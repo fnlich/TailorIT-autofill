@@ -91,7 +91,7 @@ export function SettingsView({ platform, settings, status, onClose, onSaved, onA
       </div>
       <div className="tia-settings__body">
         {draft === null ? <p className="tia-note" role="status">{WORDS.loading}</p> : (
-          <ModesFields settings={draft} disabled={saving} idPrefix="panel" signIn={signInAvailability(status)}
+          <ModesFields settings={draft} disabled={saving} idPrefix="panel" signIn={signInAvailability(status)} stored={base}
             onChange={(next) => {
               setNote(null);
               setDraft(next);

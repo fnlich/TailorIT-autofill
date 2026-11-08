@@ -10,9 +10,10 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { SITES_MATCH } from '../shared/hosts';
 import { SIDEBAR_APP_FILE } from '../shared/sidebar';
+import { LOOKUP_ON_LOAD_LIMIT } from './job-cards';
 import { NOTES_KEY, SIDEBAR_LOAD_LIMIT } from './sidebar';
-import { contentSender, EXTENSION_ID, frameReport, LEVER_URL, NO_RECEIVER, pageSender, sentToFrames, startTestWorker,
-  tokenRecord, typeOfSent, type TestWorker } from './worker.testkit';
+import { contentSender, EXTENSION_ID, frameReport, goldens, LEVER_URL, NO_RECEIVER, pageSender, sentToFrames,
+  startTestWorker, tokenRecord, typeOfSent, type TestWorker } from './worker.testkit';
 
 const TOP = contentSender();
 const SUBFRAME = contentSender({ frameId: 2, documentId: 'doc-2' });
@@ -74,6 +75,86 @@ describe('the sidebar on the page (v5 p1-shell)', () => {
         data: { connection: 'connected' } });
     });
 
+    it('keep the profile\'s sensitive part, I understand and a save that lets it act more on its own on the extension\'s pages (the review, S7)', async () => {
+      const worker = await startTestWorker({ token: tokenRecord() });
+      await hello(worker);
+      const profile = goldens.profile.profile;
+      for (const message of [{ v: 1, type: 'auth/acknowledgeDisclosure' }, { v: 1, type: 'panel/profile' },
+        { v: 1, type: 'panel/saveProfile', revision: 3, profile, sensitive: goldens.sensitive.sensitive },
+        { v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, submit: 'auto' } } },
+        { v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } },
+          base: DEFAULT_SETTINGS },
+        { v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes,
+          agentSkip: { ...DEFAULT_SETTINGS.modes.agentSkip, requiredEmpty: false } } } }]) {
+        expect(await worker.deliver(message, TOP), message.type).toEqual({ ok: false, error: 'bad_sender' });
+      }
+      expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
+        data: { settings: DEFAULT_SETTINGS } });
+      // The rest stays the sidebar's: the profile without its sensitive part, a save that changes nothing of that kind
+      // (or lets it act less on its own), and Chrome's side panel chosen.
+      expect(await worker.deliver({ v: 1, type: 'panel/profile', sensitive: false }, TOP)).not.toEqual({ ok: false,
+        error: 'bad_sender' });
+      const calmer = { ...DEFAULT_SETTINGS, view: 'minimized' as const, modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' as const } };
+      expect(await worker.deliver({ v: 1, type: 'settings/save', settings: calmer, base: DEFAULT_SETTINGS }, TOP))
+        .toEqual({ ok: true, data: { settings: calmer } });
+      // A base that held Auto while the stored settings hold Manual: only the page's own change applies, which raises
+      // nothing.
+      const autoBase = { ...calmer, modes: { ...calmer.modes, submit: 'auto' as const } };
+      expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...autoBase, offerToSaveAnswers: false },
+        base: autoBase }, TOP)).toMatchObject({ ok: true, data: { settings: { modes: { submit: 'manual' },
+        offerToSaveAnswers: false } } });
+      // The extension's own pages may.
+      expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...calmer, modes: { ...calmer.modes,
+        submit: 'auto' } } }, OPTIONS)).toMatchObject({ ok: true });
+      expect(await worker.deliver({ v: 1, type: 'settings/get' }, TOP)).toMatchObject({ ok: true,
+        data: { settings: { modes: { submit: 'auto' } } } });
+    });
+
+    it('look a job up for a sidebar that opened by itself only as a page that loads is (the review, S1)', async () => {
+      const LOOKUP = 'POST /api/autofill/lookup';
+      const relay = (worker: TestWorker, senders: ReturnType<typeof contentSender>[]) => {
+        worker.fakes.frameAnswers = async (sent) => {
+          const message = sent.message as { type?: string };
+          if (message.type !== 'job/refresh') return { ok: true, data: {} };
+          return (await worker.deliver({ v: 1, type: 'job/lookup' }, senders.find((each) => each.tab!.id === sent.tabId)!)) as
+            { ok: boolean };
+        };
+      };
+      // LOOKUP_ON_LOAD_LIMIT's budget, spent by pages that loaded: the last tab's page was not looked up.
+      const worker = await startTestWorker({ token: tokenRecord(), lookupOnLoad: true });
+      const tabs = Array.from({ length: LOOKUP_ON_LOAD_LIMIT.count + 1 }, (_, at) => contentSender({ tab: { id: 20 + at },
+        documentId: `doc-${at}` }));
+      relay(worker, tabs);
+      for (const tab of tabs) await hello(worker, tab);
+      await expect.poll(() => worker.tailorit.count(LOOKUP)).toBe(LOOKUP_ON_LOAD_LIMIT.count);
+      const last = tabs.at(-1)!;
+      const lastTab = last.tab!.id;
+      expect(await worker.deliver({ v: 1, type: 'panel/job', tabId: lastTab, onLoad: true }, last)).toEqual({ ok: true,
+        data: { tabId: lastTab, card: null } });
+      expect(worker.tailorit.count(LOOKUP)).toBe(LOOKUP_ON_LOAD_LIMIT.count);
+      // The person opened it: looked up as the side panel's card is.
+      expect(await worker.deliver({ v: 1, type: 'panel/job', tabId: lastTab }, last)).toMatchObject({ ok: true,
+        data: { tabId: lastTab } });
+      expect(worker.tailorit.count(LOOKUP)).toBe(LOOKUP_ON_LOAD_LIMIT.count + 1);
+      // A card held already is shown without a lookup.
+      expect(await worker.deliver({ v: 1, type: 'panel/job', tabId: lastTab, onLoad: true }, last)).toMatchObject({
+        ok: true, data: { tabId: lastTab, card: { state: expect.any(String) } } });
+      expect(worker.tailorit.count(LOOKUP)).toBe(LOOKUP_ON_LOAD_LIMIT.count + 1);
+
+      // A private tab, or the disclosure not acknowledged as it reads now: no card, nothing asked.
+      const quiet = await startTestWorker({ token: tokenRecord(), lookupOnLoad: true, disclosure: 1 });
+      const privateTop = contentSender({ tab: { id: 30, incognito: true }, documentId: 'doc-p' });
+      relay(quiet, [TOP, privateTop]);
+      await hello(quiet);
+      await hello(quiet, privateTop);
+      for (const [sender, tabId] of [[TOP, 7], [privateTop, 30]] as const) {
+        expect(await quiet.deliver({ v: 1, type: 'panel/job', tabId, onLoad: true }, sender)).toEqual({ ok: true,
+          data: { tabId, card: null } });
+      }
+      expect(quiet.tailorit.count(LOOKUP)).toBe(0);
+      expect(sentToFrames(quiet).filter((sent) => typeOfSent(sent) === 'job/refresh')).toEqual([]);
+    });
+
     it('are parsed as the pages\' own, strictly', async () => {
       const worker = await startTestWorker();
       expect(await worker.deliver({ v: 1, type: 'panel/reports', tabId: 7, extra: true }, TOP)).toEqual({ ok: false,
@@ -111,12 +192,12 @@ describe('the sidebar on the page (v5 p1-shell)', () => {
       }
     });
 
-    it('carry the preview of the sender\'s own tab only', async () => {
+    it('never carry a preview, even of the sender\'s own tab (the review, S6 and F10: no résumé bytes in the page)', async () => {
       const worker = await startTestWorker({ token: tokenRecord() });
       await hello(worker);
       const port = worker.connect('preview', TOP);
-      port.post({ v: 1, type: 'preview/request', tabId: 8 });
       await vi.waitFor(() => expect(port.disconnectedByWorker).toBe(true));
+      expect(port.received).toEqual([]);
     });
   });
 
@@ -244,6 +325,56 @@ describe('the sidebar on the page (v5 p1-shell)', () => {
       await fakeBrowser.action.onClicked.trigger({ id: 7, url: COMPANY } as never);
       await vi.waitFor(() => expect(asked()).toBe(4));
       expect(worker.fakes.injections).toHaveLength(1);
+    });
+
+    it('injects the content script into an applicant-tracking tab that loaded before the extension (the review, F7)', async () => {
+      const worker = await startTestWorker();
+      let listening = false;
+      worker.fakes.frameAnswers = (sent) => {
+        if (typeOfSent(sent) !== 'sidebar/open') return { ok: true, data: {} };
+        if (!listening) throw new Error(NO_RECEIVER);
+        return { ok: true, data: { opening: true } };
+      };
+      worker.fakes.injectAnswer = async () => {
+        listening = true;
+      };
+      worker.fakes.topDocument = () => ({ documentId: 'doc-ats', url: LEVER_URL });
+      // With the career sites off: the applicant-tracking hosts are not theirs.
+      await worker.deliver({ v: 1, type: 'sites/set', on: false }, OPTIONS);
+      await fakeBrowser.action.onClicked.trigger({ id: 7, url: LEVER_URL } as never);
+      await vi.waitFor(() => expect(sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'sidebar/open'))
+        .toHaveLength(2));
+      expect(worker.fakes.injections).toEqual([{ target: { tabId: 7, documentIds: ['doc-ats'] },
+        files: ['content-script.js'] }]);
+      expect(worker.fakes.sidePanelCalls.filter((call) => call.method === 'open')).toEqual([]);
+      // Never in a private tab, nor once the frame shows another page.
+      listening = false;
+      await fakeBrowser.action.onClicked.trigger({ id: 7, url: LEVER_URL, incognito: true } as never);
+      await vi.waitFor(() => expect(worker.fakes.sidePanelCalls.filter((call) => call.method === 'open')).toHaveLength(1));
+      worker.fakes.topDocument = () => ({ documentId: 'doc-co', url: COMPANY });
+      await fakeBrowser.action.onClicked.trigger({ id: 7, url: LEVER_URL } as never);
+      await vi.waitFor(() => expect(worker.fakes.sidePanelCalls.filter((call) => call.method === 'open')).toHaveLength(2));
+      expect(worker.fakes.injections).toHaveLength(1);
+    });
+
+    it('never injects into TailorIT\'s own https pages (the review, S11)', async () => {
+      const own = 'https://app.tailorit.example';
+      const worker = await startTestWorker({ origin: own, before: (fakes) => {
+        fakes.granted.add(SITES_MATCH);
+      } });
+      worker.fakes.frameAnswers = () => {
+        throw new Error(NO_RECEIVER);
+      };
+      worker.fakes.topDocument = () => ({ documentId: 'doc-own', url: `${own}/tracker` });
+      await fakeBrowser.action.onClicked.trigger({ id: 7, url: `${own}/tracker` } as never);
+      await vi.waitFor(() => expect(worker.fakes.sidePanelCalls.filter((call) => call.method === 'open')).toHaveLength(1));
+      expect(worker.fakes.injections).toEqual([]);
+      // Nor does the sentinel's registration reach them, nor its page/recognised.
+      await vi.waitFor(() => expect([...worker.fakes.registrations.values()][0]?.excludeMatches)
+        .toContain('https://app.tailorit.example/*'));
+      expect(await worker.deliver({ v: 1, type: 'page/recognised', reason: 'application-form' },
+        contentSender({ url: `${own}/apply`, tab: { id: 7, url: `${own}/apply` }, documentId: 'doc-own' })))
+        .toEqual({ ok: false, error: 'bad_message' });
     });
 
     it('injects nothing in a private tab, on an http page, where the frame moved on, or with the career sites off', async () => {

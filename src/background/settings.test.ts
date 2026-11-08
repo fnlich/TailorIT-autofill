@@ -17,7 +17,8 @@ const CHOSEN_CONTENT = { panel: 'side', view: 'minimized', modes: { next: CHOSEN
 /** v5 p1-shell: CHOSEN as versions 1 to 7 stored it, Chrome's side panel; and where every version 8 migration puts
  *  the panel, the page (the owner, 2026-11-08: the Jobright-like sidebar for everyone). */
 const OLD_PANEL = { panel: 'side' as const };
-const ON_PAGE = { panel: 'page' as const };
+/** v5: every earlier install's panel on the page, and (the review's F9) its Default view Expanded. */
+const ON_PAGE = { panel: 'page' as const, view: 'expanded' as const };
 /** CHOSEN's modes as version 6 stored them, before "When a list has no match" and the notifications' time. */
 const { noMatch: _noMatch, notifications: _notifications, ...CHOSEN_MODES_V6 } = CHOSEN.modes;
 
@@ -78,6 +79,9 @@ describe('settings', () => {
       submit: 'auto' }, llm: { whenForbidden: 'use-ai' } });
     expect(contentSettingsOf(ask).llm.whenForbidden).toBe('use-ai');
     expect(contentSettingsOf(ask, { agent: false, holdSubmit: true }).modes.submit).toBe('manual');
+    // v5 p1-shell (the review's F5): the sidebar never opens by itself in the agent's window.
+    expect(contentSettingsOf({ ...ask, view: 'expanded' }, { agent: true }).view).toBe('minimized');
+    expect(contentSettingsOf({ ...ask, view: 'expanded' }).view).toBe('expanded');
     // Any other choice is the person's in the agent's window too.
     for (const whenForbidden of ['use-ai', 'profile-only'] as const) {
       expect(contentSettingsOf({ ...ask, llm: { ...ask.llm, whenForbidden } }, { agent: true }).llm.whenForbidden)
@@ -217,11 +221,11 @@ describe('settings', () => {
   });
 
   // v5 p1-shell (settings version 8): "Where the panel shows".
-  it('migrates version 7 settings to version 8’s: the panel on the page for every install, its in-page card and its side panel alike, every other choice kept, and stores them', async () => {
+  it('migrates version 7 settings to version 8’s: the panel on the page and Default view Expanded for every install (the review, F9), every other choice kept, and stores them', async () => {
     for (const [stored, read] of [['in-page', 'page'], ['side', 'page']] as const) {
       const v7 = { ...CHOSEN, version: 7, panel: stored };
       const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v7 }) });
-      const expected = { ...CHOSEN, panel: read };
+      const expected = { ...CHOSEN, panel: read, view: 'expanded' };
       expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
         data: { settings: expected } });
       expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
@@ -283,13 +287,16 @@ describe('settings', () => {
       llm: { tiebreak: false, classify: true, drafts: true, answers: true } } } });
   });
 
-  it('reach every frame with a form once saved, as its content settings, so a run reads auto-advance afresh (the Phase 5 review, C-S2)', async () => {
+  it('reach every frame with a form, and (v5, the review, F1) every top frame of ours, once saved, as its content settings, so a run reads auto-advance afresh (the Phase 5 review, C-S2) and a sidebar follows where the panel shows', async () => {
     const worker = await startTestWorker();
     const other = contentSender({ tab: { id: 8 }, frameId: 3, documentId: 'doc-3' });
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: true }, other);
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: false },
       contentSender({ frameId: 5, documentId: 'doc-5' }));
+    // A posting's top frame with no form (its sidebar open): told too.
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false },
+      contentSender({ tab: { id: 9 }, documentId: 'doc-9' }));
     // One frame is gone: the save is answered all the same.
     worker.fakes.frameAnswers = ({ options }) => {
       if (options?.frameId === 3) throw new Error('Could not establish connection. Receiving end does not exist.');
@@ -303,10 +310,11 @@ describe('settings', () => {
     expect(pushed).toEqual([
       { tabId: 7, message, options: { frameId: 0, documentId: 'doc-1' } },
       { tabId: 8, message, options: { frameId: 3, documentId: 'doc-3' } },
+      { tabId: 9, message, options: { frameId: 0, documentId: 'doc-9' } },
     ]);
     // A save that does not parse tells no frame anything.
     await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN, panel: 'floating' } }, OPTIONS);
-    expect(sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'settings/changed')).toHaveLength(2);
+    expect(sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'settings/changed')).toHaveLength(3);
   });
 
   it('are read and written by extension pages, and (v5) by the sidebar from a tab\'s top frame only while the panel shows on the page', async () => {

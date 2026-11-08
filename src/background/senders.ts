@@ -10,7 +10,7 @@
  * injects anything.
  * v5 p1-shell (PLAN decision 1, the sidebar on the page): the sidebar draws the side panel's views in the tab's top
  * frame, and they ask the worker over that frame's content channel. So a content channel may also send the extension
- * pages' messages the sidebar's views send (SIDEBAR_PAGE_MESSAGES), and open their two ports, and nothing else of the
+ * pages' messages the sidebar's views send (SIDEBAR_PAGE_MESSAGES), and open their `panel` port, and nothing else of the
  * pages', only while: it is the tab's top frame (frame 0, whatever a payload says) of a content script of ours on an
  * active document (channelOf, or a frame the worker injected), never the sentinel; the message names no tab but the
  * sender's own (sidebarMayAsk); and "Where the panel shows" is On the page (the router's `sidebar.open`, read at each
@@ -149,7 +149,10 @@ export function isConnectPage(sender: Sender, origin: string): boolean {
 
 /** The extension pages' messages the sidebar's views send (src/ui/panel, src/ui/page), and nothing else: never the
  *  settings page's own (auth/redeemCode, auth/disconnect, runs/clear, telemetry/*, sites/*, agent/set) nor the in-page
- *  card's (panel/policyDecision, panel/confirmDraft, panel/saveAnswer, panel/describe). */
+ *  card's (panel/policyDecision, panel/confirmDraft, panel/saveAnswer, panel/describe). The review's S7: nor I understand
+ *  on a changed disclosure (auth/acknowledgeDisclosure), which the sidebar leaves to Chrome's side panel; the profile's
+ *  sensitive part and a save that lets the extension act more on its own are refused by the worker's vet
+ *  (background/sidebar.ts createSidebarVet). */
 export const SIDEBAR_PAGE_MESSAGES: ReadonlySet<string> = new Set([
   'panel/fill', 'panel/continue', 'panel/cancel', 'panel/focus', 'panel/reports', 'panel/job', 'panel/addJob',
   'panel/resumes', 'panel/setResume', 'panel/ask', 'panel/letter', 'panel/skip', 'panel/launcher', 'panel/showLauncher',
@@ -157,11 +160,12 @@ export const SIDEBAR_PAGE_MESSAGES: ReadonlySet<string> = new Set([
   // v5 p1-panel (the Phase 1 review, S6): the profile check, answered by name only.
   'panel/profileCheck',
   'panel/press', 'panel/retryApplied', 'panel/notes', 'panel/closeNote', 'settings/get', 'settings/save', 'auth/status',
-  'auth/startPairing', 'auth/acknowledgeDisclosure', 'agent/status', 'agent/stop',
+  'auth/startPairing', 'agent/status', 'agent/stop',
 ]);
 
-/** The ports the sidebar's views open (the panel's live reports and the preview's transfer). */
-export const SIDEBAR_PORTS: ReadonlySet<string> = new Set(['panel', 'preview']);
+/** The ports the sidebar's views open: the panel's live reports. The review's S6 and F10: never the preview's transfer,
+ *  so no résumé or letter bytes reach the page's process; the sidebar opens a preview in Chrome's side panel. */
+export const SIDEBAR_PORTS: ReadonlySet<string> = new Set(['panel']);
 
 /** Whether a content channel may speak for the sidebar at all: the tab's top frame of a content script of ours, never
  *  the sentinel. */

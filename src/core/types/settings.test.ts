@@ -38,13 +38,14 @@ describe('settings version 8', () => {
     expect(PANEL_PLACES).toEqual(['page', 'side']);
   });
 
-  it('migrates version 7: the panel on the page for every install, its in-page card and its side panel alike (the owner, 2026-11-08), every other choice kept', () => {
+  it('migrates version 7: the panel on the page and Default view Expanded for every install (the owner, 2026-11-08; the review, F9), every other choice kept', () => {
     const v7: SettingsV7 = { ...DEFAULT_SETTINGS, version: 7, panel: 'in-page', view: 'minimized',
       modes: { ...DEFAULT_MODES, next: 'auto', agentSkip: { requiredEmpty: false, noAi: true, legalGuess: true } },
       llm: { ...llm, drafts: false }, telemetry: { optIn: true } };
     const migrated = migrateSettingsV7(v7);
-    expect(migrated).toEqual({ ...v7, version: 8, panel: 'page' });
+    expect(migrated).toEqual({ ...v7, version: 8, panel: 'page', view: 'expanded' });
     expect(migrateSettingsV7({ ...v7, panel: 'side' }).panel).toBe('page');
+    expect(migrateSettingsV7({ ...v7, view: 'expanded' }).view).toBe('expanded');
     // Nothing of the old object is shared.
     expect(migrated.modes).not.toBe(v7.modes);
     expect(migrated.modes.agentSkip).not.toBe(v7.modes.agentSkip);
@@ -95,7 +96,7 @@ describe('settings version 7', () => {
       preapprovedConsent: ['privacy'], llm: { ...llmV5, drafts: false }, telemetry: { optIn: true },
       offerToSaveAnswers: false, interpretations: { ...DEFAULT_SETTINGS.interpretations, twoOrMoreRaces: false } };
     const migrated = migrateSettingsV4(v4);
-    expect(migrated).toEqual({ ...v4, version: 8, panel: 'page', modes: withV7({ ...v4.modes, resumeOnPage: 'keep' }),
+    expect(migrated).toEqual({ ...v4, version: 8, panel: 'page', view: 'expanded', modes: withV7({ ...v4.modes, resumeOnPage: 'keep' }),
       llm: { ...llm, drafts: false } });
     // Nothing of the old object is shared.
     expect(migrated.modes.agentSkip).not.toBe(v4.modes.agentSkip);
@@ -107,7 +108,7 @@ describe('settings version 7', () => {
     const v5: SettingsV5 = { ...DEFAULT_SETTINGS, version: 5, panel: 'in-page', modes: modesV6({ next: 'auto' }),
       llm: { ...llmV5, confirmDrafts: true, whenForbidden: 'ask', answers: false } };
     const migrated = migrateSettingsV5(v5);
-    expect(migrated).toEqual({ ...v5, version: 8, panel: 'page', modes: withV7(v5.modes),
+    expect(migrated).toEqual({ ...v5, version: 8, panel: 'page', view: 'expanded', modes: withV7(v5.modes),
       llm: { ...llm, answers: false, whenForbidden: 'profile-only' } });
     expect('confirmDrafts' in migrated.llm).toBe(false);
     // "Use AI anyway" and Profile only are kept as they were.
@@ -124,7 +125,7 @@ describe('settings version 7', () => {
         agentSkip: { requiredEmpty: false, noAi: false, legalGuess: true } }),
       llm: { ...llm, drafts: false }, telemetry: { optIn: true } };
     const migrated = migrateSettingsV6(v6);
-    expect(migrated).toEqual({ ...v6, version: 8, panel: 'page', modes: withV7(v6.modes) });
+    expect(migrated).toEqual({ ...v6, version: 8, panel: 'page', view: 'expanded', modes: withV7(v6.modes) });
     // Nothing of the old object is shared.
     expect(migrated.modes.agentSkip).not.toBe(v6.modes.agentSkip);
     expect(migrated.llm).not.toBe(v6.llm);

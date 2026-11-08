@@ -106,6 +106,10 @@ export const INTER_FAMILY = 'TailorIT Inter';
 /** Inter where it was added (the sidebar's and the extension pages' documents), else the system's own font: a closed
  *  shadow root cannot declare @font-face, and the extension talks only to TailorIT. */
 export const FONT_STACK = `"${INTER_FAMILY}", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`;
+/** v5 p1-shell (the review's S9): the generic families alone, which no page can redefine (a page may add a face under
+ *  "TailorIT Inter" to its own document, whose glyphs could say anything): the labels on the page that start or send
+ *  something are drawn in these. */
+export const GENERIC_FONT = 'system-ui, sans-serif';
 
 /** A report notice's code. */
 type NoticeCode = FrameReport['notices'][number]['code'];

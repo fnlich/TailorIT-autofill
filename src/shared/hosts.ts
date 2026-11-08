@@ -220,12 +220,37 @@ export interface SiteRegistration {
 /** The sentinel's registrations (pure: the worker reconciles Chrome's to these, and check-build holds them): none while
  *  the company career sites are off; while on, one, on every https page but the ATS hosts (whose own content script
  *  runs there), LinkedIn's, the employee HR systems' and (v5 p1-rules) the CAPTCHA and anti-bot vendors' own pages, in
- *  the top frame only (never an ad's or an anti-bot frame), once the page is loaded. */
-export function registrationsFor(on: { sites: boolean }): SiteRegistration[] {
+ *  the top frame only (never an ad's or an anti-bot frame), once the page is loaded. v5 p1-shell (the review's S11):
+ *  nor TailorIT's own pages (`own`, its origin, where it is an https one). */
+export function registrationsFor(on: { sites: boolean; own?: string }): SiteRegistration[] {
   if (!on.sites) return [];
+  const own = ownOriginMatch(on.own);
   return [{ id: SITES_REGISTRATION_ID, js: [SENTINEL_FILE], matches: [SITES_MATCH],
-    excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES, ...HR_HOST_MATCHES, ...CAPTCHA_VENDOR_MATCHES],
+    excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES, ...HR_HOST_MATCHES, ...CAPTCHA_VENDOR_MATCHES,
+      ...(own === null ? [] : [own])],
     allFrames: false, runAt: 'document_idle', persistAcrossSessions: true, world: 'ISOLATED' }];
+}
+
+/** v5 p1-shell (S11): TailorIT's https origin as a match pattern (`https://host/*`; a port is not part of a pattern),
+ *  else null (none given, not https, or unreadable). */
+function ownOriginMatch(origin: string | undefined): string | null {
+  if (origin === undefined) return null;
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'https:' ? `https://${url.hostname}/*` : null;
+  } catch {
+    return null;
+  }
+}
+
+/** v5 p1-shell (S11): whether `url` is on TailorIT's own origin (`own`), which the career sites never reach. */
+export function onOwnOrigin(url: string, own: string | undefined): boolean {
+  if (own === undefined) return false;
+  try {
+    return new URL(url).origin === new URL(own).origin;
+  } catch {
+    return false;
+  }
 }
 
 /** Whether a host is `domain` or under it, in lower case and with trailing dots dropped. */

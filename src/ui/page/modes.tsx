@@ -15,8 +15,12 @@
  * worker holds it Manual anyway.
  * v5 p1-shell (settings version 8): "Where the panel shows" (On the page / Chrome's side panel) is drawn right after
  * Default view, whose choices now say whether the sidebar opens by itself; the options page shows it here too.
+ * v5 p1-shell (the review's S7): in the sidebar on the page (ui/panel/on-page.tsx), a choice that lets the extension act
+ * more on its own than the settings as stored (`stored`) cannot be made: Submit's and Sign-in's Auto, and turning a
+ * skip rule off; the group's "?" says where it is made, and the worker refuses such a save from the sidebar anyway.
  */
 import { useId } from 'react';
+import { useOnPage } from '../panel/on-page';
 import {
   MODE_CHOICES, PANEL_PLACES, PANEL_VIEWS, type Modes, type PanelPlace, type PanelView, type Settings,
 } from '../../core/types/settings';
@@ -62,19 +66,26 @@ function wordsOf(mode: ShownMode): { name: string; help: string; choices: Record
 }
 
 /** Every shown mode, the view and the skip rules. `onChange` gets the whole settings with the one choice changed.
- *  `signIn`: why Sign-in's Auto cannot be chosen now (null: it can). */
-export function ModesFields({ settings, disabled, onChange, idPrefix, signIn }: {
+ *  `signIn`: why Sign-in's Auto cannot be chosen now (null: it can). `stored`: the settings as stored, which (in the
+ *  sidebar on the page alone) no choice here may go beyond in what the extension does on its own (the header). */
+export function ModesFields({ settings, disabled, onChange, idPrefix, signIn, stored }: {
   settings: Settings;
   disabled: boolean;
   onChange(next: Settings): void;
   /** Keeps the radios' group names apart where the page draws the modes twice. */
   idPrefix: string;
   signIn: SignInBlock | null;
+  stored?: Settings | null;
 }) {
+  const onPage = useOnPage();
+  /** S7: in the sidebar, Auto stays out of reach where the stored settings do not hold it. */
+  const held = (mode: ShownMode): { choice: string; why: string } | null =>
+    onPage !== null && stored != null && (mode === 'submit' || mode === 'signIn') && stored.modes[mode] !== 'auto'
+      ? { choice: 'auto', why: COPY.onPage.raise } : null;
   const group = (mode: ShownMode) => (
     <ModeGroup key={mode} name={`${idPrefix}-${mode}`} setting={`modes.${mode}`} words={wordsOf(mode)}
       choices={MODE_CHOICES[mode]} value={settings.modes[mode]} disabled={disabled}
-      blocked={mode === 'signIn' && signIn !== null ? { choice: 'auto', why: SIGN_IN_BLOCKS[signIn] } : null}
+      blocked={mode === 'signIn' && signIn !== null ? { choice: 'auto', why: SIGN_IN_BLOCKS[signIn] } : held(mode)}
       onChoose={(choice) => onChange({ ...settings, modes: { ...settings.modes, [mode]: choice } })} />
   );
   const [first, ...rest] = SHOWN_MODES;
@@ -90,7 +101,8 @@ export function ModesFields({ settings, disabled, onChange, idPrefix, signIn }: 
         value={settings.panel} disabled={disabled} blocked={null}
         onChoose={(choice) => onChange({ ...settings, panel: choice as PanelPlace })} />
       {rest.map(group)}
-      <SkipRules settings={settings} disabled={disabled} onChange={onChange} />
+      <SkipRules settings={settings} disabled={disabled} onChange={onChange}
+        kept={onPage !== null && stored != null ? stored.modes.agentSkip : null} />
     </div>
   );
 }
@@ -138,20 +150,24 @@ function ModeGroup({ name, setting, words, choices, value, disabled, blocked, on
   );
 }
 
-/** The skip rules (v3 Phase 5): one box each. */
-function SkipRules({ settings, disabled, onChange }: { settings: Settings; disabled: boolean; onChange(next: Settings): void }) {
+/** The skip rules (v3 Phase 5): one box each. `kept` (S7, the sidebar on the page): the rules as stored, none of which
+ *  may be turned off here. */
+function SkipRules({ settings, disabled, onChange, kept }: { settings: Settings; disabled: boolean;
+  onChange(next: Settings): void; kept: Modes['agentSkip'] | null }) {
   const nameId = useId();
   const tipId = useId();
   const words = WORDS.agentSkip;
   return (
     <div className="tia-mode" role="group" aria-labelledby={nameId} aria-describedby={tipId}
       data-setting-group="modes.agentSkip">
-      <GroupHead nameId={nameId} tipId={tipId} name={words.name} help={words.help} />
+      <GroupHead nameId={nameId} tipId={tipId} name={words.name}
+        help={kept === null ? words.help : `${words.help} ${COPY.onPage.raise}`} />
       <div className="tia-mode__choices">
         {SKIP_RULES.map((rule) => (
           <label key={rule} className="tia-radiocard tia-radiocard--box">
             <input type="checkbox" className="tia-radiocard__input" data-setting={`modes.agentSkip.${rule}`}
-              checked={settings.modes.agentSkip[rule]} disabled={disabled}
+              checked={settings.modes.agentSkip[rule]}
+              disabled={disabled || (kept !== null && kept[rule] && settings.modes.agentSkip[rule])}
               onChange={(event) => onChange({ ...settings, modes: { ...settings.modes,
                 agentSkip: { ...settings.modes.agentSkip, [rule]: event.target.checked } } })} />
             <span className="tia-radiocard__label">{words[rule]}</span>

@@ -541,13 +541,20 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
   }
 
   /** The tab's form frame and its card, read through the frame when none is held: null without a form frame;
-   *  `entry` null when TailorIT could not say. */
-  async function cardOfTab(tabId: number): Promise<{ frame: FrameEntry; entry: CardEntry | null } | null> {
+   *  `entry` null when TailorIT could not say. `onLoad` (v5 p1-shell, the review's S1: a sidebar that opened by itself):
+   *  a lookup it would set off takes LOOKUP_ON_LOAD_LIMIT's budget as loadCard's does, and none is made (null) once it
+   *  is spent; one already on its way is waited for without. */
+  async function cardOfTab(tabId: number, onLoad = false): Promise<{ frame: FrameEntry; entry: CardEntry | null } | null> {
     const frame = await formFrame(tabId);
     if (frame === null) return null;
     let entry = usable(tabId, frame);
     // A confirmation page shows the card POST /applied answered, and is never looked up through.
     if (entry === null && frame.confirmation === true) return null;
+    if (entry === null && onLoad && !relays.has(`${docKeyOf(tabId, frame.frameId, frame.documentId)}|lookup`)
+      && deps.onLoadLimit !== undefined && deps.onLoadLimit.take('on-load') !== null) {
+      log('job.lookup-on-load-deferred');
+      return null;
+    }
     if (entry === null) {
       await refresh(tabId, frame, 'lookup');
       entry = usable(tabId, frame);
@@ -557,10 +564,10 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
 
   return {
     ready,
-    async card({ tabId }) {
+    async card({ tabId, onLoad }) {
       await ready;
       if (!(await deps.connected())) return ok({ tabId, card: null });
-      const read = await cardOfTab(tabId);
+      const read = await cardOfTab(tabId, onLoad === true);
       if (read === null) return ok({ tabId, card: null });
       const lookup = read.entry?.lookup ?? null;
       if (lookup === null) return ok({ tabId, card: { state: 'unavailable' } });

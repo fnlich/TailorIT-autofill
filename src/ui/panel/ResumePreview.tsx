@@ -7,10 +7,14 @@
  * preview opened, whatever the panel draws meanwhile); a tab opened with Open it larger keeps its own copy of the PDF
  * until that tab is closed (docs/PRIVACY.md).
  * v4 ui: the cover letter's preview too (`kind` 'coverLetter', under the report's cover-letter row), the same way.
+ * v5 p1-shell (the review's S6 and F10): in the sidebar on the page (on-page.tsx) nothing is loaded: the preview says it
+ * opens in Chrome's side panel and links there, so no file's bytes reach the page's process (and no page's CSP stands
+ * between the person and the preview).
  */
 import { useEffect, useState } from 'react';
 import { COPY } from '../../shared/copy';
 import type { PreviewKind } from '../report/Report';
+import { InSidePanel, useOnPage } from './on-page';
 import type { PreviewResult } from './preview';
 
 /** The words of each kind's preview. */
@@ -19,8 +23,24 @@ const WORDS_OF: Record<PreviewKind, { loading: string; unavailable: string; titl
   coverLetter: COPY.mainView.letterPreview,
 };
 
-export function ResumePreview({ load, label, onClose, kind = 'resume' }: { load(signal: AbortSignal): Promise<PreviewResult>;
-  label: string; onClose(): void; kind?: PreviewKind }) {
+type PreviewProps = { load(signal: AbortSignal): Promise<PreviewResult>; label: string; onClose(): void;
+  kind?: PreviewKind };
+
+export function ResumePreview(props: PreviewProps) {
+  const onPage = useOnPage();
+  if (onPage === null) return <InlinePreview {...props} />;
+  return (
+    <div className="tia-preview" data-resume-preview="elsewhere" data-preview-kind={props.kind ?? 'resume'}>
+      <div className="tia-preview__bar">
+        <button type="button" className="tia-button tia-button--quiet" onClick={props.onClose}>{COPY.job.preview.close}</button>
+      </div>
+      <InSidePanel text={COPY.onPage.preview} onPage={onPage} />
+    </div>
+  );
+}
+
+/** The preview itself, where the panel is an extension page. */
+function InlinePreview({ load, label, onClose, kind = 'resume' }: PreviewProps) {
   const words = WORDS_OF[kind];
   const [view, setView] = useState<{ state: 'loading' } | { state: 'shown'; url: string }
     | { state: 'failed'; text: string }>({ state: 'loading' });

@@ -10,13 +10,16 @@
  *   page's part of the window; 'shift', a smaller one on the right (a chat button), moved left by the sidebar's width;
  *   and 'wide', an element in the page's flow, wider than the body now leaves it (a 100vw section), held to the body.
  * The marks are re-read after the page's changes (its elements added or removed, the window resized), at most one read
- * every PUSH_SYNC_MS, on animation frames, and never while a fill runs (`busy`: the page is read once it ends, as
- * Jobright waits); a read looks at most PUSH_SCAN_CAP elements, PUSH_SCAN_DEPTH levels under the body. Only visible
- * elements of some size are marked or read into, and never a form, its controls or anything aria-hidden, so a hidden
- * field or a honeypot never is. Closing the sidebar takes every mark and
- * the stylesheet away. Per-host fixes would go in the stylesheet; none is needed yet (none was seen).
+ * every PUSH_SYNC_MS (longer after a costly read: PUSH_COST_FACTOR times what it took), on animation frames, and never
+ * while a fill runs (`busy`: the page is read once it ends, as Jobright waits); a read looks at most PUSH_SCAN_CAP
+ * elements, PUSH_SCAN_DEPTH levels under the body. Only visible elements of some size are marked or read into, and
+ * never a form, its controls or anything aria-hidden, so a hidden field or a honeypot never is. The review of
+ * 2026-11-08 (S5, F6): nor one wholly past the window's right edge (an off-canvas drawer the shift would bring in), one
+ * an ancestor's overflow clips to nothing, or one that holds a CAPTCHA widget or a CAPTCHA vendor's frame. Closing the
+ * sidebar takes every mark and the stylesheet away. Per-host fixes would go in the stylesheet; none is needed yet.
  */
 import { monotonicNow } from '../../dom/time';
+import { isCaptchaVendorUrl } from '../../shared/hosts';
 import { log } from '../../shared/log';
 
 /** The root element's mark while the page is pushed. */
@@ -25,8 +28,10 @@ export const PUSHED_ATTR = 'data-tailorit-sidebar';
 export const PUSH_ATTR = 'data-tailorit-push';
 /** At most one read of the page's elements this often, in ms. */
 export const PUSH_SYNC_MS = 500;
-/** The most elements one read looks at. */
-export const PUSH_SCAN_CAP = 4000;
+/** The most elements one read looks at (the review's F6: 4,000 a read on a busy page cost too much). */
+export const PUSH_SCAN_CAP = 1500;
+/** A read that took long holds the next one back this many times its own length (F6). */
+export const PUSH_COST_FACTOR = 20;
 /** How deep under the body a read looks. */
 export const PUSH_SCAN_DEPTH = 6;
 
@@ -35,6 +40,14 @@ export type PushKind = 'span' | 'shift' | 'wide';
 
 /** Elements never marked, nor read into: a form's own controls (a honeypot's among them). */
 const FORM_CONTROLS: ReadonlySet<string> = new Set(['INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'FORM', 'LABEL', 'FIELDSET']);
+/** S5: the CAPTCHA widgets' own elements (their vendors' frames are found by their address, isCaptchaVendorUrl). */
+const CAPTCHA_WIDGETS = '.g-recaptcha, .h-captcha, .cf-turnstile, [data-sitekey], textarea[name="g-recaptcha-response"], '
+  + 'textarea[name="h-captcha-response"], input[name="cf-turnstile-response"]';
+/** S5: overflow values that clip what an element holds. */
+const CLIPS: ReadonlySet<string> = new Set(['hidden', 'clip', 'auto', 'scroll']);
+/** A box, as a read carries it. */
+type Box = { left: number; top: number; right: number; bottom: number };
+
 /** The smallest element marked or read into, in CSS pixels: anything smaller (a hidden field, a honeypot's box) is
  *  never touched. */
 const MIN_WIDTH_PX = 40;
@@ -124,27 +137,55 @@ export function createPagePush(doc: Document, width: number, own: () => Element 
   }
 
   /** What `el` is to the push now: a kind, null when it is left alone, or 'unseen' when neither it nor anything in it
-   *  is ever marked (hidden, tiny or clipped to nothing, see-through, or a form control: a honeypot never is). A marked
-   *  element is judged by where it would be without its mark: a shifted one `width` further right; a held one keeps its
-   *  mark while it is what it was (its mark only ever limits it). */
-  function kindOf(el: Element, viewport: number): PushKind | null | 'unseen' {
-    if (FORM_CONTROLS.has(el.tagName) || el.getAttribute('aria-hidden') === 'true') return 'unseen';
+   *  is ever marked (hidden, tiny or clipped to nothing, see-through, or a form control: a honeypot never is; S5: past
+   *  the window's right edge, clipped away by an ancestor's overflow (`clip`), or holding a CAPTCHA (`captcha`)). A
+   *  marked element is judged by where it would be without its mark: a shifted one `width` further right; a held one
+   *  keeps its mark while it is what it was (its mark only ever limits it). Answers its box and style too, for the walk. */
+  function kindOf(el: Element, viewport: number, clip: Box | null, captcha: ReadonlySet<Element>):
+    { kind: PushKind | null | 'unseen'; rect?: DOMRect; css?: CSSStyleDeclaration } {
+    if (FORM_CONTROLS.has(el.tagName) || el.getAttribute('aria-hidden') === 'true' || captcha.has(el)) {
+      return { kind: 'unseen' };
+    }
     const rect = el.getBoundingClientRect();
-    if (rect.width < MIN_WIDTH_PX || rect.height < MIN_HEIGHT_PX) return 'unseen';
+    if (rect.width < MIN_WIDTH_PX || rect.height < MIN_HEIGHT_PX) return { kind: 'unseen' };
     const css = view!.getComputedStyle(el);
     if (css.display === 'none' || css.visibility === 'hidden' || css.visibility === 'collapse'
-      || Number(css.opacity) === 0) return 'unseen';
+      || Number(css.opacity) === 0) return { kind: 'unseen' };
     /** The page's right edge while it is pushed. */
     const edge = viewport - width;
     const was = marks.get(el);
+    const moved = was === 'shift' ? width : 0;
+    // S5: wholly past the window's right edge (its mark aside): an off-canvas box the shift would bring into view.
+    if (rect.left + moved >= viewport) return { kind: 'unseen' };
     if (css.position === 'fixed') {
-      if (was === 'span') return 'span';
-      const moved = was === 'shift' ? width : 0;
-      if (rect.right + moved <= edge + 1) return null;
-      return rect.left + moved <= 1 || rect.width >= viewport * 0.6 ? 'span' : 'shift';
+      if (was === 'span') return { kind: 'span', rect, css };
+      if (rect.right + moved <= edge + 1) return { kind: null, rect, css };
+      return { kind: rect.left + moved <= 1 || rect.width >= viewport * 0.6 ? 'span' : 'shift', rect, css };
     }
-    if (css.position !== 'static' && css.position !== 'relative') return null;
-    return was === 'wide' || rect.right > edge + 1 ? 'wide' : null;
+    // S5 (F6): clipped to nothing by an ancestor's overflow: a box the page keeps out of sight stays so.
+    if (clip !== null && (rect.right <= clip.left || rect.left >= clip.right || rect.bottom <= clip.top
+      || rect.top >= clip.bottom)) return { kind: 'unseen' };
+    if (css.position !== 'static' && css.position !== 'relative') return { kind: null, rect, css };
+    return { kind: was === 'wide' || rect.right > edge + 1 ? 'wide' : null, rect, css };
+  }
+
+  /** S5: every element that holds a CAPTCHA widget or a CAPTCHA vendor's frame (the widget itself included). */
+  function captchaHolders(): Set<Element> {
+    const holders = new Set<Element>();
+    const found: Element[] = [...doc.querySelectorAll(CAPTCHA_WIDGETS)];
+    for (const frame of doc.querySelectorAll('iframe[src]')) {
+      try {
+        if (isCaptchaVendorUrl(new URL((frame as HTMLIFrameElement).src))) found.push(frame);
+      } catch {
+        // An address that does not read is no vendor's.
+      }
+    }
+    for (const el of found) {
+      for (let at: Element | null = el; at !== null && at !== doc.body && !holders.has(at); at = at.parentElement) {
+        holders.add(at);
+      }
+    }
+    return holders;
   }
 
   /** One read of the page: each element marked as kindOf says. */
@@ -159,18 +200,19 @@ export function createPagePush(doc: Document, width: number, own: () => Element 
       return;
     }
     dirty = false;
-    lastSync = monotonicNow();
+    const began = monotonicNow();
     // The layout viewport (the window less its scrollbar): where a fixed element's right edge sits.
     const viewport = doc.documentElement.clientWidth || view.innerWidth;
     const host = own();
     const seen = new Set<Element>();
+    const captcha = captchaHolders();
     let looked = 0;
-    const walk = (parent: Element, depth: number) => {
+    const walk = (parent: Element, depth: number, clip: Box | null) => {
       for (const child of Array.from(parent.children)) {
         if (looked >= PUSH_SCAN_CAP) return;
         if (child === host || child.tagName === 'SCRIPT' || child.tagName === 'STYLE') continue;
         looked += 1;
-        const kind = kindOf(child, viewport);
+        const { kind, rect, css } = kindOf(child, viewport, clip, captcha);
         if (kind === 'unseen') continue;
         if (kind !== null) {
           seen.add(child);
@@ -181,16 +223,25 @@ export function createPagePush(doc: Document, width: number, own: () => Element 
           // A marked element's own children move with it.
           if (kind !== 'wide') continue;
         }
-        if (depth < PUSH_SCAN_DEPTH) walk(child, depth + 1);
+        if (depth >= PUSH_SCAN_DEPTH || rect === undefined || css === undefined) continue;
+        // What this element clips its own content to (a fixed one starts afresh from the window).
+        const clips = CLIPS.has(css.overflowX) || CLIPS.has(css.overflowY) ? rect : null;
+        const outer = css.position === 'fixed' ? null : clip;
+        walk(child, depth + 1, clips === null ? outer : outer === null ? clips : { left: Math.max(clips.left, outer.left),
+          top: Math.max(clips.top, outer.top), right: Math.min(clips.right, outer.right),
+          bottom: Math.min(clips.bottom, outer.bottom) });
       }
     };
-    walk(doc.body, 1);
+    walk(doc.body, 1, null);
     for (const [el] of marks) {
       if (seen.has(el)) continue;
       if (el.getAttribute(PUSH_ATTR) !== null) el.removeAttribute(PUSH_ATTR);
       marks.delete(el);
     }
-    log('sidebar.pushed', { marked: marks.size });
+    const ended = monotonicNow();
+    // F6: a costly read holds the next one back in proportion (lastSync is set ahead of time).
+    lastSync = ended + Math.max(0, (ended - began) * PUSH_COST_FACTOR - PUSH_SYNC_MS);
+    log('sidebar.pushed', { marked: marks.size, looked });
   }
 
   function schedule(): void {

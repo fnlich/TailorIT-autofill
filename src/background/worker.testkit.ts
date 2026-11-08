@@ -411,6 +411,8 @@ export interface TestWorkerOptions {
   disclosure?: number | null;
   /** v3 Phase 5: the auto-apply agent's windows (WXT's fake browser opens windows without tabs). */
   windows?: WorkerPlatform['windows'];
+  /** v5 p1-shell (S11): TailorIT's origin as the worker knows it; ORIGIN by default. */
+  origin?: string;
 }
 
 /** Resets the fake browser, installs the hand fakes and starts the real worker over them. */
@@ -467,7 +469,7 @@ async function launch(
     now: () => clock.now,
     ...(options.windows === undefined ? {} : { windows: options.windows }),
   };
-  const state = startWorker({ platform, core, timers, origin: ORIGIN, lookupOnLoad: options.lookupOnLoad === true });
+  const state = startWorker({ platform, core, timers, origin: options.origin ?? ORIGIN, lookupOnLoad: options.lookupOnLoad === true });
   if (options.awaitStartUp !== false) await state.ready;
   const answerOf = (event: { trigger(...args: never[]): unknown }, message: unknown, sender: RawSender) =>
     new Promise<unknown>((resolve) => {

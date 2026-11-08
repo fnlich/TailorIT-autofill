@@ -56,8 +56,13 @@ export interface RouterOptions {
    *  sender is our own script (our id); the handler, once storage says the frame was injected, opens it as always. */
   openSidePanel?(tabId: number): void;
   /** v5 p1-shell: the sidebar's page messages from the tab's top frame are taken while `open()` holds ("Where the panel
-   *  shows" is On the page); without this option, none is. */
-  sidebar?: { open(): Promise<boolean> };
+   *  shows" is On the page); without this option, none is. `vet` (the review's S1 and S7) reads each one, parsed, with
+   *  its channel first: an answer of its own (a refusal, or the answer it gives instead), or null for the pages'
+   *  handler. */
+  sidebar?: {
+    open(): Promise<boolean>;
+    vet?(message: PageMessage, channel: ContentChannel): Promise<Answer<unknown> | null>;
+  };
 }
 
 export function createRouter(options: RouterOptions): Handler {
@@ -117,7 +122,7 @@ export function createRouter(options: RouterOptions): Handler {
   /** v5 p1-shell: a page message of the sidebar's from the tab's top frame: parsed as the pages' are, then refused
    *  unless it names no tab but the sender's own and the panel shows on the page, and handled by the pages' handler
    *  once the content gate is past. */
-  async function sidebarMessage(message: unknown, channel: ContentChannel, sidebar: { open(): Promise<boolean> }):
+  async function sidebarMessage(message: unknown, channel: ContentChannel, sidebar: NonNullable<RouterOptions['sidebar']>):
     Promise<Answer<unknown>> {
     const parsed = PageMessageSchema.safeParse(message);
     if (!parsed.success) {
@@ -136,6 +141,8 @@ export function createRouter(options: RouterOptions): Handler {
         log('sidebar.refused', { side: true });
         return refuse('bad_sender');
       }
+      const vetted = sidebar.vet === undefined ? null : await sidebar.vet(msg, channel);
+      if (vetted !== null) return vetted;
       const handler = options.page[msg.type] as ((m: PageMessage) => Promise<Answer<unknown>>) | undefined;
       return handler ? await handler(msg) : refuse('not_implemented');
     } catch {

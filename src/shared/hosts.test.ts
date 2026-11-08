@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MatchPattern } from 'wxt/utils/match-patterns';
 import {
   ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CAPTCHA_VENDOR_MATCHES, careerSiteOf, HR_HOST_MATCHES, isCaptchaVendorUrl,
-  isCompanySiteUrl, isHrHost, isLinkedInHost, onAtsMatch, platformOfUrl, registrationsFor, SITES_MATCH,
+  isCompanySiteUrl, isHrHost, isLinkedInHost, onAtsMatch, onOwnOrigin, platformOfUrl, registrationsFor, SITES_MATCH,
 } from './hosts';
 
 describe('the ATS host list', () => {
@@ -275,6 +275,18 @@ describe('the company career sites (v3 Phase 8)', () => {
       'https://acme.applytojob.com/', 'https://jobs.dfinsolutions.com/job/x/1/',
       'https://www.google.com/about/careers/applications/jobs/results/123-engineer']);
     for (const url of addresses) expect(isCompanySiteUrl(url), url).toBe(reached.includes(url));
+  });
+
+  it("never reaches TailorIT's own https pages (v5 p1-shell, the review's S11)", () => {
+    const [own] = registrationsFor({ sites: true, own: 'https://app.tailorit.example:8443' });
+    expect(own!.excludeMatches).toContain('https://app.tailorit.example/*');
+    expect(reaches(own!, 'https://app.tailorit.example/settings/autofill')).toBe(false);
+    expect(reaches(own!, 'https://careers.acme.example/jobs/1')).toBe(true);
+    // An http origin (the development and e2e TailorIT) adds nothing: the sentinel reaches no http page anyway.
+    expect(registrationsFor({ sites: true, own: 'http://localhost:3100' })).toEqual(registrationsFor({ sites: true }));
+    expect(onOwnOrigin('https://app.tailorit.example:8443/tracker', 'https://app.tailorit.example:8443')).toBe(true);
+    expect(onOwnOrigin('https://app.tailorit.example/tracker', 'https://app.tailorit.example:8443')).toBe(false);
+    expect(onOwnOrigin('https://careers.acme.example/', undefined)).toBe(false);
   });
 
   it("knows the employee HR systems' hosts (the Phase 8 review, B4)", () => {

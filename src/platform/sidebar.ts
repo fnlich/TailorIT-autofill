@@ -12,6 +12,7 @@
  *   sidebar/options instead (content/ui/sidebar.ts), so getURL is only what its links name.
  */
 import { browser } from 'wxt/browser';
+import { asOpened } from '../shared/sidebar';
 import type { PagePlatform, PortLike, SendFailure } from './types';
 
 function sendFailure(error: unknown): SendFailure {
@@ -39,8 +40,8 @@ function wrapPort(port: RawPort): PortLike {
   };
 }
 
-/** The sidebar's platform for the tab `tabId` (sidebar/load's answer). */
-export function createSidebarPlatform(tabId: number): PagePlatform {
+/** The sidebar's platform for the tab `tabId` (sidebar/load's answer); `byItself`: the sidebar opened by itself. */
+export function createSidebarPlatform(tabId: number, byItself = false): PagePlatform {
   const none = () => () => undefined;
   return {
     runtime: {
@@ -49,7 +50,7 @@ export function createSidebarPlatform(tabId: number): PagePlatform {
       },
       async send(message) {
         try {
-          return await browser.runtime.sendMessage(message);
+          return await browser.runtime.sendMessage(asOpened(message, byItself));
         } catch (error) {
           throw sendFailure(error);
         }

@@ -33,7 +33,7 @@
  * from top to bottom, with a 1 px line on its left and a soft shadow reaching about 24 px over the page; it slides in
  * (a 2D move) and scrolls on its own. The views inside it bring their own stylesheets (ui/sidebar/mount.tsx).
  */
-import { BRAND, FONT_STACK, IN_PAGE_SHADOWS, NEUTRAL, TONES } from '../../shared/palette';
+import { BRAND, FONT_STACK, GENERIC_FONT, IN_PAGE_SHADOWS, NEUTRAL, TONES } from '../../shared/palette';
 import { SIDEBAR_WIDTH_PX } from '../../shared/sidebar';
 import { EDGE_TUCK_PX } from './edge';
 
@@ -186,6 +186,12 @@ button.panel__close:focus-visible { outline: 2px solid var(--tia-focus); outline
 @media (prefers-reduced-motion: reduce) { .sidebar { animation: none; } }
 .sidebar__body { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .sidebar__app { min-height: 100%; }
+/* v5 p1-shell (the review's S9): the labels that start or send something (Autofill, Sign Up & Autofill, Continue,
+   Submit Application, Submit Anyway, I Understand, a toast's action) in the system's own font, never a face a page
+   could add under our font's name. */
+[data-main-action], [data-main-action] *, [data-step-action], [data-step-action] *, [data-modal-action],
+[data-modal-action] *, [data-action="acknowledge-disclosure"], .tia-cta, .tia-cta *, button.toast__action {
+  font-family: ${GENERIC_FONT} !important; }
 `;
 
 /** How the stylesheet reached the shadow root. */

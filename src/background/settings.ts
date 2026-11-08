@@ -59,10 +59,11 @@ export interface ContentHolds {
 /** What a content script may know of the settings. In the agent's window Next and Submit are Auto (Submit on Manual in
  *  any document but the one the job's Submit was pressed in, once it was) and every new page fills as it appears, with
  *  the person's own skip rules and Sign-in mode (v4: no setting asks the person any more, so nothing else changes
- *  there). */
+ *  there). v5 p1-shell (the review's F5): there the sidebar never opens by itself ("Default view" Minimized), so
+ *  nothing of it pushes the agent's pages aside or reads them for its card. */
 export function contentSettingsOf(settings: Settings, options: ContentHolds = {}): ContentSettings {
   const agent = options.agent === true;
-  return { panel: settings.panel, view: settings.view, modes: {
+  return { panel: settings.panel, view: agent ? 'minimized' : settings.view, modes: {
     next: agent ? 'auto' : settings.modes.next,
     afterPageTurn: agent ? 'auto' : settings.modes.afterPageTurn,
     submit: agent ? (options.agentSubmitHeld === true ? 'manual' : 'auto')
@@ -94,6 +95,17 @@ export function mergeSettings(current: Settings, base: Settings, next: Settings)
     return JSON.stringify(wanted) === JSON.stringify(was) ? now : wanted;
   };
   return merge(current, base, next) as Settings;
+}
+
+/** v5 p1-shell (the review's S7): whether `next` lets the extension act more on its own than `current`: Submit or
+ *  Sign-in moved to Auto, or a rule that leaves a job for the person (agentSkip) turned off. A save from the sidebar on
+ *  the page that does so is refused: those choices are made on the extension's own pages. */
+export function raisesAutonomy(current: Settings, next: Settings): boolean {
+  const { modes: was } = current;
+  const { modes: now } = next;
+  return (now.submit === 'auto' && was.submit !== 'auto') || (now.signIn === 'auto' && was.signIn !== 'auto')
+    || (!now.agentSkip.requiredEmpty && was.agentSkip.requiredEmpty) || (!now.agentSkip.noAi && was.agentSkip.noAi)
+    || (!now.agentSkip.legalGuess && was.agentSkip.legalGuess);
 }
 
 /** The settings as they act now (v3 Phase 3 review): every mode has shipped since v3 Phase 5 (Sign-in), so a stored
@@ -186,14 +198,17 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
   return store;
 }
 
-/** Tells every registered frame with a form the content settings as they act now for it (settings/changed). A frame
- *  that cannot be reached is skipped: its next run reads them at run/begin. Answers how many frames received them.
+/** Tells every registered frame with a form, and (v5 p1-shell, the review's F1) every tab's top frame of ours, whose
+ *  sidebar follows "Where the panel shows" and "Default view", the content settings as they act now for it
+ *  (settings/changed). A frame that cannot be reached is skipped: its next run reads them at run/begin. Answers how many
+ *  frames received them.
  *  `contentFor`: the frame's own (index.ts contentSettingsFor), so the auto-apply agent's tab gets the agent's
  *  settings for its task's application, with Submit on Manual in a document but the one the job's Submit was pressed
  *  in (v3 Phase 5; the audit of 2026-11-06, m1: the whole tab got Submit on Auto before). */
 export async function pushSettings(deps: { session: StorageArea; tabs: Pick<WorkerPlatform['tabs'], 'sendToFrame'> },
   contentFor: (frame: FrameEntry) => Promise<ContentSettings>): Promise<number> {
-  const frames = (Object.values(await deps.session.getMany('frames:')) as FrameEntry[]).filter((frame) => frame.hasForm);
+  const frames = (Object.values(await deps.session.getMany('frames:')) as FrameEntry[])
+    .filter((frame) => frame.hasForm || frame.frameId === 0);
   const reached = await Promise.all(frames.map(async (frame) => {
     const message = { v: 1, type: 'settings/changed', settings: await contentFor(frame) } as const;
     try {

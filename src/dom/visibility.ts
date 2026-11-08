@@ -419,18 +419,30 @@ function fitsAll(box: ClientRect, clips: readonly ClientRect[]): boolean {
 function onScreen(box: ClientRect, el: Element, cache: ScanCache): boolean {
   const view = viewOf(el)!;
   const doc = el.ownerDocument;
+  // v5 p1-shell (the review's S5): the strip our sidebar covers at the window's right edge is no place a person sees.
+  const width = view.innerWidth - (coveredRight.get(view) ?? 0);
   if (fixedToViewport(el, cache)) {
     const scroller = scrollerBelowFixed(el, cache);
     if (scroller !== null) return scrollIn(box, scroller, cache);
-    return overlap(box.left, box.right, 0, view.innerWidth) >= MIN_BOX_PX
+    return overlap(box.left, box.right, 0, width) >= MIN_BOX_PX
       && overlap(box.top, box.bottom, 0, view.innerHeight) >= MIN_BOX_PX;
   }
   const height = cache.memo('reachable-height', doc, () => reachableHeight(doc, view, cache));
   const left = box.left + view.scrollX;
   const top = box.top + view.scrollY;
-  const across = overlap(left, left + (box.right - box.left), 0, view.innerWidth) >= MIN_BOX_PX
-    || overlap(box.left, box.right, 0, view.innerWidth) >= MIN_BOX_PX;
+  const across = overlap(left, left + (box.right - box.left), 0, width) >= MIN_BOX_PX
+    || overlap(box.left, box.right, 0, width) >= MIN_BOX_PX;
   return across && overlap(top, top + (box.bottom - box.top), 0, height) >= MIN_BOX_PX;
+}
+
+/** v5 p1-shell (the review's S5): how wide a strip at each window's right edge our sidebar covers while it is open. */
+const coveredRight = new WeakMap<Window, number>();
+
+/** v5 p1-shell (S5): the sidebar opened (`px`, its width) or closed (0) in `view`: rule 5 counts nothing in that strip
+ *  as on screen while it is open. */
+export function coverRight(view: Window, px: number): void {
+  if (px > 0) coveredRight.set(view, px);
+  else coveredRight.delete(view);
 }
 
 function reachableHeight(doc: Document, view: Window, cache: ScanCache): number {

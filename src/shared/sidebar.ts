@@ -35,6 +35,16 @@ export interface SidebarTarget {
   tabId: number;
   /** The header's minimise: the sidebar folds back to the launcher. */
   minimise(): void;
+  /** v5 p1-shell (the review's S1): the sidebar opened by itself ("Default view: Expanded"), not on the person's click:
+   *  its job card is asked for as a page that loads (panel/job `onLoad`). Absent: the person opened it. */
+  byItself?: boolean;
+}
+
+/** v5 p1-shell (the review's S1): a message as a sidebar that opened by itself sends it: its job card asked for as a
+ *  page that loads (panel/job `onLoad`), so the worker holds it to loadCard's rules; anything else as it is. */
+export function asOpened(message: unknown, byItself: boolean): unknown {
+  if (!byItself || typeof message !== 'object' || message === null) return message;
+  return (message as { type?: unknown }).type === 'panel/job' ? { ...message, onLoad: true } : message;
 }
 
 /** The views, mounted: unmounted when the sidebar folds or the document goes. */

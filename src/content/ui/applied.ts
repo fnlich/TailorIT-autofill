@@ -198,6 +198,11 @@ function draw(doc: Document, options: AppliedOptions): AppliedPopup | null {
   });
   view.addEventListener('pagehide', finish);
   for (const control of [close, tracker]) watch.observe(control);
+  // v5 p1-shell (the review's S3): a page that restyled the window's host (put back at once): its buttons' seen time
+  // starts again.
+  host.onRestyled(() => {
+    for (const control of [close, tracker]) watch.reset(control);
+  });
   try {
     dialog.showModal();
   } catch {

@@ -56,6 +56,7 @@ import { createAiEdits, type AiEditItem, type AiPrompt } from './ai-edits';
 import { createEdge, type Edge, type HideScope } from './edge';
 import { createLauncher, type LauncherAction, type LauncherView } from './launcher';
 import { createInPagePanel, type InPagePanel, type PanelActions } from './panel';
+import { coverRight } from '../../dom/visibility';
 import { createPagePush, type PagePush } from './push';
 import { createUiHost } from './shadow';
 import { createSidebarFrame, type SidebarFrame } from './sidebar';
@@ -102,8 +103,8 @@ export interface PageUiHandlers {
   edge?: { placed(top: number): void; hidden(scope: HideScope): void };
   /** v5 p1-shell: the sidebar's frame, in the top frame (with `edge`): its views' minimise, and a link of theirs to the
    *  extension's settings page (its fragment), which a page may not open; `ownId`, the extension's id, which names its
-   *  pages' host. */
-  sidebar?: { minimised(): void; options(section: string | undefined): void; ownId: string | undefined };
+   *  pages' host. The review's S6 and S7: `sidePanel`, a link of theirs to Chrome's side panel, inside the click. */
+  sidebar?: { minimised(): void; options(section: string | undefined): void; sidePanel?(): void; ownId: string | undefined };
 }
 
 /** The mounted in-page UI. */
@@ -145,7 +146,7 @@ export interface PageUi {
   readonly sidebarOpen: boolean;
   /** v5 p1-shell: opens the sidebar with the views of `app` for the tab `tabId`, the page pushed and the launcher
    *  hidden; false when there is no frame or the views could not be mounted. */
-  openSidebar(app: SidebarApp, tabId: number): boolean;
+  openSidebar(app: SidebarApp, tabId: number, byItself?: boolean): boolean;
   /** v5 p1-shell: folds the sidebar back to the launcher, the page as it was. */
   closeSidebar(): void;
   /** v5 p1-shell: the page push (tests). */
@@ -282,7 +283,11 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     : createSidebarFrame(doc, { visibility, ownId: sidebarHandlers.ownId, handlers: {
       minimised: () => sidebarHandlers.minimised(),
       options: (section) => sidebarHandlers.options(section),
+      sidePanel: () => sidebarHandlers.sidePanel?.(),
     } });
+  // v5 p1-shell (the review's S3): a page that restyled our host (put back at once): every control's seen time starts
+  // again.
+  mounted.onRestyled(() => visibility.resetAll());
   const push: PagePush | null = sidebar === null ? null : createPagePush(doc, SIDEBAR_WIDTH_PX, () => mounted.host);
   if (sidebar !== null) layer.append(sidebar.el);
   const panelHandlers = handlers.panel;
@@ -498,11 +503,13 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     get sidebarOpen() {
       return sidebar?.open === true;
     },
-    openSidebar(app, tabId) {
+    openSidebar(app, tabId, byItself = false) {
       if (sidebar === null) return false;
       if (sidebar.open) return true;
-      if (!sidebar.show(app, tabId)) return false;
+      if (!sidebar.show(app, tabId, byItself)) return false;
       push?.start();
+      // The review's S5: the strip it covers is no place a person sees, for the fill's visibility checks.
+      if (view !== null) coverRight(view, SIDEBAR_WIDTH_PX);
       showEdge();
       sidebarMoved();
       return true;
@@ -511,6 +518,7 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       if (sidebar === null || !sidebar.open) return;
       sidebar.hide();
       push?.stop();
+      if (view !== null) coverRight(view, 0);
       showEdge();
       sidebarMoved();
     },
@@ -553,6 +561,7 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       edge?.destroy();
       panel?.destroy();
       sidebar?.destroy();
+      if (sidebar !== null && view !== null) coverRight(view, 0);
       push?.destroy();
       visibility.disconnect();
       resizes?.disconnect();

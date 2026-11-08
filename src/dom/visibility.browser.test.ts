@@ -7,8 +7,8 @@ import { registerOwnUiHost } from './own-ui';
 import { rawScan } from './raw-scan';
 import { scan } from './scan';
 import { newScanCache } from './scan-cache';
-import { followsItsField, isTextVisible, isUserVisible, stopsFollowing, visibilityOf, type VisibilityRule }
-  from './visibility';
+import { coverRight, followsItsField, isTextVisible, isUserVisible, stopsFollowing, visibilityOf,
+  type VisibilityRule } from './visibility';
 import { visibleText } from './visible-text';
 
 /**
@@ -229,6 +229,23 @@ describe('isUserVisible', () => {
     expect(visibilityOf(fixture.doc.getElementById('shown')!).rule).toBe('frame');
     const roomy = await loadFixture(document, '<!doctype html><body><p id="shown">Shown</p></body>', { width: 300, height: 300 });
     expect(isUserVisible(roomy.doc.getElementById('shown')!)).toBe(true);
+  });
+
+  it('counts nothing under the sidebar while it is open as on screen (v5 p1-shell, the review S5)', async () => {
+    const fixture = await loadFixture(document, '<!doctype html><body style="margin:0">'
+      + '<input id="under" style="position:fixed;right:20px;top:20px;width:120px">'
+      + '<input id="placed" style="position:absolute;left:1100px;top:80px;width:120px">'
+      + '<input id="left" style="position:absolute;left:20px;top:80px;width:120px"></body>', { width: 1280, height: 600 });
+    const at = (id: string) => fixture.doc.getElementById(id)!;
+    for (const id of ['under', 'placed', 'left']) expect(isUserVisible(at(id)), id).toBe(true);
+    coverRight(fixture.view, 384);
+    try {
+      expect([visibilityOf(at('under')).rule, visibilityOf(at('placed')).rule]).toEqual(['off-screen', 'off-screen']);
+      expect(isUserVisible(at('left'))).toBe(true);
+    } finally {
+      coverRight(fixture.view, 0);
+    }
+    expect(isUserVisible(at('under'))).toBe(true);
   });
 
   it("never sees a detached element or the extension's own UI", async () => {

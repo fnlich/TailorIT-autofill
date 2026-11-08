@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deadline } from '../../dom/time';
 import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.testkit';
 import { SIDEBAR_WIDTH_PX } from '../../shared/sidebar';
-import { createPagePush, PUSH_ATTR, PUSH_SYNC_MS, PUSHED_ATTR, type PagePush } from './push';
+import { createPagePush, PUSH_ATTR, PUSH_SCAN_CAP, PUSH_SYNC_MS, PUSHED_ATTR, type PagePush } from './push';
 
 const PAGE = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="style-src 'none'"></head>
 <body data-style="margin:0">
@@ -111,6 +111,61 @@ describe('the page push (v5 p1-shell)', () => {
     expect(push.marked).toBe(0);
     push.setBusy(false);
     await vi.waitFor(() => expect(push!.marked).toBe(3), { timeout: 3_000 });
+  });
+
+  it('never marks what the shift would bring into view, what an overflow clips away, nor what holds a CAPTCHA (the review, S5)', async () => {
+    fixture = await load();
+    const doc = fixture.doc;
+    const add = (id: string, css: string, parent: Element = doc.body, tag = 'div') => {
+      const el = doc.createElement(tag);
+      el.id = id;
+      el.style.cssText = css;
+      parent.append(el);
+      return el;
+    };
+    // An off-canvas drawer, wholly past the window's right edge: shifted left by the sidebar's width, it would show.
+    add('drawer', 'position:fixed;top:0;left:100vw;width:300px;height:400px;background:#fff');
+    // In flow, too wide, but clipped away by its container's overflow.
+    const box = add('box', 'position:relative;width:200px;height:60px;overflow:hidden');
+    add('clipped', 'position:relative;left:400px;width:1500px;height:40px', box);
+    // A wide fixed banner that holds a CAPTCHA widget, and one that holds a vendor's frame.
+    const widget = add('widget', 'width:300px;height:76px', add('captcha', 'position:fixed;left:0;right:0;bottom:0;height:80px'));
+    widget.className = 'g-recaptcha';
+    widget.dataset.sitekey = 'x';
+    const frame = add('frame', 'width:300px;height:76px', add('vendor', 'position:fixed;left:0;right:0;top:100px;height:80px'),
+      'iframe') as HTMLIFrameElement;
+    frame.src = 'https://www.google.com/recaptcha/api2/anchor?k=x';
+    push = createPagePush(doc, SIDEBAR_WIDTH_PX, () => null);
+    push.start();
+    for (const id of ['drawer', 'clipped', 'captcha', 'vendor']) expect(markOf(id), id).toBeNull();
+    expect(byId('captcha').querySelector(`[${PUSH_ATTR}]`)).toBeNull();
+    // What the push is for still moves.
+    expect([markOf('header'), markOf('chat')]).toEqual(['span', 'shift']);
+  });
+
+  it('reads a busy page less often, and no more than PUSH_SCAN_CAP elements at a time (the review, F6)', async () => {
+    fixture = await load();
+    const doc = fixture.doc;
+    const many = doc.createElement('div');
+    for (let at = 0; at < 2_500; at += 1) {
+      const line = doc.createElement('p');
+      line.textContent = `Line ${at}`;
+      many.append(line);
+    }
+    doc.body.append(many);
+    const looked: number[] = [];
+    const info = vi.spyOn(console, 'info').mockImplementation((code: unknown, data?: unknown) => {
+      if (String(code).includes('sidebar.pushed')) looked.push((data as { looked: number }).looked);
+    });
+    try {
+      push = createPagePush(doc, SIDEBAR_WIDTH_PX, () => null);
+      push.start();
+      // At most 1,500 a read (4,000 before the review), however many the page holds.
+      expect(PUSH_SCAN_CAP).toBeLessThanOrEqual(1500);
+      expect(looked.at(-1)).toBe(PUSH_SCAN_CAP);
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it('never marks our own host', async () => {

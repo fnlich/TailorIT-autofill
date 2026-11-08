@@ -6,9 +6,9 @@
  *   SIDEBAR_LOAD_LIMIT a minute per tab, and the answer names the frame's tab, which the sidebar's messages name: the
  *   top frame's sidebar, or a frame inside another page's in-page card, whose views come with the same bundle (a
  *   subframe gets nothing more by it: the sidebar's page messages are the top frame's alone, senders.ts).
- * - The sidebar's ports (`panel`, `preview`) from that frame are the side panel's, held to the sender's tab
- *   (scopedPort): a message that names another tab is dropped and the port closed; `panel/watch`'s `side` (the browser's
- *   side panel, which hides the launcher) is never the sidebar's.
+ * - The sidebar's port (`panel`; the review's S6: never `preview`) from that frame is the side panel's, held to the
+ *   sender's tab (scopedPort): a message that names another tab is dropped and the port closed; `panel/watch`'s `side`
+ *   (the browser's side panel, which hides the launcher) is never the sidebar's.
  * - The toolbar icon (actionClicked): Chrome opens the side panel by itself while the panel's place is the side panel
  *   (sidePanel.openOnActionClick, kept to the settings by placeIcon); on the page it fires action.onClicked instead, and
  *   the tab's top frame is told sidebar/open {reveal} (the launcher shown again where the person hid it, as Jobright's
@@ -16,16 +16,25 @@
  *   says why, asked for inside the click.
  * - The header's notes (panel/notes, panel/closeNote): Workday's "stay on this page" strip, closed for good, kept in
  *   storage.local (`notes:v1`, the note's name only).
+ * - What the sidebar may not ask (the review, S1 and S7; createSidebarVet): the sidebar lives in the page's process, so
+ *   the profile's sensitive part (read or saved), I understand on a changed disclosure and a save of the settings that
+ *   lets the extension act more on its own (Submit or Sign-in to Auto, a skip rule off) stay on the extension's own
+ *   pages; the sidebar links to them. And its job card, once it opened by itself (panel/job `onLoad`), is a lookup as
+ *   the page loads: none in a private tab, before the disclosure as it reads now is acknowledged, or with on-load
+ *   lookups off; LOOKUP_ON_LOAD_LIMIT's budget (job-cards.ts) then holds.
  * Nothing here reads an address beyond the click's tab (for the side panel's fallback), and nothing is sent to TailorIT.
  */
+import type { Settings } from '../core/types/settings';
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import { PANEL_NOTES, type PanelNote } from '../messaging/page-schemas';
+import type { PageMessage } from '../messaging/schemas';
 import type { PortLike, StorageArea, WorkerPlatform } from '../platform/types';
 import { isCompanySiteUrl, platformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
 import { SIDEBAR_APP_FILE } from '../shared/sidebar';
 import { createKeyedQueue, type createRateLimit } from './locks';
 import type { ContentChannel } from './router';
+import { mergeSettings, raisesAutonomy } from './settings';
 
 /** sidebar/load per tab: a person opening and folding the sidebar, a few pages a minute, never a stream. */
 export const SIDEBAR_LOAD_LIMIT = { count: 20, windowMs: 60_000 } as const;
@@ -140,4 +149,45 @@ export function iconReachesPage(url: string | undefined): boolean {
   if (platformOfUrl(url) !== null) return true;
   if (WEB_STORE.test(url)) return false;
   return isCompanySiteUrl(url) || (__E2E__ && /^http:\/\/127\.0\.0\.1:\d+\//.test(url));
+}
+
+/** What the sidebar's vet reads (createSidebarVet). */
+export interface SidebarVetDeps {
+  settings(): Promise<Settings>;
+  /** Whether the person acknowledged the disclosure as it reads now (auth.ts disclosed). */
+  disclosed(): Promise<boolean>;
+  /** Whether pages are looked up as they load at all (the worker's option). */
+  lookupOnLoad: boolean;
+}
+
+/** The router's `sidebar.vet` (module header): a refusal for what the sidebar may not ask, no card for a lookup as the
+ *  page loads that loadCard's rules would not make, else null (the pages' handler answers). */
+export function createSidebarVet(deps: SidebarVetDeps): (message: PageMessage, channel: ContentChannel) =>
+  Promise<Answer<unknown> | null> {
+  const kept = () => {
+    log('sidebar.refused', { kept: true });
+    return refuse('bad_sender');
+  };
+  return async (message, channel) => {
+    switch (message.type) {
+      case 'panel/profile':
+        return message.sensitive === false ? null : kept();
+      case 'panel/saveProfile':
+        return message.sensitive === undefined ? null : kept();
+      case 'settings/save': {
+        const current = await deps.settings();
+        const wanted = message.base === undefined ? message.settings : mergeSettings(current, message.base, message.settings);
+        return raisesAutonomy(current, wanted) ? kept() : null;
+      }
+      case 'panel/job':
+        if (message.onLoad !== true) return null;
+        if (channel.incognito === true || !deps.lookupOnLoad || !(await deps.disclosed())) {
+          log('job.lookup-on-load-deferred');
+          return ok({ tabId: message.tabId, card: null });
+        }
+        return null;
+      default:
+        return null;
+    }
+  };
 }

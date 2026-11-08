@@ -35,7 +35,8 @@
  * panel ('side'); every version 7 value moves to the page, its 'in-page' (the small in-page review card) and its 'side'
  * alike (the owner, 2026-11-08: the Jobright-like sidebar for everyone; Chrome's side panel can be chosen again in
  * Settings). "Default view" (`view`) keeps its two choices with a new meaning: Expanded opens the sidebar by itself on a
- * supported page, Minimized shows only the launcher (migrateSettingsV7).
+ * supported page, Minimized shows only the launcher; every version 7 value becomes Expanded (the review's F9: no install
+ * chose the new Minimized) (migrateSettingsV7).
  */
 import type { ConsentCategory } from '../enums';
 
@@ -272,10 +273,11 @@ export interface SettingsV2 extends Omit<SettingsV3, 'version' | 'llm'> {
  * Version 7's settings as version 8's (v5, Jobright parity): every choice is kept but where the panel shows, which is
  * the sidebar on the page for every install, version 7's in-page card and its side panel alike (the owner, 2026-11-08:
  * the Jobright-like sidebar for everyone; the person may choose Chrome's side panel again in Settings). "Default view"
- * keeps its choice, read with its new meaning.
+ * becomes Expanded for every install too (the review's F9): version 7's Minimized folded the review list, while
+ * version 8's means the sidebar never opens by itself, which no install chose.
  */
 export function migrateSettingsV7(old: SettingsV7): Settings {
-  return { ...old, version: 8, panel: 'page',
+  return { ...old, version: 8, panel: 'page', view: 'expanded',
     modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip } }, preapprovedConsent: [...old.preapprovedConsent],
     llm: { ...old.llm }, telemetry: { ...old.telemetry }, interpretations: { ...old.interpretations } };
 }

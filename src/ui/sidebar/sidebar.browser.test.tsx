@@ -10,7 +10,9 @@ import { COPY } from '../../shared/copy';
 import { INTER_FAMILY } from '../../shared/palette';
 import type { SidebarMount } from '../../shared/sidebar';
 import { adoptPageStyles } from '../page/styles';
+import { OnPageContext } from '../panel/on-page';
 import { Panel } from '../panel/Panel';
+import { ResumePreview } from '../panel/ResumePreview';
 import { click, createFakeWorker, formPage, mount, SEEN_AT_ONCE, settle, unmountAll } from '../ui.testkit';
 import { createSidebarApp } from './mount';
 
@@ -78,6 +80,85 @@ describe('the sidebar\'s views (v5 p1-shell)', () => {
     await settle();
     expect(root.querySelector('button[data-panel-settings]')).not.toBeNull();
     expect(root.querySelector('button[data-panel-minimise]')).toBeNull();
+  });
+});
+
+describe('what the sidebar leaves to the extension\'s own pages (the review of 2026-11-08)', () => {
+  const hasInter = () => [...document.fonts].some((face) => face.family.replace(/"/g, '') === INTER_FAMILY);
+
+  it('takes its Inter away when it closes (S10)', async () => {
+    await sidebar();
+    expect(hasInter()).toBe(true);
+    const { mounted } = mounts.pop()!;
+    act(() => mounted.unmount());
+    expect(hasInter()).toBe(false);
+  });
+
+  it('previews a résumé in Chrome\'s side panel, never loading its bytes into the page (S6, F10)', async () => {
+    const loads: number[] = [];
+    const onPage = { sidePanelUrl: 'chrome-extension://memory-extension/sidepanel.html',
+      settingsUrl: 'chrome-extension://memory-extension/options.html#modes' };
+    const failed = async () => {
+      loads.push(1);
+      return { ok: false as const, reason: 'unavailable' as const };
+    };
+    const root = await mount(
+      <OnPageContext.Provider value={onPage}>
+        <ResumePreview label="Backend resume" onClose={() => undefined} load={failed} />
+      </OnPageContext.Provider>,
+    );
+    await settle();
+    expect(loads).toEqual([]);
+    expect(root.querySelector('[data-resume-preview="elsewhere"] a[data-open-side-panel]')).not.toBeNull();
+    expect(root.querySelector('iframe')).toBeNull();
+    // Outside the sidebar, the preview loads as ever.
+    await mount(<ResumePreview label="Backend resume" onClose={() => undefined} load={failed} />);
+    await settle();
+    expect(loads).toEqual([1]);
+  });
+
+  it('leaves I understand on a changed disclosure to Chrome\'s side panel, with a link to it (S7)', async () => {
+    const worker = createFakeWorker();
+    worker.script.auth = { ...worker.script.auth, disclosure: 'changed' };
+    const { container } = await sidebar(worker);
+    expect(container.querySelector('[data-disclosure-changed]')).not.toBeNull();
+    expect(container.querySelector('[data-action="acknowledge-disclosure"]')).toBeNull();
+    const link = container.querySelector<HTMLAnchorElement>('[data-disclosure-changed] a[data-open-side-panel]')!;
+    expect(new URL(link.href).pathname).toBe('/sidepanel.html');
+    expect(worker.sentOfType('auth/acknowledgeDisclosure')).toEqual([]);
+  });
+
+  it('reads the profile without its sensitive part, which it leaves to Chrome\'s side panel (S7)', async () => {
+    const { worker, container } = await sidebar();
+    await click(container.querySelector<HTMLButtonElement>('button[data-panel-settings]')!);
+    await click(container.querySelector<HTMLButtonElement>('button[data-open-profile]')!);
+    await settle();
+    // The editor's read (the panel's completeness check asks panel/profileCheck, which carries no value).
+    const reads = worker.sentOfType('panel/profile');
+    expect(reads.length).toBeGreaterThanOrEqual(1);
+    for (const read of reads) expect(read).toEqual({ v: 1, type: 'panel/profile', sensitive: false });
+    const section = container.querySelector('#sensitive, [data-profile-section="sensitive"]') ?? container;
+    expect(section.querySelector('[data-on-page-elsewhere] a[data-open-side-panel]')).not.toBeNull();
+    expect(container.querySelector('[data-profile-sensitive="not-shared"]')).toBeNull();
+  });
+
+  it('keeps Submit\'s and Sign-in\'s Auto and a skip rule\'s off out of reach, and folds away once Chrome\'s side panel is chosen (S7, F1)', async () => {
+    const worker = createFakeWorker();
+    const { container, minimised } = await sidebar(worker);
+    await click(container.querySelector<HTMLButtonElement>('button[data-panel-settings]')!);
+    await settle();
+    for (const mode of ['submit', 'signIn']) {
+      expect(container.querySelector<HTMLInputElement>(`input[data-setting="modes.${mode}.auto"]`)!.disabled, mode).toBe(true);
+      expect(container.querySelector<HTMLInputElement>(`input[data-setting="modes.${mode}.manual"]`)!.disabled, mode).toBe(false);
+    }
+    const kept = container.querySelector<HTMLInputElement>('input[data-setting="modes.agentSkip.requiredEmpty"]')!;
+    expect([kept.checked, kept.disabled]).toEqual([true, true]);
+    // Chrome's side panel chosen and saved: the sidebar folds away at once.
+    await click(container.querySelector<HTMLInputElement>('input[data-setting="panel.side"]')!);
+    await click(container.querySelector<HTMLButtonElement>('button[data-action="save-settings"]')!);
+    await settle();
+    expect(worker.script.settings.panel).toBe('side');
+    expect(minimised).toEqual([1]);
   });
 });
 

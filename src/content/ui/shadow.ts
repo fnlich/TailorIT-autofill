@@ -14,6 +14,9 @@
  *   moves, so the instruction typed into Edit with AI's box reaches no bubbling listener of the page.
  * - A page that removes the host gets it back, at most MAX_REATTACH times; after that it stays gone, the run carries
  *   on without it (the side panel mirrors everything), and the loss is logged.
+ * - v5 p1-shell (the review's S3): a page that restyles the host (its style attribute, or any attribute it adds) to
+ *   move, enlarge or hide what it holds gets the host's own style back at once and its attributes taken away; whoever
+ *   listens (onRestyled: the page UI, the applied popup) starts every control's seen time again.
  */
 import { registerOwnUiHost } from '../../dom/own-ui';
 import { log } from '../../shared/log';
@@ -62,6 +65,9 @@ export interface UiHost {
   readonly styleMode: StyleMode;
   /** How many times the host was put back after the page removed it. */
   reattachments(): number;
+  /** S3: calls `listener` each time the page restyled the host (after its style is put back); the returned function
+   *  stops listening. */
+  onRestyled(listener: () => void): () => void;
   /** Removes the host for good (the run ended for invalidation, or the document is going away). */
   remove(): void;
 }
@@ -71,6 +77,8 @@ export function createUiHost(doc: Document, options: { maxReattach?: number } = 
   const maxReattach = options.maxReattach ?? MAX_REATTACH;
   const host = doc.createElement('div');
   for (const [name, value] of HOST_STYLE) host.style.setProperty(name, value, 'important');
+  /** S3: the host's own style attribute, as set here: the one it gets back. */
+  const ownStyle = host.getAttribute('style') ?? '';
   const root = host.attachShadow({ mode: 'closed' });
   registerOwnUiHost(host);
   const styleMode = applyStyles(root);
@@ -99,6 +107,27 @@ export function createUiHost(doc: Document, options: { maxReattach?: number } = 
     if (doc.documentElement !== null) observer?.observe(doc.documentElement, { childList: true });
   }
 
+  // S3: the host's attributes are ours alone: a page's change is undone at once, and the listeners told.
+  const restyled = new Set<() => void>();
+  const restyle = view === null ? null : new view.MutationObserver(() => {
+    if (removed) return;
+    let changed = false;
+    for (const name of host.getAttributeNames()) {
+      if (name !== 'style') {
+        host.removeAttribute(name);
+        changed = true;
+      }
+    }
+    if (host.getAttribute('style') !== ownStyle) {
+      host.setAttribute('style', ownStyle);
+      changed = true;
+    }
+    if (!changed) return;
+    log('content.ui-restyled');
+    for (const listener of [...restyled]) listener();
+  });
+  restyle?.observe(host, { attributes: true });
+
   (doc.documentElement ?? doc.body)?.append(host);
   watch();
   return {
@@ -106,9 +135,15 @@ export function createUiHost(doc: Document, options: { maxReattach?: number } = 
     root,
     styleMode,
     reattachments: () => reattached,
+    onRestyled(listener) {
+      restyled.add(listener);
+      return () => restyled.delete(listener);
+    },
     remove() {
       removed = true;
       observer?.disconnect();
+      restyle?.disconnect();
+      restyled.clear();
       host.remove();
     },
   };

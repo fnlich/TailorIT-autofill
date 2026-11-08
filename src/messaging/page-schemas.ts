@@ -78,8 +78,10 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   /** One read of a tab's reports; the `panel` port follows them (below). */
   z.strictObject({ v, type: z.literal('panel/reports'), tabId: TabId }),
   /** The side panel's job card (v2): what TailorIT knows of the job in the tab's form frame, from the worker's memory,
-   *  or looked up through that frame (job/refresh) when the memory has none. */
-  z.strictObject({ v, type: z.literal('panel/job'), tabId: TabId }),
+   *  or looked up through that frame (job/refresh) when the memory has none. v5 p1-shell (the review's S1): `onLoad`,
+   *  from a sidebar that opened by itself: a lookup it sets off is one as the page loads, under loadCard's rules (no
+   *  private tab, the disclosure acknowledged as it reads now, LOOKUP_ON_LOAD_LIMIT); never a person's opening. */
+  z.strictObject({ v, type: z.literal('panel/job'), tabId: TabId, onLoad: z.literal(true).optional() }),
   /** "Add this job to TailorIT" and "Save to tracker" (v2): the posting of the tab's form frame goes to TailorIT's jobs
    *  and the person's tracker (job/refresh {action: 'add'}). */
   z.strictObject({ v, type: z.literal('panel/addJob'), tabId: TabId }),

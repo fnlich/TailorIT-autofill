@@ -56,7 +56,7 @@ import { createRunStateStore } from './runstate-store';
 import { channelOf, isConnectPage, offAtsChannelOf, offAtsSenderOf, SIDEBAR_PORTS, sidebarChannel } from './senders';
 import { createServerClient } from './server-client';
 import { contentSettingsOf, createSettingsStore, pushSettings } from './settings';
-import { createSidebar, iconReachesPage, scopedPort, SIDEBAR_LOAD_LIMIT } from './sidebar';
+import { createSidebar, createSidebarVet, iconReachesPage, scopedPort, SIDEBAR_LOAD_LIMIT } from './sidebar';
 import { createSignIn } from './sign-in';
 import { createSignUps } from './sign-up';
 import { createSites, RECOGNISED_LIMIT } from './sites';
@@ -387,7 +387,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   }));
   /** v3 Phase 8: the company career sites: the sentinel's registration and the injection. */
   const sites = createSites({ local, session, scripting: platform.scripting, permissions: platform.permissions,
-    limit: createRateLimit(RECOGNISED_LIMIT.count, RECOGNISED_LIMIT.windowMs, now), now,
+    limit: createRateLimit(RECOGNISED_LIMIT.count, RECOGNISED_LIMIT.windowMs, now), now, tailorit: origin,
     // The Phase 8 review (P1/B8): every tab's top frame told site/stop, by its id alone.
     stopPages: async () => {
       const ids = (await platform.tabs.ids?.()) ?? [];
@@ -563,7 +563,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       // The Phase 8 review (B6): a company page's "open review" after a restart opens the side panel inside its click.
       openSidePanel: (tabId) => void openSidePanel(platform, tabId),
       // v5 p1-shell: the sidebar's page messages, from the tab's top frame, while the panel shows on the page.
-      sidebar: { open: onPage },
+      // v5 p1-shell (the review's S1 and S7): what the sidebar may not ask, and its lookups once it opened by itself.
+      sidebar: { open: onPage, vet: createSidebarVet({ settings: () => settings.get(), disclosed: () => auth.disclosed(),
+        lookupOnLoad }) },
       content: {
         ping: async () => ok({ pong: true as const }),
         'frame/hello': async (message, from) => {
@@ -998,8 +1000,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       reports.watch(port);
       return;
     }
-    // v5 p1-shell: the sidebar's two ports, from the tab's top frame (an ATS host's, or a page the worker injected), held
-    // to its tab, while the panel shows on the page; what they post before that is known is held.
+    // v5 p1-shell: the sidebar's port (`panel`; the review's S6: never `preview`), from the tab's top frame (an ATS
+    // host's, or a page the worker injected), held to its tab, while the panel shows on the page; what it posts before
+    // that is known is held.
     const sidebarFrom = SIDEBAR_PORTS.has(port.name) && port.sender !== undefined ? (channel?.kind === 'content' ? channel
       : channel === null ? offAtsSenderOf(port.sender, ownId, ownPagesPrefix) : null) : null;
     if (sidebarFrom !== null && sidebarChannel(sidebarFrom)) {
@@ -1013,9 +1016,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           port.disconnect();
           return;
         }
-        const scoped = scopedPort(held, sidebarFrom.tabId);
-        if (port.name === 'panel') reports.watch(scoped);
-        else resume.acceptPreview(scoped, previewResumeOf, () => contentReady(), previewLetterOf);
+        reports.watch(scopedPort(held, sidebarFrom.tabId));
       })().catch(() => port.disconnect());
       return;
     }

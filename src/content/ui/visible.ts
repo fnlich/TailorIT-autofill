@@ -36,6 +36,8 @@ export const VISIBILITY_SETTLE_CAP_MS = 1_500;
 export interface VisibilityWatch {
   /** Starts watching `el`. */
   observe(el: Element): void;
+  /** v5 p1-shell (the review's S3): every observed element's time starts again (its host was restyled). */
+  resetAll(): void;
   /** Whether the latest notification for `el` said visible; false when none has come since observe() or reset(). */
   shown(el: Element): boolean;
   /** Whether a notification for `el` has come since observe() or reset(). */
@@ -60,6 +62,8 @@ export function createVisibilityWatch(view: (Window & typeof globalThis) | null)
   /** When each observed element was last notified visible after not being so (monotonic ms). */
   const since = new WeakMap<Element, number>();
   const waiting = new Map<Element, Array<() => void>>();
+  /** The elements observed now (resetAll). */
+  const observed = new Set<Element>();
   let observer: IntersectionObserver | null = null;
   const supported = view !== null && typeof view.IntersectionObserver === 'function'
     && typeof view.IntersectionObserverEntry === 'function' && 'isVisible' in view.IntersectionObserverEntry.prototype;
@@ -83,7 +87,14 @@ export function createVisibilityWatch(view: (Window & typeof globalThis) | null)
 
   const watch: VisibilityWatch = {
     observe(el) {
+      observed.add(el);
       observer?.observe(el);
+    },
+    resetAll() {
+      for (const el of [...observed]) {
+        if (el.isConnected) watch.reset(el);
+        else watch.unobserve(el);
+      }
     },
     shown: (el) => state.get(el) === true,
     known: (el) => state.has(el),
@@ -94,6 +105,7 @@ export function createVisibilityWatch(view: (Window & typeof globalThis) | null)
     reset(el) {
       state.delete(el);
       since.delete(el);
+      observed.add(el);
       if (observer === null) return;
       // A target observed afresh gets a notification of its own, even when nothing about it changed.
       observer.unobserve(el);
@@ -124,9 +136,11 @@ export function createVisibilityWatch(view: (Window & typeof globalThis) | null)
     unobserve(el) {
       state.delete(el);
       since.delete(el);
+      observed.delete(el);
       observer?.unobserve(el);
     },
     disconnect() {
+      observed.clear();
       observer?.disconnect();
       observer = null;
       for (const wake of waiting.values()) for (const resolve of wake) resolve();

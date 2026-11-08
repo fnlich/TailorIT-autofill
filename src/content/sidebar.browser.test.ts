@@ -12,7 +12,7 @@ import { userEvent } from 'vitest/browser';
 import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import type { Settings } from '../core/types/settings';
 import { deadline } from '../dom/time';
-import { SIDEBAR_APP_KEY, SIDEBAR_WIDTH_PX, type SidebarTarget } from '../shared/sidebar';
+import { asOpened, SIDEBAR_APP_KEY, SIDEBAR_WIDTH_PX, type SidebarTarget } from '../shared/sidebar';
 import { createFakeWorker, testVocab, trapUrl, type FakeWorkerOptions } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 import { PUSHED_ATTR } from './ui/push';
@@ -28,6 +28,8 @@ beforeAll(() => {
 function fakeApp() {
   const mounts: SidebarTarget[] = [];
   const clicks: string[] = [];
+  /** What the views heard typed into their text box (S4). */
+  const typed: string[] = [];
   let unmounted = 0;
   const world = { [SIDEBAR_APP_KEY]: {
     mount(target: SidebarTarget) {
@@ -45,14 +47,24 @@ function fakeApp() {
       link.textContent = 'All settings';
       link.style.cssText = 'display:block;width:200px;height:24px;margin:40px';
       link.addEventListener('click', () => clicks.push('link'));
-      target.container.append(button, link);
+      // The review's S6 and S7: a link to Chrome's side panel, and a text box the person types in.
+      const side = doc.createElement('a');
+      side.href = 'chrome-extension://memory-extension/sidepanel.html';
+      side.dataset.app = 'side';
+      side.textContent = "Open Chrome's Side Panel";
+      side.style.cssText = 'display:block;width:200px;height:24px;margin:20px 40px';
+      const text = doc.createElement('input');
+      text.dataset.app = 'text';
+      text.style.cssText = 'display:block;width:200px;height:24px;margin:20px 40px';
+      text.addEventListener('input', () => typed.push(text.value));
+      target.container.append(button, link, side, text);
       return { unmount: () => {
         unmounted += 1;
       } };
     },
     card: { render: () => undefined, unmount: () => undefined },
   } };
-  return { world, mounts, clicks, get unmounted() {
+  return { world, mounts, clicks, typed, get unmounted() {
     return unmounted;
   } };
 }
@@ -257,6 +269,143 @@ describe('the sidebar on the page (v5 p1-shell)', () => {
     await clickInUi(runtime, ownLink);
     expect(fake.of('sidebar/options')).toEqual([{ v: 1, type: 'sidebar/options', section: 'settings-modes' }]);
     expect(app.clicks.at(-1)).toBe('link');
+  });
+
+  describe('the review of 2026-11-08', () => {
+    /** The document's visibility as a test sets it (S1). */
+    let shown: DocumentVisibilityState = 'visible';
+    afterEach(() => {
+      shown = 'visible';
+      delete (document as unknown as Record<string, unknown>).visibilityState;
+    });
+    const hideTab = () => {
+      shown = 'hidden';
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => shown });
+    };
+
+    it('opens by itself only once the tab is shown, and tells its views it opened by itself (S1)', async () => {
+      hideTab();
+      const { fake, runtime, app } = await start();
+      await vi.waitFor(() => expect(fake.of('frame/hello').length).toBeGreaterThanOrEqual(1));
+      await deadline(100);
+      expect([runtime.ui?.sidebarOpen ?? false, fake.of('sidebar/load').length]).toEqual([false, 0]);
+      shown = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.waitFor(() => expect(runtime.ui?.sidebarOpen).toBe(true));
+      expect(app.mounts.map((each) => each.byItself)).toEqual([true]);
+      // The person's opening (the toolbar icon) is not one by itself.
+      app.mounts[0]!.minimise();
+      await fake.platform.deliver({ v: 1, type: 'sidebar/open', reveal: true });
+      await vi.waitFor(() => expect(app.mounts).toHaveLength(2));
+      expect(app.mounts[1]!.byItself).toBe(false);
+      // A sidebar that opened by itself asks for its job card as a page that loads; the person's opening as ever.
+      expect(asOpened({ v: 1, type: 'panel/job', tabId: 7 }, true)).toEqual({ v: 1, type: 'panel/job', tabId: 7, onLoad: true });
+      expect(asOpened({ v: 1, type: 'panel/job', tabId: 7 }, false)).toEqual({ v: 1, type: 'panel/job', tabId: 7 });
+      expect(asOpened({ v: 1, type: 'panel/fill', tabId: 7 }, true)).toEqual({ v: 1, type: 'panel/fill', tabId: 7 });
+    });
+
+    it('takes a step button\'s click only once that button has been seen as drawn, its time started again when it changes (S2)', async () => {
+      const { runtime } = await start();
+      await vi.waitFor(() => expect(runtime.ui?.sidebarOpen).toBe(true));
+      const ui = runtime.ui!;
+      await vi.waitFor(() => expect(ui.readyNow(ui.sidebar!.el)).toBe(true), { timeout: 3_000 });
+      const pressed: string[] = [];
+      const step = document.createElement('button');
+      step.type = 'button';
+      step.dataset.stepAction = 'submit';
+      step.textContent = 'Submit Application';
+      step.style.cssText = 'display:block;width:200px;height:40px;margin:20px 40px';
+      step.addEventListener('click', () => pressed.push(step.textContent ?? ''));
+      ui.sidebar!.container.prepend(step);
+      // Drawn just now: the sidebar has long been seen, the button not yet.
+      await clickInUi(runtime, step);
+      expect(pressed).toEqual([]);
+      await vi.waitFor(() => expect(ui.readyNow(step)).toBe(true), { timeout: 3_000 });
+      await clickInUi(runtime, step);
+      expect(pressed).toEqual(['Submit Application']);
+      // Its meaning changed: its time starts again.
+      step.textContent = 'Submit Anyway';
+      await vi.waitFor(() => expect(ui.readyNow(step)).toBe(false));
+      await clickInUi(runtime, step);
+      expect(pressed).toEqual(['Submit Application']);
+      await vi.waitFor(() => expect(ui.readyNow(step)).toBe(true), { timeout: 3_000 });
+      await clickInUi(runtime, step);
+      expect(pressed).toEqual(['Submit Application', 'Submit Anyway']);
+    });
+
+    it('puts its host\'s style back, and takes no click while the page has moved it from where it is drawn (S3)', async () => {
+      const { runtime, app } = await start();
+      await vi.waitFor(() => expect(runtime.ui?.sidebarOpen).toBe(true));
+      const ui = runtime.ui!;
+      const fill = ui.sidebar!.container.querySelector<HTMLButtonElement>('button[data-app="fill"]')!;
+      await vi.waitFor(() => expect(ui.readyNow(ui.sidebar!.el)).toBe(true), { timeout: 3_000 });
+      // The page restyles our host: put back at once, every control's seen time started again.
+      const own = ui.host.getAttribute('style');
+      ui.host.style.setProperty('translate', '-200px 0', 'important');
+      ui.host.setAttribute('inert', '');
+      await vi.waitFor(() => expect(ui.host.getAttribute('style')).toBe(own));
+      expect(ui.host.hasAttribute('inert')).toBe(false);
+      expect(ui.readyNow(ui.sidebar!.el)).toBe(false);
+      await vi.waitFor(() => expect(ui.readyNow(ui.sidebar!.el)).toBe(true), { timeout: 3_000 });
+      // The page moves what holds it (its root's transform): not where it is drawn, no click counts.
+      document.documentElement.style.transform = 'translateX(-160px)';
+      try {
+        expect(ui.sidebar!.inPlace()).toBe(false);
+        await clickInUi(runtime, fill);
+        expect(app.clicks).toEqual([]);
+      } finally {
+        document.documentElement.style.transform = '';
+      }
+      expect(ui.sidebar!.inPlace()).toBe(true);
+      await vi.waitFor(() => expect(ui.readyNow(ui.sidebar!.el)).toBe(true), { timeout: 3_000 });
+      await clickInUi(runtime, fill);
+      expect(app.clicks).toEqual(['fill']);
+    });
+
+    it('undoes an edit of its text box that was not the person\'s own (a page\'s execCommand), and takes their typing (S4)', async () => {
+      const { runtime, app } = await start();
+      await vi.waitFor(() => expect(runtime.ui?.sidebarOpen).toBe(true));
+      const text = runtime.ui!.sidebar!.container.querySelector<HTMLInputElement>('input[data-app="text"]')!;
+      text.focus();
+      expect(document.execCommand('insertText', false, 'from the page')).toBe(true);
+      expect(text.value).toBe('');
+      expect(app.typed).toEqual([]);
+      await userEvent.keyboard('ok');
+      expect(text.value).toBe('ok');
+      expect(app.typed).toEqual(['o', 'ok']);
+      document.execCommand('insertText', false, '!');
+      expect(text.value).toBe('ok');
+      expect(app.typed).toEqual(['o', 'ok']);
+    });
+
+    it('draws the labels that start or send something in the system\'s own font, never a face a page could name (S9)', async () => {
+      const { runtime } = await start();
+      await vi.waitFor(() => expect(runtime.ui?.sidebarOpen).toBe(true));
+      const container = runtime.ui!.sidebar!.container;
+      const main = document.createElement('button');
+      main.dataset.mainAction = 'fill';
+      main.className = 'tia-cta';
+      const label = document.createElement('span');
+      label.textContent = 'Autofill';
+      main.append(label);
+      const step = document.createElement('button');
+      step.dataset.stepAction = 'submit';
+      step.textContent = 'Submit Application';
+      container.append(main, step);
+      for (const el of [main, label, step]) expect(getComputedStyle(el).fontFamily).toBe('system-ui, sans-serif');
+      // The views' other words keep the brand's stack.
+      expect(getComputedStyle(container).fontFamily).toContain('TailorIT Inter');
+    });
+
+    it('asks the worker for Chrome\'s side panel on a seen click on a link to it (S6, S7)', async () => {
+      const { fake, runtime } = await start();
+      await vi.waitFor(() => expect(runtime.ui?.sidebarOpen).toBe(true));
+      const ui = runtime.ui!;
+      await vi.waitFor(() => expect(ui.readyNow(ui.sidebar!.el)).toBe(true), { timeout: 3_000 });
+      await clickInUi(runtime, ui.sidebar!.container.querySelector('a[data-app="side"]')!);
+      expect(fake.of('panel/open')).toEqual([{ v: 1, type: 'panel/open' }]);
+      expect(fake.of('sidebar/options')).toEqual([]);
+    });
   });
 
   it('keeps the toasts left of the sidebar, clear of its shadow', async () => {

@@ -516,7 +516,11 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
         {head(true)}
         {problems}
         <SettingsView platform={platform} settings={settings} status={auth.status} settingsUrl={settingsUrl}
-          onClose={() => setView({ name: 'main' })} onSaved={setSettings}
+          onClose={() => setView({ name: 'main' })} onSaved={(saved) => {
+            setSettings(saved);
+            // v5 p1-shell (the review's F1): the sidebar that chose Chrome's side panel folds away at once.
+            if (shell !== undefined && saved.panel === 'side') shell.minimise();
+          }}
           onAutofillInfo={() => setView({ name: 'editor', back: 'settings' })} />
       </main>
     );

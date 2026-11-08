@@ -99,6 +99,10 @@ export const LOG_CODES = [
   // A trusted click on one of our controls a person could not see (a decoy over it), and a run refused in a frame its
   // page hides (the Phase 2 review's S5 and S1).
   'content.ui-click-refused',
+  // v5 p1-shell (the review's S3 and S4): a page restyled our UI's host (put back), and an input in the sidebar's text
+  // box that was not the person's own edit (stopped, the box's value put back).
+  'content.ui-restyled',
+  'content.ui-input-refused',
   'content.form-hidden',
   // The reactive loop (Phase 3): how it ended (the pass count and the end, as flags), and which busy signs (by name
   // only, never page text) kept a page busy at a settle's cap.

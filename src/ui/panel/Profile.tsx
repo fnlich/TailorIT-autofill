@@ -51,6 +51,7 @@ import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
 import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
+import { InSidePanel, useOnPage } from './on-page';
 
 const WORDS = COPY.profile;
 const FIELDS = WORDS.fields;
@@ -318,9 +319,10 @@ function salaryMessage(path: Path, code: string): string | undefined {
 }
 
 /** panel/profile, as the editor's state: the profile and the person's draft of it (none yet), or why it could not be
- *  read. */
-async function readProfile(platform: PagePlatform): Promise<State> {
-  const [answer, status] = await Promise.all([request(platform, { v: 1, type: 'panel/profile' }),
+ *  read. v5 p1-shell (the review's S7): in the sidebar on the page (`onPage`), never the sensitive part. */
+async function readProfile(platform: PagePlatform, onPage: boolean): Promise<State> {
+  const [answer, status] = await Promise.all([request(platform, { v: 1, type: 'panel/profile',
+    ...(onPage ? { sensitive: false as const } : {}) }),
     request(platform, { v: 1, type: 'auth/status' })]);
   if (!answer.ok) return { kind: 'failed', error: answer.error };
   const view = answer.data;
@@ -344,6 +346,9 @@ function loadFailedOf(error: ErrorCode): string {
 
 export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: ProfileEditorProps) {
   const headingId = useId();
+  /** v5 p1-shell (the review's S7): drawn in the sidebar on the page: the sensitive part stays in Chrome's side panel. */
+  const onPage = useOnPage();
+  const inPage = onPage !== null;
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
   /** Whether a Save was tried: from then on the problems are shown, and kept up to date as the person fixes them. */
@@ -362,13 +367,13 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
 
   useEffect(() => {
     let live = true;
-    void readProfile(platform).then((read) => {
+    void readProfile(platform, inPage).then((read) => {
       if (live) setState(read);
     });
     return () => {
       live = false;
     };
-  }, [platform, reads]);
+  }, [platform, reads, inPage]);
 
   /** Reads the profile again, dropping the edits and what the last save said (Try again, after a failed read). */
   const load = useCallback(() => {
@@ -385,7 +390,7 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
     if (state.kind !== 'ready') return;
     const { original, draft: mine } = state;
     setSave({ kind: 'merging' });
-    const read = await readProfile(platform);
+    const read = await readProfile(platform, inPage);
     if (!open.current) return;
     if (read.kind === 'loading') return;
     if (read.kind === 'failed') {
@@ -646,7 +651,8 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
 
           <Section name={WORDS.sections.sensitive} id="sensitive"
             {...(sensitive === null ? {} : { help: WORDS.sensitiveHelp })}>
-            {view.sensitive.state === 'not-shared' && (
+            {onPage !== null && <InSidePanel text={COPY.onPage.sensitive} onPage={onPage} />}
+            {onPage === null && view.sensitive.state === 'not-shared' && (
               <p className="tia-help" data-profile-sensitive="not-shared">{WORDS.sensitiveNotShared}</p>
             )}
             {view.sensitive.state === 'unavailable' && (

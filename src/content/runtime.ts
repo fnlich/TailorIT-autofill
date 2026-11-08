@@ -339,6 +339,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   let panelView: PanelView = 'expanded';
   /** v5 p1-shell: the sidebar opened by itself in this document once already: it never does again here. */
   let autoOpened = false;
+  /** v5 p1-shell (the review's S1): a hidden tab's sidebar waits for the tab to be shown before it opens by itself. */
+  let waitingToShow = false;
   /** v5 p1-shell: the tab the worker named at sidebar/load (null until the bundle ran here). */
   let sidebarTab: number | null = null;
   /** v5 p1-shell: a sidebar on its way (the bundle being loaded). */
@@ -839,10 +841,22 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   /** Under "Default view: Expanded", the sidebar opens by itself once per document on a supported page, unless the
-   *  person hid the launcher on this site or everywhere. */
+   *  person hid the launcher on this site or everywhere. The review's S1: never in a hidden tab; there it opens once the
+   *  tab is shown (once), if it still may. */
   function autoOpen(): void {
     if (autoOpened || !isTop || placement !== 'page' || panelView !== 'expanded' || launcherPrefs.hidden
       || !supportedPage()) return;
+    if (doc.visibilityState !== 'visible') {
+      if (waitingToShow) return;
+      waitingToShow = true;
+      doc.addEventListener('visibilitychange', function shown() {
+        if (doc.visibilityState !== 'visible') return;
+        doc.removeEventListener('visibilitychange', shown);
+        waitingToShow = false;
+        autoOpen();
+      }, { signal: lifetime.signal });
+      return;
+    }
     autoOpened = true;
     void openSidebar('auto').catch(() => undefined);
   }
@@ -858,7 +872,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     try {
       const views = await sidebarApp();
       if (views === null || sidebarTab === null || stopped || placement !== 'page' || ui === null) return false;
-      const opened = ui.openSidebar(views, sidebarTab);
+      // The review's S1: a sidebar that opened by itself asks for its job card as a page that loads does.
+      const opened = ui.openSidebar(views, sidebarTab, how === 'auto');
       if (opened) log('sidebar.opened', { auto: how === 'auto', icon: how === 'icon' });
       return opened;
     } finally {
@@ -1333,6 +1348,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           minimised: () => closeSidebar(),
           options: (section: string | undefined) => {
             if (channel.valid()) channel.fire({ v: 1, type: 'sidebar/options', ...(section === undefined ? {} : { section }) });
+          },
+          // The review's S6 and S7: Chrome's side panel, for what the sidebar leaves to it; asked inside the click.
+          sidePanel: () => {
+            if (channel.valid()) channel.fire({ v: 1, type: 'panel/open' });
           },
           ownId: platform.runtime.id,
         } } : {}),

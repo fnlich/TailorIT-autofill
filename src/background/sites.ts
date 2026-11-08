@@ -34,7 +34,7 @@ import { ok, refuse, type Answer } from '../messaging/envelope';
 import type { ContentMessage, SitesState } from '../messaging/schemas';
 import type { HostPermissions, SitesScripting, StorageArea } from '../platform/types';
 import {
-  CONTENT_SCRIPT_FILE, isCompanySiteUrl, registrationsFor, SITES_MATCH, SITES_REGISTRATION_ID, type SiteRegistration,
+  CONTENT_SCRIPT_FILE, isCompanySiteUrl, onAtsMatch, onOwnOrigin, registrationsFor, SITES_MATCH, SITES_REGISTRATION_ID, type SiteRegistration,
 } from '../shared/hosts';
 import { log } from '../shared/log';
 import { createKeyedQueue, type createRateLimit } from './locks';
@@ -69,6 +69,8 @@ export interface SitesDeps {
   now(): number;
   /** Tells every tab's top frame `site/stop` (the career sites stopped acting). */
   stopPages?(): Promise<void>;
+  /** v5 p1-shell (the review's S11): TailorIT's own origin, whose pages the career sites never reach. */
+  tailorit?: string;
   /** The e2e build only: a record of each recognition and injection, for the specs (never an address). */
   note?(event: { type: 'page-recognised'; reason: string; tabId: number; injected: boolean }): Promise<void>;
 }
@@ -84,7 +86,9 @@ export interface Sites {
   /** v5 p1-shell: the toolbar icon's click on tab `tabId` (its address and privacy as the click's tab says): the content
    *  script injected into the tab's top document (the module header), recorded first. True when the script runs there
    *  now (injected, or recorded before); false off a company's own https page, in a private tab, while the career sites
-   *  do not act, or where Chrome refused. */
+   *  do not act, or where Chrome refused. The review's F7: on an applicant-tracking page whose static script is not
+   *  there (the tab loaded before the extension was installed or updated), the content script is injected too, with no
+   *  record (the router knows those hosts) and whether or not the career sites act; never in a private tab. */
   injectTop(tabId: number, url: string | undefined, incognito: boolean): Promise<boolean>;
   /** The router's reading of a frame off the ATS hosts (senders.ts InjectedOf): null unless the career sites act. */
   injected: InjectedOf;
@@ -140,7 +144,7 @@ export function createSites(deps: SitesDeps): Sites {
   function reconcile(): Promise<void> {
     return queue.run('reconcile', async () => {
       const sites = await active();
-      const wanted = registrationsFor({ sites });
+      const wanted = registrationsFor({ sites, own: deps.tailorit });
       try {
         const current = await deps.scripting.registered([SITES_REGISTRATION_ID]);
         const stale = current.filter((held) => !wanted.some((want) => same(want, held))).map((held) => held.id);
@@ -170,6 +174,24 @@ export function createSites(deps: SitesDeps): Sites {
 
   const kindIn = (entry: InjectedEntry | null | undefined, frameId: number): InjectedKind | null =>
     (entry !== null && entry !== undefined && entry.frameId === frameId ? entry.kind : null);
+
+  /** A company's own page the career sites may reach (siteAddress), never TailorIT's own (S11). */
+  const companySite = (url: string) => siteAddress(url) && !onOwnOrigin(url, deps.tailorit);
+
+  /** F7: the content script in an applicant-tracking tab's top document, once the frame's own address says it still
+   *  shows such a page; its static script's guard (entrypoints/content-script.ts) keeps a second one from running. */
+  async function injectAts(tabId: number): Promise<boolean> {
+    const top = await deps.scripting.topDocument(tabId);
+    if (top === null || !onAtsMatch(top.url)) return false;
+    try {
+      await deps.scripting.inject(tabId, { frameId: 0, documentId: top.documentId }, CONTENT_SCRIPT_FILE);
+    } catch {
+      log('sites.inject-failed');
+      return false;
+    }
+    log('sites.injected', { icon: true, ats: true });
+    return true;
+  }
 
   /** The tab's records beyond its last TAB_DOCUMENTS documents, forgotten (the oldest first). */
   async function bound(tabId: number): Promise<void> {
@@ -213,7 +235,7 @@ export function createSites(deps: SitesDeps): Sites {
         await deps.note?.({ type: 'page-recognised', reason: message.reason, tabId: from.tabId, injected: false });
         return refuse('bad_message');
       };
-      if (!(await active()) || !siteAddress(from.url)) return refused();
+      if (!(await active()) || !companySite(from.url)) return refused();
       log('sites.recognised');
       const documentId = from.documentId;
       const key = keyOf(from.tabId, documentId);
@@ -245,10 +267,12 @@ export function createSites(deps: SitesDeps): Sites {
       return injected;
     },
     async injectTop(tabId, url, incognito) {
-      if (incognito || url === undefined || !siteAddress(url) || !(await active())) return false;
+      if (incognito || url === undefined) return false;
+      if (onAtsMatch(url)) return injectAts(tabId);
+      if (!companySite(url) || !(await active())) return false;
       // The frame's own document and address now (the tab may have moved on since the click).
       const top = await deps.scripting.topDocument(tabId);
-      if (top === null || !siteAddress(top.url)) return false;
+      if (top === null || !companySite(top.url)) return false;
       if (kindIn(await entryOf(tabId, top.documentId), 0) !== null) return true;
       const key = keyOf(tabId, top.documentId);
       // As recognised() does: recorded before the script runs, one at a time with the reconcile.
