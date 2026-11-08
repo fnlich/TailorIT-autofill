@@ -105,6 +105,10 @@ export interface MountOptions {
   styles?: HTMLElement;
   /** The phone number picks its country, as intl-tel-input does (see the header). */
   phonePicks?: boolean;
+  /** Snapshot round 2 (decision 2): the number is emptied this long after a country is chosen from the list (the owner's
+   *  snapshot2 forms all ended with the number empty beside a chosen country; no snapshot shows which step empties
+   *  it). Never by default. */
+  phoneClearsMs?: number;
   /** Each list's delay, in ms. */
   degreeMs?: number;
   schoolPageMs?: number;
@@ -236,6 +240,8 @@ interface Env {
   timings: { degreeMs: number; schoolPageMs: number; searchMs: number };
   /** The phone number picks its country (MountOptions.phonePicks). */
   phonePicks: boolean;
+  /** The number is emptied this long after a country is chosen (MountOptions.phoneClearsMs); null: never. */
+  phoneClearsMs: number | null;
   setValue(id: string, value: unknown): void;
 }
 
@@ -488,6 +494,12 @@ function GhPhone({ env }: { env: Env }): ReactElement {
   const options = useMemo(phoneCountries, []);
   const link = useRef<PhoneLink>({ pick: null, chosen: null }).current;
   link.chosen = (choice) => {
+    if (env.phoneClearsMs !== null && choice !== null) {
+      window.setTimeout(() => {
+        setText('');
+        env.setValue('phone', '');
+      }, env.phoneClearsMs);
+    }
     const shown = env.phonePicks && choice !== null ? nationally(text, choice) : text;
     if (shown === text) return;
     setText(shown);
@@ -656,6 +668,7 @@ export function mountGreenhouseForm(container: HTMLElement, options: MountOption
     log,
     timings: { degreeMs: options.degreeMs ?? 500, schoolPageMs: options.schoolPageMs ?? 800, searchMs: options.searchMs ?? 600 },
     phonePicks: options.phonePicks === true,
+    phoneClearsMs: options.phoneClearsMs ?? null,
     setValue: (id, value) => {
       log.values[id] = value;
     },

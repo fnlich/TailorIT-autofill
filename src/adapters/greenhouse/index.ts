@@ -76,6 +76,7 @@ import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
 import type { Adapter, UploadState, WidgetDecl } from '../types';
+import { EEOC_LISTS, GREENHOUSE_PHONE_COUNTRIES } from './lists';
 import { canonicalApplicationUrl, matchesUrl } from './url';
 
 /** The snapshots the Greenhouse hooks were read from. */
@@ -140,8 +141,32 @@ function nearestHeading(block: Element, cache: ReturnType<typeof newScanCache>):
 /** Node.DOCUMENT_POSITION_FOLLOWING, without reaching for a page global. */
 const FOLLOWING = 4;
 
-/** An upload group's visible label for its file input. */
+// ── s2 lists (decision 2: the phone's country is the phone's) ──
+/** The phone's country: the react-select inside fieldset.phone-input (fixtures/greenhouse/s2-lightning-0.html:
+ *  <fieldset class="phone-input"><legend class="visually-hidden">Phone</legend><div class="phone-input__country"><div
+ *  class="select"><div class="select__container"><label id="country-label" for="country" class="label
+ *  select__label">Country<span aria-hidden="true">*</span></label> ... <input class="select__input" ... id="country"
+ *  ... role="combobox" ...>, then div.phone-input__phone with the number, input#phone). */
+function isPhoneCountry(control: Element): boolean {
+  return control.localName === 'input' && control.id === 'country' && control.closest('fieldset.phone-input') !== null
+    && control.matches('input.select__input[role="combobox" i]');
+}
+
+/** The phone's country is read by its own label first (labelFirst), with "code" after it (labelSuffix): "Country
+ *  code", the phone's country code it chooses (contact.phoneCountry), never the address's country its word alone
+ *  names. Its fieldset's legend, "Phone", is visually hidden. */
+function labelFirst(control: Element): boolean {
+  return isPhoneCountry(control);
+}
+
+function labelSuffix(control: Element): string | null {
+  return isPhoneCountry(control) ? 'code' : null;
+}
+// ── end s2 lists ──
+
+/** An upload group's visible label for its file input; the phone country's own label (s2 lists, labelFirst). */
 function labelFor(control: Element): Element | null {
+  if (isPhoneCountry(control)) return control.closest('.select__container')?.querySelector('label[for="country"]') ?? null;
   if (control.localName !== 'input' || (control as HTMLInputElement).type !== 'file') return null;
   // fixtures/greenhouse/*.html: <div class="file-upload" role="group" aria-labelledby="upload-label-resume"
   // aria-required="true"><div id="upload-label-resume" class="label upload-label">Resume/CV<span
@@ -197,9 +222,21 @@ function widgetFor(control: Element): WidgetDecl | null {
   }
   const kind = SEARCH_ID.test(control.id) ? 'typeahead-remote'
     : control.closest('.select__value-container--is-multi') !== null ? 'multiselect' : 'combobox';
+  const stored = kind === 'combobox' ? storedListOf(control) : null;
   return { kind, opener: control as HTMLElement, activation: [...GREENHOUSE_ACTIVATION], bridge: 'react-select',
     expanded: control, box, busy: BUSY_SIGNS, shownAnswer: answerOf(box, control),
+    // s2 lists: a stored list, whose react-select draws its whole menu at once (rushdown-country-open: all 244 options).
+    ...(stored === null ? {} : { knownOptions: stored, drawnWhole: true as const }),
     snapshot: GREENHOUSE_WIDGET_SNAPSHOTS[0] };
+}
+
+/** s2 lists (decisions 1 and 2): the stored list of a react-select (lists.ts), or null: the phone's country, and the
+ *  EEOC block's Gender, Hispanic/Latino and Veteran Status (div.eeoc__container, by their ids: s2-pie-eeo-6, -7, -8:
+ *  <input class="select__input" ... id="gender" ... role="combobox" ...>). */
+function storedListOf(control: Element): readonly string[] | null {
+  if (isPhoneCountry(control)) return GREENHOUSE_PHONE_COUNTRIES;
+  if (control.closest('div.eeoc__container') === null || !Object.hasOwn(EEOC_LISTS, control.id)) return null;
+  return EEOC_LISTS[control.id] ?? null;
 }
 
 /** What a react-select shows chosen, beside its emptied input (twitch.yesno-chosen: <div class="select__value-container
@@ -371,6 +408,9 @@ export const greenhouseAdapter: Adapter = {
   },
   sections,
   labelFor,
+  // s2 lists: the phone's country by its own label, with "code" (decision 2).
+  labelFirst,
+  labelSuffix,
   uploadWidgets,
   uploadState,
   excluded,

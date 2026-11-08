@@ -1490,8 +1490,11 @@ describe('the committed Lever, Greenhouse and Ashby fixtures', () => {
         }
         if (field.kind === 'file' && elements.some(rendered)) found.push(`file input rendered: ${where}`);
         if (field.reason === 'not-user-visible' && elements.some(rendered)) found.push(`rendered: ${where}`);
-        // An Ashby month or year list's label is its block's "Start Date" with the adapter's "month" or "year".
-        const shownLabel = ashby && field.kind === 'select' ? field.label.replace(/ (?:month|year)$/, '') : field.label;
+        // An Ashby month or year list's label is its block's "Start Date" with the adapter's "month" or "year"; s2 lists:
+        // a Greenhouse phone's country is its own "Country" with the adapter's "code" (the phone's country code).
+        const phoneCountry = first.matches('input.select__input#country') && first.closest('fieldset.phone-input') !== null;
+        const shownLabel = ashby && field.kind === 'select' ? field.label.replace(/ (?:month|year)$/, '')
+          : phoneCountry ? field.label.replace(/ code$/, '') : field.label;
         if (field.fillable && !visibleText.includes(shownLabel)) found.push(`label not shown: ${where}`);
       }
       const controls = [...document.querySelectorAll('input, select, textarea')].filter((element) =>

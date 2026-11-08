@@ -64,6 +64,9 @@ describe('every answer parses with the schema its receiver uses', () => {
       },
       async () => ({ type: 'policy/hit', applicationKey: LEVER_KEY, patternId: null }),
       async () => ({ type: 'panel/open' }),
+      // s2 lists: a host's learned list kept, then its lists answered.
+      async () => ({ type: 'lists/learn', key: '0123456789abcdef', labels: ['Select One', 'Mr.', 'Ms.'] }),
+      async () => ({ type: 'lists/known' }),
     ];
     for (const build of messages) {
       const message = await build();

@@ -14,7 +14,10 @@
  *   kind. A widget is never grouped and gets its labels by the same visible-label rules. Its options are 'lazy'
  *   (option-set hash 'lazy') until it is opened, unless its list is already shown whole; once the run has opened it
  *   (the loop's waiting path), ScanOptions.widgetReadings gives the field what it read, by base key, and the key
- *   carries their hash; a combobox read as a remote search is a 'typeahead-remote' with no options (hash 'none'). A
+ *   carries their hash; a combobox read as a remote search is a 'typeahead-remote' with no options (hash 'none'). s2
+ *   lists: a combobox its adapter stores the whole list of (WidgetDecl.knownOptions), or a select-only dropdown drawn
+ *   whole whose list this host showed before (ScanOptions.learnedLists), takes that list as its options while the run
+ *   has no reading of it, so it is planned on the first pass (widgets/known.ts). A
  *   group's options are its members. A native control inside a widget's list, or the text box inside an ARIA 1.1
  *   combobox, is part of the widget and never a field of its own. Only the widget helpers (widgets/) write a widget.
  * - An adapter may name more widget candidates (widgetRoots: Ashby's Yes/No, a div of toggle buttons beside a hidden
@@ -49,7 +52,7 @@ import {
   adapterLabelOf, descriptionOf, labelOfControl, labelOfGroup, legendOf, optionLabelOf, type LabelContext,
   type ResolvedLabel,
 } from './labels';
-import { hashOfOptions } from './option-hash';
+import { hashOfOptions, isUsableOption } from './option-hash';
 import { isInOwnUi } from './own-ui';
 import { isCaptchaResponseField } from './pause-detect';
 import { proxyOf, type Proxy, unrecognisedUploadControl } from './proxy';
@@ -70,6 +73,7 @@ import {
   WIDGET_ROOT_SELECTOR,
 } from './widgets/aria';
 import { keepReading } from './widgets/fill';
+import { learnable, learnedListKey } from './widgets/known';
 import { chosenLabels, memberLabel, readShownList, scrolls } from './widgets/options';
 
 /** What a scan needs besides the root and the adapter. */
@@ -93,6 +97,13 @@ export interface ScanOptions {
    * closed.
    */
   widgetReadings?: Map<BaseKey, WidgetReading>;
+  // ── s2 lists ──
+  /** The lists this host's dropdowns showed the run before (background/learned-lists.ts, by their label slug's key,
+   *  widgets/known.ts learnedListKey): a select-only
+   *  dropdown its adapter draws whole (WidgetDecl.drawnWhole) and stores no list for is given the list learned for its
+   *  label as its options while nothing of this run replaces them, so it is planned on the first pass; its choice
+   *  opens it once and checks the planned option at its place (widgets/fill.ts chooseKnown). Option labels only. */
+  learnedLists?: ReadonlyMap<string, readonly string[]>;
 }
 
 /** A control that may become (part of) a field. */
@@ -242,7 +253,9 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
   const fields = kept.map((scanned, i): ScannedField => {
     const parts = { platform: options.platform, section: scanned.section, labelSlug: slugs[i]!, ordinal: ordinals[i]! };
     const base = baseKey(parts);
-    const draft = scanned.widget === null ? scanned : withReading(scanned, base, options.widgetReadings);
+    const learned = scanned.widget !== null && options.learnedLists !== undefined && learnable(scanned.widget)
+      ? options.learnedLists.get(learnedListKey(slugs[i]!)) : undefined;
+    const draft = scanned.widget === null ? scanned : withReading(scanned, base, options.widgetReadings, learned);
     const optionSetHash = draft.options === null ? OPTION_SET_NONE : draft.options === 'lazy' ? OPTION_SET_LAZY
       : draft.kind === 'typeahead-remote' && draft.options.length === 0 ? OPTION_SET_NONE
         : hashOfOptions(draft.options.map((option) => option.label));
@@ -590,7 +603,11 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null): 
       ...(declared.highlightIsNoChoice === true ? { highlightIsNoChoice: true } : {}),
       // v4 (drop): a results list no ARIA names, and the key that starts a search.
       ...(declared.results !== undefined ? { results: declared.results } : {}),
-      ...(declared.queryKey !== undefined ? { queryKey: declared.queryKey } : {}) }),
+      ...(declared.queryKey !== undefined ? { queryKey: declared.queryKey } : {}),
+      // s2 lists: a list its adapter stored (a combobox's only), and a list drawn whole.
+      ...(declared.knownOptions !== undefined && declared.knownOptions.length > 0 && kind === 'combobox'
+        ? { knownOptions: declared.knownOptions, knownFrom: 'adapter' as const } : {}),
+      ...(declared.drawnWhole === true ? { drawnWhole: true as const } : {}) }),
   };
 }
 
@@ -689,15 +706,21 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
 /** A widget's draft with what the run read of it (ScanOptions.widgetReadings): a list's options while it is closed,
  *  a remote search as a typeahead with no options. A list this scan read whole is kept as the field's reading, with
  *  any option of the earlier reading it no longer shows but the widget shows chosen kept in place (keepReading). A
- *  reading a cap stopped makes the field's options partial. */
-function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetReading> | undefined): Draft {
-  const widget = draft.widget!;
-  if (widget.kind === 'radio' || widget.kind === 'checkbox') return draft;
+ *  reading a cap stopped makes the field's options partial. s2 lists: a combobox the run has no reading of, whose list
+ *  is not shown, takes its stored list as its options (WidgetDecl.knownOptions, else `learned`: the list this host's
+ *  dropdown of the same label showed before), whole; a reading, or a list shown now, always comes first. */
+function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetReading> | undefined,
+  learned?: readonly string[]): Draft {
+  const stored = draft.widget!;
+  if (stored.kind === 'radio' || stored.kind === 'checkbox') return draft;
+  // The stored list is the field's only while nothing the run read, or the page shows now, replaces it.
+  const { knownOptions: known, knownFrom: _from, ...plain } = stored;
+  const widget: WidgetTarget = plain;
   const reading = readings?.get(base);
   if (reading?.kind === 'remote') {
     // A search's results, shown while it types, are no options of the field. A combobox its adapter declared stays
     // one, however its list answered (a Greenhouse Yes/No filters as typed too).
-    if (widget.kind !== 'typeahead-remote' && (widget.kind !== 'combobox' || widget.declared)) return draft;
+    if (widget.kind !== 'typeahead-remote' && (widget.kind !== 'combobox' || widget.declared)) return { ...draft, widget };
     return { ...draft, kind: 'typeahead-remote', options: [], widget: { ...widget, kind: 'typeahead-remote' } };
   }
   const read = (kept: WidgetReading & { kind: 'options' }, kind: WidgetKind): Draft => {
@@ -711,7 +734,14 @@ function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetR
       disabled: option.disabled })), isMultiselectable(listOf(widget.element, widget.input)), draft.optionsPartial !== true);
     return read(kept as WidgetReading & { kind: 'options' }, widget.kind);
   }
-  if (reading === undefined) return draft;
+  if (reading === undefined) {
+    const list = known ?? learned;
+    if (list === undefined || list.length === 0 || widget.kind !== 'combobox') return { ...draft, widget };
+    // s2 lists: the stored list, whole, in its order; a placeholder ("Select One") is no option to choose.
+    const { optionsPartial: _, ...whole } = draft;
+    return { ...whole, options: list.map((label, index) => optionOf(index, label, '', !isUsableOption(label), false)),
+      widget: { ...widget, knownOptions: list, knownFrom: known !== undefined ? 'adapter' : 'learned' } };
+  }
   return read(reading, widget.kind === 'combobox' && reading.multiselectable ? 'multiselect' : widget.kind);
 }
 

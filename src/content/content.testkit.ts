@@ -293,6 +293,8 @@ export interface FakeWorkerOptions {
   /** Phase G: the run's cover letter, as the next plan/poll after a plan asked for it settles it (`state`), and the
    *  file the resume port sends for it (`file`; none: the port refuses). Without it a cover-letter upload waits on. */
   letter?: { state: CoverLetterState; file?: FakeResume };
+  /** s2 lists: the lists lists/known answers (the host's learned lists; none by default). lists/learn is answered {}. */
+  learnedLists?: Array<{ key: string; labels: string[] }>;
 }
 
 /** The fake worker's draft for a free-text question, when a test scripts none (Phase 6). */
@@ -532,6 +534,11 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
       case 'runstate/clear':
       case 'frame/wall':
         // v4: frame/wall, the page's account wall told as it changes, is answered as these are.
+        return { ok: true, data: {} };
+      // s2 lists: the host's learned lists, and one learned (recorded in `messages`).
+      case 'lists/known':
+        return { ok: true, data: { lists: options.learnedLists ?? [] } };
+      case 'lists/learn':
         return { ok: true, data: {} };
       case 'answer/save':
         return { ok: true, data: { outcome: 'saved' } };

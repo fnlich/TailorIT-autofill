@@ -38,14 +38,13 @@
  * chosen, is planned again and ticked with click(): nothing is left for the person.
  * And the phone's country for three other people (the mock's profile-* parts), on the names, the email and the phone
  * alone (.../9104, its phone and country answering each other as intl-tel-input and Greenhouse make them on the live
- * BeyondTrust form, and .../9105, left to themselves): each country is chosen through the bridge by its label, nothing
- * typed, a country the phone number picked by itself stands only when it is the profile's, and the number the page
- * then draws nationally ("(512) 555-0188") still holds the profile's own, never typed again with its code:
- * - a phone with no country code ("512 555 0147"): "United States +1" chosen;
- * - a Canadian whose "+1 512 555 0188" intl-tel-input reads as the United States': the United States it picked
- *   replaced by "Canada +1" (flagged prefill-conflict, as any answer the page held is);
- * - a Briton's "+44 20 7946 0958": "United Kingdom +44" chosen where the number picks nothing, and the United Kingdom
- *   it picked kept, nothing sent, where it does.
+ * BeyondTrust form, and .../9105, left to themselves). Snapshot round 2 (decisions 1 and 2): the phone's country is the
+ * phone's ("Country code", its stored 244 countries), planned on the first pass and chosen through the bridge by its
+ * label before the number, nothing typed into it; the number is then typed without its dial code, so it never picks a
+ * country of its own:
+ * - a phone with no country code ("512 555 0147"): "United States +1" chosen, the number as the profile writes it;
+ * - a Canadian's "+1 512 555 0188": "Canada +1" chosen, then "512 555 0188";
+ * - a Briton's "+44 20 7946 0958": "United Kingdom +44" chosen, then "20 7946 0958", on both pages.
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures.ts';
@@ -217,9 +216,9 @@ test.describe("Greenhouse's react-selects", () => {
     expect(row(report, HEARD)).toMatchObject({ ...verified, kind: 'checkbox-group' });
     expect(log.values['question_9003[]']).toEqual(['900300']);
 
-    // The phone's country, from the live form's 244: "United States +1" chosen by its label, nothing typed, and read
-    // back by its flag (the answer shows the flag and "+1").
-    expect(row(report, 'Country')).toMatchObject(verified);
+    // The phone's country, from the live form's 244 (its stored list): "United States +1" chosen by its label, nothing
+    // typed, and read back by its flag (the answer shows the flag and "+1").
+    expect(row(report, 'Country code')).toMatchObject(verified);
     expect(log.values.country).toBe('us');
     expect(log.typed.country).toBeUndefined();
 
@@ -262,7 +261,7 @@ test.describe("Greenhouse's react-selects", () => {
     expect(log.values.question_9001).toBe('1');
     expect(row(report, RESIDENCE)).toMatchObject(verified);
     expect(log.values.question_9005).toBe('US');
-    expect(row(report, 'Country')).toMatchObject(verified);
+    expect(row(report, 'Country code')).toMatchObject(verified);
     expect(log.values.country).toBe('us');
     expect(row(report, 'Location (City)')).toMatchObject(verified);
     expect(log.values['candidate-location']).toBe('Austin, Texas, United States');
@@ -385,80 +384,66 @@ test.describe("Greenhouse's react-selects", () => {
     }
     const verified = { status: 'verified', wrote: true, verification: 'verified' } as const;
 
-    test('a phone with no country code: "United States +1" chosen; the number, drawn nationally, still its own', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    test('a phone with no country code: "United States +1" chosen first; the number as the profile writes it', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
       test.setTimeout(150_000);
       await tailorit.scenario('profile-phone-no-code');
       routeLog.serve(routes);
       const page = await extContext.newPage();
       const { tabId, report, log, phone, flag, seen } = await fillPhoneForm(page, GREENHOUSE_WIDGETS.phonePicks, ext);
-      expect(row(report, 'Country')).toMatchObject({ ...verified, kind: 'combobox', provenance: 'profile' });
+      expect(row(report, 'Country code')).toMatchObject({ ...verified, kind: 'combobox', provenance: 'profile',
+        category: 'contact.phoneCountry' });
       expect(log.values.country).toBe('us');
       expect(flag).toBe('iti__flag iti__us');
       expect(log.typed.country).toBeUndefined();
       expect(seen.commands).toEqual([{ target: 'country', label: 'United States +1' }]);
       expect(bridged(seen)).toEqual(['country']);
       expect(row(report, 'Phone')).toMatchObject({ ...verified, category: 'contact.phone' });
-      expect(phone).toBe('(512) 555-0147');
+      expect(phone).toBe('512 555 0147');
       expect(log.pressed).toEqual([]);
       expect(await ourEvents(page, NEVER_SENT)).toEqual([]);
       await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: PHONE_LABELS,
         applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.phonePicks) });
     });
 
-    test('a Canadian\'s "+1 512 ...": the United States the number picked replaced by "Canada +1"; the number drawn nationally holds the profile\'s', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    test('a Canadian\'s "+1 512 ...": "Canada +1" chosen first; the number typed without its "+1", picking nothing', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
       test.setTimeout(150_000);
       await tailorit.scenario('profile-canada');
       routeLog.serve(routes);
       const page = await extContext.newPage();
       const { tabId, report, log, phone, flag, seen } = await fillPhoneForm(page, GREENHOUSE_WIDGETS.phonePicks, ext);
-      // The United States the number picked was the page's answer: the profile's Canada replaced it, flagged for a look.
-      expect(row(report, 'Country')).toMatchObject({ kind: 'combobox', provenance: 'profile', wrote: true,
-        verification: 'verified', status: 'flagged', reason: 'prefill-conflict' });
+      expect(row(report, 'Country code')).toMatchObject({ ...verified, kind: 'combobox', provenance: 'profile' });
       expect(log.values.country).toBe('ca');
       expect(flag).toBe('iti__flag iti__ca');
       expect(log.typed.country).toBeUndefined();
       expect(seen.commands).toEqual([{ target: 'country', label: 'Canada +1' }]);
-      // Typed "+1 512 555 0188", then drawn "(512) 555-0188" once Canada was chosen: verified, never typed again.
       expect(row(report, 'Phone')).toMatchObject({ ...verified, category: 'contact.phone' });
-      expect(phone).toBe('(512) 555-0188');
+      expect(phone).toBe('512 555 0188');
       expect(log.pressed).toEqual([]);
       expect(await ourEvents(page, NEVER_SENT)).toEqual([]);
       await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: PHONE_LABELS,
         applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.phonePicks) });
     });
 
-    test('a Briton\'s "+44 20 ...": "United Kingdom +44" chosen where the number picks nothing, and kept, nothing sent, where it picked it', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    test('a Briton\'s "+44 20 ...": "United Kingdom +44" chosen first and the number typed nationally, on both pages', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
       test.setTimeout(240_000);
       await tailorit.scenario('profile-uk');
       routeLog.serve(routes);
-      const first = await extContext.newPage();
-      const typed = await fillPhoneForm(first, GREENHOUSE_WIDGETS.phone, ext);
-      expect(row(typed.report, 'Country')).toMatchObject({ ...verified, kind: 'combobox', provenance: 'profile' });
-      expect(typed.log.values.country).toBe('gb');
-      expect(typed.flag).toBe('iti__flag iti__gb');
-      expect(typed.log.typed.country).toBeUndefined();
-      expect(typed.seen.commands).toEqual([{ target: 'country', label: 'United Kingdom +44' }]);
-      expect(row(typed.report, 'Phone')).toMatchObject(verified);
-      expect(typed.phone).toBe('+44 20 7946 0958');
-      expect(typed.log.pressed).toEqual([]);
-      expect(await ourEvents(first, NEVER_SENT)).toEqual([]);
-      await assertTrapInvariants({ page: first, ext, tabId: typed.tabId, routeLog, console: logs(), markers: [],
-        canaries: [], labels: PHONE_LABELS, applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.phone) });
-      await first.close();
-
-      const second = await extContext.newPage();
-      const picked = await fillPhoneForm(second, GREENHOUSE_WIDGETS.phonePicks, ext);
-      expect(row(picked.report, 'Country')).toMatchObject({ status: 'skipped', reason: 'already-correct', wrote: false });
-      expect(picked.log.values.country).toBe('gb');
-      expect(picked.flag).toBe('iti__flag iti__gb');
-      expect(picked.log.typed.country).toBeUndefined();
-      expect(picked.seen.commands).toEqual([]);
-      expect(row(picked.report, 'Phone')).toMatchObject(verified);
-      expect(picked.phone).toBe('+44 20 7946 0958');
-      expect(picked.log.pressed).toEqual([]);
-      expect(await ourEvents(second, NEVER_SENT)).toEqual([]);
-      await assertTrapInvariants({ page: second, ext, tabId: picked.tabId, routeLog, console: logs(), markers: [],
-        canaries: [], labels: PHONE_LABELS, applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.phonePicks) });
+      for (const url of [GREENHOUSE_WIDGETS.phone, GREENHOUSE_WIDGETS.phonePicks]) {
+        const page = await extContext.newPage();
+        const filled = await fillPhoneForm(page, url, ext);
+        expect(row(filled.report, 'Country code'), url).toMatchObject({ ...verified, kind: 'combobox', provenance: 'profile' });
+        expect(filled.log.values.country).toBe('gb');
+        expect(filled.flag).toBe('iti__flag iti__gb');
+        expect(filled.log.typed.country).toBeUndefined();
+        expect(filled.seen.commands).toEqual([{ target: 'country', label: 'United Kingdom +44' }]);
+        expect(row(filled.report, 'Phone')).toMatchObject(verified);
+        expect(filled.phone).toBe('20 7946 0958');
+        expect(filled.log.pressed).toEqual([]);
+        expect(await ourEvents(page, NEVER_SENT)).toEqual([]);
+        await assertTrapInvariants({ page, ext, tabId: filled.tabId, routeLog, console: logs(), markers: [],
+          canaries: [], labels: PHONE_LABELS, applicationKey: applicationKeyOf(url) });
+        await page.close();
+      }
     });
   });
 });

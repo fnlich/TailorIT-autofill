@@ -30,13 +30,13 @@
       "control": "#email"
     },
     {
-      "label": "Country",
+      "label": "Country code",
       "kind": "combobox",
       "required": true,
       "section": "Apply for this job",
       "fillable": true,
       "control": "#country",
-      "options": "lazy",
+      "options": 244,
       "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country, chosen (its chosen value redacted), so react-select draws no required shim beside it."
     },
     {
@@ -146,7 +146,7 @@
       "section": "Voluntary Self-Identification",
       "fillable": true,
       "control": "#gender",
-      "options": "lazy"
+      "options": 3
     },
     {
       "label": "Are you Hispanic/Latino?",
@@ -155,7 +155,7 @@
       "section": "Voluntary Self-Identification",
       "fillable": true,
       "control": "#hispanic_ethnicity",
-      "options": "lazy"
+      "options": 3
     },
     {
       "label": "Veteran Status",
@@ -164,7 +164,7 @@
       "section": "Voluntary Self-Identification",
       "fillable": true,
       "control": "#veteran_status",
-      "options": "lazy"
+      "options": 3
     },
     {
       "label": "",

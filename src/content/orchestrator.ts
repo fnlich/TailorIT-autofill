@@ -172,7 +172,7 @@ import {
   type RunContext, type RunEffect, type RunEvent, type StepFacts, type StepNotice, type SubmitSkipRules,
 } from '../core/steps/machine';
 import { stepSignature } from '../core/steps/signature';
-import { sectionKey } from '../core/text/keys';
+import { labelSlug, sectionKey } from '../core/text/keys';
 import type { BaseKey, CurrentValue, FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
@@ -191,6 +191,7 @@ import { deadline, monotonicNow } from '../dom/time';
 import type { FieldTarget, ScannedField, ScanResult, WidgetReading } from '../dom/types';
 import { visibleTextWithout } from '../dom/visible-text';
 import { isUserVisible } from '../dom/visibility';
+import { learnable, learnedListKey } from '../dom/widgets';
 import type { ErrorCode } from '../messaging/envelope';
 import {
   MAX_EDIT_INSTRUCTION, MAX_POSTING_TEXT, type AnswerReadAnswerSchema, type PressAnswer, type RunTrigger, type StepTarget,
@@ -591,6 +592,13 @@ export class FillRun {
   /** What this run read of its lazy widgets, by base key (Phase 4): the loop's scans read it, and so do field/focus
    *  and field/describe once the run has rows. Option labels only (page text), in memory. */
   readonly widgetReadings = new Map<BaseKey, WidgetReading>();
+  /** s2 lists: the lists this host's dropdowns showed before (lists/known, asked once a scan of the run holds a
+   *  learnable dropdown), and those this run read whole since, by their label's key (dom/widgets' learnedListKey):
+   *  every scan of the run reads them (ScanOptions.learnedLists). Option labels only (page text), in memory. */
+  readonly learnedLists = new Map<string, readonly string[]>();
+  private learnedAsked = false;
+  /** The lists this run told the worker of (label key and options), each once. */
+  private readonly learnedSent = new Set<string>();
   private hitPassages: RawPassage[] = [];
   /** What cut the loop before a later pass. */
   private loopCut: LoopCut | null = null;
@@ -2390,7 +2398,7 @@ export class FillRun {
   private scanNow(): ScanResult {
     const { page } = this.env;
     return scan(this.rootNow(), page.adapter, { platform: page.app.platform, frameId: this.frameId,
-      widgetReadings: this.widgetReadings });
+      widgetReadings: this.widgetReadings, learnedLists: this.learnedLists });
   }
 
   /** validate: the step's errors and facts (module header, 6). */
@@ -3005,6 +3013,35 @@ export class FillRun {
     }
   }
 
+  /** s2 lists: asks the worker once for the lists this host's dropdowns showed before (lists/known), when the step's
+   *  scan holds a learnable dropdown (dom/widgets' learnable): every later scan of the run gives each its list. An
+   *  answer that does not come, or a refusal, leaves none: each is read when it opens, as before. */
+  private async askLearnedLists(): Promise<void> {
+    if (this.learnedAsked) return;
+    const held = this.scanNow();
+    if (!held.fields.some((field) => {
+      const widget = held.target(field.key)?.widget;
+      return widget !== undefined && learnable(widget);
+    })) return;
+    this.learnedAsked = true;
+    const answer = await this.env.channel.request<'lists/known'>({ v: 1, type: 'lists/known' });
+    this.alive();
+    if (!answer.ok) return;
+    for (const list of answer.data.lists) if (!this.learnedLists.has(list.key)) this.learnedLists.set(list.key, list.labels);
+  }
+
+  /** s2 lists: a learnable dropdown's complete whole read (dom/widgets' LearnList): kept for the rest of the run under
+   *  its label's key (another block's dropdown of the same label then plans from it), and told to the worker once. */
+  private learnList(target: FieldTarget, labels: readonly string[]): void {
+    const key = learnedListKey(labelSlug(target.field));
+    this.learnedLists.set(key, labels);
+    const sent = `${key}\u001f${labels.join('\u001f')}`;
+    if (this.learnedSent.has(sent)) return;
+    this.learnedSent.add(sent);
+    void this.env.channel.request<'lists/learn'>({ v: 1, type: 'lists/learn', key, labels: [...labels] })
+      .catch(() => undefined);
+  }
+
   /** The fill step's reactive loop (loop.ts). plan/request carries the 32 nearest canaries; each write is scanned for
    *  all of the frame's (both as the checks before each later pass leave them), and refused while a pause shows or
    *  once another step shows. */
@@ -3014,6 +3051,7 @@ export class FillRun {
     const rootNow = () => this.rootNow();
     const hasher = await this.valueHasher();
     this.alive();
+    await this.askLearnedLists();
     return runLoop({
       content: env.content,
       adapter: env.page.adapter,
@@ -3061,6 +3099,9 @@ export class FillRun {
       writing: this.writing,
       ...(carry === undefined ? {} : { carry }),
       widgetReadings: this.widgetReadings,
+      // s2 lists: what this host's dropdowns showed before, and each learnable dropdown's whole read told.
+      learnedLists: this.learnedLists,
+      learn: (target, labels) => this.learnList(target, labels),
       runId: () => this.runId,
       ...(env.options.resume ? { resume: env.options.resume } : {}),
       ...(env.options.settle ? { settle: env.options.settle } : {}),

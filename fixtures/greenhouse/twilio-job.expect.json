@@ -37,12 +37,12 @@
       "control": "#email"
     },
     {
-      "label": "Country",
+      "label": "Country code",
       "kind": "combobox",
       "required": true,
       "section": "Apply for this job",
       "fillable": true,
-      "options": "lazy",
+      "options": 244,
       "control": "#country",
       "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country. Its options read \"Canada +1\"; chosen, it shows the flag and \"+1\" (the adapter reads it back by the flag)."
     },

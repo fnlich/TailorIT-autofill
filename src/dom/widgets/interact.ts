@@ -223,6 +223,18 @@ async function awaitReady(ctx: WidgetContext): Promise<'ready' | 'aborted'> {
   return wait.done;
 }
 
+/** s2 lists: the run's one wait for a page whose script has not answered yet (awaitReady), sent outside an activation:
+ *  a stored list's react-select is planned on the run's first pass, so a command to the page-world bridge may be the
+ *  run's first contact with the widget, before the page's React attached (the bridge's 'no-react'). False, and nothing
+ *  waited for, when the run has no readiness record, the page answered an activation already, the run's one wait is
+ *  spent, or the wait was aborted. */
+export async function awaitPageReady(ctx: WidgetContext): Promise<boolean> {
+  const readiness = ctx.readiness;
+  if (readiness === undefined || readiness.answered || readiness.waited) return false;
+  readiness.waited = true;
+  return (await awaitReady(ctx)) === 'ready';
+}
+
 /** How opening a widget went. 'ignored': the page did nothing at all; 'no-list': it answered, but shows no list;
  *  'gone': the page replaced the widget while the run waited for it to be ready. */
 export type OpenResult =

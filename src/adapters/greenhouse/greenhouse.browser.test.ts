@@ -119,9 +119,15 @@ describe('the Greenhouse adapter: its hooks on the snapshots', () => {
     expect(greenhouseAdapter.labelFor!(doc.getElementById('resume')!)).toBe(doc.getElementById('upload-label-resume'));
     expect(greenhouseAdapter.labelFor!(doc.getElementById('cover_letter')!))
       .toBe(doc.getElementById('upload-label-cover_letter'));
-    for (const id of ['first_name', 'country', 'question_38318888002', 'gdpr_demographic_data_consent_given_1']) {
+    for (const id of ['first_name', 'question_38318888002', 'gdpr_demographic_data_consent_given_1']) {
       expect(greenhouseAdapter.labelFor!(doc.getElementById(id)!)).toBeNull();
     }
+    // s2 lists: the phone's country is labelled by its own label first, "code" after it (decision 2).
+    const country = doc.getElementById('country')!;
+    expect(greenhouseAdapter.labelFor!(country)).toBe(country.closest('.select__container')!.querySelector('label[for="country"]'));
+    expect([greenhouseAdapter.labelFirst!(country), greenhouseAdapter.labelSuffix!(country)]).toEqual([true, 'code']);
+    expect([greenhouseAdapter.labelFirst!(doc.getElementById('first_name')!),
+      greenhouseAdapter.labelSuffix!(doc.getElementById('first_name')!)]).toEqual([false, null]);
     // A group whose label is not its own names nothing.
     doc.getElementById('resume')!.closest('.file-upload')!.setAttribute('aria-labelledby', 'first_name-label');
     expect(greenhouseAdapter.labelFor!(doc.getElementById('resume')!)).toBeNull();

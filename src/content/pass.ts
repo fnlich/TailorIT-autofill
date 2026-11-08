@@ -58,8 +58,10 @@ import type {
 } from '../dom/types';
 import { visiblePlaceholder } from '../dom/visible-text';
 import {
-  chooseThroughBridge, fillWidget, isActionable, searchesList, searchForOption, searchTypeahead, widgetHolds,
-  type BridgeRun, type TypeaheadHooks, type TypeaheadResult, type WidgetFillContext, type WidgetReadiness,
+  awaitPageReady, chooseThroughBridge, fillWidget, isActionable, searchesList, searchForOption, searchTypeahead,
+  widgetHolds,
+  type BridgeRun, type LearnList, type TypeaheadHooks, type TypeaheadResult, type WidgetFillContext,
+  type WidgetReadiness,
 } from '../dom/widgets';
 import type { ContentPlatform } from '../platform/types';
 import type { AnswerData } from './channel';
@@ -153,6 +155,8 @@ export interface WidgetWriteEnv {
   readiness?: WidgetReadiness;
   /** The run's page-world bridge (dom/widgets' BridgeRun): off for the rest of the run once its word did not hold. */
   bridge?: BridgeRun;
+  /** s2 lists: told of a learnable dropdown's complete whole read (dom/widgets' LearnList), for its host. */
+  learn?: LearnList;
 }
 
 /** What else a write may need. */
@@ -415,7 +419,8 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
   const ctx: WidgetFillContext = { adapter: env.adapter, root: env.root, signal: env.signal, readings: widgets.readings,
     ...(env.runSignal === undefined ? {} : { runSignal: env.runSignal }),
     ...(widgets.readiness === undefined ? {} : { readiness: widgets.readiness }),
-    ...(widgets.bridge === undefined ? {} : { bridge: widgets.bridge }) };
+    ...(widgets.bridge === undefined ? {} : { bridge: widgets.bridge }),
+    ...(widgets.learn === undefined ? {} : { learn: widgets.learn }) };
   if (write.value.kind === 'query') return searchField(env, last, field, write, planned, target, widgets, ctx);
   const settled = (outcome: DomFillOutcome): WriteResult => {
     const row = rowAfterFill(planned, outcome);
@@ -430,7 +435,18 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
   }
   // React first: the write's one command to the bridge, before a long list's search too; neither the search nor
   // fillWidget sends another (bridgeTried).
-  const attempt = await chooseThroughBridge(target, write.value, ctx, write.origin);
+  let attempt = await chooseThroughBridge(target, write.value, ctx, write.origin);
+  // s2 lists: a stored list's react-select is planned on the first pass, so its command may come before the page's
+  // React attached ('no-react'): after the run's one wait for the page (dom/widgets' awaitPageReady), the field is found
+  // again, guarded again, and its command sent once more.
+  if (attempt.kind === 'fallback' && !attempt.sent && attempt.reason === 'no-react' && target.widget?.knownOptions !== undefined
+    && await awaitPageReady(ctx)) {
+    const again = domGuardBeforeWrite(last, plannedFieldOf(field));
+    if (again.ok && guardWriteInFrame(write, toFieldSpec(again.target.field), env.canaries).ok) {
+      target = again.target;
+      attempt = await chooseThroughBridge(target, write.value, ctx, write.origin);
+    }
+  }
   afterWait(env, attempt.kind === 'done' ? attempt.outcome.wrote : attempt.sent);
   if (attempt.kind === 'done') return settled(attempt.outcome);
   // A Skip after the bridge said it chose: React may hold the choice, so it is written, not verified, and no event

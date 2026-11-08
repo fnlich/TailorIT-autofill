@@ -7,7 +7,10 @@
  *   shown) and clicked through assertNotSubmit, the list closed, then its shown value read back. An llm-pick is checked
  *   once more on that fresh read, right before the click: the option must carry no injected text and its clean text
  *   must still hash as the LLM saw it (llmPickStillValid), else llm-pick-rejected and nothing is chosen. The scan's
- *   options for a closed list are the kept reading, which a page can relabel behind (the Phase 4 review, R1);
+ *   options for a closed list are the kept reading, which a page can relabel behind (the Phase 4 review, R1). s2
+ *   lists: a combobox whose options are its stored list (WidgetTarget.knownOptions) is not read first: its list is
+ *   opened once, the planned option found at its place by its label and clicked (chooseKnown), and a list that holds
+ *   no such option there is read whole as before (options-changed); an llm-pick is still checked on a whole read;
  * - a multiselect: only the planned options not chosen yet are added, one click each (the list opened again whenever
  *   the page closed it), each found in that fresh read by its label as the page shows it, since a list that hides what
  *   is chosen moves the rest up (R5); an option already chosen is never clicked (it would be removed), nor is anything
@@ -50,31 +53,47 @@ import { parseSelectionHints, selectionLimits } from '../../core/multiselect/hin
 import { assertNotSubmit } from '../fillers/not-submit';
 import { done, mismatch, refused } from '../fillers/outcome';
 import { sameOptionLabel } from '../fillers/verify';
-import { cleanOptionLabel } from '../option-hash';
+import { cleanOptionLabel, isUsableOption } from '../option-hash';
 import { OPTIONS_CAP_MS, WIDGET_EMPTY_AFTER_MS } from '../thresholds';
+import type { BridgeReason } from '../bridge-protocol';
 import type { FieldTarget, FillOutcome, WidgetOptionRead, WidgetReading, WidgetTarget } from '../types';
 import { isActionable, isChosen, isMultiselectable, isUnavailable } from './aria';
 import {
   afterAction, afterBridge, awaitList, bridgeChoose, closeList, closingContext, openList, skipTidyContext,
   type WidgetContext,
 } from './interact';
+import { findKnown, learnable, learnedLabels, type LearnList } from './known';
 import {
-  chosenLabels, memberLabel, readList, revealOption, shownIdentity, withChosenKept, type ListRead, type ReadOption,
+  chosenLabels, drawnView, memberLabel, readList, revealOption, shownIdentity, withChosenKept, type ListRead,
+  type ReadOption,
 } from './options';
 
 /** What writing a widget needs besides the field and the value. */
 export interface WidgetFillContext extends WidgetContext {
   /** The run's readings by base key: every whole read of a widget's list replaces its field's. */
   readings?: Map<BaseKey, WidgetReading>;
+  /** s2 lists: told of each complete whole read of a learnable widget (known.ts learnable), its labels within the
+   *  caps (learnedLabels): the run keeps them for its host. */
+  learn?: LearnList;
+}
+
+/** s2 lists: tells the run of a learnable widget's complete whole read (WidgetFillContext.learn); nothing for any
+ *  other widget or read. */
+export function learnRead(ctx: Pick<WidgetFillContext, 'learn'>, target: FieldTarget, widget: WidgetTarget,
+  options: readonly WidgetOptionRead[], complete: boolean): void {
+  if (ctx.learn === undefined || !complete || !learnable(widget)) return;
+  const labels = learnedLabels(options, isUsableOption);
+  if (labels !== null) ctx.learn(target, labels);
 }
 
 /** Keeps a whole read of a widget's list as its field's reading: what the read found, whether it reached the list's
  *  end, and any option of the earlier reading the list no longer shows but the widget shows chosen (withChosenKept). */
 export function remember(ctx: WidgetFillContext, baseKey: BaseKey, read: ListRead, listbox: Element,
-  widget: WidgetTarget): void {
+  widget: WidgetTarget, target?: FieldTarget): void {
   if (read.options.length === 0) return;
-  keepReading(ctx.readings, baseKey, widget, read.options.map((option) => ({ label: option.label,
+  const reading = keepReading(ctx.readings, baseKey, widget, read.options.map((option) => ({ label: option.label,
     disabled: option.disabled })), isMultiselectable(listbox), read.complete);
+  if (target !== undefined && reading.kind === 'options') learnRead(ctx, target, widget, reading.options, read.complete);
 }
 
 /** Keeps a list's options as its field's reading; a multiselect's earlier chosen options (its chips) kept in place. A
@@ -114,9 +133,10 @@ async function openAndRead(target: FieldTarget, ctx: WidgetFillContext):
   }
   const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
   if (wait.status === 'aborted') return skipped(opened.activated);
-  const read = await readList(opened.listbox, { signal: ctx.signal, labelOf: widget.optionLabel });
+  const read = await readList(opened.listbox, { signal: ctx.signal, labelOf: widget.optionLabel,
+    drawnWhole: widget.drawnWhole === true });
   if (ctx.signal?.aborted) return skipped(opened.activated);
-  remember(ctx, target.field.baseKey, read, opened.listbox, widget);
+  remember(ctx, target.field.baseKey, read, opened.listbox, widget, target);
   return { listbox: opened.listbox, read, activated: opened.activated };
 }
 
@@ -156,7 +176,7 @@ function sameChosen(a: readonly string[], b: readonly string[]): boolean {
  *  what the widget showed chosen before the command. */
 export type BridgeAttempt =
   | { kind: 'done'; outcome: FillOutcome }
-  | { kind: 'fallback'; sent: boolean; before: readonly string[] };
+  | { kind: 'fallback'; sent: boolean; before: readonly string[]; reason?: BridgeReason | 'not-allowed' };
 
 /** Chooses the planned option of a combobox its adapter declares for the page-world bridge through it (see the
  *  header): one command, after the frame's own checks, and what the widget then shows decides. */
@@ -177,6 +197,8 @@ export async function chooseThroughBridge(target: FieldTarget, value: Extract<Wr
   if (showsOption(widget, known, planned.label)) return fallback;
   const choice = await bridgeChoose(widget, { label: cleanOptionLabel(planned.label), shown: planned.label }, false,
     ctx);
+  // s2 lists: why the bridge did nothing, so a command refused before the page's React attached may be sent again.
+  if (choice.status === 'refused') return { ...fallback, reason: choice.reason };
   if (choice.status !== 'sent' && choice.status !== 'chosen') return fallback;
   if (await afterBridge(widget, ctx, () => showsOption(widget, known, planned.label))) {
     return { kind: 'done', outcome: done(true, 'ok') };
@@ -223,6 +245,10 @@ async function chooseByEvents(target: FieldTarget, value: Extract<WriteValue, { 
   ctx: WidgetFillContext, origin: ValueOrigin | undefined, known: readonly string[], before: readonly string[]):
   Promise<FillOutcome> {
   const widget = target.widget!;
+  // s2 lists: a stored list's option is chosen at once (chooseKnown); an llm-pick is checked on a whole read, as ever.
+  if (widget.knownOptions !== undefined && origin?.provenance !== 'llm-pick') {
+    return chooseKnown(target, value, ctx, known, before);
+  }
   const opened = await openAndRead(target, ctx);
   if ('failed' in opened) return opened.failed;
   const fresh = opened.read.options[value.index];
@@ -235,7 +261,8 @@ async function chooseByEvents(target: FieldTarget, value: Extract<WriteValue, { 
     await closeList(widget, ctx, opened);
     return refused('llm-pick-rejected');
   }
-  const option = await revealOption(opened.listbox, fresh, { signal: ctx.signal, labelOf: widget.optionLabel });
+  const option = await revealOption(opened.listbox, fresh, { signal: ctx.signal, labelOf: widget.optionLabel,
+    drawnWhole: widget.drawnWhole === true });
   if (ctx.signal?.aborted) {
     await closeList(widget, closingContext(ctx), opened);
     return refused('internal-error');
@@ -254,6 +281,58 @@ async function chooseByEvents(target: FieldTarget, value: Extract<WriteValue, { 
   await closeList(widget, closingContext(ctx), opened);
   const after = chosenLabels(widget, [...known, fresh.label]);
   if (after.some((label) => shownIdentity(label) === shownIdentity(fresh.label))) return done(true, 'ok');
+  if (after.length === before.length && after.every((label, at) => label === before[at])) return clickedUnshown(ctx);
+  return mismatch('verify-mismatch');
+}
+
+/**
+ * s2 lists (decision 1, the owner's "select at once"): the planned option of a stored list (WidgetTarget.knownOptions,
+ * the field's options while the run has no reading of it) chosen with one opening of its list: the option at its
+ * planned place found by its label as the page shows it (known.ts findKnown: one query, and the list scrolled to it
+ * when it scrolls), clicked through assertNotSubmit, the list closed, and the widget read back as chooseByEvents reads
+ * it. A list that holds no such option there is not the stored one: it is read whole as before (a list drawn whole
+ * without a wait), that read kept as the field's reading (and learned, where it may be), and nothing is chosen
+ * (options-changed): the next pass plans the field from what the page showed.
+ */
+async function chooseKnown(target: FieldTarget, value: Extract<WriteValue, { kind: 'option' }>, ctx: WidgetFillContext,
+  known: readonly string[], before: readonly string[]): Promise<FillOutcome> {
+  const widget = target.widget!;
+  const planned = target.field.options === 'lazy' ? undefined : target.field.options[value.index];
+  if (planned === undefined) return refused('options-changed');
+  const skipped = async (activated: boolean): Promise<FillOutcome> => {
+    const tidy = skipTidyContext(ctx);
+    if (tidy !== null) await closeList(widget, tidy, { activated });
+    return refused('internal-error');
+  };
+  const opened = await openList(widget, ctx);
+  if (!opened.open) {
+    if (opened.reason === 'aborted') return skipped(true);
+    return refused(opened.reason === 'no-list' ? 'widget-unsupported' : opened.reason === 'gone' ? 'element-not-found'
+      : 'needs-your-click');
+  }
+  const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
+  if (wait.status === 'aborted') return skipped(opened.activated);
+  const option = await findKnown(opened.listbox, { label: planned.label, index: value.index }, widget,
+    () => drawnView(opened.listbox, ctx.signal));
+  if (ctx.signal?.aborted) return skipped(opened.activated);
+  if (option === null || option.disabled || !sameOptionLabel(option.label, value.cleanLabel)) {
+    const read = await readList(opened.listbox, { signal: ctx.signal, labelOf: widget.optionLabel,
+      option: widget.results?.option, drawnWhole: widget.drawnWhole === true });
+    if (ctx.signal?.aborted) return skipped(opened.activated);
+    remember(ctx, target.field.baseKey, read, opened.listbox, widget, target);
+    await closeList(widget, ctx, opened);
+    return refused('options-changed');
+  }
+  if (!assertNotSubmit(option.el, ctx).ok) {
+    await closeList(widget, ctx, opened);
+    return refused('needs-your-click');
+  }
+  (option.el as HTMLElement).click();
+  await afterAction(widget, ctx);
+  // Clicked: the choice stands even when the person's Skip ended the wait, its list closed on the tidy context.
+  await closeList(widget, closingContext(ctx), opened);
+  const after = chosenLabels(widget, [...known, planned.label]);
+  if (after.some((label) => shownIdentity(label) === shownIdentity(planned.label))) return done(true, 'ok');
   if (after.length === before.length && after.every((label, at) => label === before[at])) return clickedUnshown(ctx);
   return mismatch('verify-mismatch');
 }
@@ -329,7 +408,8 @@ export async function addOptions(target: FieldTarget, value: Extract<WriteValue,
       stopped = refused('options-changed');
       break;
     }
-    const option = await revealOption(opened.listbox, fresh, { signal: ctx.signal, labelOf: widget.optionLabel });
+    const option = await revealOption(opened.listbox, fresh, { signal: ctx.signal, labelOf: widget.optionLabel,
+      drawnWhole: widget.drawnWhole === true });
     if (option === null || option.disabled) {
       stopped = refused('options-changed');
       break;

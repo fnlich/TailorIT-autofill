@@ -150,6 +150,15 @@ export interface WidgetTarget {
   readonly results?: { readonly list: Element; readonly option: string; readonly choose?: 'mousedown' };
   /** v4 (drop): the declared key sent after each typed query (WidgetDecl.queryKey). */
   readonly queryKey?: 'Escape' | 'ArrowDown';
+  // ── s2 lists ──
+  /** The stored whole list the scan gave the field as its options (WidgetDecl.knownOptions, or a list learned on this
+   *  host before: ScanOptions.learnedLists), set only while the field's options are that list, which no reading of the
+   *  run has replaced. Its choice is made at once (widgets/fill.ts chooseKnown). */
+  readonly knownOptions?: readonly string[];
+  /** Where that list came from: the adapter's declaration, or a list learned on this host. */
+  readonly knownFrom?: 'adapter' | 'learned';
+  /** The page draws its whole list at once (WidgetDecl.drawnWhole): read and shown again without waiting to draw. */
+  readonly drawnWhole?: true;
 }
 
 /** The part of a list's option that is its label, or null for the whole option (WidgetDecl.optionLabel). */

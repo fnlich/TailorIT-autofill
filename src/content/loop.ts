@@ -91,10 +91,11 @@ import { deadline, monotonicNow } from '../dom/time';
 import {
   BUSY_SIGNS, type BusySign, type ScannedField, type ScanResult, type SettleResult, type WidgetReading,
 } from '../dom/types';
-import { newBridgeRun, newReadiness, readWidget } from '../dom/widgets';
+import { newBridgeRun, newReadiness, readWidget, type LearnList } from '../dom/widgets';
 import { log } from '../shared/log';
 import { Attribution } from './attribution';
 import { followUpWrite, type FollowUpSource, type QueuedWrite } from './follow-up';
+import { phoneCountryFirst } from './phone-order';
 import { boxBeforeEndDate, filesAfterTheRest } from './repeatables';
 import {
   RunAborted, writeField, type PassEnv, type PlanAnswer, type WidgetWriteEnv, type WriteResult, type WrittenField,
@@ -183,6 +184,10 @@ export interface LoopEnv extends PassEnv {
   stopSignal?: AbortSignal;
   /** Where the run keeps what it read of its lazy widgets (Phase 4); a map of the loop's own without it. */
   widgetReadings?: Map<BaseKey, WidgetReading>;
+  /** s2 lists: the lists this host's dropdowns showed before (ScanOptions.learnedLists), and where a learnable
+   *  dropdown's complete whole read is told (the orchestrator keeps it and sends it to the worker). */
+  learnedLists?: ReadonlyMap<string, readonly string[]>;
+  learn?: LearnList;
   settle?: SettleTimings;
   options?: OptionsTimings;
   /** The run's keyed value hasher (one key for the run, so an earlier attempt's hashes compare); a key of the loop's
@@ -432,7 +437,8 @@ class ReactiveLoop {
   private scanNow(): ScanResult {
     const { env } = this;
     return this.seen(scan(env.root, env.adapter, { platform: env.platform, frameId: env.frameId,
-      heldPlaceholders: this.held, widgetReadings: this.readings }));
+      heldPlaceholders: this.held, widgetReadings: this.readings,
+      ...(env.learnedLists === undefined ? {} : { learnedLists: env.learnedLists }) }));
   }
 
   /** A scan the attribution has seen; its rescans scan the form root found then, never the one it was made from. */
@@ -755,8 +761,9 @@ class ReactiveLoop {
       if (write !== undefined) queue.push({ write, planned: row });
     }
     // A block's "I currently work here" is ticked before its end date (planCurrentJob's order, Phase 5); a page whose
-    // failed upload takes the form down gets its files last (Adapter.quirks.filesLast).
-    const ordered = boxBeforeEndDate(queue);
+    // failed upload takes the form down gets its files last (Adapter.quirks.filesLast); s2 lists: a phone's country is
+    // chosen before its number is typed (phone-order.ts).
+    const ordered = phoneCountryFirst(boxBeforeEndDate(queue));
     return this.env.adapter.quirks?.filesLast ? filesAfterTheRest(ordered) : ordered;
   }
 
@@ -834,7 +841,8 @@ class ReactiveLoop {
   private widgetWrites(): WidgetWriteEnv {
     const plan = this.env.planSome ?? this.env.plan;
     return { readings: this.readings, readiness: this.readiness, bridge: this.bridge,
-      plan: (specs, planKeys) => plan(specs, planKeys, this.state.pass) };
+      plan: (specs, planKeys) => plan(specs, planKeys, this.state.pass),
+      ...(this.env.learn === undefined ? {} : { learn: this.env.learn }) };
   }
 
   /**
@@ -856,7 +864,7 @@ class ReactiveLoop {
       const target = fresh.target(tracked.key);
       if (target === null || target.widget === undefined || target.field.options !== 'lazy') continue;
       const result = await readWidget(target, { adapter: env.adapter, root: env.root, signal: env.signal,
-        readings: this.readings, readiness: this.readiness });
+        readings: this.readings, readiness: this.readiness, ...(env.learn === undefined ? {} : { learn: env.learn }) });
       this.alive();
       if (result.status === 'aborted') break;
       // Read, or replaced while the run waited for the page to be ready: the next scan sees it either way.

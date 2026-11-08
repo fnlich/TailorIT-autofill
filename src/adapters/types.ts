@@ -90,6 +90,18 @@ export interface WidgetDecl {
   /** A declared key sent, as a keydown and a keyup, to the text box after each typed query, for a search that starts
    *  on a keydown and never on the input event (Lever's location search: any key but its arrows and Enter starts it). */
   queryKey?: DeclaredKey;
+  // ── s2 lists (snapshot round 2, decision 1: stored lists, chosen at once) ──
+  /** A combobox's whole list as its adapter stored it from the snapshots, every option's label as a whole read takes it
+   *  (Workday's "Select One" first included), in the list's order: the field's reading at scan time, so the planner
+   *  plans it on its first pass and its list is never opened to be read. Its choice opens the list once, finds the
+   *  planned option by its label at its place, clicks it and reads it back; a list the page shows otherwise is read
+   *  whole as before (options-changed), and that read is the field's reading from then on. */
+  knownOptions?: readonly string[];
+  /** The page draws the widget's whole list at once, every option in the DOM (Workday's dropdowns: 250 country rows in
+   *  a box 200 px high), never a part at a time: a read of it scrolls through it without waiting for rows to be drawn,
+   *  each view read at once, and an option is shown again the same way. */
+  drawnWhole?: true;
+  // ── end s2 lists ──
   /** The snapshot this declaration was written from. */
   snapshot: string;
 }
