@@ -292,7 +292,7 @@ const SIGN_IN_AND_POSTING = 'Sign-in and posting pages; its application forms ar
 /** Workday's application steps, read from the owner's snapshots of 2026-11-06: filled, with its dates and its search
  *  lists (How Did You Hear, Phone Code, School, Skills) left to the person, since no snapshot shows how they take an
  *  answer. A draft for the owner. */
-const WORKDAY_STEPS = 'Its application steps are filled; dates and search lists are left to you.';
+const WORKDAY_STEPS = 'Its application steps are filled, dates and search lists included.';
 
 // ── snapshot build 2026-11-06 (the docs pass, core-x's item 9 left to it): iCIMS's and Oracle's forms are read ──
 /** iCIMS's application steps after the email gate (the Candidate Profile, the questions, EEO), read from the owner's
