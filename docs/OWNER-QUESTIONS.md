@@ -272,12 +272,12 @@ Your request of 2026-11-07 (the Jobright-like side panel, "?" tooltips, candidat
 
 **Typeable dropdowns**
 
-180. **Lead.** A long list (50 options or more, or one read only in part) whose read holds no option for your answer is typed into with your answer's candidate answers, as a remote search is, where the widget filters as you type (declared by its adapter, or marked so by its ARIA); up to six candidates within 15 s, a result chosen only when it matches without doubt. Any other list is left empty.
+180. **Lead.** A long list (50 options or more, or one read only in part) whose read holds no option for your answer is typed into with your answer's candidate answers, as a remote search is, where the widget filters as you type (declared by its adapter, or marked so by its ARIA); up to six candidates within 15 s, a result chosen only when it matches without doubt. Any other list is left empty. **Changed (snapshot round 2, your word):** three differently written candidates, then the list's "Other" or nothing as you set it (items 207 to 212).
 181. **Lead.** Lever's "Current location" is searched with an untrusted Escape after each typed candidate (Lever starts its search on any key but the arrows and Enter; its Escape closes nothing) and a result is chosen with one mousedown, both read from the public page's own script on 2026-11-07. Default: as built. The alternative: leave the field to you, as before.
 
 **Still unknown**
 
-182. **Ask (snapshot).** Workday's prompts (School, Field of Study, Country Phone Code, Skills, "How Did You Hear About Us?") stay yours: none of the Workday snapshots of 2026-11-06 shows a prompt's results open (each holds only chosen pills). Wanted: a signed-in snapshot with a prompt's results open (type into it, wait for the list, save the page).
+182. **Ask (snapshot).** Workday's prompts (School, Field of Study, Country Phone Code, Skills, "How Did You Hear About Us?") stay yours: none of the Workday snapshots of 2026-11-06 shows a prompt's results open (each holds only chosen pills). Wanted: a signed-in snapshot with a prompt's results open (type into it, wait for the list, save the page). **Answered (snapshot round 2):** your snapshots of 2026-11-07 show the Field of Study and source lists open and School's search results; the prompts are searched now (item 203); how a live search starts is item 230.
 183. **Ask (snapshot).** Greenhouse's Discipline is searched like Degree, with your field of study's candidate answers, but no fixture holds the question with its list. Wanted: a Greenhouse form whose Discipline list is open.
 
 **The v4 review's fixes** (docs/SPEC-AMENDMENTS.md §13, each marked "the v4 review")
@@ -297,17 +297,83 @@ Your request of 2026-11-07 (the Jobright-like side panel, "?" tooltips, candidat
 
 **What v4 needs you to do:** reload the extension in `chrome://extensions`; choose I understand on the disclosure when the side panel or the options page shows it again (version 8: until then Submit stays Manual, nothing is recorded as Applied, no page is looked up as it loads, and neither Sign-in Auto nor Sign up & Autofill acts); and restart TailorIT's dev server, whose lookup now sends the job's industry for the job card (TailorIT `187696e` on `v1.2`).
 
+## 14. Snapshot round 2: your requests of 2026-11-07, evening (decided under your standing approval; each yours to overrule)
+
+Your requests after v4 (stored lists chosen at once, Workday dates typed, three styles then "Other" or leave, every experience and education, the unfilled Greenhouse fields and its EEO block, new profile answers, how long notifications stay), built and merged as docs/SPEC-AMENDMENTS.md §14 says (decisions 1 to 17, the review's C1 to C10). Still being built: the stored lists served by the worker, the review's L1 and L2 (learned lists) and P1 to P3 (the side panel under timed notifications; TailorIT's value screen); this section is updated when they merge. Answer by number as above.
+
+**The lists**
+
+196. **Lead (1).** Workday's Country and State (the US states only) and Greenhouse's phone country and EEOC Gender, Hispanic/Latino and Veteran Status are stored lists, chosen at once: the list is opened once, the planned option found by its label and chosen; a page whose list differs is read as before. Default: as built.
+197. **Lead (1).** Learned lists: a Workday dropdown no snapshot showed open (Degree, Phone Device Type, Prefix, Suffix, an Application Questions dropdown) is remembered after one complete read, its option labels only, per site and label (at most 200 lists, 60 offered to a site), and offered on that site's next run, checked when opened; offered in a private tab, never kept from one. Default: as built. The alternative: read each list once per run.
+198. **Lead (1).** No Workday page-world bridge op for its dropdowns: no live check was possible, so they are chosen by click as before.
+199. **Lead (2).** Greenhouse's phone "Country" is labelled "Country code" (its own label and "code"), so it is the phone's country, never the address's. The alternative: name it "Phone country code" from the number's label, as Workable's is. Default: as built.
+200. **Lead (1).** Greenhouse's stored-list react-selects are read as drawn whole (the captures show all 244 phone countries drawn at once).
+201. **Lead (1, the review).** On Greenhouse the page-world bridge chooses a stored EEOC option by its label without opening the list to check it (the widget is read back after). Default: as built.
+
+**Workday**
+
+202. **Lead (3).** Dates are typed part by part with the value setter, then with digit keys declared for that part where the setter's write was not taken; the calendar is never pressed, a day never made up, a current job's To left empty. Default: as built (item 229 asks what the live page does).
+203. **Lead (4).** Enter is sent after each typed query in Workday's prompts (School, Field of Study, Skills, How Did You Hear About Us, Country Phone Code): the key you allowed in §12 Decision 2 once a snapshot needed it, declared for those prompts alone. A category row and "No Items." are never chosen.
+204. **Lead (6).** A Work Experience block's Location is that job's location (never your current one), "Role Description" its description, "Overall Result (GPA)" the GPA.
+205. **Lead.** A phone with no device type in your profile is "Mobile" on Workday (filled and marked).
+206. **Ask.** "I have a preferred name" is ticked only when your preferred name differs from your first name. The fields it reveals are in no snapshot and might be read as your legal first and last name. Default: as built; a snapshot of them after ticking would settle it.
+
+**Three styles, then Other or leave**
+
+207. **Lead (5).** A school's full style drops a leading "The" ("University of Texas at Austin"). A search that matches only a name's beginning would miss "The University of …"; one that lists what holds the typed words finds both. Default: as built.
+208. **Lead (5).** "Other" is chosen only for a school, a field of study, an employer, a place (current or a job's), a referral source and a phone country by name; never a degree (a degree list's own "Other" is still chosen when read whole and the person's degree is not on it), nor self-identification, legal, consent or yes/no questions.
+209. **Lead (5).** Only five labels count as "Other": other, other school, other – not listed, not listed, other (please specify). "Others", "Something else", "Not listed above", "My school is not listed" and "None of the above" do not.
+210. **Lead (5).** Under "Leave it empty", a list read whole also leaves its "Other" unchosen (with your text in its box).
+211. **Lead (5).** A referral source's kind ("Job board", "Social media") is typed as the third style and chosen where a list does not name the source, before "Other".
+212. **Copy.** The new modes' words are drafts: "When a list has no match" (Choose its Other / Leave it empty; its help says Leave it empty "leaves the field to you") and "TailorIT notifications on the page" (Until I close them / 30 seconds / 10 seconds / 5 seconds / Never show them).
+
+**Questions**
+
+213. **Lead (8).** "N/A" (or NA, None, as the form names it) is typed where the form asks for it from applicants without a value and your profile holds nothing for that question, even when the profile is merely empty there; required and optional boxes; never an unclassified box (that goes to classification and the AI).
+214. **Lead (9).** A username or handle box gets the bare handle; "@handle" only where the box shows "@". A box naming Telegram and X takes Telegram, then X, then N/A.
+215. **Lead (10).** A consent asked as Yes/No ("I certify … true and accurate", "I understand false information may result in release", "are you okay doing this validation?") is answered by the Consents mode: Yes when required. The check rule also covers background checks and drug screening asked so ("are you comfortable undergoing a background check?"), so those are Yes when required. Default: as built.
+216. **Lead (11).** A website box takes your portfolio when your profile has no website (never GitHub or LinkedIn).
+217. **Lead (11).** "Country of Origin" (a nationality asked by country) is your first citizenship: nationality, not the country of birth.
+218. **Lead (11).** "Yes"/"No" is typed into a text box only for authorization and sponsorship asked as yes or no, and the clearance and screening answers asked so; any other text box keeps its answer in words.
+219. **Lead (12).** The CORE-4 rule (a multi-select takes the whole answer or nothing) no longer holds for self-identification lists: each matching option is chosen (a bare "Asian" on a list that splits Asian chooses nothing for Asian and keeps your other answers). It still holds for legal and sensitive sets.
+220. **Lead (12).** A self-identification answer the list does not offer (non-binary on a Male/Female list) chooses the list's decline option, not a blank.
+221. **Lead (13).** An AI classification to a profile category is dropped on any follow-up ("If yes", "If so"), not only where it names another person; and an optional follow-up dropdown nothing classified is left unanswered rather than read and classified.
+222. **Lead (14).** Past 8 passes the run keeps going, up to 20, while an AI answer or a list's options are on their way (each wait still capped at 125 s).
+223. **Lead (16).** Government service is answered by the AI where your profile holds none (as "Have you ever worked for the US government?" was); a non-compete asked as a fact, relatives, the essential functions and a nationality by country never are.
+224. **Lead (16).** A non-compete asked as a fact ("Are you subject to a non-compete?") is now answered from your profile's explicit answer (§13 D5 left it unanswered).
+225. **Ask (16).** Government service: one Yes/No for "military or government within N years", and an empty end year means you still serve. Is that how you want it read? Default: as built.
+226. **Lead (16, the review).** A clearance is answered from your profile only when the question asks about one held now; one to obtain, be sponsored for or held once goes to the AI as your AI answers mode allows.
+227. **Ask.** TailorIT's "Answer these once" does not list the new screening answers (non-compete, government service, relatives, essential functions, clearance, citizenships). Should it?
+228. **Ask (15).** Under "Never show them", the tripwire's notice (text on the page addressed to AI tools was ignored) still shows and stays until closed, as the specification's "show the user" and trap spec 20 require. Default: keep.
+
+**Still unknown (live checks)**
+
+229. **Ask (live).** On a live Workday My Experience, does a From/To take the extension's write (the parts show the digits)? If the run leaves dates "needs your click", the page takes neither the value setter nor typed digit keys, and a page-world bridge op would be next.
+230. **Ask (live).** On a live Workday prompt, does typing then Enter show the search results (or does typing alone), and does a click on a result choose it? Its loading sign and a source category's sub-list are in no snapshot.
+231. **Ask (snapshot).** Workday's Phone Device Type options (and Prefix, Suffix): no snapshot shows them open; learned lists read them on your first run.
+232. **Ask (snapshot).** What a Workday School or Field of Study search lists for a school or field it lacks: no "Other" or "Not listed" row has been seen there (only the Degree list's "Other"). The accepted labels come from the design, not a snapshot.
+233. **Ask (snapshot).** Greenhouse's standard race and disability lists: never open in any snapshot (read when they show). Also: which Hispanic answer reveals race on Pie's form, and what "I prefer to self-describe" reveals.
+234. **Ask (snapshot).** The X and Telegram boxes' markup ("Telegram username (If you don't have a profile, please type N/A)"): in your screenshot, in no snapshot. A snapshot or address of that form would confirm the rule.
+235. **Ask (live).** Lever's `selectedLocation` (item 195) is still open; and why both AHEAD captures showed the form empty.
+236. **Ask (live).** Whether every Workday tenant's Country list is the exelixis one (verily's was never seen open), and the State list of any country but the United States; whether Greenhouse's react-select takes the bridge's choice of a stored label live; which step empties the Greenhouse number live (the country's choice, a re-render, a refused dial code).
+
+**Privacy**
+
+237. **Ask.** The git history purge waiting for your OK now also covers the earlier blobs of `fixtures/sites/seatgeek-greenhouse-embed.frame-1.html` (five chip labels naming self-identification answers), `fixtures/workday/resolvetech-source-open.html` and `web-my-experience.html` (a chosen answer's Workday id each) and `fixtures/greenhouse/s2-pie-cicd-open.html` (three chip labels). Each file is scrubbed now; its earlier version stays in history until you approve the rewrite. Default: wait for you.
+
+**What round 2 needs you to do:** reload the extension in `chrome://extensions`; choose I understand on the disclosure when the side panel or the options page shows it again (version 9); restart TailorIT's dev server once its `v1.2` gains the profile fields (TailorIT `v1.2-p11`); and fill the new answers in TailorIT Settings › Autofill (phone type, X, Telegram, certifications, places, the referral source's kind, and the self-identification and screening answers) or in the side panel's "Your autofill information".
+
 ## Snapshots and owner-only inputs still needed
 
 ### Still lacking, per platform (after the snapshots of 2026-11-06)
 
 One line per platform: what no snapshot shows yet, and (live) what only a live check can show. A throwaway account and dummy data, submitting nothing, as before.
 
-- **Greenhouse:** a school search showing results; Discipline's list open (item 183); an upload error; a second education block after "Add another"; an embed's confirmation inside a company page; what the email-code step does once the code is typed.
+- **Greenhouse:** a school search showing results; Discipline's list open (item 183); the standard race and disability lists open, and the X and Telegram boxes (items 233, 234); an upload error; a second education block after "Add another"; an embed's confirmation inside a company page; what the email-code step does once the code is typed.
 - **Lever:** ~~the location search with suggestions open (and whether it takes typed text without a pick)~~ (answered by a read-only live capture of a public page, 2026-11-07: its results open, and its script empties the box when it is left while its list shows, so a result is chosen); the résumé parse's busy sign and what it fills (m12); a failed Submit's errors.
 - **Ashby:** its résumé parse in progress; a ValueSelect open on these forms.
 - **Workable:** a failed upload; what "Apply now" does on jobs.workable.com; the success panel on either host; the job-search site's dialog after scrolling.
-- **Workday:** the page after Review's Submit; a validation error after Next; a prompt's list open (item 182); how a date part takes typed digits (live); the "Autofill with Resume" step before its upload and while Workday reads it; a failed upload; Languages' and Certifications' blocks; a CAPTCHA on an account form; the loading panel shown.
+- **Workday:** the page after Review's Submit; a validation error after Next; ~~a prompt's list open (item 182)~~ (snapshot round 2), how a live prompt search starts (item 230); how a date part takes typed digits (live, item 229); the Phone Device Type, Prefix and Suffix lists open (item 231); the "Autofill with Resume" step before its upload and while Workday reads it; a failed upload; Languages' and Certifications' blocks; a CAPTCHA on an account form; the loading panel shown.
 - **iCIMS:** login.icims.com and a returning candidate's path; the gate's errors and a visible hCaptcha; a dropdown open (and the event that opens it), "Add More" and the date parts in use; a failed résumé read; the page after a last IForm's Submit; errors on the profile, EEO and IForm pages; what the consent and phone gates show next; the step bar on a narrow (mobile) layout.
 - **Taleo:** the New User registration, the application's flow (`flow.jsf`, `application.jss`) and its confirmation, and "Apply as Guest".
 - **SuccessFactors:** the application form after the account, unfilled; the DPCS dialog at Apply and the registration's terms dialog; any email verification; the confirmation; a Career Site Builder site's hand-off; the referrer a `/career` post-back carries (live).
@@ -356,7 +422,7 @@ From the plan and the Phase 5 report, taken with a throwaway candidate account h
 
 - ~~the sign-in and create-account pages~~: public, captured on 2026-11-04/05 (v3 Phase 6: the landing, Sign In, Create Account, Forgot Password); ~~the sign-in's error text, and the "verify your account" message after a new account~~: **Answered (the snapshots of 2026-11-06):** verily's `/login` (Sign-in Auto reads the error and ends at once);
 - ~~every step: My Information, My Experience with an added block, Application Questions, Voluntary Disclosures, Self Identify, Review, with each step's Next and Review's Submit~~: **Answered (the snapshots of 2026-11-06):** built from 79 pages of 11 tenants; still wanted: the confirmation after Review's Submit;
-- an open multi-select and a date field (a date seen closed and filled, never written; no prompt's list seen open: both still wanted);
+- an open multi-select and a date field (a date seen closed and filled, never written; no prompt's list seen open: both still wanted); **answered in part (snapshot round 2):** a month picker open, a From typed, and three prompt lists open; how the live parts take a write is item 229;
 - a tenant whose account form shows a CAPTCHA, if you meet one (none met).
 
 Related notes:
