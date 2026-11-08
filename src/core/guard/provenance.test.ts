@@ -212,3 +212,16 @@ describe('an AI answer’s text (llm-answer, the owner’s amendments)', () => {
     }
   });
 });
+
+// ── s2 core-gh review (C9): the N/A rule writes one of its placeholders and nothing else ──
+describe('s2 core-gh review (C9)', () => {
+  it('passes placeholder.no-profile only for a text of NO_VALUE_PLACEHOLDERS', () => {
+    const origin: ValueOrigin = { provenance: 'rule', ruleId: 'placeholder.no-profile' };
+    for (const placeholder of ['N/A', 'NA', 'None']) {
+      expect(checkProvenanceShape(writeOf(origin, { kind: 'text', text: placeholder })), placeholder).toEqual({ ok: true });
+    }
+    expect(checkProvenanceShape(writeOf(origin, { kind: 'text', text: 'banana42' })))
+      .toEqual({ ok: false, reason: 'policy-violation' });
+    expect(checkProvenanceShape(writeOf(origin, { kind: 'check' }))).toEqual({ ok: false, reason: 'policy-violation' });
+  });
+});

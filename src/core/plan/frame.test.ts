@@ -716,3 +716,17 @@ describe('v4 (drop): a long list with no option that is the value, searched with
     expect(fieldOf(planOf([none]), none)).toMatchObject({ write: undefined, row: { status: 'flagged' } });
   });
 });
+
+// ── s2 core-gh review (C7): a whole-address box is the street's where its section asks the city or the postcode ──
+describe('s2 core-gh review (C7): "Current address" beside a city box', () => {
+  it('is the street (address.line1) where its section has a city or postal-code box, the whole address elsewhere', () => {
+    const address = specOf('Current address', 'text');
+    const city = specOf('City', 'text');
+    const split = planOf([address, city]);
+    expect(fieldOf(split, address).row.category).toBe('address.line1');
+    expect(fieldOf(split, address).write?.value).toMatchObject({ kind: 'text', text: goldenProfile().address!.line1 });
+    const elsewhere = specOf('City', 'text', { section: { id: 'other-section' } });
+    expect(fieldOf(planOf([address, elsewhere]), address).row.category).toBe('address.full');
+    expect(fieldOf(planOf([address]), address).row.category).toBe('address.full');
+  });
+});

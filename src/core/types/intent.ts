@@ -80,6 +80,11 @@ export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.
 ] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
+/** s2 core-gh (decision 8): what the N/A rule (placeholder.no-profile) types: the only texts that rule may write
+ *  (guard/provenance.ts checkProvenanceShape). */
+export const NO_VALUE_PLACEHOLDERS = ['N/A', 'NA', 'None'] as const;
+export type NoValuePlaceholder = (typeof NO_VALUE_PLACEHOLDERS)[number];
+
 /** A profile location such as 'contact.email' or 'education[0].institution'. The worker checks that it resolves; the
  *  content script checks only its shape. */
 export type ProfilePath = string & { readonly __brand: 'ProfilePath' };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAUTIOUS_SETTINGS, fieldOf, goldenProfile, planOf, settingsWith, specOf, vocab } from '../plan/plan.testkit';
+import { CAUTIOUS_SETTINGS, fieldOf, goldenProfile, NOW, planOf, settingsWith, specOf, vocab } from '../plan/plan.testkit';
 import type { Explicit, Profile } from '../types/profile';
 import { CONSENT_CATEGORIES } from '../enums';
 import { DEFAULT_SETTINGS, type Settings } from '../types/settings';
@@ -441,4 +441,60 @@ describe('consent values (§8.7; the owner\'s decisions of 2026-11-01)', () => {
     expect(fieldOf(planOf([requiredBinding], { profile }), requiredBinding).write).toMatchObject({
       value: { kind: 'check' }, origin: { provenance: 'rule', ruleId: 'consent.required' } });
   });
+});
+
+// ── s2 core-gh review (C2, C3): a clearance held now; government service now, within N years, or an unread limit ──
+describe('s2 core-gh review: clearance and government service', () => {
+  const settings = { settings: DEFAULT_SETTINGS, now: NOW };
+  const yesNoList = (label: string) => specOf(label, 'radio', { optionLabels: ['Yes', 'No'] });
+  const withScreening = (screening: Partial<Profile['screening']>): Profile => ({ ...goldenProfile(),
+    screening: { ...goldenProfile().screening, ...screening } });
+  const held = withScreening({ clearance: { kind: 'value', value: { level: 'top-secret', active: true } } });
+  const polarity = (result: ValueResult) => {
+    const intended = candidate(result)?.choice?.intended;
+    return intended?.kind === 'boolean' ? intended.value : null;
+  };
+
+  it.each<[string, boolean | null]>([
+    ['Do you hold an active TS/SCI clearance?', false],
+    ['Do you hold an active Top Secret clearance?', true],
+    ['Do you have a security clearance?', true],
+    ['Do you currently possess a Secret clearance?', true],
+    // Not held now: the profile's level says nothing of it.
+    ['Are you able to obtain a security clearance?', null],
+    ['Are you eligible to obtain a Secret clearance?', null],
+    ['Are you willing to undergo a security clearance investigation?', null],
+    ['Have you ever held a security clearance?', null],
+    ['Would you require sponsorship for a security clearance?', null],
+    // Nothing asks whether one is held now.
+    ['TS/SCI clearance?', null],
+  ])('%j is %s from a held Top Secret clearance', (label, expected) => {
+    const result = legalValue('workAuth.clearance', yesNoList(label), held, vocab, settings);
+    expect(polarity(result), label).toBe(expected);
+    if (expected === null) expect(reason(result)).toBe('legal-not-in-profile');
+  });
+
+  it('answers service now only from service that has no end year, and reads "within N years" with or without "the last"',
+    () => {
+      const serving = withScreening({ governmentService: { kind: 'value', value: { military: false, government: true } } });
+      const left = withScreening({ governmentService: { kind: 'value',
+        value: { military: true, militaryEndYear: NOW.y - 3, government: true, governmentEndYear: NOW.y - 1 } } });
+      const value = (label: string, of: Profile) => legalValue('screening.governmentService', yesNoList(label), of, vocab,
+        settings);
+      expect(polarity(value('Are you currently a federal employee?', serving))).toBe(true);
+      expect(polarity(value('Are you currently a federal employee?', left))).toBe(false);
+      expect(polarity(value('Are you a current federal government employee?', left))).toBe(false);
+      expect(polarity(value('Have you served in the U.S. armed forces or been employed by a federal government within '
+        + '5 years?', left))).toBe(true);
+      const longAgo = withScreening({ governmentService: { kind: 'value',
+        value: { military: true, militaryEndYear: NOW.y - 9, government: false } } });
+      expect(polarity(value('Have you served in the U.S. armed forces or been employed by a federal government within '
+        + '5 years?', longAgo))).toBe(false);
+      // A time limit it cannot read has no answer.
+      expect(reason(value('Have you been employed by the federal government since 2019?', left)))
+        .toBe('legal-not-in-profile');
+      // OneStream's question: still serving is within the last five years.
+      expect(polarity(value('Are you currently or have you within the last five years served in the U.S. armed forces '
+        + 'or been employed by any U.S. federal, state, and local government?', serving))).toBe(true);
+    });
 });

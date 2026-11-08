@@ -369,3 +369,13 @@ describe('planFrame with LLM classification (§8.4)', () => {
       reason: 'llm-unavailable', category: 'unknown' });
   });
 });
+
+// ── s2 core-gh review (C8): sexual-orientation answers keep a vaguely worded question from the AI ──
+describe('s2 core-gh review (C8)', () => {
+  it('screens a question whose options are sexual orientations, however its label is worded', () => {
+    const vague = specOf('Which best describes you?', 'select', { optionLabels: ['Heterosexual', 'Gay', 'Bisexual',
+      'Asexual'] });
+    expect(screenForClassify(vague, vocab)).toBe('sensitive');
+    for (const word of ['Straight', 'Lesbian', 'Pansexual', 'Queer']) expect(namesSensitiveTopic(word), word).toBe(true);
+  });
+});

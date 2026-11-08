@@ -25,13 +25,14 @@ import { DEGREE_LEVEL_RANK } from '../profile/degreeParse';
 import { placeText } from '../profile/canonicalize';
 import { normalize } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
-import { COVER_LETTER_TEXT_PATH, type FieldCategory, type ProfilePath, type RuleId, type ValueOrigin } from '../types/intent';
+import { COVER_LETTER_TEXT_PATH, type FieldCategory, type NoValuePlaceholder, type ProfilePath, type RuleId,
+  type ValueOrigin } from '../types/intent';
 import type { EducationEntry, ExperienceEntry, PhoneDeviceType, Profile, YearMonth, Ymd } from '../types/profile';
 import type { RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
 import { none, value, type Choice, type ValueResult } from './candidate';
 import { phoneText } from './format';
-import { EMPLOYED_NOW } from './labelRules';
+import { EMPLOYED_NOW, X_LINK } from './labelRules';
 
 /** The profile entry each block of a repeatable section is filled from, by block index (null: no entry), for the
  *  sections the plan assigned (steps/blocks.ts). */
@@ -578,26 +579,56 @@ function handleOf(link: string, form: (typeof HANDLE_LINKS)[keyof typeof HANDLE_
   return found !== undefined && form.handle.test(found) ? found : null;
 }
 
+/** The profile's X or Telegram link: its own (links.x, links.telegram), else the one link of links.other on that
+ *  host; 'several' when links.other holds more than one there. */
+function handleLinkOf(category: 'links.twitter' | 'links.telegram', links: Profile['links']):
+  { text: string; at: string } | 'several' | null {
+  const form = HANDLE_LINKS[category];
+  const own = links[form.own]?.trim() ?? '';
+  if (own !== '') return { text: own, at: `links.${form.own}` };
+  const others = links.other.map((link, index) => ({ link, index }))
+    .filter(({ link }) => form.host.test(link.url.trim()));
+  if (others.length > 1) return 'several';
+  return others.length === 1 ? { text: others[0]!.link.url.trim(), at: `links.other[${others[0]!.index}].url` } : null;
+}
+
 /**
  * s2 core-gh (decision 9): an X or Telegram field (screenshot 7 of 2026-11-07: "X username …", "Telegram username …")
- * from the profile's own link (links.x, links.telegram), else the one link of links.other on that host. A box that asks
- * for a username or a handle gets the bare handle (link.handle), "@handle" only when its label or help text shows "@";
- * any other gets the link as stored.
+ * from the profile's link (handleLinkOf). A box that asks for a username or a handle gets the bare handle
+ * (link.handle), "@handle" only when its label or help text shows "@"; any other gets the link as stored. The s2 review
+ * (C6): a box that names both ("Telegram/X username (If you don't have a profile, please type N/A)") takes Telegram,
+ * then X, and only with neither the N/A its words ask for (resolve.ts).
  */
 function handleLinkValue(category: 'links.twitter' | 'links.telegram', spec: FieldSpec, links: Profile['links']):
   ValueResult {
-  const form = HANDLE_LINKS[category];
-  const own = links[form.own]?.trim() ?? '';
-  const others = links.other.map((link, index) => ({ link, index }))
-    .filter(({ link }) => form.host.test(link.url.trim()));
-  const found = own !== '' ? { text: own, at: `links.${form.own}` }
-    : others.length === 1 ? { text: others[0]!.link.url.trim(), at: `links.other[${others[0]!.index}].url` } : null;
-  if (found === null) return none(others.length > 1 ? 'ambiguous-options' : 'no-profile-value', others.length > 1);
+  const label = normalize(spec.label, 'label').key;
+  const both = category === 'links.telegram' ? X_LINK.test(label) || /\btwitter\b/.test(label)
+    : /\btelegram\b/.test(label);
+  const order: Array<'links.twitter' | 'links.telegram'> = both ? ['links.telegram', 'links.twitter'] : [category];
+  const tried = order.map((network) => ({ network, found: handleLinkOf(network, links) }));
+  const chosen = tried.find(({ found }) => found !== null && found !== 'several');
+  if (chosen === undefined) {
+    const several = tried.some(({ found }) => found === 'several');
+    return none(several ? 'ambiguous-options' : 'no-profile-value', several);
+  }
+  const found = chosen.found as { text: string; at: string };
   const asked = `${spec.label} ${spec.description}`;
   if (!ASKS_HANDLE.test(asked) || ASKS_LINK.test(asked)) return textValue(found.text, found.at);
-  const handle = handleOf(found.text, form);
+  const handle = handleOf(found.text, HANDLE_LINKS[chosen.network]);
   if (handle === null) return none('format-unsupported');
   return textValue(asked.includes('@') ? `@${handle}` : handle, found.at, VALUE_TRANSFORM, 'link.handle');
+}
+
+/** What a certification question asks about after the word (s2 core-gh review, C4): "certifications in AWS" → ["aws"];
+ *  [] for the generic question ("Do you hold any industry related certifications?"). */
+const CERTIFICATION_TOPIC = /\bcertifications?\s+(?:in|for|related\s+to|relevant\s+to|with|on|from|such\s+as|like|including|covering)\s+(.+)$/;
+/** Words a topic is read without. */
+const TOPIC_FILLER = new Set(['the', 'a', 'an', 'any', 'of', 'and', 'or', 'your', 'our', 'this', 'that', 'such', 'as',
+  'like', 'eg', 'e', 'g', 'etc', 'field', 'fields', 'area', 'areas', 'in', 'for', 'to', 'you', 'do', 'have', 'hold']);
+
+function certificationTopic(question: string): string[] {
+  const found = CERTIFICATION_TOPIC.exec(normalize(question, 'label').key)?.[1] ?? '';
+  return found.split(' ').filter((word) => word.length > 1 && !TOPIC_FILLER.has(word));
 }
 
 /** An address's parts in one line: the street lines, the city, the region with the postcode, the country's name. */
@@ -624,10 +655,18 @@ function composedValue(category: FieldCategory, ctx: ValueContext): ValueResult 
       return textValue(addressText(address, vocab), 'address', VALUE_TRANSFORM, 'compose.text');
     }
     case 'skills.certifications': {
+      // s2 core-gh review (C4): the generic question takes them all; one about certifications in a field ("in cloud
+      // computing", "related to project management") only those whose names hold its words. None matching, or none
+      // stored, is no profile answer: the AI may answer it (ANSWERABLE_PROFILE_CATEGORIES), as before this round.
       const names = (profile.certifications ?? []).map((certification) => certification.name.trim())
         .filter((name) => name !== '');
-      if (names.length === 0) return none('no-profile-value', false);
-      return value({ origin: byRule('compose.text', 'certifications'), confidence: VALUE_TRANSFORM, text: names.join('; '),
+      const topic = certificationTopic(`${spec.label} ${spec.description}`);
+      const named = topic.length === 0 ? names : names.filter((name) => {
+        const words = new Set(normalize(name, 'label').tokens);
+        return topic.every((word) => words.has(word));
+      });
+      if (named.length === 0) return none('no-profile-value', false);
+      return value({ origin: byRule('compose.text', 'certifications'), confidence: VALUE_TRANSFORM, text: named.join('; '),
         choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' }, check: true });
     }
     case 'preferences.relocationPlaces': {
@@ -654,9 +693,9 @@ function composedValue(category: FieldCategory, ctx: ValueContext): ValueResult 
 }
 
 /** s2 core-gh (decision 8): what a box is given when its own words tell an applicant without the answer to type a
- *  placeholder. The page's token only selects one of these: its characters are never copied. */
-export const NO_VALUE_PLACEHOLDERS = ['N/A', 'NA', 'None'] as const;
-export type NoValuePlaceholder = (typeof NO_VALUE_PLACEHOLDERS)[number];
+ *  placeholder (types/intent.ts NO_VALUE_PLACEHOLDERS). The page's token only selects one: its characters are never
+ *  copied. */
+export { NO_VALUE_PLACEHOLDERS, type NoValuePlaceholder } from '../types/intent';
 
 const QUOTE = String.raw`["'‘’“”]?`;
 const DONT_HAVE = String.raw`(?:do\s*not|don'?t|dont)\s+have`;

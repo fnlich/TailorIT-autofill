@@ -891,6 +891,25 @@ function withoutOwnDetail(spec: FieldSpec, judged: LlmClassification): LlmClassi
 }
 // s2 core-gh end
 
+/**
+ * s2 core-gh review (C7): a whole-address box ("Current address", "Primary Residence Address": label.full-address) is
+ * the street's (address.line1) where its section has its own city or postal-code box: the form asks the rest there.
+ * Elsewhere it stays address.full. Every other classification stands.
+ */
+function streetWhereSplit(classified: ReadonlyArray<{ spec: FieldSpec; classification: FieldClassification }>):
+  Array<{ spec: FieldSpec; classification: FieldClassification }> {
+  const split = new Set(classified.filter((field) => {
+    const category = categoryOf(field.classification);
+    return category === 'address.city' || category === 'address.postalCode';
+  }).map((field) => sectionKey(field.spec.section)));
+  return classified.map((field) => {
+    const { classification } = field;
+    if (classification.by !== 'rules' || classification.rules.category !== 'address.full'
+      || !split.has(sectionKey(field.spec.section))) return field;
+    return { ...field, classification: { by: 'rules', rules: { ...classification.rules, category: 'address.line1' } } };
+  });
+}
+
 /** The settings with every LLM step off: a run that fills from the profile only. */
 function withoutAi(settings: PlanInput['settings']): PlanInput['settings'] {
   return { ...settings, llm: { ...settings.llm, tiebreak: false, classify: false, drafts: false, answers: false } };
@@ -1058,7 +1077,8 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const sections = repeatables.length > 0 ? { repeatables } : {};
   // Every spec is read across the frame; only the planned ones are resolved, written and rowed.
   const wanted = input.planKeys === undefined ? null : new Set<string>(input.planKeys);
-  const classified = input.specs.map((spec) => ({ spec, classification: classifyField(spec, input.vocab) }));
+  const classified = streetWhereSplit(input.specs.map((spec) => ({ spec,
+    classification: classifyField(spec, input.vocab) })));
   // A phone number is written without its country code when the section has its own control for the code.
   const phoneCountrySections = new Set(classified
     .filter((field) => categoryOf(field.classification) === 'contact.phoneCountry')

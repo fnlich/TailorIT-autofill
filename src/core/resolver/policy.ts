@@ -424,22 +424,32 @@ function clearanceAsked(question: string): number {
   return CLEARANCE_RANK['public-trust']!;
 }
 
+/** s2 core-gh review (C2): a clearance not held now (one to obtain, undergo or be sponsored for, one held once): the
+ *  profile's level says nothing of it. */
+const CLEARANCE_NOT_HELD = /\b(?:able|eligible|willing|qualif\w*|ready|prepared)\b(?:\s+\w+){0,3}?\s+(?:to\s+)?(?:obtain|get|acquire|undergo|receive|apply|be\s+granted|be\s+sponsored|pass)\b|\bobtain\w*\b|\bundergo\w*\b|\bsponsor\w*|\b(?:ever|previously|formerly|once)\s+(?:\w+\s+)?(?:held|had|been\s+granted|possessed)\b|\bin\s+the\s+past\b|\bexpired\b|\binactive\b/;
+/** A clearance held now: hold, have, possess or maintain one, an active or a current one. */
+const CLEARANCE_HELD = /\b(?:hold|holds|have|has|possess|possesses|maintain|maintains)\b|\bactive\b|\bcurrent(?:ly)?\b/;
+
 /**
  * A clearance (s2-virtru-clearance-open question_9225664005 "Do you hold an Active TS/SCI?"): yes when the person's
  * level is the one asked or higher and, where the question asks for an active one, it is active; a text box asked for
- * the level gets its name. A polygraph question, or an active one the profile does not say, has no answer.
+ * the level gets its name. Only a clearance held now is answered (the s2 review, C2): one to obtain, undergo or be
+ * sponsored for, or one held once, a polygraph, or an active one the profile does not say has no profile answer (the AI
+ * answers it as any legal question, as settings.modes.ai allows).
  */
 function clearanceValue(spec: FieldSpec, profile: Profile): ValueResult {
   const answer = profile.screening.clearance;
   if (answer === undefined) return none('legal-not-in-profile');
   if (answer.kind === 'decline') return legalAnswer({ kind: 'decline' }, 'screening.clearance');
   const question = questionText(spec);
-  if (/\bpolygraph\b/.test(question)) return none('legal-not-in-profile');
+  if (/\bpolygraph\b/.test(question) || CLEARANCE_NOT_HELD.test(question)) return none('legal-not-in-profile');
   const { level, active } = answer.value;
-  if (spec.kind === 'text' && !YES_NO_QUESTION.test(normalize(spec.label, 'label').key)) {
+  const asksLevel = spec.kind === 'text' && !YES_NO_QUESTION.test(normalize(spec.label, 'label').key);
+  if (asksLevel) {
     return value({ origin: fromProfile('screening.clearance'), confidence: VALUE_EXPLICIT,
       text: CLEARANCE_TEXT[level] ?? level });
   }
+  if (!CLEARANCE_HELD.test(question)) return none('legal-not-in-profile');
   const held = (CLEARANCE_RANK[level] ?? 0) >= clearanceAsked(question) && level !== 'none';
   if (held && /\bactive\b|\bcurrent(?:ly)?\b/.test(question) && active !== true) {
     return active === false ? asTyped(yesNo(false, fromProfile('screening.clearance')), spec)
@@ -451,14 +461,23 @@ function clearanceValue(spec: FieldSpec, profile: Profile): ValueResult {
 /** Numbers a "within the last N years" may be written in. */
 const YEAR_WORDS: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
   eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20 };
-const WITHIN_YEARS = /\b(?:within|in|during|over)\s+the\s+(?:last|past|previous|preceding)\s+(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty)\s+years?\b/;
+const YEAR_COUNT = String.raw`(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty)`;
+/** "within the last five years", "within 5 years", "in the past 10 years" (the s2 review, C3). */
+const WITHIN_YEARS = new RegExp(String.raw`\bwithin\s+(?:the\s+)?(?:(?:last|past|previous|preceding)\s+)?${YEAR_COUNT}\s+years?\b|\b(?:in|during|over)\s+the\s+(?:last|past|previous|preceding)\s+${YEAR_COUNT}\s+years?\b`);
+/** A time limit of any wording ("since 2019", "in the last decade"): one WITHIN_YEARS cannot read has no answer. */
+const TIME_LIMIT = /\bwithin\b|\b(?:last|past|previous|preceding)\s+(?:\w+\s+){0,2}?(?:years?|decade|months?)\b|\bsince\b/;
+/** Service now: "currently", "now", "presently", "active", "a current federal employee". */
+const SERVING_NOW = /\b(?:currently|presently|now)\b|\bat\s+present\b|\bactive\s+(?:duty|members?|service|serving|reserves?)\b|\bcurrent\s+(?:\w+\s+){0,2}?(?:employee|member|official|service)\b/;
+/** A question about service before now too ("have you … served", "ever", "previously"). */
+const SERVED_BEFORE = /\bhave\s+you\b|\bever\b|\bpreviously\b|\bformer(?:ly)?\b|\bin\s+the\s+past\b|\bwere\s+you\b/;
 
 /**
  * U.S. military or government service (s2-onestream-related-open question_8152429009 "Are you currently or have you
  * within the last five years served in the U.S. armed forces or been employed by any U.S. federal, state, and local
- * government?"): yes when the person served in a branch the question names and, for "within the last N years", ended
- * it then or later (no end year: still serving); no when every branch it names is a no or ended before. An end year the
- * profile lacks, for a time the question names, has no answer.
+ * government?"): yes when the person served in a branch the question names, and for a time limit ("within the last N
+ * years", "within N years") ended it then or later; for service now only ("Are you currently…", "a current federal
+ * employee"), still serves (no end year). No when every branch it names is a no, or ended outside that time. A time
+ * limit it cannot read has no answer (the s2 review, C3). An empty end year means still serving.
  */
 function governmentServiceValue(spec: FieldSpec, profile: Profile, now: Ymd | undefined): ValueResult {
   const answer = profile.screening.governmentService;
@@ -469,21 +488,23 @@ function governmentServiceValue(spec: FieldSpec, profile: Profile, now: Ymd | un
     .test(question);
   const government = /\bgovernment\b|\bfederal\b|\bpublic\s+sector\b/.test(question);
   if (!military && !government) return none('legal-not-in-profile');
-  const within = WITHIN_YEARS.exec(question)?.[1];
-  const years = within === undefined ? null : YEAR_WORDS[within] ?? Number(within);
+  const within = WITHIN_YEARS.exec(question);
+  const count = within?.[1] ?? within?.[2];
+  const years = count === undefined ? null : YEAR_WORDS[count] ?? Number(count);
+  if (years === null && TIME_LIMIT.test(question)) return none('legal-not-in-profile');
   if (years !== null && now === undefined) return none('legal-not-in-profile');
+  const nowOnly = years === null && SERVING_NOW.test(question) && !SERVED_BEFORE.test(question);
   const service = answer.value;
-  /** Whether one branch answers yes: true, false, or null when its end year is needed and missing. */
-  const served = (did: boolean, ended: number | undefined): boolean | null => {
+  /** Whether one branch answers yes: never served, no; still serving (no end year), yes; else within the limit. */
+  const served = (did: boolean, ended: number | undefined): boolean => {
     if (!did) return false;
-    if (years === null || ended === undefined) return true;
-    return ended >= now!.y - years;
+    if (ended === undefined) return true;
+    if (nowOnly) return false;
+    return years === null || ended >= now!.y - years;
   };
-  const parts = [military ? served(service.military, service.militaryEndYear) : false,
-    government ? served(service.government, service.governmentEndYear) : false];
-  if (parts.some((part) => part === true)) return asTyped(yesNo(true, fromProfile('screening.governmentService')), spec);
-  if (parts.some((part) => part === null)) return none('legal-not-in-profile');
-  return asTyped(yesNo(false, fromProfile('screening.governmentService')), spec);
+  const yes = (military && served(service.military, service.militaryEndYear))
+    || (government && served(service.government, service.governmentEndYear));
+  return asTyped(yesNo(yes, fromProfile('screening.governmentService')), spec);
 }
 
 /**

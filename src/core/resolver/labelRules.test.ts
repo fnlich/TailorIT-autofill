@@ -1121,3 +1121,14 @@ describe('s2 core-gh: the snapshot round’s rules', () => {
     expect(labelHit('Are you comfortable doing on-call rotations?', 'radio')?.category).not.toBe('consent.other');
   });
 });
+
+// ── s2 core-gh review (C5): a government's contractor or client is no government service ──
+describe('s2 core-gh review (C5)', () => {
+  it.each<[string]>([
+    ['Have you worked for a federal government contractor?'],
+    ['Are you currently employed by a U.S. government contractor or subcontractor?'],
+    ['Have you worked with federal government clients?'],
+  ])('%j is no government service', (label) => {
+    expect(labelHit(label, 'radio')?.category).not.toBe('screening.governmentService');
+  });
+});

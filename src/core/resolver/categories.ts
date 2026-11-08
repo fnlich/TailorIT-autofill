@@ -270,4 +270,6 @@ export const AI_OPENED_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCat
  */
 export const ANSWERABLE_PROFILE_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>([
   'preferences.relocation', 'preferences.workArrangement', 'preferences.travel', 'availability.noticePeriod',
-  'availability.startDate', 'referral.source', 'experience.totalYears', 'skills.list']);
+  'availability.startDate', 'referral.source', 'experience.totalYears', 'skills.list',
+  // s2 core-gh review (C4): certifications the profile does not settle, as the AI answered them before this round.
+  'skills.certifications']);

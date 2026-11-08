@@ -2276,6 +2276,84 @@ describe('every committed fixture', () => {
 });
 // ── end core pass Z1, item 38 ──
 
+// ── s2 core-gh review (C10): react-select's chosen answers, redacted in every committed fixture ──
+/** react-select's own words in its live region ("option REDACTED, selected.", "All selected options have been
+ *  cleared.", "option REDACTED is disabled. Select another option."): no answer of a person's. */
+const REACT_SELECT_OWN_WORDS = new Set(['remove', 'option', 'options', 'selected', 'deselected', 'removed', 'cleared',
+  'all', 'have', 'been', 'is', 'disabled', 'select', 'another']);
+/** Elements that hold nothing a closing tag ends. */
+const VOID_ELEMENTS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source',
+  'track', 'wbr']);
+
+/**
+ * The places of a page where react-select shows a chosen answer and the text there is not redacted (every word
+ * REDACTED or react-select's own): a chip's remove button's aria-label (`.select__multi-value__remove`), a chip's label
+ * (`multi-value__label`), the single value shown (`single-value`), and the live region's `span#aria-selection`. Places
+ * and counts only, never the text.
+ */
+function unredactedChoicesIn(html: string): string[] {
+  const text = html.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  const found: string[] = [];
+  const redacted = (words: string) => words.replace(/REDACTED/g, ' ').split(/[^A-Za-z0-9]+/)
+    .every((word) => word === '' || REACT_SELECT_OWN_WORDS.has(word.toLowerCase()));
+  const stack: Array<{ tag: string; place: string | null; text: string }> = [];
+  const token = /<\/?([a-zA-Z][\w-]*)\b([^>]*)>|([^<]+)/g;
+  for (let match = token.exec(text); match !== null; match = token.exec(text)) {
+    const [whole, name, attributes = '', characters] = match;
+    if (characters !== undefined) {
+      for (const open of stack) if (open.place !== null) open.text += characters;
+      continue;
+    }
+    const tag = name!.toLowerCase();
+    if (whole.startsWith('</')) {
+      let at = stack.length - 1;
+      while (at >= 0 && stack[at]!.tag !== tag) at -= 1;
+      if (at < 0) continue;
+      for (const closed of stack.splice(at)) {
+        if (closed.place !== null && !redacted(closed.text)) found.push(closed.place);
+      }
+      continue;
+    }
+    const classes = /\bclass\s*=\s*"([^"]*)"/i.exec(attributes)?.[1] ?? '';
+    const id = /\bid\s*=\s*"([^"]*)"/i.exec(attributes)?.[1] ?? '';
+    const removeLabel = /multi-value__remove/.test(classes) ? /\baria-label\s*=\s*"([^"]*)"/i.exec(attributes)?.[1] : undefined;
+    if (removeLabel !== undefined && !redacted(removeLabel)) found.push('a chip\'s remove label');
+    const place = /multi-value__label/.test(classes) ? 'a chip\'s label' : /single-value/i.test(classes) ? 'the single value'
+      : id === 'aria-selection' ? 'the live region\'s selection' : null;
+    if (VOID_ELEMENTS.has(tag) || whole.endsWith('/>')) continue;
+    stack.push({ tag, place, text: '' });
+  }
+  return found;
+}
+
+describe('every committed fixture: react-select\'s chosen answers (s2 core-gh review, C10)', () => {
+  it('holds no unredacted chip remove label, chip label, single value or live-region selection', () => {
+    const pages = committedFixtureFiles().filter((file) => file.endsWith('.html'));
+    expect(pages.length).toBeGreaterThan(300);
+    const failing = pages.flatMap((file) => {
+      const places = unredactedChoicesIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'));
+      return places.length === 0 ? [] : [`${file}: ${[...new Set(places)].join(', ')} (${places.length})`];
+    });
+    expect(failing).toEqual([]);
+  }, 60_000);
+
+  it('reads each place by its markup, redacted or not', () => {
+    const page = (markup: string) => unredactedChoicesIn(`<!doctype html><html><body>${markup}</body></html>`);
+    expect(page('<div role="button" class="select__multi-value__remove css-1" aria-label="Remove Gamma"></div>'))
+      .toEqual(['a chip\'s remove label']);
+    expect(page('<div role="button" class="select__multi-value__remove css-1" aria-label="Remove REDACTED"></div>'))
+      .toEqual([]);
+    expect(page('<div class="select__multi-value__label css-2">Gamma</div>')).toEqual(['a chip\'s label']);
+    expect(page('<div class="select__single-value css-3"><div class="iti__flag"></div><span>Delta</span></div>'))
+      .toEqual(['the single value']);
+    expect(page('<div class="select__single-value css-3">REDACTED</div>')).toEqual([]);
+    expect(page('<span id="aria-selection">option Delta, selected.</span>')).toEqual(['the live region\'s selection']);
+    expect(page('<span id="aria-selection">option REDACTED, selected.</span>')).toEqual([]);
+    expect(page('<span id="aria-selection">All selected options have been cleared.</span>')).toEqual([]);
+  });
+});
+// ── end s2 core-gh review (C10) ──
+
 // ── The security fix of 2026-11-06 (S2, S3, S10): chosen marks, cleared by markup, refused and swept ──
 /**
  * The committed fixtures whose chosen states are no person's answer, which the sweep below lets keep them: the

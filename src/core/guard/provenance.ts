@@ -32,7 +32,8 @@ import { asUntrusted } from '../text/untrusted';
 import type { FieldSpec } from '../types/field';
 import type { PlannedWrite, ReasonCode } from '../types/fill';
 import {
-  ANSWER_BASES, COVER_LETTER_TEXT_PATH, FILE_PATHS, PROFILE_PATH_PATTERN, RULE_IDS, type FieldCategory, type PolicyClass,
+  ANSWER_BASES, COVER_LETTER_TEXT_PATH, FILE_PATHS, NO_VALUE_PLACEHOLDERS, PROFILE_PATH_PATTERN, RULE_IDS,
+  type FieldCategory, type PolicyClass,
   type RuleId,
   type ValueOrigin,
 } from '../types/intent';
@@ -179,6 +180,9 @@ export function checkProvenanceShape(write: PlannedWrite): GuardVerdict {
       return nonEmpty(origin.savedAnswerId) ? PASS : fail('missing-provenance');
     case 'rule':
       if (!isRuleId(origin.ruleId)) return fail('policy-violation');
+      // s2 core-gh review (C9): the N/A rule writes one of our placeholders and nothing else.
+      if (origin.ruleId === 'placeholder.no-profile' && (write.value.kind !== 'text'
+        || !(NO_VALUE_PLACEHOLDERS as readonly string[]).includes(write.value.text))) return fail('policy-violation');
       return origin.path === undefined || isPath(origin.path) ? PASS : fail('missing-provenance');
     case 'llm-pick':
       if (!nonEmpty(origin.taskId) || !Number.isInteger(origin.pickedCandidate) || origin.pickedCandidate < 0

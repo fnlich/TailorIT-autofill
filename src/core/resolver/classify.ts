@@ -267,6 +267,13 @@ const EXTENSION_PAY_TERMS: readonly RegExp[] = [
   /\bwhat\s+rate\b/,
 ];
 
+/** s2 core-gh review (C8): the words a sexual-orientation list's answers are (fixtures/greenhouse/s2-pie-eeo-2), so a
+ *  question that offers them, however vaguely worded, never goes to an AI. */
+const EXTENSION_ORIENTATION_TERMS: readonly RegExp[] = [
+  /\bheterosexual\b/, /\bstraight\b/, /\bgay\b/, /\blesbians?\b/, /\bbisexual\b/, /\bpansexual\b/, /\basexual\b/,
+  /\bqueer\b/,
+];
+
 /** The extension's own identity and tax number terms. */
 const EXTENSION_IDENTITY_NUMBER_TERMS: readonly RegExp[] = [
   // Identity and tax numbers.
@@ -282,6 +289,7 @@ const EXTENSION_IDENTITY_NUMBER_TERMS: readonly RegExp[] = [
  * only keeps text from the AI.
  */
 export const EXTENSION_SENSITIVE_TERMS: readonly RegExp[] = [
+  ...EXTENSION_ORIENTATION_TERMS,
   ...EXTENSION_CRIMINAL_TERMS,
   ...EXTENSION_PAY_TERMS,
   ...EXTENSION_IDENTITY_NUMBER_TERMS,
@@ -348,7 +356,7 @@ export const OPEN_SCREEN_TOPICS: ReadonlySet<ScreenTopic> = new Set<ScreenTopic>
 /** Each topic's terms and acronyms, the pinned lists' and the extension's own: together, exactly the screen's. */
 const TOPIC_SCREENS: ReadonlyArray<{ topic: ScreenTopic; terms: readonly RegExp[]; acronyms: readonly RegExp[] }> = [
   { topic: 'authorization', terms: AUTHORIZATION_TERMS, acronyms: AUTHORIZATION_ACRONYMS },
-  { topic: 'self_identification', terms: SELF_IDENTIFICATION_TERMS, acronyms: [] },
+  { topic: 'self_identification', terms: [...SELF_IDENTIFICATION_TERMS, ...EXTENSION_ORIENTATION_TERMS], acronyms: [] },
   { topic: 'age', terms: AGE_TERMS, acronyms: [] },
   { topic: 'pay', terms: [...PAY_TERMS, ...EXTENSION_PAY_TERMS], acronyms: [] },
   { topic: 'consent', terms: CONSENT_TERMS, acronyms: [] },

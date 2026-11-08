@@ -689,3 +689,18 @@ describe('SeatGeek\'s knowledge check: an ordinary question (S-2, CORE-10)', () 
     expect(attentionHits(label, '')).toEqual([]);
   });
 });
+
+// ── s2 core-gh review (C1): a disclaimer after an authorization question leaves it authorization ──
+describe('s2 core-gh review (C1): an authorization question with a sponsorship disclaimer after it', () => {
+  it.each<[string, FieldCategory, string]>([
+    ['Are you authorized to work in the US? Candidates requiring sponsorship are not eligible.', 'workAuth.authorized',
+      'label.work-auth'],
+    ['Are you legally authorized to work in the United States? Candidates who need visa sponsorship will not be '
+      + 'considered.', 'workAuth.authorized', 'label.work-auth'],
+    // OneStream's own sponsorship question (s2-onestream-related-open question_8152423009) stays sponsorship.
+    ['Will you now or in the future require OneStream to sponsor your employment visa status/work authorization in the '
+      + 'country/province you are applying for?', 'workAuth.sponsorship', 'label.sponsorship'],
+  ])('%j is %s by %s', (label, category, rule) => {
+    expect(classifyByRules(field(label, 'combobox'))).toMatchObject({ category, rule });
+  });
+});

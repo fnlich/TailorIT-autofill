@@ -5,6 +5,7 @@ import type { FieldSpec } from '../types/field';
 import type { FieldCategory } from '../types/intent';
 import type { ExperienceEntry, Profile } from '../types/profile';
 import type { ValueResult } from './candidate';
+import { ANSWERABLE_PROFILE_CATEGORIES } from './categories';
 import { addWeeks, NO_VALUE_PLACEHOLDERS, placeholderAsked, profileValue, yearsOfExperience } from './values';
 
 const profile = goldenProfile();
@@ -236,5 +237,37 @@ describe('s2 core-gh: links (decisions 9 and 11)', () => {
       origin: { path: 'links.portfolio', transform: 'links.website-from-portfolio' } });
     const bare: Profile = { ...linked, links: { ...linked.links, portfolio: '' } };
     expect(valueOf('links.website', field('Website'), bare)).toMatchObject({ ok: false });
+  });
+});
+
+// ── s2 core-gh review (C4, C6) ──
+describe('s2 core-gh review (C4): certifications', () => {
+  const certified: Profile = { ...profile, certifications: [{ name: 'AWS Certified Solutions Architect' },
+    { name: 'PMP' }] };
+  it('answers the generic question with every certification, one about a field only with those its words name', () => {
+    expect(candidate(valueOf('skills.certifications', field('Do you hold any industry related certifications?'),
+      certified)).text).toBe('AWS Certified Solutions Architect; PMP');
+    expect(candidate(valueOf('skills.certifications', field('Do you hold any certifications in AWS?'), certified)).text)
+      .toBe('AWS Certified Solutions Architect');
+    // None matching, or none stored: no profile answer, for the AI to answer as before this round.
+    expect(valueOf('skills.certifications', field('Do you have any certifications related to project management?'),
+      certified)).toMatchObject({ ok: false, none: { reason: 'no-profile-value' } });
+    expect(valueOf('skills.certifications', field('Do you hold any industry related certifications?'), profile))
+      .toMatchObject({ ok: false, none: { reason: 'no-profile-value' } });
+    expect(ANSWERABLE_PROFILE_CATEGORIES.has('skills.certifications')).toBe(true);
+  });
+});
+
+describe('s2 core-gh review (C6): a box that names both Telegram and X', () => {
+  const label = "Telegram/X username (If you don't have a profile, please type N/A)";
+  it('takes Telegram, then X as a handle, and nothing with neither (the N/A follows: resolve.ts)', () => {
+    const both: Profile = { ...profile, links: { ...profile.links, x: 'https://x.com/rivera_dev',
+      telegram: 'https://t.me/rivera_dev42' } };
+    const onlyX: Profile = { ...profile, links: { ...profile.links, x: 'https://x.com/rivera_dev' } };
+    expect(candidate(valueOf('links.telegram', field(label), both)).text).toBe('rivera_dev42');
+    expect(candidate(valueOf('links.telegram', field(label), onlyX))).toMatchObject({ text: 'rivera_dev',
+      origin: { path: 'links.x', transform: 'link.handle' } });
+    expect(valueOf('links.telegram', field(label), profile)).toMatchObject({ ok: false,
+      none: { reason: 'no-profile-value' } });
   });
 });

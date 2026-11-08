@@ -616,7 +616,7 @@ const OBJECT_START = new Set(['to', 'the', 'a', 'an', 'any', 'all', 'my', 'your'
 
 /** X, the old Twitter, by its own name beside what the box takes ("X username", "X (formerly Twitter) profile": the
  *  parenthetical is left out), never a bare "X" (screenshot 7 of 2026-11-07). */
-const X_LINK = /\bx\s+(?:formerly\s+(?:known\s+as\s+)?twitter\s+)?(?:user\s?names?|handles?|accounts?|profiles?|urls?|links?)\b|\bx\s+com\b/;
+export const X_LINK = /\bx\s+(?:formerly\s+(?:known\s+as\s+)?twitter\s+)?(?:user\s?names?|handles?|accounts?|profiles?|urls?|links?)\b|\bx\s+com\b/;
 /** The person's place of residence asked as a question (s2-ahead-0 "Where do you currently reside? (City/State)?",
  *  s2-tripledot-right-to-work-open "Please provide your city and state of residence", s2-robotspencils-clear-id-open
  *  "What city are you located in?"); never "Do you currently reside in …?", a yes or no. */
@@ -651,6 +651,8 @@ const RESTRICTIVE_FACT = /^(?:(?:are|were)\s+you\s+(?:currently\s+|now\s+|still\
  *  Military service alone is the veteran question, and "a government agency" alone an employment question the AI
  *  answers. */
 export const GOVERNMENT_SERVICE = /\b(?:employed|worked|served|serving|working)\s+(?:by|for|in|at|with)\s+(?:an?\s+|any\s+|the\s+)?(?:\w+\s+){0,5}?(?:federal|state|local|municipal|u\s+s|us)\s+(?:\w+\s+){0,3}?government\b|\b(?:armed\s+forces|military)\b(?:\s+\w+){0,14}?\s+government\b|\bgovernment\b(?:\s+\w+){0,14}?\s+(?:armed\s+forces|military)\b|\b(?:federal|government)\s+(?:employee|official)\b/;
+/** s2 core-gh review (C5): a government's contractor, vendor, supplier, subcontractor, contract or client. */
+const GOVERNMENT_TRADE = /\b(?:government|federal|state|public\s+sector)\s+(?:\w+\s+)?(?:contractors?|vendors?|suppliers?|subcontractors?|contracts?|clients?|customers?)\b/;
 /** A relative at the company (s2-onestream-related-open question_8152427009 "Are you related to anyone currently
  *  employed at OneStream?"). */
 const RELATIVES = /\brelated\s+to\s+(?:anyone|anybody|someone|any\s+(?:one|employee|person|current\s+employee)|an?\s+(?:current\s+)?employee)\b|\b(?:any\s+)?(?:relatives?|family\s+members?)\s+(?:who\s+(?:currently\s+)?(?:work|works|is\s+employed|are\s+employed)|(?:currently\s+)?(?:working|employed))\b/;
@@ -685,7 +687,9 @@ const S2_RULES: ReadonlyArray<{ id: string; re: RegExp; category: FieldCategory;
   { id: 'label.telegram', re: /\btelegram\b/, unless: /\btelegram\s+(?:number|phone)\b/, category: 'links.telegram',
     strength: 'normal' },
   { id: 'label.full-address', re: FULL_ADDRESS, category: 'address.full', strength: 'normal' },
-  { id: 'label.government-service', re: GOVERNMENT_SERVICE, category: 'screening.governmentService', strength: 'strong' },
+  // s2 core-gh review (C5): working for a government contractor, vendor or client is no government service.
+  { id: 'label.government-service', re: GOVERNMENT_SERVICE, unless: GOVERNMENT_TRADE,
+    category: 'screening.governmentService', strength: 'strong' },
   { id: 'label.relatives', re: RELATIVES, category: 'screening.relatives', strength: 'strong' },
   { id: 'label.essential-functions', re: ESSENTIAL_FUNCTIONS, category: 'screening.essentialFunctions',
     strength: 'strong' },
@@ -712,6 +716,10 @@ interface Refinement {
   ask?: boolean;
   /** Wordings the rule leaves alone. */
   unless?: RegExp;
+  /** s2 core-gh review (C1): `unless` reads only the label's question sentences where the label states more after them
+   *  (LabelContext.questions): a disclaimer after the question ("Candidates requiring sponsorship are not eligible.")
+   *  turns nothing away. */
+  unlessQuestionsOnly?: true;
   /** What a text the rule matched but `only` or `unless` turned away is instead; without it the next rule is tried. */
   otherwise?: { id: string; category: FieldCategory; strength: RuleStrength; needsUser?: NeedsUserCause };
   /** The category in place of the design's. */
@@ -749,8 +757,10 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // before this rule: matchLabelRules).
   // The core pass of 2026-11-06: a need for employer-sponsored work authorization is sponsorship (SPONSORED_NEED).
   // s2 core-gh (decision 13): a need for the employer to sponsor is sponsorship too (NEED_TO_SPONSOR).
+  // s2 core-gh review (C1): read in the question alone, so a disclaimer after it ("Are you authorized to work in the
+  // US? Candidates requiring sponsorship are not eligible.") leaves the authorization question authorization.
   'label.work-auth': { also: WORK_AUTH_WIDE, only: WORK_AUTH_LEGAL,
-    unless: new RegExp(`${SPONSORED_NEED.source}|${NEED_TO_SPONSOR.source}`) },
+    unless: new RegExp(`${SPONSORED_NEED.source}|${NEED_TO_SPONSOR.source}`), unlessQuestionsOnly: true },
   'label.sponsorship': { also: SPONSORED_NEED, only: VISA_SPONSORSHIP, readsQualifiers: true,
     needsUser: (c) => (sponsorshipTime(c.label) === 'unclear' ? 'unclear-time' : null) },
   'label.over18': { also: OVER18_WIDE },
@@ -889,11 +899,12 @@ const CRIMINAL_RULE = ruleById('label.criminal');
 
 /** Whether `rule`, with its refinement, reads `text` as its own: 'match', 'turned-away' (`only` or `unless` refused a
  *  text the rule's patterns matched), or null. */
-function refinedMatch(rule: LabelRule, text: string): 'match' | 'turned-away' | null {
+function refinedMatch(rule: LabelRule, text: string, questions?: string): 'match' | 'turned-away' | null {
   const refinement = REFINEMENTS[rule.id];
   if (!rule.re.test(text) && !(refinement?.also?.test(text) ?? false)) return null;
   if (refinement === undefined) return 'match';
-  if (refinement.unless?.test(text)) return 'turned-away';
+  const unlessText = refinement.unlessQuestionsOnly === true && questions !== undefined ? questions : text;
+  if (refinement.unless?.test(unlessText)) return 'turned-away';
   const only = refinement.only;
   if (only !== undefined && !only.test(refinement.ask ? text.replace(ASK, '') : text)) return 'turned-away';
   return 'match';
@@ -1122,7 +1133,7 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   if (info !== null) return info;
   for (const rule of LABEL_RULES) {
     if (DATE_RULES.has(rule.id) && section === 'other' && context.block !== undefined) continue;
-    const verdict = refinedMatch(rule, text);
+    const verdict = refinedMatch(rule, text, context.questions);
     if (verdict === null) continue;
     const refinement = REFINEMENTS[rule.id];
     if (verdict === 'turned-away') {
