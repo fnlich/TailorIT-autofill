@@ -35,17 +35,20 @@ import {
   POSTING_COUNTRY_FACTOR, VALUE_CONSENT_PREAPPROVED, VALUE_EXPLICIT, VALUE_TRANSFORM, VALUE_TWO_OR_MORE_RACES,
 } from '../confidence';
 import { CONSENT_CATEGORIES, type ConsentCategory, type FieldKind } from '../enums';
-import { intendedDecline, intendedEntity, intendedText } from '../matcher/intended';
+import { intendedCountry, intendedDecline, intendedEntity, intendedText, intendedUnknown } from '../matcher/intended';
 import type { MatchDomain } from '../matcher/types';
 import type { PlanSensitiveState } from '../plan/types';
 import { normalize } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
 import type { FieldCategory, ProfilePath, RuleId, ValueOrigin, VocabDomain } from '../types/intent';
-import type { Explicit, Profile, WorkAuthorization } from '../types/profile';
+import type { AsianSubgroup, Explicit, Profile, SexualOrientation, WorkAuthorization, Ymd } from '../types/profile';
 import type { Settings } from '../types/settings';
 import type { Vocab } from '../vocab/types';
 import { none, value, type Candidate, type Choice, type ValueResult } from './candidate';
 import { USER_ONLY_CATEGORIES } from './categories';
+import { prepareOptions } from '../matcher/prepare';
+import { YES_NO_QUESTION } from './labelRules';
+import { companyKey, namesPostingCompany } from './values';
 import { basisClassAt, readBasisOptions, type BasisClass } from './workBasis';
 
 const path = (text: string) => text as ProfilePath;
@@ -62,7 +65,10 @@ const byRule = (ruleId: RuleId, at: string): ValueOrigin => ({ provenance: 'rule
 export const SENSITIVE_PART_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['workAuth.authorized',
   'workAuth.sponsorship', 'workAuth.sponsorshipNow', 'workAuth.sponsorshipFuture', 'workAuth.status',
   'screening.over18', 'screening.criminalHistory', 'eeo.gender', 'eeo.hispanicLatino', 'eeo.race', 'eeo.veteran',
-  'eeo.disability', 'identity.pronouns', 'salary.expected', 'salary.currency']);
+  'eeo.disability', 'identity.pronouns', 'salary.expected', 'salary.currency',
+  // s2 core-gh: the snapshot round's answers from the sensitive part (core/types/profile.ts screening, eeo).
+  'workAuth.clearance', 'workAuth.citizenship', 'screening.restrictiveAgreement', 'screening.governmentService',
+  'screening.relatives', 'screening.essentialFunctions', 'eeo.sexualOrientation', 'eeo.transgender']);
 
 /** What the sensitive part's state means for a field of this category: answer it ('ready'), fetch the part first
  *  ('fetch'), or leave it blank and flagged with the state's reason. */
@@ -195,6 +201,9 @@ export function postingCountryOf(location: string, vocab: Vocab): string | undef
 export interface LegalContext {
   settings: Settings;
   postingCountry?: string;
+  /** s2 core-gh: the posting's company (a relative there) and the day (service within the last N years). */
+  postingCompany?: string;
+  now?: Ymd;
 }
 
 /** The work-authorization entry for the one country a question names (its label, else its description), or, under
@@ -361,12 +370,196 @@ function criminalValue(spec: FieldSpec, profile: Profile): ValueResult {
   return yesNo(record.value, fromProfile('screening.criminalRecord'));
 }
 
+// ── s2 core-gh: the snapshot round's legal answers, each the person's own from the sensitive part ────────────────
+
+/** The question's words as the rules read them: the label with its parentheticals, and its help text. */
+function questionText(spec: FieldSpec): string {
+  const label = normalize(spec.label, 'label');
+  return [label.key, ...label.qualifiers.map((qualifier) => qualifier.tokens.join(' ')),
+    normalize(spec.description, 'label').key].join(' ');
+}
+
+/** A yes/no legal answer as the field takes it: in a text box (decision 11) the words "Yes" or "No", only for a question
+ *  asked as yes or no (labelRules YES_NO_QUESTION), the origin's transform legal.yes-no-text where it had none. */
+function asTyped(result: ValueResult, spec: FieldSpec): ValueResult {
+  if (spec.kind !== 'text' || !result.ok) return result;
+  const { candidate } = result;
+  const answer = candidate.choice?.intended;
+  if (answer?.kind !== 'boolean' || !YES_NO_QUESTION.test(normalize(spec.label, 'label').key)) return result;
+  const origin = candidate.origin.provenance === 'profile' && candidate.origin.transform === undefined
+    ? { ...candidate.origin, transform: 'legal.yes-no-text' as const } : candidate.origin;
+  return value({ ...candidate, origin, text: answer.value ? 'Yes' : 'No' });
+}
+
+/** The countries of citizenship ("Country of Origin": decision 11, the first; s2-sandtech-salary-open
+ *  question_9737048101): typed by name, chosen as a country, or all of them for a list that takes several. */
+function citizenshipValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
+  const answer = profile.screening.citizenships;
+  if (answer === undefined) return none('legal-not-in-profile');
+  if (answer.kind === 'decline') {
+    return value({ origin: byRule('legal.decline', 'screening.citizenships'), confidence: VALUE_EXPLICIT,
+      choice: { intended: intendedDecline('country'), domain: 'country' } });
+  }
+  const countries = answer.value.filter((code) => code.trim() !== '');
+  if (countries.length === 0) return none('legal-not-in-profile');
+  const choices = countries.map((code): Choice => ({ intended: intendedCountry(code, code, vocab), domain: 'country' }));
+  const several = spec.kind === 'checkbox-group' || spec.kind === 'multiselect';
+  return value({ origin: fromProfile('screening.citizenships'), confidence: VALUE_EXPLICIT,
+    text: vocab.countries.byAlpha2(countries[0]!)?.name ?? countries[0]!, choice: choices[0]!,
+    ...(several ? { set: choices } : {}) });
+}
+
+/** A clearance's levels, from the least. */
+const CLEARANCE_RANK: Readonly<Record<string, number>> = { none: 0, 'public-trust': 1, confidential: 2, secret: 3,
+  'top-secret': 4, 'ts-sci': 5 };
+const CLEARANCE_TEXT: Readonly<Record<string, string>> = { none: 'None', 'public-trust': 'Public Trust',
+  confidential: 'Confidential', secret: 'Secret', 'top-secret': 'Top Secret', 'ts-sci': 'TS/SCI' };
+
+/** The level a clearance question asks about (any clearance when it names none). */
+function clearanceAsked(question: string): number {
+  if (/\bts\s*sci\b|\bsci\b/.test(question)) return CLEARANCE_RANK['ts-sci']!;
+  if (/\btop\s+secret\b/.test(question)) return CLEARANCE_RANK['top-secret']!;
+  if (/\bsecret\b/.test(question)) return CLEARANCE_RANK.secret!;
+  if (/\bconfidential\b/.test(question)) return CLEARANCE_RANK.confidential!;
+  return CLEARANCE_RANK['public-trust']!;
+}
+
+/**
+ * A clearance (s2-virtru-clearance-open question_9225664005 "Do you hold an Active TS/SCI?"): yes when the person's
+ * level is the one asked or higher and, where the question asks for an active one, it is active; a text box asked for
+ * the level gets its name. A polygraph question, or an active one the profile does not say, has no answer.
+ */
+function clearanceValue(spec: FieldSpec, profile: Profile): ValueResult {
+  const answer = profile.screening.clearance;
+  if (answer === undefined) return none('legal-not-in-profile');
+  if (answer.kind === 'decline') return legalAnswer({ kind: 'decline' }, 'screening.clearance');
+  const question = questionText(spec);
+  if (/\bpolygraph\b/.test(question)) return none('legal-not-in-profile');
+  const { level, active } = answer.value;
+  if (spec.kind === 'text' && !YES_NO_QUESTION.test(normalize(spec.label, 'label').key)) {
+    return value({ origin: fromProfile('screening.clearance'), confidence: VALUE_EXPLICIT,
+      text: CLEARANCE_TEXT[level] ?? level });
+  }
+  const held = (CLEARANCE_RANK[level] ?? 0) >= clearanceAsked(question) && level !== 'none';
+  if (held && /\bactive\b|\bcurrent(?:ly)?\b/.test(question) && active !== true) {
+    return active === false ? asTyped(yesNo(false, fromProfile('screening.clearance')), spec)
+      : none('legal-not-in-profile');
+  }
+  return asTyped(yesNo(held, fromProfile('screening.clearance')), spec);
+}
+
+/** Numbers a "within the last N years" may be written in. */
+const YEAR_WORDS: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
+  eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20 };
+const WITHIN_YEARS = /\b(?:within|in|during|over)\s+the\s+(?:last|past|previous|preceding)\s+(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty)\s+years?\b/;
+
+/**
+ * U.S. military or government service (s2-onestream-related-open question_8152429009 "Are you currently or have you
+ * within the last five years served in the U.S. armed forces or been employed by any U.S. federal, state, and local
+ * government?"): yes when the person served in a branch the question names and, for "within the last N years", ended
+ * it then or later (no end year: still serving); no when every branch it names is a no or ended before. An end year the
+ * profile lacks, for a time the question names, has no answer.
+ */
+function governmentServiceValue(spec: FieldSpec, profile: Profile, now: Ymd | undefined): ValueResult {
+  const answer = profile.screening.governmentService;
+  if (answer === undefined) return none('legal-not-in-profile');
+  if (answer.kind === 'decline') return legalAnswer({ kind: 'decline' }, 'screening.governmentService');
+  const question = questionText(spec);
+  const military = /\b(?:armed\s+forces|military|army|navy|air\s+force|marines?|marine\s+corps|coast\s+guard|national\s+guard|space\s+force)\b/
+    .test(question);
+  const government = /\bgovernment\b|\bfederal\b|\bpublic\s+sector\b/.test(question);
+  if (!military && !government) return none('legal-not-in-profile');
+  const within = WITHIN_YEARS.exec(question)?.[1];
+  const years = within === undefined ? null : YEAR_WORDS[within] ?? Number(within);
+  if (years !== null && now === undefined) return none('legal-not-in-profile');
+  const service = answer.value;
+  /** Whether one branch answers yes: true, false, or null when its end year is needed and missing. */
+  const served = (did: boolean, ended: number | undefined): boolean | null => {
+    if (!did) return false;
+    if (years === null || ended === undefined) return true;
+    return ended >= now!.y - years;
+  };
+  const parts = [military ? served(service.military, service.militaryEndYear) : false,
+    government ? served(service.government, service.governmentEndYear) : false];
+  if (parts.some((part) => part === true)) return asTyped(yesNo(true, fromProfile('screening.governmentService')), spec);
+  if (parts.some((part) => part === null)) return none('legal-not-in-profile');
+  return asTyped(yesNo(false, fromProfile('screening.governmentService')), spec);
+}
+
+/**
+ * A relative at the company (s2-onestream-related-open question_8152427009 "Are you related to anyone currently
+ * employed at OneStream?"): yes when the person named the posting's company (values.ts companyKey) among those where a
+ * relative works, no otherwise (none named: no everywhere). Only for a question that names the posting's company or
+ * points at it ("here", "this company"); without the posting's company there is no answer. No relative's name is held.
+ */
+function relativesValue(spec: FieldSpec, profile: Profile, postingCompany: string | undefined): ValueResult {
+  const answer = profile.screening.relativesAt;
+  if (answer === undefined) return none('legal-not-in-profile');
+  if (answer.kind === 'decline') return legalAnswer({ kind: 'decline' }, 'screening.relativesAt');
+  const company = postingCompany === undefined ? '' : companyKey(postingCompany);
+  if (company === '' || !namesPostingCompany(`${spec.label} ${spec.description}`, company)) {
+    return none('legal-not-in-profile');
+  }
+  const related = answer.value.some((name) => companyKey(name) === company);
+  return asTyped(yesNo(related, fromProfile('screening.relativesAt')), spec);
+}
+
+/** The two sentences a right-to-work question may offer instead of a Yes and a No (s2-tripledot-right-to-work-open
+ *  question_9934444101: "I have the right to work", "I require visa/sponsorship"), as normalizeLabel reads them. */
+const RIGHT_OPTION = /^i\s+(?:have|hold)\s+(?:the\s+|a\s+)?(?:legal\s+)?right\s+to\s+work\b|^i\s+am\s+(?:legally\s+)?(?:authori[sz]ed|eligible|entitled|permitted)\s+to\s+work\b/;
+const NEED_OPTION = /^i\s+(?:will\s+)?(?:require|need)\b(?:\s+\w+){0,3}?\s+(?:visas?|sponsor\w*|work\s+permits?|immigration)\b/;
+
+/**
+ * An authorization question whose two options state the right to work and the need for a visa or sponsorship: the
+ * first for a person explicitly authorized, the second for one who is not and needs sponsorship (now or later), chosen
+ * by its own words. Null for any other list (or one not read yet), so the question is read as before.
+ */
+function rightToWorkValue(spec: FieldSpec, entry: WorkAuthorization, at: string, fromPosting: boolean, vocab: Vocab):
+  ValueResult | null {
+  if (spec.options === 'lazy') return null;
+  const usable = prepareOptions(spec.options, 'generic', vocab).list.filter((option) => !option.unusable);
+  if (usable.length !== 2) return null;
+  const read = usable.map((option) => ({ option, label: normalize(option.clean, 'label').key }));
+  const right = read.find(({ label }) => RIGHT_OPTION.test(label));
+  const need = read.find(({ label }) => NEED_OPTION.test(label));
+  if (right === undefined || need === undefined || right === need) return null;
+  const authorized = entry.authorized;
+  if (authorized === undefined) return none('legal-not-in-profile');
+  if (authorized.kind === 'decline') return none('decline-option-missing');
+  const sponsorship = combinedSponsorship(entry.sponsorshipNow, entry.sponsorshipFuture);
+  const chosen = authorized.value ? right : sponsorship?.kind === 'value' && sponsorship.value ? need : null;
+  if (chosen === null) return none('legal-not-in-profile');
+  const factor = fromPosting ? POSTING_COUNTRY_FACTOR : 1;
+  return value({ origin: fromProfile(`${at}.authorized`, fromPosting ? 'legal.posting-country' : undefined),
+    confidence: VALUE_EXPLICIT * factor, choice: { intended: intendedText(chosen.option.clean), domain: 'generic' },
+    ...(fromPosting ? { flag: 'filled-low-confidence' as const } : {}) });
+}
+
+// s2 core-gh end
+
 /** The value of a legal question (§8.7): authorization, sponsorship, status and age from explicit answers only. */
 export function legalValue(category: FieldCategory, spec: FieldSpec, profile: Profile, vocab: Vocab,
   legal: LegalContext): ValueResult {
   if (category === 'screening.criminalHistory') return criminalValue(spec, profile);
   if (category === 'screening.over18') return legalAnswer(profile.screening.over18, 'screening.over18');
-  if (category === 'workAuth.visaType' || category === 'workAuth.clearance') return none('legal-not-in-profile');
+  // s2 core-gh: the snapshot round's legal answers (decision 11 and the gh study's §1).
+  switch (category) {
+    case 'workAuth.citizenship':
+      return citizenshipValue(spec, profile, vocab);
+    case 'workAuth.clearance':
+      return clearanceValue(spec, profile);
+    case 'screening.restrictiveAgreement':
+      return asTyped(legalAnswer(profile.screening.restrictiveAgreement, 'screening.restrictiveAgreement'), spec);
+    case 'screening.essentialFunctions':
+      return asTyped(legalAnswer(profile.screening.essentialFunctions, 'screening.essentialFunctions'), spec);
+    case 'screening.governmentService':
+      return governmentServiceValue(spec, profile, legal.now);
+    case 'screening.relatives':
+      return relativesValue(spec, profile, legal.postingCompany);
+    default:
+      break;
+  }
+  if (category === 'workAuth.visaType') return none('legal-not-in-profile');
   const found = authorizationEntry(spec, profile, vocab, legal);
   if ('reason' in found) return none(found.reason);
   const entry = profile.workAuthorization[found.index]!;
@@ -377,15 +570,17 @@ export function legalValue(category: FieldCategory, spec: FieldSpec, profile: Pr
     ? workBasisValue(spec, entry, at, fromPosting, vocab) : null;
   if (basis !== null) return basis;
   switch (category) {
+    // s2 core-gh (decision 11): a text box asked yes or no takes the words (asTyped).
     case 'workAuth.authorized':
-      return legalAnswer(entry.authorized, `${at}.authorized`, undefined, fromPosting);
+      return rightToWorkValue(spec, entry, at, fromPosting, vocab)
+        ?? asTyped(legalAnswer(entry.authorized, `${at}.authorized`, undefined, fromPosting), spec);
     case 'workAuth.sponsorshipNow':
-      return legalAnswer(entry.sponsorshipNow, `${at}.sponsorshipNow`, undefined, fromPosting);
+      return asTyped(legalAnswer(entry.sponsorshipNow, `${at}.sponsorshipNow`, undefined, fromPosting), spec);
     case 'workAuth.sponsorshipFuture':
-      return legalAnswer(entry.sponsorshipFuture, `${at}.sponsorshipFuture`, undefined, fromPosting);
+      return asTyped(legalAnswer(entry.sponsorshipFuture, `${at}.sponsorshipFuture`, undefined, fromPosting), spec);
     case 'workAuth.sponsorship':
-      return legalAnswer(combinedSponsorship(entry.sponsorshipNow, entry.sponsorshipFuture), at,
-        'legal.sponsorship-combined', fromPosting);
+      return asTyped(legalAnswer(combinedSponsorship(entry.sponsorshipNow, entry.sponsorshipFuture), at,
+        'legal.sponsorship-combined', fromPosting), spec);
     case 'workAuth.status': {
       const status = entry.status;
       if (status === undefined) return none('legal-not-in-profile');
@@ -445,9 +640,86 @@ export function eeoDeclineDefault(category: FieldCategory, spec: FieldSpec, sett
     choice: { intended: intendedDecline(domain), domain }, note: 'eeo-decline-default' });
 }
 
+// ── s2 core-gh (decision 12: the eeo study's §2A, fixtures/greenhouse/s2-pie-eeo-0..8) ─────────────────────────────
+
+/** A question that asks about serving members too ("a veteran or active member"). */
+const ACTIVE_MEMBER = /\bactive\s+(?:duty|members?|military|service|serving|reserv\w*)\b|\bcurrently\s+serving\b/i;
+/** A race list's own Hispanic or Latino option, as normalizeLabel reads it ("Hispanic, Latinx or of Spanish Origin",
+ *  "Hispanic or Latino"); "White (Not Hispanic or Latino)" reads "white". */
+const HISPANIC_RACE_OPTION = /^(?:hispanic|latin[aoex]|latine|spanish)\b/;
+/** A race list's Asian subgroup options, and its plain Asian option. */
+const ASIAN_SUBGROUP_OPTION = /^(?:east|south|southeast|south\s+east)\s+asian\b/;
+const ASIAN_OPTION = /^asian(?:\s+american)?$/;
+/** The Asian subgroups as Pie's demographic list words them (s2-pie-eeo-1), with their other spellings. */
+const SUBGROUP_LABELS: Readonly<Record<AsianSubgroup, readonly [string, ...string[]]>> = {
+  'east-asian': ['East Asian'], 'south-asian': ['South Asian'], 'southeast-asian': ['Southeast Asian', 'South East Asian',
+    'South-East Asian'],
+};
+/** Sexual orientations as Pie's demographic list words them (s2-pie-eeo-2), with their other spellings. */
+const ORIENTATION_LABELS: Readonly<Record<SexualOrientation, readonly [string, ...string[]]>> = {
+  asexual: ['Asexual'], 'bisexual-pansexual': ['Bisexual and/or pansexual', 'Bisexual or pansexual', 'Bisexual',
+    'Pansexual'], gay: ['Gay'], heterosexual: ['Heterosexual', 'Straight', 'Heterosexual or straight',
+    'Straight/Heterosexual'], lesbian: ['Lesbian'], queer: ['Queer'],
+  'self-describe': ['I prefer to self-describe', 'Prefer to self-describe', 'Self-describe', 'I use another term'],
+};
+const SELF_DESCRIBE = ORIENTATION_LABELS['self-describe'];
+
+const optionLabels = (spec: FieldSpec) => (spec.options === 'lazy' ? []
+  : spec.options.map((option) => normalize(option.label, 'label').key));
+/** Whether a race list offers its own Hispanic or Latino option. */
+const offersHispanicRace = (spec: FieldSpec) => optionLabels(spec).some((label) => HISPANIC_RACE_OPTION.test(label));
+/** Whether a race list splits Asian into subgroups and offers no plain Asian option. */
+const splitsAsian = (spec: FieldSpec) => {
+  const labels = optionLabels(spec);
+  return labels.some((label) => ASIAN_SUBGROUP_OPTION.test(label)) && !labels.some((label) => ASIAN_OPTION.test(label));
+};
+
+/** An Asian subgroup as a choice, by its words. */
+function subgroupChoice(subgroup: AsianSubgroup, vocab: Vocab, extra: Partial<Choice>): Choice {
+  const [first, ...rest] = SUBGROUP_LABELS[subgroup];
+  return { intended: intendedUnknown('eeo.race', first, rest, vocab), domain: 'eeo.race', ...extra };
+}
+
+/**
+ * Sexual orientation (a set, s2-pie-eeo-2 "How would you describe your sexual orientation? (mark all that apply)")
+ * and whether the person identifies as transgender (s2-pie-eeo-3), from the sensitive part: an orientation chosen by its
+ * words, several on a list that takes several, one on a list that takes one only when there is one, the self-describe
+ * option with the person's words; transgender by polarity. A decline is the form's decline option; no answer the
+ * decline default, as before.
+ */
+function orientationOrTransgender(category: 'eeo.sexualOrientation' | 'eeo.transgender', spec: FieldSpec,
+  profile: Profile, settings: Settings, vocab: Vocab): ValueResult {
+  const answer = category === 'eeo.transgender' ? profile.eeo.transgender : profile.eeo.sexualOrientation;
+  if (answer === undefined) return eeoDeclineDefault(category, spec, settings) ?? none('eeo-not-in-profile');
+  if (!EEO_CHOICE_KINDS.includes(spec.kind)) return none('format-unsupported');
+  const at = category === 'eeo.transgender' ? 'eeo.transgender' : 'eeo.sexualOrientation';
+  if (answer.kind === 'decline') {
+    return value({ origin: byRule('eeo.decline', at), confidence: VALUE_EXPLICIT,
+      choice: { intended: intendedDecline('generic'), domain: 'generic' } });
+  }
+  if (typeof answer.value === 'boolean') return yesNo(answer.value, fromProfile(at));
+  const { values, selfDescribed } = answer.value;
+  const set = values.map((orientation): Choice => {
+    const [first, ...rest] = ORIENTATION_LABELS[orientation];
+    return { intended: intendedUnknown('generic', first, rest, vocab), domain: 'generic',
+      ...(orientation === 'self-describe' && selfDescribed ? { freeText: selfDescribed } : {}) };
+  });
+  if (set.length === 0) return none('eeo-not-in-profile');
+  const several = spec.kind === 'checkbox-group' || spec.kind === 'multiselect';
+  if (!several && set.length > 1) return none('ambiguous-options');
+  return value({ origin: fromProfile(at), confidence: VALUE_EXPLICIT, set,
+    ...(set.length === 1 ? { choice: set[0]! } : {}) });
+}
+
+// s2 core-gh end
+
 /** The value of a self-identification question (§8.7). */
 export function eeoValue(category: FieldCategory, spec: FieldSpec, profile: Profile, settings: Settings, vocab: Vocab):
   ValueResult {
+  // s2 core-gh (decision 12): sexual orientation and transgender identity have answers now.
+  if (category === 'eeo.sexualOrientation' || category === 'eeo.transgender') {
+    return orientationOrTransgender(category, spec, profile, settings, vocab);
+  }
   const domain = EEO_DOMAIN[category];
   if (domain === undefined) return eeoDeclineDefault(category, spec, settings) ?? none('eeo-not-in-profile');
   const { eeo } = profile;
@@ -481,19 +753,36 @@ export function eeoValue(category: FieldCategory, spec: FieldSpec, profile: Prof
       // every classification needs service, so someone who never served is not a protected veteran either. A question
       // about service is answered by service.
       const veteran = (eeo.veteran as Extract<Profile['eeo']['veteran'], { kind: 'value' }>).value;
+      // s2 core-gh (decision 12; s2-pie-eeo-5 "Are you a veteran or active member of the United States Armed Forces?"):
+      // serving now answers a question that asks about active members too.
+      const serving = veteran.activeDuty === true && ACTIVE_MEMBER.test(`${spec.label} ${spec.description}`);
       const id = veteran.protected ? 'protected-veteran'
-        : asksProtectedStatus(spec) ? 'not-protected-veteran' : veteran.veteran ? 'veteran' : 'not-veteran';
+        : asksProtectedStatus(spec) ? 'not-protected-veteran' : veteran.veteran || serving ? 'veteran' : 'not-veteran';
       return explicitValue(eeoChoice(domain, id, vocab));
     }
     case 'race': {
       const races = (eeo.race as Extract<Profile['eeo']['race'], { kind: 'value' }>).value;
       const hispanic = eeo.hispanicLatino?.kind === 'value' ? { hispanicLatino: eeo.hispanicLatino.value } : {};
-      const choices = races.map((race) => eeoChoice(domain, race, vocab, hispanic));
+      // s2 core-gh (decision 12; s2-pie-eeo-1): a list that splits "Asian" takes the person's subgroups instead.
+      const split = splitsAsian(spec);
+      const subgroups = split ? eeo.raceSubgroups ?? [] : [];
+      const choices = races.flatMap((race) => (race === 'asian' && subgroups.length > 0
+        ? subgroups.map((subgroup) => subgroupChoice(subgroup, vocab, hispanic))
+        : [eeoChoice(domain, race, vocab, hispanic)]));
       if (choices.some((choice) => choice === null)) return none('eeo-not-in-profile');
       const set = choices as Choice[];
+      // s2 core-gh (decision 12): Hispanic or Latino, answered yes, is the list's Hispanic or Latino option where it
+      // offers one: added to a list that takes several, chosen on a list that takes one (EEO-1's rule).
+      const latino = hispanic.hispanicLatino === true && offersHispanicRace(spec)
+        ? eeoChoice(domain, 'hispanic-latino', vocab, hispanic) : null;
       if (spec.kind === 'checkbox-group' || spec.kind === 'multiselect') {
-        return value({ origin: fromProfile(at), confidence: VALUE_EXPLICIT, set });
+        const own = eeo.raceSelfDescribed?.trim() ?? '';
+        const described = own === '' ? [] : [{ intended: intendedUnknown('generic', SELF_DESCRIBE[0], SELF_DESCRIBE.slice(1),
+          vocab), domain: 'generic', freeText: own } satisfies Choice];
+        return value({ origin: fromProfile(at), confidence: VALUE_EXPLICIT,
+          set: [...set, ...(latino === null ? [] : [latino]), ...described] });
       }
+      if (latino !== null) return explicitValue(latino, 'eeo.hispanic-race');
       if (set.length === 1) return explicitValue(set[0]!);
       if (!settings.interpretations.twoOrMoreRaces) return none('ambiguous-options');
       const two = eeoChoice(domain, 'two-or-more-races', vocab, hispanic);

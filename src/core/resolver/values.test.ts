@@ -5,7 +5,7 @@ import type { FieldSpec } from '../types/field';
 import type { FieldCategory } from '../types/intent';
 import type { ExperienceEntry, Profile } from '../types/profile';
 import type { ValueResult } from './candidate';
-import { addWeeks, profileValue, yearsOfExperience } from './values';
+import { addWeeks, NO_VALUE_PLACEHOLDERS, placeholderAsked, profileValue, yearsOfExperience } from './values';
 
 const profile = goldenProfile();
 const valueOf = (category: FieldCategory, spec: FieldSpec, of: Profile = profile, separatePhoneCountry = false) =>
@@ -180,5 +180,61 @@ describe('the rest of the table', () => {
       text: '120000' });
     expect(candidate(valueOf('salary.expected', field('Expected salary (GBP)'), payIn('GBP')))).toMatchObject({
       text: '120000' });
+  });
+});
+
+// ── s2 core-gh (snapshot round 2) ─────────────────────────────────────────────────────────────────────────────────
+describe('s2 core-gh: the N/A an instruction asks for (decision 8)', () => {
+  it.each<[string, string | null]>([
+    // Screenshot 7 of 2026-11-07.
+    ["X username (If you don't have a profile, please type N/A)", 'N/A'],
+    ["Telegram username (If you don’t have a profile, please type “N/A”)", 'N/A'],
+    ['Middle name (N/A if none)', 'N/A'],
+    ['GitHub (type NA if not applicable)', 'NA'],
+    ['Portfolio link (if none, write None)', 'None'],
+    ["Twitter handle (if you do not have one, enter 'n/a')", 'N/A'],
+    // No instruction, or one naming no placeholder of ours: the page's characters are never copied.
+    ['Telegram username', null],
+    ['X username (if you do not have one, write "banana42")', null],
+    ['Website (N/A)', null],
+  ])('%j asks for %j', (label, expected) => {
+    expect(placeholderAsked({ label, description: '', labelVisible: true })).toBe(expected);
+  });
+
+  it('reads the help text, and never a label nobody sees', () => {
+    expect(placeholderAsked({ label: 'Telegram', description: "If you don't have one, please type N/A.",
+      labelVisible: true })).toBe('N/A');
+    expect(placeholderAsked({ label: "Telegram (If you don't have one, type N/A)", description: '',
+      labelVisible: false })).toBeNull();
+  });
+
+  it('chooses only from its own list', () => {
+    expect(NO_VALUE_PLACEHOLDERS).toEqual(['N/A', 'NA', 'None']);
+  });
+});
+
+describe('s2 core-gh: links (decisions 9 and 11)', () => {
+  const linked: Profile = { ...profile, links: { ...profile.links, website: '', x: 'https://x.com/rivera_dev',
+    telegram: '@rivera_dev42' } };
+  it('gives a username box the handle, an "@" box "@handle", a URL box the link', () => {
+    expect(candidate(valueOf('links.twitter', field('X username'), linked))).toMatchObject({ text: 'rivera_dev',
+      origin: { path: 'links.x', transform: 'link.handle' } });
+    expect(candidate(valueOf('links.twitter', field('X handle (@)'), linked)).text).toBe('@rivera_dev');
+    expect(candidate(valueOf('links.twitter', field('Twitter URL'), linked)).text).toBe('https://x.com/rivera_dev');
+    expect(candidate(valueOf('links.telegram', field('Telegram username'), linked)).text).toBe('rivera_dev42');
+  });
+
+  it('reads an X or Telegram link kept among the other links by its host', () => {
+    const other: Profile = { ...profile, links: { ...profile.links, other: [{ label: 'Telegram', url: 'https://t.me/rivera_dev42' }] } };
+    expect(candidate(valueOf('links.telegram', field('Telegram username'), other))).toMatchObject({ text: 'rivera_dev42',
+      origin: { path: 'links.other[0].url' } });
+    expect(valueOf('links.twitter', field('X username'), other)).toMatchObject({ ok: false });
+  });
+
+  it('fills a website with the portfolio, never GitHub or LinkedIn', () => {
+    expect(candidate(valueOf('links.website', field('Website'), linked))).toMatchObject({ text: profile.links.portfolio,
+      origin: { path: 'links.portfolio', transform: 'links.website-from-portfolio' } });
+    const bare: Profile = { ...linked, links: { ...linked.links, portfolio: '' } };
+    expect(valueOf('links.website', field('Website'), bare)).toMatchObject({ ok: false });
   });
 });

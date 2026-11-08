@@ -77,9 +77,13 @@ describe('the sensitive part’s gate', () => {
     expect(reason(sensitiveGate('screening.over18', 'not-shared') as ValueResult)).toBe('sensitive-not-shared');
     expect(reason(sensitiveGate('identity.pronouns', 'unavailable') as ValueResult)).toBe('sensitive-unavailable');
     expect(sensitiveGate('identity.firstName', 'not-loaded')).toBe('ready');
-    // Questions neither part answers never need it.
-    for (const category of ['workAuth.visaType', 'eeo.sexualOrientation'] as const) {
-      expect(SENSITIVE_PART_CATEGORIES.has(category), category).toBe(false);
+    // Questions neither part answers never need it. s2 core-gh: sexual orientation, transgender identity, a clearance,
+    // the citizenships and the screening answers of snapshot round 2 are the sensitive part's now.
+    expect(SENSITIVE_PART_CATEGORIES.has('workAuth.visaType')).toBe(false);
+    for (const category of ['eeo.sexualOrientation', 'eeo.transgender', 'workAuth.clearance', 'workAuth.citizenship',
+      'screening.restrictiveAgreement', 'screening.governmentService', 'screening.relatives',
+      'screening.essentialFunctions'] as const) {
+      expect(SENSITIVE_PART_CATEGORIES.has(category), category).toBe(true);
     }
     // Criminal history is answered once in TailorIT's sensitive part since the owner's amendments.
     expect(SENSITIVE_PART_CATEGORIES.has('screening.criminalHistory')).toBe(true);

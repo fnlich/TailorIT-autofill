@@ -20,7 +20,7 @@
  * Confidence is classification × value here; the match multiplies in later (planFrame). An unanswered EEO, legal or
  * sensitive question, and a required field with no value, are flagged rather than skipped, so the person sees them.
  */
-import { CLASSIFY_LLM, CLASSIFY_SAVED_EXACT, FILL_AT, FLAG_AT, LABEL_RULE_CONFIDENCE } from '../confidence';
+import { CLASSIFY_LLM, CLASSIFY_SAVED_EXACT, FILL_AT, FLAG_AT, LABEL_RULE_CONFIDENCE, VALUE_EXPLICIT } from '../confidence';
 import { attentionHits, botCheckOf, namesConsentTopic } from '../guard/attention';
 import { cutInjected } from '../guard/injected';
 import { hasTripwire } from '../guard/tripwire';
@@ -48,7 +48,7 @@ import { dateIso, dateText, type DateParts } from './format';
 import { asksToAgree, statementPolarity, type NeedsUserCause } from './labelRules';
 import { consentValue, eeoDeclineDefault, eeoValue, legalValue, sensitiveGate } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
-import { previouslyEmployedValue, profileValue, type BlockEntries } from './values';
+import { placeholderAsked, previouslyEmployedValue, profileValue, type BlockEntries } from './values';
 import { askedAs } from './yesNoPair';
 
 /** What the resolver reads besides the field. */
@@ -326,6 +326,9 @@ function intendedOf(shaped: Shaped): IntendedValue {
   }
 }
 
+/** s2 core-gh (decision 8): the kinds the N/A rule types its placeholder into. */
+const PLACEHOLDER_KINDS: ReadonlySet<FieldSpec['kind']> = new Set<FieldSpec['kind']>(['text', 'textarea']);
+
 /** The kinds a consent may be asked on as a choice among options (policy.ts ConsentContext.list). */
 const LIST_KINDS: ReadonlySet<FieldSpec['kind']> = new Set<FieldSpec['kind']>(['radio', 'select', 'combobox']);
 
@@ -334,8 +337,9 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
   const { profile, settings, vocab, now } = ctx;
   switch (policyClassOf(category)) {
     case 'legal':
-      return legalValue(category, spec, profile, vocab, { settings,
-        ...(ctx.postingCountry !== undefined ? { postingCountry: ctx.postingCountry } : {}) });
+      return legalValue(category, spec, profile, vocab, { settings, now,
+        ...(ctx.postingCountry !== undefined ? { postingCountry: ctx.postingCountry } : {}),
+        ...(ctx.postingCompany !== undefined ? { postingCompany: ctx.postingCompany } : {}) });
     case 'eeo':
       return eeoValue(category, spec, profile, settings, vocab);
     case 'consent':
@@ -490,6 +494,16 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
       const declined = policy === 'eeo' && ctx.sensitiveState === 'not-shared'
         ? eeoDeclineDefault(category, spec, ctx.settings) : null;
       result = declined ?? gate;
+    }
+  }
+  // s2 core-gh (decision 8): a box of a profile category the profile holds nothing for, whose own visible words tell an
+  // applicant without the answer to type a placeholder, gets it from our own list (values.ts placeholderAsked).
+  if (!result.ok && result.none.reason === 'no-profile-value' && policy === 'profile' && !needsSensitive
+    && PLACEHOLDER_KINDS.has(spec.kind)) {
+    const placeholder = placeholderAsked(spec);
+    if (placeholder !== null) {
+      result = value({ origin: { provenance: 'rule', ruleId: 'placeholder.no-profile' }, confidence: VALUE_EXPLICIT,
+        text: placeholder });
     }
   }
   if (!result.ok) {

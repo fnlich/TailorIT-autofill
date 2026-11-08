@@ -198,9 +198,11 @@ describe('classifyByRules: real-world labels (§8.3)', () => {
   it.each<[string, FieldKind, FieldCategory, string, NeedsUserCause]>([
     // A self-identification question is chosen from options, never typed: the person answers it.
     ['Gender', 'text', 'eeo.gender', 'label.gender', 'kind-mismatch'],
-    ['Will you require sponsorship for this position?', 'text', 'workAuth.sponsorship', 'label.sponsorship',
+    // s2 core-gh (decision 11): a yes/no sponsorship question asked in a text box takes "Yes" or "No" now; one not asked
+    // as a question is still the person's. A nationality asked by country takes the citizenships; a birth country not.
+    ['Visa sponsorship required for this position', 'text', 'workAuth.sponsorship', 'label.sponsorship',
       'kind-mismatch'],
-    ['Nationality', 'select', 'workAuth.status', 'label.nationality', 'nationality'],
+    ['Country of birth', 'select', 'workAuth.status', 'label.nationality', 'nationality'],
     ['Current salary', 'text', 'unknown', 'label.salary', 'current-pay'],
     ['Previous compensation', 'text', 'unknown', 'label.salary', 'current-pay'],
     ['Are you authorized to work in the US without sponsorship?', 'radio', 'workAuth.authorized',
@@ -228,7 +230,11 @@ describe('classifyByRules: real-world labels (§8.3)', () => {
     // Greenhouse draws every single-choice question as a combobox: a job title or an employer never sits on one.
     ['Are you currently based in or willing to relocate to the Bay Area for this position?', 'preferences.relocation',
       'label.relocation'],
-    ['Do you have a non-compete with your current company?', null, null],
+    // s2 core-gh: a restrictive agreement asked as a fact is the person's own answer (the sensitive part).
+    ['Do you have a non-compete with your current company?', 'screening.restrictiveAgreement',
+      'label.restrictive-agreement'],
+    ['Are you subject to any employment agreements and/or post-employment restrictions with your current employer or '
+      + 'a past employer?', 'screening.restrictiveAgreement', 'label.restrictive-agreement'],
   ])('reads the Greenhouse combobox %j as %s', (label, category, rule) => {
     const classification = classifyByRules(field(label, 'combobox'));
     expect(classification === null ? null : [classification.category, classification.rule]).toEqual(
@@ -311,10 +317,11 @@ describe('classifyByRules: the three sources together (§8.1)', () => {
       field('Citizenship', 'select', { autocomplete: ['country-name'] }),
       { asks: 'workAuth.status', confidence: 0.736, classifiedBy: 'label-rule', rule: 'label.citizenship',
         reason: 'classification-conflict', matchedOn: 'label', needsUser: 'source-conflict' }],
-    ['a nationality is the person’s, so a country token cannot fill it',
+    // s2 core-gh: a nationality is the citizenships' (decision 11), a closed class a country token contradicts.
+    ['a nationality a country token contradicts is the person’s',
       field('Nationality', 'select', { autocomplete: ['country'] }),
-      { asks: 'workAuth.status', confidence: 0.736, classifiedBy: 'label-rule', rule: 'label.nationality',
-        reason: 'classification-conflict', matchedOn: 'label', needsUser: 'nationality' }],
+      { asks: 'workAuth.citizenship', confidence: 0.736, classifiedBy: 'label-rule', rule: 'label.citizenship-country',
+        reason: 'classification-conflict', matchedOn: 'label', needsUser: 'source-conflict' }],
     ['a strong label rule beats the name',
       field('Last name', 'text', { nameAttr: 'first_name' }),
       { category: 'identity.lastName', confidence: 0.776, classifiedBy: 'label-rule', rule: 'label.last-name',
@@ -461,8 +468,6 @@ describe('classifyByRules: what no rule classifies', () => {
     ['Describe your experience with compensation planning', 'textarea'],
     ['Are you eligible to work overtime?', 'radio'],
     ['Do you have experience with sponsorship sales?', 'radio'],
-    ['Are you subject to any employment agreements and/or post-employment restrictions with your current employer or '
-      + 'a past employer?', 'combobox'],
     ['Do you have experience with sex education programs?', 'checkbox'],
   ])('%j (%s) names a sensitive topic: the person’s', (label, kind) => {
     expect(classifyByRules(field(label, kind))).toEqual({ asks: 'unknown', confidence: 0.75,
@@ -549,7 +554,7 @@ describe('classifyByRules: a field handed to the person (needsUser)', () => {
     ['authorization-and-sponsorship', field('Are you authorized to work in the US without sponsorship?', 'radio')],
     ['unclear-time', field('If you are currently on an F-1 visa, will you require sponsorship?', 'radio')],
     ['work-permit', field('Do you need a work permit to work in Germany?', 'radio')],
-    ['nationality', field('Nationality', 'select')],
+    ['nationality', field('Country of birth', 'select')],
     ['age', field('What is your age?', 'text')],
     ['current-pay', field('Current salary', 'text')],
     // The audit of 2026-11-06 (S-4, S-5).

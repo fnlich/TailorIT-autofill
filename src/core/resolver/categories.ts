@@ -43,6 +43,13 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   'freeText.additionalInfo': 'free-text', 'freeText.other': 'free-text',
   'file.resume': 'file', 'file.coverLetter': 'file', 'file.other': 'file',
   'screening.previouslyEmployed': 'unknown', 'screening.other': 'unknown',
+  // s2 core-gh: the new categories (types/intent.ts). The citizenships and the screening answers are the person's own
+  // from the sensitive part, matched by polarity or by country, never sent to an AI: legal.
+  'links.telegram': 'profile', 'address.full': 'profile', 'workAuth.citizenship': 'legal',
+  'screening.restrictiveAgreement': 'legal', 'screening.governmentService': 'legal', 'screening.relatives': 'legal',
+  'screening.essentialFunctions': 'legal', 'skills.certifications': 'profile', 'preferences.relocationPlaces': 'profile',
+  'education.summary': 'profile',
+  // s2 core-gh end
   unknown: 'unknown',
 };
 
@@ -68,6 +75,8 @@ const LOOKUP: readonly FieldKind[] = ['text', 'select', 'combobox', 'typeahead-r
 const TYPED_NAME: readonly FieldKind[] = ['text', 'typeahead-remote'];
 /** A date: a date control, typed text, or month and year lists. */
 const DATE: readonly FieldKind[] = ['text', 'date', 'select', 'combobox'];
+/** s2 core-gh (decision 11): a yes/no legal question, also asked in a text box ("Yes" or "No" typed). */
+const YES_NO_TEXT: readonly FieldKind[] = [...YES_NO, 'text'];
 /** A self-identification answer: chosen from the form's options, never typed. A lone box covers "I am a veteran". */
 const EEO: readonly FieldKind[] = ['select', 'radio', 'combobox', 'checkbox', 'checkbox-group', 'multiselect'];
 /** A consent: a box to tick, or a Yes/I agree radio (the comment above the design's consent rules). A list or a
@@ -84,7 +93,8 @@ const ANY_ANSWER: readonly FieldKind[] = FIELD_KINDS.filter((kind) => kind !== '
  * `text`, `experience.current` only `checkbox`, `consent.signature` only `text`. The rest follow the same idea: a kind
  * is listed when that category's answer can really be given through it. A legal or yes/no question in a text box is
  * left out on purpose: no value could be matched into it, so the label rules hand it to the person (needs-user,
- * `kind-mismatch`) rather than let a later rule claim it.
+ * `kind-mismatch`) rather than let a later rule claim it. s2 core-gh (decision 11): authorization and sponsorship take
+ * a text box, only when asked as yes or no (labelRules TYPED_YES_NO), where "Yes" or "No" is typed.
  */
 export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]>> = {
   'identity.fullName': LINE, 'identity.firstName': LINE, 'identity.middleName': LINE, 'identity.lastName': LINE,
@@ -94,10 +104,15 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'contact.phoneType': CHOICE,
   'address.line1': ['text', 'textarea', 'typeahead-remote'], 'address.line2': LINE, 'address.city': LOOKUP,
   'address.region': LOOKUP, 'address.postalCode': LINE, 'address.country': LOOKUP, 'location.current': LOOKUP,
-  'links.linkedin': LINE, 'links.github': LINE, 'links.portfolio': LINE, 'links.website': LINE, 'links.twitter': LINE,
-  'links.other': PROSE,
-  'workAuth.authorized': YES_NO, 'workAuth.sponsorship': YES_NO, 'workAuth.sponsorshipNow': YES_NO,
-  'workAuth.sponsorshipFuture': YES_NO, 'workAuth.status': CHOICE, 'workAuth.visaType': ['text', ...CHOICE],
+  // s2 core-gh (decision 9; the gh study's 2a: s2-onestream-related-open question_8152421009, "LinkedIn Profile" drawn as
+  // a textarea, was read as free text and asked for an AI essay): a link goes into a line or a box of text.
+  'links.linkedin': PROSE, 'links.github': PROSE, 'links.portfolio': PROSE, 'links.website': PROSE,
+  'links.twitter': PROSE, 'links.other': PROSE,
+  // s2 core-gh (decision 11; s2-robotspencils-clear-id-open question_18670483008, s2-ahead-0's "Will you now or in the
+  // future require AHEAD to sponsor you…?"): a Yes/No legal question asked in a text box takes "Yes" or "No" from the
+  // profile's explicit answer (policy.ts legal.yes-no-text).
+  'workAuth.authorized': YES_NO_TEXT, 'workAuth.sponsorship': YES_NO_TEXT, 'workAuth.sponsorshipNow': YES_NO_TEXT,
+  'workAuth.sponsorshipFuture': YES_NO_TEXT, 'workAuth.status': CHOICE, 'workAuth.visaType': ['text', ...CHOICE],
   'workAuth.clearance': ['text', ...YES_NO], 'screening.over18': YES_NO,
   // Never filled: recognised on any answer widget, so it is never taken for something else.
   'screening.criminalHistory': ['text', 'textarea', ...YES_NO],
@@ -127,6 +142,13 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'freeText.additionalInfo': PROSE, 'freeText.other': PROSE,
   'file.resume': ['file'], 'file.coverLetter': ['file'], 'file.other': ['file'],
   'screening.previouslyEmployed': ANY_ANSWER, 'screening.other': ANY_ANSWER,
+  // s2 core-gh: the new categories.
+  'links.telegram': PROSE, 'address.full': PROSE,
+  'workAuth.citizenship': ['text', 'select', 'combobox', 'typeahead-remote', 'checkbox-group', 'multiselect'],
+  'screening.restrictiveAgreement': YES_NO, 'screening.governmentService': YES_NO, 'screening.relatives': YES_NO,
+  'screening.essentialFunctions': YES_NO, 'skills.certifications': [...PROSE, ...YES_NO],
+  'preferences.relocationPlaces': [...PROSE, 'checkbox-group', 'multiselect'], 'education.summary': PROSE,
+  // s2 core-gh end
   unknown: ANY,
 };
 
@@ -227,7 +249,10 @@ export const USER_ONLY_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCat
 export const AI_OPENED_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['workAuth.authorized',
   'workAuth.sponsorship', 'workAuth.sponsorshipNow', 'workAuth.sponsorshipFuture', 'workAuth.status',
   'workAuth.visaType', 'workAuth.clearance', 'screening.over18', 'screening.criminalHistory', 'salary.expected',
-  'salary.currency', 'attentionCheck']);
+  'salary.currency', 'attentionCheck',
+  // s2 core-gh: U.S. government or military service, which the AI answered before it had a category of its own ("Have
+  // you ever worked for the US government?"), where the profile holds no answer.
+  'screening.governmentService']);
 
 /**
  * The profile categories an AI answer may fill when the profile holds no value for them (the owner's amendments): job

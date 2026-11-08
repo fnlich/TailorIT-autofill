@@ -320,7 +320,8 @@ describe('judgeClassification', () => {
 
 describe('planFrame with LLM classification (§8.4)', () => {
   const WHERE = specOf('Where do you work today?', 'text');
-  const CITY = specOf('Which city are you based in right now?', 'text');
+  // s2 core-gh: "Which city are you based in right now?" is the current location's rule now (labelRules RESIDENCE).
+  const CITY = specOf('Which city would you most like to visit?', 'text');
   const TEAM = specOf('Which team excites you most?', 'select', { optionLabels: ['Platform', 'Payments', 'Growth'] });
   const DECLINING = specOf('Which office would you pick?', 'select', { optionLabels: ['Austin', 'Prefer not to say'] });
   const PERK = specOf('Which perk matters most?', 'select', { optionLabels: ['Remote days', 'Military leave', 'Gym'] });

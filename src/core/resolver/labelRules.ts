@@ -58,6 +58,10 @@ export interface LabelContext {
   qualifiers?: string;
   rawLabel?: string;
   block?: number;
+  /** s2 core-gh (decision 13): the label's question sentences alone (questionSentences), normalized, when it also
+   *  states something after its last question ("…? You must be work authorized … without the need for employer
+   *  sponsorship."): a pre-rule that joins two answers reads only what is asked. Absent otherwise. */
+  questions?: string;
 }
 
 /** One label rule. `^…$` in a pattern means the whole label must match. */
@@ -382,6 +386,13 @@ const VISA_SPONSORSHIP = /\bvisas?\b|\bimmigra\w*|\bh\s?1\s?b\b|\bgreen\s+card\b
  *  at ClassPass": "Do you now, or will you in the future, require employer-sponsored work authorization to legally work
  *  in the country where this role is located?"). §8.3's authorization rule, read first, took it for authorization. */
 const SPONSORED_NEED = /\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,3}?\s+sponsored\s+(?:work|employment|visas?|immigration)\b/;
+// s2 core-gh (decision 13, the gh study's 3b: fixtures/greenhouse/s2-onestream-related-open question_8152423009, "Will
+// you now or in the future require OneStream to sponsor your employment visa status/work authorization in the
+// country/province you are applying for?"): a need for the employer to sponsor, a few words on, is sponsorship, whatever
+// "work authorization" the sentence names after it. §8.3's authorization rule, read first, took it for authorization
+// and answered a person who needs no sponsorship "Yes".
+const NEED_TO_SPONSOR = /\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,4}?\s+sponsor\w*/;
+// s2 core-gh end
 
 // Self-identification wordings: a topic word without one ("experience supporting individuals with disabilities") is a
 // question about the job, which the person answers; it never takes their self-identification answer.
@@ -599,6 +610,97 @@ const JOINS_IF = new Set(['and', 'or', 'nor']);
 const OBJECT_START = new Set(['to', 'the', 'a', 'an', 'any', 'all', 'my', 'your', 'our', 'its', 'their', 'that',
   'this', 'these', 'those', 'being', 'having', 'also']);
 
+// ── s2 core-gh (snapshot round 2: the gh and eeo studies' Greenhouse and Lever questions) ──────────────────────────
+
+/** X, the old Twitter, by its own name beside what the box takes ("X username", "X (formerly Twitter) profile": the
+ *  parenthetical is left out), never a bare "X" (screenshot 7 of 2026-11-07). */
+const X_LINK = /\bx\s+(?:formerly\s+(?:known\s+as\s+)?twitter\s+)?(?:user\s?names?|handles?|accounts?|profiles?|urls?|links?)\b|\bx\s+com\b/;
+/** The person's place of residence asked as a question (s2-ahead-0 "Where do you currently reside? (City/State)?",
+ *  s2-tripledot-right-to-work-open "Please provide your city and state of residence", s2-robotspencils-clear-id-open
+ *  "What city are you located in?"); never "Do you currently reside in …?", a yes or no. */
+const RESIDENCE = /^where\s+do\s+you\s+(?:currently\s+|now\s+)?(?:reside|live)\b|\b(?:your\s+)?city\s+(?:and|or)\s+(?:state|province|region|country)\s+of\s+residence\b|^(?:what|which)\s+city\s+(?:are\s+you|do\s+you)\s+(?:currently\s+)?(?:located|based|live|reside)\b|\bcity\s+of\s+(?:current\s+)?residence\b/;
+/** Employed or appointed by the company before (s2-horacemann-certify-open question_20182379004 "Have you ever been
+ *  employed or appointed by Horace Mann …"), with a second verb §8.3's rule misses. */
+const EMPLOYED_BEFORE = /\b(?:previously|ever)\s+(?:been\s+)?(?:worked|employed|appointed|contracted)(?:\s+or\s+(?:worked|employed|appointed|contracted))?\s+(?:for|at|by|with)\b/;
+/** Employed by the company now (s2-horacemann-certify-open question_20182378004 "Are you currently a Full-Time/
+ *  Part-Time employee or appointee of Horace Mann Inc …?"): the previously-employed rule's value then reads the current
+ *  entries only (values.ts previouslyEmployedValue). */
+export const EMPLOYED_NOW = /\bare\s+you\s+(?:currently|presently|now)\s+(?:an?\s+)?(?:\w+\s+){0,4}?(?:employee|appointee|employed|contractor|working)\b(?:\s+or\s+\w+)?\s+(?:of|at|by|for|with)\b/;
+/** Tools or technologies asked as a list the person has used (s2-pie-cicd-open question_20266022004[] "Which of the
+ *  following infrastructure-as-code tools have you used in a production environment?"). */
+const SKILLS_USED = /\b(?:which|what)\s+(?:of\s+the\s+following\s+)?(?:\w+\s+){0,4}?(?:tools|technologies|languages|frameworks|platforms|libraries|databases|services)\b(?:\s+\w+){0,6}?\s+(?:have\s+you|do\s+you)\s+(?:used|use|worked\s+with|know)\b/;
+/** A security clearance by its levels (s2-virtru-clearance-open question_9225664005 "Do you hold an Active TS/SCI?"). */
+const CLEARANCE_WIDE = /\bts\s*sci\b|\btop\s+secret\b|\b(?:security\s+)?clearances?\b|\bpolygraph\b|\bpublic\s+trust\b/;
+/** A consent to an identity check asked as a question (s2-robotspencils-clear-id-open question_18795013008 "… we are
+ *  sending automated CLEAR ID verification … are you okay doing this validation?"): unrecognised consent, decided by
+ *  the Consents mode (decision 10). Only a check, a verification or a validation: "Are you comfortable doing on-call?"
+ *  is a question. */
+const CHECK_CONSENT = /\bare\s+you\s+(?:ok|okay|comfortable|fine|happy|willing|alright)\s+(?:with\s+)?(?:doing|completing|undergoing|taking|having|going\s+through)\s+(?:this|the|a|an|our)?\s*(?:\w+\s+){0,2}?(?:validation|verification|identity\s+check|id\s+check|background\s+check|screening)\b/;
+/** A restrictive agreement asked as a fact (s2-horacemann-certify-open question_20182385004 "Are you subject to any
+ *  agreement (Non-compete, non-solicitation, …) that may restrict your ability to be employed …?", s2-onestream-
+ *  related-open question_8152425009 "Are you subject to a non-compete or other agreement … that would preclude or
+ *  restrict your employment …?"): the person's own answer (screening.restrictiveAgreement), read with the
+ *  parentheticals; an ask to agree to one stays the binding waiver it is. */
+const RESTRICTIVE_TOPIC = /\bnon\s?compet\w*|\bnoncompet\w*|\bnon\s?solicit\w*|\bnonsolicit\w*|\brestrictive\s+covenants?\b|\bsubject\s+to\s+(?:any|an?)\s+(?:\w+\s+){0,2}?agreements?\b(?:\s+\w+){0,8}?\s+(?:restrict|preclude|prevent|limit|prohibit)\w*/;
+const RESTRICTIVE_FACT = /^(?:(?:are|were)\s+you\s+(?:currently\s+|now\s+|still\s+)?(?:subject|bound|party|a\s+party|under)\b|(?:have|did)\s+you\s+(?:ever\s+)?(?:signed|entered|agreed)\b|do\s+you\s+(?:currently\s+)?have\b)/;
+/** U.S. military or government service asked as one question (s2-onestream-related-open question_8152429009 "Are you
+ *  currently or have you within the last five years served in the U.S. armed forces or been employed by any U.S.
+ *  federal, state, and local government?"): a federal, state or local government, or the armed forces beside one.
+ *  Military service alone is the veteran question, and "a government agency" alone an employment question the AI
+ *  answers. */
+export const GOVERNMENT_SERVICE = /\b(?:employed|worked|served|serving|working)\s+(?:by|for|in|at|with)\s+(?:an?\s+|any\s+|the\s+)?(?:\w+\s+){0,5}?(?:federal|state|local|municipal|u\s+s|us)\s+(?:\w+\s+){0,3}?government\b|\b(?:armed\s+forces|military)\b(?:\s+\w+){0,14}?\s+government\b|\bgovernment\b(?:\s+\w+){0,14}?\s+(?:armed\s+forces|military)\b|\b(?:federal|government)\s+(?:employee|official)\b/;
+/** A relative at the company (s2-onestream-related-open question_8152427009 "Are you related to anyone currently
+ *  employed at OneStream?"). */
+const RELATIVES = /\brelated\s+to\s+(?:anyone|anybody|someone|any\s+(?:one|employee|person|current\s+employee)|an?\s+(?:current\s+)?employee)\b|\b(?:any\s+)?(?:relatives?|family\s+members?)\s+(?:who\s+(?:currently\s+)?(?:work|works|is\s+employed|are\s+employed)|(?:currently\s+)?(?:working|employed))\b/;
+/** The role's essential functions (s2-ahead-0 "Confirm the ability to perform the requisite duties of the role with or
+ *  without reasonable accommodations"). */
+const ESSENTIAL_FUNCTIONS = /\b(?:able|ability)\s+to\s+perform\b(?:\s+\w+){0,6}?\s+(?:duties|functions|requirements|tasks)\b(?:\s+\w+){0,8}?\s+(?:with\s+or\s+without|reasonable\s+accommodations?)\b|\bessential\s+(?:job\s+)?functions\b/;
+/** The person's certifications (s2-ahead-0 "Do you hold any industry related certifications?"); never "I certify". */
+const CERTIFICATIONS = /\b(?:any|your|list|hold|have)\s+(?:(?:industry(?:\s+related)?|professional|relevant|technical|other)\s+)?certifications?\b|^(?:(?:professional|industry|relevant|technical)\s+)?certifications?(?:\s+(?:held|obtained|earned))?$/;
+/** Where the person would relocate or work from (s2-ahead-0 "If so, where would you be open to relocating?",
+ *  s2-lightning-0 "… select all locations you are able to work a hybrid schedule from"). */
+const RELOCATION_PLACES = /\bwhere\b(?:\s+\w+){0,6}?\s+relocat\w*|\brelocat\w*\s+to\s+(?:which|what)\s+(?:locations?|cities|places|countries)\b|\b(?:select|choose|which|what)\b(?:\s+\w+){0,4}?\s+locations?\b(?:\s+\w+){0,6}?\s+(?:work|relocat\w*|commute)\b/;
+/** The education written out (s2-ahead-0 "Provide All Post-Secondary Education Attained - Formatted as: College Name;
+ *  Degree Obtained …"). */
+const EDUCATION_SUMMARY = /\beducation\s+attained\b|^(?:please\s+)?(?:list|provide|describe)\s+(?:all\s+)?(?:of\s+)?(?:your\s+)?(?:post\s+secondary\s+|higher\s+|formal\s+)?education\b/;
+/** A whole address in one box (s2-horacemann-certify-open question_20182381004 "What is your current address?",
+ *  s2-ahead-0 "Primary Residence Address"); "Address", "Your address", a home or street address or a line stays the
+ *  street's (a form with its own city and postcode boxes asks the street there). */
+const FULL_ADDRESS = /^(?:(?:current|full|complete|primary|permanent|residence|residential)\s+)+address$|^(?:current\s+)?address\s+of\s+(?:current\s+)?residence$/;
+/** A nationality asked by country (decision 11: "Country of Origin" is the first citizenship; s2-sandtech-salary-open
+ *  question_9737048101): never a birth place or a national origin, and never a yes or no about one country. */
+const CITIZENSHIP_ASKED = /\bnationalit(?:y|ies)\b|\bcountr(?:y|ies)\s+of\s+(?:citizenship|nationality|origin)\b|\bcitizenship\s+countr(?:y|ies)\b|\bcountr(?:y|ies)\b(?:\s+\w+){0,4}?\s+citizen(?:ship)?s?\b|\bcitizen(?:ship)?s?\s+(?:\w+\s+){0,2}?countr(?:y|ies)\b|\bpassport\s+(?:country|nationality)\b/;
+const NOT_CITIZENSHIP = /\bbirth\w*|\bborn\b|\bnational\s+origin\b/;
+/** The yes/no legal questions a text box may take, as "Yes" or "No" (decision 11; categories.ts YES_NO_TEXT). */
+const TYPED_YES_NO: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['workAuth.authorized', 'workAuth.sponsorship',
+  'workAuth.sponsorshipNow', 'workAuth.sponsorshipFuture']);
+/** A yes-or-no question: an auxiliary verb leads it. */
+export const YES_NO_QUESTION = /^(?:are|is|am|was|were|do|does|did|have|has|had|will|would|can|could|may|might|shall|should)\b/;
+
+/** The rules s2 core-gh adds, tried in order before §8.3's list, each on a kind its category takes. */
+const S2_RULES: ReadonlyArray<{ id: string; re: RegExp; category: FieldCategory; strength: RuleStrength;
+  unless?: RegExp }> = [
+  { id: 'label.telegram', re: /\btelegram\b/, unless: /\btelegram\s+(?:number|phone)\b/, category: 'links.telegram',
+    strength: 'normal' },
+  { id: 'label.full-address', re: FULL_ADDRESS, category: 'address.full', strength: 'normal' },
+  { id: 'label.government-service', re: GOVERNMENT_SERVICE, category: 'screening.governmentService', strength: 'strong' },
+  { id: 'label.relatives', re: RELATIVES, category: 'screening.relatives', strength: 'strong' },
+  { id: 'label.essential-functions', re: ESSENTIAL_FUNCTIONS, category: 'screening.essentialFunctions',
+    strength: 'strong' },
+  { id: 'label.certifications', re: CERTIFICATIONS, category: 'skills.certifications', strength: 'normal' },
+  { id: 'label.relocation-places', re: RELOCATION_PLACES, category: 'preferences.relocationPlaces', strength: 'normal' },
+  { id: 'label.education-summary', re: EDUCATION_SUMMARY, category: 'education.summary', strength: 'normal' },
+];
+/** s2 core-gh: the rules tried after §8.3's list, when none of it matched. */
+const S2_LATE_RULES: typeof S2_RULES = [
+  { id: 'label.skills-used', re: SKILLS_USED, category: 'skills.list', strength: 'normal' },
+];
+const RESTRICTIVE_RULE = { id: 'label.restrictive-agreement', strength: 'strong' } as const;
+const CITIZENSHIP_RULE = { id: 'label.citizenship-country', strength: 'normal' } as const;
+const CHECK_CONSENT_RULE = { id: 'label.consent-check', strength: 'strong' } as const;
+
+// s2 core-gh end
+
 /** How the review narrows or widens one of the design's rules. */
 interface Refinement {
   /** More wordings the rule covers. */
@@ -629,12 +731,18 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.phone': { only: PHONE_NOUN, ask: true },
   'label.address2': { only: ADDRESS2_NOUN },
   'label.country': { also: /^(?:what\s+is\s+your\s+)?(?:current\s+)?country(?:\s+of\s+(?:current\s+)?residence)?$|^what\s+country\s+do\s+you\s+(?:currently\s+)?(?:live|reside)\s+in$/ },
-  'label.location': { also: /^(?:what\s+is\s+)?your\s+(?:current\s+)?location$/ },
+  // s2 core-gh: a residence asked as a question (RESIDENCE).
+  'label.location': { also: new RegExp(String.raw`^(?:what\s+is\s+)?your\s+(?:current\s+)?location$|` + RESIDENCE.source) },
   'label.portfolio': { only: PORTFOLIO_NOUN, ask: true },
+  // s2 core-gh: X by its own name (decision 9), a clearance by its levels.
+  'label.twitter': { also: X_LINK },
+  'label.clearance': { also: CLEARANCE_WIDE },
   // The Phase 7a review: "legally eligible to be employed" is authorization too (a work authorization status is read
   // before this rule: matchLabelRules).
   // The core pass of 2026-11-06: a need for employer-sponsored work authorization is sponsorship (SPONSORED_NEED).
-  'label.work-auth': { also: WORK_AUTH_WIDE, only: WORK_AUTH_LEGAL, unless: SPONSORED_NEED },
+  // s2 core-gh (decision 13): a need for the employer to sponsor is sponsorship too (NEED_TO_SPONSOR).
+  'label.work-auth': { also: WORK_AUTH_WIDE, only: WORK_AUTH_LEGAL,
+    unless: new RegExp(`${SPONSORED_NEED.source}|${NEED_TO_SPONSOR.source}`) },
   'label.sponsorship': { also: SPONSORED_NEED, only: VISA_SPONSORSHIP, readsQualifiers: true,
     needsUser: (c) => (sponsorshipTime(c.label) === 'unclear' ? 'unclear-time' : null) },
   'label.over18': { also: OVER18_WIDE },
@@ -659,7 +767,9 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.relocation': { unless: /\brelocat\w*\s+(?:assistance|package|support|benefits?|reimbursement|bonus|expenses?|costs?|stipend|allowance|help|budget|polic(?:y|ies)|services?)\b/ },
   // "Have you worked here before?" (docs/SPEC-AMENDMENTS.md §8), which §8.3's rule misses. The rule's value is taken
   // only for a question that names the posting's company or points at it (values.ts, the Phase E review, M3).
-  'label.previously-employed': { also: /\bworked\s+(?:here|for\s+us|with\s+us)\b|\bemployed\s+(?:here|by\s+us)\b|\bworked\s+(?:at|for)\s+(?:\w+\s+){1,4}?before\b|\bex\s+employees?\b|\bformer\s+employees?\b/ },
+  // s2 core-gh: employed or appointed before, and employed now (EMPLOYED_BEFORE, EMPLOYED_NOW).
+  'label.previously-employed': { also: new RegExp(String.raw`\bworked\s+(?:here|for\s+us|with\s+us)\b|\bemployed\s+(?:here|by\s+us)\b|\bworked\s+(?:at|for)\s+(?:\w+\s+){1,4}?before\b|\bex\s+employees?\b|\bformer\s+employees?\b|`
+    + `${EMPLOYED_BEFORE.source}|${EMPLOYED_NOW.source}`) },
   'label.travel': { unless: /\btravel\s+(?:restrictions?|limitations?|constraints?|bans?|reimbursements?|expenses?|polic(?:y|ies)|documents?|history)\b|\brestrictions?\s+on\s+(?:your\s+)?travel\b/ },
   // "Which languages do you speak?" (Phase 2): §8.3's rule takes "languages you speak" with nothing between. Only
   // "speak": "What programming languages do you know?" asks about skills.
@@ -687,6 +797,9 @@ interface PreRule {
   unless?: RegExp;
   /** The rule reads the label's parentheticals too: "Country (of citizenship)" asks for a nationality. */
   readsQualifiers?: boolean;
+  /** s2 core-gh (decision 13): the rule reads only the label's question sentences where the label states more after
+   *  them (LabelContext.questions). */
+  questionsOnly?: true;
   category: FieldCategory;
   strength: RuleStrength;
   needsUser: NeedsUserCause;
@@ -696,8 +809,12 @@ interface PreRule {
 export const PRE_RULES: ReadonlyArray<PreRule> = [
   // "Are you authorized to work in the US without sponsorship?" and "I am authorized to work and do not require
   // sponsorship" join two answers; "able to work without sponsorship" inverts the sponsorship one.
+  // s2 core-gh (decision 13, the gh study's 3c: s2-ridgeline-sponsorship-open question_32819764003, "Will you now or in
+  // the future require sponsorship …? You must be work authorized in the United States without the need for employer
+  // sponsorship."): only the question sentences are read, so a requirement stated after the question joins no second
+  // answer to it.
   { id: 'label.authorization-and-sponsorship', re: /\bwithout\b(?:\s+\w+){0,5}?\s+sponsor\w*|\b(?:not|never|dont|wont|doesnt|cannot|cant|no\s+longer)\b(?:\s+\w+){0,6}?\s+(?:need|require)\w*(?:\s+\w+){0,4}?\s+sponsor\w*|\bno\s+(?:need\s+for\s+|requirement\s+for\s+)?(?:\w+\s+)?sponsorship\b|(?:authori[sz]ed|eligible|permitted|entitled)\s+to\s+work\b.*\bsponsor\w*|\bsponsor\w*\b.*\b(?:authori[sz]ed|eligible|permitted|entitled)\s+to\s+work\b/,
-    category: 'workAuth.authorized', strength: 'strong', needsUser: 'authorization-and-sponsorship' },
+    questionsOnly: true, category: 'workAuth.authorized', strength: 'strong', needsUser: 'authorization-and-sponsorship' },
   { id: 'label.work-permit', re: /\b(?:work|working|residence|residency)\s+permits?\b|\bblue\s+card\b|\bpermit\s+to\s+work\b/,
     unless: /\bsponsor/, category: 'workAuth.authorized', strength: 'strong', needsUser: 'work-permit' },
   { id: 'label.nationality', re: /\bnationalit(?:y|ies)\b|\bnational\s+origin\b|\bcountr(?:y|ies)\s+of\s+(?:citizenship|nationality|birth|origin)\b|\bcountr(?:y|ies)\b(?:\s+\w+){0,6}?\s+citizen\w*|\bcitizen\w*(?:\s+\w+){0,4}?\s+countr(?:y|ies)\b|\bpassport\s+(?:country|nationality)\b|\bplace\s+of\s+birth\b|\bbirth\s*place\b/,
@@ -706,6 +823,7 @@ export const PRE_RULES: ReadonlyArray<PreRule> = [
   { id: 'label.age', re: /^(?:what\s+is\s+)?(?:your\s+)?(?:current\s+)?age(?:\s+(?:range|group|bracket|in\s+years))?$|\bdate\s+of\s+birth\b|\bbirth\s*date\b|\bbirthday\b|\bdob\b|\bhow\s+old\s+are\s+you\b|\byear\s+of\s+birth\b|\bbirth\s+year\b|\byour\s+age\b|\b(?:under|younger\s+than|below)\s+(?:the\s+age\s+of\s+)?(?:18|eighteen|21|twenty\s+one)\b|\b(?:21|twenty\s+one)\s+(?:years\s+)?(?:of\s+age\s+)?(?:old\s+)?(?:or|and)\s+(?:older|over|above)\b|\b(?:over|at\s+least|older\s+than)\s+(?:the\s+age\s+of\s+)?(?:21|twenty\s+one)\b/,
     readsQualifiers: true, category: 'screening.over18', strength: 'normal', needsUser: 'age' },
 ];
+
 
 /** The design's own rules for dates, which in a repeatable section the design does not name belong to the block. */
 const DATE_RULES = new Set(['label.start-date', 'label.end-date']);
@@ -890,8 +1008,16 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
     && kindAllowed('experience.description', kind)) {
     return hitOf(EXPERIENCE_DESCRIPTION_RULE, 'experience.description');
   }
+  // s2 core-gh (decision 11): a nationality asked by country takes the person's citizenships, before the pre-rule that
+  // hands every nationality question over.
+  const withQualifiers = ctx.qualifiers === '' ? text : `${text} ${ctx.qualifiers}`;
+  if (CITIZENSHIP_ASKED.test(withQualifiers) && !NOT_CITIZENSHIP.test(withQualifiers) && !YES_NO_QUESTION.test(text)
+    && kindAllowed('workAuth.citizenship', kind)) {
+    return hitOf(CITIZENSHIP_RULE, 'workAuth.citizenship');
+  }
   for (const rule of PRE_RULES) {
-    const reads = rule.readsQualifiers && ctx.qualifiers !== '' ? [text, `${text} ${ctx.qualifiers}`] : [text];
+    const own = rule.questionsOnly === true && context.questions !== undefined ? context.questions : text;
+    const reads = rule.readsQualifiers && ctx.qualifiers !== '' ? [own, `${own} ${ctx.qualifiers}`] : [own];
     if (reads.some((read) => rule.re.test(read) && !(rule.unless?.test(read) ?? false))) {
       return { ...hitOf(rule, rule.category), needsUser: rule.needsUser };
     }
@@ -902,6 +1028,12 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   if (asksHowApplicationMade(text, STATEMENT_KINDS.has(kind))) {
     return { ...hitOf(HOW_MADE_RULE, 'consent.aiAttestation'), consentKinds: ['consent.aiAttestation'],
       needsUser: 'how-made' };
+  }
+  // s2 core-gh: a restrictive agreement asked as a fact is the person's own answer (screening.restrictiveAgreement),
+  // never the binding waiver an ask to agree to one is.
+  if (RESTRICTIVE_TOPIC.test(withQualifiers) && RESTRICTIVE_FACT.test(text)
+    && kindAllowed('screening.restrictiveAgreement', kind)) {
+    return hitOf(RESTRICTIVE_RULE, 'screening.restrictiveAgreement');
   }
   if (kind !== 'checkbox' && namesBindingWaiver(text)) {
     return { ...hitOf(BINDING_WAIVER_RULE, 'consent.other'), consentKinds: ['consent.other'],
@@ -919,6 +1051,19 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   // no.
   if (WORK_AUTH_STATUS.test(text) && kindAllowed('workAuth.status', kind)) {
     return hitOf(WORK_AUTH_STATUS_RULE, 'workAuth.status');
+  }
+  // s2 core-gh: the snapshot round's own rules (S2_RULES), and a consent to an identity check asked as a question
+  // (decision 10), which the Consents mode decides as a consent asked as a choice (classifyRules consentChoice).
+  const asked = text.replace(ASK, '');
+  for (const rule of S2_RULES) {
+    if ((rule.re.test(text) || rule.re.test(asked)) && !(rule.unless?.test(text) ?? false)
+      && kindAllowed(rule.category, kind)) {
+      return hitOf(rule, rule.category);
+    }
+  }
+  if (CHECK_CONSENT.test(text)) {
+    return consentVerdict([{ rule: { ...CHECK_CONSENT_RULE, re: CHECK_CONSENT, category: 'consent.other' },
+      category: 'consent.other' }], kind);
   }
   for (const rule of LABEL_RULES) {
     if (DATE_RULES.has(rule.id) && section === 'other' && context.block !== undefined) continue;
@@ -946,11 +1091,16 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
       if (entries.length > 0) return consentVerdict(entries, kind);
       return consentVerdict([{ rule, category }], kind);
     }
-    if (!kindAllowed(category, kind)) {
+    // s2 core-gh (decision 11): a yes/no legal question takes a text box only when it is asked as yes or no.
+    if (!kindAllowed(category, kind) || (kind === 'text' && TYPED_YES_NO.has(category) && !YES_NO_QUESTION.test(text))) {
       if (STOPPING_CLASSES.includes(policy)) return { ...hitOf(rule, category), needsUser: 'kind-mismatch' };
       continue;
     }
     return hitOf(rule, category);
+  }
+  // s2 core-gh: tools used asked as a list (S2_LATE_RULES).
+  for (const rule of S2_LATE_RULES) {
+    if (rule.re.test(text) && kindAllowed(rule.category, kind)) return hitOf(rule, rule.category);
   }
   if (whyName(ctx.rawLabel) && kindAllowed('freeText.whyCompany', kind)) {
     return hitOf(ruleById('label.why-company'), 'freeText.whyCompany');

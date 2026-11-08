@@ -287,11 +287,11 @@ describe('a rule whose category the kind cannot hold is no match', () => {
   it.each<[string, FieldKind, string, FieldCategory]>([
     ['Gender', 'text', 'label.gender', 'eeo.gender'],
     ['Signature', 'checkbox', 'label.consent-signature', 'consent.signature'],
-    ['Will you require sponsorship for this position?', 'text', 'label.sponsorship', 'workAuth.sponsorship'],
-    ['Are you legally authorized to work in the country where this position is located?', 'text', 'label.work-auth',
+    // s2 core-gh (decision 11): a yes/no sponsorship or authorization question in a text box takes "Yes" or "No" now
+    // (below); one not asked as yes or no is still the person's.
+    ['Visa sponsorship needed for this position', 'text', 'label.sponsorship', 'workAuth.sponsorship'],
+    ['Work authorization in the country where this position is located', 'text', 'label.work-auth',
       'workAuth.authorized'],
-    ['Will you require sponsorship to work in this role?', 'text', 'label.sponsorship', 'workAuth.sponsorship'],
-    ['Do you require visa sponsorship to work at this company?', 'text', 'label.sponsorship', 'workAuth.sponsorship'],
     ['Are you a protected veteran?', 'text', 'label.veteran', 'eeo.veteran'],
     ['Are you a U.S. citizen?', 'text', 'label.citizenship', 'workAuth.status'],
     ['I am a U.S. citizen or permanent resident', 'checkbox', 'label.citizenship', 'workAuth.status'],
@@ -566,8 +566,9 @@ describe('questions no profile answer states (PRE_RULES)', () => {
   it.each<[string, FieldKind, string, string]>([
     ['Do you need a work permit to work in Germany?', 'radio', 'label.work-permit', 'work-permit'],
     ['Do you hold a valid residence permit?', 'radio', 'label.work-permit', 'work-permit'],
-    ['Nationality', 'select', 'label.nationality', 'nationality'],
-    ['Country of citizenship', 'select', 'label.nationality', 'nationality'],
+    // s2 core-gh (decision 11): a nationality asked by country takes the citizenships (below); a birth place not.
+    ['Country of birth', 'select', 'label.nationality', 'nationality'],
+    ['Place of birth', 'text', 'label.nationality', 'nationality'],
     ['Export Control and Compliance: For the sole purpose of determining export licensing requirements, please list '
       + 'any countries of which you are a citizen or legal permanent resident, and when you obtained such status.',
     'textarea', 'label.nationality', 'nationality'],
@@ -577,8 +578,6 @@ describe('questions no profile answer states (PRE_RULES)', () => {
     ['Are you under 18?', 'radio', 'label.age', 'age'],
     ['Are you 21 or older?', 'radio', 'label.age', 'age'],
     ['Age (optional)', 'text', 'label.age', 'age'],
-    // The parenthetical says what the country is.
-    ['Country (of citizenship)', 'select', 'label.nationality', 'nationality'],
   ])('%j (%s) is %s’s', (label, kind, rule, needsUser) => {
     expect(labelHit(label, kind)).toMatchObject({ rule, needsUser });
   });
@@ -839,7 +838,6 @@ describe('an entity rule needs the label’s own noun, not a word in a question'
     ['Are you entitled to work overtime?', 'text'],
     ['Do you require relocation assistance?', 'radio'],
     ['Do you have any travel restrictions?', 'radio'],
-    ['Do you have a non-compete with your current company?', 'combobox'],
     ['Are you comfortable working in the office three days a week in this role?', 'combobox'],
   ])('%j (%s) takes no profile value', (label, kind) => {
     const hit = labelHit(label, kind);
@@ -1025,5 +1023,100 @@ describe('an "I did not use AI" statement (the Phase E review, M5)', () => {
     }
     // A warning about such work states nothing of the applicant's.
     expect(attestsNoAiUse('answers generated or assisted by ai tools will be rejected')).toBe(false);
+  });
+});
+
+// ── s2 core-gh (snapshot round 2: fixtures/greenhouse/s2-*, fixtures/lever/s2-ahead-*) ──────────────────────────────
+describe('s2 core-gh: the snapshot round’s rules', () => {
+  it.each<[string, FieldKind, FieldCategory, string]>([
+    // Decision 11: a yes/no legal question in a text box, asked as yes or no.
+    ['Will you require sponsorship for this position?', 'text', 'workAuth.sponsorship', 'label.sponsorship'],
+    ['Are you legally authorized to work in the country where this position is located?', 'text', 'workAuth.authorized',
+      'label.work-auth'],
+    ['Do you require visa sponsorship to work at this company?', 'text', 'workAuth.sponsorship', 'label.sponsorship'],
+    // Decision 11: a nationality by country; the parenthetical says what the country is.
+    ['Nationality', 'select', 'workAuth.citizenship', 'label.citizenship-country'],
+    ['Country of citizenship', 'select', 'workAuth.citizenship', 'label.citizenship-country'],
+    ['Country (of citizenship)', 'select', 'workAuth.citizenship', 'label.citizenship-country'],
+    ['Country of Origin', 'text', 'workAuth.citizenship', 'label.citizenship-country'],
+    // Decision 13: a need for the employer to sponsor is sponsorship (s2-onestream-related-open).
+    ['Will you now or in the future require OneStream to sponsor your employment visa status/work authorization in the '
+      + 'country/province you are applying for?', 'combobox', 'workAuth.sponsorship', 'label.sponsorship'],
+    // Decision 9: X and Telegram, and a link in a box of text.
+    ['X username', 'text', 'links.twitter', 'label.twitter'],
+    ['X (formerly Twitter) profile', 'text', 'links.twitter', 'label.twitter'],
+    ['Telegram username', 'text', 'links.telegram', 'label.telegram'],
+    ['LinkedIn Profile', 'textarea', 'links.linkedin', 'label.linkedin'],
+    // The gh study's §1 and §3f.
+    ['Have you ever been employed or appointed by Horace Mann or any of its subsidiaries as a contractor?', 'combobox',
+      'screening.previouslyEmployed', 'label.previously-employed'],
+    ['Are you currently a Full-Time/Part-Time employee or appointee of Horace Mann Inc or any of its subsidiaries?',
+      'combobox', 'screening.previouslyEmployed', 'label.previously-employed'],
+    ['Do you have a non-compete with your current company?', 'combobox', 'screening.restrictiveAgreement',
+      'label.restrictive-agreement'],
+    ['Are you related to anyone currently employed at OneStream?', 'combobox', 'screening.relatives', 'label.relatives'],
+    ['Are you currently or have you within the last five years served in the U.S. armed forces or been employed by any '
+      + 'U.S. federal, state, and local government?', 'combobox', 'screening.governmentService',
+    'label.government-service'],
+    ['Do you hold an Active TS/SCI?', 'combobox', 'workAuth.clearance', 'label.clearance'],
+    ['What is your current address?', 'text', 'address.full', 'label.full-address'],
+    ['Primary Residence Address', 'text', 'address.full', 'label.full-address'],
+    ['Where do you currently reside? (City/State)?', 'text', 'location.current', 'label.location'],
+    ['Please provide your city and state of residence.', 'text', 'location.current', 'label.location'],
+    ['What city are you located in?', 'text', 'location.current', 'label.location'],
+    ['Which of the following infrastructure-as-code tools have you used in a production environment?',
+      'checkbox-group', 'skills.list', 'label.skills-used'],
+    // The eeo study's §2C (s2-ahead-0).
+    ['Confirm the ability to perform the requisite duties of the role with or without reasonable accommodations',
+      'select', 'screening.essentialFunctions', 'label.essential-functions'],
+    ['Do you hold any industry related certifications?', 'text', 'skills.certifications', 'label.certifications'],
+    ['If so, where would you be open to relocating?', 'text', 'preferences.relocationPlaces',
+      'label.relocation-places'],
+    ['Provide All Post-Secondary Education Attained - Formatted as: College Name; Degree Obtained', 'textarea',
+      'education.summary', 'label.education-summary'],
+  ])('%j (%s) is %s by %s', (label, kind, category, rule) => {
+    expect(labelHit(label, kind)).toMatchObject({ category, rule });
+    expect(labelHit(label, kind)?.needsUser).toBeUndefined();
+  });
+
+  it.each<[string, FieldKind, FieldCategory | null]>([
+    // Never a bare X, a Telegram number, a residence asked as yes or no, government clients, a named certification.
+    ['X', 'text', null],
+    ['Telegram number', 'text', null],
+    ['Do you currently reside in Los Angeles County?', 'combobox', null],
+    ['Have you ever worked for a government agency?', 'radio', 'screening.previouslyEmployed'],
+    ['Do you have experience working with government clients?', 'radio', null],
+    ['Address', 'text', 'address.line1'],
+    ['Street address', 'text', 'address.line1'],
+    ['Do you have any AWS certifications?', 'text', null],
+  ])('%j (%s) is not read so', (label, kind, category) => {
+    const hit = labelHit(label, kind);
+    if (category === null) {
+      expect([null, 'screening.other', 'unknown'].includes(hit?.category ?? null), JSON.stringify(hit)).toBe(true);
+    } else {
+      expect(hit?.category).toBe(category);
+    }
+  });
+
+  it('keeps a yes/no legal answer out of a text box that does not ask yes or no', () => {
+    expect(labelHit('If no, how many months is your current work authorization valid for?', 'text'))
+      .toMatchObject({ category: 'workAuth.authorized', needsUser: 'kind-mismatch' });
+  });
+
+  it('reads Ridgeline’s question sentence alone, never the requirement stated after it', () => {
+    const label = 'Will you now or in the future require sponsorship for employment visa status (e.g. H-1B, TN, F1, '
+      + 'OPT, etc)? You must be work authorized in the United States without the need for employer sponsorship.';
+    const text = normalizeLabel(label);
+    const questions = normalizeLabel(label.slice(0, label.lastIndexOf('?') + 1));
+    expect(matchLabelRules(text, 'other', 'combobox', { rawLabel: label, questions })).toMatchObject({
+      rule: 'label.sponsorship', category: 'workAuth.sponsorship' });
+    expect(matchLabelRules(text, 'other', 'combobox', { rawLabel: label })?.needsUser)
+      .toBe('authorization-and-sponsorship');
+  });
+
+  it('reads a consent to an identity check asked as a question as unrecognised consent', () => {
+    expect(labelHit('Due to fraud we are sending automated CLEAR ID verification. Are you okay doing this validation?',
+      'radio')).toMatchObject({ category: 'consent.other', rule: 'label.consent-check' });
+    expect(labelHit('Are you comfortable doing on-call rotations?', 'radio')?.category).not.toBe('consent.other');
   });
 });
