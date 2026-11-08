@@ -567,7 +567,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
               ...(message.wraps === true ? { wraps: true } : {}), ...(message.claimed === true ? { claimed: true } : {}),
               ...(chain === undefined ? {} : { chain }),
               ...(same && held.wall !== undefined ? { wall: held.wall } : {}),
-              ...(same && held.choice === true ? { choice: true } : {}) }, now()) };
+              ...(same && held.choice === true ? { choice: true } : {}),
+              ...(same && held.waits !== undefined ? { waits: held.waits } : {}) }, now()) };
           });
           // core-x, items 7 and 14: a top document with an application is the tab's chain from now on; a portal frame
           // whose pages frame chain pages keeps its application's canonical address for them (the security fix of
@@ -777,7 +778,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // v4: the account wall a tab's top or claim frame shows now (content/runtime.ts tellWall), for PageState.wall.
         'frame/wall': async (message, from) => {
           const entry = await lockTab(from.tabId, () => setWall(session, from.tabId, from.frameId,
-            from.documentId ?? null, { wall: message.wall, choice: message.choice === true }));
+            from.documentId ?? null, { wall: message.wall, choice: message.choice === true,
+              ...(message.waits === undefined ? {} : { waits: message.waits }) }));
           if (entry === null) return refuse('expired');
           log('frame.wall', { shown: message.wall !== null, choice: message.choice === true });
           void reports.pageChanged(from.tabId).catch(() => undefined);

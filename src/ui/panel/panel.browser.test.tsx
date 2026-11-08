@@ -59,17 +59,40 @@ describe('the review panel', () => {
     expect(keysShown(root)).toEqual(['on-four']);
   });
 
-  // s2 profile (settings version 7): Never show them on the page, so the panel says what a paused run waits for.
-  it('says what a paused run waits for under its line when the page shows no TailorIT notification', async () => {
+  // s2 profile (settings version 7; the review fix P1): when the page's toasts may be gone (timed) or never drawn
+  // (Never), the panel says what a paused run, or a page with no run, waits for.
+  it('says what a paused run waits for under its line unless the page’s notifications stay until closed', async () => {
     const worker = createFakeWorker();
     worker.script.reports.set(5, [frameReport(0, { status: 'handoff', pauseReason: 'email-code' })]);
     const shown = await open(worker, 5);
     expect(shown.textContent).not.toContain(COPY.pauseReasons['email-code']);
     unmountAll();
-    worker.script.settings = { ...worker.script.settings, modes: { ...worker.script.settings.modes,
-      notifications: 'off' } };
-    const off = await open(worker, 5);
-    expect(off.querySelector('.tia-frame__note--pause')?.textContent).toBe(COPY.pauseReasons['email-code']);
+    for (const notifications of ['off', '10s'] as const) {
+      worker.script.settings = { ...worker.script.settings, modes: { ...worker.script.settings.modes, notifications } };
+      const quiet = await open(worker, 5);
+      expect(quiet.querySelector('.tia-frame__note--pause')?.textContent, notifications)
+        .toBe(COPY.pauseReasons['email-code']);
+      unmountAll();
+    }
+  });
+
+  it('says what a page with no run waits for, in its wall toast’s words, unless the page’s notifications stay until closed', async () => {
+    const worker = createFakeWorker();
+    worker.script.pages.set(5, { support: 'no-form', platform: 'workday', formKey: null, wall: 'sign-in',
+      waits: 'sign-in-failed' });
+    const until = await open(worker, 5);
+    expect(until.querySelector('[data-strip="page-waits"]')).toBeNull();
+    unmountAll();
+    for (const notifications of ['off', '5s'] as const) {
+      worker.script.settings = { ...worker.script.settings, modes: { ...worker.script.settings.modes, notifications } };
+      const quiet = await open(worker, 5);
+      expect(quiet.querySelector('[data-strip="page-waits"]')?.textContent, notifications)
+        .toBe(COPY.toasts.signInFailed);
+      unmountAll();
+    }
+    worker.script.pages.set(5, { support: 'no-form', platform: 'workday', formKey: null, waits: 'challenge' });
+    const check = await open(worker, 5);
+    expect(check.querySelector('[data-strip="page-waits"]')?.textContent).toBe(COPY.toasts.challenge);
   });
 
   it('keeps to the pinned tab whatever tab becomes active', async () => {

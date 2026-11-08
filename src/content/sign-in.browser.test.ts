@@ -470,6 +470,19 @@ describe('v4: the account wall, its toast, and Sign up & Autofill (docs/SPEC-AME
     await vi.waitFor(() => expect(worker.of('frame/wall').map((message) => message.wall)).toEqual(['sign-in', null]));
   });
 
+  // s2 profile (the review fix P1): the side panel says what a page with no run waits for when the toasts may be gone.
+  it('tells the worker what the page waits for while its wall’s toast stands, and that it went', async () => {
+    const { fixture, worker, runtime } = await start(signInPage(), 'manual', {}, [walled]);
+    await vi.waitFor(() => expect(worker.of('frame/wall').map((message) => message.wall)).toEqual(['sign-in']));
+    expect(worker.of('frame/wall')[0]).not.toHaveProperty('waits');
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+    await vi.waitFor(() => expect(runtime.ui?.toasts.shown).toEqual(['sign-in']));
+    await vi.waitFor(() => expect(worker.of('frame/wall').at(-1)).toMatchObject({ wall: 'sign-in', waits: 'sign-in' }));
+    signedIn(fixture);
+    await vi.waitFor(() => expect(worker.of('frame/wall').at(-1)).toMatchObject({ wall: null }));
+    expect(worker.of('frame/wall').at(-1)).not.toHaveProperty('waits');
+  });
+
   it('at a wall with no form: Autofill shows the sign-in toast under Manual; Sign up & Autofill signs in there', async () => {
     const manual = await start(signInPage(), 'manual', {}, [walled]);
     expect(manual.runtime.page).toBeNull();

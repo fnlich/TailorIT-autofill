@@ -1167,7 +1167,7 @@ const OPTIONS = {
       '10s': '10 seconds',
       '5s': '5 seconds',
       off: 'Never show them',
-      help: "How long TailorIT's notifications stay on the application page (a check to solve, a sign-in, Submit held back, the end of a run). Each still goes once its cause is gone. With Never show them, Autofill still waits and carries on by itself, and the side panel says what it waits for. The notice that a page holds text addressed to AI tools always shows.",
+      help: "How long TailorIT's notifications stay on the application page (a check to solve, a sign-in, Submit held back, the end of a run). Each still goes once its cause is gone. Autofill still waits and carries on by itself whatever you choose, and unless they stay until you close them, the side panel says what it waits for. The notice that a page holds text addressed to AI tools always shows.",
     },
   },
   /** v3 Phase 5: Options › Auto-apply. Drafts for the owner's review. */
