@@ -30,6 +30,7 @@ import type { Adapter } from '../adapters/types';
 import { agentVerdict } from '../background/agent';
 import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
+import { deadline } from '../dom/time';
 import { pageChallenged } from '../dom/pause-detect';
 import { scan } from '../dom/scan';
 import type { SignInCredential } from '../messaging/schemas';
@@ -132,8 +133,10 @@ const POPUP = `<div style="position:absolute;left:0;top:0;visibility:visible"><i
 
 /** A Greenhouse-shaped final step whose names the golden profile fills; `extra` before its Submit, `after` after it.
  *  With `needsTick` (v5 p1-rules), the page refuses a submission while its reCAPTCHA holds no token, as JazzHR does:
- *  its own error, "Please verify you are not a robot", marked invalid. */
-function page(extra = '', after = '', needsTick = false): string {
+ *  its own error, "Please verify you are not a robot", marked invalid; 'silent' (v5 review, F2) refuses it showing
+ *  nothing; 'reset' takes it and then empties the widget's token, as an AJAX page's grecaptcha.reset() does; 'refuse'
+ *  (F8) refuses every submission with a field's own error. */
+function page(extra = '', after = '', needsTick: boolean | 'silent' | 'reset' | 'refuse' = false): string {
   return `<!doctype html><html><head><title>Job Application for Engineer at Northwind</title></head><body>
   <main class="main"><h1>Engineer</h1>
   <form id="application-form" class="application--form">
@@ -150,7 +153,22 @@ function page(extra = '', after = '', needsTick = false): string {
     document.getElementById('application-form').addEventListener('submit', (event) => {
       event.preventDefault();
       const token = document.getElementById('g-recaptcha-response');
-      if (${needsTick} && token !== null && token.value === '') {
+      const mode = ${JSON.stringify(needsTick)};
+      if (mode === 'refuse') {
+        window.refused += 1;
+        document.getElementById('first_name').setAttribute('aria-invalid', 'true');
+        return;
+      }
+      if (mode === 'silent' && token !== null && token.value === '') {
+        window.refused += 1;
+        return;
+      }
+      if (mode === 'reset') {
+        window.submitted += 1;
+        token.value = '';
+        return;
+      }
+      if (mode === true && token !== null && token.value === '') {
         window.refused += 1;
         if (document.getElementById('captcha-error') === null) {
           const error = document.createElement('div');
@@ -186,7 +204,7 @@ function watchWidget(fixture: Fixture): { events: string[] } {
   return { events };
 }
 
-async function start(html: string, settings: Settings = AUTO) {
+async function start(html: string, settings: Settings = AUTO, submitConfirmMs?: number) {
   const fixture = await loadFixture(document, html, { width: 1100, height: 1200 });
   const frame = fixture.doc.getElementById('anchor') as HTMLIFrameElement | null;
   if (frame !== null && frame.contentDocument?.getElementById('anchor-box') == null) {
@@ -194,7 +212,8 @@ async function start(html: string, settings: Settings = AUTO) {
   }
   const worker = createFakeWorker({ settings });
   const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => GREENHOUSE, isTop: true,
-    adapters: () => [greenhouseAdapter], settle: { quietMs: 40 } });
+    adapters: () => [greenhouseAdapter], settle: { quietMs: 40 },
+    ...(submitConfirmMs === undefined ? {} : { submitConfirmMs }) });
   runtimes.push(runtime);
   return { fixture, worker, runtime };
 }
@@ -285,6 +304,49 @@ describe('a checkbox widget never holds the fill (M6), and since v5 no press: th
     expect(agentVerdict(worker.reports.at(-1)!, { retried: false }))
       .toEqual({ kind: 'finish', state: 'needs-you', reason: 'captcha' });
   });
+
+  // ── v5 review (F2, F8) ──
+  it('a Submit nothing confirmed is the check’s when the box was unticked as it was pressed: paused, pressed again once ticked',
+    async () => {
+      const { fixture, worker, runtime } = await start(page(widget(), '', 'silent'), AUTO, 1_500);
+      await runtime.fill();
+      await vi.waitFor(() => expect(refused(fixture)).toBe(1), { timeout: 8_000 });
+      await vi.waitFor(() => expect(worker.reports.at(-1)).toMatchObject({ status: 'handoff', pauseReason: 'captcha' }),
+        { timeout: 8_000 });
+      expect(codes(worker)).not.toContain('submit-unconfirmed');
+      tick(fixture);
+      await vi.waitFor(() => expect(submitted(fixture)).toBe(1), { timeout: 10_000 });
+    }, 30_000);
+
+  it('never presses twice a Submit pressed with the box ticked that nothing confirmed, though the page then reset it (F2)',
+    async () => {
+      const { fixture, worker, runtime } = await start(page(widget(), '', 'reset'), AUTO, 1_500);
+      tick(fixture);
+      await runtime.fill();
+      await vi.waitFor(() => expect(submitted(fixture)).toBe(1), { timeout: 8_000 });
+      // The page took it, then emptied the widget (grecaptcha.reset()): no confirmation came, and the box is unticked.
+      expect(value(fixture, 'g-recaptcha-response')).toBe('');
+      await vi.waitFor(() => expect(codes(worker)).toContain('submit-unconfirmed'), { timeout: 8_000 });
+      expect(worker.reports.at(-1)!.status).not.toBe('handoff');
+      // Ticked again later: nothing is pressed again.
+      tick(fixture);
+      await deadline(1_500);
+      expect(submitted(fixture)).toBe(1);
+      expect(worker.of('submit/armed')).toHaveLength(1);
+    }, 30_000);
+
+  it('reads only a checkbox in the pressed step’s form: a footer newsletter’s unticked box is no refusal (F8)', async () => {
+    const footer = `<footer style="margin-top:900px"><form id="newsletter"><label for="news">Email</label>
+      <input id="news" type="email">${widget()}</form></footer>`;
+    const { fixture, worker, runtime } = await start(page('', footer, 'refuse'), DEFAULT_SETTINGS);
+    expect(await runtime.fill()).toBe('review');
+    expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
+      .toEqual({ ok: true, data: { outcome: 'pressed' } });
+    expect(refused(fixture)).toBe(1);
+    await vi.waitFor(() => expect(codes(worker)).toContain('submit-errors'), { timeout: 8_000 });
+    expect(worker.reports.at(-1)!.status).not.toBe('handoff');
+  }, 20_000);
+  // ── end v5 review ──
 
   it('presses auto-advance’s Next beside it; a Next the page did not take is a CAPTCHA pause, carried on once ticked',
     async () => {
