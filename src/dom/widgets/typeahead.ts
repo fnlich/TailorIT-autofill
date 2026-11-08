@@ -8,10 +8,15 @@
  * names is acted on through the results list its adapter declared (WidgetDecl.results: Lever's location search), and
  * one that starts on a keydown gets its declared key after each query (WidgetDecl.queryKey) once the page has answered
  * typed text itself (a static page that ignores the input event gets none), its result chosen by the declared event
- * (results.choose: Lever's mousedown) instead of click():
+ * (results.choose: Lever's mousedown) instead of click(). s2 wd (snapshot round 2): Workday's prompts search on Enter
+ * (queryKey 'Enter', their box's enterkeyhint="search"), answer typed text in the microtasks after the input event
+ * (React: typeWatched waits for those, no timer), draw their results only while open (results.list the adapter's hook),
+ * are chosen by a click on a result's label part (results.choose 'label'), and a result that only opens a list of its
+ * own (a category) is read as one that cannot be chosen (results.unchoosable), so it never is:
  * 1. each query is a guarded write (hooks.guard: the DOM guard on a fresh scan, then guardWriteInFrame with provenance
  *    profile and transform typeahead.query), typed with the text filler's setter and its input event
- *    (insertReplacementText). It is never Enter, and no change, focusout or blur follows it while results are awaited,
+ *    (insertReplacementText). No Enter follows it but a declared query key (s2 wd), and no change, focusout or blur
+ *    follows it while results are awaited,
  *    since those close a widget's list. A widget that says it is closed (WidgetDecl.expanded) is opened first, with its
  *    one declared activation, and its first answer awaited (Greenhouse's School loads its first page then): a closed
  *    react-select shows no results, and its School search sends nothing;
@@ -111,30 +116,43 @@ function shownHash(widget: NonNullable<FieldTarget['widget']>): ReturnType<typeo
 
 /** Types one query (typeQuery) into a widget that declares a key to start its search (WidgetDecl.queryKey), and
  *  answers whether the page answered the typed text itself, at once: a change inside the form root while our input
- *  event ran (Lever shows its results' container in its own input listener). A page whose script does not run there (a
- *  static snapshot) answers nothing, and gets no key (v4, drop). */
-function typeWatched(box: HTMLInputElement | HTMLTextAreaElement, query: string, root: Element): boolean {
+ *  event ran (Lever shows its results' container in its own input listener), or (s2 wd) in the microtasks that event
+ *  queued (React draws a controlled box's answer in a microtask after the event: Workday's prompts). A page whose
+ *  script does not run there (a static snapshot) answers nothing, and gets no key (v4, drop). */
+async function typeWatched(box: HTMLInputElement | HTMLTextAreaElement, query: string, root: Element): Promise<boolean> {
   const view = windowOf(root);
   const observer = new view.MutationObserver(() => undefined);
   observer.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
   try {
     typeQuery(box, query);
+    if (observer.takeRecords().length > 0) return true;
+    // s2 wd: the microtasks our input event queued run before this one; no timer, no wait beyond them.
+    await Promise.resolve();
     return observer.takeRecords().length > 0;
   } finally {
     observer.disconnect();
   }
 }
 
+/** The element a result is pressed on (s2 wd): its label part where its adapter declares so (WidgetDecl.results.choose
+ *  'label': Workday's promptOption inside the row's promptLeafNode, so the click goes through the page's own row element
+ *  to the result), else the result itself. */
+function pressTargetOf(widget: NonNullable<FieldTarget['widget']>, option: Element): Element {
+  if (widget.results?.choose !== 'label') return option;
+  const part = widget.optionLabel?.(option) ?? null;
+  return part !== null && part !== option && option.contains(part) ? part : option;
+}
+
 /** Chooses a result (v4, drop): the one event its adapter declared for the widget's results (WidgetDecl.results.choose:
  *  Lever's location search chooses on a mousedown, bubbling to its document's listener, with the main button), else
- *  click(). assertNotSubmit has passed the result. */
+ *  click() on it, or (s2 wd, 'label') on its label part (pressTargetOf). assertNotSubmit has passed both. */
 function chooseResult(widget: NonNullable<FieldTarget['widget']>, option: Element): void {
   if (widget.results?.choose === 'mousedown') {
     const view = windowOf(option);
     option.dispatchEvent(new view.MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true, button: 0 }));
     return;
   }
-  (option as HTMLElement).click();
+  (pressTargetOf(widget, option) as HTMLElement).click();
 }
 
 /** A box's text as compared: white space collapsed, any case. */
@@ -243,7 +261,7 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     // no key, and the search stops there as below.
     if (widget.queryKey === undefined) {
       typeQuery(box, query);
-    } else if (typeWatched(box, query, ctx.root) || reacted) {
+    } else if (await typeWatched(box, query, ctx.root) || reacted) {
       pressQueryKey(widget, ctx);
     }
     typed += 1;
@@ -259,7 +277,9 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     const listbox = openListOf(widget);
     if (wait.status !== 'ready' || listbox === null) continue;
     const read = await readList(listbox, { signal: ctx.signal, labelOf: widget.optionLabel,
-      ...(widget.results === undefined ? {} : { option: widget.results.option }) });
+      ...(widget.results === undefined ? {} : { option: widget.results.option }),
+      // s2 wd: a result that only opens a list of its own is read as one that cannot be chosen.
+      ...(widget.results?.unchoosable === undefined ? {} : { unchoosable: widget.results.unchoosable }) });
     if (ctx.signal?.aborted) return ended();
     const results: WidgetOptionRead[] = read.options.map((option) => ({ label: option.label, disabled: option.disabled }));
     if (results.length === 0) continue;
@@ -309,7 +329,9 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
       ...(widget.results === undefined ? {} : { option: widget.results.option }) });
     if (ctx.signal?.aborted) return sent ? stop('internal-error') : ended();
     if (option === null) return stop('options-changed');
-    if (!assertNotSubmit(option.el, ctx).ok) return stop('needs-your-click');
+    if (!assertNotSubmit(option.el, ctx).ok || !assertNotSubmit(pressTargetOf(widget, option.el), ctx).ok) {
+      return stop('needs-your-click');
+    }
     const markedBefore = marked(widget, option.el);
     chooseResult(widget, option.el);
     await afterAction(widget, ctx);

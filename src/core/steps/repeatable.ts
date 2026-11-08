@@ -9,8 +9,9 @@
  *   reused, never added again: nothing is duplicated. Blocks no entry takes are reported, never deleted or cleared.
  * - Add clicks (planAdd): one at a time, settling after each, until every entry has a block. Each click is counted
  *   (RunState.repeatableCounters, through the REPEATABLE event) before it is made, so across reloads the clicks on a
- *   step never pass the profile's count; a click that added no block is the page ignoring our click (the person's
- *   click, needs-your-click), never retried.
+ *   step never pass the profile's count (s2 wd: unless the reloaded page shows fewer blocks than were counted, its
+ *   unsaved blocks dropped, when the count starts again); a click that added no block is the page ignoring our click
+ *   (the person's click, needs-your-click), never retried.
  * - "I currently work here" (planCurrentJob): the box is ticked before anything else happens to the end date, which is
  *   decided only on the scan after the tick has settled; the end date of a current job is never written (skipped when
  *   the page disabled it), and a box the page ticked for a past job is never unticked.
@@ -240,13 +241,19 @@ export function assignEntries(entries: readonly EntryPrint[], blocks: readonly R
  * The next Add click, from counts only: one when an entry still lacks a block, the adapter has an Add button and the
  * clicks counted on this step (`prior`, from RunState, across reloads) are fewer than the profile's entries. With
  * `afterClick` (this plan follows our own click, settled), a click that added no block stops the adding: the page
- * ignores untrusted clicks there, so the person adds the rest.
+ * ignores untrusted clicks there, so the person adds the rest. s2 wd: the first plan of a step in a new document
+ * (`newDocument`: the page was loaded again) that shows fewer blocks than were counted when it was last planned starts
+ * its clicks again: the page dropped the blocks they added (Workday keeps no block it has not saved across a reload), so
+ * the run adds them again, still at most the profile's count from there.
  */
 export function planAdd(input: { profile: number; rendered: number; prior: RepeatableCounter | null;
-  afterClick: boolean; addButton: boolean }): AddPlan {
+  afterClick: boolean; addButton: boolean; newDocument?: boolean }): AddPlan {
   const profile = Math.max(0, Math.floor(input.profile));
   const rendered = Math.max(0, Math.floor(input.rendered));
-  const clicks = input.prior?.addClicks ?? 0;
+  // s2 wd: the add cap starts again on a new document that shows fewer blocks than were counted.
+  const dropped = input.newDocument === true && !input.afterClick && input.prior !== null
+    && rendered < input.prior.rendered;
+  const clicks = dropped ? 0 : input.prior?.addClicks ?? 0;
   const counter = { profile, rendered, addClicks: clicks };
   const missing = Math.max(0, profile - rendered);
   const stop = (why: AddStop): AddPlan => ({ add: false, counter, stop: why,

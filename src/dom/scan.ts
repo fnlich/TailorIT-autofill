@@ -27,12 +27,16 @@
  *   which also lets a fieldset of checkboxes it labels be one checkbox group; a mark drawn after a label (requiredFor);
  *   help text no aria-describedby names (descriptionFor); a date box's layout (formatFor); whether an opacity-0 radio or
  *   checkbox shows chosen (checkedOf, kept on the field's target for the fillers' read-back).
+ * - s2 wd: a date its page draws in parts, each a hidden control behind the digits it displays, is one field of kind
+ *   'date' where its adapter declares it (Adapter.dateFor: Workday's date input), its control the element around the
+ *   parts (FieldTarget.dateParts), its layout the parts', what it holds the parts' displays (fillers/date-parts.ts); the
+ *   parts' controls are still hidden ones the scan ignored.
  * - Keys come from the core's keys.ts (labelSlug, optionSetHash, assignOrdinals, baseKey, fieldKey), so the worker and
  *   every frame build the same strings.
  * - A field's element is never cached across a write: ScanResult.rescan() scans afresh and target(key) finds the
  *   field's live elements in that scan.
  */
-import type { Adapter, WidgetDecl } from '../adapters/types';
+import type { Adapter, DatePartsDecl, WidgetDecl } from '../adapters/types';
 import type { FieldFormat, FieldKind, FieldVisibility, Platform } from '../core/enums';
 import { statesNoAiUse } from '../core/resolver/classifyRules';
 import { assignOrdinals, baseKey, fieldKey, labelSlug, OPTION_SET_LAZY, OPTION_SET_NONE } from '../core/text/keys';
@@ -41,6 +45,7 @@ import type { BaseKey, Constraints, CurrentValue, FieldKey, FieldSpec, Option, S
 import { isControlCamouflaged } from './camouflage';
 import { composedOrder, holdsComposed } from './composed';
 import { constraintsOf } from './constraints';
+import { datePartsValue, formatOfParts } from './fillers/date-parts';
 import {
   ariaReadOnly, autocompleteTokens, CONTROL_SELECTOR, inputModeFormatOf, isDisabled, isReadOnly, isTextLike, kindOf,
   typeFormatOf, type NativeKind,
@@ -60,7 +65,8 @@ import {
   TEXT_CAP_LABEL, TEXT_CAP_PATTERN,
 } from './thresholds';
 import type {
-  FieldTarget, ScanCounters, ScannedField, ScanResult, UnrecognisedUpload, WidgetKind, WidgetReading, WidgetTarget,
+  DatePartsTarget, FieldTarget, ScanCounters, ScannedField, ScanResult, UnrecognisedUpload, WidgetKind, WidgetReading,
+  WidgetTarget,
 } from './types';
 import { currentValueOf, type SelectableOption } from './values';
 import { readSelectOptions, visiblePlaceholder, visibleText, type VisibleOption } from './visible-text';
@@ -107,6 +113,8 @@ interface Candidate {
   declared: boolean;
   /** An ARIA widget's parts, or the declared widget's: it is its own field, never grouped. */
   widget: WidgetTarget | null;
+  /** s2 wd: a date drawn in parts its adapter declares (Adapter.dateFor): its own field of kind 'date'. */
+  dateParts?: DatePartsTarget;
 }
 
 /** A field before its key: one control, or a radio or checkbox group. */
@@ -136,6 +144,8 @@ interface Draft {
   widget: WidgetTarget | null;
   /** A widget's options were read only in part: a cap stopped the read before the list's end. */
   optionsPartial?: true;
+  /** s2 wd: a date drawn in parts (Candidate.dateParts). */
+  dateParts?: DatePartsTarget;
 }
 
 /** Scans a frame's form root. */
@@ -190,6 +200,17 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     const declared = adapter?.widgetFor?.(el) ?? null;
     const aria = declared !== null ? null : !native || (kind.field && kind.kind === 'combobox')
       ? ariaWidgetKind(el, lists) : null;
+    // s2 wd: a date drawn in parts its adapter declares (Adapter.dateFor: Workday's dateInputWrapper), one field of kind
+    // 'date' whose control is the element around its parts; its parts' own controls stay hidden ones, counted below.
+    const dated = !native && declared === null && aria === null ? datePartsOf(el, adapter) : null;
+    if (dated !== null) {
+      const shown = visibilityOf(el, cache);
+      if (shown.visible) {
+        candidates.push({ el, kind: 'date', format: formatOfParts(dated.parts), visibility: 'visible', proxy: null,
+          declared: true, widget: null, dateParts: dated });
+      } else if (shown.deferred) counters.deferredFields += 1;
+      continue;
+    }
     if (!native && declared === null && aria === null) continue;
     const widget = declared !== null ? anatomyOf(el, declared.kind as WidgetKind, declared)
       : aria !== null ? anatomyOf(el, aria, null) : null;
@@ -248,7 +269,8 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
         : hashOfOptions(draft.options.map((option) => option.label));
     const key = fieldKey({ ...parts, optionSetHash });
     const current: CurrentValue = draft.widget !== null ? widgetCurrent(draft, cache)
-      : heldFile(draft.kind, draft.control, adapter, currentValueOf(draft.kind, draft.control, draft.selectable, checkedOf));
+      : draft.dateParts !== undefined ? datePartsValue(draft.dateParts)
+        : heldFile(draft.kind, draft.control, adapter, currentValueOf(draft.kind, draft.control, draft.selectable, checkedOf));
     const field: ScannedField = {
       key, baseKey: base, platform: options.platform, section: draft.section, kind: draft.kind,
       label: draft.label.text, labelSource: draft.label.source, labelVisible: draft.label.visible,
@@ -264,7 +286,8 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     };
     targets.set(key, { field, control: draft.control, members: draft.members, options: draft.selectOptions,
       proxy: draft.proxy?.el ?? null, ...(draft.widget !== null ? { widget: draft.widget } : {}),
-      ...(adapter?.checkedOf !== undefined ? { checkedOf } : {}) });
+      ...(adapter?.checkedOf !== undefined ? { checkedOf } : {}),
+      ...(draft.dateParts !== undefined ? { dateParts: draft.dateParts } : {}) });
     return field;
   });
 
@@ -545,6 +568,8 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
     selectOptions = read.map((option) => option.el);
   }
   const format = first.format;
+  // s2 wd: a date drawn in parts (Candidate.dateParts) is required, disabled or read-only as its parts all are too.
+  const parts = first.dateParts?.parts.map((part) => part.input) ?? [];
   return {
     kind: entry.kind, control, members: [], selectOptions, container: null, label, options, selectable,
     section: sections.sectionOf(control, label.element),
@@ -552,14 +577,36 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
     constraints: entry.kind === 'select' || entry.kind === 'multiselect' ? {}
       : withAdapterFormat(constraintsOf(control, format, placeholder), control, ctx.adapter),
     visibility: first.visibility, proxy: first.proxy,
-    required: label.required || isRequired(control) || adapterRequires(control, ctx.adapter),
-    disabled: isDisabled(control), readOnly: isReadOnly(control),
+    required: label.required || isRequired(control) || adapterRequires(control, ctx.adapter)
+      || (parts.length > 0 && parts.every(isRequired)),
+    disabled: isDisabled(control) || (parts.length > 0 && parts.every(isDisabled)),
+    readOnly: isReadOnly(control) || (parts.length > 0 && parts.every(isReadOnly)),
     camouflaged: first.visibility === 'visible' && isControlCamouflaged(control, placeholder !== null, cache),
     nameAttr: attribute(control, 'name'), idAttr: attribute(control, 'id'),
     autocomplete: autocompleteTokens(control).slice(0, MAX_AUTOCOMPLETE_TOKENS)
       .map((token) => capCodePoints(token, TEXT_CAP_AUTOCOMPLETE_TOKEN)),
     widget: null,
+    ...(first.dateParts !== undefined ? { dateParts: first.dateParts } : {}),
   };
+}
+
+/** s2 wd: the date drawn in parts the adapter declares for an element (Adapter.dateFor), each part a native input
+ *  inside it, none the extension's own, in a layout formatOfParts names; null without the hook, for an element it
+ *  declares none for, or when the hook fails. */
+function datePartsOf(el: Element, adapter: Adapter | null): DatePartsTarget | null {
+  let declared: DatePartsDecl | null | undefined;
+  try {
+    declared = adapter?.dateFor?.(el);
+  } catch {
+    declared = null;
+  }
+  if (declared === null || declared === undefined || declared.parts.length === 0) return null;
+  const parts = declared.parts.filter((part) => part.input !== el && part.input.localName === 'input'
+    && holdsComposed(el, part.input) && !isInOwnUi(part.input)
+    && (part.display === null || holdsComposed(el, part.display)));
+  if (parts.length !== declared.parts.length || formatOfParts(parts) === undefined) return null;
+  return { parts: parts.map((part) => ({ part: part.part, input: part.input, display: part.display })),
+    digits: declared.keys === 'digits' };
 }
 
 // ── Widgets (Phase 4) ────────────────────────────────────────────────────────────────────────────────────────────

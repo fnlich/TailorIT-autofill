@@ -14,6 +14,7 @@
 import { capCodePoints } from '../core/text/fold';
 import type { BaseKey, CurrentValue } from '../core/types/field';
 import type { ValueMac } from '../core/types/loop';
+import { datePartsValue } from '../dom/fillers/date-parts';
 import { TEXT_CAP_LABEL } from '../dom/thresholds';
 import type { FieldTarget, ScannedField } from '../dom/types';
 import { currentValueOf, type SelectableOption } from '../dom/values';
@@ -45,6 +46,8 @@ export function readBack(target: FieldTarget): CurrentValue {
   const labels = field.options === 'lazy' ? [] : field.options.map((option) => option.label);
   // A widget, as the scanner reads one: the labels it shows chosen.
   if (target.widget !== undefined) return widgetCurrentValue(target.widget, labels);
+  // s2 wd: a date drawn in parts, as the scanner reads one: what its parts' displays show.
+  if (target.dateParts !== undefined) return datePartsValue(target.dateParts);
   let selectable: SelectableOption[] = [];
   if (target.options.length > 0) {
     selectable = target.options.map((option, at) => ({ label: labels[at] ?? '', selected: option.selected }));

@@ -35,7 +35,7 @@ import type { Adapter } from '../../adapters/types';
 import type { OptionSetHash } from '../../core/types/field';
 import { askBridge } from '../bridge';
 import type { BridgeReason } from '../bridge-protocol';
-import { fireKey, fireLeave, windowOf, type DeclaredKey } from '../fillers/events';
+import { fireKey, fireLeave, WIDGET_KEYS, windowOf, type WidgetKey } from '../fillers/events';
 import { assertKeyTarget, assertNotSubmit, optionWordsRefusal } from '../fillers/not-submit';
 import { quietWait, type QuietWait } from '../settle';
 import { WIDGET_CAP_MS, WIDGET_QUIET_MS, WIDGET_READY_CAP_MS, WIDGET_READY_QUIET_MS } from '../thresholds';
@@ -252,8 +252,8 @@ export async function openList(widget: WidgetTarget, ctx: WidgetContext): Promis
  *  declare the key, assertNotSubmit refuses its target, its list is to take it and none is shown, or the key is Escape
  *  and the widget does not say, right now, that its list is open (WidgetDecl.expanded): an Escape to a closed widget
  *  is the page's to read as it likes. */
-export function pressDeclaredKey(widget: WidgetTarget, key: DeclaredKey, ctx: WidgetContext): boolean {
-  if (!(widget.keys ?? []).includes(key)) return false;
+export function pressDeclaredKey(widget: WidgetTarget, key: WidgetKey, ctx: WidgetContext): boolean {
+  if (!(WIDGET_KEYS as readonly string[]).includes(key) || !(widget.keys ?? []).includes(key)) return false;
   if (key === 'Escape' && expandedState(widget) !== true) return false;
   const target = widget.keyTarget === 'list' ? openListOf(widget) : widget.input ?? widget.element;
   if (target === null || !assertKeyTarget(target, ctx).ok) return false;

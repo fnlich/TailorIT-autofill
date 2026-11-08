@@ -1,0 +1,55 @@
+{
+  "fixture": "workday/s2-verily-create-account",
+  "source": "https://verily.wd1.myworkdayjobs.com/en-US/verily_careers/job/Dallas%2C-Texas/Security-Operations-Tech-Lead_REQ-966/apply/autofillWithResume",
+  "captured": "2026-11-08T01:16:12.000Z",
+  "fields": [
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "create-account",
+      "fillable": true,
+      "control": "input[data-automation-id=\"email\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": "create-account",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input[data-automation-id=\"email\"]",
+      "password": "input[data-automation-id=\"password\"]",
+      "confirm": "input[data-automation-id=\"verifyPassword\"]",
+      "terms": [],
+      "button": "[data-automation-id=\"click_filter\"][aria-label=\"Create Account\"]",
+      "form": "form[data-automation-id=\"signInFormo\"]",
+      "scriptSubmits": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"utilityButtonSignIn\"]",
+      "[data-automation-id=\"signInLink\"]",
+      "[data-automation-id=\"forgotPasswordLink\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"click_filter\"][aria-label=\"Create Account\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Create Account/Sign In",
+      "progress": "current step 1 of 8",
+      "anchors": [
+        "signInContent"
+      ]
+    },
+    "final": "unknown",
+    "next": null,
+    "submit": null,
+    "widgets": [],
+    "repeatables": []
+  }
+}

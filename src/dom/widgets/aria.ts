@@ -16,7 +16,10 @@
  * ARIA 1.1 combobox is part of that widget, never a field of its own.
  * v4 (drop): a search whose results no ARIA names (Lever's location search) is acted on through the results list its
  * adapter declares from a capture (WidgetDecl.results: the list, the selector of one result): widgetListOf gives that
- * list where ARIA gives none, optionElementsOf its results, and isActionable accepts it.
+ * list where ARIA gives none, optionElementsOf its results, and isActionable accepts it. s2 wd (snapshot round 2): the
+ * list may be the adapter's hook, asked each time (Workday's prompts draw theirs at the end of the body only while
+ * open), and a result its adapter names as only opening a list of its own (a category) is one that cannot be chosen
+ * (isUnchoosableResult).
  */
 import { CONTROL_SELECTOR, isTextLike } from '../kinds';
 import { WIDGET_SEARCH_MIN_OPTIONS } from '../thresholds';
@@ -91,11 +94,35 @@ export function optionElementsOf(listbox: Element, declared?: string): Element[]
 }
 
 /** A widget's list now (v4, drop): the results list its adapter declared (WidgetDecl.results), while it is in the page,
- *  else the list standard ARIA names (listOf). */
+ *  else the list standard ARIA names (listOf). s2 wd: a declared list the page draws only while open is found anew by its
+ *  adapter's hook (Workday's prompts), each time it is asked for; a hook that fails finds none. */
 export function widgetListOf(widget: Pick<WidgetTarget, 'element' | 'input' | 'results'>): Element | null {
-  const declared = widget.results?.list;
-  if (declared !== undefined && declared.isConnected) return declared;
+  const declared = declaredListOf(widget);
+  if (declared !== null && declared.isConnected) return declared;
   return listOf(widget.element, widget.input);
+}
+
+/** s2 wd: the results list its adapter declares for a widget now: the element, or what its hook finds; null for none. */
+function declaredListOf(widget: Pick<WidgetTarget, 'results'>): Element | null {
+  const list = widget.results?.list;
+  if (list === undefined) return null;
+  if (typeof list !== 'function') return list;
+  try {
+    return list();
+  } catch {
+    return null;
+  }
+}
+
+/** s2 wd: whether a result its adapter declares cannot be chosen, since it only opens a list of its own
+ *  (WidgetDecl.results.unchoosable: Workday's category rows); false for any other, or a selector the page rejects. */
+export function isUnchoosableResult(option: Element, unchoosable: string | undefined): boolean {
+  if (unchoosable === undefined) return false;
+  try {
+    return option.matches(unchoosable);
+  } catch {
+    return false;
+  }
 }
 
 /** The selector of a widget's results, where its adapter declared its list (v4, drop): none for an ARIA list. */

@@ -29,6 +29,15 @@
       "control": "input[id=\"selfIdentifiedDisabilityData--employeeId\"]"
     },
     {
+      "label": "Date",
+      "kind": "date",
+      "required": false,
+      "section": "self-identify",
+      "fillable": true,
+      "control": "div[id=\"selfIdentifiedDisabilityData--dateSignedOn\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+    },
+    {
       "label": "Please check one of the boxes below",
       "kind": "checkbox-group",
       "required": false,

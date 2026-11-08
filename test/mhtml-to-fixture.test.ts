@@ -44,6 +44,7 @@ import {
   ENTRY_SUMMARY_CONTROLS,
   ENTRY_SUMMARY_PLACES,
   FILE_LINK_PLACES,
+  SEARCH_RESULT_PLACES,
   FILE_NAME_PLACES,
   imageSize,
   INJECTED_PARAMS,
@@ -1777,7 +1778,13 @@ describe('the committed iCIMS fixtures of the owner’s snapshots', () => {
  *  WORKDAY_STEP_SNAPSHOTS). */
 const WORKDAY_STEP_FILES = ['cisive-autofill-resume', 'resolvetech-source-open',
   'resolvetech-my-experience', 'web-my-experience', 'web-application-questions', 'aep-application-questions-2',
-  'danafarber-voluntary-disclosures', 'danafarber-self-identify', 'web-review', 'verily-sign-in-verify']
+  'danafarber-voluntary-disclosures', 'danafarber-self-identify', 'web-review', 'verily-sign-in-verify',
+  // s2 wd: the owner's snapshots of round 2 (2026-11-07, F:\Develop\Refer\snapshot1), the wd study's six and the
+  // Country list open, converted once the converter dropped its chosen marks (s2-exelixis-country-open).
+  's2-exelixis-country-open', 's2-exelixis-state-open', 's2-exelixis-my-experience', 's2-verily-create-account',
+  's2-verily-source-open', 's2-verily-my-information', 's2-verily-field-of-study-open',
+  // s2 wd, snapshot4: the owner's four captures of the evening.
+  's2-verily-school-no-items', 's2-verily-degree-open', 's2-verily-school-results', 's2-verily-field-of-study-after-add']
   .map((name) => `workday/${name}`);
 
 describe("Workday's application steps: the converter's redaction (docs/OWNER-QUESTIONS.md 93)", () => {
@@ -1929,7 +1936,153 @@ describe("Workday's application steps: the converter's redaction (docs/OWNER-QUE
         if (cell !== null) expect(cell[1], `${name} #${id}`).toBe('REDACTED');
       }
     }
+    // s2 wd: a pill's id and its list's active descendant name no option, and no answer row of an open dropdown says
+    // or shows that it is the chosen one.
+    expect(body).not.toMatch(/id="pill-(?!REDACTED")/);
+    expect(body).not.toMatch(/aria-activedescendant="pill-(?!REDACTED")/);
+    expect(body).not.toMatch(/<li data-value="[^"]+"[^>]*aria-selected=/);
+    const rows = [...body.matchAll(/<li data-value="[^"]+" role="option"[^>]*class="([^"]*)"/g)].map((row) => row[1]);
+    expect(new Set(rows).size, `${name}: the answer rows of its open dropdown`).toBeLessThanOrEqual(1);
   });
+
+  // s2 wd: the converter's findings of the wd study (snapshot round 2, 2026-11-07), on the snapshots' own markup with
+  // made-up values.
+  it("drops the chosen country's marks from an open dropdown: its list's active descendant and its row's look (s2 wd)",
+    async () => {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      // The exelixis capture of the Country list open: the list names the chosen row as its active descendant, and that
+      // row alone carries aria-selected and the class that draws it highlighted.
+      await page.setContent(`<!doctype html><html><head><style>.row{color:#494949}.chosen{background:#be3a34}</style></head>
+        <body><button aria-haspopup="listbox" type="button" value="wid-b" aria-label="Country Bravoland Required"
+          id="country--country" aria-expanded="true" aria-controls="list">Bravoland</button>
+        <div data-popper-placement="bottom"><ul role="listbox" id="list" aria-activedescendant="wid-b">
+          <li data-value="" role="option" aria-disabled="true" id="select-one" class="none">Select One</li>
+          <li data-value="wid-a" role="option" id="wid-a" class="row">Alphaland</li>
+          <li data-value="wid-b" role="option" aria-selected="true" id="wid-b" class="chosen">Bravoland</li>
+          <li data-value="wid-c" role="option" id="wid-c" class="row">Charlieland</li>
+          <li data-value="wid-d" role="option" id="wid-d" class="row">Deltaland</li></ul></div>
+        <input role="combobox" id="rs" aria-activedescendant="react-select-x-option-1"><div role="listbox">
+          <div role="option" id="react-select-x-option-1" aria-selected="true">Bravoland</div></div>
+        <ul role="listbox" id="other" aria-activedescendant="wid-z"><li role="option" id="wid-z">Zululand</li></ul>
+      </body></html>`);
+      expect((await page.evaluate(clearChoicesInPage, { redacted: 'REDACTED', marks: CHOSEN_MARKS })).choices).toBe(4);
+      const counts = await page.evaluate(redactWorkdayInPage, { redacted: 'REDACTED' });
+      const state = await page.evaluate(() => ({
+        active: Array.from(document.querySelectorAll('[aria-activedescendant]'), (el) => `${el.id}>${el.getAttribute('aria-activedescendant')}`),
+        rows: Array.from(document.querySelectorAll('#list li'), (row) => `${row.className}|${row.getAttribute('aria-selected') ?? ''}`),
+      }));
+      // The active descendant that named an option the generic pass unselected goes; one naming no chosen option stays.
+      expect(state.active).toEqual(['other>wid-z']);
+      // Every answer row is drawn as most of them are, none says it was chosen; Workday's "Select One" keeps its own look.
+      expect(state.rows).toEqual(['none|', 'row|', 'row|', 'row|', 'row|']);
+      expect(counts.options).toBe(1);
+      expect(counts.dropdowns).toBe(1);
+      await context.close();
+    }, 30_000);
+
+  it("redacts a pill's id, its list's active descendant and an open prompt list's chosen row (s2 wd)", async () => {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    // s2-verily-my-information's chosen pill, and s2-verily-field-of-study-open's open list with a row chosen.
+    await page.setContent(`<!doctype html><html><body><div data-automation-id="multiSelectContainer">
+      <ul role="listbox" data-automation-id="selectedItemList" aria-activedescendant="pill-0a1b2c">
+        <li role="presentation" data-automation-id="menuItem" data-automation-selected="true"><div role="option"
+          data-automation-id="selectedItem" id="pill-0a1b2c" aria-label="Fixture Board"><p data-automation-id="promptOption"
+          data-automation-label="Fixture Board">Fixture Board</p></div></li></ul></div>
+      <div data-automation-id="activeListContainer" role="listbox" aria-label="Options Expanded">
+        <div role="option" data-automation-id="menuItem" id="menuItem-1" aria-label="Fixture Studies checked"
+          aria-selected="true" data-automation-selected="true"><div data-automation-id="promptLeafNode"
+          data-automation-checked="Checked" data-uxi-multiselectlistitem-isselected="true"><input type="radio"
+          data-automation-id="radioBtn" aria-checked="true"><div data-automation-id="promptOption">Fixture Studies</div></div></div>
+        <div role="option" data-automation-id="menuItem" id="menuItem-2" aria-label="Other Studies not checked"
+          aria-selected="false" data-automation-selected="false"><div data-automation-id="promptLeafNode"
+          data-automation-checked="Not Checked"><div data-automation-id="promptOption">Other Studies</div></div></div></div>
+    </body></html>`);
+    await page.evaluate(clearChoicesInPage, { redacted: 'REDACTED', marks: CHOSEN_MARKS });
+    const counts = await page.evaluate(redactWorkdayInPage, { redacted: 'REDACTED' });
+    const html = await page.evaluate(() => document.body.innerHTML);
+    expect(html).not.toContain('0a1b2c');
+    expect(html).not.toContain('Fixture Board');
+    expect(await page.evaluate(() => [document.querySelector('[data-automation-id="selectedItem"]')!.id,
+      document.querySelector('[data-automation-id="selectedItemList"]')!.getAttribute('aria-activedescendant')]))
+      .toEqual(['pill-REDACTED', 'pill-REDACTED']);
+    // The open list's rows: as before an answer (a list's own option words stay: they are the page's).
+    expect(await page.evaluate(() => Array.from(document.querySelectorAll('[data-automation-id="activeListContainer"] [role="option"]'),
+      (row) => [row.getAttribute('aria-label'), row.getAttribute('aria-selected'), row.getAttribute('data-automation-selected'),
+        row.querySelector('[data-automation-id="promptLeafNode"]')!.getAttribute('data-automation-checked'),
+        row.querySelector('[data-automation-id="promptLeafNode"]')!.getAttribute('data-uxi-multiselectlistitem-isselected')])))
+      .toEqual([['Fixture Studies not checked', 'false', 'false', 'Not Checked', 'false'],
+        ['Other Studies not checked', 'false', 'false', 'Not Checked', null]]);
+    expect(counts.prompts).toBeGreaterThanOrEqual(5);
+    expect(counts.options).toBe(1);
+    await context.close();
+  }, 30_000);
+
+  it("redacts a prompt's search results, which what the applicant typed found, and keeps a browse list's (s2 wd)",
+    async () => {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      // snapshot4's School search (s2-verily-school-results) and a browse list (s2-verily-field-of-study-open).
+      const row = (words: string) => `<div role="option" data-automation-id="menuItem" aria-label="${words} not checked">
+        <div data-automation-id="promptLeafNode" data-uxi-multiselectlistitem-type="1"><input type="radio"
+        data-automation-id="radioBtn"><div data-automation-id="promptOption" title="${words}">${words}</div></div></div>`;
+      await page.setContent(`<!doctype html><html><body>
+        <div data-automation-id="responsiveMonikerPrompt"><div data-automation-id="multiSelectHeader"><div
+          data-automation-id="promptTitle" title="Search Results">Search Results</div><div>(2)</div></div>
+          <div data-uxi-widget-type="multiselectlist" data-uxi-multiselectlist-issearch="true"><div
+            data-automation-id="activeListContainer" role="listbox">${row('Fixture University')}${row('Fixture College')}</div></div></div>
+        <div data-automation-id="responsiveMonikerPrompt"><div data-uxi-widget-type="multiselectlist"
+          data-uxi-multiselectlist-issearch="false"><div data-automation-id="activeListContainer" role="listbox"
+          id="browse">${row('Fixture Studies')}</div></div></div>
+      </body></html>`);
+      await page.evaluate(redactWorkdayInPage, { redacted: 'REDACTED' });
+      const html = await page.evaluate(() => document.body.innerHTML);
+      expect(html).not.toMatch(/Fixture University|Fixture College/);
+      expect(await page.evaluate(() => Array.from(document.querySelectorAll('[role="option"]'), (el) =>
+        [el.getAttribute('aria-label'), el.querySelector('[data-automation-id="promptOption"]')!.textContent]))).toEqual([
+        ['REDACTED not checked', 'REDACTED'], ['REDACTED not checked', 'REDACTED'],
+        ['Fixture Studies not checked', 'Fixture Studies']]);
+      // The header's words are the page's own.
+      expect(html).toContain('Search Results');
+      await context.close();
+    }, 30_000);
+});
+
+// s2 wd: the eeo study's converter findings (snapshot round 2): the answers react-select and Lever show besides a chip.
+describe("the answers react-select and the location searches show besides their chosen value (s2 wd)", () => {
+  it("redacts a chip's remove label, the live region's words and a location search's results, an option's too", async () => {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    // s2-pie-eeo-0's chip, s2-lightning-0..2's live region and location results, s2-ahead-0's Lever result.
+    await page.setContent(`<!doctype html><html><body>
+      <div class="select__multi-value"><div class="select__multi-value__label">REDACTED</div>
+        <div role="button" class="select__multi-value__remove" aria-label="Remove Fixture answer"><svg></svg></div></div>
+      <span id="aria-selection">option Fixture answer, selected.</span><span id="aria-focused"></span>
+      <span id="aria-results">1 result available for search term Fixturetown.</span>
+      <span id="aria-guidance">Select is focused ,type to refine list, press Down to open the menu,</span>
+      <div class="select__menu"><div class="select__menu-list" role="listbox">
+        <div class="select__option" role="option" id="react-select-candidate-location-option-0">Fixturetown, Fixture State</div>
+        <div class="select__option" role="option" id="react-select-gender-option-0">Fixture option</div></div></div>
+      <div class="dropdown-results"><div class="break-word dropdown-location" id="location-0" title="Fixturetown, FS">Fixturetown, FS</div></div>
+    </body></html>`);
+    const cleared = await page.evaluate(redactApplicantTextInPage, { fileNames: FILE_NAME_PLACES, entries: ENTRY_SUMMARY_PLACES,
+      chosen: CHOSEN_PLACES, profile: PROFILE_PLACES, links: [...FILE_LINK_PLACES, ...ENTRY_SUMMARY_CONTROLS],
+      results: SEARCH_RESULT_PLACES, redacted: 'REDACTED' });
+    const html = await page.evaluate(() => document.body.innerHTML);
+    expect(html).not.toMatch(/Fixture answer|Fixturetown/);
+    expect(await page.evaluate(() => [
+      document.querySelector('.select__multi-value__remove')!.getAttribute('aria-label'),
+      ...['aria-selection', 'aria-results', 'aria-guidance'].map((id) => document.getElementById(id)!.textContent),
+      document.getElementById('react-select-candidate-location-option-0')!.textContent,
+      document.getElementById('location-0')!.textContent, document.getElementById('location-0')!.getAttribute('title'),
+      // Another list's own option is the page's words, kept.
+      document.getElementById('react-select-gender-option-0')!.textContent,
+    ])).toEqual(['REDACTED', 'REDACTED', 'REDACTED', 'Select is focused ,type to refine list, press Down to open the menu,',
+      'REDACTED', 'REDACTED', 'REDACTED', 'Fixture option']);
+    expect(cleared.applicantText).toBeGreaterThanOrEqual(4);
+    await context.close();
+  }, 30_000);
 });
 
 // ── snapshot build 2026-11-06 (oracle-sf-sr): shadow roots, the per-platform redactions, SmartRecruiters' fixtures ──

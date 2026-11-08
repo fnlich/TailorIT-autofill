@@ -1,0 +1,222 @@
+{
+  "fixture": "workday/s2-exelixis-country-open",
+  "source": "https://exelixis.wd1.myworkdayjobs.com/en-US/exel/job/Alameda%2C-CA/Engineer-II---DevSecOps_JR7197/apply/autofillWithResume",
+  "captured": "2026-11-08T01:22:06.000Z",
+  "fields": [
+    {
+      "label": "How Did You Hear About Us?",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "my-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input[id=\"source--source\"]",
+      "note": "s2 wd: a prompt the widget helpers search (its results list declared, Enter after each query)"
+    },
+    {
+      "label": "Have you worked at Exelixis before?",
+      "kind": "radio",
+      "required": true,
+      "section": "my-information",
+      "fillable": true,
+      "options": 2,
+      "control": "input[type=\"radio\"][name=\"candidateIsPreviousWorker\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "my-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"country--country\"]"
+    },
+    {
+      "label": "Prefix",
+      "kind": "combobox",
+      "required": false,
+      "section": "legal-name",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"name--legalName--title\"]"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "legal-name",
+      "fillable": true,
+      "control": "input[id=\"name--legalName--firstName\"]"
+    },
+    {
+      "label": "Middle Name",
+      "kind": "text",
+      "required": false,
+      "section": "legal-name",
+      "fillable": true,
+      "control": "input[id=\"name--legalName--middleName\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "legal-name",
+      "fillable": true,
+      "control": "input[id=\"name--legalName--lastName\"]"
+    },
+    {
+      "label": "Suffix",
+      "kind": "combobox",
+      "required": false,
+      "section": "legal-name",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"name--legalName--social\"]"
+    },
+    {
+      "label": "I have a preferred name",
+      "kind": "checkbox",
+      "required": false,
+      "section": "legal-name",
+      "fillable": true,
+      "control": "input[id=\"name--preferredCheck\"]"
+    },
+    {
+      "label": "Address Line 1",
+      "kind": "text",
+      "required": true,
+      "section": "address",
+      "fillable": true,
+      "control": "input[id=\"address--addressLine1\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "address",
+      "fillable": true,
+      "control": "input[id=\"address--city\"]"
+    },
+    {
+      "label": "State",
+      "kind": "combobox",
+      "required": true,
+      "section": "address",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"address--countryRegion\"]"
+    },
+    {
+      "label": "Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "address",
+      "fillable": true,
+      "control": "input[id=\"address--postalCode\"]"
+    },
+    {
+      "label": "Phone Device Type",
+      "kind": "combobox",
+      "required": true,
+      "section": "phone",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"phoneNumber--phoneType\"]"
+    },
+    {
+      "label": "Country Phone Code",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "phone",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input[id=\"phoneNumber--countryPhoneCode\"]",
+      "note": "s2 wd: a prompt the widget helpers search (its results list declared, Enter after each query)"
+    },
+    {
+      "label": "Phone Number",
+      "kind": "text",
+      "required": true,
+      "section": "phone",
+      "fillable": true,
+      "control": "input[id=\"phoneNumber--phoneNumber\"]"
+    },
+    {
+      "label": "Phone Extension",
+      "kind": "text",
+      "required": false,
+      "section": "phone",
+      "fillable": true,
+      "control": "input[id=\"phoneNumber--extension\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"DELETE_charm\"]",
+      "[data-automation-id=\"utilityMenuButton\"]",
+      "[data-automation-id=\"phone-terms-and-condition-link\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "My Information",
+      "progress": "current step 2 of 6",
+      "anchors": [
+        "applyFlowMyInfoPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "input[id=\"source--source\"]",
+        "kind": "typeahead-remote",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"country--country\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"name--legalName--title\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"name--legalName--social\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"address--countryRegion\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"phoneNumber--phoneType\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "input[id=\"phoneNumber--countryPhoneCode\"]",
+        "kind": "typeahead-remote",
+        "answered": true
+      }
+    ],
+    "repeatables": []
+  }
+}

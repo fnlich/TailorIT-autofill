@@ -46,12 +46,13 @@ export function domGuardBeforeWrite(last: ScanResult, planned: PlannedField): Do
   const elements: Element[] = [control, ...target.members, ...(target.widget?.members ?? [])];
   if (elements.some(isInOwnUi)) return { ok: false, reason: 'internal-error' };
   // A native control that is no field now is an auth field (or the page changed its type); a widget's element is no
-  // native control, so only its text box is asked.
-  const natives = target.widget === undefined ? elements : target.widget.input === null ? [] : [target.widget.input];
+  // native control, so only its text box is asked; s2 wd: nor is a date drawn in parts' wrapper, so its parts are.
+  const natives = target.dateParts !== undefined ? target.dateParts.parts.map((part) => part.input)
+    : target.widget === undefined ? elements : target.widget.input === null ? [] : [target.widget.input];
   if (natives.some((el) => kindOf(el).field === false)) return { ok: false, reason: 'auth-required' };
   if (field.labelSource === 'none' || !field.labelVisible) return { ok: false, reason: 'no-visible-label' };
   if (field.camouflaged) return { ok: false, reason: 'not-user-visible' };
-  const disabled = target.widget !== undefined ? field.disabled || field.readOnly
+  const disabled = target.widget !== undefined || target.dateParts !== undefined ? field.disabled || field.readOnly
     : field.kind === 'radio' || field.kind === 'checkbox-group' ? field.disabled
       : isDisabled(control) || isReadOnly(control);
   if (disabled) return { ok: false, reason: 'disabled-or-readonly' };

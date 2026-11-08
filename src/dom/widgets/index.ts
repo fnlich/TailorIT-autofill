@@ -18,8 +18,8 @@
  *   and content/pass.ts before a long list's search, once per write (WidgetContext.bridgeTried).
  * A widget is acted on only when standard ARIA says where its list is (or it is a group whose members carry their own
  * state), or its adapter declares where a search's results are from a capture (v4: WidgetDecl.results, Lever's
- * location search): a widget an adapter declares without either (Workday's prompts) is widget-unsupported, never typed
- * into.
+ * location search; s2 wd: Workday's prompts, their list found anew by the adapter's hook): a widget an adapter declares
+ * without either is widget-unsupported, never typed into.
  * The events are interact.ts's: click() through assertNotSubmit (or the adapter's one declared mousedown, mouseup or
  * focus), the text filler's input, change, focusout and blur, a key the adapter declares for the widget, and a list's
  * own scrollTop set as a property; before any of them, for a widget declared for it, one command to the page-world

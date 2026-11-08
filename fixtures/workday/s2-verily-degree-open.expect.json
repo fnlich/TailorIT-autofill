@@ -1,0 +1,129 @@
+{
+  "fixture": "workday/s2-verily-degree-open",
+  "source": "https://verily.wd1.myworkdayjobs.com/en-US/verily_careers/job/Dallas%2C-Texas/Security-Operations-Tech-Lead_REQ-966/apply",
+  "captured": "2026-11-08T01:29:28.000Z",
+  "fields": [
+    {
+      "label": "School or University",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input[id=\"education-6--school\"]",
+      "note": "s2 wd: a prompt the widget helpers search (its results list declared, Enter after each query)"
+    },
+    {
+      "label": "Degree",
+      "kind": "combobox",
+      "required": true,
+      "section": "education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"education-6--degree\"]"
+    },
+    {
+      "label": "Field of Study",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input[id=\"education-6--fieldOfStudy\"]",
+      "note": "s2 wd: a prompt the widget helpers search (its results list declared, Enter after each query)"
+    },
+    {
+      "label": "Overall Result (GPA)",
+      "kind": "text",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "input[id=\"education-6--gradeAverage\"]"
+    },
+    {
+      "label": "Upload a file (5MB max)",
+      "kind": "file",
+      "required": true,
+      "section": "resume",
+      "fillable": true,
+      "control": "[data-fkit-id=\"resumeAttachments--attachments\"] input[type=\"file\"]"
+    },
+    {
+      "label": "LinkedIn",
+      "kind": "text",
+      "required": false,
+      "section": "social-network-urls",
+      "fillable": true,
+      "control": "input[id=\"socialNetworkAccounts--linkedInAccount\"]"
+    },
+    {
+      "label": "X",
+      "kind": "text",
+      "required": false,
+      "section": "social-network-urls",
+      "fillable": true,
+      "control": "input[id=\"socialNetworkAccounts--twitterAccount\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"select-files\"]",
+      "[data-automation-id=\"utilityMenuButton\"]",
+      "h5[id$=\"-panel\"] + button"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id=\"add-button\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "My Experience",
+      "progress": "current step 2 of 6",
+      "anchors": [
+        "applyFlowMyExpPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "input[id=\"education-6--school\"]",
+        "kind": "typeahead-remote",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"education-6--degree\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "input[id=\"education-6--fieldOfStudy\"]",
+        "kind": "typeahead-remote",
+        "answered": false
+      }
+    ],
+    "repeatables": [
+      {
+        "kind": "experience",
+        "blocks": 0,
+        "add": "Add"
+      },
+      {
+        "kind": "education",
+        "blocks": 1,
+        "add": "Add Another"
+      }
+    ]
+  }
+}

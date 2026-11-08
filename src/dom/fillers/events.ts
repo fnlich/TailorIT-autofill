@@ -3,31 +3,58 @@
  * a page listens for, built with the element's own window's constructors. Every event is an untrusted DOM event: no
  * pointer moves, hovers, touches or typed keystrokes, no focus and no scrolling. A key is sent only to a widget whose
  * adapter declares it (WidgetDecl.keys, docs/SPEC-AMENDMENTS.md §12), or to a text box its adapter declares one for
- * around the write (Adapter.keyAroundWrite: Workable's date masks): one of DECLARED_KEYS, as a keydown and a keyup,
- * never Space, never Enter and never a key no adapter declares. The prototype setter matters in a page's main world,
- * where React tracks a controlled input's value on the element itself; it is correct in the content script's isolated
- * world too.
+ * around the write (Adapter.keyAroundWrite: Workable's date masks): one of WIDGET_KEYS, as a keydown and a keyup,
+ * never Space and never a key no adapter declares. s2 wd (snapshot round 2): Enter only as a search's declared query
+ * key (WidgetDecl.queryKey: Workday's prompts), and the digits only into a date's parts whose adapter declares them
+ * (Adapter.dateFor: Workday's date input, date-parts.ts), each to that one control. The prototype setter matters in a
+ * page's main world, where React tracks a controlled input's value on the element itself; it is correct in the content
+ * script's isolated world too.
  */
 
 /** The events the extension may cause on page elements. */
 export const ALLOWED_EVENTS = ['input', 'change', 'focusout', 'blur', 'click'] as const;
 
-/** The keys a widget may declare (WidgetDecl.keys), each sent as KEY_EVENTS, untrusted, to that widget alone. Enter,
- *  which the owner allowed too, joins them only once a snapshot shows a widget that needs it. */
-export const DECLARED_KEYS = ['Escape', 'ArrowDown'] as const;
+/** The keys a widget may declare (WidgetDecl.keys) and a text box around its write (Adapter.keyAroundWrite), each sent
+ *  as KEY_EVENTS, untrusted, to that widget or box alone. */
+export const WIDGET_KEYS = ['Escape', 'ArrowDown'] as const;
+export type WidgetKey = (typeof WIDGET_KEYS)[number];
+
+// ── s2 wd: Enter and the digits (snapshot round 2) ──
+/** A search's query key (WidgetDecl.queryKey): a widget key, or Enter, which the owner allowed and a snapshot now needs
+ *  (Workday's prompts: <input enterkeyhint="search" placeholder="Search">, fixtures/workday/s2-verily-field-of-study-
+ *  open.html). Enter is sent after a typed query only, to the search's own text box. */
+export const QUERY_KEYS = [...WIDGET_KEYS, 'Enter'] as const;
+export type QueryKey = (typeof QUERY_KEYS)[number];
+/** The digits a date drawn in parts takes typed, one key per digit, into the part they write (Adapter.dateFor's
+ *  `keys: 'digits'`: Workday's spin buttons, fixtures/workday/s2-exelixis-my-experience.html), when its value setter's
+ *  write is not taken. Never to any other control. */
+export const DIGIT_KEYS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
+export type DigitKey = (typeof DIGIT_KEYS)[number];
+// ── end s2 wd ──
+
+/** Every key the extension may send, each only where its declaration allows it (see the header). */
+export const DECLARED_KEYS = [...QUERY_KEYS, ...DIGIT_KEYS] as const;
 export type DeclaredKey = (typeof DECLARED_KEYS)[number];
 
 /** The events a declared key is sent as, on the widget that declares it only (on top of ALLOWED_EVENTS). */
 export const KEY_EVENTS = ['keydown', 'keyup'] as const;
 
 /** The `code` of each declared key, as a keyboard's own event carries it. */
-const KEY_CODES: Record<DeclaredKey, string> = { Escape: 'Escape', ArrowDown: 'ArrowDown' };
+const KEY_CODES: Record<DeclaredKey, string> = { Escape: 'Escape', ArrowDown: 'ArrowDown', Enter: 'Enter',
+  ...Object.fromEntries(DIGIT_KEYS.map((digit) => [digit, `Digit${digit}`])) as Record<DigitKey, string> };
+
+/** s2 wd: the legacy keyCode (and which) Enter and the digits carry as a keyboard's own events do, for a page handler
+ *  that reads it rather than `key`; the widget keys' events stay as they were. */
+const LEGACY_CODES: Partial<Record<DeclaredKey, number>> = { Enter: 13,
+  ...Object.fromEntries(DIGIT_KEYS.map((digit) => [digit, 48 + Number(digit)])) };
 
 /** One declared key on an element: an untrusted keydown and keyup (KEY_EVENTS), bubbling, built with the element's own
  *  window. The caller has checked that its adapter declares the key there. */
 export function fireKey(el: Element, key: DeclaredKey): void {
   const view = windowOf(el);
-  const init = { key, code: KEY_CODES[key], bubbles: true, cancelable: true, composed: true };
+  const legacy = LEGACY_CODES[key];
+  const init = { key, code: KEY_CODES[key], bubbles: true, cancelable: true, composed: true,
+    ...(legacy === undefined ? {} : { keyCode: legacy, which: legacy }) };
   el.dispatchEvent(new view.KeyboardEvent('keydown', init));
   el.dispatchEvent(new view.KeyboardEvent('keyup', init));
 }

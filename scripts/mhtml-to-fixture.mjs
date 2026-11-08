@@ -42,7 +42,8 @@
 //     (INJECTED_UI), an overlay's shadow host on <body> that holds no control where the platform does not keep shadow
 //     roots, and the per-load values of PER_LOAD_PARAMS (REDACTED); and the choices a page mirrors are cleared
 //     (clearChoicesInPage: aria-checked, aria-pressed and data-checked, a chosen phone country's flag and button, and
-//     the chosen marks of the new ATSs' drawn controls and lists, CHOSEN_MARKS);
+//     the chosen marks of the new ATSs' drawn controls and lists, CHOSEN_MARKS, with (s2 wd) any aria-activedescendant
+//     that names an option it unselected);
 //   - each frame is converted before the frame that holds it (a parent's conversion points its frames at their real
 //     addresses, which navigates them away from the document measured: iCIMS's IForm, a company page's embed);
 //   - the applicant's own text the redaction list may not hold becomes REDACTED where the markup shows it
@@ -50,7 +51,8 @@
 //     entries shown as text (ENTRY_SUMMARY_PLACES), chosen answers drawn outside a native control (CHOSEN_PLACES), the
 //     account's and the profile's own text (PROFILE_PLACES), the controls that name a file or an entry, a custom
 //     element's value and default-value, data-date-value and data-gtm-form-interact-*, a searchable Ant select's open
-//     list and UltiPro's Race row (drawn open);
+//     list and UltiPro's Race row (drawn open), and (s2 wd) a search's results that list the applicant's answer
+//     (SEARCH_RESULT_PLACES: Greenhouse's and Lever's location results), inside an option too;
 //   - a tel: or sms: link's number becomes REDACTED whatever its spelling, and so does a per-visitor id a script wrote
 //     into a stylesheet (--sa-uid, Dice's) once the sheet is inlined (transformInPage);
 //   - another extension's parameters (INJECTED_PARAMS: Jobright's jr_id, Simplify's utm_source) leave every address and
@@ -66,8 +68,9 @@
 //   - Workday's application steps (docs/OWNER-QUESTIONS.md 93), before the transformation (redactWorkdayInPage): the
 //     Review step's value cells, read-only summaries and the account menu, an upload's announcement and delete label,
 //     any word ending in a document's extension, a dropdown's chosen option id and aria-label, a prompt's "1 item
-//     selected, <answer>" and its pill's labels, an open list's chosen option, an exclusive group's disabled boxes, and a
-//     date's displayed digits and help text, back to MM/DD/YYYY. Counts go in the header (redacted.workday).
+//     selected, <answer>" and its pill's labels and (s2 wd) its pill's id, an open list's chosen option, an exclusive
+//     group's disabled boxes, and a date's displayed digits and help text, back to MM/DD/YYYY. Counts go in the header
+//     (redacted.workday).
 //   - iCIMS's signed-in pages, after it (icimsRedactInPage): the header's name, a current file's name, and iCIMS's
 //     dropdowns' chosen options, results and searched lists; normaliseTokens adds their per-person address values.
 //   - Oracle and SmartRecruiters, after it (redactPlatformInPage): Oracle's apply flow's personal text (its work and
@@ -295,7 +298,20 @@ export const CHOSEN_PLACES = [
   // Builder B, dice-0, -3, -5: the React Aria select's shown option (span#<valueId> div.ListItemTemplate) repeats the
   // chosen option's label in its title, beside the text the trigger's rule clears.
   'button[aria-haspopup="listbox"] .ListItemTemplate',
+  // s2 wd (the eeo study's converter findings, snapshot round 2): react-select's chip remove button names the chosen
+  // answer, <div role="button" class="select__multi-value__remove" aria-label="Remove <answer>"> (s2-pie-eeo-0, -1;
+  // fixtures/sites/seatgeek-greenhouse-embed.frame-1.html); its live region says the choice and the typed search term,
+  // <span id="aria-selection">option <answer>, selected.</span>, <span id="aria-focused">, <span id="aria-results">
+  // (s2-lightning-0..2). Their words become REDACTED (the guidance, span#aria-guidance, is react-select's own).
+  '.select__multi-value__remove[aria-label]',
+  'span[id="aria-selection"], span[id="aria-focused"], span[id="aria-results"]',
 ];
+/** s2 wd (the eeo study's converter findings): a search's results that list the applicant's own answer, an option of
+ *  the list or not: each result's text, title and aria-label become REDACTED, inside a role=option too (redactApplicant-
+ *  TextInPage). Greenhouse's location search (s2-lightning-2: <div class="select__option" role="option"
+ *  id="react-select-candidate-location-option-0">) and Lever's (s2-ahead-0: <div class="... dropdown-location"
+ *  id="location-0">). */
+export const SEARCH_RESULT_PLACES = ['[id^="react-select-candidate-location-option-"]', '.dropdown-location'];
 
 // ── The security fix of 2026-11-06 (S2, S3, S10): chosen marks keyed by markup, cleared and refused ──
 /** A CSS module's chosen class, whatever its hash (Ashby's `_checked_132c8_44`). */
@@ -1104,7 +1120,7 @@ export function stripInjectedInPage(input) {
  * - intl-tel-input's country button names the chosen country in its title and aria-label, beside its flag and dial code
  *   (Workable's phone, the Raydar and Salvo captures): they become REDACTED, the flag's region dropped;
  * - the marks `marks` names (CHOSEN_MARKS: the new ATSs' drawn controls and lists) lose their chosen classes, and an
- *   option's aria-selected="true" becomes "false".
+ *   option's aria-selected="true" becomes "false" (s2 wd: and an aria-activedescendant naming that option goes).
  * Returns how many it cleared.
  * @param {{ redacted: string; marks?: Array<{ selector: string; classes?: string[]; patterns?: string[];
  *   attributes?: string[]; aria?: boolean }> }} input
@@ -1128,6 +1144,8 @@ export function clearChoicesInPage(input) {
   }
   // The marks a drawn control or a list shows on the chosen answer (CHOSEN_MARKS): their classes and attributes go, and
   // an option's aria-selected="true" becomes "false".
+  /** The ids of the options unselected here. @type {Set<string>} */
+  const unselected = new Set();
   for (const { selector, classes = [], patterns = [], attributes = [], aria = true } of input.marks ?? []) {
     const matchers = patterns.map((source) => new RegExp(source));
     for (const element of doc.querySelectorAll(selector)) {
@@ -1136,9 +1154,21 @@ export function clearChoicesInPage(input) {
       const held = attributes.filter((name) => element.hasAttribute(name));
       const selected = aria && (element.getAttribute('aria-selected') ?? '').trim().toLowerCase() === 'true';
       if (selected) element.setAttribute('aria-selected', 'false');
+      if (selected && element.id !== '') unselected.add(element.id);
       if (named.length > 0) element.classList.remove(...named);
       for (const name of held) element.removeAttribute(name);
       if (selected || named.length > 0 || held.length > 0) choices += 1;
+    }
+  }
+  // s2 wd (the wd study's converter finding 1): an aria-activedescendant that names an option unselected above names the
+  // chosen answer still (the exelixis capture of Workday's Country list open: its ul[role=listbox] named the chosen
+  // country's row by its Workday id), so it goes, as Workday's own redaction drops it where it unselects an option itself
+  // (redactWorkdayInPage, which runs after this and so never met that option chosen).
+  if (unselected.size > 0) {
+    for (const element of doc.querySelectorAll('[aria-activedescendant]')) {
+      if (!unselected.has((element.getAttribute('aria-activedescendant') ?? '').trim())) continue;
+      element.removeAttribute('aria-activedescendant');
+      choices += 1;
     }
   }
   const region = /^iti__[a-z]{2}$/;
@@ -1183,16 +1213,37 @@ export function clearChoicesInPage(input) {
  *   name REDACTED;
  * - a custom element's typed or chosen value and default-value (ukg-input, an answered sdf-radio-group; never an
  *   option's own element: -button, -option, -item, -radio, -checkbox, -tab), a date widget's data-date-value, and the
- *   data-gtm-form-interact-* attributes a tag manager adds once a form is typed into.
+ *   data-gtm-form-interact-* attributes a tag manager adds once a form is typed into;
+ * - s2 wd: each search result place's (`results`: SEARCH_RESULT_PLACES) text, title and aria-label, a role=option's too.
  * Returns how many places and repeats it cleared, and the file names (kept in memory, never printed or written).
  * @param {{ fileNames: string[]; entries: string[]; chosen: string[]; profile: string[]; links: string[];
- *   redacted: string }} input
+ *   results?: string[]; redacted: string }} input
  * @returns {{ applicantText: number; names: string[] }}
  */
 export function redactApplicantTextInPage(input) {
   const doc = globalThis.document;
   const { redacted } = input;
   let applicantText = 0;
+  // s2 wd: a search's results that list the applicant's own answer (SEARCH_RESULT_PLACES), whole, inside an option too.
+  for (const result of input.results === undefined || input.results.length === 0 ? []
+    : doc.querySelectorAll(input.results.join(', '))) {
+    let cleared = false;
+    const walker = doc.createTreeWalker(result, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.nodeValue?.trim() || node.nodeValue === redacted || node.parentElement?.closest('style')) continue;
+      node.nodeValue = redacted;
+      cleared = true;
+    }
+    for (const element of [result, ...result.querySelectorAll('*')]) {
+      for (const name of ['aria-label', 'title']) {
+        const value = element.getAttribute(name);
+        if (value === null || value.trim() === '' || value === redacted) continue;
+        element.setAttribute(name, redacted);
+        cleared = true;
+      }
+    }
+    if (cleared) applicantText += 1;
+  }
   /** Clears a place: each of its text nodes becomes REDACTED (an option's, a list's and a stylesheet's kept), and with
    *  `words` its aria-label, title and alt, in it and its descendants. Answers the texts and titles it held.
    *  @param {Element} place @param {boolean} words */
@@ -1390,8 +1441,12 @@ export function measureInPage() {
  *   its aria-label ("<question> <answer> Required");
  * - a multiselect prompt's answer: its pill's words ([data-automation-id=selectedItem], a role=option the generic rule
  *   leaves alone), aria-label and title, its promptOption's data-automation-label, and [data-automation-id=
- *   promptAriaInstruction] ("1 item selected, <answer>");
- * - an open dropdown's list: a chosen option's aria-selected and the list's aria-activedescendant naming it;
+ *   promptAriaInstruction] ("1 item selected, <answer>"); (s2 wd) its pill's id ("pill-<the option's id>") and its
+ *   list's aria-activedescendant naming it, pill-REDACTED;
+ * - an open dropdown's list: a chosen option's aria-selected and the list's aria-activedescendant naming it, and (s2 wd)
+ *   the class that draws it apart (every answer row takes the class most of them have); an open prompt's list: a chosen
+ *   row's data-automation-selected, data-automation-checked, isselected and "<label> checked"; a prompt's search
+ *   results (data-uxi-multiselectlist-issearch="true": what the applicant typed found them), their words REDACTED;
  * - in an exclusive group (Self Identify's disability status: the other boxes disabled once one is ticked, their labels
  *   cursor "default"), those boxes enabled and their labels "pointer" again, as Workday draws the group before an
  *   answer (a radio's or checkbox's aria-checked="true" is the generic pass's, clearChoicesInPage);
@@ -1498,6 +1553,20 @@ export function redactWorkdayInPage(input) {
       counts.prompts += 1;
     }
   }
+  // s2 wd (the wd study's converter finding 2): a pill's id names the chosen option by its Workday id (s2-verily-my-
+  // information: <div role="option" data-automation-id="selectedItem" id="pill-<id>">), and so does its list's
+  // aria-activedescendant (<ul data-automation-id="selectedItemList" aria-activedescendant="pill-<id>">): both become
+  // pill-REDACTED.
+  for (const pill of doc.querySelectorAll('[data-automation-id="selectedItem"][id^="pill-"]')) {
+    if (pill.id === `pill-${redacted}`) continue;
+    pill.id = `pill-${redacted}`;
+    counts.prompts += 1;
+  }
+  for (const list of doc.querySelectorAll('[aria-activedescendant^="pill-"]')) {
+    if (list.getAttribute('aria-activedescendant') === `pill-${redacted}`) continue;
+    list.setAttribute('aria-activedescendant', `pill-${redacted}`);
+    counts.prompts += 1;
+  }
   for (const list of doc.querySelectorAll('[role="listbox" i]:not([data-automation-id="selectedItemList"])')) {
     for (const option of list.querySelectorAll('[role="option" i][aria-selected="true" i]')) {
       // Workday's own "Select One" (data-value="") is no answer.
@@ -1507,6 +1576,71 @@ export function redactWorkdayInPage(input) {
         list.removeAttribute('aria-activedescendant');
       }
       counts.options += 1;
+    }
+    // s2 wd: an open dropdown's chosen row is drawn apart, besides its aria-selected (the exelixis capture of the Country
+    // list open: its rows <li data-value="<id>" role="option" id="<id>" class="css-1dq1u4">, the chosen one alone with
+    // aria-selected and the class that draws it highlighted). Every answer row (data-value not "") is drawn as most of
+    // them are: the chosen one's aria-selected goes and it takes their class.
+    const rows = Array.from(list.querySelectorAll(':scope li[role="option" i][data-value]'))
+      .filter((row) => (row.getAttribute('data-value') ?? '') !== '');
+    /** @type {Map<string, number>} */
+    const classes = new Map();
+    for (const row of rows) classes.set(row.className, (classes.get(row.className) ?? 0) + 1);
+    const common = [...classes.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (rows.length >= 3 && common !== undefined && common[1] > rows.length / 2) {
+      for (const row of rows) {
+        if (row.className === common[0] && !row.hasAttribute('aria-selected')) continue;
+        row.className = common[0];
+        row.removeAttribute('aria-selected');
+        counts.options += 1;
+      }
+    }
+  }
+  // s2 wd: an open prompt's list (div[data-automation-id=activeListContainer], s2-verily-field-of-study-open) marks a
+  // chosen row in its own words besides aria-selected: <div role="option" data-automation-id="menuItem"
+  // aria-label="<label> checked" data-automation-selected="true"><div data-automation-id="promptLeafNode"
+  // data-automation-checked="Checked" data-uxi-multiselectlistitem-isselected="true">. Each is drawn as before an answer.
+  for (const row of doc.querySelectorAll('[data-automation-id="activeListContainer"] [role="option" i]')) {
+    let cleared = false;
+    for (const element of [row, ...row.querySelectorAll('*')]) {
+      if (element.getAttribute('data-automation-selected') === 'true') {
+        element.setAttribute('data-automation-selected', 'false');
+        cleared = true;
+      }
+      if (element.getAttribute('data-automation-checked') === 'Checked') {
+        element.setAttribute('data-automation-checked', 'Not Checked');
+        cleared = true;
+      }
+      if (element.getAttribute('data-uxi-multiselectlistitem-isselected') === 'true') {
+        element.setAttribute('data-uxi-multiselectlistitem-isselected', 'false');
+        cleared = true;
+      }
+    }
+    const label = row.getAttribute('aria-label') ?? '';
+    if (/ checked$/.test(label) && !/ not checked$/.test(label)) {
+      row.setAttribute('aria-label', label.replace(/ checked$/, ' not checked'));
+      cleared = true;
+    }
+    if (cleared) counts.options += 1;
+  }
+  // s2 wd (snapshot4, the owner's School search of 2026-11-07): an open prompt's search results list what the applicant
+  // typed, <div data-uxi-widget-type="multiselectlist" data-uxi-multiselectlist-issearch="true"> under a "Search Results
+  // (17)" header, its rows <div role="option" data-automation-id="menuItem" aria-label="<result> not checked"> ...
+  // <div data-automation-id="promptOption">result</div>: each row's words become REDACTED, its aria-label "REDACTED not
+  // checked" (a browse list, issearch="false", is the tenant's own list: kept).
+  for (const results of doc.querySelectorAll('[data-uxi-multiselectlist-issearch="true" i]')) {
+    for (const row of results.querySelectorAll('[role="option" i]')) {
+      counts.prompts += redactText(row, 'style');
+      const label = row.getAttribute('aria-label') ?? '';
+      const state = / (not checked|checked)$/.exec(label);
+      const words = `${redacted}${state === null ? '' : ` ${state[1]}`}`;
+      if (label !== '' && label !== words) {
+        row.setAttribute('aria-label', words);
+        counts.prompts += 1;
+      }
+      for (const element of [row, ...row.querySelectorAll('[title]')]) {
+        if (element.hasAttribute('title') && element.getAttribute('title') !== redacted) element.setAttribute('title', redacted);
+      }
     }
   }
   for (const group of doc.querySelectorAll('[data-automation-id$="-CheckboxGroup"]')) {
@@ -2599,7 +2733,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       // (PLATFORM_REDACTIONS).
       const applicant = await frame.evaluate(redactApplicantTextInPage, { fileNames: FILE_NAME_PLACES,
         entries: ENTRY_SUMMARY_PLACES, chosen: CHOSEN_PLACES, profile: PROFILE_PLACES,
-        links: [...FILE_LINK_PLACES, ...ENTRY_SUMMARY_CONTROLS], redacted: REDACTED });
+        links: [...FILE_LINK_PLACES, ...ENTRY_SUMMARY_CONTROLS], results: SEARCH_RESULT_PLACES, redacted: REDACTED });
       for (const name of applicant.names) fileNames.add(name);
       const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,

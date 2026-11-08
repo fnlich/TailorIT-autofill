@@ -46,6 +46,7 @@ import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { FieldCategory, ValueOrigin, WriteValue } from '../core/types/intent';
 import { optionQuery } from '../core/matcher/listSearch';
 import { accepts, acceptTokens, fill } from '../dom/fillers';
+import { fillDateParts } from '../dom/fillers/date-parts';
 import { mismatch } from '../dom/fillers/outcome';
 import { awaitUpload, uploadStateOf } from '../dom/fillers/upload';
 import { sameOptionLabel } from '../dom/fillers/verify';
@@ -367,7 +368,11 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   const listed = target.field.options;
   const optionShown = write.value.kind === 'option' && listed !== 'lazy'
     ? listed[write.value.index]?.label ?? null : null;
-  const outcome = fill(target, write.value, { adapter: env.adapter, root: env.root, file, readBack: rule });
+  // s2 wd: a date drawn in parts (Adapter.dateFor: Workday's) is written part by part and read back from its displays,
+  // its page's answer awaited (dom/fillers/date-parts.ts); every other field by the native fillers.
+  const outcome = target.dateParts !== undefined && write.value.kind === 'date'
+    ? await fillDateParts(target, write.value.iso, { adapter: env.adapter, root: env.root, signal: env.signal })
+    : fill(target, write.value, { adapter: env.adapter, root: env.root, file, readBack: rule });
   let row = rowAfterFill(planned, outcome);
   if (!outcome.wrote) {
     resume?.release();

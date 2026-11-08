@@ -18,6 +18,7 @@ import { cleanOptionLabel } from '../option-hash';
 import type { FieldTarget, FillOutcome, ReadBackRule, ScannedField, ScanResult } from '../types';
 import { widgetHolds } from '../widgets/hold';
 import { dateValueFor } from './date';
+import { holdsDateParts } from './date-parts';
 
 /** The read-back rule a field's own type gives: digits for tel, case-folded for email, numeric for number. */
 export function readBackRuleOf(field: ScannedField): ReadBackRule {
@@ -83,6 +84,8 @@ export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule
     case 'text':
       return sameText((control as HTMLInputElement).value, value.text, rule);
     case 'date': {
+      // s2 wd: a date drawn in parts shows what it holds in its parts' displays (date-parts.ts).
+      if (target.dateParts !== undefined) return holdsDateParts(target.dateParts, value.iso);
       const expected = dateValueFor(control as HTMLInputElement, value.iso);
       return expected !== null && (control as HTMLInputElement).value === expected;
     }
@@ -116,7 +119,9 @@ export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule
 
 /** True when the page marked the field invalid: aria-invalid="true" on the control or a group member. */
 export function markedInvalid(target: FieldTarget): boolean {
-  const elements: Element[] = [target.control, ...target.members];
+  // s2 wd: a date drawn in parts is marked on its parts' controls too.
+  const elements: Element[] = [target.control, ...target.members,
+    ...(target.dateParts?.parts.map((part) => part.input) ?? [])];
   return elements.some((el) => (el.getAttribute('aria-invalid') ?? '').trim().toLowerCase() === 'true');
 }
 
@@ -131,7 +136,8 @@ export function verifyAfterSettle(fresh: ScanResult, key: FieldKey, value: Write
   if (target === null) return { verification: 'not-checked', reason: 'element-not-found' };
   // A widget is disabled or read-only as its scan says (a text box its adapter declares read-only by design is not:
   // WidgetDecl.readOnlyBox), as the DOM guard reads it; a native control by its own attributes.
-  const unwritable = target.widget !== undefined ? target.field.disabled || target.field.readOnly
+  const unwritable = target.widget !== undefined || target.dateParts !== undefined
+    ? target.field.disabled || target.field.readOnly
     : isDisabled(target.control) || isReadOnly(target.control);
   if (unwritable) return { verification: 'mismatch', reason: 'disabled-or-readonly' };
   const rule = options.rule ?? readBackRuleOf(target.field);

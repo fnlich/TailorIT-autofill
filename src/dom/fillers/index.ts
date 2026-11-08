@@ -18,7 +18,7 @@ import { isDisabled, isReadOnly } from '../kinds';
 import type { FieldTarget, FillOutcome, ReadBackRule } from '../types';
 import { fillCheckbox, fillCheckboxGroup, fillRadio } from './choice';
 import { fillDate } from './date';
-import { DECLARED_KEYS, type DeclaredKey } from './events';
+import { WIDGET_KEYS, type WidgetKey } from './events';
 import { fillFile } from './file';
 import { assertNotSubmit } from './not-submit';
 import { refused } from './outcome';
@@ -38,16 +38,16 @@ export interface FillContext {
   readBack?: ReadBackRule;
 }
 
-/** The key a text box's adapter declares around its write (Adapter.keyAroundWrite), one of DECLARED_KEYS; null when it
+/** The key a text box's adapter declares around its write (Adapter.keyAroundWrite), one of WIDGET_KEYS; null when it
  *  declares none, or its hook fails. */
-function keyAroundWrite(control: Element, adapter: Adapter | null): DeclaredKey | null {
-  let key: DeclaredKey | null | undefined;
+function keyAroundWrite(control: Element, adapter: Adapter | null): WidgetKey | null {
+  let key: WidgetKey | null | undefined;
   try {
     key = adapter?.keyAroundWrite?.(control);
   } catch {
     key = null;
   }
-  return key !== null && key !== undefined && (DECLARED_KEYS as readonly string[]).includes(key) ? key : null;
+  return key !== null && key !== undefined && (WIDGET_KEYS as readonly string[]).includes(key) ? key : null;
 }
 
 /** Writes one planned value into a field just re-found, and reads it back. */
@@ -61,6 +61,8 @@ export function fill(target: FieldTarget, value: WriteValue, ctx: FillContext): 
   // An ARIA widget, or one the adapter declares, and options that exist only once a widget is opened: the widget
   // helpers (dom/widgets) fill those, asynchronously, never the native fillers.
   if (target.widget !== undefined || field.options === 'lazy') return refused('widget-unsupported');
+  // s2 wd: a date drawn in parts is date-parts.ts's (fillDateParts, awaited by content/pass.ts), never fillDate's.
+  if (target.dateParts !== undefined) return refused('widget-unsupported');
   if (value.kind === 'options' && value.cleanLabels.length !== value.indices.length) return refused('internal-error');
   const clicks = { adapter: ctx.adapter, root: ctx.root };
   switch (field.kind) {
