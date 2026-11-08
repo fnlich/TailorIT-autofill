@@ -1,8 +1,9 @@
 /*
  * Stored lists (snapshot round 2, decision 1: the owner's "store it and select at a once, without checking what elements
  * is there"): which widgets a list read whole may be learned for, and how an option of a stored list is found at once
- * in the open list. A stored list is the field's reading at scan time (dom/scan.ts withReading: WidgetDecl.knownOptions,
- * or a list learned on this host before), so the planner plans it on its first pass and its list is never opened to
+ * in the open list. A stored list is the field's reading at scan time (dom/scan.ts withReading: the list a
+ * WidgetDecl.storedList id names, which the worker serves before a step's scan as ScanOptions.storedLists, or a list
+ * learned on this site before), so the planner plans it on its first pass and its list is never opened to
  * be read; its choice (fill.ts chooseKnown) opens the list once, finds the planned option here by its place and its
  * label, and clicks it. A list the page shows otherwise is read whole as before (options-changed), and that read is
  * the field's from then on.

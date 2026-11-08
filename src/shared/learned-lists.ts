@@ -12,7 +12,8 @@ import { sha256Hex } from '../core/text/sha256';
 /** The most options a learned list holds, and the longest label it keeps: a longer list or label is never learned. */
 export const MAX_LEARNED_OPTIONS = 300;
 export const MAX_LEARNED_LABEL = 160;
-/** The most lists the worker keeps across every host (the least recently learned go first), and offers for one host. */
+/** The most lists the worker keeps in all (the earliest learned go first), and keeps and offers for one site (a host,
+ *  or a myworkdaysite.com tenant: background/learned-lists.ts siteOf); the name keeps "host" from version 1. */
 export const MAX_LEARNED_LISTS = 200;
 export const MAX_LEARNED_PER_HOST = 60;
 
