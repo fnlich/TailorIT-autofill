@@ -102,6 +102,20 @@ export type StartDate = { kind: 'immediately' } | { kind: 'date'; date: Ymd } | 
  *  lacks the scope, so those questions are left blank with sensitive-not-shared. */
 export type SensitiveState = 'loaded' | 'not-loaded' | 'not-shared';
 
+/** Snapshot round 2 (2026-11-07): the new profile values' choices. */
+export const PHONE_DEVICE_TYPES = ['mobile', 'home', 'work'] as const;
+export type PhoneDeviceType = (typeof PHONE_DEVICE_TYPES)[number];
+export const ASIAN_SUBGROUPS = ['east-asian', 'south-asian', 'southeast-asian'] as const;
+export type AsianSubgroup = (typeof ASIAN_SUBGROUPS)[number];
+export const SEXUAL_ORIENTATIONS = ['asexual', 'bisexual-pansexual', 'gay', 'heterosexual', 'lesbian', 'queer',
+  'self-describe'] as const;
+export type SexualOrientation = (typeof SEXUAL_ORIENTATIONS)[number];
+export const CLEARANCE_LEVELS = ['none', 'public-trust', 'confidential', 'secret', 'top-secret', 'ts-sci'] as const;
+export type ClearanceLevel = (typeof CLEARANCE_LEVELS)[number];
+export const REFERRAL_CATEGORIES = ['job-board', 'company-website', 'employee-referral', 'recruiter', 'social-media',
+  'event', 'other'] as const;
+export type ReferralCategory = (typeof REFERRAL_CATEGORIES)[number];
+
 export interface Profile {
   identity: {
     fullName: string;
@@ -109,14 +123,22 @@ export interface Profile {
     middleName?: string;
     lastName: string;
     preferredName?: string;
+    /** Snapshot round 2 (2026-11-07): the contract's name.suffix ("Jr.", "III"), for Workday's Suffix list. */
+    suffix?: string;
     pronouns?: Explicit<string>;
     /** First and last name were split from the full name, so the panel asks the person to check them. */
     nameSplitDerived: boolean;
   };
-  contact: { email: string; phone?: { text: string; digits: string; countryCallingCode?: string; country?: string } };
+  contact: { email: string; phone?: { text: string; digits: string; countryCallingCode?: string; country?: string;
+    /** Snapshot round 2: the contract's phone.extension (digits), and the phone's device type (Workday's required
+     *  "Phone Device Type"). */
+    extension?: string; type?: PhoneDeviceType } };
   address?: { line1?: string; line2?: string; city?: string; region?: { code?: string; name: string };
     postalCode?: string; country?: string };
   links: { linkedin?: string; github?: string; portfolio?: string; website?: string;
+    /** Snapshot round 2 (the owner: "you can add them on autofill profile data"): X (Twitter) and Telegram, as links
+     *  (https://x.com/<handle>, https://t.me/<handle>); a "username" box takes the handle. */
+    x?: string; telegram?: string;
     other: Array<{ label: string; url: string }> };
   workAuthorization: WorkAuthorization[];
   eeo: {
@@ -124,13 +146,35 @@ export interface Profile {
     gender?: Explicit<{ identity: Gender; selfDescribed?: string }>;
     hispanicLatino?: Explicit<boolean>;
     race?: Explicit<Race[]>;
-    veteran?: Explicit<{ veteran: boolean; protected: boolean }>;
+    veteran?: Explicit<{ veteran: boolean; protected: boolean;
+      /** Snapshot round 2: serving now ("a veteran or active member of the United States Armed Forces"). */
+      activeDuty?: boolean }>;
     disability?: Explicit<boolean>;
+    /** Snapshot round 2 (Greenhouse's U.S. Standard Demographic Questions, fixtures/greenhouse/s2-pie-eeo-*): the
+     *  Asian subgroups a list may split "Asian" into, the person's own words for race, sexual orientation (a set, with
+     *  self-described words) and whether the person identifies as transgender. All from the sensitive part. */
+    raceSubgroups?: AsianSubgroup[];
+    raceSelfDescribed?: string;
+    sexualOrientation?: Explicit<{ values: SexualOrientation[]; selfDescribed?: string }>;
+    transgender?: Explicit<boolean>;
   };
   /** From the sensitive part: whether the person is 18 or older, and (version 2) whether they have ever been convicted
    *  of a crime, answered once in TailorIT and matched to a question by its polarity alone, never guessed and never
    *  sent to an AI. */
-  screening: { over18?: Explicit<boolean>; criminalRecord?: Explicit<boolean> };
+  screening: { over18?: Explicit<boolean>; criminalRecord?: Explicit<boolean>;
+    /** Snapshot round 2, from the sensitive part, each answered once in TailorIT and matched by polarity, never sent to
+     *  an AI: bound by a non-compete or non-solicitation agreement now; U.S. military or government service (and the
+     *  year it ended, for "within the last N years"); the companies where a relative works (empty: none); able to
+     *  perform the role's essential functions with or without accommodation; a security clearance; citizenships
+     *  (ISO alpha-2, for "Country of Origin" and nationality questions). */
+    restrictiveAgreement?: Explicit<boolean>;
+    governmentService?: Explicit<{ military: boolean; militaryEndYear?: number; government: boolean;
+      governmentEndYear?: number }>;
+    relativesAt?: Explicit<string[]>;
+    essentialFunctions?: Explicit<boolean>;
+    clearance?: Explicit<{ level: ClearanceLevel; active?: boolean; polygraph?: 'none' | 'ci' | 'full-scope' }>;
+    citizenships?: Explicit<string[]>;
+  };
   education: EducationEntry[];
   experience: ExperienceEntry[];
   languages: Array<{ code?: string; name: string; proficiency?: Proficiency }>;
@@ -142,9 +186,15 @@ export interface Profile {
     workArrangements?: Array<'remote' | 'hybrid' | 'onsite'>;
     /** How much of the time the person is willing to travel, 0 to 100 (TailorIT's travelPercent). */
     travelPercent?: number;
+    /** Snapshot round 2: where the person would relocate or work hybrid from (place texts, at most 10). */
+    relocationPlaces?: string[];
   };
+  /** Snapshot round 2: the person's certifications ("Do you hold any industry related certifications?"). */
+  certifications?: Array<{ name: string; issuer?: string; year?: number }>;
   /** "How did you hear about us": a referral-vocabulary id, or 'other' with text. */
-  referralSource?: { id: string; otherText?: string };
+  referralSource?: { id: string; otherText?: string;
+    /** Snapshot round 2 (Workday's two-level "How Did You Hear About Us?"): its kind, for a list of categories. */
+    category?: ReferralCategory };
   resume?: { id: string; fileName: string; mime: string; sizeBytes: number };
   /** The run's cover letter (Phase G), attached by the worker only once TailorIT has it ready to upload
    *  (withCoverLetter): whether TailorIT's AI wrote it (and the person never edited it). No id, no name and no word of

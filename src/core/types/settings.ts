@@ -82,7 +82,24 @@ export interface Modes {
    *  submitting it: a required field still empty, a posting that forbids AI, a legal answer that was an AI guess. Not
    *  shown until the agent's phase: their defaults act. */
   agentSkip: { requiredEmpty: boolean; noAi: boolean; legalGuess: boolean };
+  /** Snapshot round 2 (the owner, 2026-11-07: "there is no matched after with 3 different style value, last will be
+   *  other or don't write (user can set on setting it)"): a searched list (a school, a field of study, a place, how you
+   *  heard) with no match after three differently written answers takes its own "Other" ('other') or is left empty
+   *  ('leave'). Never for EEO, legal, consent or yes/no questions. Optional until the settings version that stores it;
+   *  read as `?? 'other'`. */
+  noMatch?: NoMatchMode;
+  /** Snapshot round 2 (the owner: "user can set tailorit notification show time including never till user remove the
+   *  notification", "user can set so that notification is never shown as well"): how long the page's TailorIT
+   *  notifications stay: never shown ('off'), a few seconds, or until closed ('until-closed', the default: today's
+   *  behaviour). A notification still leaves when its cause is gone. Optional until stored; read as
+   *  `?? 'until-closed'`. */
+  notifications?: NotificationTime;
 }
+
+export const NO_MATCH_MODES = ['other', 'leave'] as const;
+export type NoMatchMode = (typeof NO_MATCH_MODES)[number];
+export const NOTIFICATION_TIMES = ['off', '5s', '10s', '30s', 'until-closed'] as const;
+export type NotificationTime = (typeof NOTIFICATION_TIMES)[number];
 
 /** The side panel's default view: the whole review, or folded to its progress line. */
 export const PANEL_VIEWS = ['expanded', 'minimized'] as const;
