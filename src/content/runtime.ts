@@ -146,7 +146,7 @@ import type { ScanResult } from '../dom/types';
 import { ok, refuse } from '../messaging/envelope';
 import {
   SIGN_IN_WALLS, WorkerToContentSchema, type EntryAnswer, type LauncherPrefs, type PressAnswer, type SignInWall,
-  type StepTarget, type SubmitEvidence, type SubmitPresser,
+  type StepTarget, type SubmitEvidence, type SubmitPresser, type WallWaits,
 } from '../messaging/schemas';
 import { probeStorageLocalFromContent } from '../platform/chrome';
 import type { ContentPlatform, Sender } from '../platform/types';
@@ -1219,10 +1219,13 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   // ── v4: the page's account wall, and Sign up & Autofill at a wall with no form (module header) ──────────────────
 
-  /** What this frame last told the worker of its wall (undefined: nothing yet). */
-  let wallTold: { wall: SignInWall | null; choice: boolean } | undefined;
+  /** What this frame last told the worker of its wall (undefined: nothing yet); s2 profile (P1), what it waits for. */
+  let wallTold: { wall: SignInWall | null; choice: boolean; waits: WallWaits | null } | undefined;
   /** The toast a wall with no form shows (atWall), while its cause stands; null: none. */
   let wallToast: 'sign-in' | 'no-sign-in' | 'challenge' | null = null;
+  /** s2 profile (P1): what that toast says the page waits for (WALL_WAITS), told the worker with the wall (tellWall) so
+   *  the side panel can say it when the toasts are not shown until closed; null: nothing. */
+  let wallWaits: WallWaits | null = null;
   /** A look at the page for its wall waits for its time (lookForWall). */
   let wallLooking = false;
 
@@ -1257,20 +1260,30 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       const next = now.challenge ? 'challenge' : now.wall !== null && wallToast !== 'challenge' ? wallToast : null;
       if (next !== wallToast) {
         wallToast = next;
+        wallWaits = next === 'challenge' ? 'challenge' : next === null ? null : wallWaits;
         if (next === 'challenge') wallUi()?.setToasts([{ kind: 'challenge', text: PAGE_COPY.toasts.challenge }]);
         else if (next === null) ui?.setToasts([]);
       }
     }
-    if (wallTold !== undefined && wallTold.wall === now.wall && wallTold.choice === now.choice) return;
+    sendWall(now);
+  }
+
+  /** frame/wall, when the wall, its choice or (s2 profile, P1) what the page waits for changed since the worker was
+   *  last told. */
+  function sendWall(now: { wall: SignInWall | null; choice: boolean }): void {
+    if (stopped || told === null || frameId === null || !channel.valid()) return;
+    const waits = page === null ? wallWaits : null;
+    if (wallTold !== undefined && wallTold.wall === now.wall && wallTold.choice === now.choice
+      && wallTold.waits === waits) return;
     // A first word of "no wall" is the registry's own default: nothing to say.
-    if (wallTold === undefined && now.wall === null && !now.choice) {
-      wallTold = now;
+    if (wallTold === undefined && now.wall === null && !now.choice && waits === null) {
+      wallTold = { wall: now.wall, choice: now.choice, waits };
       return;
     }
-    wallTold = { wall: now.wall, choice: now.choice };
-    log('content.wall', { shown: now.wall !== null, choice: now.choice });
-    void channel.request({ v: 1, type: 'frame/wall', wall: now.wall, ...(now.choice ? { choice: true as const } : {}) })
-      .catch(() => undefined);
+    wallTold = { wall: now.wall, choice: now.choice, waits };
+    log('content.wall', { shown: now.wall !== null, choice: now.choice, waits: waits !== null });
+    void channel.request({ v: 1, type: 'frame/wall', wall: now.wall, ...(now.choice ? { choice: true as const } : {}),
+      ...(waits === null ? {} : { waits }) }).catch(() => undefined);
   }
 
   /** A look at the page for its wall, WALL_LOOK_MS from now: the changes of a moment are read once. */
@@ -1303,7 +1316,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         ? { kind: 'no-sign-in', text: words.noSignIn, action: { label: words.open, run: () => openSignInSettings() } }
         : { kind: 'sign-in', text: said === 'failed' ? words.signInFailed : words.signIn };
     wallToast = toast.kind === 'challenge' ? 'challenge' : toast.kind === 'no-sign-in' ? 'no-sign-in' : 'sign-in';
+    wallWaits = said === 'failed' ? 'sign-in-failed' : said === 'none-saved' ? 'no-sign-in' : said;
     wallUi()?.setToasts([toast]);
+    // s2 profile (P1): the worker hears what the page waits for, for the side panel (the wall as last read; the toast
+    // itself is tellWall's to take away, at the page's next change).
+    sendWall(wallTold ?? { wall: null, choice: false });
   }
 
   /**
@@ -1341,7 +1358,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       if (wallNow().challenge) showWallToast('challenge');
       else {
         wallToast = null;
+        wallWaits = null;
         ui?.setToasts([]);
+        sendWall(wallTold ?? { wall: null, choice: false });
       }
       formAfterWall();
       return;

@@ -141,6 +141,27 @@ describe('PageState.wall: the account wall the tab’s application frame shows (
     expect((await pageOf(worker, 12))?.wall).toBeUndefined();
   });
 
+  // s2 profile (the review fix P1): what a page with no form waits for, for the side panel.
+  it('says what a page with no form waits for (frame/wall’s waits), kept while its document says hello, never for a page with a form', async () => {
+    const worker = await signUpWorker();
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false }, top());
+    await worker.deliver({ v: 1, type: 'frame/wall', wall: 'sign-in', waits: 'sign-in-failed' }, top());
+    expect(await pageOf(worker, 12)).toMatchObject({ wall: 'sign-in', waits: 'sign-in-failed' });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false, nav: 1 }, top());
+    expect((await pageOf(worker, 12))?.waits).toBe('sign-in-failed');
+    await worker.deliver({ v: 1, type: 'frame/wall', wall: 'sign-in', waits: 'challenge' }, top());
+    expect((await pageOf(worker, 12))?.waits).toBe('challenge');
+    await worker.deliver({ v: 1, type: 'frame/wall', wall: null }, top());
+    expect(await pageOf(worker, 12)).not.toHaveProperty('waits');
+    // A page with a form: its run's own report says what it waits for.
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true, nav: 2 }, top());
+    await worker.deliver({ v: 1, type: 'frame/wall', wall: 'sign-in', waits: 'sign-in' }, top());
+    expect(await pageOf(worker, 12)).not.toHaveProperty('waits');
+    // Only a value of its list.
+    expect(await worker.deliver({ v: 1, type: 'frame/wall', wall: null, waits: 'anything' }, top()))
+      .toMatchObject({ ok: false });
+  });
+
   it('reads only the application frame’s: a subframe’s wall is not the page’s, and an unknown document is expired', async () => {
     const worker = await signUpWorker();
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top());

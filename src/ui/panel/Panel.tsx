@@ -58,7 +58,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { Settings } from '../../core/types/settings';
 import type { Answer } from '../../messaging/envelope';
 import type {
-  AddJobOutcome, AskLength, PageMessage, PageState, PanelLauncherAnswer, SiteRequestOutcome,
+  AddJobOutcome, AskLength, PageMessage, PageState, PanelLauncherAnswer, SiteRequestOutcome, WallWaits,
 } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
@@ -121,6 +121,15 @@ const TAILORIT_LINKS = {
  *  under Autofill after page turn: Manually is at 'review' (v4, D7: it raises no page-turned notice any more), and its
  *  plain panel/fill goes on there. */
 const PAUSED: ReadonlySet<FrameReport['status']> = new Set<FrameReport['status']>(['handoff', 'auth-needed']);
+
+/** s2 profile (the review fix P1): what a page with no run waits for (PageState.waits), in its wall's toast's own
+ *  words, said here when the page's toasts are not shown until closed. */
+const PAGE_WAITS: Readonly<Record<WallWaits, string>> = {
+  challenge: COPY.toasts.challenge,
+  'sign-in': COPY.toasts.signIn,
+  'sign-in-failed': COPY.toasts.signInFailed,
+  'no-sign-in': COPY.toasts.noSignIn,
+};
 
 /** What the main button says and sends: Autofill, Sign up & Autofill, or (labelled Autofill) go on with a paused run. */
 type MainMeaning = 'fill' | 'sign-up' | 'continue';
@@ -435,6 +444,10 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const meaning: MainMeaning = wall ? 'sign-up' : choice ? 'fill' : reports.some((report) => PAUSED.has(report.status))
     ? 'continue' : 'fill';
   const offersFill = tabId !== null && page?.support !== 'none' && !postingOnly && !submitted;
+  // s2 profile (the review fix P1): the page's toasts may be gone (timed) or never drawn ('off') while the page still
+  // waits, so the panel says what for: a paused run's line (the report's saysWaits), and a page with no run's wall.
+  const toastsMayGo = settings !== null && settings.modes.notifications !== 'until-closed';
+  const pageWaits = toastsMayGo && page?.waits !== undefined ? page.waits : null;
   // The résumé line until a run lists the résumé's own row (which then has its Preview): one the lists show (D8).
   const resumeRow = reports.some((report) => report.fields.some((row) => row.category === 'file.resume'
     && !leftOut(row)));
@@ -492,6 +505,11 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
       {tabId !== null && postingOnly && page?.confirmation !== true && (
         <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.noForm}</p>
       )}
+      {tabId !== null && pageWaits !== null && (
+        <p className="tia-strip" data-strip="page-waits" data-page-waits={pageWaits} data-tone="warning" role="status">
+          {PAGE_WAITS[pageWaits]}
+        </p>
+      )}
       {offersFill && tabId !== null && (
         <MainButton tabId={tabId} meaning={meaning} working={busy || working} clock={seenClock}
           onRun={(message) => void run(message)} />
@@ -515,8 +533,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             notices={false}
             busy={busy}
             minimized={settings?.view === 'minimized'}
-            // s2 profile: with the page's notifications off, a paused run's line says what it waits for.
-            saysWaits={settings?.modes.notifications === 'off'}
+            // s2 profile (P1): with the page's notifications not shown until closed, a paused run's line says what it
+            // waits for.
+            saysWaits={toastsMayGo}
             submitted={submitted}
             {...(submitted ? {} : {
               onCancel: () => void run({ v: 1, type: 'panel/cancel', tabId }),

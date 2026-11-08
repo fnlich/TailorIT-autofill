@@ -17,7 +17,7 @@
 import { applicationOf } from '../adapters';
 import { parseAtsUrl } from '../contract/tailorit';
 import type { Platform } from '../core/enums';
-import type { PageState, SignInWall } from '../messaging/schemas';
+import type { PageState, SignInWall, WallWaits } from '../messaging/schemas';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { platformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
@@ -63,6 +63,8 @@ export interface FrameEntry {
   wall?: SignInWall;
   /** The frame shows a choice of how to apply its adapter answers with a declared entry (frame/wall's `choice`). */
   choice?: true;
+  /** s2 profile (P1): what the frame's page waits for while no run holds it (frame/wall's `waits`). */
+  waits?: WallWaits;
 }
 
 const keyOf = (tabId: number, frameId: number) => `frames:${tabId}:${frameId}`;
@@ -80,8 +82,8 @@ export async function registerFrame(
   session: StorageArea,
   frame: { tabId: number; frameId: number; documentId: string | undefined; url: string; isTop: boolean; hasForm: boolean;
     nav?: number; letter?: true; keepKey?: string; wraps?: true; claimed?: true; chain?: FrameChain;
-    /** v4: the same document's wall and choice, kept from its entry (frame/wall). */
-    wall?: SignInWall; choice?: true },
+    /** v4: the same document's wall and choice, kept from its entry (frame/wall); s2 profile, what it waits for. */
+    wall?: SignInWall; choice?: true; waits?: WallWaits },
   now: number,
 ): Promise<FrameEntry> {
   const entry: FrameEntry = {
@@ -109,6 +111,7 @@ export async function registerFrame(
         : { chainedFrom: frame.chain.parentFrameId }) }),
     ...(frame.wall === undefined ? {} : { wall: frame.wall }),
     ...(frame.choice === true ? { choice: true as const } : {}),
+    ...(frame.waits === undefined ? {} : { waits: frame.waits }),
   };
   await session.set({ [keyOf(frame.tabId, frame.frameId)]: entry });
   return entry;
@@ -117,12 +120,12 @@ export async function registerFrame(
 /** v4: a frame's frame/wall: its entry, for the same document, takes the wall and the choice it shows now (none:
  *  gone). Answers the entry as stored, or null when the frame is not registered for that document. */
 export async function setWall(session: StorageArea, tabId: number, frameId: number, documentId: string | null,
-  shown: { wall: SignInWall | null; choice: boolean }): Promise<FrameEntry | null> {
+  shown: { wall: SignInWall | null; choice: boolean; waits?: WallWaits }): Promise<FrameEntry | null> {
   const held = await frameEntry(session, tabId, frameId);
   if (held === null || held.documentId !== documentId) return null;
-  const { wall: _wall, choice: _choice, ...rest } = held;
+  const { wall: _wall, choice: _choice, waits: _waits, ...rest } = held;
   const entry: FrameEntry = { ...rest, ...(shown.wall === null ? {} : { wall: shown.wall }),
-    ...(shown.choice ? { choice: true as const } : {}) };
+    ...(shown.choice ? { choice: true as const } : {}), ...(shown.waits === undefined ? {} : { waits: shown.waits }) };
   await session.set({ [keyOf(tabId, frameId)]: entry });
   return entry;
 }
@@ -137,10 +140,13 @@ export function wallFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
  *  M4) on a page with no form, the choice of how to apply it shows (its frame/wall's `choice`), for PageState.choice:
  *  the side panel then offers Autofill there, a posting page included (Workday's /apply, which its parser reads as a
  *  posting). Each goes with the frame/wall that cleared it, or with its document. */
-function wallOf(frames: readonly FrameEntry[], noForm: boolean): { wall?: SignInWall; choice?: true } {
+function wallOf(frames: readonly FrameEntry[], noForm: boolean): { wall?: SignInWall; choice?: true;
+  waits?: WallWaits } {
   const frame = wallFrameOf(frames);
   return { ...(frame?.wall === undefined ? {} : { wall: frame.wall }),
-    ...(noForm && frame?.choice === true ? { choice: true as const } : {}) };
+    ...(noForm && frame?.choice === true ? { choice: true as const } : {}),
+    // s2 profile (P1): a page with no form whose wall's toast stands.
+    ...(noForm && frame?.waits !== undefined ? { waits: frame.waits } : {}) };
 }
 
 /** The chain an entry holds, as registerFrame takes it again (the same document's next hello keeps it). */

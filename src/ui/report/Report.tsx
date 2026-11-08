@@ -140,8 +140,9 @@ export interface ReportActions {
   /** v4 ui: a résumé or cover-letter row's own tool beside Preview and Show (the side panel's résumé Change after a
    *  run): its button's words, its data-action, and what it unfolds under the row; null for none. */
   rowTool?(row: ReportRow): { label: string; action: string; render(close: () => void): ReactNode } | null;
-  /** s2 profile (settings version 7): the page draws no TailorIT notification (`modes.notifications` 'off'), so the
-   *  line of a frame whose run paused says what it waits for (its pause reason), as the page's toast would have. */
+  /** s2 profile (settings version 7): the page's TailorIT notifications may not be there (`modes.notifications` other
+   *  than 'until-closed': timed, they go while the run still waits; 'off', none is drawn), so the line of a frame whose
+   *  run paused says what it waits for (its pause reason), as the page's toast would have. */
   saysWaits?: boolean;
 }
 
@@ -386,8 +387,8 @@ function Progress({ reports, actions, minimized }: { reports: readonly FrameRepo
 
 /** Where each form stands, when that says more than the progress: a decision, a sign-in, a pause, a stop, a step; that
  *  a dry run wrote nothing. With several forms, or one embedded in its page, each names its form, its own run status
- *  beside it. What a paused run waits for is said on the page (v4 ui, D10), not here, unless the page draws no
- *  notification (`saysWaits`, s2 profile): then its pause reason is said under its line. */
+ *  beside it. What a paused run waits for is said on the page (v4 ui, D10), not here, unless the page's notification
+ *  may not be there (`saysWaits`, s2 profile): then its pause reason is said under its line. */
 function FrameLines({ reports, named, saysWaits }: { reports: readonly FrameReport[]; named: boolean;
   saysWaits: boolean }) {
   const lines = reports.map((report) => {

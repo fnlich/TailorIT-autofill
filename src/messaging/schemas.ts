@@ -273,6 +273,12 @@ export type RunTrigger = (typeof RUN_TRIGGERS)[number];
 export const SIGN_IN_WALLS = ['sign-in', 'create-account', 'email-gate'] as const;
 export type SignInWall = (typeof SIGN_IN_WALLS)[number];
 
+/** s2 profile (the review fix P1): what a page with no form waits for while no run holds it, as its wall's toast says
+ *  (content/runtime.ts showWallToast): a check to solve, a sign-in to make there (or the saved one failed), or a
+ *  job-site sign-in to add in TailorIT. The side panel says it when the page's toasts are not shown until closed. */
+export const WALL_WAITS = ['challenge', 'sign-in', 'sign-in-failed', 'no-sign-in'] as const;
+export type WallWaits = (typeof WALL_WAITS)[number];
+
 /** What came of the agent's press on a posting page's entry control (v3 Phase 5; agent/enter): 'pressed' (the
  *  adapter's declared Apply or Application, that one element), 'not-offered' (none shows, or a form shows already),
  *  'blocked' (a CAPTCHA, a sign-in or a code shows). */
@@ -423,7 +429,9 @@ const contentMessages = [
   z.strictObject({ v, type: z.literal('frame/wall'), wall: z.enum(SIGN_IN_WALLS).nullable(),
     /** The page shows a choice of how to apply that its adapter answers with a declared entry (Workday's "Start Your
      *  Application": Apply Manually): Autofill there presses it (D7). */
-    choice: z.literal(true).optional() }),
+    choice: z.literal(true).optional(),
+    /** s2 profile (P1): what the page waits for now, as its wall's toast says (WALL_WAITS); absent: nothing. */
+    waits: z.enum(WALL_WAITS).optional() }),
   /** v3 Phase 8: the sentinel recognised its top frame (src/sentinel): why, from a closed list. The worker checks the
    *  frame's address again itself (Chrome's, never a payload's), limits the asks per tab and injects the content script
    *  into that one document. The only message a company's own page sends before then. */
@@ -613,6 +621,9 @@ export const PageStateSchema = z.strictObject({
    *  Apply Manually and the like, declared by the adapter's authState 'entry-choice'): the side panel offers Autofill
    *  there, even on a posting page, and the run presses the declared entry. */
   choice: z.literal(true).optional(),
+  /** s2 profile (the review fix P1): what the tab's application frame, with no run holding it, waits for now (its
+   *  wall's toast: frame/wall's `waits`); the side panel says it when the page's toasts are not shown until closed. */
+  waits: z.enum(WALL_WAITS).optional(),
 });
 export type PageState = z.infer<typeof PageStateSchema>;
 
