@@ -127,10 +127,10 @@
       "kind": "typeahead-remote",
       "required": true,
       "section": "phone",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "input[id=\"phoneNumber--countryPhoneCode\"]"
+      "control": "input[id=\"phoneNumber--countryPhoneCode\"]",
+      "note": "s2 wd: a prompt the widget helpers search (its results list declared, Enter after each query)"
     },
     {
       "label": "Phone Number",

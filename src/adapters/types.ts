@@ -6,7 +6,7 @@
  */
 import type { FieldFormat, Platform } from '../core/enums';
 import type { ShownBlock } from '../core/steps/blocks';
-import type { DeclaredKey } from '../dom/fillers/events';
+import type { QueryKey, WidgetKey } from '../dom/fillers/events';
 
 export type AdapterId = Platform | 'generic';
 
@@ -30,7 +30,7 @@ export interface WidgetDecl {
   /** Untrusted keys this widget needs (docs/SPEC-AMENDMENTS.md §12), each a keydown and a keyup on its text box (else
    *  its element, or its list: keyTarget), never one it does not declare: Escape closes a list that ignores focusout
    *  and blur. */
-  keys?: readonly DeclaredKey[];
+  keys?: readonly WidgetKey[];
   /** Where the declared keys go: 'list', the widget's open list itself (Workable's dropdowns move focus there when they
    *  open, and close on an Escape there, never on one to their text box). Without it, its text box, else its
    *  element. */
@@ -89,20 +89,44 @@ export interface WidgetDecl {
   results?: WidgetResults;
   /** A declared key sent, as a keydown and a keyup, to the text box after each typed query, for a search that starts
    *  on a keydown and never on the input event (Lever's location search: any key but its arrows and Enter starts it). */
-  queryKey?: DeclaredKey;
+  queryKey?: QueryKey;
   /** The snapshot this declaration was written from. */
   snapshot: string;
 }
 
 /** A search's results list that no ARIA names (WidgetDecl.results). */
 export interface WidgetResults {
-  /** The element that holds the results: open while a person can see it. */
-  list: Element;
+  /** The element that holds the results: open while a person can see it. s2 wd: or the hook that finds it now, for a
+   *  page that draws the list only while it is open, at the end of the body (Workday's prompts: the
+   *  responsiveMonikerPrompt whose data-associated-widget names the prompt, fixtures/workday/s2-verily-field-of-study-
+   *  open.html); null while the page shows none. */
+  list: Element | (() => Element | null);
   /** A CSS selector for one result inside `list`. */
   option: string;
-  /** The one event that chooses a result instead of click(). */
-  choose?: 'mousedown';
+  /** The one event that chooses a result instead of click() on it: 'mousedown' (Lever's), or, s2 wd, 'label': click()
+   *  on the result's label part (WidgetDecl.optionLabel), so the click goes through the page's own row element inside
+   *  the result to the result itself (Workday's promptOption inside its promptLeafNode inside the menuItem). */
+  choose?: 'mousedown' | 'label';
+  /** s2 wd: a CSS selector a result matches when it only opens a list of its own, a category and no answer (Workday's
+   *  2-level source list: a row with a chevron and no radio, fixtures/workday/s2-verily-source-open.html): read as a
+   *  result that cannot be chosen, so it is never chosen. */
+  unchoosable?: string;
 }
+
+// ── s2 wd: a date drawn in parts ──
+/** A date its page draws as separate parts, each a control a person cannot see behind the digits it displays (Workday's
+ *  date input: per part an aria-hidden display over a 1 px spin button, fixtures/workday/s2-exelixis-my-experience
+ *  .html), declared by its adapter (Adapter.dateFor) as one field of kind 'date' whose control is the element around
+ *  the parts. Its layout is the parts' (month and year: month-year; a year alone: year; month, day and year: date). */
+export interface DatePartsDecl {
+  /** The parts in the order the page draws them; each control must sit inside the declared element. */
+  parts: ReadonlyArray<{ part: 'month' | 'day' | 'year'; input: HTMLInputElement; display: Element | null }>;
+  /** The digits are typed, one key each, into a part whose value setter's write the page did not take. */
+  keys?: 'digits';
+  /** The snapshot this declaration was written from. */
+  snapshot: string;
+}
+// ── end s2 wd ──
 
 /** What the page shows of a file the extension put into a file input (Adapter.uploadState). */
 export type UploadState = 'confirmed' | 'failed' | 'pending';
@@ -199,9 +223,9 @@ export interface Adapter {
   formatFor?(control: Element): { format: FieldFormat; pattern?: string } | null;
   /** An untrusted key the page needs on a text box around its text write (Workable's date masks take a written value
    *  only after a keydown, then open their calendar): sent as a keydown and a keyup to that box right before the
-   *  value is written, and once more after its events, which closes what the page opened. One of DECLARED_KEYS, never
+   *  value is written, and once more after its events, which closes what the page opened. One of WIDGET_KEYS, never
    *  Enter (a date mask reads Enter as today); null for any other control. */
-  keyAroundWrite?(control: Element): DeclaredKey | null;
+  keyAroundWrite?(control: Element): WidgetKey | null;
   /** DESIGN-NEW-ATS Phase 0: the element that holds one question's options where the page draws no fieldset,
    *  radiogroup or group around them (JazzHR's Yes/No checkbox questions: two boxes with different names in a
    *  div.form-group, the question a label whose for names nothing), for a checkbox, or a radio with no name; null where
@@ -247,6 +271,9 @@ export interface Adapter {
   proxyFor?(input: HTMLInputElement): Element | null;
   uploadWidgets?(root: Element): Array<{ control: Element; input: HTMLInputElement }>;
   widgetFor?(control: Element): WidgetDecl | null;
+  /** s2 wd: a date drawn in parts (DatePartsDecl), asked of each element the scanner reads as no field and no widget
+   *  (Workday's div[role=group][data-automation-id=dateInputWrapper]); null for any other. */
+  dateFor?(control: Element): DatePartsDecl | null;
   isBusy?(doc: Document): boolean;
   stepSignature?(doc: Document): { heading?: string; progress?: string; urlPart?: string; anchors: string[] };
   nextButton?(root: Element): HTMLElement | null;

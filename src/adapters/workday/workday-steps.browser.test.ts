@@ -29,6 +29,29 @@ import reviewExpect from '../../../fixtures/workday/web-review.expect.json';
 import reviewHtml from '../../../fixtures/workday/web-review.html?raw';
 import verilyExpect from '../../../fixtures/workday/verily-sign-in-verify.expect.json';
 import verilyHtml from '../../../fixtures/workday/verily-sign-in-verify.html?raw';
+// s2 wd: the owner's snapshots of round 2 (2026-11-07).
+import countryOpenExpect from '../../../fixtures/workday/s2-exelixis-country-open.expect.json';
+import countryOpenHtml from '../../../fixtures/workday/s2-exelixis-country-open.html?raw';
+import stateOpenExpect from '../../../fixtures/workday/s2-exelixis-state-open.expect.json';
+import stateOpenHtml from '../../../fixtures/workday/s2-exelixis-state-open.html?raw';
+import exelixisExpExpect from '../../../fixtures/workday/s2-exelixis-my-experience.expect.json';
+import exelixisExpHtml from '../../../fixtures/workday/s2-exelixis-my-experience.html?raw';
+import verilyCreateExpect from '../../../fixtures/workday/s2-verily-create-account.expect.json';
+import verilyCreateHtml from '../../../fixtures/workday/s2-verily-create-account.html?raw';
+import verilySourceExpect from '../../../fixtures/workday/s2-verily-source-open.expect.json';
+import verilySourceHtml from '../../../fixtures/workday/s2-verily-source-open.html?raw';
+import verilyInfoExpect from '../../../fixtures/workday/s2-verily-my-information.expect.json';
+import verilyInfoHtml from '../../../fixtures/workday/s2-verily-my-information.html?raw';
+import verilyStudyExpect from '../../../fixtures/workday/s2-verily-field-of-study-open.expect.json';
+import verilyStudyHtml from '../../../fixtures/workday/s2-verily-field-of-study-open.html?raw';
+import noItemsExpect from '../../../fixtures/workday/s2-verily-school-no-items.expect.json';
+import noItemsHtml from '../../../fixtures/workday/s2-verily-school-no-items.html?raw';
+import degreeOpenExpect from '../../../fixtures/workday/s2-verily-degree-open.expect.json';
+import degreeOpenHtml from '../../../fixtures/workday/s2-verily-degree-open.html?raw';
+import schoolResultsExpect from '../../../fixtures/workday/s2-verily-school-results.expect.json';
+import schoolResultsHtml from '../../../fixtures/workday/s2-verily-school-results.html?raw';
+import afterAddExpect from '../../../fixtures/workday/s2-verily-field-of-study-after-add.expect.json';
+import afterAddHtml from '../../../fixtures/workday/s2-verily-field-of-study-after-add.html?raw';
 import syntheticHtml from '../../../fixtures/synthetic/workday/steps.html?raw';
 import { classifyByRules } from '../../core/resolver/classifyRules';
 import { scan, toFieldSpec } from '../../dom/scan';
@@ -61,6 +84,18 @@ const CASES = [
   { name: 'danafarber-voluntary-disclosures', html: disclosuresHtml, json: disclosuresExpect },
   { name: 'danafarber-self-identify', html: selfIdHtml, json: selfIdExpect },
   { name: 'web-review', html: reviewHtml, json: reviewExpect },
+  // s2 wd
+  { name: 's2-exelixis-country-open', html: countryOpenHtml, json: countryOpenExpect },
+  { name: 's2-exelixis-state-open', html: stateOpenHtml, json: stateOpenExpect },
+  { name: 's2-exelixis-my-experience', html: exelixisExpHtml, json: exelixisExpExpect },
+  { name: 's2-verily-create-account', html: verilyCreateHtml, json: verilyCreateExpect },
+  { name: 's2-verily-source-open', html: verilySourceHtml, json: verilySourceExpect },
+  { name: 's2-verily-my-information', html: verilyInfoHtml, json: verilyInfoExpect },
+  { name: 's2-verily-field-of-study-open', html: verilyStudyHtml, json: verilyStudyExpect },
+  { name: 's2-verily-school-no-items', html: noItemsHtml, json: noItemsExpect },
+  { name: 's2-verily-degree-open', html: degreeOpenHtml, json: degreeOpenExpect },
+  { name: 's2-verily-school-results', html: schoolResultsHtml, json: schoolResultsExpect },
+  { name: 's2-verily-field-of-study-after-add', html: afterAddHtml, json: afterAddExpect },
 ] as const;
 
 async function load(html: string): Promise<Fixture> {
@@ -203,32 +238,46 @@ describe('Workday’s dropdown: a select-only combobox the helpers act on throug
 });
 
 describe('the other step rules, each on its own', () => {
-  it('never types into a prompt: no ARIA names its list, so the helpers refuse it (widget-unsupported)', async () => {
-    const scanned = await scanCase(document, resolveExpHtml, sourceOf(resolveExpExpect));
-    const root = scanned.root;
-    for (const id of ['skills--skills', 'education-71--fieldOfStudy']) {
-      const input = scanned.doc.getElementById(id)!;
-      const field = scanned.result.fields.find((each) => scanned.result.target(each.key)?.control === input)!;
-      const target = scanned.result.target(field.key)!;
-      expect(field.kind).toBe('typeahead-remote');
-      // The pass's query write (content/pass.ts searchField) and the waiting path's read both stop here.
-      expect(isActionable(target.widget!)).toBe(false);
-      expect(await readWidget(target, { adapter: workdayAdapter, root })).toEqual({ status: 'unread',
-        reason: 'widget-unsupported' });
-      expect((input as HTMLInputElement).value).toBe('');
-    }
-  });
+  // s2 wd (snapshot round 2): the prompt's results list is declared (s2-verily-field-of-study-open.html), so the widget
+  // helpers search it; before, no ARIA named it and they refused it (widget-unsupported).
+  it('searches a prompt through the results list its adapter declares, read as a search, never opened to be read',
+    async () => {
+      const scanned = await scanCase(document, resolveExpHtml, sourceOf(resolveExpExpect));
+      const root = scanned.root;
+      for (const id of ['skills--skills', 'education-71--fieldOfStudy']) {
+        const input = scanned.doc.getElementById(id)!;
+        const field = scanned.result.fields.find((each) => scanned.result.target(each.key)?.control === input)!;
+        const target = scanned.result.target(field.key)!;
+        expect(field.kind).toBe('typeahead-remote');
+        expect(isActionable(target.widget!)).toBe(true);
+        expect(target.widget!.queryKey).toBe('Enter');
+        expect(await readWidget(target, { adapter: workdayAdapter, root })).toEqual({ status: 'read',
+          reading: { kind: 'remote' } });
+        expect((input as HTMLInputElement).value).toBe('');
+      }
+    });
 
-  it('withholds Next while a required date is empty, and offers it once every required date holds a value', async () => {
-    const fixture = await load(resolveExpHtml);
-    const root = workdayAdapter.detect(fixture.doc)!.formRoot;
-    expect(workdayAdapter.isFinalStep!(fixture.doc)).toBe('not-final');
-    expect(workdayAdapter.nextButton!(root)).toBeNull();
-    for (const part of Array.from(fixture.doc.querySelectorAll<HTMLInputElement>('input[role="spinbutton"]'))) {
-      if (part.getAttribute('aria-required') === 'true') part.value = '1';
-    }
-    expect(workdayAdapter.nextButton!(root)?.getAttribute('data-automation-id')).toBe('pageFooterNextButton');
-  });
+  it('withholds Next while a required date shows no digits, and offers it once every required part shows its own',
+    async () => {
+      const fixture = await load(resolveExpHtml);
+      const root = workdayAdapter.detect(fixture.doc)!.formRoot;
+      expect(workdayAdapter.isFinalStep!(fixture.doc)).toBe('not-final');
+      expect(workdayAdapter.nextButton!(root)).toBeNull();
+      const parts = Array.from(fixture.doc.querySelectorAll<HTMLInputElement>('input[role="spinbutton"]'))
+        .filter((part) => part.getAttribute('aria-required') === 'true');
+      // s2 wd: a value in the hidden spin button alone is no date a person sees: its display still shows "MM".
+      for (const part of parts) part.value = '1';
+      expect(workdayAdapter.nextButton!(root)).toBeNull();
+      // Every required part but one shows digits: still withheld.
+      // resolvetech-my-experience.html: <div aria-hidden="true" id="<wrapper>-dateSectionMonth-display" ...>MM</div>
+      // beside <input role="spinbutton" id="<wrapper>-dateSectionMonth-input" ...>.
+      const display = (part: HTMLInputElement) => fixture.doc.getElementById(part.id.replace(/-input$/, '-display'))!;
+      for (const part of parts.slice(1)) display(part).textContent = '01';
+      expect(workdayAdapter.nextButton!(root)).toBeNull();
+      // The last one shows its number through aria-valuenow: Next.
+      parts[0]!.setAttribute('aria-valuenow', '1');
+      expect(workdayAdapter.nextButton!(root)?.getAttribute('data-automation-id')).toBe('pageFooterNextButton');
+    });
 
   it('makes each block’s “I currently work here” a box of its own, though every block names it alike', async () => {
     const scanned = await scanCase(document, webExpHtml, sourceOf(webExpExpect));
@@ -393,7 +442,11 @@ describe('the synthetic steps page the e2e spec runs on (fixtures/synthetic/work
     const sections = workdayAdapter.repeatables!(root);
     expect(sections.map((section) => [section.kind, section.blocks().length, section.addButton()?.textContent])).toEqual([
       ['experience', 1, 'Add Another']]);
-    for (const part of Array.from(doc.querySelectorAll<HTMLInputElement>('input[role="spinbutton"]'))) part.value = '1';
+    // The person's date, as Workday shows it (s2 wd: each part's display), and the value the page's own check reads.
+    for (const part of Array.from(doc.querySelectorAll<HTMLInputElement>('input[role="spinbutton"]'))) {
+      part.value = '1';
+      part.parentElement!.querySelector('[data-automation-id$="-display"]')!.textContent = '01';
+    }
     for (const id of ['workExperience-61--jobTitle', 'workExperience-61--companyName']) {
       (doc.getElementById(id) as HTMLInputElement).value = 'x';
     }

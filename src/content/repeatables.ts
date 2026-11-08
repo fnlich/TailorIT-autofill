@@ -7,7 +7,9 @@
  * - The sections are the adapter's repeatables on the step, each kind once (the first the adapter names).
  * - Adds (addBlocks), before the step's reactive loop: planAdd decides from the counts; the Add button must be visible
  *   and pass assertNotSubmit before its click is counted, and the counters (the REPEATABLE event, stored before the
- *   click) never let the clicks on a step pass the profile's count, across reloads too. Once counted, the button is
+ *   click) never let the clicks on a step pass the profile's count, across reloads too (s2 wd: but the first plan of a
+ *   section in a new document that shows fewer blocks than were counted starts the count again, planAdd's
+ *   newDocument: the reload dropped them). Once counted, the button is
  *   checked again at the click itself (still the adapter's Add, connected, shown, enabled, clickIfAllowed), with
  *   nothing awaited between, and a click not made is uncounted (the Phase 5 review, X-S3). An Add that is, holds or
  *   sits in the adapter's Next or Submit is never clicked (X-S7). One untrusted click() at a
@@ -44,6 +46,7 @@ import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import { MAX_REPEATABLE_BLOCKS, REPEATABLE_KINDS, type RepeatableCounter, type RepeatableKind }
   from '../core/types/run';
 import { assertNotSubmit, clickIfAllowed } from '../dom/fillers';
+import { datePartsValue } from '../dom/fillers/date-parts';
 import { newScanCache } from '../dom/scan-cache';
 import { settle, type SettleOptions } from '../dom/settle';
 import type { ScanResult } from '../dom/types';
@@ -145,6 +148,19 @@ function clickNow(button: HTMLElement, section: SectionView, env: AddEnv): boole
   return clickIfAllowed(button, { adapter: env.adapter, root: env.root });
 }
 
+/** s2 wd: the sections whose adds this document has planned already, by kind: the first plan of a kind in a document is
+ *  a new document's (planAdd's newDocument: a reload that dropped the blocks the counted clicks added). */
+const PLANNED_IN = new WeakMap<Document, Set<RepeatableKind>>();
+
+/** Whether this is the first plan of `kind`'s adds in `doc`, marking it planned. */
+function firstPlanIn(doc: Document, kind: RepeatableKind): boolean {
+  const planned = PLANNED_IN.get(doc) ?? new Set<RepeatableKind>();
+  PLANNED_IN.set(doc, planned);
+  if (planned.has(kind)) return false;
+  planned.add(kind);
+  return true;
+}
+
 /** Clicks each section's Add until every entry has a block, one click at a time (module header). */
 export async function addBlocks(env: AddEnv, sections: readonly SectionView[]): Promise<AddOutcome[]> {
   const outcomes: AddOutcome[] = [];
@@ -155,11 +171,13 @@ export async function addBlocks(env: AddEnv, sections: readonly SectionView[]): 
     let afterClick = false;
     const before = new Set(section.blocks());
     const opened = () => section.blocks().filter((block) => !before.has(block));
+    const newDocument = firstPlanIn(env.root.ownerDocument, section.kind);
     for (;;) {
       const button = section.addButton();
       const rendered = section.blocks().length;
       const shown = clickable(button);
-      const plan = planAdd({ profile, rendered, prior: env.prior(section.kind), afterClick, addButton: shown });
+      const plan = planAdd({ profile, rendered, prior: env.prior(section.kind), afterClick, addButton: shown,
+        newDocument: newDocument && clicks === 0 });
       const missing = Math.max(0, profile - rendered);
       if (!plan.add) {
         await env.record(section.kind, plan.counter);
@@ -351,8 +369,10 @@ export function currentJobRows(rows: ReadonlyMap<FieldKey, FillResult>, scan: Sc
     const end = [...out.values()].find((row) => row.section === name && row.category === 'experience.endDate');
     const endTarget = end === undefined ? null : scan.target(end.key);
     const endControl = endTarget?.control as HTMLInputElement | undefined;
-    const endState = endControl === undefined ? 'absent' : endControl.disabled ? 'disabled'
-      : endControl.value.trim() === '' ? 'empty' : 'filled';
+    // s2 wd: an end date drawn in parts (Workday's) holds what its parts' displays show, disabled as its scan says.
+    const endState = endControl === undefined ? 'absent' : endTarget?.dateParts !== undefined
+      ? endTarget.field.disabled ? 'disabled' : datePartsValue(endTarget.dateParts).kind === 'empty' ? 'empty' : 'filled'
+      : endControl.disabled ? 'disabled' : endControl.value.trim() === '' ? 'empty' : 'filled';
     const plan = planCurrentJob({ current, box: box === null ? 'absent' : box.checked ? 'checked' : 'unchecked',
       endDate: endState, endDateRequired: endTarget?.field.required ?? false });
     const boxRow = box === null ? undefined : [...out.values()].find((row) => row.section === name

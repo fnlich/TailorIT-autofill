@@ -36,6 +36,15 @@
       "control": "input[id=\"workExperience-58--currentlyWorkHere\"]"
     },
     {
+      "label": "From",
+      "kind": "date",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "div[id=\"workExperience-58--startDate\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+    },
+    {
       "label": "Role Description",
       "kind": "textarea",
       "required": false,
@@ -76,6 +85,24 @@
       "control": "input[id=\"workExperience-59--currentlyWorkHere\"]"
     },
     {
+      "label": "From",
+      "kind": "date",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "div[id=\"workExperience-59--startDate\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+    },
+    {
+      "label": "To",
+      "kind": "date",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "div[id=\"workExperience-59--endDate\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+    },
+    {
       "label": "Role Description",
       "kind": "textarea",
       "required": false,
@@ -105,10 +132,10 @@
       "kind": "typeahead-remote",
       "required": false,
       "section": "education",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "input[id=\"education-73--fieldOfStudy\"]"
+      "control": "input[id=\"education-73--fieldOfStudy\"]",
+      "note": "s2 wd: a prompt the widget helpers search (its results list declared, Enter after each query)"
     },
     {
       "label": "Overall Result (GPA)",
@@ -117,6 +144,24 @@
       "section": "education",
       "fillable": true,
       "control": "input[id=\"education-73--gradeAverage\"]"
+    },
+    {
+      "label": "From",
+      "kind": "date",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "div[id=\"education-73--firstYearAttended\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+    },
+    {
+      "label": "To (Actual or Expected)",
+      "kind": "date",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "div[id=\"education-73--lastYearAttended\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
     },
     {
       "label": "Upload a file (5MB max)",
@@ -139,10 +184,10 @@
       "kind": "typeahead-remote",
       "required": true,
       "section": "additional-attachments",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "input[id=\"additionalAttachments--attachments-12--category\"]"
+      "control": "input[id=\"additionalAttachments--attachments-12--category\"]",
+      "note": "s2 wd: a prompt the widget helpers search (its results list declared, Enter after each query)"
     },
     {
       "label": "URL",

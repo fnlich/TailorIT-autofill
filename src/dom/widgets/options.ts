@@ -36,7 +36,7 @@ import { monotonicNow } from '../time';
 import type { OptionLabel, WidgetKind, WidgetOptionRead, WidgetTarget } from '../types';
 import { readVisibleText, visibleText, visibleTextWithout } from '../visible-text';
 import { isUserVisible } from '../visibility';
-import { isChosen, isUnavailable, listOf, optionElementsOf, widgetBox, widgetListOf } from './aria';
+import { isChosen, isUnavailable, isUnchoosableResult, listOf, optionElementsOf, widgetBox, widgetListOf } from './aria';
 
 /** One option a person can see in a widget's list now. Page content: untrusted. */
 export interface ShownOption extends WidgetOptionRead {
@@ -85,9 +85,10 @@ function positionOf(el: Element): number | null {
 }
 
 /** The options of a list a person can see now, in document order, each labelled by its visible text (or its part's
- *  that `labelOf` names); `option` is the selector of a results list its adapter declared (v4: WidgetDecl.results). */
-export function shownOptions(listbox: Element, cache: ScanCache = newScanCache(), labelOf?: OptionLabel, option?: string):
-  ShownOption[] {
+ *  that `labelOf` names); `option` is the selector of a results list its adapter declared (v4: WidgetDecl.results), and
+ *  `unchoosable` (s2 wd: WidgetDecl.results.unchoosable) the selector of a result that cannot be chosen. */
+export function shownOptions(listbox: Element, cache: ScanCache = newScanCache(), labelOf?: OptionLabel, option?: string,
+  unchoosable?: string): ShownOption[] {
   if (!isUserVisible(listbox, cache)) return [];
   const shown: ShownOption[] = [];
   const top = listbox.getBoundingClientRect().top - listbox.scrollTop;
@@ -97,8 +98,8 @@ export function shownOptions(listbox: Element, cache: ScanCache = newScanCache()
     const named = part !== null && el.contains(part) ? part : el;
     const label = capCodePoints(visibleText(named, { singleLine: true, cap: TEXT_CAP_LABEL, cache }), TEXT_CAP_LABEL);
     if (label === '') continue;
-    shown.push({ el, label, disabled: isUnavailable(el), selected: isChosen(el), position: positionOf(el),
-      offset: Math.round(el.getBoundingClientRect().top - top) });
+    shown.push({ el, label, disabled: isUnavailable(el) || isUnchoosableResult(el, unchoosable), selected: isChosen(el),
+      position: positionOf(el), offset: Math.round(el.getBoundingClientRect().top - top) });
   }
   return shown;
 }
@@ -115,11 +116,11 @@ function sameOption(known: Pick<ReadOption, 'label' | 'position' | 'offset'>,
 
 /** Takes the options of the view shown now into `found`, those an earlier view took aside; false once the option cap
  *  stops it. */
-function takeView(listbox: Element, found: ReadOption[], cache?: ScanCache, labelOf?: OptionLabel, selector?: string):
-  boolean {
+function takeView(listbox: Element, found: ReadOption[], cache?: ScanCache, labelOf?: OptionLabel, selector?: string,
+  unchoosable?: string): boolean {
   const at = listbox.scrollTop;
   const earlier = found.length;
-  for (const option of shownOptions(listbox, cache, labelOf, selector)) {
+  for (const option of shownOptions(listbox, cache, labelOf, selector, unchoosable)) {
     let seen = false;
     for (let index = 0; index < earlier && !seen; index += 1) seen = sameOption(found[index]!, option);
     if (seen) continue;
@@ -181,7 +182,8 @@ export function scrollListTo(listbox: Element, top: number): void {
  * minute and more. A list the page empties or removes while it is read ends the read where it is.
  */
 export async function readList(listbox: Element,
-  options: { signal?: AbortSignal; capMs?: number; labelOf?: OptionLabel; option?: string } = {}): Promise<ListRead> {
+  options: { signal?: AbortSignal; capMs?: number; labelOf?: OptionLabel; option?: string; unchoosable?: string } = {}):
+  Promise<ListRead> {
   const started = monotonicNow();
   const capMs = options.capMs ?? WIDGET_READ_CAP_MS;
   const found: ReadOption[] = [];
@@ -190,7 +192,7 @@ export async function readList(listbox: Element,
     scrollListTo(listbox, 0);
     await drawn(listbox, options.signal);
   }
-  complete = takeView(listbox, found, undefined, options.labelOf, options.option);
+  complete = takeView(listbox, found, undefined, options.labelOf, options.option, options.unchoosable);
   for (let steps = 0; complete && scrolls(listbox) && listbox.isConnected; steps += 1) {
     if (options.signal?.aborted) break;
     const before = listbox.scrollTop;
@@ -204,7 +206,7 @@ export async function readList(listbox: Element,
     scrollListTo(listbox, Math.min(end, before + Math.max(1, listbox.clientHeight - 8)));
     await drawn(listbox, options.signal);
     if (listbox.scrollTop <= before) break;
-    complete = takeView(listbox, found, undefined, options.labelOf, options.option);
+    complete = takeView(listbox, found, undefined, options.labelOf, options.option, options.unchoosable);
   }
   return { options: ordered(found), complete };
 }

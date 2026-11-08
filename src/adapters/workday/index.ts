@@ -51,7 +51,7 @@ import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
 import type { Adapter, SignInForm, SignInWall } from '../types';
 import {
-  accountErrors, descriptionFor, isBusy, isFinalStep, labelFor, neverPressedOnSteps, nextButton, repeatables,
+  accountErrors, dateFor, descriptionFor, isBusy, isFinalStep, labelFor, neverPressedOnSteps, nextButton, repeatables,
   requiredFor, sections, stepSignature, submitButton, uploadHeld, uploadHeldNames, uploadState, uploadWidgets, widgetFor,
   widgetRoots,
 } from './application';
@@ -261,6 +261,8 @@ export const workdayAdapter: Adapter = {
   descriptionFor,
   widgetRoots,
   widgetFor,
+  // s2 wd: the date input as one date field, written part by part (./application.ts, Dates).
+  dateFor,
   uploadWidgets,
   uploadState,
   // The core pass of 2026-11-06: a field showing a file Workday took is answered, never uploaded again.

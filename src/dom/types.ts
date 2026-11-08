@@ -8,6 +8,7 @@
  * the scanner recognises (WidgetTarget) and what opening one read (WidgetReading).
  */
 import type { BaseKey, FieldDescriptor, FieldKey, OptionSetHash, ReasonCode, SectionRef } from '../core/types';
+import type { QueryKey, WidgetKey } from './fillers/events';
 
 /** How a visually hidden native control qualified to be filled (the proxy rule): through its tied visible label, or
  *  through an element the adapter declared. Highlights point at this element, not the hidden input. */
@@ -94,7 +95,29 @@ export interface FieldTarget {
   /** Whether a native radio or checkbox of the field shows chosen, as its adapter reads it (Adapter.checkedOf: Ashby
    *  draws the answer beside an opacity-0 input); absent: its own checked property. */
   readonly checkedOf?: (input: HTMLInputElement) => boolean;
+  /** s2 wd: a date drawn in parts its adapter declares (Adapter.dateFor: Workday's date input), the field's control its
+   *  wrapper: written and read part by part (fillers/date-parts.ts), never through the native date filler. */
+  readonly dateParts?: DatePartsTarget;
 }
+
+// ── s2 wd: a date drawn in parts ──
+/** One part of a date drawn in parts: which part it is, the control that takes it (a spin button a person cannot see),
+ *  and the element that shows what it holds (its digits, or a placeholder). */
+export interface DatePart {
+  readonly part: 'month' | 'day' | 'year';
+  readonly input: HTMLInputElement;
+  readonly display: Element | null;
+}
+
+/** A date drawn in parts as one scan found it (Adapter.dateFor). */
+export interface DatePartsTarget {
+  /** Its parts in the order the page draws them. */
+  readonly parts: readonly DatePart[];
+  /** The adapter declares the digits for its parts: typed one key per digit where the value setter's write is not
+   *  taken. */
+  readonly digits: boolean;
+}
+// ── end s2 wd ──
 
 /** The widget kinds a scan can report (Phase 4), as their fields' kinds: the first four from standard ARIA, and a
  *  'checkbox' only as an adapter declares one (WidgetDecl), which no helper fills yet (widget-unsupported). */
@@ -120,7 +143,7 @@ export interface WidgetTarget {
   /** The page-world bridge's code the adapter declared for it (WidgetDecl.bridge), tried before any event. */
   readonly bridge?: 'react-select' | null;
   /** The untrusted keys the adapter declared for it (WidgetDecl.keys); none for any other widget. */
-  readonly keys?: readonly ('Escape' | 'ArrowDown')[];
+  readonly keys?: readonly WidgetKey[];
   /** Where its declared keys go (WidgetDecl.keyTarget): 'list', its open list; absent, its text box, else its element. */
   readonly keyTarget?: 'list';
   /** Its text box is read-only by design (WidgetDecl.readOnlyBox): that box's readonly does not make it read-only. */
@@ -146,10 +169,12 @@ export interface WidgetTarget {
   readonly emptyAfterMs?: number;
   /** The list's first result carries its mark before anything is chosen (WidgetDecl.highlightIsNoChoice). */
   readonly highlightIsNoChoice?: boolean;
-  /** v4 (drop): its results list that no ARIA names, as its adapter declared it (WidgetDecl.results). */
-  readonly results?: { readonly list: Element; readonly option: string; readonly choose?: 'mousedown' };
+  /** v4 (drop): its results list that no ARIA names, as its adapter declared it (WidgetDecl.results; s2 wd: the list
+   *  found anew on each read where the page draws it only while open, and a result that only opens a sub-list). */
+  readonly results?: { readonly list: Element | (() => Element | null); readonly option: string;
+    readonly choose?: 'mousedown' | 'label'; readonly unchoosable?: string };
   /** v4 (drop): the declared key sent after each typed query (WidgetDecl.queryKey). */
-  readonly queryKey?: 'Escape' | 'ArrowDown';
+  readonly queryKey?: QueryKey;
 }
 
 /** The part of a list's option that is its label, or null for the whole option (WidgetDecl.optionLabel). */

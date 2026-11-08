@@ -36,15 +36,32 @@
  *   - the prompt ("How Did You Hear About Us?", Country Phone Code, Field of Study, Skills, School, an attachment's
  *     Category): div[data-automation-id=multiSelectContainer] around an input[placeholder=Search], its answers pills
  *     ([data-automation-id=selectedItem] in ul[data-automation-id=selectedItemList]): a search ('typeahead-remote'), as
- *     Lever's location search is. No snapshot shows its list open, so no ARIA names a list: the helpers never type into
- *     it (widget-unsupported, the person's), and its pills are its answer (shownAnswer).
+ *     Lever's location search is, its pills its answer (shownAnswer). s2 wd (snapshot round 2: fixtures/workday/
+ *     s2-verily-field-of-study-open.html, s2-verily-source-open.html): its list opens at the end of the body, a
+ *     div[data-popper-placement] around div[data-automation-id=responsiveMonikerPrompt] whose data-associated-widget is
+ *     the container's id, around div[data-automation-id=activeListContainer][role=listbox] (scrolling, virtualised) of
+ *     rows div[role=option][data-automation-id=menuItem], each a promptLeafNode with its radio (a leaf) or a chevron
+ *     (a category, which opens a list of its own), its words its promptOption. So the prompt declares its results list
+ *     (results: the hook promptListOf finds it anew each time, the row selector, its label part, a click there
+ *     chooses, and a category row is no answer to choose), and Enter after each typed query (queryKey: its box says
+ *     enterkeyhint="search"). snapshot4 (the owner's captures of 2026-11-07, 19:20 and 19:47): opened with nothing
+ *     typed, School's list shows one row of its own, "No Items." (s2-verily-school-no-items.html: id="menuItem-", its
+ *     promptLeafNode of type 2, no radio), no answer to choose; typed, a "Search Results (17)" header
+ *     (div[data-automation-id=multiSelectHeader] > div[data-automation-id=promptTitle][title="Search Results"]) above a
+ *     list that says data-uxi-multiselectlist-issearch="true", its rows radio leaves of type 1 as a browse list's
+ *     (s2-verily-school-results.html). No capture shows a search's loading sign, nor an "Other" row in a prompt's list
+ *     (the Degree dropdown's last option is "Other": s2-verily-degree-open.html).
  *   Neither needs the page-world bridge: the snapshots show standard ARIA on the dropdown, and nothing of the prompt's
  *   list (an MHTML holds no React props).
  * - Dates: Workday's date input ([data-automation-id=dateInputWrapper], "From"/"To" in Work Experience, a year alone in
  *   Education, month/day/year on Application Questions and Self Identify) draws each part as an aria-hidden display over
  *   a 1 px, scale(0.01), z-index -1000 input[role=spinbutton]: the scanner reads that input as hidden, as a person
- *   cannot see it, so a date is never written. No snapshot shows how the part takes typed digits; until one does, a
- *   required date is the person's, and Next is theirs while one is empty (nextButton).
+ *   cannot see it. s2 wd (snapshot round 2, the owner's screenshot of "04/2025" typed into From: the date takes typed
+ *   digits without its calendar): dateFor declares the wrapper one date field, its parts and their displays, the digits
+ *   declared for its parts, its question its fieldset's legend (labelFor); dom/fillers/date-parts.ts writes it part by
+ *   part (the value setter, else the digits typed) and reads it back from the displays, never through the calendar
+ *   (dateIcon, never pressed). Next is withheld while a required part shows no digits (nextButton): a part's display or
+ *   aria-valuenow, as a person reads it. How the live page takes our events is unknown until the owner's live run.
  * - Radios and checkboxes are native inputs with label[for] (previous worker, "I currently work here", the terms box,
  *   the SMS and WhatsApp opt-ins, the ethnicity and disability groups), filled by the standard fillers.
  * - Uploads (uploadWidgets, uploadState): a drop zone, [data-automation-id=file-upload-drop-zone], holds
@@ -56,7 +73,8 @@
  *   aria-labelledby "<Kind>-section" (its h4) holding blocks div[role=group] aria-labelledby "<Kind>-<n>-panel" (an h5
  *   "Work Experience 1" with its Delete button) and its button[data-automation-id=add-button] ("Add" while it has no
  *   block, "Add Another" after); a Work Experience block's "I currently work here" is its input[name=currentlyWorkHere].
- *   Languages shows only its Add in the snapshots (no block's markup seen), Websites is no kind the core counts.
+ *   Languages shows only its Add in the snapshots (no block's markup seen), Websites is no kind the core counts. s2 wd:
+ *   each hook looks its section up again, so a section Workday draws anew after an Add is the one read.
  * - The account view (index.ts) shows Workday's sign-in error as div[data-automation-id=errorMessage][role=alert]
  *   above the form ("[verily.wd1.myworkdayjobs.com] Sign In (1)": "Verify your account before you sign in or request a
  *   verification email."): errors names it, so Sign-in Auto reads a failed sign-in at once. The busy sign is
@@ -73,7 +91,7 @@ import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
-import type { Adapter, UploadState, WidgetDecl } from '../types';
+import type { Adapter, DatePartsDecl, UploadState, WidgetDecl } from '../types';
 
 /** The owner's snapshots the step hooks were written from, as converted (fixtures/workday/). */
 export const WORKDAY_STEP_SNAPSHOTS = ['fixtures/workday/cisive-autofill-resume.html',
@@ -81,7 +99,18 @@ export const WORKDAY_STEP_SNAPSHOTS = ['fixtures/workday/cisive-autofill-resume.
   'fixtures/workday/resolvetech-my-experience.html', 'fixtures/workday/web-my-experience.html',
   'fixtures/workday/web-application-questions.html', 'fixtures/workday/aep-application-questions-2.html',
   'fixtures/workday/danafarber-voluntary-disclosures.html', 'fixtures/workday/danafarber-self-identify.html',
-  'fixtures/workday/web-review.html', 'fixtures/workday/verily-sign-in-verify.html'] as const;
+  'fixtures/workday/web-review.html', 'fixtures/workday/verily-sign-in-verify.html',
+  // s2 wd: the owner's snapshots of round 2 (2026-11-07): the Country, State, source and Field of Study lists open, My
+  // Experience after Workday's resume parse (four jobs, two schools, seven dates), My Information with chosen pills, and
+  // verily's Create Account.
+  'fixtures/workday/s2-exelixis-country-open.html', 'fixtures/workday/s2-exelixis-state-open.html',
+  'fixtures/workday/s2-exelixis-my-experience.html', 'fixtures/workday/s2-verily-create-account.html',
+  'fixtures/workday/s2-verily-source-open.html', 'fixtures/workday/s2-verily-my-information.html',
+  'fixtures/workday/s2-verily-field-of-study-open.html',
+  // s2 wd, snapshot4 (2026-11-07 evening): School opened with nothing typed ("No Items."), the Degree list open, the
+  // School's search results (their words redacted) with a typed From, and Field of Study after a Work Experience Add.
+  'fixtures/workday/s2-verily-school-no-items.html', 'fixtures/workday/s2-verily-degree-open.html',
+  'fixtures/workday/s2-verily-school-results.html', 'fixtures/workday/s2-verily-field-of-study-after-add.html'] as const;
 
 /**
  * The step pages before Review, by their data-automation-id, each from the snapshots of a whole flow (the progress
@@ -196,18 +225,45 @@ export function isFinalStep(doc: Document): 'final' | 'not-final' | 'unknown' {
 
 /** The placeholder each part of Workday's date input shows while empty (fixtures/workday/resolvetech-my-experience.html:
  *  <div ... data-automation-id="dateSectionMonth-display">MM</div> over <input role="spinbutton" aria-label="Month" ...
- *  aria-required="true" ... data-automation-id="dateSectionMonth-input" value="">; "YYYY", and Self Identify's "DD"). */
-const DATE_PARTS = ['dateSectionMonth', 'dateSectionDay', 'dateSectionYear'] as const;
+ *  aria-required="true" ... data-automation-id="dateSectionMonth-input" value="">; "YYYY", and Self Identify's "DD"),
+ *  each by the part it is (s2 wd). */
+const DATE_PARTS = { dateSectionMonth: 'month', dateSectionDay: 'day', dateSectionYear: 'year' } as const;
 
-/** Whether a required date the step shows is still empty: a dateInputWrapper a person can see whose parts are required
- *  (aria-required="true" on each spin button) and all empty. Its parts are never written (module header). */
+/** s2 wd: Workday's date input as one date field (module header, Dates): fixtures/workday/s2-exelixis-my-experience
+ *  .html's <div id="workExperience-312--startDate" aria-labelledby="hiddenDateValueId-..." role="group"
+ *  data-automation-id="dateInputWrapper"> holding, per part, <div id="...-dateSectionMonth" tabindex="-1"><div
+ *  aria-hidden="true" data-automation-id="dateSectionMonth-display">MM</div><input role="spinbutton" aria-label="Month"
+ *  aria-valuemax="12" aria-valuemin="1" aria-valuetext="MM" aria-required="true" data-automation-id="dateSectionMonth-
+ *  input" value=""></div>, then "/" and the year's; a year alone in resolvetech-my-experience.html's education, and
+ *  month, day and year in danafarber-self-identify.html. Its parts in the page's order, their digits declared for it;
+ *  null for any other element, or a wrapper outside a question's field. */
+export function dateFor(control: Element): DatePartsDecl | null {
+  if (!control.matches('[data-automation-id="dateInputWrapper"][role="group" i]') || fieldOf(control) === null) return null;
+  const parts = Array.from(control.querySelectorAll<HTMLInputElement>('input[role="spinbutton" i]'))
+    .flatMap((input) => {
+      const id = (input.getAttribute('data-automation-id') ?? '').replace(/-input$/, '');
+      const part = (DATE_PARTS as Record<string, 'month' | 'day' | 'year'>)[id];
+      return part === undefined ? [] : [{ part, input, display: byId(control, `${id}-display`) }];
+    });
+  return parts.length === 0 ? null : { parts, keys: 'digits', snapshot: 'fixtures/workday/s2-exelixis-my-experience.html' };
+}
+
+/** s2 wd: whether a part of Workday's date input shows nothing: its display shows no digits (its placeholder, "MM") and
+ *  its spin button says no aria-valuenow, as a person reads it (a written part shows its digits there). */
+function partEmpty(wrapper: Element, input: HTMLInputElement): boolean {
+  const id = (input.getAttribute('data-automation-id') ?? '').replace(/-input$/, '');
+  const display = byId(wrapper, `${id}-display`);
+  return !/^\d+$/.test(wordsOf(display)) && !/^\d+$/.test((input.getAttribute('aria-valuenow') ?? '').trim());
+}
+
+/** Whether a required date the step shows is still empty or part-written: a dateInputWrapper a person can see with a
+ *  required part (aria-required="true" on its spin button) that shows nothing (s2 wd: read from its displays, as a person
+ *  reads it, partEmpty; its parts are written by the date filler now, Dates in the module header). */
 function requiredDateEmpty(page: Element, cache: ScanCache): boolean {
   return allById(page, 'dateInputWrapper').some((wrapper) => {
-    const parts = DATE_PARTS.map((part) => byId<HTMLInputElement>(wrapper, `${part}-input`))
-      .filter((input): input is HTMLInputElement => input !== null);
-    return parts.length > 0 && isUserVisible(wrapper, cache)
-      && parts.every((input) => (input.getAttribute('aria-required') ?? '').trim().toLowerCase() === 'true'
-        && input.value.trim() === '');
+    const parts = Array.from(wrapper.querySelectorAll<HTMLInputElement>('input[role="spinbutton" i]'))
+      .filter((input) => (input.getAttribute('aria-required') ?? '').trim().toLowerCase() === 'true');
+    return parts.length > 0 && isUserVisible(wrapper, cache) && parts.some((input) => partEmpty(wrapper, input));
   });
 }
 
@@ -282,6 +338,10 @@ export function labelFor(control: Element): Element | null {
     return legendIn(fieldOf(control), control);
   }
   if (control.matches('input[type="file" i][data-automation-id="file-upload-input-ref"]')) return uploadLabelOf(control);
+  // s2 wd: a date input (dateFor) is named by its fieldset's legend, s2-exelixis-my-experience.html's <fieldset><legend>
+  // <label id="label373"><span>From<abbr aria-hidden="true">*</abbr></span></label></legend> ... <div ... role="group"
+  // data-automation-id="dateInputWrapper">, the element its aria-labelledby names absent.
+  if (control.matches('[data-automation-id="dateInputWrapper"][role="group" i]')) return legendIn(fieldOf(control), control);
   return null;
 }
 
@@ -377,11 +437,50 @@ export function widgetFor(control: Element): WidgetDecl | null {
     // Once it holds a pill its search box is drawn at opacity 0 inside its visible input container (resolvetech-source-
     // open's phone code, web-my-experience's Category): that container is what a person sees as the widget.
     const box = byId(container, 'multiselectInputContainer') ?? container;
+    // s2 wd: its results list, found anew on each read (drawn at the end of the body only while it is open), its rows,
+    // their label, a category row never chosen, and Enter after each typed query (module header, Widgets).
     return { kind: 'typeahead-remote', opener: control as HTMLElement, box, shownAnswer: promptAnswer(container),
-      snapshot: 'fixtures/workday/resolvetech-source-open.html' };
+      results: { list: () => promptListOf(container), option: PROMPT_ROW, choose: 'label', unchoosable: UNCHOOSABLE_ROW },
+      optionLabel: (row) => byId(row, 'promptOption'), queryKey: 'Enter',
+      snapshot: 'fixtures/workday/s2-verily-field-of-study-open.html' };
   }
   return null;
 }
+
+// ── s2 wd: the prompt's results list (snapshot round 2) ──
+/** A row of a prompt's open list: fixtures/workday/s2-verily-field-of-study-open.html's <div aria-setsize="321"
+ *  id="menuItem-..." data-automation-id="menuItem" role="option" aria-posinset="62" aria-label="Canadian Studies not
+ *  checked" aria-selected="false" ...><div data-automation-id="promptLeafNode" ...><div ...><input type="radio"
+ *  data-automation-id="radioBtn" ...></div><div data-automation-id="promptOption" ...>Canadian Studies</div></div></div>. */
+const PROMPT_ROW = '[role="option" i][data-automation-id="menuItem"]';
+/** A row that is no answer to choose (results.unchoosable):
+ *  - a row that opens a list of its own, a category: fixtures/workday/s2-verily-source-open.html's "Career Websites",
+ *    "Employee Referral", "In Person Event" and "Social Media" rows, each <div data-automation-id="promptLeafNode" ...
+ *    data-uxi-multiselectlistitem-type="2" data-uxi-multiselectlistitem-hassidecharm="true"><div data-automation-id=
+ *    "promptOption" ...>Career Websites</div><div ...><span ...><svg ... class="wd-icon-chevron-right-small wd-icon" ...>
+ *    </svg></span></div></div>: a chevron and no radio, where a leaf row has its radio and no chevron;
+ *  - the list's own "nothing found" row (snapshot4: fixtures/workday/s2-verily-school-no-items.html, School opened with
+ *    nothing typed): <div aria-setsize="1" id="menuItem-" data-automation-id="menuItem" role="option" aria-posinset="1"
+ *    aria-label="No Items." ...><div data-automation-id="promptLeafNode" ... data-uxi-multiselectlistitem-type="2"
+ *    data-uxi-multiselectlistitem-hassidecharm="false"><div data-automation-id="promptOption" ...>No Items.</div></div>
+ *    </div>: no radio, a leaf node of type 2 as a category's (every answer row of the snapshots is of type 1). */
+const UNCHOOSABLE_ROW = ':has(svg.wd-icon-chevron-right-small):not(:has([data-automation-id="radioBtn"])), '
+  + ':has(> [data-automation-id="promptLeafNode"][data-uxi-multiselectlistitem-type="2"])';
+
+/** A prompt's open list now: the scrolling listbox, div[data-automation-id=activeListContainer][role=listbox], of the
+ *  popup whose data-automation-id="responsiveMonikerPrompt" names the prompt's container by data-associated-widget
+ *  (s2-verily-field-of-study-open.html and s2-verily-source-open.html: <div data-associated-widget="<the
+ *  multiSelectContainer's id>" ... data-automation-id="responsiveMonikerPrompt" ...> ... <div data-automation-id=
+ *  "activeListContainer" aria-label="Options Expanded" role="listbox" ...>, drawn at the end of the body inside
+ *  div[data-popper-placement]); null while the page shows none, or for a container with no id. */
+function promptListOf(container: Element): Element | null {
+  const id = container.id;
+  if (id === '') return null;
+  const prompt = allById(container.ownerDocument, 'responsiveMonikerPrompt')
+    .find((each) => each.getAttribute('data-associated-widget') === id) ?? null;
+  return prompt === null ? null : byId(prompt, 'activeListContainer');
+}
+// ── end s2 wd ──
 
 /** Each drop zone's "Select files" and its file input (module header). */
 export function uploadWidgets(root: Element): Array<{ control: Element; input: HTMLInputElement }> {
@@ -494,22 +593,36 @@ export function repeatables(root: Element): ReturnType<NonNullable<Adapter['repe
   if (step === null || step.page === null || step.page.id !== 'applyFlowMyExpPage' || !root.contains(step.page.el)) {
     return [];
   }
-  const page = step.page.el;
   // fixtures/workday/resolvetech-my-experience.html: <div role="group" aria-labelledby="Work-Experience-section"><h4
   // id="Work-Experience-section">Work Experience</h4><div role="group" aria-labelledby="Work-Experience-1-panel"><div
   // ...><h5 id="Work-Experience-1-panel">Work Experience 1</h5><button ...>Delete</button></div> ... <input
   // id="workExperience-62--currentlyWorkHere" type="checkbox" ... name="currentlyWorkHere" ...> ... </div><button
   // data-automation-id="add-button" ...>Add Another</button></div>; <div role="group" aria-labelledby="Education-section">
   // <h4 id="Education-section">Education</h4><div role="group" aria-labelledby="Education-1-panel"> ...
-  return REPEATABLE_SECTIONS.flatMap(([kind, prefix]) => {
-    const section = Array.from(page.querySelectorAll(`[role="group" i][aria-labelledby="${prefix}-section"]`))
+  // s2 wd (snapshot round 2, decision 6): the section is looked up again on each call of its hooks, so a section Workday
+  // draws anew after an Add is the one read, never a node it took out of the page (the wd study's scratch variant that
+  // redraws the section stopped after one click, no-add-button).
+  const sectionOf = (prefix: string): Element | null => {
+    const now = root.contains(step.page!.el) ? step.page!.el : byId(root, 'applyFlowMyExpPage');
+    if (now === null) return null;
+    return Array.from(now.querySelectorAll(`[role="group" i][aria-labelledby="${prefix}-section"]`))
       .find((group) => doc.getElementById(`${prefix}-section`)?.closest('[role="group" i]') === group) ?? null;
-    if (section === null) return [];
-    const blocks = () => Array.from(section.querySelectorAll(`[role="group" i][aria-labelledby^="${prefix}-"]`))
-      .filter((group) => /^\S+-\d+-panel$/.test(group.getAttribute('aria-labelledby') ?? '')
-        && group.parentElement?.closest('[role="group" i]') === section);
-    const addButton = () => Array.from(section.querySelectorAll<HTMLElement>('button[data-automation-id="add-button"]'))
-      .find((button) => button.closest('[role="group" i]') === section) ?? null;
+  };
+  return REPEATABLE_SECTIONS.flatMap(([kind, prefix]) => {
+    if (sectionOf(prefix) === null) return [];
+    const blocks = () => {
+      const section = sectionOf(prefix);
+      if (section === null) return [];
+      return Array.from(section.querySelectorAll(`[role="group" i][aria-labelledby^="${prefix}-"]`))
+        .filter((group) => /^\S+-\d+-panel$/.test(group.getAttribute('aria-labelledby') ?? '')
+          && group.parentElement?.closest('[role="group" i]') === section);
+    };
+    const addButton = () => {
+      const section = sectionOf(prefix);
+      if (section === null) return null;
+      return Array.from(section.querySelectorAll<HTMLElement>('button[data-automation-id="add-button"]'))
+        .find((button) => button.closest('[role="group" i]') === section) ?? null;
+    };
     return [{
       kind,
       blocks,

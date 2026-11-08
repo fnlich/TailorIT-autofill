@@ -5,11 +5,13 @@
  * capture, the plan's Phase 2): closeList sends the declared Escape only after focusout and blur left it open; a
  * widget that declares none is left open, with no key sent; a key the widget does not declare is never sent, nor one
  * to a control assertNotSubmit refuses, nor an Escape to a widget that does not say, right then, that it is open; and
- * Enter is no key a widget may declare until a snapshot needs it.
+ * (s2 wd, snapshot round 2) Enter is a search's query key alone (Workday's prompts) and the digits a date's parts' alone
+ * (Workday's date input): neither is a key a widget's list or a text box around its write gets, even one that names it.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Adapter, WidgetDecl } from '../../adapters/types';
-import { ALLOWED_EVENTS, DECLARED_KEYS, KEY_EVENTS } from '../fillers/events';
+import { ALLOWED_EVENTS, DECLARED_KEYS, DIGIT_KEYS, fireKey, KEY_EVENTS, QUERY_KEYS, WIDGET_KEYS } from '../fillers/events';
+import { fill } from '../fillers';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations, type Fixture } from '../fixture.testkit';
 import { scan } from '../scan';
 import type { WidgetTarget } from '../types';
@@ -100,6 +102,41 @@ describe('declared untrusted keys', () => {
     expect(pressDeclaredKey(page.widget('city'), 'Escape', page.ctx)).toBe(false);
     await closeList(page.widget('city'), page.ctx, { activated: true });
     expect(log.events.filter((event) => event.type === 'keydown' || event.type === 'keyup')).toEqual([]);
-    expect(DECLARED_KEYS).toEqual(['Escape', 'ArrowDown']);
+    expect(WIDGET_KEYS).toEqual(['Escape', 'ArrowDown']);
+  });
+
+  // s2 wd (snapshot round 2): Enter and the digits, each where its declaration allows it alone.
+  it('admits Enter as a query key and the digits for a date’s parts, never as a widget’s or a write’s key', async () => {
+    expect(QUERY_KEYS).toEqual(['Escape', 'ArrowDown', 'Enter']);
+    expect(DIGIT_KEYS).toEqual(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
+    expect(DECLARED_KEYS).toEqual([...QUERY_KEYS, ...DIGIT_KEYS]);
+    // A widget whose adapter lists Enter or a digit among its keys gets neither.
+    const page = await open(['Escape', 'Enter', '4'] as unknown as WidgetDecl['keys']);
+    const log = logEvents(page.fixture.doc);
+    await openList(page.widget('city'), page.ctx);
+    for (const key of ['Enter', '4'] as const) {
+      expect(pressDeclaredKey(page.widget('city'), key as unknown as 'Escape', page.ctx)).toBe(false);
+    }
+    expect(log.events.filter((event) => event.type === 'keydown')).toEqual([]);
+    removeFixtures(document);
+    // A text box whose adapter names Enter around its write gets no key either.
+    const plain = await loadFixture(document, '<!doctype html><body><form id="g"><label for="town">Town</label>'
+      + '<input id="town" type="text"></form></body>');
+    const later = logEvents(plain.doc);
+    const root = plain.doc.getElementById('g')!;
+    const input = plain.doc.getElementById('town') as HTMLInputElement;
+    const scanned = scan(root, null, { platform: 'ashby' });
+    const box = scanned.fields.find((field) => field.idAttr === 'town')!;
+    fill(scanned.target(box.key)!, { kind: 'text', text: 'Austin' }, { root,
+      adapter: { keyAroundWrite: () => 'Enter' } as unknown as Adapter });
+    expect(input.value).toBe('Austin');
+    expect(later.events.filter((event) => event.type === 'keydown')).toEqual([]);
+    // Enter and the digits carry their legacy keyCode, as a keyboard's own events do.
+    const codes: Array<[string, string, number]> = [];
+    input.addEventListener('keydown', (event) => codes.push([event.key, event.code, event.keyCode]));
+    fireKey(input, 'Enter');
+    fireKey(input, '7');
+    fireKey(input, 'Escape');
+    expect(codes).toEqual([['Enter', 'Enter', 13], ['7', 'Digit7', 55], ['Escape', 'Escape', 0]]);
   });
 });

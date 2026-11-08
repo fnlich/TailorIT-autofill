@@ -36,6 +36,24 @@
       "control": "input[id=\"workExperience-62--currentlyWorkHere\"]"
     },
     {
+      "label": "From",
+      "kind": "date",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "div[id=\"workExperience-62--startDate\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+    },
+    {
+      "label": "To",
+      "kind": "date",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "div[id=\"workExperience-62--endDate\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+    },
+    {
       "label": "Role Description",
       "kind": "textarea",
       "required": false,
@@ -65,10 +83,10 @@
       "kind": "typeahead-remote",
       "required": false,
       "section": "education",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "input[id=\"education-71--fieldOfStudy\"]"
+      "control": "input[id=\"education-71--fieldOfStudy\"]",
+      "note": "s2 wd: a prompt the widget helpers search (its results list declared, Enter after each query)"
     },
     {
       "label": "Overall Result (GPA)",
@@ -79,14 +97,32 @@
       "control": "input[id=\"education-71--gradeAverage\"]"
     },
     {
+      "label": "From",
+      "kind": "date",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "div[id=\"education-71--firstYearAttended\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+    },
+    {
+      "label": "To (Actual or Expected)",
+      "kind": "date",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "div[id=\"education-71--lastYearAttended\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+    },
+    {
       "label": "Type to Add Skills",
       "kind": "typeahead-remote",
       "required": false,
       "section": "skills",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "input[id=\"skills--skills\"]"
+      "control": "input[id=\"skills--skills\"]",
+      "note": "s2 wd: a prompt the widget helpers search (its results list declared, Enter after each query)"
     },
     {
       "label": "Upload a file (5MB max)",

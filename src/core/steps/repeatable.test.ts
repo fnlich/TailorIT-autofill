@@ -162,6 +162,21 @@ describe('planAdd', () => {
     expect(planAdd({ profile: 1, rendered: 0, prior: null, afterClick: false, addButton: false }))
       .toMatchObject({ add: false, stop: 'no-add-button', reason: 'needs-your-click' });
   });
+
+  // s2 wd (snapshot round 2, decision 6): Workday keeps no block it has not saved across a reload.
+  it('starts the count again on a new document that shows fewer blocks than were counted, and only then', () => {
+    // The page was loaded again and shows none of the two blocks the counted clicks added: the run adds them again.
+    expect(planAdd({ profile: 2, rendered: 0, prior: counter(2, 2), afterClick: false, addButton: true,
+      newDocument: true })).toEqual({ add: true, counter: counter(0, 1), stop: null, reason: null });
+    // The same document, or a new one that shows as many blocks as were counted: the cap stands.
+    expect(planAdd({ profile: 2, rendered: 0, prior: counter(2, 2), afterClick: false, addButton: true,
+      newDocument: false })).toMatchObject({ add: false, stop: 'add-cap' });
+    expect(planAdd({ profile: 3, rendered: 2, prior: counter(2, 3, 3), afterClick: false, addButton: true,
+      newDocument: true })).toMatchObject({ add: false, stop: 'add-cap' });
+    // After our own click the page's answer decides, as before.
+    expect(planAdd({ profile: 2, rendered: 0, prior: counter(0, 1), afterClick: true, addButton: true,
+      newDocument: true })).toMatchObject({ add: false, stop: 'add-ignored' });
+  });
 });
 
 describe('planRepeatable', () => {
