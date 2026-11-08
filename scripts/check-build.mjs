@@ -14,6 +14,10 @@
 // registrationsFor (src/shared/hosts.ts), read here as the worker reads it, registers that sentinel in the top frame
 // only, on every https page but the ATS hosts and every LinkedIn host (LinkedIn is deferred to v5: nothing of the
 // extension may run there, even with https://*/* granted), inside the optional host permissions.
+// v5 p1-rules (PLAN decisions 9 and 10, the owner's "Implement like jobright. I approved all", 2026-11-08): the required
+// host permissions are exactly every https and http page plus TailorIT's origin (never <all_urls>), and there are no
+// optional ones; the sentinel's registration also excludes the CAPTCHA and anti-bot vendors' own pages
+// (CAPTCHA_VENDOR_MATCHES) and reaches none of them, and no static content script matches one either.
 // Usage: node scripts/check-build.mjs [--all]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -23,15 +27,18 @@ import { paint } from './proc.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const requireAll = process.argv.includes('--all');
-const { ATS_MATCHES, CONTENT_SCRIPT_FILE, OPTIONAL_HOST_PERMISSIONS, registrationsFor, SENTINEL_FILE, SITES_MATCH,
-  SITES_REGISTRATION_ID } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
+const { ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CAPTCHA_VENDOR_MATCHES, CONTENT_SCRIPT_FILE, registrationsFor, SENTINEL_FILE,
+  SITES_MATCH, SITES_REGISTRATION_ID } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
 const MANIFEST_KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
 /** The content script, React included once the in-page panel lands, must stay under this: every file the manifest's
  *  content script lists, together. The snapshot build's integration (2026-11-06) found it at 1,047,869 bytes in
  *  production and 1,050,663 in the e2e variant, past the budget; the in-page UI then read only its own words
  *  (src/shared/copy.ts PAGE_COPY, not the options page's and the side panel's), which made them 1,017,951 and
- *  1,020,745. */
-const CONTENT_SCRIPT_BUDGET = 1024 * 1024;
+ *  1,020,745. v5 p1-rules (2026-11-08): main 9ac709e left the e2e variant at 1,046,997 bytes (1,579 under 1 MiB); the
+ *  CAPTCHA switch (PLAN decision 9: the refusal a press meets for an unticked checkbox, read by the run, its pause and
+ *  its carrying on) adds about 2.9 KB, so the budget is 1 MiB and 4 KiB. P1-shell's sidebar measures and moves its own
+ *  weight; this raise is for decision 9 alone. */
+const CONTENT_SCRIPT_BUDGET = 1028 * 1024;
 /** The page-world bridge (src/page/bridge.ts and its protocol, and the address parsers it installs by: the v3 Phase
  *  6/7b review, S3) must stay under this. The new ATSs (DESIGN-NEW-ATS §5) raised it from 20 KiB to 30 KiB for their
  *  fifteen address parsers (src/adapters/address.ts URL_PARSERS): builder C's eight alone were about 4.8 KiB of the
@@ -45,16 +52,19 @@ const BRIDGE_BUDGET = 24 * 1024;
 const BRIDGE_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage'];
 /** v3 Phase 8: the sentinel's budget (src/entrypoints/sentinel.ts and what it imports). DESIGN-NEW-ATS Phase 0: 16 KiB
  *  became 17 KiB for the sixteen new ATS match patterns, which the sentinel holds to rule their pages out (shared/hosts.ts
- *  onAtsMatch, isCompanySiteUrl): about 0.7 KiB of host and path text. */
-const SENTINEL_BUDGET = 17 * 1024;
+ *  onAtsMatch, isCompanySiteUrl): about 0.7 KiB of host and path text. v5 p1-rules (PLAN decision 9): 18 KiB, for the
+ *  CAPTCHA and anti-bot vendors' pages isCompanySiteUrl refuses too (isCaptchaVendorUrl): 17,194 bytes on main 9ac709e,
+ *  17,529 with them. */
+const SENTINEL_BUDGET = 18 * 1024;
 /** What the sentinel's bundle may never name: React and zod (it renders and parses nothing), any DOM write, and window
  *  messaging. It reads the page and sends the worker one message. */
 const SENTINEL_NEVER_NAMES = ['react.', '__REACT', 'ZodError', '$ZodType', 'zod', 'createElement', 'appendChild', 'insertBefore',
   'replaceChild', 'replaceChildren', 'innerHTML', 'outerHTML', 'insertAdjacent', 'setAttribute', 'removeAttribute',
   'toggleAttribute', 'attachShadow', 'dispatchEvent', 'postMessage', 'execCommand', 'document.write', 'textContent=',
   'chrome.storage', 'browser.storage'];
-/** A host permission that reaches every site (v3 Phase 8: the required ones never may). */
-const BROAD_HOST = /^(?:<all_urls>|(?:\*|https?|wss?|ftp|file):\/\/\*(?:\/.*)?)$/;
+/** v5 p1-rules (PLAN decision 10): a host permission that reaches more than web pages (every scheme, file pages, ftp or
+ *  websockets): never one, required or optional. Every https and http page is required, exactly. */
+const BEYOND_WEB_PAGES = /^(?:<all_urls>|(?:wss?|ftp|file|urn|data|chrome-extension):)/;
 /** What no content script's bundle may hold: WXT's content-script context, whose start-up dispatches
  *  `<extension id>:<entry>:wxt:content-script-started` on the page's document (and posts it to the window), an event
  *  any page script can listen for to learn the extension is installed (the v3 Phase 6/7b review's round 2, E1). Our
@@ -120,14 +130,16 @@ function checkManifest(build, manifest) {
   if (!sameSet(manifest.permissions ?? [], ['storage', 'sidePanel', 'activeTab', 'alarms', 'scripting'])) {
     fail(build, `permissions are ${JSON.stringify(manifest.permissions)}`);
   }
-  if (!sameSet(manifest.host_permissions ?? [], [...ATS_MATCHES, `${build.origin}/*`])) fail(build, 'host_permissions differ from the ATS list plus TailorIT');
-  for (const host of manifest.host_permissions ?? []) if (BROAD_HOST.test(host)) fail(build, `the required host permission ${host} is broad`);
-  // v3 Phase 8: asked for on the person's click in Options, never at install.
-  if (!isDeepStrictEqual(manifest.optional_host_permissions, [...OPTIONAL_HOST_PERMISSIONS])
-    || !isDeepStrictEqual(manifest.optional_host_permissions, ['https://*/*'])) {
-    fail(build, `optional_host_permissions are ${JSON.stringify(manifest.optional_host_permissions)}, not ["https://*/*"]`);
+  // v5 p1-rules (PLAN decision 10, like Jobright): every https and http page at install, and TailorIT; never <all_urls>.
+  if (!sameSet(manifest.host_permissions ?? [], [...ALL_SITES_HOST_PERMISSIONS, `${build.origin}/*`])
+    || !sameSet([...ALL_SITES_HOST_PERMISSIONS], ['https://*/*', 'http://*/*'])) {
+    fail(build, `host_permissions are ${JSON.stringify(manifest.host_permissions)}, not every https and http page plus TailorIT`);
   }
-  for (const key of ['optional_permissions', 'web_accessible_resources', 'content_security_policy', 'commands', 'update_url']) {
+  for (const host of manifest.host_permissions ?? []) {
+    if (BEYOND_WEB_PAGES.test(host)) fail(build, `the host permission ${host} reaches more than web pages`);
+  }
+  for (const key of ['optional_host_permissions', 'optional_permissions', 'web_accessible_resources', 'content_security_policy',
+    'commands', 'update_url']) {
     if (key in manifest) fail(build, `${key} must be absent`);
   }
   if (manifest.key !== MANIFEST_KEY) fail(build, 'key is missing or is not the committed public key');
@@ -140,6 +152,14 @@ function checkManifest(build, manifest) {
       + JSON.stringify(scripts.map((script) => script.world ?? 'isolated')));
   }
   const expected = fallback ? [...ATS_MATCHES, 'http://127.0.0.1/*'] : [...ATS_MATCHES];
+  // v5 p1-rules (PLAN decision 9): no static content script ever runs in a CAPTCHA or anti-bot vendor's own frame.
+  for (const [script, name] of [[ours, 'the content script'], [bridge, 'the page-world bridge']]) {
+    for (const address of VENDOR_ADDRESSES) {
+      if ((script?.matches ?? []).some((pattern) => patternMatches(pattern, address))) {
+        fail(build, `${name} runs in a CAPTCHA vendor's frame at ${address}`);
+      }
+    }
+  }
   if (ours) {
     if (!sameSet(ours.matches ?? [], expected)) fail(build, 'content script matches differ from the ATS list');
     if (ours.all_frames !== true) fail(build, 'content script is not all_frames');
@@ -310,12 +330,25 @@ const HR_ADDRESSES = ['https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelc
   'https://access.paylocity.com/', 'https://secure.paycor.com/Accounts/Signin', 'https://app.rippling.com/dashboard',
   'https://app.hibob.com/home', 'https://my.adp.com/', 'https://app.careerplug.com/jobs/1'];
 
-/** Whether a Chrome match pattern (https://<host>/<path>, `*.` a host's first labels) matches an address. */
+/** v5 p1-rules (PLAN decision 9): addresses of the CAPTCHA and anti-bot vendors' own frames (reCAPTCHA's anchor,
+ *  challenge and enterprise frames on google.com and recaptcha.net, hCaptcha's, Turnstile's, Arkose's, DataDome's,
+ *  PerimeterX's, GeeTest's): CAPTCHA_VENDOR_MATCHES must cover each, the registration must reach none, and no static
+ *  content script may match one. */
+const VENDOR_ADDRESSES = ['https://www.google.com/recaptcha/api2/anchor?ar=1&k=x&size=normal',
+  'https://www.google.com/recaptcha/api2/bframe?hl=en&k=x', 'https://www.google.com/recaptcha/enterprise/anchor?k=x',
+  'https://recaptcha.google.com/recaptcha/api2/anchor?k=x', 'https://www.recaptcha.net/recaptcha/api2/anchor?k=x',
+  'https://newassets.hcaptcha.com/captcha/v1/abc/static/hcaptcha.html#frame=checkbox',
+  'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2/av0/rcv0/0/x/light/normal',
+  'https://client-api.arkoselabs.com/fc/gc/?token=x', 'https://geo.captcha-delivery.com/captcha/?initialCid=x',
+  'https://li.protechts.net/index.html', 'https://static.geetest.com/static/js/gt.0.4.9.js'];
+
+/** Whether a Chrome match pattern (https://, http:// or *:// for both; <host>/<path>, `*.` a host's first labels)
+ *  matches an address. */
 function patternMatches(pattern, address) {
-  const [, host, path] = /^https:\/\/([^/]+)(\/.*)$/.exec(pattern) ?? [];
-  if (host === undefined || path === undefined) return false;
+  const [, scheme, host, path] = /^(\*|https?):\/\/([^/]+)(\/.*)$/.exec(pattern) ?? [];
+  if (scheme === undefined || host === undefined || path === undefined) return false;
   const url = new URL(address);
-  if (url.protocol !== 'https:') return false;
+  if (scheme === '*' ? !/^https?:$/.test(url.protocol) : url.protocol !== `${scheme}:`) return false;
   const name = url.hostname;
   const hostFits = host === '*' || (host.startsWith('*.') ? name === host.slice(2) || name.endsWith(host.slice(1)) : name === host);
   const prefix = path.replace(/\*$/, '');
@@ -324,8 +357,8 @@ function patternMatches(pattern, address) {
 
 /** v3 Phase 8: registrationsFor, pure, as the worker reconciles Chrome's registration to it: nothing while the career
  *  sites are off; while on, one, loading the sentinel alone, in the top frame only, once the page is loaded, kept across
- *  sessions, in the isolated world, on every https page but the ATS hosts, every LinkedIn host and the employee HR
- *  systems, inside the optional host permissions, none on an http page. */
+ *  sessions, in the isolated world, on every https page but the ATS hosts, every LinkedIn host, the employee HR systems
+ *  and (v5 p1-rules) the CAPTCHA and anti-bot vendors' own pages, inside the host permissions, none on an http page. */
 function checkRegistrations() {
   const where = 'registrationsFor';
   const failHere = (message) => failures.push(`${where}: ${message}`);
@@ -342,10 +375,10 @@ function checkRegistrations() {
     if (!isDeepStrictEqual(each.matches, [SITES_MATCH])) failHere(`${each.id} matches ${JSON.stringify(each.matches)}`);
     for (const match of each.matches) {
       if (!match.startsWith('https://')) failHere(`${each.id} matches ${match}`);
-      if (!OPTIONAL_HOST_PERMISSIONS.includes(match)) failHere(`${each.id} matches ${match}, outside the optional host permissions`);
+      if (!ALL_SITES_HOST_PERMISSIONS.includes(match)) failHere(`${each.id} matches ${match}, outside the host permissions`);
     }
     const excluded = new Set(each.excludeMatches ?? []);
-    for (const pattern of [...ATS_MATCHES, ...LINKEDIN_EXCLUDED, ...HR_EXCLUDED]) {
+    for (const pattern of [...ATS_MATCHES, ...LINKEDIN_EXCLUDED, ...HR_EXCLUDED, ...CAPTCHA_VENDOR_MATCHES]) {
       if (!excluded.has(pattern)) failHere(`${each.id} does not exclude ${pattern}`);
     }
     // LinkedIn is deferred to v5, and the HR systems are never reached: no address of theirs may be one it reaches.
@@ -353,6 +386,13 @@ function checkRegistrations() {
       && !(each.excludeMatches ?? []).some((pattern) => patternMatches(pattern, address));
     for (const address of LINKEDIN_ADDRESSES) if (reaches(address)) failHere(`${each.id} reaches LinkedIn at ${address}`);
     for (const address of HR_ADDRESSES) if (reaches(address)) failHere(`${each.id} reaches an HR system at ${address}`);
+    for (const address of VENDOR_ADDRESSES) if (reaches(address)) failHere(`${each.id} reaches a CAPTCHA vendor at ${address}`);
+  }
+  // v5 p1-rules (PLAN decision 9): the vendors' list covers each of their frames.
+  for (const address of VENDOR_ADDRESSES) {
+    if (!CAPTCHA_VENDOR_MATCHES.some((pattern) => patternMatches(pattern, address))) {
+      failHere(`CAPTCHA_VENDOR_MATCHES misses ${address}`);
+    }
   }
 }
 

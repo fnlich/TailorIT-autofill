@@ -380,7 +380,8 @@ function checkboxCaptcha(doc: Document): HTMLElement {
   return widget;
 }
 
-describe('the v4 review: a checkbox CAPTCHA beside Workday’s landing holds the prelude too (L5)', () => {
+// v5 p1-rules (PLAN decision 9, like Jobright): the unticked checkbox no longer holds the prelude, nor anything else.
+describe('the v4 review’s L5, since v5: a checkbox CAPTCHA beside Workday’s landing holds no press', () => {
   /** The landing as served, the unticked box drawn on it, and every click recorded by its control's automation id. */
   async function landing(): Promise<{ fixture: Fixture; clicks: string[] }> {
     const fixture = await served(landingHtml, ACCOUNT, 'body');
@@ -394,17 +395,17 @@ describe('the v4 review: a checkbox CAPTCHA beside Workday’s landing holds the
     return { fixture, clicks };
   }
 
-  it('presses nothing, not even "Sign in with email", and asks for nothing: challenged', async () => {
+  it('presses "Sign in with email" beside it, and asks for nothing until a form shows (here none: unavailable)', async () => {
     const { fixture, clicks } = await landing();
     expect(workdayAdapter.authState!(fixture.doc)).toBe('sign-in');
     const channel = channelAnswering({ ok: true, data: CREDENTIAL });
     const outcome = await attempt(fixture, workdayAdapter, channel, ACCOUNT);
-    expect(clicks).toEqual([]);
-    expect(outcome).toBe('challenged');
+    expect(clicks).toEqual(['SignInWithEmailButton']);
+    expect(outcome).toBe('unavailable');
     expect(channel.asked).toEqual([]);
   });
 
-  it('Sign up & Autofill at that landing (its flow page the run’s form root): nothing pressed, the challenge toast', async () => {
+  it('Sign up & Autofill at that landing (its flow page the run’s form root): the prelude pressed, no challenge toast', async () => {
     const { fixture, clicks } = await landing();
     const worker = createFakeWorker({ settings: DEFAULT_SETTINGS,
       script: { 'signin/credential': [{ ok: true, data: CREDENTIAL }] } as never });
@@ -412,11 +413,12 @@ describe('the v4 review: a checkbox CAPTCHA beside Workday’s landing holds the
       adapters: () => [workdayAdapter], settle: { quietMs: 40 } });
     runtimes.push(runtime);
     await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
-    await vi.waitFor(() => expect(runtime.ui?.toasts.shown).toEqual(['challenge']), { timeout: 5_000 });
+    await vi.waitFor(() => expect(clicks).toEqual(['SignInWithEmailButton']), { timeout: 5_000 });
+    await vi.waitFor(() => expect(runtime.ui?.toasts.shown.length).toBeGreaterThan(0), { timeout: 15_000 });
+    expect(runtime.ui?.toasts.shown).not.toContain('challenge');
     expect(runtime.run?.ended).toBe('paused');
-    expect(clicks).toEqual([]);
     expect(worker.of('signin/credential')).toEqual([]);
-  });
+  }, 20_000);
 });
 
 describe('the password, written only into a password box, and never left behind (S7, C4, S5)', () => {

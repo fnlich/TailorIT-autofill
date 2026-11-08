@@ -19,6 +19,11 @@
  * Left to the standard rules, as no snapshot shows them: the résumé's state once a file is chosen (its input is visible
  * and keeps its own files), the datepicker's written layout (jazzhr-2's "Earliest start date?" stays free text), any
  * error markup and the page after submitting. The reCAPTCHA "Human Check" is always the person's (pause detection).
+ * v5 p1-rules (PLAN decision 9, the owner's "implement like jobright extension", 2026-11-08): Submit is pressed beside
+ * an unticked Human Check and JazzHR decides; its own "complete the reCAPTCHA" error, #recaptcha-required-error (as
+ * Jobright 1.25.2's submission rules read JazzHR; not seen in a snapshot, none of which was refused), is an error of
+ * the form, which the run reads as the check's (dom/pause-detect.ts isCaptchaError: a CAPTCHA pause, carried on once the
+ * person ticked it), never a field's.
  */
 import type { AtsConfig } from '../configured/types';
 import { parseJazzhrUrl } from './url';
@@ -39,6 +44,8 @@ export const JAZZHR_CONFIG: AtsConfig = {
       from: 'jazzhr-3, jazzhr-4' },
   ],
   submit: { css: 'form#form_submit_new_resume a#resumator-submit-resume', from: 'jazzhr-0 to -3' },
+  // v5 p1-rules (PLAN decision 9): JazzHR's CAPTCHA-required error, from Jobright 1.25.2's reading (module header).
+  errors: { css: '#recaptcha-required-error', from: 'Jobright 1.25.2 submission rules (not seen live)' },
   busy: [{ css: 'div#resumator-submit:not(:has(#resumator-submit-resume))', from: 'jazzhr-4' }],
   neverPress: [
     { css: '#resumator-mobile-apply-button', from: 'jazzhr-0 to -4' },

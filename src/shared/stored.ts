@@ -44,8 +44,13 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  9, snapshot round 2 (2026-11-07 evening: the options of some sites' dropdown lists kept in this browser to choose at
  *  once next time; government service among the questions the AI may guess; the new sensitive answers, sexual
  *  orientation, citizenship, clearance, non-compete, government service, relatives and essential functions, named
- *  among those that never go to the AI). Raise it whenever the disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 9;
+ *  among those that never go to the AI); 10, v5 Phase 1 (2026-11-08, the owner's "Implement like jobright": the panel
+ *  on the page itself, opening by itself and moving the page aside, its contents out of the site's scripts' reach, the
+ *  side panel a choice; every https and http page granted at install, Company career sites on unless turned off, never
+ *  in a CAPTCHA vendor's frame; an unticked checkbox CAPTCHA holding no press, the site deciding, a site's request for
+ *  the check waited out, a refused sign-in left typed for the person). Raise it whenever the disclosure's substance
+ *  changes. */
+export const DISCLOSURE_VERSION = 10;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */

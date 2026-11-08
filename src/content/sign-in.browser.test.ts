@@ -29,7 +29,7 @@ import signInHtml from '../../fixtures/synthetic/signin/sign-in.html?raw';
 import { createFakeWorker, testVocab } from './content.testkit';
 import { pressEntry } from './press';
 import { startContentRuntime, type ContentRuntime } from './runtime';
-import { signIn, type SignInContext } from './sign-in';
+import { signIn, signInRefusalWaits, type SignInContext } from './sign-in';
 
 const HOST = 'acme.wd5.myworkdayjobs.com';
 /** An application's account page on a Workday tenant (the Workday parser reads it; its /login names no posting). */
@@ -47,7 +47,7 @@ function setBase(doc: Document, base = `https://${HOST}/`): void {
 /** A sign-in page: email, password and a required terms box in one form, its button "Sign In". `before` goes in the
  *  form before the button; with `wrong`, the page's script shows an error and keeps the form. */
 function signInPage(options: { before?: string; action?: string; method?: string; wrong?: boolean;
-  passwordStyle?: string; passwordAttrs?: string; captcha?: boolean } = {}): string {
+  passwordStyle?: string; passwordAttrs?: string; captcha?: boolean; needsTick?: boolean } = {}): string {
   return `<!doctype html><html><head><title>Sign In</title><style>
     body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui; }
     input[type=email], input[type=password] { display: block; width: 300px; padding: 6px; border: 1px solid #888; }
@@ -75,6 +75,14 @@ function signInPage(options: { before?: string; action?: string; method?: string
         widget.setAttribute('data-sitekey', 'k');
         widget.style.cssText = 'width:304px;height:78px;border:1px solid #888';
         document.querySelector('main').append(widget);
+        return;
+      }
+      // v5 p1-rules: a site that refuses the sign-in while its reCAPTCHA checkbox holds no token, keeping the form as it is.
+      const token = document.querySelector('textarea[name="g-recaptcha-response"]');
+      if (${options.needsTick === true} && token !== null && token.value === '') {
+        const error = document.getElementById('error');
+        error.textContent = 'Please verify that you are not a robot.';
+        error.hidden = false;
         return;
       }
       if (${options.wrong === true}) {
@@ -613,10 +621,15 @@ describe('the v4 review: the side panel’s Autofill at a pause (behaviour H1)',
 });
 
 describe('the v4 review: each sign-in the run could not make says why (behaviour M5)', () => {
-  /** reCAPTCHA v2's checkbox, unsolved: no pause for detectPause, a challenge for Sign-in Auto. */
+  /** reCAPTCHA v2's checkbox, unsolved: no pause for detectPause, and since v5 (PLAN decision 9) no challenge for
+   *  Sign-in Auto either. */
   const CHECKBOX = '<div class="g-recaptcha" data-sitekey="x"><div style="width:304px;height:78px"><div><iframe srcdoc="" '
     + 'title="reCAPTCHA" width="304" height="78" src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=x&amp;'
     + 'size=normal"></iframe></div><textarea name="g-recaptcha-response" style="display:none"></textarea></div></div>';
+  /** A frame of another origin that reads like a challenge (round 3, X9): no pause for detectPause, a challenge for
+   *  Sign-in Auto. */
+  const SHIELD = '<iframe srcdoc="" title="Human verification" src="https://shield.example/f" '
+    + 'style="width:304px;height:78px;border:0"></iframe>';
   async function start(page: string, script: Record<string, unknown[]>, adapters: Adapter[] = [genericAdapter]) {
     const fixture = await loadFixture(document, page, { width: 1100, height: 900 });
     const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const } };
@@ -634,7 +647,7 @@ describe('the v4 review: each sign-in the run could not make says why (behaviour
     for (const [error, outcome] of [['not_found', 'none-saved'], ['unavailable', 'unavailable'], ['expired', 'failed']]) {
       expect(await attempt(page, channelAnswering({ ok: false, error })), error).toBe(outcome);
     }
-    const checked = await loadFixture(document, signInPage({ before: CHECKBOX }));
+    const checked = await loadFixture(document, signInPage({ before: SHIELD }));
     const channel = channelAnswering({ ok: true, data: CREDENTIAL });
     expect(await attempt(checked, channel)).toBe('challenged');
     expect(channel.asked).toEqual([]);
@@ -644,7 +657,7 @@ describe('the v4 review: each sign-in the run could not make says why (behaviour
     const cases: Array<[string, Record<string, unknown[]>, string]> = [
       [signInPage(), { 'signin/credential': [{ ok: false, error: 'not_found' }] }, 'no-sign-in'],
       [signInPage(), { 'signin/credential': [{ ok: false, error: 'unavailable' }] }, 'sign-in'],
-      [signInPage({ before: CHECKBOX }), {}, 'challenge'],
+      [signInPage({ before: SHIELD }), {}, 'challenge'],
     ];
     for (const [page, script, toast] of cases) {
       const { worker, runtime } = await start(page, script);
@@ -660,7 +673,7 @@ describe('the v4 review: each sign-in the run could not make says why (behaviour
     const cases: Array<[string, Record<string, unknown[]>, string]> = [
       [signInPage(), { 'signin/credential': [{ ok: false, error: 'not_found' }] }, 'no-sign-in'],
       [signInPage(), { 'signin/credential': [{ ok: false, error: 'unavailable' }] }, 'sign-in'],
-      [signInPage({ before: CHECKBOX }), {}, 'challenge'],
+      [signInPage({ before: SHIELD }), {}, 'challenge'],
     ];
     for (const [page, script, toast] of cases) {
       const { worker, runtime } = await start(page, script, [walled]);
@@ -675,6 +688,51 @@ describe('the v4 review: each sign-in the run could not make says why (behaviour
       removeFixtures(document);
     }
   });
+
+  // ── v5 p1-rules: CAPTCHA like Jobright (PLAN decision 9) ──
+  it('types and presses beside an unticked checkbox; refused for it, keeps what it typed and answers challenged', async () => {
+    const fixture = await loadFixture(document, signInPage({ before: CHECKBOX, needsTick: true }));
+    const channel = channelAnswering({ ok: true, data: CREDENTIAL });
+    expect(signInRefusalWaits(fixture.doc)).toBe(false);
+    expect(await attempt(fixture, channel)).toBe('challenged');
+    expect(channel.asked).toHaveLength(1);
+    expect(submitsOn(fixture)).toBe(1);
+    expect(typedOn(fixture)).toMatchObject({ email: CREDENTIAL.email, password: CREDENTIAL.password });
+    // The site's refusal for its check: the sign-in stays typed for the person's own press, once they ticked the box.
+    expect((fixture.doc.getElementById('password') as HTMLInputElement).value).toBe(CREDENTIAL.password);
+    expect(signInRefusalWaits(fixture.doc)).toBe(true);
+    // The box itself was never touched.
+    expect((fixture.doc.querySelector('textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('a refusal while the box is ticked is the sign-in’s own failure: the password is written empty again', async () => {
+    const fixture = await loadFixture(document, signInPage({ before: CHECKBOX, wrong: true }));
+    (fixture.doc.querySelector('textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement).value = '03AFcWeA-token';
+    expect(await attempt(fixture, channelAnswering({ ok: true, data: CREDENTIAL }))).toBe('failed');
+    expect(signInRefusalWaits(fixture.doc)).toBe(false);
+  });
+
+  it('in a run: the challenge toast, no second sign-in once ticked, and the run carries on after the person’s press',
+    async () => {
+      const { fixture, worker, runtime } = await start(signInPage({ before: CHECKBOX, needsTick: true }),
+        { 'signin/credential': [{ ok: true, data: CREDENTIAL }, { ok: true, data: CREDENTIAL }] });
+      expect(await runtime.fill()).toBe('paused');
+      await vi.waitFor(() => expect(runtime.ui!.toasts.shown).toEqual(['challenge']), { timeout: 8_000 });
+      expect(worker.of('signin/credential')).toHaveLength(1);
+      expect(submitsOn(fixture)).toBe(1);
+      // The person ticks the box: Sign-in Auto is not tried again (the worker answers a tab once per wall).
+      (fixture.doc.querySelector('textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement).value = '03AFcWeA-token';
+      fixture.doc.body.append(fixture.doc.createElement('span'));
+      await deadline(1_500);
+      expect(worker.of('signin/credential')).toHaveLength(1);
+      expect(submitsOn(fixture)).toBe(1);
+      // Their own press signs in (what the run typed is still there), and the run carries on by itself.
+      (fixture.doc.getElementById('go') as HTMLButtonElement).click();
+      await vi.waitFor(() => expect(fixture.doc.getElementById('first')).not.toBeNull(), { timeout: 5_000 });
+      expect(typedOn(fixture)).toMatchObject({ email: CREDENTIAL.email, password: CREDENTIAL.password });
+      await vi.waitFor(() => expect(worker.reports.at(-1)?.status).not.toBe('auth-needed'), { timeout: 8_000 });
+    }, 30_000);
+  // ── end v5 p1-rules ──
 });
 
 describe('the agent’s messages (v3 Phase 5)', () => {
@@ -1095,7 +1153,8 @@ describe('a declared sign-in container’s gates (the behaviour review of 2026-1
   async function run(page: string, request: { dryRun?: boolean } = {}) {
     const fixture = await loadFixture(document, page, { width: 1100, height: 900 });
     const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const } };
-    const worker = createFakeWorker({ settings, script: SAVED as never });
+    // A fresh copy each run: the fake worker uses its script's answers up.
+    const worker = createFakeWorker({ settings, script: structuredClone(SAVED) as never });
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
       adapters: () => [stepAdapter], settle: { quietMs: 40 } });
     runtimes.push(runtime);
@@ -1137,19 +1196,29 @@ describe('a declared sign-in container’s gates (the behaviour review of 2026-1
     expect(worker.of('signin/credential')).toEqual([]);
   });
 
-  it('never presses while a checkbox CAPTCHA on the step is unsolved, though the step was filled (M6)', async () => {
-    const widget = '<div class="g-recaptcha" data-sitekey="x"><div style="width:304px;height:78px"><div><iframe srcdoc="" '
-      + 'title="reCAPTCHA" width="304" height="78" src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=x&amp;'
-      + 'size=normal"></iframe></div><textarea name="g-recaptcha-response" style="display:none"></textarea></div></div>';
-    logs.mockClear();
-    const { fixture, worker } = await run(stepPage(widget));
-    await vi.waitFor(() => expect((fixture.doc.getElementById('first') as HTMLInputElement).value).not.toBe(''));
-    await deadline(1_200);
-    expect(pressesOn(fixture)).toBe(0);
-    expect(worker.of('signin/credential')).toEqual([]);
-    // Held by the run's own gate (Z1s), before Sign-in Auto's own challenge guard is reached.
-    expect(containerTried()).toBe(false);
-  });
+  // v5 p1-rules (PLAN decision 9, like Jobright: ADP's reCAPTCHA-bound Continue is pressed and the site decides): a
+  // checkbox CAPTCHA not yet ticked holds the container's press no more; a challenge that is no checkbox still does.
+  it('presses beside a checkbox CAPTCHA not yet ticked, the step filled (v5); never while another challenge shows (M6)',
+    async () => {
+      const widget = '<div class="g-recaptcha" data-sitekey="x"><div style="width:304px;height:78px"><div><iframe srcdoc="" '
+        + 'title="reCAPTCHA" width="304" height="78" src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=x&amp;'
+        + 'size=normal"></iframe></div><textarea name="g-recaptcha-response" style="display:none"></textarea></div></div>';
+      logs.mockClear();
+      const ticked = await run(stepPage(widget));
+      await vi.waitFor(() => expect(pressesOn(ticked.fixture)).toBe(1), { timeout: 5_000 });
+      await vi.waitFor(() => expect(containerTried()).toBe(true), { timeout: 10_000 });
+      removeFixtures(document);
+      logs.mockClear();
+      const shield = '<iframe srcdoc="" title="Human verification" src="https://shield.example/f" '
+        + 'style="width:304px;height:78px;border:0"></iframe>';
+      const { fixture, worker } = await run(stepPage(shield));
+      await vi.waitFor(() => expect((fixture.doc.getElementById('first') as HTMLInputElement).value).not.toBe(''));
+      await deadline(1_200);
+      expect(pressesOn(fixture)).toBe(0);
+      expect(worker.of('signin/credential')).toEqual([]);
+      // Held by the run's own gate (Z1s), before Sign-in Auto's own challenge guard is reached.
+      expect(containerTried()).toBe(false);
+    }, 20_000);
 
   /** A page holding the application's form and a container, read as the adapter declares it. */
   async function refusalOf(html: string, declared: (doc: Document) => Partial<SignInForm>) {

@@ -5,7 +5,9 @@
  * (deferred to v5) and the employee HR systems never reached. The Phase 8 review: everything injected stops with the
  * career sites (P1/B8), a tab keeps a few documents (B7), a company page's "open review" keeps its click after a
  * restart (B6), TailorIT hears a company page's origin and path alone and never as it loads (P3), a company page takes
- * its own host's sign-in alone (P6), and the side panel offers a reload on a company page (B10).
+ * its own host's sign-in alone (P6), and the side panel offers a reload on a company page (B10). v5 p1-rules (PLAN
+ * decisions 9 and 10): on by default with every https and http page granted at install, turned off without giving the
+ * permission back, and the CAPTCHA and anti-bot vendors' pages excluded and refused.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -28,13 +30,14 @@ const recognised = (url: string, reason = 'application-form', overrides: Record<
 
 let worker: TestWorker;
 
-/** A worker with the company career sites turned on (or not) in storage and Chrome's permission granted (or not). */
-async function withSites(on: boolean, granted: boolean) {
+/** A worker with the company career sites turned on (or not) in storage, or (undefined) never chosen, and Chrome's
+ *  permission granted (or not). */
+async function withSites(on: boolean | undefined, granted: boolean) {
   worker = await startTestWorker({
     token: tokenRecord(),
     before: async (fakes) => {
       if (granted) fakes.granted.add(SITES_MATCH);
-      await fakeBrowser.storage.local.set({ [SITES_KEY]: { sites: on } });
+      if (on !== undefined) await fakeBrowser.storage.local.set({ [SITES_KEY]: { sites: on } });
     },
   });
   return worker;
@@ -51,6 +54,28 @@ afterEach(() => {
 });
 
 describe("the sentinel's registration", () => {
+  // v5 p1-rules (PLAN decision 10, like Jobright): every https and http page is granted at install, and the career
+  // sites are on unless the person turned them off.
+  it('is made at install with nothing chosen (on by default), while Chrome holds the permission', async () => {
+    await withSites(undefined, true);
+    await registered(['tailorit-sites']);
+    expect(worker.fakes.registrations.get('tailorit-sites')).toMatchObject({ js: ['sentinel.js'], matches: [SITES_MATCH],
+      allFrames: false, runAt: 'document_idle', persistAcrossSessions: true, world: 'ISOLATED' });
+    expect(await worker.deliver({ v: 1, type: 'sites/get' }, pageSender('options.html')))
+      .toEqual({ ok: true, data: { on: true, granted: true } });
+  });
+
+  it('stays off for a person who turned the career sites off, and waits for the permission withheld in Chrome', async () => {
+    await withSites(false, true);
+    await registered([]);
+    fakeBrowser.reset();
+    await withSites(undefined, false);
+    await registered([]);
+    // The person gives the extension its site access again in Chrome: onAdded reconciles.
+    worker.fakes.grant([SITES_MATCH]);
+    await registered(['tailorit-sites']);
+  });
+
   it('is made only once the person turns the career sites on and Chrome holds the permission', async () => {
     await withSites(false, false);
     await registered([]);
@@ -69,19 +94,23 @@ describe("the sentinel's registration", () => {
     await registered(['tailorit-sites']);
     const sites = worker.fakes.registrations.get('tailorit-sites') as { excludeMatches: string[] };
     expect(sites.excludeMatches).toEqual(expect.arrayContaining(['https://job-boards.greenhouse.io/*', 'https://*.icims.com/*',
-      'https://*.linkedin.com/*', 'https://*.linkedin.cn/*', 'https://*.lnkd.in/*', 'https://*.licdn.com/*']));
+      'https://*.linkedin.com/*', 'https://*.linkedin.cn/*', 'https://*.lnkd.in/*', 'https://*.licdn.com/*',
+      // v5 p1-rules (PLAN decision 9): the CAPTCHA and anti-bot vendors' own pages.
+      '*://*.google.com/recaptcha/*', '*://*.recaptcha.net/*', '*://*.hcaptcha.com/*', '*://challenges.cloudflare.com/*',
+      '*://*.arkoselabs.com/*', '*://*.captcha-delivery.com/*', '*://*.protechts.net/*']));
     // The person takes it back in Chrome's own settings.
     worker.fakes.revoke([SITES_MATCH]);
     await registered([]);
   });
 
-  it('gives the permission back and unregisters when the person turns them off', async () => {
-    await withSites(true, true);
+  it('unregisters when the person turns them off, keeping the install\'s permission (v5 p1-rules)', async () => {
+    await withSites(undefined, true);
     await registered(['tailorit-sites']);
     const answer = await worker.deliver({ v: 1, type: 'sites/set', on: false }, pageSender('options.html'));
-    expect(answer).toEqual({ ok: true, data: { on: false, granted: false } });
-    expect(worker.fakes.granted.has(SITES_MATCH)).toBe(false);
+    expect(answer).toEqual({ ok: true, data: { on: false, granted: true } });
+    expect(worker.fakes.granted.has(SITES_MATCH)).toBe(true);
     expect([...worker.fakes.registrations.keys()]).toEqual([]);
+    expect(await fakeBrowser.storage.local.get(SITES_KEY)).toEqual({ [SITES_KEY]: { sites: false } });
   });
 
   it('is put back as it should be when Chrome holds a stale one', async () => {
@@ -117,7 +146,10 @@ describe('page/recognised', () => {
   it('checks the address itself: LinkedIn, an ATS domain, an http page, a subframe or a private tab get nothing', async () => {
     await withSites(true, true);
     for (const url of ['https://www.linkedin.com/jobs/view/4012345678/', 'https://uk.linkedin.com/jobs/view/1/',
-      'https://lnkd.in/abc', 'https://login.icims.com/u/login', 'https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/x']) {
+      'https://lnkd.in/abc', 'https://login.icims.com/u/login', 'https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/x',
+      // v5 p1-rules (PLAN decision 9): a CAPTCHA or anti-bot vendor's own page, should one ever be a top frame.
+      'https://www.google.com/recaptcha/api2/fallback?k=x', 'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/x',
+      'https://newassets.hcaptcha.com/captcha/v1/abc/static/hcaptcha.html', 'https://geo.captcha-delivery.com/captcha/']) {
       expect(await recognised(url), url).toMatchObject({ ok: false });
     }
     expect(await recognised('http://careers.northwind.example/jobs/1')).toMatchObject({ ok: false, error: 'bad_sender' });

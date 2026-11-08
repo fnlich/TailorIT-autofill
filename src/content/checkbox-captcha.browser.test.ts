@@ -5,11 +5,14 @@
  *   step whose challenge popup shows (fixtures/dayforce/submit-challenge) is still blocked, and so is a synthetic page
  *   whose bframe shows.
  * - M6 (the owner's decision; docs/SPEC-AMENDMENTS.md §12): a checkbox widget not yet solved (reCAPTCHA v2's, hCaptcha's),
- *   with no challenge popup shown, does not stop the fill. It holds every press until the person solves it: Next (the
- *   run's auto-advance and the panel's), Submit (Submit mode Auto and the panel's), the agent's entry and Sign-in Auto;
- *   the agent reads the review's CAPTCHA notice as needs-you captcha. The run never touches the widget: nothing is
- *   written into its frame or its response field, shown or not. Its challenge popup, once shown, still pauses the run
- *   before anything is filled.
+ *   with no challenge popup shown, does not stop the fill. The run never touches the widget: nothing is written into
+ *   its frame or its response field, shown or not. Its challenge popup, once shown, still pauses the run before
+ *   anything is filled.
+ * - v5 p1-rules (PLAN decision 9, the owner's "implement like jobright extension", 2026-11-08): such a widget holds no
+ *   press any more: Next (auto-advance's and the panel's), Submit (Submit mode Auto's and the panel's), the agent's
+ *   entry and Sign-in Auto are pressed beside it, and the site decides. A press the site refuses while the box is
+ *   unticked rests the run at a CAPTCHA pause (the "solve the check" toast; the agent's needs-you captcha), and once the
+ *   person ticks it the run carries on by itself, pressing again where its mode says so.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
 import careerplugHtml from '../../fixtures/careerplug/cloudscouts-form.html?raw';
@@ -127,8 +130,10 @@ const POPUP = `<div style="position:absolute;left:0;top:0;visibility:visible"><i
   title="recaptcha challenge expires in two minutes" style="width:400px;height:580px"
   src="https://www.google.com/recaptcha/api2/bframe?hl=en&amp;k=x"></iframe></div>`;
 
-/** A Greenhouse-shaped final step whose names the golden profile fills; `extra` before its Submit, `after` after it. */
-function page(extra = '', after = ''): string {
+/** A Greenhouse-shaped final step whose names the golden profile fills; `extra` before its Submit, `after` after it.
+ *  With `needsTick` (v5 p1-rules), the page refuses a submission while its reCAPTCHA holds no token, as JazzHR does:
+ *  its own error, "Please verify you are not a robot", marked invalid. */
+function page(extra = '', after = '', needsTick = false): string {
   return `<!doctype html><html><head><title>Job Application for Engineer at Northwind</title></head><body>
   <main class="main"><h1>Engineer</h1>
   <form id="application-form" class="application--form">
@@ -141,14 +146,33 @@ function page(extra = '', after = ''): string {
   </form></main>${after}
   <script>
     window.submitted = 0;
+    window.refused = 0;
     document.getElementById('application-form').addEventListener('submit', (event) => {
       event.preventDefault();
+      const token = document.getElementById('g-recaptcha-response');
+      if (${needsTick} && token !== null && token.value === '') {
+        window.refused += 1;
+        if (document.getElementById('captcha-error') === null) {
+          const error = document.createElement('div');
+          error.id = 'captcha-error';
+          error.setAttribute('aria-invalid', 'true');
+          error.textContent = 'Please verify you are not a robot.';
+          document.getElementById('widget').after(error);
+        }
+        return;
+      }
       window.submitted += 1;
     });
   </script></body></html>`;
 }
 
 const submitted = (fixture: Fixture) => (fixture.doc.defaultView as unknown as { submitted: number }).submitted;
+const refused = (fixture: Fixture) => (fixture.doc.defaultView as unknown as { refused: number }).refused;
+/** The person ticks the box: reCAPTCHA puts its token in its field (and the page changes, as the widget redraws). */
+function tick(fixture: Fixture): void {
+  (fixture.doc.getElementById('g-recaptcha-response') as HTMLTextAreaElement).value = '03AFcWeA-token';
+  fixture.doc.body.append(fixture.doc.createElement('span'));
+}
 const value = (fixture: Fixture, id: string) => (fixture.doc.getElementById(id) as HTMLInputElement).value;
 
 /** Every event the run might cause on the widget: in the page on its response field, and inside its frame. */
@@ -177,31 +201,38 @@ async function start(html: string, settings: Settings = AUTO) {
 
 const codes = (worker: ReturnType<typeof createFakeWorker>) => worker.reports.at(-1)!.notices.map((notice) => notice.code);
 
-describe('a checkbox widget holds every press but never the fill (M6)', () => {
-  it('fills the step, holds Submit mode Auto, and the agent reads it as needs-you captcha', async () => {
-    const { fixture, worker, runtime } = await start(page(widget()));
-    const watched = watchWidget(fixture);
-    expect(await runtime.fill()).toBe('review');
-    // Filled: the step's own fields, from the profile.
-    expect(value(fixture, 'first_name')).not.toBe('');
-    expect(value(fixture, 'last_name')).not.toBe('');
-    await vi.waitFor(() => expect(codes(worker)).toContain('submit-held-captcha'));
-    expect(submitted(fixture)).toBe(0);
-    expect(worker.of('submit/armed')).toEqual([]);
-    const report = worker.reports.at(-1)!;
-    expect(report.status).toBe('review');
-    expect(agentVerdict(report, { retried: false })).toEqual({ kind: 'finish', state: 'needs-you', reason: 'captcha' });
-    // The panel's Submit, with the person's word, is blocked too.
-    expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
-      .toEqual({ ok: true, data: { outcome: 'blocked' } });
-    expect(submitted(fixture)).toBe(0);
-    // Nothing touched the widget: its frame's box, its response field, and no row names it.
-    const inner = (fixture.doc.getElementById('anchor') as HTMLIFrameElement).contentDocument!;
-    expect((inner.getElementById('anchor-box') as HTMLInputElement).checked).toBe(false);
-    expect(value(fixture, 'g-recaptcha-response')).toBe('');
-    expect(watched.events).toEqual([]);
-    expect(report.fields.map((row) => row.label)).not.toContain('Cover letter');
-  });
+describe('a checkbox widget never holds the fill (M6), and since v5 no press: the site decides', () => {
+  it('fills the step and Submit mode Auto presses beside it; refused for it, a CAPTCHA pause, carried on once ticked',
+    async () => {
+      const { fixture, worker, runtime } = await start(page(widget(), '', true));
+      const watched = watchWidget(fixture);
+      await runtime.fill();
+      // Filled: the step's own fields, from the profile.
+      expect(value(fixture, 'first_name')).not.toBe('');
+      expect(value(fixture, 'last_name')).not.toBe('');
+      // Submit mode Auto pressed beside the unticked box (v5 p1-rules, PLAN decision 9): the page refused it.
+      await vi.waitFor(() => expect(refused(fixture)).toBe(1), { timeout: 8_000 });
+      expect(submitted(fixture)).toBe(0);
+      expect(worker.of('submit/armed')).toHaveLength(1);
+      // Its refusal is the check's: a CAPTCHA pause, its toast, the agent's needs-you captcha; no submit-errors.
+      await vi.waitFor(() => expect(worker.reports.at(-1)).toMatchObject({ status: 'handoff', pauseReason: 'captcha' }),
+        { timeout: 8_000 });
+      await vi.waitFor(() => expect(runtime.ui?.toasts.shown).toEqual(['challenge']));
+      const report = worker.reports.at(-1)!;
+      expect(codes(worker)).not.toContain('submit-errors');
+      expect(agentVerdict(report, { retried: false })).toEqual({ kind: 'finish', state: 'needs-you', reason: 'captcha' });
+      // Nothing touched the widget: its frame's box, its response field, and no row names it.
+      const inner = (fixture.doc.getElementById('anchor') as HTMLIFrameElement).contentDocument!;
+      expect((inner.getElementById('anchor-box') as HTMLInputElement).checked).toBe(false);
+      expect(value(fixture, 'g-recaptcha-response')).toBe('');
+      expect(watched.events).toEqual([]);
+      expect(report.fields.map((row) => row.label)).not.toContain('Cover letter');
+      // The person ticks it: the run carries on by itself, and Submit mode Auto presses once more; the page takes it.
+      tick(fixture);
+      await vi.waitFor(() => expect(submitted(fixture)).toBe(1), { timeout: 10_000 });
+      expect(refused(fixture)).toBe(1);
+      expect(worker.of('submit/armed')).toHaveLength(2);
+    }, 30_000);
 
   it('never writes into the response field a page shows and labels as a question (adversarial)', async () => {
     const { fixture, worker, runtime } = await start(page(widget('display:block;width:250px;height:40px')));
@@ -215,16 +246,33 @@ describe('a checkbox widget holds every press but never the fill (M6)', () => {
       .map((field) => field.label)).not.toContain('Cover letter');
   });
 
-  it('presses once the person solved it: its token in the vendor’s field', async () => {
+  it('presses the panel’s Submit beside it, and the site decides (v5)', async () => {
     const { fixture, worker, runtime } = await start(page(widget()), DEFAULT_SETTINGS);
     expect(await runtime.fill()).toBe('review');
-    expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
-      .toEqual({ ok: true, data: { outcome: 'blocked' } });
-    (fixture.doc.getElementById('g-recaptcha-response') as HTMLTextAreaElement).value = '03AFcWeA-token';
     expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
       .toEqual({ ok: true, data: { outcome: 'pressed' } });
     expect(submitted(fixture)).toBe(1);
   });
+
+  it('with Submit on Manual, a refusal for it is a CAPTCHA pause too, and once ticked the run rests for the person’s Submit',
+    async () => {
+      const { fixture, worker, runtime } = await start(page(widget(), '', true), DEFAULT_SETTINGS);
+      expect(await runtime.fill()).toBe('review');
+      expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
+        .toEqual({ ok: true, data: { outcome: 'pressed' } });
+      expect(refused(fixture)).toBe(1);
+      await vi.waitFor(() => expect(worker.reports.at(-1)).toMatchObject({ status: 'handoff', pauseReason: 'captcha' }),
+        { timeout: 8_000 });
+      expect(codes(worker)).not.toContain('submit-errors');
+      tick(fixture);
+      await vi.waitFor(() => expect(worker.reports.at(-1)?.status).toBe('review'), { timeout: 10_000 });
+      // Manual: nothing pressed by itself; the stale error is no field's error; the person's Submit goes through.
+      expect(refused(fixture) + submitted(fixture)).toBe(1);
+      expect(codes(worker)).not.toContain('validation');
+      expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
+        .toEqual({ ok: true, data: { outcome: 'pressed' } });
+      expect(submitted(fixture)).toBe(1);
+    }, 30_000);
 
   it('pauses before anything is filled once the challenge popup shows (adversarial)', async () => {
     const { fixture, worker, runtime } = await start(page(widget(), POPUP));
@@ -238,28 +286,42 @@ describe('a checkbox widget holds every press but never the fill (M6)', () => {
       .toEqual({ kind: 'finish', state: 'needs-you', reason: 'captcha' });
   });
 
-  it('holds auto-advance’s Next on a step it filled, and the review says why', async () => {
-    const ADAPTER = e2eAdaptersFor(new URL(WIZARD_URL))[0]!;
-    const html = wizardHtml.replace('<button type="button" id="next-details"', `${widget()}
-        <button type="button" id="next-details"`);
-    const fixture = await loadFixture(document, html, { width: 900, height: 1400 });
-    const worker = createFakeWorker({ settings: { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes,
-      next: 'auto' as const } } });
-    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => WIZARD_URL, isTop: true,
-      adapters: () => [ADAPTER], settle: { quietMs: 60 } });
-    runtimes.push(runtime);
-    const nexts: Event[] = [];
-    fixture.doc.getElementById('next-details')!.addEventListener('click', (event) => nexts.push(event), true);
-    await runtime.fill();
-    await vi.waitFor(() => expect(codes(worker)).toContain('captcha-next'), { timeout: 15_000 });
-    expect(nexts).toEqual([]);
-    expect((fixture.view as unknown as { __wizard: { step: number } }).__wizard.step).toBe(1);
-    expect(worker.reports.at(-1)!.fields.filter((row) => row.wrote).length).toBeGreaterThan(0);
-    expect(agentVerdict(worker.reports.at(-1)!, { retried: false }))
-      .toEqual({ kind: 'finish', state: 'needs-you', reason: 'captcha' });
-  });
+  it('presses auto-advance’s Next beside it; a Next the page did not take is a CAPTCHA pause, carried on once ticked',
+    async () => {
+      const ADAPTER = e2eAdaptersFor(new URL(WIZARD_URL))[0]!;
+      const html = wizardHtml.replace('<button type="button" id="next-details"', `${widget()}
+          <button type="button" id="next-details"`);
+      const fixture = await loadFixture(document, html, { width: 900, height: 1400 });
+      const worker = createFakeWorker({ settings: { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes,
+        next: 'auto' as const } } });
+      const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => WIZARD_URL, isTop: true,
+        adapters: () => [ADAPTER], settle: { quietMs: 60 }, transition: { capMs: 800 } });
+      runtimes.push(runtime);
+      // The site refuses Next while its box holds no token (its own script stops the click).
+      const nexts: Event[] = [];
+      fixture.doc.getElementById('next-details')!.addEventListener('click', (event) => {
+        nexts.push(event);
+        if (value(fixture, 'g-recaptcha-response') === '') event.stopImmediatePropagation();
+      }, true);
+      const step = () => (fixture.view as unknown as { __wizard: { step: number } }).__wizard.step;
+      await runtime.fill();
+      await vi.waitFor(() => expect(worker.reports.at(-1)).toMatchObject({ status: 'handoff', pauseReason: 'captcha' }),
+        { timeout: 15_000 });
+      // Pressed beside the unticked box (v5 p1-rules, PLAN decision 9), and the page kept the step.
+      expect(nexts).toHaveLength(1);
+      expect(step()).toBe(1);
+      expect(codes(worker)).not.toContain('captcha-next');
+      expect(worker.reports.at(-1)!.fields.filter((row) => row.wrote).length).toBeGreaterThan(0);
+      expect(agentVerdict(worker.reports.at(-1)!, { retried: false }))
+        .toEqual({ kind: 'finish', state: 'needs-you', reason: 'captcha' });
+      await vi.waitFor(() => expect(runtime.ui?.toasts.shown).toEqual(['challenge']));
+      // Ticked: the run carries on by itself and presses Next again, which the page takes.
+      tick(fixture);
+      await vi.waitFor(() => expect(step()).toBe(2), { timeout: 15_000 });
+      expect(nexts).toHaveLength(2);
+    }, 40_000);
 
-  it('blocks the agent’s entry on a posting page that shows one, pressing nothing', async () => {
+  it('presses the agent’s entry on a posting page that shows one (v5): the site decides', async () => {
     const posting = `<!doctype html><html><body><main><h1>Engineer</h1>
       <a id="apply" class="btn" href="#application" role="button">Apply</a>${widget()}</main></body></html>`;
     const fixture = await loadFixture(document, posting, { width: 1100, height: 900 });
@@ -271,11 +333,11 @@ describe('a checkbox widget holds every press but never the fill (M6)', () => {
     const entry: Adapter = { ...greenhouseAdapter, detect: () => null,
       entryControl: (doc) => doc.getElementById('apply') };
     expect(await pressEntry(fixture.doc, [entry], new AbortController().signal, 300, 300))
-      .toEqual({ outcome: 'blocked', block: 'captcha' });
-    expect(pressed).toEqual([]);
+      .toEqual({ outcome: 'pressed' });
+    expect(pressed.map((el) => el.id)).toEqual(['apply']);
   });
 
-  it('keeps Sign-in Auto from typing or pressing on a sign-in page that shows one; the pause is the sign-in', async () => {
+  it('types and presses Sign-in Auto beside one (v5); a press the page did not take is challenged, kept typed', async () => {
     const host = 'acme.wd5.myworkdayjobs.com';
     const signInPage = `<!doctype html><html><body><main><form id="sign-in" method="post">
       <label for="email">Email Address</label><input id="email" type="email" autocomplete="username" style="width:300px">
@@ -299,12 +361,15 @@ describe('a checkbox widget holds every press but never the fill (M6)', () => {
     const outcome = await signIn({ doc: fixture.doc, adapter: greenhouseAdapter, channel,
       href: () => `https://${host}/en-US/careers/login`, isTop: true, signal: new AbortController().signal,
       settleMs: 300 });
-    // The v4 review (M5): 'challenged', so the page's toast says to solve the check.
+    // v5 p1-rules (PLAN decision 9): typed and pressed beside the box; nothing came of the press while it is unticked,
+    // so the check is the person's ('challenged': the page's toast says to solve it), and what was typed stays for
+    // their own press.
     expect(outcome).toBe('challenged');
-    expect(asked).toEqual([]);
-    expect(presses).toEqual([]);
-    expect(value(fixture, 'email')).toBe('');
-    expect(value(fixture, 'password')).toBe('');
+    expect(asked).toHaveLength(1);
+    expect(presses).toHaveLength(1);
+    expect(value(fixture, 'email')).toBe(credential.email);
+    expect(value(fixture, 'password')).toBe(credential.password);
+    expect(value(fixture, 'g-recaptcha-response')).toBe('');
     expect(scan(fixture.doc.getElementById('sign-in')!, null, { platform: 'workday' }).fields
       .map((field) => field.nameAttr)).not.toContain('g-recaptcha-response');
   });

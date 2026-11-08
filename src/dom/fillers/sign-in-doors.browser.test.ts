@@ -113,27 +113,25 @@ function checkboxCaptcha(doc: Document): HTMLElement {
 }
 
 describe('the sign-in prelude door and a challenge (the v4 review, L5)', () => {
-  it('never presses while the page shows a checkbox CAPTCHA not solved, or any challenge frame', async () => {
-    const { fixture, clicks } = await served(landingHtml);
-    const view = fixture.doc.querySelector('[data-automation-id="signInContent"]')!;
-    const widget = checkboxCaptcha(fixture.doc);
-    view.append(widget);
-    expect(clickAdapterSignInPrelude(workdayAdapter, fixture.doc, 'sign-in', PAGE)).toBeNull();
-    // A frame of another origin that reads like a challenge holds it too.
-    widget.remove();
-    const shield = fixture.doc.createElement('iframe');
-    shield.setAttribute('srcdoc', '');
-    shield.title = 'Human verification';
-    shield.src = 'https://shield.example/f';
-    shield.style.cssText = 'width:304px;height:78px;border:0';
-    view.append(shield);
-    expect(clickAdapterSignInPrelude(workdayAdapter, fixture.doc, 'sign-in', PAGE)).toBeNull();
-    expect(clicks).toEqual([]);
-    // Gone: pressed.
-    shield.remove();
-    expect(clickAdapterSignInPrelude(workdayAdapter, fixture.doc, 'sign-in', PAGE)?.getAttribute('data-automation-id'))
-      .toBe('SignInWithEmailButton');
-  });
+  it('never presses while the page shows a challenge frame; since v5 a checkbox CAPTCHA not solved holds it no more',
+    async () => {
+      const { fixture, clicks } = await served(landingHtml);
+      const view = fixture.doc.querySelector('[data-automation-id="signInContent"]')!;
+      // A frame of another origin that reads like a challenge holds it.
+      const shield = fixture.doc.createElement('iframe');
+      shield.setAttribute('srcdoc', '');
+      shield.title = 'Human verification';
+      shield.src = 'https://shield.example/f';
+      shield.style.cssText = 'width:304px;height:78px;border:0';
+      view.append(shield);
+      expect(clickAdapterSignInPrelude(workdayAdapter, fixture.doc, 'sign-in', PAGE)).toBeNull();
+      expect(clicks).toEqual([]);
+      // v5 p1-rules (PLAN decision 9, like Jobright): reCAPTCHA's checkbox, unticked, holds no press: the site decides.
+      shield.remove();
+      view.append(checkboxCaptcha(fixture.doc));
+      expect(clickAdapterSignInPrelude(workdayAdapter, fixture.doc, 'sign-in', PAGE)?.getAttribute('data-automation-id'))
+        .toBe('SignInWithEmailButton');
+    });
 });
 
 describe('the sign-in door', () => {

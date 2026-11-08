@@ -32,7 +32,10 @@
  *   person). A CAPTCHA, a bot check, an email code, a sign-in it cannot do, a required field left empty, a posting that
  *   forbids AI (with those skip rules on), the page's refusal after one retry, a closed posting, a page that never
  *   loads, and AGENT_JOB_TIMEOUT_MS without progress (AGENT_JOB_MAX_MS in all) each finish it with the contract's state
- *   and reason.
+ *   and reason. v5 p1-rules (PLAN decision 9, like Jobright): an unticked checkbox CAPTCHA holds none of the agent's
+ *   presses (its entry, Next, Submit): the site decides, and a press it refuses for the check rests the run at a CAPTCHA
+ *   pause (content/orchestrator.ts refusedForCheck), which finishes the job needs-you captcha as before: the agent's
+ *   window is unattended, so nobody ticks the box there.
  * - Finish: the result is kept, the agent's tab released (run/cancel and the person's own settings to its frames) and
  *   closed (that tab only, never a window, and never one already gone), and the result told to TailorIT (POST
  *   /api/autofill/agent/:id/result {state, reason, aiGuesses}). A result TailorIT could not take for now is kept and
@@ -270,6 +273,8 @@ function atRest(report: ReportView, has: (code: FrameReport['notices'][number]['
   if (has('submit-held-required')) return finish('needs-you', 'required_field_empty');
   if (has('submit-held-guess')) return finish('needs-you', 'ai_guess_legal');
   if (has('submit-held-attention') || has('submit-held-entries')) return finish('needs-you', 'other');
+  // v5 p1-rules (PLAN decision 9): these notices now come only from a challenge that is no checkbox widget (a popup, a
+  // vendor's frame that reads like one, a bot check); a checkbox widget's refusal is the CAPTCHA pause (handoff above).
   if (has('submit-held-captcha') || has('captcha-next') || has('captcha')) return finish('needs-you', 'captcha');
   if (has('auth')) return finish('needs-you', 'sign_in');
   if (has('submit-errors')) return context.retried ? finish('failed', 'validation_error') : { kind: 'retry' };
