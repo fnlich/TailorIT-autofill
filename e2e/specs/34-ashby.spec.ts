@@ -28,7 +28,7 @@
  * the application before its form is opened.
  */
 import type { Page } from '@playwright/test';
-import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
+import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import { expect, test } from '../fixtures.ts';
 import { applicationKeyOf, row, type Extension } from '../helpers/extension.ts';
 import { GOLDEN } from '../helpers/golden.ts';

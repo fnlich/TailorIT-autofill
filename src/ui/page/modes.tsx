@@ -13,9 +13,13 @@
  * show them), and (v3 Phase 5) the skip rules Submit mode Auto and the auto-apply agent read, each a box. Sign-in's Auto can be chosen only while it may act (signInAvailability: a connection holding
  * credentials:read, the disclosure acknowledged); otherwise its card is disabled and the group's "?" says why, and the
  * worker holds it Manual anyway.
+ * v5 p1-shell (settings version 8): "Where the panel shows" (On the page / Chrome's side panel) is drawn right after
+ * Default view, whose choices now say whether the sidebar opens by itself; the options page shows it here too.
  */
 import { useId } from 'react';
-import { MODE_CHOICES, PANEL_VIEWS, type Modes, type PanelView, type Settings } from '../../core/types/settings';
+import {
+  MODE_CHOICES, PANEL_PLACES, PANEL_VIEWS, type Modes, type PanelPlace, type PanelView, type Settings,
+} from '../../core/types/settings';
 import type { AuthStatus } from '../../messaging/schemas';
 import { COPY } from '../../shared/copy';
 import { HelpTip } from './HelpTip';
@@ -81,6 +85,10 @@ export function ModesFields({ settings, disabled, onChange, idPrefix, signIn }: 
         choices: { expanded: WORDS.view.expanded, minimized: WORDS.view.minimized } }} choices={PANEL_VIEWS}
         value={settings.view} disabled={disabled} blocked={null}
         onChoose={(choice) => onChange({ ...settings, view: choice as PanelView })} />
+      <ModeGroup name={`${idPrefix}-panel`} setting="panel" words={{ name: WORDS.panel.name, help: WORDS.panel.help,
+        choices: { page: WORDS.panel.page, side: WORDS.panel.side } }} choices={PANEL_PLACES}
+        value={settings.panel} disabled={disabled} blocked={null}
+        onChoose={(choice) => onChange({ ...settings, panel: choice as PanelPlace })} />
       {rest.map(group)}
       <SkipRules settings={settings} disabled={disabled} onChange={onChange} />
     </div>

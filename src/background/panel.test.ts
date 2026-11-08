@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { beginRun, contentSender, frameReport, NO_RECEIVER, pageSender, sentToFrames, startTestWorker, tokenRecord,
   type TestWorker } from './worker.testkit';
 
@@ -170,9 +171,13 @@ describe('panel/open', () => {
     expect(worker.fakes.sidePanelCalls.filter((call) => call.method === 'open')).toEqual([]);
   });
 
-  it('keeps the toolbar button opening the panel', async () => {
+  it('keeps the toolbar button opening the panel: the sidebar on the page by default, Chrome\'s side panel once chosen (v5 p1-shell)', async () => {
     const worker = await startTestWorker();
     await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install' });
-    expect(worker.fakes.sidePanelCalls).toContainEqual({ method: 'setPanelBehavior', args: { openPanelOnActionClick: true } });
+    const behaviour = () => worker.fakes.sidePanelCalls.filter((call) => call.method === 'setPanelBehavior').at(-1);
+    await vi.waitFor(() => expect(behaviour()).toEqual({ method: 'setPanelBehavior', args: { openPanelOnActionClick: false } }));
+    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'side' } },
+      pageSender('options.html'));
+    expect(behaviour()).toEqual({ method: 'setPanelBehavior', args: { openPanelOnActionClick: true } });
   });
 });

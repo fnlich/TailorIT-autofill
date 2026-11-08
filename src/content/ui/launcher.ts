@@ -10,6 +10,9 @@
  * page can never start a fill or open the panel by clicking it from script. Its action runs synchronously inside the
  * click handler: Open review must reach the worker (panel/open) before anything is awaited, or the browser no longer
  * counts the click as the person's gesture.
+ * v5 p1-shell (PLAN decision 2): in the top frame the launcher is the pill's (edge.ts), whose click opens the panel
+ * (the sidebar, or the browser's side panel) whatever the run's state, so its name says that (`label`), and the pill
+ * shows no badge (styles.ts: the progress is the panel's).
  */
 import { PAGE_COPY } from '../../shared/copy';
 import { ICONS, LOGO_GLYPH } from '../../shared/icons';
@@ -77,8 +80,10 @@ function titleOf(view: LauncherView): string {
   }
 }
 
-/** Creates the launcher. `onAction` is called synchronously inside a trusted click's handler. */
-export function createLauncher(doc: Document, onAction: (action: LauncherAction) => void): Launcher {
+/** Creates the launcher. `onAction` is called synchronously inside a trusted click's handler. `label` (v5): its name
+ *  whatever the state (the pill's, which opens the panel); by default the state's own. */
+export function createLauncher(doc: Document, onAction: (action: LauncherAction) => void,
+  options: { label?: string } = {}): Launcher {
   const el = doc.createElement('button');
   el.type = 'button';
   el.className = 'launcher';
@@ -102,7 +107,7 @@ export function createLauncher(doc: Document, onAction: (action: LauncherAction)
   function set(next: LauncherView): void {
     view = next;
     el.dataset.state = next.state;
-    const title = titleOf(next);
+    const title = options.label ?? titleOf(next);
     el.title = title;
     el.setAttribute('aria-label', title);
     el.setAttribute('aria-busy', next.state === 'running' ? 'true' : 'false');

@@ -12,7 +12,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { TELEMETRY_FIELDS } from '../../src/core/telemetry/events';
-import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
+import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import type { TelemetryAnswer } from '../../src/messaging/schemas';
 import { COPY } from '../../src/shared/copy';
 import { expect, test } from '../fixtures.ts';

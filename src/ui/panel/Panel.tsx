@@ -49,6 +49,12 @@
  * When the worker says the connection or the settings changed (panel/changed, perhaps from another window), they are
  * read again, and the job card read with the old connection is dropped at once.
  *
+ * v5 p1-shell (PLAN decisions 1 and 8): the same Panel is the sidebar on the page (src/ui/sidebar/mount.tsx), pinned to
+ * its tab and talking over the tab's content channel; its head then also has the minimise (`shell`), which folds the
+ * sidebar back to the launcher. Over every view's head, on a Workday page, the "stay on this page" note
+ * (page/workday-note.tsx) until the person closes it. "Default view" no longer folds the review (settings version 8:
+ * it says whether the sidebar opens by itself).
+ *
  * It never shows or receives a field value: reports hold none. The job card draws only what TailorIT's lookup said, the
  * resume's title among it (which may be the person's name: it is shown on purpose, as the resume the fill attaches);
  * the custom question's answer is the person's own request; the profile check keeps which items are missing, never a
@@ -67,6 +73,7 @@ import { Brand } from '../brand/Logo';
 import { Icon } from '../brand/Icon';
 import { AgentStatusLine, useAgentStatus } from '../page/agent';
 import { DisclosureChanged } from '../page/disclosure';
+import { WorkdayNote } from '../page/workday-note';
 import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
@@ -96,6 +103,14 @@ export interface PanelProps {
   copyText?: (text: string) => Promise<boolean>;
   /** The clock the main button's CONTROL_SEEN_MS is timed on (seen.ts); the browser's by default. */
   seenClock?: SeenClock;
+  /** v5 p1-shell: the sidebar on the page's own controls (none in Chrome's side panel and the report page). */
+  shell?: PanelShell;
+}
+
+/** v5 p1-shell: what the sidebar adds to the panel's head. */
+export interface PanelShell {
+  /** The minimise: the sidebar folds back to the launcher at the page's edge. */
+  minimise(): void;
 }
 
 /** The browser's clipboard: false when it would not take the text. */
@@ -170,7 +185,7 @@ function asksForLetter(page: PageState | null, reports: readonly FrameReport[]):
 type View = { name: 'main' } | { name: 'settings' } | { name: 'editor'; back: 'setup' | 'settings' };
 
 export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipboardCopy,
-  seenClock = BROWSER_SEEN_CLOCK }: PanelProps) {
+  seenClock = BROWSER_SEEN_CLOCK, shell }: PanelProps) {
   const root = useRef<HTMLElement>(null);
   const dashboardId = useId();
   const tabId = useFollowedTab(platform, pinnedTabId);
@@ -367,16 +382,28 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const hidden = launcher !== null && launcher.tabId === tabId ? launcher.hidden : 'none';
 
   const head = (gear: boolean) => (
-    <header className="tia-panel__head">
-      <h1 className="tia-brand"><Brand markSize={28} large /></h1>
-      {gear && (
-        <button type="button" className="tia-iconbutton" aria-label={COPY.mainView.settings} title={COPY.mainView.settings}
-          aria-pressed={view.name === 'settings'} data-panel-settings=""
-          onClick={() => setView(view.name === 'settings' ? { name: 'main' } : { name: 'settings' })}>
-          <Icon name="gear" size={18} />
-        </button>
-      )}
-    </header>
+    <>
+      {/* v5 p1-shell: Workday's "stay on this page" note, over the head. */}
+      <WorkdayNote platform={platform} shown={page?.platform === 'workday'} />
+      <header className="tia-panel__head">
+        <h1 className="tia-brand"><Brand markSize={28} large /></h1>
+        <span className="tia-panel__tools">
+          {gear && (
+            <button type="button" className="tia-iconbutton" aria-label={COPY.mainView.settings} title={COPY.mainView.settings}
+              aria-pressed={view.name === 'settings'} data-panel-settings=""
+              onClick={() => setView(view.name === 'settings' ? { name: 'main' } : { name: 'settings' })}>
+              <Icon name="gear" size={18} />
+            </button>
+          )}
+          {shell !== undefined && (
+            <button type="button" className="tia-iconbutton" aria-label={COPY.sidebar.minimise} title={COPY.sidebar.minimise}
+              data-panel-minimise="" onClick={() => shell.minimise()}>
+              <Icon name="minimise" size={18} />
+            </button>
+          )}
+        </span>
+      </header>
+    </>
   );
   const problems = (
     <>
@@ -532,7 +559,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             reports={reports}
             notices={false}
             busy={busy}
-            minimized={settings?.view === 'minimized'}
+            // v5 p1-shell (settings version 8): Default view says whether the sidebar opens by itself, not how the
+            // review is folded.
+            minimized={false}
             // s2 profile (P1): with the page's notifications not shown until closed, a paused run's line says what it
             // waits for.
             saysWaits={toastsMayGo}

@@ -6,7 +6,8 @@
  * - Each test: its routes and the page spies; the strict-mode check that nothing unrouted was requested and nothing
  *   submitted; the pages it opened closed afterwards.
  * - `tailorit` resets the mock (e2e build only: its TailorIT origin is the mock); `connected` makes sure the extension
- *   is paired with it, through the real hand-off, pairing again only when an earlier test left it disconnected.
+ *   is paired with it, through the real hand-off, pairing again only when an earlier test left it disconnected, and
+ *   (v5 p1-shell) saves the suite's default settings (helpers/settings.ts: the sidebar minimized).
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +17,7 @@ import { ConsoleLog, type ConsoleEntry } from './helpers/console.ts';
 import { Extension } from './helpers/extension.ts';
 import { mock } from './helpers/mock.ts';
 import { ensureConnected } from './helpers/pairing.ts';
+import { DEFAULT_SETTINGS } from './helpers/settings.ts';
 import { installSpies } from './helpers/spies.ts';
 import { installRoutes, type RouteLog } from './routes.ts';
 
@@ -148,6 +150,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   connected: async ({ ext, tailorit }, use) => {
     expect(tailorit).toBe(mock);
     await ensureConnected(ext);
+    // v5 p1-shell: every test starts from the e2e suite's defaults (helpers/settings.ts: the sidebar minimized).
+    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
     await use(ext);
   },
 });

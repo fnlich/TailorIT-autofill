@@ -2,6 +2,10 @@
  * The worker's one message router. It finds the channel from the sender, parses the message with that channel's strict
  * schema, and calls the handler for its type. A known type on the wrong channel is bad_sender; anything unparsable is
  * bad_message; a type without a handler yet is not_implemented. Handlers never see an unparsed message.
+ * v5 p1-shell (the sidebar on the page): the one exception to "the wrong channel" is a page message the sidebar's views
+ * send from the tab's top frame (senders.ts sidebarMayAsk), parsed with the pages' schema and handled by the pages'
+ * handler, once the content gate is past and only while `sidebar.open()` says the panel shows on the page; anything
+ * else of the pages' from a content channel stays bad_sender.
  */
 import type { z } from 'zod';
 import { refuse, type Answer } from '../messaging/envelope';
@@ -9,7 +13,10 @@ import { ContentMessageSchema, type ContentMessage, type PageMessage } from '../
 import { PageMessageSchema } from '../messaging/page-schemas';
 import type { Handler, Sender } from '../platform/types';
 import { log } from '../shared/log';
-import { allowedOn, channelOf, offAtsChannelOf, offAtsSenderOf, type Channel, type InjectedOf } from './senders';
+import {
+  allowedOn, channelOf, offAtsChannelOf, offAtsSenderOf, SIDEBAR_PAGE_MESSAGES, sidebarChannel, sidebarMayAsk,
+  type Channel, type InjectedOf,
+} from './senders';
 
 /** Where a content message came from: its tab, frame, document and address, as Chrome reported them. */
 export type ContentChannel = Extract<Channel, { kind: 'content' }>;
@@ -48,10 +55,15 @@ export interface RouterOptions {
    *  not know in memory yet (a worker that restarted), before storage is read, while the click still counts. Such a
    *  sender is our own script (our id); the handler, once storage says the frame was injected, opens it as always. */
   openSidePanel?(tabId: number): void;
+  /** v5 p1-shell: the sidebar's page messages from the tab's top frame are taken while `open()` holds ("Where the panel
+   *  shows" is On the page); without this option, none is. */
+  sidebar?: { open(): Promise<boolean> };
 }
 
 export function createRouter(options: RouterOptions): Handler {
-  return async (message: unknown, sender: Sender) => {
+  return route;
+
+  async function route(message: unknown, sender: Sender): Promise<unknown> {
     const type = typeOf(message);
     // Synchronous for the ATS hosts and the extension's pages, and for a frame off them the worker knows in memory
     // (v3 Phase 8): panel/open reaches sidePanel.open with nothing awaited. Storage is read only for one it does not.
@@ -71,6 +83,11 @@ export function createRouter(options: RouterOptions): Handler {
     const [schema, own, other] =
       channel.kind === 'content' ? [ContentMessageSchema, CONTENT_TYPES, PAGE_TYPES] : [PageMessageSchema, PAGE_TYPES, CONTENT_TYPES];
     if (type !== null && !own.has(type) && other.has(type)) {
+      // v5 p1-shell: the sidebar's own page messages, from the tab's top frame.
+      if (channel.kind === 'content' && options.sidebar !== undefined && SIDEBAR_PAGE_MESSAGES.has(type)
+        && sidebarChannel(channel)) {
+        return sidebarMessage(message, channel, options.sidebar);
+      }
       log('router.bad-sender');
       return refuse('bad_sender');
     }
@@ -95,5 +112,35 @@ export function createRouter(options: RouterOptions): Handler {
       log('router.handler-failed');
       return refuse('internal');
     }
-  };
+  }
+
+  /** v5 p1-shell: a page message of the sidebar's from the tab's top frame: parsed as the pages' are, then refused
+   *  unless it names no tab but the sender's own and the panel shows on the page, and handled by the pages' handler
+   *  once the content gate is past. */
+  async function sidebarMessage(message: unknown, channel: ContentChannel, sidebar: { open(): Promise<boolean> }):
+    Promise<Answer<unknown>> {
+    const parsed = PageMessageSchema.safeParse(message);
+    if (!parsed.success) {
+      log('router.bad-message');
+      return refuse('bad_message');
+    }
+    const msg = parsed.data as PageMessage;
+    if (!sidebarMayAsk(channel, msg as { type: string; tabId?: unknown })) {
+      log('sidebar.refused', { tab: true });
+      return refuse('bad_sender');
+    }
+    try {
+      const gate = options.contentGate;
+      if (gate) await gate.ready();
+      if (!(await sidebar.open())) {
+        log('sidebar.refused', { side: true });
+        return refuse('bad_sender');
+      }
+      const handler = options.page[msg.type] as ((m: PageMessage) => Promise<Answer<unknown>>) | undefined;
+      return handler ? await handler(msg) : refuse('not_implemented');
+    } catch {
+      log('router.handler-failed');
+      return refuse('internal');
+    }
+  }
 }

@@ -197,9 +197,10 @@ export function createReports(deps: ReportsDeps): Reports {
     return frame !== undefined && frame.documentId === stored.documentId ? stored : null;
   }
 
-  /** report/update to the frame that shows the tab's in-page panel, when the person chose the in-page panel. */
+  /** report/update to the frame that shows the tab's in-page panel, when the person chose the panel on the page (v5:
+   *  'page', whose embedded frames keep the in-page card; the top frame's sidebar watches the `panel` port instead). */
   async function pushToPanelFrame(tabId: number, reports: FrameReport[]): Promise<void> {
-    if ((await deps.settings.get()).panel !== 'in-page') return;
+    if ((await deps.settings.get()).panel !== 'page') return;
     const frame = await panelFrame(tabId);
     if (frame === null) return;
     try {

@@ -16,8 +16,8 @@
  *   to confirm that applications go out unattended with AI-guessed answers (agent/set {on, confirmed}); it can be
  *   turned on only while connected with agent:run and the disclosure acknowledged, and says why not otherwise. Its
  *   status line, Stop and a link to TailorIT's Auto-apply page.
- * - Review panel: the side panel (the default) or the in-page panel (src/content/ui/panel.tsx), which opens from the
- *   launcher; a frame too small for it opens the side panel instead.
+ * - Where the panel shows (v5 p1-shell, settings version 8): On the page (the default: the sidebar at the page's right
+ *   edge) or Chrome's side panel, drawn with the modes (src/ui/page/modes.tsx), after Default view.
  * - Consent boxes: the core's closed list of categories, for Consent boxes: Required only; the usual ones pre-approved
  *   since settings version 2 (all but marketing and SMS: docs/SPEC-AMENDMENTS.md); certify carries a warning. Nothing
  *   outside the list can be pre-approved, so AI attestations and unrecognised consent never appear.
@@ -300,16 +300,6 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
 
       <WhereItWorks platform={platform} />
 
-      <Card title={TEXT.panel.heading} name="panel" help={`${TEXT.panel.intro} ${TEXT.panel.inPageHelp}`}>
-        <fieldset className="tia-fieldset">
-          <legend className="tia-visually-hidden">{TEXT.panel.intro}</legend>
-          {(['side', 'in-page'] as const).map((placement) => (
-            <PlacementChoice key={placement} placement={placement} checked={shown.panel === placement} disabled={saving}
-              onChoose={() => set({ panel: placement })} />
-          ))}
-        </fieldset>
-      </Card>
-
       <Card title={TEXT.consent.heading} name="consent" help={`${TEXT.consent.intro} ${TEXT.consent.never}`}>
         {/* Under All agreements every kind is ticked, whatever its toggle: each shows ticked and cannot be changed, and
             the line says where the choice is (v3 Phase 3 review). The kinds pre-approved are kept for Required only. */}
@@ -509,22 +499,6 @@ function ForbiddenChoice({ mode, checked, disabled, onChoose }: {
         <label htmlFor={id} className="tia-field__name">{words[mode]}</label>
         <HelpTip text={help} topic={words[mode]} id={`${id}-help`} />
       </span>
-    </div>
-  );
-}
-
-function PlacementChoice({ placement, checked, disabled, onChoose }: {
-  placement: Settings['panel'];
-  checked: boolean;
-  disabled: boolean;
-  onChoose(): void;
-}) {
-  const id = useId();
-  return (
-    <div className="tia-field">
-      <input type="radio" id={id} name="panel-placement" value={placement} data-setting={`panel.${placement}`} checked={checked}
-        disabled={disabled} onChange={() => onChoose()} />
-      <label htmlFor={id} className="tia-field__name">{placement === 'side' ? TEXT.panel.side : TEXT.panel.inPage}</label>
     </div>
   );
 }

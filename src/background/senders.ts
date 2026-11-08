@@ -8,6 +8,16 @@
  * page), which may send what a frame on the ATS hosts sends, and nothing of the sentinel's (allowedOn); and the
  * sentinel's top frame on an https page, for page/recognised alone, whose address the worker checks again before it
  * injects anything.
+ * v5 p1-shell (PLAN decision 1, the sidebar on the page): the sidebar draws the side panel's views in the tab's top
+ * frame, and they ask the worker over that frame's content channel. So a content channel may also send the extension
+ * pages' messages the sidebar's views send (SIDEBAR_PAGE_MESSAGES), and open their two ports, and nothing else of the
+ * pages', only while: it is the tab's top frame (frame 0, whatever a payload says) of a content script of ours on an
+ * active document (channelOf, or a frame the worker injected), never the sentinel; the message names no tab but the
+ * sender's own (sidebarMayAsk); and "Where the panel shows" is On the page (the router's `sidebar.open`, read at each
+ * message). The settings page's own (Disconnect, the code, the counters, the career sites, Run auto-apply's switch,
+ * clearing the runs) and the in-page card's are never among them. A page script cannot send any of this: only the
+ * extension's own isolated world can (Chrome's sender, never a payload); a page process taken over by an exploit could,
+ * as it could ask for anything the sidebar shows (docs: the security review of the sidebar's channel).
  */
 import { MatchPattern } from 'wxt/utils/match-patterns';
 import { ATS_MATCHES } from '../shared/hosts';
@@ -133,4 +143,33 @@ export function isConnectPage(sender: Sender, origin: string): boolean {
     return false;
   }
   return url.origin === origin && (url.pathname === CONNECT_PAGE_PATH || url.pathname === `${CONNECT_PAGE_PATH}/`);
+}
+
+// ── v5 p1-shell: the sidebar's page messages over the top frame's content channel ──────────────────────────────────
+
+/** The extension pages' messages the sidebar's views send (src/ui/panel, src/ui/page), and nothing else: never the
+ *  settings page's own (auth/redeemCode, auth/disconnect, runs/clear, telemetry/*, sites/*, agent/set) nor the in-page
+ *  card's (panel/policyDecision, panel/confirmDraft, panel/saveAnswer, panel/describe). */
+export const SIDEBAR_PAGE_MESSAGES: ReadonlySet<string> = new Set([
+  'panel/fill', 'panel/continue', 'panel/cancel', 'panel/focus', 'panel/reports', 'panel/job', 'panel/addJob',
+  'panel/resumes', 'panel/setResume', 'panel/ask', 'panel/letter', 'panel/skip', 'panel/launcher', 'panel/showLauncher',
+  'panel/jobSearch', 'panel/chooseJob', 'panel/siteRequest', 'panel/profile', 'panel/saveProfile', 'panel/withoutResume',
+  'panel/press', 'panel/retryApplied', 'panel/notes', 'panel/closeNote', 'settings/get', 'settings/save', 'auth/status',
+  'auth/startPairing', 'auth/acknowledgeDisclosure', 'agent/status', 'agent/stop',
+]);
+
+/** The ports the sidebar's views open (the panel's live reports and the preview's transfer). */
+export const SIDEBAR_PORTS: ReadonlySet<string> = new Set(['panel', 'preview']);
+
+/** Whether a content channel may speak for the sidebar at all: the tab's top frame of a content script of ours, never
+ *  the sentinel. */
+export function sidebarChannel(channel: ContentChannelOf): boolean {
+  return channel.frameId === 0 && channel.reach !== 'sentinel';
+}
+
+/** Whether a page message, already parsed, may come from the sidebar on `channel`: one of SIDEBAR_PAGE_MESSAGES, from
+ *  the top frame, naming no tab but the sender's own. */
+export function sidebarMayAsk(channel: ContentChannelOf, message: { type: string; tabId?: unknown }): boolean {
+  if (!sidebarChannel(channel) || !SIDEBAR_PAGE_MESSAGES.has(message.type)) return false;
+  return message.tabId === undefined || message.tabId === channel.tabId;
 }

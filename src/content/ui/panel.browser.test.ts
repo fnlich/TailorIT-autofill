@@ -1,5 +1,5 @@
 /*
- * The in-page review panel (panel.tsx) in the page UI's closed root: the report components mounted there with the
+ * The in-page review panel (panel.ts, its views card.tsx) in the page UI's closed root: the report components mounted there with the
  * report's stylesheet adopted beside the page UI's, trusted clicks only, its actions on this frame's own rows, room in
  * a small embedded frame, and the notices it mirrors in the page's own words.
  */
@@ -10,6 +10,7 @@ import { deadline } from '../../dom/time';
 import { COPY } from '../../shared/copy';
 import type { FrameReport } from '../../shared/report';
 import { mountPageUi, type PageUi } from './page-ui';
+import { CARD_RENDERER } from './card';
 import { clickTimes, ready, uncoveredAsThePointerComes } from './ui.testkit';
 import { CONTROL_SEEN_MS } from './visible';
 
@@ -57,6 +58,8 @@ function mount(doc: Document = document, frameId = 2, options: { confirm?: boole
     onLauncher: () => undefined,
     panel: {
       frameId: () => frameId,
+      // v5 p1-shell: the card's views, as the sidebar's bundle gives them.
+      card: () => CARD_RENDERER,
       showField: (key) => calls.shown.push(key),
       describeField: async (key) => {
         calls.described.push(key);

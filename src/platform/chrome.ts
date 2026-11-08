@@ -389,6 +389,12 @@ export function createWorkerPlatform(): WorkerPlatform {
       open: (tabId) => browser.sidePanel.open({ tabId }),
       openOnActionClick: (on) => browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: on }),
     },
+    // v5 p1-shell: the toolbar icon, while the panel shows on the page.
+    action: {
+      onClicked: (cb) => browser.action.onClicked.addListener((tab) => {
+        if (typeof tab.id === 'number') cb({ id: tab.id, ...(tab.url === undefined ? {} : { url: tab.url }) });
+      }),
+    },
     windows: agentWindows(),
     alarms: agentAlarms(),
     scripting: sitesScripting(),

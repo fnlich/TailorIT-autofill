@@ -95,11 +95,17 @@ export const IN_PAGE_SHADOWS = {
   launcherHover: `0 0 0 2px ${NEUTRAL.surface}, 0 1px 4px rgb(0 0 0 / 0.45)`,
   card: '0 12px 20px -12px rgb(0 0 0 / 0.2), 0 1px 3px rgb(0 0 0 / 0.08)',
   panel: '0 18px 24px -14px rgb(0 0 0 / 0.22), 0 2px 6px -3px rgb(0 0 0 / 0.1)',
+  /** v5 p1-shell: the sidebar's, cast over the page to its left only, reaching about 24 px (its clearance from the
+   *  toasts, page-ui.ts SIDEBAR_CLEARANCE_PX, is more). */
+  sidebar: '-12px 0 32px -20px rgb(0 0 0 / 0.28)',
 } as const;
 
-/** The system's own font: no font file is ever fetched (a closed shadow root cannot use @font-face, and the extension
- *  talks only to TailorIT). */
-export const FONT_STACK = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+/** v5 p1-shell (PLAN decision 3, Jobright's Inter): the bundled Inter's family name, scoped so it never meets a page's
+ *  own "Inter" (ui/brand/font.ts adds it to the document from the bundle's own bytes; nothing is fetched). */
+export const INTER_FAMILY = 'TailorIT Inter';
+/** Inter where it was added (the sidebar's and the extension pages' documents), else the system's own font: a closed
+ *  shadow root cannot declare @font-face, and the extension talks only to TailorIT. */
+export const FONT_STACK = `"${INTER_FAMILY}", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`;
 
 /** A report notice's code. */
 type NoticeCode = FrameReport['notices'][number]['code'];

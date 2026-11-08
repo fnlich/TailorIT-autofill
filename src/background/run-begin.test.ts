@@ -21,7 +21,7 @@ const begin = (worker: TestWorker, overrides: Record<string, unknown> = {}, send
   worker.deliver({ v: 1, type: 'run/begin', applicationKey: LEVER_KEY, trigger: 'launcher', dryRun: false, ...overrides }, sender);
 const policyHit = (worker: TestWorker, patternId: string | null, applicationKey = LEVER_KEY, sender = contentSender()) =>
   worker.deliver({ v: 1, type: 'policy/hit', applicationKey, patternId }, sender);
-const CONTENT_SETTINGS = { panel: DEFAULT_SETTINGS.panel, llm: DEFAULT_SETTINGS.llm,
+const CONTENT_SETTINGS = { panel: DEFAULT_SETTINGS.panel, view: DEFAULT_SETTINGS.view, llm: DEFAULT_SETTINGS.llm,
   modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn,
     submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip,
     signIn: DEFAULT_SETTINGS.modes.signIn, noMatch: DEFAULT_SETTINGS.modes.noMatch,
@@ -231,10 +231,10 @@ describe('run/begin', () => {
   it('answers the content settings as saved', async () => {
     const worker = await startTestWorker({ token: tokenRecord() });
     const modes = { ...DEFAULT_SETTINGS.modes, next: 'auto' as const, afterPageTurn: 'manual' as const };
-    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'in-page', modes } },
+    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'side', modes } },
       pageSender('options.html'));
     // The frame hears only the modes it acts on (v3 Phase 3 review; v3 Phase 4: Submit and its skip rules).
-    expect(await begin(worker)).toMatchObject({ ok: true, data: { settings: { panel: 'in-page',
+    expect(await begin(worker)).toMatchObject({ ok: true, data: { settings: { panel: 'side', view: 'expanded',
       modes: { next: 'auto', afterPageTurn: 'manual', submit: 'manual', agentSkip: DEFAULT_SETTINGS.modes.agentSkip,
         signIn: 'manual' },
       llm: DEFAULT_SETTINGS.llm } } });

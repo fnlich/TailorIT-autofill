@@ -443,6 +443,15 @@ const contentMessages = [
    *  its option labels (page text, never a value), kept for the sender's host. Nothing is kept from a private tab. */
   z.strictObject({ v, type: z.literal('lists/learn'), key: z.string().regex(LEARNED_KEY),
     labels: z.array(z.string().min(1).max(MAX_LEARNED_LABEL)).min(1).max(MAX_LEARNED_OPTIONS) }),
+  // ── v5 p1-shell (PLAN decision 1: the sidebar on the page) ──
+  /** A frame asks for the sidebar's bundle (shared/sidebar.ts SIDEBAR_APP_FILE): the tab's top frame to open the
+   *  sidebar, a frame inside another page for its in-page card's views. The worker runs it in that one document, while
+   *  "Where the panel shows" is On the page, and answers the frame's tab id, which every panel message of the sidebar
+   *  names (the worker takes none that names another, nor any from a subframe). */
+  z.strictObject({ v, type: z.literal('sidebar/load') }),
+  /** The sidebar's link to the extension's own settings page (a page may not open an extension page itself): the
+   *  worker opens options.html at `section` (its fragment, an id of that page) in a new tab. Frame 0 alone. */
+  z.strictObject({ v, type: z.literal('sidebar/options'), section: z.string().regex(/^[a-z][a-z-]{0,39}$/).optional() }),
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -565,6 +574,9 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
    *  worker's alone, to every tab's top frame. A page the worker injected ends its run and removes its UI; the sentinel
    *  stops (platform/sentinel.ts reads it without this schema); a page on an ATS host ignores it. */
   z.strictObject({ v, type: z.literal('site/stop') }),
+  /** v5 p1-shell (PLAN decision 2): the toolbar icon, under "Where the panel shows: On the page": the tab's top frame
+   *  opens the sidebar (`reveal`: the person's click brings the launcher back where they hid it). The worker's alone. */
+  z.strictObject({ v, type: z.literal('sidebar/open'), reveal: z.literal(true).optional() }),
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -695,6 +707,11 @@ export type LearnedListsAnswer = z.infer<typeof LearnedListsAnswerSchema>;
 
 /** v3 Phase 8: page/recognised's answer: the content script was injected into the frame (or was there already). */
 export const PageRecognisedAnswerSchema = z.strictObject({ injected: z.boolean() });
+/** v5 p1-shell: sidebar/load's answer: the sending frame's tab, once the sidebar's bundle ran in its document. */
+export const SidebarLoadAnswerSchema = z.strictObject({ tabId: Count });
+/** v5 p1-shell: sidebar/open's answer: whether the sidebar opens (false: this frame shows none, or it is the side
+ *  panel's place now). */
+export const SidebarOpenAnswerSchema = z.strictObject({ opening: z.boolean() });
 /** panel/press and run/press (v3 Phase 4): 'pressed' (the page's own Next or Submit was clicked); 'required-empty' (a
  *  Submit with required fields still empty, `count` of them, that the person did not confirm); 'not-offered' (the step
  *  no longer offers that button: another step, a step not final, a button hidden or disabled); 'blocked' (a CAPTCHA,
@@ -755,6 +772,9 @@ export const CONTENT_ANSWER_SCHEMAS = {
   // s2 lists
   'lists/known': LearnedListsAnswerSchema,
   'lists/learn': DoneAnswerSchema,
+  // v5 p1-shell
+  'sidebar/load': SidebarLoadAnswerSchema,
+  'sidebar/options': DoneAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of a frame's answer to each message the worker sends it. */
@@ -778,6 +798,8 @@ export const FRAME_ANSWER_SCHEMAS = {
   'run/press': PressAnswerSchema,
   'agent/enter': EntryAnswerSchema,
   'site/stop': DoneAnswerSchema,
+  // v5 p1-shell
+  'sidebar/open': SidebarOpenAnswerSchema,
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 // ── The resume port ───────────────────────────────────────────────────────────────────────────────────────────────

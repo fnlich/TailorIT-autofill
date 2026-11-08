@@ -10,7 +10,7 @@
  */
 import type { BrowserContext, Page } from '@playwright/test';
 import type { FieldCategory } from '../../src/core/types/intent';
-import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
+import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import { COPY } from '../../src/shared/copy';
 import type { FrameReport } from '../../src/shared/report';
 import { expect, test } from '../fixtures.ts';
@@ -403,7 +403,10 @@ test.describe('trap fixtures', () => {
     expect(await page.evaluate(() => (window as unknown as { __forgedEvents: number }).__forgedEvents)).toBe(3);
     const ui = await PageUi.of(page);
     expect(await ui.mounted()).toBe(true);
-    expect((await ui.launcher())?.shown).toBe(true);
+    // v5 p1-shell: the sidebar opened by itself (the defaults), the pill hidden meanwhile; either is ours, mounted.
+    const shown = async () => ((await ui.launcher())?.shown ?? false)
+      || ((await ui.elements('[data-sidebar]'))[0]?.shown ?? false);
+    expect(await shown()).toBe(true);
     expect(logs().filter((entry) => entry.source === 'content' && entry.text.includes('content.forged-wxt-event')).length)
       .toBeGreaterThanOrEqual(1);
     expect(noticeCount(report, 'tripwire')).toBe(0);

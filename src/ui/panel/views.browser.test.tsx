@@ -222,9 +222,9 @@ describe('the Settings view (v4 ui)', () => {
     expect(sent[0]!.settings).toMatchObject({ view: 'minimized', modes: { afterPageTurn: 'manual' } });
     expect(root.querySelector('.tia-settings__note')?.textContent).toBe(COPY.settingsView.saved);
     expect(save().disabled).toBe(true);
-    // The main view follows what was saved: the Minimized view folds the lists.
+    // The main view follows what was saved; Minimized (v5 p1-shell: whether the sidebar opens by itself) folds nothing.
     await click(root.querySelector('button[data-action="close-settings"]'));
-    expect(root.querySelector('li[data-field-key="a"]')).toBeNull();
+    expect(root.querySelector('li[data-field-key="a"]')).not.toBeNull();
   });
 
   it('discards an unsaved change on ✕', async () => {

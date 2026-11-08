@@ -23,7 +23,7 @@
 import type { Page } from '@playwright/test';
 import { applicationKey } from '../../src/adapters/application-key';
 import { parseWorkdayUrl } from '../../src/adapters/workday/url';
-import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
+import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import { expect, test } from '../fixtures.ts';
 import type { Extension } from '../helpers/extension.ts';
 import { mock } from '../helpers/mock.ts';

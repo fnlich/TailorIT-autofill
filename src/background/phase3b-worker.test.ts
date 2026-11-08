@@ -227,7 +227,7 @@ describe('the profile editor (v3 Phase 3b)', () => {
 
   it('is an extension page\'s: a content script is refused', async () => {
     const worker = await withForm();
-    expect(await worker.deliver({ v: 1, type: 'panel/profile' }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'panel/profile' }, contentSender({ frameId: 2, documentId: 'doc-2' }))).toEqual({ ok: false, error: 'bad_sender' });
   });
 });
 
@@ -301,7 +301,7 @@ describe('the panel\'s Next and Submit (v3 Phase 4)', () => {
       .toEqual([{ v: 1, type: 'run/press', target: 'submit', confirmed: false }]);
     // A content script can never ask for it; nor can it send run/press, a worker's message.
     expect(await worker.deliver({ v: 1, type: 'panel/press', tabId: 7, frameId: 0, target: 'submit', confirmed: true },
-      contentSender())).toEqual({ ok: false, error: 'bad_sender' });
+      contentSender({ frameId: 2, documentId: 'doc-2' }))).toEqual({ ok: false, error: 'bad_sender' });
     expect(await worker.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }, contentSender()))
       .toEqual({ ok: false, error: 'bad_message' });
   });
@@ -326,7 +326,7 @@ describe('the resume\'s preview port (v3 Phase 3b)', () => {
     await vi.waitFor(() => expect(port.received.some((message) => (message as { type: string }).type === 'resume/end'))
       .toBe(true));
     // A content script's port of that name is refused.
-    const refused = worker.connect('preview', contentSender());
+    const refused = worker.connect('preview', contentSender({ frameId: 2, documentId: 'doc-2' }));
     expect(refused.disconnectedByWorker).toBe(true);
   });
 

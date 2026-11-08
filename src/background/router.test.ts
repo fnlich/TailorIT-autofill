@@ -37,7 +37,9 @@ describe('the worker router', () => {
 
   it('refuses a known type on the wrong channel', async () => {
     const worker = await startTestWorker();
-    expect(await worker.deliver({ v: 1, type: 'settings/get' }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
+    // v5 p1-shell: a page message from a subframe, or one the sidebar never sends from the top frame.
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, contentSender({ frameId: 2, documentId: 'doc-2' }))).toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'telemetry/get' }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
     expect(await worker.deliver({ v: 1, type: 'runstate/clear', applicationKey: 'lever:0123456789abcdef' }, pageSender()))
       .toEqual({ ok: false, error: 'bad_sender' });
   });
@@ -109,7 +111,8 @@ describe('the worker router', () => {
     for (let tick = 0; tick < 20; tick += 1) await new Promise((resolve) => setImmediate(resolve));
     expect([...answered.keys()].sort()).toEqual(['panel/open', 'ping']);
     expect(answered.get('ping')).toEqual({ ok: true, data: { pong: true } });
-    expect(worker.fakes.sidePanelCalls.map((call) => call.method)).toEqual(['open']);
+    // v5 p1-shell: the toolbar icon's behaviour is set at the start, as the settings say; only the one open came here.
+    expect(worker.fakes.sidePanelCalls.filter((call) => call.method === 'open')).toHaveLength(1);
     expect(Object.keys(await fakeBrowser.storage.session.get(null)).filter((key) => key.startsWith('frames:'))).toEqual([]);
 
     release();

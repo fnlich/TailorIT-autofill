@@ -106,6 +106,8 @@ export const ICONS = {
   /** Add: a plus. */
   plus: { viewBox: GRID, stroked: true, parts: [line('M10 4.5v11M4.5 10h11')] },
   // ── end v4 ui ──
+  /** v5 p1-shell: fold the sidebar to the page's edge (its minimise): an arrow to a bar at the right. */
+  minimise: { viewBox: GRID, stroked: true, parts: [line('M3.5 10h9.5M9.25 6.25L13 10l-3.75 3.75'), line('M16.25 4v12')] },
 } as const satisfies Record<string, IconDef>;
 
 /** An icon's name. */

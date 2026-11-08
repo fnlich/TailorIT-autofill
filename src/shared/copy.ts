@@ -1074,13 +1074,7 @@ const OPTIONS = {
     unreachable: 'TailorIT could not be reached. Check that it is running, then try again.',
     openFailed: "TailorIT's page could not be opened. Try again.",
   },
-  panel: {
-    heading: 'Review panel',
-    intro: 'Where the list of filled fields appears.',
-    side: "The browser's side panel",
-    inPage: 'A panel on the application page',
-    inPageHelp: "The panel on the page opens from the launcher beside the form. On a form inside another site's page that is too small for it, the side panel opens instead.",
-  },
+
   /** Options › Modes (v3 Phase 3): each behaviour the person chooses, also in the side panel's gear menu. Sign-in and
    *  the agent's skip rules are stored and shown once they exist (Phase 5); Submit since v3 Phase 4. Drafts for the
    *  owner's review. */
@@ -1147,11 +1141,18 @@ const OPTIONS = {
       upload: 'Upload mine again',
       help: "When the site already shows a résumé in its résumé field: Keep it leaves that file as your résumé there. Upload mine again uploads the résumé you chose in TailorIT into that field through the site's own upload, which replaces the file or adds yours beside it. Neither presses the site's Remove or Delete; where the site gives no way to add a file, the field is left to you.",
     },
+    // v5 p1-shell (settings version 8): the view's new meaning, and where the panel shows.
     view: {
       name: 'Default view',
       expanded: 'Expanded',
       minimized: 'Minimized',
-      help: 'Expanded lists every field after Autofill; Minimized folds the list to its progress line, which opens it.',
+      help: "Expanded opens the TailorIT panel by itself on a job application or posting. Minimized shows only the TailorIT button at the page's edge, which opens it. With Chrome's side panel, the panel opens from the button or the toolbar icon either way.",
+    },
+    panel: {
+      name: 'Where the panel shows',
+      page: 'On the page',
+      side: "Chrome's side panel",
+      help: "On the page: a panel at the page's right edge, which pushes the page left. Chrome's side panel: Chrome's own panel beside the page.",
     },
     // ── s2 profile (snapshot round 2, settings version 7): drafts for the owner's review ──
     noMatch: {
@@ -1376,12 +1377,22 @@ export const PAGE_COPY = {
    *  Drafts for the owner's review. */
   launcherFilling: (percent: number) => `Autofilling, ${percent}%`,
   launcherMove: 'Drag up or down to move the TailorIT button',
+  // ── v5 p1-shell (PLAN decisions 2 and 3): the hide menu's items in Title Case, Jobright's. ──
   launcherHide: {
     open: 'Hide the TailorIT button',
-    nextVisit: 'Hide until next visit',
-    site: 'Hide on this site',
-    everywhere: 'Hide everywhere',
+    nextVisit: 'Hide Until Next Visit',
+    site: 'Hide on This Site',
+    everywhere: 'Hide Everywhere',
     note: 'The TailorIT Autofill icon in the toolbar brings it back.',
+  },
+  // ── v5 p1-shell (PLAN decisions 1, 2 and 8): the sidebar on the page, its launcher and its header. Drafts for the
+  // owner's review. ──
+  sidebar: {
+    region: 'TailorIT Autofill',
+    open: 'Open TailorIT Autofill',
+    minimise: 'Minimize',
+    workdayNote: 'Please stay on this page while Autofill fills the form.',
+    closeNote: 'Close',
   },
   dismiss: 'Dismiss',
   // ── v4 run (D10): the branded toasts on the page (content/ui/toasts.ts). Drafts for the owner's review. ──

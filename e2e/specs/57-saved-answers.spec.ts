@@ -9,7 +9,7 @@
  *   flagged; the person's Confirm draft on the report page makes it verified, an AI draft still.
  * Each case then runs assertTrapInvariants on a page the person did not type into.
  */
-import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
+import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import { COPY } from '../../src/shared/copy';
 import { expect, test } from '../fixtures.ts';
 import { applicationKeyOf, row, rowOf } from '../helpers/extension.ts';

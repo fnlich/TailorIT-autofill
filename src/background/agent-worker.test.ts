@@ -81,7 +81,7 @@ describe('Run auto-apply in the worker (v3 Phase 5)', () => {
       data: { on: false, phase: 'off', allowed: true } });
     expect(await worker.deliver({ v: 1, type: 'agent/set', on: true, confirmed: true }, contentSender()))
       .toEqual({ ok: false, error: 'bad_sender' });
-    expect(await worker.deliver({ v: 1, type: 'agent/status' }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'agent/status' }, contentSender({ frameId: 2, documentId: 'doc-2' }))).toEqual({ ok: false, error: 'bad_sender' });
   });
 
   it('opens the queued job in its own window, runs the agent there with Next and Submit on Auto, and reports its submission', async () => {

@@ -472,6 +472,17 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-field__head, .tia-profile__labelrow { display: inline-flex; align-items: center; gap: 2px; }
 .tia-another__heading { display: flex; align-items: center; gap: 4px; margin: 0; font: 700 13px/1.4 var(--tia-font); }
 .tia-unsupported__askrow { display: inline-flex; align-items: center; gap: 4px; }
+/* v5 p1-shell (PLAN decision 8): the head's tools (the gear, the sidebar's minimise) and Workday's note over it. */
+.tia-panel__tools { display: inline-flex; flex: none; align-items: center; gap: 8px; }
+.tia-shellnote { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 8px 10px 8px 12px;
+  border-radius: var(--tia-r-control); background: var(--tia-tone-warning-bg); color: var(--tia-tone-warning-fg);
+  font: 600 13px/1.4 var(--tia-font); }
+.tia-shellnote__text { flex: 1 1 auto; min-width: 0; }
+.tia-shellnote__close { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 22px;
+  height: 22px; margin: 0; padding: 0; border: 0; border-radius: 999px; background: transparent; color: inherit;
+  cursor: pointer; }
+.tia-shellnote__close:hover { background: rgb(0 0 0 / 0.06); }
+.tia-shellnote__close:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .tia-spin, .tia-skeleton { animation: none; }

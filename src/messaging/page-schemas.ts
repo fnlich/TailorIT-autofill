@@ -32,6 +32,10 @@ export const MAX_CUSTOM_QUESTION = 1000;
 export const ASK_LENGTHS = ['short', 'medium', 'long'] as const;
 export type AskLength = (typeof ASK_LENGTHS)[number];
 
+/** v5 p1-shell: the notes over the panel's head a person may close for good: Workday's "stay on this page" strip. */
+export const PANEL_NOTES = ['workday'] as const;
+export type PanelNote = (typeof PANEL_NOTES)[number];
+
 /** A job of the tab's last "Autofill for another job" search, as the panel names it (v3 Phase 3b): its place in that
  *  search, never TailorIT's id. */
 export const JobRefSchema = z.string().regex(/^j[0-9]$/);
@@ -136,6 +140,11 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   /** The status's Stop: the job running now is left for the person (needs-you, cancelled), its window closed, and
    *  Run auto-apply turned off. */
   z.strictObject({ v, type: z.literal('agent/stop') }),
+  // ── v5 p1-shell (PLAN decision 8: the header's notes) ──
+  /** The notes over the panel's head the person closed (Workday's "stay on this page" strip), kept in storage.local. */
+  z.strictObject({ v, type: z.literal('panel/notes') }),
+  /** The person closed a note: it stays closed, on the page and in the side panel. */
+  z.strictObject({ v, type: z.literal('panel/closeNote'), note: z.enum(PANEL_NOTES) }),
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
@@ -422,6 +431,9 @@ export const TelemetryCountSchema = z.strictObject({
 export const TelemetryAnswerSchema = z.strictObject({ counts: z.array(TelemetryCountSchema).max(MAX_TELEMETRY_COUNTS) });
 export type TelemetryAnswer = z.infer<typeof TelemetryAnswerSchema>;
 
+/** v5 p1-shell: panel/notes's answer: the notes the person closed. */
+export const PanelNotesAnswerSchema = z.strictObject({ closed: z.array(z.enum(PANEL_NOTES)).max(PANEL_NOTES.length) });
+
 /** The data schema of the worker's answer to each page message. */
 export const PAGE_ANSWER_SCHEMAS = {
   ping: PingAnswerSchema,
@@ -466,6 +478,9 @@ export const PAGE_ANSWER_SCHEMAS = {
   'agent/stop': AgentStatusSchema,
   'sites/get': SitesStateSchema,
   'sites/set': SitesStateSchema,
+  // v5 p1-shell
+  'panel/notes': PanelNotesAnswerSchema,
+  'panel/closeNote': DoneAnswerSchema,
 } as const satisfies Record<PageMessage['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */

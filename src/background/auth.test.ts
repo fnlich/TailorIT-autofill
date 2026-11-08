@@ -189,7 +189,9 @@ describe('the connect-code fallback (auth/redeemCode)', () => {
   it('refuses auth messages from a content script', async () => {
     const worker = await startTestWorker();
     expect(await worker.deliver({ v: 1, type: 'auth/redeemCode', code: CODE }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
-    expect(await worker.deliver({ v: 1, type: 'auth/status' }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'auth/status' }, contentSender({ frameId: 2, documentId: 'doc-2' }))).toEqual({ ok: false, error: 'bad_sender' });
+    // v5 p1-shell: the code is the settings page's alone, never the sidebar's, even from the top frame.
+    expect(await worker.deliver({ v: 1, type: 'auth/disconnect' }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
   });
 });
 
@@ -279,7 +281,7 @@ describe('the connection', () => {
       contentSender({ documentId: 'doc-2' })) as { data: { settings: { modes: { submit: string } } } };
     expect(again.data.settings.modes.submit).toBe('auto');
     // A content script may not acknowledge it.
-    expect(await worker.deliver({ v: 1, type: 'auth/acknowledgeDisclosure' }, contentSender())).toMatchObject({ ok: false });
+    expect(await worker.deliver({ v: 1, type: 'auth/acknowledgeDisclosure' }, contentSender({ frameId: 2, documentId: 'doc-2' }))).toMatchObject({ ok: false });
   });
 
   it('keeps the disclosure acknowledged when the person connects: pairing shows it', async () => {

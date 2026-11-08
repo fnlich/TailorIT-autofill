@@ -47,7 +47,7 @@ describe('the side panel in TailorIT’s look', () => {
     // The modes in the side panel's order, as the options page shows them; the view second.
     const settings = root.querySelector<HTMLElement>('[data-settings-view]')!;
     expect([...settings.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => group.dataset.settingGroup))
-      .toEqual(['modes.afterPageTurn', 'view', 'modes.next', 'modes.submit', 'modes.signIn', 'modes.consents', 'modes.ai',
+      .toEqual(['modes.afterPageTurn', 'view', 'panel', 'modes.next', 'modes.submit', 'modes.signIn', 'modes.consents', 'modes.ai',
         'modes.resumeOnPage', 'modes.recordOwn', 'modes.noMatch', 'modes.notifications', 'modes.agentSkip']);
     // Radio cards (screenshot 5): a grey card per choice, the chosen one's ring holding a teal dot.
     const keep = settings.querySelector<HTMLInputElement>('input[data-setting="modes.resumeOnPage.keep"]')!;
@@ -170,7 +170,7 @@ describe('the side panel in TailorIT’s look', () => {
     expect(review.querySelector('[data-group="required"] li[data-field-key="first"]')).not.toBeNull();
     expect([before(cta, ask), before(ask, review)]).toEqual([true, true]);
   });
-  it('folds the lists with the Minimized view the person chose', async () => {
+  it('never folds the lists for the Minimized view: it says whether the sidebar opens by itself (v5 p1-shell)', async () => {
     const worker = createFakeWorker();
     worker.script.settings = { ...worker.script.settings, view: 'minimized' };
     worker.script.reports.set(5, [frameReport(0, { fields: [row('first', { required: true })] })]);
@@ -184,11 +184,12 @@ describe('the side panel in TailorIT’s look', () => {
     expect(root.querySelector('li[data-field-key="first"]')).toBeNull();
     answer({ ok: true, data: { settings: worker.script.settings } });
     await settle();
-    expect(root.querySelector('button[data-action="toggle-fields"]')?.getAttribute('aria-expanded')).toBe('false');
-    expect(root.querySelector('li[data-field-key="first"]')).toBeNull();
-    expect(root.querySelector('.tia-progress-line__percent')?.textContent).toBe('100%');
-    await click(root.querySelector<HTMLButtonElement>('button[data-action="toggle-fields"]'));
+    expect(root.querySelector('button[data-action="toggle-fields"]')?.getAttribute('aria-expanded')).toBe('true');
     expect(root.querySelector('li[data-field-key="first"]')).not.toBeNull();
+    expect(root.querySelector('.tia-progress-line__percent')?.textContent).toBe('100%');
+    // The person folds them as ever.
+    await click(root.querySelector<HTMLButtonElement>('button[data-action="toggle-fields"]'));
+    expect(root.querySelector('li[data-field-key="first"]')).toBeNull();
   });
 
   it('offers the TailorIT button again where the person hid it, on this site or everywhere', async () => {

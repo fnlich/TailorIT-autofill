@@ -14,7 +14,7 @@
  * TailorIT's mark and name, shaped so they never cover another of our controls (palette.ts IN_PAGE_SHADOWS). Nothing is drawn over the page's fields (the
  * owner's decision of 2026-11-01): a field's status and the AI's marks are the review's. The in-page review panel's
  * frame is here too, a white card with a 20 px radius; the report inside it adds the report's own stylesheet to the
- * same root (src/content/ui/panel.tsx), whose tokens its box carries (.tia-page). Its rows scroll inside its box (a
+ * same root (src/content/ui/card.tsx), whose tokens its box carries (.tia-page). Its rows scroll inside its box (a
  * flex column whose body may shrink, the box clipping what overflows): nothing of the panel is ever drawn outside the
  * box its visibility watch observes (the Phase 6 review, E1).
  *
@@ -25,8 +25,17 @@
  * at the window's right edge (v3 Phase 3, edge.ts), its close button above it and its grip under it, 8 px apart and the
  * launcher without its own shadow there, so neither it nor its badge is ever painted over them; the hide menu opens to
  * its left with a shadow too small to reach the tab.
+ * v5 p1-shell (PLAN decisions 1 to 3): the tab is Jobright's horizontal pill: 56 px high, its left corners round, the
+ * launcher's 40 px tile left and a teal grip strip right, EDGE_TUCK_PX past the window's edge until it slides out (a 2D
+ * move, which the visibility watch allows; none while motion is reduced), its "×" a 20 px bubble at its top-left only
+ * while it is out, clear of the tile so neither is ever painted over the other, and no badge (the progress is the
+ * panel's). The sidebar's frame (sidebar.ts) is a white column SIDEBAR_WIDTH_PX wide, fixed at the window's right edge
+ * from top to bottom, with a 1 px line on its left and a soft shadow reaching about 24 px over the page; it slides in
+ * (a 2D move) and scrolls on its own. The views inside it bring their own stylesheets (ui/sidebar/mount.tsx).
  */
 import { BRAND, FONT_STACK, IN_PAGE_SHADOWS, NEUTRAL, TONES } from '../../shared/palette';
+import { SIDEBAR_WIDTH_PX } from '../../shared/sidebar';
+import { EDGE_TUCK_PX } from './edge';
 
 /** The launcher's badge, per tone. */
 const TONE_RULES = (['warning', 'danger', 'info', 'success', 'brand'] as const).map((tone) =>
@@ -61,21 +70,32 @@ svg.icon, svg.mark { display: block; flex: none; }
 @keyframes tailorit-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .launcher[data-state="running"]::after { animation: none; } }
 .edge { pointer-events: auto; position: fixed; top: 120px; right: 0; box-sizing: border-box; display: flex;
-  flex-direction: column; align-items: center; gap: 8px; width: 46px; margin: 0; padding: 4px 0 6px 2px;
-  border: 1px solid ${NEUTRAL.line}; border-right: 0; border-radius: 14px 0 0 14px; background: ${WHITE};
-  box-shadow: ${IN_PAGE_SHADOWS.card}; font: 13px/1.45 ${FONT_STACK}; color: ${NEUTRAL.fg}; }
-.edge .launcher, .edge .launcher:hover { box-shadow: none; }
+  flex-direction: row; align-items: stretch; height: 56px; margin: 0; padding: 0 0 0 16px;
+  border: 1px solid ${NEUTRAL.line}; border-right: 0; border-radius: 28px 0 0 28px; background: ${WHITE};
+  box-shadow: ${IN_PAGE_SHADOWS.card}; font: 13px/1.45 ${FONT_STACK}; color: ${NEUTRAL.fg};
+  transform: translateX(${EDGE_TUCK_PX}px); transition: transform 0.5s ease; }
+.edge[data-out] { transform: none; }
+@media (prefers-reduced-motion: reduce) { .edge { transition: none; } }
+.edge .launcher, .edge .launcher:hover { align-self: center; width: 40px; height: 40px; margin: 0 10px 0 0;
+  border-radius: 12px; box-shadow: none; }
+.edge .launcher .glyph, .edge .launcher svg.mark { width: 40px; height: 40px; }
+.edge .launcher[data-state="running"]::after { top: 12px; left: 12px; }
+.edge .badge { display: none; }
 button.edge__close, button.edge__grip { pointer-events: auto; display: flex; align-items: center; justify-content: center;
   box-sizing: border-box; margin: 0; padding: 0; border: 0; background: transparent; color: ${NEUTRAL.muted};
   cursor: pointer; }
-button.edge__close { width: 20px; height: 20px; border-radius: 999px; }
+button.edge__close { position: absolute; top: -8px; left: -8px; width: 20px; height: 20px; border-radius: 999px;
+  border: 1px solid ${NEUTRAL.line}; background: ${WHITE}; box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.edge:not([data-out]) button.edge__close { display: none; }
 button.edge__close:hover, button.edge__close[aria-expanded="true"] { background: ${NEUTRAL.track}; color: ${NEUTRAL.fg}; }
-button.edge__grip { width: 30px; height: 16px; border-radius: 6px; cursor: grab; touch-action: none; }
-button.edge__grip:hover { background: ${NEUTRAL.track}; color: ${NEUTRAL.fg}; }
-.edge[data-dragging] button.edge__grip { cursor: grabbing; background: ${NEUTRAL.track}; }
+button.edge__grip { width: 34px; height: auto; align-self: stretch; border-radius: 0; background: ${BRAND.tint};
+  color: ${BRAND.ink}; cursor: grab; touch-action: none; }
+button.edge__grip:hover { background: ${BRAND.container}; color: ${BRAND.ink}; }
+.edge[data-dragging], .edge[data-dragging] button { cursor: grabbing; }
+.edge[data-dragging] button.edge__grip { background: ${BRAND.container}; }
 button.edge__close:focus-visible, button.edge__grip:focus-visible, button.edge__item:focus-visible {
   outline: 2px solid ${BRAND.ink}; outline-offset: 1px; }
-.edge__menu { position: absolute; top: 0; right: calc(100% + 10px); box-sizing: border-box; width: 232px; margin: 0;
+.edge__menu { position: absolute; top: 0; right: calc(100% + 18px); box-sizing: border-box; width: 232px; margin: 0;
   padding: 6px; border: 1px solid ${NEUTRAL.line}; border-radius: 12px; background: ${WHITE};
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); text-align: left; }
 .edge__menu[data-up] { top: auto; bottom: 0; }
@@ -157,6 +177,15 @@ button.panel__close { flex: 0 0 auto; display: flex; align-items: center; justif
   color: var(--tia-fg); cursor: pointer; }
 button.panel__close:hover { background: var(--tia-line); }
 button.panel__close:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+/* v5 p1-shell: the sidebar's frame (sidebar.ts); the views inside it bring their own sheets. */
+.sidebar { pointer-events: auto; position: fixed; top: 0; right: 0; bottom: 0; z-index: 2; box-sizing: border-box;
+  display: flex; flex-direction: column; width: ${SIDEBAR_WIDTH_PX}px; max-width: 100vw; margin: 0; padding: 0;
+  background: ${WHITE}; color: ${NEUTRAL.fg}; box-shadow: inset 1px 0 0 ${NEUTRAL.line}, ${IN_PAGE_SHADOWS.sidebar};
+  font: 14px/1.45 ${FONT_STACK}; text-align: left; color-scheme: light; animation: tailorit-slide-in 0.25s ease-out; }
+@keyframes tailorit-slide-in { from { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .sidebar { animation: none; } }
+.sidebar__body { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+.sidebar__app { min-height: 100%; }
 `;
 
 /** How the stylesheet reached the shadow root. */

@@ -92,9 +92,9 @@ describe('a page\'s save applies only its own change (the audit, M4)', () => {
   it('merges leaf by leaf: what the page changed wins, everything else is what is stored now', () => {
     const base = DEFAULT_SETTINGS;
     const current: Settings = { ...base, modes: { ...base.modes, submit: 'auto' }, preapprovedConsent: ['privacy'] };
-    const next: Settings = { ...base, panel: 'in-page', modes: { ...base.modes, consents: 'required' },
+    const next: Settings = { ...base, panel: 'side', modes: { ...base.modes, consents: 'required' },
       preapprovedConsent: ['privacy', 'terms'] };
-    expect(mergeSettings(current, base, next)).toEqual({ ...base, panel: 'in-page',
+    expect(mergeSettings(current, base, next)).toEqual({ ...base, panel: 'side',
       modes: { ...base.modes, submit: 'auto', consents: 'required' }, preapprovedConsent: ['privacy', 'terms'] });
     // Nothing changed: the stored settings, whole.
     expect(mergeSettings(current, base, base)).toEqual(current);

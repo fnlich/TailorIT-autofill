@@ -53,9 +53,10 @@ import { createRouter, type ContentChannel } from './router';
 import { beginRun, keyFitsFrame, RUN_BEGIN_LIMIT } from './run-begin';
 import { createRunRegistry, type RunRegistry } from './runs';
 import { createRunStateStore } from './runstate-store';
-import { channelOf, isConnectPage, offAtsChannelOf, offAtsSenderOf } from './senders';
+import { channelOf, isConnectPage, offAtsChannelOf, offAtsSenderOf, SIDEBAR_PORTS, sidebarChannel } from './senders';
 import { createServerClient } from './server-client';
 import { contentSettingsOf, createSettingsStore, pushSettings } from './settings';
+import { createSidebar, iconReachesPage, scopedPort, SIDEBAR_LOAD_LIMIT } from './sidebar';
 import { createSignIn } from './sign-in';
 import { createSignUps } from './sign-up';
 import { createSites, RECOGNISED_LIMIT } from './sites';
@@ -387,6 +388,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         .catch(() => undefined)));
     },
     ...(__E2E__ ? { note: (event) => noteE2e(event) } : {}) });
+  /** v5 p1-shell: the sidebar on the page (sidebar.ts): its bundle, its ports, the toolbar icon and the header's notes. */
+  const onPage = async () => (await settings.get()).panel === 'page';
+  const sidebar = createSidebar({ scripting: platform.scripting, local, onPage,
+    limit: createRateLimit(SIDEBAR_LOAD_LIMIT.count, SIDEBAR_LOAD_LIMIT.windowMs, now) });
+  /** v5 p1-shell: Chrome opens the side panel on the toolbar icon's click only while the panel's place is the side
+   *  panel; on the page, the click comes to the action's listener below. */
+  const placeIcon = async () => {
+    await platform.sidePanel.openOnActionClick(!(await onPage())).catch(() => undefined);
+  };
   /** v3 Phase 5: Sign-in mode Auto's credential, for a paused run's top frame. */
   const signIn = createSignIn({ server, session, now,
     // v4: or the tab's Sign up & Autofill grant (sign-up.ts), every other rule held.
@@ -545,6 +555,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       injected: sites.injected,
       // The Phase 8 review (B6): a company page's "open review" after a restart opens the side panel inside its click.
       openSidePanel: (tabId) => void openSidePanel(platform, tabId),
+      // v5 p1-shell: the sidebar's page messages, from the tab's top frame, while the panel shows on the page.
+      sidebar: { open: onPage },
       content: {
         ping: async () => ok({ pong: true as const }),
         'frame/hello': async (message, from) => {
@@ -780,6 +792,16 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           await learnedLists.learn(from.url, message.key, message.labels);
           return ok({});
         },
+        // v5 p1-shell: the sidebar's bundle, for the tab's top frame (sidebar.ts), and its link to the settings page.
+        'sidebar/load': (_message, from) => sidebar.load(from),
+        'sidebar/options': async (message, from) => {
+          if (!sidebarChannel(from)) return refuse('bad_sender');
+          const retry = launcherLimit.take(`${from.tabId}/`);
+          if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+          await platform.tabs.create(platform.runtime.getURL(`/options.html${message.section === undefined ? ''
+            : `#${message.section}`}`));
+          return ok({});
+        },
         // v4: the account wall a tab's top or claim frame shows now (content/runtime.ts tellWall), for PageState.wall.
         'frame/wall': async (message, from) => {
           const entry = await lockTab(from.tabId, () => setWall(session, from.tabId, from.frameId,
@@ -884,6 +906,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           await pushNow();
           // And every side panel (v2): the custom question follows the AI drafts switch.
           reports.tellPanels('settings');
+          // v5 p1-shell: the toolbar icon follows where the panel shows.
+          await placeIcon();
           return ok({ settings: saved });
         },
         'auth/status': async () => ok(await auth.status()),
@@ -911,6 +935,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           await telemetry.clear();
           return ok({ counts: [] });
         },
+        // v5 p1-shell: the header's notes (Workday's "stay on this page" strip).
+        'panel/notes': () => sidebar.notes(),
+        'panel/closeNote': (message) => sidebar.closeNote(message.note),
       },
     }),
   );
@@ -963,6 +990,27 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       reports.watch(port);
       return;
     }
+    // v5 p1-shell: the sidebar's two ports, from the tab's top frame (an ATS host's, or a page the worker injected), held
+    // to its tab, while the panel shows on the page; what they post before that is known is held.
+    const sidebarFrom = SIDEBAR_PORTS.has(port.name) && port.sender !== undefined ? (channel?.kind === 'content' ? channel
+      : channel === null ? offAtsSenderOf(port.sender, ownId, ownPagesPrefix) : null) : null;
+    if (sidebarFrom !== null && sidebarChannel(sidebarFrom)) {
+      const held = heldPort(port);
+      const injectedFrame = channel === null;
+      void (async () => {
+        const reached = !injectedFrame || (sites.injected.now(sidebarFrom.tabId, 0, sidebarFrom.documentId)
+          ?? await sites.injected.read(sidebarFrom.tabId, 0, sidebarFrom.documentId)) !== null;
+        if (!reached || !(await onPage())) {
+          log('sidebar.refused', { port: true });
+          port.disconnect();
+          return;
+        }
+        const scoped = scopedPort(held, sidebarFrom.tabId);
+        if (port.name === 'panel') reports.watch(scoped);
+        else resume.acceptPreview(scoped, previewResumeOf, () => contentReady(), previewLetterOf);
+      })().catch(() => port.disconnect());
+      return;
+    }
     // v3 Phase 3b: the side panel's resume preview, an extension page's port only.
     if (port.name === 'preview' && channel?.kind === 'page') {
       resume.acceptPreview(port, previewResumeOf, () => contentReady(), previewLetterOf);
@@ -974,7 +1022,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
 
   platform.runtime.onInstalled(() => {
     void restrict();
-    void platform.sidePanel.openOnActionClick(true).catch(() => undefined);
+    // v5 p1-shell: Chrome opens the side panel on the icon's click only while the panel's place is the side panel.
+    void placeIcon();
     // v3 Phase 8: the sentinel's registrations, as the person's choice and Chrome's permissions stand.
     void sites.reconcile().catch(() => undefined);
   });
@@ -982,6 +1031,34 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // v3 Phase 8: the person granted or took back a host permission (in Options, or in Chrome's own settings).
   platform.permissions.onChanged(() => {
     void sites.reconcile().catch(() => undefined);
+  });
+
+  // v5 p1-shell (PLAN decision 2): the toolbar icon, while the panel shows on the page (Chrome opens the side panel by
+  // itself otherwise). A page a frame of ours may draw on hears sidebar/open, and its launcher comes back where the
+  // person hid it; any other page (a browser page, LinkedIn, an HR system) gets the side panel, asked for inside the
+  // click, before anything is awaited.
+  platform.action.onClicked((tab) => {
+    if (!iconReachesPage(tab.url)) {
+      log('action.clicked', { page: false });
+      void openSidePanel(platform, tab.id);
+      return;
+    }
+    log('action.clicked', { page: true });
+    void (async () => {
+      const top = await topFrameOf(tab.id);
+      const site = top?.origin ?? tab.url ?? null;
+      if (site !== null) await launchers.show(site);
+      await session.remove([visitKey(tab.id)]);
+      await tellLauncherPrefs(tab.id, true);
+      try {
+        await platform.tabs.sendToFrame(tab.id, { v: 1, type: 'sidebar/open', reveal: true }, { frameId: 0 });
+      } catch {
+        // No frame of ours draws this page (it loaded before the extension, or the site is not reached): the side panel,
+        // where Chrome still takes it after the click.
+        log('action.clicked', { page: true, unreached: true });
+        await openSidePanel(platform, tab.id);
+      }
+    })().catch(() => undefined);
   });
 
 
@@ -1041,6 +1118,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   void state.ready.then(() => agent.start()).catch(() => undefined);
   // v3 Phase 8: the injected frames back in memory, and the sentinel's registrations reconciled.
   void sites.start().catch(() => undefined);
+  // v5 p1-shell: the toolbar icon as the settings say (an update keeps them, and onInstalled may not come).
+  void placeIcon();
   log('worker.started');
   return state;
 }

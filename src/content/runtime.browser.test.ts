@@ -9,6 +9,8 @@ import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { createFakeWorker, testVocab, trapUrl, type FakeWorkerOptions } from './content.testkit';
 import { restoredFromCache, startContentRuntime, type ContentRuntime } from './runtime';
+import { SIDEBAR_APP_KEY } from '../shared/sidebar';
+import { CARD_RENDERER } from './ui/card';
 
 const POSTING = 'https://jobs.lever.co/tailorit-fixture/0b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00';
 const plain = trap11.replace(/<script>[\s\S]*<\/script>/, '');
@@ -81,14 +83,17 @@ describe('the content runtime’s start-up', () => {
     expect(await fake.platform.deliver({ v: 1, type: 'report/update', reports: [] })).toEqual({ ok: true, data: {} });
   });
 
-  it('reads a posting page with no form for policy text, tells the worker the pattern id, and offers no launcher', async () => {
+  it('reads a posting page with no form for policy text, tells the worker the pattern id, and runs nothing (v5: its pill shows)', async () => {
     const page = '<!doctype html><body><main><h1>Developer Advocate</h1><p>We read every application ourselves. '
       + 'Please do not use AI tools to apply.</p></main></body>';
     const { fake, runtime } = await startOn(page, POSTING);
     expect(fake.of('frame/hello')[0]).toMatchObject({ hasForm: false });
     expect(fake.of('policy/hit')).toEqual([{ v: 1, type: 'policy/hit', applicationKey: expect.stringMatching(/^lever:/),
       patternId: 'do-not-use-ai' }]);
-    expect(runtime.ui).toBeNull();
+    // v5 p1-shell (PLAN decision 2, Jobright's launcher): a supported page shows the pill with no form; its click opens
+    // the panel, and nothing fills here.
+    expect(runtime.ui!.edge!.el.hidden).toBe(false);
+    expect(runtime.page).toBeNull();
     expect(runtime.fill()).toBeNull();
     expect(await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false })).toEqual({ ok: true, data: {} });
     expect(fake.of('run/begin')).toEqual([]);
@@ -102,8 +107,16 @@ describe('the content runtime’s start-up', () => {
   it('runs nothing on a page with no form root', async () => {
     const { fake, runtime } = await startOn('<!doctype html><body><p>No fields here.</p></body>', trapUrl('none'));
     expect(fake.of('frame/hello')[0]).toMatchObject({ hasForm: false });
-    expect(runtime.ui).toBeNull();
+    expect(runtime.page).toBeNull();
+    expect(runtime.fill()).toBeNull();
     expect(fake.of('policy/hit')).toEqual([]);
+    expect(fake.of('run/begin')).toEqual([]);
+  });
+
+  it('shows no pill and draws nothing on a page no parser reads, nor on the platform\'s page after submitting (v5)', async () => {
+    const { runtime } = await startOn('<!doctype html><body><p>Thanks for applying.</p></body>',
+      'https://www.example.org/careers');
+    expect(runtime.ui).toBeNull();
   });
 
   it('follows the address: another application ends the run, says hello again, and reads a posting page', async () => {
@@ -116,7 +129,9 @@ describe('the content runtime’s start-up', () => {
     expect(fake.of('frame/hello')[1]).toMatchObject({ hasForm: false });
     await vi.waitFor(() => expect(fake.of('policy/hit')).toHaveLength(1));
     expect(runtime.page).toBeNull();
-    expect(runtime.ui!.launcher.el.getBoundingClientRect().width).toBe(0);
+    // v5 p1-shell: the posting is a supported page: the pill stays, with no form to fill.
+    expect(runtime.ui!.edge!.el.hidden).toBe(false);
+    expect(runtime.fill()).toBeNull();
   });
 
   it('says hello again with a new count at each address a form shows, so the side panel reads the next posting (v2)', async () => {
@@ -317,7 +332,8 @@ describe('the launcher in the page', () => {
     document.body.append(form);
     let inClick = false;
     const opened: boolean[] = [];
-    const fake = createFakeWorker({ onMessage: (message) => {
+    // With Chrome's side panel chosen (v5: the page's default is the sidebar, sidebar.browser.test.ts).
+    const fake = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, panel: 'side' }, onMessage: (message) => {
       if (message.type === 'panel/open') opened.push(inClick);
     } });
     const runtime = await startContentRuntime(fake.platform, document, { href: () => trapUrl('launcher'), isTop: true,
@@ -345,7 +361,7 @@ describe('the launcher in the page', () => {
   });
 });
 
-describe('the in-page panel', () => {
+describe('the in-page panel (v5: a frame inside another page\'s; the top frame\'s panel is the sidebar)', () => {
   /** A form on the test page itself, so the launcher's trusted click can reach it. */
   function pageForm(doc: Document = document): HTMLInputElement {
     const form = doc.createElement('form');
@@ -362,18 +378,29 @@ describe('the in-page panel', () => {
     return input;
   }
 
-  async function clickInUi(runtime: ContentRuntime, target: Element): Promise<void> {
-    const ui = runtime.ui!;
-    const host = ui.host.getBoundingClientRect();
+  /** A trusted click on one of our controls in the fixture frame, aimed through the frame. */
+  async function clickInUi(frame: HTMLIFrameElement, target: Element): Promise<void> {
     const box = target.getBoundingClientRect();
-    await userEvent.click(ui.host, { force: true, position: { x: box.left - host.left + box.width / 2,
-      y: box.top - host.top + box.height / 2 } });
+    await userEvent.click(frame, { force: true, position: { x: box.left + box.width / 2, y: box.top + box.height / 2 } });
+  }
+
+  /** A frame inside the test page, big enough for the in-page panel, with a form. */
+  async function embedded() {
+    const fixture = await loadFixture(document, '<!doctype html><body style="margin:0"></body>', { width: 900, height: 700 });
+    pageForm(fixture.doc);
+    return fixture;
   }
 
   async function startInPage(doc: Document, isTop: boolean) {
-    const fake = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, panel: 'in-page' } });
+    // v5 p1-shell: the card's views come with the sidebar's bundle, which the worker runs in the frame on sidebar/load.
+    const world: Record<symbol, unknown> = {};
+    const loaded = { ok: true, data: { tabId: 7 } };
+    const fake = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, panel: 'page' }, script: { 'sidebar/load': [loaded, loaded],
+      }, onMessage: (message) => {
+      if (message.type === 'sidebar/load') world[SIDEBAR_APP_KEY] = { mount: () => ({ unmount: () => undefined }), card: CARD_RENDERER };
+    } });
     const runtime = await startContentRuntime(fake.platform, doc, { href: () => trapUrl('in-page'), isTop,
-      settle: { quietMs: 60 } });
+      settle: { quietMs: 60 }, sidebarWorld: world });
     runtimes.push(runtime);
     return { fake, runtime };
   }
@@ -387,13 +414,15 @@ describe('the in-page panel', () => {
       needsUserAction: false }] });
 
   it('opens from the launcher where the person chose it, tells the worker, shows report/update, and closes', async () => {
-    pageForm();
-    const { fake, runtime } = await startInPage(document, true);
+    const fixture = await embedded();
+    const { fake, runtime } = await startInPage(fixture.doc, false);
     expect(await runtime.fill()).toBe('review');
     expect(runtime.ui!.launcher.view.action).toBe('open-review');
     await vi.waitFor(() => expect(runtime.ui!.readyNow(runtime.ui!.launcher.el)).toBe(true), { timeout: 3_000 });
-    await clickInUi(runtime, runtime.ui!.launcher.el);
-    expect(runtime.ui!.panel?.open).toBe(true);
+    await clickInUi(fixture.frame, runtime.ui!.launcher.el);
+    await vi.waitFor(() => expect(runtime.ui!.panel?.open).toBe(true));
+    // Its views came with the sidebar's bundle, asked for once, from this frame.
+    expect(fake.of('sidebar/load')).toHaveLength(1);
     expect(fake.of('panel/shown')).toEqual([{ v: 1, type: 'panel/shown', open: true }]);
     expect(fake.of('panel/open')).toEqual([]);
 
@@ -409,7 +438,7 @@ describe('the in-page panel', () => {
 
     // The panel's own clicks count once it has been seen for CONTROL_SEEN_MS (the audit of 2026-11-06, S-1).
     await vi.waitFor(() => expect(runtime.ui!.readyNow(panel)).toBe(true), { timeout: 3_000 });
-    await clickInUi(runtime, panel.querySelector('button.panel__close')!);
+    await clickInUi(fixture.frame, panel.querySelector('button.panel__close')!);
     expect(runtime.ui!.panel?.open).toBe(false);
     expect(fake.of('panel/shown').at(-1)).toEqual({ v: 1, type: 'panel/shown', open: false });
     // Closed, it keeps nothing (the Phase 6 review, E7), and takes no more reports.
@@ -420,20 +449,20 @@ describe('the in-page panel', () => {
   });
 
   it('closes when the person chooses the side panel, which Open review then opens', async () => {
-    pageForm();
-    const { fake, runtime } = await startInPage(document, true);
+    const fixture = await embedded();
+    const { fake, runtime } = await startInPage(fixture.doc, false);
     expect(await runtime.fill()).toBe('review');
     await vi.waitFor(() => expect(runtime.ui!.readyNow(runtime.ui!.launcher.el)).toBe(true), { timeout: 3_000 });
-    await clickInUi(runtime, runtime.ui!.launcher.el);
-    expect(runtime.ui!.panel?.open).toBe(true);
+    await clickInUi(fixture.frame, runtime.ui!.launcher.el);
+    await vi.waitFor(() => expect(runtime.ui!.panel?.open).toBe(true));
     await fake.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side',
       modes: { next: CAUTIOUS_SETTINGS.modes.next, afterPageTurn: CAUTIOUS_SETTINGS.modes.afterPageTurn, submit: CAUTIOUS_SETTINGS.modes.submit, agentSkip: CAUTIOUS_SETTINGS.modes.agentSkip, signIn: CAUTIOUS_SETTINGS.modes.signIn },
       llm: CAUTIOUS_SETTINGS.llm, offerToSaveAnswers: true } });
     expect(runtime.ui!.panel?.open).toBe(false);
     expect(fake.of('panel/shown')).toEqual([{ v: 1, type: 'panel/shown', open: true }, { v: 1, type: 'panel/shown', open: false }]);
-    // v3 Phase 3: the launcher's tab hid while the panel was open; shown again, it is clicked once it is seen.
+    // The corner launcher, clicked once it is seen.
     await vi.waitFor(() => expect(runtime.ui!.readyNow(runtime.ui!.launcher.el)).toBe(true), { timeout: 3_000 });
-    await clickInUi(runtime, runtime.ui!.launcher.el);
+    await clickInUi(fixture.frame, runtime.ui!.launcher.el);
     expect(fake.of('panel/open')).toHaveLength(1);
     expect(runtime.ui!.panel?.open).toBe(false);
   });

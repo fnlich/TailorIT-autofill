@@ -139,6 +139,10 @@ export interface WorkerPlatform {
   /** open() must be called before any await in the handler of the message that carries the click, or the browser no
    *  longer counts the click as the person's gesture. */
   sidePanel: { open(tabId: number): Promise<void>; openOnActionClick(on: boolean): Promise<void> };
+  /** v5 p1-shell: the toolbar icon's click (action.onClicked), which Chrome fires only while it does not open the side
+   *  panel itself (openOnActionClick false: "Where the panel shows: On the page"): the tab it was clicked on, and that
+   *  tab's address while the click's activeTab grant lets Chrome say. Registered synchronously at start-up. */
+  action: { onClicked(cb: (tab: { id: number; url?: string }) => void): void };
   /** v3 Phase 5: the auto-apply agent's windows (chrome.windows, no permission needed). */
   windows: AgentWindows;
   /** v3 Phase 5: the auto-apply agent's wake-ups (chrome.alarms, the `alarms` permission: no install warning). */

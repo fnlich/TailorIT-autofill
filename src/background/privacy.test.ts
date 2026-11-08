@@ -83,7 +83,7 @@ describe('the worker keeps the profile to itself', () => {
     const options = pageSender('options.html');
 
     // The in-page panel and the anonymous counters on (Phase 6): neither may carry a value either.
-    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...(await settingsOf(worker)), panel: 'in-page',
+    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...(await settingsOf(worker)), panel: 'page',
       telemetry: { optIn: true } } }, options);
     expect(await worker.deliver({ v: 1, type: 'auth/redeemCode', code: 'K7QM-2XRD-9VHT-PA3C' }, options)).toMatchObject({ ok: true });
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());

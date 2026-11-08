@@ -75,8 +75,11 @@ describe('the launcher’s place and hiding (v3 Phase 3)', () => {
       [0, { v: 1, type: 'launcher/prefs', launcher: { top: null, hidden: false }, shown: true }],
       [3, { v: 1, type: 'launcher/prefs', launcher: { top: null, hidden: false }, shown: true }],
     ]));
-    // A content script cannot show it again: that is the person's, from the extension's own page.
-    expect(await worker.deliver({ v: 1, type: 'panel/showLauncher', tabId: 7 }, LEVER_FRAME)).toEqual({ ok: false,
+    // A frame's content script cannot show it again: that is the person's, from a panel of ours (v5 p1-shell: the
+    // sidebar, from the tab's top frame, for its own tab only).
+    expect(await worker.deliver({ v: 1, type: 'panel/showLauncher', tabId: 7 }, EMBED)).toEqual({ ok: false,
+      error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'panel/showLauncher', tabId: 8 }, LEVER_FRAME)).toEqual({ ok: false,
       error: 'bad_sender' });
   });
 

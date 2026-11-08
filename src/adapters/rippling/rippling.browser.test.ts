@@ -181,7 +181,7 @@ describe("the Rippling posting (rippling-4): its footer's language picker is nev
   /** The posting's address, as the fixture's header keeps it. */
   const POSTING = 'https://ats.rippling.com/qu-careers/jobs/73bf0c96-e3e8-42ca-820c-01f2360ed78d?src=LinkedIn';
 
-  it('reads the address as the posting, so the content runtime picks no adapter there: no launcher, nothing to fill',
+  it('reads the address as the posting, so the content runtime picks no adapter there: nothing to fill (v5: its pill shows)',
     async () => {
       // Core pass Z2 of 2026-11-06 (CORE-BLOCKERS item 32): the generic adapter's detect, asked alone, takes the body for
       // the footer's "Display language" combobox (footer > ... input[aria-label="Display language"][role=combobox]),
@@ -199,7 +199,8 @@ describe("the Rippling posting (rippling-4): its footer's language picker is nev
       try {
         expect(worker.of('frame/hello')[0]).toMatchObject({ hasForm: false });
         expect(runtime.page).toBeNull();
-        expect(runtime.ui).toBeNull();
+        // v5 p1-shell: a posting is a supported page: the pill shows, with no form behind it.
+        expect(runtime.ui!.edge!.el.hidden).toBe(false);
         expect(runtime.fill()).toBeNull();
       } finally {
         runtime.stop();

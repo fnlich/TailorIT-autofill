@@ -7,6 +7,7 @@
  *   it there (the worker keeps it, by a hash of the host), even after a reload; the side panel then offers "Show the
  *   TailorIT button again", which brings it back. Every click is the person's own (trusted) one.
  */
+import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import { COPY } from '../../src/shared/copy';
 import { expect, test } from '../fixtures.ts';
 import { row } from '../helpers/extension.ts';
@@ -61,18 +62,24 @@ test.describe('the launcher’s tab at the page’s edge (v3 Phase 3)', () => {
     // The browser's own side panel, left open by an earlier spec, would show this tab once it is in front, and the tab
     // hides while it does (as it should): only the report page, a tab of its own, shows it here.
     await closeSidePanelViews(extContext, await ext.page(), extensionId);
+    // v5 p1-shell: Minimized, so the sidebar does not open by itself and the pill shows.
+    await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, view: 'minimized' } });
     const page = await extContext.newPage();
     await page.goto(url);
     const tabId = await ext.tabIdOf(page);
     await ext.frameWithForm(tabId);
     const ui = await PageUi.of(page);
     try {
-      // The tab at the window's right edge, the launcher in it.
+      // The pill at the window's right edge, the launcher in it, tucked past the edge until the pointer comes.
       await expect.poll(async () => (await ui.launcher())?.shown ?? false).toBe(true);
       const edge = (await ui.elements('[data-edge]'))[0]!;
       const box = (await ui.box(edge))!;
-      expect(box.x + box.width).toBeCloseTo(page.viewportSize()!.width, 0);
-      // Its ×: the menu, then Hide on this site.
+      const right = await page.evaluate(() => document.documentElement.clientWidth);
+      expect(box.x + box.width).toBeCloseTo(right + 24, 0);
+      // Its × shows with the pointer over it: the menu, then Hide on this site.
+      await ui.hover((await ui.launcher())!);
+      await expect.poll(async () => (await ui.elements(`button[aria-label="${COPY.launcherHide.open}"]`))[0]?.shown)
+        .toBe(true);
       await ui.clickButton(COPY.launcherHide.open);
       await expect.poll(async () => (await ui.elements('[data-hide]')).filter((item) => item.shown).map((item) => item.text))
         .toEqual([COPY.launcherHide.nextVisit, COPY.launcherHide.site, COPY.launcherHide.everywhere]);
@@ -94,6 +101,7 @@ test.describe('the launcher’s tab at the page’s edge (v3 Phase 3)', () => {
       await again.close();
     } finally {
       await ui.close();
+      await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
     }
   });
 });

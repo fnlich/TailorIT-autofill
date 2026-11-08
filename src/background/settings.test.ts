@@ -5,15 +5,17 @@ import { contentSettingsOf } from './settings';
 import { contentSender, pageSender, sentToFrames, startTestWorker, tokenRecord, typeOfSent } from './worker.testkit';
 
 const OPTIONS = pageSender('options.html');
-const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'in-page' as const, view: 'minimized' as const,
+const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'side' as const, view: 'minimized' as const,
   modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' as const, consents: 'required' as const },
   preapprovedConsent: ['privacy' as const], llm: { ...DEFAULT_SETTINGS.llm, tiebreak: false, classify: true, drafts: true },
   offerToSaveAnswers: false };
 /** CHOSEN as a frame receives it: its content settings. */
-const CHOSEN_CONTENT = { panel: 'in-page', modes: { next: CHOSEN.modes.next, afterPageTurn: CHOSEN.modes.afterPageTurn,
+const CHOSEN_CONTENT = { panel: 'side', view: 'minimized', modes: { next: CHOSEN.modes.next, afterPageTurn: CHOSEN.modes.afterPageTurn,
   submit: CHOSEN.modes.submit, agentSkip: CHOSEN.modes.agentSkip, signIn: CHOSEN.modes.signIn,
   noMatch: CHOSEN.modes.noMatch, notifications: CHOSEN.modes.notifications }, llm: CHOSEN.llm,
   offerToSaveAnswers: false };
+/** v5 p1-shell: CHOSEN as versions 1 to 7 stored it: its place 'side', which version 8 keeps. */
+const OLD_PANEL = { panel: 'side' as const };
 /** CHOSEN's modes as version 6 stored them, before "When a list has no match" and the notifications' time. */
 const { noMatch: _noMatch, notifications: _notifications, ...CHOSEN_MODES_V6 } = CHOSEN.modes;
 
@@ -114,8 +116,10 @@ describe('settings', () => {
     const worker = await startTestWorker({
       before: async () => fakeBrowser.storage.local.set({ 'settings:v1': V1_DEFAULTS }),
     });
-    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: DEFAULT_SETTINGS } });
-    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': DEFAULT_SETTINGS });
+    // v5 p1-shell: its place, Chrome's side panel, is kept (version 8's default, the page, is for a new install).
+    const expected = { ...DEFAULT_SETTINGS, panel: 'side' };
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: expected } });
+    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
   });
 
   it('keeps every version 1 choice the person changed when it migrates', async () => {
@@ -124,7 +128,8 @@ describe('settings', () => {
       interpretations: { postingCountryForLegal: true, twoOrMoreRaces: false } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: {
-      version: 7, panel: 'in-page', view: 'expanded',
+      // v5 p1-shell: version 7's 'in-page' (the small card) is the sidebar on the page (version 8).
+      version: 8, panel: 'page', view: 'expanded',
       // Auto-advance became the Next mode; version 3's `all` answers took their default (All), and act only while
       // answers are on; the other modes take theirs.
       modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' },
@@ -137,9 +142,9 @@ describe('settings', () => {
     } } });
   });
 
-  it('migrates version 2 settings to version 7’s, every choice kept, the `all` answers on (the owner’s decision of 2026-11-01) and "Ask me each time" Profile only (v4)', async () => {
+  it('migrates version 2 settings to version 8’s, every choice kept, the `all` answers on (the owner’s decision of 2026-11-01) and "Ask me each time" Profile only (v4)', async () => {
     const { modes: _modes, view: _view, version: _version, ...rest } = CHOSEN;
-    const v2 = { ...rest, version: 2, autoAdvance: true, llm: { ...CHOSEN.llm, answers: false, confirmDrafts: true,
+    const v2 = { ...rest, ...OLD_PANEL, version: 2, autoAdvance: true, llm: { ...CHOSEN.llm, answers: false, confirmDrafts: true,
       whenForbidden: 'ask' } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v2 }) });
     const expected = { ...CHOSEN, view: 'expanded', modes: { ...DEFAULT_SETTINGS.modes, next: 'auto', ai: 'all' },
@@ -149,10 +154,10 @@ describe('settings', () => {
     expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
   });
 
-  it('migrates version 3 settings to version 7’s: auto-advance is the Next mode, the `all` answers the AI answers mode (v3 Phase 3)', async () => {
+  it('migrates version 3 settings to version 8’s: auto-advance is the Next mode, the `all` answers the AI answers mode (v3 Phase 3)', async () => {
     const { modes: _modes, view: _view, ...rest } = CHOSEN;
     for (const [autoAdvance, answerAll] of [[true, false], [false, true]] as const) {
-      const v3 = { ...rest, version: 3, autoAdvance, llm: { ...CHOSEN.llm, confirmDrafts: false, answerAll } };
+      const v3 = { ...rest, ...OLD_PANEL, version: 3, autoAdvance, llm: { ...CHOSEN.llm, confirmDrafts: false, answerAll } };
       const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v3 }) });
       // Every other choice kept; the consents take the owner's default (All); the view its default (Expanded).
       const expected = { ...CHOSEN, view: 'expanded', modes: { ...DEFAULT_SETTINGS.modes,
@@ -167,9 +172,9 @@ describe('settings', () => {
     expect(DEFAULT_SETTINGS.view).toBe('expanded');
   });
 
-  it('migrates version 4 settings to version 7’s, every choice kept and "Résumé already on the page" Keep it, and stores them (the behaviour review of 2026-11-06)', async () => {
+  it('migrates version 4 settings to version 8’s, every choice kept and "Résumé already on the page" Keep it, and stores them (the behaviour review of 2026-11-06)', async () => {
     const { resumeOnPage: _added, ...v4modes } = CHOSEN_MODES_V6;
-    const v4 = { ...CHOSEN, version: 4, modes: { ...v4modes, recordOwn: 'off', submit: 'auto' },
+    const v4 = { ...CHOSEN, ...OLD_PANEL, version: 4, modes: { ...v4modes, recordOwn: 'off', submit: 'auto' },
       llm: { ...CHOSEN.llm, confirmDrafts: false } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v4 }) });
     const expected = { ...CHOSEN, modes: { ...CHOSEN.modes, recordOwn: 'off', submit: 'auto', resumeOnPage: 'keep' } };
@@ -181,11 +186,11 @@ describe('settings', () => {
     const oldest = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1':
       { ...v4, modes: older } }) });
     expect(await oldest.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true,
-      data: { settings: { version: 7, modes: { recordOwn: 'on', resumeOnPage: 'keep' } } } });
+      data: { settings: { version: 8, modes: { recordOwn: 'on', resumeOnPage: 'keep' } } } });
   });
 
-  it('migrates version 5 settings to version 7’s (v4, D6): "Ask me each time" Profile only, the draft confirmation gone, and stores them', async () => {
-    const v5 = { ...CHOSEN, version: 5, modes: CHOSEN_MODES_V6,
+  it('migrates version 5 settings to version 8’s (v4, D6): "Ask me each time" Profile only, the draft confirmation gone, and stores them', async () => {
+    const v5 = { ...CHOSEN, ...OLD_PANEL, version: 5, modes: CHOSEN_MODES_V6,
       llm: { ...CHOSEN.llm, confirmDrafts: true, whenForbidden: 'ask' } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v5 }) });
     const expected = { ...CHOSEN, llm: { ...CHOSEN.llm, whenForbidden: 'profile-only' } };
@@ -200,13 +205,32 @@ describe('settings', () => {
   });
 
   // s2 profile (snapshot round 2): "When a list has no match" and how long the page's notifications stay.
-  it('migrates version 6 settings to version 7’s, every choice kept, Other and Until closed, and stores them', async () => {
-    const v6 = { ...CHOSEN, version: 6, modes: CHOSEN_MODES_V6 };
+  it('migrates version 6 settings to version 8’s, every choice kept, Other and Until closed, and stores them', async () => {
+    const v6 = { ...CHOSEN, ...OLD_PANEL, version: 6, modes: CHOSEN_MODES_V6 };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v6 }) });
     const expected = { ...CHOSEN, modes: { ...CHOSEN.modes, noMatch: 'other', notifications: 'until-closed' } };
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
       data: { settings: expected } });
     expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
+  });
+
+  // v5 p1-shell (settings version 8): "Where the panel shows".
+  it('migrates version 7 settings to version 8’s: the small in-page card is the sidebar on the page, the side panel stays, every other choice kept, and stores them', async () => {
+    for (const [stored, read] of [['in-page', 'page'], ['side', 'side']] as const) {
+      const v7 = { ...CHOSEN, version: 7, panel: stored };
+      const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v7 }) });
+      const expected = { ...CHOSEN, panel: read };
+      expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
+        data: { settings: expected } });
+      expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
+    }
+    // Version 8 holds no 'in-page', and its default is the page.
+    const worker = await startTestWorker();
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN, panel: 'in-page' } }, OPTIONS))
+      .toEqual({ ok: false, error: 'bad_message' });
+    expect(DEFAULT_SETTINGS.panel).toBe('page');
+    expect(contentSettingsOf({ ...CHOSEN, panel: 'page', view: 'expanded' })).toMatchObject({ panel: 'page',
+      view: 'expanded' });
   });
 
   it('saves a list with no match left empty and each notification time, gives them to a frame, and refuses a choice it does not know or a version 7 value without them', async () => {
@@ -283,10 +307,22 @@ describe('settings', () => {
     expect(sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'settings/changed')).toHaveLength(2);
   });
 
-  it('are read and written by extension pages only', async () => {
+  it('are read and written by extension pages, and (v5) by the sidebar from a tab\'s top frame only while the panel shows on the page', async () => {
     const worker = await startTestWorker();
+    // A subframe never.
+    const sub = contentSender({ frameId: 2, documentId: 'doc-2' });
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, sub)).toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: CHOSEN }, sub)).toEqual({ ok: false, error: 'bad_sender' });
+    // The top frame, while the panel shows on the page (the default): the sidebar's Settings view.
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, contentSender())).toEqual({ ok: true,
+      data: { settings: DEFAULT_SETTINGS } });
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: CHOSEN }, contentSender())).toEqual({ ok: true,
+      data: { settings: CHOSEN } });
+    // CHOSEN's place is Chrome's side panel: the page's channel is closed from then on.
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
-    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: CHOSEN }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN, panel: 'page' } }, contentSender()))
+      .toEqual({ ok: false, error: 'bad_sender' });
+    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': CHOSEN });
   });
 
   it('reach a frame only as its content settings, with frame/hello\'s connection state', async () => {

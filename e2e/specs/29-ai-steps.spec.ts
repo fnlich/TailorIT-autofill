@@ -15,7 +15,8 @@
  * Each case then runs assertTrapInvariants.
  */
 import { expect, test } from '../fixtures.ts';
-import { DEFAULT_SETTINGS, type Settings } from '../../src/core/types/settings';
+import type { Settings } from '../../src/core/types/settings';
+import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import { applicationKeyOf, row, noticeCount, type Extension } from '../helpers/extension.ts';
 import { assertTrapInvariants } from '../helpers/invariants.ts';
 import { mock, type MockRequest } from '../helpers/mock.ts';

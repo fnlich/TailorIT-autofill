@@ -142,7 +142,7 @@ describe('the job card (v2)', () => {
 
   it('is a page message and a content message apart: a frame cannot read a card, a page cannot relay', async () => {
     const worker = await withForm();
-    expect(await worker.deliver({ v: 1, type: 'panel/job', tabId: 7 }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'panel/job', tabId: 7 }, contentSender({ frameId: 2, documentId: 'doc-2' }))).toEqual({ ok: false, error: 'bad_sender' });
     expect(await worker.deliver({ v: 1, type: 'job/lookup' }, pageSender())).toEqual({ ok: false, error: 'bad_sender' });
     expect(await worker.deliver({ v: 1, type: 'job/lookup', url: 'https://example.com' }, contentSender()))
       .toEqual({ ok: false, error: 'bad_message' });

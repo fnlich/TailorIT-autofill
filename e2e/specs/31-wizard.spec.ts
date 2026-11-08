@@ -37,7 +37,7 @@
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures.ts';
-import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
+import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import type { FrameReport } from '../../src/shared/report';
 import { applicationKeyOf, noticeCount, row, rowOf, type Extension } from '../helpers/extension.ts';
 import { GOLDEN, GOLDEN_PROFILE } from '../helpers/golden.ts';

@@ -1,14 +1,16 @@
 /*
- * The launcher's tab at the window's right edge (v3 Phase 3, Jobright's launcher): placed 120 px down or where the
- * worker kept it, dragged up and down only by a trusted drag of its grip (or its arrow keys), hidden from its "×" menu
- * (until next visit, on this site, everywhere), hidden while a panel of ours shows the tab, and shown only while there
- * is a form. Every control takes the person's own, visible events only.
+ * The launcher at the window's right edge (v3 Phase 3; v5 p1-shell, PLAN decision 2: Jobright's pill, read for
+ * behaviour only): a horizontal pill placed 120 px down or where the worker kept it, tucked EDGE_TUCK_PX past the edge
+ * until the pointer or the focus brings it out, its "×" shown only then, dragged up and down only (the whole pill, by
+ * a trusted drag of its launcher or grip, or its grip's arrow keys), hidden from its "×" menu (until next visit, on this
+ * site, everywhere), hidden while a panel of ours shows the tab, and shown while there is a form or a supported page.
+ * Every control takes the person's own, visible events only.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import axe from 'axe-core';
 import { userEvent } from 'vitest/browser';
 import { COPY } from '../../shared/copy';
-import { EDGE_DEFAULT_TOP_PX, EDGE_KEY_STEP_PX, EDGE_MARGIN_PX } from './edge';
+import { EDGE_DEFAULT_TOP_PX, EDGE_KEY_STEP_PX, EDGE_MARGIN_PX, EDGE_TUCK_PX, type Edge } from './edge';
 import type { LauncherAction } from './launcher';
 import { deadline } from '../../dom/time';
 import { EDGE_CLEARANCE_PX, mountPageUi, type PageUi } from './page-ui';
@@ -28,6 +30,13 @@ async function trustedClick(ui: PageUi, target: Element): Promise<void> {
 
 async function seen(ui: PageUi, el: Element): Promise<void> {
   await vi.waitFor(() => expect(ui.visibleNow(el)).toBe(true));
+}
+
+/** The pill brought out by the person's pointer over its launcher, slid fully out (its 0.5 s move over). */
+async function out(ui: PageUi, edge: Edge): Promise<void> {
+  await userEvent.hover(ui.host, { force: true, position: offsetOf(ui, ui.launcher.el) });
+  await vi.waitFor(() => expect(edge.out).toBe(true));
+  await vi.waitFor(() => expect(edge.el.getBoundingClientRect().right).toBeCloseTo(document.documentElement.clientWidth, 0));
 }
 
 function formRoot(): HTMLElement {
@@ -51,38 +60,59 @@ function mount() {
   return { ui, actions, placed, hidden, edge: ui.edge! };
 }
 
-describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () => {
-  afterEach(() => {
+describe('the launcher’s pill at the window’s right edge (v3 Phase 3, v5 p1-shell)', () => {
+  afterEach(async () => {
     for (const ui of mounted.splice(0)) ui.destroy();
     document.querySelectorAll('[data-test-root]').forEach((el) => el.remove());
+    // The pointer away from the edge, so the next pill starts tucked.
+    await userEvent.hover(document.documentElement, { force: true, position: { x: 2, y: 2 } });
   });
 
-  it('holds the launcher in a tab at the right edge, 120 px down, or where the worker kept it', async () => {
+  it('holds the launcher in a horizontal pill at the right edge, tucked until the pointer comes, 120 px down or where the worker kept it', async () => {
     const { ui, edge, actions } = mount();
-    const tab = edge.el.getBoundingClientRect();
-    expect(tab.right).toBeCloseTo(window.innerWidth, 0);
-    expect(tab.top).toBeCloseTo(EDGE_DEFAULT_TOP_PX, 0);
+    const edgeX = document.documentElement.clientWidth;
+    expect(edge.out).toBe(false);
+    await vi.waitFor(() => expect(edge.el.getBoundingClientRect().right).toBeCloseTo(edgeX + EDGE_TUCK_PX, 0));
+    expect(edge.el.getBoundingClientRect().top).toBeCloseTo(EDGE_DEFAULT_TOP_PX, 0);
     expect(edge.el.contains(ui.launcher.el)).toBe(true);
-    // Its close button above the launcher, its grip under it, none over another.
-    const [close, launcher, grip] = [edge.close, ui.launcher.el, edge.grip].map((el) => el.getBoundingClientRect()) as
-      [DOMRect, DOMRect, DOMRect];
-    expect(close.bottom).toBeLessThanOrEqual(launcher.top);
-    expect(launcher.bottom).toBeLessThanOrEqual(grip.top);
+    // Tucked, its "×" does not show; the launcher and the grip sit side by side.
+    expect(edge.close.getBoundingClientRect().width).toBe(0);
+    const [launcher, grip] = [ui.launcher.el, edge.grip].map((el) => el.getBoundingClientRect()) as [DOMRect, DOMRect];
+    expect(launcher.right).toBeLessThanOrEqual(grip.left);
+    expect(Math.abs((launcher.top + launcher.bottom) / 2 - (grip.top + grip.bottom) / 2)).toBeLessThan(2);
+    // No badge: the progress is the panel's.
+    ui.setLauncher({ state: 'review', action: 'open-review', percent: 50 });
+    expect(ui.launcher.el.querySelector<HTMLElement>('.badge')!.getBoundingClientRect().width).toBe(0);
+    // Its name says it opens the panel, whatever the state.
+    expect([ui.launcher.el.getAttribute('aria-label'), ui.launcher.el.title]).toEqual([COPY.sidebar.open, COPY.sidebar.open]);
     expect([edge.close.getAttribute('aria-label'), edge.grip.getAttribute('aria-label')])
       .toEqual([COPY.launcherHide.open, COPY.launcherMove]);
-    // The launcher still does what its state says, on the person's click.
+    // The pointer brings it out, its "×" at its top-left, clear of the launcher.
+    await out(ui, edge);
+    await seen(ui, edge.close);
+    const close = edge.close.getBoundingClientRect();
+    const tile = ui.launcher.el.getBoundingClientRect();
+    expect(close.right <= tile.left || close.bottom <= tile.top).toBe(true);
+    // The launcher does what the page UI's owner says, on the person's click.
     await ready(ui, ui.launcher.el);
     await trustedClick(ui, ui.launcher.el);
-    expect(actions).toEqual(['fill']);
+    expect(actions).toEqual(['open-review']);
     // The worker's place, as a fraction of the window's height, kept within the window.
     ui.setLauncherPrefs({ top: 0.5, hidden: false });
     expect(edge.el.getBoundingClientRect().top).toBeCloseTo(Math.round(window.innerHeight * 0.5), 0);
     ui.setLauncherPrefs({ top: 1, hidden: false });
     expect(edge.el.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight - EDGE_MARGIN_PX + 1);
+    // The focus in it keeps it out; the focus and the pointer gone, it tucks itself again.
+    await userEvent.hover(document.documentElement, { force: true, position: { x: 2, y: 2 } });
+    expect(edge.out).toBe(true);
+    (ui.shadow.activeElement as HTMLElement | null)?.blur();
+    await vi.waitFor(() => expect(edge.out).toBe(false));
   });
 
-  it('drags up and down only, by a trusted drag of its grip, and tells the worker where it was dropped', async () => {
-    const { ui, edge, placed } = mount();
+  it('drags up and down only, the whole pill by a trusted drag of its grip or its launcher, and tells the worker where it was dropped', async () => {
+    const { ui, edge, placed, actions } = mount();
+    // Tucked, most of the grip is past the window's edge: the pointer brings the pill out first, as a person's does.
+    await out(ui, edge);
     await ready(ui, edge.grip);
     // A page's own pointer events move nothing.
     edge.grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true, clientY: 130, pointerId: 1 }));
@@ -99,14 +129,26 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
     const after = edge.el.getBoundingClientRect();
     // Down by the drag, never sideways.
     expect(after.top - before.top).toBeCloseTo(150, -1);
-    expect(after.right).toBeCloseTo(before.right, 0);
     expect(placed[0]).toBeCloseTo(after.top / window.innerHeight, 2);
+    // The launcher drags the pill too, and the click that ends the drag opens nothing.
+    await ready(ui, ui.launcher.el);
+    const tile = offsetOf(ui, ui.launcher.el);
+    await userEvent.dragAndDrop(ui.host, ui.host, { force: true, sourcePosition: tile,
+      targetPosition: { x: tile.x, y: tile.y - 100 } } as never);
+    await vi.waitFor(() => expect(placed).toHaveLength(2));
+    expect(edge.el.getBoundingClientRect().top - after.top).toBeCloseTo(-100, -1);
+    expect(actions).toEqual([]);
+    // A plain click on it still opens.
+    await ready(ui, ui.launcher.el);
+    await trustedClick(ui, ui.launcher.el);
+    expect(actions).toEqual(['fill']);
   });
 
-  it('moves by ArrowUp and ArrowDown on its grip', async () => {
+  it('moves by ArrowUp and ArrowDown on its grip, the focus bringing it out', async () => {
     const { ui, edge, placed } = mount();
     await ready(ui, edge.grip);
     edge.grip.focus();
+    await vi.waitFor(() => expect(edge.out).toBe(true));
     await userEvent.keyboard('{ArrowDown}');
     await userEvent.keyboard('{ArrowDown}');
     await userEvent.keyboard('{ArrowUp}');
@@ -120,6 +162,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
   it('opens its hide menu from the ×: until next visit stays in the page, on this site and everywhere go to the worker', async () => {
     for (const scope of ['next-visit', 'site', 'everywhere'] as const) {
       const { ui, edge, hidden } = mount();
+      await out(ui, edge);
       await ready(ui, edge.close);
       // A page's own click opens nothing.
       edge.close.click();
@@ -140,10 +183,11 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
       expect(hidden).toEqual([scope]);
       expect(ui.edgeHidden).toBe(true);
       ui.destroy();
+      await userEvent.hover(document.documentElement, { force: true, position: { x: 2, y: 2 } });
     }
   });
 
-  it('hides while a panel of ours shows the tab, while the worker says it is hidden, and without a form', async () => {
+  it('hides while a panel of ours shows the tab, while the worker says it is hidden, and without a form or a supported page', async () => {
     const { ui, edge } = mount();
     ui.setSidePanel(true);
     expect(edge.el.hidden).toBe(true);
@@ -155,6 +199,11 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
     expect(edge.el.hidden).toBe(false);
     ui.anchorTo(null);
     expect(edge.el.hidden).toBe(true);
+    // v5: a supported page with no form (a posting) shows it too.
+    ui.setPageShown(true);
+    expect(edge.el.hidden).toBe(false);
+    ui.setPageShown(false);
+    expect(edge.el.hidden).toBe(true);
     // Shown again, its launcher is clicked only once it is seen again.
     ui.anchorTo(formRoot());
     expect(edge.el.hidden).toBe(false);
@@ -162,12 +211,12 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
     await seen(ui, ui.launcher.el);
   });
 
-  it('v4 (D10): keeps the toasts at the viewport’s top-right clear of the tab and its shadow, so neither covers the other', async () => {
+  it('v4 (D10): keeps the toasts at the viewport’s top-right clear of the pill and its shadow, so neither covers the other', async () => {
     const { ui, edge, actions } = mount();
     const wide = formRoot();
     wide.style.cssText = 'display:block;position:absolute;top:0;left:0;right:0;height:600px;margin:0;border:1px solid #888';
     ui.anchorTo(wide);
-    // The tab at the window's top, beside where the toasts sit.
+    // The pill at the window's top, beside where the toasts sit.
     edge.setTop(0.02);
     ui.setToasts([{ kind: 'tripwire', text: COPY.notices.tripwire }, { kind: 'validation', text: COPY.toasts.validation }]);
     await vi.waitFor(() => {
@@ -176,11 +225,11 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
       expect(drawn.length).toBeGreaterThanOrEqual(4);
       for (const el of drawn) expect(el.getBoundingClientRect().right).toBeLessThanOrEqual(tab.left - EDGE_CLEARANCE_PX + 1);
     });
-    // The launcher in the tab is still seen, and takes the person's click.
+    // The launcher in the pill is still seen, and takes the person's click.
     await ready(ui, ui.launcher.el);
     await trustedClick(ui, ui.launcher.el);
     expect(actions).toEqual(['fill']);
-    // With the tab hidden, the toasts go back to the viewport's own corner.
+    // With the pill hidden, the toasts go back to the viewport's own corner.
     ui.setLauncherPrefs({ top: null, hidden: true });
     await vi.waitFor(() => expect(ui.shadow.querySelector('.toast')!.getBoundingClientRect().right)
       .toBeGreaterThan(window.innerWidth - 2 * EDGE_MARGIN_PX - 32));
@@ -200,16 +249,23 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
     async () => {
       const { ui, edge } = mount();
       ui.setLauncherPrefs({ top: 1, hidden: false });
+      await out(ui, edge);
       await ready(ui, edge.close);
       await trustedClick(ui, edge.close);
       const menu = ui.shadow.querySelector<HTMLElement>('[role="menu"]')!;
       expect(menu.dataset.up).toBe('');
       expect(menu.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight);
-      // A trusted press outside the tab closes it.
+      // A trusted press outside the pill closes it, and the pill tucks itself again.
       await userEvent.click(document.body, { position: { x: 20, y: 20 } });
       expect(edge.menuOpen).toBe(false);
-      // By keyboard: Enter on the ×, the focus on the first item, the arrows, Home and End move it, Escape goes back.
+      await vi.waitFor(() => expect(edge.out).toBe(false));
+      // By keyboard: the focus in the pill brings it out, its × with it; once the × is seen, Enter opens the menu with
+      // the focus on its first item, the arrows, Home and End move it, Escape goes back.
+      ui.launcher.el.focus();
+      await vi.waitFor(() => expect(edge.out).toBe(true));
       edge.close.focus();
+      expect(ui.shadow.activeElement).toBe(edge.close);
+      await ready(ui, edge.close);
       await userEvent.keyboard('{Enter}');
       await vi.waitFor(() => expect(edge.menuOpen).toBe(true));
       const focused = () => (ui.shadow.activeElement as HTMLElement | null)?.dataset.hide;
@@ -225,8 +281,9 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
       expect(ui.shadow.activeElement).toBe(edge.close);
     });
 
-  it('shows again after "Hide until next visit" when the person asks for it from the side panel', async () => {
+  it('shows again after "Hide until next visit" when the person asks for it from a panel of ours', async () => {
     const { ui, edge } = mount();
+    await out(ui, edge);
     await ready(ui, edge.close);
     await trustedClick(ui, edge.close);
     const item = edge.menuItems.find((each) => each.dataset.hide === 'next-visit')!;
@@ -240,12 +297,15 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
     expect(edge.el.hidden).toBe(false);
   });
 
-  it('refuses its launcher’s, its ×’s and its grip’s events when the page uncovered the tab a moment before (the audit of 2026-11-06, S-1)',
+  it('refuses its launcher’s, its ×’s and its grip’s events when the page uncovered the pill a moment before (the audit of 2026-11-06, S-1)',
     async () => {
       const { ui, edge, actions, placed } = mount();
+      // The focus in the pill keeps it out, its "×" shown, whatever the pointer does.
+      edge.grip.focus();
+      await vi.waitFor(() => expect(edge.out).toBe(true));
       for (const control of [ui.launcher.el, edge.close, edge.grip]) await ready(ui, control);
       const clicks = clickTimes(ui);
-      // The auditor's scenario: a top-layer "Chat with us" over the tab, gone as the pointer comes onto it.
+      // The auditor's scenario: a top-layer "Chat with us" over the pill, gone as the pointer comes onto it.
       let gone = await uncoveredAsThePointerComes(ui, ui.launcher.el);
       await trustedClick(ui, ui.launcher.el);
       expect(clicks.at(-1)! - gone).toBeLessThan(CONTROL_SEEN_MS);
@@ -269,8 +329,22 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
       expect(edge.menuOpen).toBe(true);
     });
 
+  it('takes its ×’s click only once the × has been seen for 600 ms after the pill came out (S-1)', async () => {
+    const { ui, edge } = mount();
+    await out(ui, edge);
+    // The moment the watch sees the ×, a click on it is refused, and never counted later.
+    await seen(ui, edge.close);
+    await trustedClick(ui, edge.close);
+    await deadline(CONTROL_SEEN_MS + 100);
+    expect(edge.menuOpen).toBe(false);
+    await ready(ui, edge.close);
+    await trustedClick(ui, edge.close);
+    expect(edge.menuOpen).toBe(true);
+  });
+
   it('takes a hide menu item’s click only once the menu has been seen for 600 ms (S-1)', async () => {
     const { ui, edge, hidden } = mount();
+    await out(ui, edge);
     await ready(ui, edge.close);
     await trustedClick(ui, edge.close);
     const item = edge.menuItems.find((each) => each.dataset.hide === 'site')!;
@@ -286,10 +360,11 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
 
   it('has no serious or critical accessibility violation, its hide menu open (axe, on a copy of its closed root)', async () => {
     const { ui, edge } = mount();
+    await out(ui, edge);
     await ready(ui, edge.close);
     await trustedClick(ui, edge.close);
     expect(edge.menuOpen).toBe(true);
-    // axe cannot reach into a closed root: the tab and its menu are copied into an open one, with its stylesheets.
+    // axe cannot reach into a closed root: the pill and its menu are copied into an open one, with its stylesheets.
     const host = document.createElement('div');
     host.dataset.testRoot = '';
     document.body.append(host);
@@ -302,13 +377,17 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
       .map((violation) => violation.id)).toEqual([]);
   });
 
-  it('keeps a frame inside another page’s launcher at its form’s corner, with no tab to hide', () => {
+  it('keeps a frame inside another page’s launcher at its form’s corner, with no pill to hide', () => {
     const ui = mountPageUi(document, { onLauncher: () => undefined });
     mounted.push(ui);
     const root = formRoot();
     ui.anchorTo(root);
     expect(ui.edge).toBeNull();
     expect(ui.launcher.el.getBoundingClientRect().right).toBeCloseTo(root.getBoundingClientRect().right - 8, 0);
+    // Its badge and its name are the state's, as before.
+    ui.setLauncher({ state: 'review', action: 'open-review', percent: 50 });
+    expect(ui.launcher.el.querySelector<HTMLElement>('.badge')!.textContent).toBe('50%');
+    expect(ui.launcher.el.getAttribute('aria-label')).toBe(COPY.launcherReview(50));
   });
 
   it('hides an embedded form’s corner launcher while the button is hidden, except while a run fills (S1)', () => {

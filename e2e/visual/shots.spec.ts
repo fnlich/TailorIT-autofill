@@ -27,7 +27,8 @@ import { mkdirSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:
 import { extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Page } from '@playwright/test';
-import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
+import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
+import { COPY } from '../../src/shared/copy';
 import { DISCLOSURE_VERSION } from '../../src/shared/stored';
 import { expect, test } from '../fixtures.ts';
 import type { Extension } from '../helpers/extension.ts';
@@ -185,8 +186,9 @@ test('v4: a branded toast on the page (the tripwire’s, the hard rules’ one n
   await ui.close();
 });
 
-test('the in-page panel, and the launcher at rest', async ({ extContext, connected: ext, routeLog }) => {
-  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'in-page' } });
+test('the sidebar on the page, and the launcher at rest (v5 p1-shell)', async ({ extContext, connected: ext, routeLog }) => {
+  // Minimized first: the pill at rest; then its click opens the sidebar.
+  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, view: 'minimized' } });
   try {
     const served = trap('03');
     routeLog.serve({ [served.url]: served.file });
@@ -197,17 +199,14 @@ test('the in-page panel, and the launcher at rest', async ({ extContext, connect
     await still(page);
     const ui = await PageUi.of(page);
     await expect.poll(async () => (await ui.launcher())?.shown ?? false).toBe(true);
-    await shoot(page, '05a-launcher-idle.png', 'Launcher at rest', { clip: await around(page, ui, ['button.launcher'], 44) });
+    await shoot(page, '05a-launcher-idle.png', 'Launcher at rest', { clip: await around(page, ui, ['[data-edge]'], 44) });
 
     await ui.clickLauncher();
-    expect((await ext.settled(tabId)).status).toBe('review');
-    await expect.poll(async () => (await ui.launcher())?.attributes['data-state']).toBe('review');
-    await ui.clickLauncher();
-    await expect.poll(async () => (await ui.elements('[data-panel="in-page"]'))[0]?.shown).toBe(true);
-    await expect.poll(async () => (await ui.elements('[data-panel="in-page"] li[data-field-key]')).length).toBeGreaterThan(0);
-    await shoot(page, '06-in-page-panel.png', 'The in-page panel under the launcher',
-      { clip: await around(page, ui, ['button.launcher', '[data-panel="in-page"]']) });
-    await ui.clickButton('Close the review');
+    await expect.poll(async () => (await ui.elements('[data-sidebar]'))[0]?.shown).toBe(true);
+    await expect.poll(async () => (await ui.elements('[data-sidebar] main[data-view]')).length).toBe(1);
+    await still(page);
+    await shoot(page, '06-sidebar.png', 'The sidebar on the page, the page pushed left');
+    await ui.clickButton(COPY.sidebar.minimise);
     await ui.close();
   } finally {
     await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });

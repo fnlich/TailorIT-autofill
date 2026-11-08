@@ -1,15 +1,16 @@
 /*
  * The settings schema and where they are kept. The worker reads and writes them; content scripts receive the part
- * they need with run/begin and never touch storage. Version 7 (snapshot round 2: "When a list has no match" and the
- * notifications' time) is stored under the same key; a version 1 to 6 value read there is migrated (core/types/settings.ts
- * migrateSettings, migrateSettingsV2 to migrateSettingsV6) and stored again.
+ * they need with run/begin and never touch storage. Version 8 (v5: "Where the panel shows", On the page or Chrome's side
+ * panel) is stored under the same key; a version 1 to 7 value read there is migrated (core/types/settings.ts
+ * migrateSettings, migrateSettingsV2 to migrateSettingsV7) and stored again.
  * The older versions' schemas, which only the worker reads, are in ./settings-stored.ts (the behaviour review of
  * 2026-11-06: kept out of the content script's bundle, and its budget).
  */
 import { z } from 'zod';
 import { CONSENT_CATEGORIES } from '../core/enums';
 import {
-  AI_FORBIDDEN_MODES, AI_FORBIDDEN_MODES_V5, MODE_CHOICES, NO_MATCH_MODES, NOTIFICATION_TIMES, PANEL_VIEWS, type Settings,
+  AI_FORBIDDEN_MODES, AI_FORBIDDEN_MODES_V5, MODE_CHOICES, NO_MATCH_MODES, NOTIFICATION_TIMES, PANEL_PLACES, PANEL_VIEWS,
+  type Settings,
 } from '../core/types/settings';
 
 export const SETTINGS_KEY = 'settings:v1';
@@ -47,8 +48,8 @@ export const ModesSchema = ModesV6Schema.extend({ noMatch: z.enum(NO_MATCH_MODES
   notifications: z.enum(NOTIFICATION_TIMES) });
 
 export const SettingsSchema = z.strictObject({
-  version: z.literal(7),
-  panel: z.enum(['side', 'in-page']),
+  version: z.literal(8),
+  panel: z.enum(PANEL_PLACES),
   view: z.enum(PANEL_VIEWS),
   modes: ModesSchema,
   preapprovedConsent: Consents,
@@ -72,7 +73,9 @@ export const ContentModesSchema = ModesSchema.pick({ next: true, afterPageTurn: 
 
 /** What a content script needs to know of the settings for a run: panel placement, the modes it acts on
  *  (ContentModesSchema), the AI switches (what a posting that forbids AI does among them), and whether to offer saving
- *  a fixed answer (Phase 6: off means no row is marked for the offer). */
+ *  a fixed answer (Phase 6: off means no row is marked for the offer). v5 p1-shell (version 8): the Default view, so the
+ *  top frame opens the sidebar by itself on a supported page under Expanded (a message without it, a test's or an older
+ *  worker's, reads Expanded). */
 export const ContentSettingsSchema = SettingsSchema.pick({ panel: true, llm: true, offerToSaveAnswers: true })
-  .extend({ modes: ContentModesSchema });
+  .extend({ modes: ContentModesSchema, view: z.enum(PANEL_VIEWS).default('expanded') });
 export type ContentSettings = z.infer<typeof ContentSettingsSchema>;

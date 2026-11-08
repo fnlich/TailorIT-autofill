@@ -43,9 +43,10 @@ export type PlanRepeatablesMatch = Assert<Same<Unbrand<NonNullable<PlanInput['re
 export type PlanAnswerRepeatablesMatch = Assert<Same<Unbrand<NonNullable<PlanOutput['repeatables']>>,
   Unbrand<NonNullable<z.infer<typeof PlanAnswerSchema>['repeatables']>>>>;
 /** settings/changed carries the part of the core's Settings a frame may know, and nothing more (the Phase 5 review,
- *  C-S2): the worker's contentSettingsOf. */
+ *  C-S2): the worker's contentSettingsOf. v5 p1-shell: the Default view too (the top frame's sidebar opens by itself
+ *  under Expanded). */
 type SettingsChanged = Extract<z.infer<typeof WorkerToContentSchema>, { type: 'settings/changed' }>;
-export type SettingsChangedMatches = Assert<Same<Unbrand<Pick<Settings, 'panel' | 'llm' | 'offerToSaveAnswers'>
+export type SettingsChangedMatches = Assert<Same<Unbrand<Pick<Settings, 'panel' | 'view' | 'llm' | 'offerToSaveAnswers'>
   & { modes: Pick<Settings['modes'], 'next' | 'afterPageTurn' | 'submit' | 'agentSkip' | 'signIn' | 'noMatch'
     | 'notifications'> }>,
   Unbrand<SettingsChanged['settings']>>>;

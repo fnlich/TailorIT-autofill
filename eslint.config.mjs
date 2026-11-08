@@ -211,12 +211,13 @@ export default tseslint.config(
     { name: 'document', message: 'The worker has no document.' }, { name: 'window', message: 'The worker has no window.' }] } },
   {
     files: ['src/content/**/*.{ts,tsx}'],
-    ignores: ['src/content/ui/panel.tsx'],
+    // v5 p1-shell: the in-page card's views, which only the sidebar's bundle imports (the content script holds no React).
+    ignores: ['src/content/ui/card.tsx'],
     rules: {
       '@typescript-eslint/no-restricted-imports': restrictImports([
         // src/ui as seen from src/content (../ui) and from src/content/ui (../../ui); the content's own ./ui is allowed.
         { group: ['react', 'react-dom', 'react/*', 'react-dom/*', '../ui', '../ui/**', '../../ui', '../../ui/**'],
-          message: 'Only content/ui/panel.tsx may import React and the report.' },
+          message: 'Only content/ui/card.tsx, which the sidebar bundle alone imports, may import React and the report.' },
         { group: ['wxt/browser', '@wxt-dev/browser'], message: 'Only src/platform touches the browser APIs.' },
       ]),
     },
@@ -248,7 +249,7 @@ export default tseslint.config(
       ]),
     },
   },
-  { files: ['src/ui/**/*.tsx', 'src/entrypoints/**/*.tsx', 'src/content/ui/panel.tsx'], ...reactHooks.configs.flat.recommended },
+  { files: ['src/ui/**/*.tsx', 'src/entrypoints/**/*.tsx', 'src/content/ui/card.tsx'], ...reactHooks.configs.flat.recommended },
   {
     files: ['**/*.mjs'],
     languageOptions: {

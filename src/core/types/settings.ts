@@ -30,6 +30,11 @@
  * page's TailorIT notifications stay (`modes.notifications`: never shown, 5, 10 or 30 seconds, or until closed), both
  * shown with the modes. A version 6 value takes their defaults, Other and Until closed, today's behaviour
  * (migrateSettingsV6).
+ * Version 8 (v5, Jobright parity, the owner's "Implement like jobright. I approved all", 2026-11-08): "Where the panel
+ * shows" (`panel`) is On the page ('page', the default: the sidebar docked at the page's right edge) or Chrome's side
+ * panel ('side'); version 7's 'in-page' (the small in-page review card) becomes 'page', and 'side' stays. "Default view"
+ * (`view`) keeps its two choices with a new meaning: Expanded opens the sidebar by itself on a supported page, Minimized
+ * shows only the launcher (migrateSettingsV7).
  */
 import type { ConsentCategory } from '../enums';
 
@@ -116,15 +121,26 @@ export type NotificationTime = (typeof NOTIFICATION_TIMES)[number];
 export const NOTIFICATION_MS: Readonly<Record<'5s' | '10s' | '30s', number>> = { '5s': 5_000, '10s': 10_000,
   '30s': 30_000 };
 
-/** The side panel's default view: the whole review, or folded to its progress line. */
+/** "Default view" (version 8, v5): whether the sidebar opens by itself on a supported page ('expanded', the default),
+ *  or only its launcher shows ('minimized'). Versions 4 to 7 read it as the side panel's review, whole or folded. */
 export const PANEL_VIEWS = ['expanded', 'minimized'] as const;
 export type PanelView = (typeof PANEL_VIEWS)[number];
 
+/** "Where the panel shows" (version 8, v5): on the page, as Jobright's sidebar docked at the right edge ('page', the
+ *  default), or in Chrome's side panel ('side'). */
+export const PANEL_PLACES = ['page', 'side'] as const;
+export type PanelPlace = (typeof PANEL_PLACES)[number];
+/** Versions 1 to 7's places: the browser's side panel, or the small in-page review card. */
+export type PanelPlaceV7 = 'side' | 'in-page';
+
+/** The settings' version now (v5 p1-shell). */
+export const SETTINGS_VERSION = 8;
+
 export interface Settings {
-  version: 7;
-  /** Where the review report shows: the browser's side panel (default) or a panel on the page. */
-  panel: 'side' | 'in-page';
-  /** The side panel's review at first: whole ('expanded'), or folded to its progress line ('minimized'). */
+  version: typeof SETTINGS_VERSION;
+  /** Where the panel shows (version 8): the sidebar on the page (the default) or Chrome's side panel. */
+  panel: PanelPlace;
+  /** Whether the sidebar opens by itself on a supported page ('expanded') or shows its launcher ('minimized'). */
   view: PanelView;
   modes: Modes;
   /** The optional consents ticked under Consents: Required only (with All, every kind the extension recognises is). */
@@ -174,8 +190,8 @@ export const DEFAULT_MODES: Modes = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-  version: 7,
-  panel: 'side',
+  version: 8,
+  panel: 'page',
   view: 'expanded',
   modes: { ...DEFAULT_MODES, agentSkip: { ...DEFAULT_MODES.agentSkip } },
   preapprovedConsent: [...DEFAULT_PREAPPROVED_CONSENT],
@@ -197,8 +213,14 @@ export interface LlmV5 {
   whenForbidden: AiForbiddenModeV5;
 }
 
+/** Version 7's settings, as an install stored them before v5's "Where the panel shows" (version 8). */
+export interface SettingsV7 extends Omit<Settings, 'version' | 'panel'> {
+  version: 7;
+  panel: PanelPlaceV7;
+}
+
 /** Version 6's settings, as an install stored them before snapshot round 2's two modes (version 7). */
-export interface SettingsV6 extends Omit<Settings, 'version' | 'modes'> {
+export interface SettingsV6 extends Omit<SettingsV7, 'version' | 'modes'> {
   version: 6;
   modes: ModesV6;
 }
@@ -212,7 +234,7 @@ export interface SettingsV5 extends Omit<SettingsV6, 'version' | 'llm'> {
 /** Version 1's settings, as an install stored them before the owner's amendments. */
 export interface SettingsV1 {
   version: 1;
-  panel: 'side' | 'in-page';
+  panel: PanelPlaceV7;
   autoAdvance: boolean;
   preapprovedConsent: ConsentCategory[];
   llm: { tiebreak: boolean; classify: boolean; drafts: boolean };
@@ -229,7 +251,7 @@ export interface SettingsV4 extends Omit<SettingsV5, 'version' | 'modes'> {
 }
 
 /** Version 3's settings, as an install stored them before the modes (v3 Phase 3). */
-export interface SettingsV3 extends Omit<Settings, 'version' | 'view' | 'modes' | 'llm'> {
+export interface SettingsV3 extends Omit<SettingsV7, 'version' | 'view' | 'modes' | 'llm'> {
   version: 3;
   /** Press Next on a clean, settled, non-final step (now modes.next). */
   autoAdvance: boolean;
@@ -246,12 +268,23 @@ export interface SettingsV2 extends Omit<SettingsV3, 'version' | 'llm'> {
 }
 
 /**
- * Version 6's settings as version 7's (snapshot round 2): every choice is kept, and the two new modes take their
- * defaults, which are what version 6 did: a list with no match takes its own "Other" (the owner's first choice), and the
- * page's notifications stay until closed.
+ * Version 7's settings as version 8's (v5, Jobright parity): every choice is kept; the small in-page review card
+ * ('in-page') becomes the sidebar on the page ('page'), and Chrome's side panel ('side') stays (the coordinator's field
+ * names of 2026-11-08). "Default view" keeps its choice, read with its new meaning.
+ */
+export function migrateSettingsV7(old: SettingsV7): Settings {
+  return { ...old, version: 8, panel: old.panel === 'in-page' ? 'page' : 'side',
+    modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip } }, preapprovedConsent: [...old.preapprovedConsent],
+    llm: { ...old.llm }, telemetry: { ...old.telemetry }, interpretations: { ...old.interpretations } };
+}
+
+/**
+ * Version 6's settings as version 8's, through version 7 (snapshot round 2): every choice is kept, and the two new
+ * modes take their defaults, which are what version 6 did: a list with no match takes its own "Other" (the owner's
+ * first choice), and the page's notifications stay until closed.
  */
 export function migrateSettingsV6(old: SettingsV6): Settings {
-  return {
+  return migrateSettingsV7({
     version: 7,
     panel: old.panel,
     view: old.view,
@@ -262,11 +295,11 @@ export function migrateSettingsV6(old: SettingsV6): Settings {
     telemetry: { ...old.telemetry },
     offerToSaveAnswers: old.offerToSaveAnswers,
     interpretations: { ...old.interpretations },
-  };
+  });
 }
 
 /**
- * Version 5's settings as version 7's, through version 6 (v4, the owner's word of 2026-11-07): every choice is kept but
+ * Version 5's settings as version 8's, through version 6 (v4, the owner's word of 2026-11-07): every choice is kept but
  * the two that asked the person: "Ask me each time" on a posting that forbids AI becomes Profile only (the default:
  * nothing goes to the AI, and no card waits), and the draft confirmation goes (a draft is written and accepted).
  */
@@ -286,7 +319,7 @@ export function migrateSettingsV5(old: SettingsV5): Settings {
 }
 
 /**
- * Version 4's settings as version 7's, through versions 5 and 6 (the behaviour review of 2026-11-06, M2): every choice is kept,
+ * Version 4's settings as version 8's, through versions 5 and 6 (the behaviour review of 2026-11-06, M2): every choice is kept,
  * and "Résumé already on the page" takes its default, Keep it, which is what version 4 did with a résumé the page
  * showed.
  */
@@ -305,7 +338,7 @@ export function migrateSettingsV4(old: SettingsV4): Settings {
 }
 
 /**
- * Version 3's settings as version 7's, through versions 4 to 6 (v3 Phase 3). Auto-advance becomes the Next mode (on: Auto),
+ * Version 3's settings as version 8's, through versions 4 to 7 (v3 Phase 3). Auto-advance becomes the Next mode (on: Auto),
  * the AI's legal, pay and attention-check answers the AI answers mode (on: All, off: Profile only), each as the person
  * had it; the other modes and the default view take their defaults. Consents: All among them is a change, not a choice
  * kept (the owner's decision: every agreement box is ticked, like Jobright): an optional box version 3 left unticked is
@@ -334,7 +367,7 @@ function settingsV4Of(old: SettingsV3): SettingsV4 {
 }
 
 /**
- * Version 2's settings as version 7's, through versions 3 to 6: every choice is kept, and version 3's switch,
+ * Version 2's settings as version 8's, through versions 3 to 7: every choice is kept, and version 3's switch,
  * llm.answerAll, takes its default (on, as the owner chose), so the AI answers mode is All. It acts only while answers
  * are on, so a person who turned the AI's answers off keeps them off.
  */
@@ -343,7 +376,7 @@ export function migrateSettingsV2(old: SettingsV2): Settings {
 }
 
 /**
- * Version 1's settings as version 7's, through versions 2 to 6: each choice still on version 1's default (drafts off,
+ * Version 1's settings as version 8's, through versions 2 to 7: each choice still on version 1's default (drafts off,
  * nothing pre-approved, the two interpretations off) takes version 2's, and every choice the person changed is kept.
  * The new switches take their defaults, but a person who had turned the AI off (the tiebreak and classification both
  * off) keeps answers off and drafts as they were (off unless they turned them on: the lead's decision on the Phase E

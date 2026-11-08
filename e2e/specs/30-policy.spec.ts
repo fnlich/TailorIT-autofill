@@ -14,7 +14,7 @@
  * Each case is its own posting, so no policy record from another reaches it.
  */
 import { readFileSync } from 'node:fs';
-import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
+import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import { expect, test } from '../fixtures.ts';
 import { mock } from '../helpers/mock.ts';
 import { applicationKeyOf, noticeCount, row } from '../helpers/extension.ts';

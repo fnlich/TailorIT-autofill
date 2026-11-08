@@ -264,6 +264,16 @@ export const LOG_CODES = [
   // s2 lists: a host's dropdown list learned (its option count, the lists kept), or one from a private tab not kept.
   'lists.learned',
   'lists.private',
+  // ── v5 p1-shell: the sidebar on the page (its bundle injected or refused, opened or closed, by what as flags), a page
+  // message or port of the sidebar's refused (why, as flags), the page pushed (how many elements tagged), the toolbar
+  // icon (where it went, as flags). Never an address, a host or a value. ──
+  'sidebar.injected',
+  'sidebar.inject-refused',
+  'sidebar.opened',
+  'sidebar.closed',
+  'sidebar.refused',
+  'sidebar.pushed',
+  'action.clicked',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

@@ -12,6 +12,7 @@ import type { IconDef } from '../../shared/icons';
 import type { FrameReport } from '../../shared/report';
 import type { LauncherAction, LauncherView } from './launcher';
 import { mountPageUi, type PageUi } from './page-ui';
+import { CARD_RENDERER } from './card';
 import { svgOf } from './svg';
 
 type Row = FrameReport['fields'][number];
@@ -47,6 +48,7 @@ function mount(options: { panel?: boolean } = {}) {
     onLauncher: (action) => actions.push(action),
     ...(options.panel ? { panel: {
       frameId: () => 2,
+      card: () => CARD_RENDERER,
       showField: () => undefined,
       describeField: async () => null,
       confirmDraft: async (key: string) => {

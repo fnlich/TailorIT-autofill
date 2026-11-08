@@ -75,7 +75,7 @@ describe('reports', () => {
     expect(answer.data.reports.map((report) => report.frameId)).toEqual([0, 3]);
     expect(await worker.deliver({ v: 1, type: 'panel/reports', tabId: 8 }, pageSender()))
       .toEqual({ ok: true, data: { tabId: 8, reports: [], page: { support: 'none', platform: null, formKey: null } } });
-    expect(await worker.deliver({ v: 1, type: 'panel/reports', tabId: 7 }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'panel/reports', tabId: 7 }, contentSender({ frameId: 2, documentId: 'doc-2' }))).toEqual({ ok: false, error: 'bad_sender' });
   });
 
   describe('the panel port', () => {
@@ -148,7 +148,7 @@ describe('reports', () => {
 
     it('is refused to a content script, and closed on a message it does not know', async () => {
       const worker = await startTestWorker({ token: tokenRecord() });
-      const fromContent = worker.connect('panel', contentSender());
+      const fromContent = worker.connect('panel', contentSender({ frameId: 2, documentId: 'doc-2' }));
       await vi.waitFor(() => expect(fromContent.disconnectedByWorker).toBe(true));
       const port = worker.connect('panel', pageSender());
       port.post({ v: 1, type: 'panel/update', tabId: 7, reports: [] });
@@ -158,7 +158,7 @@ describe('reports', () => {
 
   describe('the in-page panel (panel/shown)', () => {
     const inPage = (worker: TestWorker) =>
-      worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'in-page' } }, pageSender('options.html'));
+      worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'page' } }, pageSender('options.html'));
     const shown = (worker: TestWorker, open: boolean, sender = contentSender()) =>
       worker.deliver({ v: 1, type: 'panel/shown', open }, sender);
     const reportUpdates = (worker: TestWorker) => sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'report/update');
@@ -196,6 +196,9 @@ describe('reports', () => {
 
     it('sends nothing while the person chose the side panel, and only to the frame that opened it last', async () => {
       const worker = await startTestWorker({ token: tokenRecord() });
+      // v5 p1-shell: the panel shows on the page by default; the person chose Chrome's side panel.
+      await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'side' } },
+        pageSender('options.html'));
       await hello(worker);
       await hello(worker, EMBED);
       const runId = await beginRun(worker);

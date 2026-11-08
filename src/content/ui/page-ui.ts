@@ -1,7 +1,8 @@
 /*
  * The in-page UI, put together (docs/design/runtime.md §10.1): the host and its closed shadow root (shadow.ts), the one
  * stylesheet (styles.ts), the launcher, the toasts (v4) and the Edit with AI buttons, all vanilla DOM; and the in-page
- * review panel (panel.tsx, the only React in the content script), in the anchor's column, so it never covers the
+ * review panel (panel.ts; v5: its React views, card.tsx, come with the sidebar's bundle, so the content script holds no
+ * React), in the anchor's column, so it never covers the
  * launcher. In a small embedded frame (panelFits false) the panel does not open: the runtime opens the side panel
  * instead.
  * - v4 (the owner, 2026-11-07; toasts.ts): what is left for the person shows as branded toasts, never a notice stack or
@@ -39,6 +40,13 @@
  *   only once the control it lands on has been seen for CONTROL_SEEN_MS (a drag's start and the menu's choices
  *   alike). A frame inside another page keeps its launcher at the form's corner, never hidden: it is how its
  *   run knows the frame is seen (S1).
+ * - v5 p1-shell (PLAN decisions 1 and 2, Jobright's sidebar and launcher): in the top frame the tab is a horizontal pill
+ *   (edge.ts) whose launcher's click opens the panel (the runtime decides which: the sidebar, or the browser's side
+ *   panel); a click that ends a drag of the pill does nothing. It shows on a supported page with or without a form
+ *   (setPageShown), and hides while the sidebar is open. The sidebar's frame (sidebar.ts) lives here, in the same closed
+ *   root, watched like every control of ours; while it is open the page is pushed left (push.ts, its reads held while a
+ *   fill runs, as the launcher's state says) and the toasts sit left of it, SIDEBAR_CLEARANCE_PX from it, clear of its
+ *   shadow.
  */
 import { PAGE_COPY } from '../../shared/copy';
 import { log } from '../../shared/log';
@@ -48,7 +56,10 @@ import { createAiEdits, type AiEditItem, type AiPrompt } from './ai-edits';
 import { createEdge, type Edge, type HideScope } from './edge';
 import { createLauncher, type LauncherAction, type LauncherView } from './launcher';
 import { createInPagePanel, type InPagePanel, type PanelActions } from './panel';
+import { createPagePush, type PagePush } from './push';
 import { createUiHost } from './shadow';
+import { createSidebarFrame, type SidebarFrame } from './sidebar';
+import { SIDEBAR_WIDTH_PX, type CardRenderer, type SidebarApp } from '../../shared/sidebar';
 import type { StyleMode } from './styles';
 import { createToasts, type ToastKind, type ToastSpec } from './toasts';
 import type { NotificationTime } from '../../core/types/settings';
@@ -65,6 +76,9 @@ const INSET_PX = 8;
 /** v4: how far the top frame's toasts sit from the viewport's top and right edges (the right one: from the launcher's
  *  tab, EDGE_CLEARANCE_PX, while it shows). */
 export const TOAST_INSET_PX = 16;
+/** v5 p1-shell: how far the toasts keep from the sidebar while it is open: past its shadow (palette.ts
+ *  IN_PAGE_SHADOWS.sidebar, about 24 px), which the visibility watch counts as painted over what lies under it. */
+export const SIDEBAR_CLEARANCE_PX = 32;
 
 /** An embedded frame smaller than this (its own viewport, in CSS pixels) is too small for the in-page panel: the
  *  launcher's Open review opens the side panel instead. The top frame always has room. */
@@ -80,11 +94,16 @@ export interface PageUiHandlers {
   /** The form root the UI is anchored to has left the page (the page drew its whole form again): the runtime finds the
    *  new one and anchors the UI to it (anchorTo), else the launcher stays hidden. Asked at a layout, not a click. */
   rootGone?(): void;
-  /** The in-page panel's actions, for this frame's own fields, and this frame's id (none: no panel is made). */
-  panel?: PanelActions & { frameId(): number | null };
+  /** The in-page panel's actions, for this frame's own fields, and this frame's id (none: no panel is made); v5: its
+   *  views (`card`: the sidebar's bundle's, null until it ran in this document). */
+  panel?: PanelActions & { frameId(): number | null; card(): CardRenderer | null };
   /** v3 Phase 3: the launcher sits in the tab at the window's right edge (the top frame). Its place, dropped by the
    *  person (a fraction of the window's height), and its hiding on this site or everywhere go to the worker. */
   edge?: { placed(top: number): void; hidden(scope: HideScope): void };
+  /** v5 p1-shell: the sidebar's frame, in the top frame (with `edge`): its views' minimise, and a link of theirs to the
+   *  extension's settings page (its fragment), which a page may not open; `ownId`, the extension's id, which names its
+   *  pages' host. */
+  sidebar?: { minimised(): void; options(section: string | undefined): void; ownId: string | undefined };
 }
 
 /** The mounted in-page UI. */
@@ -120,11 +139,27 @@ export interface PageUi {
   setLauncherPrefs(prefs: LauncherPrefs, shownAgain?: boolean): void;
   /** Whether the browser's side panel shows this tab: the tab hides while it does. */
   setSidePanel(open: boolean): void;
+  /** v5 p1-shell: the sidebar's frame (null in a frame inside another page, or without `sidebar` handlers). */
+  readonly sidebar: SidebarFrame | null;
+  /** v5 p1-shell: whether the sidebar is open now. */
+  readonly sidebarOpen: boolean;
+  /** v5 p1-shell: opens the sidebar with the views of `app` for the tab `tabId`, the page pushed and the launcher
+   *  hidden; false when there is no frame or the views could not be mounted. */
+  openSidebar(app: SidebarApp, tabId: number): boolean;
+  /** v5 p1-shell: folds the sidebar back to the launcher, the page as it was. */
+  closeSidebar(): void;
+  /** v5 p1-shell: the page push (tests). */
+  readonly push: PagePush | null;
+  /** v5 p1-shell: the top frame shows a supported page (a posting, its form, a job page): the pill shows there with or
+   *  without a form to anchor to. */
+  setPageShown(shown: boolean): void;
+
   /** Whether the launcher's tab is hidden now (by the person, or while a panel shows the tab). */
   readonly edgeHidden: boolean;
   /** Whether this frame has room for the in-page panel: the top frame always, an embedded one at PANEL_MIN_VIEWPORT. */
   panelFits(): boolean;
-  /** Opens the in-page panel; false, and nothing opens, when the frame has no room for it or there is no panel. */
+  /** Opens the in-page panel; false, and nothing opens, when the frame has no room for it, there is no panel, or (v5)
+   *  its views are not here yet. */
   openPanel(): boolean;
   closePanel(): void;
   /** The tab's combined report (report/update), for the panel. */
@@ -167,9 +202,11 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     return false;
   };
   const launcher = createLauncher(doc, (action) => {
+    // v5: the click that ends a drag of the pill opens nothing.
+    if (edge?.endedDrag() === true) return;
     // Open review must go out inside the click, so the launcher must already have been seen: no waiting here.
     if (counts(launcher.el, true)) handlers.onLauncher(action);
-  });
+  }, handlers.edge === undefined ? {} : { label: PAGE_COPY.sidebar.open });
   // v4: the toasts' buttons are watched like every control of ours, and counted only once seen long enough.
   const toasts = createToasts(doc, {
     counts: (control) => counts(control),
@@ -190,6 +227,8 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   let hiddenForVisit = false;
   let prefs: LauncherPrefs = { top: null, hidden: false };
   let sideOpen = false;
+  /** v5: the top frame shows a supported page: the pill shows with or without a form. */
+  let pageShown = false;
   const edgeHandlers = handlers.edge;
   const edge = edgeHandlers === undefined ? null : createEdge(doc, launcher.el, {
     placed: (top) => edgeHandlers.placed(top),
@@ -235,9 +274,19 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     if (shown !== null) visibility.observe(shown);
   });
   visibility.observe(launcher.el);
-  if (edge !== null) for (const control of [edge.close, edge.grip]) visibility.observe(control);
+  // v5: the pill's "×" shows only while the pill is out, and is watched from then (edge.ts `controls`).
+  if (edge !== null) visibility.observe(edge.grip);
+  // v5 p1-shell: the sidebar's frame and the page push, in the top frame.
+  const sidebarHandlers = handlers.sidebar;
+  const sidebar: SidebarFrame | null = edge === null || sidebarHandlers === undefined ? null
+    : createSidebarFrame(doc, { visibility, ownId: sidebarHandlers.ownId, handlers: {
+      minimised: () => sidebarHandlers.minimised(),
+      options: (section) => sidebarHandlers.options(section),
+    } });
+  const push: PagePush | null = sidebar === null ? null : createPagePush(doc, SIDEBAR_WIDTH_PX, () => mounted.host);
+  if (sidebar !== null) layer.append(sidebar.el);
   const panelHandlers = handlers.panel;
-  const panel = panelHandlers === undefined ? null : createInPagePanel(doc, root, {
+  const panel = panelHandlers === undefined ? null : createInPagePanel(doc, {
     actions: panelHandlers,
     frameId: () => panelHandlers.frameId(),
     visibility,
@@ -273,11 +322,23 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     schedule();
   };
 
+  /** v5: the sidebar opened or closed: the toasts move (left of it, or back to the window's corner), and what the watch
+   *  knew of their buttons is stale. */
+  function sidebarMoved(): void {
+    for (const kind of toasts.shown) {
+      for (const which of ['action', 'close'] as const) {
+        const control = toasts.button(kind, which);
+        if (control !== null) visibility.reset(control);
+      }
+    }
+    schedule();
+  }
+
   /** Whether the tab is hidden: the person hid it (for this visit, this site or everywhere), or a panel of ours shows
    *  the tab. */
   function edgeHidden(): boolean {
-    return hiddenForVisit || prefs.hidden || sideOpen || panel?.open === true || anchorRoot === null
-      || !anchorRoot.isConnected;
+    return hiddenForVisit || prefs.hidden || sideOpen || panel?.open === true || sidebar?.open === true
+      || (!pageShown && (anchorRoot === null || !anchorRoot.isConnected));
   }
 
   /** A frame inside another page (no tab): its corner launcher hides while the person hid the button everywhere (or on
@@ -303,7 +364,7 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       return;
     }
     edge.layout();
-    for (const control of [launcher.el, edge.close, edge.grip]) visibility.reset(control);
+    for (const control of [launcher.el, edge.grip]) visibility.reset(control);
   }
 
   let anchorRoot: Element | null = null;
@@ -346,6 +407,8 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   function placeToasts(): void {
     if (edge === null || !toasts.el.classList.contains('toasts--fixed') || view === null) return;
     let right = TOAST_INSET_PX;
+    // v5: left of the sidebar while it is open, clear of its shadow.
+    if (sidebar?.open === true) right = SIDEBAR_WIDTH_PX + SIDEBAR_CLEARANCE_PX;
     if (!edge.el.hidden) {
       const tab = edge.el.getBoundingClientRect();
       if (tab.width > 0) right = Math.max(right, view.innerWidth - tab.left + EDGE_CLEARANCE_PX);
@@ -396,6 +459,8 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     setLauncher(next) {
       launcher.set(next);
       showCorner();
+      // v5: while a fill runs (the launcher says so) the page push reads the page again only once it ends.
+      push?.setBusy(next.state === 'running');
     },
     setToasts(list) {
       toasts.set(list);
@@ -429,13 +494,41 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       sideOpen = open;
       showEdge();
     },
+    sidebar,
+    get sidebarOpen() {
+      return sidebar?.open === true;
+    },
+    openSidebar(app, tabId) {
+      if (sidebar === null) return false;
+      if (sidebar.open) return true;
+      if (!sidebar.show(app, tabId)) return false;
+      push?.start();
+      showEdge();
+      sidebarMoved();
+      return true;
+    },
+    closeSidebar() {
+      if (sidebar === null || !sidebar.open) return;
+      sidebar.hide();
+      push?.stop();
+      showEdge();
+      sidebarMoved();
+    },
+    push,
+    setPageShown(shown) {
+      if (pageShown === shown) return;
+      pageShown = shown;
+      showEdge();
+    },
+
     get edgeHidden() {
       return edge !== null && edgeHidden();
     },
     panelFits,
     openPanel() {
-      if (panel === null || !panelFits()) return false;
-      panel.show();
+      const card = handlers.panel?.card() ?? null;
+      if (panel === null || card === null || !panelFits()) return false;
+      panel.show(card);
       panelShown(true);
       return true;
     },
@@ -459,6 +552,8 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       toasts.destroy();
       edge?.destroy();
       panel?.destroy();
+      sidebar?.destroy();
+      push?.destroy();
       visibility.disconnect();
       resizes?.disconnect();
       if (frame !== null) view?.cancelAnimationFrame(frame);

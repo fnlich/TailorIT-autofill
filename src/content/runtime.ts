@@ -49,7 +49,9 @@
  * edited (Phase 6). The document keeps one value hasher and the AI drafts written in it that still wait for the
  * person, for every run it holds (the Phase 6 review, E4): a later run rows a field still holding one as an
  * unconfirmed draft. Another application at the same address forgets them.
- * The in-page panel (Phase 6, ui/panel.tsx): with settings.panel 'in-page' (frame/hello's answer, then each
+ * The in-page panel (Phase 6, ui/panel.ts; v5: its views, ui/card.tsx, come with the sidebar's bundle): with
+ * settings.panel 'page' (v5: in a frame inside another page, the top frame's panel being the sidebar) (frame/hello's
+ * answer, then each
  * settings/changed), the launcher's Open review opens it in this frame and tells the worker (panel/shown {open: true}),
  * which then sends this frame alone the tab's report (report/update) while it is open; its Close button, or the person
  * choosing the side panel, closes it (panel/shown {open: false}). A frame too small for it (an embedded one under
@@ -123,6 +125,17 @@
  * page, the address is the `site` application of its origin and path and the site adapter alone may claim a form (by
  * the application-form score, and again for SITE_FORM_LATE_MS as the page draws); nothing is said to the worker until it
  * does. The page-world bridge and the forged-event listener never run there (bridgeInstallsAt reads no such address).
+ *
+ * v5 p1-shell (PLAN decisions 1 and 2, Jobright's sidebar and launcher; settings version 8): with "Where the panel
+ * shows" On the page ('page', the default), the top frame's panel is the sidebar (ui/sidebar.ts): its views are the
+ * side panel's, in a bundle the worker runs in this document on sidebar/load (shared/sidebar.ts), mounted into the
+ * page UI's closed root. The top frame of a supported page (an address a platform's parser reads, never its page after
+ * submitting; a company's own page once its form or job signal is found) shows the launcher's pill with or without a
+ * form, and the pill's click opens the panel (the sidebar, or the browser's side panel with 'side') whatever the run's
+ * state. Under "Default view: Expanded" the sidebar opens by itself once per document on such a page, unless the person
+ * hid the launcher on this site or everywhere; the views' minimise folds it back to the pill. The worker's sidebar/open
+ * (the toolbar icon) opens it on any page of ours. A frame inside another page keeps its corner launcher and in-page
+ * card (the panel 'page' acts there as the in-page card did).
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from '../adapters/address';
@@ -170,6 +183,8 @@ import { createReportLimiter } from './report';
 import { showField } from './targets';
 import { TouchLog } from './touches';
 import { mountPageUi, type PageUi } from './ui/page-ui';
+import { sidebarAppOf, type SidebarApp } from '../shared/sidebar';
+import type { PanelPlace, PanelView } from '../core/types/settings';
 import type { ToastSpec } from './ui/toasts';
 import type { NotificationTime } from '../core/types/settings';
 import { createValueHasher, type ValueHasher } from './values';
@@ -209,6 +224,9 @@ export interface RuntimeOptions extends RunOptions {
   /** The browser's referrer for this document (document.referrer by default): a top chain page names its hash
    *  (core-x items 7 and 14). */
   referrer?: () => string;
+  /** v5 p1-shell: where the sidebar's bundle leaves its entry (the isolated world's global by default; tests stand one
+   *  in). */
+  sidebarWorld?: object;
 }
 
 /** The running content script, as tests drive it. */
@@ -313,8 +331,17 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** How many times a single-page application changed this document's address (v2): frame/hello carries it, so the
    *  worker reads the side panel's job card again for the posting the frame shows now. A count, never the address. */
   let nav = 0;
-  /** Where the person wants the review: frame/hello's settings, then each settings/changed. */
-  let placement: 'side' | 'in-page' = 'side';
+  /** Where the person wants the panel (v5: the sidebar on the page, or the browser's side panel): frame/hello's
+   *  settings, then each settings/changed. */
+  let placement: PanelPlace = 'page';
+  /** v5 p1-shell: whether the sidebar opens by itself (Expanded) or shows its launcher (Minimized). */
+  let panelView: PanelView = 'expanded';
+  /** v5 p1-shell: the sidebar opened by itself in this document once already: it never does again here. */
+  let autoOpened = false;
+  /** v5 p1-shell: the tab the worker named at sidebar/load (null until the bundle ran here). */
+  let sidebarTab: number | null = null;
+  /** v5 p1-shell: a sidebar on its way (the bundle being loaded). */
+  let sidebarOpening = false;
   /** Sign-in mode as it acts (v3 Phase 5): frame/hello's settings, then each settings/changed. */
   let signInMode: 'manual' | 'auto' = 'manual';
   /** s2 profile (settings version 7): how long the page's toasts stay: frame/hello's settings, then each
@@ -414,6 +441,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         return ok({});
       case 'settings/changed':
         current?.settingsChanged(msg.settings);
+        panelView = msg.settings.view;
         placementChanged(msg.settings.panel);
         signInMode = msg.settings.modes.signIn;
         notificationsChanged(msg.settings.modes.notifications);
@@ -461,6 +489,13 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         // worker relays the side panel's only while the frame's report offers that button.
         if (!fromWorker(sender)) return refuse('bad_sender');
         return ok(await pressFor(msg.target, msg.confirmed));
+      case 'sidebar/open': {
+        // v5 p1-shell: the toolbar icon, from the worker alone: the sidebar opens on this page, if it is ours to draw.
+        if (!fromWorker(sender)) return refuse('bad_sender');
+        const opening = isTop && !stopped && placement === 'page';
+        if (opening) void openSidebar('icon').catch(() => undefined);
+        return ok({ opening });
+      }
       case 'site/stop':
         // v3 Phase 8 (the review's P1/B8): the company career sites were turned off, or Chrome's permission taken back.
         // The worker's alone; a page the worker injected ends its run and removes its UI, a page on an ATS host carries
@@ -509,6 +544,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     told = hasForm;
     frameId = answer.data.frameId;
     tookChain(answer.data.chained?.applicationKey);
+    panelView = answer.data.settings.view;
     placementChanged(answer.data.settings.panel);
     signInMode = answer.data.settings.modes.signIn;
     notificationsChanged(answer.data.settings.modes.notifications);
@@ -522,6 +558,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       sideOpen = true;
       ui?.setSidePanel(true);
     }
+    // v5 p1-shell: a supported page shows the pill, and opens the sidebar by itself under Expanded.
+    pageShownNow();
+    autoOpen();
     return null;
   }
 
@@ -767,10 +806,77 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   // ── The in-page panel (Phase 6) ─────────────────────────────────────────────────────────────────────────────────
 
-  /** The person's choice of panel: choosing the side panel closes this frame's in-page one. */
-  function placementChanged(next: 'side' | 'in-page'): void {
+  /** The person's choice of panel: choosing the side panel closes this frame's in-page one, and (v5) the sidebar. */
+  function placementChanged(next: PanelPlace): void {
     placement = next;
     if (next === 'side' && ui?.panel?.open === true) closePanel();
+    if (next === 'side') closeSidebar();
+  }
+
+  // ── v5 p1-shell: the sidebar on the page (module header) ────────────────────────────────────────────────────────
+
+  /** Whether the top frame shows a supported page: an address a platform's parser reads, never its page after
+   *  submitting; a company's own page once its form or a job signal is found. */
+  function supportedPage(): boolean {
+    if (!isTop || stopped || app === null || app.page === 'confirmation') return false;
+    return app.platform !== 'site' || page !== null || siteJobPage();
+  }
+
+  /** The pill shows on a supported page, with or without a form (the page UI made for it here when there is none). */
+  function pageShownNow(): void {
+    if (!isTop) return;
+    const shown = supportedPage();
+    if (shown && ui === null) makeUi(page?.root ?? null);
+    ui?.setPageShown(shown);
+  }
+
+  /** Under "Default view: Expanded", the sidebar opens by itself once per document on a supported page, unless the
+   *  person hid the launcher on this site or everywhere. */
+  function autoOpen(): void {
+    if (autoOpened || !isTop || placement !== 'page' || panelView !== 'expanded' || launcherPrefs.hidden
+      || !supportedPage()) return;
+    autoOpened = true;
+    void openSidebar('auto').catch(() => undefined);
+  }
+
+  /** Opens the sidebar: its bundle asked of the worker the first time (sidebar/load), then mounted into the page UI's
+   *  closed root. Answers whether it is open. */
+  async function openSidebar(how: 'auto' | 'launcher' | 'icon'): Promise<boolean> {
+    if (!isTop || stopped || placement !== 'page' || sidebarOpening || !channel.valid()) return false;
+    if (ui === null) makeUi(page?.root ?? null);
+    if (ui === null) return false;
+    if (ui.sidebarOpen) return true;
+    sidebarOpening = true;
+    try {
+      const views = await sidebarApp();
+      if (views === null || sidebarTab === null || stopped || placement !== 'page' || ui === null) return false;
+      const opened = ui.openSidebar(views, sidebarTab);
+      if (opened) log('sidebar.opened', { auto: how === 'auto', icon: how === 'icon' });
+      return opened;
+    } finally {
+      sidebarOpening = false;
+    }
+  }
+
+  /** The sidebar's bundle's entry in this document: asked of the worker the first time (sidebar/load, which also names
+   *  the tab), null when it would not run it. */
+  async function sidebarApp(): Promise<SidebarApp | null> {
+    const world = options.sidebarWorld ?? globalThis;
+    if (sidebarTab !== null && sidebarAppOf(world) !== null) return sidebarAppOf(world);
+    const answer = await channel.request({ v: 1, type: 'sidebar/load' });
+    if (!answer.ok) {
+      log('sidebar.inject-refused', { content: true });
+      return null;
+    }
+    sidebarTab = answer.data.tabId;
+    return sidebarAppOf(world);
+  }
+
+  /** Folds the sidebar back to the pill (the views' minimise, or the side panel chosen). */
+  function closeSidebar(): void {
+    if (ui?.sidebarOpen !== true) return;
+    ui.closeSidebar();
+    log('sidebar.closed');
   }
 
   /** s2 profile: the toasts' time as the person set it now (ui/toasts.ts). */
@@ -779,15 +885,28 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     ui?.setNotificationTime(next);
   }
 
-  /** Open review from the launcher's click: the in-page panel where the person chose it and the frame has room for it,
-   *  else the side panel, which must be asked for inside the click (nothing awaited before it). */
+  /** Open review from the launcher's click: (v5) the sidebar in the top frame on the page; in a frame inside another
+   *  page the in-page panel where the frame has room for it; else the side panel, which must be asked for inside the
+   *  click (nothing awaited before it). */
   function openReview(): void {
-    if (placement === 'in-page' && ui !== null && ui.openPanel()) {
-      channel.fire({ v: 1, type: 'panel/shown', open: true });
+    if (isTop && placement === 'page') {
+      void openSidebar('launcher').catch(() => undefined);
       return;
     }
-    if (placement === 'in-page') log('content.panel-collapsed');
+    // v5: the card's views come with the sidebar's bundle, run in this frame's document the first time.
+    if (placement === 'page' && ui !== null && ui.panelFits()) {
+      void openCard().catch(() => undefined);
+      return;
+    }
+    if (placement === 'page') log('content.panel-collapsed');
     channel.fire({ v: 1, type: 'panel/open' });
+  }
+
+  /** v5 p1-shell: the in-page card of a frame inside another page, once its views are here (the sidebar's bundle). */
+  async function openCard(): Promise<void> {
+    if (ui === null || ui.panel?.open === true) return;
+    if (sidebarAppOf(options.sidebarWorld ?? globalThis) === null && (await sidebarApp()) === null) return;
+    if (ui?.openPanel() === true) channel.fire({ v: 1, type: 'panel/shown', open: true });
   }
 
   /** The in-page panel's Save my answer: the worker reads the answer back (answer/read) and sends it to TailorIT.
@@ -1153,9 +1272,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   function mountUi(): void {
     if (ui !== null || page === null) {
       ui?.anchorTo(page?.root ?? null);
+      // v5: a supported page with no form shows the pill too.
+      pageShownNow();
       return;
     }
     makeUi(page.root);
+    pageShownNow();
   }
 
   /** v4: the page UI with no form to anchor to (a wall's toasts: atWall), made once. */
@@ -1170,6 +1292,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       ui = mountPageUi(doc, {
         onLauncher(action) {
           if (!channel.valid()) return;
+          // v5 p1-shell (PLAN decision 2): the top frame's pill opens the panel whatever the run's state.
+          if (isTop) {
+            openReview();
+            return;
+          }
           // Open review goes out at once, inside the click: the browser then still counts it as the person's gesture.
           if (action === 'open-review') openReview();
           else if (action === 'continue') continueRun('launcher');
@@ -1193,8 +1320,18 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
             if (channel.valid()) channel.fire({ v: 1, type: 'launcher/hide', scope });
           },
         } } : {}),
+        // v5 p1-shell: the sidebar's frame, in the top frame: its views' minimise, and their link to the settings page.
+        ...(isTop ? { sidebar: {
+          minimised: () => closeSidebar(),
+          options: (section: string | undefined) => {
+            if (channel.valid()) channel.fire({ v: 1, type: 'sidebar/options', ...(section === undefined ? {} : { section }) });
+          },
+          ownId: platform.runtime.id,
+        } } : {}),
         panel: {
           frameId: () => frameId,
+          // v5 p1-shell: the card's views, once the sidebar's bundle ran in this document.
+          card: () => sidebarAppOf(options.sidebarWorld ?? globalThis)?.card ?? null,
           showField: (key) => focusField(key as FieldKey),
           describeField: async (key) => describeField(key as FieldKey).options,
           // Phase 6, wave 2: this frame's draft, confirmed here; its answer, saved through the worker.
@@ -1438,6 +1575,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     }
     if (page === null) ui?.anchorTo(null);
     else mountUi();
+    // v5 p1-shell: the pill follows what the address shows; a supported page reached by a route of the page's own opens
+    // the sidebar by itself as one loaded would, once per document.
+    pageShownNow();
+    autoOpen();
     // Each new address is counted; the worker hears of it while the frame shows a form (the job card is that form's
     // posting), and whenever the form came or went.
     nav += 1;

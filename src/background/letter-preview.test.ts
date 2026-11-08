@@ -82,8 +82,8 @@ describe('the cover letter’s preview (v4 ui)', () => {
     // Only a check: nothing is written for a preview.
     expect(posted(worker).map(generateOf)).toEqual([false]);
     expect(JSON.parse(posted(worker)[0]!.body!)).toMatchObject({ jobId: goldens.lookup.job.id, generate: false });
-    // A content script can never ask for it.
-    expect(worker.connect('preview', contentSender()).disconnectedByWorker).toBe(true);
+    // A subframe's content script can never ask for it (v5 p1-shell: the sidebar's top frame may, for its own tab).
+    expect(worker.connect('preview', contentSender({ frameId: 2, documentId: 'doc-2' })).disconnectedByWorker).toBe(true);
   });
 
   it('answers resume-unavailable when there is no letter, and refuses one that is not TailorIT’s PDF', async () => {

@@ -185,6 +185,13 @@ export class PageUi {
     await this.click(button);
   }
 
+  /** v5 p1-shell: the person's pointer over a shown element (the launcher's pill slides out, its "×" with it). */
+  async hover(target: UiElement): Promise<void> {
+    const at = await this.centre(target);
+    if (at === null) throw new Error(`the ${target.localName} has no box to hover`);
+    await this.page.mouse.move(at.x, at.y);
+  }
+
   /** A trusted click on the launcher. */
   async clickLauncher(): Promise<void> {
     const launcher = await this.launcher();

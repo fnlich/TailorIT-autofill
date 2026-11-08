@@ -1,14 +1,31 @@
 /*
  * The settings versions an install may still hold in storage.local, read only by the worker to migrate them
- * (background/settings.ts; core/types/settings.ts migrateSettings, migrateSettingsV2 to migrateSettingsV6). Apart from
+ * (background/settings.ts; core/types/settings.ts migrateSettings, migrateSettingsV2 to migrateSettingsV7). Apart from
  * ./settings.ts, which content scripts import, so these never reach the content script's
  * bundle (the behaviour review of 2026-11-06: its size budget, scripts/check-build.mjs).
  */
 import { z } from 'zod';
 import {
   PANEL_VIEWS, type SettingsV1, type SettingsV2, type SettingsV3, type SettingsV4, type SettingsV5, type SettingsV6,
+  type SettingsV7,
 } from '../core/types/settings';
-import { Consents, Interpretations, Llm as LlmV6, LlmV5 as Llm, ModesV4Schema, ModesV6Schema } from './settings';
+import {
+  Consents, Interpretations, Llm as LlmV6, LlmV5 as Llm, ModesSchema, ModesV4Schema, ModesV6Schema,
+} from './settings';
+
+/** Version 7's stored settings (before v5's version 8: "Where the panel shows" On the page or Chrome's side panel, its
+ *  'in-page' the small review card), read only to migrate them. */
+export const SettingsV7Schema = z.strictObject({
+  version: z.literal(7),
+  panel: z.enum(['side', 'in-page']),
+  view: z.enum(PANEL_VIEWS),
+  modes: ModesSchema,
+  preapprovedConsent: Consents,
+  llm: LlmV6,
+  telemetry: z.strictObject({ optIn: z.boolean() }),
+  offerToSaveAnswers: z.boolean(),
+  interpretations: Interpretations,
+}) satisfies z.ZodType<SettingsV7>;
 
 /** Version 6's stored settings (before snapshot round 2's version 7: "When a list has no match" and the
  *  notifications' time), read only to migrate them. */

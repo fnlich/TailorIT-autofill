@@ -59,7 +59,8 @@ describe('the options page', () => {
     expect(setting(root, 'llm.answers').checked).toBe(true);
     expect(setting(root, 'llm.whenForbidden.profile-only').checked).toBe(true);
     expect(setting(root, 'interpretations.eeoDeclineByDefault').checked).toBe(true);
-    expect(setting(root, 'panel.side').checked).toBe(true);
+    // v5 p1-shell (settings version 8): the panel on the page by default.
+    expect(setting(root, 'panel.page').checked).toBe(true);
     // v4 (D6): no draft confirmation, and no "Ask me each time" for a posting that forbids AI.
     expect(root.querySelector('input[data-setting="llm.confirmDrafts"], input[data-setting="llm.whenForbidden.ask"]')).toBeNull();
     expect([...root.querySelectorAll<HTMLInputElement>('input[name="when-forbidden"]')].map((input) => input.value))
@@ -85,16 +86,16 @@ describe('the options page', () => {
     await click(setting(root, 'llm.drafts'));
     await click(setting(root, 'llm.whenForbidden.use-ai'));
     await click(setting(root, 'interpretations.twoOrMoreRaces'));
-    await click(setting(root, 'panel.in-page'));
+    await click(setting(root, 'panel.side'));
     expect(saves(worker)).toHaveLength(8);
     // Each save is the whole settings, built on the last answer; consent stays in the closed list's order.
     expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, next: 'auto',
       consents: 'required' },
       preapprovedConsent: ['terms', 'certify', 'dataRetention', 'marketing', 'backgroundCheck', 'signature'],
-      llm: { ...DEFAULT_SETTINGS.llm, drafts: false, whenForbidden: 'use-ai' }, panel: 'in-page',
+      llm: { ...DEFAULT_SETTINGS.llm, drafts: false, whenForbidden: 'use-ai' }, panel: 'side',
       interpretations: { ...DEFAULT_SETTINGS.interpretations, twoOrMoreRaces: false } });
     expect(root.textContent).toContain(TEXT.saved);
-    for (const name of ['modes.next.auto', 'consent.marketing', 'llm.whenForbidden.use-ai', 'panel.in-page']) {
+    for (const name of ['modes.next.auto', 'consent.marketing', 'llm.whenForbidden.use-ai', 'panel.side']) {
       expect(setting(root, name).checked, name).toBe(true);
     }
     for (const name of ['consent.privacy', 'llm.drafts', 'interpretations.twoOrMoreRaces', 'llm.whenForbidden.profile-only']) {
@@ -111,7 +112,7 @@ describe('the options page', () => {
     expect([...card.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => [group.dataset.settingGroup,
       group.querySelector('.tia-mode__name')?.textContent])).toEqual([
       ['modes.afterPageTurn', TEXT.modes.afterPageTurn.name], ['view', TEXT.modes.view.name],
-      ['modes.next', TEXT.modes.next.name], ['modes.submit', TEXT.modes.submit.name], ['modes.signIn', TEXT.modes.signIn.name],
+      ['panel', TEXT.modes.panel.name], ['modes.next', TEXT.modes.next.name], ['modes.submit', TEXT.modes.submit.name], ['modes.signIn', TEXT.modes.signIn.name],
       ['modes.consents', TEXT.modes.consents.name], ['modes.ai', TEXT.modes.ai.name],
       ['modes.resumeOnPage', TEXT.modes.resumeOnPage.name], ['modes.recordOwn', TEXT.modes.recordOwn.name],
       ['modes.noMatch', TEXT.modes.noMatch.name], ['modes.notifications', TEXT.modes.notifications.name],
@@ -228,7 +229,8 @@ describe('the options page', () => {
     expect(root.textContent).toContain(TEXT.consent.never);
     expect(root.querySelector('[data-ai-never]')?.textContent).toBe(TEXT.ai.never);
     expect(root.textContent).toContain(TEXT.modes.next.help);
-    expect(root.textContent).toContain(TEXT.panel.inPageHelp);
+    // v5 p1-shell: "Where the panel shows" with the modes.
+    expect(root.textContent).toContain(TEXT.modes.panel.help);
   });
 
   it('offers no "Your fixes" card: Save my answer is not offered any more (v4, D6)', async () => {
