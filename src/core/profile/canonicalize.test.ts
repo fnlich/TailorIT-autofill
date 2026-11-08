@@ -175,6 +175,100 @@ describe('canonicalizeProfile over the contract’s examples (§2.7)', () => {
   });
 });
 
+// ── s2 profile (snapshot round 2, 2026-11-07): TailorIT's new profile values (decision 16) ──────────────────────────
+describe('the values snapshot round 2 added (TailorIT’s example snapshot-round-two.json)', () => {
+  const wire = AutofillProfileSchema.parse(example('AutofillProfile', 'snapshot-round-two.json'));
+  const answers = AutofillSensitiveSchema.parse(example('AutofillSensitive', 'snapshot-round-two.json'));
+
+  it('maps the phone’s type and extension, X and Telegram, the places, the certifications and the referral’s kind', () => {
+    const extended = { ...wire, contact: { ...wire.contact, phone: { ...wire.contact.phone, extension: '42' } } };
+    const { profile, issues } = canonical(extended, answers);
+    expect(issues).toEqual([]);
+    expect(profile.contact.phone).toMatchObject({ extension: '42', type: 'mobile' });
+    expect(profile.links).toMatchObject({ x: 'https://x.com/elena_ruiz_example', telegram: 'https://t.me/elena_ruiz_example' });
+    expect(profile.preferences.relocationPlaces).toEqual(['Denver, CO', 'Seattle, WA']);
+    expect(profile.certifications).toEqual([
+      { name: 'Certified Kubernetes Administrator', issuer: 'The Linux Foundation', year: 2024 },
+      { name: 'AWS Certified Solutions Architect - Associate' }]);
+    expect(profile.referralSource).toEqual({ id: 'linkedin', category: 'social-media' });
+  });
+
+  it('maps the new sensitive answers tri-state, each a value here', () => {
+    const { profile } = canonical(wire, answers);
+    expect(profile.eeo).toMatchObject({
+      race: { kind: 'value', value: ['asian', 'white'] },
+      raceSubgroups: ['east-asian'],
+      veteran: { kind: 'value', value: { veteran: true, protected: false, activeDuty: true } },
+      sexualOrientation: { kind: 'value', value: { values: ['bisexual-pansexual', 'self-describe'],
+        selfDescribed: 'Fluid' } },
+      transgender: { kind: 'decline' },
+    });
+    expect(profile.eeo.raceSelfDescribed).toBeUndefined();
+    expect(profile.screening).toEqual({
+      over18: { kind: 'value', value: true },
+      criminalRecord: { kind: 'value', value: false },
+      restrictiveAgreement: { kind: 'value', value: false },
+      governmentService: { kind: 'value', value: { military: true, militaryEndYear: 2019, government: false } },
+      relativesAt: { kind: 'value', value: [] },
+      essentialFunctions: { kind: 'value', value: true },
+      clearance: { kind: 'value', value: { level: 'secret', active: true } },
+      citizenships: { kind: 'value', value: ['US', 'MX'] },
+    });
+  });
+
+  it('gives the name’s suffix its own place, beside the full name that already held it', () => {
+    const named = { ...wire, name: { ...wire.name, suffix: ' Jr. ' } };
+    expect(canonical(named).profile.identity).toMatchObject({ fullName: 'Elena Marisol Ruiz Jr.', suffix: 'Jr.' });
+    expect(canonical(wire).profile.identity.suffix).toBeUndefined();
+  });
+
+  it('reads a copy older than them (no such keys) as not given, and the defaults as nothing', () => {
+    const older = canonical(goldenWire().profile, goldenWire().sensitive).profile;
+    const parsed = canonical(AutofillProfileSchema.parse(goldenWire().profile),
+      AutofillSensitiveSchema.parse(goldenWire().sensitive)).profile;
+    for (const profile of [older, parsed]) {
+      expect(profile.contact.phone).not.toHaveProperty('type');
+      expect(profile.contact.phone).not.toHaveProperty('extension');
+      expect(profile.links).not.toHaveProperty('x');
+      expect(profile.preferences).not.toHaveProperty('relocationPlaces');
+      expect(profile).not.toHaveProperty('certifications');
+      expect(profile.referralSource).toEqual({ id: 'linkedin' });
+      expect(Object.keys(profile.screening)).toEqual(['over18']);
+      expect(profile.eeo).not.toHaveProperty('sexualOrientation');
+    }
+    // Parsed, a veteran answer says it is not on active duty; an older copy says nothing of it.
+    expect(older.eeo.veteran).toEqual({ kind: 'value', value: { veteran: false, protected: false } });
+    expect(parsed.eeo.veteran).toEqual({ kind: 'value', value: { veteran: false, protected: false, activeDuty: false } });
+  });
+
+  it('keeps subgroups only beside Asian, a referral’s kind without its words, a service year only with the service', () => {
+    const sensitive = structuredClone(answers);
+    sensitive.eeo.races = { state: 'value', value: ['white'] };
+    sensitive.legal.governmentService = { state: 'value', value: { military: false, militaryEndYear: 2010,
+      government: true, governmentEndYear: null } };
+    const kindOnly = { ...wire, preferences: { ...wire.preferences, referralSource: '' } };
+    const { profile } = canonical(kindOnly, sensitive);
+    expect(profile.eeo.raceSubgroups).toBeUndefined();
+    expect(profile.screening.governmentService).toEqual({ kind: 'value', value: { military: false, government: true } });
+    expect(profile.referralSource).toEqual({ id: 'other', category: 'social-media' });
+  });
+
+  it('leaves an answer outside its closed list absent as a whole, with an issue and never the value', () => {
+    const sensitive = structuredClone(answers);
+    sensitive.legal.clearance = { state: 'value', value: { level: 'cosmic' as 'secret', active: null, polygraph: null } };
+    sensitive.legal.citizenships = { state: 'value', value: ['US', 'QQ'] };
+    sensitive.eeo.sexualOrientation = { state: 'value', value: { values: ['gay', 'other' as 'gay'], selfDescribed: '' } };
+    const { profile, issues } = canonical(wire, sensitive);
+    expect(profile.screening.clearance).toBeUndefined();
+    expect(profile.screening.citizenships).toBeUndefined();
+    expect(profile.eeo.sexualOrientation).toBeUndefined();
+    expect(issues).toEqual(expect.arrayContaining([{ path: 'screening.clearance', code: 'value-unknown' },
+      { path: 'screening.citizenships', code: 'value-unknown' },
+      { path: 'eeo.sexualOrientation', code: 'eeo-value-unknown' }]));
+    expect(JSON.stringify(issues)).not.toMatch(/cosmic|QQ/);
+  });
+});
+
 describe('the phone’s calling code and country', () => {
   /** The golden wire with this phone number, phone country and address country. */
   const withPhone = (number: string, country: string | null, addressCountry: string | null) => {

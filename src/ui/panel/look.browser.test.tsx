@@ -48,7 +48,7 @@ describe('the side panel in TailorIT’s look', () => {
     const settings = root.querySelector<HTMLElement>('[data-settings-view]')!;
     expect([...settings.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => group.dataset.settingGroup))
       .toEqual(['modes.afterPageTurn', 'view', 'modes.next', 'modes.submit', 'modes.signIn', 'modes.consents', 'modes.ai',
-        'modes.resumeOnPage', 'modes.recordOwn', 'modes.agentSkip']);
+        'modes.resumeOnPage', 'modes.recordOwn', 'modes.noMatch', 'modes.notifications', 'modes.agentSkip']);
     // Radio cards (screenshot 5): a grey card per choice, the chosen one's ring holding a teal dot.
     const keep = settings.querySelector<HTMLInputElement>('input[data-setting="modes.resumeOnPage.keep"]')!;
     const card = keep.closest<HTMLElement>('.tia-radiocard')!;

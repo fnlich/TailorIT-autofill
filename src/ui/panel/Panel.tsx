@@ -515,6 +515,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             notices={false}
             busy={busy}
             minimized={settings?.view === 'minimized'}
+            // s2 profile: with the page's notifications off, a paused run's line says what it waits for.
+            saysWaits={settings?.modes.notifications === 'off'}
             submitted={submitted}
             {...(submitted ? {} : {
               onCancel: () => void run({ v: 1, type: 'panel/cancel', tabId }),

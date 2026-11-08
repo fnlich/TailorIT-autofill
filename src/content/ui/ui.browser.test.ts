@@ -160,6 +160,54 @@ describe('the in-page UI', () => {
     expect(ui.shadow.querySelector('.toasts')!.hasAttribute('hidden')).toBe(true);
   });
 
+  // s2 profile (snapshot round 2, settings version 7): `modes.notifications`.
+  it('honours the notifications’ time: none under Never but the tripwire’s notice, each gone after its seconds as if closed, until closed by default', () => {
+    const { ui } = mount();
+    ui.anchorTo(formRoot());
+    const both: ToastSpec[] = [{ kind: 'challenge', text: COPY.toasts.challenge },
+      { kind: 'tripwire', text: COPY.notices.tripwire }];
+    ui.setNotificationTime('off');
+    ui.setToasts(both);
+    // The hard rule's notice shows whatever the choice.
+    expect(ui.toasts.shown).toEqual(['tripwire']);
+    ui.setNotificationTime('until-closed');
+    expect(ui.toasts.shown).toEqual(['challenge', 'tripwire']);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      // Until closed: nothing leaves by itself.
+      vi.advanceTimersByTime(60_000);
+      expect(ui.toasts.shown).toEqual(['challenge', 'tripwire']);
+      // Five seconds, from when the time is chosen: the tripwire's notice stays.
+      ui.setNotificationTime('5s');
+      vi.advanceTimersByTime(4_900);
+      expect(ui.toasts.shown).toEqual(['challenge', 'tripwire']);
+      vi.advanceTimersByTime(200);
+      expect(ui.toasts.shown).toEqual(['tripwire']);
+      // Gone as if closed: given again with the same sentence it stays gone; with another it shows, for its own time.
+      ui.setToasts(both);
+      expect(ui.toasts.shown).toEqual(['tripwire']);
+      ui.setToasts([{ kind: 'challenge', text: COPY.toasts.signIn }, both[1]!]);
+      expect(ui.toasts.shown).toEqual(['challenge', 'tripwire']);
+      vi.advanceTimersByTime(5_100);
+      expect(ui.toasts.shown).toEqual(['tripwire']);
+      // Its cause gone and back: shown again; 30 seconds now.
+      ui.setToasts([]);
+      ui.setNotificationTime('30s');
+      ui.setToasts(both);
+      vi.advanceTimersByTime(29_000);
+      expect(ui.toasts.shown).toEqual(['challenge', 'tripwire']);
+      vi.advanceTimersByTime(1_100);
+      expect(ui.toasts.shown).toEqual(['tripwire']);
+      // Never: a toast drawn now goes at once.
+      ui.setToasts([]);
+      ui.setToasts(both);
+      ui.setNotificationTime('off');
+      expect(ui.toasts.shown).toEqual(['tripwire']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('v4 (D10): sits fixed at the viewport’s top-right in the top frame, clear of the launcher’s tab', async () => {
     const ui = mountPageUi(document, { onLauncher: () => undefined, edge: { placed: () => undefined,
       hidden: () => undefined } });

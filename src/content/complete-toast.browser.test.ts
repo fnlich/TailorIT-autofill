@@ -57,3 +57,25 @@ describe('the end-of-run toast (the v4 review, L8)', () => {
     expect(await completeToastOf(false)).toBe('Autofill complete · 2/2 fields filled');
   });
 });
+
+// s2 profile (snapshot round 2, settings version 7): the toasts' time reaches the page UI with frame/hello and with each
+// settings/changed (runtime.ts notificationsChanged).
+describe('the notifications’ time (settings version 7)', () => {
+  it('draws no toast under Never show them, from frame/hello on, and the end-of-run toast once the person turns them back on', async () => {
+    const fixture = await loadFixture(document, page(true), { width: 1100, height: 900 });
+    const off = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, notifications: 'off' as const } };
+    const worker = createFakeWorker({ settings: off });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => GREENHOUSE, isTop: true,
+      adapters: () => [greenhouseAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    // The run is the same: it reaches review by itself.
+    expect(await runtime.fill()).toBe('review');
+    expect(runtime.ui!.toasts.shown).toEqual([]);
+    const { notifications: _off, ...modes } = off.modes;
+    await worker.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side', modes: {
+      next: modes.next, afterPageTurn: modes.afterPageTurn, submit: modes.submit, agentSkip: modes.agentSkip,
+      signIn: modes.signIn, noMatch: modes.noMatch, notifications: 'until-closed' }, llm: { ...off.llm },
+      offerToSaveAnswers: off.offerToSaveAnswers } });
+    await vi.waitFor(() => expect(runtime.ui!.toasts.shown).toEqual(['complete']));
+  });
+});

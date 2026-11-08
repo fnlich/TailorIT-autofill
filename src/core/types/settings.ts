@@ -25,6 +25,11 @@
  * waits at a policy card, so "Ask me each time" goes from what a posting that forbids AI does (a stored 'ask' reads as
  * 'profile-only', the default), and so does the draft confirmation (llm.confirmDrafts: a draft is always written and
  * accepted). migrateSettingsV5.
+ * Version 7 (snapshot round 2, the owner's words of 2026-11-07): "When a list has no match" (`modes.noMatch`: a searched
+ * list with no match after three differently written answers takes its own "Other", or is left empty) and how long the
+ * page's TailorIT notifications stay (`modes.notifications`: never shown, 5, 10 or 30 seconds, or until closed), both
+ * shown with the modes. A version 6 value takes their defaults, Other and Until closed, today's behaviour
+ * (migrateSettingsV6).
  */
 import type { ConsentCategory } from '../enums';
 
@@ -47,6 +52,9 @@ export const MODE_CHOICES = {
   consents: ['all', 'required'],
   ai: ['all', 'profile'],
   resumeOnPage: ['keep', 'upload'],
+  // s2 profile (version 7): the default first, then as drawn.
+  noMatch: ['other', 'leave'],
+  notifications: ['until-closed', '30s', '10s', '5s', 'off'],
 } as const;
 
 /** The modes the person chooses (the owner's correction at the v3 plan's review, docs/SPEC-AMENDMENTS.md §12). */
@@ -85,28 +93,35 @@ export interface Modes {
   /** Snapshot round 2 (the owner, 2026-11-07: "there is no matched after with 3 different style value, last will be
    *  other or don't write (user can set on setting it)"): a searched list (a school, a field of study, a place, how you
    *  heard) with no match after three differently written answers takes its own "Other" ('other') or is left empty
-   *  ('leave'). Never for EEO, legal, consent or yes/no questions. Optional until the settings version that stores it;
-   *  read as `?? 'other'`. */
-  noMatch?: NoMatchMode;
+   *  ('leave'). Never for EEO, legal, consent or yes/no questions. Stored since version 7 (a reader may still write
+   *  `?? 'other'`). */
+  noMatch: NoMatchMode;
   /** Snapshot round 2 (the owner: "user can set tailorit notification show time including never till user remove the
    *  notification", "user can set so that notification is never shown as well"): how long the page's TailorIT
    *  notifications stay: never shown ('off'), a few seconds, or until closed ('until-closed', the default: today's
-   *  behaviour). A notification still leaves when its cause is gone. Optional until stored; read as
-   *  `?? 'until-closed'`. */
-  notifications?: NotificationTime;
+   *  behaviour). A notification still leaves when its cause is gone. Under 'off' a run still pauses and carries on by
+   *  itself, and the side panel's status line says what it waits for. Stored since version 7. */
+  notifications: NotificationTime;
 }
+
+/** Version 6's modes: before "When a list has no match" and the notifications' time (version 7). */
+export type ModesV6 = Omit<Modes, 'noMatch' | 'notifications'>;
 
 export const NO_MATCH_MODES = ['other', 'leave'] as const;
 export type NoMatchMode = (typeof NO_MATCH_MODES)[number];
 export const NOTIFICATION_TIMES = ['off', '5s', '10s', '30s', 'until-closed'] as const;
 export type NotificationTime = (typeof NOTIFICATION_TIMES)[number];
 
+/** How long a notification of each timed choice stays drawn, in ms (s2 profile, version 7). */
+export const NOTIFICATION_MS: Readonly<Record<'5s' | '10s' | '30s', number>> = { '5s': 5_000, '10s': 10_000,
+  '30s': 30_000 };
+
 /** The side panel's default view: the whole review, or folded to its progress line. */
 export const PANEL_VIEWS = ['expanded', 'minimized'] as const;
 export type PanelView = (typeof PANEL_VIEWS)[number];
 
 export interface Settings {
-  version: 6;
+  version: 7;
   /** Where the review report shows: the browser's side panel (default) or a panel on the page. */
   panel: 'side' | 'in-page';
   /** The side panel's review at first: whole ('expanded'), or folded to its progress line ('minimized'). */
@@ -154,10 +169,12 @@ export const DEFAULT_PREAPPROVED_CONSENT: readonly ConsentCategory[] = ['privacy
 export const DEFAULT_MODES: Modes = {
   signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual', recordOwn: 'on', consents: 'all', ai: 'all',
   resumeOnPage: 'keep', agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false },
+  // Version 7 (s2 profile): a list with no match takes its own "Other"; notifications stay until closed.
+  noMatch: 'other', notifications: 'until-closed',
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-  version: 6,
+  version: 7,
   panel: 'side',
   view: 'expanded',
   modes: { ...DEFAULT_MODES, agentSkip: { ...DEFAULT_MODES.agentSkip } },
@@ -180,8 +197,14 @@ export interface LlmV5 {
   whenForbidden: AiForbiddenModeV5;
 }
 
+/** Version 6's settings, as an install stored them before snapshot round 2's two modes (version 7). */
+export interface SettingsV6 extends Omit<Settings, 'version' | 'modes'> {
+  version: 6;
+  modes: ModesV6;
+}
+
 /** Version 5's settings, as an install stored them before v4's "decide, don't flag" (version 6). */
-export interface SettingsV5 extends Omit<Settings, 'version' | 'llm'> {
+export interface SettingsV5 extends Omit<SettingsV6, 'version' | 'llm'> {
   version: 5;
   llm: LlmV5;
 }
@@ -202,7 +225,7 @@ export interface SettingsV1 {
  *  2026-11-06, M2). */
 export interface SettingsV4 extends Omit<SettingsV5, 'version' | 'modes'> {
   version: 4;
-  modes: Omit<Modes, 'resumeOnPage'>;
+  modes: Omit<ModesV6, 'resumeOnPage'>;
 }
 
 /** Version 3's settings, as an install stored them before the modes (v3 Phase 3). */
@@ -223,13 +246,33 @@ export interface SettingsV2 extends Omit<SettingsV3, 'version' | 'llm'> {
 }
 
 /**
- * Version 5's settings as version 6's (v4, the owner's word of 2026-11-07): every choice is kept but the two that asked
- * the person: "Ask me each time" on a posting that forbids AI becomes Profile only (the default: nothing goes to the
- * AI, and no card waits), and the draft confirmation goes (a draft is written and accepted).
+ * Version 6's settings as version 7's (snapshot round 2): every choice is kept, and the two new modes take their
+ * defaults, which are what version 6 did: a list with no match takes its own "Other" (the owner's first choice), and the
+ * page's notifications stay until closed.
+ */
+export function migrateSettingsV6(old: SettingsV6): Settings {
+  return {
+    version: 7,
+    panel: old.panel,
+    view: old.view,
+    modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip }, noMatch: DEFAULT_MODES.noMatch,
+      notifications: DEFAULT_MODES.notifications },
+    preapprovedConsent: [...old.preapprovedConsent],
+    llm: { ...old.llm },
+    telemetry: { ...old.telemetry },
+    offerToSaveAnswers: old.offerToSaveAnswers,
+    interpretations: { ...old.interpretations },
+  };
+}
+
+/**
+ * Version 5's settings as version 7's, through version 6 (v4, the owner's word of 2026-11-07): every choice is kept but
+ * the two that asked the person: "Ask me each time" on a posting that forbids AI becomes Profile only (the default:
+ * nothing goes to the AI, and no card waits), and the draft confirmation goes (a draft is written and accepted).
  */
 export function migrateSettingsV5(old: SettingsV5): Settings {
   const { confirmDrafts: _gone, whenForbidden, ...llm } = old.llm;
-  return {
+  return migrateSettingsV6({
     version: 6,
     panel: old.panel,
     view: old.view,
@@ -239,11 +282,11 @@ export function migrateSettingsV5(old: SettingsV5): Settings {
     telemetry: { ...old.telemetry },
     offerToSaveAnswers: old.offerToSaveAnswers,
     interpretations: { ...old.interpretations },
-  };
+  });
 }
 
 /**
- * Version 4's settings as version 6's, through version 5 (the behaviour review of 2026-11-06, M2): every choice is kept,
+ * Version 4's settings as version 7's, through versions 5 and 6 (the behaviour review of 2026-11-06, M2): every choice is kept,
  * and "Résumé already on the page" takes its default, Keep it, which is what version 4 did with a résumé the page
  * showed.
  */
@@ -262,7 +305,7 @@ export function migrateSettingsV4(old: SettingsV4): Settings {
 }
 
 /**
- * Version 3's settings as version 6's, through versions 4 and 5 (v3 Phase 3). Auto-advance becomes the Next mode (on: Auto),
+ * Version 3's settings as version 7's, through versions 4 to 6 (v3 Phase 3). Auto-advance becomes the Next mode (on: Auto),
  * the AI's legal, pay and attention-check answers the AI answers mode (on: All, off: Profile only), each as the person
  * had it; the other modes and the default view take their defaults. Consents: All among them is a change, not a choice
  * kept (the owner's decision: every agreement box is ticked, like Jobright): an optional box version 3 left unticked is
@@ -275,7 +318,7 @@ export function migrateSettingsV3(old: SettingsV3): Settings {
 /** Version 3's settings as version 4's (migrateSettingsV3). */
 function settingsV4Of(old: SettingsV3): SettingsV4 {
   const { answerAll, ...llm } = old.llm;
-  const { resumeOnPage: _later, ...modes } = DEFAULT_MODES;
+  const { resumeOnPage: _later, noMatch: _v7, notifications: _alsoV7, ...modes } = DEFAULT_MODES;
   return {
     version: 4,
     panel: old.panel,
@@ -291,7 +334,7 @@ function settingsV4Of(old: SettingsV3): SettingsV4 {
 }
 
 /**
- * Version 2's settings as version 6's, through versions 3, 4 and 5: every choice is kept, and version 3's switch,
+ * Version 2's settings as version 7's, through versions 3 to 6: every choice is kept, and version 3's switch,
  * llm.answerAll, takes its default (on, as the owner chose), so the AI answers mode is All. It acts only while answers
  * are on, so a person who turned the AI's answers off keeps them off.
  */
@@ -300,7 +343,7 @@ export function migrateSettingsV2(old: SettingsV2): Settings {
 }
 
 /**
- * Version 1's settings as version 6's, through versions 2, 3, 4 and 5: each choice still on version 1's default (drafts off,
+ * Version 1's settings as version 7's, through versions 2 to 6: each choice still on version 1's default (drafts off,
  * nothing pre-approved, the two interpretations off) takes version 2's, and every choice the person changed is kept.
  * The new switches take their defaults, but a person who had turned the AI off (the tiebreak and classification both
  * off) keeps answers off and drafts as they were (off unless they turned them on: the lead's decision on the Phase E

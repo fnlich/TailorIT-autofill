@@ -1,0 +1,150 @@
+{
+  "workAuthorization": [
+    {
+      "country": "US",
+      "authorized": {
+        "state": "value",
+        "value": true
+      },
+      "sponsorshipNow": {
+        "state": "value",
+        "value": false
+      },
+      "sponsorshipFuture": {
+        "state": "value",
+        "value": false
+      },
+      "status": {
+        "state": "value",
+        "value": "citizen"
+      }
+    },
+    {
+      "country": "CA",
+      "authorized": {
+        "state": "value",
+        "value": false
+      },
+      "sponsorshipNow": {
+        "state": "value",
+        "value": true
+      },
+      "sponsorshipFuture": {
+        "state": "value",
+        "value": true
+      },
+      "status": {
+        "state": "not_provided"
+      }
+    }
+  ],
+  "eeo": {
+    "gender": {
+      "state": "value",
+      "value": {
+        "identity": "female",
+        "selfDescribed": ""
+      }
+    },
+    "hispanicOrLatino": {
+      "state": "value",
+      "value": true
+    },
+    "races": {
+      "state": "value",
+      "value": [
+        "asian",
+        "white"
+      ]
+    },
+    "raceSubgroups": [
+      "east-asian"
+    ],
+    "raceSelfDescribed": "",
+    "veteran": {
+      "state": "value",
+      "value": {
+        "isVeteran": true,
+        "isProtectedVeteran": false,
+        "isActiveDuty": true
+      }
+    },
+    "disability": {
+      "state": "declined"
+    },
+    "pronouns": {
+      "state": "value",
+      "value": "she/her"
+    },
+    "sexualOrientation": {
+      "state": "value",
+      "value": {
+        "values": [
+          "bisexual-pansexual",
+          "self-describe"
+        ],
+        "selfDescribed": "Fluid"
+      }
+    },
+    "transgender": {
+      "state": "declined"
+    }
+  },
+  "legal": {
+    "atLeast18": {
+      "state": "value",
+      "value": true
+    },
+    "criminalRecord": {
+      "state": "value",
+      "value": false
+    },
+    "restrictiveAgreement": {
+      "state": "value",
+      "value": false
+    },
+    "governmentService": {
+      "state": "value",
+      "value": {
+        "military": true,
+        "militaryEndYear": 2019,
+        "government": false,
+        "governmentEndYear": null
+      }
+    },
+    "relativesAt": {
+      "state": "value",
+      "value": []
+    },
+    "essentialFunctions": {
+      "state": "value",
+      "value": true
+    },
+    "clearance": {
+      "state": "value",
+      "value": {
+        "level": "cosmic",
+        "active": true,
+        "polygraph": null
+      }
+    },
+    "citizenships": {
+      "state": "value",
+      "value": [
+        "US",
+        "MX"
+      ]
+    }
+  },
+  "compensation": {
+    "expectedSalary": {
+      "state": "value",
+      "value": {
+        "min": 150000,
+        "max": 180000,
+        "currency": "USD",
+        "period": "year"
+      }
+    }
+  }
+}

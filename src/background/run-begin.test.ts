@@ -24,7 +24,8 @@ const policyHit = (worker: TestWorker, patternId: string | null, applicationKey 
 const CONTENT_SETTINGS = { panel: DEFAULT_SETTINGS.panel, llm: DEFAULT_SETTINGS.llm,
   modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn,
     submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip,
-    signIn: DEFAULT_SETTINGS.modes.signIn },
+    signIn: DEFAULT_SETTINGS.modes.signIn, noMatch: DEFAULT_SETTINGS.modes.noMatch,
+    notifications: DEFAULT_SETTINGS.modes.notifications },
   offerToSaveAnswers: DEFAULT_SETTINGS.offerToSaveAnswers };
 const withPosting = (postingText: string) => ({ json: { ...goldens.lookup, job: { ...goldens.lookup.job, postingText } } });
 

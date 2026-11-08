@@ -22,10 +22,15 @@ import {
   AUTOFILL_SAVED_ANSWER_FIELD_KINDS,
   AUTOFILL_SAVED_ANSWER_LIMITS,
   AUTOFILL_UNSAVED_CATEGORIES,
+  ASIAN_SUBGROUPS as CONTRACT_ASIAN_SUBGROUPS,
+  CLEARANCE_LEVELS as CONTRACT_CLEARANCE_LEVELS,
   DEGREE_LEVELS as CONTRACT_DEGREE_LEVELS,
   GENDER_IDENTITIES,
   LANGUAGE_PROFICIENCIES,
+  PHONE_DEVICE_TYPES as CONTRACT_PHONE_DEVICE_TYPES,
   RACE_CATEGORIES,
+  REFERRAL_CATEGORIES as CONTRACT_REFERRAL_CATEGORIES,
+  SEXUAL_ORIENTATIONS as CONTRACT_SEXUAL_ORIENTATIONS,
   WORK_STATUSES as CONTRACT_WORK_STATUSES,
   cutAtWord as contractCutAtWord,
   signInHostCovered,
@@ -36,6 +41,9 @@ import {
   TIEBREAK_MAX_ALIASES, TIEBREAK_MAX_CANDIDATES, TIEBREAK_MAX_ITEMS, TIEBREAK_REQUEST_TEXT_MAX,
 } from '../src/core/confidence';
 import { REASON_CODES } from '../src/core/types/fill';
+import {
+  ASIAN_SUBGROUPS, CLEARANCE_LEVELS, PHONE_DEVICE_TYPES, REFERRAL_CATEGORIES, SEXUAL_ORIENTATIONS,
+} from '../src/core/types/profile';
 import { MAX_POSTING_TEXT } from '../src/messaging/schemas';
 import { COPY } from '../src/shared/copy';
 import { PICK_CATEGORIES } from '../src/core/matcher/types';
@@ -234,6 +242,12 @@ describe('the value lists the two sides share', () => {
     expect(RACE_CATEGORIES).toEqual(RACES);
     expect(GENDER_IDENTITIES).toEqual(GENDERS);
     expect(CONTRACT_WORK_STATUSES).toEqual(WORK_STATUSES);
+    // s2 profile (snapshot round 2, 2026-11-07): the new profile values' lists, in src/core/types/profile.ts.
+    expect(CONTRACT_PHONE_DEVICE_TYPES).toEqual(PHONE_DEVICE_TYPES);
+    expect(CONTRACT_ASIAN_SUBGROUPS).toEqual(ASIAN_SUBGROUPS);
+    expect(CONTRACT_SEXUAL_ORIENTATIONS).toEqual(SEXUAL_ORIENTATIONS);
+    expect(CONTRACT_CLEARANCE_LEVELS).toEqual(CLEARANCE_LEVELS);
+    expect(CONTRACT_REFERRAL_CATEGORIES).toEqual(REFERRAL_CATEGORIES);
   });
 
   // The AI contract (Phase 4): the lists the core keeps of its own, since it may import none of the contract at run time.

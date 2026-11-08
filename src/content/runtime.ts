@@ -171,6 +171,7 @@ import { showField } from './targets';
 import { TouchLog } from './touches';
 import { mountPageUi, type PageUi } from './ui/page-ui';
 import type { ToastSpec } from './ui/toasts';
+import type { NotificationTime } from '../core/types/settings';
 import { createValueHasher, type ValueHasher } from './values';
 
 /** The worker's script, as the built extension names it (wxt: entrypoints/background.ts): run/press is taken only from
@@ -316,6 +317,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   let placement: 'side' | 'in-page' = 'side';
   /** Sign-in mode as it acts (v3 Phase 5): frame/hello's settings, then each settings/changed. */
   let signInMode: 'manual' | 'auto' = 'manual';
+  /** s2 profile (settings version 7): how long the page's toasts stay: frame/hello's settings, then each
+   *  settings/changed; until closed until the worker says. */
+  let notificationTime: NotificationTime = 'until-closed';
   /** The launcher's place and hiding for this site (v3 Phase 3): frame/hello's answer, then launcher/prefs. */
   let launcherPrefs: LauncherPrefs = { top: null, hidden: false };
   /** The browser's side panel shows this tab (panel/side): the launcher's tab hides meanwhile. */
@@ -412,6 +416,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         current?.settingsChanged(msg.settings);
         placementChanged(msg.settings.panel);
         signInMode = msg.settings.modes.signIn;
+        notificationsChanged(msg.settings.modes.notifications);
         return ok({});
       case 'run/policyDecision':
         // v4 (D6): no run waits at a policy card any more.
@@ -506,6 +511,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     tookChain(answer.data.chained?.applicationKey);
     placementChanged(answer.data.settings.panel);
     signInMode = answer.data.settings.modes.signIn;
+    notificationsChanged(answer.data.settings.modes.notifications);
     if (answer.data.launcher !== undefined) {
       launcherPrefs = answer.data.launcher;
       ui?.setLauncherPrefs(launcherPrefs);
@@ -765,6 +771,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   function placementChanged(next: 'side' | 'in-page'): void {
     placement = next;
     if (next === 'side' && ui?.panel?.open === true) closePanel();
+  }
+
+  /** s2 profile: the toasts' time as the person set it now (ui/toasts.ts). */
+  function notificationsChanged(next: NotificationTime): void {
+    notificationTime = next;
+    ui?.setNotificationTime(next);
   }
 
   /** Open review from the launcher's click: the in-page panel where the person chose it and the frame has room for it,
@@ -1197,6 +1209,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       ui.setLauncher({ state: 'idle', action: 'fill' });
       ui.setLauncherPrefs(launcherPrefs);
       ui.setSidePanel(sideOpen);
+      ui.setNotificationTime(notificationTime);
     } catch {
       // Without its UI the top frame still fills from the side panel's Fill; a frame inside another page cannot show
       // its launcher is seen there, so it fills nothing (FillRun's frame check, S1).

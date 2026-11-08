@@ -26,15 +26,22 @@
  *   from month pickers (YYYY-MM; a year alone, as TailorIT may hold one, is kept until the person picks a month).
  * - A connection without profile:write (one made before API version 3) shows everything read-only and says to
  *   connect again. "Open in TailorIT" (TailorIT's Settings › Autofill) is always at the foot.
+ * - Snapshot round 2 (2026-11-07, TailorIT's contract of the same day, the owner: "you can add them on autofill profile
+ *   data"): the phone's type, X and Telegram (a handle typed is saved as its link), the kind of "How did you hear"
+ *   answer, the places the person would relocate to or work from, Certifications; and in the sensitive part the Asian
+ *   subgroups (beside Asian), race and sexual orientation in the person's words, active duty, transgender, and the
+ *   screening answers (a non-compete, U.S. military or government service, relatives at a company, essential
+ *   functions, a security clearance, citizenships). An empty place, company or certification is left out of a save.
  *
  * The person's own data, shown to them alone: held in this component's state while it is open, never stored, logged
  * or put in an attribute. It talks to the worker through messaging only.
  */
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
-  AutofillProfileSaveSchema, AutofillSensitiveSaveSchema, AUTOFILL_ANYTHING_ELSE_MAX, DEGREE_LEVELS,
-  EXPECTED_SALARY_PERIODS, GENDER_IDENTITIES, RACE_CATEGORIES, WORK_ARRANGEMENTS, WORK_STATUSES, type AutofillEducation,
-  type AutofillExperience, type AutofillProfile, type AutofillSensitive, type SensitiveAnswer,
+  ASIAN_SUBGROUPS, AutofillProfileSaveSchema, AutofillSensitiveSaveSchema, AUTOFILL_ANYTHING_ELSE_MAX, CLEARANCE_LEVELS,
+  DEGREE_LEVELS, EXPECTED_SALARY_PERIODS, GENDER_IDENTITIES, PHONE_DEVICE_TYPES, POLYGRAPH_KINDS, RACE_CATEGORIES,
+  REFERRAL_CATEGORIES, SEXUAL_ORIENTATIONS, WORK_ARRANGEMENTS, WORK_STATUSES, type AutofillCertification,
+  type AutofillEducation, type AutofillExperience, type AutofillProfile, type AutofillSensitive, type SensitiveAnswer,
 } from '../../contract/tailorit';
 import type { ErrorCode } from '../../messaging/envelope';
 import type { PanelSaveProfileAnswer, ProfileView } from '../../messaging/schemas';
@@ -53,6 +60,11 @@ const DEGREE_CHOICES = DEGREE_LEVELS.map((level) => [level, WORDS.degreeLevels[l
 const RELOCATE_CHOICES = [['', WORDS.choices.unset], ['yes', WORDS.choices.yes], ['no', WORDS.choices.no]] as const;
 const ARRANGEMENT_CHOICES = WORK_ARRANGEMENTS.map((arrangement) =>
   [arrangement, WORDS.arrangements[arrangement]] as const);
+// s2 profile (snapshot round 2): the new lists' choices, "Not set" first where none may be chosen.
+const PHONE_TYPE_CHOICES = [['', WORDS.choices.unset],
+  ...PHONE_DEVICE_TYPES.map((type) => [type, WORDS.phoneTypes[type]] as const)] as const;
+const REFERRAL_CATEGORY_CHOICES = [['', WORDS.choices.unset],
+  ...REFERRAL_CATEGORIES.map((category) => [category, WORDS.referralCategories[category]] as const)] as const;
 
 /** What an empty date or choice is stored as: none. */
 const noneIfEmpty = (value: string) => (value === '' ? null : value);
@@ -107,11 +119,52 @@ const skillsText = (skills: readonly string[]) => skills.join(', ');
 /** The skills a line names: split at commas, trimmed, empty ones dropped. */
 const skillsOf = (text: string) => text.split(',').map((skill) => skill.trim()).filter((skill) => skill !== '');
 
-/** The profile to save: the skills from their line. */
-const profileOf = (draft: Draft): AutofillProfile => ({ ...draft.profile, skills: skillsOf(draft.skills) });
+/**
+ * s2 profile: a social profile as its link: a handle ("@elena_r" or "elena_r") becomes the site's address for it, and
+ * an address typed without its scheme ("x.com/elena_r") gets https://; anything else is left as typed, for the save's
+ * check to name (TailorIT's Settings page does the same).
+ */
+function socialLink(text: string, site: { host: string; hosts: RegExp; handle: RegExp }): string {
+  const typed = text.trim();
+  const handle = /^@?([A-Za-z0-9_]+)$/.exec(typed)?.[1];
+  if (handle !== undefined && site.handle.test(handle)) return `https://${site.host}/${handle}`;
+  if (site.hosts.test(typed)) return `https://${typed}`;
+  return text;
+}
+
+const X_SITE = { host: 'x.com', hosts: /^(?:www\.)?(?:x|twitter)\.com\/\S+$/i, handle: /^[A-Za-z0-9_]{1,15}$/ };
+const TELEGRAM_SITE = { host: 't.me', hosts: /^(?:t\.me|telegram\.me)\/\S+$/i, handle: /^[A-Za-z0-9_]{5,32}$/ };
+
+/** s2 profile: a certification never filled in (no name, issuer or year). */
+const blankCertification = (entry: AutofillCertification) => entry.name.trim() === '' && entry.issuer.trim() === ''
+  && entry.year === null;
+
+/** The profile to save: the skills from their line; s2 profile: X and Telegram as links, the empty places and
+ *  certifications left out. */
+const profileOf = (draft: Draft): AutofillProfile => {
+  const { links, preferences, certifications } = draft.profile;
+  return { ...draft.profile, skills: skillsOf(draft.skills),
+    links: { ...links, x: socialLink(links.x, X_SITE), telegram: socialLink(links.telegram, TELEGRAM_SITE) },
+    preferences: { ...preferences, relocationPlaces: preferences.relocationPlaces.map((place) => place.trim())
+      .filter((place) => place !== '') },
+    certifications: certifications.filter((entry) => !blankCertification(entry)) };
+};
+
+/** s2 profile: the sensitive part to save: the empty companies left out, the Asian subgroups only beside Asian. */
+const sensitiveOf = (draft: Draft): AutofillSensitive | null => {
+  const sensitive = draft.sensitive;
+  if (sensitive === null) return null;
+  const { races, raceSubgroups } = sensitive.eeo;
+  const relatives = sensitive.legal.relativesAt;
+  return { ...sensitive,
+    eeo: { ...sensitive.eeo,
+      raceSubgroups: races.state === 'value' && races.value.includes('asian') ? raceSubgroups : [] },
+    legal: { ...sensitive.legal, relativesAt: relatives.state !== 'value' ? relatives
+      : { state: 'value', value: relatives.value.map((company) => company.trim()).filter((company) => company !== '') } } };
+};
 
 /** What a save would send, to tell whether anything changed. */
-const fingerprint = (draft: Draft) => JSON.stringify([profileOf(draft), draft.sensitive]);
+const fingerprint = (draft: Draft) => JSON.stringify([profileOf(draft), sensitiveOf(draft)]);
 
 /** `target` with the value at `path` replaced; every object and array on the way copied, nothing else touched. */
 function setIn<T>(target: T, path: Path, value: unknown): T {
@@ -204,7 +257,7 @@ function labelOf(path: Path): string {
   if (root === 'contact') {
     if (second === 'email') return FIELDS.email;
     if (second === 'phone') return third === 'number' ? FIELDS.phone : third === 'country' ? FIELDS.phoneCountry
-      : FIELDS.phoneExtension;
+      : third === 'type' ? FIELDS.phoneType : FIELDS.phoneExtension;
     return field(third);
   }
   if (root === 'education' && typeof second === 'number') {
@@ -217,6 +270,9 @@ function labelOf(path: Path): string {
     return `${WORDS.entry.experience(second + 1)} · ${field(third)}`;
   }
   if (root === 'skills') return FIELDS.skills;
+  if (root === 'certifications' && typeof second === 'number') {
+    return `${WORDS.entry.certification(second + 1)} · ${field(third)}`;
+  }
   if (root === 'preferences') return field(second);
   if (root === 'anythingElse') return FIELDS.anythingElse;
   if (root === 'workAuthorization' && typeof second === 'number') {
@@ -239,8 +295,9 @@ function problemsOf(draft: Draft): Map<string, { label: string; message: string 
       if (!found.has(key)) found.set(key, { label: labelOf(path), message: issue.message });
     }
   }
-  if (draft.sensitive !== null) {
-    const checked = AutofillSensitiveSaveSchema.safeParse(draft.sensitive);
+  const sensitive = sensitiveOf(draft);
+  if (sensitive !== null) {
+    const checked = AutofillSensitiveSaveSchema.safeParse(sensitive);
     if (!checked.success) {
       for (const issue of checked.error.issues) {
         const path = issue.path as Path;
@@ -409,8 +466,9 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
     if (found.size > 0) return;
     setSave({ kind: 'saving' });
     const sent = draft;
+    const sentSensitive = sensitiveOf(sent);
     const answer = await request(platform, { v: 1, type: 'panel/saveProfile', revision: view.revision,
-      profile: profileOf(sent), ...(sent.sensitive === null ? {} : { sensitive: sent.sensitive }) });
+      profile: profileOf(sent), ...(sentSensitive === null ? {} : { sensitive: sentSensitive }) });
     if (!answer.ok) {
       setSave({ kind: 'refused', outcome: answer.error === 'not_connected' ? 'not-connected'
         : answer.error === 'rate_limited' ? 'rate-limited' : 'unavailable' });
@@ -462,6 +520,8 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
                 {...bind<string>(['contact', 'phone', 'extension'])} />
               <Country label={FIELDS.phoneCountry} value={phone.country}
                 {...bind<string | null>(['contact', 'phone', 'country'])} />
+              <Select label={FIELDS.phoneType} value={phone.type ?? ''} choices={PHONE_TYPE_CHOICES}
+                {...bind<string>(['contact', 'phone', 'type'], noneIfEmpty)} />
             </div>
             <Text label={FIELDS.line1} value={address.line1} {...bind<string>(['contact', 'address', 'line1'])} />
             <Text label={FIELDS.line2} value={address.line2} {...bind<string>(['contact', 'address', 'line2'])} />
@@ -476,8 +536,9 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
           </Section>
 
           <Section name={WORDS.sections.links} id="links">
-            {(['linkedin', 'github', 'portfolio', 'website'] as const).map((link) => (
+            {(['linkedin', 'github', 'portfolio', 'website', 'x', 'telegram'] as const).map((link) => (
               <Text key={link} label={FIELDS[link]} type="url" value={p.links[link]}
+                {...(link === 'x' || link === 'telegram' ? { help: WORDS.socialHelp } : {})}
                 {...bind<string>(['links', link])} />
             ))}
           </Section>
@@ -527,6 +588,25 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
               placeholder={WORDS.placeholders.skills} error={firstUnder(problems, 'skills')} />
           </Section>
 
+          <Section name={WORDS.sections.certifications} id="certifications">
+            {p.certifications.map((entry, at) => (
+              <Entry key={at} name={WORDS.entry.certification(at + 1)}
+                onRemove={() => edit(['certifications'], p.certifications.filter((_, index) => index !== at))}>
+                <Text label={FIELDS.name} value={entry.name} {...bind<string>(['certifications', at, 'name'])} />
+                <div className="tia-profile__grid">
+                  <Text label={FIELDS.issuer} value={entry.issuer} {...bind<string>(['certifications', at, 'issuer'])} />
+                  <Whole label={FIELDS.year} value={entry.year} min={1950} max={2100}
+                    {...bind<number | null>(['certifications', at, 'year'])} />
+                </div>
+              </Entry>
+            ))}
+            <button type="button" className="tia-button" data-profile-add="certification"
+              disabled={p.certifications.length >= 20}
+              onClick={() => edit(['certifications'], [...p.certifications, { name: '', issuer: '', year: null }])}>
+              {WORDS.add.certification}
+            </button>
+          </Section>
+
           <Section name={WORDS.sections.preferences} id="preferences">
             <div className="tia-profile__grid">
               <Text label={FIELDS.earliestStartDate} type="date" value={preferences.earliestStartDate ?? ''}
@@ -543,6 +623,13 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
                 (v) => WORK_ARRANGEMENTS.filter((each) => v.includes(each)))} />
             <Text label={FIELDS.referralSource} value={preferences.referralSource}
               {...bind<string>(['preferences', 'referralSource'])} />
+            <Select label={FIELDS.referralSourceCategory} value={preferences.referralSourceCategory ?? ''}
+              choices={REFERRAL_CATEGORY_CHOICES}
+              {...bind<string>(['preferences', 'referralSourceCategory'], noneIfEmpty)} />
+            <TextList legend={FIELDS.relocationPlaces} itemLabel={FIELDS.place} add={WORDS.add.place} max={10}
+              help={WORDS.relocationHelp} items={preferences.relocationPlaces}
+              onChange={(items) => edit(['preferences', 'relocationPlaces'], items)}
+              error={firstUnder(problems, 'preferences.relocationPlaces')} />
           </Section>
 
           <Section name={WORDS.sections.anythingElse} id="anything-else">
@@ -724,7 +811,7 @@ function Country({ value, onChange, ...field }: FieldProps & { value: string | n
 
 /** A whole number; empty is none. */
 function Whole({ value, onChange, min, max, ...field }: FieldProps & { value: number | null;
-  onChange(value: number | null): void; min: number; max: number }) {
+  onChange(value: number | null): void; min: number; max: number; help?: string }) {
   return (
     <Labelled {...field}>
       {({ id, describedBy, invalid }) => (
@@ -771,6 +858,32 @@ function Checks<T extends string>({ legend, chosen, choices, onChange, error }: 
           <span>{words}</span>
         </label>
       ))}
+      {error !== undefined && <p className="tia-profile__error" id={errorId}>{error}</p>}
+    </fieldset>
+  );
+}
+
+/** s2 profile: a short list of texts (places, companies), each its own box with Remove, then Add; at most `max`. */
+function TextList({ legend, itemLabel, add, items, onChange, max, help, error }: { legend: string; itemLabel: string;
+  add: string; items: readonly string[]; onChange(items: string[]): void; max: number; help?: string;
+  error?: string | undefined }) {
+  const helpId = useId();
+  const errorId = useId();
+  const described = [help === undefined ? null : helpId, error === undefined ? null : errorId].filter(Boolean);
+  return (
+    <fieldset className="tia-profile__checks" aria-describedby={described.length === 0 ? undefined : described.join(' ')}>
+      <legend className="tia-profile__label">{legend}</legend>
+      {help !== undefined && <p className="tia-help" id={helpId}>{help}</p>}
+      {items.map((item, at) => (
+        <div key={at} className="tia-profile__grid">
+          <Text label={`${itemLabel} ${at + 1}`} value={item}
+            onChange={(value) => onChange(items.map((each, index) => (index === at ? value : each)))} />
+          <button type="button" className="tia-button tia-button--quiet" aria-label={WORDS.remove(`${itemLabel} ${at + 1}`)}
+            onClick={() => onChange(items.filter((_, index) => index !== at))}>{WORDS.removeShort}</button>
+        </div>
+      ))}
+      <button type="button" className="tia-button" disabled={items.length >= max}
+        onClick={() => onChange([...items, ''])}>{add}</button>
       {error !== undefined && <p className="tia-profile__error" id={errorId}>{error}</p>}
     </fieldset>
   );
@@ -851,12 +964,27 @@ const VETERAN_CHOICES = [...UNANSWERED, ['none', WORDS.veteran.none], ['veteran'
   ['protected', WORDS.veteran.protected]] as const;
 /** An expected pay first answered: its minimum still to type. */
 const NEW_SALARY = { min: 0, max: null, currency: 'USD', period: 'year' } as const;
+// s2 profile (snapshot round 2): the new sensitive answers' choices, and what each starts from once answered.
+const SUBGROUP_CHOICES = ASIAN_SUBGROUPS.map((subgroup) => [subgroup, WORDS.asianSubgroups[subgroup]] as const);
+const ORIENTATION_CHOICES = SEXUAL_ORIENTATIONS.map((value) => [value, WORDS.orientations[value]] as const);
+const CLEARANCE_CHOICES = CLEARANCE_LEVELS.map((level) => [level, WORDS.clearanceLevels[level]] as const);
+const POLYGRAPH_CHOICES = [['', WORDS.choices.unset],
+  ...POLYGRAPH_KINDS.map((kind) => [kind, WORDS.polygraphs[kind]] as const)] as const;
+const ACTIVE_CHOICES = [['', WORDS.choices.unset], ['yes', WORDS.clearanceActive.yes],
+  ['no', WORDS.clearanceActive.no]] as const;
+const NEW_ORIENTATION = { values: [], selfDescribed: '' };
+const NEW_SERVICE = { military: false, militaryEndYear: null, government: false, governmentEndYear: null };
+const NEW_CLEARANCE = { level: 'none', active: null, polygraph: null } as const;
 
 /** The sensitive part's fields: work authorization per country, self-identification, age and record, pay. */
 function SensitiveFields({ value, edit, problem }: { value: AutofillSensitive; edit(path: Path, value: unknown): void;
   problem(key: string): string | undefined }) {
   const { eeo, legal, compensation } = value;
   const { gender, races, pronouns, veteran } = eeo;
+  // s2 profile (snapshot round 2).
+  const { sexualOrientation, raceSubgroups } = eeo;
+  const { governmentService, relativesAt, clearance, citizenships } = legal;
+  const year = (part: string): Path => ['legal', 'governmentService', 'value', part];
   const salary = compensation.expectedSalary;
   const veteranShown = veteran.state !== 'value' ? veteran.state
     : veteran.value.isProtectedVeteran ? 'protected' : veteran.value.isVeteran ? 'veteran' : 'none';
@@ -905,11 +1033,42 @@ function SensitiveFields({ value, edit, problem }: { value: AutofillSensitive; e
         <Checks legend={FIELDS.races} chosen={races.value} choices={RACE_CHOICES} error={problem('eeo.races.value')}
           onChange={(v) => edit(['eeo', 'races', 'value'], RACE_CATEGORIES.filter((each) => v.includes(each)))} />
       )}
+      {races.state === 'value' && races.value.includes('asian') && (
+        <Checks legend={FIELDS.raceSubgroups} chosen={raceSubgroups} choices={SUBGROUP_CHOICES}
+          error={problem('eeo.raceSubgroups')}
+          onChange={(v) => edit(['eeo', 'raceSubgroups'], ASIAN_SUBGROUPS.filter((each) => v.includes(each)))} />
+      )}
+      <Text label={FIELDS.raceSelfDescribed} value={eeo.raceSelfDescribed} help={WORDS.raceSelfDescribedHelp}
+        {...bind<string>(['eeo', 'raceSelfDescribed'])} />
       <Select label={FIELDS.veteran} value={veteranShown} choices={VETERAN_CHOICES}
         onChange={(choice) => edit(['eeo', 'veteran'], unanswered(choice) ? { state: choice }
-          : { state: 'value', value: { isVeteran: choice !== 'none', isProtectedVeteran: choice === 'protected' } })} />
+          : { state: 'value', value: { isVeteran: choice !== 'none', isProtectedVeteran: choice === 'protected',
+            isActiveDuty: veteran.state === 'value' && veteran.value.isActiveDuty } })} />
+      {veteran.state === 'value' && (
+        <label className="tia-profile__check">
+          <input type="checkbox" checked={veteran.value.isActiveDuty}
+            onChange={(event) => edit(['eeo', 'veteran', 'value', 'isActiveDuty'], event.currentTarget.checked)} />
+          <span>{FIELDS.activeDuty}</span>
+        </label>
+      )}
       <SensitiveBoolean label={FIELDS.disability} value={eeo.disability}
         {...bind<SensitiveAnswer<boolean>>(['eeo', 'disability'])} />
+      <SensitiveState label={FIELDS.sexualOrientation} state={sexualOrientation.state}
+        onChange={stateOf(['eeo', 'sexualOrientation'], sexualOrientation, NEW_ORIENTATION)} />
+      {sexualOrientation.state === 'value' && (
+        <>
+          <Checks legend={FIELDS.sexualOrientation} chosen={sexualOrientation.value.values} choices={ORIENTATION_CHOICES}
+            error={problem('eeo.sexualOrientation.value.values')}
+            onChange={(v) => edit(['eeo', 'sexualOrientation', 'value', 'values'],
+              SEXUAL_ORIENTATIONS.filter((each) => v.includes(each)))} />
+          {sexualOrientation.value.values.includes('self-describe') && (
+            <Text label={FIELDS.selfDescribed} value={sexualOrientation.value.selfDescribed}
+              {...bind<string>(['eeo', 'sexualOrientation', 'value', 'selfDescribed'])} />
+          )}
+        </>
+      )}
+      <SensitiveBoolean label={FIELDS.transgender} value={eeo.transgender}
+        {...bind<SensitiveAnswer<boolean>>(['eeo', 'transgender'])} />
       <SensitiveState label={FIELDS.pronouns} state={pronouns.state}
         onChange={stateOf(['eeo', 'pronouns'], pronouns, '')} />
       {pronouns.state === 'value' && (
@@ -919,6 +1078,81 @@ function SensitiveFields({ value, edit, problem }: { value: AutofillSensitive; e
         {...bind<SensitiveAnswer<boolean>>(['legal', 'atLeast18'])} />
       <SensitiveBoolean label={FIELDS.criminalRecord} value={legal.criminalRecord}
         {...bind<SensitiveAnswer<boolean>>(['legal', 'criminalRecord'])} />
+      <SensitiveBoolean label={FIELDS.restrictiveAgreement} value={legal.restrictiveAgreement}
+        {...bind<SensitiveAnswer<boolean>>(['legal', 'restrictiveAgreement'])} />
+      <SensitiveBoolean label={FIELDS.essentialFunctions} value={legal.essentialFunctions}
+        {...bind<SensitiveAnswer<boolean>>(['legal', 'essentialFunctions'])} />
+      <SensitiveState label={FIELDS.governmentService} state={governmentService.state}
+        onChange={stateOf(['legal', 'governmentService'], governmentService, NEW_SERVICE)} />
+      {governmentService.state === 'value' && (['military', 'government'] as const).map((served) => {
+        const end = served === 'military' ? 'militaryEndYear' : 'governmentEndYear';
+        return (
+          <div key={served}>
+            <label className="tia-profile__check">
+              <input type="checkbox" checked={governmentService.value[served]}
+                onChange={(event) => edit(['legal', 'governmentService', 'value'], { ...governmentService.value,
+                  [served]: event.currentTarget.checked, ...(event.currentTarget.checked ? {} : { [end]: null }) })} />
+              <span>{FIELDS[served]}</span>
+            </label>
+            {governmentService.value[served] && (
+              <Whole label={FIELDS[end]} value={governmentService.value[end]} min={1940} max={2100}
+                help={WORDS.serviceYearHelp} onChange={(v) => edit(year(end), v)} error={problem(year(end).join('.'))} />
+            )}
+          </div>
+        );
+      })}
+      <SensitiveState label={FIELDS.relativesAt} state={relativesAt.state}
+        onChange={stateOf(['legal', 'relativesAt'], relativesAt, [])} />
+      {relativesAt.state === 'value' && (
+        <TextList legend={FIELDS.relativesAt} itemLabel={FIELDS.relative} add={WORDS.add.relative} max={20}
+          help={WORDS.relativesHelp} items={relativesAt.value}
+          onChange={(items) => edit(['legal', 'relativesAt', 'value'], items)}
+          error={problem('legal.relativesAt.value')} />
+      )}
+      <SensitiveState label={FIELDS.clearance} state={clearance.state}
+        onChange={stateOf(['legal', 'clearance'], clearance, NEW_CLEARANCE)} />
+      {clearance.state === 'value' && (
+        <div className="tia-profile__grid">
+          <Select label={FIELDS.clearanceLevel} value={clearance.value.level} choices={CLEARANCE_CHOICES}
+            {...bind<string>(['legal', 'clearance', 'value', 'level'])} />
+          {clearance.value.level !== 'none' && (
+            <>
+              <Select label={FIELDS.clearanceActive} choices={ACTIVE_CHOICES}
+                value={clearance.value.active === null ? '' : clearance.value.active ? 'yes' : 'no'}
+                onChange={(v) => edit(['legal', 'clearance', 'value', 'active'], v === '' ? null : v === 'yes')} />
+              <Select label={FIELDS.polygraph} value={clearance.value.polygraph ?? ''} choices={POLYGRAPH_CHOICES}
+                onChange={(v) => edit(['legal', 'clearance', 'value', 'polygraph'], noneIfEmpty(v))} />
+            </>
+          )}
+        </div>
+      )}
+      <SensitiveState label={FIELDS.citizenships} state={citizenships.state}
+        onChange={stateOf(['legal', 'citizenships'], citizenships, ['US'])} />
+      {citizenships.state === 'value' && (
+        <>
+          {citizenships.value.map((code, at) => (
+            <div key={at} className="tia-profile__grid">
+              <Country label={WORDS.citizenship(at + 1)} value={code}
+                onChange={(v) => edit(['legal', 'citizenships', 'value', at], v ?? '')}
+                error={problem(`legal.citizenships.value.${at}`)} />
+              {citizenships.value.length > 1 && (
+                <button type="button" className="tia-button tia-button--quiet"
+                  aria-label={WORDS.remove(WORDS.citizenship(at + 1))}
+                  onClick={() => edit(['legal', 'citizenships', 'value'],
+                    citizenships.value.filter((_, index) => index !== at))}>{WORDS.removeShort}</button>
+              )}
+            </div>
+          ))}
+          {problem('legal.citizenships.value') !== undefined && (
+            <p className="tia-profile__error">{problem('legal.citizenships.value')}</p>
+          )}
+          <button type="button" className="tia-button" data-profile-add="citizenship"
+            disabled={citizenships.value.length >= 3}
+            onClick={() => edit(['legal', 'citizenships', 'value'], [...citizenships.value, ''])}>
+            {WORDS.add.citizenship}
+          </button>
+        </>
+      )}
       <SensitiveState label={FIELDS.expectedSalary} state={salary.state}
         onChange={stateOf(['compensation', 'expectedSalary'], salary, NEW_SALARY)} />
       {salary.state === 'value' && (

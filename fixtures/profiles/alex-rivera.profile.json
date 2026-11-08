@@ -11,7 +11,8 @@
     "phone": {
       "number": "+1 512 555 0147",
       "country": "US",
-      "extension": ""
+      "extension": "",
+      "type": null
     },
     "address": {
       "line1": "4417 Quillfeather Lane",
@@ -27,6 +28,8 @@
     "github": "https://github.com/alexrivera-f7q2",
     "portfolio": "https://alexrivera-f7q2.example.com",
     "website": "",
+    "x": "",
+    "telegram": "",
     "other": []
   },
   "education": [
@@ -107,8 +110,11 @@
     "willingToRelocate": null,
     "workArrangements": [],
     "travelPercent": null,
-    "referralSource": "LinkedIn"
+    "referralSource": "LinkedIn",
+    "referralSourceCategory": null,
+    "relocationPlaces": []
   },
+  "certifications": [],
   "documents": {
     "resumeId": null
   },

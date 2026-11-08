@@ -48,6 +48,36 @@ const EntryIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/);
 /** The longest note the profile's `anythingElse` holds ("Anything else we should know?"). */
 export const AUTOFILL_ANYTHING_ELSE_MAX = 2000;
 
+// The extension's snapshot round 2 (2026-11-07, the owner: "you can add them on autofill profile data"): the answers its
+// forms asked for that the profile could not give. Each one is optional in what is sent and has a default, so a page or
+// a copy that does not know it still parses, and a save without it keeps the answer already stored (repository.ts).
+
+/** Workday's required "Phone Device Type". */
+export const PHONE_DEVICE_TYPES = ['mobile', 'home', 'work'] as const;
+export type PhoneDeviceType = (typeof PHONE_DEVICE_TYPES)[number];
+
+/** The kind of "How did you hear about us?" answer, for a list of kinds (Workday's two-level list: Career Websites,
+ *  Employee Referral, In Person Event, Social Media...). */
+export const REFERRAL_CATEGORIES = [
+  'job-board',
+  'company-website',
+  'employee-referral',
+  'recruiter',
+  'social-media',
+  'event',
+  'other',
+] as const;
+export type ReferralCategory = (typeof REFERRAL_CATEGORIES)[number];
+
+/** A certification ("Do you hold any industry related certifications?"): its name, who issued it, the year. */
+export const AutofillCertificationSchema = z.object({
+  name: textOf(150).min(1, 'Required'),
+  /** '' when not known. */
+  issuer: textOf(150),
+  year: z.number().int().min(1950).max(2100).nullable(),
+});
+export type AutofillCertification = z.infer<typeof AutofillCertificationSchema>;
+
 /** Where a school or a job is; '' or null for what is not known. */
 export const AutofillPlaceSchema = z.object({
   city: textOf(100),
@@ -123,6 +153,8 @@ export const AutofillProfileSchema = z.object({
         .regex(/^[0-9+().\s-]*$/, 'Use digits, spaces and + ( ) - only'),
       country: CountryCodeSchema.nullable(),
       extension: z.string().max(8, 'Use at most 8 digits').regex(/^\d*$/, 'Use digits only'),
+      /** Snapshot round 2: mobile, home or work phone; null when not said. */
+      type: z.enum(PHONE_DEVICE_TYPES).nullable().default(null),
     }),
     address: z.object({
       line1: textOf(200),
@@ -139,6 +171,10 @@ export const AutofillProfileSchema = z.object({
     github: WebUrlSchema,
     portfolio: WebUrlSchema,
     website: WebUrlSchema,
+    /** Snapshot round 2: X (Twitter) and Telegram profiles as links ("https://x.com/<handle>", "https://t.me/<handle>");
+     *  a form's "username" box takes the handle from them. */
+    x: WebUrlSchema.default(''),
+    telegram: WebUrlSchema.default(''),
     other: z.array(z.object({ label: textOf(60), url: WebUrlSchema })).max(10),
   }),
   /** Most recent first, as on the resume. */
@@ -158,7 +194,13 @@ export const AutofillProfileSchema = z.object({
     travelPercent: z.number().int().min(0).max(100).nullable(),
     /** The usual answer to "How did you hear about us?"; '' = ask each time. */
     referralSource: textOf(100),
+    /** Snapshot round 2: the kind of that answer, for a list of kinds; null when not said. */
+    referralSourceCategory: z.enum(REFERRAL_CATEGORIES).nullable().default(null),
+    /** Snapshot round 2: the places the person would relocate to or work hybrid from ("Denver, CO"), at most ten. */
+    relocationPlaces: z.array(textOf(100).min(1, 'Required')).max(10).default([]),
   }),
+  /** Snapshot round 2: the person's certifications, at most twenty. */
+  certifications: z.array(AutofillCertificationSchema).max(20).default([]),
   /**
    * The resume to attach unless the application tracked for the job names its own; null = TailorIT's best match for
    * each job. The extension attaches the lookup's suggestedResume.
@@ -195,6 +237,38 @@ export type WorkStatus = (typeof WORK_STATUSES)[number];
 export const EXPECTED_SALARY_PERIODS = ['year', 'month', 'hour'] as const;
 export type ExpectedSalaryPeriod = (typeof EXPECTED_SALARY_PERIODS)[number];
 
+/** Snapshot round 2: the Asian subgroups a form's race list may offer instead of "Asian" (Greenhouse's U.S. Standard
+ *  Demographic Questions: East Asian, South Asian, Southeast Asian). Each one implies `asian` among the races. */
+export const ASIAN_SUBGROUPS = ['east-asian', 'south-asian', 'southeast-asian'] as const;
+export type AsianSubgroup = (typeof ASIAN_SUBGROUPS)[number];
+
+/** Snapshot round 2: "How would you describe your sexual orientation? (mark all that apply)". `self-describe` carries
+ *  the person's own words. */
+export const SEXUAL_ORIENTATIONS = [
+  'asexual',
+  'bisexual-pansexual',
+  'gay',
+  'heterosexual',
+  'lesbian',
+  'queer',
+  'self-describe',
+] as const;
+export type SexualOrientation = (typeof SEXUAL_ORIENTATIONS)[number];
+
+/** Snapshot round 2: a security clearance, from none up ("Do you hold an Active TS/SCI?"). */
+export const CLEARANCE_LEVELS = ['none', 'public-trust', 'confidential', 'secret', 'top-secret', 'ts-sci'] as const;
+export type ClearanceLevel = (typeof CLEARANCE_LEVELS)[number];
+
+/** The polygraph a clearance came with: none, counterintelligence, full scope. */
+export const POLYGRAPH_KINDS = ['none', 'ci', 'full-scope'] as const;
+export type PolygraphKind = (typeof POLYGRAPH_KINDS)[number];
+
+/** An answer the sensitive part gained after its first version: absent in what is sent reads as not provided. */
+const notProvided = () => ({ state: 'not_provided' as const });
+
+/** A year a service ended, or null while it goes on. */
+const ServiceEndSchema = z.number().int().min(1940).max(2100).nullable();
+
 export const AutofillSensitiveSchema = z.object({
   /** One row per country answered for; a question about another country is left blank and flagged. */
   workAuthorization: z
@@ -217,9 +291,29 @@ export const AutofillSensitiveSchema = z.object({
     hispanicOrLatino: sensitive(z.boolean()),
     /** Every race that applies; "Two or more races" is derived from two or more. */
     races: sensitive(z.array(z.enum(RACE_CATEGORIES)).min(1, 'Choose at least one').max(6)),
-    veteran: sensitive(z.object({ isVeteran: z.boolean(), isProtectedVeteran: z.boolean() })),
+    /**
+     * Snapshot round 2: the Asian subgroups that apply, for a list that splits "Asian"; only beside `asian` among the
+     * races. [] for none. Optional in what is sent, as are the answers below marked so.
+     */
+    raceSubgroups: z.array(z.enum(ASIAN_SUBGROUPS)).max(3).default([]),
+    /** Snapshot round 2: the person's own words for a race list's "I prefer to self-describe"; '' for none. */
+    raceSelfDescribed: textOf(100).default(''),
+    /** `isActiveDuty` (snapshot round 2): serving now ("a veteran or active member of the United States Armed
+     *  Forces"); absent reads as false. */
+    veteran: sensitive(
+      z.object({ isVeteran: z.boolean(), isProtectedVeteran: z.boolean(), isActiveDuty: z.boolean().default(false) }),
+    ),
     disability: sensitive(z.boolean()),
     pronouns: sensitive(textOf(40).min(1, 'Required')),
+    /** Snapshot round 2: every sexual orientation that applies; `selfDescribed` the words for `self-describe`. */
+    sexualOrientation: sensitive(
+      z.object({
+        values: z.array(z.enum(SEXUAL_ORIENTATIONS)).min(1, 'Choose at least one').max(SEXUAL_ORIENTATIONS.length),
+        selfDescribed: textOf(100),
+      }),
+    ).default(notProvided),
+    /** Snapshot round 2: "Do you identify as transgender?" */
+    transgender: sensitive(z.boolean()).default(notProvided),
   }),
   legal: z.object({
     atLeast18: sensitive(z.boolean()),
@@ -230,6 +324,38 @@ export const AutofillSensitiveSchema = z.object({
      * it out keeps the answer already stored.
      */
     criminalRecord: sensitive(z.boolean()).default(() => ({ state: 'not_provided' as const })),
+    /**
+     * Snapshot round 2, each answered once, matched to a question by its polarity alone, never guessed and never sent
+     * to Claude, optional in what is sent like `criminalRecord`. "Are you subject to a non-compete, non-solicitation or
+     * other agreement that may restrict your employment?"
+     */
+    restrictiveAgreement: sensitive(z.boolean()).default(notProvided),
+    /** U.S. armed forces and U.S. federal, state or local government service: whether the person served, and the
+     *  year it ended (null while it goes on), for "within the last five years". */
+    governmentService: sensitive(
+      z.object({
+        military: z.boolean(),
+        militaryEndYear: ServiceEndSchema,
+        government: z.boolean(),
+        governmentEndYear: ServiceEndSchema,
+      }),
+    ).default(notProvided),
+    /** The companies where a relative of the person works ("Are you related to anyone employed at <company>?");
+     *  [] for none anywhere. No relative's name is kept. */
+    relativesAt: sensitive(z.array(textOf(100).min(1, 'Required')).max(20)).default(notProvided),
+    /** "Can you perform the essential functions of the role, with or without reasonable accommodation?" */
+    essentialFunctions: sensitive(z.boolean()).default(notProvided),
+    /** A security clearance: its level, whether it is active now (null: not said), and its polygraph (null: not
+     *  said). */
+    clearance: sensitive(
+      z.object({
+        level: z.enum(CLEARANCE_LEVELS),
+        active: z.boolean().nullable(),
+        polygraph: z.enum(POLYGRAPH_KINDS).nullable(),
+      }),
+    ).default(notProvided),
+    /** The person's citizenships, the first the one a "Country of Origin" question takes; at most three. */
+    citizenships: sensitive(z.array(CountryCodeSchema).min(1, 'Choose at least one').max(3)).default(notProvided),
   }),
   compensation: z.object({
     expectedSalary: sensitive(
@@ -323,6 +449,26 @@ function checkSensitive(answers: AutofillSensitive, ctx: z.RefinementCtx): void 
   if (veteran.state === 'value' && veteran.value.isProtectedVeteran && !veteran.value.isVeteran) {
     ctx.addIssue({ code: 'custom', path: ['eeo', 'veteran'], message: 'A protected veteran is a veteran' });
   }
+  // Snapshot round 2.
+  const { races, raceSubgroups, sexualOrientation } = answers.eeo;
+  if (raceSubgroups.length > 0 && !(races.state === 'value' && races.value.includes('asian'))) {
+    ctx.addIssue({ code: 'custom', path: ['eeo', 'raceSubgroups'], message: 'Choose Asian among your races first' });
+  }
+  if (
+    sexualOrientation.state === 'value' &&
+    sexualOrientation.value.values.includes('self-describe') &&
+    !sexualOrientation.value.selfDescribed.trim()
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['eeo', 'sexualOrientation', 'value', 'selfDescribed'],
+      message: 'Describe it in your words, or untick that answer',
+    });
+  }
+  const citizenships = answers.legal.citizenships;
+  if (citizenships.state === 'value' && new Set(citizenships.value).size !== citizenships.value.length) {
+    ctx.addIssue({ code: 'custom', path: ['legal', 'citizenships', 'value'], message: 'That country is already listed' });
+  }
   const salary = answers.compensation.expectedSalary;
   if (salary.state === 'value' && salary.value.max !== null && salary.value.max < salary.value.min) {
     ctx.addIssue({
@@ -413,10 +559,10 @@ export const EMPTY_AUTOFILL_PROFILE: AutofillProfile = {
   name: { first: '', middle: '', last: '', suffix: '', preferred: '' },
   contact: {
     email: '',
-    phone: { number: '', country: null, extension: '' },
+    phone: { number: '', country: null, extension: '', type: null },
     address: { line1: '', line2: '', city: '', region: '', postalCode: '', country: null },
   },
-  links: { linkedin: '', github: '', portfolio: '', website: '', other: [] },
+  links: { linkedin: '', github: '', portfolio: '', website: '', x: '', telegram: '', other: [] },
   education: [],
   experience: [],
   languages: [],
@@ -428,7 +574,10 @@ export const EMPTY_AUTOFILL_PROFILE: AutofillProfile = {
     workArrangements: [],
     travelPercent: null,
     referralSource: '',
+    referralSourceCategory: null,
+    relocationPlaces: [],
   },
+  certifications: [],
   documents: { resumeId: null },
   anythingElse: '',
 };
@@ -440,10 +589,23 @@ export const EMPTY_AUTOFILL_SENSITIVE: AutofillSensitive = {
     gender: { state: 'not_provided' },
     hispanicOrLatino: { state: 'not_provided' },
     races: { state: 'not_provided' },
+    raceSubgroups: [],
+    raceSelfDescribed: '',
     veteran: { state: 'not_provided' },
     disability: { state: 'not_provided' },
     pronouns: { state: 'not_provided' },
+    sexualOrientation: { state: 'not_provided' },
+    transgender: { state: 'not_provided' },
   },
-  legal: { atLeast18: { state: 'not_provided' }, criminalRecord: { state: 'not_provided' } },
+  legal: {
+    atLeast18: { state: 'not_provided' },
+    criminalRecord: { state: 'not_provided' },
+    restrictiveAgreement: { state: 'not_provided' },
+    governmentService: { state: 'not_provided' },
+    relativesAt: { state: 'not_provided' },
+    essentialFunctions: { state: 'not_provided' },
+    clearance: { state: 'not_provided' },
+    citizenships: { state: 'not_provided' },
+  },
   compensation: { expectedSalary: { state: 'not_provided' } },
 };

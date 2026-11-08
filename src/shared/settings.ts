@@ -1,14 +1,16 @@
 /*
  * The settings schema and where they are kept. The worker reads and writes them; content scripts receive the part
- * they need with run/begin and never touch storage. Version 6 (v4, "decide, don't flag": no "Ask me each time", no draft
- * confirmation) is stored under the same key; a version 1 to 5 value read there is migrated (core/types/settings.ts
- * migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4, migrateSettingsV5) and stored again.
+ * they need with run/begin and never touch storage. Version 7 (snapshot round 2: "When a list has no match" and the
+ * notifications' time) is stored under the same key; a version 1 to 6 value read there is migrated (core/types/settings.ts
+ * migrateSettings, migrateSettingsV2 to migrateSettingsV6) and stored again.
  * The older versions' schemas, which only the worker reads, are in ./settings-stored.ts (the behaviour review of
  * 2026-11-06: kept out of the content script's bundle, and its budget).
  */
 import { z } from 'zod';
 import { CONSENT_CATEGORIES } from '../core/enums';
-import { AI_FORBIDDEN_MODES, AI_FORBIDDEN_MODES_V5, MODE_CHOICES, PANEL_VIEWS, type Settings } from '../core/types/settings';
+import {
+  AI_FORBIDDEN_MODES, AI_FORBIDDEN_MODES_V5, MODE_CHOICES, NO_MATCH_MODES, NOTIFICATION_TIMES, PANEL_VIEWS, type Settings,
+} from '../core/types/settings';
 
 export const SETTINGS_KEY = 'settings:v1';
 
@@ -37,11 +39,15 @@ export const ModesV4Schema = z.strictObject({
   agentSkip: z.strictObject({ requiredEmpty: z.boolean(), noAi: z.boolean(), legalGuess: z.boolean() }),
 });
 
-/** Version 5 (the behaviour review of 2026-11-06): "Résumé already on the page". */
-export const ModesSchema = ModesV4Schema.extend({ resumeOnPage: z.enum(MODE_CHOICES.resumeOnPage) });
+/** Version 5 (the behaviour review of 2026-11-06): "Résumé already on the page"; versions 5 and 6 stored these. */
+export const ModesV6Schema = ModesV4Schema.extend({ resumeOnPage: z.enum(MODE_CHOICES.resumeOnPage) });
+
+/** Version 7 (snapshot round 2): "When a list has no match" and how long the page's notifications stay. */
+export const ModesSchema = ModesV6Schema.extend({ noMatch: z.enum(NO_MATCH_MODES),
+  notifications: z.enum(NOTIFICATION_TIMES) });
 
 export const SettingsSchema = z.strictObject({
-  version: z.literal(6),
+  version: z.literal(7),
   panel: z.enum(['side', 'in-page']),
   view: z.enum(PANEL_VIEWS),
   modes: ModesSchema,
@@ -54,10 +60,15 @@ export const SettingsSchema = z.strictObject({
 
 /** The modes a content script acts on (v3 Phase 3 review): Next, and whether a new step fills as it appears; since v3
  *  Phase 4, Submit and the skip rules it reads; since v3 Phase 5, Sign-in (as it acts: Manual unless the connection may
- *  read sign-ins and the disclosure was acknowledged). The rest (Consent boxes and AI answers, the planner's) stay in
- *  the worker. */
+ *  read sign-ins and the disclosure was acknowledged); since version 7, how long the page's notifications stay
+ *  (ui/toasts.ts) and what a searched list with no match takes (the search's "Other" query). The rest (Consent boxes
+ *  and AI answers, the planner's) stay in the worker. */
 export const ContentModesSchema = ModesSchema.pick({ next: true, afterPageTurn: true, submit: true, agentSkip: true,
-  signIn: true });
+  signIn: true }).extend({
+  // Version 7: the worker always sends both; a message without them (a test's, an older worker's) reads their defaults.
+  noMatch: z.enum(NO_MATCH_MODES).default('other'),
+  notifications: z.enum(NOTIFICATION_TIMES).default('until-closed'),
+});
 
 /** What a content script needs to know of the settings for a run: panel placement, the modes it acts on
  *  (ContentModesSchema), the AI switches (what a posting that forbids AI does among them), and whether to offer saving

@@ -63,8 +63,9 @@ export type RuleId = (typeof RULE_IDS)[number];
 /** A profile location such as 'contact.email' or 'education[0].institution'. The worker checks that it resolves; the
  *  content script checks only its shape. */
 export type ProfilePath = string & { readonly __brand: 'ProfilePath' };
+// s2 profile (snapshot round 2): `certifications`, the profile's new root.
 export const PROFILE_PATH_PATTERN =
-  /^(identity|contact|address|location|links|workAuthorization|eeo|screening|education|experience|languages|skills|preferences|referralSource|resume|coverLetter)(\.[A-Za-z0-9]+|\[\d+\])*$/;
+  /^(identity|contact|address|location|links|workAuthorization|eeo|screening|education|experience|languages|skills|preferences|referralSource|certifications|resume|coverLetter)(\.[A-Za-z0-9]+|\[\d+\])*$/;
 
 /** Where a value came from. A value without one cannot exist: the Guard blocks it as a bug. */
 export type ValueOrigin =

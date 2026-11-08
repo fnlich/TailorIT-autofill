@@ -114,6 +114,7 @@ describe('the options page', () => {
       ['modes.next', TEXT.modes.next.name], ['modes.submit', TEXT.modes.submit.name], ['modes.signIn', TEXT.modes.signIn.name],
       ['modes.consents', TEXT.modes.consents.name], ['modes.ai', TEXT.modes.ai.name],
       ['modes.resumeOnPage', TEXT.modes.resumeOnPage.name], ['modes.recordOwn', TEXT.modes.recordOwn.name],
+      ['modes.noMatch', TEXT.modes.noMatch.name], ['modes.notifications', TEXT.modes.notifications.name],
       ['modes.agentSkip', TEXT.modes.agentSkip.name]]);
     // Submit is Manual unless the person sets it to Auto.
     expect(setting(root, 'modes.submit.manual').checked).toBe(true);
@@ -144,6 +145,28 @@ describe('the options page', () => {
     }
     expect(card.querySelector('.tia-help')).toBeNull();
   });
+  // s2 profile (snapshot round 2, settings version 7).
+  it('shows "When a list has no match" and the notifications’ time with the modes, each choice said and saved at once', async () => {
+    const worker = createFakeWorker();
+    const root = await open(worker);
+    const noMatch = root.querySelector<HTMLElement>('[data-card="modes"] [data-setting-group="modes.noMatch"]')!;
+    expect([...noMatch.querySelectorAll('label')].map((label) => label.textContent)).toEqual(['Choose its Other',
+      'Leave it empty']);
+    expect(setting(root, 'modes.noMatch.other').checked).toBe(true);
+    expect(noMatch.querySelector('[role="tooltip"]')?.textContent).toBe(TEXT.modes.noMatch.help);
+    await click(setting(root, 'modes.noMatch.leave'));
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, noMatch: 'leave' } });
+    const times = root.querySelector<HTMLElement>('[data-card="modes"] [data-setting-group="modes.notifications"]')!;
+    expect([...times.querySelectorAll('label')].map((label) => label.textContent)).toEqual(['Until I close them',
+      '30 seconds', '10 seconds', '5 seconds', 'Never show them']);
+    expect(setting(root, 'modes.notifications.until-closed').checked).toBe(true);
+    await click(setting(root, 'modes.notifications.off'));
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, noMatch: 'leave',
+      notifications: 'off' } });
+    await click(setting(root, 'modes.notifications.10s'));
+    expect(saves(worker).at(-1)?.modes.notifications).toBe('10s');
+  });
+
   it('shows "Résumé already on the page" with the modes: Keep it by default, Upload mine again saved at once, each choice said (the behaviour review of 2026-11-06)', async () => {
     const worker = createFakeWorker();
     const root = await open(worker);

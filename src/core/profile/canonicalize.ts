@@ -17,12 +17,22 @@
  * A phone number's calling code is read with the E.164 table (callingCodes.ts), with or without spaces
  * ("+15125550147"), and its country comes from that code; the address decides only among the countries that share it,
  * or when the number has no code (the review, CORE-7 and CORE-18).
+ *
+ * Snapshot round 2 (2026-11-07, TailorIT's contract of the same day): the name's suffix and the phone's extension (in
+ * the contract since its first version) and the new values are mapped too: the phone's device type, X and Telegram,
+ * the relocation places, the certifications, the referral answer's kind (with no answer text, a referral of its kind
+ * alone: `{id: 'other', category}`, which the referral value reads as no answer); from the sensitive part the Asian
+ * subgroups (only beside `asian` among the races), race and sexual orientation in the person's words, active duty,
+ * transgender, and the screening answers (a restrictive agreement, government service, relatives at a company,
+ * essential functions, a clearance, citizenships), each tri-state as the others. A copy of either part older than
+ * them (no such key) maps as if not given.
  */
 import type { AutofillProfile, AutofillResumeChoice, AutofillSensitive, SensitiveAnswer } from '../../contract/tailorit';
 import { GENDERS, PROFICIENCIES, RACES, WORK_STATUSES, type Gender, type Race, type WorkStatus } from '../enums';
-import type {
-  EducationEntry, ExperienceEntry, Explicit, PlaceRef, Profile, Salary, SensitiveState, StartDate, WorkAuthorization,
-  YearMonth, Ymd,
+import {
+  ASIAN_SUBGROUPS, CLEARANCE_LEVELS, PHONE_DEVICE_TYPES, REFERRAL_CATEGORIES, SEXUAL_ORIENTATIONS, type AsianSubgroup,
+  type EducationEntry, type ExperienceEntry, type Explicit, type PlaceRef, type Profile, type Salary,
+  type SensitiveState, type SexualOrientation, type StartDate, type WorkAuthorization, type YearMonth, type Ymd,
 } from '../types/profile';
 import { resolveText } from '../vocab/lookup';
 import type { LanguageEntity, ReferralEntity, Vocab } from '../vocab/types';
@@ -212,15 +222,84 @@ function eeoOf(eeo: AutofillSensitive['eeo'], issues: Issues): Profile['eeo'] {
     const races = [...new Set(value)];
     return races.length > 0 && races.every((item) => inList(RACES, item)) ? races as Race[] : null;
   }, code);
+  // Snapshot round 2: active duty, when the copy carries it.
   const veteran = explicit(eeo.veteran, 'eeo.veteran', issues, (value) => (value.isProtectedVeteran && !value.isVeteran
-    ? null : { veteran: value.isVeteran, protected: value.isProtectedVeteran }), code);
+    ? null : { veteran: value.isVeteran, protected: value.isProtectedVeteran,
+      ...(typeof value.isActiveDuty === 'boolean' ? { activeDuty: value.isActiveDuty } : {}) }), code);
   const disability = explicit(eeo.disability, 'eeo.disability', issues, (value: boolean) => value, code);
+  // Snapshot round 2: each absent in a copy older than it.
+  const subgroups = [...new Set(eeo.raceSubgroups ?? [])];
+  const asian = race?.kind === 'value' && race.value.includes('asian');
+  if (!subgroups.every((item) => inList(ASIAN_SUBGROUPS, item))) issues.add('eeo.raceSubgroups', code);
+  const raceSubgroups = asian && subgroups.every((item) => inList(ASIAN_SUBGROUPS, item))
+    ? subgroups as AsianSubgroup[] : [];
+  const raceSelfDescribed = tidy(eeo.raceSelfDescribed ?? '');
+  const sexualOrientation = eeo.sexualOrientation === undefined ? undefined
+    : explicit(eeo.sexualOrientation, 'eeo.sexualOrientation', issues,
+      (value): { values: SexualOrientation[]; selfDescribed?: string } | null => {
+        const values = [...new Set(value.values)];
+        if (values.length === 0 || !values.every((item) => inList(SEXUAL_ORIENTATIONS, item))) return null;
+        const words = tidy(value.selfDescribed);
+        return { values: values as SexualOrientation[],
+          ...(values.includes('self-describe') && words !== '' ? { selfDescribed: words } : {}) };
+      }, code);
+  const transgender = eeo.transgender === undefined ? undefined
+    : explicit(eeo.transgender, 'eeo.transgender', issues, (value: boolean) => value, code);
   return {
     ...(gender ? { gender } : {}),
     ...(hispanicLatino ? { hispanicLatino } : {}),
     ...(race ? { race } : {}),
     ...(veteran ? { veteran } : {}),
     ...(disability ? { disability } : {}),
+    ...(raceSubgroups.length > 0 ? { raceSubgroups } : {}),
+    ...(raceSelfDescribed !== '' ? { raceSelfDescribed } : {}),
+    ...(sexualOrientation ? { sexualOrientation } : {}),
+    ...(transgender ? { transgender } : {}),
+  };
+}
+
+/** The polygraphs a clearance may name (the contract's POLYGRAPH_KINDS). */
+const POLYGRAPHS = ['none', 'ci', 'full-scope'] as const;
+
+/** Snapshot round 2: the screening answers of the sensitive part's `legal` (each absent in a copy older than it). */
+function screeningOf(legal: AutofillSensitive['legal'], issues: Issues, vocab: Vocab):
+  Omit<Profile['screening'], 'over18' | 'criminalRecord'> {
+  const bool = (value: boolean) => value;
+  const restrictiveAgreement = legal.restrictiveAgreement === undefined ? undefined
+    : explicit(legal.restrictiveAgreement, 'screening.restrictiveAgreement', issues, bool);
+  const essentialFunctions = legal.essentialFunctions === undefined ? undefined
+    : explicit(legal.essentialFunctions, 'screening.essentialFunctions', issues, bool);
+  const governmentService = legal.governmentService === undefined ? undefined
+    : explicit(legal.governmentService, 'screening.governmentService', issues, (value) => ({
+      military: value.military,
+      // A year only beside the service it ends; none while it goes on.
+      ...(value.military && value.militaryEndYear !== null ? { militaryEndYear: value.militaryEndYear } : {}),
+      government: value.government,
+      ...(value.government && value.governmentEndYear !== null ? { governmentEndYear: value.governmentEndYear } : {}),
+    }));
+  const relativesAt = legal.relativesAt === undefined ? undefined
+    : explicit(legal.relativesAt, 'screening.relativesAt', issues, (value: string[]) => distinct(value));
+  const clearance = legal.clearance === undefined ? undefined
+    : explicit(legal.clearance, 'screening.clearance', issues, (value) => {
+      if (!inList(CLEARANCE_LEVELS, value.level)) return null;
+      if (value.polygraph !== null && !inList(POLYGRAPHS, value.polygraph)) return null;
+      return { level: value.level, ...(value.active !== null ? { active: value.active } : {}),
+        ...(value.polygraph !== null ? { polygraph: value.polygraph } : {}) };
+    });
+  // Citizenships: ISO alpha-2 codes the vocabulary knows, the first a "Country of Origin"; an unknown one drops the
+  // answer as a whole.
+  const citizenships = legal.citizenships === undefined ? undefined
+    : explicit(legal.citizenships, 'screening.citizenships', issues, (value: string[]) => {
+      const codes = [...new Set(value)];
+      return codes.length > 0 && codes.every((item) => vocab.countries.byAlpha2(item) !== undefined) ? codes : null;
+    });
+  return {
+    ...(restrictiveAgreement ? { restrictiveAgreement } : {}),
+    ...(governmentService ? { governmentService } : {}),
+    ...(relativesAt ? { relativesAt } : {}),
+    ...(essentialFunctions ? { essentialFunctions } : {}),
+    ...(clearance ? { clearance } : {}),
+    ...(citizenships ? { citizenships } : {}),
   };
 }
 
@@ -234,15 +313,33 @@ function startDateOf(preferences: AutofillProfile['preferences'], issues: Issues
   return weeks === 0 ? { kind: 'immediately' } : { kind: 'notice', weeks };
 }
 
-/** "How did you hear about us": the referral vocabulary's id, else 'other' with the person's words. */
-function referralOf(text: string, issues: Issues, vocab: Vocab): Profile['referralSource'] {
+/** "How did you hear about us": the referral vocabulary's id, else 'other' with the person's words; with its kind
+ *  (snapshot round 2), and with no words but a kind, the kind alone (`{id: 'other', category}`). */
+function referralOf(text: string, kind: string | null | undefined, issues: Issues, vocab: Vocab):
+  Profile['referralSource'] {
   const words = tidy(text);
-  if (words === '') return undefined;
+  const category = kind !== null && kind !== undefined && inList(REFERRAL_CATEGORIES, kind) ? kind : undefined;
+  if (kind !== null && kind !== undefined && category === undefined) {
+    issues.add('preferences.referralSourceCategory', 'value-unknown');
+  }
+  const withKind = category === undefined ? {} : { category };
+  if (words === '') return category === undefined ? undefined : { id: 'other', ...withKind };
   const resolution = resolveText(vocab, 'referral', words);
   const entity = resolution.id === null ? undefined : vocab.entity(resolution.id);
-  if (entity?.kind === 'referral') return { id: (entity as ReferralEntity).answerId };
+  if (entity?.kind === 'referral') return { id: (entity as ReferralEntity).answerId, ...withKind };
   issues.add('referralSource', 'referral-not-in-vocab');
-  return { id: 'other', otherText: words };
+  return { id: 'other', otherText: words, ...withKind };
+}
+
+/** Snapshot round 2: the certifications, each with its name (trimmed; one without a name is left out), its issuer
+ *  and its year when known. */
+function certificationsOf(list: AutofillProfile['certifications'] | undefined): NonNullable<Profile['certifications']> {
+  return (list ?? []).flatMap((entry) => {
+    const name = tidy(entry.name);
+    if (name === '') return [];
+    const issuer = tidy(entry.issuer);
+    return [{ name, ...(issuer !== '' ? { issuer } : {}), ...(entry.year !== null ? { year: entry.year } : {}) }];
+  });
 }
 
 /** The languages, each with its code when the vocabulary knows its name. */
@@ -312,10 +409,16 @@ export function canonicalizeProfile(profile: AutofillProfile, sensitive: Autofil
   const callingCode = phoneText === '' ? undefined : callingCodeOf(phoneText);
   const phoneCountry = phoneText === '' ? undefined
     : phoneCountryOf(callingCode, contact.phone.country ?? undefined, addressCountry, issues);
+  // Snapshot round 2: the extension (digits) and the device type, beside a number.
+  const extension = contact.phone.extension.replace(/\D/g, '');
+  const phoneType = contact.phone.type ?? null;
+  if (phoneType !== null && !inList(PHONE_DEVICE_TYPES, phoneType)) issues.add('contact.phone.type', 'value-unknown');
   const phone = phoneText === '' ? undefined : {
     text: phoneText, digits: phoneText.replace(/\D/g, ''),
     ...(callingCode !== undefined ? { countryCallingCode: callingCode } : {}),
     ...(phoneCountry ? { country: phoneCountry } : {}),
+    ...(extension !== '' ? { extension } : {}),
+    ...(phoneType !== null && inList(PHONE_DEVICE_TYPES, phoneType) ? { type: phoneType } : {}),
   };
   const addressRegion = tidy(wireAddress.region) === '' ? undefined
     : issues.take(canonicalRegion(wireAddress.region, addressCountry, vocab, 'address.region'));
@@ -332,6 +435,9 @@ export function canonicalizeProfile(profile: AutofillProfile, sensitive: Autofil
   const github = link(links.github);
   const portfolio = link(links.portfolio);
   const website = link(links.website);
+  // Snapshot round 2: absent in a copy older than them.
+  const x = link(links.x ?? '');
+  const telegram = link(links.telegram ?? '');
 
   const salary = sensitive ? explicit(sensitive.compensation.expectedSalary, 'preferences.expectedSalary', issues,
     (value): Salary => ({ min: value.min, ...(value.max !== null ? { max: value.max } : {}), currency: value.currency,
@@ -340,7 +446,9 @@ export function canonicalizeProfile(profile: AutofillProfile, sensitive: Autofil
   const relocation: Explicit<boolean> | undefined = preferences.willingToRelocate === null ? undefined
     : { kind: 'value', value: preferences.willingToRelocate === 'yes' };
   const arrangements = [...new Set(preferences.workArrangements)];
-  const referralSource = referralOf(preferences.referralSource, issues, vocab);
+  const referralSource = referralOf(preferences.referralSource, preferences.referralSourceCategory, issues, vocab);
+  const relocationPlaces = distinct(preferences.relocationPlaces ?? []).slice(0, 10);
+  const certifications = certificationsOf(profile.certifications);
   const over18 = sensitive ? explicit(sensitive.legal.atLeast18, 'screening.over18', issues, (value: boolean) => value)
     : undefined;
   // Version 2: an older copy of the sensitive part has no criminal record, which reads as not provided.
@@ -355,6 +463,7 @@ export function canonicalizeProfile(profile: AutofillProfile, sensitive: Autofil
       ...(middle !== '' ? { middleName: middle } : {}),
       lastName: last,
       ...(preferred !== '' ? { preferredName: preferred } : {}),
+      ...(suffix !== '' ? { suffix } : {}),
       ...(pronouns ? { pronouns } : {}),
       nameSplitDerived: false,
     },
@@ -362,13 +471,14 @@ export function canonicalizeProfile(profile: AutofillProfile, sensitive: Autofil
     ...(Object.keys(addressParts).length > 0 ? { address: addressParts } : {}),
     links: {
       ...(linkedin ? { linkedin } : {}), ...(github ? { github } : {}), ...(portfolio ? { portfolio } : {}),
-      ...(website ? { website } : {}),
+      ...(website ? { website } : {}), ...(x ? { x } : {}), ...(telegram ? { telegram } : {}),
       other: links.other.filter((item) => item.url.trim() !== '').map((item) => ({ label: tidy(item.label),
         url: item.url.trim() })),
     },
     workAuthorization: sensitive ? workAuthorizationOf(sensitive.workAuthorization, issues) : [],
     eeo: sensitive ? eeoOf(sensitive.eeo, issues) : {},
-    screening: { ...(over18 ? { over18 } : {}), ...(criminalRecord ? { criminalRecord } : {}) },
+    screening: { ...(over18 ? { over18 } : {}), ...(criminalRecord ? { criminalRecord } : {}),
+      ...(sensitive ? screeningOf(sensitive.legal, issues, vocab) : {}) },
     education: profile.education.map((entry, index) => educationOf(entry, index, issues, vocab, now)),
     experience: profile.experience.map((entry, index) => experienceOf(entry, index, issues, vocab)),
     languages: languagesOf(profile.languages, issues, vocab),
@@ -380,7 +490,9 @@ export function canonicalizeProfile(profile: AutofillProfile, sensitive: Autofil
       ...(arrangements.length > 0 ? { workArrangements: arrangements } : {}),
       ...(typeof travel === 'number' && Number.isInteger(travel) && travel >= 0 && travel <= 100
         ? { travelPercent: travel } : {}),
+      ...(relocationPlaces.length > 0 ? { relocationPlaces } : {}),
     },
+    ...(certifications.length > 0 ? { certifications } : {}),
     ...(referralSource ? { referralSource } : {}),
   };
   return { profile: canonical, issues: issues.list, sensitiveState: sensitive ? 'loaded' : 'not-loaded' };
