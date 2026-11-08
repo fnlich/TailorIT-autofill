@@ -102,7 +102,7 @@ Tags: **Ask** = needs your answer. **Lead** = decided by the lead; tell the owne
 77. **Copy.** Phase 6 wording: save outcomes, the draft reasons, the stored-copy notice, "Your fixes", counters, panel strings, field-kind names, confirm and save feedback. (Phase 6)
 78. **Ask.** The counter export is JSON totals ({fields, counts}) with no per-day breakdown; the telemetry event lost its version field. Default: as is. (Phase 6)
 79. **Ask.** Counting: success = filled or verified; failure = flagged or blocked; skipped isn't counted; a draft counts only once confirmed or edited. Default: as is. (Phase 6)
-80. **Ask.** The in-page panel sits under the launcher (380 px wide, up to 70% of the window high), not as a fixed sidebar, so it never covers the launcher or card. Default: as is. (Phase 6)
+80. **Ask.** The in-page panel sits under the launcher (380 px wide, up to 70% of the window high), not as a fixed sidebar, so it never covers the launcher or card. Default: as is. (Phase 6) **Superseded (v5 Phase 1, §15 below):** the top frame's panel is a 384 px sidebar docked at the right edge, like Jobright's; the small card stays for a form inside another page (items 240, 245).
 81. **Ask.** Clicks in the side panel aren't trust-checked (it's an extension page; web pages can't script it). Default: as is. (Phase 6)
 82. **Departure.** Dry runs pass the AI-policy gate, save no run state, highlight only rows that need you, and count as one pass. (Phases 2, 3)
 83. **Departure.** At the policy card the launcher opens the review; side-panel Fill goes to every frame with a form (a hidden embedded frame refuses); the card's Fill anyway and Cancel go to every frame that reported. (Phase 2)
@@ -234,7 +234,7 @@ Your 249 signed-in snapshots, built into adapters for about 25 platforms, then f
 
 **Core**
 
-155. **Lead.** A checkbox CAPTCHA (reCAPTCHA's or hCaptcha's "I'm not a robot", as your snapshots show them) no longer stops the fill: the form is filled, the box is never touched, and nothing is pressed (Next, Submit, sign-in, the agent's entry) until you tick it; a picture challenge, an Enterprise or compact widget, Turnstile and the other vendors still stop everything. On an account page the pause is the account's. The invisible reCAPTCHA badge stops nothing. **Ask:** should a last step whose only hold is an unticked box say so in the review when Submit is Manual? Default: the panel's Submit answers "The page asks you to do something first".
+155. **Lead.** A checkbox CAPTCHA (reCAPTCHA's or hCaptcha's "I'm not a robot", as your snapshots show them) no longer stops the fill: the form is filled, the box is never touched, and nothing is pressed (Next, Submit, sign-in, the agent's entry) until you tick it; a picture challenge, an Enterprise or compact widget, Turnstile and the other vendors still stop everything. On an account page the pause is the account's. The invisible reCAPTCHA badge stops nothing. **Ask:** should a last step whose only hold is an unticked box say so in the review when Submit is Manual? Default: the panel's Submit answers "The page asks you to do something first". **Superseded (v5 Phase 1, your "implement like jobright extension"):** nothing holds for the box now; the presses go beside it and the site decides (items 261 to 266).
 156. **Lead.** A page that names no job takes the job of the tab's page before it: only in the same tab, on the same platform and company (SuccessFactors: the same career host), within 30 minutes of that page, from the last six pages of the tab, and only where the browser's referrer is that page's exact address.
 157. **Lead.** TailorIT is asked with its own canonical address of the posting (so Lever's `/apply` and Workday's steps are named by the posting page), else the platform's application address, else the page's origin and path with no query and no per-application id. The page's path goes to TailorIT with a sign-in request only on ADP's and ClearCompany's candidate pages, where TailorIT's every-site sign-in depends on it; a path its query would refuse is left out. Saved answers keep a company scope on Greenhouse, Lever, Ashby and Workable alone, though API 6 would take one for the new sites.
 158. **Lead.** Reading what a person sees: a translucent panel over an image is read only where words pass over every colour the image could give (Oracle's reads; a thin veil still hides grey words), and not where another box sits at the words; a modal dialog's lower fields are read when you can scroll to them, never through a slit; a box drawn by a wrapper holding only icons (each at most 32 px) counts as drawn; a bound CAPTCHA button is at most 64 px tall and named. A sibling box under words on an opaque panel is a known gap (documented by a failing test).
@@ -370,6 +370,72 @@ Your requests after v4 (stored lists chosen at once, Workday dates typed, three 
    which should clear them; "Errors Found" may stay until Save and Continue.
 
 **What round 2 needs you to do:** reload the extension in `chrome://extensions`; choose I understand on the disclosure when the side panel or the options page shows it again (version 9); restart TailorIT's dev server, whose `v1.2` now holds the profile fields and the review's P2 and P3 (TailorIT `978c205`, from `v1.2-p11`); and fill the new answers in TailorIT Settings › Autofill (phone type, X, Telegram, certifications, places, the referral source's kind, and the self-identification and screening answers) or in the side panel's "Your autofill information".
+
+## 15. v5 Phase 1: parity with Jobright's extension (decided under your "Implement like jobright. I approved all"; each yours to overrule)
+
+Your words of 2026-11-08 ("very similar with jobright extension … Only difference will be: interact with my server; user can set settings like current", then "Implement like jobright. I approved all", and of CAPTCHAs "implement like jobright extension"), turned into the plan's decisions 1 to 15, of which Phase 1 (decisions 1 to 10: what you see first) is built and merged on extension `main` `7f6ba79`, as docs/SPEC-AMENDMENTS.md §15 says (docs/ARCHITECTURE.md "v5 Phase 1"). Jobright's build was read for behaviour only; the code you offered was not used (copyright). Each item states what was built; answer by number as above.
+
+**The panel on the page (decision 1)**
+
+240. **Lead.** On the page is the default for every install: settings version 8 moved every version 7 value there, your side panel included (the builder had kept `'side'` where it was; the merge moved both, for "the Jobright-like sidebar for everyone"). Settings › "Where the panel shows: Chrome's side panel" goes back.
+241. **Ask (security).** The sidebar's views reach the worker over the page's own content-script channel. A page process taken over by an exploit could ask what the sidebar can: read your profile (its sensitive part where this browser may), save it, change the modes, acknowledge the disclosure. It can never Disconnect, use a connect code, read the counters, change Company career sites or Run auto-apply, or clear the runs. Chrome's side panel, an extension page, has no such exposure. Default: On the page, as Jobright.
+242. **Ask.** What you type into the sidebar (the profile editor, a question of your own) reaches the page's own capture-phase key and input listeners, as Edit with AI's box does; Chrome's side panel avoids it. Open the profile editor in TailorIT or Chrome's side panel instead? Default: as built.
+243. **Ask (privacy).** Under "Default view: Expanded" the sidebar opens by itself on a company page whose form or job signal was found, and its job card then asks TailorIT about that page (its origin and path, as the side panel did when you opened it). Before v5 a company page was named to TailorIT only on your opening or Autofill. Keep, or hold the card's lookup on company pages until you touch the sidebar? Default: as built.
+244. **Lead.** The page is pushed left while the sidebar is open: an attribute on its root, one stylesheet of ours and a mark on its visible fixed or over-wide elements, never a form, a control or a hidden element, all removed when it closes. No per-host fixes yet: **Ask:** tell us any site whose layout breaks under it (Jobright keeps fixes per host).
+245. **Lead (open).** A form inside another page (an embedded Greenhouse form, say) keeps its corner launcher, whose click still starts a fill and whose badge shows the percent, and its small in-page card. Jobright draws one panel in the top frame for those too; that is not Phase 1. Default: as built until a later phase.
+246. **Lead.** The sidebar's views come in a bundle of the extension's own (`sidebar-app.js`, 749,866 bytes), which the worker runs in the page only when the sidebar or a card opens there (at most 20 times a minute per tab): never a file the page can load, and nothing on pages where no panel opens.
+
+**The launcher and the toolbar icon (decision 2)**
+
+247. **Lead.** The pill's click opens the panel and never starts a fill (Autofill is the panel's button); it shows on a supported page with or without a form, hides while the sidebar is open, and has no percent badge (the progress is the panel's).
+248. **Lead.** The pill stays slid out while the keyboard focus is in it (after a click under Chrome's side panel, say), until the focus leaves.
+249. **Lead.** The toolbar icon opens the sidebar and brings the button back where you hid it; on a company's https page with no script of ours it first runs the content script there (while Company career sites act, never in a private window), so the sidebar shows on any https page; on a browser page, the Web Store, LinkedIn, an HR system or an http page off the job sites it opens Chrome's side panel. Known limit: where the script cannot be run after the click (a private window, Company career sites off), Chrome may refuse the side panel asked for after the wait, and the click does nothing.
+
+**Look and words (decision 3)**
+
+250. **Lead.** Inter, TailorIT's own copy of the OFL face carried in the extension (never fetched), named "TailorIT Inter" so it never takes a page's own Inter: added to the side panel and the options page, and to a page's document when the sidebar first opens there (until then our controls on a page show the system font).
+251. **Copy.** Title Case is naive, every word capitalised ("Continue To The Next Page"), as Jobright's and the plan's examples; the settings' names and every help stay sentence case ("Where the panel shows"). The new words are drafts: the sheet's ("7/9 Required Fields Filled", "Signing In", "2/3 Added", "Not Added"), the modals', "Application Submitted!" and its window, and the Workday note.
+
+**The sheet, the modals and the applied window (decisions 4 to 6)**
+
+252. **Lead (4).** The sheet starts up when the panel opens on a run at rest; Jobright's starts folded (its sidebar is there through the fill). One line to change.
+253. **Lead (6).** The check before a fill offers "Autofill Anyway" too (Jobright's has only Cancel and Edit, and blocks the fill), and it checks your autofill information (no work experience or no education), not the résumé file.
+254. **Copy (6).** The error modals' words are ours: "Autofill can't reach this page's form right now…" stands for Jobright's "temporarily unavailable" (its kill switch; we have none), and "updated" (Refresh Page) shows only in the sidebar, which can reload its page.
+255. **Lead (5).** "Application Submitted!" shows once per submission TailorIT recorded, in the top frame of a visible tab, never in the auto-apply agent's window; its button is TailorIT's ink (#08758c, AA with white), not the brand fill.
+
+**Edit with AI (decision 7)**
+
+256. **Lead.** It shows only on boxes at least 40 px tall, as Jobright's shows on tall text areas: one-line answer boxes ("Which office…") lose the button they had.
+257. **Lead.** "Unchanged" (the AI wrote what the box holds) rests the button silently; a failure, a refusal or the sensitive screen turns it red; a red button's click reopens the box with why, and does not resend your last instruction (what you type is never kept).
+258. **Lead (open).** Not built: Edit with AI "at any time" (before a run, or while one fills); the rewrite still needs a resting run. It waits for the filling phase.
+
+**The header (decision 8)**
+
+259. **Lead.** Workday's "Please stay on this page while Autofill fills the form." closes for good with its ×, in Chrome's side panel too (the note's name kept in this browser).
+260. **Lead (open).** No feedback button yet: TailorIT has no endpoint for it (Phase 3).
+
+**CAPTCHA like Jobright (decision 9)**
+
+261. **Lead.** An unticked "I'm not a robot" box (reCAPTCHA's or hCaptcha's checkbox) holds nothing now: Next, Submit, the agent's entry and the sign-in are pressed beside it, and the site decides. If the site asks for the check, the run pauses with "Solve the check on this page" and carries on by itself once you tick it. A pop-up challenge, an Enterprise or compact widget, Turnstile and the other vendors still pause everything. Nothing ever ticks or solves a check, and no script of ours runs in a vendor's frame.
+262. **Ask.** A Next or Submit the page did not take while a box is unticked is read as the check's, even when the site said nothing about it: a page that refused for another reason shows the challenge toast first, and its own error once the box is ticked. Default: as built.
+263. **Lead.** Submit mode Auto presses once more after you tick a box the site asked for (Next likewise: the step gets back the attempt the refused press used). Each such press needs your tick: never a loop.
+264. **Lead.** A Sign-in Auto press the site refused for the check is left to you: the typed email and password stay in the form, you tick the box and press the site's Sign in (Jobright leaves Sign In to you too); it is not pressed again by itself.
+265. **Ask (snapshot).** JazzHR's "CAPTCHA required" error (`#recaptcha-required-error`) is taken from Jobright's rules, not seen in a snapshot: a snapshot of a refused JazzHR Submit would confirm it.
+266. **Lead.** The vendors whose frames nothing of ours enters: the plan's seven, plus FunCaptcha (Arkose's older host) and GeeTest, both already known to the pause detection.
+
+**Every site at install (decision 10)**
+
+267. **Ask.** Company pages stay https only (the sentinel, the injection, the fill), though every http page is granted: a company's http form would send your answers unencrypted. Jobright fills http pages too. Default: https only.
+268. **Lead.** Company career sites are on unless you turn them off; turning them off gives no permission back (it is the install's own), and you can still withhold site access in Chrome's extension settings, which stops them.
+269. **Lead.** On an https page with no form, Chrome's side panel now says "No Application Form Found Here Yet" with the reload hint, where it said the site was not supported and offered "Ask TailorIT to support this site". **Ask:** should that view offer Ask TailorIT too?
+270. **Lead.** Size budgets: the page's script 1 MiB (817,527 bytes now that React left it; P1-rules had raised it to 1028 KiB for the CAPTCHA switch before that), the sidebar's bundle 800 KiB (749,866 bytes), the sentinel 18 KiB (+1 KiB for the vendor check).
+271. **Copy.** The first-run disclosure is version 10 (docs/PRIVACY.md): the panel on the page and what the site can tell of it, every site at install, Company career sites on unless turned off, and the CAPTCHA presses. A draft for your review, as before.
+
+**Tests**
+
+272. **Lead (open).** The e2e suite starts every test at "Default view: Minimized", so the sidebar does not open by itself where a spec counts TailorIT's requests, stops the worker or times a run (its own job card, letter check and port added reads and kept the worker awake); the sidebar's own specs (56, 60) run at the product's defaults. Should more specs run Expanded? Default: as built.
+
+**What v5 Phase 1 needs you to do:** reload the extension in `chrome://extensions` (it now holds every https and http page, which Chrome names "Read and change all your data on all websites"); choose I understand on the disclosure when the panel or the options page shows it again (version 10; until then Submit and Sign-in stay Manual, nothing is recorded as Applied, no page is looked up as it loads, and Run auto-apply takes no job). Your install now shows the panel on the page; Settings › "Where the panel shows" brings Chrome's side panel back.
 
 ## Snapshots and owner-only inputs still needed
 
