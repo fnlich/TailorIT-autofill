@@ -155,6 +155,7 @@ import { newScanCache } from '../dom/scan-cache';
 import { scan, toFieldSpec } from '../dom/scan';
 import { deadline, monotonicNow, startDeadline, type Cancel } from '../dom/time';
 import { visibleText } from '../dom/visible-text';
+import { isUserVisible } from '../dom/visibility';
 import type { ScanResult } from '../dom/types';
 import { ok, refuse } from '../messaging/envelope';
 import {
@@ -1384,8 +1385,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   // ── v4: the page's account wall, and Sign up & Autofill at a wall with no form (module header) ──────────────────
 
-  /** What this frame last told the worker of its wall (undefined: nothing yet); s2 profile (P1), what it waits for. */
-  let wallTold: { wall: SignInWall | null; choice: boolean; waits: WallWaits | null } | undefined;
+  /** What this frame last told the worker of its wall (undefined: nothing yet); s2 profile (P1), what it waits for;
+   *  v5 p2-fill, whether its posting's own Apply is offered (Open Application). */
+  let wallTold: { wall: SignInWall | null; choice: boolean; waits: WallWaits | null; entry: boolean } | undefined;
   /** The toast a wall with no form shows (atWall), while its cause stands; null: none. */
   let wallToast: 'sign-in' | 'no-sign-in' | 'challenge' | null = null;
   /** s2 profile (P1): what that toast says the page waits for (WALL_WAITS), told the worker with the wall (tellWall) so
@@ -1397,8 +1399,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** The account wall the page shows now (a sign-in, an account's creation, an email gate: the pause detection with
    *  the page's adapter, or the address's own where there is no form), and whether it shows a choice of how to apply
    *  its adapter answers with a declared entry. Only the tab's top frame, or the frame that claims its application. */
-  function wallNow(): { wall: SignInWall | null; choice: boolean; challenge: boolean } {
-    const none = { wall: null, choice: false, challenge: false };
+  function wallNow(): { wall: SignInWall | null; choice: boolean; challenge: boolean; entry: boolean } {
+    const none = { wall: null, choice: false, challenge: false, entry: false };
     if (stopped || (!isTop && !claimed) || app === null) return none;
     const at = urlOf(readHref());
     const adapter = page?.adapter ?? (at === null ? null : adapters(at)[0] ?? null);
@@ -1408,11 +1410,34 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     } catch {
       return none;
     }
-    if (shown === null) return none;
+    // v5 p2-fill: no wall: a posting page with no form may offer its own Apply (Open Application).
+    if (shown === null) return { ...none, entry: entryOffered() };
     const wall = (SIGN_IN_WALLS as readonly string[]).includes(shown.kind) ? shown.kind as SignInWall : null;
     return { wall, choice: shown.kind === 'entry-choice' && adapter?.entryControl !== undefined,
-      challenge: shown.kind === 'captcha' || shown.kind === 'email-code' };
+      challenge: shown.kind === 'captcha' || shown.kind === 'email-code', entry: false };
   }
+
+  // -- v5 p2-fill: Open Application (PLAN Phase 2, Jobright's "Open Application" on a posting page) --
+  /** Whether this frame shows a posting page with no form whose address's adapters offer their own Apply now
+   *  (Adapter.entryControl, each written from its platform's fixtures: Greenhouse's and Lever's Apply, Ashby's
+   *  Application tab, iCIMS's, Oracle's, SmartRecruiters', SuccessFactors', Taleo's, Workable's, Workday's and the
+   *  configured platforms' declared entries), a control a person can see: the panel's main button then reads "Open
+   *  Application", and its press is atWall's. */
+  function entryOffered(): boolean {
+    if (page !== null || app?.page !== 'posting') return false;
+    const at = urlOf(readHref());
+    if (at === null) return false;
+    const cache = newScanCache();
+    return adapters(at).some((adapter) => {
+      try {
+        const control = adapter.entryControl?.(doc) ?? null;
+        return control !== null && isUserVisible(control, cache);
+      } catch {
+        return false;
+      }
+    });
+  }
+  // -- end v5 p2-fill --
 
   /** Tells the worker the wall the page shows now (frame/wall), when it changed since it was last told; never while a
    *  run of this frame works (its own pause says it, and its writes change the page all along). */
@@ -1435,20 +1460,22 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   /** frame/wall, when the wall, its choice or (s2 profile, P1) what the page waits for changed since the worker was
    *  last told. */
-  function sendWall(now: { wall: SignInWall | null; choice: boolean }): void {
+  function sendWall(now: { wall: SignInWall | null; choice: boolean; entry?: boolean }): void {
     if (stopped || told === null || frameId === null || !channel.valid()) return;
     const waits = page === null ? wallWaits : null;
+    // v5 p2-fill: whether the posting's own Apply is offered (Open Application) is told too.
+    const entry = now.entry === true;
     if (wallTold !== undefined && wallTold.wall === now.wall && wallTold.choice === now.choice
-      && wallTold.waits === waits) return;
+      && wallTold.waits === waits && wallTold.entry === entry) return;
     // A first word of "no wall" is the registry's own default: nothing to say.
-    if (wallTold === undefined && now.wall === null && !now.choice && waits === null) {
-      wallTold = { wall: now.wall, choice: now.choice, waits };
+    if (wallTold === undefined && now.wall === null && !now.choice && waits === null && !entry) {
+      wallTold = { wall: now.wall, choice: now.choice, waits, entry };
       return;
     }
-    wallTold = { wall: now.wall, choice: now.choice, waits };
-    log('content.wall', { shown: now.wall !== null, choice: now.choice, waits: waits !== null });
+    wallTold = { wall: now.wall, choice: now.choice, waits, entry };
+    log('content.wall', { shown: now.wall !== null, choice: now.choice, waits: waits !== null, entry });
     void channel.request({ v: 1, type: 'frame/wall', wall: now.wall, ...(now.choice ? { choice: true as const } : {}),
-      ...(waits === null ? {} : { waits }) }).catch(() => undefined);
+      ...(waits === null ? {} : { waits }), ...(entry ? { entry: true as const } : {}) }).catch(() => undefined);
   }
 
   /** A look at the page for its wall, WALL_LOOK_MS from now: the changes of a moment are read once. */
@@ -1503,6 +1530,17 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const own = adapters(at);
     if (own.length === 0) return;
     const shown = detectPause(doc, null, own[0]!);
+    // v5 p2-fill (PLAN Phase 2): Open Application. A posting page with no form whose adapter offers its own Apply: that
+    // Apply, pressed through the entry door (press.ts pressEntry: the agent's, every guard held; Workday's choice
+    // followed by its Apply Manually where its adapter allows a second press), then the form it brings is filled: this
+    // document's (formAfterWall), or the next one's (the worker starts its run: background/panel.ts's grant).
+    if (shown === null) {
+      if (!entryOffered()) return;
+      const entered = await pressEntry(doc, own, lifetime.signal, entryWaitOf(own));
+      log('content.open-application', { pressed: entered.outcome === 'pressed' });
+      if (entered.outcome === 'pressed') formAfterWall();
+      return;
+    }
     if (shown?.kind === 'entry-choice') {
       const entered = await pressEntry(doc, own, lifetime.signal, entryWaitOf(own));
       log('content.entry-choice', { pressed: entered.outcome === 'pressed' });

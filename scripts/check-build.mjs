@@ -56,8 +56,11 @@ const SIDEBAR_APP_BUDGET = 800 * 1024;
  *  bundle (16,670 bytes without them, 21,520 with, on Phase 0); with builders A's, B's and C's merged the bundle is
  *  28,897 bytes in both builds (the integration of 2026-11-06). The snapshot build's core pass Z1 (items 26 and 39)
  *  slimmed it: the bridge's decision (src/adapters/bridge-address.ts) reads only the parsers of the platforms with a
- *  host outside the public job hosts (sixteen), so it is 20,921 bytes, under a budget of 24 KiB. */
-const BRIDGE_BUDGET = 24 * 1024;
+ *  host outside the public job hosts (sixteen), so it is 20,921 bytes, under a budget of 24 KiB. v5 p2-fill (PLAN
+ *  decision 14): 26 KiB, for the two page patches the bridge makes on command alone (src/page/dialogs.ts, the page's
+ *  alert and confirm held through one write; src/page/picker.ts, the page's own file picker armed for one press), about
+ *  3.4 KB: 24,289 bytes in both builds. Nothing is patched at install: the bundle check below still finds one listener. */
+const BRIDGE_BUDGET = 26 * 1024;
 /** What the bridge's bundle may never name: the extension's APIs (it runs in the page's world, which has none of
  *  them, and must not look for any) and window messaging. */
 const BRIDGE_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage'];
@@ -261,7 +264,9 @@ const BRIDGE_SILENT_AT = ['https://internal-acme.icims.com/jobs/1/engineer/job',
  * naming none of BRIDGE_NEVER_NAMES; and, run in a bare context whose document only records its listeners and has an
  * address, it adds no global and throws nothing; at a posting or its form it listens for exactly one event on the
  * document, its command (src/dom/bridge-protocol.ts), in the capture phase, and anywhere else for none. The page's world
- * is the page's: a global there would be the page's to read and to change.
+ * is the page's: a global there would be the page's to read and to change. v5 p2-fill (PLAN decision 14): and it
+ * patches nothing of the page at install (its alert, confirm, showOpenFilePicker and file-input click stay the page's):
+ * the bridge's two page patches are made on a command alone, during one write, and put back after it.
  */
 function checkBridgeBundle(build, dir, bridge) {
   const [path] = Array.isArray(bridge?.js) ? bridge.js : [];
@@ -276,8 +281,16 @@ function checkBridgeBundle(build, dir, bridge) {
     const listeners = [];
     const document = { addEventListener: (type, _listener, capture) => listeners.push([type, capture === true]),
       removeEventListener: () => undefined, location: { href } };
-    document.defaultView = { document };
-    const sandbox = { document, URL };
+    // v5 p2-fill (PLAN decision 14): what the bridge's page patches act on, only ever on command (src/page/dialogs.ts,
+    // src/page/picker.ts): at install each is left exactly as the page has it, in the window and as globals.
+    const pagePatched = () => ({ alert() {}, confirm() {}, showOpenFilePicker() {},
+      HTMLInputElement: { prototype: { click() {} } } });
+    const own = pagePatched();
+    const view = { document, ...own, HTMLInputElement: { prototype: { ...own.HTMLInputElement.prototype } } };
+    document.defaultView = view;
+    const sandbox = { document, URL, ...pagePatched() };
+    const globals = { alert: sandbox.alert, confirm: sandbox.confirm, showOpenFilePicker: sandbox.showOpenFilePicker,
+      click: sandbox.HTMLInputElement.prototype.click };
     const before = new Set(Object.getOwnPropertyNames(sandbox));
     try {
       vm.runInContext(text, vm.createContext(sandbox), { timeout: 1_000 });
@@ -287,6 +300,14 @@ function checkBridgeBundle(build, dir, bridge) {
     }
     const added = Object.getOwnPropertyNames(sandbox).filter((name) => !before.has(name));
     if (added.length > 0) fail(build, `the page-world bridge adds globals: ${added.join(', ')}`);
+    const untouched = view.alert === own.alert && view.confirm === own.confirm
+      && view.showOpenFilePicker === own.showOpenFilePicker
+      && view.HTMLInputElement.prototype.click === own.HTMLInputElement.prototype.click
+      && Object.keys(view.HTMLInputElement.prototype).length === 1
+      && sandbox.alert === globals.alert && sandbox.confirm === globals.confirm
+      && sandbox.showOpenFilePicker === globals.showOpenFilePicker
+      && sandbox.HTMLInputElement.prototype.click === globals.click;
+    if (!untouched) fail(build, `the page-world bridge patches the page at install at ${href || 'no address'}`);
     const wanted = BRIDGE_INSTALLS_AT.includes(href) ? [['tailorit:bridge', true]] : [];
     if (!isDeepStrictEqual(listeners, wanted)) {
       fail(build, `the page-world bridge listens for ${JSON.stringify(listeners)} at ${href || 'no address'}, not `

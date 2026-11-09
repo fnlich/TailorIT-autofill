@@ -175,7 +175,10 @@ export default tseslint.config(
         'XMLHttpRequest', 'localStorage', 'sessionStorage', 'indexedDB'].map((name) => ({
         name, message: 'The page-world bridge works from the document it is given, and reaches no extension or network API.' }))],
       '@typescript-eslint/no-restricted-imports': restrictImports([
-        { regex: String.raw`^(?!\.\./dom/bridge-protocol$)`, message: 'The page-world bridge imports only its protocol.' },
+        // v5 p2-fill (PLAN decision 14): and its own two page patches beside it (./dialogs, ./picker), which import only
+        // the protocol in turn, so the bridge still reaches nothing of the app but its protocol.
+        { regex: String.raw`^(?!\.\./dom/bridge-protocol$|\./(?:dialogs|picker)$)`,
+          message: 'The page-world bridge imports only its protocol (and, v5 p2-fill, its own page patches beside it).' },
       ]),
     },
   },

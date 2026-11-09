@@ -99,6 +99,9 @@ export interface FieldTarget {
   /** s2 wd: a date drawn in parts its adapter declares (Adapter.dateFor: Workday's date input), the field's control its
    *  wrapper: written and read part by part (fillers/date-parts.ts), never through the native date filler. */
   readonly dateParts?: DatePartsTarget;
+  /** v5 p2-fill: a résumé control its adapter declares that opens the site's own file picker (Adapter.uploadPickers):
+   *  the field's control is that button, and its file goes in through the page's picker (fillers/picker.ts). */
+  readonly picker?: true;
 }
 
 // ── s2 wd: a date drawn in parts ──

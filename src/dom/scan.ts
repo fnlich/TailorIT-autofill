@@ -35,6 +35,14 @@
  *   'date' where its adapter declares it (Adapter.dateFor: Workday's date input), its control the element around the
  *   parts (FieldTarget.dateParts), its layout the parts', what it holds the parts' displays (fillers/date-parts.ts); the
  *   parts' controls are still hidden ones the scan ignored.
+ * - v5 p2-fill: a rich-text box, an editing host by the HTML standard (kinds.ts isEditingHost: contenteditable "",
+ *   "true" or "plaintext-only", editable now, its parent not), is a text field of its own ('textarea', or 'text' where
+ *   it says aria-multiline="false"), labelled and judged visible by the same rules, its text what it shows
+ *   (values.ts editableText); one a person cannot see is a honeypot, only counted; an editable element inside another
+ *   box is that box's content. Nothing but the standard attribute is read.
+ * - v5 p2-fill: a résumé control its adapter declares to open the site's own file picker (Adapter.uploadPickers: a
+ *   button with no file input in the form) is a 'file' field of its own while a person can see it, its target marked
+ *   `picker`, holding nothing the scan can read; its file goes in through the page's own picker (fillers/picker.ts).
  * - Keys come from the core's keys.ts (labelSlug, optionSetHash, assignOrdinals, baseKey, fieldKey), so the worker and
  *   every frame build the same strings.
  * - A field's element is never cached across a write: ScanResult.rescan() scans afresh and target(key) finds the
@@ -51,8 +59,8 @@ import { composedOrder, holdsComposed } from './composed';
 import { constraintsOf } from './constraints';
 import { datePartsValue, formatOfParts } from './fillers/date-parts';
 import {
-  ariaReadOnly, autocompleteTokens, CONTROL_SELECTOR, inputModeFormatOf, isDisabled, isReadOnly, isTextLike, kindOf,
-  typeFormatOf, type NativeKind,
+  ariaReadOnly, autocompleteTokens, CONTROL_SELECTOR, EDITABLE_SELECTOR, editableKind, inputModeFormatOf, isDisabled,
+  isEditingHost, isReadOnly, isTextLike, kindOf, typeFormatOf, type NativeKind,
 } from './kinds';
 import {
   adapterLabelOf, descriptionOf, labelOfControl, labelOfGroup, legendOf, optionLabelOf, type LabelContext,
@@ -132,6 +140,8 @@ interface Candidate {
   widget: WidgetTarget | null;
   /** s2 wd: a date drawn in parts its adapter declares (Adapter.dateFor): its own field of kind 'date'. */
   dateParts?: DatePartsTarget;
+  /** v5 p2-fill: a résumé control that opens the site's own file picker (Adapter.uploadPickers): a file field. */
+  picker?: true;
 }
 
 /** A field before its key: one control, or a radio or checkbox group. */
@@ -163,6 +173,8 @@ interface Draft {
   optionsPartial?: true;
   /** s2 wd: a date drawn in parts (Candidate.dateParts). */
   dateParts?: DatePartsTarget;
+  /** v5 p2-fill: a résumé control that opens the site's own file picker (Candidate.picker). */
+  picker?: true;
 }
 
 /** Scans a frame's form root. */
@@ -185,8 +197,11 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       if (part !== el && holdsComposed(el, part) && part.matches(CONTROL_SELECTOR)) absorbed.add(part);
     }
   }
+  // v5 p2-fill: the résumé controls that open the site's own file picker, as its adapter declares them.
+  const pickers = new Set(adapterParts(adapter?.uploadPickers, root).filter((el) => !outside(el)));
   const collected = collectFields(root);
-  const all = extraRoots.length === 0 ? collected : inDocumentOrder([...collected, ...extraRoots]);
+  const all = extraRoots.length === 0 && pickers.size === 0 ? collected
+    : inDocumentOrder([...collected, ...extraRoots, ...pickers]);
   const found = excluded.length === 0 && absorbed.size === 0 ? all : all.filter((el) => {
     if (!outside(el) && !absorbed.has(el)) return true;
     // A control the adapter keeps out of the fields is still one the scan ignored.
@@ -197,6 +212,15 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
   const lists = new Set(found.filter((el) => roleOf(el) === 'combobox').map((el) => listOf(el))
     .filter((list): list is Element => list !== null));
   for (const el of found) {
+    // v5 p2-fill: a declared picker control a person can see is a file field; one they cannot is none.
+    if (pickers.has(el)) {
+      const shown = visibilityOf(el, cache);
+      if (shown.visible) {
+        candidates.push({ el, kind: 'file', format: undefined, visibility: 'visible', proxy: null, declared: true,
+          widget: null, picker: true });
+      } else if (shown.deferred) counters.deferredFields += 1;
+      continue;
+    }
     const native = el.matches(CONTROL_SELECTOR);
     // A native control inside a widget's list, or an ARIA 1.1 combobox's text box, is that widget's.
     if (native && isWidgetPart(el)) continue;
@@ -226,6 +250,17 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
         candidates.push({ el, kind: 'date', format: formatOfParts(dated.parts), visibility: 'visible', proxy: null,
           declared: true, widget: null, dateParts: dated });
       } else if (shown.deferred) counters.deferredFields += 1;
+      continue;
+    }
+    // v5 p2-fill: a rich-text box (an editing host by the HTML standard: kinds.ts isEditingHost) is a text field of its
+    // own, judged by the same visibility rules; one a person cannot see is a honeypot, only counted (never a proxy).
+    if (!native && declared === null && aria === null && isEditingHost(el)) {
+      const shown = visibilityOf(el, cache);
+      if (shown.visible) {
+        candidates.push({ el, kind: editableKind(el), format: undefined, visibility: 'visible', proxy: null,
+          declared: false, widget: null });
+      } else if (shown.deferred) counters.deferredFields += 1;
+      else counters.hiddenControlsIgnored += 1;
       continue;
     }
     if (!native && declared === null && aria === null) continue;
@@ -287,9 +322,12 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       : draft.kind === 'typeahead-remote' && draft.options.length === 0 ? OPTION_SET_NONE
         : hashOfOptions(draft.options.map((option) => option.label));
     const key = fieldKey({ ...parts, optionSetHash });
+    // v5 p2-fill: a picker control holds no file the scan can read (the page's own input is made at its press).
     const current: CurrentValue = draft.widget !== null ? widgetCurrent(draft, cache)
       : draft.dateParts !== undefined ? datePartsValue(draft.dateParts)
-        : heldFile(draft.kind, draft.control, adapter, currentValueOf(draft.kind, draft.control, draft.selectable, checkedOf));
+        : draft.picker === true ? { kind: 'empty' }
+          : heldFile(draft.kind, draft.control, adapter, currentValueOf(draft.kind, draft.control, draft.selectable,
+            checkedOf));
     const field: ScannedField = {
       key, baseKey: base, platform: options.platform, section: draft.section, kind: draft.kind,
       label: draft.label.text, labelSource: draft.label.source, labelVisible: draft.label.visible,
@@ -306,7 +344,8 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     targets.set(key, { field, control: draft.control, members: draft.members, options: draft.selectOptions,
       proxy: draft.proxy?.el ?? null, ...(draft.widget !== null ? { widget: draft.widget } : {}),
       ...(adapter?.checkedOf !== undefined ? { checkedOf } : {}),
-      ...(draft.dateParts !== undefined ? { dateParts: draft.dateParts } : {}) });
+      ...(draft.dateParts !== undefined ? { dateParts: draft.dateParts } : {}),
+      ...(draft.picker === true ? { picker: true as const } : {}) });
     return field;
   });
 
@@ -375,9 +414,10 @@ function collectControls(root: Element): Element[] {
   return collect(root, CONTROL_SELECTOR);
 }
 
-/** Every native control and every element that may be an ARIA widget's (widgets/aria.ts), in document order. */
+/** Every native control and every element that may be an ARIA widget's (widgets/aria.ts) or (v5 p2-fill) a rich-text
+ *  box (kinds.ts EDITABLE_SELECTOR), in document order. */
 function collectFields(root: Element): Element[] {
-  return collect(root, `${CONTROL_SELECTOR}, ${WIDGET_ROOT_SELECTOR}`);
+  return collect(root, `${CONTROL_SELECTOR}, ${WIDGET_ROOT_SELECTOR}, ${EDITABLE_SELECTOR}`);
 }
 
 /** The elements an adapter's hook names inside the form root (its widget roots, its excluded parts), the extension's
@@ -606,6 +646,7 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
       .map((token) => capCodePoints(token, TEXT_CAP_AUTOCOMPLETE_TOKEN)),
     widget: null,
     ...(first.dateParts !== undefined ? { dateParts: first.dateParts } : {}),
+    ...(first.picker === true ? { picker: true as const } : {}),
   };
 }
 

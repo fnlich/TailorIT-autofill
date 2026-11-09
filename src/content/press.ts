@@ -33,6 +33,10 @@
  * counted (withoutSolvedCaptchaErrors). A challenge popup, a vendor that is no checkbox and a frame that reads like one
  * still block every press. Nothing here ever touches a check.
  *
+ * v5 p2-fill (PLAN Phase 2, Jobright's "Open Application"): the same entry, every guard below held, is also the
+ * person's: the panel's main button on a posting with no form whose adapter offers its own Apply reads "Open
+ * Application", and its panel/fill reaches the posting's frame as run/start (from the worker alone), which presses it
+ * (runtime.ts atWall) and fills the form it brings.
  * v3 Phase 5: pressEntry, the auto-apply agent's agent/enter (from the worker's own script alone: runtime.ts), presses
  * a posting page's declared entry control (Adapter.entryControl: Greenhouse's and Lever's Apply, Ashby's Application
  * tab) through not-submit.ts clickAdapterEntry, the third door this module alone may open: never while a form, a

@@ -640,4 +640,9 @@ export const icimsAdapter: Adapter = {
   entryControl,
   // Apply is never pressed by a run (neverPress): the entry door presses that element alone.
   entryNeverPressed: true,
+  // v5 p2-fill: the profile's résumé is read into the profile (nyu-profile.frame-1.html: "Provide your resume below to
+  // auto-fill your profile"; githubinc-profile.frame-1.html: "Provide your resume below to pre-fill your profile.
+  // Existing data in the form will be replaced", and "Parsing resume, please wait..."): the résumé is written first and
+  // its parse waited for (isBusy shows it), so the run's answers go over the parse, never under it.
+  quirks: { resumeParse: true },
 };

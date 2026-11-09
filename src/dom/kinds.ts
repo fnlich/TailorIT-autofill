@@ -109,3 +109,34 @@ export function isReadOnly(el: Element): boolean {
 export function ariaReadOnly(el: Element): boolean {
   return (el.getAttribute('aria-readonly') ?? '').trim().toLowerCase() === 'true';
 }
+
+// ── v5 p2-fill: rich-text boxes (contenteditable) ──
+/** The elements a rich-text box can be: any element carrying the HTML standard's contenteditable attribute
+ *  (PLAN Phase 2, Jobright's cover-letter and answer boxes). Read by the standard alone, never by a site's class. */
+export const EDITABLE_SELECTOR = '[contenteditable]';
+
+/** The contenteditable values that make an element editable (the HTML standard's: "", "true", "plaintext-only");
+ *  "false" and anything else do not. */
+const EDITABLE_VALUES: ReadonlySet<string> = new Set(['', 'true', 'plaintext-only']);
+
+/**
+ * A rich-text box: an editing host, by the HTML standard. The element itself says contenteditable "", "true" or
+ * "plaintext-only", the browser reads it editable now (isContentEditable), and its parent is not editable (an element
+ * inside another box's editing is that box's content, never a field of its own). An input, a textarea or a select is
+ * the native scanner's. Nothing here reads a class or a site's markup.
+ */
+export function isEditingHost(el: Element): el is HTMLElement {
+  if (el.localName === 'input' || el.localName === 'textarea' || el.localName === 'select') return false;
+  const value = el.getAttribute('contenteditable');
+  if (value === null || !EDITABLE_VALUES.has(value.trim().toLowerCase())) return false;
+  if ((el as HTMLElement).isContentEditable !== true) return false;
+  const parent = el.parentElement ?? ((el.getRootNode() as Partial<ShadowRoot>).host ?? null);
+  return parent === null || (parent as HTMLElement).isContentEditable !== true;
+}
+
+/** A rich-text box's kind: 'text' where it says it holds one line (aria-multiline="false"), else 'textarea' (an
+ *  answer or a cover letter, which take paragraphs). */
+export function editableKind(el: Element): 'text' | 'textarea' {
+  return (el.getAttribute('aria-multiline') ?? '').trim().toLowerCase() === 'false' ? 'text' : 'textarea';
+}
+// ── end v5 p2-fill ──

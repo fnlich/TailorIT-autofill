@@ -356,13 +356,13 @@ describe("check-build's two content scripts: ours and the page-world bridge", ()
   });
 
   // (The snapshot build of 2026-11-06, core pass Z1 items 26 and 39: the bridge reads only the shared domains' address
-  // parsers, under a budget of 24 KiB.)
-  it("fail a page-world bridge over its 24 KiB budget, or one whose file is missing", () => {
+  // parsers, under a budget of 24 KiB; v5 p2-fill: 26 KiB, for its two page patches.)
+  it("fail a page-world bridge over its 26 KiB budget, or one whose file is missing", () => {
     const big = checkBuild(project((write) => {
-      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(24 * 1024)}";`);
+      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(26 * 1024)}";`);
     }));
     expect(big.output).toContain('.output/chrome-mv3: the page-world bridge is');
-    expect(big.output).toContain('over the 24576-byte budget');
+    expect(big.output).toContain('over the 26624-byte budget');
     expect(big.status).toBe(1);
 
     const missing = checkBuild(project((write) => everyManifest(write, (changed) => {
@@ -413,6 +413,16 @@ describe("check-build's two content scripts: ours and the page-world bridge", ()
         `the page-world bridge listens for ${command} at https://internal-acme.icims.com/jobs/1/engineer/job, not []`],
       ['(function(){window.x=1})();',
         `the page-world bridge throws on its own at ${POSTING_AT}: ReferenceError: window is not defined`],
+      // v5 p2-fill (PLAN decision 14): a bridge that patches the page's dialogs or its file picker at install, in the
+      // window it reads (the document's defaultView) or as a global.
+      [`(function(){var v=document.defaultView;v.alert=function(){};${listen}})();`,
+        `the page-world bridge patches the page at install at ${POSTING_AT}`],
+      [`(function(){var v=document.defaultView;v.HTMLInputElement.prototype.click=function(){};${listen}})();`,
+        `the page-world bridge patches the page at install at ${POSTING_AT}`],
+      [`(function(){var v=document.defaultView;v.showOpenFilePicker=null;${listen}})();`,
+        `the page-world bridge patches the page at install at ${POSTING_AT}`],
+      [`(function(){confirm=function(){};${listen}})();`,
+        `the page-world bridge patches the page at install at ${POSTING_AT}`],
     ];
     for (const [bundle, message] of cases) {
       const { status, output } = checkBuild(project((write) => {

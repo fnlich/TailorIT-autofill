@@ -280,6 +280,14 @@ export const LOG_CODES = [
   'sidebar.refused',
   'sidebar.pushed',
   'action.clicked',
+  // ── v5 p2-fill: the page's dialogs a write held back (counts), the page's own file picker armed for a résumé
+  // control's press (what the page opened, as flags), a résumé the page parses waited for (how long, whether it
+  // changed the form), and Open Application on a posting (whether its Apply was pressed). Never a value. ──
+  'content.dialogs-held',
+  'content.picker',
+  'content.resume-parse',
+  'content.open-application',
+  // ── end v5 p2-fill ──
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

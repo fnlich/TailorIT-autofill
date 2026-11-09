@@ -163,8 +163,9 @@ const PAGE_WAITS: Readonly<Record<WallWaits, string>> = {
   'no-sign-in': COPY.toasts.noSignIn,
 };
 
-/** What the main button says and sends: Autofill, Sign up & Autofill, or (labelled Autofill) go on with a paused run. */
-type MainMeaning = 'fill' | 'sign-up' | 'continue';
+/** What the main button says and sends: Autofill, Sign up & Autofill, or (labelled Autofill) go on with a paused run;
+ *  v5 p2-fill: Open Application, on a posting whose site offers its own Apply (a panel/fill: its frame presses it). */
+type MainMeaning = 'fill' | 'sign-up' | 'continue' | 'open';
 
 /** The main button's message for what it means. */
 function mainMessageOf(meaning: MainMeaning, tabId: number): RunMessage {
@@ -530,18 +531,22 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   // The v4 review (M4): the tab's application frame shows an entry choice (Workday's "Start Your Application", whose
   // address reads as the posting's): Autofill answers it with the declared entry.
   const choice = page?.choice === true;
+  // v5 p2-fill (PLAN Phase 2): a posting with no form whose site offers its own Apply (PageState.entry): the main button
+  // reads Open Application, and its panel/fill presses that Apply, then fills what it opens.
+  const entry = page?.support === 'no-form' && page.entry === true && page.confirmation !== true && !choice && !wall;
   // A recognised posting page with no form (v3 Phase 3b): its card shows, and Autofill waits for the application; the
   // platform's page after submitting (the review) shows the card POST /applied answered, without Autofill. A posting
-  // that shows an entry choice or an account wall is not one: Autofill (or Sign up & Autofill) answers it there.
+  // that shows an entry choice or an account wall is not one: Autofill (or Sign up & Autofill) answers it there; nor
+  // (v5 p2-fill) one whose site offers its own Apply: Open Application answers it.
   const postingOnly = page?.support === 'no-form' && (page.confirmation === true
-    || (page.posting === true && !choice && !wall));
+    || (page.posting === true && !choice && !wall && !entry));
   // The platform confirmed the tab's application (the review, Jobright's "Submitted!"): no Autofill, no Cancel or Skip.
   const submitted = page?.submitted !== undefined;
   const cardJob = answered?.job ?? null;
   // v4 ui: the main button's meaning: Sign up & Autofill at an account wall; Autofill at an entry choice (a fill that
   // presses the entry); else go on with a run that waits; else Autofill.
   const meaning: MainMeaning = wall ? 'sign-up' : choice ? 'fill' : reports.some((report) => PAUSED.has(report.status))
-    ? 'continue' : 'fill';
+    ? 'continue' : entry ? 'open' : 'fill';
   const offersFill = tabId !== null && page?.support !== 'none' && !postingOnly && !submitted;
   // s2 profile (the review fix P1): the page's toasts may be gone (timed) or never drawn ('off') while the page still
   // waits, so the panel says what for: a paused run's line (the report's saysWaits), and a page with no run's wall.
@@ -721,7 +726,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
 function MainButton({ tabId, meaning, working, clock, onRun }: { tabId: number; meaning: MainMeaning; working: boolean;
   clock: SeenClock; onRun(message: RunMessage): void }) {
   const seen = useShownFor(`${tabId}|${meaning}`, clock);
-  const label = meaning === 'sign-up' ? COPY.mainView.signUpFill : COPY.panel.fill;
+  // v5 p2-fill: Open Application on a posting whose site offers its own Apply.
+  const label = meaning === 'sign-up' ? COPY.mainView.signUpFill : meaning === 'open' ? COPY.mainView.openApplication
+    : COPY.panel.fill;
   return (
     <div className="tia-toolbar">
       <button type="button" className="tia-cta" disabled={working || !seen} data-working={working ? 'true' : undefined}
@@ -734,6 +741,10 @@ function MainButton({ tabId, meaning, working, clock, onRun }: { tabId: number; 
       </button>
       {meaning === 'sign-up' && (
         <HelpTip text={COPY.mainView.signUpHelp} topic={COPY.mainView.signUpFill} className="tia-toolbar__tip" />
+      )}
+      {meaning === 'open' && (
+        <HelpTip text={COPY.mainView.openApplicationHelp} topic={COPY.mainView.openApplication}
+          className="tia-toolbar__tip" />
       )}
     </div>
   );
@@ -844,7 +855,8 @@ function Unsupported({ reload, ask }: { reload: 'ats' | 'site' | null;
  *  main button answers (the v4 review, M4). */
 function PageStrip({ page }: { page: PageState | null }) {
   if (page === null) return null;
-  if (page.support === 'no-form' && (page.choice === true || page.wall !== undefined)) return null;
+  // v5 p2-fill: nor where the site offers its own Apply (Open Application answers it).
+  if (page.support === 'no-form' && (page.choice === true || page.wall !== undefined || page.entry === true)) return null;
   if (page.support === 'form') {
     return (
       <p className="tia-strip" data-strip="form" data-tone="brand">

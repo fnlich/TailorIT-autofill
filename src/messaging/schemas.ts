@@ -426,7 +426,10 @@ const contentMessages = [
      *  Application": Apply Manually): Autofill there presses it (D7). */
     choice: z.literal(true).optional(),
     /** s2 profile (P1): what the page waits for now, as its wall's toast says (WALL_WAITS); absent: nothing. */
-    waits: z.enum(WALL_WAITS).optional() }),
+    waits: z.enum(WALL_WAITS).optional(),
+    // v5 p2-fill: a posting page with no form whose adapter offers its own Apply now (Adapter.entryControl, from its
+    // fixtures): the panel's main button reads "Open Application" there and presses it (content/runtime.ts atWall).
+    entry: z.literal(true).optional() }),
   /** v3 Phase 8: the sentinel recognised its top frame (src/sentinel): why, from a closed list. The worker checks the
    *  frame's address again itself (Chrome's, never a payload's), limits the asks per tab and injects the content script
    *  into that one document. The only message a company's own page sends before then. */
@@ -513,6 +516,10 @@ export const PageStateSchema = z.strictObject({
   /** s2 profile (the review fix P1): what the tab's application frame, with no run holding it, waits for now (its
    *  wall's toast: frame/wall's `waits`); the side panel says it when the page's toasts are not shown until closed. */
   waits: z.enum(WALL_WAITS).optional(),
+  // v5 p2-fill (PLAN Phase 2, Jobright's "Open Application"): the tab's application frame shows a posting with no form
+  // whose adapter offers its own Apply (frame/wall's `entry`): the panel's main button reads "Open Application", and
+  // its panel/fill presses that Apply, then fills the form it brings.
+  entry: z.literal(true).optional(),
 });
 export type PageState = z.infer<typeof PageStateSchema>;
 

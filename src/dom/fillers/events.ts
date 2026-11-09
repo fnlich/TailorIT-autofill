@@ -9,10 +9,21 @@
  * (Adapter.dateFor: Workday's date input, date-parts.ts), each to that one control. The prototype setter matters in a
  * page's main world, where React tracks a controlled input's value on the element itself; it is correct in the content
  * script's isolated world too.
+ * v5 p2-fill: a rich-text box (dom/kinds.ts isEditingHost), which no value setter reaches, is written with the browser's
+ * own editing instead (text.ts fillEditable): it takes the focus (no scroll) and its content the selection, each insert
+ * is offered first as an untrusted, cancelable beforeinput (EDITING_EVENTS), and document.execCommand makes it where
+ * no editor took it, with the browser's own (trusted) input event; then the box loses the focus. That box alone.
  */
 
 /** The events the extension may cause on page elements. */
 export const ALLOWED_EVENTS = ['input', 'change', 'focusout', 'blur', 'click'] as const;
+
+// ── v5 p2-fill: rich-text boxes ──
+/** The untrusted event a rich-text box (dom/kinds.ts isEditingHost) gets before each insert of its write, on that box
+ *  alone (text.ts fillEditable): a cancelable beforeinput naming the insert, which an editor keeping its own model
+ *  takes (and cancels); otherwise the browser's own editing follows, with its own events. */
+export const EDITING_EVENTS = ['beforeinput'] as const;
+// ── end v5 p2-fill ──
 
 /** The keys a widget may declare (WidgetDecl.keys) and a text box around its write (Adapter.keyAroundWrite), each sent
  *  as KEY_EVENTS, untrusted, to that widget or box alone. */

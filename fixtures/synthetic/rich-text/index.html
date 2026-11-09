@@ -1,0 +1,121 @@
+<!doctype html>
+<!--
+  Synthetic (v5 Phase 2, P2-fill): rich-text answer boxes, read by the HTML standard alone (contenteditable editing
+  hosts), for src/dom/rich-text.browser.test.ts and e2e/specs/61-rich-text.spec.ts. No site's markup is copied: each
+  box is written afresh to behave as the editor families do.
+  - #letter: a plain editing host (contenteditable="true"), its label tied by aria-labelledby, its border its own.
+  - #why: a model-keeping editor (as ProseMirror, Lexical, Slate and Draft keep theirs): the page's script cancels
+    every beforeinput, applies insertText, insertParagraph and the deletes to its own model and draws the box again
+    from it; a DOM change of anyone else's is drawn over at the next input. window.__whyModel holds its model (lines),
+    window.__whyInputs counts the beforeinput events it took, by inputType.
+  - #preferred: contenteditable="plaintext-only", aria-multiline="false": a one-line box (kind text), labelled "First
+    name", so a run fills it from the profile.
+  - #name: a native box whose change the page answers with an alert (window.__alerts counts the alerts called while
+    the page shows them), which a write holds (the page-world bridge's dialogs.hold).
+  - #ignores: a box whose script cancels every beforeinput and draws nothing: it ignores every write.
+  - #shadowed: an editing host inside an open shadow root of #host, labelled inside it.
+  - Not fields: #trap (a box no person can see, with a label: a honeypot, only counted), #off (contenteditable="false"),
+    #inner (an editable element inside #letter's editing: #letter's content), the toolbar's buttons.
+  Served at https://jobs.lever.co/tailorit-fixture/rich-text/apply (e2e). The form posts to /__submitted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rich-text answers</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    .label { display: block; margin-top: 16px; font-weight: 600; }
+    .box { display: block; min-height: 48px; padding: 6px; border: 1px solid #888; background: #fff; }
+    .line { min-height: 24px; }
+    .toolbar button { margin-right: 4px; }
+    #trap-wrap { display: none; }
+    button[type="submit"] { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Platform Engineer</h1>
+    <form action="/__submitted" method="post" id="application">
+      <label class="label" for="name">Full name</label>
+      <input id="name" name="name" class="box line">
+
+      <span class="label" id="letter-label">Cover letter</span>
+      <div class="toolbar"><button type="button" aria-label="Bold">B</button><button type="button" aria-label="Italic">I</button></div>
+      <div id="letter" class="box" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="letter-label"><p>Old text<span id="inner" contenteditable="true"></span></p></div>
+
+      <span class="label" id="why-label">Why do you want to join us?</span>
+      <div id="why" class="box" contenteditable="true" role="textbox" aria-labelledby="why-label" aria-required="true"><p><br></p></div>
+
+      <span class="label" id="preferred-label">First name</span>
+      <div id="preferred" class="box line" contenteditable="plaintext-only" role="textbox" aria-multiline="false" aria-labelledby="preferred-label"></div>
+
+      <span class="label" id="ignores-label">Anything else?</span>
+      <div id="ignores" class="box" contenteditable="true" role="textbox" aria-labelledby="ignores-label"></div>
+
+      <div id="host"></div>
+
+      <div id="trap-wrap"><span class="label" id="trap-label">Website</span>
+        <div id="trap" class="box" contenteditable="true" role="textbox" aria-labelledby="trap-label"></div></div>
+
+      <span class="label" id="off-label">Posting summary</span>
+      <div id="off" class="box" contenteditable="false" aria-labelledby="off-label">Read only</div>
+
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+  <script>
+    (function () {
+      // The model-keeping editor (#why): its own lines, drawn as paragraphs.
+      var why = document.getElementById('why');
+      var model = [''];
+      window.__whyModel = model;
+      window.__whyInputs = {};
+      function draw() {
+        why.textContent = '';
+        model.forEach(function (line) {
+          var p = document.createElement('p');
+          if (line === '') p.appendChild(document.createElement('br'));
+          else p.textContent = line;
+          why.appendChild(p);
+        });
+      }
+      why.addEventListener('beforeinput', function (event) {
+        event.preventDefault();
+        window.__whyInputs[event.inputType] = (window.__whyInputs[event.inputType] || 0) + 1;
+        var selection = document.getSelection();
+        var whole = selection !== null && selection.rangeCount === 1 && selection.toString().replace(/\s+/g, ' ').trim()
+          === model.join(' ').replace(/\s+/g, ' ').trim() && model.join('') !== '';
+        if (whole) { model.length = 0; model.push(''); }
+        if (event.inputType === 'insertText') model[model.length - 1] += event.data || '';
+        else if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') model.push('');
+        else if (event.inputType.indexOf('delete') === 0) { model.length = 0; model.push(''); }
+        draw();
+        // The caret at the end of what it drew, as an editor puts it.
+        var last = why.lastChild;
+        if (last !== null && selection !== null) {
+          var range = document.createRange();
+          range.selectNodeContents(last);
+          range.collapse(false);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      });
+      // The native box's change answered with an alert.
+      window.__alerts = 0;
+      document.getElementById('name').addEventListener('change', function () {
+        window.__alerts += 1;
+        window.alert('Name saved');
+      });
+      // A box that ignores every write.
+      document.getElementById('ignores').addEventListener('beforeinput', function (event) { event.preventDefault(); });
+      // The editing host inside an open shadow root.
+      var root = document.getElementById('host').attachShadow({ mode: 'open' });
+      root.innerHTML = '<style>.box{display:block;min-height:48px;padding:6px;border:1px solid #888;background:#fff}'
+        + '.label{display:block;margin-top:16px;font-weight:600}</style>'
+        + '<span class="label" id="shadow-label">Additional information</span>'
+        + '<div id="shadowed" class="box" contenteditable="true" role="textbox" aria-labelledby="shadow-label"></div>';
+    })();
+  </script>
+</body>
+</html>

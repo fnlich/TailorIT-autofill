@@ -13,8 +13,13 @@
  *    format-unsupported), then is checked again, since the page had a moment to change, and is dropped as user-stopped
  *    if the person pressed Cancel meanwhile;
  * 4. fill() writes with untrusted events and reads back at once; what the field then holds (readBack, values.ts) is
- *    what the loop hashes for its flip count. An ARIA widget is written by the widget helpers instead (Phase 4,
- *    dom/widgets): its option chosen, its missing options added, its member pressed, or, for a remote typeahead, each
+ *    what the loop hashes for its flip count. v5 p2-fill: a rich-text box takes the browser's own insert
+ *    (fillers/text.ts fillEditable); a résumé control that opens the page's own picker (FieldTarget.picker) takes its
+ *    file through that picker, armed for one press (fillers/picker.ts); the page's alert and confirm are held through
+ *    the write's own events and an upload's wait (fillers/dialogs.ts: only dialogs no action of the person's brought,
+ *    counted); and where the page parses the résumé (Adapter.quirks.resumeParse; the loop writes it first:
+ *    core/plan/order.ts) its parse is waited for before the next write (dom/resume-parse.ts). An ARIA widget is
+ *    written by the widget helpers instead (Phase 4, dom/widgets): its option chosen, its missing options added, its member pressed, or, for a remote typeahead, each
  *    query a guarded write of its own and each result list matched by the worker (searchField). A widget's options in
  *    the scan may be the run's kept reading of a closed list, so the write's origin goes to the widget filler, which
  *    checks an llm-pick again on what the list shows right before its click (the Phase 4 review, R1). A long list its
@@ -50,6 +55,11 @@ import { accepts, acceptTokens, fill } from '../dom/fillers';
 import { fillDateParts } from '../dom/fillers/date-parts';
 import { mismatch } from '../dom/fillers/outcome';
 import { awaitUpload, uploadStateOf } from '../dom/fillers/upload';
+import type { HeldDialogs } from '../dom/bridge-protocol';
+import { withDialogsHeld, withDialogsHeldWhile } from '../dom/fillers/dialogs';
+import { fillThroughPicker, type PickerResult } from '../dom/fillers/picker';
+import { awaitResumeParse } from '../dom/resume-parse';
+import { log } from '../shared/log';
 import { sameOptionLabel } from '../dom/fillers/verify';
 import { domGuardBeforeWrite, type PlannedField } from '../dom/guard';
 import { hashOfOptions } from '../dom/option-hash';
@@ -59,6 +69,7 @@ import { monotonicNow } from '../dom/time';
 import type {
   FieldTarget, FillOutcome as DomFillOutcome, ReadBackRule, ScannedField, ScanResult, WidgetOptionRead, WidgetReading,
 } from '../dom/types';
+import { textOfControl } from '../dom/values';
 import { visiblePlaceholder } from '../dom/visible-text';
 import {
   awaitPageReady, chooseThroughBridge, fillWidget, isActionable, searchesList, searchForOption, searchTypeahead,
@@ -144,6 +155,9 @@ export interface WrittenField {
   /** The core pass of 2026-11-06: whether the file input written has left the page since (Greenhouse takes it out once
    *  a file is in it: fixtures/greenhouse/axle-attached.html); set only beside uploadNow. */
   inputLeft?: () => boolean;
+  /** v5 p2-fill: what the page's own picker opened for a picker control's write (dom/fillers/picker.ts): a file input of
+   *  its own, read back at the write, or its showOpenFilePicker, which leaves nothing to read back. */
+  picked?: 'input' | 'file-system';
 }
 
 /** What a widget's write needs from its loop (Phase 4). */
@@ -324,7 +338,8 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
 
   let resume: ReceivedResume | null = null;
   if (write.value.kind === 'file') {
-    const tokens = acceptTokens(verdict.target.control as HTMLInputElement);
+    // v5 p2-fill: a picker control has no input to read an accept list from: the page's own input is read at the press.
+    const tokens = verdict.target.picker === true ? [] : acceptTokens(verdict.target.control as HTMLInputElement);
     const document = write.value.ref;
     const got = await receiveResume(env.content, { runId: env.runId(), accepts: (file) => accepts(tokens, file),
       signal: env.signal, ...env.resume, ...(document === 'cover-letter' ? { document } : {}) });
@@ -367,28 +382,50 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   const shown = visiblePlaceholder(target.control);
   if (shown !== null) held.set(target.control, shown);
   const textLike = target.field.kind === 'text' || target.field.kind === 'textarea';
-  const textBefore = textLike ? (target.control as HTMLInputElement | HTMLTextAreaElement).value : null;
+  // v5 p2-fill: a rich-text box's text too (dom/values.ts textOfControl).
+  const textBefore = textLike ? textOfControl(target.control) : null;
   const selectedBefore = selectedOf(target.field);
   const rule = readBackOf(planned.category);
   const file = resume?.file ?? undefined;
   const listed = target.field.options;
   const optionShown = write.value.kind === 'option' && listed !== 'lazy'
     ? listed[write.value.index]?.label ?? null : null;
-  // s2 wd: a date drawn in parts (Adapter.dateFor: Workday's) is written part by part and read back from its displays,
-  // its page's answer awaited (dom/fillers/date-parts.ts); every other field by the native fillers.
-  const outcome = target.dateParts !== undefined && write.value.kind === 'date'
-    ? await fillDateParts(target, write.value.iso, { adapter: env.adapter, root: env.root, signal: env.signal })
-    : fill(target, write.value, { adapter: env.adapter, root: env.root, file, readBack: rule });
+  // v5 p2-fill (PLAN decision 14): the page's alert and confirm held through the write's own events and an upload's
+  // wait, for the dialogs no action of the person's brought (dom/fillers/dialogs.ts; counts logged, never words).
+  const doc = target.control.ownerDocument;
+  const heard = (dialogs: HeldDialogs) => log('content.dialogs-held', { alerts: dialogs.alerts,
+    confirms: dialogs.confirms });
+  // v5 p2-fill: a résumé control that opens the page's own file picker (Adapter.uploadPickers) gets its file through
+  // that picker, armed for one press (dom/fillers/picker.ts); s2 wd: a date drawn in parts (Adapter.dateFor: Workday's)
+  // is written part by part and read back from its displays, its page's answer awaited (dom/fillers/date-parts.ts);
+  // every other field by the native fillers.
+  let picked: PickerResult | null = null;
+  let outcome: DomFillOutcome;
+  if (target.picker === true && write.value.kind === 'file') {
+    picked = await withDialogsHeldWhile(doc, () => fillThroughPicker(target.control as HTMLElement, file,
+      { adapter: env.adapter, root: env.root, signal: env.signal }), heard);
+    log('content.picker', { input: picked.picked === 'input', fileSystem: picked.picked === 'file-system',
+      wrote: picked.outcome.wrote });
+    outcome = picked.outcome;
+  } else if (target.dateParts !== undefined && write.value.kind === 'date') {
+    const iso = write.value.iso;
+    outcome = await withDialogsHeldWhile(doc, () => fillDateParts(target, iso, { adapter: env.adapter, root: env.root,
+      signal: env.signal }), heard);
+  } else {
+    outcome = withDialogsHeld(doc, () => fill(target, write.value, { adapter: env.adapter, root: env.root, file,
+      readBack: rule }), heard);
+  }
   let row = rowAfterFill(planned, outcome);
   if (!outcome.wrote) {
     resume?.release();
     return { row };
   }
   // A page that uploads a file the moment it goes in says whether its upload worked (Adapter.uploadState): waited for,
-  // and a failed or unconfirmed upload is never verified.
-  const input = target.control as HTMLInputElement;
-  const upload = write.value.kind === 'file' && file !== undefined ? await awaitUpload(env.adapter, input, file.name,
-    env.signal) : null;
+  // and a failed or unconfirmed upload is never verified. v5 p2-fill: the input is the one the page's picker opened
+  // for a picker control (none where the page took the file through its showOpenFilePicker).
+  const input = picked === null ? target.control as HTMLInputElement : picked.input;
+  const upload = write.value.kind === 'file' && file !== undefined && input !== null
+    ? await withDialogsHeldWhile(doc, () => awaitUpload(env.adapter, input, file.name, env.signal), heard) : null;
   // The file is in its input: the person's Skip only ends the wait for the page's word (still pending, so
   // upload-not-confirmed); the run's end throws.
   if (runOver(env)) {
@@ -396,14 +433,29 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
     throw new RunAborted();
   }
   if (upload === 'failed' || upload === 'pending') row = uploadRow(planned, upload);
+  // v5 p2-fill: a file the page took through its showOpenFilePicker leaves nothing of ours to read back: flagged.
+  else if (picked?.picked === 'file-system') row = uploadRow(planned, 'pending');
+  // v5 p2-fill: the résumé of a page that parses it (Adapter.quirks.resumeParse; core/plan/order.ts wrote it first):
+  // its parse is waited for, so the rest of the pass is written over it, never under it (dom/resume-parse.ts).
+  if (write.value.kind === 'file' && write.value.ref === 'resume' && env.adapter.quirks?.resumeParse === true
+    && upload !== 'failed') {
+    const parse = await awaitResumeParse(() => env.root, env.adapter, env.signal);
+    log('content.resume-parse', { ms: Math.round(parse.ms), changed: parse.changed, parsed: parse.outcome === 'parsed' });
+    if (runOver(env)) {
+      resume?.release();
+      throw new RunAborted();
+    }
+  }
   const named = file?.name;
+  const watched = upload === null || named === undefined || input === null ? null : input;
   return {
     row,
     written: { key: write.key, field: wanted, value: write.value, origin: write.origin, planned, rule,
       file: file === undefined ? null : { name: file.name, size: file.size }, resume, textBefore, selectedBefore,
       readBackVerified: outcome.verification === 'verified', optionShown, upload,
-      uploadNow: upload === null || named === undefined ? null : () => uploadStateOf(env.adapter, input, named),
-      ...(upload === null || named === undefined ? {} : { inputLeft: () => !input.isConnected }) },
+      uploadNow: watched === null || named === undefined ? null : () => uploadStateOf(env.adapter, watched, named),
+      ...(watched === null ? {} : { inputLeft: () => !watched.isConnected }),
+      ...(picked === null || picked.picked === null ? {} : { picked: picked.picked }) },
     readBack: readBack(target),
   };
 }

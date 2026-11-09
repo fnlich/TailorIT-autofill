@@ -14,7 +14,7 @@
  */
 import type { FieldKind } from '../core/enums';
 import type { BaseKey, FieldKey } from '../core/types/field';
-import { isDisabled, isReadOnly, kindOf } from './kinds';
+import { isDisabled, isEditingHost, isReadOnly, kindOf } from './kinds';
 import { isInOwnUi } from './own-ui';
 import type { DomGuardVerdict, ScanResult } from './types';
 import { isUserVisible } from './visibility';
@@ -47,8 +47,12 @@ export function domGuardBeforeWrite(last: ScanResult, planned: PlannedField): Do
   if (elements.some(isInOwnUi)) return { ok: false, reason: 'internal-error' };
   // A native control that is no field now is an auth field (or the page changed its type); a widget's element is no
   // native control, so only its text box is asked; s2 wd: nor is a date drawn in parts' wrapper, so its parts are.
+  // v5 p2-fill: nor is a rich-text box (an editing host: kinds.ts isEditingHost; one no longer editable is no field of
+  // the fresh scan at all), nor a declared picker control (a button: the page makes its input at the press).
   const natives = target.dateParts !== undefined ? target.dateParts.parts.map((part) => part.input)
-    : target.widget === undefined ? elements : target.widget.input === null ? [] : [target.widget.input];
+    : target.picker === true ? []
+      : target.widget === undefined ? elements.filter((el) => !isEditingHost(el))
+        : target.widget.input === null ? [] : [target.widget.input];
   if (natives.some((el) => kindOf(el).field === false)) return { ok: false, reason: 'auth-required' };
   if (field.labelSource === 'none' || !field.labelVisible) return { ok: false, reason: 'no-visible-label' };
   if (field.camouflaged) return { ok: false, reason: 'not-user-visible' };

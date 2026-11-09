@@ -19,7 +19,9 @@
  * frame hears run/start (it signs in there, or presses the adapter's declared entry), and the tab's next form is
  * started once it says hello. A plain panel/fill ends any grant the tab held. The v4 review (M1): the grant is given for
  * the tab's application frame as it is now (wallFrameOf: its origin, and its application key where it has one), so it
- * holds for that site alone (sign-up.ts).
+ * holds for that site alone (sign-up.ts). v5 p2-fill: and where it shows a posting whose adapter offers its own Apply
+ * (frame/wall's `entry`: the panel's "Open Application"), that frame presses it, and the tab's next form is started the
+ * same way.
  * The policy card's decision has its own message, addressed to one frame: panel/policyDecision becomes
  * run/policyDecision for that frame only, and only while its report says its run waits at policy-notice. Continue
  * never stands in for Fill anyway: with one frame at the policy card and another at a CAPTCHA pause, the toolbar's
@@ -113,7 +115,9 @@ export function createPanelHandlers(deps: PanelDeps) {
       // the tab's next form is started once it shows (module header).
       const application = wallFrameOf(all);
       const wall = forms.length === 0 ? application : null;
-      const atWall = wall !== null && (wall.wall !== undefined || wall.choice === true);
+      // v5 p2-fill: or a posting whose adapter offers its own Apply (Open Application: the frame presses it, and the
+      // tab's next form is started once it shows).
+      const atWall = wall !== null && (wall.wall !== undefined || wall.choice === true || wall.entry === true);
       const signIn = message.signIn === true && !message.dryRun;
       // The v4 review (M1): the grant is for the tab's application frame as it is now, its origin and application.
       await deps.signUp?.(message.tabId, { signIn, fill: atWall && !message.dryRun }, application === null ? null

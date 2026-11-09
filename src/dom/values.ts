@@ -7,8 +7,28 @@
 import type { FieldKind } from '../core/enums';
 import type { CurrentValue } from '../core/types/field';
 import { capCodePoints } from '../core/text/fold';
+import { isEditingHost } from './kinds';
 import { cleanOptionLabel, isPlaceholderOption } from './option-hash';
 import { MAX_SELECTED_LABELS, TEXT_CAP_CURRENT } from './thresholds';
+
+// ── v5 p2-fill: rich-text boxes (contenteditable) ──
+/** What a rich-text box (kinds.ts isEditingHost) shows as its text: its rendered text (innerText: a paragraph or a
+ *  line break is a new line, what CSS hides is left out, a placeholder drawn by ::before is no text), non-breaking
+ *  spaces as spaces, trailing white space dropped, and '' for a box that shows only white space (an empty editor
+ *  keeps an empty paragraph). Memory only. */
+export function editableText(el: HTMLElement): string {
+  const text = (typeof el.innerText === 'string' ? el.innerText : el.textContent ?? '').replace(/\u00a0/g, ' ')
+    .replace(/\r\n?/g, '\n');
+  return text.trim() === '' ? '' : text.replace(/\s+$/, '');
+}
+
+/** A text-like control's text: an input's or a textarea's value, a rich-text box's text (editableText). */
+export function textOfControl(control: Element): string {
+  if (isEditingHost(control)) return editableText(control);
+  const value = (control as HTMLInputElement | HTMLTextAreaElement).value;
+  return typeof value === 'string' ? value : '';
+}
+// ── end v5 p2-fill ──
 
 /** One option of a scanned field, as values.ts needs it: its label and whether it is selected now. */
 export interface SelectableOption {
@@ -25,7 +45,8 @@ export function currentValueOf(kind: FieldKind, control: Element, options: reado
     case 'text':
     case 'textarea':
     case 'date': {
-      const value = (control as HTMLInputElement | HTMLTextAreaElement).value;
+      // v5 p2-fill: a rich-text box's text too.
+      const value = textOfControl(control);
       return value === '' ? { kind: 'empty' } : { kind: 'text', text: capCodePoints(value, TEXT_CAP_CURRENT) };
     }
     case 'checkbox':

@@ -295,6 +295,14 @@ export interface Adapter {
   /** The visible element standing in for a hidden native radio or checkbox. */
   proxyFor?(input: HTMLInputElement): Element | null;
   uploadWidgets?(root: Element): Array<{ control: Element; input: HTMLInputElement }>;
+  // ── v5 p2-fill (PLAN decision 14) ──
+  /** Résumé controls that open the site's own file picker: a button the person presses to attach a file, with no file
+   *  input of the form behind it (the page makes one, or calls showOpenFilePicker, when it is pressed), each written
+   *  from a snapshot or a read-only public capture of the control before an upload. Each one a person can see is a file
+   *  field of its own (FieldTarget.picker), its file given through the page's own picker armed for one press
+   *  (dom/fillers/picker.ts, page/picker.ts). None is declared yet: no snapshot shows one (docs/OWNER-QUESTIONS.md). */
+  uploadPickers?(root: Element): HTMLElement[];
+  // ── end v5 p2-fill ──
   widgetFor?(control: Element): WidgetDecl | null;
   /** s2 wd: a date drawn in parts (DatePartsDecl), asked of each element the scanner reads as no field and no widget
    *  (Workday's div[role=group][data-automation-id=dateInputWrapper]); null for any other. */
@@ -366,7 +374,8 @@ export interface Adapter {
   signInPrelude?(doc: Document, wall: SignInWall): HTMLElement | null;
   /** v3 Phase 5, the auto-apply agent: on a posting page that shows no form, the one control that opens the
    *  application (Greenhouse's and Lever's Apply, Ashby's Application tab), or null. Pressed only by
-   *  the entry door of dom/fillers/not-submit.ts, for the agent alone. Where quirks.entryPresses allows it, a press
+   *  the entry door of dom/fillers/not-submit.ts, for the agent alone, and (v5 p2-fill) for the person's Open
+   *  Application (the panel's main button on such a page: content/runtime.ts atWall). Where quirks.entryPresses allows it, a press
    *  that leaves the page in the same document is followed by the next control the hook answers then (v3 Phase 7b:
    *  Workday's Apply opens its choice in place, and the hook then answers its Apply Manually). */
   entryControl?(doc: Document): HTMLElement | null;
@@ -406,5 +415,12 @@ export interface Adapter {
     /** A failed upload can take the whole form down (Workable's page shows its error page in the form's place: the
      *  live check of 2026-11-02), so a pass writes its files after every other field. */
     filesLast?: true;
+    // ── v5 p2-fill ──
+    /** The page reads the résumé put into its form and fills the application's fields from it (Rippling's "The résumé
+     *  will be parsed to fill in the application details", iCIMS's "Parsing resume, please wait..."), each named in its
+     *  adapter from a snapshot: a pass writes the résumé before every other field and waits for the page's parse
+     *  (dom/resume-parse.ts) before it writes the rest over it (Jobright uploads the résumé first for the same reason). */
+    resumeParse?: true;
+    // ── end v5 p2-fill ──
   };
 }

@@ -78,6 +78,7 @@ import {
 } from '../core/loop/bookkeeping';
 import { loopRows, unplannedRow, unresolvedRow } from '../core/loop/rows';
 import type { Provenance } from '../core/enums';
+import { resumeFirst } from '../core/plan/order';
 import { settleRow } from '../core/plan/settle';
 import { reconcilePrefill, type PrefillIntent } from '../core/steps/prefill';
 import type { BaseKey, CurrentValue, FieldKey, FieldSpec, OptionSetHash } from '../core/types/field';
@@ -768,6 +769,8 @@ class ReactiveLoop {
     // failed upload takes the form down gets its files last (Adapter.quirks.filesLast); s2 lists: a phone's country is
     // chosen before its number is typed (phone-order.ts).
     const ordered = phoneCountryFirst(boxBeforeEndDate(queue));
+    // v5 p2-fill: a page that parses the résumé gets it first (core/plan/order.ts), its parse awaited (content/pass.ts).
+    if (this.env.adapter.quirks?.resumeParse === true) return resumeFirst(ordered);
     return this.env.adapter.quirks?.filesLast ? filesAfterTheRest(ordered) : ordered;
   }
 

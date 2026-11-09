@@ -1,0 +1,110 @@
+/*
+ * v5 p2-fill (PLAN decision 14; Jobright's file-picker interception, in our own design): a résumé control its adapter
+ * declares (Adapter.uploadPickers: a button with no file input in the form, which opens the site's own file picker by
+ * calling a file input's click() or showOpenFilePicker()) gets the run's chosen file instead of an OS dialog. The
+ * page's side is page/picker.ts, through the page-world bridge (dom/bridge.ts):
+ * 1. the control is armed (picker.arm, on the control): for this one press, the page's click() on a file input opens
+ *    no picker and the bridge tells which input it was (BRIDGE_PICKED, its relatedTarget), and its showOpenFilePicker()
+ *    waits for our answer;
+ * 2. the control is pressed with an untrusted click(), through the never-submit door (not-submit.ts clickIfAllowed);
+ * 3. what the page opened is waited for, PICKER_WAIT_MS at most (a page may open it after a promise: react-dropzone
+ *    falls back to its input's click() once showOpenFilePicker refuses an untrusted press);
+ * 4. a file input of this document is given the file as any file input is (file.ts fillFile: its accept list checked,
+ *    the file set through a DataTransfer, input and change), and read back; a showOpenFilePicker() is answered with the
+ *    file alone (BRIDGE_SUPPLY, a detached input holding it: the page reads it from the handle it resolves with), never
+ *    read back (upload-not-confirmed, flagged for the person, unless the adapter reads the page's own word);
+ * 5. the control is disarmed (picker.disarm), whatever happened.
+ * Only the planned write's own file is ever supplied, only in answer to this one press. Nothing is pressed where no
+ * bridge answers the arm (a frame it does not install in): the field is needs-your-click, the person's to attach, as is
+ * a press the page answered with no picker. Nothing here reads or logs a value.
+ */
+import type { Adapter } from '../../adapters/types';
+import { askBridge } from '../bridge';
+import { BRIDGE_PICKED, BRIDGE_SUPPLY, PICKED_FILE_SYSTEM, PICKED_INPUT } from '../bridge-protocol';
+import { isInOwnUi } from '../own-ui';
+import { deadline } from '../time';
+import type { FillOutcome } from '../types';
+import { setFiles, windowOf } from './events';
+import { fillFile } from './file';
+import { clickIfAllowed } from './not-submit';
+import { mismatch, refused } from './outcome';
+
+/** How long a press waits for the page to open its picker (page/picker.ts PICKER_ARM_MS holds the arm a little longer). */
+export const PICKER_WAIT_MS = 1_500;
+
+/** What the page opened for the press: a file input of its own, or its showOpenFilePicker. */
+export type Picked = { kind: 'input'; input: HTMLInputElement } | { kind: 'file-system' };
+
+/** What a press through the page's own picker came to: the fill's outcome, the input the file went into (null where the
+ *  page took it through showOpenFilePicker, or nothing was given), and what the page opened. */
+export interface PickerResult {
+  outcome: FillOutcome;
+  input: HTMLInputElement | null;
+  picked: Picked['kind'] | null;
+}
+
+/** What a press needs besides the control and the file. */
+export interface PickerContext {
+  adapter: Adapter | null;
+  root: Element | null;
+  signal?: AbortSignal;
+  waitMs?: number;
+}
+
+/** Whether the page's picked input is one the file may go into: a file input of the control's own document, never the
+ *  extension's own UI, not disabled. */
+function takesFile(input: Element | null, control: HTMLElement): input is HTMLInputElement {
+  if (input === null) return false;
+  const view = windowOf(control);
+  return input instanceof view.HTMLInputElement && input.type === 'file' && input.ownerDocument === control.ownerDocument
+    && !isInOwnUi(input) && !input.disabled;
+}
+
+/** Answers the page's showOpenFilePicker with `file` alone: a detached file input holding it, on the armed control. */
+function supply(control: HTMLElement, file: File): void {
+  const view = windowOf(control);
+  const carrier = control.ownerDocument.createElement('input');
+  carrier.type = 'file';
+  setFiles(carrier, file);
+  control.dispatchEvent(new view.FocusEvent(BRIDGE_SUPPLY, { relatedTarget: carrier, bubbles: false, cancelable: false,
+    composed: false }));
+}
+
+/** Presses `control` with the page's own picker armed and gives `file` to what the page opens (see the header). */
+export async function fillThroughPicker(control: HTMLElement, file: File | undefined, ctx: PickerContext):
+  Promise<PickerResult> {
+  if (file === undefined) return { outcome: refused('resume-unavailable'), input: null, picked: null };
+  let picked: Picked | null = null;
+  let wake: () => void = () => undefined;
+  const woken = new Promise<void>((resolve) => {
+    wake = resolve;
+  });
+  const onPicked = (event: Event): void => {
+    if (picked !== null || event.target !== control) return;
+    const detail = (event as UIEvent).detail;
+    const related = (event as FocusEvent).relatedTarget as Element | null;
+    if (detail === PICKED_INPUT && takesFile(related, control)) picked = { kind: 'input', input: related };
+    else if (detail === PICKED_FILE_SYSTEM && related === null) {
+      picked = { kind: 'file-system' };
+      supply(control, file);
+    }
+    if (picked !== null) wake();
+  };
+  control.addEventListener(BRIDGE_PICKED, onPicked);
+  try {
+    const armed = askBridge(control, { op: 'picker.arm' }, ctx.signal);
+    if (armed?.ok !== true) return { outcome: refused('needs-your-click'), input: null, picked: null };
+    if (!clickIfAllowed(control, { adapter: ctx.adapter, root: ctx.root })) {
+      return { outcome: refused('needs-your-click'), input: null, picked: null };
+    }
+    if (picked === null) await Promise.race([woken, deadline(ctx.waitMs ?? PICKER_WAIT_MS, ctx.signal)]);
+  } finally {
+    control.removeEventListener(BRIDGE_PICKED, onPicked);
+    if (control.isConnected) askBridge(control, { op: 'picker.disarm' });
+  }
+  const now = picked as Picked | null;
+  if (now === null) return { outcome: refused('needs-your-click'), input: null, picked: null };
+  // Given through the page's showOpenFilePicker: the page holds it, and nothing of ours can read it back.
+  if (now.kind === 'file-system') return { outcome: mismatch('upload-not-confirmed'), input: null, picked: now.kind };
+  return { outcome: fillFile(now.input, file), input: now.input, picked: now.kind };
+}

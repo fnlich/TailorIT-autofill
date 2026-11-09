@@ -14,7 +14,7 @@
  */
 import type { Adapter } from '../../adapters/types';
 import type { WriteValue } from '../../core/types/intent';
-import { isDisabled, isReadOnly } from '../kinds';
+import { isDisabled, isEditingHost, isReadOnly } from '../kinds';
 import type { FieldTarget, FillOutcome, ReadBackRule } from '../types';
 import { fillCheckbox, fillCheckboxGroup, fillRadio } from './choice';
 import { fillDate } from './date';
@@ -23,7 +23,7 @@ import { fillFile } from './file';
 import { assertNotSubmit } from './not-submit';
 import { refused } from './outcome';
 import { fillMultiSelect, fillSelect } from './select';
-import { fillText } from './text';
+import { fillEditable, fillText } from './text';
 import { readBackRuleOf } from './verify';
 
 /** What a fill needs besides the field and the value. */
@@ -63,6 +63,8 @@ export function fill(target: FieldTarget, value: WriteValue, ctx: FillContext): 
   if (target.widget !== undefined || field.options === 'lazy') return refused('widget-unsupported');
   // s2 wd: a date drawn in parts is date-parts.ts's (fillDateParts, awaited by content/pass.ts), never fillDate's.
   if (target.dateParts !== undefined) return refused('widget-unsupported');
+  // v5 p2-fill: a picker control's file goes through the page's own picker (picker.ts, awaited by content/pass.ts).
+  if (target.picker === true) return refused('widget-unsupported');
   if (value.kind === 'options' && value.cleanLabels.length !== value.indices.length) return refused('internal-error');
   const clicks = { adapter: ctx.adapter, root: ctx.root };
   switch (field.kind) {
@@ -72,6 +74,8 @@ export function fill(target: FieldTarget, value: WriteValue, ctx: FillContext): 
       // The key its adapter declares around the write (Workable's date masks), only to a box assertNotSubmit allows.
       const key = keyAroundWrite(control, ctx.adapter);
       if (key !== null && !assertNotSubmit(control, clicks).ok) return refused('needs-your-click');
+      // v5 p2-fill: a rich-text box (contenteditable) takes the browser's own insert (text.ts fillEditable), never a key.
+      if (isEditingHost(control)) return fillEditable(control, value.text, ctx.readBack ?? readBackRuleOf(field));
       return fillText(control as HTMLInputElement | HTMLTextAreaElement, value.text,
         ctx.readBack ?? readBackRuleOf(field), key);
     }

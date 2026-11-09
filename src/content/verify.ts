@@ -53,6 +53,14 @@ export function verifyWritten(fresh: ScanResult, written: WrittenField): FillRes
     // fixtures/greenhouse/axle-attached.html): nothing is left to read back, and the page's word is the read-back.
     if (now === 'confirmed' && written.inputLeft?.() === true) return settleRow(written.planned, { kind: 'verified' });
   }
+  // v5 p2-fill: a picker control's write (Adapter.uploadPickers, dom/fillers/picker.ts): the scan holds no input of it,
+  // so the input the page's picker opened was read back at the write; a file taken through its showOpenFilePicker has
+  // nothing to read back, flagged for the person.
+  if (written.value.kind === 'file' && written.picked !== undefined) {
+    if (written.picked === 'file-system') return uploadRow(written.planned, 'pending');
+    return written.readBackVerified ? settleRow(written.planned, { kind: 'verified' })
+      : mismatchRow(written.planned, 'verify-mismatch');
+  }
   if (written.value.kind === 'file' && written.readBackVerified) {
     // Upload widgets empty their input once they have the file: the upload taken, not a mismatch (LC-3). The input's
     // own files say so: its scanned value may be a file its field shows (Adapter.uploadHeld, the core pass of

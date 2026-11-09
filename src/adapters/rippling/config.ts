@@ -28,6 +28,8 @@
  * typeahead's suggestions, error markup, what follows Apply (the progress bar stands at 50 %) and the confirmation.
  * The résumé's help says it "will be parsed to fill in the application details"; it is the form's first field, so the
  * standard order writes it first, and what the parse may change afterwards is read back by the run's verification.
+ * v5 p2-fill: since Phase 2 that help is the adapter's quirks.resumeParse (rippling-0, -2): the résumé is written first
+ * and its parse waited for (dom/resume-parse.ts), so the rest of the form is written over the parse.
  */
 import type { AtsConfig } from '../configured/types';
 import { parseRipplingUrl } from './url';
@@ -84,6 +86,9 @@ export const RIPPLING_CONFIG: AtsConfig = {
     { css: 'span[role="button"][aria-label^="Share on"]', from: 'rippling-4' },
   ],
   posting: { text: 'div.ATS_htmlPreview', entry: 'button[data-testid="Apply now"]', from: 'rippling-4' },
+  // v5 p2-fill: rippling-0 and -2 (smartsuite-uploaded, qu-careers-form): the résumé's help, "The résumé will be parsed
+  // to fill in the application details".
+  quirks: { resumeParse: true },
   code: {
     // rippling-0, -2: the country code shares the phone field's label with the number, so it reads "Phone number
     // country code", as Workable's does.

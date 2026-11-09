@@ -9,7 +9,8 @@
  * drops anything but digits); any other box that puts its old value back ignored our events (needs-your-click).
  */
 import type { FillOutcome, ReadBackRule } from '../types';
-import { fireChange, fireInput, fireKey, fireLeave, setValue, type DeclaredKey } from './events';
+import { editableText } from '../values';
+import { fireChange, fireInput, fireKey, fireLeave, setValue, windowOf, type DeclaredKey } from './events';
 import { done, mismatch, refused } from './outcome';
 import { sameText } from './verify';
 
@@ -36,3 +37,76 @@ export function fillText(el: HTMLInputElement | HTMLTextAreaElement, text: strin
     : refused('needs-your-click');
   return mismatch(after === '' ? 'value-rejected-by-site' : 'verify-mismatch');
 }
+
+// ── v5 p2-fill: rich-text boxes (contenteditable) ──
+/** A text's lines, whatever its line breaks. */
+function lineList(text: string): string[] {
+  return text.replace(/\r\n?/g, '\n').split('\n');
+}
+
+/** A text as a rich-text box would show it once written (values.ts editableText): one kind of line break, non-breaking
+ *  spaces as spaces, no trailing white space. */
+function asShown(text: string): string {
+  const lines = text.replace(/\u00a0/g, ' ').replace(/\r\n?/g, '\n');
+  return lines.trim() === '' ? '' : lines.replace(/\s+$/, '');
+}
+
+/**
+ * Writes `text` into a rich-text box (dom/kinds.ts isEditingHost: a contenteditable editing host, PLAN Phase 2) and
+ * reads it back under `rule`. No value setter reaches what an editor holds (ProseMirror, Quill, Lexical, Slate, Draft
+ * and the rest keep their own model and draw the box from it), so the box is written as a person's typing writes it:
+ * the box takes the focus (no scroll), its whole content is selected (the selection is the box's own content alone),
+ * and its text is replaced one line at a time, insertText for a line and insertParagraph between lines, as Enter
+ * makes them. Each insert is first offered as an untrusted, cancelable beforeinput naming it (EDITING_EVENTS), which an
+ * editor keeping its own model takes and cancels (Jobright offers the same event); where none cancels it, the browser's
+ * own editing makes it (document.execCommand), with the browser's own input event and DOM change, which every editor
+ * reads as typing: a trusted-equivalent insert, with no key pressed and no page script called. Then the box loses the
+ * focus (blur), so validation on leaving runs, and the selection is cleared. A box that took nothing (no insert taken
+ * and its text unchanged) ignored the write (needs-your-click); one whose editor took an insert but shows nothing yet
+ * (Lexical draws on a microtask) reads as written and not verified, and the pass's verification after its settle has
+ * the last word.
+ */
+export function fillEditable(el: HTMLElement, text: string, rule: ReadBackRule): FillOutcome {
+  const before = editableText(el);
+  if (before === asShown(text)) return done(false, 'already-correct');
+  const view = windowOf(el);
+  const doc = el.ownerDocument;
+  const selection = view.getSelection();
+  if (selection === null || typeof doc.execCommand !== 'function') return refused('needs-your-click');
+  el.focus({ preventScroll: true });
+  const tree = el.getRootNode() as Document | ShadowRoot;
+  if (tree.activeElement !== el) return refused('needs-your-click');
+  const range = doc.createRange();
+  range.selectNodeContents(el);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  let taken = false;
+  /** One insert: offered to the box's editor first, else the browser's own command. Answers whether it was made. */
+  const insert = (inputType: 'insertText' | 'insertParagraph' | 'deleteContentBackward', data: string | null): boolean => {
+    const offered = new view.InputEvent('beforeinput', { inputType, data, bubbles: true, cancelable: true,
+      composed: true });
+    if (!el.dispatchEvent(offered)) {
+      taken = true;
+      return true;
+    }
+    if (!el.isConnected) return false;
+    const command = inputType === 'deleteContentBackward' ? 'delete' : inputType;
+    const made = data === null ? doc.execCommand(command, false) : doc.execCommand(command, false, data);
+    if (made) taken = true;
+    return made;
+  };
+  if (asShown(text) === '') insert('deleteContentBackward', null);
+  else {
+    for (const [at, line] of lineList(text).entries()) {
+      if (at > 0 && !insert('insertParagraph', null)) break;
+      if (line !== '' && !insert('insertText', line)) break;
+    }
+  }
+  el.blur();
+  selection.removeAllRanges();
+  const after = editableText(el);
+  if (sameText(after, text, rule)) return done(true, 'ok');
+  if (after === before) return taken ? mismatch('verify-mismatch') : refused('needs-your-click');
+  return mismatch(after === '' ? 'value-rejected-by-site' : 'verify-mismatch');
+}
+// ── end v5 p2-fill ──

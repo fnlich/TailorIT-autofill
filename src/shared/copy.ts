@@ -1568,6 +1568,10 @@ const MAIN_VIEW = {
   addJob: 'Add This Job In One Click',
   addHelp: 'Adds this posting to your TailorIT jobs, and to your tracker as Saved, so you can follow it there.',
   notThisJob: 'Not This Job?', // v5 p1-panel
+  // ── v5 p2-fill: Open Application on a posting page (PLAN Phase 2, Jobright's button in our own words). Drafts. ──
+  openApplication: 'Open Application',
+  openApplicationHelp: "This page shows the job, not its application. Open Application presses the site's own Apply, then fills the application it opens.",
+  // ── end v5 p2-fill ──
   resume: 'Résumé:',
   noResume: 'none',
   withoutResume: 'none, by your choice',

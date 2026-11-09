@@ -52,7 +52,12 @@ describe('entrypoints', () => {
     expect(address.filter((source) => !/^\.\/[a-z]+\/url$/.test(source))).toEqual(['../core/enums', '../shared/hosts',
       './application-key', './bridge-address']);
     expect(importsOf(join(ENTRYPOINTS, '..', 'shared', 'hosts.ts'))).toEqual(['../core/enums']);
-    expect(importsOf(join(ENTRYPOINTS, '..', 'page', 'bridge.ts'))).toEqual(['../dom/bridge-protocol']);
+    // v5 p2-fill (PLAN decision 14): the bridge's two page patches beside it, which import only the protocol.
+    expect(importsOf(join(ENTRYPOINTS, '..', 'page', 'bridge.ts'))).toEqual(['../dom/bridge-protocol', './dialogs',
+      './picker']);
+    for (const patch of ['dialogs.ts', 'picker.ts']) {
+      expect(importsOf(join(ENTRYPOINTS, '..', 'page', patch)), patch).toEqual(['../dom/bridge-protocol']);
+    }
     expect(importsOf(join(ENTRYPOINTS, '..', 'dom', 'bridge-protocol.ts'))).toEqual([]);
   });
 
