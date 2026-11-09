@@ -243,7 +243,9 @@ describe('the options page', () => {
     const root = await open(createFakeWorker());
     // The cards' explanations.
     for (const [name, help] of [['modes', TEXT.modes.intro], ['ai', TEXT.ai.intro], ['interpretations', TEXT.interpretations.intro],
-      ['runs', TEXT.data.intro], ['telemetry', TEXT.telemetry.intro]] as const) {
+      ['runs', TEXT.data.intro], ['telemetry', TEXT.telemetry.intro],
+      // v1.4 F: the templates.
+      ['documents', COPY.documents.help]] as const) {
       const head = root.querySelector(`[data-card="${name}"] .tia-card__head`)!;
       expect([name, head.querySelector('[role="tooltip"]')?.textContent]).toEqual([name, help]);
     }
@@ -497,5 +499,62 @@ describe('the options page left open (the audit of 2026-11-06, M4)', () => {
     await settle();
     expect(worker.sentOfType('settings/get').length).toBe(reads + 1);
     expect(setting(root, 'modes.submit.auto').checked).toBe(true);
+  });
+});
+
+describe('the Documents card (v1.4 F, PLAN decision 18)', () => {
+  afterEach(() => unmountAll());
+
+  const card = (root: ParentNode) => root.querySelector<HTMLElement>('[data-card="documents"]')!;
+  const select = (root: ParentNode, kind: string) =>
+    card(root).querySelector<HTMLSelectElement>(`[data-template-field="${kind}"] select`)!;
+  const choose = async (field: HTMLSelectElement, value: string) => act(async () => {
+    field.value = value;
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+
+  it('reads the profile’s two templates with TailorIT’s lists, and saves them alone', async () => {
+    const worker = createFakeWorker();
+    worker.script.documents = { ...(worker.script.documents as Extract<typeof worker.script.documents,
+      { outcome: 'ready' }>), resumeTemplateId: 'one-column-slate', coverLetterTemplateId: 'gone-template' };
+    const root = await open(worker);
+    expect(worker.sentOfType('panel/documents')).toEqual([{ v: 1, type: 'panel/documents' }]);
+    expect(select(root, 'resume').value).toBe('one-column-slate');
+    // A stored template TailorIT no longer lists stays a choice, named as such: nothing changes unasked.
+    expect(select(root, 'coverLetter').value).toBe('gone-template');
+    expect(select(root, 'coverLetter').selectedOptions[0]?.textContent).toBe(COPY.documents.missing);
+    const save = card(root).querySelector<HTMLButtonElement>('button[data-action="save-documents"]')!;
+    expect(save.disabled).toBe(true);
+    await choose(select(root, 'resume'), '');
+    await choose(select(root, 'coverLetter'), '9b2e4f61-7c3a-4d8e-b1f0-5a6c2d9e8f47');
+    await click(save);
+    expect(worker.sentOfType('panel/documents').at(-1)).toEqual({ v: 1, type: 'panel/documents',
+      save: { resumeTemplateId: null, coverLetterTemplateId: '9b2e4f61-7c3a-4d8e-b1f0-5a6c2d9e8f47' } });
+    expect(card(root).querySelector('[data-documents-note]')?.textContent).toBe(COPY.documents.saved);
+    expect(select(root, 'resume').selectedOptions[0]?.textContent).toBe(COPY.documents.ownTemplate);
+  });
+
+  it('asks nothing until connected, shows them read-only without profile:write, and says a refusal with Try Again', async () => {
+    const offline = createFakeWorker();
+    offline.script.auth = authStatus({ connection: 'not-connected', account: null, scopes: [], expiresAt: null });
+    const off = await open(offline);
+    expect(offline.sentOfType('panel/documents')).toEqual([]);
+    expect(card(off).textContent).toContain(COPY.documents.refusals['not-connected']);
+    unmountAll();
+    const reader = createFakeWorker();
+    reader.script.documents = { ...(reader.script.documents as Extract<typeof reader.script.documents,
+      { outcome: 'ready' }>), canWrite: false };
+    const read = await open(reader);
+    expect(select(read, 'resume').disabled).toBe(true);
+    expect(card(read).querySelector('[data-documents-read-only]')?.textContent).toBe(COPY.documents.readOnly);
+    expect(card(read).querySelector('button[data-action="save-documents"]')).toBeNull();
+    unmountAll();
+    const refusing = createFakeWorker();
+    refusing.script.documents = { outcome: 'not-allowed' };
+    const refused = await open(refusing);
+    expect(card(refused).textContent).toContain(COPY.documents.refusals['not-allowed']);
+    refusing.script.documents = (createFakeWorker()).script.documents;
+    await click(card(refused).querySelector('button[data-documents-retry]'));
+    expect(card(refused).querySelector('[data-documents="ready"]')).not.toBeNull();
   });
 });

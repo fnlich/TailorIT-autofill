@@ -15,6 +15,7 @@ import type { TelemetryCount } from '../core/types/telemetry';
 import type {
   AgentStatus, AuthStatus, JobCard, LetterOutcome, PageState, PanelAskAnswer, ResumeListAnswer,
 } from '../messaging/schemas';
+import type { DocumentsAnswer, TailorView } from '../messaging/page-schemas';
 import { createMemoryPagePlatform, type MemoryPagePlatform } from '../platform/memory';
 import type { PortLike } from '../platform/types';
 import { historyGaps, profileGaps } from '../shared/profile-gaps';
@@ -104,6 +105,15 @@ export function completeProfile(overrides: Partial<AutofillProfile> = {}): Autof
   };
 }
 
+/** v1.4 F: panel/documents' answer: TailorIT's lists (the contract's example) and the profile's two choices. */
+export function templateLists(overrides: Partial<Extract<DocumentsAnswer, { outcome: 'ready' }>> = {}): DocumentsAnswer {
+  return { outcome: 'ready', resumeTemplateId: null, coverLetterTemplateId: null,
+    resumeTemplates: [{ id: 'one-column-slate', name: 'Slate' }, { id: 'double-column', name: 'Double Column' }],
+    coverLetterTemplates: [{ id: '9b2e4f61-7c3a-4d8e-b1f0-5a6c2d9e8f47', name: 'Classic', isSystem: true },
+      { id: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d', name: 'My letter', isSystem: false }],
+    canWrite: true, ...overrides };
+}
+
 /** A connected status, as auth/status answers it. */
 export function authStatus(overrides: Partial<AuthStatus> = {}): AuthStatus {
   return {
@@ -148,6 +158,9 @@ export interface WorkerScript {
   profile: AutofillProfile | null;
   /** v5 p1-shell: the header's notes the person closed (panel/notes; panel/closeNote adds one). */
   closedNotes: Array<'workday'>;
+  /** v1.4 F: what panel/tailor answers (a read, or a start), and panel/documents (a read; a save keeps its choices). */
+  tailor: TailorView;
+  documents: DocumentsAnswer;
 }
 
 export interface FakeWorker {
@@ -176,7 +189,9 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
       policy: false },
     letter: { check: 'none', write: 'written' }, launcherHidden: 'none',
     agent: { on: false, confirmed: false, phase: 'off', blocked: null, allowed: true, pending: false, job: null,
-      doneToday: 0, last: null }, profile: completeProfile(), closedNotes: [] };
+      doneToday: 0, last: null }, profile: completeProfile(), closedNotes: [],
+    // v1.4 F
+    tailor: { state: 'idle' }, documents: templateLists() };
   /** A tab's page state, when the script names one (an older worker sends none). */
   const pageOf = (tabId: number) => (script.pages.has(tabId) ? { page: script.pages.get(tabId) } : {});
   const replies = new Map<string, (message: Record<string, unknown>) => unknown>();
@@ -238,6 +253,16 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
     'panel/closeNote': (message) => {
       if (!script.closedNotes.includes(message.note as 'workday')) script.closedNotes.push(message.note as 'workday');
       return ok({});
+    },
+    // v1.4 F
+    'panel/tailor': () => ok(script.tailor),
+    'panel/openDocument': () => ok({ opened: true }),
+    'panel/documents': (message) => {
+      const save = message.save as { resumeTemplateId: string | null; coverLetterTemplateId: string | null } | undefined;
+      if (save !== undefined && script.documents.outcome === 'ready') {
+        script.documents = { ...script.documents, ...save, saved: true };
+      }
+      return ok(script.documents);
     },
     'telemetry/get': () => ok({ counts: script.counts }),
     'telemetry/clear': () => {

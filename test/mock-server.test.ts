@@ -28,6 +28,7 @@ import {
   AutofillLookupResponseSchema,
   AutofillPickTaskSchema,
   AutofillRedeemResponseSchema,
+  AutofillResumeListSchema,
   PutAutofillProfileResponseSchema,
   AutofillSavedAnswerListSchema,
   AutofillSavedAnswerSchema,
@@ -50,6 +51,9 @@ import {
   GOLDEN_LETTER,
   GOLDEN_LETTER_TEXT,
   GOLDEN_RESUME,
+  GOLDEN_TAILOR_TASK,
+  TAILOR_LINE,
+  TAILORED_RESUME,
   MOCK_API_VERSION,
   MOCK_SCENARIOS,
   connectScopes,
@@ -127,7 +131,9 @@ function sseEvents(text: string): Array<{ type: string } & Record<string, unknow
 /** The contract's golden pick task, which the mock always holds. */
 const GOLDEN_TASK_ID = (example('AutofillPickTask') as { id: string }).id;
 const pathOf = (route: { path: string }) => route.path.replace(':id', route.path.startsWith('/api/ai/tasks/') ? GOLDEN_TASK_ID
-  : route.path.startsWith('/api/autofill/cover-letters/') ? GOLDEN_LETTER.id : GOLDEN_RESUME.id);
+  : route.path.startsWith('/api/autofill/cover-letters/') ? GOLDEN_LETTER.id
+    // v1.4 F: the contract's golden tailoring, which the mock always holds.
+    : route.path.startsWith('/api/autofill/tailor/') ? GOLDEN_TAILOR_TASK.id : GOLDEN_RESUME.id);
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 describe('the routes', () => {
@@ -1144,5 +1150,63 @@ describe('v5 p2-stream (the P2 review, L8b): one round, as TailorIT keeps answer
       classification: { category: 'sensitive_legal' } });
     await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-classify-category', value: 'sensitive_eeo' } });
     expect(await answerOf('all')).toMatchObject({ reason: 'sensitive', text: null });
+  });
+});
+
+describe('v1.4 F: tailoring and the templates, as the contract shapes them', () => {
+  const tailor = (json: unknown) => call('/api/autofill/tailor', { method: 'POST', headers: asToken(), json });
+  const read = async (id: string) => AUTOFILL_CONTRACT_SCHEMAS.AutofillTailorTask
+    .parse(await (await call(`/api/autofill/tailor/${id}`, { headers: asToken() })).json());
+
+  it('runs a tailoring: running, then succeeded; the tailored resume is listed, sent and suggested from then on', async () => {
+    const posted = await tailor({ jobId: 42, coverLetter: true });
+    expect(posted.status).toBe(202);
+    const { taskId, deduped } = AUTOFILL_CONTRACT_SCHEMAS.AutofillTailorAccepted.parse(await posted.json());
+    expect(deduped).toBe(false);
+    expect(await read(taskId)).toMatchObject({ status: 'running', step: 'analyzing', message: TAILOR_LINE, result: null });
+    const done = await read(taskId);
+    expect(done).toMatchObject({ status: 'succeeded', step: null, result: { resumeId: TAILORED_RESUME.id,
+      title: TAILORED_RESUME.label, coverLetterId: GOLDEN_LETTER.id } });
+    const list = AutofillResumeListSchema.parse(await (await call('/api/autofill/resumes', { headers: asToken() })).json());
+    expect(list.items[0]).toMatchObject({ id: TAILORED_RESUME.id, kind: 'built', fileKind: 'pdf' });
+    const file = await call(`/api/autofill/resumes/${TAILORED_RESUME.id}/file`, { headers: asToken() });
+    expect([file.status, file.headers.get('X-TailorIT-File-Kind')]).toEqual([200, 'pdf']);
+    const lookup = await call('/api/autofill/lookup', { method: 'POST', headers: asToken(),
+      json: example('AutofillLookupRequest') });
+    expect(((await lookup.json()) as { suggestedResume: { id: string; reason: string } }).suggestedResume)
+      .toMatchObject({ id: TAILORED_RESUME.id, reason: 'application' });
+    // A resume-only tailoring writes no letter.
+    const resumeOnly = AUTOFILL_CONTRACT_SCHEMAS.AutofillTailorAccepted.parse(await (await tailor({ jobId: 42,
+      coverLetter: false })).json());
+    await read(resumeOnly.taskId);
+    expect((await read(resumeOnly.taskId)).result?.coverLetterId).toBeNull();
+  });
+
+  it('checks the body as TailorIT does, and answers the scripted refusals', async () => {
+    expect((await tailor({ jobId: 42 })).status).toBe(400);
+    expect((await tailor({ coverLetter: false, company: 'Northwind', title: 'Engineer' })).status).toBe(400);
+    expect((await tailor({ jobId: 42, coverLetter: false, resumeTemplateId: 'no-such-template' })).status).toBe(400);
+    await scenario('tailor-needs-copy', { times: 1 });
+    const copy = await tailor({ jobId: 42, coverLetter: false });
+    expect([copy.status, await errorCode(copy)]).toEqual([409, 'needs_editable_copy']);
+    await scenario('tailor-rate-limited', { times: 1 });
+    const limited = await tailor({ jobId: 42, coverLetter: false });
+    expect([limited.status, limited.headers.get('Retry-After')]).toEqual([429, '60']);
+    await scenario('tailor-ai-off', { times: 1 });
+    const off = await tailor({ jobId: 42, coverLetter: false });
+    expect([off.status, await errorCode(off)]).toEqual([503, 'ai_unavailable']);
+    await scenario('tailor-failed', { times: 1 });
+    const failed = AUTOFILL_CONTRACT_SCHEMAS.AutofillTailorAccepted.parse(await (await tailor({ jobId: 42,
+      coverLetter: false })).json());
+    await read(failed.taskId);
+    expect(await read(failed.taskId)).toMatchObject({ status: 'failed', error: { code: 'ai_failed' } });
+    expect((await call('/api/autofill/tailor/00000000-0000-4000-8000-000000000000', { headers: asToken() })).status)
+      .toBe(404);
+  });
+
+  it('lists the templates, and keeps the contract’s golden tailoring', async () => {
+    const templates = await call('/api/autofill/templates', { headers: asToken() });
+    expect(await templates.json()).toEqual(example('AutofillTemplateList'));
+    expect(await read(GOLDEN_TAILOR_TASK.id)).toEqual(example('AutofillTailorTask'));
   });
 });

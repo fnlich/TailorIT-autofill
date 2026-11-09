@@ -188,7 +188,7 @@ test.describe('cover letters', () => {
       applicationKey: applicationKeyOf(url) });
   });
 
-  test('the side panel previews the letter the fill attached, from its row, without asking TailorIT again (v4 ui)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  test('the side panel previews the letter the fill attached, from its row, without asking TailorIT again (v4 ui; v1.4 F: in the full-window preview page)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
     await tailorit.scenario('letter-generating-then-ready', { times: 1 });
     const page = await extContext.newPage();
     await open(page, routeLog, 'cover-letter-preview');
@@ -204,12 +204,16 @@ test.describe('cover letters', () => {
     await expect(drawn).toHaveAttribute('data-file', 'coverLetter');
     const written = (await bodies()).filter((body) => body.generate === true).length;
     const files = (await fileRequests()).length;
+    // v1.4 F (PLAN decision 17): the full-window preview page, opened on the letter's tab.
+    const opened = extContext.waitForEvent('page');
     await drawn.locator('button[data-action="preview"]').click();
-    const frame = drawn.locator('iframe[data-preview-frame]');
+    const preview = await opened;
+    expect(preview.url()).toBe(ext.url(`preview.html?tabId=${tabId}&kind=coverLetter`));
+    const frame = preview.locator('iframe[data-preview-frame]');
     await expect(frame).toBeVisible();
     const src = await frame.getAttribute('src');
     expect(src).toMatch(/^blob:chrome-extension:\/\//);
-    const digest = await panel.evaluate(async (address) => {
+    const digest = await preview.evaluate(async (address) => {
       const bytes = new Uint8Array(await (await fetch(address)).arrayBuffer());
       const hash = await crypto.subtle.digest('SHA-256', bytes);
       return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');

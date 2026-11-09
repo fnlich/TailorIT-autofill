@@ -31,6 +31,8 @@
  *   this browser (telemetry/get), exported as a JSON file through an <a download> link (the page builds it from what it
  *   read: nothing is sent), and cleared (telemetry/clear).
  * - Saved runs: Clear (runs/clear), showing how many went.
+ * - v1.4 F (PLAN decision 18): Documents, after the modes: the resume template and the cover-letter template TailorIT
+ *   writes a tailored resume and its letter on, kept in the profile (ui/page/documents.tsx: panel/documents).
  * v4 ui (the owner, 2026-11-07: "all explanation will be tooltip"): each card's and each setting's explanation is a "?"
  * (HelpTip) beside its title or its name, still describing its control; what a setting is now, the first-run
  * disclosure, the plan's sentence on what never goes to the AI and the list of what the counters count stay as text.
@@ -51,6 +53,7 @@ import { DisclosureChanged } from '../page/disclosure';
 import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
 import { AgentStatusLine, useAgentStatus, type AgentState } from '../page/agent';
+import { DocumentsFields, documentsKeyOf } from '../page/documents';
 import { ModesFields, signInAvailability } from '../page/modes';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
 import { animationFrames, clockText, useSecondsLeft, type FrameScheduler } from './countdown';
@@ -294,6 +297,11 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
       <Card title={TEXT.modes.heading} name="modes" help={TEXT.modes.intro}>
         <ModesFields settings={shown} disabled={saving} onChange={save} idPrefix="options"
           signIn={signInAvailability(auth.status)} />
+      </Card>
+
+      {/* v1.4 F (PLAN decision 18): the templates a tailored resume and its letter are written on (the profile's). */}
+      <Card title={COPY.documents.title} name="documents" help={COPY.documents.help}>
+        <DocumentsFields platform={platform} readKey={documentsKeyOf(auth.status)} />
       </Card>
 
       <AutoApply platform={platform} auth={auth} />

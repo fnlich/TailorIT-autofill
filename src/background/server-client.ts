@@ -86,6 +86,15 @@ import {
   type AutofillSensitiveEnvelope,
   type PutAutofillSavedAnswerBody,
   type AutofillSession,
+  // v1.4 F
+  AutofillTailorAcceptedSchema,
+  AutofillTailorTaskSchema,
+  AutofillTemplateListSchema,
+  TailorTaskIdSchema,
+  type AutofillTailorAccepted,
+  type AutofillTailorRequest,
+  type AutofillTailorTask,
+  type AutofillTemplateList,
 } from '../contract/tailorit';
 // The snapshot build of 2026-11-06 (core-x, item 6): every address named to TailorIT goes through tailoritAddressOf, which
 // keeps v3 Phase 8's company-page rule (addressForTailorIT) and names iCIMS's, SmartRecruiters' and jobs.workable.com's
@@ -253,6 +262,14 @@ export interface ServerClient {
    *  query would refuse (a query, a fragment, a space, no leading '/', too long) is never sent: the host is asked
    *  alone, which still finds the sign-in saved for it. */
   credential(host: string, path?: string): Promise<ServerResult<AutofillCredential>>;
+  // ── v1.4 F (PLAN decisions 16-18, the contract's tailor.ts) ──
+  /** POST /tailor: a tailoring task for a job (202 {taskId, deduped}). */
+  tailor(body: AutofillTailorRequest): Promise<ServerResult<AutofillTailorAccepted>>;
+  /** GET /tailor/:id: where one stands, and once it succeeded, what it made. */
+  tailorTask(id: string): Promise<ServerResult<AutofillTailorTask>>;
+  /** GET /templates: the resume and cover-letter templates the profile's documents may name. */
+  templates(): Promise<ServerResult<AutofillTemplateList>>;
+  // ── end v1.4 F ──
 }
 
 /** What the server client needs. */
@@ -763,6 +780,18 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
       return json({ method: 'GET', path: '/api/autofill/credentials', token: 'current',
         query: named === null ? { host } : { host, path: named } }, AutofillCredentialSchema);
     },
+    // ── v1.4 F ──
+    tailor: (body) =>
+      json({ method: 'POST', path: '/api/autofill/tailor', token: 'current', json: body }, AutofillTailorAcceptedSchema),
+    tailorTask(id) {
+      if (!TailorTaskIdSchema.safeParse(id).success) {
+        log('server.path-refused');
+        return Promise.resolve(failure('refused-path'));
+      }
+      return json({ method: 'GET', path: `/api/autofill/tailor/${id}`, token: 'current' }, AutofillTailorTaskSchema);
+    },
+    templates: () => json({ method: 'GET', path: '/api/autofill/templates', token: 'current' }, AutofillTemplateListSchema),
+    // ── end v1.4 F ──
     async coverLetterFile(id, maxBytes = AUTOFILL_COVER_LETTER_MAX_BYTES) {
       if (!AutofillCoverLetterIdSchema.safeParse(id).success) {
         log('server.path-refused');

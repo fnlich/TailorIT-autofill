@@ -10,10 +10,8 @@ import { COPY } from '../../shared/copy';
 import { INTER_FAMILY } from '../../shared/palette';
 import type { SidebarMount } from '../../shared/sidebar';
 import { adoptPageStyles } from '../page/styles';
-import { OnPageContext } from '../panel/on-page';
 import { Panel } from '../panel/Panel';
-import { ResumePreview } from '../panel/ResumePreview';
-import { click, createFakeWorker, formPage, mount, SEEN_AT_ONCE, settle, unmountAll } from '../ui.testkit';
+import { click, createFakeWorker, formPage, jobCard, mount, SEEN_AT_ONCE, settle, unmountAll } from '../ui.testkit';
 import { createSidebarApp } from './mount';
 
 const mounts: Array<{ host: HTMLElement; mounted: SidebarMount }> = [];
@@ -94,28 +92,20 @@ describe('what the sidebar leaves to the extension\'s own pages (the review of 2
     expect(hasInter()).toBe(false);
   });
 
-  it('previews a résumé in Chrome\'s side panel, never loading its bytes into the page (S6, F10)', async () => {
-    const loads: number[] = [];
-    const onPage = { sidePanelUrl: 'chrome-extension://memory-extension/sidepanel.html',
-      settingsUrl: 'chrome-extension://memory-extension/options.html#modes' };
-    const failed = async () => {
-      loads.push(1);
-      return { ok: false as const, reason: 'unavailable' as const };
-    };
-    const root = await mount(
-      <OnPageContext.Provider value={onPage}>
-        <ResumePreview label="Backend resume" onClose={() => undefined} load={failed} />
-      </OnPageContext.Provider>,
-    );
-    await settle();
-    expect(loads).toEqual([]);
-    expect(root.querySelector('[data-resume-preview="elsewhere"] a[data-open-side-panel]')).not.toBeNull();
-    expect(root.querySelector('iframe')).toBeNull();
-    // Outside the sidebar, the preview loads as ever.
-    await mount(<ResumePreview label="Backend resume" onClose={() => undefined} load={failed} />);
-    await settle();
-    expect(loads).toEqual([1]);
-  });
+  it('opens a preview as a full-window extension page through the worker, never loading its bytes here (S6, F10, v1.4 F)',
+    async () => {
+      const worker = createFakeWorker();
+      worker.script.pages.set(7, formPage({ letter: true }));
+      worker.script.cards.set(7, jobCard());
+      worker.on('panel/openDocument', () => ({ ok: true, data: { opened: true } }));
+      const { container } = await sidebar(worker);
+      await click(container.querySelector('button[data-job-action="preview"]'));
+      expect(worker.sentOfType('panel/openDocument')).toEqual([{ v: 1, type: 'panel/openDocument', tabId: 7,
+        kind: 'resume', how: 'preview' }]);
+      // No preview port, no bytes and no frame in the page's process.
+      expect(worker.posted.some((message) => (message as { type?: unknown }).type === 'preview/request')).toBe(false);
+      expect(container.querySelector('iframe, [data-resume-preview]')).toBeNull();
+    });
 
   it('leaves I understand on a changed disclosure to Chrome\'s side panel, with a link to it (S7)', async () => {
     const worker = createFakeWorker();

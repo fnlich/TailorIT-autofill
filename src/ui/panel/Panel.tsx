@@ -34,13 +34,16 @@
  *     L4: a page cannot flip it as the pointer comes). While a run works it spins, and the progress below has Cancel.
  *     No Dry run, Continue or Cancel buttons (the messages stay);
  *   - "Ask custom question" (Ask.tsx: panel/ask), an outline button that unfolds the box;
- *   - "Résumé: <label> · Preview · Change" (JobCard.tsx ResumeLine: panel/resumes, panel/setResume,
- *     panel/withoutResume, the `preview` port) until a run lists the résumé's own row;
+ *   - "Résumé: <label> · Preview · Edit · Change" (JobCard.tsx ResumeLine: panel/resumes, panel/setResume,
+ *     panel/withoutResume; v1.4 F: Preview and Edit are panel/openDocument) until a run lists the résumé's own row,
+ *     with "Tailor Resume For This Job" under it; and where the form asks for a cover letter, "Cover letter: <state>
+ *     · Preview · Edit" with "Generate Cover Letter" (tailor.tsx: panel/tailor, read again on panel/changed 'tailor')
+ *     until a run lists the letter's own row;
  *   - what the last button did, until a newer report tells more;
  *   - the progress and the field lists (Report, without its notices: D10's page notifications say what is left for
  *     the person): "7/7 required fields filled | 100%", Required then Optional, each row a tick or an empty circle and
  *     its label, which shows the field on the page (panel/focus); Skip on the field being written after 2 s
- *     (panel/skip); Preview and Show on the résumé and cover-letter rows (the `preview` port, its kind); the dock's
+ *     (panel/skip); Preview (v1.4 F: the full-window preview page) and Show on the résumé and cover-letter rows; the dock's
  *     "Continue to the next page" or "Submit application" (panel/press); folded at first with the Minimized view.
  * - The Settings view (SettingsView.tsx) in place of everything under the head: ✕ and "Settings", the modes as radio
  *   cards with their "?", "Autofill information", the account, "All settings" and Save (settings/save {settings, base}).
@@ -68,7 +71,7 @@
  * It never shows or receives a field value: reports hold none. The job card draws only what TailorIT's lookup said, the
  * resume's title among it (which may be the person's name: it is shown on purpose, as the resume the fill attaches);
  * the custom question's answer is the person's own request; the profile check keeps which items are missing, never a
- * value (profile-check.ts); the previews' bytes stay in this page (preview.ts).
+ * value (profile-check.ts); the previews open in the full-window preview page (v1.4 F), whose bytes stay there.
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { Settings } from '../../core/types/settings';
@@ -94,10 +97,9 @@ import { AskQuestion } from './Ask';
 import { useTabJob } from './job';
 import { JobCard, ResumeLine, ResumePicker } from './JobCard';
 import { useTabLetter } from './letter';
-import { receivePreview } from './preview';
 import { PanelModal, type PanelModalState, type StopReason } from './Modals';
 import { ProfileEditor } from './Profile';
-import { ResumePreview } from './ResumePreview';
+import { LetterLine, TailorRow, useTabTailor } from './tailor';
 import { useTabReports, type LinkState } from './reports';
 import { SettingsView } from './SettingsView';
 import { ProgressSheet, useSheetTop } from './Sheet';
@@ -271,11 +273,10 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
    *  an Add's outcome or a custom answer never shows under the next posting the tab moves to. */
   const viewKey = `${tabId ?? ''}|${page?.formKey ?? ''}|${connection ?? ''}`;
   const newestReport = Math.max(0, ...reports.map((report) => report.updatedAt));
-  // The previews' loaders, one per tab and kind (the review): a preview opened is one transfer, whatever the panel draws.
-  const loadResumePreview = useCallback((signal: AbortSignal) => (tabId === null ? Promise.resolve({ ok: false as const,
-    reason: 'unavailable' as const }) : receivePreview(platform, tabId, signal)), [platform, tabId]);
-  const loadLetterPreview = useCallback((signal: AbortSignal) => (tabId === null ? Promise.resolve({ ok: false as const,
-    reason: 'unavailable' as const }) : receivePreview(platform, tabId, signal, 'coverLetter')), [platform, tabId]);
+  // v1.4 F: the tab's tailoring, read for its page under this connection, and again as the worker says it moved on.
+  const tailorBase = tabId !== null && page !== null && typeof connection === 'string'
+    ? `${tabId}|${page.formKey ?? ''}|${connection}` : null;
+  const tailor = useTabTailor(platform, tabId, { base: tailorBase, changes: changes.tailor, onDone: job.reload });
   const settingsUrl = platform.runtime.getURL('/options.html');
   /** AI-written answers (the drafts setting) are off: the custom question is too. */
   const aiOff = settings === null ? null : !settings.llm.drafts;
@@ -413,6 +414,16 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     void request(platform, { v: 1, type: 'panel/withoutResume', tabId: target, without }).then((answer) => {
       if (!answer.ok) setFeedback({ tabId: target, text: COPY.job.withoutFailed, newest: Number.POSITIVE_INFINITY });
       job.reload();
+    });
+  };
+
+  /** v1.4 F (PLAN decision 17): Preview (the full-window preview page) or Edit (TailorIT's editor) of what the tab
+   *  attaches, each opened by the worker in a tab of its own; nothing there yet is said under the buttons. */
+  const openDocument = (target: number, kind: PreviewKind, how: 'preview' | 'edit') => {
+    void request(platform, { v: 1, type: 'panel/openDocument', tabId: target, kind, how }).then((answer) => {
+      if (answer.ok && answer.data.opened) return;
+      setFeedback({ tabId: target, text: answer.ok ? COPY.tailor.nothingToOpen : refusalOf(answer.error),
+        newest: Number.POSITIVE_INFINITY });
     });
   };
 
@@ -555,6 +566,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   // The résumé line until a run lists the résumé's own row (which then has its Preview): one the lists show (D8).
   const resumeRow = reports.some((report) => report.fields.some((row) => row.category === 'file.resume'
     && !leftOut(row)));
+  // v1.4 F: likewise the cover-letter line, until a run lists the letter's own row.
+  const letterRow = reports.some((report) => report.fields.some((row) => (row.category === 'file.coverLetter'
+    || row.category === 'freeText.coverLetter') && !leftOut(row)));
   /** v4 ui: which file a résumé or cover-letter row previews: the PDF the fill attached or would attach. */
   const previewOf = (row: ReportRow): PreviewKind | null => {
     if (row.category === 'file.resume') {
@@ -646,7 +660,18 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
           {tabId !== null && answered !== null && !submitted && !resumeRow && (
             <ResumeLine card={answered} loadResumes={loadResumes}
               chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
-              setWithout={(without) => setWithout(tabId, without)} loadPreview={loadResumePreview} />
+              setWithout={(without) => setWithout(tabId, without)}
+              openDocument={(kind, how) => openDocument(tabId, kind, how)}>
+              <TailorRow kind="resume" tabId={tabId} view={tailor.view} clock={seenClock} onStart={tailor.start} />
+            </ResumeLine>
+          )}
+          {/* v1.4 F: the cover letter, where the form asks for one, until a run lists its own row. */}
+          {tabId !== null && answered !== null && !submitted && letterAsked && !letterRow && (
+            <LetterLine outcome={letter.view.outcome} checking={letter.view.checking}
+              tailored={tailor.view?.state === 'done' && tailor.view.letter}
+              onOpen={(kind, how) => openDocument(tabId, kind, how)}>
+              <TailorRow kind="coverLetter" tabId={tabId} view={tailor.view} clock={seenClock} onStart={tailor.start} />
+            </LetterLine>
           )}
           {shownFeedback !== null && <p className="tia-feedback" role="status">{shownFeedback.text}</p>}
         </div>
@@ -688,10 +713,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
                       setWithout={(without) => setWithout(tabId, without)} />
                   ),
                 })}
-                renderPreview={(kind, label, close) => (
-                  <ResumePreview kind={kind} load={kind === 'resume' ? loadResumePreview : loadLetterPreview}
-                    label={kind === 'resume' ? answered?.resume?.label ?? label : label} onClose={close} />
-                )}
+                // v1.4 F (PLAN decision 17): the full-window preview page, never under the row.
+                openPreview={(kind) => openDocument(tabId, kind, 'preview')}
               />
             )}
           </ProgressSheet>

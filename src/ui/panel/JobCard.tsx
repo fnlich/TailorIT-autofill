@@ -13,14 +13,16 @@
  *   with a sparkle (screenshot 2), where TailorIT can add from this site (`addable`), and what came of it.
  * - Loading (a busy skeleton), and unavailable.
  *
- * ResumeLine (v4 ui): "Résumé: Backend resume · Preview · Change", before the first run (the panel shows it), with the
- * account's resumes to choose from and "Apply without resume" (v3 Phase 3b) under Change (ResumePicker, which the
- * review's résumé row offers after a run), and the PDF's preview (ResumePreview.tsx, in this page only) under Preview.
+ * ResumeLine (v4 ui): "Résumé: Backend resume · Preview · Edit · Change", before the first run (the panel shows it), with
+ * the account's resumes to choose from and "Apply without resume" (v3 Phase 3b) under Change (ResumePicker, which the
+ * review's résumé row offers after a run). v1.4 F (PLAN decision 17): Preview opens the full-window preview page (an
+ * extension page, never the job page) and Edit TailorIT's editor, each in a tab of its own (panel/openDocument); the
+ * tailoring's row (tailor.tsx) comes under the line.
  *
  * It never shows an id, an address, the posting text or a file name: the card holds none. The resume's title is the
  * person's own and may be their name; it is shown on purpose, as the resume the fill attaches.
  */
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { AUTOFILL_TRACKER_STATUSES } from '../../contract/tailorit/lookup';
 import type {
   AddJobOutcome, JobCard as Card, PanelJobSearchAnswer, ResumeListAnswer,
@@ -29,9 +31,9 @@ import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
 import { AnotherJob } from './AnotherJob';
 import type { JobView } from './job';
-import type { PreviewResult } from './preview';
 import { postedDaysAgo } from './posted';
-import { ResumePreview } from './ResumePreview';
+import { DocumentLinks } from './tailor';
+import type { TailorKind } from '../../messaging/page-schemas';
 
 type Answered = Extract<Card, { state: 'answered' }>;
 type ResumeItem = ResumeListAnswer['items'][number];
@@ -214,23 +216,20 @@ export interface ResumeLineActions {
   chooseResume(resumeId: string | null): void;
   /** v3 Phase 3b: "Apply without resume" (true), or attach one again (false). */
   setWithout?(without: boolean): void;
-  /** v3 Phase 3b: the PDF a fill attaches, for the preview (absent: no Preview); the container's stable loader, which
-   *  `signal` ends early. */
-  loadPreview?(signal: AbortSignal): Promise<PreviewResult>;
+  /** v1.4 F: Preview (a PDF's, in the full-window preview page) and Edit (TailorIT's editor); absent: neither. */
+  openDocument?(kind: TailorKind, how: 'preview' | 'edit'): void;
 }
 
-/** v4 ui: "Résumé: <label> · Preview · Change", the résumé a fill attaches, before the first run, with Change (the
- *  account's resumes and "Apply without resume": ResumePicker) and, for a PDF, Preview. */
-export function ResumeLine({ card, loadResumes, chooseResume, setWithout, loadPreview }: { card: Answered }
-  & ResumeLineActions) {
+/** v4 ui: "Résumé: <label> · Preview · Edit · Change", the résumé a fill attaches, before the first run, with Change
+ *  (the account's resumes and "Apply without resume": ResumePicker), for a PDF Preview, and Edit; v1.4 F: the
+ *  tailoring's row under it (`children`). */
+export function ResumeLine({ card, loadResumes, chooseResume, setWithout, openDocument, children }: { card: Answered;
+  children?: ReactNode } & ResumeLineActions) {
   const [picking, setPicking] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
   const pickerId = useId();
   const { resume } = card;
   const without = card.withoutResume === true;
-  const closePreview = useCallback(() => setPreviewing(false), []);
   const closePicker = useCallback(() => setPicking(false), []);
-  const previewable = loadPreview !== undefined && !without && resume !== null && resume.fileKind === 'pdf';
   const label = without ? COPY.mainView.withoutResume : resume === null ? COPY.mainView.noResume : resume.label;
 
   return (
@@ -241,21 +240,17 @@ export function ResumeLine({ card, loadResumes, chooseResume, setWithout, loadPr
           {COPY.mainView.resume}{' '}
           <strong className="tia-resumeline__label" data-resume-label="">{label}</strong>
         </span>
-        {previewable && (
-          <button type="button" className="tia-linkbutton" aria-expanded={previewing} data-job-action="preview"
-            onClick={() => setPreviewing((shown) => !shown)}>{COPY.job.preview.open}</button>
+        {openDocument !== undefined && !without && resume !== null && (
+          <DocumentLinks kind="resume" preview={resume.fileKind === 'pdf'} onOpen={openDocument} />
         )}
         <button type="button" className="tia-linkbutton" aria-expanded={picking} aria-controls={pickerId}
           data-job-action="change" onClick={() => setPicking((open) => !open)}>{COPY.job.change}</button>
       </p>
-      {previewable && previewing && resume !== null && (
-        <ResumePreview key={`${resume.label}|${resume.fileKind}`} load={loadPreview} label={resume.label}
-          onClose={closePreview} />
-      )}
       {picking && (
         <ResumePicker id={pickerId} card={card} loadResumes={loadResumes} chooseResume={chooseResume} onClose={closePicker}
           {...(setWithout === undefined ? {} : { setWithout })} />
       )}
+      {children}
     </div>
   );
 }

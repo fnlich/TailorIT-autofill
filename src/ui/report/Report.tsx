@@ -26,7 +26,8 @@
  *
  * The résumé and cover-letter rows (file.resume, file.coverLetter, freeText.coverLetter; v4 ui): on the right, Preview
  * (an eye) where the container says there is a file to preview (previewOf: the PDF the fill attached or would attach),
- * which unfolds the preview under the row (renderPreview, the container's), Show, which shows the field on the page,
+ * which unfolds the preview under the row (renderPreview, the container's; v1.4 F: or opens it elsewhere, openPreview:
+ * the side panel's full-window preview page), Show, which shows the field on the page,
  * and the container's own tool where it has one (rowTool: the side panel's résumé Change after a run).
  *
  * Row actions, each drawn only when the container passes its callback (and, with actionsFrameId, only on that frame's
@@ -153,9 +154,12 @@ export interface ReportActions {
   /** v4 ui: which file a résumé or cover-letter row previews (the PDF the fill attached or would attach), or null for
    *  none; absent: no Preview anywhere. */
   previewOf?(row: ReportRow): PreviewKind | null;
-  /** v4 ui: the preview itself, drawn under its row (the side panel's ResumePreview over the preview port); `close`
-   *  folds it. Without it, no Preview. */
+  /** v4 ui: the preview itself, drawn under its row; `close` folds it. Without it (and without openPreview), no
+   *  Preview. */
   renderPreview?(kind: PreviewKind, label: string, close: () => void): ReactNode;
+  /** v1.4 F (PLAN decision 17): Preview opens the file elsewhere (the side panel's full-window preview page), in place
+   *  of unfolding it under the row. */
+  openPreview?(kind: PreviewKind): void;
   /** v4 ui: a résumé or cover-letter row's own tool beside Preview and Show (the side panel's résumé Change after a
    *  run): its button's words, its data-action, and what it unfolds under the row; null for none. */
   rowTool?(row: ReportRow): { label: string; action: string; render(close: () => void): ReactNode } | null;
@@ -656,14 +660,14 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
   const previewId = useId();
   const toolId = useId();
   const scores = row.detail?.suggestions ?? [];
-  const { describeField, onShowField, onConfirmDraft, previewOf, renderPreview } = actions;
+  const { describeField, onShowField, onConfirmDraft, previewOf, renderPreview, openPreview } = actions;
   const busy = actions.busy ?? false;
   const draft = row.provenance === 'llm-draft';
   const describe = describeField !== undefined && scores.length > 0;
   const drawer = describeField !== undefined || onConfirmDraft !== undefined;
   const label = row.label || PAGE_COPY.report.noLabel;
   const file = FILE_ROWS.has(row.category);
-  const kind = file && renderPreview !== undefined ? previewOf?.(row) ?? null : null;
+  const kind = file && (renderPreview !== undefined || openPreview !== undefined) ? previewOf?.(row) ?? null : null;
   const tool = file ? actions.rowTool?.(row) ?? null : null;
 
   // The row being written comes into view (Jobright's list follows the fill): in the side panel, its own page; in the
@@ -775,9 +779,11 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
         {file && (kind !== null || onShowField || tool !== null) && (
           <span className="tia-row__files">
             {kind !== null && (
-              <button type="button" className="tia-row__file" data-action="preview" aria-expanded={previewing}
-                aria-controls={previewId} aria-label={PAGE_COPY.report.previewLabel(label)}
-                onClick={() => setPreviewing((shown) => !shown)}>
+              <button type="button" className="tia-row__file" data-action="preview"
+                aria-expanded={openPreview === undefined ? previewing : undefined}
+                aria-controls={openPreview === undefined ? previewId : undefined}
+                aria-label={PAGE_COPY.report.previewLabel(label)}
+                onClick={() => (openPreview !== undefined ? openPreview(kind) : setPreviewing((shown) => !shown))}>
                 <Icon name="eye" size={15} className="tia-icon" />
                 {PAGE_COPY.report.preview}
               </button>
@@ -803,7 +809,7 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
           </button>
         )}
       </div>
-      {kind !== null && previewing && renderPreview !== undefined && (
+      {kind !== null && previewing && renderPreview !== undefined && openPreview === undefined && (
         <div className="tia-row__preview" id={previewId} data-row-preview={kind}>
           {renderPreview(kind, label, () => setPreviewing(false))}
         </div>

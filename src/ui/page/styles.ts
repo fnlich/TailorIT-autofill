@@ -463,6 +463,17 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-resumeline__icon { color: var(--tia-ink); }
 .tia-resumeline__text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .tia-resumeline__label { font-weight: 700; }
+/* v1.4 F: the tailoring's row under the résumé and cover-letter lines, and the templates' fields. */
+.tia-tailor { display: grid; gap: 4px; justify-items: start; }
+.tia-tailor__row { display: inline-flex; align-items: center; gap: 4px; }
+.tia-tailor__go { min-height: 34px; padding: 0 14px; font-size: 13px; }
+.tia-tailor__note { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.tia-docfields { display: grid; gap: 10px; }
+.tia-docfield { display: grid; gap: 4px; }
+.tia-docfield__label { font: 600 13px/1.3 var(--tia-font); }
+.tia-docfield__select { min-height: 36px; padding: 0 8px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-control);
+  background: var(--tia-bg); color: var(--tia-fg); font: 400 14px/1.2 var(--tia-font); }
+.tia-docfields__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
 /* "?" beside a heading or a name: the options page's cards and fields, the editor's, the unsupported page's. */
 .tia-card__head, .tia-unsupported__head, .tia-disclosure-changed__head, .tia-profile__headrow { display: flex;

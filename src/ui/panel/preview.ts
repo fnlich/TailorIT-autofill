@@ -1,5 +1,6 @@
 /*
- * The resume's preview, the side panel's side (v3 Phase 3b; docs/PRIVACY.md "The resume's preview"): the `preview`
+ * The resume's preview, the extension page's side (v3 Phase 3b; docs/PRIVACY.md "The resume's preview"; since v1.4 F
+ * the full-window preview page's, ui/preview/PreviewPage.tsx, in place of the side panel's): the `preview`
  * port, an extension page's, posts preview/request {tabId}; the worker sends the resume a fill of the tab would attach
  * as the resume port sends it to a form (a header, 256 KiB base64 chunks each acknowledged, resume/end), checked the
  * same way here (the header's size and chunk count, each chunk's length, the SHA-256), and the panel answers

@@ -7,7 +7,8 @@
  * - I understand on a changed disclosure is chosen in Chrome's side panel;
  * - a choice that lets the extension act more on its own (Submit or Sign-in to Auto, a skip rule off) is made on the
  *   settings page or in Chrome's side panel;
- * - a résumé or cover letter is previewed in Chrome's side panel: no file's bytes reach the page.
+ * - a résumé or cover letter is previewed in the full-window preview page (v1.4 F: preview.html, which the worker
+ *   opens, from either host): no file's bytes reach the page.
  * Each says so and links to Chrome's side panel (sidepanel.html) or the settings page; the sidebar's click gate
  * (content/ui/sidebar.ts) turns the person's click on either link into the worker's opening of it.
  */

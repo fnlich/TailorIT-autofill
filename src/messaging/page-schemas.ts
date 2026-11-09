@@ -12,6 +12,7 @@ import { RESUME_CHOICE_REASONS } from '../contract/tailorit/lookup';
 import { AutofillProfileSchema, AutofillSensitiveSchema, WORK_ARRANGEMENTS } from '../contract/tailorit/profile';
 import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from '../contract/tailorit/resumes';
 import { AUTOFILL_JOB_SEARCH_MAX, AUTOFILL_JOB_SEARCH_QUERY_MAX } from '../contract/tailorit/tracker';
+import { TAILOR_STEPS } from '../contract/tailorit/tailor'; // v1.4 F
 import { FIELD_KINDS, MATCHER_STAGES, PLATFORMS } from '../core/enums';
 import { MAX_TELEMETRY_COUNTS, TELEMETRY_OUTCOMES } from '../core/telemetry/events';
 import { HISTORY_KINDS, PROFILE_GAPS } from '../shared/profile-gaps';
@@ -40,6 +41,14 @@ export type PanelNote = (typeof PANEL_NOTES)[number];
 /** A job of the tab's last "Autofill for another job" search, as the panel names it (v3 Phase 3b): its place in that
  *  search, never TailorIT's id. */
 export const JobRefSchema = z.string().regex(/^j[0-9]$/);
+
+// ── v1.4 F ──
+/** What a tailoring writes, and which document a preview or an edit opens: the resume, or the cover letter. */
+export const TAILOR_KINDS = ['resume', 'coverLetter'] as const;
+export type TailorKind = (typeof TAILOR_KINDS)[number];
+/** A template's id, as the contract caps it (AUTOFILL_TAILOR_LIMITS.templateId). */
+const TemplateId = z.string().min(1).max(64);
+// ── end v1.4 F ──
 
 export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('ping') }),
@@ -151,6 +160,20 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('panel/notes') }),
   /** The person closed a note: it stays closed, on the page and in the side panel. */
   z.strictObject({ v, type: z.literal('panel/closeNote'), note: z.enum(PANEL_NOTES) }),
+  // ── v1.4 F (PLAN decisions 16-18): tailoring, the documents' preview and editor, the templates ──
+  /** The tab's tailoring (background/tailor.ts): its state for the card frame's application (no `start`: a read from
+   *  memory, nothing asked), or "Tailor resume for this job" ('resume') or "Generate cover letter" ('coverLetter'),
+   *  each a trusted click on a control seen CONTROL_SEEN_MS, which starts TailorIT's tailoring for the tab's job. */
+  z.strictObject({ v, type: z.literal('panel/tailor'), tabId: TabId, start: z.enum(TAILOR_KINDS).optional() }),
+  /** Preview (the full-window preview page, preview.html, an extension page) or Edit (TailorIT's editor, in a new tab)
+   *  of the resume or the cover letter a fill of the tab attaches: the worker opens it, as it alone knows their ids. */
+  z.strictObject({ v, type: z.literal('panel/openDocument'), tabId: TabId, kind: z.enum(TAILOR_KINDS),
+    how: z.enum(['preview', 'edit']) }),
+  /** The templates a tailored resume and its letter are written on (the profile's `documents`), with the lists TailorIT
+   *  offers; `save` changes those two alone, on the profile as TailorIT holds it now, with its revision. */
+  z.strictObject({ v, type: z.literal('panel/documents'), save: z.strictObject({ resumeTemplateId: TemplateId.nullable(),
+    coverLetterTemplateId: TemplateId.nullable() }).optional() }),
+  // ── end v1.4 F ──
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
@@ -160,7 +183,9 @@ const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(
 
 /** What changed for every side panel (v2): the connection (a token stored or dropped, perhaps from another window) or
  *  the settings. */
-export const PANEL_CHANGES = ['connection', 'settings', 'agent'] as const;
+export const PANEL_CHANGES = ['connection', 'settings', 'agent',
+  // v1.4 F: a tab's tailoring moved on (a step, done, failed): each panel reads its own tab's with panel/tailor.
+  'tailor'] as const;
 
 export const PanelPortMessageSchema = z.discriminatedUnion('type', [
   /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). `side` (v3 Phase 3):
@@ -325,6 +350,53 @@ export const LETTER_OUTCOMES = ['yours', 'written', 'none', 'failed', 'ai-off', 
 export type LetterOutcome = (typeof LETTER_OUTCOMES)[number];
 export const PanelLetterAnswerSchema = z.strictObject({ outcome: z.enum(LETTER_OUTCOMES) });
 export type PanelLetterAnswer = z.infer<typeof PanelLetterAnswerSchema>;
+
+// ── v1.4 F (PLAN decisions 16-18) ──
+/**
+ * Why a tailoring did not start or did not finish (panel/tailor): 'needs-copy' (the resume is an upload with no editable
+ * copy: TailorIT's 409 needs_editable_copy), 'rate-limited' (this panel's pace, or TailorIT's hourly cap), 'ai-off' (the
+ * person's AI-written answers are off, the posting forbids AI under profile-only, or the form says "I did not use AI"),
+ * 'ai-unavailable' (TailorIT's AI is off, signed out or paused), 'busy' (two tailorings of the account already run),
+ * 'no-job' (TailorIT has no such job and the page names no company and title), 'not-allowed' (this connection may not
+ * run TailorIT's AI: connect again), 'not-connected', 'failed' (TailorIT's tailoring failed), 'unavailable' (TailorIT
+ * or the page could not be reached, or it took too long).
+ */
+export const TAILOR_FAILURES = ['needs-copy', 'rate-limited', 'ai-off', 'ai-unavailable', 'busy', 'no-job', 'not-allowed',
+  'not-connected', 'failed', 'unavailable'] as const;
+export type TailorFailure = (typeof TAILOR_FAILURES)[number];
+const Score = z.number().int().min(0).max(100);
+/** panel/tailor: the tab's tailoring for its card frame's application, states only (never an id, a word of the
+ *  resume or the posting): none; running (TailorIT's step, and its line for it); done (the new resume's title, which
+ *  may hold the person's name as any resume's does, whether a letter was written, the ATS score and the one before);
+ *  or failed, with why. `kind` is the control that started it. */
+export const TailorViewSchema = z.discriminatedUnion('state', [
+  z.strictObject({ state: z.literal('idle') }),
+  z.strictObject({ state: z.literal('running'), kind: z.enum(TAILOR_KINDS), step: z.enum(TAILOR_STEPS).nullable(),
+    message: Text(200).nullable() }),
+  z.strictObject({ state: z.literal('done'), kind: z.enum(TAILOR_KINDS), title: Text(200), letter: z.boolean(),
+    score: Score.nullable(), scoreBefore: Score.nullable() }),
+  z.strictObject({ state: z.literal('failed'), kind: z.enum(TAILOR_KINDS), reason: z.enum(TAILOR_FAILURES) }),
+]);
+export type TailorView = z.infer<typeof TailorViewSchema>;
+
+/** panel/openDocument: whether a page was opened (false: there is no such document for the tab yet). */
+export const OpenDocumentAnswerSchema = z.strictObject({ opened: z.boolean() });
+
+/** panel/documents' refusals: as panel/saveProfile's ('conflict': the profile changed between the read and the save). */
+export const DOCUMENTS_REFUSALS = ['conflict', 'invalid', 'not-allowed', 'not-connected', 'rate-limited',
+  'unavailable'] as const;
+/** panel/documents: the profile's two template choices (null: the resume's own template; no template for the letter),
+ *  TailorIT's lists, whether this connection may save them (profile:write), and `saved` after a save. */
+export const DocumentsAnswerSchema = z.discriminatedUnion('outcome', [
+  z.strictObject({ outcome: z.literal('ready'), resumeTemplateId: TemplateId.nullable(),
+    coverLetterTemplateId: TemplateId.nullable(),
+    resumeTemplates: z.array(z.strictObject({ id: TemplateId, name: Text(120) })).max(100),
+    coverLetterTemplates: z.array(z.strictObject({ id: TemplateId, name: Text(120), isSystem: z.boolean() })).max(200),
+    canWrite: z.boolean(), saved: z.literal(true).optional() }),
+  z.strictObject({ outcome: z.enum(DOCUMENTS_REFUSALS) }),
+]);
+export type DocumentsAnswer = z.infer<typeof DocumentsAnswerSchema>;
+// ── end v1.4 F ──
 
 /** panel/launcher (v3 Phase 3): where the person hid the launcher of the tab's site: nowhere, on that site, or on every
  *  site. */
@@ -496,6 +568,10 @@ export const PAGE_ANSWER_SCHEMAS = {
   // v5 p1-shell
   'panel/notes': PanelNotesAnswerSchema,
   'panel/closeNote': DoneAnswerSchema,
+  // v1.4 F
+  'panel/tailor': TailorViewSchema,
+  'panel/openDocument': OpenDocumentAnswerSchema,
+  'panel/documents': DocumentsAnswerSchema,
 } as const satisfies Record<PageMessage['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */

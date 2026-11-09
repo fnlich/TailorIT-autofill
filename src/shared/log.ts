@@ -303,6 +303,17 @@ export const LOG_CODES = [
   // v5 p2-stream review (H1's backstop): a field asked anew past MAX_AI_REASKS, given up.
   'content.ai-reask-limit',
   // v5 p2-stream end
+  // ── v1.4 F: a tailoring started (whether with a job TailorIT has, deduped), refused (why, as a number), its steps as
+  // they changed, done (whether a letter came, the ATS score), failed; a document opened (preview or edit, which kind);
+  // the templates read or saved (statuses). Never an id, a title, a template's name or a word of a document. ──
+  'tailor.started',
+  'tailor.refused',
+  'tailor.step',
+  'tailor.done',
+  'tailor.failed',
+  'tailor.opened',
+  'profile.documents',
+  // ── end v1.4 F ──
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

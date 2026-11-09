@@ -8,7 +8,7 @@
  *   note's lines TailorIT keeps from the AI, and a fill after it reads the profile as saved;
  * - Edit with AI's instruction box: what the person types goes as the question's instruction;
  * - "Apply without resume": the fill attaches none, and leaves the resume field to the person;
- * - the resume's PDF preview, in the side panel, from the worker's checked bytes;
+ * - the resume's PDF preview, from the worker's checked bytes (v1.4 F: in the full-window preview page);
  * - a cover-letter text box gets the person's letter typed in;
  * - a posting page with no form is looked up as it loads, and its card shows without Autofill.
  */
@@ -192,7 +192,7 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     expect(await mock.requestsTo(RESUME_FILE_ROUTE)).toEqual([]);
   });
 
-  test('the resume’s preview: the PDF a fill attaches, shown in the side panel from its own blob address', async ({ extContext, connected: ext, routeLog }) => {
+  test('the resume’s preview: the PDF a fill attaches, shown in the full-window preview page from its own blob address (v1.4 F)', async ({ extContext, connected: ext, routeLog }) => {
     const url = `${at('a4')}/apply`;
     routeLog.serve({ [url]: FORM });
     const page = await extContext.newPage();
@@ -200,21 +200,25 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     const tabId = await ext.tabIdOf(page);
     await ext.frameWithForm(tabId);
     const panel = await ext.reportPage(tabId);
+    const opened = extContext.waitForEvent('page');
     await panel.locator('button[data-job-action="preview"]').click();
-    const frame = panel.locator('iframe[data-preview-frame]');
+    const preview = await opened;
+    expect(preview.url()).toBe(ext.url(`preview.html?tabId=${tabId}&kind=resume`));
+    const frame = preview.locator('iframe[data-preview-frame]');
     await expect(frame).toBeVisible();
     const src = await frame.getAttribute('src');
     expect(src).toMatch(/^blob:chrome-extension:\/\//);
-    const digest = await panel.evaluate(async (address) => {
+    const digest = await preview.evaluate(async (address) => {
       const bytes = new Uint8Array(await (await fetch(address)).arrayBuffer());
       const hash = await crypto.subtle.digest('SHA-256', bytes);
       return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
     }, src!);
     expect(digest).toBe(GOLDEN_RESUME.sha256);
     expect(createHash('sha256').update('').digest('hex')).not.toBe(digest);
-    // Closing it revokes the address.
-    await panel.getByRole('button', { name: COPY.job.preview.close }).click();
+    // The letter's tab: the résumé's frame goes, its address revoked.
+    await preview.locator('[data-preview-tab="coverLetter"]').click();
     await expect(frame).toHaveCount(0);
+    await preview.close();
   });
 
   test('a cover-letter text box gets the person’s letter typed in', async ({ extContext, connected: ext, routeLog, tailorit }) => {

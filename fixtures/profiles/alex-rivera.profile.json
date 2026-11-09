@@ -116,7 +116,9 @@
   },
   "certifications": [],
   "documents": {
-    "resumeId": null
+    "resumeId": null,
+    "resumeTemplateId": null,
+    "coverLetterTemplateId": null
   },
   "anythingElse": ""
 }

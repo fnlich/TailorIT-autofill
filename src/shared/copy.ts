@@ -22,6 +22,7 @@ import type {
   AddJobOutcome, AgentBlock, AgentPause, AgentStatus, AskLength, AskOutcome, JobSearchRefusal, LetterOutcome, PressOutcome,
   ProfileSaveRefusal, SaveAnswerOutcome, SiteRequestOutcome, SubmittedState,
 } from '../messaging/schemas';
+import type { TailorFailure, TailorKind } from '../messaging/page-schemas'; // v1.4 F
 import type { FrameReport } from './report';
 
 /** A report notice's code. */
@@ -784,12 +785,10 @@ const JOB = {
   withoutFailed: "That couldn't be changed: the page changed. Try again.",
   preview: {
     open: 'Preview',
-    close: 'Close the preview',
     title: (label: string) => `Preview of ${label}`,
     loading: 'Loading the resume…',
     unavailable: "This resume's preview couldn't be shown.",
     notPdf: 'Only a PDF resume has a preview.',
-    openTab: 'Open It Larger', // v5 p1-panel
   },
   picker: {
     heading: 'Choose The Resume To Attach', // v5 p1-panel
@@ -1657,6 +1656,83 @@ const MODALS = {
 } as const;
 // ── end v5 p1-panel ──
 
+// ── v1.4 F (PLAN decisions 16-18): tailoring on the job card, the preview page, the templates. Drafts for the owner's
+// review. ──
+
+/** The job card's tailoring (ui/panel/tailor.tsx), its Preview and Edit. */
+const TAILOR = {
+  start: { resume: 'Tailor Resume For This Job', coverLetter: 'Generate Cover Letter' } satisfies Record<TailorKind, string>,
+  help: {
+    resume: 'TailorIT writes a new resume for this job from the one attached, on the template chosen in your settings, and links it to this job in your tracker. Autofill attaches it from then on.',
+    coverLetter: 'TailorIT writes a resume for this job and a cover letter beside it, on the templates chosen in your settings, and links both to this job in your tracker. Autofill attaches them from then on.',
+  } satisfies Record<TailorKind, string>,
+  /** TailorIT's steps, when it sends no line of its own (TAILOR_STEPS). */
+  steps: { waiting: 'Waiting for TailorIT…', analyzing: 'Reading the job…', writing: 'Writing…',
+    revising: 'Checking the ATS score…', saving: 'Saving…' },
+  working: 'Tailoring…',
+  done: (title: string) => `Tailored for this job: ${title}`,
+  score: (before: number | null, after: number) => (before === null ? `ATS score ${after}` : `ATS score ${before} → ${after}`),
+  letterWritten: 'Its cover letter is ready too.',
+  failures: {
+    'needs-copy': 'This resume is an upload. Make an editable copy of it in TailorIT first.',
+    'rate-limited': 'Too many tailorings for now. Wait a little, then try again.',
+    'ai-off': "Nothing was written: AI-written answers are off, or this posting doesn't allow AI.",
+    'ai-unavailable': "TailorIT's AI is off right now. Try again later.",
+    busy: 'TailorIT is already tailoring two documents. Try again in a minute.',
+    'no-job': "TailorIT doesn't know this job yet. Add it, then try again.",
+    'not-allowed': "This connection can't use TailorIT's AI. Connect the extension again from TailorIT's Settings › Autofill.",
+    'not-connected': 'Connect to TailorIT in the settings first.',
+    failed: "TailorIT couldn't tailor it this time. Try again.",
+    unavailable: "TailorIT couldn't be reached just now. Try again.",
+  } satisfies Record<TailorFailure, string>,
+  makeCopy: 'Make An Editable Copy In TailorIT',
+  edit: 'Edit',
+  editLabel: (what: string) => `Edit ${what} in TailorIT`,
+  previewLabel: (what: string) => `Preview ${what} in a full window`,
+  nothingToOpen: 'There is nothing to open yet.',
+  /** The card's cover-letter line (the form asks for one). */
+  letter: { label: 'Cover letter:', yours: 'yours', written: 'written by TailorIT', none: 'none yet', checking: 'checking…',
+    tailored: 'written for this job' },
+  kinds: { resume: 'the resume', coverLetter: 'the cover letter' } satisfies Record<TailorKind, string>,
+} as const;
+
+/** The full-window preview page (preview.html, ui/preview/PreviewPage.tsx). */
+const PREVIEW_PAGE = {
+  title: 'TailorIT Preview',
+  tabs: { resume: 'Résumé', coverLetter: 'Cover Letter' } satisfies Record<TailorKind, string>,
+  edit: 'Edit In TailorIT',
+  close: 'Close',
+  noTab: 'This preview names no tab. Open it again from the panel.',
+} as const;
+
+/** The templates a tailored resume and its letter are written on (Options' Documents card, the Settings view, the
+ *  profile editor's Documents section: ui/page/documents.tsx). */
+const DOCUMENTS = {
+  title: 'Documents',
+  help: 'The templates TailorIT writes a tailored resume and its cover letter on. They are kept in your TailorIT profile.',
+  resumeTemplate: 'Resume template',
+  letterTemplate: 'Cover letter template',
+  ownTemplate: "Resume's own template",
+  noTemplate: 'No template',
+  missing: 'A template TailorIT no longer has',
+  system: (name: string) => `${name} (TailorIT)`,
+  save: 'Save',
+  saving: 'Saving…',
+  saved: 'Saved.',
+  loading: 'Reading your templates…',
+  readOnly: "This connection can't change your templates. Connect the extension again from TailorIT's Settings › Autofill.",
+  tryAgain: 'Try Again',
+  refusals: {
+    conflict: 'Your profile changed elsewhere meanwhile. Try again.',
+    invalid: "TailorIT doesn't have that template any more. Choose another.",
+    'not-allowed': "This connection can't read or change your templates. Connect the extension again from TailorIT's Settings › Autofill.",
+    'not-connected': 'Connect to TailorIT to choose your templates.',
+    'rate-limited': 'Too many changes in a minute. Wait a little, then try again.',
+    unavailable: "Your templates couldn't be read just now. Try again.",
+  } satisfies Record<ProfileSaveRefusal, string>,
+} as const;
+// ── end v1.4 F ──
+
 /** Every sentence: the in-page UI's (PAGE_COPY) and those only the options page and the side panel show. */
 export const COPY = {
   ...PAGE_COPY,
@@ -1673,6 +1749,10 @@ export const COPY = {
   mainView: MAIN_VIEW,
   settingsView: SETTINGS_VIEW,
   modals: MODALS, // v5 p1-panel
+  // v1.4 F
+  tailor: TAILOR,
+  previewPage: PREVIEW_PAGE,
+  documents: DOCUMENTS,
   // v5 p1-shell (the review's S6 and S7): what the sidebar on the page leaves to the extension's own pages. Drafts for
   // the owner's review.
   onPage: {
@@ -1680,7 +1760,6 @@ export const COPY = {
     sensitive: "Your self-identification, legal, pay and consent answers are edited in Chrome's side panel, not on the job page.",
     disclosure: "Choose I Understand in Chrome's side panel: the job page's own scripts can see what happens here.",
     raise: "Auto is chosen on the settings page or in Chrome's side panel, not on the job page.",
-    preview: "The preview opens in Chrome's side panel, so the file never reaches the job page.",
   },
   // v5 p1-panel: moved from PAGE_COPY (no page UI draws them since v4): one sentence per reason code, and the words of
   // the statuses, the provenances and the matcher's stages (the options page's counters).

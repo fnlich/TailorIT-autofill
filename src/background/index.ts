@@ -46,6 +46,7 @@ import {
   CONFIRMATION_PAGE_MS, createSubmissions, SUBMIT_ARM_PREFIX, SUBMIT_MESSAGE_LIMIT, type Submissions,
 } from './submissions';
 import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT, type Reports } from './reports';
+import { createTailoring, editorUrlOf, OPEN_DOCUMENT_LIMIT, TAILOR_LIMIT, type Tailoring } from './tailor'; // v1.4 F
 import { fillsFromProfileOnly, latestReport, saysNoAi } from '../shared/report';
 import { createResumeChooser } from './resume-choice';
 import { createResumeTransfer } from './resume-transfer';
@@ -159,6 +160,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   let jobCards: JobCards | null = null;
   let panelReports: Reports | null = null;
   let letterRows: ReturnType<typeof createPanelLetters> | null = null;
+  let tailorings: Tailoring | null = null; // v1.4 F
   let submissions: Submissions | null = null;
   let agentRef: Agent | null = null;
   const keeper = createTokenKeeper(platform, () => {
@@ -166,6 +168,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     void runRegistry?.dropTokenData().catch(() => undefined);
     jobCards?.dropTokenData();
     letterRows?.dropTokenData();
+    tailorings?.dropTokenData(); // v1.4 F
     submissions?.dropTokenData();
     // v3 Phase 5: the agent's job closes; its result waits for a connection to tell it.
     void agentRef?.tokenChanged().catch(() => undefined);
@@ -263,6 +266,42 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     profileOnlyHeld: async (tabId) => (await reports.ofTab(tabId)).some(fillsFromProfileOnly),
     dryRunHeld: async (tabId) => latestReport(await reports.ofTab(tabId))?.mode === 'dry-run' });
   letterRows = panelLetters;
+  // v1.4 F (PLAN decisions 16-17): the job card's tailoring, and Preview and Edit of what the tab attaches.
+  const tailoring = createTailoring({ server, jobs, tabs: platform.tabs, settings, timers,
+    connected: () => auth.connected(), generation: () => keeper.generation,
+    cardFrame: async (tabId) => cardFrameOf(await framesOfTab(session, tabId)),
+    limit: createRateLimit(TAILOR_LIMIT.count, TAILOR_LIMIT.windowMs, now),
+    changed: () => reports.tellPanels('tailor'),
+    policyHeld: async (tabId) => (await reports.ofTab(tabId)).some(saysNoAi),
+    profileOnlyHeld: async (tabId) => (await reports.ofTab(tabId)).some(fillsFromProfileOnly) });
+  tailorings = tailoring;
+  const openLimit = createRateLimit(OPEN_DOCUMENT_LIMIT.count, OPEN_DOCUMENT_LIMIT.windowMs, now);
+  /** panel/openDocument: Preview opens the full-window preview page (an extension page: never the job page) for the
+   *  tab; Edit opens TailorIT's editor for what the tab attaches (the tailored document, else the attached resume or
+   *  the person's letter), its id read here alone. */
+  async function openDocument({ tabId, kind, how }: { tabId: number; kind: 'resume' | 'coverLetter';
+    how: 'preview' | 'edit' }) {
+    const retry = openLimit.take(`${tabId}/`);
+    if (retry !== null) return { ok: false as const, error: 'rate_limited' as const, retryAfterSeconds: retry };
+    if (how === 'preview') {
+      await platform.tabs.create(platform.runtime.getURL(`/preview.html?tabId=${tabId}&kind=${kind}`));
+      log('tailor.opened', { preview: true, letter: kind === 'coverLetter' });
+      return ok({ opened: true });
+    }
+    if (!(await auth.connected())) return refuse('not_connected');
+    let url: string | null = null;
+    if (kind === 'coverLetter') {
+      const id = (await tailoring.documentOf(tabId, 'coverLetter')) ?? (await previewLetterOf(tabId, () => true));
+      url = id === null ? null : editorUrlOf(origin, 'coverLetter', id);
+    } else {
+      const attached = await attachedResumeOf(tabId);
+      url = attached === null ? null : editorUrlOf(origin, 'resume', attached.id, attached.kind === 'built');
+    }
+    if (url === null) return ok({ opened: false });
+    await platform.tabs.create(url);
+    log('tailor.opened', { preview: false, letter: kind === 'coverLetter' });
+    return ok({ opened: true });
+  }
   // v3 Phase 3b: the side panel's "Your autofill information" and "Ask TailorIT to support this site".
   const profileEditor = createProfileEditor({ server, profiles: profileCache, connected: () => auth.connected(),
     scopes: async () => (await keeper.current())?.scopes ?? [],
@@ -286,18 +325,25 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   /** The resume a fill of the tab would attach, for the side panel's preview (v3 Phase 3b): the person's choice, else
    *  the card's; read from the account's list, for its file kind and name. None while the tab applies without one. */
   async function previewResumeOf(tabId: number) {
+    const item = await attachedResumeOf(tabId);
+    return item === null ? null : { id: item.id, fileKind: item.fileKind, fileName: item.fileName };
+  }
+  /** The account's list item of the resume a fill of the tab would attach (v1.4 F: its kind too, for Edit). */
+  async function attachedResumeOf(tabId: number) {
     const frame = cardFrameOf(await framesOfTab(session, tabId));
     if (jobs.without(tabId, frame?.applicationKey ?? null)) return null;
     const id = jobs.chosen(tabId, frame?.applicationKey ?? null) ?? (await jobs.tabJob(tabId)).resume?.id ?? null;
     if (id === null) return null;
     const list = await server.resumes();
-    const item = list.ok ? list.value.items.find((entry) => entry.id === id) : undefined;
-    return item === undefined ? null : { id: item.id, fileKind: item.fileKind, fileName: item.fileName };
+    return (list.ok ? list.value.items.find((entry) => entry.id === id) : undefined) ?? null;
   }
   /** v4 ui: the cover letter a fill of the tab attached or would attach, for the side panel's preview: the ready letter
    *  of the tab's newest run that holds one (not a dry run's: it reads none), else the person's own letter for the
    *  tab's job, checked for with generate false (nothing is written). Its id stays in this worker. */
   async function previewLetterOf(tabId: number, active: () => boolean): Promise<string | null> {
+    // v1.4 F: the letter the tab's tailoring wrote for the application it shows comes first.
+    const tailored = await tailorings?.documentOf(tabId, 'coverLetter') ?? null;
+    if (tailored !== null) return tailored;
     const held = [...(await reports.ofTab(tabId))].filter((report) => report.mode === 'fill')
       .sort((a, b) => b.updatedAt - a.updatedAt);
     for (const report of held) {
@@ -963,6 +1009,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // v5 p1-shell: the header's notes (Workday's "stay on this page" strip).
         'panel/notes': () => sidebar.notes(),
         'panel/closeNote': (message) => sidebar.closeNote(message.note),
+        // v1.4 F: the job card's tailoring, Preview and Edit, and the templates (Options, Settings, the profile editor).
+        'panel/tailor': (message) => tailoring.tailor(message),
+        'panel/openDocument': (message) => openDocument(message),
+        'panel/documents': (message) => profileEditor.documents(message),
       },
     }),
   );
@@ -1127,6 +1177,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     jobs.forgetTab(tabId);
     sites.forgetTab(tabId);
     panelLetters.forgetTab(tabId);
+    tailoring.forgetTab(tabId); // v1.4 F
+    openLimit.forget(`${tabId}/`);
     submitted.forgetTab(tabId);
     void Promise.all([
       forgetTabFrames(session, tabId),

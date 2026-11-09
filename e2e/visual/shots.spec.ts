@@ -128,12 +128,16 @@ test("the side panel: before Autofill, a real form's review, the Settings view, 
   await shoot(panel, '02b-side-panel-review-full.png', 'Side panel, a real form reviewed (whole page)', { fullPage: true });
   await panel.locator('[data-group="required"]').scrollIntoViewIfNeeded();
   await shoot(panel, '02d-side-panel-required-optional.png', 'Side panel, the Required and Optional lists');
-  // v4 ui: the résumé row's preview, then the Settings view with a "?" showing its bubble.
+  // v4 ui: the résumé row's preview (v1.4 F: the full-window preview page), then the Settings view with a "?" showing
+  // its bubble.
   const preview = panel.locator('li[data-file] button[data-action="preview"]').first();
   if (await preview.count() > 0) {
+    const opened = panel.context().waitForEvent('page');
     await preview.click();
-    await preview.scrollIntoViewIfNeeded();
-    await shoot(panel, '02c-side-panel-row-preview.png', 'Side panel, the résumé row\'s Preview opened');
+    const page = await opened;
+    await expect(page.locator('iframe[data-preview-frame]')).toBeVisible();
+    await shoot(page, '02c-preview-page.png', 'The full-window preview page, from the résumé row\'s Preview');
+    await page.close();
   }
   await panel.evaluate(() => window.scrollTo(0, 0));
   await panel.locator('button[data-panel-settings]').click();
@@ -283,10 +287,14 @@ test('the cover letter attached in a review, previewed from its row (v4 ui)', as
   await panel.bringToFront();
   const row = panel.locator('li[data-category="file.coverLetter"]').first();
   await expect(row).toHaveAttribute('data-status', 'verified');
+  const opened = extContext.waitForEvent('page');
   await row.locator('button[data-action="preview"]').click();
-  await expect(row.locator('iframe[data-preview-frame]')).toBeVisible();
+  const previewPage = await opened;
+  await expect(previewPage.locator('iframe[data-preview-frame]')).toBeVisible();
+  await shoot(previewPage, '17b-cover-letter-preview-page.png', 'The full-window preview page on the cover letter\'s tab');
+  await previewPage.close();
   await row.scrollIntoViewIfNeeded();
-  await shoot(panel, '17-cover-letter-preview.png', 'Review: the cover letter attached, its Preview opened under its row');
+  await shoot(panel, '17-cover-letter-preview.png', 'Review: the cover letter attached, with its Preview');
 });
 
 test('v3 Phase 3: Autofilling with a percent, the row being written and Skip; Minimized; the gear’s modes', async ({ extContext, connected: ext, routeLog, tailorit }) => {
@@ -416,9 +424,12 @@ test('v3 Phase 3b: another job, the resume’s preview, without resume, the prof
   await shoot(another.panel, '44b-job-card-chosen.png', 'Job card: another job chosen, with "Use this page’s own job"');
 
   const preview = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('102'));
+  const opened = extContext.waitForEvent('page');
   await preview.panel.locator('button[data-job-action="preview"]').click();
-  await expect(preview.panel.locator('iframe[data-preview-frame]')).toBeVisible();
-  await shoot(preview.panel, '45-job-card-preview.png', 'Job card: the resume’s preview, in the side panel');
+  const previewPage = await opened;
+  await expect(previewPage.locator('iframe[data-preview-frame]')).toBeVisible();
+  await shoot(previewPage, '45-job-card-preview.png', 'Job card: the resume’s preview, in the full-window preview page');
+  await previewPage.close();
 
   const without = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('103'));
   await without.panel.locator('button[data-job-action="change"]').click();

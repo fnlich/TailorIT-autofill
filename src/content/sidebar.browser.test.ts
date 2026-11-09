@@ -333,6 +333,36 @@ describe('the sidebar on the page (v5 p1-shell)', () => {
       expect(pressed).toEqual(['Submit Application', 'Submit Anyway']);
     });
 
+    it('holds the job card\'s tailoring as it holds a step button: no click until seen as drawn (v1.4 F, S2)', async () => {
+      const { runtime } = await start();
+      await vi.waitFor(() => expect(runtime.ui?.sidebarOpen).toBe(true));
+      const ui = runtime.ui!;
+      await vi.waitFor(() => expect(ui.readyNow(ui.sidebar!.el)).toBe(true), { timeout: 3_000 });
+      const pressed: string[] = [];
+      const tailor = document.createElement('button');
+      tailor.type = 'button';
+      tailor.dataset.tailorAction = 'resume';
+      tailor.textContent = 'Tailor Resume For This Job';
+      tailor.style.cssText = 'display:block;width:200px;height:40px;margin:20px 40px';
+      tailor.addEventListener('click', () => pressed.push(tailor.dataset.tailorAction ?? ''));
+      ui.sidebar!.container.prepend(tailor);
+      // Drawn just now: the sidebar has long been seen, the button not yet.
+      await clickInUi(runtime, tailor);
+      expect(pressed).toEqual([]);
+      await vi.waitFor(() => expect(ui.readyNow(tailor)).toBe(true), { timeout: 3_000 });
+      await clickInUi(runtime, tailor);
+      expect(pressed).toEqual(['resume']);
+      // Another meaning (the letter's control in its place): its time starts again.
+      tailor.dataset.tailorAction = 'coverLetter';
+      await vi.waitFor(() => expect(ui.readyNow(tailor)).toBe(false));
+      await clickInUi(runtime, tailor);
+      expect(pressed).toEqual(['resume']);
+      // An untrusted click never counts.
+      await vi.waitFor(() => expect(ui.readyNow(tailor)).toBe(true), { timeout: 3_000 });
+      tailor.click();
+      expect(pressed).toEqual(['resume']);
+    });
+
     it('puts its host\'s style back, and takes no click while the page has moved it from where it is drawn (S3)', async () => {
       const { runtime, app } = await start();
       await vi.waitFor(() => expect(runtime.ui?.sidebarOpen).toBe(true));

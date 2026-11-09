@@ -14,7 +14,8 @@
  * open it (`sidePanel`), inside that click.
  * The review of 2026-11-08:
  * - S2: a step's or the main button's click (`[data-step-action]`, `[data-main-action]`: Continue, Submit Application,
- *   Submit Anyway, Autofill) counts only once that button itself has been seen, as drawn, for CONTROL_SEEN_MS: each is
+ *   Submit Anyway, Autofill; v1.4 F `[data-tailor-action]`: the job card's tailoring) counts only once that button
+ *   itself has been seen, as drawn, for CONTROL_SEEN_MS: each is
  *   watched as the views draw it, its time starts again whenever its meaning changes (its action, its words, its being
  *   hidden; never its being enabled, which the views' own hold decides: ui/panel/seen.ts), and one never watched never
  *   counts (failing closed).
@@ -74,8 +75,10 @@ export interface SidebarFrame {
 /** The click types the frame's controls answer. */
 const CLICKS = ['click', 'auxclick', 'dblclick'] as const;
 
-/** S2: the buttons whose click starts or presses something: watched each, and counted only once seen as drawn. */
-const HELD_BUTTONS = '[data-step-action], [data-main-action]';
+/** S2: the buttons whose click starts or presses something: watched each, and counted only once seen as drawn. v1.4 F:
+ *  the job card's tailoring ("Tailor Resume For This Job", "Generate Cover Letter": TailorIT's AI writes for the
+ *  person) too. */
+const HELD_BUTTONS = '[data-step-action], [data-main-action], [data-tailor-action]';
 
 /** S3: how often the frame's box is read while it is open. */
 export const BOX_CHECK_MS = 100;
@@ -208,7 +211,7 @@ export function createSidebarFrame(doc: Document, options: { visibility: Sidebar
     }
   });
   drawn?.observe(container, { subtree: true, childList: true, characterData: true, attributes: true,
-    attributeFilter: ['data-step-action', 'data-main-action', 'hidden'] });
+    attributeFilter: ['data-step-action', 'data-main-action', 'data-tailor-action', 'hidden'] });
 
   // S4: the person's own edits of the sidebar's text boxes (module header).
   const granted = new WeakMap<Element, number>();

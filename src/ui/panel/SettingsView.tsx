@@ -10,6 +10,8 @@
  * base}, `base` being the settings this view last read (the audit's M4: the worker applies only the change, so a change
  * made meanwhile elsewhere is kept). What the worker stored is shown after. ✕ discards an unsaved change. Settings the
  * worker says changed elsewhere while nothing here is changed are shown at once.
+ * v1.4 F (PLAN decision 18): "Documents" after the modes, the templates a tailored resume and its letter are written on
+ * (ui/page/documents.tsx), with a Save of their own: they are the TailorIT profile's, not this browser's settings.
  */
 import { useId, useState } from 'react';
 import type { Settings } from '../../core/types/settings';
@@ -17,6 +19,7 @@ import type { AuthStatus } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
+import { DocumentsFields, documentsKeyOf } from '../page/documents';
 import { ModesFields, signInAvailability } from '../page/modes';
 import { request } from '../page/request';
 
@@ -97,6 +100,11 @@ export function SettingsView({ platform, settings, status, onClose, onSaved, onA
               setDraft(next);
             }} />
         )}
+        {/* v1.4 F: the profile's templates, saved on their own. */}
+        <section className="tia-settings__documents" data-settings-documents="">
+          <h3 className="tia-card__title">{COPY.documents.title}</h3>
+          <DocumentsFields platform={platform} readKey={documentsKeyOf(status)} />
+        </section>
         <div className="tia-settings__links">
           <button type="button" className="tia-linkrow" data-open-profile="" onClick={onAutofillInfo}>
             <Icon name="person" size={18} className="tia-icon tia-linkrow__icon" />

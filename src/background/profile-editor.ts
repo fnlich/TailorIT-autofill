@@ -23,15 +23,17 @@
  *   own key under the same limit.
  * No value is ever logged: statuses and counts only.
  */
-import { AutofillProfileSaveSchema, AutofillSensitiveSaveSchema, type ExtensionScope } from '../contract/tailorit';
+import {
+  AutofillProfileSaveSchema, AutofillSensitiveSaveSchema, cutAtWord, type ExtensionScope,
+} from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
-import type { PageMessage, PanelSaveProfileAnswer, ProfileView } from '../messaging/schemas';
-import type { ProfileCheckAnswer } from '../messaging/page-schemas';
+import type { PageMessage, PanelSaveProfileAnswer, ProfileSaveRefusal, ProfileView } from '../messaging/schemas';
+import type { DocumentsAnswer, ProfileCheckAnswer } from '../messaging/page-schemas';
 import { log } from '../shared/log';
 import { historyGaps, profileGaps } from '../shared/profile-gaps';
 import type { createRateLimit } from './locks';
 import type { ProfileCache } from './profile-cache';
-import type { ServerClient } from './server-client';
+import type { ServerClient, ServerResult } from './server-client';
 
 /** The editor's reads and saves a minute: a person's pace, and a bound on what a stuck panel could ask. */
 export const PROFILE_EDIT_LIMIT = { count: 20, windowMs: 60_000 } as const;
@@ -40,7 +42,7 @@ type Of<T extends PageMessage['type']> = Extract<PageMessage, { type: T }>;
 
 /** What the editor's handlers need. */
 export interface ProfileEditorDeps {
-  server: Pick<ServerClient, 'profile' | 'sensitive' | 'putProfile'>;
+  server: Pick<ServerClient, 'profile' | 'sensitive' | 'putProfile'> & Partial<Pick<ServerClient, 'templates'>>;
   /** The worker's profile cache: dropped after a save, so plans read the profile as saved. */
   profiles: Pick<ProfileCache, 'drop'>;
   connected(): Promise<boolean>;
@@ -123,14 +125,76 @@ export function createProfileEditor(deps: ProfileEditorDeps) {
           flaggedLines: answer.value.anythingElseFlaggedLines.slice(0, 500) });
       }
       log('profile.editor-save', { status: answer.status ?? 0 });
-      if (answer.failure === 'conflict') return ok({ outcome: 'conflict' });
-      if (answer.failure === 'bad-request') return ok({ outcome: 'invalid' });
-      if (answer.failure === 'forbidden') return ok({ outcome: 'not-allowed' });
-      if (answer.failure === 'not-connected' || answer.failure === 'unauthorized') return ok({ outcome: 'not-connected' });
-      if (answer.failure === 'rate-limited') return ok({ outcome: 'rate-limited' });
-      return ok({ outcome: 'unavailable' });
+      return ok({ outcome: saveRefusalOf(answer) });
+    },
+
+    /**
+     * v1.4 F (PLAN decision 18): panel/documents, the templates a tailored resume and its letter are written on, for
+     * Options' Documents card, the Settings view's and the editor's Documents section: the profile's two choices and
+     * TailorIT's lists (GET /profile and GET /templates, scope profile:read). `save` changes those two alone (scope
+     * profile:write): on the profile as TailorIT holds it now, read afresh, with its revision (PUT /profile), every other
+     * field as read, the email that stands for the account's address saved as '' again (as the editor saves it) and the
+     * sensitive part left out (TailorIT keeps it). A template TailorIT does not list is refused before anything is sent.
+     */
+    async documents(message: Of<'panel/documents'>): Promise<Answer<DocumentsAnswer>> {
+      const retry = deps.limit.take('documents');
+      if (retry !== null) return ok({ outcome: 'rate-limited' });
+      if (!(await deps.connected())) return ok({ outcome: 'not-connected' });
+      const scopes = await deps.scopes();
+      if (!scopes.includes('profile:read') || deps.server.templates === undefined) return ok({ outcome: 'not-allowed' });
+      const [read, list] = await Promise.all([deps.server.profile(), deps.server.templates()]);
+      if (!read.ok) {
+        log('profile.documents', { status: read.status ?? 0 });
+        return ok({ outcome: saveRefusalOf(read) });
+      }
+      if (!list.ok) {
+        log('profile.documents', { status: list.status ?? 0 });
+        return ok({ outcome: saveRefusalOf(list) });
+      }
+      const resumeTemplates = list.value.resumeTemplates.filter((each) => each.id.length > 0 && each.id.length <= 64)
+        .slice(0, 100).map((each) => ({ id: each.id, name: cutAtWord(each.name, 120) }));
+      const coverLetterTemplates = list.value.coverLetterTemplates
+        .filter((each) => each.id.length > 0 && each.id.length <= 64).slice(0, 200)
+        .map((each) => ({ id: each.id, name: cutAtWord(each.name, 120), isSystem: each.isSystem }));
+      let { profile } = read.value;
+      let saved = false;
+      if (message.save !== undefined) {
+        if (!scopes.includes('profile:write')) return ok({ outcome: 'not-allowed' });
+        const { resumeTemplateId, coverLetterTemplateId } = message.save;
+        if ((resumeTemplateId !== null && !resumeTemplates.some((each) => each.id === resumeTemplateId))
+          || (coverLetterTemplateId !== null && !coverLetterTemplates.some((each) => each.id === coverLetterTemplateId))) {
+          return ok({ outcome: 'invalid' });
+        }
+        const email = (await deps.accountEmail?.()) ?? null;
+        const follows = email !== null && email !== ''
+          && profile.contact.email.trim().toLowerCase() === email.trim().toLowerCase();
+        const checked = AutofillProfileSaveSchema.safeParse({ ...profile,
+          contact: follows ? { ...profile.contact, email: '' } : profile.contact,
+          documents: { ...profile.documents, resumeTemplateId, coverLetterTemplateId } });
+        if (!checked.success) return ok({ outcome: 'invalid' });
+        const answer = await deps.server.putProfile({ revision: read.value.revision, profile: checked.data });
+        if (answer.ok || !['not-connected', 'unauthorized', 'forbidden', 'bad-request', 'rate-limited',
+          'refused-path'].includes(answer.failure)) deps.profiles.drop();
+        log('profile.documents', { status: answer.ok ? 200 : answer.status ?? 0, saved: answer.ok });
+        if (!answer.ok) return ok({ outcome: saveRefusalOf(answer) });
+        profile = answer.value.profile;
+        saved = true;
+      }
+      return ok({ outcome: 'ready', resumeTemplateId: profile.documents.resumeTemplateId ?? null,
+        coverLetterTemplateId: profile.documents.coverLetterTemplateId ?? null, resumeTemplates, coverLetterTemplates,
+        canWrite: scopes.includes('profile:write'), ...(saved ? { saved: true as const } : {}) });
     },
   };
+}
+
+/** What a refused profile call means to the person (panel/saveProfile's and panel/documents' refusals). */
+function saveRefusalOf(answer: Extract<ServerResult<unknown>, { ok: false }>): ProfileSaveRefusal {
+  if (answer.failure === 'conflict') return 'conflict';
+  if (answer.failure === 'bad-request') return 'invalid';
+  if (answer.failure === 'forbidden') return 'not-allowed';
+  if (answer.failure === 'not-connected' || answer.failure === 'unauthorized') return 'not-connected';
+  if (answer.failure === 'rate-limited') return 'rate-limited';
+  return 'unavailable';
 }
 
 /** The profile editor, as index.ts wires it. */

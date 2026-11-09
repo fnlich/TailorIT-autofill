@@ -161,10 +161,14 @@ export const SIDEBAR_PAGE_MESSAGES: ReadonlySet<string> = new Set([
   'panel/profileCheck',
   'panel/press', 'panel/retryApplied', 'panel/notes', 'panel/closeNote', 'settings/get', 'settings/save', 'auth/status',
   'auth/startPairing', 'agent/status', 'agent/stop',
+  // v1.4 F (PLAN decisions 16-18): the job card's tailoring, its Preview and Edit (the worker opens an extension page or
+  // TailorIT's editor: a page may open neither, and no id reaches it), and the templates of Settings and the profile.
+  'panel/tailor', 'panel/openDocument', 'panel/documents',
 ]);
 
 /** The ports the sidebar's views open: the panel's live reports. The review's S6 and F10: never the preview's transfer,
- *  so no résumé or letter bytes reach the page's process; the sidebar opens a preview in Chrome's side panel. */
+ *  so no résumé or letter bytes reach the page's process; v1.4 F: the sidebar's Preview asks the worker to open the
+ *  full-window preview page (panel/openDocument), an extension page, which alone takes the preview port. */
 export const SIDEBAR_PORTS: ReadonlySet<string> = new Set(['panel']);
 
 /** Whether a content channel may speak for the sidebar at all: the tab's top frame of a content script of ours, never

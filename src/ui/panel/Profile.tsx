@@ -24,6 +24,8 @@
  *   '' again, so it keeps following the account; a typed address is saved as typed.
  * - Countries are chosen from the ISO 3166-1 list (CLDR English names, the bundled vocabulary's), and an entry's dates
  *   from month pickers (YYYY-MM; a year alone, as TailorIT may hold one, is kept until the person picks a month).
+ * - v1.4 F (PLAN decision 18): Documents, after Preferences: the resume and cover-letter templates TailorIT writes a
+ *   tailored resume and its letter on (the profile's `documents`), from TailorIT's lists, saved with the rest.
  * - A connection without profile:write (one made before API version 3) shows everything read-only and says to
  *   connect again. "Open in TailorIT" (TailorIT's Settings › Autofill) is always at the foot.
  * - Snapshot round 2 (2026-11-07, TailorIT's contract of the same day, the owner: "you can add them on autofill profile
@@ -52,6 +54,7 @@ import { Icon } from '../brand/Icon';
 import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
 import { InSidePanel, useOnPage } from './on-page';
+import { TemplateField, templateChoices, useTemplates } from '../page/documents'; // v1.4 F
 
 const WORDS = COPY.profile;
 const FIELDS = WORDS.fields;
@@ -637,6 +640,13 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
               error={firstUnder(problems, 'preferences.relocationPlaces')} />
           </Section>
 
+          {/* v1.4 F (PLAN decision 18): the templates a tailored resume and its letter are written on. */}
+          <Section name={COPY.documents.title} id="documents" help={COPY.documents.help}>
+            <EditorTemplates platform={platform} resume={p.documents.resumeTemplateId ?? null}
+              letter={p.documents.coverLetterTemplateId ?? null}
+              onChange={(key, value) => edit(['documents', key], value)} />
+          </Section>
+
           <Section name={WORDS.sections.anythingElse} id="anything-else">
             <Text label={FIELDS.anythingElse} hideLabel multiline rows={5} maxLength={AUTOFILL_ANYTHING_ELSE_MAX}
               value={p.anythingElse} onChange={(v) => edit(['anythingElse'], v)} help={WORDS.anythingElseHelp}
@@ -715,6 +725,27 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
 function firstUnder(problems: ReadonlyMap<string, { message: string }>, prefix: string): string | undefined {
   for (const [key, found] of problems) if (key === prefix || key.startsWith(`${prefix}.`)) return found.message;
   return undefined;
+}
+
+/** v1.4 F: the editor's two template choices, over its own draft (saved with the profile), from TailorIT's lists (read
+ *  once as the editor opens: ui/page/documents.tsx); a list that could not be read leaves "none" and the stored one. */
+function EditorTemplates({ platform, resume, letter, onChange }: { platform: PagePlatform; resume: string | null;
+  letter: string | null; onChange(key: 'resumeTemplateId' | 'coverLetterTemplateId', value: string | null): void }) {
+  const { state } = useTemplates(platform, 'editor');
+  const lists = state.kind === 'ready' ? state.lists : { resumeTemplates: [], coverLetterTemplates: [] };
+  return (
+    <div className="tia-docfields" data-documents={state.kind === 'ready' ? 'ready' : state.kind === 'loading' ? 'loading'
+      : state.outcome}>
+      {state.kind !== 'ready' && (
+        <p className="tia-note" role="status">{state.kind === 'loading' ? COPY.documents.loading
+          : COPY.documents.refusals[state.outcome]}</p>
+      )}
+      <TemplateField kind="resume" value={resume} choices={templateChoices('resume', lists, resume)}
+        onChange={(value) => onChange('resumeTemplateId', value)} />
+      <TemplateField kind="coverLetter" value={letter} choices={templateChoices('coverLetter', lists, letter)}
+        onChange={(value) => onChange('coverLetterTemplateId', value)} />
+    </div>
+  );
 }
 
 /** One section: its heading (v4 ui: with a "?" holding its explanation, where it has one), then its fields. */

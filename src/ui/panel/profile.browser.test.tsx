@@ -100,8 +100,8 @@ describe('Your autofill information (v3 Phase 3b)', () => {
     expect(control<HTMLTextAreaElement>(root, WORDS.fields.anythingElse).value).toBe(PROFILE.anythingElse);
     expect([...root.querySelectorAll('[data-profile-section] h3')].map((heading) => heading.textContent)).toEqual([
       WORDS.sections.personal, WORDS.sections.links, WORDS.sections.education, WORDS.sections.experience,
-      WORDS.sections.skills, WORDS.sections.certifications, WORDS.sections.preferences, WORDS.sections.anythingElse,
-      WORDS.sections.sensitive]);
+      WORDS.sections.skills, WORDS.sections.certifications, WORDS.sections.preferences, COPY.documents.title,
+      WORDS.sections.anythingElse, WORDS.sections.sensitive]);
     // The shared sensitive part: a yes, a no and a decline, as each answer's three states.
     expect(control<HTMLSelectElement>(root, WORDS.fields.authorized).value).toBe('yes');
     expect(control<HTMLSelectElement>(root, WORDS.fields.sponsorshipNow).value).toBe('no');

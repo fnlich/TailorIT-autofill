@@ -148,7 +148,8 @@ describe('the job card in the side panel (v2)', () => {
     const worker = withForm();
     const root = await open(worker);
     const line = root.querySelector<HTMLElement>('[data-job-resume]')!;
-    expect(line.querySelector('p')?.textContent).toBe(`${COPY.mainView.resume} Backend resume${COPY.job.preview.open}${COPY.job.change}`);
+    expect(line.querySelector('p')?.textContent).toBe(`${COPY.mainView.resume} Backend resume${COPY.job.preview.open}`
+      + `${COPY.tailor.edit}${COPY.job.change}`);
     // Under Autofill and Ask custom question, outside the card.
     expect(line.closest('[data-job-card]')).toBeNull();
     expect(root.querySelector('.tia-cta')!.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -452,10 +453,30 @@ describe("the run buttons' line (the Phase F1 review, 7)", () => {
 });
 
 describe('the cover letter and the résumé in the review (Phase G; v4 ui: the rows’ Preview)', () => {
-  it('shows no cover-letter row on the card: the letter is the report row’s, with its Preview (v4 ui)', async () => {
+  it('shows the cover-letter line where the form asks for one, until a run lists the letter’s row (v1.4 F)', async () => {
     const worker = withForm();
+    worker.script.letter = { check: 'yours', write: 'written' };
     const root = await open(worker);
-    expect(root.querySelector('[data-job-letter], [data-job-action="write-letter"], [data-job-docs]')).toBeNull();
+    const line = root.querySelector<HTMLElement>('[data-job-letter]')!;
+    expect(line.querySelector('p')?.textContent).toBe(`${COPY.tailor.letter.label} ${COPY.tailor.letter.yours}`
+      + `${COPY.job.preview.open}${COPY.tailor.edit}`);
+    expect(line.querySelector('[data-tailor-action="coverLetter"]')?.textContent).toBe(COPY.tailor.start.coverLetter);
+    // Still no Write it now.
+    expect(root.querySelector('[data-job-action="write-letter"], [data-job-docs]')).toBeNull();
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { fields: [
+      row('letter', { kind: 'file', category: 'file.coverLetter', label: 'Cover letter' })] })],
+    page: formPage({ letter: true }) }));
+    await settle();
+    expect(root.querySelector('[data-job-letter]')).toBeNull();
+    unmountAll();
+    // A form that asks for no letter has no line; one with no letter yet says so, with no Preview or Edit.
+    const plain = withForm();
+    plain.script.pages.set(5, formPage());
+    expect((await open(plain)).querySelector('[data-job-letter]')).toBeNull();
+    unmountAll();
+    const none = await open(withForm());
+    expect(none.querySelector('[data-job-letter] [data-letter-label]')?.textContent).toBe(COPY.tailor.letter.none);
+    expect(none.querySelector('[data-job-letter] [data-job-action="letter-preview"]')).toBeNull();
   });
 
   it('offers Preview on the cover-letter row when the fill attached a letter or TailorIT holds the person’s, Show always', async () => {
@@ -501,27 +522,23 @@ describe('the cover letter and the résumé in the review (Phase G; v4 ui: the r
     await open(asking);
     expect(asking.sentOfType('panel/letter')).toEqual([{ v: 1, type: 'panel/letter', tabId: 5, write: false }]);
   });
-  it('previews the résumé row’s PDF and the cover letter’s over the preview port, each with its kind', async () => {
+  it('opens the résumé row’s and the cover letter’s Preview in the full-window page, each with its kind (v1.4 F)', async () => {
     const worker = withForm();
     worker.script.reports.set(5, [frameReport(0, { fields: [
       row('cv', { kind: 'file', category: 'file.resume', label: 'Resume/CV' }),
       row('letter', { kind: 'file', category: 'file.coverLetter', label: 'Cover letter', reason: 'cover-letter-written',
         wrote: true, status: 'verified' })] })]);
     const root = await open(worker);
-    const asked = () => worker.posted.filter((message) => (message as { type?: unknown }).type === 'preview/request');
     await click(root.querySelector('li[data-field-key="cv"] button[data-action="preview"]'));
-    await settle();
-    expect(root.querySelector('li[data-field-key="cv"] [data-row-preview="resume"] [data-resume-preview]')).not.toBeNull();
     await click(root.querySelector('li[data-field-key="letter"] button[data-action="preview"]'));
-    await settle();
-    expect(asked()).toEqual([{ v: 1, type: 'preview/request', tabId: 5 },
-      { v: 1, type: 'preview/request', tabId: 5, kind: 'coverLetter' }]);
-    const letter = root.querySelector<HTMLElement>('li[data-field-key="letter"] [data-preview-kind="coverLetter"]')!;
-    expect(letter.textContent).toContain(COPY.mainView.letterPreview.loading);
-    // The worker had none to send: the letter's own words.
-    await act(async () => worker.ports.at(-1)!.post({ v: 1, type: 'resume/error', reason: 'resume-unavailable' }));
-    await settle();
-    expect(letter.querySelector('[data-preview-failed]')?.textContent).toBe(COPY.mainView.letterPreview.unavailable);
+    expect(worker.sentOfType('panel/openDocument')).toEqual([
+      { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'resume', how: 'preview' },
+      { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'coverLetter', how: 'preview' }]);
+    // Nothing unfolds under the rows, and no bytes come to the panel.
+    expect(root.querySelector('[data-row-preview], [data-resume-preview], iframe')).toBeNull();
+    expect(worker.posted.some((message) => (message as { type?: unknown }).type === 'preview/request')).toBe(false);
+    expect(root.querySelector('li[data-field-key="cv"] button[data-action="preview"]')?.hasAttribute('aria-expanded'))
+      .toBe(false);
     // A résumé that is not a PDF has no Preview on its row.
     unmountAll();
     const word = withForm(jobCard({ resume: { label: 'Word resume', fileKind: 'docx', reason: 'application' } }));
@@ -619,28 +636,28 @@ describe('after a Submit, and the disclosure shown again (the v3 Phase 4 review)
   });
 });
 
-describe('the resume preview’s transfer (the review, 8)', () => {
-  it('asks once per preview opened, whatever the panel draws meanwhile, and lets its port go when it closes', async () => {
+describe('Preview and Edit on the résumé line (v1.4 F, PLAN decision 17)', () => {
+  it('opens the full-window preview and TailorIT’s editor through the worker; says when there is nothing to open', async () => {
     const worker = withForm();
     const root = await open(worker);
-    await click(root.querySelector<HTMLButtonElement>('button[data-job-action="preview"]')!);
-    await settle();
-    const asked = () => worker.posted.filter((message) => (message as { type?: unknown }).type === 'preview/request');
-    expect(asked()).toEqual([{ v: 1, type: 'preview/request', tabId: 5 }]);
-    const port = worker.ports.at(-1)!;
-    let dropped = false;
-    port.onDisconnect(() => {
-      dropped = true;
-    });
-    // The panel draws again (a report, a page state): no second transfer.
-    await act(async () => worker.ports[0]!.post({ v: 1, type: 'panel/update', tabId: 5,
-      reports: [frameReport(0, { status: 'review' })], page: formPage({ letter: true }) }));
-    await settle();
-    expect(asked()).toHaveLength(1);
-    // Closed before the bytes came: the port goes.
-    await click(root.querySelector<HTMLButtonElement>('button[data-job-action="preview"]')!);
-    await settle();
-    expect(dropped).toBe(true);
+    await click(root.querySelector<HTMLButtonElement>('[data-job-resume] button[data-job-action="preview"]')!);
+    await click(root.querySelector<HTMLButtonElement>('[data-job-resume] button[data-job-action="edit"]')!);
+    expect(worker.sentOfType('panel/openDocument')).toEqual([
+      { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'resume', how: 'preview' },
+      { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'resume', how: 'edit' }]);
+    expect(root.querySelector('iframe, [data-resume-preview]')).toBeNull();
+    worker.on('panel/openDocument', () => ({ ok: true, data: { opened: false } }));
+    await click(root.querySelector<HTMLButtonElement>('[data-job-resume] button[data-job-action="edit"]')!);
+    expect(root.querySelector('.tia-feedback')?.textContent).toBe(COPY.tailor.nothingToOpen);
+    unmountAll();
+    // A Word resume has Edit and no Preview; "Apply without resume" has neither.
+    const word = await open(withForm(jobCard({ resume: { label: 'Word resume', fileKind: 'docx', reason: 'application' } })));
+    expect(word.querySelector('[data-job-resume] button[data-job-action="preview"]')).toBeNull();
+    expect(word.querySelector('[data-job-resume] button[data-job-action="edit"]')).not.toBeNull();
+    unmountAll();
+    const without = await open(withForm(jobCard({ withoutResume: true })));
+    expect(without.querySelector('[data-job-resume] button[data-job-action="preview"], '
+      + '[data-job-resume] button[data-job-action="edit"]')).toBeNull();
   });
 });
 

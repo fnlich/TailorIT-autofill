@@ -70,6 +70,15 @@
  *   task's items one at a time (its first after delayMs, then one every `value` ms), and an AI route asked without
  *   respond-async then waits for its task as TailorIT does (AUTOFILL_AI_WAIT_MS, 10 s) before it answers 202;
  *   ai-stream-off is a TailorIT before the stream (its stream 404, respond-async not heard).
+ * - v1.4 F (the contract's tailor.ts, TailorIT builder D's 32900ee): POST /tailor checks its body as TailorIT does (a
+ *   coverLetter flag, a job or the posting's text, company and title, the caps, a template TailorIT lists) and makes a
+ *   task, 202 {taskId, deduped: false}; GET /tailor/:id reads it running ('analyzing', TailorIT's line) for its first
+ *   poll (`value` polls under tailor-slow), then succeeded: the tailored resume (TAILORED_RESUME: the contract's
+ *   golden result, built, the golden PDF's bytes under its own name) and, when asked, the golden letter. From then on
+ *   the resume list holds the tailored resume, its file route answers, and a lookup with a job and no chosen resume
+ *   suggests it (reason application: TailorIT linked it to the tracker entry). The contract's golden task is always
+ *   there. GET /templates answers the contract's example. Scenarios: tailor-needs-copy, tailor-rate-limited,
+ *   tailor-ai-off, tailor-failed, tailor-slow.
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -192,6 +201,21 @@ export const GOLDEN_LETTER = Object.freeze({
 export function goldenLetterBytes() {
   return Uint8Array.from(LETTER_BYTES);
 }
+
+// ── v1.4 F ──
+/** The contract's golden tailoring task, which the mock always holds (succeeded). */
+export const GOLDEN_TAILOR_TASK = Object.freeze(example('AutofillTailorTask'));
+/** The resume a tailoring makes: the golden task's result, a built PDF (the golden resume's bytes) under its own name. */
+export const TAILORED_RESUME = Object.freeze({
+  id: /** @type {string} */ (GOLDEN_TAILOR_TASK.result.resumeId),
+  label: /** @type {string} */ (GOLDEN_TAILOR_TASK.result.title),
+  kind: 'built',
+  fileKind: 'pdf',
+  fileName: `${GOLDEN_TAILOR_TASK.result.title}.pdf`,
+});
+/** TailorIT's line while a tailoring writes (its AI_PROGRESS_MESSAGES). */
+export const TAILOR_LINE = 'Tailoring your resume...';
+// ── end v1.4 F ──
 
 /**
  * The id Chrome gives an extension with this public key: the first 32 hex digits of the key's SHA-256, each mapped
@@ -326,6 +350,12 @@ export const MOCK_SCENARIOS = Object.freeze({
   'site-request-limited': 'POST /site-requests gets 429 rate_limited.',
   'applied-fails': 'POST /applied gets 500.',
   'applied-forbidden': 'POST /applied gets 403: a connection made before tracker:write.',
+  // v1.4 F: tailoring. Without these, a tailoring reads running at its first poll and succeeded at the next.
+  'tailor-needs-copy': 'POST /tailor gets 409 needs_editable_copy: the resume is an upload with no editable copy.',
+  'tailor-rate-limited': 'POST /tailor gets 429 rate_limited (Retry-After 60): the hourly cap.',
+  'tailor-ai-off': 'POST /tailor gets 503 ai_unavailable: Claude is off, signed out or paused.',
+  'tailor-failed': 'The tailoring reads failed (ai_failed) once it stops running.',
+  'tailor-slow': 'The tailoring reads running for `value` polls (default 3) before it ends: analyzing, then writing.',
 });
 
 /** The words GET /cover-letters/:id/text answers (v3 Phase 3b): `GOLDEN_LETTER.sentinel` among them, so a spec can
@@ -613,6 +643,11 @@ export function createMock() {
     savedProfile: null,
     /** v3 Phase 3b: the hosts POST /site-requests recorded, in order. @type {string[]} */
     siteRequests: [],
+    /** v1.4 F: the tailorings POST /tailor made, by id (how many times each was read, how many it reads running, whether
+     *  it fails, whether it writes a letter), and whether one succeeded (its resume is the account's from then on).
+     *  @type {Map<string, { createdAt: number; polls: number; running: number; fails: boolean; letter: boolean }>} */
+    tailors: new Map(),
+    tailored: false,
     /** v3 Phase 4: the bodies POST /applied took; every later lookup says Applied. @type {Array<Record<string, unknown>>} */
     applied: [],
     /** v3 Phase 5: the agent's queue: its rows (the task, its state and reason, the connection that claimed it), every
@@ -781,6 +816,12 @@ export function createMock() {
     else if (!contractReads(json.url)) answer = lookupAnswer('unknown-page-default-resume');
     else answer = state.added === null ? lookupAnswer('golden') : JSON.parse(JSON.stringify(state.added));
     if (json.includePostingText !== true && answer.job) delete answer.job.postingText;
+    // v1.4 F: TailorIT linked the tailored resume to the job's tracker entry: the lookup suggests it.
+    if (state.tailored && answer.job && answer.suggestedResume !== null) {
+      answer.suggestedResume = { id: TAILORED_RESUME.id, label: TAILORED_RESUME.label, kind: TAILORED_RESUME.kind,
+        fileKind: TAILORED_RESUME.fileKind, fileName: TAILORED_RESUME.fileName, reason: 'application' };
+      if (answer.match) answer.match = { ...answer.match, resumeId: TAILORED_RESUME.id };
+    }
     // v3 Phase 4: a job POST /applied marked is Applied in the tracker from then on.
     if (state.applied.length > 0 && answer.job) {
       answer.application = { ...(answer.application ?? { id: 'app-applied', trackedOn: iso(Date.now()), archived: false,
@@ -833,8 +874,73 @@ export function createMock() {
     const list = example('AutofillResumeList');
     list.items = list.items.map((/** @type {{ id: string; fileName: string }} */ item) =>
       (item.id === GOLDEN_RESUME.id ? { ...item, fileName: GOLDEN_RESUME.fileName } : item));
+    // v1.4 F: a tailoring made the tailored resume (the newest).
+    if (state.tailored) list.items = [{ id: TAILORED_RESUME.id, label: TAILORED_RESUME.label, kind: TAILORED_RESUME.kind,
+      fileKind: TAILORED_RESUME.fileKind, fileName: TAILORED_RESUME.fileName, isDefault: false,
+      updatedAt: iso(Date.now()) }, ...list.items];
     return list;
   }
+
+  // ── v1.4 F: tailoring (module header) ──
+
+  /** POST /tailor: TailorIT's checks in brief, then a scenario's refusal, else a new task.
+   *  @param {Record<string, any>} json @returns {Answer} */
+  function tailor(json) {
+    const filled = (/** @type {unknown} */ value, /** @type {number} */ max) => typeof value === 'string'
+      && value.trim() !== '' && value.length <= max;
+    if (typeof json.coverLetter !== 'boolean') return invalid('coverLetter: Expected a boolean');
+    if (json.jobId !== undefined && !(Number.isInteger(json.jobId) && json.jobId > 0)) return invalid('jobId: Invalid');
+    if (json.jobId === undefined && !(filled(json.jobDescription, 20_000) && filled(json.company, 200)
+      && filled(json.title, 200))) return invalid('jobDescription: Required');
+    if (json.resumeId !== undefined && !filled(json.resumeId, 64)) return invalid('resumeId: Invalid');
+    const lists = example('AutofillTemplateList');
+    const listed = (/** @type {unknown} */ id, /** @type {Array<{ id: string }>} */ items) => id === undefined || id === null
+      || items.some((item) => item.id === id);
+    if (!listed(json.resumeTemplateId, lists.resumeTemplates) || !listed(json.coverLetterTemplateId, lists.coverLetterTemplates)) {
+      return invalid('resumeTemplateId: Unknown template');
+    }
+    const canaries = json.canaries ?? [];
+    if (!Array.isArray(canaries) || canaries.length > 50
+      || canaries.some((/** @type {unknown} */ canary) => typeof canary !== 'string' || canary.length < 2 || canary.length > 200)) {
+      return invalid('canaries: Invalid');
+    }
+    if (take('tailor-needs-copy') !== null) {
+      return refusal(409, 'needs_editable_copy', 'This resume is an upload. Make an editable copy of it in Documents first.');
+    }
+    if (take('tailor-rate-limited') !== null) {
+      return { ...refusal(429, 'rate_limited', 'Too many tailorings this hour.'), headers: { 'Retry-After': '60' } };
+    }
+    if (take('tailor-ai-off') !== null) return refusal(503, 'ai_unavailable', 'The AI is turned off.');
+    const slow = take('tailor-slow');
+    const id = randomUUID();
+    state.tailors.set(id, { createdAt: Date.now(), polls: 0, running: slow === null ? 1 : Number(slow.value ?? 3),
+      fails: take('tailor-failed') !== null, letter: json.coverLetter === true });
+    return jsonAnswer(202, { taskId: id, deduped: false });
+  }
+
+  /** GET /tailor/:id: running for its first polls, then succeeded (or failed). @param {string} id @returns {Answer} */
+  function tailorTask(id) {
+    if (id === GOLDEN_TAILOR_TASK.id) return jsonAnswer(200, example('AutofillTailorTask'));
+    const task = state.tailors.get(id);
+    if (task === undefined) return refusal(404, 'not_found', 'That tailoring was not found.');
+    const at = task.polls;
+    task.polls += 1;
+    const base = { id, createdAt: iso(task.createdAt) };
+    if (at < task.running) {
+      return jsonAnswer(200, { ...base, status: 'running', step: at === 0 ? 'analyzing' : 'writing', message: TAILOR_LINE,
+        result: null, error: null, finishedAt: null });
+    }
+    if (task.fails) {
+      return jsonAnswer(200, { ...base, status: 'failed', step: null, message: null, result: null,
+        error: { code: 'ai_failed', message: 'The AI request failed. Please try again.' }, finishedAt: iso(Date.now()) });
+    }
+    state.tailored = true;
+    const golden = example('AutofillTailorTask');
+    return jsonAnswer(200, { ...base, status: 'succeeded', step: null, message: null,
+      result: { ...golden.result, coverLetterId: task.letter ? GOLDEN_LETTER.id : null,
+        coverLetterTemplateId: null }, error: null, finishedAt: iso(Date.now()) });
+  }
+  // ── end v1.4 F ──
 
   // ── The AI routes (Phase 4) ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -1395,7 +1501,16 @@ export function createMock() {
     },
     'GET /api/autofill/cover-letters/:id/file': ({ params }) => coverLetterFile(params[0] ?? ''),
     'GET /api/autofill/cover-letters/:id/text': ({ params }) => coverLetterText(params[0] ?? ''),
+    // v1.4 F
+    'POST /api/autofill/tailor': ({ json }) => tailor(json),
+    'GET /api/autofill/tailor/:id': ({ params }) => tailorTask(params[0] ?? ''),
+    'GET /api/autofill/templates': () => jsonAnswer(200, example('AutofillTemplateList')),
     'GET /api/autofill/resumes/:id/file': ({ params }) => {
+      // v1.4 F: the tailored resume, once a tailoring made it: the golden bytes under its own name.
+      if (state.tailored && params[0] === TAILORED_RESUME.id) {
+        return { status: 200, bytes: goldenResumeBytes(), headers: { 'Content-Type': GOLDEN_RESUME.mime,
+          [FILE_KIND_HEADER]: 'pdf', [SHA256_HEADER]: GOLDEN_RESUME.sha256 } };
+      }
       if (params[0] !== GOLDEN_RESUME.id) return refusal(404, 'not_found', 'That resume was not found.');
       if (take('resume-fails') !== null) return serverError();
       const mismatch = take('resume-hash-mismatch') !== null;
