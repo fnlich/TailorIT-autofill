@@ -16,9 +16,10 @@ import { ALLOWED_EVENTS, EDITING_EVENTS } from '../../src/dom/fillers/events.ts'
 
 const PAGE_FILE = 'fixtures/synthetic/rich-text/index.html';
 const URL = 'https://jobs.lever.co/tailorit-fixture/rich-text/apply';
-/** The fixture's rich-text boxes, by their labels. */
+/** The fixture's rich-text boxes, by their labels: the id their events carry (the one inside an open shadow root's are
+ *  retargeted to its host, #host). */
 const BOXES: Readonly<Record<string, string>> = { 'Cover letter': 'letter', 'Why do you want to join us?': 'why',
-  'First name': 'preferred', 'Anything else?': 'ignores' };
+  'First name': 'preferred', 'Anything else?': 'ignores', 'Additional information': 'host' };
 /** The trusted events the browser's own editing of a box makes: its focus moving in and out, and its input. */
 const BROWSER_EDITING = new Set(['focus', 'focusin', 'focusout', 'blur', 'input']);
 
