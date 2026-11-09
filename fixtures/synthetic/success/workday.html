@@ -1,0 +1,32 @@
+<!doctype html>
+<!--
+  Synthetic (v5 p2-detect): Workday's page after submitting, in no snapshot, drawn from Jobright 1.25.2's rules
+  'myworkday-task-submitted-title', 'myworkday-task-application-submitted' and 'myworkday-submitted' (its
+  ats-submission-rules, read as their behaviour; src/adapters/workday/index.ts WORKDAY_SUCCESS): the candidate home's
+  task dialog with its Return to home, titled Application Submitted (#task); the sign-in content's Congratulations
+  above the words that the application was submitted (#welcome, hidden until a test shows it); and decoys a sign must
+  never be read from (#decoy-title: the title outside the dialog; #decoy-dialog: a dialog saying something else).
+  Nothing here is any person's.
+-->
+<html lang="en">
+<head><meta charset="utf-8"><title>Candidate Home</title>
+<style>body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; } [hidden] { display: none; }</style></head>
+<body>
+  <main>
+    <h2 id="decoy-title">Application Submitted</h2>
+    <div data-automation-id="candidateHomeTaskModal" role="dialog" id="task">
+      <h2>Application Submitted</h2>
+      <p>Your application has been submitted successfully.</p>
+      <button type="button" data-automation-id="returnToHome">Return to home</button>
+    </div>
+    <div data-automation-id="candidateHomeTaskModal" role="dialog" id="decoy-dialog">
+      <h2>Upload your documents</h2>
+      <p>Your application has been submitted successfully once you upload them.</p>
+    </div>
+    <div data-automation-id="signInContent" id="welcome" hidden>
+      <h1>Congratulations!</h1>
+      <div>Your application has successfully been submitted.</div>
+    </div>
+  </main>
+</body>
+</html>

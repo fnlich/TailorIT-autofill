@@ -4,8 +4,9 @@ import {
   ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CAPTCHA_VENDOR_MATCHES, careerSiteOf, HR_HOST_MATCHES, isCaptchaVendorUrl,
   isCompanySiteUrl, isHrHost, isLinkedInHost, onAtsMatch, onOwnOrigin, platformOfUrl, registrationsFor, SITES_MATCH,
   // v5 p2-detect
-  SUBMIT_WATCH_MATCHES,
+  LINKEDIN_HOST_MATCHES, ORACLE_REFUSED_DOMAINS, oracleOwnDomain, SUBMIT_WATCH_MATCHES,
 } from './hosts';
+import { ORACLE_REFUSED_DOMAINS as PARSER_REFUSED } from '../adapters/oracle/url';
 
 describe('the ATS host list', () => {
   it('names the platform of each host, nested Workday subdomains included', () => {
@@ -407,17 +408,20 @@ describe('the address variants (v5 p2-detect)', () => {
     }
   });
 
-  it("matches the submit watcher on Workday's and ClearCompany's candidate hosts alone, each an ATS match", () => {
+  it("matches the submit watcher on Workday's, ClearCompany's, Oracle's and SuccessFactors' candidate hosts alone, each an ATS match", () => {
     expect([...SUBMIT_WATCH_MATCHES].every((pattern) => (ATS_MATCHES as readonly string[]).includes(pattern))).toBe(true);
     const watch = SUBMIT_WATCH_MATCHES.map((p) => new MatchPattern(p));
     for (const url of ['https://acme.wd5.myworkdayjobs.com/x', 'https://wd5.myworkdaysite.com/recruiting/acme/x',
-      'https://acme.myworkdayjobs-impl.com/x', 'https://vafb.clearcompany.com/careers/jobs/x/apply']) {
+      'https://acme.myworkdayjobs-impl.com/x', 'https://vafb.clearcompany.com/careers/jobs/x/apply',
+      // The owner's word of 2026-11-08: Oracle's and SuccessFactors' signs too.
+      'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/1', 'https://career2.successfactors.eu/career',
+      'https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX/job/1']) {
       expect(watch.some((p) => p.includes(url)), url).toBe(true);
-      expect(['workday', 'clearcompany', null]).toContain(platformOfUrl(url));
+      expect(['workday', 'clearcompany', 'oracle', 'successfactors', null]).toContain(platformOfUrl(url));
     }
     for (const url of ['https://job-boards.greenhouse.io/acme/jobs/1', 'https://acme.icims.com/jobs/1/job',
-      'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/1', 'https://vafb.clearcompany.com/app/home',
-      'https://career2.successfactors.eu/career']) {
+      'https://vafb.clearcompany.com/app/home', 'https://acme.taleo.net/careersection/ex/jobdetail.ftl',
+      'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345']) {
       expect(watch.some((p) => p.includes(url)), url).toBe(false);
     }
   });
@@ -427,4 +431,44 @@ describe('the address variants (v5 p2-detect)', () => {
 function patterns(url: string, list: MatchPattern[]): boolean {
   return list.some((p) => p.includes(url));
 }
+// ── end v5 p2-detect ──
+
+// ── v5 p2-detect: Oracle's Candidate Experience on a company's own domain (the owner's word of 2026-11-08) ──
+describe("Oracle's Candidate Experience on a company's own domain (v5 p2-detect)", () => {
+  const OWN = 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345/apply/section/1';
+
+  it('names it Oracle by its address alone, never a static match: the sentinel reaches it as a company page', () => {
+    for (const url of [OWN, 'https://jobs.acme.example/careers/CandidateExperience/fr-CA/sites/External/job/7',
+      'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/jobs/preview/12345']) {
+      expect(platformOfUrl(url), url).toBe('oracle');
+      expect(onAtsMatch(url), url).toBe(false);
+      expect(isCompanySiteUrl(url), url).toBe(true);
+      expect(ATS_MATCHES.some((pattern) => new MatchPattern(pattern).includes(url)), url).toBe(false);
+    }
+    for (const url of ['https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites', 'https://careers.acme-corp.example/',
+      'https://careers.acme-corp.example/CandidateExperience/en/sites/CX_1/job/1', 'https://localhost/hcmUI/CandidateExperience/en/sites/X/job/1',
+      'http://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345']) {
+      expect(platformOfUrl(url), url).toBeNull();
+    }
+  });
+
+  it('never on LinkedIn, an employee HR system, a CAPTCHA vendor or Oracle\'s own domains\' other hosts', () => {
+    for (const host of ['www.linkedin.com', 'acme.paylocity.com', 'n12.ultipro.com', 'acme.bamboohr.com', 'wd5.myworkday.com',
+      'www.google.com', 'challenges.cloudflare.com', 'objectstorage.us-ashburn-1.oraclecloud.com', 'www.oraclegovcloud.com',
+      'workforcenow.adp.com', 'www.paycomonline.net', 'app.careerplug.com', 'newassets.hcaptcha.com']) {
+      const url = `https://${host}/hcmUI/CandidateExperience/en/sites/CX_1/job/12345`;
+      expect(platformOfUrl(url), url).not.toBe('oracle');
+      expect(oracleOwnDomain(host, '/hcmUI/CandidateExperience/en/sites/CX_1/job/12345'), host).toBe(false);
+    }
+  });
+
+  it("keeps the same refused domains as Oracle's own parser", () => {
+    expect([...ORACLE_REFUSED_DOMAINS]).toEqual([...PARSER_REFUSED]);
+    // Every HR system's and LinkedIn's domain this file keeps the extension off is among them.
+    for (const pattern of [...HR_HOST_MATCHES, ...LINKEDIN_HOST_MATCHES]) {
+      const domain = /^https:\/\/(?:\*\.)?([^/]+)\//.exec(pattern)![1]!;
+      expect(ORACLE_REFUSED_DOMAINS.some((each) => domain === each || domain.endsWith(`.${each}`)), domain).toBe(true);
+    }
+  });
+});
 // ── end v5 p2-detect ──

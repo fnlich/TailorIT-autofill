@@ -44,6 +44,11 @@ export const JAZZHR_CONFIG: AtsConfig = {
       from: 'jazzhr-3, jazzhr-4' },
   ],
   submit: { css: 'form#form_submit_new_resume a#resumator-submit-resume', from: 'jazzhr-0 to -3' },
+  // v5 p2-detect: the page after submitting, in no snapshot (jazzhr/url.ts reads its address, /apply/confirm/<code>):
+  // Jobright 1.25.2's rule 'jazzhr-application-received' (its ats-submission-rules), read as its behaviour: a centred
+  // heading or the page's title saying the application was received (fixtures/synthetic/success/jazzhr.html).
+  success: { css: 'h1.text-center, h2.page-title', text: /^Your application has been received\.$/,
+    from: "Jobright 1.25.2 ats-submission-rules 'jazzhr-application-received'" },
   // v5 p1-rules (PLAN decision 9): JazzHR's CAPTCHA-required error, from Jobright 1.25.2's reading (module header).
   errors: { css: '#recaptcha-required-error', from: 'Jobright 1.25.2 submission rules (not seen live)' },
   busy: [{ css: 'div#resumator-submit:not(:has(#resumator-submit-resume))', from: 'jazzhr-4' }],

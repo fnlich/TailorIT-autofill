@@ -5,7 +5,8 @@
  * finalize, POST /wday/cxs/<tenant>/jobapplication/<id>/finalize, and its answer's status alone:
  * - answered 200 after the person's own Submit, by fetch or by XMLHttpRequest, the application is recorded Applied
  *   (POST /applied) from the tab that armed it;
- * - answered 400, nothing is recorded, and the page still had its own answer.
+ * - answered 400, or 200 with an answer that names no application (v5 p2-detect, the owner's word of 2026-11-08: Jobright's
+ *   reading of the finalize's answer), nothing is recorded, and the page still had its own answer.
  * The routes answer the finalize; nothing else leaves the page (routes.ts fails a test that reaches anything else).
  */
 import type { Page } from '@playwright/test';
@@ -51,18 +52,22 @@ test.describe("a platform's network sign records Applied (v5 p2-detect)", () => 
       expect(routeLog.submitted).toEqual([]);
     });
 
-  test('Workday: a finalize answered 400 records nothing, and the page has its own answer', async ({ extContext, connected: ext, routeLog }) => {
-    const url = reviewAt('finalize');
-    routeLog.serve({ [url]: STEPS_PAGE, [FINALIZE]: { body: '{"errors":[{"message":"x"}]}', contentType: 'application/json',
-      status: 400 } });
-    const before = (await mock.requestsTo(APPLIED)).length;
-    const page = await extContext.newPage();
-    const tabId = await submitAt(ext, page, url);
-    await expect.poll(() => finalizedOn(page)).toEqual([400]);
-    // A sign would be told within the answer's own task; a second is ample for its message to the worker.
-    await page.waitForTimeout(1_000);
-    expect(await submittedState(ext, tabId)).toBeUndefined();
-    expect((await mock.requestsTo(APPLIED)).length).toBe(before);
-    expect(routeLog.unexpected).toEqual([]);
-  });
+  // The owner's word of 2026-11-08 (Jobright's reading): a 200 that names no application is no sign either.
+  test('Workday: a finalize answered 400, or 200 naming no application, records nothing, and the page has its own answer',
+    async ({ extContext, connected: ext, routeLog }) => {
+      for (const [status, body] of [[400, '{"errors":[{"message":"x"}]}'], [200, '{"errors":[{"message":"x"}]}']] as const) {
+        const url = reviewAt(`finalize&s=${status}`);
+        routeLog.serve({ [url]: STEPS_PAGE, [FINALIZE]: { body, contentType: 'application/json', status } });
+        const before = (await mock.requestsTo(APPLIED)).length;
+        const page = await extContext.newPage();
+        const tabId = await submitAt(ext, page, url);
+        await expect.poll(() => finalizedOn(page)).toEqual([status]);
+        // A sign would be told within the answer's own task; a second is ample for its message to the worker.
+        await page.waitForTimeout(1_000);
+        expect(await submittedState(ext, tabId), String(status)).toBeUndefined();
+        expect((await mock.requestsTo(APPLIED)).length, String(status)).toBe(before);
+        await page.close();
+      }
+      expect(routeLog.unexpected).toEqual([]);
+    });
 });

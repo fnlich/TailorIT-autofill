@@ -18,6 +18,7 @@
  */
 import type { Platform } from '../../core/enums';
 import type { ApplicationUrl } from '../application-key';
+import type { SuccessRule } from '../success';
 import type { Adapter, WidgetDecl } from '../types';
 
 /** A CSS selector, read from a snapshot. */
@@ -78,8 +79,9 @@ export interface AtsConfig {
   readonly busy?: readonly { readonly css: Css; readonly from: From }[];
   /** What the page shows once an application was sent, drawn in the form's place (a confirmation page the parse reads
    *  as 'confirmation' needs no sign). Read only after a Submit was pressed (content/submitted.ts, unchanged rules:
-   *  new, shown where the form was, never inside the posting text). */
-  readonly success?: { readonly css: Css; readonly from: From };
+   *  new, shown where the form was, never inside the posting text). v5 p2-detect: a SuccessRule (adapters/success.ts),
+   *  its words and a companion beside it read too where the rule names them. */
+  readonly success?: SuccessRule;
   /** The posting's own text (postingText) and, on a posting page with no form, the one control that opens the
    *  application (entryControl), pressed only by the agent's entry door, never by a run (entryNeverPressed). */
   readonly posting?: { readonly text?: Css; readonly entry?: Css; readonly from: From };

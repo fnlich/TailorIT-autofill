@@ -35,6 +35,8 @@ import type { ContentMessage, SitesState } from '../messaging/schemas';
 import type { HostPermissions, SitesScripting, StorageArea } from '../platform/types';
 import {
   CONTENT_SCRIPT_FILE, isCompanySiteUrl, onAtsMatch, onOwnOrigin, registrationsFor, SITES_MATCH, SITES_REGISTRATION_ID, type SiteRegistration,
+  // v5 p2-detect
+  platformOfUrl, SUBMIT_WATCH_FILE,
 } from '../shared/hosts';
 import { log } from '../shared/log';
 import { createKeyedQueue, type createRateLimit } from './locks';
@@ -257,6 +259,13 @@ export function createSites(deps: SitesDeps): Sites {
           await deps.session.remove([key]);
           log('sites.inject-failed');
           return refuse('unavailable');
+        }
+        // ── v5 p2-detect: Oracle's Candidate Experience on a company's own domain (shared/hosts.ts platformOfUrl) has no
+        // static page-world script: its submit watcher runs in the page's own world now, for its "applied" sign (it
+        // installs only where the bridge's address decision says, as on Oracle's own hosts). ──
+        if (platformOfUrl(from.url) === 'oracle') {
+          await deps.scripting.inject(from.tabId, { frameId: from.frameId, documentId }, SUBMIT_WATCH_FILE, 'MAIN')
+            .catch(() => log('sites.inject-failed'));
         }
         return ok({ injected: true });
       });

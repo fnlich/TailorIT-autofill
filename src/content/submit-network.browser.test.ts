@@ -14,6 +14,12 @@ import { userEvent } from 'vitest/browser';
 import ccHtml from '../../fixtures/clearcompany/vafb-page3.html?raw';
 import ccExpect from '../../fixtures/clearcompany/vafb-page3.expect.json';
 import reviewHtml from '../../fixtures/workday/web-review.html?raw';
+// ── v5 p2-detect: Oracle's and SuccessFactors' signs (the owner's word of 2026-11-08) ──
+import oracleHtml from '../../fixtures/oracle/hjf-apply-section.html?raw';
+import oracleExpect from '../../fixtures/oracle/hjf-apply-section.expect.json';
+import sfHtml from '../../fixtures/synthetic/success/successfactors.html?raw';
+import { oracleAdapter } from '../adapters/oracle';
+import { successFactorsAdapter } from '../adapters/successfactors';
 import reviewExpect from '../../fixtures/workday/web-review.expect.json';
 import { clearCompanyAdapter } from '../adapters/clearcompany';
 import { applicationOf } from '../adapters';
@@ -128,13 +134,67 @@ describe('a network sign makes the application sent (v5 p2-detect)', () => {
   });
 });
 
+// ── v5 p2-detect: Oracle's and SuccessFactors' signs, from Jobright's behaviour (the owner's word of 2026-11-08) ──
+const ORACLE = (oracleExpect as { source: string }).source;
+const SUCCESSFACTORS = 'https://career2.successfactors.eu/career?company=tailoritfixture&career_job_req_id=48659'
+  + '&career_ns=job_application';
+
+describe("Oracle's and SuccessFactors' signs make the application sent (v5 p2-detect)", () => {
+  it("Oracle (the owner's snapshot of the one-page flow): its CREATE then its CONFIRM after the person's Submit", async () => {
+    const { fixture, worker } = await start(oracleHtml, ORACLE, oracleAdapter);
+    await personSubmits(fixture, oracleAdapter);
+    await vi.waitFor(() => expect(worker.of('submit/armed')).toEqual([expect.objectContaining({ by: 'page' })]));
+    // The snapshot shows an education entry the page marked invalid: while it shows, the signs make nothing.
+    tell(fixture, 'oracle-created');
+    tell(fixture, 'oracle-confirmed');
+    await deadline(150);
+    expect(worker.of('submit/detected')).toEqual([]);
+    for (const mark of Array.from(fixture.doc.querySelectorAll('.beautiful-timeline-item--invalid-block'))) mark.remove();
+    // The CONFIRM alone, before any CREATE, is no sign.
+    tell(fixture, 'oracle-confirmed');
+    await deadline(150);
+    expect(worker.of('submit/detected')).toEqual([]);
+    tell(fixture, 'oracle-created');
+    await deadline(150);
+    expect(worker.of('submit/detected')).toEqual([]);
+    tell(fixture, 'oracle-confirmed');
+    await vi.waitFor(() => expect(worker.of('submit/detected')).toEqual([expect.objectContaining({
+      applicationKey: applicationOf(new URL(ORACLE))!.applicationKey, evidence: 'network' })]));
+  });
+
+  it("SuccessFactors (a synthetic application form from Jobright's reading): its applyJob's answer after the person's Submit",
+    async () => {
+      const { fixture, worker } = await start(sfHtml, SUCCESSFACTORS, successFactorsAdapter);
+      // The application form is the adapter's (input#career_ns = job_application), its Submit the page's span.
+      const root = successFactorsAdapter.detect(fixture.doc)!.formRoot;
+      expect(root.id).toBe('careerform');
+      expect(successFactorsAdapter.submitButton!(root)!.id).toBe('fbja_submitBtn');
+      expect(successFactorsAdapter.authState!(fixture.doc)).toBeNull();
+      await personSubmits(fixture, successFactorsAdapter);
+      await vi.waitFor(() => expect(worker.of('submit/armed')).toEqual([expect.objectContaining({ by: 'page' })]));
+      tell(fixture, 'successfactors-applied');
+      await vi.waitFor(() => expect(worker.of('submit/detected')).toEqual([expect.objectContaining({
+        applicationKey: applicationOf(new URL(SUCCESSFACTORS))!.applicationKey, evidence: 'network' })]));
+    });
+
+  it("SuccessFactors: its page after submitting drawn where the form was is the sign too (Jobright's rule)", async () => {
+    const { fixture, worker } = await start(sfHtml, SUCCESSFACTORS, successFactorsAdapter);
+    await personSubmits(fixture, successFactorsAdapter);
+    await vi.waitFor(() => expect(worker.of('submit/armed')).toHaveLength(1));
+    fixture.doc.getElementById('careerform')!.hidden = true;
+    fixture.doc.getElementById('jobAppPageTitle')!.hidden = false;
+    await vi.waitFor(() => expect(worker.of('submit/detected')).toEqual([expect.objectContaining({
+      evidence: 'success-message' })]));
+  });
+});
+
 describe('watchNetworkSigns (v5 p2-detect)', () => {
   it('adds no listener for a platform with no network sign, and stops with its signal', async () => {
     const fixture = await loadFixture(document, '<!doctype html><title>x</title><body></body>');
     const listen = vi.spyOn(fixture.doc, 'addEventListener');
     const sent = vi.fn();
     const watch = new AbortController();
-    for (const platform of ['greenhouse', 'oracle', 'successfactors', 'site'] as const) {
+    for (const platform of ['greenhouse', 'taleo', 'icims', 'site'] as const) {
       watchNetworkSigns(fixture.doc, platform, watch.signal, sent);
     }
     expect(listen).not.toHaveBeenCalled();

@@ -32,6 +32,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { setImmediate as nextTurn } from 'node:timers';
 import vm from 'node:vm';
 import { paint } from './proc.mjs';
 
@@ -63,31 +64,63 @@ const SIDEBAR_APP_BUDGET = 800 * 1024;
  *  bundle (16,670 bytes without them, 21,520 with, on Phase 0); with builders A's, B's and C's merged the bundle is
  *  28,897 bytes in both builds (the integration of 2026-11-06). The snapshot build's core pass Z1 (items 26 and 39)
  *  slimmed it: the bridge's decision (src/adapters/bridge-address.ts) reads only the parsers of the platforms with a
- *  host outside the public job hosts (sixteen), so it is 20,921 bytes, under a budget of 24 KiB. */
-const BRIDGE_BUDGET = 24 * 1024;
+ *  host outside the public job hosts (sixteen), so it is 20,921 bytes, under a budget of 24 KiB. v5 p2-detect: 26 KiB,
+ *  for the address variants and the pages after submitting its parsers now read (UltiPro's parser joined them for UKG's
+ *  other recruiting hosts; Oracle's reads its Candidate Experience on a company's own domain, which platformOfUrl names
+ *  with the HR and LinkedIn hosts it keeps off): 20,939 bytes on main 019f489, 26,507 with them (983c81e). */
+const BRIDGE_BUDGET = 26 * 1024;
 // ── v5 p2-detect: the page-world submit watcher (src/entrypoints/submit-watch.content.ts) ──
 /** The submit watcher's file, as WXT writes it (the page-world bridge is the manifest's other world MAIN script). */
 const SUBMIT_WATCH_FILE = 'content-scripts/submit-watch.js';
 /** The submit watcher must stay under this. Its wrappers and its protocol (src/page/submit-watch.ts,
  *  src/dom/submit-net-protocol.ts) are about 3 KiB; the rest is the page-world bridge's own address decision
  *  (src/adapters/bridge-address.ts and its parsers), which it shares so it installs exactly where the bridge would:
- *  22,024 bytes when it was added (v5 p2-detect, addfa31), the bridge's 24 KiB budget alike. */
-const SUBMIT_WATCH_BUDGET = 24 * 1024;
-/** What the watcher's bundle may never name: the extension's APIs, and every way to read a request's or an answer's
- *  body or headers (it reads a request's method and address and its answer's status, nothing else: docs/PRIVACY.md). */
-const SUBMIT_WATCH_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage', '.clone(', '.json(', '.text(', '.arrayBuffer(',
-  '.blob(', '.formData(', 'getReader', 'responseText', 'responseXML', '.body', 'getResponseHeader',
-  'getAllResponseHeaders', '.headers', 'localStorage', 'sessionStorage', 'indexedDB'];
-/** Where the watcher installs (a Workday or ClearCompany posting or form, as the bridge decides) and where it does
- *  nothing (a shared host's other page, another platform's page, Oracle's, an address with none). */
+ *  22,024 bytes when it was added (v5 p2-detect, addfa31), under the bridge's 24 KiB. The owner's word of 2026-11-08
+ *  ("Jobright is sample ... you can use it") added Oracle's and SuccessFactors' signs and the body facts of Workday and
+ *  Oracle, and Oracle's own-domain reading (28,571 bytes at 983c81e), so 28 KiB. */
+const SUBMIT_WATCH_BUDGET = 28 * 1024;
+/** What the watcher's bundle may never name: the extension's APIs, headers, storage, and the body readers it has no
+ *  use for. The owner's word of 2026-11-08 ("Jobright is sample ... you can use it") relaxed the rest of this rule for
+ *  the three platforms whose sign is one yes-or-no fact of a body, as Jobright reads it (src/dom/submit-net-protocol.ts:
+ *  Workday's application id, Oracle's action and flags, SuccessFactors' callback result): Request.clone, Response.clone,
+ *  .text(), an XMLHttpRequest's responseText and the body the page sends are allowed now, and what leaves is held by
+ *  the behaviour below instead (SUBMIT_WATCH_DRIVES: ClearCompany's bodies are never touched, and every event the
+ *  watcher dispatches carries a sign alone). */
+const SUBMIT_WATCH_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage', '.json(', '.arrayBuffer(', '.blob(', '.formData(',
+  'getReader', 'responseXML', 'getResponseHeader', 'getAllResponseHeaders', '.headers', 'localStorage',
+  'sessionStorage', 'indexedDB', 'document.cookie'];
+/** Where the watcher wraps fetch and XMLHttpRequest (a Workday, ClearCompany or Oracle posting or form, as the bridge
+ *  decides), where it wraps SuccessFactors' applyJob proxy instead (a career site's posting or form), and where it does
+ *  nothing (a shared host's other page, another platform's page, an address with none). */
 const SUBMIT_WATCH_INSTALLS_AT = [
   'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote/Engineer_JR-1/apply/applyManually',
   'https://acme.wd5.myworkdayjobs.com/en-US/External', 'https://wd5.myworkdaysite.com/recruiting/acme/External/job/Remote/Engineer_JR-1',
   'https://acme.wd5.myworkdayjobs-impl.com/en-US/External/job/Remote/Engineer_JR-1',
-  'https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply'];
+  'https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply',
+  'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/section/1'];
+const SUBMIT_WATCH_PROXY_AT = [
+  'https://career2.successfactors.eu/career?company=danfossas&career_job_req_id=48659&career_ns=job_application'];
 const SUBMIT_WATCH_SILENT_AT = ['https://wd5.myworkdaysite.com/recruiting/acme/External',
   'https://job-boards.greenhouse.io/acme/jobs/4012345', 'https://vafb.clearcompany.com/careers/blank',
-  'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946', ''];
+  'https://elhr.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'https://performancemanager4.successfactors.com/sf/home',
+  ''];
+/** The watcher driven at an address where it wraps fetch: the page's request, the answer the page's own fetch gives,
+ *  and what the watcher may do (`touches`: whether it may read that answer's body; `tells`: the only details it may
+ *  dispatch, each a sign alone, never a field of a body). The answers hold fields beside the fact read. */
+const SUBMIT_WATCH_DRIVES = [
+  { at: SUBMIT_WATCH_INSTALLS_AT[0], request: ['/wday/cxs/acme/jobapplication/JA-1/finalize', { method: 'POST', body: '{}' }],
+    answer: { status: 200, text: '{"id":"JA-1","applicant":{"name":"A Person","email":"a@example.com"}}' },
+    touches: true, tells: ['{"v":1,"sign":"workday-finalize"}'] },
+  { at: SUBMIT_WATCH_INSTALLS_AT[4], request: ['/api/v1/careers/apply/form/11111111-2222-3333-4444-555555555555/'
+    + '9485c936-3d5f-0a3b-27a4-708fe87203d8/responses/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    + '?isInternalEdit=false&advanceToEnd=false', { method: 'POST', body: '{"answers":["A Person"]}' }],
+    answer: { status: 200, text: '{"ResponseType":"WorkflowEnded","Name":"A Person"}' },
+    touches: false, tells: ['{"v":1,"sign":"clearcompany-responses"}'] },
+  { at: SUBMIT_WATCH_INSTALLS_AT[5], request: ['/hcmRestApi/resources/latest/recruitingCEJobApplications', { method: 'POST',
+    body: '{"action":"CREATE","requisitionNumber":12946,"candidateNumber":77,"firstName":"A","lastName":"Person"}' }],
+    answer: { status: 201, text: '{"submissionId":5,"email":"a@example.com"}' },
+    touches: true, tells: ['{"v":1,"sign":"oracle-created"}'] },
+];
 // ── end v5 p2-detect ──
 /** What the bridge's bundle may never name: the extension's APIs (it runs in the page's world, which has none of
  *  them, and must not look for any) and window messaging. */
@@ -96,8 +129,10 @@ const BRIDGE_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage'];
  *  became 17 KiB for the sixteen new ATS match patterns, which the sentinel holds to rule their pages out (shared/hosts.ts
  *  onAtsMatch, isCompanySiteUrl): about 0.7 KiB of host and path text. v5 p1-rules (PLAN decision 9): 18 KiB, for the
  *  CAPTCHA and anti-bot vendors' pages isCompanySiteUrl refuses too (isCaptchaVendorUrl): 17,194 bytes on main 9ac709e,
- *  17,529 with them. */
-const SENTINEL_BUDGET = 18 * 1024;
+ *  17,529 with them. v5 p2-detect: 19 KiB, for the address variants' patterns it rules out and Oracle's Candidate
+ *  Experience on a company's own domain it recognises by its address (shared/hosts.ts oracleOwnDomain): 18,657 bytes
+ *  (983c81e). */
+const SENTINEL_BUDGET = 19 * 1024;
 /** What the sentinel's bundle may never name: React and zod (it renders and parses nothing), any DOM write, and window
  *  messaging. It reads the page and sends the worker one message. */
 const SENTINEL_NEVER_NAMES = ['react.', '__REACT', 'ZodError', '$ZodType', 'zod', 'createElement', 'appendChild', 'insertBefore',
@@ -346,63 +381,113 @@ function checkBridgeBundle(build, dir, bridge) {
 
 /**
  * v5 p2-detect: the submit watcher's bundle (src/entrypoints/submit-watch.content.ts): WXT's anonymous wrapper, naming
- * none of SUBMIT_WATCH_NEVER_NAMES; and, run in a bare context whose window holds stand-ins for fetch and
- * XMLHttpRequest and whose document and window record their listeners, it adds no global, throws nothing and adds no
- * listener, and replaces fetch, open and send exactly at SUBMIT_WATCH_INSTALLS_AT, leaving them as they were anywhere
- * else.
+ * none of SUBMIT_WATCH_NEVER_NAMES; and, run in a bare context whose window holds stand-ins for fetch,
+ * XMLHttpRequest and SuccessFactors' applyJob proxy and whose document and window record their listeners and events, it
+ * adds no global, throws nothing and adds no listener; replaces fetch, open and send exactly at
+ * SUBMIT_WATCH_INSTALLS_AT, the proxy's applyJob exactly at SUBMIT_WATCH_PROXY_AT, and nothing anywhere else; and,
+ * driven as SUBMIT_WATCH_DRIVES says, reads no body it has no use for and dispatches nothing but a sign.
  */
-function checkSubmitWatchBundle(build, dir, watcher) {
+async function checkSubmitWatchBundle(build, dir, watcher) {
   const [path] = Array.isArray(watcher?.js) ? watcher.js : [];
   const file = typeof path === 'string' ? join(dir, path) : null;
   if (file === null || !existsSync(file)) return;
   const text = readFileSync(file, 'utf8').trim();
   // The same bundle in another build is read once (each address runs it in a context of its own).
-  if (!watchProblems.has(text)) watchProblems.set(text, submitWatchProblems(text));
+  if (!watchProblems.has(text)) watchProblems.set(text, await submitWatchProblems(text));
   for (const problem of watchProblems.get(text)) fail(build, problem);
 }
 
 /** What checkSubmitWatchBundle found wrong with a bundle's text, by its text. */
 const watchProblems = new Map();
 
+/** A bare window for the watcher's bundle at `href` (checkSubmitWatchBundle): stand-ins for fetch (answering
+ *  `answer`, its body's readings counted), XMLHttpRequest and SuccessFactors' applyJob proxy; its document and window
+ *  record their listeners, and its document the details of the events dispatched on it. */
+function watchSandbox(href, answer) {
+  const listeners = [];
+  const told = [];
+  const touched = { body: 0 };
+  const listen = (type) => listeners.push(type);
+  const response = { status: answer?.status ?? 200, redirected: false,
+    clone() {
+      touched.body += 1;
+      return { text: async () => answer?.text ?? '' };
+    },
+    text: async () => {
+      touched.body += 1;
+      return answer?.text ?? '';
+    } };
+  const fetch = function fetch(..._request) { return Promise.resolve(response); };
+  function XMLHttpRequest() { /* a stand-in */ }
+  const open = function open() { return undefined; };
+  const send = function send() { return undefined; };
+  XMLHttpRequest.prototype.open = open;
+  XMLHttpRequest.prototype.send = send;
+  const applyJob = function applyJob() { return undefined; };
+  const proxy = { applyJob };
+  const document = { addEventListener: listen, removeEventListener: () => undefined, location: { href },
+    dispatchEvent: (event) => told.push(event?.detail), querySelector: () => null };
+  const window = { document, location: { href }, fetch, XMLHttpRequest, addEventListener: listen,
+    removeEventListener: () => undefined, Request: function Request() { /* a stand-in */ },
+    CustomEvent: function CustomEvent(type, init) { this.type = type; this.detail = init?.detail; },
+    HTMLInputElement: function HTMLInputElement() { /* a stand-in */ }, rcmHybridJobApplicationControllerASProxy: proxy };
+  window.parent = window;
+  window.top = window;
+  document.defaultView = window;
+  return { sandbox: { window, document, URL }, window, listeners, told, touched, fetch, open, send, XMLHttpRequest,
+    proxy, applyJob };
+}
+
 /** The submit watcher's bundle's problems (checkSubmitWatchBundle), each as check-build says it. */
-function submitWatchProblems(text) {
+async function submitWatchProblems(text) {
   const problems = [];
   if (!text.startsWith('(function(){') || !text.endsWith('})();')) {
     problems.push('the submit watcher is not one anonymous function called at once');
   }
   for (const name of SUBMIT_WATCH_NEVER_NAMES) if (text.includes(name)) problems.push(`the submit watcher names "${name}"`);
-  for (const href of [...SUBMIT_WATCH_INSTALLS_AT, ...SUBMIT_WATCH_SILENT_AT]) {
-    const listeners = [];
-    const listen = (type) => listeners.push(type);
-    const fetch = function fetch() { return undefined; };
-    function XMLHttpRequest() { /* a stand-in */ }
-    const open = function open() { return undefined; };
-    const send = function send() { return undefined; };
-    XMLHttpRequest.prototype.open = open;
-    XMLHttpRequest.prototype.send = send;
-    const document = { addEventListener: listen, removeEventListener: () => undefined, location: { href } };
-    const window = { document, location: { href }, fetch, XMLHttpRequest, addEventListener: listen,
-      removeEventListener: () => undefined, Request: function Request() { /* a stand-in */ },
-      CustomEvent: function CustomEvent() { /* a stand-in */ } };
-    window.parent = window;
-    window.top = window;
-    document.defaultView = window;
-    const sandbox = { window, document, URL };
-    const before = new Set(Object.getOwnPropertyNames(sandbox));
+  const run = (href, answer) => {
+    const bare = watchSandbox(href, answer);
+    const before = new Set(Object.getOwnPropertyNames(bare.sandbox));
     try {
-      vm.runInContext(text, vm.createContext(sandbox), { timeout: 1_000 });
+      vm.runInContext(text, vm.createContext(bare.sandbox), { timeout: 1_000 });
     } catch (error) {
       problems.push(`the submit watcher throws on its own at ${href || 'no address'}: ${String(error).slice(0, 120)}`);
-      return problems;
+      return null;
     }
-    const added = Object.getOwnPropertyNames(sandbox).filter((name) => !before.has(name));
+    const added = Object.getOwnPropertyNames(bare.sandbox).filter((name) => !before.has(name));
     if (added.length > 0) problems.push(`the submit watcher adds globals: ${added.join(', ')}`);
-    if (listeners.length > 0) problems.push(`the submit watcher listens for ${JSON.stringify(listeners)} at ${href || 'no address'}`);
-    const wrapped = [window.fetch !== fetch, XMLHttpRequest.prototype.open !== open, XMLHttpRequest.prototype.send !== send];
+    return bare;
+  };
+  for (const href of [...SUBMIT_WATCH_INSTALLS_AT, ...SUBMIT_WATCH_PROXY_AT, ...SUBMIT_WATCH_SILENT_AT]) {
+    const bare = run(href);
+    if (bare === null) return problems;
+    if (bare.listeners.length > 0) {
+      problems.push(`the submit watcher listens for ${JSON.stringify(bare.listeners)} at ${href || 'no address'}`);
+    }
+    const wrapped = [bare.window.fetch !== bare.fetch, bare.XMLHttpRequest.prototype.open !== bare.open,
+      bare.XMLHttpRequest.prototype.send !== bare.send];
     const wanted = SUBMIT_WATCH_INSTALLS_AT.includes(href);
     if (!wrapped.every((each) => each === wanted)) {
       problems.push(`the submit watcher ${wanted ? 'does not wrap' : 'wraps'} fetch and XMLHttpRequest at `
         + `${href || 'no address'} (${JSON.stringify(wrapped)})`);
+    }
+    const proxied = bare.proxy.applyJob !== bare.applyJob;
+    if (proxied !== SUBMIT_WATCH_PROXY_AT.includes(href)) {
+      problems.push(`the submit watcher ${proxied ? 'wraps' : 'does not wrap'} applyJob at ${href || 'no address'}`);
+    }
+  }
+  for (const drive of SUBMIT_WATCH_DRIVES) {
+    const bare = run(drive.at, drive.answer);
+    if (bare === null) return problems;
+    try {
+      await bare.window.fetch(drive.request[0], drive.request[1]);
+    } catch {
+      // The page's own answer is the page's.
+    }
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((done) => nextTurn(done));
+    if (!drive.touches && bare.touched.body > 0) problems.push(`the submit watcher reads a body at ${drive.at}`);
+    if (!isDeepStrictEqual(bare.told, drive.tells.filter((detail) => bare.told.includes(detail)))) {
+      problems.push(`the submit watcher dispatches ${JSON.stringify(bare.told)} at ${drive.at}, more than a sign`);
     }
   }
   return problems;
@@ -553,7 +638,7 @@ function checkNoWxtContext(build, dir, manifest) {
 
 /** Each content script's budget: ours (no React since v5 p1-shell: the sidebar's bundle holds it), the page-world
  *  bridge's and (v5 p2-detect) the submit watcher's. */
-function checkContentScriptSize(build, dir, manifest) {
+async function checkContentScriptSize(build, dir, manifest) {
   const { ours, bridge, watcher } = contentScripts(manifest);
   if (ours) checkScriptSize(build, dir, ours, 'the content script', CONTENT_SCRIPT_BUDGET);
   if (bridge) {
@@ -563,7 +648,7 @@ function checkContentScriptSize(build, dir, manifest) {
   // ── v5 p2-detect ──
   if (watcher) {
     checkScriptSize(build, dir, watcher, 'the submit watcher', SUBMIT_WATCH_BUDGET);
-    checkSubmitWatchBundle(build, dir, watcher);
+    await checkSubmitWatchBundle(build, dir, watcher);
   }
 }
 
@@ -593,7 +678,7 @@ for (const build of BUILDS) {
     }
   }
   for (const page of DEV_ONLY_PAGES) if (existsSync(join(dir, page))) fail(build, `${page} is a development-only page`);
-  checkContentScriptSize(build, dir, manifest);
+  await checkContentScriptSize(build, dir, manifest);
   checkNoWxtContext(build, dir, manifest);
   checkSentinel(build, dir, manifest);
   checkSidebarApp(build, dir, manifest);

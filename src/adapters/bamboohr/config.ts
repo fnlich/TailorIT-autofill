@@ -45,6 +45,11 @@ export const BAMBOOHR_CONFIG: AtsConfig = {
   widgets: [{ match: `${SELECT_FIELD} div.fab-Select`, root: true, kind: 'combobox', opener: 'button.fab-SelectToggle',
     expanded: 'button.fab-SelectToggle', parts: 'select.chzn-ignore', from: 'bamboohr-0 to -2' }],
   submit: { css: 'button[type="submit"][form="job-application-form"]', from: 'bamboohr-0 to -2' },
+  // v5 p2-detect: the page after submitting, in no snapshot: Jobright 1.25.2's rule 'bamboohr-confirmation' (its
+  // ats-submission-rules), read as its behaviour: a paragraph saying the application was submitted beside a "Thank You"
+  // heading in the same block, drawn where the form was (fixtures/synthetic/success/bamboohr.html).
+  success: { css: 'p', text: /^Your application was submitted successfully[.!]?$/,
+    companion: { css: 'h3', text: /^Thank You$/ }, from: "Jobright 1.25.2 ats-submission-rules 'bamboohr-confirmation'" },
   neverPress: [
     { css: '[data-fabric-component="ActionFooter"] button[data-fabric-component="TextButton"]', from: 'bamboohr-0 to -2' },
     { css: 'button[data-bi-id="careers-site-view-description-button"]', from: 'bamboohr-0 to -2' },
