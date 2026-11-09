@@ -17,10 +17,20 @@
  *      planFrame has one, always flagged (answerFromLlm); otherwise it is 'unknown', and takes only a saved answer;
  *   then the value: the profile's (values.ts), or the EEO, legal and consent policy's (policy.ts), behind the
  *   sensitive part's gate, shaped for the field's kind (candidate.ts).
+ *   v1.3 B: where those leave a gap (no profile value, an unknown question, free text, an EEO or legal question the
+ *   profile does not answer, or the decline default the policy would choose for want of an answer), the person's own
+ *   answer to the same question in an application they submitted before fills it (submitted.ts: this job's first,
+ *   another job's only for a question that is not sensitive), with provenance submitted-before and the note
+ *   submitted-before; one whose option the field no longer offers is not written, and is flagged submitted-option-gone.
+ *   So the profile wins wherever it holds a value (the profile is what the person keeps up to date; an answer typed into
+ *   one form is a fact of that day), and an earlier answer still beats any AI. A field nothing classified that one
+ *   fills is classified 'submitted', so no AI classifies or answers it.
  * Confidence is classification × value here; the match multiplies in later (planFrame). An unanswered EEO, legal or
  * sensitive question, and a required field with no value, are flagged rather than skipped, so the person sees them.
  */
-import { CLASSIFY_LLM, CLASSIFY_SAVED_EXACT, FILL_AT, FLAG_AT, LABEL_RULE_CONFIDENCE, VALUE_EXPLICIT } from '../confidence';
+import {
+  CLASSIFY_LLM, CLASSIFY_SAVED_EXACT, CLASSIFY_SUBMITTED, FILL_AT, FLAG_AT, LABEL_RULE_CONFIDENCE, VALUE_EXPLICIT,
+} from '../confidence';
 import { attentionHits, botCheckOf, namesConsentTopic } from '../guard/attention';
 import { cutInjected } from '../guard/injected';
 import { hasTripwire } from '../guard/tripwire';
@@ -38,6 +48,7 @@ import type { Action, Classifier, Resolution } from '../types/match';
 import type { Profile, Ymd } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
 import type { Settings } from '../types/settings';
+import type { SubmittedAnswer } from '../types/submitted';
 import type { VisibleText } from '../types/text';
 import type { Vocab } from '../vocab/types';
 import { none, NOTE_REASONS, SHAPE_OF_KIND, value, type Candidate, type Choice, type ValueResult } from './candidate';
@@ -48,6 +59,7 @@ import { dateIso, dateText, type DateParts } from './format';
 import { asksToAgree, statementPolarity, type NeedsUserCause } from './labelRules';
 import { consentValue, eeoDeclineDefault, eeoValue, legalValue, sensitiveGate } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
+import { findSubmittedAnswer } from './submitted';
 import { placeholderAsked, previouslyEmployedValue, profileValue, type BlockEntries } from './values';
 import { askedAs } from './yesNoPair';
 
@@ -73,6 +85,9 @@ export interface ResolveContext {
   /** The run used no AI at all (a profile-only frame, and no AI asked for its application before): an "I did not use
    *  AI" attestation is then true, and ticked (the owner's decision of 2026-11-01). */
   aiFree?: boolean;
+  /** v1.3 B: the person's answers in applications they submitted before (TailorIT's known questions, the worker's
+   *  memory for the run): they fill a gap the profile leaves (submitted.ts). Absent: none known. */
+  submitted?: readonly SubmittedAnswer[];
 }
 
 /** What decided a field's category, before any value: a tripwire in its label, an attention check, the rules, the
@@ -190,6 +205,33 @@ function savedCandidate(answer: SavedAnswer): Candidate {
       return { origin, confidence: 1, check: saved.checked };
   }
 }
+
+/** v1.3 B: an earlier submitted answer as a candidate (provenance submitted-before, the note submitted-before): option
+ *  labels matched as text, a text typed, a box ticked. */
+function submittedCandidate(answer: SubmittedAnswer): Candidate {
+  const origin = { provenance: 'submitted-before' as const, submittedId: answer.id, sameJob: answer.sameJob };
+  const note = 'submitted-before' as const;
+  const { answer: given } = answer;
+  switch (given.kind) {
+    case 'options': {
+      const set = given.labels.map((label): Choice => ({ intended: intendedText(label), domain: 'generic' }));
+      return { origin, confidence: 1, note, set,
+        ...(set.length === 1 ? { choice: set[0]!, text: given.labels[0]! } : {}) };
+    }
+    case 'text':
+      return { origin, confidence: 1, note, text: given.text,
+        choice: { intended: intendedText(given.text), domain: 'generic' } };
+    case 'checked':
+      return { origin, confidence: 1, note, check: given.checked };
+  }
+}
+
+/** v1.3 B: the gaps an earlier submitted answer may fill (resolveField): the profile holds no value, the question is
+ *  unknown or free text, or an EEO or legal question the profile leaves unanswered. Never a gap the profile decided
+ *  (an end date a current job has none of), nor one only the person may fill. */
+const SUBMITTED_GAPS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['no-profile-value', 'unknown-field',
+  'free-text-requires-user', 'eeo-not-in-profile', 'legal-not-in-profile', 'criminal-not-covered',
+  'work-auth-country-unknown']);
 
 /** The months, by their English names, as a list of months shows them. */
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
@@ -488,10 +530,11 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
   // A screened question never takes a saved answer (T6-1): screened only when one would apply, which is rare.
   const found = findSavedAnswer(spec, ctx.savedAnswers, policy, ctx.company);
   const saved = found !== null && screenForClassify(spec, ctx.vocab) === null ? found : null;
-  const classifiedBy: Classifier = rules?.classifiedBy ?? (saved ? 'saved' : 'none');
-  const classifyConfidence = saved ? Math.max(rules?.confidence ?? 0, CLASSIFY_SAVED_EXACT) : rules?.confidence ?? 0;
-  const base = { key: spec.key, category, classifiedBy, rule: saved ? 'saved.exact-key' : rules?.rule ?? null,
-    confidence: classifyConfidence, policy, awaiting: null };
+  let classifiedBy: Classifier = rules?.classifiedBy ?? (saved ? 'saved' : 'none');
+  let classifyConfidence = saved ? Math.max(rules?.confidence ?? 0, CLASSIFY_SAVED_EXACT) : rules?.confidence ?? 0;
+  let base: { key: FieldSpec['key']; category: FieldCategory; classifiedBy: Classifier; rule: string | null;
+    confidence: number; policy: typeof policy; awaiting: null } = { key: spec.key, category, classifiedBy,
+    rule: saved ? 'saved.exact-key' : rules?.rule ?? null, confidence: classifyConfidence, policy, awaiting: null };
 
   let result: ValueResult;
   let needsSensitive = false;
@@ -516,6 +559,23 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
       result = declined ?? gate;
     }
   }
+  // v1.3 B: a gap the profile, the policy and a saved answer left, or the decline default the policy chose for want of
+  // an answer, takes the person's own answer to it in an application they submitted before (submitted.ts); one whose
+  // option is gone is flagged and not written (and no AI answers it), unless the decline default stands anyway.
+  const defaulted = result.ok && result.candidate.note === 'eeo-decline-default';
+  if (!saved && !needsSensitive && ctx.submitted !== undefined && ctx.submitted.length > 0
+    && (defaulted || (!result.ok && SUBMITTED_GAPS.has(result.none.reason)))) {
+    const prior = findSubmittedAnswer(spec, ctx.submitted, { policy,
+      screened: screenForClassify(spec, ctx.vocab) !== null, sensitiveReady: ctx.sensitiveState === 'loaded' });
+    if (prior !== null && !(prior.gone && defaulted)) {
+      classifiedBy = rules?.classifiedBy ?? 'submitted';
+      classifyConfidence = Math.max(rules?.confidence ?? 0, CLASSIFY_SUBMITTED);
+      base = { ...base, classifiedBy, confidence: classifyConfidence,
+        rule: prior.answer.sameJob ? 'submitted.same-job' : 'submitted.other-job' };
+      if (prior.gone) return answer(withoutValue(base, spec, 'submitted-option-gone', true, false));
+      result = value(submittedCandidate(prior.answer));
+    }
+  }
   // s2 core-gh (decision 8): a box of a profile category the profile holds nothing for, whose own visible words tell an
   // applicant without the answer to type a placeholder, gets it from our own list (values.ts placeholderAsked).
   if (!result.ok && result.none.reason === 'no-profile-value' && policy === 'profile' && !needsSensitive
@@ -536,7 +596,9 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
   // A lone checkbox states one thing, so it is ticked from an answer only when its statement is affirmative and the
   // tick then says exactly that answer (the review, CORE-2). A saved answer is the person's own for this very
   // statement; consent reads its own wording (an opt-out is unrecognised consent).
-  if (shaped.shaped.shape === 'check' && candidate.origin.provenance !== 'saved' && policy !== 'consent'
+  if (shaped.shaped.shape === 'check' && candidate.origin.provenance !== 'saved'
+    // v1.3 B: so is an earlier submitted answer to the same statement.
+    && candidate.origin.provenance !== 'submitted-before' && policy !== 'consent'
     && statementPolarity(statementText(spec, rules)) !== 'affirmative') {
     return answer(withoutValue(base, spec, 'statement-not-affirmative', true, true));
   }

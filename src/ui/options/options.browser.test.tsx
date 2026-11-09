@@ -115,8 +115,15 @@ describe('the options page', () => {
       ['panel', TEXT.modes.panel.name], ['modes.next', TEXT.modes.next.name], ['modes.submit', TEXT.modes.submit.name], ['modes.signIn', TEXT.modes.signIn.name],
       ['modes.consents', TEXT.modes.consents.name], ['modes.ai', TEXT.modes.ai.name],
       ['modes.resumeOnPage', TEXT.modes.resumeOnPage.name], ['modes.recordOwn', TEXT.modes.recordOwn.name],
+      // v1.3 B (settings version 9).
+      ['modes.keepAnswers', TEXT.modes.keepAnswers.name],
       ['modes.noMatch', TEXT.modes.noMatch.name], ['modes.notifications', TEXT.modes.notifications.name],
       ['modes.agentSkip', TEXT.modes.agentSkip.name]]);
+    // v1.3 B: "Keep my submitted answers in TailorIT" is On, and Off is saved at once.
+    expect(setting(root, 'modes.keepAnswers.on').checked).toBe(true);
+    await click(setting(root, 'modes.keepAnswers.off'));
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, keepAnswers: 'off' } });
+    await click(setting(root, 'modes.keepAnswers.on'));
     // Submit is Manual unless the person sets it to Auto.
     expect(setting(root, 'modes.submit.manual').checked).toBe(true);
     await click(setting(root, 'modes.submit.auto'));

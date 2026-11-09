@@ -9,10 +9,11 @@
     "connect.ts": "c7c32bda21eb64b78ec9e8085549144384fbf1d5c676b72918dbe726588b0071",
     "cover-letters.ts": "99634afc594f27fb9c2951c8539dcd59aa91c950f42734eaf9f178cd87d7903d",
     "credentials.ts": "c09ae7e8fd46ce7f16d136a90b85b76ed99817cf68d543d572ec0851950d699d",
-    "index.ts": "3c146f82768d342ca37d974da6943ad98c4faa1830b4b0401c0bfeca3598028c",
-    "lookup.ts": "5df4d24096b46b608622768f76935703135daca1e06941b0b354822f115f9896",
+    "forms.ts": "fed5c6e906153511a496a46e5e858d83821d8f0f927e73e63042a03e10733aa6",
+    "index.ts": "d5543e50581cb11c7b458d3b9e7854ef1e5e422fc86e98854b95638f24a26d27",
+    "lookup.ts": "16c1b5d56ae5122505a50a2797c864b83e3f93b66375c1b3870b40ab454f12a7",
     "profile.ts": "83e3ea000d2a84c049e4e0b1e78ac87ff71000414818011b217599204dc89d11",
-    "registry.ts": "1588a77c4c1ba2998106b34d75ab52fc4f69dae85601948164c26fdfb57d0b68",
+    "registry.ts": "346e94ee2cbbe9450e447d06904deb311812c1d4110e9fd5d0fbbac18bc51aaa",
     "resumes.ts": "c8a24403aced811f67daff035dffe6af00c1d266fb9cc861d1c5a623902fcc61",
     "sites.ts": "8277ea2ad73f9b4253f89c460af91c4635d3aee2b6f29b94024e5482e3abf3ef",
     "tracker.ts": "5ac61739e8e46add184682de1a0bed52fa2fc5f4284db24fdf23cc4d2ee0c7cf",
@@ -178,6 +179,14 @@
     "AutofillErrorBody/valid/other-api-version.json": "50242c36adc8591d00199b16ec1eda268341a186fc41c70a42ca8853e9bb0c4f",
     "AutofillErrorBody/valid/rate-limited.json": "b24c201b6f016bcdc9a7eb5722e1f83c8de9983105d24368d19a6a7596625e0e",
     "AutofillErrorBody/valid/validation-failed.json": "2aecc3b8ebc0dccc7b374a399827a641bc2e14948c3fe0806274277b887befb2",
+    "AutofillFormsKnownRequest/invalid/neither.json": "3d27f8b64c1917d7dfc88987efd6e6c4fa27aebf2f9a1042763c2014dc734e42",
+    "AutofillFormsKnownRequest/invalid/option-set-not-hex.json": "77f4e84a4bcf4565f09b99420d412699ecca622e859391123dff1c5cb012efd0",
+    "AutofillFormsKnownRequest/valid/golden.json": "8738441e2a03e1dfbaccd4cd71208ee2f0ae0d2215371c91c2a6bbecb717afcd",
+    "AutofillFormsKnownRequest/valid/job-and-fields.json": "17a647501d9de48933fcc80fa97779fbd1b8548f8eaf4c45e5b058275a519c55",
+    "AutofillFormsKnownResponse/invalid/unknown-match.json": "a569b85662c38ba5e8f58c3a5234078a7e99018d08d9e15283650186d33bf282",
+    "AutofillFormsKnownResponse/valid/golden.json": "ec65d932cc778d4f36f625ddc643f4db6a21824168edd8b2e806dfe664ba8bf3",
+    "AutofillFormsKnownResponse/valid/greenhouse-api.json": "4a71887124960d57a9d5a87cfe128bebace513045051b095ed66a91dcbbfa2f4",
+    "AutofillFormsKnownResponse/valid/nothing-kept.json": "6009fb6ed0aba7d5bd401a0b25d09a3f68ae1028eed67c3b02c3ba048bf1881a",
     "AutofillFromPageRequest/invalid/description-over-20000.json": "013726520b7a26b4e7e9b24fd04f22df24c08bf298f2dbf7f6c34909f1d12887",
     "AutofillFromPageRequest/invalid/employer-on-linkedin.json": "3dfa9826a33cf845f2eb98916f2f267e792ccaaf5a0be10d4f2e5af64bacda9d",
     "AutofillFromPageRequest/invalid/no-title.json": "4499e324c01f3ab3516e5c5553c76ea7d89221f4ddde36065081cf8cfe3ea79f",
@@ -209,6 +218,7 @@
     "AutofillLookupResponse/valid/ashby.json": "278888b3293ee6d9be6bacfe5144369516009b6feb294b06c27dcd418b9d93ec",
     "AutofillLookupResponse/valid/chosen.json": "b582a87f4bcc4e0d9fcbcc919526992ea9cce55d336782ef0fb169a1b31d6a7b",
     "AutofillLookupResponse/valid/company-page.json": "0a5a01e6ab565a1142e254a01698c7c62ba324528ab3079a1456d0d8272e65ce",
+    "AutofillLookupResponse/valid/form-known.json": "e642f8483c1287f12ae3fbc848983ae6a37f0311703d7b11fce93fa600d0e401",
     "AutofillLookupResponse/valid/golden.json": "13f44f268aa9f7d261cc25d79154a07bd35457cfac6d6e2a53b5b27df677a6b2",
     "AutofillLookupResponse/valid/job-chosen.json": "de4c5205f98603a88b3c8c8afca0e467a1497014bbd92e47e34e1e6126933df1",
     "AutofillLookupResponse/valid/linkedin.json": "724c65444746bbcdb0c86c4d3abacbf6f95c39a84828c53b2395bd1e5b502762",
@@ -327,6 +337,22 @@
     "AutofillSiteRequestBody/valid/golden.json": "1be8a529d370b6721951d3f326e122779edf04c5c84a9852e93a3a057de5422c",
     "AutofillSiteRequestList/invalid/zero-count.json": "f7df45176fd7e055869af1206b020b739bc486c12a9a859d68dc24abc0087bb1",
     "AutofillSiteRequestList/valid/golden.json": "e50f253d60e2b4f57f327d667742937f4894de22a8150d7cc1fc11e527bf291f",
+    "AutofillSubmissionRequest/invalid/answer-does-not-fit.json": "7a15d90147a96e8913b1820ad3a8c69c18864e83c648fbebc988f8ca87cb6850",
+    "AutofillSubmissionRequest/invalid/answer-to-no-question.json": "84db49bb00bfa2f69ce0a88d26a8fa3507c0c8eb6f9ee33ce08fb812c000bfad",
+    "AutofillSubmissionRequest/invalid/blank-label.json": "e2f708f7fb081ec9324e136ef191769a1e685043d0890473023c15d4cc5ed5b7",
+    "AutofillSubmissionRequest/invalid/file-path-not-name.json": "841c3a2aebeb92b365cd998c8f34862251449bb5c078ac6b1e5bcf057d6751f1",
+    "AutofillSubmissionRequest/invalid/neither.json": "5e93d699c5e77686821ecf3c05fd8c4365bb8214da137675435a088d69cb3d75",
+    "AutofillSubmissionRequest/invalid/option-index-not-label.json": "5b2d5342bc5a18531de6a731d17ac8851684017b8a26c71acb3951d547105750",
+    "AutofillSubmissionRequest/invalid/ref-twice.json": "21713c9085554b9af627cbb064ff53de91b3459c43e2e80e5e4e8f86e0265254",
+    "AutofillSubmissionRequest/invalid/text-over-10k.json": "85e229b3e1c2247c0ecaee8d0b7af34e3d8ec6df576f7723dfd8dbd23ade6acf",
+    "AutofillSubmissionRequest/valid/from-page-posting.json": "11d6d52d50e27451eb7c7e1a86ddeb1e4125ef9bd632f25610a007782b558a13",
+    "AutofillSubmissionRequest/valid/golden.json": "ac792609421a236a286dae051abfb545a070b26c36bcb6b353898200f1d77762",
+    "AutofillSubmissionRequest/valid/job.json": "76fd1178a16c9e61f2882c97927d21431bef08840090c3e7fce9263504ff6b6e",
+    "AutofillSubmissionRequest/valid/keep-answers-off.json": "796f72f2eca64349df7360e98ccdca0c0f9990055ddd5f14945f2d434e794842",
+    "AutofillSubmissionRequest/valid/label-on-two-lines.json": "61a433c9715b5b49b7480174c83c4b0eabb63786be9f5e2049a6edf1b2438a03",
+    "AutofillSubmissionResponse/invalid/unknown-job-state.json": "803f30b1587e34c103890f03a09332be13560e1d24ec8b9c40d9904b4280c3b9",
+    "AutofillSubmissionResponse/valid/golden.json": "ff9588760048f58ac74df2ee780942cda7510a32b3716abbf384e9682e50d817",
+    "AutofillSubmissionResponse/valid/keep-answers-off.json": "5fc8200689aaf5b4cce577fda582beab2d0564d4e63566a7aeee2e77a9418155",
     "AutofillTaskAccepted/invalid/no-task-id.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
     "AutofillTaskAccepted/invalid/not-a-uuid.json": "533a6acca25c542ed5adc3c6413cbdbf6a3cf6a4615cdcb6c0ebfe1f3a334a69",
     "AutofillTaskAccepted/valid/golden.json": "d1595b4020d355682291c70bc32762e3150d9315ae3169eab1d683e565082958",
@@ -10706,6 +10732,9 @@
             "addWith"
           ],
           "additionalProperties": false
+        },
+        "formKnown": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -11185,6 +11214,9 @@
                 "addWith"
               ],
               "additionalProperties": false
+            },
+            "formKnown": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -16295,6 +16327,1232 @@
         "email"
       ],
       "additionalProperties": false
+    },
+    "AutofillSubmissionRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "jobId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "employerUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "resumeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "posting": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "company": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "location": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000
+            },
+            "criteria": {
+              "maxItems": 12,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "label",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "title",
+            "company",
+            "description"
+          ],
+          "additionalProperties": false
+        },
+        "questions": {
+          "maxItems": 300,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "questionKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300,
+                "pattern": "^[^\\s\\p{Cc}](?:[^\\p{Cc}]*[^\\s\\p{Cc}])?$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "textarea",
+                  "select",
+                  "radio",
+                  "checkbox",
+                  "checkbox-group",
+                  "combobox",
+                  "multiselect",
+                  "typeahead-remote",
+                  "date",
+                  "file"
+                ]
+              },
+              "options": {
+                "default": [],
+                "maxItems": 500,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "optionSetHash": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": ""
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{16}$"
+                  }
+                ]
+              },
+              "section": {
+                "default": "",
+                "type": "string",
+                "maxLength": 200
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "step": {
+                "default": 0,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 99
+              },
+              "position": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9999
+              },
+              "category": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "first_name",
+                      "middle_name",
+                      "last_name",
+                      "full_name",
+                      "preferred_name",
+                      "email",
+                      "phone",
+                      "phone_country_code",
+                      "address_line1",
+                      "address_line2",
+                      "city",
+                      "region",
+                      "postal_code",
+                      "country",
+                      "location",
+                      "linkedin",
+                      "github",
+                      "portfolio",
+                      "website",
+                      "current_employer",
+                      "current_title",
+                      "employer",
+                      "job_title",
+                      "role_description",
+                      "years_experience",
+                      "school",
+                      "degree",
+                      "field_of_study",
+                      "graduation_date",
+                      "gpa",
+                      "language",
+                      "language_proficiency",
+                      "skills",
+                      "start_date",
+                      "end_date",
+                      "notice_period",
+                      "relocation",
+                      "work_arrangement",
+                      "referral_source",
+                      "resume_upload",
+                      "cover_letter_upload",
+                      "sensitive_eeo",
+                      "sensitive_legal",
+                      "sensitive_compensation",
+                      "consent",
+                      "attention_check",
+                      "free_text_question"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "ref",
+              "questionKey",
+              "label",
+              "kind",
+              "options",
+              "optionSetHash",
+              "section",
+              "required",
+              "step",
+              "position",
+              "category"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "answers": {
+          "maxItems": 300,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "answer": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "text"
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 10000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "options"
+                      },
+                      "labels": {
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "labels"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "checked"
+                      },
+                      "checked": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "checked"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "file"
+                      },
+                      "fileName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255,
+                        "pattern": "^[^\\p{Cc}/\\\\]*$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "fileName"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "provenance": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "profile",
+                      "saved",
+                      "rule",
+                      "llm-pick",
+                      "llm-draft",
+                      "llm-answer",
+                      "submitted-before",
+                      "person"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "ref",
+              "answer",
+              "provenance"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "questions"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillSubmissionResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "lookup": {
+          "type": "object",
+          "properties": {
+            "ats": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "greenhouse",
+                        "lever",
+                        "ashby",
+                        "workday",
+                        "workable",
+                        "icims",
+                        "taleo",
+                        "successfactors",
+                        "oracle",
+                        "jobvite",
+                        "jazzhr",
+                        "bamboohr",
+                        "rippling",
+                        "breezy",
+                        "careerplug",
+                        "pinpoint",
+                        "paycor",
+                        "hibob",
+                        "ultipro",
+                        "dayforce",
+                        "paylocity",
+                        "dice",
+                        "clearcompany",
+                        "adp",
+                        "smartrecruiters"
+                      ]
+                    },
+                    "board": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "externalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "board",
+                    "externalId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "job": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "companyName": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "matchedBy": {
+                      "type": "string",
+                      "enum": [
+                        "source_link",
+                        "link_key",
+                        "chosen",
+                        "alias"
+                      ]
+                    },
+                    "postingText": {
+                      "type": "string",
+                      "maxLength": 20000
+                    },
+                    "postedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "salary": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "workArrangement": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "remote",
+                            "hybrid",
+                            "onsite"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "industry": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 120
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "companyName",
+                    "location",
+                    "active",
+                    "matchedBy"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "application": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "trackedOn": {
+                      "type": "string"
+                    },
+                    "archived": {
+                      "type": "boolean"
+                    },
+                    "resumeId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "matchedBy": {
+                      "type": "string",
+                      "enum": [
+                        "job",
+                        "posting_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "trackedOn",
+                    "archived",
+                    "resumeId",
+                    "matchedBy"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "suggestedResume": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "built",
+                        "uploaded"
+                      ]
+                    },
+                    "fileKind": {
+                      "type": "string",
+                      "enum": [
+                        "pdf",
+                        "docx",
+                        "doc"
+                      ]
+                    },
+                    "fileName": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "chosen",
+                        "application",
+                        "profile",
+                        "best_match",
+                        "only_resume",
+                        "default",
+                        "latest"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "kind",
+                    "fileKind",
+                    "fileName",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "match": {
+              "anyOf": [
+                {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "ok"
+                        },
+                        "resumeId": {
+                          "type": "string"
+                        },
+                        "matchedCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "total": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "percentage": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "resumeId",
+                        "matchedCount",
+                        "total",
+                        "percentage"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "no_keywords"
+                        },
+                        "resumeId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "resumeId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "unreadable"
+                        },
+                        "resumeId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "resumeId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "page": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "linkedin",
+                    "ats",
+                    "site"
+                  ]
+                },
+                "linkedInUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "employer": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "greenhouse",
+                            "lever",
+                            "ashby",
+                            "workday",
+                            "workable",
+                            "icims",
+                            "taleo",
+                            "successfactors",
+                            "oracle",
+                            "jobvite",
+                            "jazzhr",
+                            "bamboohr",
+                            "rippling",
+                            "breezy",
+                            "careerplug",
+                            "pinpoint",
+                            "paycor",
+                            "hibob",
+                            "ultipro",
+                            "dayforce",
+                            "paylocity",
+                            "dice",
+                            "clearcompany",
+                            "adp",
+                            "smartrecruiters"
+                          ]
+                        },
+                        "board": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "externalId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "board",
+                        "externalId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "addWith": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "ats",
+                        "page"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "linkedInUrl",
+                "employer",
+                "addWith"
+              ],
+              "additionalProperties": false
+            },
+            "formKnown": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ats",
+            "job",
+            "application",
+            "suggestedResume"
+          ],
+          "additionalProperties": false
+        },
+        "job": {
+          "type": "string",
+          "enum": [
+            "shared",
+            "promoted",
+            "added",
+            "none"
+          ]
+        },
+        "questionsAdded": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "questionsKnown": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "answersKept": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "lookup",
+        "job",
+        "questionsAdded",
+        "questionsKnown",
+        "answersKept"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillFormsKnownRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "jobId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "employerUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "fields": {
+          "maxItems": 300,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "questionKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300,
+                "pattern": "^[^\\s\\p{Cc}](?:[^\\p{Cc}]*[^\\s\\p{Cc}])?$"
+              },
+              "optionSetHash": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": ""
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{16}$"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "questionKey",
+              "optionSetHash"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "AutofillFormsKnownResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "questions": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "questionKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "textarea",
+                  "select",
+                  "radio",
+                  "checkbox",
+                  "checkbox-group",
+                  "combobox",
+                  "multiselect",
+                  "typeahead-remote",
+                  "date",
+                  "file"
+                ]
+              },
+              "options": {
+                "maxItems": 500,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "optionSetHash": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": ""
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{16}$"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "section": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "step": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 99
+              },
+              "position": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9999
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "submission",
+                  "ats-api"
+                ]
+              },
+              "firstSeenAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "lastSeenAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              }
+            },
+            "required": [
+              "id",
+              "questionKey",
+              "label",
+              "kind",
+              "options",
+              "optionSetHash",
+              "section",
+              "required",
+              "step",
+              "position",
+              "source",
+              "firstSeenAt",
+              "lastSeenAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "answers": {
+          "maxItems": 1300,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "match": {
+                "type": "string",
+                "enum": [
+                  "sameJob",
+                  "otherJob"
+                ]
+              },
+              "questionId": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "questionKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "optionSetHash": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": ""
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{16}$"
+                  }
+                ]
+              },
+              "questionLabel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "fieldKind": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "textarea",
+                  "select",
+                  "radio",
+                  "checkbox",
+                  "checkbox-group",
+                  "combobox",
+                  "multiselect",
+                  "typeahead-remote",
+                  "date",
+                  "file"
+                ]
+              },
+              "answer": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "text"
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 10000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "options"
+                      },
+                      "labels": {
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "labels"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "checked"
+                      },
+                      "checked": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "checked"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "file"
+                      },
+                      "fileName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255,
+                        "pattern": "^[^\\p{Cc}/\\\\]*$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "fileName"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "submittedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              }
+            },
+            "required": [
+              "match",
+              "questionId",
+              "questionKey",
+              "optionSetHash",
+              "questionLabel",
+              "fieldKind",
+              "answer",
+              "submittedAt"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "jobId",
+        "questions",
+        "answers"
+      ],
+      "additionalProperties": false
     }
   },
   "routes": [
@@ -16746,6 +18004,26 @@
       "request": null,
       "status": 204,
       "response": null,
+      "accepted": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/autofill/submissions",
+      "caller": "either",
+      "scope": "tracker:write",
+      "request": "AutofillSubmissionRequest",
+      "status": 200,
+      "response": "AutofillSubmissionResponse",
+      "accepted": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/autofill/forms/known",
+      "caller": "either",
+      "scope": "jobs:lookup",
+      "request": "AutofillFormsKnownRequest",
+      "status": 200,
+      "response": "AutofillFormsKnownResponse",
       "accepted": null
     }
   ]

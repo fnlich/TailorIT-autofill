@@ -1,0 +1,63 @@
+{
+  "url": "https://www.linkedin.com/jobs/view/4012345678/",
+  "employerUrl": "https://careers-northwind.icims.com/jobs/13634/senior-data-engineer/job",
+  "posting": {
+    "title": "Senior Data Engineer",
+    "company": "Northwind",
+    "location": "Rochester, NY",
+    "description": "Northwind is hiring a Senior Data Engineer to build its data platform.\n\nWhat you will do\nDesign and run pipelines with Python, Airflow and Kafka.",
+    "criteria": [
+      {
+        "label": "Employment type",
+        "value": "Full-time"
+      }
+    ]
+  },
+  "questions": [
+    {
+      "ref": "icims|personal|first name|none|0",
+      "questionKey": "first name",
+      "label": "First Name",
+      "kind": "text",
+      "optionSetHash": "",
+      "section": "Personal",
+      "required": true,
+      "step": 1,
+      "position": 0
+    },
+    {
+      "ref": "icims|questions|are you willing to relocate|4c6e8a0b2d4f6181|0",
+      "questionKey": "are you willing to relocate",
+      "label": "Are you willing to relocate?",
+      "kind": "radio",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionSetHash": "4c6e8a0b2d4f6181",
+      "section": "Questions",
+      "required": true,
+      "step": 2,
+      "position": 0
+    }
+  ],
+  "answers": [
+    {
+      "ref": "icims|personal|first name|none|0",
+      "answer": {
+        "kind": "text",
+        "text": "Elena"
+      }
+    },
+    {
+      "ref": "icims|questions|are you willing to relocate|4c6e8a0b2d4f6181|0",
+      "answer": {
+        "kind": "options",
+        "labels": [
+          "Yes"
+        ]
+      },
+      "provenance": "llm-pick"
+    }
+  ]
+}

@@ -72,7 +72,9 @@ export interface NoValue {
 export type ValueResult = { ok: true; candidate: Candidate } | { ok: false; none: NoValue };
 
 /** The reasons a written value's row may carry and still need nothing of the person: a note, never a flag. */
-export const NOTE_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['eeo-decline-default']);
+export const NOTE_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['eeo-decline-default',
+  // v1.3 B: the person's own answer from an application they submitted before.
+  'submitted-before']);
 
 /** A value result. */
 export const value = (candidate: Candidate): ValueResult => ({ ok: true, candidate });

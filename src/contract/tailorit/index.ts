@@ -16,4 +16,5 @@ export * from './cover-letters';
 export * from './sites';
 export * from './agent';
 export * from './credentials';
+export * from './forms';
 export * from './registry';

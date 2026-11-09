@@ -42,10 +42,15 @@ export type FieldKind = (typeof FIELD_KINDS)[number];
 /** Where a value came from. profile, saved and rule are trusted; llm-pick is validated against the visible options
  *  (a tiebreak's pick, or an answer that chose one of the field's options); llm-draft is a free-text draft (written
  *  and accepted, or kept for the person's confirmation when settings.llm.confirmDrafts is on); llm-answer is a short
- *  text TailorIT's AI answered a question with (version 2: docs/SPEC-AMENDMENTS.md). */
-export const PROVENANCES = ['profile', 'saved', 'rule', 'llm-pick', 'llm-draft', 'llm-answer'] as const;
+ *  text TailorIT's AI answered a question with (version 2: docs/SPEC-AMENDMENTS.md). v1.3 B: submitted-before is the
+ *  person's own answer to the same question in an application they submitted before (TailorIT's known questions,
+ *  core/resolver/submitted.ts), trusted as their own words are. */
+export const PROVENANCES = ['profile', 'saved', 'rule', 'llm-pick', 'llm-draft', 'llm-answer',
+  // v1.3 B
+  'submitted-before'] as const;
 export type Provenance = (typeof PROVENANCES)[number];
-export const TRUSTED_PROVENANCES: ReadonlySet<Provenance> = new Set<Provenance>(['profile', 'saved', 'rule']);
+export const TRUSTED_PROVENANCES: ReadonlySet<Provenance> = new Set<Provenance>(['profile', 'saved', 'rule',
+  'submitted-before']);
 
 /** Which stage of the matcher chose the option. 'cache' reuses an accepted match; 'not-applicable' is a field with no
  *  options (text, file). */

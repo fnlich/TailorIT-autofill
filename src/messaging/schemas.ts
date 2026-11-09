@@ -114,6 +114,30 @@ export const FieldSpecSchema = z.strictObject({
   current: CurrentValueSchema,
 });
 
+// ── v1.3 B: a submitted form's questions and answers (content/form-capture.ts) ──
+/** An answer as the frame read it: a text, the chosen options' clean labels (never their places or values), a box's
+ *  state, or an upload's file name alone. */
+export const CapturedAnswerSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('text'), text: z.string().min(1).max(10_000) }),
+  z.strictObject({ kind: z.literal('options'), labels: z.array(z.string().min(1).max(300)).min(1).max(50) }),
+  z.strictObject({ kind: z.literal('checked'), checked: z.boolean() }),
+  z.strictObject({ kind: z.literal('file'), fileName: z.string().min(1).max(255) }),
+]);
+export type CapturedAnswer = z.infer<typeof CapturedAnswerSchema>;
+/** One question as the step showed it (its spec, with its value left out: `current` empty), its step, and the answer
+ *  it held when the step was left or submitted (absent: none). */
+export const CapturedFieldSchema = z.strictObject({
+  spec: FieldSpecSchema.refine((spec) => spec.current.kind === 'empty', 'A question carries no value'),
+  step: z.number().int().min(0).max(99),
+  answer: CapturedAnswerSchema.optional(),
+});
+export type CapturedField = z.infer<typeof CapturedFieldSchema>;
+/** The posting as the top frame's page shows it (its title's names, its visible text outside the form). */
+export const CapturedPostingSchema = z.strictObject({ title: z.string().min(1).max(300),
+  company: z.string().min(1).max(200), description: z.string().min(1).max(20_000) });
+export type CapturedPosting = z.infer<typeof CapturedPostingSchema>;
+// ── end v1.3 B ──
+
 export const WriteValueSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('text'), text: Text(20_000) }),
   z.strictObject({ kind: z.literal('option'), index: Count, cleanLabel: Text(300), freeText: Text(1000).optional() }),
@@ -141,6 +165,8 @@ export const ValueOriginSchema = z.discriminatedUnion('provenance', [
   z.strictObject({ provenance: z.literal('llm-draft'), taskId: Id, confirmedByUser: z.boolean() }),
   /** An AI answer's text (the owner's amendments): its task, and what it rested on (`guess`: marked "AI guess"). */
   z.strictObject({ provenance: z.literal('llm-answer'), taskId: Id, basis: z.enum(ANSWER_BASES) }),
+  // v1.3 B: the person's own answer from an application they submitted before (core/resolver/submitted.ts).
+  z.strictObject({ provenance: z.literal('submitted-before'), submittedId: Id, sameJob: z.boolean() }),
 ]);
 
 export const MatchSchema = z.strictObject({
@@ -408,6 +434,12 @@ const contentMessages = [
    *  when this tab armed the same application within SUBMIT_ARM_MS. */
   z.strictObject({ v, type: z.literal('submit/detected'), applicationKey: z.string().max(80),
     evidence: z.enum(SUBMIT_EVIDENCE) }),
+  /** v1.3 B: the questions and answers of the form whose Submit this frame armed a moment before (content/
+   *  form-capture.ts: every step's, as each was left, and the step shown at the press), and, from the top frame, the
+   *  posting as the page shows it. The worker holds them in its memory only, for the arm's life, and sends them to
+   *  TailorIT (POST /api/autofill/submissions) only once the site confirmed that Submit; never logged, never stored. */
+  z.strictObject({ v, type: z.literal('submit/form'), applicationKey: z.string().max(80),
+    fields: z.array(CapturedFieldSchema).max(300), posting: CapturedPostingSchema.optional() }),
   /** v3 Phase 5, Sign-in mode Auto: the top frame's run paused at a sign-in (`sign-in`) or create-account
    *  (`create-account`) page and asks for the job-site sign-in of its own host. The worker reads the host from Chrome's
    *  sender address, never from a payload, fetches GET /credentials?host= only while the person chose Auto, the
@@ -802,6 +834,8 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'launcher/hide': DoneAnswerSchema,
   'submit/armed': DoneAnswerSchema,
   'submit/detected': DoneAnswerSchema,
+  // v1.3 B
+  'submit/form': DoneAnswerSchema,
   'signin/credential': SignInCredentialAnswerSchema,
   'agent/entered': DoneAnswerSchema,
   'frame/wall': DoneAnswerSchema,

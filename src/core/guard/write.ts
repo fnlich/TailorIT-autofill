@@ -24,6 +24,7 @@ import type { PlannedWrite } from '../types/fill';
 import type { FieldCategory, WriteValue } from '../types/intent';
 import type { Profile } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
+import type { SubmittedAnswer } from '../types/submitted';
 import { canariesIn, collidesWithProfile, profileIndex, type ProfileIndex } from './canary';
 import { checkHoneypot } from './honeypot';
 import { cutInjected } from './injected';
@@ -126,6 +127,8 @@ export interface GuardContext {
   /** The profile's collision index; built from `profile` when absent. */
   profileIndex?: ProfileIndex;
   savedAnswers: readonly SavedAnswer[];
+  /** v1.3 B: the run's earlier submitted answers (core/resolver/submitted.ts); absent: none. */
+  submittedAnswers?: readonly SubmittedAnswer[];
   /** TailorIT's AI may answer the closed categories AI_OPENED_CATEGORIES lists (settings.modes.ai 'all', with answers
    *  on and the AI allowed for the frame): the category policy then lets its picks and answers fill them. */
   answerAll?: boolean;

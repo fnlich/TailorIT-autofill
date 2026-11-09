@@ -142,6 +142,9 @@ export interface JobCardsDeps {
   limit: ReturnType<typeof createRateLimit>;
   /** LOOKUP_ON_LOAD_LIMIT, one key for every tab: the lookups as pages load have their own budget. */
   onLoadLimit?: ReturnType<typeof createRateLimit>;
+  /** v1.3 B: a lookup as the page loaded says TailorIT keeps the job's questions: they are read ahead (known-forms.ts).
+   *  Absent: nothing is read ahead. */
+  prefetchForm?(jobId: number): void;
 }
 
 /** What the card a document's lookup gives the active resume and a custom question. */
@@ -511,6 +514,9 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       ...(relay.chosen === null ? {} : { resumeId: relay.chosen }), ...(job === null ? {} : { jobId: job }) });
     log('job.looked-up', { status: answer.ok ? 200 : answer.status ?? 0, job: answer.ok && answer.value.job !== null });
     keep(from, answer.ok ? answer.value : null, relay);
+    // v1.3 B: the job's known questions and the person's earlier answers, read ahead for the fill (loadCard).
+    if (relay.onLoad && answer.ok && answer.value.formKnown === true && answer.value.job !== null
+      && stillCurrent(from, relay)) deps.prefetchForm?.(answer.value.job.id);
   }
 
   async function addFrom(from: ContentChannel, relay: Relay): Promise<void> {

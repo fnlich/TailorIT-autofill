@@ -146,6 +146,8 @@ describe('the category policy (§7.6, §8.2)', () => {
         return { provenance, taskId: 't', confirmedByUser: true };
       case 'llm-answer':
         return { provenance, taskId: 't', basis: 'resume' };
+      case 'submitted-before':
+        return { provenance, submittedId: 'k0', sameJob: true };
     }
   };
   const allows = (category: FieldCategory) => (['profile', 'saved', 'rule', 'llm-pick', 'llm-draft'] as const)
@@ -168,6 +170,24 @@ describe('the category policy (§7.6, §8.2)', () => {
     expect(allows('consent.aiAttestation')).toEqual([]);
     // Criminal history is a legal answer from the person's own profile since the owner's amendments, never an AI's.
     expect(allows('screening.criminalHistory')).toEqual(['profile', 'rule']);
+  });
+
+  // v1.3 B: an earlier submitted answer: this job's for any class but consent, attention and file; another job's only
+  // for the profile and unknown classes (undo proof: drop OTHER_JOB_CLASSES's check and the EEO line fails).
+  it("lets this job's earlier answer fill a sensitive question, and another job's only a question that is not", () => {
+    const same: ValueOrigin = { provenance: 'submitted-before', submittedId: 'k0', sameJob: true };
+    const other: ValueOrigin = { provenance: 'submitted-before', submittedId: 'k1', sameJob: false };
+    for (const category of ['eeo.gender', 'workAuth.authorized', 'freeText.whyCompany', 'referral.source', 'unknown'] as const) {
+      expect(checkCategoryPolicy(same, category).ok, category).toBe(true);
+    }
+    for (const category of ['eeo.gender', 'workAuth.authorized', 'screening.criminalHistory', 'freeText.whyCompany'] as const) {
+      expect(checkCategoryPolicy(other, category), category).toEqual({ ok: false, reason: 'policy-violation' });
+    }
+    expect(checkCategoryPolicy(other, 'referral.source').ok).toBe(true);
+    expect(checkCategoryPolicy(other, 'unknown').ok).toBe(true);
+    for (const category of ['consent.privacy', 'attentionCheck', 'file.resume'] as const) {
+      expect(checkCategoryPolicy(same, category).ok, category).toBe(false);
+    }
   });
 
   it('lets drafts and saved answers fill free text, and only the resume an upload', () => {

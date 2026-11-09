@@ -105,6 +105,10 @@ export const REASON_CODES = [
   // v5 p2-fill review (security 3): a rich-text box holding text a person cannot see (off-screen, clipped,
   // see-through or tiny), which Edit with AI never rewrites: none of its text goes to the AI
   'hidden-text-in-box',
+  // v1.3 B (the owner, 2026-11-09): a field filled with the person's own answer to the same question in an application
+  // they submitted before (provenance submitted-before); then, flagged and left empty: that earlier answer's option is
+  // no longer among the field's options (the form changed since), so it is not written and no AI answers it either
+  'submitted-before', 'submitted-option-gone',
   // a bug
   'internal-error',
 ] as const;

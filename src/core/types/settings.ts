@@ -37,6 +37,10 @@
  * Settings). "Default view" (`view`) keeps its two choices with a new meaning: Expanded opens the sidebar by itself on a
  * supported page, Minimized shows only the launcher; every version 7 value becomes Expanded (the review's F9: no install
  * chose the new Minimized) (migrateSettingsV7).
+ * Version 9 (v1.3, the owner's words of 2026-11-09: "If user send the application, the answer will be stored on server,
+ * and user can see it in the future"): "Keep my submitted answers in TailorIT" (`modes.keepAnswers`, shown with the
+ * modes): On (the default) sends the answers of an application the person submits to their own TailorIT with its
+ * questions; Off sends the questions only. Every version 8 value takes On (migrateSettingsV8).
  */
 import type { ConsentCategory } from '../enums';
 
@@ -62,6 +66,8 @@ export const MODE_CHOICES = {
   // s2 profile (version 7): the default first, then as drawn.
   noMatch: ['other', 'leave'],
   notifications: ['until-closed', '30s', '10s', '5s', 'off'],
+  // v1.3 B (version 9): the default first.
+  keepAnswers: ['on', 'off'],
 } as const;
 
 /** The modes the person chooses (the owner's correction at the v3 plan's review, docs/SPEC-AMENDMENTS.md §12). */
@@ -109,10 +115,18 @@ export interface Modes {
    *  behaviour). A notification still leaves when its cause is gone. Under 'off' a run still pauses and carries on by
    *  itself, and the side panel's status line says what it waits for. Stored since version 7. */
   notifications: NotificationTime;
+  /** v1.3 B (version 9; the owner, 2026-11-09): once the site confirms an application the person submitted, its
+   *  questions always go to their own TailorIT (shared there, never shown on Jobs), and with 'on' (the default) their
+   *  answers too, kept for them alone (the Tracker's Submitted answers). 'off': the questions only. Never a password,
+   *  a CAPTCHA, a hidden or trap field, or a file's contents (content/form-capture.ts). */
+  keepAnswers: (typeof MODE_CHOICES.keepAnswers)[number];
 }
 
+/** Version 8's modes: before "Keep my submitted answers in TailorIT" (version 9). */
+export type ModesV8 = Omit<Modes, 'keepAnswers'>;
+
 /** Version 6's modes: before "When a list has no match" and the notifications' time (version 7). */
-export type ModesV6 = Omit<Modes, 'noMatch' | 'notifications'>;
+export type ModesV6 = Omit<ModesV8, 'noMatch' | 'notifications'>;
 
 export const NO_MATCH_MODES = ['other', 'leave'] as const;
 export type NoMatchMode = (typeof NO_MATCH_MODES)[number];
@@ -135,8 +149,8 @@ export type PanelPlace = (typeof PANEL_PLACES)[number];
 /** Versions 1 to 7's places: the browser's side panel, or the small in-page review card. */
 export type PanelPlaceV7 = 'side' | 'in-page';
 
-/** The settings' version now (v5 p1-shell). */
-export const SETTINGS_VERSION = 8;
+/** The settings' version now (v1.3 B: "Keep my submitted answers in TailorIT"). */
+export const SETTINGS_VERSION = 9;
 
 export interface Settings {
   version: typeof SETTINGS_VERSION;
@@ -189,10 +203,12 @@ export const DEFAULT_MODES: Modes = {
   resumeOnPage: 'keep', agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false },
   // Version 7 (s2 profile): a list with no match takes its own "Other"; notifications stay until closed.
   noMatch: 'other', notifications: 'until-closed',
+  // Version 9 (v1.3 B): the answers of an application the person submits are kept in their TailorIT.
+  keepAnswers: 'on',
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-  version: 8,
+  version: 9,
   panel: 'page',
   view: 'expanded',
   modes: { ...DEFAULT_MODES, agentSkip: { ...DEFAULT_MODES.agentSkip } },
@@ -215,8 +231,14 @@ export interface LlmV5 {
   whenForbidden: AiForbiddenModeV5;
 }
 
+/** Version 8's settings, as an install stored them before v1.3's "Keep my submitted answers in TailorIT" (version 9). */
+export interface SettingsV8 extends Omit<Settings, 'version' | 'modes'> {
+  version: 8;
+  modes: ModesV8;
+}
+
 /** Version 7's settings, as an install stored them before v5's "Where the panel shows" (version 8). */
-export interface SettingsV7 extends Omit<Settings, 'version' | 'panel'> {
+export interface SettingsV7 extends Omit<SettingsV8, 'version' | 'panel'> {
   version: 7;
   panel: PanelPlaceV7;
 }
@@ -270,20 +292,31 @@ export interface SettingsV2 extends Omit<SettingsV3, 'version' | 'llm'> {
 }
 
 /**
- * Version 7's settings as version 8's (v5, Jobright parity): every choice is kept but where the panel shows, which is
- * the sidebar on the page for every install, version 7's in-page card and its side panel alike (the owner, 2026-11-08:
- * the Jobright-like sidebar for everyone; the person may choose Chrome's side panel again in Settings). "Default view"
- * becomes Expanded for every install too (the review's F9): version 7's Minimized folded the review list, while
- * version 8's means the sidebar never opens by itself, which no install chose.
+ * v1.3 B: version 8's settings as version 9's: every choice is kept, and "Keep my submitted answers in TailorIT" takes
+ * its default, On (the owner, 2026-11-09: the answers of an application the person submits are stored on their server
+ * and shown to them).
  */
-export function migrateSettingsV7(old: SettingsV7): Settings {
-  return { ...old, version: 8, panel: 'page', view: 'expanded',
-    modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip } }, preapprovedConsent: [...old.preapprovedConsent],
-    llm: { ...old.llm }, telemetry: { ...old.telemetry }, interpretations: { ...old.interpretations } };
+export function migrateSettingsV8(old: SettingsV8): Settings {
+  return { ...old, version: 9, modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip },
+    keepAnswers: DEFAULT_MODES.keepAnswers }, preapprovedConsent: [...old.preapprovedConsent], llm: { ...old.llm },
+  telemetry: { ...old.telemetry }, interpretations: { ...old.interpretations } };
 }
 
 /**
- * Version 6's settings as version 8's, through version 7 (snapshot round 2): every choice is kept, and the two new
+ * Version 7's settings as version 9's, through version 8 (v5, Jobright parity): every choice is kept but where the
+ * panel shows, which is the sidebar on the page for every install, version 7's in-page card and its side panel alike
+ * (the owner, 2026-11-08: the Jobright-like sidebar for everyone; the person may choose Chrome's side panel again in
+ * Settings). "Default view" becomes Expanded for every install too (the review's F9): version 7's Minimized folded the
+ * review list, while version 8's means the sidebar never opens by itself, which no install chose.
+ */
+export function migrateSettingsV7(old: SettingsV7): Settings {
+  return migrateSettingsV8({ ...old, version: 8, panel: 'page', view: 'expanded',
+    modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip } }, preapprovedConsent: [...old.preapprovedConsent],
+    llm: { ...old.llm }, telemetry: { ...old.telemetry }, interpretations: { ...old.interpretations } });
+}
+
+/**
+ * Version 6's settings as version 9's, through versions 7 and 8 (snapshot round 2): every choice is kept, and the two new
  * modes take their defaults, which are what version 6 did: a list with no match takes its own "Other" (the owner's
  * first choice), and the page's notifications stay until closed.
  */
@@ -303,7 +336,7 @@ export function migrateSettingsV6(old: SettingsV6): Settings {
 }
 
 /**
- * Version 5's settings as version 8's, through version 6 (v4, the owner's word of 2026-11-07): every choice is kept but
+ * Version 5's settings as version 9's, through version 6 (v4, the owner's word of 2026-11-07): every choice is kept but
  * the two that asked the person: "Ask me each time" on a posting that forbids AI becomes Profile only (the default:
  * nothing goes to the AI, and no card waits), and the draft confirmation goes (a draft is written and accepted).
  */
@@ -323,7 +356,7 @@ export function migrateSettingsV5(old: SettingsV5): Settings {
 }
 
 /**
- * Version 4's settings as version 8's, through versions 5 and 6 (the behaviour review of 2026-11-06, M2): every choice is kept,
+ * Version 4's settings as version 9's, through versions 5 to 8 (the behaviour review of 2026-11-06, M2): every choice is kept,
  * and "Résumé already on the page" takes its default, Keep it, which is what version 4 did with a résumé the page
  * showed.
  */
@@ -342,7 +375,7 @@ export function migrateSettingsV4(old: SettingsV4): Settings {
 }
 
 /**
- * Version 3's settings as version 8's, through versions 4 to 7 (v3 Phase 3). Auto-advance becomes the Next mode (on: Auto),
+ * Version 3's settings as version 9's, through versions 4 to 8 (v3 Phase 3). Auto-advance becomes the Next mode (on: Auto),
  * the AI's legal, pay and attention-check answers the AI answers mode (on: All, off: Profile only), each as the person
  * had it; the other modes and the default view take their defaults. Consents: All among them is a change, not a choice
  * kept (the owner's decision: every agreement box is ticked, like Jobright): an optional box version 3 left unticked is
@@ -355,7 +388,7 @@ export function migrateSettingsV3(old: SettingsV3): Settings {
 /** Version 3's settings as version 4's (migrateSettingsV3). */
 function settingsV4Of(old: SettingsV3): SettingsV4 {
   const { answerAll, ...llm } = old.llm;
-  const { resumeOnPage: _later, noMatch: _v7, notifications: _alsoV7, ...modes } = DEFAULT_MODES;
+  const { resumeOnPage: _later, noMatch: _v7, notifications: _alsoV7, keepAnswers: _v9, ...modes } = DEFAULT_MODES;
   return {
     version: 4,
     panel: old.panel,
@@ -371,7 +404,7 @@ function settingsV4Of(old: SettingsV3): SettingsV4 {
 }
 
 /**
- * Version 2's settings as version 8's, through versions 3 to 7: every choice is kept, and version 3's switch,
+ * Version 2's settings as version 9's, through versions 3 to 8: every choice is kept, and version 3's switch,
  * llm.answerAll, takes its default (on, as the owner chose), so the AI answers mode is All. It acts only while answers
  * are on, so a person who turned the AI's answers off keeps them off.
  */
@@ -380,7 +413,7 @@ export function migrateSettingsV2(old: SettingsV2): Settings {
 }
 
 /**
- * Version 1's settings as version 8's, through versions 2 to 7: each choice still on version 1's default (drafts off,
+ * Version 1's settings as version 9's, through versions 2 to 8: each choice still on version 1's default (drafts off,
  * nothing pre-approved, the two interpretations off) takes version 2's, and every choice the person changed is kept.
  * The new switches take their defaults, but a person who had turned the AI off (the tiebreak and classification both
  * off) keeps answers off and drafts as they were (off unless they turned them on: the lead's decision on the Phase E

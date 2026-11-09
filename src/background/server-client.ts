@@ -86,6 +86,13 @@ import {
   type AutofillSensitiveEnvelope,
   type PutAutofillSavedAnswerBody,
   type AutofillSession,
+  // v1.3 B
+  AutofillFormsKnownResponseSchema,
+  AutofillSubmissionResponseSchema,
+  type AutofillFormsKnownRequest,
+  type AutofillFormsKnownResponse,
+  type AutofillSubmissionRequest,
+  type AutofillSubmissionResponse,
 } from '../contract/tailorit';
 // The snapshot build of 2026-11-06 (core-x, item 6): every address named to TailorIT goes through tailoritAddressOf, which
 // keeps v3 Phase 8's company-page rule (addressForTailorIT) and names iCIMS's, SmartRecruiters' and jobs.workable.com's
@@ -234,6 +241,13 @@ export interface ServerClient {
   applied(body: AutofillAppliedRequest): Promise<ServerResult<AutofillLookupResponse>>;
   /** POST /site-requests (version 3): "Ask TailorIT to support this site", a host name alone. */
   siteRequest(host: string): Promise<ServerResult<null>>;
+  /** v1.3 B: POST /submissions (scope tracker:write), once the site confirmed a Submit: what POST /applied does, and
+   *  the form's questions (and, unless the person turned it off, their answers) kept in TailorIT; answers the lookup
+   *  with what happened. A 400 changed nothing: POST /applied then. The body is never logged. */
+  submissions(body: AutofillSubmissionRequest): Promise<ServerResult<AutofillSubmissionResponse>>;
+  /** v1.3 B: POST /forms/known (scope jobs:lookup; the answers profile:read): the job's known questions and the
+   *  person's earlier answers. */
+  knownForm(body: AutofillFormsKnownRequest): Promise<ServerResult<AutofillFormsKnownResponse>>;
   /** PUT /profile (version 3, scope profile:write; its `sensitive` only with profile:sensitive): the side panel's
    *  "Your autofill information". A stale revision is a conflict (409 `revision_conflict`), a body TailorIT refuses
    *  bad-request (400), a token without the scope forbidden (403). */
@@ -736,6 +750,16 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
         json: body.url === undefined ? body : { ...body, url: tailoritAddressOf(body.url) } }, LookupWireSchema);
       return raw.ok ? { ok: true, value: lookupOf(raw.value) } : raw;
     },
+    // v1.3 B
+    async submissions(body) {
+      const raw = await json({ method: 'POST', path: '/api/autofill/submissions', token: 'current',
+        json: body.url === undefined ? body : { ...body, url: tailoritAddressOf(body.url) } },
+      AutofillSubmissionResponseSchema.extend({ lookup: LookupWireSchema }));
+      return raw.ok ? { ok: true, value: { ...raw.value, lookup: lookupOf(raw.value.lookup) } } : raw;
+    },
+    knownForm: (body) => json({ method: 'POST', path: '/api/autofill/forms/known', token: 'current',
+      json: body.url === undefined ? body : { ...body, url: tailoritAddressOf(body.url) } },
+    AutofillFormsKnownResponseSchema),
     async siteRequest(host) {
       const raw = await send({ method: 'POST', path: '/api/autofill/site-requests', token: 'current', json: { host },
         answer: { kind: 'none' } });

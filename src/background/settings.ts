@@ -8,7 +8,9 @@
  * the behaviour review of 2026-11-06), and a version 5 value loses "Ask me each time" (Profile only) and the draft
  * confirmation (migrateSettingsV5, v4: the run never asks the person), and a version 6 value takes snapshot round 2's
  * two modes at their defaults, Other and Until closed (migrateSettingsV6), and every version 7 value shows the panel on
- * the page, its in-page card and its side panel alike (migrateSettingsV7, v5: the owner's word); each is stored again.
+ * the page, its in-page card and its side panel alike (migrateSettingsV7, v5: the owner's word), and every version 8
+ * value keeps the answers of the applications the person submits (migrateSettingsV8, v1.3 B: On); each is stored
+ * again.
  * Content scripts get only the part they need (panel placement, the modes, the AI switches, the offer to save answers)
  * with frame/hello and run/begin, and again with settings/changed whenever the person saves them (pushSettings: every
  * registered frame with a form, so a run in progress reads the Next mode as it is now: the Phase 5 review, C-S2), each
@@ -20,14 +22,14 @@
  */
 import {
   DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4, migrateSettingsV5,
-  migrateSettingsV6, migrateSettingsV7, SETTINGS_VERSION, type Settings,
+  migrateSettingsV6, migrateSettingsV7, migrateSettingsV8, SETTINGS_VERSION, type Settings,
 } from '../core/types/settings';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { SETTINGS_KEY, SettingsSchema, type ContentSettings } from '../shared/settings';
 import {
   SettingsV1Schema, SettingsV2Schema, SettingsV3Schema, SettingsV4Schema, SettingsV5Schema, SettingsV6Schema,
-  SettingsV7Schema,
+  SettingsV7Schema, SettingsV8Schema,
 } from '../shared/settings-stored';
 import { frameTarget, type FrameEntry } from './frames';
 import { createKeyedQueue } from './locks';
@@ -132,6 +134,18 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
       const parsed = SettingsSchema.safeParse(stored);
       if (parsed.success) {
         cached = withShippedModes(parsed.data);
+        return cached;
+      }
+      // v1.3 B: version 8 (before "Keep my submitted answers in TailorIT").
+      const v8 = SettingsV8Schema.safeParse(stored);
+      if (v8.success) {
+        cached = migrateSettingsV8(v8.data);
+        try {
+          await local.set({ [SETTINGS_KEY]: cached });
+          log('settings.migrated', { from: 8, to: SETTINGS_VERSION });
+        } catch {
+          log('settings.migrated', { from: 8, to: SETTINGS_VERSION, stored: false });
+        }
         return cached;
       }
       // v5 p1-shell: version 7 (before "Where the panel shows").

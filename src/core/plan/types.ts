@@ -13,6 +13,7 @@ import type { BaseKey, FieldKey, FieldSpec } from '../types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../types/fill';
 import type { Profile, SensitiveState, Ymd } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
+import type { SubmittedAnswer } from '../types/submitted';
 import type { Settings } from '../types/settings';
 import type { Vocab } from '../vocab/types';
 import type { AnswerItem, AnswerVerdict } from './answers';
@@ -35,6 +36,10 @@ export interface PlanInput {
   sensitiveState: PlanSensitiveState;
   /** The person's saved answers (Phase 6): GET /answers, fetched with the profile, in the worker's memory only. */
   savedAnswers: readonly SavedAnswer[];
+  /** v1.3 B: the person's answers in applications they submitted before, as TailorIT gives them back with the job's
+   *  known questions (POST /forms/known, the worker's memory for the run): they fill a gap the profile leaves with no
+   *  AI (resolver/submitted.ts). Absent: none known. */
+  submittedAnswers?: readonly SubmittedAnswer[];
   /** The company the form belongs to (its platform and board, from the frame's address), for answers saved for one
    *  company: free text only. Absent when the address names none: then no company's answer applies. */
   company?: CompanyScope;

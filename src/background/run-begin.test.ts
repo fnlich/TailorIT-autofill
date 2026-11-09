@@ -42,10 +42,13 @@ describe('run/begin', () => {
       },
     });
     const routes = worker.tailorit.requests.map((request) => `${request.method} ${request.path}`).sort();
-    // The saved answers are read with the profile (Phase 6).
-    expect(routes).toEqual(['GET /api/autofill/answers', 'GET /api/autofill/profile', 'POST /api/autofill/lookup']);
+    // The saved answers are read with the profile (Phase 6); v1.3 B: the job's known form, once the lookup names it.
+    expect(routes).toEqual(['GET /api/autofill/answers', 'GET /api/autofill/profile', 'POST /api/autofill/forms/known',
+      'POST /api/autofill/lookup']);
     const lookup = worker.tailorit.requests.find((request) => request.path === '/api/autofill/lookup')!;
     expect(JSON.parse(lookup.body!)).toEqual({ url: LEVER_POSTING_URL, includePostingText: true });
+    const known = worker.tailorit.requests.find((request) => request.path === '/api/autofill/forms/known')!;
+    expect(JSON.parse(known.body!)).toEqual({ jobId: goldens.lookup.job.id });
   });
 
   it('answers neither the profile nor the lookup, and stores the run without its address', async () => {

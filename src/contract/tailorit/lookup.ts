@@ -311,6 +311,13 @@ export const AutofillLookupResponseSchema = z.object({
   match: AutofillLookupMatchSchema.nullable().optional(),
   /** Version 5: how TailorIT read the page and the employer's link (AutofillLookupPageSchema). */
   page: AutofillLookupPageSchema.optional(),
+  // v1.3 A
+  /**
+   * v1.3 (additive within version 6): whether TailorIT keeps the application questions of this job (or, with no job,
+   * of the posting the page names), so the extension can prefetch them (POST /api/autofill/forms/known).
+   */
+  formKnown: z.boolean().optional(),
+  // end v1.3 A
 });
 export type AutofillLookupResponse = z.infer<typeof AutofillLookupResponseSchema>;
 

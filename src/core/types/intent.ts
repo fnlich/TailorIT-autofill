@@ -103,7 +103,11 @@ export type ValueOrigin =
   | { provenance: 'llm-draft'; taskId: string; confirmedByUser: boolean }
   /** A short text TailorIT's AI answered with (version 2), and what it rested on: the resume, the profile, the job's
    *  own words, or nothing (a guess, marked "AI guess"). */
-  | { provenance: 'llm-answer'; taskId: string; basis: AnswerBasis };
+  | { provenance: 'llm-answer'; taskId: string; basis: AnswerBasis }
+  /** v1.3 B: the person's own answer to this question in an application they submitted before (TailorIT's known
+   *  questions; core/resolver/submitted.ts): `submittedId` names it in the run's list, `sameJob` says whether it was
+   *  this job's (a re-apply) or another job's (only ever for a question that is not sensitive). */
+  | { provenance: 'submitted-before'; submittedId: string; sameJob: boolean };
 
 /** What an AI answer rested on (TailorIT's AUTOFILL_ANSWER_BASES): `guess` when nothing in the resume, the profile or
  *  the posting settles it. */

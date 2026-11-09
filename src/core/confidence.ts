@@ -32,6 +32,9 @@ export const LABEL_RULE_CONFIDENCE: Readonly<Record<'strong' | 'normal' | 'weak'
 };
 /** A saved answer with the exact key (label key, observed option-set hash, scope). */
 export const CLASSIFY_SAVED_EXACT = 0.97;
+/** v1.3 B: the person's own answer to the same question (its normalized label, and its option set or this job's own
+ *  options) in an application they submitted before (resolver/submitted.ts). */
+export const CLASSIFY_SUBMITTED = 0.97;
 /** An LLM classification, below the fill line so the field is always flagged (ARCHITECTURE.md). */
 export const CLASSIFY_LLM = 0.7;
 /** Two classifiers agree: the higher confidence plus this. */

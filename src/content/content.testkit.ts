@@ -565,6 +565,9 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         if (!armed.delete(key)) return { ok: false, error: 'expired' };
         return { ok: true, data: {} };
       }
+      // v1.3 B: the armed Submit's form, held by the worker (submissions.ts).
+      case 'submit/form':
+        return { ok: true, data: {} };
       case 'ping':
         return { ok: true, data: { pong: true } };
       default:
