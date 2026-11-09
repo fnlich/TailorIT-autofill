@@ -9,7 +9,11 @@
  * build ships its four icons as PNGs of their sizes. v5 p1-rules (PLAN decisions 9 and 10): the host permissions are
  * exactly every https and http page plus TailorIT, with no optional ones, and neither the sentinel's registration nor
  * a static content script reaches a CAPTCHA or anti-bot vendor's frame. v5 p1-shell: the sidebar's bundle is in every
- * build, listed nowhere in the manifest, within its budget, and holds no WXT content-script context.
+ * build, listed nowhere in the manifest, within its budget, and holds no WXT content-script context. v5 p2-detect: a
+ * third content script, the page-world submit watcher (world MAIN, Workday's and ClearCompany's hosts alone, every
+ * frame, from document_start, within its budget), whose bundle is one anonymous function naming no extension API and
+ * no way to read a body or a header, adding no global and no listener, and wrapping fetch and XMLHttpRequest exactly
+ * at a Workday or ClearCompany posting or form.
  * The script runs as it is, copied with what it reads (proc.mjs, the host list, the public key) into a
  * temporary folder that holds three fixture builds, and each case breaks the builds in one way.
  */
@@ -19,7 +23,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CAPTURE_MARKER } from '../src/background/capture';
-import { ATS_MATCHES } from '../src/shared/hosts';
+import { ATS_MATCHES, SUBMIT_WATCH_MATCHES } from '../src/shared/hosts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
@@ -60,7 +64,9 @@ function manifest(origin: string): Record<string, unknown> {
     options_ui: { open_in_tab: true, page: 'options.html' },
     side_panel: { default_path: 'sidepanel.html' },
     content_scripts: [{ matches: [...ATS_MATCHES], all_frames: true, run_at: 'document_idle', js: ['content-scripts/content.js'] },
-      { ...BRIDGE_SCRIPT, matches: [...ATS_MATCHES] }],
+      { ...BRIDGE_SCRIPT, matches: [...ATS_MATCHES] },
+      // v5 p2-detect: the page-world submit watcher.
+      { ...WATCH_SCRIPT, matches: [...SUBMIT_WATCH_MATCHES] }],
   };
 }
 
@@ -80,6 +86,16 @@ const SENTINEL_BUNDLE = '(function(){var t=globalThis.chrome;var r=document.quer
 
 /** The page-world bridge's entry in a manifest, as WXT writes it (src/entrypoints/page-bridge.content.ts). */
 const BRIDGE_SCRIPT = { all_frames: true, run_at: 'document_start', js: ['content-scripts/page-bridge.js'], world: 'MAIN' };
+/** v5 p2-detect: the page-world submit watcher's entry, as WXT writes it (src/entrypoints/submit-watch.content.ts). */
+const WATCH_SCRIPT = { all_frames: true, run_at: 'document_start', js: ['content-scripts/submit-watch.js'], world: 'MAIN' };
+/** v5 p2-detect: a watcher bundle as the real one behaves: it wraps fetch and XMLHttpRequest's open and send at a
+ *  Workday or ClearCompany posting or form (check-build's own addresses), and nowhere else. */
+const WATCH_AT = 'var h=String(document.location&&document.location.href||"");'
+  + 'if(/myworkdayjobs(?:-impl)?\\.com\\/|\\/job\\/Remote\\/Engineer_JR-1|\\/careers\\/jobs\\/[0-9a-f-]+\\/apply/.test(h))';
+const WATCH_WRAP = '{var f=window.fetch;window.fetch=function(){return f.apply(this,arguments)};'
+  + 'var p=window.XMLHttpRequest.prototype,o=p.open,s=p.send;p.open=function(){return o.apply(this,arguments)};'
+  + 'p.send=function(){return s.apply(this,arguments)}}';
+const WATCH_BUNDLE = `(function(){${WATCH_AT}${WATCH_WRAP}})();`;
 
 const folders: string[] = [];
 
@@ -101,6 +117,7 @@ function project(change: (write: (path: string, text: string | Uint8Array) => vo
     write(`${dir}/background.js`, 'var background=(function(){return {}})();');
     write(`${dir}/content-scripts/content.js`, 'var content=(function(){return {}})();');
     write(`${dir}/content-scripts/page-bridge.js`, BRIDGE_BUNDLE);
+    write(`${dir}/content-scripts/submit-watch.js`, WATCH_BUNDLE);
     // v3 Phase 8: the sentinel the worker registers, and the content script it injects, at the build's root.
     write(`${dir}/sentinel.js`, SENTINEL_BUNDLE);
     write(`${dir}/content-script.js`, 'var contentScript=(function(){return {}})();');
@@ -181,6 +198,8 @@ function everyManifest(write: (path: string, text: string | Uint8Array) => void,
 const contentScript = (changed: Record<string, unknown>) => (changed.content_scripts as Array<Record<string, unknown>>)[0]!;
 /** The page-world bridge's entry in a manifest. */
 const bridgeScript = (changed: Record<string, unknown>) => (changed.content_scripts as Array<Record<string, unknown>>)[1]!;
+/** v5 p2-detect: the page-world submit watcher's entry in a manifest. */
+const watchScript = (changed: Record<string, unknown>) => (changed.content_scripts as Array<Record<string, unknown>>)[2]!;
 
 /** A script just past the content script's budget (scripts/check-build.mjs's CONTENT_SCRIPT_BUDGET, 1 MiB again since
  *  v5 p1-shell). */
@@ -301,12 +320,12 @@ describe("check-build's manifest and bundle assertions", () => {
   });
 });
 
-describe("check-build's two content scripts: ours and the page-world bridge", () => {
+describe("check-build's three content scripts: ours, the page-world bridge and (v5 p2-detect) the submit watcher", () => {
   afterEach(() => {
     for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
   });
 
-  it('pass ours and the bridge in either order', () => {
+  it('pass ours, the bridge and the watcher in any order', () => {
     const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
       (changed.content_scripts as unknown[]).reverse();
     })));
@@ -314,26 +333,87 @@ describe("check-build's two content scripts: ours and the page-world bridge", ()
     expect(status).toBe(0);
   });
 
-  it('fail a build with our content script alone, a third script, or two in the isolated world', () => {
+  // v5 p2-detect: three content scripts, the submit watcher beside the bridge (the old two-script cases, each kept).
+  it('fail a build with our content script alone, a fourth script, a page-world script missing, or two in the isolated world', () => {
     const alone = checkBuild(project((write) => everyManifest(write, (changed) => {
       changed.content_scripts = [contentScript(changed)];
     })));
-    expect(alone.output).toContain('.output/chrome-mv3: expected two content scripts, ours and the page-world bridge '
-      + '(world MAIN), found 1: ["isolated"]');
+    expect(alone.output).toContain('.output/chrome-mv3: expected three content scripts, ours, the page-world bridge and '
+      + 'the submit watcher (both world MAIN), found 1: ["isolated"]');
     expect(alone.status).toBe(1);
 
-    const third = checkBuild(project((write) => everyManifest(write, (changed) => {
+    const fourth = checkBuild(project((write) => everyManifest(write, (changed) => {
       (changed.content_scripts as unknown[]).push({ ...BRIDGE_SCRIPT, matches: [...ATS_MATCHES], js: ['content-scripts/more.js'] });
     })));
-    expect(third.output).toContain('found 3: ["isolated","MAIN","MAIN"]');
-    expect(third.status).toBe(1);
+    expect(fourth.output).toContain('found 4: ["isolated","MAIN","MAIN","MAIN"]');
+    expect(fourth.status).toBe(1);
+
+    const noWatcher = checkBuild(project((write) => everyManifest(write, (changed) => {
+      (changed.content_scripts as unknown[]).pop();
+    })));
+    expect(noWatcher.output).toContain('found 2: ["isolated","MAIN"]');
+    expect(noWatcher.status).toBe(1);
 
     const isolated = checkBuild(project((write) => everyManifest(write, (changed) => {
       delete bridgeScript(changed).world;
     })));
-    expect(isolated.output).toContain('found 2: ["isolated","isolated"]');
+    expect(isolated.output).toContain('found 3: ["isolated","isolated","MAIN"]');
     expect(isolated.status).toBe(1);
   });
+
+  it('fail a submit watcher with other matches, CSS, about:blank frames, the top frame alone or another start (v5 p2-detect)', () => {
+    const cases: Array<[(watcher: Record<string, unknown>) => void, string]> = [
+      [(watcher) => { watcher.matches = [...SUBMIT_WATCH_MATCHES, 'https://jobs.lever.co/*']; },
+        "the submit watcher's matches differ from SUBMIT_WATCH_MATCHES"],
+      [(watcher) => { watcher.matches = [...ATS_MATCHES]; }, "the submit watcher's matches differ from SUBMIT_WATCH_MATCHES"],
+      [(watcher) => { watcher.css = ['content-scripts/submit-watch.css']; }, 'the submit watcher has css'],
+      [(watcher) => { watcher.match_about_blank = true; }, 'the submit watcher has match_about_blank'],
+      [(watcher) => { watcher.exclude_matches = ['https://*.myworkdaysite.com/*']; }, 'the submit watcher has exclude_matches'],
+      [(watcher) => { watcher.all_frames = false; }, 'the submit watcher is not all_frames'],
+      [(watcher) => { watcher.run_at = 'document_idle'; }, 'the submit watcher does not run at document_start'],
+    ];
+    for (const [change, message] of cases) {
+      const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => change(watchScript(changed)))));
+      expect(output, message).toContain(`.output/chrome-mv3: ${message}`);
+      expect(status, message).toBe(1);
+    }
+  });
+
+  it('fail a submit watcher over its 24 KiB budget, or one that reads a body, adds a global or a listener, or wraps elsewise (v5 p2-detect)', () => {
+    const big = checkBuild(project((write) => {
+      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/submit-watch.js`, `var big="${'a'.repeat(24 * 1024)}";`);
+    }));
+    expect(big.output).toContain('.output/chrome-mv3: the submit watcher is');
+    expect(big.output).toContain('over the 24576-byte budget');
+    expect(big.status).toBe(1);
+
+    const installs = 'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote/Engineer_JR-1/apply/applyManually';
+    const wrap = `${WATCH_AT}${WATCH_WRAP}`;
+    const cases: Array<[string, string]> = [
+      [`var watch=(function(){${wrap}})();`, 'the submit watcher is not one anonymous function called at once'],
+      [`var watch=(function(){${wrap}})();`, 'the submit watcher adds globals: watch'],
+      [`(function(){globalThis.__tailorit=1;${wrap}})();`, 'the submit watcher adds globals: __tailorit'],
+      [`(function(){chrome.runtime;${wrap}})();`, 'the submit watcher names "chrome."'],
+      [`(function(){var r;r&&r.clone();${wrap}})();`, 'the submit watcher names ".clone("'],
+      [`(function(){var r;r&&r.json();${wrap}})();`, 'the submit watcher names ".json("'],
+      [`(function(){var r;r&&r.body;${wrap}})();`, 'the submit watcher names ".body"'],
+      [`(function(){var r;r&&r.responseText;${wrap}})();`, 'the submit watcher names "responseText"'],
+      [`(function(){var r;r&&r.headers;${wrap}})();`, 'the submit watcher names ".headers"'],
+      [`(function(){document.addEventListener("tailorit:submit-net",()=>{});${wrap}})();`,
+        `the submit watcher listens for ["tailorit:submit-net"] at ${installs}`],
+      ['(function(){})();', `the submit watcher does not wrap fetch and XMLHttpRequest at ${installs}`],
+      [`(function(){${WATCH_WRAP}})();`,
+        'the submit watcher wraps fetch and XMLHttpRequest at https://wd5.myworkdaysite.com/recruiting/acme/External'],
+      ['(function(){window.fetch=function(){}})();', `the submit watcher does not wrap fetch and XMLHttpRequest at ${installs}`],
+    ];
+    for (const [bundle, message] of cases) {
+      const { status, output } = checkBuild(project((write) => {
+        for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/submit-watch.js`, bundle);
+      }));
+      expect(output, bundle).toContain(`.output/chrome-mv3: ${message}`);
+      expect(status, bundle).toBe(1);
+    }
+  }, 30_000);
 
   it('fail a page-world bridge with other matches, CSS, about:blank frames, another start or more files', () => {
     const cases: Array<[(bridge: Record<string, unknown>) => void, string]> = [
@@ -421,7 +501,8 @@ describe("check-build's two content scripts: ours and the page-world bridge", ()
       expect(output, bundle).toContain(`.output/chrome-mv3: ${message}`);
       expect(status, bundle).toBe(1);
     }
-  });
+    // v5 p2-detect: eleven runs of the script, each now also running the submit watcher's bundle at its addresses.
+  }, 30_000);
 });
 
 describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel and its registrations", () => {

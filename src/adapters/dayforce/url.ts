@@ -12,8 +12,10 @@
  * site and the posting's id. The canonical application URL is step 1's address as dayforce-2 writes it,
  * https://jobs.dayforcehcm.com/en-US/<clientNamespace>/<careerSiteXRefCode>/jobs/<id>/apply/manualApplication
  * ?applicationSource=Manual. Whether it loads without its query is a live check no snapshot answers (DESIGN-NEW-ATS §7).
- * The posting page, the other ways to apply and the confirmation are in no snapshot: no address is read as them, and
- * every other page of the host (the search, Recommended Jobs) is none.
+ * The posting page, the other ways to apply and the confirmation are in no snapshot: no address is read as the first
+ * two, and every other page of the host (the search, Recommended Jobs) is none. v5 p2-detect (Jobright's record of
+ * Dayforce's page after submitting, read as its behaviour, never its code): .../jobs/<id>/apply/success, with or without
+ * the locale, is the page after submitting, the confirmation, under the application's key.
  */
 import type { ApplicationUrl } from '../application-key';
 
@@ -39,9 +41,11 @@ export function parseDayforceUrl(url: URL): ApplicationUrl | null {
   if (segments.length === 7 && LOCALE.test(segments[0]!)) segments.shift();
   if (segments.length !== 6) return null;
   const [namespace, site, jobs, id, apply, manual] = segments as [string, string, string, string, string, string];
+  // v5 p2-detect: apply/success is the page after submitting (module header).
+  const confirmed = manual === 'success';
   if (!SEGMENT.test(namespace) || !SEGMENT.test(site) || jobs !== 'jobs' || !POSTING_ID.test(id)
-    || apply !== APPLICATION_TAIL[0] || manual !== APPLICATION_TAIL[1]) return null;
-  return { platform: 'dayforce', board: namespace, jobId: id, page: 'application',
+    || apply !== APPLICATION_TAIL[0] || (manual !== APPLICATION_TAIL[1] && !confirmed)) return null;
+  return { platform: 'dayforce', board: namespace, jobId: id, page: confirmed ? 'confirmation' : 'application',
     applicationUrl: `https://${HOST}/en-US/${namespace}/${site}/jobs/${id}/apply/manualApplication?applicationSource=Manual` };
 }
 

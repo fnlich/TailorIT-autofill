@@ -175,8 +175,12 @@ import {
   FillRun, RunFailure, type HeldAnswer, type RunEnd, type RunOptions, type RunPage, type RunRequest,
 } from './orchestrator';
 import { readPostingPage } from './policy';
-import { newSuccessSign, shownSignsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot } from './submitted';
-import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter } from './press';
+import { newSuccessSign, shownSignsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot,
+  // v5 p2-detect
+  watchNetworkSigns } from './submitted';
+import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter,
+  // v5 p2-detect
+  refusalNow } from './press';
 import { signIn } from './sign-in';
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { createReportLimiter } from './report';
@@ -742,6 +746,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     void refusalAfter({ doc, adapter: at.adapter, root: at.root }, watch.signal).then((count) => {
       if (armed === record && count > 0) endArm(record, { refused: count });
     });
+    // ── v5 p2-detect: the platform's network sign (submitted.ts watchNetworkSigns: Workday's finalize answered, or
+    // ClearCompany's last answers and completed message), this Submit's while it is armed and the page shows no error.
+    watchNetworkSigns(doc, at.platform, watch.signal, () => {
+      if (armed !== record || stopped) return;
+      if (refusalNow({ doc, adapter: at.adapter, root: at.root }) > 0) return;
+      record.stopWatch();
+      armed = null;
+      void detected('network', record);
+    });
+    // ── end v5 p2-detect ──
     check();
   }
 

@@ -249,8 +249,11 @@ export type SubmitPresser = (typeof SUBMIT_PRESSERS)[number];
 
 /** What showed that an application was sent (v3 Phase 4): the platform's page after submitting (Lever's /thanks,
  *  Greenhouse's /confirmation), or its success message in the form's place (Ashby's, or Greenhouse's confirmation
- *  drawn in the same document). */
-export const SUBMIT_EVIDENCE = ['confirmation-page', 'success-message'] as const;
+ *  drawn in the same document). // v5 p2-detect: or (`network`) the answer to the platform's own request that sends the
+ *  application, seen by the page-world submit watcher in the arming document (content/submitted.ts watchNetworkSigns). */
+export const SUBMIT_EVIDENCE = ['confirmation-page', 'success-message',
+  // v5 p2-detect
+  'network'] as const;
 export type SubmitEvidence = (typeof SUBMIT_EVIDENCE)[number];
 
 /** The page's own buttons the panel may press for the person (v3 Phase 4): Next on a step the adapter says is not the

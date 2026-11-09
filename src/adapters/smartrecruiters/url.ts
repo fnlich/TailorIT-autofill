@@ -15,6 +15,9 @@
  *   unknown"). The posting is keyed on its own canonical address, https://jobs.smartrecruiters.com/<Company>/<id>; the
  *   application on https://jobs.smartrecruiters.com/oneclick-ui/company/<Company>/publication/<uuid>, the UUID in lower
  *   case, the company as written, the screening step, the query and the fragment dropped.
+ * v5 p2-detect (Jobright's record of SmartRecruiters' page after submitting, read as its behaviour, never its code):
+ * .../publication/<uuid>/success is the one-click application's page after its Submit, the confirmation, under the
+ * application's key.
  * Other SmartRecruiters hosts (careers.smartrecruiters.com, www.smartr.me's "apply with SmartR") are not read: no
  * snapshot shows an application there.
  * TailorIT's parseAtsUrl reads the same since its API 6 (src/adapters/url.test.ts).
@@ -51,10 +54,14 @@ export function parseSmartRecruitersUrl(url: URL): ApplicationUrl | null {
   const parts = path.split('/').slice(1);
   if (parts[0] === 'oneclick-ui') {
     const [, company, board, publication, id, ...tail] = parts;
+    // v5 p2-detect: /success after the publication is the page after submitting (module header).
+    const confirmed = tail.join('/') === 'success';
     if (company !== 'company' || publication !== 'publication' || board === undefined || id === undefined
-      || !COMPANY.test(board) || !PUBLICATION.test(id) || !APPLICATION_TAILS.has(tail.join('/'))) return null;
+      || !COMPANY.test(board) || !PUBLICATION.test(id) || !(APPLICATION_TAILS.has(tail.join('/')) || confirmed)) {
+      return null;
+    }
     const jobId = id.toLowerCase();
-    return { platform: 'smartrecruiters', board, jobId, page: 'application',
+    return { platform: 'smartrecruiters', board, jobId, page: confirmed ? 'confirmation' : 'application',
       applicationUrl: `${ORIGIN}/oneclick-ui/company/${board}/publication/${jobId}` };
   }
   if (parts.length !== 2) return null;

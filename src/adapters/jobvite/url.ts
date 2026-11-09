@@ -7,7 +7,9 @@
  *   steps, all at this one address with no query (ninjaone-consent-empty, ninjaone-consent, ninjaone-step1..3;
  *   jobvite-0..5, -7);
  * - https://jobs.jobvite.com/<company>/jobs, the company's list, shows no posting (the header's link on every page).
- * No snapshot shows the page after Send Application, so no address is read as the confirmation. The company and the
+ * No snapshot shows the page after Send Application; v5 p2-detect (Jobright's record of Jobvite's page after
+ * submitting, read as its behaviour, never its code): .../job/<id>/applyConfirmation is it, the confirmation, under the
+ * application's key. The company and the
  * id are kept as written (the id is mixed case, "o5b1AfwB"; whether either is read case-insensitively is not shown),
  * and the canonical URL drops a trailing slash, the query and the fragment: the posting and its application share one
  * application key. TailorIT's parseAtsUrl reads the same since its API 6 (src/adapters/url.test.ts).
@@ -34,9 +36,10 @@ export function parseJobviteUrl(url: URL): ApplicationUrl | null {
   const [company, job, id, ...rest] = path.split('/').slice(1);
   if (!company || job !== 'job' || !id || !COMPANY.test(company) || !JOB_ID.test(id)) return null;
   const tail = rest.join('/');
-  if (tail !== '' && tail !== 'apply') return null;
+  if (tail !== '' && tail !== 'apply' && tail !== 'applyConfirmation') return null;
   const applicationUrl = `https://${HOST}/${company}/job/${id}/apply`;
-  return { platform: 'jobvite', board: company, jobId: id, page: tail === '' ? 'posting' : 'application', applicationUrl };
+  return { platform: 'jobvite', board: company, jobId: id,
+    page: tail === '' ? 'posting' : tail === 'apply' ? 'application' : 'confirmation', applicationUrl };
 }
 
 /** The canonical application URL when the address shows the application (its consent gate included); null on the

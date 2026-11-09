@@ -37,6 +37,20 @@
  * Paycom waits for its snapshots (no match, only its HR exclusion) and DFIN (a company's own host) stays a career
  * site. Chrome reads a host permission without its path, so the path-scoped hosts' permission covers the whole host,
  * as Oracle's does (docs/PRIVACY.md).
+ * v5 p2-detect (the engine audit's gap 1a; each from Jobright's site list, read as its behaviour, never its code): the
+ * address variants of platforms already here, each read by that platform's own url.ts: a Workday tenant's
+ * implementation host (<tenant>[.wd<n>].myworkdayjobs-impl.com); Pinpoint's postings under any locale or none
+ * (PINPOINT_PATH); Paylocity's /recruiting/ in lower case; UKG's other recruiting hosts, recruiting2.ultipro.com,
+ * recruiting.ultipro.ca and <x>.rec.pro.ukg.net, on their job boards' paths alone (/<tenant>/JobBoard/, ULTIPRO_BOARD_PATH:
+ * each of those domains also serves an employee HR system, which stays no platform's, and HR_HOST_MATCHES keeps the
+ * sentinel off all of them); and CareerPlug's partner domains, sfagentjobs.com, sfagentcareers.com and
+ * apscareerportal.com (CAREERPLUG_PARTNER_HOST), under /jobs/. A `*` inside a pattern's path is read as Chrome reads it
+ * (onAtsMatch). Not added, each for its reason (the phase notes): Workday's myworkday.com and SuccessFactors' sapsf.com
+ * (employee systems; sapsf.com's career hosts are in no capture), Oracle on a company's own domain (a static match on
+ * every host's /hcmUI/CandidateExperience/ would reach LinkedIn's, which no static script may), rippling-ats.com
+ * (HiringThing's white-label, not Rippling's application), Breezy's other /apply paths, ADP MyJobs and
+ * recruiting.adp.com, Dayforce's sign-in pages, ClearCompany's hrmdirect.com and smartr.me (other applications or
+ * redirects, none in any snapshot). SUBMIT_WATCH_MATCHES names where the page-world submit watcher runs.
  */
 import type { Platform } from '../core/enums';
 
@@ -78,17 +92,49 @@ export const ATS_MATCHES = [
   'https://workforcenow.adp.com/mascsr/applicant/mdf/recruitment/*',
   'https://*.bamboohr.com/careers/*',
   // ── end New ATSs ──
+  // ── v5 p2-detect: address variants of platforms already here (the engine audit's gap 1a; module header) ──
+  'https://*.myworkdayjobs-impl.com/*',
+  'https://*.pinpointhq.com/*/postings/*',
+  'https://*.pinpointhq.com/postings/*',
+  'https://recruiting.paylocity.com/recruiting/*',
+  'https://*.ultipro.com/*/JobBoard/*',
+  'https://*.ultipro.ca/*/JobBoard/*',
+  'https://*.rec.pro.ukg.net/*/JobBoard/*',
+  'https://*.sfagentjobs.com/jobs/*',
+  'https://*.sfagentcareers.com/jobs/*',
+  'https://*.apscareerportal.com/jobs/*',
+  // ── end v5 p2-detect ──
 ] as const;
+
+// ── v5 p2-detect: the page-world submit watcher's hosts (entrypoints/submit-watch.content.ts, PLAN decision 14) ──
+/** Where the submit watcher's script is matched (world MAIN, from document_start): Workday's and ClearCompany's
+ *  candidate hosts as ATS_MATCHES names them, and no other; it installs only where the page-world bridge would
+ *  (adapters/bridge-address.ts) and on those two platforms' pages (dom/submit-net-protocol.ts NET_PLATFORMS). */
+export const SUBMIT_WATCH_MATCHES = ['https://*.myworkdayjobs.com/*', 'https://*.myworkdaysite.com/*',
+  'https://*.myworkdayjobs-impl.com/*', 'https://*.clearcompany.com/careers/*'] as const;
+
+// ── v5 p2-detect: the address variants' own readings (each platform's url.ts reads the same) ──
+/** Pinpoint's posting paths: /<locale>/postings/ (en, de, fr-ca...) or /postings/. */
+export const PINPOINT_PATH = /^\/(?:[A-Za-z]{2}(?:[-_][A-Za-z]{2})?\/)?postings\//;
+/** A UKG job board's paths on the hosts beside recruiting.ultipro.com: /<tenant>/JobBoard/. */
+export const ULTIPRO_BOARD_PATH = /^\/[A-Za-z0-9_-]{1,64}\/JobBoard\//;
+/** CareerPlug's partner domains, each host under them (Jobright reads them as CareerPlug's). */
+export const CAREERPLUG_PARTNER_HOST = /^(?:[a-z0-9-]+\.)*(?:sfagentjobs|sfagentcareers|apscareerportal)\.com$/;
+// ── end v5 p2-detect ──
 
 /** The candidate hosts of each platform; on a host that also serves other pages, its candidate pages by their paths
  *  (`paths`: the path must start with one of them, else the address is no platform's). */
-const HOST_PLATFORMS: ReadonlyArray<{ host: RegExp; platform: Platform; paths?: readonly string[] }> = [
+const HOST_PLATFORMS: ReadonlyArray<{ host: RegExp; platform: Platform; paths?: readonly string[];
+  /** v5 p2-detect: a candidate path no prefix can say (a locale or a tenant before it), read as written. */
+  pathPattern?: RegExp }> = [
   { host: /^(?:job-)?boards\.greenhouse\.io$/, platform: 'greenhouse' },
   { host: /^jobs\.(?:eu\.)?lever\.co$/, platform: 'lever' },
   { host: /^jobs\.ashbyhq\.com$/, platform: 'ashby' },
   // A tenant's own host, <tenant>.wd<n>.myworkdayjobs.com or <tenant>.myworkdayjobs.com, and the shared
   // wd<n>.myworkdaysite.com: the hosts workday/url.ts reads (the v3 Phase 6/7b review, C1).
-  { host: /^(?:(?!(?:www|wd\d{1,3})\.)[a-z0-9-]+\.(?:wd\d{1,3}\.)?myworkdayjobs|wd\d{1,3}\.myworkdaysite)\.com$/,
+  // v5 p2-detect: a tenant's implementation (pre-production) host, <tenant>[.wd<n>].myworkdayjobs-impl.com, alike
+  // (Jobright's site list names the domain).
+  { host: /^(?:(?!(?:www|wd\d{1,3})\.)[a-z0-9-]+\.(?:wd\d{1,3}\.)?myworkdayjobs(?:-impl)?|wd\d{1,3}\.myworkdaysite)\.com$/,
     platform: 'workday' },
   // Snapshot build, boards (2026-11-06): jobs.workable.com beside apply.workable.com.
   { host: /^(?:apply|jobs)\.workable\.com$/, platform: 'workable' },
@@ -114,18 +160,26 @@ const HOST_PLATFORMS: ReadonlyArray<{ host: RegExp; platform: Platform; paths?: 
   // The security fix of 2026-11-06 (S5): app.careerplug.com is CareerPlug's employers' host (HR_HOST_MATCHES), no
   // tenant's candidate host.
   { host: /^(?!app\.)[a-z0-9-]+\.careerplug\.com$/, platform: 'careerplug', paths: ['/jobs/'] },
-  { host: /^(?!app\.)[a-z0-9-]+\.pinpointhq\.com$/, platform: 'pinpoint', paths: ['/en/postings/'] },
+  // v5 p2-detect: a posting under any locale, or none (Jobright's site list: /*/postings/* and /postings/*).
+  { host: /^(?!app\.)[a-z0-9-]+\.pinpointhq\.com$/, platform: 'pinpoint', pathPattern: PINPOINT_PATH },
   { host: /^recruitingbypaycor\.com$/, platform: 'paycor', paths: ['/career/'] },
   { host: /^[a-z0-9-]+\.careers\.hibob\.com$/, platform: 'hibob' },
   { host: /^recruiting\.ultipro\.com$/, platform: 'ultipro' },
+  // v5 p2-detect: UKG's other recruiting hosts (recruiting2.ultipro.com, recruiting.ultipro.ca, <x>.rec.pro.ukg.net:
+  // Jobright's site list), their job boards' paths alone: each domain also serves an employee HR system.
+  { host: /^(?:[a-z0-9-]+\.)+ultipro\.(?:com|ca)$|^[a-z0-9-]+\.rec\.pro\.ukg\.net$/, platform: 'ultipro',
+    pathPattern: ULTIPRO_BOARD_PATH },
   { host: /^jobs\.dayforcehcm\.com$/, platform: 'dayforce' },
-  { host: /^recruiting\.paylocity\.com$/, platform: 'paylocity', paths: ['/Recruiting/'] },
+  // v5 p2-detect: /recruiting/ in lower case too (Jobright's site list and its page after submitting).
+  { host: /^recruiting\.paylocity\.com$/, platform: 'paylocity', paths: ['/Recruiting/', '/recruiting/'] },
   { host: /^www\.dice\.com$/, platform: 'dice', paths: ['/job-applications/'] },
   { host: /^(?!cc-)[a-z0-9-]+\.clearcompany\.com$/, platform: 'clearcompany', paths: ['/careers/'] },
   { host: /^workforcenow\.adp\.com$/, platform: 'adp',
     paths: ['/mascsr/default/mdf/recruitment/', '/mascsr/applicant/mdf/recruitment/'] },
   { host: /^[a-z0-9-]+\.bamboohr\.com$/, platform: 'bamboohr', paths: ['/careers/'] },
   // ── end New ATSs ──
+  // ── v5 p2-detect: CareerPlug's partner domains (Jobright's site list: State Farm agents' and APS's career portals) ──
+  { host: CAREERPLUG_PARTNER_HOST, platform: 'careerplug', paths: ['/jobs/'] },
 ];
 
 /** Whether the manifest's static content script runs at an address (one of ATS_MATCHES matches it: a host as written
@@ -140,8 +194,15 @@ export function onAtsMatch(url: string): boolean {
     const [, patternHost, patternPath] = /^https:\/\/([^/]+)(\/.*)$/.exec(pattern)!;
     const hostFits = patternHost!.startsWith('*.') ? host === patternHost!.slice(2) || host.endsWith(patternHost!.slice(1))
       : host === patternHost;
-    return hostFits && path.startsWith(patternPath!.replace(/\*$/, ''));
+    // v5 p2-detect: a `*` inside the path (Pinpoint's locale, UKG's tenant) matches any characters, as Chrome's does.
+    return hostFits && globPath(patternPath!).test(path);
   });
+}
+
+/** A match pattern's path as Chrome reads it: each `*` any run of characters, the rest as written, from the start. */
+function globPath(path: string): RegExp {
+  const parts = path.split('*').map((part) => part.replace(/[.+?^$|()[\]{}\\]/g, '\\$&'));
+  return new RegExp(`^${parts.join('.*')}`);
 }
 
 /** The platform of an https address on one of the ATS hosts (a path-scoped host's under one of its candidate paths,
@@ -152,9 +213,10 @@ export function platformOfUrl(url: string): Platform | null {
   const host = match[1]!.toLowerCase();
   const entry = HOST_PLATFORMS.find((each) => each.host.test(host));
   if (entry === undefined) return null;
-  if (entry.paths === undefined) return entry.platform;
+  if (entry.paths === undefined && entry.pathPattern === undefined) return entry.platform;
   const path = (match[2] ?? '').split(/[?#]/, 1)[0]!;
-  return entry.paths.some((prefix) => path.startsWith(prefix)) ? entry.platform : null;
+  return (entry.paths ?? []).some((prefix) => path.startsWith(prefix)) || entry.pathPattern?.test(path) === true
+    ? entry.platform : null;
 }
 
 // ── v3 Phase 8: company career sites (docs/SPEC-AMENDMENTS.md §12 Decision 13) ─────────────────────────────────────
