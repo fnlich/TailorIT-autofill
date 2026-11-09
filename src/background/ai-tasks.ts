@@ -84,6 +84,10 @@
  * `oneRound` with its scope, so planFrame uses it only where that category leaves the question to the AI. A TailorIT
  * that answers such an item with no classification (one before v5's one round) has its answer dropped, unread, and
  * the worker asks classifications first for the rest of its life (oneRoundUsable false).
+ * The P2 review: H1, what streamed is kept by its batch (a field asked again in another batch, a draft after a
+ * free-text classification, waits for that batch, takes its stream and its failure); M1, an item asked with its
+ * category that TailorIT's answer screen held back (`sensitive`, or the extension's own answer screen withheld) is
+ * classified first, by a classify task, as before one round (RunAi.answers.classifyFirst).
  * v5 p2-stream (two at once): a run has up to AI_RUN_TASKS (2) tasks in flight, in the order its batches were asked,
  * as TailorIT runs two CLI processes of an account at once (AI_CLI_PER_ACCOUNT); idle() waits for every one.
  */
@@ -428,12 +432,15 @@ const answerTextOf = (item: AutofillAnswerItem) => [item.key, item.shape, item.k
  *  context and the canaries, the items of each scope in batches of their own: the `all` scope only for the questions
  *  the standard one would not ask), and the verdicts of those never sent. */
 export function answerBatches(items: readonly AnswerItem[], context: DraftContext, canaries: readonly string[],
-  vocab?: Vocab): { batches: AnswerBatch[]; withheld: AnswerVerdict[]; classified: ClassifyVerdict[] } {
+  vocab?: Vocab): { batches: AnswerBatch[]; withheld: AnswerVerdict[]; classified: ClassifyVerdict[];
+    classifyFirst: FieldKey[] } {
   const limits = AUTOFILL_AI_LIMITS.answer;
   const withheld: AnswerVerdict[] = [];
   /** v5 p2-stream (one round): the classifications of items asked as plain answers (a platform TailorIT does not
    *  name: unknown-field, as classifyBatches withholds it), and of items never sent (screened, as classify's). */
   const classified: ClassifyVerdict[] = [];
+  /** The P2 review (M1): the items asked with their category that the answer screen withheld: classified first. */
+  const classifyFirst: FieldKey[] = [];
   const sendable: Array<{ item: AnswerItem; sent: AutofillAnswerItem }> = [];
   const seen = new Set<string>();
   for (const asked of items) {
@@ -444,8 +451,10 @@ export function answerBatches(items: readonly AnswerItem[], context: DraftContex
     if (unnamed) classified.push({ key: item.key, category: null, why: 'unknown-field' });
     const sent = answerItemOfCore(item, vocab);
     if (sent === null) {
-      withheld.push({ key: item.key, kind: 'none', why: 'llm-disabled-for-category' });
-      if (item.classify === true) classified.push({ key: item.key, category: null, why: 'llm-disabled-for-category' });
+      // The P2 review (M1): an item the answer screen withholds, asked with its category, is classified first (a
+      // classify task names what the answer screen may not ask about), its answer not asked.
+      if (item.classify === true) classifyFirst.push(item.key);
+      else withheld.push({ key: item.key, kind: 'none', why: 'llm-disabled-for-category' });
     } else sendable.push({ item, sent });
   }
   const shared = {
@@ -482,7 +491,7 @@ export function answerBatches(items: readonly AnswerItem[], context: DraftContex
       flush();
     }
   }
-  return { batches, withheld, classified };
+  return { batches, withheld, classified, classifyFirst };
 }
 
 /** v5 p2-stream (one round): an item asked as a plain answer, its category not asked. */
@@ -498,23 +507,25 @@ function withoutClassify(item: AnswerItem): AnswerItem {
  * classification (a TailorIT before v5's one round), or answered twice or not at all (llm-invalid-output then).
  */
 export function oneRoundClassifications(items: readonly AnswerItem[], result: AutofillAnswerResult):
-  Map<string, ClassifyVerdict | 'missing'> {
+  Map<string, ClassifyVerdict | 'missing' | 'held'> {
   const byKey = new Map<string, AutofillAnswerResult['answers']>();
   for (const answer of result.answers) byKey.set(answer.key, [...(byKey.get(answer.key) ?? []), answer]);
-  const verdicts = new Map<string, ClassifyVerdict | 'missing'>();
+  const verdicts = new Map<string, ClassifyVerdict | 'missing' | 'held'>();
   for (const item of items) {
     if (item.classify !== true) continue;
     const answers = byKey.get(item.key) ?? [];
     const classification = answers.length === 1 ? answers[0]!.classification : null;
-    let verdict: ClassifyVerdict | 'missing';
+    let verdict: ClassifyVerdict | 'missing' | 'held';
     if (classification === undefined) verdict = 'missing';
     else if (classification === null) verdict = { key: item.key, category: null, why: 'llm-invalid-output' };
     else if (classification.reason === 'classified' && classification.category !== null) {
       verdict = { key: item.key, category: classification.category, why: 'ok' };
     } else if (classification.reason === 'unknown') verdict = { key: item.key, category: null, why: 'unknown-field' };
-    else if (classification.reason === 'sensitive') {
-      verdict = { key: item.key, category: null, why: 'llm-disabled-for-category' };
-    } else verdict = { key: item.key, category: null, why: 'llm-invalid-output' };
+    // The P2 review (M1): held back by TailorIT's answer screen, which also holds back the person's own details and,
+    // under the standard scope, legal and pay questions: not classified, so a classify task names it (the profile's
+    // value, or the `all` scope's question), as before one round.
+    else if (classification.reason === 'sensitive') verdict = 'held';
+    else verdict = { key: item.key, category: null, why: 'llm-invalid-output' };
     verdicts.set(item.key, verdict);
   }
   return verdicts;
@@ -979,6 +990,10 @@ export interface RunAi {
   used(): boolean;
   /** The run went: nothing more is submitted, and a task in flight is cancelled. */
   stop(): void;
+  /** The P2 review (security 5): the keys whose answer or draft came on this run's stream and whose reply TailorIT then
+   *  voided as a whole (`streamedThenVoided`), not yet told to the frame: taken once, so the fields written from them
+   *  are flagged for review (ai-reply-voided). */
+  takeReviews(): FieldKey[];
 }
 
 /** The field a tiebreak item or verdict is for: its id is the field's key, with a value's reference after '#' when one
@@ -1006,8 +1021,13 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
   let quiet: Array<() => void> = [];
   let stopped = false;
   let submitted = false;
-  // v5 p2-stream: the keys whose verdict came on their task's stream, before the task ended, and the stream's end.
-  const streamed = new Set<string>();
+  // v5 p2-stream: the keys whose verdict came on their task's stream, before the task ended, each with the batch that
+  // streamed it (the P2 review, H1: a key asked again in another batch is that batch's own), and the stream's end.
+  const streamed = new Map<string, string>();
+  /** The P2 review (M1): the keys an answer task held back that a classify task names first. */
+  const classifyFirst = new Set<string>();
+  /** The P2 review (security 5): streamed keys whose reply was then voided, until the frame is told (takeReviews). */
+  const reviews = new Set<FieldKey>();
   const halt = new AbortController();
 
   /** Tells the run that keys' answers are in (the planner tells the frame). Never throws. */
@@ -1020,27 +1040,28 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
     }
   }
 
-  /** One answer or draft from a batch's stream: that key's verdict now, once. */
-  function streamedItem(batch: AiBatch, item: StreamedItem, taskId: string): void {
+  /** One answer or draft from a batch's stream: that key's verdict now, once per batch. */
+  function streamedItem(batch: AiBatch, hash: string, item: StreamedItem, taskId: string): void {
     if (stopped) return;
     let key: string | null = null;
     if (batch.kind === 'answer' && item.type === 'answer') {
       const asked = batch.items.find((entry) => entry.key === item.answer.key);
-      if (asked === undefined || streamed.has(asked.key)) return;
-      // v5 p2-stream (one round): its classification first; an answer with none is never taken.
+      if (asked === undefined || streamed.get(asked.key) === hash) return;
+      // v5 p2-stream (one round): its classification first; an answer with none is never taken, and one held back
+      // waits for its batch's end, then is classified first (M1).
       const classified = oneRoundClassifications([asked], { answers: [item.answer] }).get(asked.key);
-      if (classified === 'missing') return;
+      if (classified === 'missing' || classified === 'held') return;
       if (classified !== undefined) classifications.set(asked.key, classified);
       answers.set(asked.key, answerVerdicts([asked], { answers: [item.answer] }, taskId).get(asked.key)!);
       key = asked.key;
     } else if (batch.kind === 'draft' && item.type === 'draft') {
       const asked = batch.items.find((entry) => entry.key === item.draft.key);
-      if (asked === undefined || streamed.has(asked.key)) return;
+      if (asked === undefined || streamed.get(asked.key) === hash) return;
       drafts.set(asked.key, draftVerdicts([asked], { drafts: [item.draft] }, taskId).get(asked.key)!);
       key = asked.key;
     }
     if (key === null) return;
-    streamed.add(key);
+    streamed.set(key, hash);
     ready([key]);
   }
 
@@ -1048,18 +1069,34 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
   const keysOf = (batch: AiBatch): string[] => batch.items.map((item) => (batch.kind === 'pick'
     ? fieldKeyOf(item as TiebreakItem) : (item as ClassifyItem | DraftItem | AnswerItem).key));
 
-  function record(batch: AiBatch, outcome: TaskOutcome): void {
+  function record(batch: AiBatch, hash: string, outcome: TaskOutcome): void {
+    /** Whether this batch's own stream brought the key's verdict (H1: never another batch's). */
+    const ownStream = (key: string) => streamed.get(key) === hash;
+    /**
+     * The P2 review (security 5): the items TailorIT sent on the stream before voiding their reply as a whole. One
+     * this run took from its own stream stands as written and is told to the frame for review; one it never took (its
+     * stream lost, the result polled) is not trusted: no answer.
+     */
+    const voidedOf = (entries: ReadonlyArray<{ key: string; streamedThenVoided?: true }>) => {
+      const voided = new Set<string>();
+      for (const entry of entries) {
+        if (entry.streamedThenVoided !== true) continue;
+        voided.add(entry.key);
+        if (ownStream(entry.key)) reviews.add(entry.key as FieldKey);
+      }
+      return voided;
+    };
     if (!outcome.ok) {
       const failed = failedVerdicts(batch, outcome.why);
       for (const verdict of failed.picks) verdicts.set(verdict.id, { verdict, taskId: '' });
       for (const verdict of failed.classes) classifications.set(verdict.key, verdict);
-      // v5 p2-stream: what came on the stream before the task failed stands (it may be written already).
-      for (const verdict of failed.drafts) if (!streamed.has(verdict.key)) drafts.set(verdict.key, verdict);
-      for (const verdict of failed.answers) if (!streamed.has(verdict.key)) answers.set(verdict.key, verdict);
+      // v5 p2-stream: what came on this batch's stream before its task failed stands (it may be written already).
+      for (const verdict of failed.drafts) if (!ownStream(verdict.key)) drafts.set(verdict.key, verdict);
+      for (const verdict of failed.answers) if (!ownStream(verdict.key)) answers.set(verdict.key, verdict);
       // v5 p2-stream (one round): an item asked with its category has none either.
       if (batch.kind === 'answer') {
         for (const item of batch.items) {
-          if (item.classify === true && !streamed.has(item.key)) {
+          if (item.classify === true && !ownStream(item.key)) {
             classifications.set(item.key, { key: item.key, category: null, why: outcome.why });
           }
         }
@@ -1072,8 +1109,14 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
       }
     } else if (batch.kind === 'draft') {
       let differ = 0;
-      for (const [key, verdict] of draftVerdicts(batch.items, outcome.result as AutofillDraftResult, outcome.taskId)) {
-        if (streamed.has(key) && JSON.stringify(drafts.get(key)) !== JSON.stringify(verdict)) differ += 1;
+      const result = outcome.result as AutofillDraftResult;
+      const voided = voidedOf(result.drafts);
+      for (const [key, verdict] of draftVerdicts(batch.items, result, outcome.taskId)) {
+        if (voided.has(key) && !ownStream(key)) {
+          drafts.set(key, { key: key as FieldKey, text: null, why: 'llm-invalid-output' });
+          continue;
+        }
+        if (ownStream(key) && JSON.stringify(drafts.get(key)) !== JSON.stringify(verdict)) differ += 1;
         drafts.set(key, verdict);
       }
       if (differ > 0) log('ai.stream-differs', { items: differ });
@@ -1083,15 +1126,26 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
       // v5 p2-stream (one round): each classification first; an answer that came without the one it was asked is
       // dropped, unread (a TailorIT before v5's one round), and the worker classifies first from now on.
       const classified = oneRoundClassifications(batch.items, result);
+      const voided = voidedOf(result.answers);
       let missing = 0;
       for (const [key, verdict] of answerVerdicts(batch.items, result, outcome.taskId)) {
+        if (voided.has(key) && !ownStream(key)) {
+          if (classified.has(key)) classifications.set(key, { key: key as FieldKey, category: null, why: 'llm-invalid-output' });
+          answers.set(key, { key: key as FieldKey, kind: 'none', why: 'llm-invalid-output' });
+          continue;
+        }
         const classification = classified.get(key);
         if (classification === 'missing') {
           missing += 1;
           continue;
         }
+        // The P2 review (M1): held back by the answer screen: classified first, its answer never taken.
+        if (classification === 'held') {
+          classifyFirst.add(key);
+          continue;
+        }
         if (classification !== undefined) classifications.set(key, classification);
-        if (streamed.has(key) && JSON.stringify(answers.get(key)) !== JSON.stringify(verdict)) differ += 1;
+        if (ownStream(key) && JSON.stringify(answers.get(key)) !== JSON.stringify(verdict)) differ += 1;
         answers.set(key, verdict);
       }
       if (missing > 0) tasks.oneRoundMissing?.();
@@ -1112,11 +1166,13 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
     queue.push(async () => {
       const outcome = stopped ? { ok: false as const, why: 'llm-unavailable' as const }
         : await tasks.run(batch, ids, () => !stopped,
-          { signal: halt.signal, onItem: (item, taskId) => streamedItem(batch, item, taskId) });
-      record(batch, outcome);
+          { signal: halt.signal, onItem: (item, taskId) => streamedItem(batch, hash, item, taskId) });
+      record(batch, hash, outcome);
       entry.done = true;
-      // v5 p2-stream: the batch's other keys are in now: the frame plans them at once.
-      ready(keysOf(batch).filter((key) => !streamed.has(key)));
+      // v5 p2-stream: the batch's other keys are in now: the frame plans them at once (H1: by this batch's stream);
+      // the frame is told too when a streamed one waits for review (security 5).
+      const wake = keysOf(batch).filter((key) => streamed.get(key) !== hash);
+      ready(wake.length === 0 && reviews.size > 0 ? keysOf(batch) : wake);
     });
     pump();
     return hash;
@@ -1140,7 +1196,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
   }
 
   return {
-    answers: { verdicts, classifications, drafts, answers },
+    answers: { verdicts, classifications, drafts, answers, classifyFirst },
     ask(ask, awaiting, context, llm, revision) {
       const owner = new Map<string, string | null>();
       const picks = llm.tiebreak ? pickBatches(ask.tiebreaks, revision)
@@ -1171,13 +1227,18 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
       const answered = llm.answers && context.draft !== undefined
         ? answerBatches(questions, context.draft, context.canaries, vocab)
         : { batches: [], withheld: questions.map((item): AnswerVerdict => ({ key: item.key, kind: 'none',
-          why: 'llm-disabled-for-category' })), classified: [] as ClassifyVerdict[] };
+          why: 'llm-disabled-for-category' })), classified: [] as ClassifyVerdict[], classifyFirst: [] as FieldKey[] };
       for (const verdict of answered.withheld) {
         answers.set(verdict.key, verdict);
         owner.set(verdict.key, null);
       }
-      // v5 p2-stream (one round): the classifications its answer batches settle at once.
+      // v5 p2-stream (one round): the classifications its answer batches settle at once, and (M1) the items the
+      // answer screen withheld, classified first: answered at once, so the next plan asks their classification.
       for (const verdict of answered.classified) classifications.set(verdict.key, verdict);
+      for (const key of answered.classifyFirst) {
+        classifyFirst.add(key);
+        owner.set(key, null);
+      }
       const withheld = picks.withheld.length + classes.withheld.length + written.withheld.length
         + answered.withheld.length;
       if (withheld > 0) log('ai.withheld', { items: withheld });
@@ -1194,8 +1255,8 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
       const entry = waiting.get(key);
       if (entry === undefined) return 'unknown';
       if (entry.batch === null) return 'done';
-      // v5 p2-stream: an answer or draft that came on its task's stream is in before its batch ends.
-      if (streamed.has(key) && answeredBy.get(key) === entry.batch) return 'done';
+      // v5 p2-stream: an answer or draft that came on its own batch's stream is in before that batch ends (H1).
+      if (streamed.get(key) === entry.batch) return 'done';
       return batches.get(entry.batch)?.done === true ? 'done' : 'waiting';
     },
     contextOf: (key) => waiting.get(key)?.context,
@@ -1221,6 +1282,11 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
     stop() {
       stopped = true;
       halt.abort();
+    },
+    takeReviews() {
+      const taken = [...reviews];
+      reviews.clear();
+      return taken;
     },
   };
 }

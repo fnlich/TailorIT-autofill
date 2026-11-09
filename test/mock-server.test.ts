@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
 import {
   answerInFormat,
@@ -1098,6 +1098,21 @@ describe('v5 p2-stream: the AI task stream', () => {
     expect(sseEvents(await stream.text()).map((event) => event.type)).toEqual(['task']);
   });
 
+  it('answers the task it waited for finished, even when the clock reads before it is due after the wait', async () => {
+    await scenario('ai-answer');
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-paced', delayMs: 100, value: 50 } });
+    // The clock stands still from the request on: the wait (a real timer) ends while Date.now() still reads before the
+    // task is due, as a timer that fires a millisecond early does (the docs writer's flaky run), every time.
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now());
+    try {
+      const waited = await call('/api/autofill/ai/answer', { method: 'POST', headers: asToken(), json: answerBody(2) });
+      expect(waited.status).toBe(200);
+      expect(((await waited.json()) as { status: string }).status).toBe('succeeded');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('is a TailorIT before the stream under ai-stream-off: the stream 404, respond-async not heard', async () => {
     await scenario('ai-stream-off');
     const posted = await call('/api/autofill/ai/answer', { method: 'POST', headers: asToken({ Prefer: 'respond-async' }),
@@ -1107,5 +1122,27 @@ describe('v5 p2-stream: the AI task stream', () => {
     expect((await call(`/api/ai/tasks/${id}/stream`, { headers: asToken() })).status).toBe(404);
     // Past the stream's path a token reaches nothing.
     expect((await call(`/api/ai/tasks/${id}/stream/x`, { headers: asToken() })).status).toBe(403);
+  });
+});
+
+describe('v5 p2-stream (the P2 review, L8b): one round, as TailorIT keeps answers per scope', () => {
+  const asked = (scope: 'standard' | 'all') => ({ ...(example('AutofillAnswerRequest') as Record<string, unknown>), scope,
+    items: [{ key: 'lever|main|convicted|none|0', shape: 'text', kind: 'text', question: 'Have you been convicted?',
+      hint: '', section: '', optionSetHash: null, options: [], maxLength: 100, classify: true }], canaries: [] });
+  const answerOf = async (scope: 'standard' | 'all') => {
+    const posted = await call('/api/autofill/ai/answer', { method: 'POST', headers: asToken(), json: asked(scope) });
+    const task = (await posted.json()) as { result: { answers: Array<{ reason: string; text: string | null;
+      classification?: { category: string | null } }> } };
+    return task.result.answers[0]!;
+  };
+
+  it('keeps a legal answer under the all scope and drops it under the standard one; never an EEO answer', async () => {
+    await scenario('ai-answer');
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-classify-category', value: 'sensitive_legal' } });
+    expect(await answerOf('all')).toMatchObject({ reason: 'answered', classification: { category: 'sensitive_legal' } });
+    expect(await answerOf('standard')).toMatchObject({ reason: 'sensitive', text: null,
+      classification: { category: 'sensitive_legal' } });
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-classify-category', value: 'sensitive_eeo' } });
+    expect(await answerOf('all')).toMatchObject({ reason: 'sensitive', text: null });
   });
 });

@@ -3,7 +3,7 @@
   "zod": "4.6.7",
   "files": {
     "agent.ts": "f5e936bfd780aab1810818876eb1faa2e3efbc97b45c2dfe72b581f523afb002",
-    "ai.ts": "8d6d5ebc75d6831829c96bee225aa616601cc5cf1dd49743d6ea332b8a1338f8",
+    "ai.ts": "cb3290749fdc383f7712d72f40ad90cca189fc5bf0c16cef23d11aa712d4bbdb",
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "49960ec62489547d78a01bdc51d82142b6ce44168c31a81f060a282774da20f1",
     "connect.ts": "c7c32bda21eb64b78ec9e8085549144384fbf1d5c676b72918dbe726588b0071",
@@ -12167,6 +12167,10 @@
                   "invalid",
                   "sensitive"
                 ]
+              },
+              "streamedThenVoided": {
+                "type": "boolean",
+                "const": true
               }
             },
             "required": [
@@ -12246,6 +12250,10 @@
                           "invalid",
                           "sensitive"
                         ]
+                      },
+                      "streamedThenVoided": {
+                        "type": "boolean",
+                        "const": true
                       }
                     },
                     "required": [
@@ -12712,6 +12720,10 @@
                   "reason"
                 ],
                 "additionalProperties": false
+              },
+              "streamedThenVoided": {
+                "type": "boolean",
+                "const": true
               }
             },
             "required": [
@@ -12910,6 +12922,10 @@
                           "reason"
                         ],
                         "additionalProperties": false
+                      },
+                      "streamedThenVoided": {
+                        "type": "boolean",
+                        "const": true
                       }
                     },
                     "required": [
@@ -13416,6 +13432,10 @@
                               "invalid",
                               "sensitive"
                             ]
+                          },
+                          "streamedThenVoided": {
+                            "type": "boolean",
+                            "const": true
                           }
                         },
                         "required": [
@@ -13680,6 +13700,10 @@
                               "reason"
                             ],
                             "additionalProperties": false
+                          },
+                          "streamedThenVoided": {
+                            "type": "boolean",
+                            "const": true
                           }
                         },
                         "required": [
@@ -13930,6 +13954,10 @@
                     "reason"
                   ],
                   "additionalProperties": false
+                },
+                "streamedThenVoided": {
+                  "type": "boolean",
+                  "const": true
                 }
               },
               "required": [
@@ -13989,6 +14017,10 @@
                     "invalid",
                     "sensitive"
                   ]
+                },
+                "streamedThenVoided": {
+                  "type": "boolean",
+                  "const": true
                 }
               },
               "required": [
@@ -14414,6 +14446,10 @@
                                       "invalid",
                                       "sensitive"
                                     ]
+                                  },
+                                  "streamedThenVoided": {
+                                    "type": "boolean",
+                                    "const": true
                                   }
                                 },
                                 "required": [
@@ -14678,6 +14714,10 @@
                                       "reason"
                                     ],
                                     "additionalProperties": false
+                                  },
+                                  "streamedThenVoided": {
+                                    "type": "boolean",
+                                    "const": true
                                   }
                                 },
                                 "required": [

@@ -115,6 +115,9 @@ export interface PlanAi {
   drafts?: ReadonlyMap<string, DraftVerdict>;
   /** AI answers by field key (answers.ts): a chosen option, a text, or why there is none. */
   answers?: ReadonlyMap<string, AnswerVerdict>;
+  /** v5 p2-stream (the P2 review, M1): fields an answer task asked with their category held back (TailorIT's answer
+   *  screen, or the extension's own): a classify task names them first, as before one round. */
+  classifyFirst?: ReadonlySet<string>;
 }
 
 /** The questions a plan needs the LLM for (Phase 4): each awaiting key has exactly one. */

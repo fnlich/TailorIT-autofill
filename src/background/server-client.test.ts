@@ -460,6 +460,28 @@ describe('the AI task stream (v5 p2-stream)', () => {
     expect(await stopped).toEqual({ ok: true, value: null });
   });
 
+  it('keeps a CR LF split between two chunks one line end (the P2 review, security 7a)', async () => {
+    const task = await finished();
+    const text = [{ type: 'answer', answer }, { type: 'task', task }]
+      .map((event) => `event: ${event.type}\r\ndata: ${JSON.stringify(event)}\r\n\r\n`).join('');
+    // Each chunk ends right after a CR, so every CR LF is split between two chunks.
+    const chunks = text.split(/(?<=\r)/).map((part) => new TextEncoder().encode(part));
+    expect(chunks.length).toBeGreaterThan(6);
+    const { server } = client({ platform: {
+      fetch: async () => new Response(new ReadableStream<Uint8Array>({ start: (controller) => {
+        for (const chunk of chunks) controller.enqueue(chunk);
+        controller.close();
+      } }), { headers: { 'Content-Type': 'text/event-stream', 'X-TailorIT-Autofill-Api': String(AUTOFILL_API_VERSION) } }),
+      timeout: () => new AbortController().signal,
+      now: () => START_MS,
+    } });
+    const heard: unknown[] = [];
+    const read = await server.aiTaskStream(TASK_ID, { signal: new AbortController().signal,
+      onEvent: (event) => heard.push(event) });
+    expect(read).toEqual({ ok: true, value: task });
+    expect(heard).toEqual([{ type: 'answer', answer }]);
+  });
+
   it('asks an AI route with Prefer: respond-async only when told to', async () => {
     const { server, tailorit } = client();
     tailorit.reply('POST /api/autofill/ai/answer', { status: 202, json: { taskId: TASK_ID } });

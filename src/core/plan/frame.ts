@@ -1135,7 +1135,8 @@ export function planFrame(asked: PlanInput): PlanOutput {
     }
     const item = classifyItemOf(spec);
     if (item !== null) {
-      if (oneRound) unclassified.set(spec.key, item);
+      // The P2 review (M1): one an answer task held back is classified first, as before one round.
+      if (oneRound && input.ai?.classifyFirst?.has(spec.key) !== true) unclassified.set(spec.key, item);
       else classify.push(item);
     }
     return first;

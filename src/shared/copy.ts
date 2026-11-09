@@ -229,6 +229,9 @@ const REASONS = {
   'bot-check': 'This checks that a person is filling in the form, so it is never answered for you.',
   // The audit of 2026-11-06 (S-4): a draft for the owner's review.
   'how-application-made': 'This asks how your application was made, which an extension never answers, so it was not filled.',
+  // v5 p2-stream review (security 5): a draft for the owner's review.
+  'ai-reply-voided': "The AI's answer was put in as it arrived, and the rest of that reply was then found unreliable.",
+  // v5 p2-stream review end
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was not filled.',
 } as const satisfies Record<ReasonCode, string>;

@@ -300,6 +300,8 @@ export const LOG_CODES = [
   // v5 p2-stream (one round): TailorIT answered an item asked with its category without one (the worker classifies
   // first from then on).
   'ai.one-round-unsupported',
+  // v5 p2-stream review (H1's backstop): a field asked anew past MAX_AI_REASKS, given up.
+  'content.ai-reask-limit',
   // v5 p2-stream end
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
