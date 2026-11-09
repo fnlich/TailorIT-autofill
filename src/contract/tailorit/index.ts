@@ -16,4 +16,6 @@ export * from './cover-letters';
 export * from './sites';
 export * from './agent';
 export * from './credentials';
+// v1.4 D: tailoring a resume and a cover letter for a job.
+export * from './tailor';
 export * from './registry';

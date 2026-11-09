@@ -1,0 +1,14 @@
+{
+  "resumeTemplates": [
+    {
+      "id": "one-column-slate",
+      "name": "Slate"
+    }
+  ],
+  "coverLetterTemplates": [
+    {
+      "id": "9b2e4f61-7c3a-4d8e-b1f0-5a6c2d9e8f47",
+      "name": "Classic"
+    }
+  ]
+}

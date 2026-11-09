@@ -1,0 +1,126 @@
+{
+  "id": "e4b7c2a9-1f3d-4e6b-8a50-c9d2f1b3a786",
+  "status": "succeeded",
+  "step": null,
+  "message": null,
+  "result": {
+    "resumeId": "7c1d9e2f-4a3b-4c5d-8e6f-0a1b2c3d4e5f",
+    "title": "Northwind - Senior Platform Engineer",
+    "resumeTemplateId": "one-column-slate",
+    "coverLetterId": "2d4f6a8c-1b3e-4f5a-9c7d-8e0f1a2b3c4d",
+    "coverLetterTemplateId": null,
+    "applicationId": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+    "ats": {
+      "score": 91,
+      "scoreBefore": 54,
+      "hardSkills": {
+        "score": 94,
+        "matched": 7,
+        "total": 8,
+        "keywords": [
+          {
+            "keyword": "Terraform",
+            "jobCount": 3,
+            "resumeCount": 2
+          },
+          {
+            "keyword": "Kubernetes",
+            "jobCount": 2,
+            "resumeCount": 2
+          },
+          {
+            "keyword": "AWS",
+            "jobCount": 2,
+            "resumeCount": 3
+          },
+          {
+            "keyword": "GitHub Actions",
+            "jobCount": 1,
+            "resumeCount": 1
+          },
+          {
+            "keyword": "Prometheus",
+            "jobCount": 1,
+            "resumeCount": 1
+          },
+          {
+            "keyword": "Incident response",
+            "jobCount": 1,
+            "resumeCount": 1
+          },
+          {
+            "keyword": "Capacity planning",
+            "jobCount": 1,
+            "resumeCount": 1
+          },
+          {
+            "keyword": "Helm",
+            "jobCount": 1,
+            "resumeCount": 0
+          }
+        ]
+      },
+      "softSkills": {
+        "score": 100,
+        "matched": 2,
+        "total": 2,
+        "keywords": [
+          {
+            "keyword": "Mentoring",
+            "jobCount": 1,
+            "resumeCount": 1
+          },
+          {
+            "keyword": "Cross-functional collaboration",
+            "jobCount": 1,
+            "resumeCount": 1
+          }
+        ]
+      },
+      "jobTitle": {
+        "title": "Senior Platform Engineer",
+        "found": false
+      },
+      "searchability": {
+        "score": 100,
+        "checks": [
+          {
+            "label": "Email address",
+            "passed": true
+          },
+          {
+            "label": "Phone number",
+            "passed": true
+          },
+          {
+            "label": "Location",
+            "passed": true
+          },
+          {
+            "label": "Summary section",
+            "passed": true
+          },
+          {
+            "label": "Professional Experience section",
+            "passed": true
+          },
+          {
+            "label": "Every role has dates",
+            "passed": true
+          },
+          {
+            "label": "Education section",
+            "passed": true
+          }
+        ]
+      },
+      "missingHardSkills": [
+        "Helm"
+      ],
+      "missingSoftSkills": []
+    }
+  },
+  "error": null,
+  "createdAt": "2026-11-09T12:00:00.000Z",
+  "finishedAt": "2026-11-09T12:01:42.000Z"
+}

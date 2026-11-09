@@ -1,0 +1,24 @@
+{
+  "resumeTemplates": [
+    {
+      "id": "one-column-slate",
+      "name": "Slate"
+    },
+    {
+      "id": "double-column",
+      "name": "Double Column"
+    }
+  ],
+  "coverLetterTemplates": [
+    {
+      "id": "9b2e4f61-7c3a-4d8e-b1f0-5a6c2d9e8f47",
+      "name": "Classic",
+      "isSystem": true
+    },
+    {
+      "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "My letter",
+      "isSystem": false
+    }
+  ]
+}

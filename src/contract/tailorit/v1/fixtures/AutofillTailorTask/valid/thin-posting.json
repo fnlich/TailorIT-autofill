@@ -1,0 +1,18 @@
+{
+  "id": "e4b7c2a9-1f3d-4e6b-8a50-c9d2f1b3a786",
+  "status": "succeeded",
+  "step": null,
+  "message": null,
+  "result": {
+    "resumeId": "7c1d9e2f-4a3b-4c5d-8e6f-0a1b2c3d4e5f",
+    "title": "Fabrikam - Site Reliability Engineer",
+    "resumeTemplateId": "double-column",
+    "coverLetterId": null,
+    "coverLetterTemplateId": null,
+    "applicationId": null,
+    "ats": null
+  },
+  "error": null,
+  "createdAt": "2026-11-09T12:00:00.000Z",
+  "finishedAt": "2026-11-09T12:00:20.000Z"
+}

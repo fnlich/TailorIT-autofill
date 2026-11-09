@@ -1,0 +1,13 @@
+{
+  "id": "e4b7c2a9-1f3d-4e6b-8a50-c9d2f1b3a786",
+  "status": "failed",
+  "step": null,
+  "message": null,
+  "result": null,
+  "error": {
+    "code": "ai_failed",
+    "message": "The AI request failed. Please try again."
+  },
+  "createdAt": "2026-11-09T12:00:00.000Z",
+  "finishedAt": "2026-11-09T12:00:31.000Z"
+}

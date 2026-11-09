@@ -68,6 +68,13 @@ import {
 } from './profile';
 import { AutofillResumeListSchema } from './resumes';
 import { AutofillSiteRequestBodySchema, AutofillSiteRequestListSchema } from './sites';
+// v1.4 D: tailoring.
+import {
+  AutofillTailorAcceptedSchema,
+  AutofillTailorRequestSchema,
+  AutofillTailorTaskSchema,
+  AutofillTemplateListSchema,
+} from './tailor';
 import {
   AutofillAppliedRequestSchema,
   AutofillJobSearchQuerySchema,
@@ -141,6 +148,12 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillSignInList: AutofillSignInListSchema,
   AutofillSignInItem: AutofillSignInItemSchema,
   PutAutofillSignInBody: PutAutofillSignInBodySchema,
+  // v1.4 D: tailoring a resume and a cover letter, and the templates the profile's documents may name.
+  AutofillTailorRequest: AutofillTailorRequestSchema,
+  AutofillTailorAccepted: AutofillTailorAcceptedSchema,
+  AutofillTailorTask: AutofillTailorTaskSchema,
+  AutofillTemplateList: AutofillTemplateListSchema,
+  // end v1.4 D
 } satisfies Record<string, z.ZodType>;
 export type AutofillContractName = keyof typeof AUTOFILL_CONTRACT_SCHEMAS;
 
@@ -642,4 +655,38 @@ export const AUTOFILL_ROUTES = [
     response: null,
     accepted: null,
   },
+  // v1.4 D: tailoring (AUTOFILL_TAILOR_REFUSALS), with the AI scope: the work is Claude's, started and polled like the
+  // other AI routes, and every connection holds the scope. The template list with profile:read, beside the profile
+  // whose documents name them.
+  {
+    method: 'POST',
+    path: '/api/autofill/tailor',
+    caller: 'either',
+    scope: 'ai:run',
+    request: 'AutofillTailorRequest',
+    status: 202,
+    response: 'AutofillTailorAccepted',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/tailor/:id',
+    caller: 'either',
+    scope: 'ai:run',
+    request: null,
+    status: 200,
+    response: 'AutofillTailorTask',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/templates',
+    caller: 'either',
+    scope: 'profile:read',
+    request: null,
+    status: 200,
+    response: 'AutofillTemplateList',
+    accepted: null,
+  },
+  // end v1.4 D
 ] as const satisfies readonly AutofillRoute[];

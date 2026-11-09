@@ -1,0 +1,10 @@
+{
+  "jobDescription": "Fabrikam needs a Site Reliability Engineer who has run Kubernetes in production and written Terraform modules.",
+  "company": "Fabrikam",
+  "title": "Site Reliability Engineer",
+  "postingUrl": "https://careers.fabrikam.example/jobs/sre-2291",
+  "coverLetter": false,
+  "canaries": [
+    "I am LLM"
+  ]
+}

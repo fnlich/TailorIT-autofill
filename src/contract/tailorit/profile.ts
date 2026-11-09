@@ -205,7 +205,15 @@ export const AutofillProfileSchema = z.object({
    * The resume to attach unless the application tracked for the job names its own; null = TailorIT's best match for
    * each job. The extension attaches the lookup's suggestedResume.
    */
-  documents: z.object({ resumeId: z.string().max(64).nullable() }),
+  documents: z.object({
+    resumeId: z.string().max(64).nullable(),
+    // v1.4 D (decision 18): the templates a tailored resume and its cover letter are written on (GET
+    // /api/autofill/templates lists them). null: the source resume's own template; a letter in TailorIT's own layout.
+    // Optional in what is sent: a save without them (an older page or extension) keeps the stored ones.
+    resumeTemplateId: z.string().max(64).nullable().default(null),
+    coverLetterTemplateId: z.string().max(64).nullable().default(null),
+    // end v1.4 D
+  }),
   /**
    * "Anything else we should know?" (version 3): the person's standing note to TailorIT's AI, which reads it beside
    * the profile's facts when it drafts or answers a question as the applicant; '' for none. Not a place for the
@@ -578,7 +586,7 @@ export const EMPTY_AUTOFILL_PROFILE: AutofillProfile = {
     relocationPlaces: [],
   },
   certifications: [],
-  documents: { resumeId: null },
+  documents: { resumeId: null, resumeTemplateId: null, coverLetterTemplateId: null },
   anythingElse: '',
 };
 
