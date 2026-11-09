@@ -3,8 +3,8 @@
  * - a rich-text box (contenteditable, fixtures/synthetic/rich-text) labelled "First name" is scanned as a text field,
  *   planned from the profile and written with the browser's own insert, read back verified;
  * - the page answers its native name box's change with window.alert: the write holds the page's dialogs through the
- *   page-world bridge (dialogs.hold, in the page's own world on Lever's public host), so no dialog is shown, and the
- *   box is verified;
+ *   page patches the worker ran in the page's own world as the run began (dialogs.hold), so no dialog is shown, and
+ *   the box is verified;
  * - nothing is submitted; the hidden box (a honeypot) never gets an event; every trusted event on the page's controls is
  *   the browser's own editing of a rich-text box the run wrote (its focus, its input), and every untrusted one is a
  *   filler's (the native fillers' events, and the one beforeinput offered before each insert).
@@ -27,10 +27,7 @@ test.describe('rich-text boxes and the page\'s dialogs (v5 p2-fill)', () => {
     routeLog.serve({ [URL]: PAGE_FILE });
     const page = await extContext.newPage();
     const dialogs: string[] = [];
-    const consoleLines: string[] = [];
-    page.on('console', (message) => consoleLines.push(message.text()));
     page.on('dialog', (dialog) => {
-      consoleLines.push('DIALOG ' + dialog.message() + ' ' + Date.now());
       dialogs.push(dialog.type());
       void dialog.dismiss();
     });
@@ -42,7 +39,6 @@ test.describe('rich-text boxes and the page\'s dialogs (v5 p2-fill)', () => {
     expect(await page.locator('#preferred').innerText()).toBe('Alex');
     // The page's change listener ran (it counts), and its alert was held: no dialog showed.
     expect(await page.evaluate(() => (window as unknown as { __alerts: number }).__alerts)).toBeGreaterThan(0);
-    console.log(JSON.stringify(consoleLines.filter((line) => /tailorit|DIALOG/.test(line)), null, 1));
     expect(dialogs).toEqual([]);
     // Nothing submitted; the hidden box untouched.
     expect(routeLog.submitted).toEqual([]);
