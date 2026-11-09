@@ -107,11 +107,15 @@ export const ATS_MATCHES = [
 ] as const;
 
 // ── v5 p2-detect: the page-world submit watcher's hosts (entrypoints/submit-watch.content.ts, PLAN decision 14) ──
-/** Where the submit watcher's script is matched (world MAIN, from document_start): Workday's and ClearCompany's
- *  candidate hosts as ATS_MATCHES names them, and no other; it installs only where the page-world bridge would
- *  (adapters/bridge-address.ts) and on those two platforms' pages (dom/submit-net-protocol.ts NET_PLATFORMS). */
+/** Where the submit watcher's script is matched (world MAIN, from document_start): Workday's, ClearCompany's, Oracle
+ *  Recruiting Cloud's and SuccessFactors' candidate hosts as ATS_MATCHES names them, and no other; it installs only
+ *  where the page-world bridge would (adapters/bridge-address.ts) and on those platforms' pages
+ *  (dom/submit-net-protocol.ts NET_PLATFORMS). */
 export const SUBMIT_WATCH_MATCHES = ['https://*.myworkdayjobs.com/*', 'https://*.myworkdaysite.com/*',
-  'https://*.myworkdayjobs-impl.com/*', 'https://*.clearcompany.com/careers/*'] as const;
+  'https://*.myworkdayjobs-impl.com/*', 'https://*.clearcompany.com/careers/*',
+  'https://*.oraclecloud.com/hcmUI/CandidateExperience/*',
+  'https://*.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/*', 'https://*.successfactors.com/*',
+  'https://*.successfactors.eu/*'] as const;
 
 // ── v5 p2-detect: the address variants' own readings (each platform's url.ts reads the same) ──
 /** Pinpoint's posting paths: /<locale>/postings/ (en, de, fr-ca...) or /postings/. */
@@ -199,6 +203,31 @@ export function onAtsMatch(url: string): boolean {
   });
 }
 
+// ── v5 p2-detect: Oracle Recruiting Cloud on a company's own domain (adapters/oracle/url.ts reads the same) ──
+/** Its Candidate Experience's paths: /<prefix>/CandidateExperience/<lang>/sites/<site>/ (Jobright 1.25.2's site
+ *  registry, read as its behaviour; adapters/oracle/url.ts ORACLE_OWN_DOMAIN_PATH). */
+export const ORACLE_OWN_DOMAIN_PATH =
+  /^\/[A-Za-z0-9_-]{1,40}\/CandidateExperience\/[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?\/sites\/[A-Za-z0-9_-]{1,40}\//;
+
+/** Whether a host and path are Oracle's Candidate Experience on a company's own domain: never a static match (no ATS
+ *  host of ours), never Oracle's own domains (their tenants are HOST_PLATFORMS'), LinkedIn's, an employee HR system's
+ *  or a CAPTCHA vendor's: the page the sentinel recognises (dom/page-signals.ts) and the worker injects into, where the
+ *  Oracle adapter then reads it. */
+export function oracleOwnDomain(host: string, path: string): boolean {
+  return host.includes('.') && ORACLE_OWN_DOMAIN_PATH.test(path) && !under(host, ORACLE_REFUSED_DOMAINS)
+    && !isLinkedInHost(host) && !isHrHost(host) && !CAPTCHA_VENDOR_HOST.test(host);
+}
+
+/** The domains no company's own Candidate Experience is read on, written whole (adapters/oracle/url.ts reads the same
+ *  list: src/shared/hosts.test.ts holds them equal): Oracle's own clouds (their tenants are HOST_PLATFORMS'), and every
+ *  domain this file keeps the extension off (LinkedIn's, the employee HR systems', the CAPTCHA vendors'). */
+export const ORACLE_REFUSED_DOMAINS: readonly string[] = ['oraclecloud.com', 'oraclegovcloud.com', 'linkedin.com',
+  'linkedin.cn', 'lnkd.in', 'licdn.com', 'myworkday.com', 'sapsf.com', 'sapsf.eu', 'bamboohr.com', 'clearcompany.com',
+  'dayforcehcm.com', 'ultipro.com', 'ukg.net', 'paylocity.com', 'paycor.com', 'rippling.com', 'hibob.com', 'adp.com',
+  'paycomonline.net', 'careerplug.com', 'google.com', 'recaptcha.net', 'hcaptcha.com', 'cloudflare.com', 'arkoselabs.com',
+  'funcaptcha.com', 'captcha-delivery.com', 'protechts.net', 'geetest.com'];
+// ── end v5 p2-detect ──
+
 /** A match pattern's path as Chrome reads it: each `*` any run of characters, the rest as written, from the start. */
 function globPath(path: string): RegExp {
   const parts = path.split('*').map((part) => part.replace(/[.+?^$|()[\]{}\\]/g, '\\$&'));
@@ -212,7 +241,7 @@ export function platformOfUrl(url: string): Platform | null {
   if (!match) return null;
   const host = match[1]!.toLowerCase();
   const entry = HOST_PLATFORMS.find((each) => each.host.test(host));
-  if (entry === undefined) return null;
+  if (entry === undefined) return oracleOwnDomain(host, (match[2] ?? '').split(/[?#]/, 1)[0]!) ? 'oracle' : null;
   if (entry.paths === undefined && entry.pathPattern === undefined) return entry.platform;
   const path = (match[2] ?? '').split(/[?#]/, 1)[0]!;
   return (entry.paths ?? []).some((prefix) => path.startsWith(prefix)) || entry.pathPattern?.test(path) === true
@@ -264,6 +293,10 @@ export const SENTINEL_FILE = 'sentinel.js';
 /** The content script's bundle (src/entrypoints/content-script.ts, likewise): the manifest's static script on the ATS
  *  hosts, and the one the worker injects into a frame the sentinel recognised. */
 export const CONTENT_SCRIPT_FILE = 'content-script.js';
+/** v5 p2-detect: the page-world submit watcher's bundle (src/entrypoints/submit-watch.content.ts, as WXT writes it): the
+ *  manifest's static script on its hosts, and the one the worker runs in the page's own world of a company's own page
+ *  that shows Oracle's Candidate Experience (background/sites.ts). */
+export const SUBMIT_WATCH_FILE = 'content-scripts/submit-watch.js';
 /** The sentinel's registration's id. */
 export const SITES_REGISTRATION_ID = 'tailorit-sites';
 

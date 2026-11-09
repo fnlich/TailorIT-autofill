@@ -4,7 +4,11 @@
  * - https://<tenant>.applytojob.com/apply/<code>/<slug> is a posting and its application form on one page (all five:
  *   the form posts to its own address); <code> is 10 letters and digits as written, <slug> the posting's title words;
  * - https://<tenant>.applytojob.com/apply/ is the tenant's board ("View All Jobs"): no posting;
- * - no page after submitting is seen, so none is read.
+ * - no page after submitting is in the snapshots; v5 p2-detect (Jobright 1.25.2's record of JazzHR's page after
+ *   submitting, its ats-submission-rules 'jazzhr-application-received', read as its behaviour): /apply/confirm/<code>,
+ *   with no `c` in its query, is it: the confirmation of posting <code>. It names no slug, so its own key is not the
+ *   form's; the worker takes it for the tab's Submit armed on the same tenant's posting <code> in the same frame
+ *   (adapters/address.ts confirmsApplication, as Jobright matches the page to the application it was sent from).
  * The canonical application URL is the address the page itself names canonical (its link rel=canonical and og:url, on
  * the tenant's own host in jazzhr-2 to -4): https, the tenant's host, /apply/<code>/<slug> as written, with no query
  * (Jobright's jr_id came on four of the five) and no fragment.
@@ -32,14 +36,22 @@ export function parseJazzhrUrl(url: URL): ApplicationUrl | null {
   if (!matchesUrl(url)) return null;
   const path = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
   const [apply, code, slug, ...rest] = path.split('/').slice(1);
+  const tenant = url.hostname.slice(0, -'.applytojob.com'.length);
+  // v5 p2-detect: the page after submitting (module header), keyed by the posting it names.
+  if (apply === 'apply' && code === 'confirm' && slug !== undefined && CODE.test(slug) && rest.length === 0
+    && !url.searchParams.has('c')) {
+    return { platform: 'jazzhr', board: tenant, jobId: slug, page: 'confirmation',
+      applicationUrl: `https://${url.hostname}/apply/${slug}` };
+  }
   if (apply !== 'apply' || code === undefined || !CODE.test(code) || slug === undefined || slug === ''
     || rest.length > 0) return null;
-  const tenant = url.hostname.slice(0, -'.applytojob.com'.length);
   return { platform: 'jazzhr', board: tenant, jobId: code, page: 'application',
     applicationUrl: `https://${url.hostname}/apply/${code}/${slug}` };
 }
 
-/** The canonical application URL (every posting page is its form), or null. */
+/** The canonical application URL (every posting page is its form), or null (v5 p2-detect: also on the page after
+ *  submitting). */
 export function canonicalApplicationUrl(url: URL): string | null {
-  return parseJazzhrUrl(url)?.applicationUrl ?? null;
+  const parsed = parseJazzhrUrl(url);
+  return parsed?.page === 'application' ? parsed.applicationUrl : null;
 }

@@ -111,6 +111,33 @@ export function postingAddressOf(url: URL): PostingAddress | null {
   return canonical === null ? null : { platform, page: 'application', applicationUrl: canonical };
 }
 
+// ── v5 p2-detect: a page after submitting that names its posting but not its whole application ──
+/** Whether `confirmationAddress` is the page after submitting of the application at `applicationAddress` (a posting
+ *  or its form), where the confirmation's own address names the posting but not the application's whole canonical
+ *  address (JazzHR's /apply/confirm/<code>: no slug), so its key is not the form's: both read by the same platform's
+ *  parser on the same host, the first a posting or its form, the second its page after submitting, the same board (in
+ *  any case) and the same posting id. As Jobright 1.25.2 matches a confirmation page to the application it was sent
+ *  from (its isAtsSubmissionConfirmationUrl, read as its behaviour). The worker takes such a page for the tab's Submit
+ *  armed in the same frame (background/submissions.ts). */
+export function confirmsApplication(applicationAddress: string, confirmationAddress: string): boolean {
+  let form: URL;
+  let done: URL;
+  try {
+    form = new URL(applicationAddress);
+    done = new URL(confirmationAddress);
+  } catch {
+    return false;
+  }
+  const platform = platformOfUrl(done.href);
+  const parser = platform === null ? undefined : URL_PARSERS[platform];
+  if (parser === undefined || platformOfUrl(form.href) !== platform || form.host !== done.host) return false;
+  const sent = parser(form);
+  const confirmed = parser(done);
+  return sent !== null && confirmed !== null && sent.page !== 'confirmation' && confirmed.page === 'confirmation'
+    && (sent.board ?? '').toLowerCase() === (confirmed.board ?? '').toLowerCase() && sent.jobId === confirmed.jobId;
+}
+// ── end v5 p2-detect ──
+
 // ── snapshot build 2026-11-06 (core pass Z1, items 26 and 39): where the page-world bridge installs ──
 // bridgeInstallsAt, readableAncestors and framedByEmployerPage moved, unchanged in what they answer, to
 // adapters/bridge-address.ts, which reads only the parsers of the platforms on shared domains, so the bridge's bundle holds

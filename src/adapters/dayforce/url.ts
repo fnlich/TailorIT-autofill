@@ -15,7 +15,8 @@
  * The posting page, the other ways to apply and the confirmation are in no snapshot: no address is read as the first
  * two, and every other page of the host (the search, Recommended Jobs) is none. v5 p2-detect (Jobright's record of
  * Dayforce's page after submitting, read as its behaviour, never its code): .../jobs/<id>/apply/success, with or without
- * the locale, is the page after submitting, the confirmation, under the application's key.
+ * the locale, is the page after submitting, the confirmation, under the application's key; and (its
+ * isSameDayforceApplicationUrl) .../jobs/<id> and .../jobs/<id>/apply are the posting's page, under the same key.
  */
 import type { ApplicationUrl } from '../application-key';
 
@@ -37,8 +38,18 @@ export function matchesUrl(url: URL): boolean {
 /** The posting an address shows (see the header), or null on every other page of the host. */
 export function parseDayforceUrl(url: URL): ApplicationUrl | null {
   if (!matchesUrl(url)) return null;
-  const segments = url.pathname.split('/').slice(1);
-  if (segments.length === 7 && LOCALE.test(segments[0]!)) segments.shift();
+  const segments = (url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname).split('/').slice(1);
+  if (LOCALE.test(segments[0] ?? '') && (segments.length === 7 || segments.length === 5
+    || (segments.length === 6 && segments[5] === APPLICATION_TAIL[0]))) segments.shift();
+  // v5 p2-detect (Jobright 1.25.2's isSameDayforceApplicationUrl, read as its behaviour; the owner's word of 2026-11-08):
+  // the posting, .../jobs/<id>, and its way-to-apply choice, .../jobs/<id>/apply, are the posting's page, its key the
+  // application's.
+  if ((segments.length === 4 || (segments.length === 5 && segments[4] === APPLICATION_TAIL[0]))
+    && SEGMENT.test(segments[0]!) && SEGMENT.test(segments[1]!) && segments[2] === 'jobs' && POSTING_ID.test(segments[3]!)) {
+    const [namespace, site, , id] = segments as [string, string, string, string];
+    return { platform: 'dayforce', board: namespace, jobId: id, page: 'posting',
+      applicationUrl: `https://${HOST}/en-US/${namespace}/${site}/jobs/${id}/apply/manualApplication?applicationSource=Manual` };
+  }
   if (segments.length !== 6) return null;
   const [namespace, site, jobs, id, apply, manual] = segments as [string, string, string, string, string, string];
   // v5 p2-detect: apply/success is the page after submitting (module header).

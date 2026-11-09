@@ -34,11 +34,21 @@
  * a#dataPrivacyId ("Read and accept the data privacy statement.", whose dialog no snapshot shows open). The application
  * after the account (its snapshot "Apply for ... (4984)") is posted to /portalcareer?_s.crb=<token>, an address that
  * names no job, so no application is read there (url.ts) and the extension stays dormant on it.
+ * v5 p2-detect (the owner, 2026-11-08: "Jobright is sample, and it works perfectly. you can use it"): the application
+ * form, in no snapshot, as Jobright 1.25.2 reads it (its successfactors-submission-network module, read as its
+ * behaviour): form#careerform holding input#career_ns whose value is job_application is the application ('application'
+ * view: claimed, filled as the generic reading fills it, no auth); its Submit (submitButton) is the page's
+ * span[role=button] whose id ends _submitBtn, else the form's submit control whose value is "apply" (Jobright's
+ * SUCCESSFACTORS_FINAL_SUBMIT_SELECTOR), read only so the person's own click on it arms the "applied" watch (isFinalStep
+ * stays 'unknown': nothing of ours presses it). Its page after submitting (SUCCESSFACTORS_SUCCESS): Jobright's
+ * 'successfactors-application-sent', #jobAppPageTitle's #success_message saying the application was sent, beside the
+ * page's "Jobs applied" button. The application's network sign is the page-world watcher's (page/submit-watch.ts).
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
+import type { SuccessRule } from '../success';
 import type { Adapter, SignInForm, SignInWall } from '../types';
 import { canonicalApplicationUrl, matchesUrl } from './url';
 
@@ -56,7 +66,8 @@ function shown<T extends Element>(elements: readonly T[], cache: ScanCache = new
 
 /** The account view form#careerform shows (fixtures/successfactors/danfoss-sign-in.html: <form id="careerform"
  *  name="careerform" action="/career?_s.crb=..." method="POST">), or null. */
-function viewOf(doc: Document): { form: HTMLFormElement; view: 'sign-in' | 'create-account' | 'forgot' } | null {
+function viewOf(doc: Document): { form: HTMLFormElement;
+  view: 'sign-in' | 'create-account' | 'forgot' | 'application' } | null {
   const form = doc.querySelector<HTMLFormElement>('form#careerform');
   if (form === null || !isUserVisible(form)) return null;
   // danfoss-forgot-password.html: <input type="text" ... id="username" ... name="cEmail">.
@@ -67,8 +78,32 @@ function viewOf(doc: Document): { form: HTMLFormElement; view: 'sign-in' | 'crea
   // type="password" name="password" id="password" ... autocomplete="current-password">.
   if (form.querySelector('input#username[name="username"]') !== null
     && form.querySelector('input#password[type="password"]') !== null) return { form, view: 'sign-in' };
+  // v5 p2-detect: the application (module header): every input#career_ns of the form reads job_application.
+  const kind = Array.from(form.querySelectorAll<HTMLInputElement>('input#career_ns'));
+  if (kind.length > 0 && kind.every((box) => box.value === 'job_application')) return { form, view: 'application' };
   return null;
 }
+
+// ── v5 p2-detect ──
+/** The application's Submit (module header): the page's span[role=button] whose id ends _submitBtn, not
+ *  aria-disabled, else form#careerform's submit control whose value is "apply"; a person must see it. */
+function submitButton(root: Element): HTMLElement | null {
+  const doc = root.ownerDocument;
+  if (viewOf(doc)?.view !== 'application') return null;
+  const cache = newScanCache();
+  return shown(Array.from(doc.querySelectorAll<HTMLElement>('span[role="button"][id$="_submitBtn"]:not([aria-disabled="true"])')),
+    cache) ?? shown(Array.from(doc.querySelectorAll<HTMLElement>(
+    'form#careerform button[type="submit"][value="apply"], form#careerform input[type="submit"][value="apply"]')), cache);
+}
+
+/** The page after submitting (module header): Jobright 1.25.2's rule 'successfactors-application-sent', read as its
+ *  behaviour (fixtures/synthetic/success/successfactors.html). */
+export const SUCCESSFACTORS_SUCCESS: readonly SuccessRule[] = [
+  { css: '#jobAppPageTitle > #success_message', text: /^Your application has been sent\. Thank you!$/,
+    companion: { css: 'button#fbja_jobsApplied', text: /\S/, scope: '#jobAppPageTitle' },
+    from: "Jobright 1.25.2 ats-submission-rules 'successfactors-application-sent'" },
+];
+// ── end v5 p2-detect ──
 
 function detect(doc: Document): { formRoot: Element } | null {
   const view = viewOf(doc);
@@ -87,7 +122,8 @@ function entryControl(doc: Document): HTMLElement | null {
 
 function authState(doc: Document): ReturnType<NonNullable<Adapter['authState']>> {
   const view = viewOf(doc);
-  return view === null ? null : view.view === 'forgot' ? 'forgot-password' : view.view;
+  // v5 p2-detect: the application is filled like a step, no account view.
+  return view === null || view.view === 'application' ? null : view.view === 'forgot' ? 'forgot-password' : view.view;
 }
 
 /** A button's own words, white space collapsed, in lower case. */
@@ -157,6 +193,8 @@ export const successFactorsAdapter: Adapter = {
   neverPress,
   errors,
   isFinalStep: () => 'unknown',
+  // v5 p2-detect: read so the person's own click arms the "applied" watch (module header).
+  submitButton,
   entryControl,
   // Apply is never pressed by a run (neverPress): the entry door presses that element alone.
   entryNeverPressed: true,

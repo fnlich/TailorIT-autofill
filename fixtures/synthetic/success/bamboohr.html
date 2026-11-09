@@ -1,0 +1,19 @@
+<!doctype html>
+<!--
+  Synthetic (v5 p2-detect): BambooHR's page after submitting, in no snapshot, drawn from Jobright 1.25.2's rule
+  'bamboohr-confirmation' (its ats-submission-rules, read as its behaviour; src/adapters/bamboohr/config.ts success): a
+  "Thank You" heading above a paragraph saying the application was submitted, in one block (#done); and decoys
+  (#decoy-alone: the words with no heading beside them; #decoy-heading: the heading beside other words). Nothing here
+  is any person's.
+-->
+<html lang="en">
+<head><meta charset="utf-8"><title>BambooHR</title>
+<style>body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; } [hidden] { display: none; }</style></head>
+<body>
+  <main>
+    <div id="done"><h3>Thank You</h3><p>Your application was submitted successfully!</p></div>
+    <div id="decoy-alone"><p>Your application was submitted successfully.</p></div>
+    <div id="decoy-heading"><h3>Thank You</h3><p>Your application was saved as a draft.</p></div>
+  </main>
+</body>
+</html>

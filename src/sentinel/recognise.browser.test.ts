@@ -87,3 +87,21 @@ describe("the sentinel's recognition", () => {
     expect(await at(ordinaryHtml, 'https://www.fixture-shop.example/')).toBeNull();
   });
 });
+
+// ── v5 p2-detect: Oracle's Candidate Experience on a company's own domain (the owner's word of 2026-11-08) ──
+describe("Oracle's Candidate Experience on a company's own domain (v5 p2-detect)", () => {
+  it("recognises it by its address alone, as a career-site platform's page, before anything is drawn", async () => {
+    expect(await at(ordinaryHtml, 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345'))
+      .toBe('platform');
+    expect(await at(ordinaryHtml, 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345/apply'))
+      .toBe('platform');
+    // Not on LinkedIn, an HR system or Oracle's own clouds (the static script's there), nor any other path.
+    for (const href of ['https://www.linkedin.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1',
+      'https://acme.paylocity.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1',
+      'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1',
+      'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites']) {
+      expect(await at(ordinaryHtml, href), href).toBeNull();
+    }
+  });
+});
+// ── end v5 p2-detect ──

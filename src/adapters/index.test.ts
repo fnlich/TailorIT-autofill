@@ -194,3 +194,17 @@ describe("a company page's address to TailorIT (the Phase 8 review, P3)", () => 
     }
   });
 });
+
+// ── v5 p2-detect ──
+describe("adaptersFor on Oracle's Candidate Experience on a company's own domain (v5 p2-detect)", () => {
+  it("gives the Oracle adapter (then the generic one), not the site adapter, and reads its application as Oracle's", () => {
+    const own = new URL('https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345/apply/section/1');
+    expect(adaptersFor(own).map((adapter) => adapter.id).filter((id) => !id.startsWith('tailorit-e2e')))
+      .toEqual(['oracle', 'generic']);
+    expect(applicationOf(own)).toMatchObject({ platform: 'oracle', page: 'application',
+      applicationUrl: 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345' });
+    expect(adaptersFor(new URL('https://careers.acme-corp.example/jobs/1')).map((adapter) => adapter.id)
+      .filter((id) => !id.startsWith('tailorit-e2e'))).toEqual(['site']);
+  });
+});
+// ── end v5 p2-detect ──

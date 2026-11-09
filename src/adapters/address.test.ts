@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  bridgeInstallsAt, framedByEmployerPage, postingAddressOf, readableAncestors, showsPostingOrForm,
+  bridgeInstallsAt, confirmsApplication, framedByEmployerPage, postingAddressOf, readableAncestors, showsPostingOrForm,
 } from './address';
 
 describe('bridgeInstallsAt', () => {
@@ -175,3 +175,26 @@ describe('a frame below an employer’s own page (the audit of 2026-11-06, S-9)'
     expect(framedByEmployerPage(posting, [posting])).toBe(false);
   });
 });
+
+// ── v5 p2-detect ──
+describe('confirmsApplication (v5 p2-detect: a page after submitting keyed by its posting alone)', () => {
+  const FORM = 'https://invaluable.applytojob.com/apply/bopFMbElHx/Senior-Backend-Engineer';
+  it("reads JazzHR's /apply/confirm/<code> as the page after submitting of that posting's form on the same tenant", () => {
+    expect(confirmsApplication(FORM, 'https://invaluable.applytojob.com/apply/confirm/bopFMbElHx')).toBe(true);
+    expect(confirmsApplication('https://Invaluable.applytojob.com/apply/bopFMbElHx/x',
+      'https://invaluable.applytojob.com/apply/confirm/bopFMbElHx')).toBe(true);
+    for (const [form, page] of [[FORM, 'https://invaluable.applytojob.com/apply/confirm/Harslv6cNi'],
+      [FORM, 'https://other.applytojob.com/apply/confirm/bopFMbElHx'],
+      [FORM, 'https://invaluable.applytojob.com/apply/confirm/bopFMbElHx?c=1'], [FORM, FORM],
+      ['https://invaluable.applytojob.com/apply/confirm/bopFMbElHx', 'https://invaluable.applytojob.com/apply/confirm/bopFMbElHx'],
+      ['https://jobs.lever.co/acme/2a55d6c9-c564-443a-be3e-a3851db5a93b/apply',
+        'https://jobs.lever.co/acme/2a55d6c9-c564-443a-be3e-a3851db5a93b/thanks'].reverse(),
+      [FORM, 'not an address'], ['', 'https://invaluable.applytojob.com/apply/confirm/bopFMbElHx']]) {
+      expect(confirmsApplication(form!, page!), `${form} -> ${page}`).toBe(false);
+    }
+    // Another platform's page after submitting under its own key needs none of it, and fits too where it names the same.
+    expect(confirmsApplication('https://jobs.lever.co/acme/2a55d6c9-c564-443a-be3e-a3851db5a93b/apply',
+      'https://jobs.lever.co/acme/2a55d6c9-c564-443a-be3e-a3851db5a93b/thanks')).toBe(true);
+  });
+});
+// ── end v5 p2-detect ──

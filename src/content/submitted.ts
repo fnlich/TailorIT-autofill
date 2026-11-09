@@ -49,6 +49,9 @@ import type { Platform } from '../core/enums';
 import { newScanCache } from '../dom/scan-cache';
 // ── v5 p2-detect ──
 import { isNetPlatform, NET_SEQUENCES, parseNetSign, SUBMIT_NET_EVENT } from '../dom/submit-net-protocol';
+import { successSignsOf } from '../adapters/success';
+import { SUCCESSFACTORS_SUCCESS } from '../adapters/successfactors';
+import { WORKDAY_SUCCESS } from '../adapters/workday';
 // ── end v5 p2-detect ──
 import { isUserVisible } from '../dom/visibility';
 
@@ -88,6 +91,9 @@ export function signsOf(doc: Document, platform: Platform): Element[] {
   if (platform === 'icims') {
     return icimsSubmitted(doc) ? [...doc.querySelectorAll('.iCIMS_Message.iCIMS_SuccessMessage')] : [];
   }
+  // ── v5 p2-detect: Workday's and SuccessFactors' pages after submitting (adapters/success.ts rules, Jobright's) ──
+  if (platform === 'workday') return successSignsOf(doc, WORKDAY_SUCCESS);
+  if (platform === 'successfactors') return successSignsOf(doc, SUCCESSFACTORS_SUCCESS);
   // DESIGN-NEW-ATS Phase 0: a configured platform's own sign (AtsConfig.success).
   return configuredSuccessSigns(doc, ATS_CONFIGS[platform]);
 }

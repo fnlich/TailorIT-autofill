@@ -191,3 +191,47 @@ describe('a network sign: only from the frame and document that armed the Submit
   });
 });
 // ── end v5 p2-detect ──
+
+// ── v5 p2-detect: a page after submitting that names its posting but not the whole application (JazzHR's) ──
+describe("a confirmation page keyed by its posting alone, as Jobright matches it (v5 p2-detect: JazzHR's /apply/confirm)", () => {
+  const FORM = 'https://invaluable.applytojob.com/apply/bopFMbElHx/Senior-Backend-Engineer';
+  const CONFIRM = 'https://invaluable.applytojob.com/apply/confirm/bopFMbElHx';
+  const formKey = applicationOf(new URL(FORM))!.applicationKey;
+  const confirmKey = applicationOf(new URL(CONFIRM))!.applicationKey;
+  const at = (url: string, more: Record<string, unknown> = {}) => contentSender({ url, tab: { id: 7, url }, ...more });
+
+  async function armed(): Promise<TestWorker> {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    worker.tailorit.reply('POST /api/autofill/applied', { json: goldens.lookup });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, at(FORM));
+    expect(await worker.deliver({ v: 1, type: 'submit/armed', applicationKey: formKey, by: 'page' }, at(FORM)))
+      .toEqual({ ok: true, data: {} });
+    return worker;
+  }
+  const confirmed = (worker: TestWorker, sender = at(CONFIRM, { documentId: 'doc-2' })) => worker.deliver({ v: 1,
+    type: 'submit/detected', applicationKey: confirmKey, evidence: 'confirmation-page' }, sender);
+
+  it("takes the confirmation for the tab's Submit armed in the same frame on the same posting", async () => {
+    expect(confirmKey).not.toBe(formKey);
+    const worker = await armed();
+    expect(await confirmed(worker)).toEqual({ ok: true, data: {} });
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(1);
+    // Once.
+    expect(await confirmed(worker)).toEqual({ ok: false, error: 'expired' });
+  });
+
+  it('refuses one from another frame, for another posting, a success message by that key, or past the minute', async () => {
+    const worker = await armed();
+    expect(await confirmed(worker, at(CONFIRM, { frameId: 2, documentId: 'doc-3' }))).toEqual({ ok: false, error: 'expired' });
+    const other = 'https://invaluable.applytojob.com/apply/confirm/Harslv6cNi';
+    expect(await worker.deliver({ v: 1, type: 'submit/detected', applicationKey: applicationOf(new URL(other))!.applicationKey,
+      evidence: 'confirmation-page' }, at(other, { documentId: 'doc-2' }))).toEqual({ ok: false, error: 'expired' });
+    expect(await worker.deliver({ v: 1, type: 'submit/detected', applicationKey: confirmKey, evidence: 'success-message' },
+      at(CONFIRM, { documentId: 'doc-2' }))).toEqual({ ok: false, error: 'expired' });
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
+    worker.clock.now += 61_000;
+    expect(await confirmed(worker)).toEqual({ ok: false, error: 'expired' });
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
+  });
+});
+// ── end v5 p2-detect ──

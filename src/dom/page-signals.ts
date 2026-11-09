@@ -21,7 +21,7 @@
  * - An embedded applicant-tracking system (an ATS's frame or its loader): its own frame serves the form, so the page
  *   around it claims none (B3). A payment frame (a card's fields, served by a payment provider) rules the page out (P5).
  */
-import { careerSiteOf, onAtsMatch } from '../shared/hosts';
+import { careerSiteOf, onAtsMatch, oracleOwnDomain } from '../shared/hosts';
 
 /** The query parameters an ATS embed's host page carries; gh_jid and ashby_jid name the posting itself. */
 export const ATS_PARAMS = ['gh_jid', 'ashby_jid', 'gh_src', 'LeverAppId'] as const;
@@ -166,6 +166,9 @@ export type JobSignal = 'career-site' | 'platform' | 'job-posting';
  *  JobPosting in its JSON-LD; or null. */
 export function jobSignalOf(doc: Document, url: URL): JobSignal | null {
   if (careerSiteOf(url.href) !== null) return 'career-site';
+  // v5 p2-detect: Oracle Recruiting Cloud's Candidate Experience on a company's own domain, by its address (shared/
+  // hosts.ts oracleOwnDomain; platformOfUrl names it Oracle's, the worker injects, and the Oracle adapter reads it).
+  if (oracleOwnDomain(url.hostname.toLowerCase(), url.pathname)) return 'platform';
   if (platformFingerprint(doc)) return 'platform';
   if (jobPosting(doc)) return 'job-posting';
   return null;

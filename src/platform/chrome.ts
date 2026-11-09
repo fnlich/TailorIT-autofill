@@ -293,9 +293,9 @@ function sitesScripting(): SitesScripting {
     async unregister(ids) {
       if (ids.length > 0) await scripting().unregisterContentScripts({ ids: [...ids] });
     },
-    async inject(tabId, target, file) {
+    async inject(tabId, target, file, world) {
       await scripting().executeScript({ target: target.documentId === undefined ? { tabId, frameIds: [target.frameId] }
-        : { tabId, documentIds: [target.documentId] }, files: [file] });
+        : { tabId, documentIds: [target.documentId] }, files: [file], ...(world === undefined ? {} : { world }) });
     },
     // v5 p1-shell: a function in the top frame that reads its own address; Chrome's answer names its document.
     async topDocument(tabId) {

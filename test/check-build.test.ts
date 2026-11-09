@@ -89,13 +89,17 @@ const BRIDGE_SCRIPT = { all_frames: true, run_at: 'document_start', js: ['conten
 /** v5 p2-detect: the page-world submit watcher's entry, as WXT writes it (src/entrypoints/submit-watch.content.ts). */
 const WATCH_SCRIPT = { all_frames: true, run_at: 'document_start', js: ['content-scripts/submit-watch.js'], world: 'MAIN' };
 /** v5 p2-detect: a watcher bundle as the real one behaves: it wraps fetch and XMLHttpRequest's open and send at a
- *  Workday or ClearCompany posting or form (check-build's own addresses), and nowhere else. */
+ *  Workday, ClearCompany or Oracle posting or form (check-build's own addresses), SuccessFactors' applyJob proxy at a
+ *  career site's form, and nothing elsewhere; it reads no body and tells nothing. */
 const WATCH_AT = 'var h=String(document.location&&document.location.href||"");'
-  + 'if(/myworkdayjobs(?:-impl)?\\.com\\/|\\/job\\/Remote\\/Engineer_JR-1|\\/careers\\/jobs\\/[0-9a-f-]+\\/apply/.test(h))';
+  + 'if(/myworkdayjobs(?:-impl)?\\.com\\/|\\/job\\/Remote\\/Engineer_JR-1|\\/careers\\/jobs\\/[0-9a-f-]+\\/apply'
+  + '|\\/CandidateExperience\\/.*\\/apply\\//.test(h))';
 const WATCH_WRAP = '{var f=window.fetch;window.fetch=function(){return f.apply(this,arguments)};'
   + 'var p=window.XMLHttpRequest.prototype,o=p.open,s=p.send;p.open=function(){return o.apply(this,arguments)};'
   + 'p.send=function(){return s.apply(this,arguments)}}';
-const WATCH_BUNDLE = `(function(){${WATCH_AT}${WATCH_WRAP}})();`;
+const WATCH_PROXY = 'if(/successfactors\\.eu\\/career\\?/.test(h)){var x=window.rcmHybridJobApplicationControllerASProxy,'
+  + 'a=x.applyJob;x.applyJob=function(){return a.apply(this,arguments)}}';
+const WATCH_BUNDLE = `(function(){${WATCH_AT}${WATCH_WRAP}${WATCH_PROXY}})();`;
 
 const folders: string[] = [];
 
@@ -379,31 +383,45 @@ describe("check-build's three content scripts: ours, the page-world bridge and (
     }
   });
 
-  it('fail a submit watcher over its 24 KiB budget, or one that reads a body, adds a global or a listener, or wraps elsewise (v5 p2-detect)', () => {
+  it('fail a submit watcher over its 28 KiB budget, or one that reads a body, adds a global or a listener, or wraps elsewise (v5 p2-detect)', () => {
     const big = checkBuild(project((write) => {
-      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/submit-watch.js`, `var big="${'a'.repeat(24 * 1024)}";`);
+      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/submit-watch.js`, `var big="${'a'.repeat(28 * 1024)}";`);
     }));
     expect(big.output).toContain('.output/chrome-mv3: the submit watcher is');
-    expect(big.output).toContain('over the 24576-byte budget');
+    expect(big.output).toContain('over the 28672-byte budget');
     expect(big.status).toBe(1);
 
     const installs = 'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote/Engineer_JR-1/apply/applyManually';
-    const wrap = `${WATCH_AT}${WATCH_WRAP}`;
+    const clearCompany = 'https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply';
+    const wrap = `${WATCH_AT}${WATCH_WRAP}${WATCH_PROXY}`;
+    const xhr = 'var p=window.XMLHttpRequest.prototype,o=p.open,s=p.send;p.open=function(){return o.apply(this,arguments)};'
+      + 'p.send=function(){return s.apply(this,arguments)}';
+    // A watcher that reads every answer's body, or tells more than a sign (a field of the answer beside it).
+    const reading = `${WATCH_AT}{var f=window.fetch;window.fetch=function(){var q=f.apply(this,arguments);`
+      + `q.then(function(r){r.clone()});return q};${xhr}}${WATCH_PROXY}`;
+    const detail = JSON.stringify({ v: 1, sign: 'workday-finalize', name: 'A Person' });
+    const telling = `${WATCH_AT}{var f=window.fetch;window.fetch=function(){var q=f.apply(this,arguments);`
+      + `q.then(function(){document.dispatchEvent(new window.CustomEvent("tailorit:submit-net",{detail:${JSON.stringify(detail)}}))});`
+      + `return q};${xhr}}${WATCH_PROXY}`;
     const cases: Array<[string, string]> = [
       [`var watch=(function(){${wrap}})();`, 'the submit watcher is not one anonymous function called at once'],
       [`var watch=(function(){${wrap}})();`, 'the submit watcher adds globals: watch'],
       [`(function(){globalThis.__tailorit=1;${wrap}})();`, 'the submit watcher adds globals: __tailorit'],
       [`(function(){chrome.runtime;${wrap}})();`, 'the submit watcher names "chrome."'],
-      [`(function(){var r;r&&r.clone();${wrap}})();`, 'the submit watcher names ".clone("'],
       [`(function(){var r;r&&r.json();${wrap}})();`, 'the submit watcher names ".json("'],
-      [`(function(){var r;r&&r.body;${wrap}})();`, 'the submit watcher names ".body"'],
-      [`(function(){var r;r&&r.responseText;${wrap}})();`, 'the submit watcher names "responseText"'],
+      [`(function(){var r;r&&r.getReader();${wrap}})();`, 'the submit watcher names "getReader"'],
       [`(function(){var r;r&&r.headers;${wrap}})();`, 'the submit watcher names ".headers"'],
+      [`(function(){var r;r&&r.getAllResponseHeaders();${wrap}})();`, 'the submit watcher names "getAllResponseHeaders"'],
+      // The owner's word of 2026-11-08: a body read where the sign needs it, never where it does not (ClearCompany's).
+      [`(function(){${reading}})();`, `the submit watcher reads a body at ${clearCompany}`],
+      [`(function(){${telling}})();`, `the submit watcher dispatches ${JSON.stringify([detail])} at ${installs}, more than a sign`],
+      [`(function(){${WATCH_AT}${WATCH_WRAP}})();`,
+        'the submit watcher does not wrap applyJob at https://career2.successfactors.eu/career?company=danfossas'],
       [`(function(){document.addEventListener("tailorit:submit-net",()=>{});${wrap}})();`,
         `the submit watcher listens for ["tailorit:submit-net"] at ${installs}`],
       ['(function(){})();', `the submit watcher does not wrap fetch and XMLHttpRequest at ${installs}`],
       [`(function(){${WATCH_WRAP}})();`,
-        'the submit watcher wraps fetch and XMLHttpRequest at https://wd5.myworkdaysite.com/recruiting/acme/External'],
+        'the submit watcher wraps fetch and XMLHttpRequest at https://career2.successfactors.eu/career?company=danfossas'],
       ['(function(){window.fetch=function(){}})();', `the submit watcher does not wrap fetch and XMLHttpRequest at ${installs}`],
     ];
     for (const [bundle, message] of cases) {
@@ -436,13 +454,13 @@ describe("check-build's three content scripts: ours, the page-world bridge and (
   });
 
   // (The snapshot build of 2026-11-06, core pass Z1 items 26 and 39: the bridge reads only the shared domains' address
-  // parsers, under a budget of 24 KiB.)
-  it("fail a page-world bridge over its 24 KiB budget, or one whose file is missing", () => {
+  // parsers, under a budget of 24 KiB; v5 p2-detect: 26 KiB, for the address variants its parsers read.)
+  it("fail a page-world bridge over its 26 KiB budget, or one whose file is missing", () => {
     const big = checkBuild(project((write) => {
-      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(24 * 1024)}";`);
+      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(26 * 1024)}";`);
     }));
     expect(big.output).toContain('.output/chrome-mv3: the page-world bridge is');
-    expect(big.output).toContain('over the 24576-byte budget');
+    expect(big.output).toContain('over the 26624-byte budget');
     expect(big.status).toBe(1);
 
     const missing = checkBuild(project((write) => everyManifest(write, (changed) => {
@@ -577,7 +595,8 @@ describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel an
 
   it('fail a sentinel that is missing, listed in the manifest, over its budget, or that names React, zod or a DOM write', () => {
     const cases: Array<[string, string]> = [
-      [`var big="${'a'.repeat(18 * 1024)}";`, 'the sentinel is 18443 bytes, over the 18432-byte budget'],
+      // v5 p2-detect: 19 KiB (Oracle's Candidate Experience on a company's own domain, recognised by its address).
+      [`var big="${'a'.repeat(19 * 1024)}";`, 'the sentinel is 19467 bytes, over the 19456-byte budget'],
       ['(function(){document.body.appendChild(document.createElement("div"))})();', 'the sentinel names "createElement"'],
       ['(function(){e.innerHTML="x"})();', 'the sentinel names "innerHTML"'],
       ['(function(){e.setAttribute("x","y")})();', 'the sentinel names "setAttribute"'],

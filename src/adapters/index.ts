@@ -97,9 +97,12 @@ const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = {
  *  recognised it, gets the site adapter alone, which claims a page by the application-form score. */
 export function adaptersFor(url: URL): Adapter[] {
   const platform = platformOfUrl(url.href);
-  if (siteAdapter.matchesUrl(url)) return __E2E__ ? [...e2eAdaptersFor(url), siteAdapter] : [siteAdapter];
   const own = platform === null ? undefined : PLATFORM_ADAPTERS[platform];
-  const candidates = own !== undefined && own.matchesUrl(url) ? [own, genericAdapter] : [genericAdapter];
+  // v5 p2-detect: a platform's own pages on a company's own domain (Oracle's Candidate Experience: shared/hosts.ts
+  // platformOfUrl) are that platform's adapter's, the page the sentinel recognised and the worker injected into.
+  const ownHere = own !== undefined && own.matchesUrl(url);
+  if (!ownHere && siteAdapter.matchesUrl(url)) return __E2E__ ? [...e2eAdaptersFor(url), siteAdapter] : [siteAdapter];
+  const candidates = ownHere ? [own, genericAdapter] : [genericAdapter];
   return __E2E__ ? [...e2eAdaptersFor(url), ...candidates] : candidates;
 }
 
