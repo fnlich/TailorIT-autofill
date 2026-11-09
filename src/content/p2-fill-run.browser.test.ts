@@ -136,6 +136,9 @@ function parseOnUpload(doc: Document, view: Window & typeof globalThis): string[
   doc.addEventListener('input', (event) => {
     const target = event.target as HTMLInputElement;
     if (target === firstName && target.value !== 'Parsed') seen.push('first-name');
+    // Any other box the run writes, a custom question's AI answer among them (v5 p2-stream's one round: answers land in
+    // passes after the résumé's).
+    else if (target !== firstName && target.type !== 'file') seen.push('write');
   }, true);
   const input = doc.querySelector<HTMLInputElement>('input[data-testid="input-resume"]')!;
   input.addEventListener('change', () => {
@@ -167,6 +170,8 @@ describe('the résumé first where the page parses it (quirks.resumeParse)', () 
     const { rows } = await run(fixture.doc, (await import('../adapters')).adaptersFor(new URL(href)), href);
     expect(seen[0]).toBe('resume');
     expect(seen.indexOf('parsed')).toBeLessThan(seen.indexOf('first-name'));
+    // Nothing else was written under the parse either: every other write came after it.
+    expect(seen.slice(0, seen.indexOf('parsed'))).toEqual(['resume']);
     const first = rows.find((row) => row.category === 'identity.firstName');
     expect(first).toMatchObject({ wrote: true, verification: 'verified' });
   }, 60_000);
