@@ -4,12 +4,15 @@
  * box, a model-keeping editor that cancels every beforeinput and draws itself from its own model (as ProseMirror,
  * Lexical, Slate and Draft do), a one-line plaintext-only box, a box that ignores every write, one inside an open shadow
  * root; and what is no field: a hidden box (a honeypot, only counted), contenteditable="false", an editable element
- * inside another box's editing, and the extension's own UI.
+ * inside another box's editing, and the extension's own UI. v5 p2-fill review (L6): an editor that takes its selection
+ * from the document's selectionchange, on a later task (as Lexical does), replaces its text once selectEditable has
+ * let it see the selection; at once, it would insert at the caret it last saw.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import pageHtml from '../../fixtures/synthetic/rich-text/index.html?raw';
 import { loadFixture, logEvents, removeFixtures, type Fixture } from './fixture.testkit';
 import { fill, verifyAfterSettle } from './fillers';
+import { selectEditable } from './fillers/text';
 import { domGuardBeforeWrite } from './guard';
 import { isEditingHost } from './kinds';
 import { scan } from './scan';
@@ -32,6 +35,28 @@ function targetOf(fixture: Fixture, label: string): FieldTarget {
   const field = result.fields.find((candidate) => candidate.label === label);
   if (field === undefined) throw new Error(`no field ${label}`);
   return result.target(field.key)!;
+}
+
+/** v5 p2-fill review (L6): an editor that keeps its own selection, synced from the document's selectionchange on a
+ *  later task (as Lexical schedules it), and takes every insert itself: over its whole text where its selection says
+ *  so, else at its caret, the end. */
+function laggingEditor(fixture: Fixture, box: HTMLElement): void {
+  let all = false;
+  fixture.doc.addEventListener('selectionchange', () => {
+    const selection = fixture.view.getSelection();
+    const now = selection !== null && selection.rangeCount === 1 && box.textContent !== ''
+      && selection.getRangeAt(0).toString() === box.textContent;
+    fixture.view.setTimeout(() => {
+      all = now;
+    }, 0);
+  });
+  box.addEventListener('beforeinput', (event) => {
+    event.preventDefault();
+    const data = (event as InputEvent).data ?? '';
+    if ((event as InputEvent).inputType !== 'insertText') return;
+    box.textContent = all ? data : `${box.textContent ?? ''}${data}`;
+    all = false;
+  });
 }
 
 function write(fixture: Fixture, label: string, text: string) {
@@ -135,6 +160,26 @@ describe('rich-text boxes: the write', () => {
     const verdict = domGuardBeforeWrite(fresh, { key: field.key, baseKey: field.baseKey, label: field.label,
       kind: field.kind });
     expect(verdict.ok).toBe(true);
+  });
+
+  // v5 p2-fill review (L6)
+  it('lets an editor that syncs its selection on selectionchange see it before the insert (selectEditable)', async () => {
+    const fixture = await loadFixture(document, pageHtml);
+    const box = fixture.doc.getElementById('letter')!;
+    laggingEditor(fixture, box);
+    const target = targetOf(fixture, 'Cover letter');
+    await selectEditable(box);
+    expect(fill(target, { kind: 'text', text: 'New words' }, { adapter: null, root: rootOf(fixture) }))
+      .toMatchObject({ wrote: true, verification: 'verified' });
+    expect(editableText(box)).toBe('New words');
+  });
+
+  it('at once, the same editor inserts at the caret it last saw (why the run waits: undo proof)', async () => {
+    const fixture = await loadFixture(document, pageHtml);
+    const box = fixture.doc.getElementById('letter')!;
+    laggingEditor(fixture, box);
+    expect(write(fixture, 'Cover letter', 'New words')).toMatchObject({ verification: 'mismatch' });
+    expect(editableText(box)).toBe('Old textNew words');
   });
 
   it('never touches another box: the selection is the written box\'s own content alone', async () => {

@@ -5,6 +5,7 @@
  * it, not even a listener. Installed, they keep one capture listener on the document for their command
  * (dom/patch-protocol.ts) and patch nothing until a write asks:
  * - dialogs.hold / dialogs.release: the page's alert and confirm held through one write (page/dialogs.ts);
+ *   dialogs.hold-alerts: its alert alone, through a wait (v5 p2-fill review, security 4);
  * - picker.arm / picker.disarm: the page's own file picker armed for one press of a résumé control (page/picker.ts).
  * A second run of the bundle in the same document finds the first listener answering and adds none (a command the
  * page itself answered is no install of ours: the patches are then simply not there, and every write goes on without
@@ -42,8 +43,9 @@ export function installPatches(doc: Document): () => void {
     try {
       switch (command.op) {
         case 'dialogs.hold':
+        case 'dialogs.hold-alerts':
           dialogs ??= dialogHold(view);
-          dialogs.hold();
+          dialogs.hold(command.op === 'dialogs.hold-alerts');
           outcome = { ok: true, reason: 'ok' };
           break;
         case 'dialogs.release':

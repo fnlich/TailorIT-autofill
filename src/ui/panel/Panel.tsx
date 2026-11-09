@@ -632,6 +632,12 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
           {offersFill && tabId !== null && (
             <MainButton tabId={tabId} meaning={meaning} working={busy || working} clock={seenClock} onRun={start} />
           )}
+          {/* v5 p2-fill review (L5): the posting's own Apply could not be pressed: why, in one line. */}
+          {tabId !== null && page?.support === 'no-form' && page.entryRefused === true && (
+            <p className="tia-strip" data-strip="entry-refused" data-tone="warning" role="status">
+              {COPY.mainView.openApplicationRefused}
+            </p>
+          )}
           {tabId !== null && page?.support !== 'none' && (
             <AskQuestion key={viewKey} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
               connected={connection !== undefined && connection !== null} aiOff={aiOff === true}

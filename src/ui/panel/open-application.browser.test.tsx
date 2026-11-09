@@ -40,6 +40,26 @@ describe('Open Application on a posting page (v5 p2-fill)', () => {
     expect(worker.sentOfType('panel/fill')).toEqual([{ v: 1, type: 'panel/fill', tabId: 5, dryRun: false }]);
   });
 
+  // v5 p2-fill review (L5)
+  it('says why when the site\'s Apply could not be pressed, in one line', async () => {
+    const worker = createFakeWorker();
+    worker.script.pages.set(5, { ...posting, entry: true });
+    const root = await open(worker);
+    expect(root.querySelector('[data-strip="entry-refused"]')).toBeNull();
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [],
+      page: { ...posting, entry: true, entryRefused: true } }));
+    await settle();
+    expect(root.querySelector('[data-strip="entry-refused"]')?.textContent).toBe(COPY.mainView.openApplicationRefused);
+    // The Apply gone from the page: the line stays, beside the strip that says there is no form.
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [],
+      page: { ...posting, entryRefused: true } }));
+    await settle();
+    expect(root.querySelector('[data-strip="entry-refused"]')).not.toBeNull();
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [], page: { ...posting, entry: true } }));
+    await settle();
+    expect(root.querySelector('[data-strip="entry-refused"]')).toBeNull();
+  });
+
   it('waits CONTROL_SEEN_MS before its click counts, as every main button does', async () => {
     const worker = createFakeWorker();
     worker.script.pages.set(5, { ...posting, entry: true });

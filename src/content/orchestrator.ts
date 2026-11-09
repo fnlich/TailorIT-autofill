@@ -193,6 +193,9 @@ import { scan, toFieldSpec } from '../dom/scan';
 import { deadline, monotonicNow } from '../dom/time';
 import type { FieldTarget, ScannedField, ScanResult, WidgetReading } from '../dom/types';
 import { visibleTextWithout } from '../dom/visible-text';
+import { isEditingHost } from '../dom/kinds';
+import { editableHidesText } from '../dom/values';
+import type { HeldDialogs } from '../dom/patch-protocol';
 import { isUserVisible } from '../dom/visibility';
 import { learnable, learnedListKey, staleLearned } from '../dom/widgets';
 import { storedListsWanted, type StoredListId } from '../shared/learned-lists';
@@ -244,7 +247,9 @@ export class RunFailure extends Error {
 export const RUN_ENDS = ['review', 'waiting', 'stopped', 'paused', 'error', 'aborted'] as const;
 
 /** What an Edit with AI came to (v3 Phase 3b; FillRun.rewrite). */
-export type RewriteOutcome = 'rewritten' | 'sensitive' | 'unchanged' | 'refused' | 'failed';
+export type RewriteOutcome = 'rewritten' | 'sensitive' | 'unchanged' | 'refused' | 'failed'
+  // v5 p2-fill review (security 3): a rich-text box holding text a person cannot see is never rewritten.
+  | 'hidden';
 export type RunEnd = (typeof RUN_ENDS)[number];
 
 /** What a run started with. */
@@ -692,6 +697,9 @@ export class FillRun {
   private readonly aiEditable = new Set<BaseKey>();
   /** The field whose Edit with AI is on its way (one at a time). */
   private rewriting: FieldKey | null = null;
+  /** v5 p2-fill review (security 4): what this run's holds of the page's dialogs held back, counts only (never words):
+   *  the page's toast says so. */
+  private heldDialogs: HeldDialogs = { alerts: 0, confirms: 0 };
   /** The AI's answers this run keeps when the document keeps none (RunEnv.answers). */
   private readonly ownAnswers = new Map<BaseKey, HeldAnswer>();
   /** The fields the person edited after the run left them flagged (their rows say userEdited), by base key. */
@@ -1008,6 +1016,16 @@ export class FillRun {
       || (field.kind !== 'text' && field.kind !== 'textarea')) return refused({ field: false });
     const spec = toFieldSpec(field);
     if (!checkHoneypot(spec).ok) return refused({ honeypot: true });
+    // v5 p2-fill review (security 3): a rich-text box whose text a person cannot all see (off-screen, clipped,
+    // see-through or tiny text in it: its innerText and its visible reading differ beyond white space) is never
+    // rewritten: nothing is sent, and its row is flagged so the review says why (dom/values.ts editableHidesText).
+    const control = fresh.target(field.key)?.control;
+    if (control !== undefined && isEditingHost(control) && editableHidesText(control)) {
+      const row = this.rows.find((candidate) => candidate.key === field.key);
+      if (row !== undefined) this.replaceRow({ ...row, status: 'flagged', reason: 'hidden-text-in-box' });
+      log('content.ai-edit-refused', { hidden: true });
+      return 'hidden';
+    }
     const text = field.current.kind === 'text' ? field.current.text : '';
     if (canariesIn([text], this.inMemory).length > 0) return refused({ canary: true });
     this.rewriting = field.key;
@@ -1095,8 +1113,18 @@ export class FillRun {
         const signal = this.pauseNow();
         return signal === null ? (this.movedOn() !== null ? 'field-disappeared' : null) : pauseCutOf(signal);
       },
+      // v5 p2-fill review (security 4)
+      dialogsHeld: (held) => this.dialogsHeld(held),
       ...(env.options.resume ? { resume: env.options.resume } : {}),
     };
+  }
+
+  /** v5 p2-fill review (security 4): a write's hold of the page's dialogs held some back: added to the run's counts,
+   *  which the page's toast says (toastsNow), counts only. */
+  private dialogsHeld(held: HeldDialogs): void {
+    this.heldDialogs = { alerts: this.heldDialogs.alerts + held.alerts,
+      confirms: this.heldDialogs.confirms + held.confirms };
+    this.drawToasts();
   }
 
   /** The run fills from the profile only from now on (module header): the notice says why, and Edit with AI goes. The
@@ -1601,6 +1629,10 @@ export class FillRun {
         list.push({ kind: 'complete', text: words.complete(progress.filled, progress.of, progress.requiredOnly) });
       }
     }
+    // v5 p2-fill review (security 4): what the run's holds of the page's dialogs held back, counts only (never the
+    // page's words), so the person knows the page said something while the run filled it.
+    const { alerts, confirms } = this.heldDialogs;
+    if (alerts > 0 || confirms > 0) list.push({ kind: 'dialogs', text: words.dialogs(alerts, confirms) });
     // Text on the page addressed to AI tools was ignored: the plan's own sentence, the one notice the hard rules keep
     // on the page (the trap specs read it there).
     if (this.notices.has('tripwire')) list.push({ kind: 'tripwire', text: PAGE_COPY.notices.tripwire });
@@ -3250,6 +3282,8 @@ export class FillRun {
       get canaries() {
         return inMemory();
       },
+      // v5 p2-fill review (security 4)
+      dialogsHeld: (held) => this.dialogsHeld(held),
       signal: this.controller.signal,
       valid: () => env.channel.valid(),
       stopped: () => this.stopRequested,

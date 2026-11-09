@@ -11,7 +11,8 @@
   - #preferred: contenteditable="plaintext-only", aria-multiline="false": a one-line box (kind text), labelled "First
     name", so a run fills it from the profile.
   - #name: a native box whose change the page answers with an alert (window.__alerts counts the alerts called while
-    the page shows them), which a write holds (the page-world bridge's dialogs.hold).
+    the page shows them), which a write holds (the page patches' dialogs.hold: src/page/dialogs.ts, run in the
+    page's world by the worker once a run begins).
   - #ignores: a box whose script cancels every beforeinput and draws nothing: it ignores every write.
   - #shadowed: an editing host inside an open shadow root of #host, labelled inside it.
   - Not fields: #trap (a box no person can see, with a label: a honeypot, only counted), #off (contenteditable="false"),

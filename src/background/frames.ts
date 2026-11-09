@@ -67,6 +67,9 @@ export interface FrameEntry {
   waits?: WallWaits;
   /** v5 p2-fill: the frame shows a posting with no form whose adapter offers its own Apply (frame/wall's `entry`). */
   entry?: true;
+  /** v5 p2-fill review (L5): the frame's last Open Application could not press that Apply (frame/wall's
+   *  `entryRefused`), while no wall or choice shows. Not kept by a hello. */
+  entryRefused?: true;
 }
 
 const keyOf = (tabId: number, frameId: number) => `frames:${tabId}:${frameId}`;
@@ -124,14 +127,17 @@ export async function registerFrame(
 /** v4: a frame's frame/wall: its entry, for the same document, takes the wall and the choice it shows now (none:
  *  gone). Answers the entry as stored, or null when the frame is not registered for that document. */
 export async function setWall(session: StorageArea, tabId: number, frameId: number, documentId: string | null,
-  shown: { wall: SignInWall | null; choice: boolean; waits?: WallWaits; entry?: boolean }): Promise<FrameEntry | null> {
+  shown: { wall: SignInWall | null; choice: boolean; waits?: WallWaits; entry?: boolean; entryRefused?: boolean }):
+  Promise<FrameEntry | null> {
   const held = await frameEntry(session, tabId, frameId);
   if (held === null || held.documentId !== documentId) return null;
-  const { wall: _wall, choice: _choice, waits: _waits, entry: _entry, ...rest } = held;
+  const { wall: _wall, choice: _choice, waits: _waits, entry: _entry, entryRefused: _refused, ...rest } = held;
   const entry: FrameEntry = { ...rest, ...(shown.wall === null ? {} : { wall: shown.wall }),
     ...(shown.choice ? { choice: true as const } : {}), ...(shown.waits === undefined ? {} : { waits: shown.waits }),
     // v5 p2-fill: a posting's own Apply, offered while no wall or choice shows.
-    ...(shown.entry === true && shown.wall === null && !shown.choice ? { entry: true as const } : {}) };
+    ...(shown.entry === true && shown.wall === null && !shown.choice ? { entry: true as const } : {}),
+    // v5 p2-fill review (L5): its refusal, likewise.
+    ...(shown.entryRefused === true && shown.wall === null && !shown.choice ? { entryRefused: true as const } : {}) };
   await session.set({ [keyOf(tabId, frameId)]: entry });
   return entry;
 }
@@ -147,12 +153,14 @@ export function wallFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
  *  the side panel then offers Autofill there, a posting page included (Workday's /apply, which its parser reads as a
  *  posting). Each goes with the frame/wall that cleared it, or with its document. */
 function wallOf(frames: readonly FrameEntry[], noForm: boolean): { wall?: SignInWall; choice?: true;
-  waits?: WallWaits; entry?: true } {
+  waits?: WallWaits; entry?: true; entryRefused?: true } {
   const frame = wallFrameOf(frames);
   return { ...(frame?.wall === undefined ? {} : { wall: frame.wall }),
     ...(noForm && frame?.choice === true ? { choice: true as const } : {}),
     // v5 p2-fill: a posting with no form whose adapter offers its own Apply: the panel's Open Application.
     ...(noForm && frame?.entry === true ? { entry: true as const } : {}),
+    // v5 p2-fill review (L5): its last press refused: the panel says why.
+    ...(noForm && frame?.entryRefused === true ? { entryRefused: true as const } : {}),
     // s2 profile (P1): a page with no form whose wall's toast stands.
     ...(noForm && frame?.waits !== undefined ? { waits: frame.waits } : {}) };
 }

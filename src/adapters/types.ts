@@ -302,6 +302,10 @@ export interface Adapter {
    *  field of its own (FieldTarget.picker), its file given through the page's own picker armed for one press
    *  (dom/fillers/picker.ts, page/picker.ts). None is declared yet: no snapshot shows one (docs/OWNER-QUESTIONS.md). */
   uploadPickers?(root: Element): HTMLElement[];
+  /** v5 p2-fill review (security 7c): where a press of such a control opens its file input, from the same snapshot (a
+   *  page that keeps the input apart from its button: Dropzone's under the body); absent: the control's parent. A file
+   *  input the page clicks during the press is taken only inside it (or made at the press and never put in the page). */
+  uploadPickerScope?(control: HTMLElement): Element | null;
   // ── end v5 p2-fill ──
   widgetFor?(control: Element): WidgetDecl | null;
   /** s2 wd: a date drawn in parts (DatePartsDecl), asked of each element the scanner reads as no field and no widget

@@ -102,6 +102,9 @@ export const REASON_CODES = [
   // whose reply TailorIT then voided as a whole (`streamedThenVoided`: talk of being an AI, a canary, a second JSON
   // block, an item array not naming each item once, or no JSON): left as written, flagged for review
   'ai-reply-voided',
+  // v5 p2-fill review (security 3): a rich-text box holding text a person cannot see (off-screen, clipped,
+  // see-through or tiny), which Edit with AI never rewrites: none of its text goes to the AI
+  'hidden-text-in-box',
   // a bug
   'internal-error',
 ] as const;

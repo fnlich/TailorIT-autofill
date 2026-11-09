@@ -8,6 +8,8 @@ import type { FieldKind } from '../core/enums';
 import type { CurrentValue } from '../core/types/field';
 import { capCodePoints } from '../core/text/fold';
 import { isEditingHost } from './kinds';
+import type { ScanCache } from './scan-cache';
+import { visibleText } from './visible-text';
 import { cleanOptionLabel, isPlaceholderOption } from './option-hash';
 import { MAX_SELECTED_LABELS, TEXT_CAP_CURRENT } from './thresholds';
 
@@ -22,11 +24,35 @@ export function editableText(el: HTMLElement): string {
   return text.trim() === '' ? '' : text.replace(/\s+$/, '');
 }
 
-/** A text-like control's text: an input's or a textarea's value, a rich-text box's text (editableText). */
+// v5 p2-fill review (security 3)
+/** What a person can see of a rich-text box's text, by the visibleText walker (its editable content read by the same
+ *  rules as any page text): the box's `current`, the planner's and the AI's only reading of it. innerText
+ *  (editableText) stays for our own write's read-back alone. */
+export function editableVisibleText(el: HTMLElement, cache?: ScanCache): string {
+  return visibleText(el, { editable: true, ...(cache === undefined ? {} : { cache }) });
+}
+
+/** Whether a rich-text box holds text a person cannot see: its innerText and its visible reading differ beyond white
+ *  space. Such a box is never rewritten (Edit with AI: content/orchestrator.ts rewrite). */
+export function editableHidesText(el: HTMLElement, cache?: ScanCache): boolean {
+  const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
+  return flat(editableText(el)) !== flat(editableVisibleText(el, cache));
+}
+// end v5 p2-fill review
+
+/** A text-like control's text: an input's or a textarea's value, a rich-text box's visible text (editableVisibleText;
+ *  v5 p2-fill review, security 3: never its hidden text). */
 export function textOfControl(control: Element): string {
-  if (isEditingHost(control)) return editableText(control);
+  if (isEditingHost(control)) return editableVisibleText(control);
   const value = (control as HTMLInputElement | HTMLTextAreaElement).value;
   return typeof value === 'string' ? value : '';
+}
+
+/** A text-like control's text as our own write's read-back compares it: a rich-text box's rendered text
+ *  (editableText, innerText), any other's value. */
+export function readBackTextOf(control: Element): string {
+  if (isEditingHost(control)) return editableText(control);
+  return textOfControl(control);
 }
 // ── end v5 p2-fill ──
 

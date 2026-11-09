@@ -14,6 +14,10 @@
  *    file alone (SUPPLY, a detached input holding it: the page reads it from the handle it resolves with), never
  *    read back (upload-not-confirmed, flagged for the person, unless the adapter reads the page's own word);
  * 5. the control is disarmed (picker.disarm), whatever happened.
+ * v5 p2-fill review (security 7c): the arm is made on the control's scope (Adapter.uploadPickerScope, else its parent),
+ * and the page's side takes only a file input inside it (or one made at the press and never put in the page): a file
+ * input of another upload is never given the résumé. The person's own pointer or key on the page during the wait (a
+ * trusted pointerdown, mousedown, touchstart or keydown, heard first) disarms at once: their press is theirs.
  * Only the planned write's own file is ever supplied, only in answer to this one press. Nothing is pressed where no
  * patch answers the arm (no run began in the frame, or the page answered our probe itself): the field is needs-your-click, the person's to attach, as is
  * a press the page answered with no picker. Nothing here reads or logs a value.
@@ -60,7 +64,8 @@ function takesFile(input: Element | null, control: HTMLElement): input is HTMLIn
     && !isInOwnUi(input) && !input.disabled;
 }
 
-/** Answers the page's showOpenFilePicker with `file` alone: a detached file input holding it, on the armed control. */
+/** Answers the page's showOpenFilePicker with `file` alone: a detached file input holding it, on the armed element
+ *  (v5 p2-fill review: the control's scope). */
 function supply(control: HTMLElement, file: File): void {
   const view = windowOf(control);
   const carrier = control.ownerDocument.createElement('input');
@@ -70,37 +75,65 @@ function supply(control: HTMLElement, file: File): void {
     composed: false }));
 }
 
+/** v5 p2-fill review (security 7c): the person's own actions that disarm a press's wait. */
+const PERSON_ACTIONS = ['pointerdown', 'mousedown', 'touchstart', 'keydown'] as const;
+
+/** v5 p2-fill review (security 7c): where a press of `control` may open the file input it is given to (header). */
+export function pickerScopeOf(control: HTMLElement, adapter: Adapter | null): Element {
+  let declared: Element | null = null;
+  try {
+    declared = adapter?.uploadPickerScope?.(control) ?? null;
+  } catch {
+    declared = null;
+  }
+  return declared !== null && declared.isConnected && declared.ownerDocument === control.ownerDocument ? declared
+    : control.parentElement ?? control;
+}
+
 /** Presses `control` with the page's own picker armed and gives `file` to what the page opens (see the header). */
 export async function fillThroughPicker(control: HTMLElement, file: File | undefined, ctx: PickerContext):
   Promise<PickerResult> {
   if (file === undefined) return { outcome: refused('resume-unavailable'), input: null, picked: null };
+  // v5 p2-fill review (security 7c): armed on the control's scope; what the page opens is told there.
+  const scope = pickerScopeOf(control, ctx.adapter);
+  const doc = control.ownerDocument;
+  let personActed = false;
   let picked: Picked | null = null;
   let wake: () => void = () => undefined;
   const woken = new Promise<void>((resolve) => {
     wake = resolve;
   });
   const onPicked = (event: Event): void => {
-    if (picked !== null || event.target !== control) return;
+    if (picked !== null || personActed || event.target !== scope) return;
     const detail = (event as UIEvent).detail;
     const related = (event as FocusEvent).relatedTarget as Element | null;
     if (detail === PICKED_INPUT && takesFile(related, control)) picked = { kind: 'input', input: related };
     else if (detail === PICKED_FILE_SYSTEM && related === null) {
       picked = { kind: 'file-system' };
-      supply(control, file);
+      supply(scope as HTMLElement, file);
     }
     if (picked !== null) wake();
   };
-  control.addEventListener(PICKED, onPicked);
+  // v5 p2-fill review (security 7c): the person's own press during the wait is theirs: disarmed at once.
+  const onPerson = (event: Event): void => {
+    if (!event.isTrusted || picked !== null) return;
+    personActed = true;
+    if (scope.isConnected) askPatches(scope, 'picker.disarm');
+    wake();
+  };
+  scope.addEventListener(PICKED, onPicked);
+  for (const type of PERSON_ACTIONS) doc.addEventListener(type, onPerson, true);
   try {
-    const armed = askPatches(control, 'picker.arm', ctx.signal);
+    const armed = askPatches(scope, 'picker.arm', ctx.signal);
     if (armed?.ok !== true) return { outcome: refused('needs-your-click'), input: null, picked: null };
     if (!clickIfAllowed(control, { adapter: ctx.adapter, root: ctx.root })) {
       return { outcome: refused('needs-your-click'), input: null, picked: null };
     }
     if (picked === null) await Promise.race([woken, deadline(ctx.waitMs ?? PICKER_WAIT_MS, ctx.signal)]);
   } finally {
-    control.removeEventListener(PICKED, onPicked);
-    if (control.isConnected) askPatches(control, 'picker.disarm');
+    scope.removeEventListener(PICKED, onPicked);
+    for (const type of PERSON_ACTIONS) doc.removeEventListener(type, onPerson, true);
+    if (scope.isConnected) askPatches(scope, 'picker.disarm');
   }
   const now = picked as Picked | null;
   if (now === null) return { outcome: refused('needs-your-click'), input: null, picked: null };

@@ -15,7 +15,7 @@ import type { FieldKey } from '../../core/types/field';
 import type { WriteValue } from '../../core/types/intent';
 import { isDisabled, isReadOnly } from '../kinds';
 import { cleanOptionLabel } from '../option-hash';
-import { textOfControl } from '../values';
+import { readBackTextOf } from '../values';
 import type { FieldTarget, FillOutcome, ReadBackRule, ScannedField, ScanResult } from '../types';
 import { widgetHolds } from '../widgets/hold';
 import { dateValueFor } from './date';
@@ -83,8 +83,8 @@ export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule
   const checked = (input: HTMLInputElement | undefined) => input !== undefined && (target.checkedOf?.(input) ?? input.checked);
   switch (value.kind) {
     case 'text':
-      // v5 p2-fill: a rich-text box's text too (values.ts textOfControl).
-      return sameText(textOfControl(control), value.text, rule);
+      // v5 p2-fill: a rich-text box's text too (values.ts readBackTextOf: its rendered text, our own write's read-back).
+      return sameText(readBackTextOf(control), value.text, rule);
     case 'date': {
       // s2 wd: a date drawn in parts shows what it holds in its parts' displays (date-parts.ts).
       if (target.dateParts !== undefined) return holdsDateParts(target.dateParts, value.iso);
