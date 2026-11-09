@@ -95,3 +95,41 @@ describe('one round: a question nothing classified (v5 p2-stream)', () => {
       [KUBERNETES.key, 'standard', undefined]]);
   });
 });
+
+describe('one round: a field TailorIT held back (the P2 review, M1)', () => {
+  /** A field the answer task held back (`sensitive`, or the extension's own answer screen): classified first. */
+  const held = (key: string, classification?: ClassifyVerdict): PlanAi => ({ verdicts: new Map(),
+    classifications: new Map(classification === undefined ? [] : [[key, classification]]), answers: new Map(),
+    classifyFirst: new Set([key]) });
+  const CALL_ME = specOf('What should the team call you on your first day?', 'text');
+
+  it('classifies it first, so a name question the rules missed fills from the profile', () => {
+    const asked = planOf([CALL_ME], { oneRound: true, ai: held(CALL_ME.key) });
+    expect(asked.ask?.classify?.map((item) => item.key)).toEqual([CALL_ME.key]);
+    expect(asked.ask?.answers ?? []).toEqual([]);
+    const profile = goldenProfile();
+    const filled = planOf([CALL_ME], { oneRound: true, profile, ai: held(CALL_ME.key, { key: CALL_ME.key as never,
+      category: 'first_name', why: 'ok' }) });
+    expect(fieldOf(filled, CALL_ME).write).toMatchObject({ value: { kind: 'text', text: profile.identity.firstName },
+      origin: { provenance: 'profile' } });
+  });
+
+  it('plans it once classified as before one round: a legal or pay category as a classification first left it', () => {
+    // A question no rule classifies, which one round asks under the standard scope with its category.
+    const served = specOf('Have you served in government?', 'radio', { optionLabels: ['Yes', 'No'] });
+    expect(planOf([served], { oneRound: true }).ask?.answers?.map((item) => [item.scope, item.classify]))
+      .toEqual([['standard', true]]);
+    const asked = planOf([served], { oneRound: true, ai: held(served.key) });
+    expect(asked.ask?.classify?.map((item) => item.key)).toEqual([served.key]);
+    expect(asked.ask?.answers ?? []).toEqual([]);
+    for (const verdict of [{ category: 'sensitive_legal', why: 'ok' }, { category: 'sensitive_compensation', why: 'ok' },
+      { category: null, why: 'llm-disabled-for-category' }, { category: null, why: 'unknown-field' }] as const) {
+      const classification = { key: served.key, ...verdict };
+      const now = planOf([served], { oneRound: true, ai: held(served.key, classification) });
+      const before = planOf([served], { ai: { verdicts: new Map(), classifications: new Map([[served.key as string,
+        classification]]) } });
+      expect([now.ask, now.writes, now.results], verdict.category ?? verdict.why).toEqual([before.ask, before.writes,
+        before.results]);
+    }
+  });
+});

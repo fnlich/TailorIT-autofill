@@ -12,7 +12,7 @@ import { sha256Hex } from '../core/text/sha256';
 import type { FieldKey } from '../core/types/field';
 import type { UntrustedText } from '../core/types/text';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
-import { answerBatches, createAiTasks, createRunAi, type AiTaskIds } from './ai-tasks';
+import { AI_TASK_CAP_MS, answerBatches, createAiTasks, createRunAi, type AiTaskIds } from './ai-tasks';
 import type { AiStreamOptions, AiSubmitOptions, ServerClient, ServerResult } from './server-client';
 import { manualTimers } from './timers';
 import { taskView, TASK_ID } from './worker.testkit';
@@ -224,5 +224,183 @@ describe('the worker reads a task’s stream (v5 p2-stream)', () => {
     expect(await done).toMatchObject({ ok: true });
     expect(calls).toEqual(['answer', `task ${TASK_ID}`]);
     expect(asked).toEqual([undefined]);
+  });
+});
+
+// ── The P2 review ─────────────────────────────────────────────────────────────────────────────────────────────────
+const DRAFT_TASK_ID = '8c1d7e2f-4a3b-4c5d-9e6f-0a1b2c3d4e5f';
+const TEXTAREA: AnswerItem = { key: `lever|main|about|none|0` as FieldKey, scope: 'standard', shape: 'text',
+  kind: 'textarea', question: u('Tell us about a project you led.'), hint: u(''), section: u(''), optionSetHash: null,
+  options: [], maxLength: null, format: null, classify: true, platform: 'lever' };
+const DRAFT_LLM = { ...DEFAULT_SETTINGS.llm, answers: true, drafts: true };
+const ONE_ROUND = { tiebreaks: [], classify: [], answers: [TEXTAREA] };
+const AS_DRAFT = { tiebreaks: [], classify: [], drafts: [{ key: TEXTAREA.key, question: TEXTAREA.question, maxLength: null }] };
+const freeText: AutofillAnswer = { key: TEXTAREA.key, optionSetHash: null, index: null, text: 'I led one.', basis: 'resume',
+  reason: 'answered', classification: { category: 'free_text_question', reason: 'classified' } };
+const DRAFT = { key: TEXTAREA.key, text: 'I led the move of our billing to a new platform.', reason: 'drafted' as const };
+
+/** A stream per task the test drives: `send` lands an item, `finish` sends the task; the caller's abort ends it. */
+function streamsByTask() {
+  const open = new Map<string, { options: AiStreamOptions; close: (value: ServerResult<AutofillTaskView | null>) => void }>();
+  const waiters = new Map<string, () => void>();
+  return {
+    open(id: string, options: AiStreamOptions): Promise<ServerResult<AutofillTaskView | null>> {
+      return new Promise((close) => {
+        open.set(id, { options, close });
+        options.signal.addEventListener('abort', () => close({ ok: true, value: null }), { once: true });
+        waiters.get(id)?.();
+      });
+    },
+    opened: (id: string) => (open.has(id) ? Promise.resolve()
+      : new Promise<void>((resolve) => void waiters.set(id, resolve))),
+    send: (id: string, item: Parameters<AiStreamOptions['onEvent']>[0]) => open.get(id)!.options.onEvent(item),
+    finish(id: string, kind: 'autofill_answer' | 'autofill_draft', result: unknown,
+      status: 'succeeded' | 'failed' = 'succeeded') {
+      open.get(id)!.close({ ok: true, value: taskView(kind, status, result, id) as AutofillTaskView });
+    },
+  };
+}
+
+/** An AI server whose answer task is TASK_ID and whose draft task is DRAFT_TASK_ID (or the draft's refusal). */
+function twoTaskServer(streams: ReturnType<typeof streamsByTask>, draft: ServerResult<unknown> | 'task' = 'task') {
+  const refused = { ok: false as const, failure: 'not-found' as const, status: 404 };
+  const server: Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiDraft' | 'aiAnswer' | 'aiTask' | 'aiTaskStream'> = {
+    aiPick: async () => refused,
+    aiClassify: async () => refused,
+    aiAnswer: async () => ({ ok: true, value: { done: false, taskId: TASK_ID } }),
+    aiDraft: async () => (draft === 'task' ? { ok: true, value: { done: false, taskId: DRAFT_TASK_ID } } : draft) as never,
+    aiTask: async () => refused,
+    aiTaskStream: (id, options) => streams.open(id, options),
+  };
+  return server;
+}
+
+describe('the P2 review: a key asked again in another batch (H1)', () => {
+  /** B1 streams the textarea's answer, classified free_text_question; the frame then asks it as a draft (B2). */
+  async function askedTwice(draft: ServerResult<unknown> | 'task' = 'task') {
+    const streams = streamsByTask();
+    const time = clockedTimers();
+    const ready: string[][] = [];
+    const run = createRunAi(createAiTasks({ server: twoTaskServer(streams, draft), timers: time.timers, now: time.now }),
+      memoryIds(), vocab, (keys) => ready.push([...keys]));
+    const context = { specs: [], canaries: [], draft: CONTEXT };
+    run.ask(ONE_ROUND, [TEXTAREA.key], context, DRAFT_LLM, 1);
+    await streams.opened(TASK_ID);
+    streams.send(TASK_ID, { type: 'answer', answer: freeText });
+    expect(run.state(TEXTAREA.key)).toBe('done');
+    expect(run.answers.classifications.get(TEXTAREA.key)).toMatchObject({ category: 'free_text_question', why: 'ok' });
+    run.settle([TEXTAREA.key]);
+    run.ask(AS_DRAFT, [TEXTAREA.key], context, DRAFT_LLM, 1);
+    expect(run.state(TEXTAREA.key)).toBe('waiting');
+    return { streams, time, ready, run };
+  }
+
+  it('takes B2’s streamed draft, wakes the frame and ends; B1’s end does not end B2’s wait', async () => {
+    const { streams, ready, run } = await askedTwice();
+    streams.finish(TASK_ID, 'autofill_answer', { answers: [freeText] });
+    await flush();
+    expect(run.state(TEXTAREA.key)).toBe('waiting');
+    await streams.opened(DRAFT_TASK_ID);
+    streams.send(DRAFT_TASK_ID, { type: 'draft', draft: DRAFT });
+    expect(run.state(TEXTAREA.key)).toBe('done');
+    expect(run.answers.drafts!.get(TEXTAREA.key)).toMatchObject({ text: DRAFT.text, taskId: DRAFT_TASK_ID });
+    expect(ready).toEqual([[TEXTAREA.key], [TEXTAREA.key]]);
+    streams.finish(DRAFT_TASK_ID, 'autofill_draft', { drafts: [DRAFT] });
+    await run.idle();
+    expect(run.state(TEXTAREA.key)).toBe('done');
+  });
+
+  it.each([
+    ['TailorIT’s AI unavailable', { ok: false, failure: 'server-error', status: 503, code: 'ai_unavailable' }, 'llm-unavailable'],
+    ['the usage limit (429)', { ok: false, failure: 'rate-limited', status: 429, code: 'rate_limited' }, 'llm-unavailable'],
+    ['an answer off the contract', { ok: false, failure: 'bad-answer', status: 200 }, 'llm-invalid-output'],
+  ] as const)('records B2’s failure (%s) as the key’s verdict, and the run ends', async (_name, refusal, why) => {
+    const { streams, ready, run } = await askedTwice(refusal as ServerResult<unknown>);
+    streams.finish(TASK_ID, 'autofill_answer', { answers: [freeText] });
+    await run.idle();
+    expect(run.answers.drafts!.get(TEXTAREA.key)).toEqual({ key: TEXTAREA.key, text: null, why });
+    expect(run.state(TEXTAREA.key)).toBe('done');
+    // B1's stream woke the frame once; B2's end wakes it again for its failure (B1's own end names nothing).
+    expect(ready).toEqual([[TEXTAREA.key], [TEXTAREA.key]]);
+  });
+
+  it('records B2’s failed task, and its cap, as the key’s verdict', async () => {
+    const failed = await askedTwice();
+    await failed.streams.opened(DRAFT_TASK_ID);
+    failed.streams.finish(DRAFT_TASK_ID, 'autofill_draft', null, 'failed');
+    failed.streams.finish(TASK_ID, 'autofill_answer', { answers: [freeText] });
+    await failed.run.idle();
+    expect(failed.run.answers.drafts!.get(TEXTAREA.key)).toEqual({ key: TEXTAREA.key, text: null, why: 'llm-unavailable' });
+    const capped = await askedTwice();
+    capped.streams.finish(TASK_ID, 'autofill_answer', { answers: [freeText] });
+    await capped.streams.opened(DRAFT_TASK_ID);
+    await capped.time.advance(AI_TASK_CAP_MS + 1000);
+    await capped.run.idle();
+    expect(capped.run.answers.drafts!.get(TEXTAREA.key)).toEqual({ key: TEXTAREA.key, text: null, why: 'llm-unavailable' });
+    expect(capped.run.state(TEXTAREA.key)).toBe('done');
+  });
+});
+
+describe('the P2 review: a stream refused past its cap (security 6a)', () => {
+  it('polls the task when TailorIT answers its stream 429, and streams the next batch again', async () => {
+    const { server, calls, asked } = streamingServer({
+      stream: () => Promise.resolve({ ok: false, failure: 'rate-limited', status: 429, code: 'rate_limited' }),
+      task: [{ ok: true, value: taskView('autofill_answer', 'succeeded', RESULT) }] });
+    const time = clockedTimers();
+    const tasks = createAiTasks({ server, timers: time.timers, now: time.now });
+    const first = tasks.run(BATCH, memoryIds(), () => true);
+    await flush();
+    await time.advance(AUTOFILL_AI_POLL_MS + 100);
+    expect(await first).toMatchObject({ ok: true, taskId: TASK_ID });
+    const second = tasks.run(BATCH, memoryIds(), () => true);
+    await flush();
+    await time.advance(AUTOFILL_AI_POLL_MS + 100);
+    await second;
+    // A 429 is no TailorIT without the stream: the second batch asks with respond-async and reads its stream again.
+    expect(calls).toEqual(['answer', `stream ${TASK_ID}`, `task ${TASK_ID}`, 'answer', `stream ${TASK_ID}`,
+      `task ${TASK_ID}`]);
+    expect(asked).toEqual([{ async: true }, { async: true }]);
+  });
+});
+
+describe('the P2 review: what streamed, its reply then voided (security 5)', () => {
+  const voided = (item: AnswerItem): AutofillAnswer => ({ ...answered(item), streamedThenVoided: true });
+
+  it('keeps the streamed answer and names its key for review once; one it never took is not trusted', async () => {
+    const stream = drivenStream();
+    const { server } = streamingServer({ stream: (options) => stream.open(options) });
+    const time = clockedTimers();
+    const ready: string[][] = [];
+    const run = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds(), vocab,
+      (keys) => ready.push([...keys]));
+    run.ask(ASK, ITEMS.map((item) => item.key), { specs: [], canaries: [], draft: CONTEXT }, SETTINGS_LLM, 1);
+    await stream.opened;
+    stream.send(answered(ITEMS[0]!));
+    expect(run.takeReviews()).toEqual([]);
+    // TailorIT voided the reply after it streamed the first answer and (on a stream this run lost) the second.
+    stream.finish({ answers: [voided(ITEMS[0]!), voided(ITEMS[1]!), answered(ITEMS[2]!)] });
+    await run.idle();
+    expect(run.answers.answers!.get(ITEMS[0]!.key)).toMatchObject({ kind: 'choice', index: 1 });
+    expect(run.answers.answers!.get(ITEMS[1]!.key)).toEqual({ key: ITEMS[1]!.key, kind: 'none', why: 'llm-invalid-output' });
+    expect(run.answers.answers!.get(ITEMS[2]!.key)).toMatchObject({ kind: 'choice', index: 1 });
+    expect(run.takeReviews()).toEqual([ITEMS[0]!.key]);
+    expect(run.takeReviews()).toEqual([]);
+    expect(ready).toEqual([[ITEMS[0]!.key], [ITEMS[1]!.key, ITEMS[2]!.key]]);
+  });
+
+  it('tells the frame at the batch’s end even when every key streamed, so the review reaches it', async () => {
+    const stream = drivenStream();
+    const { server } = streamingServer({ stream: (options) => stream.open(options) });
+    const time = clockedTimers();
+    const ready: string[][] = [];
+    const run = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds(), vocab,
+      (keys) => ready.push([...keys]));
+    run.ask(ASK, ITEMS.map((item) => item.key), { specs: [], canaries: [], draft: CONTEXT }, SETTINGS_LLM, 1);
+    await stream.opened;
+    for (const item of ITEMS) stream.send(answered(item));
+    stream.finish({ answers: ITEMS.map(voided) });
+    await run.idle();
+    expect(ready).toHaveLength(4);
+    expect(run.takeReviews()).toEqual(ITEMS.map((item) => item.key));
   });
 });

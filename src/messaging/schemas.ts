@@ -609,8 +609,11 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('applied/popup') }),
   // v5 p2-stream (each AI answer fills as it lands): answers the run's frame waits for came in (an item on its task's
   // stream, or a batch's end): the frame polls at once (plan/poll) instead of at its next tick. The worker's alone, to
-  // the run's own frame and document; it names the run only, never a key or an answer.
-  z.strictObject({ v, type: z.literal('plan/ready'), runId: Id }),
+  // the run's own frame and document; it names the run, never an answer.
+  // v5 p2-stream review (security 5): `reviews`, the keys whose answer or draft came on the run's stream and whose
+  // reply TailorIT then voided as a whole: the fields written from them are flagged (ai-reply-voided).
+  z.strictObject({ v, type: z.literal('plan/ready'), runId: Id, reviews: z.array(Key).max(500).optional() }),
+  // v5 p2-stream review end
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 

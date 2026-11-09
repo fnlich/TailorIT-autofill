@@ -16,7 +16,7 @@ import type { CoreFunctions } from './core';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import {
   ANSWER_TEXT, beginRun, contentSender, DRAFT_TEXT, fieldSpec, goldens, itemsOf, pageSender, questionsOf, skippedRow,
-  startTestWorker, tokenRecord, type TestWorker,
+  startTestWorker, TASK_ID, taskView, tokenRecord, type TestWorker,
 } from './worker.testkit';
 
 const ANSWER = 'POST /api/autofill/ai/answer';
@@ -98,6 +98,28 @@ async function poll(worker: TestWorker, runId: string, keys: string[]) {
 }
 
 describe('AI answers in the worker', () => {
+  it('tells the frame which streamed answer’s reply TailorIT then voided, for review (the P2 review, security 5)', async () => {
+    const worker = await startTestWorker({ token: tokenRecord(), core: answeringCore() });
+    const told = vi.spyOn(worker.platform.tabs, 'sendToFrame');
+    const answer = { key: YEARS.key, optionSetHash: null, index: null, text: ANSWER_TEXT, basis: 'resume', reason: 'answered' };
+    const task = taskView('autofill_answer', 'succeeded', { answers: [{ ...answer, streamedThenVoided: true }] });
+    const events = [{ type: 'answer', answer }, { type: 'task', task }];
+    worker.tailorit.reply(ANSWER, { status: 202, json: { taskId: TASK_ID } });
+    worker.tailorit.reply(`GET /api/ai/tasks/${TASK_ID}/stream`, { bytes: new TextEncoder().encode(events
+      .map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('')),
+    headers: { 'Content-Type': 'text/event-stream' } });
+    const runId = await beginRun(worker);
+    await request(worker, runId, [YEARS]);
+    const ready = () => told.mock.calls.map(([, message]) => message as { type?: string; reviews?: string[] })
+      .filter((message) => message.type === 'plan/ready');
+    await vi.waitFor(() => expect(ready().some((message) => message.reviews !== undefined)).toBe(true));
+    expect(ready().filter((message) => message.reviews !== undefined)).toEqual([{ v: 1, type: 'plan/ready', runId,
+      reviews: [YEARS.key] }]);
+    // The answer stands as written: the poll brings its write.
+    expect((await poll(worker, runId, [YEARS.key])).data?.writes).toEqual([expect.objectContaining({ key: YEARS.key,
+      value: { kind: 'text', text: ANSWER_TEXT } })]);
+  });
+
   it('asks TailorIT’s answer route with the job context and the canaries, and the poll brings the write', async () => {
     const worker = await startTestWorker({ token: tokenRecord(), core: answeringCore() });
     const runId = await beginRun(worker);

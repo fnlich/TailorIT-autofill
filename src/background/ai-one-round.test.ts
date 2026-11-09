@@ -82,7 +82,7 @@ describe('one round: the worker (v5 p2-stream)', () => {
     expect([...verdicts]).toEqual([
       [items[0]!.key, { key: items[0]!.key, category: 'relocation', why: 'ok' }],
       [items[1]!.key, { key: items[1]!.key, category: null, why: 'unknown-field' }],
-      [items[2]!.key, { key: items[2]!.key, category: null, why: 'llm-disabled-for-category' }],
+      [items[2]!.key, 'held'],
       [items[3]!.key, 'missing'],
     ]);
   });
@@ -139,5 +139,71 @@ describe('one round: the worker (v5 p2-stream)', () => {
     for (let at = 0; at < 30; at += 1) await Promise.resolve();
     timers.advance(AUTOFILL_AI_POLL_MS);
     await run.idle();
+  });
+});
+
+describe('one round: an item held back (the P2 review, M1)', () => {
+  const heldBack = (item: AnswerItem): AutofillAnswer => ({ key: item.key, optionSetHash: HASH, index: null, text: null,
+    basis: null, reason: 'sensitive', classification: { category: null, reason: 'sensitive' } });
+
+  it('classifies first an item TailorIT held back (sensitive): no answer, no classification taken from it', async () => {
+    const item = once(1);
+    const { api } = server({ answers: [heldBack(item)] });
+    const tasks = createAiTasks({ server: api, timers: manualTimers(), now: () => 0 });
+    const run = createRunAi(tasks, memoryIds(), vocab);
+    run.ask({ tiebreaks: [], classify: [], answers: [item] }, [item.key], { specs: [], canaries: [], draft: CONTEXT },
+      LLM, 1);
+    await run.idle();
+    expect(run.state(item.key)).toBe('done');
+    expect(run.answers.answers!.get(item.key)).toBeUndefined();
+    expect(run.answers.classifications.get(item.key)).toBeUndefined();
+    expect([...run.answers.classifyFirst!]).toEqual([item.key]);
+    // A TailorIT that holds an item back still classifies within an answer task.
+    expect(tasks.oneRoundUsable?.()).toBe(true);
+  });
+
+  it('never takes a held-back item from the stream: it waits for its batch, then is classified first', async () => {
+    const item = once(1);
+    let send: ((answer: AutofillAnswer) => void) | null = null;
+    let finish: (() => void) | null = null;
+    const { api } = server({ answers: [heldBack(item)] }, (options) => new Promise((resolve) => {
+      send = (answer) => options.onEvent({ type: 'answer', answer });
+      finish = () => resolve({ ok: true, value: taskView('autofill_answer', 'succeeded', { answers: [heldBack(item)] }) as never });
+    }));
+    const ready: string[][] = [];
+    const run = createRunAi(createAiTasks({ server: api, timers: manualTimers(), now: () => 0 }), memoryIds(), vocab,
+      (keys) => ready.push([...keys]));
+    run.ask({ tiebreaks: [], classify: [], answers: [item] }, [item.key], { specs: [], canaries: [], draft: CONTEXT },
+      LLM, 1);
+    for (let at = 0; at < 30 && send === null; at += 1) await Promise.resolve();
+    send!(heldBack(item));
+    expect(run.state(item.key)).toBe('waiting');
+    expect(ready).toEqual([]);
+    finish!();
+    await run.idle();
+    expect(run.state(item.key)).toBe('done');
+    expect(run.answers.classifications.get(item.key)).toBeUndefined();
+    expect([...run.answers.classifyFirst!]).toEqual([item.key]);
+    expect(ready).toEqual([[item.key]]);
+  });
+
+  it('classifies first an item asked with its category that the extension’s own answer screen withholds', async () => {
+    const gender = choice(7, { classify: true, platform: 'greenhouse', question: u('What is your gender identity?') });
+    const plain = choice(8, { question: u('What is your gender identity?') });
+    const batched = answerBatches([gender, plain], CONTEXT, [], vocab);
+    expect(batched.batches).toEqual([]);
+    expect(batched.classifyFirst).toEqual([gender.key]);
+    expect(batched.withheld).toEqual([{ key: plain.key, kind: 'none', why: 'llm-disabled-for-category' }]);
+    expect(batched.classified).toEqual([]);
+    const { api, asked } = server({ answers: [] });
+    const run = createRunAi(createAiTasks({ server: api, timers: manualTimers(), now: () => 0 }), memoryIds(), vocab);
+    run.ask({ tiebreaks: [], classify: [], answers: [gender] }, [gender.key], { specs: [], canaries: [], draft: CONTEXT },
+      LLM, 1);
+    await run.idle();
+    expect(asked).toEqual([]);
+    expect(run.state(gender.key)).toBe('done');
+    expect(run.answers.answers!.get(gender.key)).toBeUndefined();
+    expect(run.answers.classifications.get(gender.key)).toBeUndefined();
+    expect([...run.answers.classifyFirst!]).toEqual([gender.key]);
   });
 });

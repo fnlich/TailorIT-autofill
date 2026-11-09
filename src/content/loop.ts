@@ -129,6 +129,11 @@ export const AI_WAIT_CAP_MS = 125_000;
 /** How long the loop waits for a cover-letter upload's letter with no answer coming in (Phase G): the worker's cap on
  *  it (180 s, background/cover-letters.ts LETTER_CAP_MS) and a few polls more. */
 export const LETTER_WAIT_CAP_MS = 185_000;
+/** The P2 review (H1's backstop): a field the worker plans again and asks anew more often than this in one run is
+ *  given up (llm-unavailable, flagged): asked again so often, it would keep the wait for the AI from ever reaching its
+ *  cap. A chain asks a field anew two or three times at most (a classification, then an answer or a draft, then
+ *  another scope). */
+export const MAX_AI_REASKS = 4;
 /** A dry run plans one pass, and asks again at most this many times for fields the worker forgot (it restarted). */
 const DRY_RUN_ASKS = 2;
 
@@ -412,6 +417,8 @@ class ReactiveLoop {
   /** When the wait for the LLM last made progress (a field began waiting, or an answer came): its cap runs from it. */
   private aiProgressAt: number | null = null;
   private aiPolls = 0;
+  /** How often the worker planned each field again and asked it anew (MAX_AI_REASKS). Keys only. */
+  private readonly reasked = new Map<FieldKey, number>();
   /** This pass's fields still to come besides its writes (v3 Phase 3 review): those that began to wait for the AI and
    *  those whose list's options it waits for. The progress counts them as being filled, never as left for the person. */
   private waitingNow: FieldKey[] = [];
@@ -1013,6 +1020,14 @@ class ReactiveLoop {
             // A key still waiting that comes with a row was planned again and asked anew (a classification in, then
             // its answer asked): a task finished, so the wait made progress (the Phase E review, M6).
             if (still.has(row.key)) {
+              // The P2 review (H1's backstop): asked anew past MAX_AI_REASKS, the field is given up, flagged.
+              const times = (this.reasked.get(row.key as FieldKey) ?? 0) + 1;
+              this.reasked.set(row.key as FieldKey, times);
+              if (times > MAX_AI_REASKS) {
+                this.giveUp([row.key as FieldKey], 'llm-unavailable');
+                log('content.ai-reask-limit');
+                continue;
+              }
               asksAgain = true;
               continue;
             }

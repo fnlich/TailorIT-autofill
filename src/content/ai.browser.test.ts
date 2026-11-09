@@ -7,12 +7,13 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { AUTOFILL_AI_POLL_MS } from '../contract/tailorit';
 import type { TiebreakItem } from '../core/matcher/types';
+import type { ClassifyItem } from '../core/resolver/classify';
 // The Phase 2-6 behaviour these tests pin: version 1's defaults in version 2's shape (the owner's amendments' new
 // defaults have tests of their own: fill-all.browser.test.ts).
 import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations } from '../dom/fixture.testkit';
 import { createFakeWorker, FAKE_ANSWER, FAKE_TASK_ID, sentinelsIn, testVocab, VALUE_SENTINELS, type FakeWorkerOptions } from './content.testkit';
-import { AI_POLL_MS } from './loop';
+import { AI_POLL_MS, MAX_AI_REASKS } from './loop';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
 const URL_OF = (name: string) => `https://jobs.lever.co/tailorit-fixture/${name}/apply`;
@@ -169,6 +170,30 @@ describe('fields that wait for the LLM', () => {
     expect(row).toMatchObject({ provenance: 'llm-answer', reason: 'ai-guess', wrote: true });
     expect((fixture.doc.getElementById('work') as HTMLInputElement).value).toBe(FAKE_ANSWER);
     expect(worker.of('plan/poll').length).toBeGreaterThanOrEqual(30);
+  });
+
+  it('give up a field the worker asks anew past MAX_AI_REASKS, flagged llm-unavailable, and the run ends (the P2 review, H1’s backstop)', async () => {
+    // A worker that, each time the field's classification comes in, plans it again and asks it anew, forever: each
+    // re-ask is progress, so the wait's cap alone would never end it.
+    let kept: ClassifyItem | undefined;
+    let asks = 0;
+    const ran = await fill({ ai: ANSWERS, editPlan(plan, specs) {
+      const spec = specs.find((candidate) => candidate.label === WORK);
+      const asked = plan.ask?.classify?.find((item) => item.key === spec?.key) ?? kept;
+      if (spec === undefined || asked === undefined || !plan.results.some((row) => row.key === spec.key)) return plan;
+      kept = asked;
+      asks += 1;
+      return { ...plan, writes: plan.writes.filter((write) => write.key !== spec.key),
+        awaiting: [...plan.awaiting.filter((key) => key !== spec.key), spec.key],
+        ask: { ...(plan.ask ?? { tiebreaks: [] }), classify: [...(plan.ask?.classify ?? [])
+          .filter((item) => item.key !== spec.key), asked] } };
+    } }, {}, 'ai-reasks');
+    expect(ran.end).toBe('review');
+    expect(ran.row(WORK)).toMatchObject({ status: 'flagged', reason: 'llm-unavailable', wrote: false });
+    expect(ran.control('work').value).toBe('');
+    // Asked once, then anew MAX_AI_REASKS times and once more, which gives it up; the other field is written.
+    expect(asks).toBe(MAX_AI_REASKS + 2);
+    expect(ran.row(SOURCE)).toMatchObject({ provenance: 'llm-pick', wrote: true });
   });
 
   it('in a dry run, wait for the answers and show the rows they would give, writing nothing', async () => {

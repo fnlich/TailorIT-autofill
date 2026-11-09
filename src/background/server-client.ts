@@ -602,6 +602,8 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     }
     const decoder = new TextDecoder();
     let buffer = '';
+    /** The P2 review (security 7a, L2): a CR ending a chunk, held until the next one says whether an LF follows. */
+    let carry = '';
     let bytes = 0;
     let items = 0;
     /** The stream's end: its reader let go, and one log line of counts. */
@@ -619,7 +621,10 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
         if (read.done) return done({ ok: true, value: null }, 'closed');
         bytes += read.value.byteLength;
         if (bytes > AI_STREAM_MAX_BYTES) return done(failure('too-large'), 'tooLarge');
-        buffer += decoder.decode(read.value, { stream: true }).replace(/\r\n?/g, '\n');
+        // Line ends are made LF across chunks: a CR LF split between two chunks stays one line end.
+        const text = carry + decoder.decode(read.value, { stream: true });
+        carry = text.endsWith('\r') ? '\r' : '';
+        buffer += (carry === '' ? text : text.slice(0, -1)).replace(/\r\n?/g, '\n');
         for (let cut = buffer.indexOf('\n\n'); cut >= 0; cut = buffer.indexOf('\n\n')) {
           const message = sseMessage(buffer.slice(0, cut));
           buffer = buffer.slice(cut + 2);

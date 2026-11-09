@@ -427,6 +427,8 @@ const DEFAULT_DELAYS = { 'lookup-slow': 30_000, 'resume-slow': 8_000, 'ai-slow':
 /** v5 p2-stream (one round): the categories whose answer TailorIT never keeps under the standard scope. */
 const NEVER_ANSWERED_STANDARD = new Set(['sensitive_eeo', 'sensitive_legal', 'sensitive_compensation', 'consent',
   'attention_check']);
+/** v5 p2-stream (the P2 review, L8b): those it never keeps under the `all` scope (TailorIT's NEVER_ANSWERED). */
+const NEVER_ANSWERED = new Set(['sensitive_eeo', 'consent']);
 /** v5 p2-stream: ai-paced's wait between two items when the test names none. */
 const PACED_ITEM_MS = 400;
 /** v5 p2-stream: how long an AI route waits for its task before it answers 202 (the contract's AUTOFILL_AI_WAIT_MS). */
@@ -905,8 +907,9 @@ export function createMock() {
    *  (a choice its first option, a text CLEAN_ANSWER within its cap, or, for a text asked in a layout, version 4,
    *  FORMAT_ANSWERS' value of it) with its basis. Under ai-answer-amount every text is AMOUNT_ANSWER, which a text
    *  asked in a layout gets as TailorIT answers it: `invalid`, since it is no one value of that layout (answerInFormat).
-   *  @param {Array<Record<string, any>>} items */
-  function answerResult(items) {
+   *  v5 p2-stream (the P2 review, L8b): `scope` the request's, whose never-answered list applies, as TailorIT's.
+   *  @param {Array<Record<string, any>>} items @param {unknown} [scope] */
+  function answerResult(items, scope) {
     const amount = take('ai-answer-amount');
     const answering = amount ?? take('ai-answer');
     const basis = typeof answering?.value === 'string' ? answering.value : 'guess';
@@ -936,17 +939,16 @@ export function createMock() {
       answers: answers.map((answer) => {
         const classification = classes.get(answer.key);
         if (classification === undefined) return answer;
-        const never = NEVER_ANSWERED_STANDARD.has(String(classification.category));
+        const never = (scope === 'all' ? NEVER_ANSWERED : NEVER_ANSWERED_STANDARD).has(String(classification.category));
         return { ...(never ? { key: answer.key, optionSetHash: answer.optionSetHash, index: null, text: null, basis: null,
           reason: 'sensitive' } : answer), classification };
       }),
     };
   }
 
-  /** A task as AiTaskView shows it now. @param {{ id: string; kind: string; createdAt: number; readyAt: number | null;
-   *  cancelledAt: number | null; result: unknown }} task */
-  function viewOf(task) {
-    const now = Date.now();
+  /** A task as AiTaskView shows it now (or at `now`). @param {{ id: string; kind: string; createdAt: number;
+   *  readyAt: number | null; cancelledAt: number | null; result: unknown }} task @param {number} [now] */
+  function viewOf(task, now = Date.now()) {
     const ready = task.readyAt !== null && task.readyAt <= now;
     const status = task.cancelledAt !== null ? 'cancelled' : ready ? 'succeeded' : 'running';
     const finishedAt = task.cancelledAt ?? (ready ? task.readyAt : null);
@@ -994,7 +996,7 @@ export function createMock() {
     const task = { id: randomUUID(), kind, createdAt: now, cancelledAt: null,
       readyAt: endless !== null ? null : itemsAt !== null ? itemsAt.at(-1) ?? now : slow !== null ? now + slow.delayMs : now,
       result: kind === 'autofill_pick' ? pickResult(items) : kind === 'autofill_classify' ? classifyResult(items)
-        : kind === 'autofill_answer' ? answerResult(items) : draftResult(items),
+        : kind === 'autofill_answer' ? answerResult(items, json.scope) : draftResult(items),
       itemsAt,
       streams: (kind === 'autofill_answer' || kind === 'autofill_draft')
         && !(Array.isArray(json.canaries) && json.canaries.length > 0) };
@@ -1621,7 +1623,10 @@ export function createMock() {
     const late = /** @type {{ lateJson?: string }} */ (answer).lateJson;
     if (late !== undefined) {
       const task = state.tasks.get(late);
-      answer = task === undefined ? notFound() : { ...answer, json: viewOf(task) };
+      // The wait was until the task is due: it is answered as of then, finished (a timer that fires a millisecond
+      // early, or a clock that reads behind it, never makes it `running`; the docs writer's flaky run).
+      answer = task === undefined ? notFound()
+        : { ...answer, json: viewOf(task, Math.max(Date.now(), task.readyAt ?? Number.NEGATIVE_INFINITY)) };
     }
     entry.status = answer.status;
     // v5 p2-stream: a server-sent event stream is written, then ended.

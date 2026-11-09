@@ -466,6 +466,9 @@ export const AutofillDraftSchema = z.object({
    *  `trimmed`. */
   text: z.string().max(AUTOFILL_AI_LIMITS.draft.maxLength).nullable(),
   reason: z.enum(AUTOFILL_DRAFT_REASONS),
+  /** v5 (the review's security 5): as an answer's `streamedThenVoided`: sent on the stream, its reply then not trusted
+   *  as a whole. */
+  streamedThenVoided: z.literal(true).optional(),
 });
 export type AutofillDraft = z.infer<typeof AutofillDraftSchema>;
 
@@ -788,6 +791,13 @@ export const AutofillAnswerSchema = z
         reason: z.enum(AUTOFILL_CLASSIFY_REASONS),
       })
       .optional(),
+    /**
+     * v5 (the review's security 5): this answer went out on the task's stream, and the reply it came from was then
+     * not trusted as a whole (Claude spoke as an AI after it, the reply never read as the JSON asked, held two JSON
+     * blocks, or did not answer each item once). The answer stands as sent, and the extension flags the field it
+     * wrote for review. Absent otherwise.
+     */
+    streamedThenVoided: z.literal(true).optional(),
   })
   .superRefine(checkAnswer);
 export type AutofillAnswer = z.infer<typeof AutofillAnswerSchema>;

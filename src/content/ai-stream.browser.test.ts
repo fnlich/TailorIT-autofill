@@ -90,3 +90,52 @@ describe('answers that come in (v5 p2-stream)', () => {
     expect(report.fields.filter((row) => row.reason === 'max-passes-reached')).toEqual([]);
   }, 60_000);
 });
+
+describe('an answer whose reply TailorIT then voided (the P2 review, security 5)', () => {
+  const OFFICE = 'Which of our offices would you visit first?';
+
+  it('flags the field written from it for review at rest, left as written; a field the profile filled stays', async () => {
+    const fixture = await loadFixture(document, savedAnswers);
+    const worker = createFakeWorker({ settings: ANSWERS_ON });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => boardUrl('saved-answers'),
+      isTop: true, settle: { quietMs: 30 }, ai: { pollMs: 50 } });
+    runtimes.push(runtime);
+    expect(await runtime.fill()).toBe('review');
+    const runId = String(worker.of('plan/poll')[0]!.runId);
+    const before = worker.reports.at(-1)!.fields;
+    const office = before.find((row) => row.label === OFFICE)!;
+    const profiled = before.find((row) => row.provenance === 'profile' && row.wrote)!;
+    expect(office).toMatchObject({ provenance: 'llm-answer', wrote: true, needsUserAction: false });
+    expect(await worker.platform.deliver({ v: 1, type: 'plan/ready', runId, reviews: [office.key, profiled.key] }))
+      .toEqual({ ok: true, data: {} });
+    await vi.waitFor(() => expect(worker.reports.at(-1)!.fields.find((row) => row.label === OFFICE))
+      .toMatchObject({ status: 'flagged', reason: 'ai-reply-voided', wrote: true, needsUserAction: true,
+        provenance: 'llm-answer' }));
+    const after = worker.reports.at(-1)!.fields;
+    expect(after.find((row) => row.key === profiled.key)).toEqual(profiled);
+    expect((fixture.doc.getElementById('office') as HTMLInputElement).value).toBe(FAKE_ANSWER);
+    // A word for another run changes nothing; one without reviews at rest is expired, as before.
+    expect(await worker.platform.deliver({ v: 1, type: 'plan/ready', runId: 'another-run', reviews: [office.key] }))
+      .toEqual({ ok: false, error: 'expired' });
+    expect(await worker.platform.deliver({ v: 1, type: 'plan/ready', runId })).toEqual({ ok: false, error: 'expired' });
+  });
+
+  it('flags it in the run’s rows when the word comes while the run fills', async () => {
+    const fixture = await loadFixture(document, savedAnswers);
+    let holding = true;
+    const worker = createFakeWorker({ settings: ANSWERS_ON, aiHold: () => holding });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => boardUrl('saved-answers'),
+      isTop: true, settle: { quietMs: 30 }, ai: { pollMs: 6000 } });
+    runtimes.push(runtime);
+    const filled = runtime.fill();
+    await vi.waitFor(() => expect(worker.of('plan/poll').length).toBeGreaterThanOrEqual(1), { timeout: 10_000 });
+    const poll = worker.of('plan/poll')[0]!;
+    const runId = String(poll.runId);
+    const keys = poll.keys as string[];
+    holding = false;
+    expect(await worker.platform.deliver({ v: 1, type: 'plan/ready', runId, reviews: keys })).toEqual({ ok: true, data: {} });
+    expect(await filled).toBe('review');
+    const office = worker.reports.at(-1)!.fields.find((row) => row.label === OFFICE)!;
+    expect(office).toMatchObject({ status: 'flagged', reason: 'ai-reply-voided', wrote: true, needsUserAction: true });
+  });
+});

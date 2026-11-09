@@ -733,6 +733,9 @@ export class FillRun {
   private readonly writing = new CurrentWrite();
   /** v5 p2-stream: rung by the worker's plan/ready, so the loop's wait for the AI polls at once (loop.ts AiWake). */
   private readonly aiWake = new AiWake();
+  /** v5 p2-stream (the P2 review, security 5): the fields whose AI answer or draft came on the stream and whose reply
+   *  TailorIT then voided as a whole (plan/ready's `reviews`): what the run wrote from them is flagged for review. */
+  private readonly voidedAi = new Set<BaseKey>();
   /** The step's repeatable sections as the report counts them: entries the profile has, and blocks the form shows. */
   private repeatableCounts: NonNullable<ReportHeader['repeatables']> = [];
 
@@ -797,11 +800,29 @@ export class FillRun {
   }
 
   /** v5 p2-stream (plan/ready): answers this run waits for came in, by the worker's word: the loop's wait for the AI
-   *  polls at once. Answers whether the word was this run's. */
-  aiReady(runId: string): boolean {
-    if (this.ended !== null || this.id === null || runId !== this.id) return false;
+   *  polls at once. Answers whether the word was this run's. The P2 review (security 5): `reviews` names fields whose
+   *  streamed answer's reply was then voided: what the run wrote from them is flagged now at rest, else at its end. */
+  aiReady(runId: string, reviews: readonly FieldKey[] = []): boolean {
+    if (this.id === null || runId !== this.id) return false;
+    for (const key of reviews) this.voidedAi.add(baseKeyOf(key));
+    if (this.ended !== null) {
+      if (reviews.length === 0) return false;
+      this.replaceRows(this.reviewedRows(this.rows).filter((row, at) => row !== this.rows[at]));
+      return true;
+    }
     this.aiWake.ring();
     return true;
+  }
+
+  /** v5 p2-stream (the P2 review, security 5): a field written from an AI answer or draft whose reply TailorIT voided
+   *  after its stream sent it stays as written, flagged for review (ai-reply-voided). A row already waiting for the
+   *  person (a draft to confirm) or blocked stays as it is. */
+  private reviewedRows(rows: readonly FillResult[]): FillResult[] {
+    if (this.voidedAi.size === 0) return [...rows];
+    return rows.map((row) => (this.voidedAi.has(baseKeyOf(row.key)) && row.wrote && row.status !== 'blocked'
+      && (row.provenance === 'llm-answer' || row.provenance === 'llm-draft' || row.provenance === 'llm-pick')
+      && !(row.status === 'flagged' && row.needsUserAction)
+      ? { ...row, status: 'flagged' as const, reason: 'ai-reply-voided' as const, needsUserAction: true } : row));
   }
 
   /** The person's Skip (v3 Phase 3, run/skip): gives up the write of `key` when it is the one being made now, and the
@@ -2421,8 +2442,10 @@ export class FillRun {
       const rowsNow = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)];
       const macs = await this.draftMacs(after, rowsNow);
       this.alive();
-      const all = this.markedRows(rowsNow, after, loop.carry.lastWriteAt, macs);
-      this.bookDrafts(all, macs);
+      const marked = this.markedRows(rowsNow, after, loop.carry.lastWriteAt, macs);
+      this.bookDrafts(marked, macs);
+      // v5 p2-stream (the P2 review, security 5): what was written from a voided reply is flagged for review.
+      const all = this.reviewedRows(marked);
       this.noticesFromRows(all);
       this.counters = { passes: loop.passes, hiddenControlsIgnored: last.counters.hiddenControlsIgnored,
         deferredFields: last.counters.deferredFields };

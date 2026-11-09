@@ -493,7 +493,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'plan/ready':
         // v5 p2-stream: the worker's alone: answers the run waits for came in, and its wait for the AI polls at once.
         if (!fromWorker(sender)) return refuse('bad_sender');
-        return current?.aiReady(msg.runId) === true ? ok({}) : refuse('expired');
+        return current?.aiReady(msg.runId, (msg.reviews ?? []) as FieldKey[]) === true ? ok({}) : refuse('expired');
       case 'launcher/prefs':
         launcherPrefs = msg.launcher;
         ui?.setLauncherPrefs(launcherPrefs, msg.shown === true);

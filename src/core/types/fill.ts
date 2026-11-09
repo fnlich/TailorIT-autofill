@@ -98,6 +98,10 @@ export const REASON_CODES = [
   // page shows holding a file while it offers no file input to put the person's in its place (its input disabled, or
   // gone by the write): left for the person, whose page's own Remove or Replace it is
   'resume-held-no-input',
+  // v5 p2-stream (the P2 review, security 5): a field written from an AI answer or draft that came on its task's stream,
+  // whose reply TailorIT then voided as a whole (`streamedThenVoided`: talk of being an AI, a canary, a second JSON
+  // block, an item array not naming each item once, or no JSON): left as written, flagged for review
+  'ai-reply-voided',
   // v5 p2-fill review (security 3): a rich-text box holding text a person cannot see (off-screen, clipped,
   // see-through or tiny), which Edit with AI never rewrites: none of its text goes to the AI
   'hidden-text-in-box',

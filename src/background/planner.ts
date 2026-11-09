@@ -64,10 +64,12 @@
  *
  * v5 p2-stream (Jobright parity, Phase 2: each AI answer fills as it lands): when a run's answers come in (an answer or
  * draft on its task's stream, or a batch's end: ai-tasks.ts onReady), the run's own frame and document are told,
- * `plan/ready {runId}` (one message per burst, never a key or an answer), and poll at once; the frame's own poll every
+ * `plan/ready {runId}` (one message per burst, never an answer), and poll at once; the frame's own poll every
  * AI_POLL_MS stays the fallback and keeps the worker awake.
  * v5 p2-stream (one round): every plan asks a question nothing classified its category with its answer
  * (PlanInput.oneRound), unless TailorIT showed it does not classify within an answer task (ai-tasks.ts).
+ * The P2 review (security 5): plan/ready names the keys whose answer or draft the run took from its stream and whose
+ * reply TailorIT then voided as a whole (`reviews`, RunAi.takeReviews): the frame flags what it wrote from them.
  */
 import type { z } from 'zod';
 import type { PlanAsk, PlanOutput, PlanSensitiveState } from '../core/plan/types';
@@ -166,7 +168,10 @@ export function createPlanner(deps: PlannerDeps) {
       ringing.delete(run.runId);
       const target = run.documentId === null ? { frameId: run.frameId }
         : { frameId: run.frameId, documentId: run.documentId };
-      void tabs.sendToFrame(run.tabId, { v: 1, type: 'plan/ready', runId: run.runId }, target).catch(() => undefined);
+      // The P2 review (security 5): with the keys whose streamed answer's reply was then voided, for review.
+      const reviews = deps.runs.memo(run.runId).ai?.takeReviews() ?? [];
+      void tabs.sendToFrame(run.tabId, { v: 1, type: 'plan/ready', runId: run.runId,
+        ...(reviews.length === 0 ? {} : { reviews: reviews.slice(0, 500) }) }, target).catch(() => undefined);
     });
   }
   // v5 p2-stream end
