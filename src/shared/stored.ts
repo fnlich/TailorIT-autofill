@@ -49,9 +49,14 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  the site can tell it shows and hears what is typed into it, its closed notes kept, the toolbar icon opening it on any
  *  https page it may run on, the side panel a choice; every https and http page granted at install, Company career sites on unless turned off, never
  *  in a CAPTCHA vendor's frame; an unticked checkbox CAPTCHA holding no press, the site deciding, a site's request for
- *  the check waited out, a refused sign-in left typed for the person). Raise it whenever the disclosure's substance
- *  changes. */
-export const DISCLOSURE_VERSION = 10;
+ *  the check waited out, a refused sign-in left typed for the person); 11, v5 Phase 2 (2026-11-08: a small script in
+ *  the page's own context on Workday's, ClearCompany's, Oracle Recruiting Cloud's and SuccessFactors' candidate pages
+ *  telling the extension only whether the site took the application, read on three of them from the request or its
+ *  answer; a second one, once a fill starts, holding back the alerts and confirms the writes bring and answering the
+ *  site's own file picker with the chosen resume; either visible to the site's scripts; rich-text boxes typed with the
+ *  browser's own editing; Open Application; the AI's answers streamed back). Raise it whenever the disclosure's
+ *  substance changes. */
+export const DISCLOSURE_VERSION = 11;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */
