@@ -70,11 +70,16 @@
  * Values, free text and hashes stay in this frame's memory; nothing here sends or logs one (plan/request carries the
  * scan's FieldSpecs, as every pass's always did). The waits are settle()'s and awaitOptions()', on dom/time.ts's
  * timers: there is no fixed sleep.
+ * v5 p2-stream (Jobright parity, Phase 2: each AI answer fills as it lands): TailorIT streams each answer as it lands
+ * and the worker tells the frame (plan/ready, LoopEnv.wake: AiWake), so the wait for the AI polls at once instead of
+ * at its next AI_POLL_MS tick; the tick stays, as the fallback and to keep the worker awake. A pass that only writes
+ * answers that came in (no field planned or held back) is not counted against MAX_PASSES or MAX_AI_PASSES
+ * (bookkeeping.ts noteArrivalPass; MAX_LOOP_PASSES still ends any loop), since answers now arrive a few at a time.
  */
 import {
-  awaitingKeys, baseKeyOf, carriedFields, childrenOf, createLoop, isStopped, loopVerdict, mayWrite, orderPending,
-  recordOptionsWait, recordRows, recordWrite, requeueAwaiting, revealEdgesOf, observeScan, type LoopEnd, type LoopEvent,
-  type LoopState, type LoopVerdict, type ScanObservation, type TrackedField,
+  awaitingKeys, baseKeyOf, carriedFields, childrenOf, createLoop, isStopped, loopVerdict, mayWrite, noteArrivalPass,
+  orderPending, recordOptionsWait, recordRows, recordWrite, requeueAwaiting, revealEdgesOf, observeScan, type LoopEnd,
+  type LoopEvent, type LoopState, type LoopVerdict, type ScanObservation, type TrackedField,
 } from '../core/loop/bookkeeping';
 import { loopRows, unplannedRow, unresolvedRow } from '../core/loop/rows';
 import type { Provenance } from '../core/enums';
@@ -126,6 +131,39 @@ export const AI_WAIT_CAP_MS = 125_000;
 export const LETTER_WAIT_CAP_MS = 185_000;
 /** A dry run plans one pass, and asks again at most this many times for fields the worker forgot (it restarted). */
 const DRY_RUN_ASKS = 2;
+
+// v5 p2-stream
+/**
+ * The worker's word that answers the run waits for came in (plan/ready): the loop's wait for the AI ends at once and
+ * polls. A ring between a poll and the wait after it is kept (`pending`), so it is never lost. Holds no key.
+ */
+export class AiWake {
+  private controller = new AbortController();
+  private rung = false;
+
+  /** plan/ready came: the wait now, or the next one, ends at once. */
+  ring(): void {
+    this.rung = true;
+    this.controller.abort();
+  }
+
+  /** A poll is about to read everything in: what rang before it is taken. */
+  take(): void {
+    this.rung = false;
+    if (this.controller.signal.aborted) this.controller = new AbortController();
+  }
+
+  /** Whether it rang since the last take. */
+  get pending(): boolean {
+    return this.rung;
+  }
+
+  /** Aborted by the next ring (already, when it rang since the last take). */
+  get signal(): AbortSignal {
+    return this.controller.signal;
+  }
+}
+// v5 p2-stream end
 
 /** The write the loop makes now, and the person's Skip of it (v3 Phase 3): the run holds one and the loop fills it in
  *  around each write. Keys only. */
@@ -207,6 +245,9 @@ export interface LoopEnv extends PassEnv {
   progress?(rows: readonly FillResult[], pending: readonly FieldKey[], current: FieldKey | null): void;
   /** Where the loop names the write it makes now, so the person's Skip can give it up (CurrentWrite). */
   writing?: CurrentWrite;
+  /** v5 p2-stream: rung by the worker's plan/ready (an answer came in): the wait for the AI polls at once. Without it
+   *  the wait polls every AI_POLL_MS only. */
+  wake?: AiWake;
 }
 
 /** What a later attempt on the same step starts from (LoopEnv.carry): the books of the fields written or taken over,
@@ -569,6 +610,8 @@ class ReactiveLoop {
     const holding = new Set(env.dryRun ? [] : order.filter((key) => !arrived.has(key)
       && loadingWithOptions(current, fields.get(key)!)));
     const asked = order.filter((key) => !holding.has(key) && !arrived.has(key));
+    // v5 p2-stream: a pass that only writes answers that came in is not counted against the pass caps.
+    const arrivalOnly = asked.length === 0 && holding.size === 0 && arrived.size > 0;
     const rows = new Map<FieldKey, FillResult>();
     let writes: PlannedWrite[] = [];
     let awaiting: FieldKey[] = [];
@@ -660,6 +703,7 @@ class ReactiveLoop {
     // would only overwrite the row of our write.
     const waiting = awaiting.filter((key) => rows.get(key)?.wrote !== true);
     this.state = recordRows(this.state, rows.values(), { awaiting: waiting });
+    if (arrivalOnly) this.state = noteArrivalPass(this.state);
     this.settleFollowUps(rows);
     if (settled !== null && !settled.settled) {
       const busy = busySigns(env.root, env.adapter);
@@ -907,6 +951,9 @@ class ReactiveLoop {
       ? Math.max(aiCapMs, env.ai?.letterCapMs ?? LETTER_WAIT_CAP_MS) : aiCapMs);
     this.aiProgressAt ??= monotonicNow();
     const started = monotonicNow();
+    // v5 p2-stream: the waits plan/ready ended early, and whether it rang (read afresh at each ask).
+    let woken = 0;
+    const rang = (): boolean => env.wake?.pending === true;
     /** The field whose Skip the wait takes (the audit of 2026-11-06, m5): one slot across the whole wait, the poll's
      *  requests included, so a Skip the person sends while a poll is out is never lost. It moves only when the wait
      *  moves on to another field. */
@@ -936,6 +983,8 @@ class ReactiveLoop {
         if (keys.length === 0 || env.poll === undefined) return [];
         if (block) hold(keys[0] ?? null);
         this.aiPolls += 1;
+        // v5 p2-stream: this poll reads everything in so far, so what rang before it is taken.
+        env.wake?.take();
         const answer = await env.poll(keys);
         this.alive();
         if (answer === 'failed') {
@@ -981,16 +1030,29 @@ class ReactiveLoop {
           return [];
         }
         const skip = hold(on);
+        // v5 p2-stream: an answer came in while the poll was out (plan/ready): poll again at once.
+        if (rang()) {
+          woken += 1;
+          continue;
+        }
         const stop = AbortSignal.any([env.signal, ...(env.stopSignal === undefined ? [] : [env.stopSignal]),
-          ...(skip === null ? [] : [skip])]);
+          ...(skip === null ? [] : [skip]), ...(env.wake === undefined ? [] : [env.wake.signal])]);
         const waited = await deadline(Math.min(pollMs, left), stop);
         this.alive();
         if (skippedNow()) continue;
-        if (waited === 'aborted' || env.stopped()) return [];
+        if (env.stopped()) return [];
+        if (waited === 'aborted') {
+          // v5 p2-stream: the worker's plan/ready ended the wait: poll now.
+          if (rang()) {
+            woken += 1;
+            continue;
+          }
+          return [];
+        }
       }
     } finally {
       hold(null);
-      if (block) log('content.ai-waited', { polls: this.aiPolls, ms: Math.round(monotonicNow() - started) });
+      if (block) log('content.ai-waited', { polls: this.aiPolls, ms: Math.round(monotonicNow() - started), woken });
     }
   }
 

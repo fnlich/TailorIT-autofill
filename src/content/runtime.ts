@@ -485,6 +485,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null || app?.page === 'posting');
       case 'run/skip':
         return current?.skipField(msg.fieldKey as FieldKey) === true ? ok({}) : refuse('expired');
+      case 'plan/ready':
+        // v5 p2-stream: the worker's alone: answers the run waits for came in, and its wait for the AI polls at once.
+        if (!fromWorker(sender)) return refuse('bad_sender');
+        return current?.aiReady(msg.runId) === true ? ok({}) : refuse('expired');
       case 'launcher/prefs':
         launcherPrefs = msg.launcher;
         ui?.setLauncherPrefs(launcherPrefs, msg.shown === true);

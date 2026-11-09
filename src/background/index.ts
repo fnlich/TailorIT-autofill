@@ -235,7 +235,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const letters = { server, timers, now };
   const planner = createPlanner({ runs, profiles: profileCache, settings, core, chooseResume, ai: aiTasks,
     aiTaskIds: runStates, cache: matchCache, accepts, letters, now,
-    withoutResume: (tabId, applicationKey) => jobs.without(tabId, applicationKey) });
+    withoutResume: (tabId, applicationKey) => jobs.without(tabId, applicationKey),
+    // v5 p2-stream: a run's frame is told when its AI answers come in (plan/ready).
+    tabs: platform.tabs });
   const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes),
     choose: chooseResume, letters });
   /** v4: the tabs' Sign up & Autofill grants, and the forms to start after a wall (sign-up.ts). The v4 review (M1): one

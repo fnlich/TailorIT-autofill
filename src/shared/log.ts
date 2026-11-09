@@ -291,6 +291,13 @@ export const LOG_CODES = [
   'patches.injected',
   'patches.refused',
   // ── end v5 p2-fill ──
+  // v5 p2-stream: an AI task's stream ended (items as a count, how long, whether with its task, why as a flag); a
+  // TailorIT without the stream (the worker polls from then on); a finished task that differs from what streamed (a
+  // count). Never a key, an item or a value. (A frame woken by plan/ready counts it in content.ai-waited's `woken`.)
+  'server.stream-ended',
+  'ai.stream-unsupported',
+  'ai.stream-differs',
+  // v5 p2-stream end
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

@@ -114,6 +114,16 @@ async function scenario(name: keyof typeof MOCK_SCENARIOS, options: { times?: nu
   expect(response.status).toBe(204);
 }
 
+/** v5 p2-stream: the data of each server-sent event, parsed, its `event:` name checked against its type. */
+function sseEvents(text: string): Array<{ type: string } & Record<string, unknown>> {
+  return text.split('\n\n').filter((message) => /^data: /m.test(message)).map((message) => {
+    const name = /^event: (.*)$/m.exec(message)?.[1];
+    const event = JSON.parse(/^data: (.*)$/m.exec(message)![1]!) as { type: string } & Record<string, unknown>;
+    expect(name).toBe(event.type);
+    return event;
+  });
+}
+
 /** The contract's golden pick task, which the mock always holds. */
 const GOLDEN_TASK_ID = (example('AutofillPickTask') as { id: string }).id;
 const pathOf = (route: { path: string }) => route.path.replace(':id', route.path.startsWith('/api/ai/tasks/') ? GOLDEN_TASK_ID
@@ -151,6 +161,15 @@ describe('the routes', () => {
         json: sendsBody ? example(route.request!) : undefined });
       expect(response.status).toBe(route.status);
       expect(response.headers.get(API)).toBe(V);
+      // v5 p2-stream: a task's streamed view is server-sent events, each message's data one AutofillTaskStreamEvent.
+      if (route.path === '/api/ai/tasks/:id/stream') {
+        expect(response.headers.get('cache-control')).toBe('no-store, no-transform');
+        expect(response.headers.get('content-type')).toMatch(/^text\/event-stream/);
+        const events = sseEvents(await response.text());
+        expect(events.map((event) => event.type)).toEqual(['task']);
+        for (const event of events) expect(AUTOFILL_CONTRACT_SCHEMAS[route.response!].safeParse(event).success).toBe(true);
+        return;
+      }
       expect(response.headers.get('cache-control')).toBe('no-store');
       if (route.response !== null) {
         const schema: z.ZodType = AUTOFILL_CONTRACT_SCHEMAS[route.response];
@@ -1029,5 +1048,64 @@ describe('cover letters (Phase G)', () => {
       const refused = await ask(body);
       expect([refused.status, await errorCode(refused)]).toEqual([400, 'validation_failed']);
     }
+  });
+});
+
+describe('v5 p2-stream: the AI task stream', () => {
+  const answerBody = (count: number, canaries: string[] = []) => ({ ...(example('AutofillAnswerRequest') as Record<string, unknown>),
+    items: Array.from({ length: count }, (_, at) => ({ key: `lever|main|q-${at}|none|0`, shape: 'text', kind: 'text',
+      question: `Question ${at}?`, hint: '', section: '', optionSetHash: null, options: [], maxLength: 100 })), canaries });
+
+  it('answers respond-async 202 at once, and streams each answer as it lands (ai-paced), then the finished task', async () => {
+    await scenario('ai-answer');
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-paced', delayMs: 200, value: 150 } });
+    const posted = await call('/api/autofill/ai/answer', { method: 'POST', headers: asToken({ Prefer: 'respond-async' }),
+      json: answerBody(3) });
+    expect([posted.status, posted.headers.get('preference-applied')]).toEqual([202, 'respond-async']);
+    const { taskId } = (await posted.json()) as { taskId: string };
+    const started = Date.now();
+    const stream = await call(`/api/ai/tasks/${taskId}/stream`, { headers: asToken() });
+    const reader = stream.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    const arrivals: number[] = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      for (const _ of chunk.matchAll(/^event: answer$/gm)) arrivals.push(Date.now() - started);
+      text += chunk;
+    }
+    const events = sseEvents(text);
+    expect(events.map((event) => event.type)).toEqual(['answer', 'answer', 'answer', 'task']);
+    // One at a time, about 150 ms apart, the first about 350 ms in: never all at once at the end.
+    expect(arrivals[2]! - arrivals[0]!).toBeGreaterThanOrEqual(200);
+    const task = events.at(-1)!.task as { status: string; result: { answers: unknown[] } };
+    expect(task.status).toBe('succeeded');
+    expect(task.result.answers).toEqual(events.slice(0, 3).map((event) => event.answer));
+  });
+
+  it('waits for an ai-paced task as TailorIT does when asked without respond-async, and streams nothing with canaries', async () => {
+    await scenario('ai-answer');
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-paced', delayMs: 100, value: 50 } });
+    const waited = await call('/api/autofill/ai/answer', { method: 'POST', headers: asToken(), json: answerBody(2) });
+    expect(waited.status).toBe(200);
+    expect(((await waited.json()) as { status: string }).status).toBe('succeeded');
+    const posted = await call('/api/autofill/ai/answer', { method: 'POST', headers: asToken({ Prefer: 'respond-async' }),
+      json: answerBody(2, ['zebra-canary']) });
+    const { taskId } = (await posted.json()) as { taskId: string };
+    const stream = await call(`/api/ai/tasks/${taskId}/stream`, { headers: asToken() });
+    expect(sseEvents(await stream.text()).map((event) => event.type)).toEqual(['task']);
+  });
+
+  it('is a TailorIT before the stream under ai-stream-off: the stream 404, respond-async not heard', async () => {
+    await scenario('ai-stream-off');
+    const posted = await call('/api/autofill/ai/answer', { method: 'POST', headers: asToken({ Prefer: 'respond-async' }),
+      json: answerBody(1) });
+    expect(posted.status).toBe(200);
+    const id = ((await posted.json()) as { id: string }).id;
+    expect((await call(`/api/ai/tasks/${id}/stream`, { headers: asToken() })).status).toBe(404);
+    // Past the stream's path a token reaches nothing.
+    expect((await call(`/api/ai/tasks/${id}/stream/x`, { headers: asToken() })).status).toBe(403);
   });
 });
