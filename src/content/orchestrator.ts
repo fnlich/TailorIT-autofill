@@ -206,7 +206,7 @@ import { log } from '../shared/log';
 import { leftForPerson, notFilled, progressOf, unfilledByRun } from '../shared/report';
 import type { ContentSettings } from '../shared/settings';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
-import { AI_POLL_MS, AI_WAIT_CAP_MS, CurrentWrite, runLoop, type LoopCarry, type LoopResult, type OptionsTimings,
+import { AI_POLL_MS, AI_WAIT_CAP_MS, AiWake, CurrentWrite, runLoop, type LoopCarry, type LoopResult, type OptionsTimings,
   type SettleTimings } from './loop';
 import { RunAborted, writeField, type PassEnv, type PlanAnswer } from './pass';
 import { frameHitsOf, hiddenPolicyHits, policyGateOf, POSTING_READ_MIN, type PolicyView } from './policy';
@@ -723,6 +723,8 @@ export class FillRun {
   private readonly liveLimiter = createReportLimiter({ perSecond: REPORT_PUTS_PER_SECOND });
   /** The write being made now, which the person's Skip gives up (the loop fills it in). */
   private readonly writing = new CurrentWrite();
+  /** v5 p2-stream: rung by the worker's plan/ready, so the loop's wait for the AI polls at once (loop.ts AiWake). */
+  private readonly aiWake = new AiWake();
   /** The step's repeatable sections as the report counts them: entries the profile has, and blocks the form shows. */
   private repeatableCounts: NonNullable<ReportHeader['repeatables']> = [];
 
@@ -784,6 +786,14 @@ export class FillRun {
   /** Ends the run at once: its planned writes are dropped (invalidation, the document leaving, a new document). */
   abort(): void {
     this.controller.abort();
+  }
+
+  /** v5 p2-stream (plan/ready): answers this run waits for came in, by the worker's word: the loop's wait for the AI
+   *  polls at once. Answers whether the word was this run's. */
+  aiReady(runId: string): boolean {
+    if (this.ended !== null || this.id === null || runId !== this.id) return false;
+    this.aiWake.ring();
+    return true;
   }
 
   /** The person's Skip (v3 Phase 3, run/skip): gives up the write of `key` when it is the one being made now, and the
@@ -3248,6 +3258,8 @@ export class FillRun {
       // v3 Phase 3: the side panel's progress, and the person's Skip of the write being made.
       progress: (rows, pending, current) => this.liveProgress(rows, pending, current),
       writing: this.writing,
+      // v5 p2-stream: the worker's plan/ready ends a wait for the AI at once.
+      wake: this.aiWake,
       ...(carry === undefined ? {} : { carry }),
       widgetReadings: this.widgetReadings,
       // s2 lists: what this host's dropdowns showed before, and each learnable dropdown's whole read told.

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AUTOFILL_API_VERSION } from '../contract/tailorit';
-import { createServerClient, isAllowedRequest, SERVER_TIMEOUT_MS, type ServerClientDeps } from './server-client';
+import {
+  AI_STREAM_IDLE_MS, createServerClient, isAllowedRequest, SERVER_TIMEOUT_MS, type ServerClientDeps,
+} from './server-client';
 import { createFakeTailorIT, fakePdf, fileReply, goldens, GOLDEN_TOKEN, ORIGIN, START_MS, type FakeTailorIT } from './worker.testkit';
 
 const REDEEM_BODY = { code: 'K7QM2XRD9VHTPA3C', client: { browser: 'chrome' as const, extensionVersion: '0.1.0', os: 'windows' as const } };
@@ -347,3 +349,123 @@ describe('GET /credentials (version 6: the page path)', () => {
   });
 });
 // ── end contract6 ──
+
+// ── v5 p2-stream: a task's streamed view, and Prefer: respond-async ──
+describe('the AI task stream (v5 p2-stream)', () => {
+  const TASK_ID = '3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60';
+  const STREAM = `/api/ai/tasks/${TASK_ID}/stream`;
+  const ANSWER_BODY = { items: [{ key: 'lever|main|t1|none|0', shape: 'text' as const, kind: 'text' as const,
+    question: 'How many years of Go?', hint: '', section: '', optionSetHash: null, options: [], maxLength: 40 }],
+  scope: 'standard' as const, jobText: '', company: 'Northwind', jobTitle: 'Engineer', resumeId: null, canaries: [] };
+  const answer = { key: 'lever|main|t1|none|0', optionSetHash: null, index: null, text: 'Four years', basis: 'resume',
+    reason: 'answered' };
+  const sse = (...events: Array<Record<string, unknown> & { type: string }>) => new TextEncoder().encode(
+    `: ping\n\n${events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('')}`);
+  const streamReply = (bytes: Uint8Array) => ({ bytes, headers: { 'Content-Type': 'text/event-stream; charset=utf-8' } });
+  const finished = async () => (await import('../contract/tailorit/v1/fixtures/AutofillTaskView/valid/answer.json')).default;
+
+  it.each([
+    ['GET', STREAM, true],
+    ['DELETE', STREAM, false],
+    ['POST', STREAM, false],
+    ['GET', `${STREAM}/x`, false],
+    ['GET', '/api/ai/tasks/not-a-task/stream', false],
+  ])('allows %s %s: %s', (method, path, allowed) => {
+    expect(isAllowedRequest(method, path)).toBe(allowed);
+  });
+
+  it('reads each answer as it comes and answers the finished task, its headers within 25 s, each read within the idle limit', async () => {
+    const { server, tailorit, timeouts } = client();
+    const task = await finished();
+    tailorit.reply(`GET ${STREAM}`, streamReply(sse({ type: 'answer', answer }, { type: 'task', task })));
+    const heard: unknown[] = [];
+    const read = await server.aiTaskStream(TASK_ID, { signal: new AbortController().signal,
+      onEvent: (event) => heard.push(event) });
+    expect(read).toEqual({ ok: true, value: task });
+    expect(heard).toEqual([{ type: 'answer', answer }]);
+    const sent = tailorit.requests.at(-1)!;
+    expect(sent.headers).toMatchObject({ accept: 'text/event-stream', authorization: `Bearer ${GOLDEN_TOKEN}`,
+      'x-tailorit-autofill-api': String(AUTOFILL_API_VERSION) });
+    expect(sent.init).toMatchObject({ credentials: 'omit', redirect: 'error', cache: 'no-store' });
+    expect(timeouts.map((timeout) => timeout.ms)).toEqual(expect.arrayContaining([SERVER_TIMEOUT_MS, AI_STREAM_IDLE_MS]));
+  });
+
+  it('answers null for a stream that ends without its task, and bad-answer for a message off the contract', async () => {
+    const { server, tailorit } = client();
+    const signal = new AbortController().signal;
+    const read = () => server.aiTaskStream(TASK_ID, { signal, onEvent: () => undefined });
+    tailorit.reply(`GET ${STREAM}`, streamReply(sse({ type: 'answer', answer })), { once: true });
+    expect(await read()).toEqual({ ok: true, value: null });
+    // An event named for another type, an answer off the contract, a body that is not JSON.
+    const named = new TextEncoder().encode(`event: draft\ndata: ${JSON.stringify({ type: 'answer', answer })}\n\n`);
+    tailorit.reply(`GET ${STREAM}`, streamReply(named), { once: true });
+    expect(await read()).toMatchObject({ ok: false, failure: 'bad-answer' });
+    tailorit.reply(`GET ${STREAM}`, streamReply(sse({ type: 'answer', answer: { ...answer, basis: null } })), { once: true });
+    expect(await read()).toMatchObject({ ok: false, failure: 'bad-answer' });
+    tailorit.reply(`GET ${STREAM}`, streamReply(new TextEncoder().encode('event: task\ndata: {\n\n')), { once: true });
+    expect(await read()).toMatchObject({ ok: false, failure: 'bad-answer' });
+    // JSON where a stream belongs.
+    tailorit.reply(`GET ${STREAM}`, { json: await finished() }, { once: true });
+    expect(await read()).toMatchObject({ ok: false, failure: 'bad-answer' });
+  });
+
+  it('answers not-found for a TailorIT without the stream, and refuses an id that is not one before any request', async () => {
+    const { server, tailorit } = client();
+    const signal = new AbortController().signal;
+    const read = (id: string) => server.aiTaskStream(id, { signal, onEvent: () => undefined });
+    expect(await read(TASK_ID)).toMatchObject({ ok: false, failure: 'not-found' });
+    const before = tailorit.requests.length;
+    for (const id of ['../profile', TASK_ID.toUpperCase(), '']) {
+      expect(await read(id)).toMatchObject({ ok: false, failure: 'refused-path' });
+    }
+    expect(tailorit.requests.length).toBe(before);
+  });
+
+  it('gives up a stream quiet past the idle limit, or when the caller aborts: null, and the caller polls', async () => {
+    let feed: ReadableStreamDefaultController<Uint8Array> | null = null;
+    // A body its request's signal ends, as a browser's fetch does.
+    const body = (signal: AbortSignal | null | undefined) => new ReadableStream<Uint8Array>({ start: (controller) => {
+      feed = controller;
+      signal?.addEventListener('abort', () => controller.error(new DOMException('The request was aborted.', 'AbortError')),
+        { once: true });
+    } });
+    const timeouts: Array<{ ms: number; controller: AbortController }> = [];
+    const { server } = client({ platform: {
+      fetch: async (_url, init) => new Response(body(init?.signal), { headers: { 'Content-Type': 'text/event-stream',
+        'X-TailorIT-Autofill-Api': String(AUTOFILL_API_VERSION) } }),
+      timeout: (ms) => {
+        const controller = new AbortController();
+        timeouts.push({ ms, controller });
+        return controller.signal;
+      },
+      now: () => START_MS,
+    } });
+    const heard: unknown[] = [];
+    const quiet = server.aiTaskStream(TASK_ID, { signal: new AbortController().signal,
+      onEvent: (event) => heard.push(event) });
+    await vi.waitFor(() => expect(timeouts.some((timeout) => timeout.ms === AI_STREAM_IDLE_MS)).toBe(true));
+    // The 25 s limit is on the headers alone: once they came, it ends nothing.
+    // (Its timeout is the first asked for, before the request; the idle limit's come with each read.)
+    expect(timeouts[0]!.ms).toBe(SERVER_TIMEOUT_MS);
+    timeouts[0]!.controller.abort();
+    feed!.enqueue(sse({ type: 'answer', answer }));
+    await vi.waitFor(() => expect(heard).toHaveLength(1));
+    for (const timeout of timeouts.slice(1)) timeout.controller.abort();
+    expect(await quiet).toEqual({ ok: true, value: null });
+    feed = null;
+    const stop = new AbortController();
+    const stopped = server.aiTaskStream(TASK_ID, { signal: stop.signal, onEvent: () => undefined });
+    await vi.waitFor(() => expect(feed).not.toBeNull());
+    stop.abort();
+    expect(await stopped).toEqual({ ok: true, value: null });
+  });
+
+  it('asks an AI route with Prefer: respond-async only when told to', async () => {
+    const { server, tailorit } = client();
+    tailorit.reply('POST /api/autofill/ai/answer', { status: 202, json: { taskId: TASK_ID } });
+    expect(await server.aiAnswer(ANSWER_BODY, { async: true })).toEqual({ ok: true, value: { done: false, taskId: TASK_ID } });
+    expect(tailorit.requests.at(-1)!.headers.prefer).toBe('respond-async');
+    await server.aiAnswer(ANSWER_BODY);
+    expect(tailorit.requests.at(-1)!.headers.prefer).toBeUndefined();
+  });
+});

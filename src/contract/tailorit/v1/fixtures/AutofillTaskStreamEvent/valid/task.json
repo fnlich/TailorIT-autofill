@@ -1,0 +1,48 @@
+{
+  "type": "task",
+  "task": {
+    "id": "d4f6a8b0-2c4e-4a6b-8d0f-1e3c5a7b9d20",
+    "kind": "autofill_answer",
+    "status": "succeeded",
+    "result": {
+      "answers": [
+        {
+          "key": "greenhouse|main|are-you-willing-to-travel-up-to-25|3a7c1e9b5d2f4068|0",
+          "optionSetHash": "3a7c1e9b5d2f4068",
+          "index": 0,
+          "text": null,
+          "basis": "profile",
+          "reason": "answered"
+        },
+        {
+          "key": "greenhouse|main|which-container-platform-have-you-used-most|8e2d4f6a1c3b5079|0",
+          "optionSetHash": "8e2d4f6a1c3b5079",
+          "index": 1,
+          "text": null,
+          "basis": "resume",
+          "reason": "answered"
+        },
+        {
+          "key": "greenhouse|main|how-many-years-have-you-written-go|none|0",
+          "optionSetHash": null,
+          "index": null,
+          "text": "3",
+          "basis": "guess",
+          "reason": "answered"
+        },
+        {
+          "key": "lever|main|when-could-you-start|none|0",
+          "optionSetHash": null,
+          "index": null,
+          "text": null,
+          "basis": null,
+          "reason": "too_long"
+        }
+      ]
+    },
+    "error": null,
+    "createdAt": "2026-10-22T12:00:00.000Z",
+    "startedAt": "2026-10-22T12:00:00.120Z",
+    "finishedAt": "2026-10-22T12:00:05.310Z"
+  }
+}
