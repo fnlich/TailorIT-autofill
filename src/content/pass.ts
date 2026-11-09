@@ -55,6 +55,8 @@ import { accepts, acceptTokens, fill } from '../dom/fillers';
 import { fillDateParts } from '../dom/fillers/date-parts';
 import { mismatch } from '../dom/fillers/outcome';
 import { awaitUpload, uploadStateOf } from '../dom/fillers/upload';
+import { selectEditable } from '../dom/fillers/text';
+import { isEditingHost } from '../dom/kinds';
 import type { HeldDialogs } from '../dom/patch-protocol';
 import { withDialogsHeld, withDialogsHeldWhile } from '../dom/fillers/dialogs';
 import { fillThroughPicker, type PickerResult } from '../dom/fillers/picker';
@@ -69,7 +71,7 @@ import { monotonicNow } from '../dom/time';
 import type {
   FieldTarget, FillOutcome as DomFillOutcome, ReadBackRule, ScannedField, ScanResult, WidgetOptionRead, WidgetReading,
 } from '../dom/types';
-import { textOfControl } from '../dom/values';
+import { readBackTextOf } from '../dom/values';
 import { visiblePlaceholder } from '../dom/visible-text';
 import {
   awaitPageReady, chooseThroughBridge, fillWidget, isActionable, searchesList, searchForOption, searchTypeahead,
@@ -123,6 +125,9 @@ export interface PassEnv {
    *  being filled (field-disappeared). Null to go on. Without it only the DOM guard's own check of the form root
    *  counts. */
   heldBy?(): ReasonCode | null;
+  /** v5 p2-fill review (security 4): told what a write's hold of the page's dialogs held back (counts only, never
+   *  words), so the person sees it (content/orchestrator.ts). */
+  dialogsHeld?(held: HeldDialogs): void;
   /** Overrides for the transfer, for tests. */
   resume?: { idleMs?: number; releaseAfterMs?: number };
 }
@@ -192,6 +197,9 @@ export interface WriteResult {
   row: FillResult;
   written?: WrittenField;
   readBack?: CurrentValue;
+  /** v5 p2-fill review (L1): the page's résumé parse changed the form's values: the pass reads the form again before
+   *  its other writes (content/loop.ts), so what the parse put in is reconciled and an overwrite of it flagged. */
+  reread?: true;
 }
 
 /** DOM-guard refusals that mean the Guard forbids the write; the rest mean it could not be done. */
@@ -383,8 +391,9 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   const shown = visiblePlaceholder(target.control);
   if (shown !== null) held.set(target.control, shown);
   const textLike = target.field.kind === 'text' || target.field.kind === 'textarea';
-  // v5 p2-fill: a rich-text box's text too (dom/values.ts textOfControl).
-  const textBefore = textLike ? textOfControl(target.control) : null;
+  // v5 p2-fill: a rich-text box's text too, as it renders (dom/values.ts readBackTextOf; v5 p2-fill review: memory only,
+  // for guard.revert, never sent).
+  const textBefore = textLike ? readBackTextOf(target.control) : null;
   const selectedBefore = selectedOf(target.field);
   const rule = readBackOf(planned.category);
   const file = resume?.file ?? undefined;
@@ -395,8 +404,11 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   // wait, for the dialogs no action of the person's brought (dom/fillers/dialogs.ts; counts logged, never words).
   const doc = target.control.ownerDocument;
   await pagePatchesSettled(doc, env.signal);
-  const heard = (dialogs: HeldDialogs) => log('content.dialogs-held', { alerts: dialogs.alerts,
-    confirms: dialogs.confirms });
+  const heard = (dialogs: HeldDialogs) => {
+    log('content.dialogs-held', { alerts: dialogs.alerts, confirms: dialogs.confirms });
+    // v5 p2-fill review (security 4): and the person sees the counts.
+    env.dialogsHeld?.(dialogs);
+  };
   // v5 p2-fill: a résumé control that opens the page's own file picker (Adapter.uploadPickers) gets its file through
   // that picker, armed for one press (dom/fillers/picker.ts); s2 wd: a date drawn in parts (Adapter.dateFor: Workday's)
   // is written part by part and read back from its displays, its page's answer awaited (dom/fillers/date-parts.ts);
@@ -414,6 +426,13 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
     outcome = await withDialogsHeldWhile(doc, () => fillDateParts(target, iso, { adapter: env.adapter, root: env.root,
       signal: env.signal }), heard);
   } else {
+    // v5 p2-fill review (L6): a rich-text box is selected first, and its editor given the time to see the selection
+    // (dom/fillers/text.ts selectEditable), so its insert replaces the box's content, never lands at an old caret.
+    if (write.value.kind === 'text' && isEditingHost(target.control)) {
+      await selectEditable(target.control as HTMLElement, env.signal);
+      // Nothing written yet (a text write holds no résumé): the run's end, or the person's Skip, gives the write up.
+      afterWait(env, false);
+    }
     outcome = withDialogsHeld(doc, () => fill(target, write.value, { adapter: env.adapter, root: env.root, file,
       readBack: rule }), heard);
   }
@@ -439,9 +458,11 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   else if (picked?.picked === 'file-system') row = uploadRow(planned, 'pending');
   // v5 p2-fill: the résumé of a page that parses it (Adapter.quirks.resumeParse; core/plan/order.ts wrote it first):
   // its parse is waited for, so the rest of the pass is written over it, never under it (dom/resume-parse.ts).
+  let reread = false;
   if (write.value.kind === 'file' && write.value.ref === 'resume' && env.adapter.quirks?.resumeParse === true
     && upload !== 'failed') {
     const parse = await awaitResumeParse(() => env.root, env.adapter, env.signal);
+    reread = parse.changed;
     log('content.resume-parse', { ms: Math.round(parse.ms), changed: parse.changed, parsed: parse.outcome === 'parsed' });
     if (runOver(env)) {
       resume?.release();
@@ -459,6 +480,7 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
       ...(watched === null ? {} : { inputLeft: () => !watched.isConnected }),
       ...(picked === null || picked.picked === null ? {} : { picked: picked.picked }) },
     readBack: readBack(target),
+    ...(reread ? { reread: true as const } : {}),
   };
 }
 

@@ -1409,7 +1409,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   /** What this frame last told the worker of its wall (undefined: nothing yet); s2 profile (P1), what it waits for;
    *  v5 p2-fill, whether its posting's own Apply is offered (Open Application). */
-  let wallTold: { wall: SignInWall | null; choice: boolean; waits: WallWaits | null; entry: boolean } | undefined;
+  let wallTold: { wall: SignInWall | null; choice: boolean; waits: WallWaits | null; entry: boolean;
+    refused?: boolean } | undefined;
+  /** v5 p2-fill review (L5): the person's last Open Application could not press the posting's own Apply (none shows
+   *  now, none was drawn in time, or what shows instead is the person's): the panel says why until the next press. */
+  let entryRefused = false;
   /** The toast a wall with no form shows (atWall), while its cause stands; null: none. */
   let wallToast: 'sign-in' | 'no-sign-in' | 'challenge' | null = null;
   /** s2 profile (P1): what that toast says the page waits for (WALL_WAITS), told the worker with the wall (tellWall) so
@@ -1485,19 +1489,22 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   function sendWall(now: { wall: SignInWall | null; choice: boolean; entry?: boolean }): void {
     if (stopped || told === null || frameId === null || !channel.valid()) return;
     const waits = page === null ? wallWaits : null;
-    // v5 p2-fill: whether the posting's own Apply is offered (Open Application) is told too.
+    // v5 p2-fill: whether the posting's own Apply is offered (Open Application) is told too; v5 p2-fill review (L5):
+    // and whether its last press was refused, while no wall or choice shows (one that does says what is left).
     const entry = now.entry === true;
+    const refused = entryRefused && now.wall === null && !now.choice;
     if (wallTold !== undefined && wallTold.wall === now.wall && wallTold.choice === now.choice
-      && wallTold.waits === waits && wallTold.entry === entry) return;
+      && wallTold.waits === waits && wallTold.entry === entry && (wallTold.refused ?? false) === refused) return;
     // A first word of "no wall" is the registry's own default: nothing to say.
-    if (wallTold === undefined && now.wall === null && !now.choice && waits === null && !entry) {
-      wallTold = { wall: now.wall, choice: now.choice, waits, entry };
+    if (wallTold === undefined && now.wall === null && !now.choice && waits === null && !entry && !refused) {
+      wallTold = { wall: now.wall, choice: now.choice, waits, entry, refused };
       return;
     }
-    wallTold = { wall: now.wall, choice: now.choice, waits, entry };
-    log('content.wall', { shown: now.wall !== null, choice: now.choice, waits: waits !== null, entry });
+    wallTold = { wall: now.wall, choice: now.choice, waits, entry, refused };
+    log('content.wall', { shown: now.wall !== null, choice: now.choice, waits: waits !== null, entry, refused });
     void channel.request({ v: 1, type: 'frame/wall', wall: now.wall, ...(now.choice ? { choice: true as const } : {}),
-      ...(waits === null ? {} : { waits }), ...(entry ? { entry: true as const } : {}) }).catch(() => undefined);
+      ...(waits === null ? {} : { waits }), ...(entry ? { entry: true as const } : {}),
+      ...(refused ? { entryRefused: true as const } : {}) }).catch(() => undefined);
   }
 
   /** A look at the page for its wall, WALL_LOOK_MS from now: the changes of a moment are read once. */
@@ -1557,10 +1564,26 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // followed by its Apply Manually where its adapter allows a second press), then the form it brings is filled: this
     // document's (formAfterWall), or the next one's (the worker starts its run: background/panel.ts's grant).
     if (shown === null) {
-      if (!entryOffered()) return;
-      const entered = await pressEntry(doc, own, lifetime.signal, entryWaitOf(own));
-      log('content.open-application', { pressed: entered.outcome === 'pressed' });
-      if (entered.outcome === 'pressed') formAfterWall();
+      // v5 p2-fill review (L5): a press that could not be made (no Apply shows now, none was drawn within the wait,
+      // or what shows instead is the person's) is told the worker, and the panel says why (COPY.mainView
+      // .openApplicationRefused), until the next press.
+      if (entryRefused) {
+        entryRefused = false;
+        sendWall(wallNow());
+      }
+      const offered = entryOffered();
+      // Nothing to say where no Open Application was offered: neither now nor as this frame last told the worker.
+      if (!offered && wallTold?.entry !== true) return;
+      const entered = offered ? await pressEntry(doc, own, lifetime.signal, entryWaitOf(own))
+        : { outcome: 'not-offered' as const };
+      log('content.open-application', { pressed: entered.outcome === 'pressed', offered });
+      if (stopped) return;
+      if (entered.outcome === 'pressed') {
+        formAfterWall();
+        return;
+      }
+      entryRefused = true;
+      sendWall(wallNow());
       return;
     }
     if (shown?.kind === 'entry-choice') {

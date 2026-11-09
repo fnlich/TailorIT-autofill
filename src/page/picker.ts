@@ -9,6 +9,11 @@
  *   world which input it was (PICKED on the armed control, the input as its relatedTarget, detail PICKED_INPUT),
  *   and the isolated world puts the chosen résumé into that input itself, as any file is put in (fillers/file.ts). A
  *   click() on any other input, and every call once disarmed, goes to the page's own click as before.
+ * - v5 p2-fill review (security 7c): the element armed is the pressed control's scope (its parent, or what its adapter
+ *   declares: Adapter.uploadPickerScope), and only a file input inside it (open shadow roots included), or one made at
+ *   the press and never put in the page, is taken; a click() on any other file input (another upload's, the person's
+ *   own press elsewhere) opens the page's picker as always. The isolated world also disarms at the person's own pointer
+ *   or key during the press's wait (dom/fillers/picker.ts).
  * - While armed, the page's showOpenFilePicker() is answered with a promise and PICKED (no input, detail
  *   PICKED_FILE_SYSTEM); the isolated world answers with SUPPLY on the armed control, its relatedTarget a detached
  *   file input holding the one file, and the promise resolves with one handle (kind 'file', the file's name, getFile).
@@ -22,6 +27,16 @@
  * the résumé is being uploaded to).
  */
 import { PICKED, PICKED_FILE_SYSTEM, PICKED_INPUT, PICKER_ARM_MS, SUPPLY } from '../dom/patch-protocol';
+
+/** v5 p2-fill review (security 7c): whether `input` lies inside `scope`, across open shadow roots, or was never put in
+ *  the page (made at the press). */
+function inScope(scope: Element, input: Node): boolean {
+  if (!input.isConnected) return true;
+  for (let at: Node | null = input; at !== null; at = at.parentNode ?? (at as ShadowRoot).host ?? null) {
+    if (at === scope) return true;
+  }
+  return false;
+}
 
 /** A page's own file picker, armed for one press at a time. */
 export interface PickerArm {
@@ -93,7 +108,8 @@ export function pickerArm(doc: Document, view: Window & typeof globalThis): Pick
     const ownPicker = Object.getOwnPropertyDescriptor(view, 'showOpenFilePicker');
     const click = function (this: HTMLInputElement): void {
       const now = armed;
-      if (now !== null && this instanceof view.HTMLInputElement && this.type === 'file' && this.ownerDocument === doc) {
+      if (now !== null && this instanceof view.HTMLInputElement && this.type === 'file' && this.ownerDocument === doc
+        && inScope(now.control, this)) {
         disarm();
         tell(now.control, this, PICKED_INPUT);
         return;

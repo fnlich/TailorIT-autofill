@@ -229,6 +229,8 @@ const REASONS = {
   'bot-check': 'This checks that a person is filling in the form, so it is never answered for you.',
   // The audit of 2026-11-06 (S-4): a draft for the owner's review.
   'how-application-made': 'This asks how your application was made, which an extension never answers, so it was not filled.',
+  // v5 p2-fill review (security 3): a draft for the owner's review.
+  'hidden-text-in-box': "This box holds text you can't see, so it was not sent to the AI. Check it on the page.",
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was not filled.',
 } as const satisfies Record<ReasonCode, string>;
@@ -1456,6 +1458,17 @@ export const PAGE_COPY = {
     // The v4 review (L8): "required fields" only when the count is of the required ones (progressOf's requiredOnly).
     complete: (filled: number, of: number, requiredOnly: boolean) =>
       `Autofill complete · ${filled}/${of} ${requiredOnly ? 'required fields' : 'fields'} filled`,
+    // v5 p2-fill review (security 4): the page's alerts and confirms the run's writes held back, as counts only (never
+    // the page's words). Drafts for the owner's review.
+    dialogs: (alerts: number, confirms: number) => {
+      const many = (count: number, one: string) => `${count} ${one}${count === 1 ? '' : 's'}`;
+      const what = [alerts > 0 ? `showed ${many(alerts, 'message')}` : '',
+        confirms > 0 ? `asked ${many(confirms, 'question')}` : ''].filter((part) => part !== '').join(' and ');
+      const did = [alerts > 0 ? (alerts === 1 ? 'closed it' : 'closed them') : '',
+        confirms > 0 ? 'answered Cancel' : ''].filter((part) => part !== '').join(' and ');
+      return `The page ${what} while Autofill filled it. Autofill ${did}; check the page.`;
+    },
+    // end v5 p2-fill review
   },
   /** The review's marks of a field the AI wrote, and of one it answered with nothing to go on (the owner's
    *  amendments): its chips beside the row's status. */
@@ -1483,6 +1496,8 @@ export const PAGE_COPY = {
       unchanged: 'The AI wrote the same text this box holds already.',
       failed: "It couldn't be rewritten just now. Try again.",
       refused: "This box can't be rewritten now: the page changed, or something on it needs you first.",
+      // v5 p2-fill review (security 3): a draft for the owner's review.
+      hidden: "Not rewritten: this box holds text you can't see, and that never goes to the AI. Check the box on the page.",
     },
   },
   // ── v5 p1-panel: the page's "Application Submitted!" window after a confirmed submission (PLAN decision 5; content/
@@ -1572,6 +1587,8 @@ const MAIN_VIEW = {
   // ── v5 p2-fill: Open Application on a posting page (PLAN Phase 2, Jobright's button in our own words). Drafts. ──
   openApplication: 'Open Application',
   openApplicationHelp: "This page shows the job, not its application. Open Application presses the site's own Apply, then fills the application it opens.",
+  // v5 p2-fill review (L5): a draft for the owner's review.
+  openApplicationRefused: "Autofill couldn't press this site's Apply. Press Apply on the page yourself, then press Autofill on the application.",
   // ── end v5 p2-fill ──
   resume: 'Résumé:',
   noResume: 'none',

@@ -70,8 +70,7 @@ async function filled({ noMatch = false, late = false } = {}): Promise<Page> {
   const targets: string[] = [];
   const watch = (event: Event) => {
     const command = parseCommand((event as CustomEvent<unknown>).detail);
-    // v5 p2-fill: the React ops alone; a write's dialogs.hold and dialogs.release go to the bridge as they come.
-    if (command === null || !command.op.startsWith('react')) return;
+    if (command === null) return;
     commands.push(command);
     targets.push((event.target as Element).id);
     if (!noMatch) return;

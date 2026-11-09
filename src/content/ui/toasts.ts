@@ -34,7 +34,9 @@ import { svgOf } from './svg';
  *  ignored (the plan's tripwire sentence: the hard rule's notice, which the trap specs read on the page); the run's
  *  end. */
 export const TOAST_KINDS = ['challenge', 'sign-in', 'no-sign-in', 'submit-held', 'submit-errors', 'validation',
-  'tripwire', 'complete'] as const;
+  'tripwire', 'complete',
+  // v5 p2-fill review (security 4): the page's messages the run's writes held back, counted (never their words)
+  'dialogs'] as const;
 export type ToastKind = (typeof TOAST_KINDS)[number];
 
 /** One toast as the run gives it: its kind, its sentence, and an action (its label, and what a counted click does). */
@@ -109,7 +111,8 @@ export function createToasts(doc: Document, host: ToastHost): Toasts {
     const card = doc.createElement('div');
     card.className = 'toast';
     card.dataset.kind = spec.kind;
-    card.setAttribute('role', spec.kind === 'complete' ? 'status' : 'alert');
+    // v5 p2-fill review: the count of the page's held messages is news, not an alarm.
+    card.setAttribute('role', spec.kind === 'complete' || spec.kind === 'dialogs' ? 'status' : 'alert');
     // The brand line: TailorIT's mark and its name, "IT" in TailorIT's ink (module header).
     const brand = doc.createElement('div');
     brand.className = 'toast__brand';

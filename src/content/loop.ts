@@ -654,6 +654,8 @@ class ReactiveLoop {
 
     const done: WrittenField[] = [];
     const writtenAt = new Map<BaseKey, number>();
+    // v5 p2-fill review (L1): the scan the writes find their fields in, read again after a résumé's parse.
+    let scanned = current;
     const queued = this.queue(order, rows, writes, fields);
     const left = queued.map((entry) => entry.write.key);
     this.progress(rows, left, null);
@@ -677,12 +679,18 @@ class ReactiveLoop {
         rows.set(write.key, prefill.row);
         continue;
       }
-      const result = await this.writeSkippable(current, field, write, prefill?.row ?? planned, keep);
+      const result = await this.writeSkippable(scanned, field, write, prefill?.row ?? planned, keep);
       rows.set(write.key, result.row);
       if (result.written === undefined || result.readBack === undefined) continue;
       done.push(result.written);
       writtenAt.set(result.written.field.baseKey, monotonicNow());
       await this.recordWritten(result.written, result.readBack, planned);
+      // v5 p2-fill review (L1): the page's résumé parse changed the form: it is read again before the other writes, so
+      // what the parse put in is reconciled (prefillOf) and an overwrite of it flagged, as on a later pass.
+      if (result.reread === true) {
+        scanned = this.scanNow();
+        for (const fresh of scanned.fields) fields.set(fresh.key, fresh);
+      }
     }
     this.progress(rows, [], null);
     // What the pass's last write revealed at once is that write's.

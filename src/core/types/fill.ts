@@ -98,6 +98,9 @@ export const REASON_CODES = [
   // page shows holding a file while it offers no file input to put the person's in its place (its input disabled, or
   // gone by the write): left for the person, whose page's own Remove or Replace it is
   'resume-held-no-input',
+  // v5 p2-fill review (security 3): a rich-text box holding text a person cannot see (off-screen, clipped,
+  // see-through or tiny), which Edit with AI never rewrites: none of its text goes to the AI
+  'hidden-text-in-box',
   // a bug
   'internal-error',
 ] as const;

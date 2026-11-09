@@ -4,6 +4,10 @@
  * included) and keeps a text node only when a person could see it: its parent's subtree is rendered, its own glyph
  * boxes pass isUserVisible's rules, and its colour is 'clear' against what is behind it. Scripts, styles, templates,
  * comments, other documents, drawings, controls and editable regions are never read; a control's value never is.
+ * v5 p2-fill review (security 3): one exception, asked for by name (VisibleTextOptions.editable): a rich-text box's
+ * own content, read by the same rules from its editing host down, is that box's `current` (dom/values.ts
+ * editableVisibleText), the only reading of it the planner and the AI get; text in it a person cannot see (off-screen,
+ * clipped, see-through, tiny) is left out like any page text, and a box holding any is never rewritten.
  *
  * Two readers sit beside it, with the plan's rules:
  * - the native <option> reader: an option counts only when its select is visible, neither it nor its optgroup is
@@ -62,6 +66,9 @@ export interface VisibleTextOptions {
   /** One line: line breaks become spaces (labels and options). */
   singleLine?: boolean;
   cache?: ScanCache;
+  /** v5 p2-fill review (security 3): the root is a rich-text box's editing host, whose own (editable) content is read;
+   *  without it an editable region is never read. */
+  editable?: boolean;
 }
 
 /** The text a person can see in `root`, as one VisibleText. */
@@ -123,7 +130,7 @@ function walk(root: Node, options: VisibleTextOptions, excluded: ReadonlySet<Ele
     if (entry.nodeType !== 1) continue;
     const el = entry as Element;
     if (el !== start && (SKIPPED.has(el.localName) || isSubtreeHidden(el, cache))) continue;
-    if (isInOwnUi(el) || isEditable(el) || excluded?.has(el)) continue;
+    if (isInOwnUi(el) || (isEditable(el) && options.editable !== true) || excluded?.has(el)) continue;
     if (el.localName === 'br') {
       parts.push('\n');
       continue;

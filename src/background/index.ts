@@ -826,8 +826,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           const entry = await lockTab(from.tabId, () => setWall(session, from.tabId, from.frameId,
             from.documentId ?? null, { wall: message.wall, choice: message.choice === true,
               ...(message.waits === undefined ? {} : { waits: message.waits }),
-              // v5 p2-fill: a posting's own Apply (Open Application).
-              ...(message.entry === true ? { entry: true } : {}) }));
+              // v5 p2-fill: a posting's own Apply (Open Application); v5 p2-fill review (L5): its press refused.
+              ...(message.entry === true ? { entry: true } : {}),
+              ...(message.entryRefused === true ? { entryRefused: true } : {}) }));
           if (entry === null) return refuse('expired');
           log('frame.wall', { shown: message.wall !== null, choice: message.choice === true });
           void reports.pageChanged(from.tabId).catch(() => undefined);

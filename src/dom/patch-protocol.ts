@@ -9,7 +9,8 @@
  *   '_', no other key, at most PATCH_DETAIL_MAX characters;
  * - the patches acknowledge it (preventDefault) and answer with PATCH_RESULT on the same element, inside the dispatch,
  *   {v: 1, id, ok, reason} and, for dialogs.release, `dialogs` {alerts, confirms} (0 to DIALOGS_COUNT_MAX each);
- * - the ops: dialogs.hold / dialogs.release (the page's alert and confirm held through one write: page/dialogs.ts),
+ * - the ops: dialogs.hold / dialogs.release (the page's alert and confirm held through one write: page/dialogs.ts;
+ *   v5 p2-fill review, security 4: dialogs.hold-alerts holds the page's alert alone, through a wait),
  *   picker.arm / picker.disarm (the page's own file picker armed for one press: page/picker.ts);
  * - while armed, the page's world tells the isolated world what the page opened with PICKED (a FocusEvent on the armed
  *   control, the one event kind that carries an element across the worlds, as its relatedTarget: the file input the
@@ -34,7 +35,9 @@ export const PICKED_INPUT = 1;
 export const PICKED_FILE_SYSTEM = 2;
 
 /** What the patches may be asked. */
-export const PATCH_OPS = ['dialogs.hold', 'dialogs.release', 'picker.arm', 'picker.disarm'] as const;
+export const PATCH_OPS = ['dialogs.hold', 'dialogs.release', 'picker.arm', 'picker.disarm',
+  // v5 p2-fill review (security 4)
+  'dialogs.hold-alerts'] as const;
 export type PatchOp = (typeof PATCH_OPS)[number];
 /** Why the patches did or did not do what they were asked. */
 export const PATCH_REASONS = ['ok', 'failed'] as const;
