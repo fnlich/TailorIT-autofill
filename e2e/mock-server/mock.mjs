@@ -88,6 +88,9 @@
  *   and the `fields` named, the latest answer another job's form kept to the same key and option set (otherJob), never
  *   a self-identification, legal, pay, consent, attention-check or file question's. GET /__mock/forms lists what it
  *   keeps. Scenarios: submissions-bad-request (400), submissions-fails (500).
+ * - v1.5 X: GET /resumes names how each resume was made and when (the contract's golden list, and the tailored resume:
+ *   `tailor`, now); POST /forms/known answers `drafts` under the form-drafts scenario (the person's prebuilt draft
+ *   answers, ready or not ready, each for one of the job's questions).
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -368,6 +371,11 @@ export const MOCK_SCENARIOS = Object.freeze({
   // v1.3 B
   'submissions-bad-request': 'POST /submissions gets 400 validation_failed: nothing is kept.',
   'submissions-fails': 'POST /submissions gets 500: nothing is kept.',
+  // v1.5 X
+  'form-drafts': 'POST /forms/known answers `drafts` (the person’s prebuilt draft answers, TailorIT v1.5): `value` is '
+    + 'a list of {label, kind, options?, answer} (answer null: not_ready), each one of the job’s questions (added as '
+    + 'Greenhouse board-API questions where the job keeps none of that label). It holds until the next reset (times '
+    + 'does not apply).',
 });
 
 /** The words GET /cover-letters/:id/text answers (v3 Phase 3b): `GOLDEN_LETTER.sentinel` among them, so a spec can
@@ -982,7 +990,26 @@ export function createMock() {
       }
     }
     const jobId = key.startsWith('job:') ? Number(key.slice(4)) : null;
-    return jsonAnswer(200, { jobId, questions: questions.map(knownQuestion), answers });
+    // v1.5 X: the person's prebuilt draft answers (the form-drafts scenario), each for one of the job's questions.
+    /** @type {Array<Record<string, any>>} */
+    const drafts = [];
+    const scripted = state.scenarios.find((scenario) => scenario.name === 'form-drafts');
+    for (const entry of /** @type {Array<Record<string, any>>} */ (Array.isArray(scripted?.value) ? scripted.value : [])) {
+      let question = questions.find((each) => each.label === entry.label);
+      if (question === undefined) {
+        question = { id: state.questionId++, questionKey: String(entry.label).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(),
+          label: entry.label, kind: entry.kind, options: entry.options ?? [], optionSetHash: null, section: '',
+          required: false, step: 0, position: questions.length, source: 'ats-api', firstSeenAt: iso(Date.now()),
+          lastSeenAt: iso(Date.now()) };
+        questions.push(question);
+      }
+      drafts.push({ match: 'draft', questionId: question.id, questionKey: question.questionKey,
+        optionSetHash: question.optionSetHash, questionLabel: question.label, fieldKind: question.kind,
+        status: entry.answer === null ? 'not_ready' : 'ready', answer: entry.answer, provenance: 'server-ai',
+        preparedAt: iso(Date.now()) });
+    }
+    return jsonAnswer(200, { jobId, questions: questions.map(knownQuestion), answers,
+      ...(drafts.length > 0 ? { drafts } : {}) });
   }
   // ── end v1.3 B ──
 
@@ -1031,9 +1058,10 @@ export function createMock() {
     list.items = list.items.map((/** @type {{ id: string; fileName: string }} */ item) =>
       (item.id === GOLDEN_RESUME.id ? { ...item, fileName: GOLDEN_RESUME.fileName } : item));
     // v1.4 F: a tailoring made the tailored resume (the newest).
+    // v1.5 X: how TailorIT made it and when (the contract's madeBy and createdAt; the golden list names its own).
     if (state.tailored) list.items = [{ id: TAILORED_RESUME.id, label: TAILORED_RESUME.label, kind: TAILORED_RESUME.kind,
       fileKind: TAILORED_RESUME.fileKind, fileName: TAILORED_RESUME.fileName, isDefault: false,
-      updatedAt: iso(Date.now()) }, ...list.items];
+      updatedAt: iso(Date.now()), madeBy: 'tailor', createdAt: iso(Date.now()) }, ...list.items];
     return list;
   }
 

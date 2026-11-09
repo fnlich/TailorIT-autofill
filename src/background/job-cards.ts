@@ -70,6 +70,7 @@ import {
   DoneAnswerSchema, JOB_RELAY_ACTIONS, type AddJobOutcome, type JobCard, type JobRelayAction, type PageMessage,
   type PanelJobAnswer, type PanelJobSearchAnswer, type ResumeListAnswer,
 } from '../messaging/schemas';
+import { RESUME_MADE_BY, type ResumeMadeBy } from '../messaging/page-schemas'; // v1.5 X
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { JOB_CHOICE_PREFIX, JobChoiceRecordSchema, type JobChoiceRecord } from '../shared/stored';
@@ -308,6 +309,21 @@ function addOutcomeOf(failure: Extract<ServerResult<unknown>, { ok: false }>): A
   if (failure.failure === 'bad-request' && failure.code === 'unsupported') return 'unsupported';
   return 'unavailable';
 }
+
+// v1.5 X (PLAN decision 6)
+const MADE_BY: ReadonlySet<string> = new Set<string>(RESUME_MADE_BY);
+/** An ISO 8601 instant with its offset, as the contract's InstantSchema writes it. */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+/** How TailorIT made a resume and when (GET /api/autofill/resumes' `madeBy` and `createdAt`), for the picker's folders:
+ *  each only when it reads (a TailorIT before v1.5 sends neither, and the picker reads the kind then). */
+export function madeOf(item: object): { madeBy?: ResumeMadeBy; createdAt?: string } {
+  const read = item as { madeBy?: unknown; createdAt?: unknown };
+  const madeBy = typeof read.madeBy === 'string' && MADE_BY.has(read.madeBy) ? read.madeBy as ResumeMadeBy : undefined;
+  const createdAt = typeof read.createdAt === 'string' && read.createdAt.length <= 40
+    && ISO_INSTANT.test(read.createdAt) && Number.isFinite(Date.parse(read.createdAt)) ? read.createdAt : undefined;
+  return { ...(madeBy === undefined ? {} : { madeBy }), ...(createdAt === undefined ? {} : { createdAt }) };
+}
+// end v1.5 X
 
 /** The card module over the frame registry (storage.session) and the server client. */
 export function createJobCards(deps: JobCardsDeps): JobCards {
@@ -617,6 +633,7 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       return ok({
         items: list.value.items.filter((item) => item.id.length > 0 && item.id.length <= 64).slice(0, 200).map((item) => ({
           id: item.id, label: cutAtWord(item.label, 200), fileKind: item.fileKind, kind: item.kind, current: item.id === current,
+          ...madeOf(item), // v1.5 X
         })),
       });
     },

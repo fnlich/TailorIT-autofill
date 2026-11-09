@@ -12,8 +12,11 @@
  * the pointer cannot be pressed by a click aimed at what was there); Cancel and Escape close it at once. The focus
  * starts on Cancel and stays inside (Tab and Shift+Tab cycle), and goes back to where it was when the modal closes.
  * Nothing here holds a value: the history check is the kinds missing, never an entry.
+ * v1.5 X (PLAN decision 3): the upload edit confirm (`edit-upload`), where the worker could not show it over the page
+ * (Edit in Chrome's side panel on a page with no frame of ours): the same words, "Don't show this again", Cancel and
+ * Continue, which sends Edit again with the person's word (panel/openDocument `confirmed`).
  */
-import { useCallback, useEffect, useId, useRef, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { COPY } from '../../shared/copy';
 import type { HistoryGap } from './profile-check';
 import { useShownFor, type SeenClock } from './seen';
@@ -25,7 +28,9 @@ export type StopReason = keyof typeof COPY.modals.errors;
 /** The modal the main view shows, or none. */
 export type PanelModalState =
   | { kind: 'error'; reason: StopReason }
-  | { kind: 'history'; missing: readonly HistoryGap[] };
+  | { kind: 'history'; missing: readonly HistoryGap[] }
+  // v1.5 X
+  | { kind: 'edit-upload' };
 
 export interface PanelModalProps {
   modal: PanelModalState;
@@ -39,19 +44,25 @@ export interface PanelModalProps {
   onEdit(): void;
   /** Autofill Anyway (the history check): the fill the person asked for, as they asked. */
   onAnyway(): void;
+  /** v1.5 X: Continue on the upload edit confirm; `skip` is "Don't show this again". */
+  onContinueEdit?(skip: boolean): void;
 }
 
-/** The buttons a Tab moves between, in order. */
-function focusables(box: HTMLElement): HTMLButtonElement[] {
-  return [...box.querySelectorAll<HTMLButtonElement>('button')].filter((each) => !each.disabled);
+/** The controls a Tab moves between, in order (v1.5 X: the confirm's box among them). */
+function focusables(box: HTMLElement): HTMLElement[] {
+  return [...box.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input')].filter((each) => !each.disabled);
 }
 
-export function PanelModal({ modal, clock, onClose, onRetry, onRefresh, onEdit, onAnyway }: PanelModalProps) {
+export function PanelModal({ modal, clock, onClose, onRetry, onRefresh, onEdit, onAnyway, onContinueEdit }:
+  PanelModalProps) {
   const textId = useId();
   const box = useRef<HTMLDivElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
+  // v1.5 X: the upload edit confirm's "Don't show this again".
+  const [skip, setSkip] = useState(false);
   // The modal's meaning, held CONTROL_SEEN_MS before its actions take a click (module header).
-  const seen = useShownFor(modal.kind === 'error' ? `error|${modal.reason}` : `history|${modal.missing.join(',')}`, clock);
+  const seen = useShownFor(modal.kind === 'error' ? `error|${modal.reason}` : modal.kind === 'history'
+    ? `history|${modal.missing.join(',')}` : modal.kind, clock);
   const words = COPY.modals;
   const ref = useCallback((node: HTMLDivElement | null) => {
     box.current = node;
@@ -76,14 +87,43 @@ export function PanelModal({ modal, clock, onClose, onRetry, onRefresh, onEdit, 
     if (event.key !== 'Tab' || box.current === null) return;
     const order = focusables(box.current);
     if (order.length === 0) return;
-    const at = order.indexOf(event.target as HTMLButtonElement);
+    const at = order.indexOf(event.target as HTMLElement);
     const next = event.shiftKey ? (at <= 0 ? order.length - 1 : at - 1) : (at === -1 || at === order.length - 1 ? 0 : at + 1);
     event.preventDefault();
     order[next]?.focus();
   };
 
   const updated = modal.kind === 'error' && modal.reason === 'updated';
-  const text = modal.kind === 'error' ? words.errors[modal.reason] : words.history.text(modal.missing);
+  const text = modal.kind === 'error' ? words.errors[modal.reason] : modal.kind === 'history'
+    ? words.history.text(modal.missing) : COPY.documentDialog.editText;
+  // v1.5 X: the upload edit confirm (module header).
+  if (modal.kind === 'edit-upload') {
+    return (
+      <div className="tia-modal" data-modal={modal.kind}>
+        <div className="tia-modal__scrim" aria-hidden="true" />
+        <div ref={ref} className="tia-modal__box" role="alertdialog" aria-modal="true" aria-labelledby={textId}
+          tabIndex={-1} onKeyDown={keys}>
+          <p className="tia-modal__text" id={textId}>{text}</p>
+          <label className="tia-modal__check">
+            <input type="checkbox" checked={skip} data-modal-setting="dont-show"
+              onChange={(event) => setSkip(event.target.checked)} />
+            {COPY.documentDialog.dontShow}
+          </label>
+          <div className="tia-modal__actions">
+            <button ref={cancel} type="button" className="tia-button" data-modal-action="cancel" onClick={onClose}>
+              {COPY.documentDialog.cancel}
+            </button>
+            <button type="button" className="tia-button tia-button--primary" data-modal-action="continue" disabled={!seen}
+              onClick={() => {
+                if (seen) onContinueEdit?.(skip);
+              }}>
+              {COPY.documentDialog.continue}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="tia-modal" data-modal={modal.kind} data-modal-reason={modal.kind === 'error' ? modal.reason : undefined}>
       <div className="tia-modal__scrim" aria-hidden="true" />

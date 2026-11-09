@@ -325,6 +325,13 @@ export const LOG_CODES = [
   'forms.known',
   'forms.known-failed',
   'ai.known-batch',
+  // ── v1.5 X (flags only): a document dialog shown over the page or not (the preview, or the upload edit confirm); a
+  // preview asked for by a framed page with no live grant, or a dialog's message refused (why, as a flag); an upload's
+  // editable copy opened (from the page's confirm, the panel's, or at once). ──
+  'content.document-dialog',
+  'document.refused',
+  'document.edit',
+  // ── end v1.5 X ──
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

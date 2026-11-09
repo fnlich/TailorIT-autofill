@@ -19,8 +19,8 @@ import { HISTORY_KINDS, PROFILE_GAPS } from '../shared/profile-gaps';
 import { FrameReportSchema } from '../shared/report';
 import { SettingsSchema } from '../shared/settings';
 import {
-  Count, DoneAnswerSchema, FieldDescribeAnswerSchema, Id, Key, PageStateSchema, PingAnswerSchema, POLICY_DECISIONS,
-  PressAnswerSchema, SaveAnswerAnswerSchema, STEP_TARGETS, Text, TRANSFER_MESSAGES, v,
+  Count, DOCUMENT_GRANT, DoneAnswerSchema, FieldDescribeAnswerSchema, Id, Key, PageStateSchema, PingAnswerSchema,
+  POLICY_DECISIONS, PressAnswerSchema, SaveAnswerAnswerSchema, STEP_TARGETS, Text, TRANSFER_MESSAGES, v,
 } from './schemas';
 
 // ── Extension pages (side panel, options) → worker ────────────────────────────────────────────────────────────────
@@ -44,6 +44,10 @@ export const JobRefSchema = z.string().regex(/^j[0-9]$/);
 
 // ── v1.4 F ──
 /** What a tailoring writes, and which document a preview or an edit opens: the resume, or the cover letter. */
+// v1.5 X (PLAN decision 6): how TailorIT made a resume (its `resumes.made_by`), as GET /api/autofill/resumes names it.
+export const RESUME_MADE_BY = ['upload', 'editor', 'copy', 'tailor'] as const;
+export type ResumeMadeBy = (typeof RESUME_MADE_BY)[number];
+
 export const TAILOR_KINDS = ['resume', 'coverLetter'] as const;
 export type TailorKind = (typeof TAILOR_KINDS)[number];
 /** A template's id, as the contract caps it (AUTOFILL_TAILOR_LIMITS.templateId). */
@@ -168,7 +172,18 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   /** Preview (the full-window preview page, preview.html, an extension page) or Edit (TailorIT's editor, in a new tab)
    *  of the resume or the cover letter a fill of the tab attaches: the worker opens it, as it alone knows their ids. */
   z.strictObject({ v, type: z.literal('panel/openDocument'), tabId: TabId, kind: z.enum(TAILOR_KINDS),
-    how: z.enum(['preview', 'edit']) }),
+    how: z.enum(['preview', 'edit']),
+    // ── v1.5 X (PLAN decisions 2 and 3) ──
+    /** Preview: the documents the panel shows a Preview for (the dialog's tabs; `kind` among them). Absent: `kind`. */
+    kinds: z.array(z.enum(TAILOR_KINDS)).min(1).max(TAILOR_KINDS.length).optional(),
+    /** Edit of an uploaded resume, where the page could not show the confirm (`confirm: 'panel'`): the person's
+     *  Continue on the panel's own, and its "Don't show this again". */
+    confirmed: z.literal(true).optional(), skipConfirm: z.boolean().optional() })
+    .refine((message) => message.kinds === undefined || message.kinds.includes(message.kind),
+      { message: 'kind is no tab', path: ['kind'] })
+    .refine((message) => message.how === 'edit' || (message.confirmed === undefined && message.skipConfirm === undefined),
+      { message: 'only Edit is confirmed', path: ['confirmed'] }),
+    // ── end v1.5 X ──
   /** The templates a tailored resume and its letter are written on (the profile's `documents`), with the lists TailorIT
    *  offers; `save` changes those two alone, on the profile as TailorIT holds it now, with its revision. */
   z.strictObject({ v, type: z.literal('panel/documents'), save: z.strictObject({ resumeTemplateId: TemplateId.nullable(),
@@ -313,7 +328,10 @@ export type SitesState = z.infer<typeof SitesStateSchema>;
  *  tab's card attaches marked `current`. Never a file name. */
 export const ResumeListAnswerSchema = z.strictObject({
   items: z.array(z.strictObject({ id: Id, label: Text(200), fileKind: z.enum(AUTOFILL_FILE_KINDS),
-    kind: z.enum(AUTOFILL_RESUME_KINDS), current: z.boolean() })).max(200),
+    kind: z.enum(AUTOFILL_RESUME_KINDS), current: z.boolean(),
+    // v1.5 X (PLAN decision 6): how TailorIT made it (an upload, the editor, an editable copy, a tailoring) and when
+    // (an ISO instant), for the picker's folders; absent from a TailorIT before v1.5 (the kind decides then).
+    madeBy: z.enum(RESUME_MADE_BY).optional(), createdAt: Text(40).optional() })).max(200),
 });
 export type ResumeListAnswer = z.infer<typeof ResumeListAnswerSchema>;
 
@@ -379,8 +397,12 @@ export const TailorViewSchema = z.discriminatedUnion('state', [
 ]);
 export type TailorView = z.infer<typeof TailorViewSchema>;
 
-/** panel/openDocument: whether a page was opened (false: there is no such document for the tab yet). */
-export const OpenDocumentAnswerSchema = z.strictObject({ opened: z.boolean() });
+/** panel/openDocument: whether a page was opened (false: there is no such document for the tab yet). v1.5 X: Preview
+ *  `onPage` (the dialog over the tab's page, not the full-window page); Edit of an uploaded resume `confirm`, the confirm
+ *  shown first: over the page ('page'), or for the panel to show (`panel`: the page could not), Continue then sending
+ *  panel/openDocument again with `confirmed`. */
+export const OpenDocumentAnswerSchema = z.strictObject({ opened: z.boolean(),
+  onPage: z.literal(true).optional(), confirm: z.enum(['page', 'panel']).optional() });
 
 /** panel/documents' refusals: as panel/saveProfile's ('conflict': the profile changed between the read and the save). */
 export const DOCUMENTS_REFUSALS = ['conflict', 'invalid', 'not-allowed', 'not-connected', 'rate-limited',
@@ -584,6 +606,9 @@ export const EXTERNAL_ANSWER_SCHEMAS = { 'pair/complete': DoneAnswerSchema } as 
 export const PreviewPortMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('preview/request'), tabId: TabId,
     /** v4: which file of the tab's fill: the resume (the default) or the cover letter it attached or would attach. */
-    kind: z.enum(['resume', 'coverLetter']).optional() }),
+    kind: z.enum(['resume', 'coverLetter']).optional(),
+    /** v1.5 X: the preview page embedded in the page's dialog names the worker's grant for that dialog: a framed
+     *  extension page gets nothing without it (background/document-dialog.ts). */
+    grant: z.string().regex(DOCUMENT_GRANT).optional() }),
   ...TRANSFER_MESSAGES,
 ]);

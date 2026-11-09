@@ -81,7 +81,8 @@ export function createRouter(options: RouterOptions): Handler {
       channel = offAtsChannelOf(off, now !== undefined ? now
         : await options.injected!.read(off.tabId, off.frameId, off.documentId), type);
     }
-    if (!channel || (channel.kind === 'content' && type !== null && !allowedOn(channel, type))) {
+    // v1.5 X: a framed extension page (the preview embedded in the page's dialog) sends no message.
+    if (!channel || channel.kind === 'framed' || (channel.kind === 'content' && type !== null && !allowedOn(channel, type))) {
       log('router.bad-sender');
       return refuse('bad_sender');
     }

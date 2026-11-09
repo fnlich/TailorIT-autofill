@@ -36,7 +36,12 @@ export type Channel =
     /** v3 Phase 8: a frame off the ATS hosts: one the worker injected the content script into ('site', a company's
      *  own page), or the sentinel's top frame before that ('sentinel'). Absent on the ATS hosts. */
     reach?: Reach }
-  | { kind: 'page' };
+  | { kind: 'page' }
+  // v1.5 X (PLAN decision 2): one of the extension's pages inside another page's frame: the preview page embedded in
+  // the page's dialog (preview.html, the extension's one web-accessible resource), which any page could also load at
+  // its address of the session. It may send no message at all; its preview port is served only with the grant of the
+  // dialog the worker asked its tab's top frame to show (document-dialog.ts).
+  | { kind: 'framed'; tabId: number; frameId: number };
 
 /** v3 Phase 8: what a frame off the ATS hosts is to the worker. */
 export type Reach = 'site' | 'sentinel';
@@ -89,8 +94,12 @@ export function channelOf(sender: Sender, ownId: string, ownPagesPrefix: string)
   if (sender.tabId === undefined) {
     return sender.url.startsWith(ownPagesPrefix) ? { kind: 'page' } : null;
   }
-  // An extension page opened as a normal tab (the report page under test) still counts as a page.
-  if (sender.url.startsWith(ownPagesPrefix)) return { kind: 'page' };
+  // An extension page opened as a normal tab (the report page under test) still counts as a page. v1.5 X: one inside
+  // a frame of a tab is framed, never a page.
+  if (sender.url.startsWith(ownPagesPrefix)) {
+    return typeof sender.frameId === 'number' && sender.frameId !== 0
+      ? { kind: 'framed', tabId: sender.tabId, frameId: sender.frameId } : { kind: 'page' };
+  }
   if (typeof sender.frameId !== 'number' || !isAtsAddress(sender.url)) return null;
   if (sender.documentLifecycle !== undefined && sender.documentLifecycle !== 'active') return null;
   const { url, addressFrom } = addressOf({ ...sender, url: sender.url });

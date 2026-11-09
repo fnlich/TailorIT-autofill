@@ -210,7 +210,8 @@ describe('tailoring for the tab’s job (panel/tailor)', () => {
     expect(tailorRequestOf({ jobId: null }, page, null, 'coverLetter', true)).toEqual({ coverLetter: true, force: true,
       jobDescription: 'text', company: 'Co', title: 'T', canaries: ['ab'] });
     expect(editorUrlOf(ORIGIN, 'resume', TAILORED)).toBe(`${ORIGIN}/resumes/${TAILORED}`);
-    expect(editorUrlOf(ORIGIN, 'resume', TAILORED, false)).toBe(`${ORIGIN}/documents`);
+    // v1.5 X (PLAN decision 3): an upload's editable copy, TailorIT's route that makes or reuses it.
+    expect(editorUrlOf(ORIGIN, 'resume', TAILORED, false)).toBe(`${ORIGIN}/resumes/${TAILORED}/edit`);
     expect(editorUrlOf(ORIGIN, 'coverLetter', LETTER)).toBe(`${ORIGIN}/cover-letter/${LETTER}`);
     expect([editorUrlOf(ORIGIN, 'resume', '../admin'), editorUrlOf(ORIGIN, 'coverLetter', 'x/y')]).toEqual([null, null]);
   });
@@ -229,6 +230,7 @@ describe('Preview and Edit (panel/openDocument)', () => {
   const open = (worker: TestWorker, kind: 'resume' | 'coverLetter', how: 'preview' | 'edit') =>
     worker.deliver({ v: 1, type: 'panel/openDocument', tabId: 7, kind, how }, pageSender());
 
+  // v1.5 X: where the tab's top frame shows no dialog (here: it answers nothing of the kind), as before.
   it('opens the full-window preview page for the tab, an extension page of ours', async () => {
     const worker = await withForm();
     expect(await open(worker, 'coverLetter', 'preview')).toEqual({ ok: true, data: { opened: true } });
@@ -252,11 +254,14 @@ describe('Preview and Edit (panel/openDocument)', () => {
     expect((await opened()).at(-1)).toBe(`${ORIGIN}/cover-letter/${LETTER}`);
     expect(await open(worker, 'resume', 'edit')).toEqual({ ok: true, data: { opened: true } });
     expect((await opened()).at(-1)).toBe(`${ORIGIN}/resumes/${TAILORED}`);
-    // An upload: TailorIT's Documents page, where its editable copy is made.
+    // An upload: v1.5 X, its editable copy (`/resumes/<id>/edit`), after the confirm: the page here shows none, so the
+    // panel's (document-dialog.test.ts holds the rest).
     const upload = await withForm();
     await upload.deliver({ v: 1, type: 'panel/setResume', tabId: 7, resumeId: goldens.resumes.items[1]!.id }, pageSender());
-    await open(upload, 'resume', 'edit');
-    expect((await opened()).at(-1)).toBe(`${ORIGIN}/documents`);
+    expect(await open(upload, 'resume', 'edit')).toEqual({ ok: true, data: { opened: false, confirm: 'panel' } });
+    expect(await upload.deliver({ v: 1, type: 'panel/openDocument', tabId: 7, kind: 'resume', how: 'edit',
+      confirmed: true }, pageSender())).toEqual({ ok: true, data: { opened: true } });
+    expect((await opened()).at(-1)).toBe(`${ORIGIN}/resumes/${goldens.resumes.items[1]!.id}/edit`);
   });
 });
 

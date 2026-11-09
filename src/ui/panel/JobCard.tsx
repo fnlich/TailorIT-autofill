@@ -33,6 +33,7 @@ import { AnotherJob } from './AnotherJob';
 import type { JobView } from './job';
 import { postedDaysAgo } from './posted';
 import { DocumentLinks } from './tailor';
+import { dayLabel, folderOf, foldersOf, type ResumeFolder } from './resume-folders'; // v1.5 X
 import type { TailorKind } from '../../messaging/page-schemas';
 
 type Answered = Extract<Card, { state: 'answered' }>;
@@ -255,6 +256,78 @@ export function ResumeLine({ card, loadResumes, chooseResume, setWithout, openDo
   );
 }
 
+// ── v1.5 X (PLAN decision 6): the list in folders (resume-folders.ts) ──
+
+/** One resume of the list: its title, its file's kind and whether it is attached now. */
+function Choice({ item, choose }: { item: ResumeItem; choose(resumeId: string): void }) {
+  return (
+    <li>
+      <button type="button" className="tia-picker__item" aria-pressed={item.current} data-resume-choice=""
+        onClick={() => choose(item.id)}>
+        <span className="tia-picker__label">{item.label}</span>
+        <span className="tia-picker__meta">
+          {`${COPY.job.fileKinds[item.fileKind]} · ${COPY.job.picker.kinds[item.kind]}`}
+          {item.current && ` · ${COPY.job.picker.current}`}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+/** Uploaded, Edited and Tailored (by day, newest first), each folding: the one holding the resume attached now opens
+ *  (none attached: the first that holds any); an empty one shows its name and 0 and does not open. */
+function Folders({ items, choose }: { items: readonly ResumeItem[]; choose(resumeId: string): void }) {
+  const groups = foldersOf(items);
+  const [open, setOpen] = useState<ReadonlySet<ResumeFolder>>(() => {
+    const current = items.find((item) => item.current);
+    const first = current === undefined ? groups.find((group) => group.items.length > 0)?.folder : folderOf(current);
+    return new Set(first === undefined ? [] : [first]);
+  });
+  const baseId = useId();
+  const words = COPY.job.picker;
+  return (
+    <div className="tia-folders" data-resume-folders="">
+      {groups.map(({ folder, items: held, days }) => {
+        const shown = open.has(folder) && held.length > 0;
+        const listId = `${baseId}-${folder}`;
+        return (
+          <section key={folder} className="tia-folder" data-resume-folder={folder} data-open={shown ? '' : undefined}>
+            <button type="button" className="tia-folder__head" aria-expanded={shown} aria-controls={listId}
+              disabled={held.length === 0} aria-label={words.folderLabel(words.folders[folder], held.length)}
+              onClick={() => setOpen((was) => {
+                const next = new Set(was);
+                if (next.has(folder)) next.delete(folder);
+                else next.add(folder);
+                return next;
+              })}>
+              <Icon name={shown ? 'chevron-up' : 'chevron-down'} size={14} className="tia-icon" />
+              <span className="tia-folder__name">{words.folders[folder]}</span>
+              <span className="tia-folder__count">{held.length}</span>
+            </button>
+            {shown && (folder === 'tailored' ? (
+              <div id={listId} className="tia-folder__days">
+                {days.map(({ day, items: dayItems }) => (
+                  <div key={day ?? 'undated'} className="tia-folder__day" data-resume-day={day ?? 'undated'}>
+                    <p className="tia-folder__date">{day === null ? words.undated : dayLabel(day)}</p>
+                    <ul className="tia-picker__list">
+                      {dayItems.map((item) => <Choice key={item.id} item={item} choose={choose} />)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul id={listId} className="tia-picker__list">
+                {held.map((item) => <Choice key={item.id} item={item} choose={choose} />)}
+              </ul>
+            ))}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+// ── end v1.5 X ──
+
 /** The picker's state: reading the resumes, unreadable, or the list. */
 type Picker = { state: 'loading' } | { state: 'failed' } | { state: 'open'; items: readonly ResumeItem[] };
 
@@ -290,20 +363,7 @@ export function ResumePicker({ id, card, loadResumes, chooseResume, setWithout, 
       {picker.state === 'failed' && <p className="tia-picker__note">{COPY.job.picker.failed}</p>}
       {picker.state === 'open' && picker.items.length === 0 && <p className="tia-picker__note">{COPY.job.picker.empty}</p>}
       {picker.state === 'open' && picker.items.length > 0 && (
-        <ul className="tia-picker__list">
-          {picker.items.map((item) => (
-            <li key={item.id}>
-              <button type="button" className="tia-picker__item" aria-pressed={item.current} data-resume-choice=""
-                onClick={() => choose(item.id)}>
-                <span className="tia-picker__label">{item.label}</span>
-                <span className="tia-picker__meta">
-                  {`${COPY.job.fileKinds[item.fileKind]} · ${COPY.job.picker.kinds[item.kind]}`}
-                  {item.current && ` · ${COPY.job.picker.current}`}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <Folders items={picker.items} choose={choose} />
       )}
       <div className="tia-picker__actions">
         {setWithout !== undefined && !without && (

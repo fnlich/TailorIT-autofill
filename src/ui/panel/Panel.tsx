@@ -419,9 +419,18 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
 
   /** v1.4 F (PLAN decision 17): Preview (the full-window preview page) or Edit (TailorIT's editor) of what the tab
    *  attaches, each opened by the worker in a tab of its own; nothing there yet is said under the buttons. */
-  const openDocument = (target: number, kind: PreviewKind, how: 'preview' | 'edit') => {
-    void request(platform, { v: 1, type: 'panel/openDocument', tabId: target, kind, how }).then((answer) => {
+  // v1.5 X (PLAN decisions 2 and 3): Preview shows the dialog over the tab's page (its tabs the documents this panel
+  // previews, `kinds`), else the full-window page; Edit of an uploaded resume confirms first, over the page, or here
+  // (`confirm: 'panel'`: the page could not), Continue sending it again with the person's word.
+  const openDocument = (target: number, kind: PreviewKind, how: 'preview' | 'edit',
+    extra: { kinds?: PreviewKind[]; confirmed?: true; skipConfirm?: boolean } = {}) => {
+    void request(platform, { v: 1, type: 'panel/openDocument', tabId: target, kind, how, ...extra }).then((answer) => {
       if (answer.ok && answer.data.opened) return;
+      if (answer.ok && answer.data.confirm === 'page') return;
+      if (answer.ok && answer.data.confirm === 'panel') {
+        setModal({ tabId: target, state: { kind: 'edit-upload' }, message: null });
+        return;
+      }
       setFeedback({ tabId: target, text: answer.ok ? COPY.tailor.nothingToOpen : refusalOf(answer.error),
         newest: Number.POSITIVE_INFINITY });
     });
@@ -577,6 +586,19 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     const attached = row.wrote && row.status !== 'blocked';
     return attached || letter.view.outcome === 'yours' || letter.view.outcome === 'written' ? 'coverLetter' : null;
   };
+  // v1.5 X (PLAN decision 2): the documents this panel previews for the tab, for the dialog's tabs (`kind` among them).
+  const previewKinds = (kind: PreviewKind): PreviewKind[] => {
+    const resume = answered !== null && answered.withoutResume !== true && answered.resume?.fileKind === 'pdf';
+    const letterRows = reports.some((report) => report.fields.some((row) => (row.category === 'file.coverLetter'
+      || row.category === 'freeText.coverLetter') && previewOf(row) === 'coverLetter'));
+    const letterShown = letterRows || letter.view.outcome === 'yours' || letter.view.outcome === 'written'
+      || (tailor.view?.state === 'done' && tailor.view.letter);
+    return (['resume', 'coverLetter'] as const).filter((each) => each === kind
+      || (each === 'resume' ? resume : letterShown));
+  };
+  // v1.5 X: Preview with the dialog's tabs; Edit as it was (its confirm comes from the worker).
+  const openOf = (target: number) => (kind: PreviewKind, how: 'preview' | 'edit') =>
+    openDocument(target, kind, how, how === 'preview' ? { kinds: previewKinds(kind) } : {});
 
   // v5 p1-panel (PLAN decision 4): the progress sheet over the stage's bottom, up while a run works (or signs in for
   // it), and the step dock under the stage; (decision 6) the modal over the view, for the tab it was raised on.
@@ -661,7 +683,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             <ResumeLine card={answered} loadResumes={loadResumes}
               chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
               setWithout={(without) => setWithout(tabId, without)}
-              openDocument={(kind, how) => openDocument(tabId, kind, how)}>
+              openDocument={openOf(tabId)}>
               <TailorRow kind="resume" tabId={tabId} view={tailor.view} clock={seenClock} onStart={tailor.start} />
             </ResumeLine>
           )}
@@ -669,7 +691,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
           {tabId !== null && answered !== null && !submitted && letterAsked && !letterRow && (
             <LetterLine outcome={letter.view.outcome} checking={letter.view.checking}
               tailored={tailor.view?.state === 'done' && tailor.view.letter}
-              onOpen={(kind, how) => openDocument(tabId, kind, how)}>
+              onOpen={openOf(tabId)}>
               <TailorRow kind="coverLetter" tabId={tabId} view={tailor.view} clock={seenClock} onStart={tailor.start} />
             </LetterLine>
           )}
@@ -713,8 +735,12 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
                       setWithout={(without) => setWithout(tabId, without)} />
                   ),
                 })}
-                // v1.4 F (PLAN decision 17): the full-window preview page, never under the row.
-                openPreview={(kind) => openDocument(tabId, kind, 'preview')}
+                // v1.4 F (PLAN decision 17): the full-window preview page, never under the row; v1.5 X: the dialog
+                // over the tab's page, else that page.
+                openPreview={(kind) => openOf(tabId)(kind, 'preview')}
+                // v1.5 X (PLAN decision 3): the résumé row's Edit, in Show's place, for an attached resume.
+                {...(answered !== null && answered.withoutResume !== true && answered.resume !== null && !submitted
+                  ? { openEdit: (kind: PreviewKind) => openOf(tabId)(kind, 'edit') } : {})}
               />
             )}
           </ProgressSheet>
@@ -743,6 +769,12 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             const held = modal?.message ?? null;
             setModal(null);
             if (held !== null) void run(held);
+          }}
+          // v1.5 X: the upload edit confirm's Continue, where the page could not show it.
+          onContinueEdit={(skip) => {
+            const target = modal?.tabId ?? null;
+            setModal(null);
+            if (target !== null) openDocument(target, 'resume', 'edit', { confirmed: true, skipConfirm: skip });
           }} />
       )}
     </main>

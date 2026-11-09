@@ -24,6 +24,9 @@ import { assertTrapInvariants } from '../helpers/invariants.ts';
 import { SYNTHETIC_LABELS } from '../helpers/labels.ts';
 import { GOLDEN_LETTER, GOLDEN_RESUME, mock } from '../helpers/mock.ts';
 import { eventsOn, fileHeld } from '../helpers/page-state.ts';
+import { PageUi } from '../helpers/page-ui.ts';
+import { dialogOn, previewFrameOn, previewFramesOn, shownDigest } from '../helpers/document-dialog.ts';
+import { COPY } from '../../src/shared/copy';
 import { example } from '../mock-server/mock.mjs';
 import type { ConsoleEntry } from '../helpers/console.ts';
 import type { RouteLog } from '../routes.ts';
@@ -188,7 +191,7 @@ test.describe('cover letters', () => {
       applicationKey: applicationKeyOf(url) });
   });
 
-  test('the side panel previews the letter the fill attached, from its row, without asking TailorIT again (v4 ui; v1.4 F: in the full-window preview page)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  test('the side panel previews the letter the fill attached, from its row, without asking TailorIT again (v4 ui; v1.5 X: in a dialog over the job page)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
     await tailorit.scenario('letter-generating-then-ready', { times: 1 });
     const page = await extContext.newPage();
     await open(page, routeLog, 'cover-letter-preview');
@@ -204,21 +207,27 @@ test.describe('cover letters', () => {
     await expect(drawn).toHaveAttribute('data-file', 'coverLetter');
     const written = (await bodies()).filter((body) => body.generate === true).length;
     const files = (await fileRequests()).length;
-    // v1.4 F (PLAN decision 17): the full-window preview page, opened on the letter's tab.
-    const opened = extContext.waitForEvent('page');
+    // v1.5 X (PLAN decision 2): the dialog over the job page, on the letter's tab, the résumé's beside it.
+    const tabs = extContext.pages().length;
     await drawn.locator('button[data-action="preview"]').click();
-    const preview = await opened;
-    expect(preview.url()).toBe(ext.url(`preview.html?tabId=${tabId}&kind=coverLetter`));
-    const frame = preview.locator('iframe[data-preview-frame]');
-    await expect(frame).toBeVisible();
-    const src = await frame.getAttribute('src');
+    const ui = await PageUi.of(page);
+    await dialogOn(ui, 'preview');
+    expect((await ui.elements('[role="tab"]')).map((tab) => [tab.text, tab.attributes['aria-selected']]))
+      .toEqual([[COPY.documentDialog.tabs.resume, 'false'], [COPY.documentDialog.tabs.coverLetter, 'true']]);
+    expect(extContext.pages()).toHaveLength(tabs);
+    const { src, digest } = await shownDigest(await previewFrameOn(page, 'coverLetter'));
     expect(src).toMatch(/^blob:chrome-extension:\/\//);
-    const digest = await preview.evaluate(async (address) => {
-      const bytes = new Uint8Array(await (await fetch(address)).arrayBuffer());
-      const hash = await crypto.subtle.digest('SHA-256', bytes);
-      return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    }, src!);
     expect(digest).toBe(GOLDEN_LETTER.sha256);
+    // The résumé's tab, a person's click: its own frame and transfer, the letter's frame gone with its document.
+    const [resumeTab] = await ui.elements('[data-document-tab="resume"]');
+    await ui.click(resumeTab!);
+    expect((await shownDigest(await previewFrameOn(page, 'resume'))).digest).toBe(GOLDEN_RESUME.sha256);
+    await expect.poll(() => previewFramesOn(page).map((each) => new URLSearchParams(each.url().split('?')[1]).get('kind')))
+      .toEqual(['resume']);
+    // Escape closes it.
+    await page.keyboard.press('Escape');
+    await expect.poll(async () => (await ui.elements('dialog[data-document-dialog]')).length).toBe(0);
+    await ui.close();
     // The run's own letter: fetched once more for the preview, nothing written or asked to be written.
     expect((await fileRequests()).length).toBe(files + 1);
     expect((await bodies()).filter((body) => body.generate === true)).toHaveLength(written);

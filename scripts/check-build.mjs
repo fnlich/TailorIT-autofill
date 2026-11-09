@@ -30,6 +30,8 @@
 // anywhere under a single-page candidate app's own path: SUBMIT_WATCH_INSTALLS_AT), SuccessFactors' applyJob exactly
 // at its career site's form, and nowhere else, and, driven, reads no body it has no use for and dispatches a sign
 // alone. The watcher is told from the bridge by its file.
+// v1.5 X (PLAN decision 2, the in-page preview dialog): exactly one web-accessible resource, the preview page
+// (WEB_ACCESSIBLE_PAGE), at its dynamic address alone, on every https and http page, and in the build.
 // Usage: node scripts/check-build.mjs [--all]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -41,7 +43,8 @@ import { paint } from './proc.mjs';
 const ROOT = resolve(import.meta.dirname, '..');
 const requireAll = process.argv.includes('--all');
 const { ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CAPTCHA_VENDOR_MATCHES, CONTENT_SCRIPT_FILE, registrationsFor, SENTINEL_FILE,
-  SITES_MATCH, SITES_REGISTRATION_ID, SUBMIT_WATCH_MATCHES } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
+  SITES_MATCH, SITES_REGISTRATION_ID, SUBMIT_WATCH_MATCHES, WEB_ACCESSIBLE_PAGE,
+} = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
 const { SIDEBAR_APP_FILE } = await import(new URL('../src/shared/sidebar.ts', import.meta.url).href);
 const MANIFEST_KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
 /** The content script must stay under this: every file the manifest's content script lists, together. The snapshot
@@ -247,10 +250,10 @@ function checkManifest(build, manifest) {
   for (const host of manifest.host_permissions ?? []) {
     if (BEYOND_WEB_PAGES.test(host)) fail(build, `the host permission ${host} reaches more than web pages`);
   }
-  for (const key of ['optional_host_permissions', 'optional_permissions', 'web_accessible_resources', 'content_security_policy',
-    'commands', 'update_url']) {
+  for (const key of ['optional_host_permissions', 'optional_permissions', 'content_security_policy', 'commands', 'update_url']) {
     if (key in manifest) fail(build, `${key} must be absent`);
   }
+  checkWebAccessible(build, manifest);
   if (manifest.key !== MANIFEST_KEY) fail(build, 'key is missing or is not the committed public key');
   if (manifest.minimum_chrome_version !== '144') fail(build, 'minimum_chrome_version is not 144');
   if (!manifest.action) fail(build, 'action is missing');
@@ -308,10 +311,36 @@ function checkManifest(build, manifest) {
     fail(build, 'externally_connectable is not exactly TailorIT');
   }
   if (manifest.options_ui?.open_in_tab !== true) fail(build, 'the options page does not open in a tab');
-  for (const page of [manifest.options_ui?.page, manifest.side_panel?.default_path]) {
+  for (const page of [manifest.options_ui?.page, manifest.side_panel?.default_path, WEB_ACCESSIBLE_PAGE]) {
     if (!page || !existsSync(join(ROOT, build.dir, page))) fail(build, `page ${page} is missing`);
   }
 }
+
+// ── v1.5 X ──
+/**
+ * The web-accessible resources (PLAN decision 2): exactly one entry, the preview page the dialog over a tab's page
+ * embeds (WEB_ACCESSIBLE_PAGE). Why: that dialog shows the résumé on the page the person is on, inside a frame of the
+ * extension's own (so the bytes stay in its process and the page's scripts cannot read them), and a page may frame an
+ * extension page only when it is web-accessible. `use_dynamic_url: true`, so it loads only at an address that changes
+ * each browser session (a page cannot probe for the extension at its fixed id); its matches every https and http page,
+ * where the sidebar runs (the host permissions); and nothing else, ever: its scripts, styles and fonts load from the
+ * extension's own origin (the page that loads them is ours), and a script, the sidebar's bundle, the content script or
+ * a font listed here would be any page's to load. No other key (extension_ids would let other extensions in). The page
+ * is in the build.
+ */
+function checkWebAccessible(build, manifest) {
+  const entries = manifest.web_accessible_resources;
+  const [entry] = Array.isArray(entries) ? entries : [];
+  const exact = Array.isArray(entries) && entries.length === 1 && entry !== null && typeof entry === 'object'
+    && sameSet(Object.keys(entry), ['resources', 'matches', 'use_dynamic_url'])
+    && isDeepStrictEqual(entry.resources, [WEB_ACCESSIBLE_PAGE]) && entry.use_dynamic_url === true
+    && Array.isArray(entry.matches) && sameSet(entry.matches, [...ALL_SITES_HOST_PERMISSIONS]);
+  if (!exact) {
+    fail(build, `web_accessible_resources must be exactly ${WEB_ACCESSIBLE_PAGE} at its dynamic address on every https and `
+      + `http page, found ${JSON.stringify(entries ?? null)}`);
+  }
+}
+// ── end v1.5 X ──
 
 /** The icons: exactly the four sizes, each a PNG in the build whose header (IHDR, bytes 16-23) gives its key's width
  *  and height; the action's icons are the 16 and 32 px ones. */

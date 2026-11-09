@@ -135,14 +135,15 @@ export function tailorRequestOf(job: { jobId: number | null }, page: PageText, s
   return { ...base, jobDescription, company, title, ...(canaries.length > 0 ? { canaries } : {}) };
 }
 
-/** TailorIT's editor for a document (PLAN decision 17): a built resume's `/resumes/<id>`, an upload's Documents page
- *  (where its editable copy is made), a letter's `/cover-letter/<id>`; null for an id that may not name a path. */
+/** TailorIT's editor for a document (PLAN decision 17): a built resume's `/resumes/<id>`, a letter's
+ *  `/cover-letter/<id>`; v1.5 X (PLAN decision 3): an upload's `/resumes/<id>/edit`, TailorIT's route that makes (or
+ *  reuses) its editable copy, with progress, then opens the editor; null for an id that may not name a path. */
 export function editorUrlOf(origin: string, kind: TailorKind, id: string, built = true): string | null {
   if (kind === 'coverLetter') {
     return AutofillCoverLetterIdSchema.safeParse(id).success ? `${origin}/cover-letter/${id}` : null;
   }
   if (!RESUME_ID.test(id)) return null;
-  return built ? `${origin}/resumes/${id}` : `${origin}/documents`;
+  return built ? `${origin}/resumes/${id}` : `${origin}/resumes/${id}/edit`;
 }
 
 /** Each failure as a number in the log. */

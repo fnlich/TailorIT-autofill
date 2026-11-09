@@ -13,9 +13,15 @@
  *   worker alone knows its id). Close closes this page.
  *
  * Nothing is stored or logged: the bytes live in this page while it shows them.
+ * v1.5 X (PLAN decision 2): the same page is the extension's one web-accessible resource, embedded in the dialog the
+ * content script shows over the tab's page (content/ui/document-dialog.ts): framed (`embedded`), it draws the one
+ * document its address names (`kind`) and nothing else (no tabs, no buttons: the dialog has them, in our closed root,
+ * so a page that frames it cannot press any), asking for it with the dialog's `grant`, without which the worker sends
+ * nothing to a framed page.
  */
 import { useEffect, useId, useState } from 'react';
 import { TAILOR_KINDS, type TailorKind } from '../../messaging/page-schemas';
+import { DOCUMENT_GRANT } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { LogoMark, Wordmark } from '../brand/Logo';
@@ -31,10 +37,26 @@ const FRAME_WORDS: Record<TailorKind, { loading: string; unavailable: string; ti
   coverLetter: COPY.mainView.letterPreview,
 };
 
-/** The page's address: the tab it shows (null: none named), and the document shown first. */
-export function previewTargetOf(search: string): { tabId: number | null; kind: TailorKind } {
-  const kind = new URLSearchParams(search).get('kind');
-  return { tabId: pinnedTabOf(search), kind: kind === 'coverLetter' ? 'coverLetter' : 'resume' };
+/** The page's address: the tab it shows (null: none named), and the document shown first; v1.5 X: the dialog's
+ *  grant (null: none, or not one). */
+export function previewTargetOf(search: string): { tabId: number | null; kind: TailorKind; grant: string | null } {
+  const params = new URLSearchParams(search);
+  const kind = params.get('kind');
+  const grant = params.get('grant');
+  return { tabId: pinnedTabOf(search), kind: kind === 'coverLetter' ? 'coverLetter' : 'resume',
+    grant: grant !== null && DOCUMENT_GRANT.test(grant) ? grant : null };
+}
+
+/** v1.5 X: the page embedded in the dialog over a tab's page (module header): the one document, filling the frame. */
+export function EmbeddedPreview({ platform, search }: { platform: PagePlatform; search: string }) {
+  const { tabId, kind, grant } = previewTargetOf(search);
+  return (
+    <main className="tia-page tia-previewpage tia-previewpage--embedded" data-preview-page="embedded"
+      data-preview-shown={kind}>
+      {tabId === null || grant === null ? <p className="tia-help" role="status" data-preview-failed="">{WORDS.noTab}</p>
+        : <DocumentFrame kind={kind} load={(signal) => receivePreview(platform, tabId, signal, kind, grant)} />}
+    </main>
+  );
 }
 
 /** The page's own layout over the pages' stylesheet: the head, then the frame filling the rest of the window. */
@@ -53,6 +75,9 @@ html, body, #root { height: 100%; margin: 0; }
 .tia-previewpage__body { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
 .tia-previewpage .tia-preview { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
 .tia-previewpage .tia-preview__frame { flex: 1 1 auto; height: auto; min-height: 320px; }
+.tia-previewpage--embedded { padding: 0; gap: 0; }
+.tia-previewpage--embedded .tia-preview__frame { min-height: 0; border: 0; border-radius: 0; }
+.tia-previewpage--embedded > .tia-help, .tia-previewpage--embedded .tia-preview > .tia-help { margin: 0; padding: 24px; }
 `;
 
 /** The full-window preview (module header). `close` closes the page (the window's own by default). */

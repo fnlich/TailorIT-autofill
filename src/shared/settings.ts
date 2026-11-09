@@ -1,8 +1,8 @@
 /*
  * The settings schema and where they are kept. The worker reads and writes them; content scripts receive the part
- * they need with run/begin and never touch storage. Version 9 (v1.3: "Keep my submitted answers in TailorIT") is stored
- * under the same key; a version 1 to 8 value read there is migrated (core/types/settings.ts migrateSettings,
- * migrateSettingsV2 to migrateSettingsV8) and stored again.
+ * they need with run/begin and never touch storage. Version 10 (v1.5 X: the extension's UI choices, `ui`) is stored
+ * under the same key; a version 1 to 9 value read there is migrated (core/types/settings.ts migrateSettings,
+ * migrateSettingsV2 to migrateSettingsV9) and stored again.
  * The older versions' schemas, which only the worker reads, are in ./settings-stored.ts (the behaviour review of
  * 2026-11-06: kept out of the content script's bundle, and its budget).
  */
@@ -51,8 +51,13 @@ export const ModesV8Schema = ModesV6Schema.extend({ noMatch: z.enum(NO_MATCH_MOD
 /** v1.3 B (version 9): "Keep my submitted answers in TailorIT". */
 export const ModesSchema = ModesV8Schema.extend({ keepAnswers: z.enum(MODE_CHOICES.keepAnswers) });
 
+// v1.5 X
+/** Version 10: the extension's own UI choices (the upload edit confirm's "Don't show this again"). */
+export const UiChoicesSchema = z.strictObject({ skipUploadEditConfirm: z.boolean() });
+// end v1.5 X
+
 export const SettingsSchema = z.strictObject({
-  version: z.literal(9),
+  version: z.literal(10),
   panel: z.enum(PANEL_PLACES),
   view: z.enum(PANEL_VIEWS),
   modes: ModesSchema,
@@ -61,6 +66,7 @@ export const SettingsSchema = z.strictObject({
   telemetry: z.strictObject({ optIn: z.boolean() }),
   offerToSaveAnswers: z.boolean(),
   interpretations: Interpretations,
+  ui: UiChoicesSchema, // v1.5 X
 }) satisfies z.ZodType<Settings>;
 
 /** The modes a content script acts on (v3 Phase 3 review): Next, and whether a new step fills as it appears; since v3

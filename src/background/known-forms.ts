@@ -10,6 +10,9 @@
  *   other jobs fill them too (RunKnown.withFields).
  * - The answers become the resolver's SubmittedAnswer list (submitted-forms.ts submittedAnswersOf), and the questions
  *   the run-start AI batch's (planner.ts). Nothing here is stored or logged but counts.
+ * - v1.5 X (PLAN decision 4): the person's prebuilt draft answers for the job (`drafts`), the ready ones, join that list
+ *   marked `draft` (submitted-forms.ts draftAnswersOf); a not-ready one is left to the fill's own AI path. A run of the
+ *   auto-apply agent reads them the same way.
  */
 import {
   AUTOFILL_FORM_LIMITS, AutofillQuestionKeySchema, type AutofillFormFieldKey, type AutofillKnownQuestion,
@@ -22,7 +25,7 @@ import type { BaseKey, FieldKey, FieldSpec, OptionSetHash, SectionRef } from '..
 import type { SubmittedAnswer } from '../core/types/submitted';
 import { log } from '../shared/log';
 import type { ServerClient } from './server-client';
-import { submittedAnswersOf } from './submitted-forms';
+import { draftAnswersOf, submittedAnswersOf } from './submitted-forms';
 
 /** How long a job's known form is kept before it is read again. */
 export const KNOWN_FORM_TTL_MS = 10 * 60_000;
@@ -66,8 +69,12 @@ export function createKnownForms(deps: { server: Pick<ServerClient, 'knownForm'>
       return null;
     }
     prefix += 1;
-    const answers = submittedAnswersOf(answer.value).map((item) => ({ ...item, id: `r${prefix}.${item.id}` }));
-    log('forms.known', { questions: answer.value.questions.length, answers: answers.length });
+    // v1.5 X (PLAN decision 4): the person's ready prebuilt draft answers too, marked `draft` (submitted-forms.ts).
+    const drafts = draftAnswersOf(answer.value);
+    const answers = [...submittedAnswersOf(answer.value), ...drafts]
+      .map((item) => ({ ...item, id: `r${prefix}.${item.id}` }));
+    log('forms.known', { questions: answer.value.questions.length, answers: answers.length - drafts.length,
+      drafts: drafts.length, notReady: (answer.value.drafts ?? []).length - drafts.length });
     return { jobId: answer.value.jobId, questions: answer.value.questions, answers };
   }
 

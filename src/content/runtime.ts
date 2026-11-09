@@ -202,6 +202,7 @@ import { visibleTextWithout } from '../dom/visible-text';
 import { showField } from './targets';
 import { TouchLog } from './touches';
 import { showApplied } from './ui/applied';
+import { documentDialogShown, showEditConfirm, showPreviewDialog } from './ui/document-dialog'; // v1.5 X
 import { mountPageUi, type PageUi } from './ui/page-ui';
 import { sidebarAppOf, type SidebarApp } from '../shared/sidebar';
 import type { PanelPlace, PanelView } from '../core/types/settings';
@@ -408,6 +409,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     ui?.destroy();
     ui = null;
     formCapture.clear();
+    // v1.5 X: a documents' dialog this script showed goes with it (its controls would reach no worker).
+    if (isTop) documentDialogShown(doc)?.remove();
   }
 
   // ── v1.3 B: the form's questions and answers (form-capture.ts) ──
@@ -566,6 +569,34 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         if (!isTop || stopped) return refuse('expired');
         showApplied(doc, { trackerUrl: `${__TAILORIT_ORIGIN__}/tracker` });
         return ok({});
+      // ── v1.5 X (PLAN decisions 2 and 3): the documents' dialogs over the page (ui/document-dialog.ts) ──
+      case 'preview/show': {
+        // The worker's alone, to the top frame: the preview over the page, its document in a frame of the extension's
+        // own preview page with the worker's grant. {shown: false} (a hidden tab, a modal refused): the worker opens
+        // the full-window page instead.
+        if (!fromWorker(sender)) return refuse('bad_sender');
+        if (!isTop || stopped) return ok({ shown: false });
+        const { tabId, grant, page: address } = msg;
+        const shown = showPreviewDialog(doc, { kinds: msg.kinds, kind: msg.kind, names: msg.names,
+          frameUrl: (kind) => `${address}?${new URLSearchParams({ tabId: String(tabId), kind, grant }).toString()}`,
+          openTab: (kind) => {
+            if (channel.valid()) channel.fire({ v: 1, type: 'preview/openTab', kind });
+          } });
+        log('content.document-dialog', { preview: true, shown: shown !== null });
+        return ok({ shown: shown !== null });
+      }
+      case 'edit/confirm': {
+        // The worker's alone, to the top frame: the confirm before Edit opens an uploaded resume's editable copy.
+        if (!fromWorker(sender)) return refuse('bad_sender');
+        if (!isTop || stopped) return ok({ shown: false });
+        const { grant } = msg;
+        const shown = showEditConfirm(doc, { onContinue: (skip) => {
+          if (channel.valid()) channel.fire({ v: 1, type: 'edit/confirmed', grant, skip });
+        } });
+        log('content.document-dialog', { preview: false, shown: shown !== null });
+        return ok({ shown: shown !== null });
+      }
+      // ── end v1.5 X ──
       case 'run/press':
         // The worker's alone (the review): an extension page's message never presses the page's Next or Submit; the
         // worker relays the side panel's only while the frame's report offers that button.

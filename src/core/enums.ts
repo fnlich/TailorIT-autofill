@@ -47,7 +47,10 @@ export type FieldKind = (typeof FIELD_KINDS)[number];
  *  core/resolver/submitted.ts), trusted as their own words are. */
 export const PROVENANCES = ['profile', 'saved', 'rule', 'llm-pick', 'llm-draft', 'llm-answer',
   // v1.3 B
-  'submitted-before'] as const;
+  'submitted-before',
+  // v1.5 X (PLAN decision 4): an answer TailorIT prepared for this job ahead of time (a job application draft,
+  // POST /forms/known's `match: 'draft'`; core/resolver/submitted.ts findDraftAnswer). AI-made, so not trusted.
+  'prebuilt'] as const;
 export type Provenance = (typeof PROVENANCES)[number];
 export const TRUSTED_PROVENANCES: ReadonlySet<Provenance> = new Set<Provenance>(['profile', 'saved', 'rule',
   'submitted-before']);

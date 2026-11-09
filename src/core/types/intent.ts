@@ -107,7 +107,11 @@ export type ValueOrigin =
   /** v1.3 B: the person's own answer to this question in an application they submitted before (TailorIT's known
    *  questions; core/resolver/submitted.ts): `submittedId` names it in the run's list, `sameJob` says whether it was
    *  this job's (a re-apply) or another job's (only ever for a question that is not sensitive). */
-  | { provenance: 'submitted-before'; submittedId: string; sameJob: boolean };
+  | { provenance: 'submitted-before'; submittedId: string; sameJob: boolean }
+  /** v1.5 X (PLAN decision 4): the answer TailorIT prepared for this job's question ahead of time (its job application
+   *  draft, read with the job's known questions; core/resolver/submitted.ts findDraftAnswer): `draftId` names it in the
+   *  run's list. Never for a sensitive, consent or attention-check question, nor a file. */
+  | { provenance: 'prebuilt'; draftId: string };
 
 /** What an AI answer rested on (TailorIT's AUTOFILL_ANSWER_BASES): `guess` when nothing in the resume, the profile or
  *  the posting settles it. */

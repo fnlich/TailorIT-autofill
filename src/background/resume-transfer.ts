@@ -284,15 +284,22 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
    */
   function acceptPreview(port: PortLike, resumeFor: (tabId: number) => Promise<ResumeChoice | null>,
     ready: () => Promise<void> = () => Promise.resolve(),
-    letterFor?: (tabId: number, active: () => boolean) => Promise<string | null>): void {
+    letterFor?: (tabId: number, active: () => boolean) => Promise<string | null>,
+    // v1.5 X: a framed preview page's request is served only when `admits` says so (its tab's grant: index.ts).
+    admits?: (request: PreviewAsk) => boolean): void {
     const parse = (raw: unknown) => {
       const parsed = PreviewPortMessageSchema.safeParse(raw);
       return parsed.success ? parsed.data : null;
     };
-    serve(port, (raw) => {
+    serve(port, (raw): PreviewAsk | null => {
       const message = parse(raw);
-      return message?.type === 'preview/request' ? { tabId: message.tabId, kind: message.kind ?? 'resume' } : null;
+      return message?.type === 'preview/request' ? { tabId: message.tabId, kind: message.kind ?? 'resume',
+        ...(message.grant === undefined ? {} : { grant: message.grant }) } : null;
     }, async (request, active) => {
+      if (admits !== undefined && !admits(request)) {
+        log('resume.preview', { sent: false, refused: true });
+        return 'resume-unavailable';
+      }
       if (request.kind === 'coverLetter') {
         // v4 ui: the cover letter the tab's fill attached or would attach (`letterFor`: its id, in this worker's memory
         // only), fetched and checked as the resume port sends it: a PDF only, its hash TailorIT's.
@@ -320,6 +327,13 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
   }
 
   return { accept, acceptPreview };
+}
+
+/** v1.5 X: a preview port's request: the tab, the document and (a framed preview page's) the dialog's grant. */
+export interface PreviewAsk {
+  tabId: number;
+  kind: 'resume' | 'coverLetter';
+  grant?: string;
 }
 
 /** The resume transfer, as index.ts wires it. */

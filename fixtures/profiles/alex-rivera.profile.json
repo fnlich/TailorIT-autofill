@@ -118,7 +118,8 @@
   "documents": {
     "resumeId": null,
     "resumeTemplateId": null,
-    "coverLetterTemplateId": null
+    "coverLetterTemplateId": null,
+    "prebuildCoverLetters": true
   },
   "anythingElse": ""
 }

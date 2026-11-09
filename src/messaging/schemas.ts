@@ -167,6 +167,8 @@ export const ValueOriginSchema = z.discriminatedUnion('provenance', [
   z.strictObject({ provenance: z.literal('llm-answer'), taskId: Id, basis: z.enum(ANSWER_BASES) }),
   // v1.3 B: the person's own answer from an application they submitted before (core/resolver/submitted.ts).
   z.strictObject({ provenance: z.literal('submitted-before'), submittedId: Id, sameJob: z.boolean() }),
+  // v1.5 X (PLAN decision 4): an answer TailorIT prepared for this job ahead of time (core/resolver/submitted.ts).
+  z.strictObject({ provenance: z.literal('prebuilt'), draftId: Id }),
 ]);
 
 export const MatchSchema = z.strictObject({
@@ -312,6 +314,20 @@ export type EntryOutcome = (typeof ENTRY_OUTCOMES)[number];
  *  the site did not take, an email code, a CAPTCHA or bot check, or another choice (Workday's entry choice). */
 export const ENTRY_BLOCKS = ['sign-in', 'sign-in-failed', 'email-code', 'captcha', 'other'] as const;
 export type EntryBlock = (typeof ENTRY_BLOCKS)[number];
+
+// ── v1.5 X (PLAN decisions 2 and 3): the documents' dialogs on the page ──
+/** The documents a fill attaches that the page's dialog shows (the preview's tabs), as the panel's TAILOR_KINDS. */
+export const DOCUMENT_KINDS = ['resume', 'coverLetter'] as const;
+export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
+/** A grant the worker gives a dialog it asks the tab's top frame to show (background/document-dialog.ts): 128 random
+ *  bits as hex. The embedded preview page names it on the preview port, the confirm's Continue on edit/confirmed. */
+export const DOCUMENT_GRANT = /^[0-9a-f]{32}$/;
+/** The extension's preview page (preview.html) at any of its addresses: its own, or the dynamic one a page may load. */
+export const PREVIEW_PAGE_ADDRESS = /^[a-z-]*extension:\/\/[A-Za-z0-9-]{1,64}\/preview\.html$/;
+/** What the preview dialog's title names: each document's file name (the person's own, never an id). */
+export const DocumentNamesSchema = z.strictObject({ resume: z.string().min(1).max(255).optional(),
+  coverLetter: z.string().min(1).max(255).optional() });
+// ── end v1.5 X ──
 
 // ── Content script → worker (one-shot messages) ───────────────────────────────────────────────────────────────────
 
@@ -503,6 +519,15 @@ const contentMessages = [
    *  page's dialogs through a write and arm its own file picker for a résumé control's press, on command alone. */
   z.strictObject({ v, type: z.literal('page/patches') }),
   // ── end v5 p2-fill ──
+  // ── v1.5 X (PLAN decisions 2 and 3) ──
+  /** The preview dialog's "Open In A New Tab" (a trusted click on it, seen CONTROL_SEEN_MS): the worker opens the
+   *  full-window preview page of the sender's own tab on `kind`, while a preview grant of that tab stands. Frame 0. */
+  z.strictObject({ v, type: z.literal('preview/openTab'), kind: z.enum(DOCUMENT_KINDS) }),
+  /** The upload edit confirm's Continue (a trusted click on it, seen CONTROL_SEEN_MS), naming its grant: the worker opens
+   *  TailorIT's /resumes/<id>/edit for the resume the grant was given for (its id the worker's alone), and keeps
+   *  `skip` ("Don't show this again") in the settings. Frame 0. */
+  z.strictObject({ v, type: z.literal('edit/confirmed'), grant: z.string().regex(DOCUMENT_GRANT), skip: z.boolean() }),
+  // ── end v1.5 X ──
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -646,6 +671,21 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
   // reply TailorIT then voided as a whole: the fields written from them are flagged (ai-reply-voided).
   z.strictObject({ v, type: z.literal('plan/ready'), runId: Id, reviews: z.array(Key).max(500).optional() }),
   // v5 p2-stream review end
+  // ── v1.5 X (PLAN decisions 2 and 3): the worker's alone, to the tab's top frame ──
+  /** The preview dialog over the page (content/ui/document-dialog.ts): the tab's documents in an embedded frame of the
+   *  extension's preview page, which names `grant` on the preview port; `kinds`, its tabs; `kind`, the one shown
+   *  first. Answered {shown}: false where this frame shows none (not the top frame, a hidden tab, gone). */
+  z.strictObject({ v, type: z.literal('preview/show'), tabId: Count, kind: z.enum(DOCUMENT_KINDS),
+    kinds: z.array(z.enum(DOCUMENT_KINDS)).min(1).max(DOCUMENT_KINDS.length), grant: z.string().regex(DOCUMENT_GRANT),
+    names: DocumentNamesSchema,
+    /** The preview page's address in this browser session (runtime.getURL of the web-accessible preview.html, its
+     *  dynamic address): the frame's, with the tab, the document and the grant added. */
+    page: z.string().max(200).regex(PREVIEW_PAGE_ADDRESS) })
+    .refine((message) => message.kinds.includes(message.kind), { message: 'kind is no tab', path: ['kind'] }),
+  /** The confirm before Edit opens TailorIT's editable copy of an uploaded resume, over the page; its Continue sends
+   *  edit/confirmed with `grant`. Answered {shown}. */
+  z.strictObject({ v, type: z.literal('edit/confirm'), grant: z.string().regex(DOCUMENT_GRANT) }),
+  // ── end v1.5 X ──
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -778,6 +818,9 @@ export type LearnedListsAnswer = z.infer<typeof LearnedListsAnswerSchema>;
 export const PageRecognisedAnswerSchema = z.strictObject({ injected: z.boolean() });
 /** v5 p1-shell: sidebar/load's answer: the sending frame's tab, once the sidebar's bundle ran in its document. */
 export const SidebarLoadAnswerSchema = z.strictObject({ tabId: Count });
+// v1.5 X
+/** preview/show's and edit/confirm's answer: whether the dialog shows over the page now. */
+export const DialogShownAnswerSchema = z.strictObject({ shown: z.boolean() });
 /** v5 p1-shell: sidebar/open's answer: whether the sidebar opens (false: this frame shows none, or it is the side
  *  panel's place now). */
 export const SidebarOpenAnswerSchema = z.strictObject({ opening: z.boolean() });
@@ -850,6 +893,9 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'sidebar/options': DoneAnswerSchema,
   // v5 p2-fill
   'page/patches': DoneAnswerSchema,
+  // v1.5 X
+  'preview/openTab': DoneAnswerSchema,
+  'edit/confirmed': DoneAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of a frame's answer to each message the worker sends it. */
@@ -877,6 +923,9 @@ export const FRAME_ANSWER_SCHEMAS = {
   'sidebar/open': SidebarOpenAnswerSchema,
   'applied/popup': DoneAnswerSchema, // v5 p1-panel
   'plan/ready': DoneAnswerSchema, // v5 p2-stream
+  // v1.5 X
+  'preview/show': DialogShownAnswerSchema,
+  'edit/confirm': DialogShownAnswerSchema,
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 // ── The resume port ───────────────────────────────────────────────────────────────────────────────────────────────

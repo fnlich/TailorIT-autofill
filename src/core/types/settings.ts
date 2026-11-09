@@ -41,6 +41,10 @@
  * and user can see it in the future"): "Keep my submitted answers in TailorIT" (`modes.keepAnswers`, shown with the
  * modes): On (the default) sends the answers of an application the person submits to their own TailorIT with its
  * questions; Off sends the questions only. Every version 8 value takes On (migrateSettingsV8).
+ * Version 10 (v1.5 X, the owner's words of 2026-11-09: "if uploaded image, alert like `It can take some time to analyze
+ * fixed resume, can you proceed it` with `never be shown` checkbox"): `ui.skipUploadEditConfirm`, the confirm's "Don't
+ * show this again" before Edit opens TailorIT's editable copy of an uploaded resume; off (the confirm shows) by default,
+ * and turned back on in Options' Documents card. Every version 9 value takes the default (migrateSettingsV9).
  */
 import type { ConsentCategory } from '../enums';
 
@@ -149,8 +153,17 @@ export type PanelPlace = (typeof PANEL_PLACES)[number];
 /** Versions 1 to 7's places: the browser's side panel, or the small in-page review card. */
 export type PanelPlaceV7 = 'side' | 'in-page';
 
-/** The settings' version now (v1.3 B: "Keep my submitted answers in TailorIT"). */
-export const SETTINGS_VERSION = 9;
+/** The settings' version now (v1.5 X: the upload edit confirm's "Don't show this again"). */
+export const SETTINGS_VERSION = 10;
+
+// v1.5 X
+/** The extension's own UI choices that are no mode (version 10). */
+export interface UiChoices {
+  /** "Don't show this again" on the confirm before Edit opens TailorIT's editable copy of an uploaded resume: true
+   *  opens it at once. */
+  skipUploadEditConfirm: boolean;
+}
+// end v1.5 X
 
 export interface Settings {
   version: typeof SETTINGS_VERSION;
@@ -187,6 +200,8 @@ export interface Settings {
      *  sensitive part, takes the form's decline option ("Decline to self-identify"); with none, it is left blank. */
     eeoDeclineByDefault: boolean;
   };
+  /** v1.5 X (version 10): the extension's own UI choices. */
+  ui: UiChoices;
 }
 
 /** The consents pre-approved by default (version 2): marketing and SMS stay off under Consents: Required only; an AI
@@ -207,8 +222,11 @@ export const DEFAULT_MODES: Modes = {
   keepAnswers: 'on',
 };
 
+/** v1.5 X (version 10): the confirm before editing an uploaded resume shows. */
+export const DEFAULT_UI: UiChoices = { skipUploadEditConfirm: false };
+
 export const DEFAULT_SETTINGS: Settings = {
-  version: 9,
+  version: 10,
   panel: 'page',
   view: 'expanded',
   modes: { ...DEFAULT_MODES, agentSkip: { ...DEFAULT_MODES.agentSkip } },
@@ -217,6 +235,7 @@ export const DEFAULT_SETTINGS: Settings = {
   telemetry: { optIn: false },
   offerToSaveAnswers: true,
   interpretations: { postingCountryForLegal: true, twoOrMoreRaces: true, eeoDeclineByDefault: true },
+  ui: { ...DEFAULT_UI },
 };
 
 /** Versions 2 to 5's AI switches: the draft confirmation, and "Ask me each time" among what a posting that forbids AI
@@ -231,8 +250,13 @@ export interface LlmV5 {
   whenForbidden: AiForbiddenModeV5;
 }
 
+/** v1.5 X: version 9's settings, as an install stored them before the extension's UI choices (version 10). */
+export interface SettingsV9 extends Omit<Settings, 'version' | 'ui'> {
+  version: 9;
+}
+
 /** Version 8's settings, as an install stored them before v1.3's "Keep my submitted answers in TailorIT" (version 9). */
-export interface SettingsV8 extends Omit<Settings, 'version' | 'modes'> {
+export interface SettingsV8 extends Omit<SettingsV9, 'version' | 'modes'> {
   version: 8;
   modes: ModesV8;
 }
@@ -292,14 +316,24 @@ export interface SettingsV2 extends Omit<SettingsV3, 'version' | 'llm'> {
 }
 
 /**
- * v1.3 B: version 8's settings as version 9's: every choice is kept, and "Keep my submitted answers in TailorIT" takes
- * its default, On (the owner, 2026-11-09: the answers of an application the person submits are stored on their server
- * and shown to them).
+ * v1.5 X: version 9's settings as version 10's: every choice is kept, and the confirm before editing an uploaded
+ * resume shows (the extension's UI choices at their defaults).
+ */
+export function migrateSettingsV9(old: SettingsV9): Settings {
+  return { ...old, version: 10, modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip } },
+    preapprovedConsent: [...old.preapprovedConsent], llm: { ...old.llm }, telemetry: { ...old.telemetry },
+    interpretations: { ...old.interpretations }, ui: { ...DEFAULT_UI } };
+}
+
+/**
+ * v1.3 B: version 8's settings as version 10's, through version 9: every choice is kept, and "Keep my submitted answers
+ * in TailorIT" takes its default, On (the owner, 2026-11-09: the answers of an application the person submits are
+ * stored on their server and shown to them).
  */
 export function migrateSettingsV8(old: SettingsV8): Settings {
-  return { ...old, version: 9, modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip },
+  return migrateSettingsV9({ ...old, version: 9, modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip },
     keepAnswers: DEFAULT_MODES.keepAnswers }, preapprovedConsent: [...old.preapprovedConsent], llm: { ...old.llm },
-  telemetry: { ...old.telemetry }, interpretations: { ...old.interpretations } };
+  telemetry: { ...old.telemetry }, interpretations: { ...old.interpretations } });
 }
 
 /**

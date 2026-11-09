@@ -225,7 +225,9 @@ export function draftItemOf(spec: FieldSpec, classification: FieldClassification
   writable: boolean, context: DraftContext): DraftItem | null {
   if (!writable || !freeTextQuestion(classification)) return null;
   // A saved answer fills it, or the resolution is no longer the person's (a draft is asked for nothing else).
-  if (resolution.classifiedBy === 'saved' || resolution.classifiedBy === 'submitted' || resolution.action !== 'needs-user'
+  // v1.5 X: nor one an answer TailorIT prepared for the job settles.
+  if (resolution.classifiedBy === 'saved' || resolution.classifiedBy === 'submitted'
+    || resolution.classifiedBy === 'prebuilt' || resolution.action !== 'needs-user'
     || resolution.reason !== 'free-text-requires-user') return null;
   if (!PROSE_KINDS.has(spec.kind) || !llmMaySeeLabel(spec.labelSource)) return null;
   if (spec.current.kind === 'text' && spec.current.text.trim() !== '') return null;

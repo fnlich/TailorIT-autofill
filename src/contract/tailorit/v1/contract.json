@@ -9,12 +9,12 @@
     "connect.ts": "c7c32bda21eb64b78ec9e8085549144384fbf1d5c676b72918dbe726588b0071",
     "cover-letters.ts": "99634afc594f27fb9c2951c8539dcd59aa91c950f42734eaf9f178cd87d7903d",
     "credentials.ts": "c09ae7e8fd46ce7f16d136a90b85b76ed99817cf68d543d572ec0851950d699d",
-    "forms.ts": "fed5c6e906153511a496a46e5e858d83821d8f0f927e73e63042a03e10733aa6",
+    "forms.ts": "90095d14dc80ae456cdf121f05ae63e302fe04e1eb8223d74dda5a301b07df3e",
     "index.ts": "d82fa73c2ad73e1c69f6bd2914dbac7fc0ac329a3b0b57313094d9d1b4c1f827",
-    "lookup.ts": "16c1b5d56ae5122505a50a2797c864b83e3f93b66375c1b3870b40ab454f12a7",
-    "profile.ts": "f9e1da1f892b614d7a767ed7592ab23e26436c1d53c9831eb6028c4a5c9b60e2",
+    "lookup.ts": "9c4ff64ddef5114b7dfefa99cf25423a4e5d8048b065a39f942942026ba5c0b6",
+    "profile.ts": "83865e029fbf8d67bb6ffe93a7eac8e3b555d853b2125199afce03706d4db15b",
     "registry.ts": "98c87d0f4fcf93bc5186795b747a3b85271fa91657cea1ba73d8ddc09413f93e",
-    "resumes.ts": "c8a24403aced811f67daff035dffe6af00c1d266fb9cc861d1c5a623902fcc61",
+    "resumes.ts": "4ff18ed3654e5127b36f7c747f665dcd5e8c3f301e238a20f85fef1655de46f4",
     "sites.ts": "8277ea2ad73f9b4253f89c460af91c4635d3aee2b6f29b94024e5482e3abf3ef",
     "tailor.ts": "b7348760e889d54974f4f05af36a1c24c17a8aaeca99ed21c2af120d7adb5a92",
     "tracker.ts": "5ac61739e8e46add184682de1a0bed52fa2fc5f4284db24fdf23cc4d2ee0c7cf",
@@ -184,7 +184,12 @@
     "AutofillFormsKnownRequest/invalid/option-set-not-hex.json": "77f4e84a4bcf4565f09b99420d412699ecca622e859391123dff1c5cb012efd0",
     "AutofillFormsKnownRequest/valid/golden.json": "8738441e2a03e1dfbaccd4cd71208ee2f0ae0d2215371c91c2a6bbecb717afcd",
     "AutofillFormsKnownRequest/valid/job-and-fields.json": "17a647501d9de48933fcc80fa97779fbd1b8548f8eaf4c45e5b058275a519c55",
+    "AutofillFormsKnownResponse/invalid/draft-file-answer.json": "7eb00b0859e8ef55484e1bb5766d4fd95bacac97d8352f1c80b27de351d2c9e0",
+    "AutofillFormsKnownResponse/invalid/draft-ready-without-answer.json": "60536b4f42f13dbaedfd04fc3b30c4d408e06c980d470089cc752a110ef9ee91",
+    "AutofillFormsKnownResponse/invalid/draft-wrong-match.json": "9249a7b518e89083d7973cf27b94ce414f3ebc65d5b2c0415607827f18cb20a7",
     "AutofillFormsKnownResponse/invalid/unknown-match.json": "a569b85662c38ba5e8f58c3a5234078a7e99018d08d9e15283650186d33bf282",
+    "AutofillFormsKnownResponse/valid/draft-not-ready.json": "15f81f988926ebad6fbc3e5c63b01f02bb3f6af0109526b4e086bc9bd3e85e80",
+    "AutofillFormsKnownResponse/valid/drafts.json": "29b5912101e39f01b555c957fec0f3037a340eed632613cddfb8e91ae42f28e3",
     "AutofillFormsKnownResponse/valid/golden.json": "ec65d932cc778d4f36f625ddc643f4db6a21824168edd8b2e806dfe664ba8bf3",
     "AutofillFormsKnownResponse/valid/greenhouse-api.json": "4a71887124960d57a9d5a87cfe128bebace513045051b095ed66a91dcbbfa2f4",
     "AutofillFormsKnownResponse/valid/nothing-kept.json": "6009fb6ed0aba7d5bd401a0b25d09a3f68ae1028eed67c3b02c3ba048bf1881a",
@@ -219,6 +224,7 @@
     "AutofillLookupResponse/valid/ashby.json": "278888b3293ee6d9be6bacfe5144369516009b6feb294b06c27dcd418b9d93ec",
     "AutofillLookupResponse/valid/chosen.json": "b582a87f4bcc4e0d9fcbcc919526992ea9cce55d336782ef0fb169a1b31d6a7b",
     "AutofillLookupResponse/valid/company-page.json": "0a5a01e6ab565a1142e254a01698c7c62ba324528ab3079a1456d0d8272e65ce",
+    "AutofillLookupResponse/valid/draft-ready.json": "7346af9623641997071393f10065f7a700aac1538e4116d7c389a5a733017c83",
     "AutofillLookupResponse/valid/form-known.json": "e642f8483c1287f12ae3fbc848983ae6a37f0311703d7b11fce93fa600d0e401",
     "AutofillLookupResponse/valid/golden.json": "13f44f268aa9f7d261cc25d79154a07bd35457cfac6d6e2a53b5b27df677a6b2",
     "AutofillLookupResponse/valid/job-chosen.json": "de4c5205f98603a88b3c8c8afca0e467a1497014bbd92e47e34e1e6126933df1",
@@ -260,6 +266,7 @@
     "AutofillProfile/invalid/long-template-id.json": "c99c62405e2d804e45e51c2a7ed40de62cdcad5adac6794c18536339a6a5d2e7",
     "AutofillProfile/invalid/lower-case-country.json": "21547536bc89122ee3194c198b69f9e994a3d6c71ec82f8535cd7a157e43e531",
     "AutofillProfile/invalid/missing-preferences.json": "13c1765cac090a84afcfcda1cfac4987d174247e9e5b7ced38979c65324da016",
+    "AutofillProfile/invalid/prebuild-letters-not-boolean.json": "dd8e87b43d07cf9c3f385afae7472ceac833169c532fe23a526190c878ccc6ad",
     "AutofillProfile/invalid/school-without-name.json": "7ee29b8c651aeaae8eb7a2695d2148bd619c4d9f0ebfb79557152d641e6b1ba2",
     "AutofillProfile/invalid/script-link.json": "f42b1ed355af753b10de61b55f6f9010669e55bd658f9cc6c663e55b25d9d565",
     "AutofillProfile/invalid/unknown-degree-level.json": "4d5cbbeb19f56bdcd20cb3c7c0b9a5d8c93d0cd2d1a4be5e42a51599b8d88f53",
@@ -267,6 +274,7 @@
     "AutofillProfile/invalid/unknown-proficiency.json": "2999e644da0235073072355b40c9224422bd41e1ae41bc50807f134b1b9bb2c8",
     "AutofillProfile/valid/empty.json": "e06ce8cdb23b6ddae85c0e94216798a07576f3189dcd71088346bce49a08b19b",
     "AutofillProfile/valid/golden.json": "c143bf44d73be5c3dc1e74c1a12c9c58f0a369476ab6b6eeefafcd1282a3b8ae",
+    "AutofillProfile/valid/prebuild-letters-off.json": "e1617e27b6321877ebbd0c85ec6f0cd287789c360905fc2803fc13cc9c687dc4",
     "AutofillProfile/valid/snapshot-round-two.json": "0e0d534993a8b9e90fe9781ed8c935666a9005019da2af1de25865a1fb093909",
     "AutofillProfile/valid/templates.json": "957c7e2ee380d5d11f7cd6f62061fd8c323e3d76a1d49d67cc5cbc52889b2373",
     "AutofillProfileEnvelope/invalid/missing-profile.json": "f7c798d4ade7c16e6417a563b96ceb9c084c020e6c14a91cd60343f49088ca92",
@@ -285,8 +293,10 @@
     "AutofillRedeemResponse/valid/golden.json": "af7ba8e95b21726bd04f5c4c8c8c8e12710c2620772d3d664ce89730ca13bb82",
     "AutofillRedeemResponse/valid/without-sensitive.json": "0c621f2a7f7b2d010484b39c67a304b6ef25ecab12a3bb70fd47fa6bcdafb122",
     "AutofillResumeList/invalid/unknown-file-kind.json": "837aa7db5027680296c9f5a5ebdfab381a4b1df6497043cd575790676aa9114e",
-    "AutofillResumeList/valid/golden.json": "4ac733a1f445e870dc1856a05e0eb30a35da5087681866905ab4d174bdd66393",
+    "AutofillResumeList/invalid/unknown-made-by.json": "8f8e08596bde0d3e6108e518735d936687ea8b0f4b667215a691a796932edbf4",
+    "AutofillResumeList/valid/golden.json": "17149c5ab1e720b124d6ac9c6bb3996ec365e96587048c4840fed0de67eff11b",
     "AutofillResumeList/valid/none.json": "ad13fbd1e9c76a3beae2d83d0bca99a43a150efdf5daddb4a29d00c8ffd8e615",
+    "AutofillResumeList/valid/older-server.json": "4ac733a1f445e870dc1856a05e0eb30a35da5087681866905ab4d174bdd66393",
     "AutofillSavedAnswer/invalid/blank-text.json": "0faffb7620b6a84076d1966f387f8530cda80b11c6cf245ed7b3b57285ea8fb2",
     "AutofillSavedAnswer/invalid/company-scope-for-options.json": "eb6c59f3c227060d993f3705afa2199767d392a79fc4a2e05ea15164ddd4207d",
     "AutofillSavedAnswer/invalid/file-kind.json": "510c175710c5956dced5f25598c64ddf35f5f6465277c0584c632cef9e041d1a",
@@ -353,6 +363,7 @@
     "AutofillSubmissionRequest/valid/job.json": "76fd1178a16c9e61f2882c97927d21431bef08840090c3e7fce9263504ff6b6e",
     "AutofillSubmissionRequest/valid/keep-answers-off.json": "796f72f2eca64349df7360e98ccdca0c0f9990055ddd5f14945f2d434e794842",
     "AutofillSubmissionRequest/valid/label-on-two-lines.json": "61a433c9715b5b49b7480174c83c4b0eabb63786be9f5e2049a6edf1b2438a03",
+    "AutofillSubmissionRequest/valid/prebuilt-answer.json": "e9732261fe599577edc003d06bc3c2b80afed2157aaf2d4add39880160172995",
     "AutofillSubmissionResponse/invalid/unknown-job-state.json": "803f30b1587e34c103890f03a09332be13560e1d24ec8b9c40d9904b4280c3b9",
     "AutofillSubmissionResponse/valid/golden.json": "ff9588760048f58ac74df2ee780942cda7510a32b3716abbf384e9682e50d817",
     "AutofillSubmissionResponse/valid/keep-answers-off.json": "5fc8200689aaf5b4cce577fda582beab2d0564d4e63566a7aeee2e77a9418155",
@@ -1618,12 +1629,17 @@
                   "type": "null"
                 }
               ]
+            },
+            "prebuildCoverLetters": {
+              "default": true,
+              "type": "boolean"
             }
           },
           "required": [
             "resumeId",
             "resumeTemplateId",
-            "coverLetterTemplateId"
+            "coverLetterTemplateId",
+            "prebuildCoverLetters"
           ],
           "additionalProperties": false
         },
@@ -3786,12 +3802,17 @@
                       "type": "null"
                     }
                   ]
+                },
+                "prebuildCoverLetters": {
+                  "default": true,
+                  "type": "boolean"
                 }
               },
               "required": [
                 "resumeId",
                 "resumeTemplateId",
-                "coverLetterTemplateId"
+                "coverLetterTemplateId",
+                "prebuildCoverLetters"
               ],
               "additionalProperties": false
             },
@@ -5989,12 +6010,17 @@
                       "type": "null"
                     }
                   ]
+                },
+                "prebuildCoverLetters": {
+                  "default": true,
+                  "type": "boolean"
                 }
               },
               "required": [
                 "resumeId",
                 "resumeTemplateId",
-                "coverLetterTemplateId"
+                "coverLetterTemplateId",
+                "prebuildCoverLetters"
               ],
               "additionalProperties": false
             },
@@ -8151,12 +8177,17 @@
                       "type": "null"
                     }
                   ]
+                },
+                "prebuildCoverLetters": {
+                  "default": true,
+                  "type": "boolean"
                 }
               },
               "required": [
                 "resumeId",
                 "resumeTemplateId",
-                "coverLetterTemplateId"
+                "coverLetterTemplateId",
+                "prebuildCoverLetters"
               ],
               "additionalProperties": false
             },
@@ -10356,12 +10387,17 @@
                       "type": "null"
                     }
                   ]
+                },
+                "prebuildCoverLetters": {
+                  "default": true,
+                  "type": "boolean"
                 }
               },
               "required": [
                 "resumeId",
                 "resumeTemplateId",
-                "coverLetterTemplateId"
+                "coverLetterTemplateId",
+                "prebuildCoverLetters"
               ],
               "additionalProperties": false
             },
@@ -10888,6 +10924,9 @@
         },
         "formKnown": {
           "type": "boolean"
+        },
+        "draftReady": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -11370,6 +11409,9 @@
             },
             "formKnown": {
               "type": "boolean"
+            },
+            "draftReady": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -11495,6 +11537,20 @@
                 "type": "boolean"
               },
               "updatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "madeBy": {
+                "type": "string",
+                "enum": [
+                  "upload",
+                  "editor",
+                  "copy",
+                  "tailor"
+                ]
+              },
+              "createdAt": {
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
@@ -17322,7 +17378,8 @@
                       "llm-draft",
                       "llm-answer",
                       "submitted-before",
-                      "person"
+                      "person",
+                      "prebuilt"
                     ]
                   },
                   {
@@ -17794,6 +17851,9 @@
             },
             "formKnown": {
               "type": "boolean"
+            },
+            "draftReady": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -18194,6 +18254,191 @@
               "fieldKind",
               "answer",
               "submittedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "drafts": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "match": {
+                "type": "string",
+                "const": "draft"
+              },
+              "questionId": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "questionKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "optionSetHash": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": ""
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{16}$"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "questionLabel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "fieldKind": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "textarea",
+                  "select",
+                  "radio",
+                  "checkbox",
+                  "checkbox-group",
+                  "combobox",
+                  "multiselect",
+                  "typeahead-remote",
+                  "date",
+                  "file"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "ready",
+                  "not_ready"
+                ]
+              },
+              "answer": {
+                "anyOf": [
+                  {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "text"
+                          },
+                          "text": {
+                            "type": "string",
+                            "maxLength": 10000
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "options"
+                          },
+                          "labels": {
+                            "minItems": 1,
+                            "maxItems": 50,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            }
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "labels"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "checked"
+                          },
+                          "checked": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "checked"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "file"
+                          },
+                          "fileName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255,
+                            "pattern": "^[^\\p{Cc}/\\\\]*$"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "fileName"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provenance": {
+                "type": "string",
+                "enum": [
+                  "server-ai",
+                  "mcp"
+                ]
+              },
+              "preparedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              }
+            },
+            "required": [
+              "match",
+              "questionId",
+              "questionKey",
+              "optionSetHash",
+              "questionLabel",
+              "fieldKind",
+              "status",
+              "answer",
+              "provenance",
+              "preparedAt"
             ],
             "additionalProperties": false
           }

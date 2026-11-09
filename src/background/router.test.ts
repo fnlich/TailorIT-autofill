@@ -44,6 +44,32 @@ describe('the worker router', () => {
       .toEqual({ ok: false, error: 'bad_sender' });
   });
 
+  // v1.5 X (PLAN decision 2): an extension page in a frame of another page (the web-accessible preview page) is no page.
+  it('takes no message from an extension page framed in a tab, while the same page in a tab’s top frame or in no tab is a page', async () => {
+    const worker = await startTestWorker();
+    const own = pageSender('preview.html?tabId=7&kind=resume');
+    for (const type of ['ping', 'settings/get', 'auth/status', 'telemetry/get']) {
+      expect(await worker.deliver({ v: 1, type }, { ...own, tab: { id: 7 }, frameId: 3 }), type)
+        .toEqual({ ok: false, error: 'bad_sender' });
+    }
+    expect(await worker.deliver({ v: 1, type: 'ping' }, { ...own, tab: { id: 7 }, frameId: 0 }))
+      .toEqual({ ok: true, data: { pong: true } });
+    expect(await worker.deliver({ v: 1, type: 'ping' }, own)).toEqual({ ok: true, data: { pong: true } });
+    // The dialogs' own messages are a content script's (the tab's top frame), never a page's or a subframe's.
+    expect(await worker.deliver({ v: 1, type: 'preview/openTab', kind: 'resume' }, own))
+      .toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'edit/confirmed', grant: 'a'.repeat(32), skip: false }, own))
+      .toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'edit/confirmed', grant: 'a'.repeat(32), skip: false },
+      contentSender({ frameId: 2, documentId: 'doc-2' }))).toEqual({ ok: false, error: 'bad_sender' });
+    expect(await worker.deliver({ v: 1, type: 'edit/confirmed', grant: 'not-a-grant', skip: false }, contentSender()))
+      .toEqual({ ok: false, error: 'bad_message' });
+    // A worker's own messages to a frame are never a content script's to send.
+    expect(await worker.deliver({ v: 1, type: 'preview/show', tabId: 7, kind: 'resume', kinds: ['resume'],
+      grant: 'a'.repeat(32), names: {}, page: 'chrome-extension://x/preview.html' }, contentSender()))
+      .toEqual({ ok: false, error: 'bad_message' });
+  });
+
   it('answers not_implemented for a known message it has no handler for', async () => {
     // Since Phase 6 the worker handles every message: a router made without a handler says so.
     const sender = pageSender();

@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "id": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+      "label": "Senior Software Engineer",
+      "kind": "built",
+      "fileKind": "pdf",
+      "fileName": "Elena Ruiz Resume.pdf",
+      "isDefault": true,
+      "updatedAt": "2026-10-21T08:15:00.000Z"
+    },
+    {
+      "id": "7d9f2b14-3e6a-4f80-b2c5-91e3a7d4f650",
+      "label": "Elena Ruiz CV",
+      "kind": "uploaded",
+      "fileKind": "docx",
+      "fileName": "Elena_Ruiz_CV.docx",
+      "isDefault": false,
+      "updatedAt": "2026-09-30T17:02:00.000Z"
+    }
+  ],
+  "defaultResumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13"
+}

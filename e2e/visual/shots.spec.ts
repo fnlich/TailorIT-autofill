@@ -35,6 +35,7 @@ import type { Extension } from '../helpers/extension.ts';
 import { mock } from '../helpers/mock.ts';
 import { expectation } from '../helpers/labels.ts';
 import { PageUi } from '../helpers/page-ui.ts';
+import { dialogOn, previewFramesOn, shownDigest } from '../helpers/document-dialog.ts';
 import { trap } from '../helpers/traps.ts';
 import { WIZARD } from '../helpers/wizard.ts';
 import { routesFile } from '../routes.ts';
@@ -128,16 +129,13 @@ test("the side panel: before Autofill, a real form's review, the Settings view, 
   await shoot(panel, '02b-side-panel-review-full.png', 'Side panel, a real form reviewed (whole page)', { fullPage: true });
   await panel.locator('[data-group="required"]').scrollIntoViewIfNeeded();
   await shoot(panel, '02d-side-panel-required-optional.png', 'Side panel, the Required and Optional lists');
-  // v4 ui: the résumé row's preview (v1.4 F: the full-window preview page), then the Settings view with a "?" showing
+  // v4 ui: the résumé row's preview (v1.5 X: the dialog over the job page), then the Settings view with a "?" showing
   // its bubble.
   const preview = panel.locator('li[data-file] button[data-action="preview"]').first();
   if (await preview.count() > 0) {
-    const opened = panel.context().waitForEvent('page');
     await preview.click();
-    const page = await opened;
-    await expect(page.locator('iframe[data-preview-frame]')).toBeVisible();
-    await shoot(page, '02c-preview-page.png', 'The full-window preview page, from the résumé row\'s Preview');
-    await page.close();
+    await previewShot(page, '02c-preview-dialog.png', 'The preview over the job page, from the résumé row\'s Preview');
+    await panel.bringToFront();
   }
   await panel.evaluate(() => window.scrollTo(0, 0));
   await panel.locator('button[data-panel-settings]').click();
@@ -221,6 +219,17 @@ test('the sidebar on the page, and the launcher at rest (v5 p1-shell)', async ({
 const CARD_APPLY = (id: string) => `https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000c${id}/apply`;
 
 /** The side panel of a fresh tab showing the synthetic form at `url`, once its card is past `state` (or at it). */
+/** v1.5 X: the preview dialog over `page`, its document drawn, captured, then closed (Escape). */
+async function previewShot(page: Page, file: string, caption: string): Promise<void> {
+  await page.bringToFront();
+  const ui = await PageUi.of(page);
+  await dialogOn(ui, 'preview');
+  await shownDigest(previewFramesOn(page)[0]!);
+  await shoot(page, file, caption);
+  await page.keyboard.press('Escape');
+  await ui.close();
+}
+
 async function cardPanel(ext: Extension, page: Page, routeLog: { serve(routes: Record<string, string>): void }, url: string) {
   routeLog.serve({ [url]: 'fixtures/synthetic/policy-apply.html' });
   await page.goto(url);
@@ -287,12 +296,9 @@ test('the cover letter attached in a review, previewed from its row (v4 ui)', as
   await panel.bringToFront();
   const row = panel.locator('li[data-category="file.coverLetter"]').first();
   await expect(row).toHaveAttribute('data-status', 'verified');
-  const opened = extContext.waitForEvent('page');
   await row.locator('button[data-action="preview"]').click();
-  const previewPage = await opened;
-  await expect(previewPage.locator('iframe[data-preview-frame]')).toBeVisible();
-  await shoot(previewPage, '17b-cover-letter-preview-page.png', 'The full-window preview page on the cover letter\'s tab');
-  await previewPage.close();
+  await previewShot(page, '17b-cover-letter-preview-dialog.png', 'The preview over the job page, on the cover letter\'s tab');
+  await panel.bringToFront();
   await row.scrollIntoViewIfNeeded();
   await shoot(panel, '17-cover-letter-preview.png', 'Review: the cover letter attached, with its Preview');
 });
@@ -423,13 +429,10 @@ test('v3 Phase 3b: another job, the resume’s preview, without resume, the prof
   await expect(another.card.locator('[data-job-chosen]')).toBeVisible();
   await shoot(another.panel, '44b-job-card-chosen.png', 'Job card: another job chosen, with "Use this page’s own job"');
 
-  const preview = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('102'));
-  const opened = extContext.waitForEvent('page');
+  const jobPage = await extContext.newPage();
+  const preview = await cardPanel(ext, jobPage, routeLog, CARD_APPLY('102'));
   await preview.panel.locator('button[data-job-action="preview"]').click();
-  const previewPage = await opened;
-  await expect(previewPage.locator('iframe[data-preview-frame]')).toBeVisible();
-  await shoot(previewPage, '45-job-card-preview.png', 'Job card: the resume’s preview, in the full-window preview page');
-  await previewPage.close();
+  await previewShot(jobPage, '45-job-card-preview.png', 'Job card: the resume’s preview, over the job page');
 
   const without = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('103'));
   await without.panel.locator('button[data-job-action="change"]').click();

@@ -1,15 +1,16 @@
 /*
  * v1.3 B: the person's own answers from applications they submitted before (submitted.ts, resolve.ts, the Guard).
+ * v1.5 X: and the answers TailorIT prepared for the job ahead of time (findDraftAnswer, provenance prebuilt).
  * Undo proofs: each `it` names the rule whose removal fails it.
  */
 import { describe, expect, it } from 'vitest';
-import { checkProvenance } from '../guard/provenance';
+import { checkCategoryPolicy, checkProvenance, checkProvenanceShape } from '../guard/provenance';
 import { fieldOf, goldenProfile, inputOf, planOf, specOf } from '../plan/plan.testkit';
 import { planFrame } from '../plan/frame';
 import { normalizeLabel } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
 import type { SubmittedAnswer } from '../types/submitted';
-import { findSubmittedAnswer, submittedFitsKind } from './submitted';
+import { findDraftAnswer, findSubmittedAnswer, submittedFitsKind } from './submitted';
 
 const hiking = specOf('Do you enjoy hiking on weekends?', 'radio', { optionLabels: ['Yes', 'No'] });
 const answerOf = (spec: FieldSpec, extra: Partial<SubmittedAnswer> = {}): SubmittedAnswer => ({ id: 'r1.s0',
@@ -152,3 +153,102 @@ describe('the resolver step before any AI (planFrame)', () => {
     expect(checkProvenance(write, other, 'unknown', ctx).ok).toBe(false);
   });
 });
+
+// ── v1.5 X (PLAN decision 4): the answers TailorIT prepared for the job (its job application draft) ──
+describe('the answers TailorIT prepared for the job (v1.5 X)', () => {
+  const draftOf = (spec: FieldSpec, extra: Partial<SubmittedAnswer> = {}): SubmittedAnswer => answerOf(spec,
+    { id: 'r1.d0', sameJob: true, draft: true, answer: { kind: 'options', labels: ['Yes'] }, ...extra });
+  const why = specOf('Why do you want to work here?', 'textarea');
+  const whyDraft = draftOf(why, { id: 'r1.d1', answer: { kind: 'text', text: 'I build ordering platforms.' } });
+
+  // Undo proof: remove the draft step of resolveField and the question waits for the AI.
+  it('fills a gap with provenance prebuilt and the note prebuilt-answer, and asks no AI about it', () => {
+    const output = planOf([hiking, why], { submittedAnswers: [draftOf(hiking), whyDraft] });
+    const hike = fieldOf(output, hiking);
+    expect(hike.write?.origin).toEqual({ provenance: 'prebuilt', draftId: 'r1.d0' });
+    expect(hike.write?.value).toMatchObject({ kind: 'option', index: 0 });
+    expect(hike.row).toMatchObject({ status: 'verified', provenance: 'prebuilt', reason: 'prebuilt-answer' });
+    const text = fieldOf(output, why);
+    expect(text.write?.value).toEqual({ kind: 'text', text: 'I build ordering platforms.' });
+    expect(text.row).toMatchObject({ provenance: 'prebuilt', reason: 'prebuilt-answer' });
+    expect(output.awaiting).toEqual([]);
+    expect(output.ask).toBeUndefined();
+  });
+
+  // Undo proof: run the draft step before the profile, or before this job's own answer, and these fail.
+  it('comes after a saved answer, the profile, and this job’s own earlier answer; before another job’s and any AI', () => {
+    const email = specOf('Email', 'text', { autocomplete: ['email'] });
+    expect(fieldOf(planOf([email], { submittedAnswers: [draftOf(email, { answer: { kind: 'text', text: 'x@y.z' } })] }),
+      email).write?.origin.provenance).toBe('profile');
+    const own = answerOf(hiking, { id: 'own', sameJob: true, answer: { kind: 'options', labels: ['No'] } });
+    const other = answerOf(hiking, { id: 'other', sameJob: false, submittedAt: 99 });
+    expect(fieldOf(planOf([hiking], { submittedAnswers: [draftOf(hiking), own, other] }), hiking).write?.origin)
+      .toEqual({ provenance: 'submitted-before', submittedId: 'own', sameJob: true });
+    expect(fieldOf(planOf([hiking], { submittedAnswers: [other, draftOf(hiking)] }), hiking).write?.origin)
+      .toEqual({ provenance: 'prebuilt', draftId: 'r1.d0' });
+    // This job's own answer whose option is gone stays the person's (flagged), as before: no draft in its place.
+    const changed = specOf('Do you enjoy hiking on weekends?', 'radio', { optionLabels: ['Yes', 'Sometimes'] });
+    const gone = fieldOf(planOf([changed], { submittedAnswers: [own, draftOf(changed)] }), changed);
+    expect(gone.row).toMatchObject({ status: 'flagged', reason: 'submitted-option-gone' });
+  });
+
+  // Undo proof: let DRAFT_CLASSES take 'eeo', 'legal', 'sensitive' or 'consent', or drop `screened`.
+  it('never fills a sensitive, consent or attention-check question, a screened one, or an upload', () => {
+    const draft = draftOf(hiking);
+    for (const policy of ['eeo', 'legal', 'sensitive', 'consent', 'attention', 'file'] as const) {
+      expect(findDraftAnswer(hiking, [draft], { category: 'unknown', policy, screened: false }), policy).toBeNull();
+    }
+    expect(findDraftAnswer(hiking, [draft], { category: 'unknown', policy: 'unknown', screened: true })).toBeNull();
+    expect(findDraftAnswer(hiking, [draft], { category: 'unknown', policy: 'unknown', screened: false })?.id).toBe('r1.d0');
+    // A profile question only in the categories an AI may answer (ANSWERABLE_PROFILE_CATEGORIES).
+    expect(findDraftAnswer(hiking, [draft], { category: 'contact.email', policy: 'profile', screened: false })).toBeNull();
+    const upload = specOf('Resume', 'file');
+    expect(findDraftAnswer(upload, [draftOf(upload, { answer: { kind: 'text', text: 'resume.pdf' } })],
+      { category: 'unknown', policy: 'unknown', screened: false })).toBeNull();
+    // In a plan: an EEO question the profile leaves open keeps its decline default, the draft unused; a consent stays
+    // the policy's; an attention check the person's.
+    const gender = specOf('Gender', 'select', { optionLabels: ['Male', 'Female', 'Decline To Self Identify'] });
+    const profile = { ...goldenProfile(), eeo: { ...goldenProfile().eeo, gender: undefined } } as ReturnType<typeof goldenProfile>;
+    const eeo = fieldOf(planFrame(inputOf([gender], { profile, submittedAnswers: [draftOf(gender,
+      { answer: { kind: 'options', labels: ['Female'] } })] })), gender);
+    expect(eeo.write?.origin.provenance).not.toBe('prebuilt');
+    const consent = specOf('I agree to the privacy policy', 'checkbox');
+    expect(fieldOf(planOf([consent], { submittedAnswers: [draftOf(consent, { answer: { kind: 'checked', checked: true } })] }),
+      consent).write?.origin.provenance).not.toBe('prebuilt');
+    const attention = specOf('To show you read this, select Blue', 'radio', { optionLabels: ['Red', 'Blue'] });
+    const check = fieldOf(planOf([attention], { submittedAnswers: [draftOf(attention, { answer: { kind: 'options',
+      labels: ['Blue'] } })] }), attention);
+    expect(check.write).toBeUndefined();
+    expect(check.row?.reason).toBe('attention-check');
+  });
+
+  // Undo proof: take a draft whose option is gone and it is written.
+  it('leaves a draft whose option the form no longer offers to the AI, unflagged', () => {
+    const changed = specOf('Do you enjoy hiking on weekends?', 'radio', { optionLabels: ['Maybe', 'Sometimes'] });
+    const output = planOf([changed], { submittedAnswers: [draftOf(hiking)] });
+    expect(fieldOf(output, changed).write).toBeUndefined();
+    expect(output.awaiting).toEqual([changed.key]);
+  });
+
+  it('the Guard checks a prepared answer is the run’s, for this question, and lets it fill no sensitive class', () => {
+    const draft = draftOf(hiking);
+    const write = fieldOf(planOf([hiking], { submittedAnswers: [draft] }), hiking).write!;
+    const ctx = { profile: goldenProfile(), savedAnswers: [], submittedAnswers: [draft] };
+    expect(checkProvenance(write, hiking, 'unknown', ctx)).toEqual({ ok: true });
+    expect(checkProvenance(write, hiking, 'unknown', { ...ctx, submittedAnswers: [] }).ok).toBe(false);
+    // Not a draft (a person's earlier answer of the same id) is no prepared answer.
+    const { draft: _mark, ...earlier } = draft;
+    expect(checkProvenance(write, hiking, 'unknown', { ...ctx, submittedAnswers: [earlier] }).ok).toBe(false);
+    const other = specOf('Do you like camping?', 'radio', { optionLabels: ['Yes', 'No'] });
+    expect(checkProvenance(write, other, 'unknown', ctx).ok).toBe(false);
+    // Undo proof: add 'prebuilt' to a sensitive class's provenances and these pass.
+    for (const category of ['eeo.gender', 'workAuth.sponsorship', 'screening.criminalHistory', 'salary.expected',
+      'consent.privacy', 'attentionCheck', 'file.resume'] as const) {
+      expect(checkCategoryPolicy(write.origin, category).ok, category).toBe(false);
+    }
+    expect(checkCategoryPolicy(write.origin, 'unknown').ok).toBe(true);
+    // A draft never names a file or a date.
+    expect(checkProvenanceShape({ ...write, value: { kind: 'file', ref: 'resume' } }).ok).toBe(false);
+  });
+});
+// ── end v1.5 X ──

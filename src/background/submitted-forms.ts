@@ -21,7 +21,8 @@
  * (nothing fills an upload from it).
  */
 import {
-  AUTOFILL_FIELD_KINDS, AUTOFILL_FORM_LIMITS, AutofillFormQuestionSchema, AutofillQuestionKeySchema,
+  AUTOFILL_ANSWER_PROVENANCES, AUTOFILL_FIELD_KINDS, AUTOFILL_FORM_LIMITS, AutofillFormQuestionSchema,
+  AutofillQuestionKeySchema,
   AutofillSubmissionRequestSchema, AutofillSubmittedAnswerValueSchema,
   submittedAnswerFits, type AutofillAnswerProvenance, type AutofillFieldCategory, type AutofillFormQuestion,
   type AutofillFormsKnownResponse, type AutofillSubmissionAnswer, type AutofillSubmissionRequest,
@@ -108,9 +109,14 @@ export function provenanceOf(row: Pick<Row, 'provenance' | 'wrote' | 'reason' | 
   if (row.reason === 'changed-by-you' || row.detail?.userEdited === true || row.detail?.filledByYou === true) {
     return 'person';
   }
-  if (row.wrote && row.provenance !== null) return row.provenance;
+  // v1.5 X: an answer TailorIT prepared for the job is its AI's (a TailorIT that names `prebuilt` takes it so).
+  if (row.wrote && row.provenance !== null) return row.provenance === 'prebuilt' ? PREBUILT_AS : row.provenance;
   return 'person';
 }
+
+/** v1.5 X: how /submissions names a prepared answer: `prebuilt` where TailorIT's contract has it, else an AI answer. */
+const PREBUILT_AS: AutofillAnswerProvenance = (AUTOFILL_ANSWER_PROVENANCES as readonly string[]).includes('prebuilt')
+  ? 'prebuilt' as AutofillAnswerProvenance : 'llm-answer';
 
 /** A question's options as TailorIT keeps them: each clean label once, at most AUTOFILL_FORM_LIMITS.options. */
 function optionsOf(spec: FieldSpec): string[] {
@@ -216,3 +222,30 @@ export function submittedAnswersOf(known: AutofillFormsKnownResponse): Submitted
         order: question.step * 10_000 + question.position }) }];
   });
 }
+
+// ── v1.5 X (PLAN decision 4) ──
+/**
+ * The person's prebuilt draft answers for the job (POST /forms/known's `drafts`, apart from `answers`: TailorIT's
+ * contract), as the resolver reads them: each ready one, for one of the job's own questions, becomes this job's answer
+ * marked `draft` (core/resolver/submitted.ts findDraftAnswer: after this job's own earlier answer, before another
+ * job's and any AI, never a sensitive, consent or attention-check question). A `not_ready` one is left out (the fill's
+ * own AI path makes it, as before), and so is one answering a file, or a question the answer does not name.
+ */
+export function draftAnswersOf(known: AutofillFormsKnownResponse): SubmittedAnswer[] {
+  const questions = new Map(known.questions.map((question) => [question.id, question] as const));
+  return (known.drafts ?? []).flatMap((item, at): SubmittedAnswer[] => {
+    const { answer } = item;
+    if (item.status !== 'ready' || answer === null || answer.kind === 'file' || !FILLABLE.has(item.fieldKind)) return [];
+    const question = questions.get(item.questionId);
+    if (question === undefined || question.kind === 'file') return [];
+    const fromApi = question.source === 'ats-api' || item.optionSetHash === null;
+    const labelKey = question.source === 'ats-api' ? normalizeLabel(question.label) : item.questionKey;
+    const optionSetHash = fromApi ? hashOfLabels(question.options)
+      : item.optionSetHash === '' ? 'none' as OptionSetHash : item.optionSetHash as OptionSetHash;
+    const preparedAt = Date.parse(item.preparedAt);
+    return [{ id: `d${at}`, labelKey, optionSetHash, kind: item.fieldKind, answer, sameJob: true, draft: true,
+      submittedAt: Number.isFinite(preparedAt) ? preparedAt : 0, questionId: question.id, section: question.section,
+      order: question.step * 10_000 + question.position }];
+  });
+}
+// ── end v1.5 X ──

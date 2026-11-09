@@ -318,6 +318,15 @@ export const AutofillLookupResponseSchema = z.object({
    */
   formKnown: z.boolean().optional(),
   // end v1.3 A
+  // v1.5 P
+  /**
+   * v1.5 (additive within version 6): whether this person has a prebuilt application draft for the job that is ready
+   * (Prebuild on TailorIT's Auto-apply page): its tailored resume (and its cover letter, when one was asked) linked to
+   * the job's tracker entry, which `application` and `suggestedResume` then name, and its answers made (each ready or
+   * not ready: POST /api/autofill/forms/known's `drafts`). Absent when the person has no draft for the job.
+   */
+  draftReady: z.boolean().optional(),
+  // end v1.5 P
 });
 export type AutofillLookupResponse = z.infer<typeof AutofillLookupResponseSchema>;
 

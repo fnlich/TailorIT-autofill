@@ -311,6 +311,14 @@ export const LINKEDIN_HOST_MATCHES = ['https://*.linkedin.com/*', 'https://*.lin
   'https://*.licdn.com/*'] as const;
 /** The sentinel's bundle (src/entrypoints/sentinel.ts, an unlisted script WXT writes at the build's root). */
 export const SENTINEL_FILE = 'sentinel.js';
+// ── v1.5 X (PLAN decision 2) ──
+/** The extension's one web-accessible resource: the preview page (src/entrypoints/preview), which the dialog over a
+ *  tab's page embeds (content/ui/document-dialog.ts). Declared at its dynamic address alone (`use_dynamic_url`: a new
+ *  address each browser session, so a page cannot tell the extension is installed by loading it at its fixed id), on
+ *  the pages the sidebar runs on (ALL_SITES_HOST_PERMISSIONS); its scripts, styles and fonts load from the extension's
+ *  own origin, so nothing else is listed (scripts/check-build.mjs holds the manifest to exactly this). */
+export const WEB_ACCESSIBLE_PAGE = 'preview.html';
+// ── end v1.5 X ──
 /** The content script's bundle (src/entrypoints/content-script.ts, likewise): the manifest's static script on the ATS
  *  hosts, and the one the worker injects into a frame the sentinel recognised. */
 export const CONTENT_SCRIPT_FILE = 'content-script.js';

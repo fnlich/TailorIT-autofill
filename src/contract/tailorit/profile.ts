@@ -213,6 +213,11 @@ export const AutofillProfileSchema = z.object({
     resumeTemplateId: z.string().max(64).nullable().default(null),
     coverLetterTemplateId: z.string().max(64).nullable().default(null),
     // end v1.4 D
+    // v1.5 P: whether Prebuild (TailorIT's Auto-apply page) writes a cover letter for each saved job beside its tailored
+    // resume; on unless turned off. Optional in what is sent: a save without it (an older page or extension) keeps the
+    // stored choice.
+    prebuildCoverLetters: z.boolean().default(true),
+    // end v1.5 P
   }),
   /**
    * "Anything else we should know?" (version 3): the person's standing note to TailorIT's AI, which reads it beside
@@ -586,7 +591,7 @@ export const EMPTY_AUTOFILL_PROFILE: AutofillProfile = {
     relocationPlaces: [],
   },
   certifications: [],
-  documents: { resumeId: null, resumeTemplateId: null, coverLetterTemplateId: null },
+  documents: { resumeId: null, resumeTemplateId: null, coverLetterTemplateId: null, prebuildCoverLetters: true },
   anythingElse: '',
 };
 

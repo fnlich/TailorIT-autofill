@@ -148,6 +148,9 @@ describe('the category policy (§7.6, §8.2)', () => {
         return { provenance, taskId: 't', basis: 'resume' };
       case 'submitted-before':
         return { provenance, submittedId: 'k0', sameJob: true };
+      // v1.5 X
+      case 'prebuilt':
+        return { provenance, draftId: 'd0' };
     }
   };
   const allows = (category: FieldCategory) => (['profile', 'saved', 'rule', 'llm-pick', 'llm-draft'] as const)
@@ -170,6 +173,19 @@ describe('the category policy (§7.6, §8.2)', () => {
     expect(allows('consent.aiAttestation')).toEqual([]);
     // Criminal history is a legal answer from the person's own profile since the owner's amendments, never an AI's.
     expect(allows('screening.criminalHistory')).toEqual(['profile', 'rule']);
+  });
+
+  // v1.5 X (PLAN decision 4): an answer TailorIT prepared for the job fills the profile categories an AI may answer,
+  // unknown and free text; never a sensitive, legal, EEO, consent, attention-check or file one. Undo proof: add
+  // 'prebuilt' to a sensitive class's provenances, or drop it from the answerable check.
+  it('lets a prepared answer fill no sensitive, legal, EEO, consent, attention-check or file question', () => {
+    for (const category of ['eeo.gender', 'eeo.race', 'workAuth.sponsorship', 'screening.criminalHistory', 'salary.expected',
+      'consent.privacy', 'consent.aiAttestation', 'attentionCheck', 'file.resume', 'contact.email'] as const) {
+      expect(checkCategoryPolicy(origin('prebuilt'), category).ok, category).toBe(false);
+    }
+    for (const category of ['unknown', 'freeText.whyCompany', 'freeText.other'] as const) {
+      expect(checkCategoryPolicy(origin('prebuilt'), category).ok, category).toBe(true);
+    }
   });
 
   // v1.3 B: an earlier submitted answer: this job's for any class but consent, attention and file; another job's only

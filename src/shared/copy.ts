@@ -238,6 +238,8 @@ const REASONS = {
   // v1.3 B: a field filled from an application the person submitted before, and one whose earlier option is gone.
   'submitted-before': 'Filled with your answer from an application you submitted before.',
   'submitted-option-gone': "Your earlier answer to this is no longer one of its options, so it was left for you.",
+  // v1.5 X (PLAN decision 4): a draft for the owner's review.
+  'prebuilt-answer': 'Filled with the answer TailorIT prepared for this job ahead of time.',
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was not filled.',
 } as const satisfies Record<ReasonCode, string>;
@@ -262,6 +264,8 @@ const PROVENANCES = {
   'llm-answer': 'AI answer',
   // v1.3 B
   'submitted-before': 'Your earlier application',
+  // v1.5 X
+  prebuilt: 'Prepared by TailorIT',
 } as const satisfies Record<Provenance, string>;
 
 /** Which stage of the matcher chose the option. */
@@ -474,6 +478,9 @@ const REPORT = {
   previewLabel: (label: string) => `Preview "${label}"`,
   show: 'Show',
   showLabel: (label: string) => `Show "${label}" on the page`,
+  // v1.5 X (PLAN decision 3): the résumé row's Edit, in Show's place.
+  edit: 'Edit',
+  editLabel: (label: string) => `Edit "${label}" in TailorIT`,
   // ── end v4 ui ──
 } as const;
 
@@ -804,6 +811,10 @@ const JOB = {
     suggested: "Use TailorIT's Choice", // v5 p1-panel
     cancel: 'Cancel',
     kinds: { built: 'Built in TailorIT', uploaded: 'Uploaded' },
+    // v1.5 X (PLAN decision 6): the list in folders, as TailorIT's Documents › Resumes shows them.
+    folders: { uploaded: 'Uploaded Resumes', edited: 'Edited Resumes', tailored: 'Tailored Resumes' },
+    folderLabel: (name: string, count: number) => `${name}, ${count} ${count === 1 ? 'resume' : 'resumes'}`,
+    undated: 'No date',
   },
 } as const;
 
@@ -1525,6 +1536,22 @@ export const PAGE_COPY = {
     close: 'Close the Application Submitted window',
   },
   // ── end v5 p1-panel ──
+  // ── v1.5 X: the documents' dialogs over the page (PLAN decisions 2 and 3; content/ui/document-dialog.ts), and the
+  // panel's own confirm where the page cannot show it. Drafts for the owner's review. ──
+  documentDialog: {
+    titles: { resume: 'Your Resume', coverLetter: 'Your Cover Letter' },
+    tabs: { resume: 'Résumé', coverLetter: 'Cover Letter' },
+    tabsLabel: 'Documents',
+    frames: { resume: 'Your resume, as a PDF', coverLetter: 'Your cover letter, as a PDF' },
+    openTab: 'Open In A New Tab',
+    close: 'Close',
+    editTitle: 'Edit An Uploaded Resume',
+    editText: "Editing an uploaded resume needs an editable copy. TailorIT's AI reads your file to make it, which can take a little while. Continue?",
+    dontShow: "Don't show this again",
+    continue: 'Continue',
+    cancel: 'Cancel',
+  },
+  // ── end v1.5 X ──
   // v5 p1-panel: the reason, status, provenance and stage words moved to COPY (below): no page UI draws them since v4
   // (D1), and the content script's bundle stays within its budget with the v5 sheet and the applied window in it.
   runStatuses: RUN_STATUSES,
@@ -1736,6 +1763,9 @@ const DOCUMENTS = {
   loading: 'Reading your templates…',
   readOnly: "This connection can't change your templates. Connect the extension again from TailorIT's Settings › Autofill.",
   tryAgain: 'Try Again',
+  // v1.5 X (PLAN decision 3): settings version 10's ui.skipUploadEditConfirm, shown the other way round.
+  askBeforeUploadEdit: 'Ask before editing an uploaded resume',
+  askBeforeUploadEditHelp: "Edit on an uploaded resume opens an editable copy that TailorIT's AI makes from your file. With this on, the extension asks first; \"Don't show this again\" turns it off.",
   refusals: {
     conflict: 'Your profile changed elsewhere meanwhile. Try again.',
     invalid: "TailorIT doesn't have that template any more. Choose another.",

@@ -160,6 +160,10 @@ export interface ReportActions {
   /** v1.4 F (PLAN decision 17): Preview opens the file elsewhere (the side panel's full-window preview page), in place
    *  of unfolding it under the row. */
   openPreview?(kind: PreviewKind): void;
+  /** v1.5 X (PLAN decision 3, the owner: "`show` right of preview should be `edit`"): the résumé row's Edit, in place
+   *  of its Show: TailorIT's editor for the resume a fill attaches (the worker's, with its confirm for an upload).
+   *  Absent: Show as before. Every other row keeps Show. */
+  openEdit?(kind: PreviewKind): void;
   /** v4 ui: a résumé or cover-letter row's own tool beside Preview and Show (the side panel's résumé Change after a
    *  run): its button's words, its data-action, and what it unfolds under the row; null for none. */
   rowTool?(row: ReportRow): { label: string; action: string; render(close: () => void): ReactNode } | null;
@@ -660,7 +664,7 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
   const previewId = useId();
   const toolId = useId();
   const scores = row.detail?.suggestions ?? [];
-  const { describeField, onShowField, onConfirmDraft, previewOf, renderPreview, openPreview } = actions;
+  const { describeField, onShowField, onConfirmDraft, previewOf, renderPreview, openPreview, openEdit } = actions;
   const busy = actions.busy ?? false;
   const draft = row.provenance === 'llm-draft';
   const describe = describeField !== undefined && scores.length > 0;
@@ -669,6 +673,8 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
   const file = FILE_ROWS.has(row.category);
   const kind = file && (renderPreview !== undefined || openPreview !== undefined) ? previewOf?.(row) ?? null : null;
   const tool = file ? actions.rowTool?.(row) ?? null : null;
+  // v1.5 X: the résumé row's Edit, in Show's place.
+  const edit = row.category === 'file.resume' && openEdit !== undefined;
 
   // The row being written comes into view (Jobright's list follows the fill): in the side panel, its own page; in the
   // in-page panel, only the panel's own scrolling list, never the page around it (v3 Phase 3 review).
@@ -776,7 +782,7 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
         {current && actions.onSkip !== undefined && (
           <SkipButton frameId={frameId} row={row} onSkip={actions.onSkip} clock={actions.clock ?? BROWSER_CLOCK} />
         )}
-        {file && (kind !== null || onShowField || tool !== null) && (
+        {file && (kind !== null || onShowField || tool !== null || edit) && (
           <span className="tia-row__files">
             {kind !== null && (
               <button type="button" className="tia-row__file" data-action="preview"
@@ -788,7 +794,12 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
                 {PAGE_COPY.report.preview}
               </button>
             )}
-            {onShowField && (
+            {edit ? (
+              <button type="button" className="tia-row__file" data-action="edit-file"
+                aria-label={PAGE_COPY.report.editLabel(label)} onClick={() => openEdit('resume')}>
+                {PAGE_COPY.report.edit}
+              </button>
+            ) : onShowField && (
               <button type="button" className="tia-row__file" data-action="show-file"
                 aria-label={PAGE_COPY.report.showLabel(label)} onClick={() => onShowField(frameId, row.key)}>
                 {PAGE_COPY.report.show}

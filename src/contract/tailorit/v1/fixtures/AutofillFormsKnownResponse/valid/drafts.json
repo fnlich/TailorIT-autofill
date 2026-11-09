@@ -1,0 +1,181 @@
+{
+  "jobId": 1042,
+  "questions": [
+    {
+      "id": 7001,
+      "questionKey": "first name",
+      "label": "First Name",
+      "kind": "text",
+      "options": [],
+      "optionSetHash": "",
+      "section": "Application",
+      "required": true,
+      "step": 0,
+      "position": 0,
+      "source": "submission",
+      "firstSeenAt": "2026-10-20T15:04:00.000Z",
+      "lastSeenAt": "2026-10-22T09:30:00.000Z"
+    },
+    {
+      "id": 7002,
+      "questionKey": "resume cv",
+      "label": "Resume/CV",
+      "kind": "file",
+      "options": [],
+      "optionSetHash": "",
+      "section": "Application",
+      "required": true,
+      "step": 0,
+      "position": 1,
+      "source": "submission",
+      "firstSeenAt": "2026-10-20T15:04:00.000Z",
+      "lastSeenAt": "2026-10-22T09:30:00.000Z"
+    },
+    {
+      "id": 7003,
+      "questionKey": "how did you hear about us",
+      "label": "How did you hear about us?",
+      "kind": "select",
+      "options": [
+        "LinkedIn",
+        "Company website",
+        "Referral",
+        "Other"
+      ],
+      "optionSetHash": "9a1c3e5f7b2d4068",
+      "section": "Application",
+      "required": false,
+      "step": 0,
+      "position": 2,
+      "source": "submission",
+      "firstSeenAt": "2026-10-20T15:04:00.000Z",
+      "lastSeenAt": "2026-10-22T09:30:00.000Z"
+    },
+    {
+      "id": 7004,
+      "questionKey": "why do you want to work at northwind",
+      "label": "Why do you want to work at Northwind?",
+      "kind": "textarea",
+      "options": [],
+      "optionSetHash": "",
+      "section": "Application",
+      "required": true,
+      "step": 0,
+      "position": 3,
+      "source": "submission",
+      "firstSeenAt": "2026-10-20T15:04:00.000Z",
+      "lastSeenAt": "2026-10-22T09:30:00.000Z"
+    },
+    {
+      "id": 7005,
+      "questionKey": "gender",
+      "label": "Gender",
+      "kind": "select",
+      "options": [
+        "Male",
+        "Female",
+        "Decline To Self Identify"
+      ],
+      "optionSetHash": "0b2d4f6a8c1e3579",
+      "section": "Voluntary Self-Identification",
+      "required": false,
+      "step": 0,
+      "position": 4,
+      "source": "submission",
+      "firstSeenAt": "2026-10-20T15:04:00.000Z",
+      "lastSeenAt": "2026-10-22T09:30:00.000Z"
+    },
+    {
+      "id": 7006,
+      "questionKey": "i agree to the privacy notice",
+      "label": "I agree to the privacy notice",
+      "kind": "checkbox",
+      "options": [],
+      "optionSetHash": "",
+      "section": "Application",
+      "required": true,
+      "step": 0,
+      "position": 5,
+      "source": "submission",
+      "firstSeenAt": "2026-10-20T15:04:00.000Z",
+      "lastSeenAt": "2026-10-22T09:30:00.000Z"
+    }
+  ],
+  "answers": [
+    {
+      "match": "sameJob",
+      "questionId": 7001,
+      "questionKey": "first name",
+      "optionSetHash": "",
+      "questionLabel": "First Name",
+      "fieldKind": "text",
+      "answer": {
+        "kind": "text",
+        "text": "Elena"
+      },
+      "submittedAt": "2026-10-20T15:04:00.000Z"
+    },
+    {
+      "match": "sameJob",
+      "questionId": 7002,
+      "questionKey": "resume cv",
+      "optionSetHash": "",
+      "questionLabel": "Resume/CV",
+      "fieldKind": "file",
+      "answer": {
+        "kind": "file",
+        "fileName": "Elena Ruiz Resume.pdf"
+      },
+      "submittedAt": "2026-10-20T15:04:00.000Z"
+    },
+    {
+      "match": "otherJob",
+      "questionId": null,
+      "questionKey": "how did you hear about us",
+      "optionSetHash": "9a1c3e5f7b2d4068",
+      "questionLabel": "How did you hear about us?",
+      "fieldKind": "select",
+      "answer": {
+        "kind": "options",
+        "labels": [
+          "LinkedIn"
+        ]
+      },
+      "submittedAt": "2026-10-18T11:00:00.000Z"
+    }
+  ],
+  "drafts": [
+    {
+      "match": "draft",
+      "questionId": 7003,
+      "questionKey": "how did you hear about us",
+      "optionSetHash": "9a1c3e5f7b2d4068",
+      "questionLabel": "How did you hear about us?",
+      "fieldKind": "select",
+      "status": "ready",
+      "answer": {
+        "kind": "options",
+        "labels": [
+          "LinkedIn"
+        ]
+      },
+      "provenance": "server-ai",
+      "preparedAt": "2026-10-21T08:00:00.000Z"
+    },
+    {
+      "match": "draft",
+      "questionId": 7004,
+      "questionKey": "why do you want to work at northwind",
+      "optionSetHash": "",
+      "questionLabel": "Why do you want to work at Northwind?",
+      "fieldKind": "textarea",
+      "status": "ready",
+      "answer": {
+        "kind": "text",
+        "text": "Northwind's platform work is the work I like most: I have kept deploy platforms fast and calm for eight years."
+      },
+      "provenance": "mcp",
+      "preparedAt": "2026-10-21T08:00:00.000Z"
+    }
+  ]
+}

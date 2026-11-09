@@ -10,7 +10,10 @@ import type { FieldCategory, IntendedValue, PolicyClass, ValueOrigin } from './i
 /** What decided the field's category. */
 /** v1.3 B: 'submitted' is a field nothing else classified that the person's answer to it in an application they
  *  submitted before fills (core/resolver/submitted.ts): no AI classifies or answers it. */
-export const CLASSIFIERS = ['autocomplete', 'name-id', 'label-rule', 'saved', 'llm-classify', 'none', 'submitted'] as const;
+/** v1.5 X: 'prebuilt' is a field nothing else classified that an answer TailorIT prepared for this job fills
+ *  (core/resolver/submitted.ts findDraftAnswer): no AI classifies or answers it either. */
+export const CLASSIFIERS = ['autocomplete', 'name-id', 'label-rule', 'saved', 'llm-classify', 'none', 'submitted',
+  'prebuilt'] as const;
 export type Classifier = (typeof CLASSIFIERS)[number];
 
 /** The resolver's action, from the confidence bands: fill at 0.85 or more, fill and flag from 0.6, else leave blank. */

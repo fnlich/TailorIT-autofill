@@ -8,7 +8,8 @@
  *   note's lines TailorIT keeps from the AI, and a fill after it reads the profile as saved;
  * - Edit with AI's instruction box: what the person types goes as the question's instruction;
  * - "Apply without resume": the fill attaches none, and leaves the resume field to the person;
- * - the resume's PDF preview, from the worker's checked bytes (v1.4 F: in the full-window preview page);
+ * - the resume's PDF preview, from the worker's checked bytes (v1.4 F: in the full-window preview page; v1.5 X: in a
+ *   dialog over the job page, in a frame of the extension's own);
  * - a cover-letter text box gets the person's letter typed in;
  * - a posting page with no form is looked up as it loads, and its card shows without Autofill.
  */
@@ -18,6 +19,7 @@ import { expect, test } from '../fixtures.ts';
 import { row } from '../helpers/extension.ts';
 import { GOLDEN_LETTER, GOLDEN_RESUME, mock, RESUME_FILE_ROUTE } from '../helpers/mock.ts';
 import { PageUi } from '../helpers/page-ui.ts';
+import { dialogOn, previewFrameOn, previewFramesOn, shownDigest } from '../helpers/document-dialog.ts';
 import { trap } from '../helpers/traps.ts';
 import { CLEAN_DRAFT } from '../mock-server/mock.mjs';
 
@@ -192,7 +194,8 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     expect(await mock.requestsTo(RESUME_FILE_ROUTE)).toEqual([]);
   });
 
-  test('the resume’s preview: the PDF a fill attaches, shown in the full-window preview page from its own blob address (v1.4 F)', async ({ extContext, connected: ext, routeLog }) => {
+  // v1.5 X (PLAN decision 2): over the job page, in a dialog of ours, its document in a frame of the extension's own.
+  test('the resume’s preview: the PDF a fill attaches, in a dialog over the job page, drawn in the extension’s own frame from its own blob address (v1.5 X)', async ({ extContext, connected: ext, routeLog }) => {
     const url = `${at('a4')}/apply`;
     routeLog.serve({ [url]: FORM });
     const page = await extContext.newPage();
@@ -200,25 +203,29 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     const tabId = await ext.tabIdOf(page);
     await ext.frameWithForm(tabId);
     const panel = await ext.reportPage(tabId);
-    const opened = extContext.waitForEvent('page');
+    const tabs = extContext.pages().length;
     await panel.locator('button[data-job-action="preview"]').click();
-    const preview = await opened;
-    expect(preview.url()).toBe(ext.url(`preview.html?tabId=${tabId}&kind=resume`));
-    const frame = preview.locator('iframe[data-preview-frame]');
-    await expect(frame).toBeVisible();
-    const src = await frame.getAttribute('src');
+    const ui = await PageUi.of(page);
+    await dialogOn(ui, 'preview');
+    expect((await ui.elements('dialog[data-document-dialog] h2'))[0]?.text).toBe(COPY.documentDialog.titles.resume);
+    expect((await ui.elements('[data-document-file]'))[0]?.text).toBe(GOLDEN_RESUME.fileName);
+    // No tab opened: the page the person is on shows it.
+    expect(extContext.pages()).toHaveLength(tabs);
+    const frame = await previewFrameOn(page, 'resume');
+    const { src, digest } = await shownDigest(frame);
     expect(src).toMatch(/^blob:chrome-extension:\/\//);
-    const digest = await preview.evaluate(async (address) => {
-      const bytes = new Uint8Array(await (await fetch(address)).arrayBuffer());
-      const hash = await crypto.subtle.digest('SHA-256', bytes);
-      return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    }, src!);
     expect(digest).toBe(GOLDEN_RESUME.sha256);
     expect(createHash('sha256').update('').digest('hex')).not.toBe(digest);
-    // The letter's tab: the résumé's frame goes, its address revoked.
-    await preview.locator('[data-preview-tab="coverLetter"]').click();
-    await expect(frame).toHaveCount(0);
-    await preview.close();
+    // The page's own scripts cannot reach the frame: it is of the extension's origin, in a closed root.
+    expect(await page.evaluate(() => [document.querySelectorAll('iframe').length,
+      performance.getEntriesByType('resource').some((entry) => entry.name.includes('extension'))])).toEqual([0, false]);
+    // One document (the form asks for no letter): no tabs. The × (a person's click, once seen) closes it, its frame and
+    // the PDF going with it.
+    expect((await ui.elements('[role="tablist"]'))[0]?.shown).toBe(false);
+    await ui.clickButton(COPY.documentDialog.close);
+    await expect.poll(() => previewFramesOn(page).length).toBe(0);
+    await expect.poll(async () => (await ui.elements('dialog[data-document-dialog]')).length).toBe(0);
+    await ui.close();
   });
 
   test('a cover-letter text box gets the person’s letter typed in', async ({ extContext, connected: ext, routeLog, tailorit }) => {

@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { FILL_STATUSES } from '../core/enums';
+import { DOCUMENT_DIALOG_CSS } from '../content/ui/document-dialog'; // v1.5 X
 import { UI_CSS } from '../content/ui/styles';
 import { PAGE_CSS } from '../ui/page/styles';
 import { REPORT_CSS } from '../ui/report/styles';
@@ -24,7 +25,7 @@ function contrast(a: string, b: string): number {
 }
 
 const WHITE = NEUTRAL.surface;
-const STYLESHEETS = { REPORT_CSS, PAGE_CSS, UI_CSS } as const;
+const STYLESHEETS = { REPORT_CSS, PAGE_CSS, UI_CSS, DOCUMENT_DIALOG_CSS } as const;
 
 /** The custom properties the report's stylesheet sets, by name (the pages' and the in-page panel's tokens). */
 const TOKENS = new Map([...REPORT_CSS.matchAll(/(--tia-[\w-]+)\s*:\s*([^;]+);/g)].map((match) => [match[1]!, match[2]!.trim()]));

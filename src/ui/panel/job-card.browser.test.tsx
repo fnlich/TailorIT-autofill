@@ -42,6 +42,10 @@ async function drawCard(card: Card, props: Partial<JobCardProps> = {}): Promise<
     onAdd={() => undefined} {...props} /></div>);
 }
 
+/** v1.5 X: opens one of Change's folders. */
+const openFolder = (root: ParentNode, folder: 'uploaded' | 'edited' | 'tailored') =>
+  click(root.querySelector(`[data-resume-folder="${folder}"] .tia-folder__head`));
+
 /** The answered card of `card`. */
 const answered = (card: Card) => card as Extract<Card, { state: 'answered' }>;
 
@@ -181,10 +185,14 @@ describe('the job card in the side panel (v2)', () => {
     const root = await open(worker);
     await click(button(root, COPY.job.change));
     expect(worker.sentOfType('panel/resumes')).toEqual([{ v: 1, type: 'panel/resumes', tabId: 5 }]);
+    // v1.5 X: in folders, the attached one's open (Edited: a built resume), the upload's folded until opened.
+    expect([...root.querySelectorAll<HTMLButtonElement>('[data-resume-choice=""]')]
+      .map((each) => each.getAttribute('aria-pressed'))).toEqual(['true']);
+    await openFolder(root, 'uploaded');
     const choices = [...root.querySelectorAll<HTMLButtonElement>('[data-resume-choice=""]')];
-    expect(choices.map((each) => each.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
-    expect(choices[1]!.textContent).toContain('Platform resume');
-    await click(choices[1]);
+    expect(choices.map((each) => each.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
+    expect(choices[0]!.textContent).toContain('Platform resume');
+    await click(choices[0]);
     expect(worker.sentOfType('panel/setResume')).toEqual([{ v: 1, type: 'panel/setResume', tabId: 5, resumeId: 'resume-2' }]);
     expect(root.querySelector('[data-resume-picker]')).toBeNull();
     expect(reads(worker, 'panel/job')).toBe(2);
@@ -531,9 +539,10 @@ describe('the cover letter and the résumé in the review (Phase G; v4 ui: the r
     const root = await open(worker);
     await click(root.querySelector('li[data-field-key="cv"] button[data-action="preview"]'));
     await click(root.querySelector('li[data-field-key="letter"] button[data-action="preview"]'));
+    // v1.5 X: with the dialog's tabs, the documents this panel previews.
     expect(worker.sentOfType('panel/openDocument')).toEqual([
-      { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'resume', how: 'preview' },
-      { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'coverLetter', how: 'preview' }]);
+      { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'resume', how: 'preview', kinds: ['resume', 'coverLetter'] },
+      { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'coverLetter', how: 'preview', kinds: ['resume', 'coverLetter'] }]);
     // Nothing unfolds under the rows, and no bytes come to the panel.
     expect(root.querySelector('[data-row-preview], [data-resume-preview], iframe')).toBeNull();
     expect(worker.posted.some((message) => (message as { type?: unknown }).type === 'preview/request')).toBe(false);
@@ -545,7 +554,9 @@ describe('the cover letter and the résumé in the review (Phase G; v4 ui: the r
     word.script.reports.set(5, [frameReport(0, { fields: [row('cv', { kind: 'file', category: 'file.resume' })] })]);
     const docx = await open(word);
     expect(docx.querySelector('li[data-field-key="cv"] button[data-action="preview"]')).toBeNull();
-    expect(docx.querySelector('li[data-field-key="cv"] button[data-action="show-file"]')).not.toBeNull();
+    // v1.5 X (PLAN decision 3): its Edit, in Show's place.
+    expect(docx.querySelector('li[data-field-key="cv"] button[data-action="edit-file"]')).not.toBeNull();
+    expect(docx.querySelector('li[data-field-key="cv"] button[data-action="show-file"]')).toBeNull();
   });
 });
 
@@ -562,9 +573,11 @@ describe('the résumé’s choice after a run (v4 ui)', () => {
     await settle();
     expect(worker.sentOfType('panel/resumes')).toEqual([{ v: 1, type: 'panel/resumes', tabId: 5 }]);
     const picker = root.querySelector('li[data-category="file.resume"] [data-row-tool="change"] [data-resume-picker]')!;
+    // v1.5 X: the upload's folder, opened.
+    await openFolder(picker, 'uploaded');
     const choices = [...picker.querySelectorAll<HTMLButtonElement>('[data-resume-choice=""]')];
-    expect(choices.map((each) => each.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
-    await click(choices[1]);
+    expect(choices.map((each) => each.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
+    await click(choices[0]);
     expect(worker.sentOfType('panel/setResume')).toEqual([{ v: 1, type: 'panel/setResume', tabId: 5, resumeId: 'resume-2' }]);
     expect(root.querySelector('[data-resume-picker]')).toBeNull();
     // Apply without resume from the row too: no Preview while none is attached.
@@ -643,7 +656,7 @@ describe('Preview and Edit on the résumé line (v1.4 F, PLAN decision 17)', () 
     await click(root.querySelector<HTMLButtonElement>('[data-job-resume] button[data-job-action="preview"]')!);
     await click(root.querySelector<HTMLButtonElement>('[data-job-resume] button[data-job-action="edit"]')!);
     expect(worker.sentOfType('panel/openDocument')).toEqual([
-      { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'resume', how: 'preview' },
+      { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'resume', how: 'preview', kinds: ['resume'] },
       { v: 1, type: 'panel/openDocument', tabId: 5, kind: 'resume', how: 'edit' }]);
     expect(root.querySelector('iframe, [data-resume-preview]')).toBeNull();
     worker.on('panel/openDocument', () => ({ ok: true, data: { opened: false } }));

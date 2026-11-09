@@ -5,7 +5,8 @@
  * the content script lists exists and stays within the size budget; there are exactly two content scripts, ours and
  * the page-world bridge (world MAIN, the same matches, from document_start, one file and no CSS, within its own
  * budget: docs/SPEC-AMENDMENTS.md §12), whose bundle is one anonymous function that names no extension API and no
- * window messaging, adds no global and listens for its command alone, and no web-accessible resource; and every
+ * window messaging, adds no global and listens for its command alone, and (v1.5 X) no web-accessible resource but the
+ * preview page at its dynamic address on every web page; and every
  * build ships its four icons as PNGs of their sizes. v5 p1-rules (PLAN decisions 9 and 10): the host permissions are
  * exactly every https and http page plus TailorIT, with no optional ones, and neither the sentinel's registration nor
  * a static content script reaches a CAPTCHA or anti-bot vendor's frame. v5 p1-shell: the sidebar's bundle is in every
@@ -65,6 +66,8 @@ function manifest(origin: string): Record<string, unknown> {
     background: { service_worker: 'background.js' },
     options_ui: { open_in_tab: true, page: 'options.html' },
     side_panel: { default_path: 'sidepanel.html' },
+    // v1.5 X (PLAN decision 2): the preview page, the one web-accessible resource, at its dynamic address alone.
+    web_accessible_resources: [{ resources: ['preview.html'], matches: ['https://*/*', 'http://*/*'], use_dynamic_url: true }],
     content_scripts: [{ matches: [...ATS_MATCHES], all_frames: true, run_at: 'document_idle', js: ['content-scripts/content.js'] },
       { ...BRIDGE_SCRIPT, matches: [...ATS_MATCHES] },
       // v5 p2-detect: the page-world submit watcher.
@@ -144,6 +147,8 @@ function project(change: (write: (path: string, text: string | Uint8Array) => vo
     write(`${dir}/chunks/options-abc.js`, 'export const options = 1;');
     write(`${dir}/options.html`, '<!doctype html><title>Settings</title>');
     write(`${dir}/sidepanel.html`, '<!doctype html><title>Review</title>');
+    // v1.5 X: the web-accessible preview page.
+    write(`${dir}/preview.html`, '<!doctype html><title>TailorIT Preview</title>');
     for (const [size, path] of Object.entries(ICONS)) write(`${dir}/${path}`, png(Number(size)));
   }
   change(write);
@@ -489,11 +494,41 @@ describe("check-build's three content scripts: ours, the page-world bridge and (
     expect(missing.status).toBe(1);
   });
 
-  it('fail a build with web-accessible resources, which a page-world script never needs', () => {
-    const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
-      changed.web_accessible_resources = [{ resources: ['content-scripts/page-bridge.js'], matches: [...ATS_MATCHES] }];
+  // v1.5 X (PLAN decision 2): exactly the preview page, at its dynamic address alone, on every https and http page.
+  it('fail a build with any web-accessible resource but the preview page at its dynamic address on every web page (a page-world script never needs one)', () => {
+    const PREVIEW = { resources: ['preview.html'], matches: ['https://*/*', 'http://*/*'], use_dynamic_url: true };
+    // Each case one build of its own (every case spawns check-build: kept few).
+    const cases: Array<[string, unknown]> = [
+      ['the bridge beside it', [PREVIEW, { resources: ['content-scripts/page-bridge.js'], matches: [...ATS_MATCHES] }]],
+      ['a second resource', [{ ...PREVIEW, resources: ['preview.html', 'chunks/options-abc.js'] }]],
+      ['its fixed address', [{ ...PREVIEW, use_dynamic_url: false }]],
+      ['every scheme', [{ ...PREVIEW, matches: ['<all_urls>'] }]],
+      ['other extensions', [{ ...PREVIEW, extension_ids: ['*'] }]],
+      ['none', undefined],
+    ];
+    for (const [name, resources] of cases) {
+      const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
+        if (resources === undefined) delete changed.web_accessible_resources;
+        else changed.web_accessible_resources = resources;
+      })));
+      expect(output, name).toContain('.output/chrome-mv3: web_accessible_resources must be exactly preview.html at its '
+        + 'dynamic address on every https and http page');
+      expect(status, name).toBe(1);
+    }
+    // The matches' order does not matter.
+    const reordered = checkBuild(project((write) => everyManifest(write, (changed) => {
+      changed.web_accessible_resources = [{ ...PREVIEW, matches: ['http://*/*', 'https://*/*'] }];
     })));
-    expect(output).toContain('.output/chrome-mv3: web_accessible_resources must be absent');
+    expect(reordered.output).not.toContain('web_accessible_resources');
+    expect(reordered.status).toBe(0);
+  }, 60_000);
+
+  // v1.5 X: the preview page is in every build.
+  it('fail a build without the web-accessible preview page', () => {
+    const root = project();
+    for (const dir of Object.values(BUILDS)) rmSync(join(root, dir, 'preview.html'));
+    const { status, output } = checkBuild(root);
+    expect(output).toContain('.output/chrome-mv3: page preview.html is missing');
     expect(status).toBe(1);
   });
 
@@ -591,7 +626,7 @@ describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel an
     })));
     expect(output).toContain('.output/chrome-mv3: optional_permissions must be absent');
     expect(status).toBe(1);
-  });
+  }, 30_000); // v1.5 X: as the file's other many-build cases (a loaded machine takes over 5 s).
 
   // v5 p1-rules (PLAN decision 9): no static content script runs in a CAPTCHA or anti-bot vendor's frame.
   it("fail a static content script that would run in a CAPTCHA vendor's frame", () => {
@@ -668,7 +703,7 @@ describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel an
       for (const dir of Object.values(BUILDS)) rmSync(join(folders.at(-1)!, dir, 'sentinel.js'));
     }));
     expect(gone.output).toContain('.output/chrome-mv3: the sentinel sentinel.js is missing');
-  });
+  }, 30_000); // v1.5 X: as the file's other many-build cases (a loaded machine takes over 5 s).
 
   it("fail a sidebar bundle that is missing, listed in the manifest, over its budget, or holds WXT's context", () => {
     const cases: Array<[string, string]> = [
@@ -781,5 +816,5 @@ describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel an
       expect(output, message).toContain(message);
       expect(status, message).toBe(1);
     }
-  });
+  }, 30_000); // v1.5 X: as the file's other many-build cases (a loaded machine takes over 5 s).
 });

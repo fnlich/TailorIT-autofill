@@ -30,7 +30,7 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
  *  `signal` (the review): the preview went (closed, another resume or tab) before the bytes came: the port is
  *  disconnected and nothing is kept. */
 export function receivePreview(platform: PagePlatform, tabId: number, signal?: AbortSignal,
-  kind: PreviewKind = 'resume'): Promise<PreviewResult> {
+  kind: PreviewKind = 'resume', grant?: string): Promise<PreviewResult> {
   return new Promise((resolve) => {
     if (signal?.aborted === true) {
       resolve({ ok: false, reason: 'failed' });
@@ -109,7 +109,9 @@ export function receivePreview(platform: PagePlatform, tabId: number, signal?: A
     });
     signal?.addEventListener('abort', () => finish({ ok: false, reason: 'failed' }), { once: true });
     try {
-      port.post({ v: 1, type: 'preview/request', tabId, ...(kind === 'coverLetter' ? { kind } : {}) });
+      port.post({ v: 1, type: 'preview/request', tabId, ...(kind === 'coverLetter' ? { kind } : {}),
+        // v1.5 X: the page's dialog's grant, from the embedded preview page's address.
+        ...(grant === undefined ? {} : { grant }) });
     } catch {
       finish({ ok: false, reason: 'failed' });
     }

@@ -25,11 +25,17 @@
  *   So the profile wins wherever it holds a value (the profile is what the person keeps up to date; an answer typed into
  *   one form is a fact of that day), and an earlier answer still beats any AI. A field nothing classified that one
  *   fills is classified 'submitted', so no AI classifies or answers it.
+ *   v1.5 X (PLAN decision 4): between this job's own earlier answer and another job's, the answer TailorIT prepared for
+ *   this job ahead of time (its job application draft: submitted.ts findDraftAnswer), with provenance prebuilt and the
+ *   note prebuilt-answer: the order is a saved answer, the profile or the policy, this job's earlier answer, the draft,
+ *   another job's earlier answer, then the run-start AI batch and the AI. A field nothing classified that a draft fills
+ *   is classified 'prebuilt'. Never a sensitive, consent or attention-check question, nor a file.
  * Confidence is classification × value here; the match multiplies in later (planFrame). An unanswered EEO, legal or
  * sensitive question, and a required field with no value, are flagged rather than skipped, so the person sees them.
  */
 import {
-  CLASSIFY_LLM, CLASSIFY_SAVED_EXACT, CLASSIFY_SUBMITTED, FILL_AT, FLAG_AT, LABEL_RULE_CONFIDENCE, VALUE_EXPLICIT,
+  CLASSIFY_LLM, CLASSIFY_PREBUILT, CLASSIFY_SAVED_EXACT, CLASSIFY_SUBMITTED, FILL_AT, FLAG_AT, LABEL_RULE_CONFIDENCE,
+  VALUE_EXPLICIT,
 } from '../confidence';
 import { attentionHits, botCheckOf, namesConsentTopic } from '../guard/attention';
 import { cutInjected } from '../guard/injected';
@@ -59,7 +65,7 @@ import { dateIso, dateText, type DateParts } from './format';
 import { asksToAgree, statementPolarity, type NeedsUserCause } from './labelRules';
 import { consentValue, eeoDeclineDefault, eeoValue, legalValue, sensitiveGate } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
-import { findSubmittedAnswer } from './submitted';
+import { findDraftAnswer, findSubmittedAnswer } from './submitted';
 import { placeholderAsked, previouslyEmployedValue, profileValue, type BlockEntries } from './values';
 import { askedAs } from './yesNoPair';
 
@@ -211,6 +217,27 @@ function savedCandidate(answer: SavedAnswer): Candidate {
 function submittedCandidate(answer: SubmittedAnswer): Candidate {
   const origin = { provenance: 'submitted-before' as const, submittedId: answer.id, sameJob: answer.sameJob };
   const note = 'submitted-before' as const;
+  const { answer: given } = answer;
+  switch (given.kind) {
+    case 'options': {
+      const set = given.labels.map((label): Choice => ({ intended: intendedText(label), domain: 'generic' }));
+      return { origin, confidence: 1, note, set,
+        ...(set.length === 1 ? { choice: set[0]!, text: given.labels[0]! } : {}) };
+    }
+    case 'text':
+      return { origin, confidence: 1, note, text: given.text,
+        choice: { intended: intendedText(given.text), domain: 'generic' } };
+    case 'checked':
+      return { origin, confidence: 1, note, check: given.checked };
+  }
+}
+
+/** v1.5 X (PLAN decision 4): an answer TailorIT prepared for this job as a candidate (provenance prebuilt, the note
+ *  prebuilt-answer): option labels matched as text, a text typed, a box ticked (a lone box only on an affirmative
+ *  statement, as any AI answer). */
+function prebuiltCandidate(answer: SubmittedAnswer): Candidate {
+  const origin = { provenance: 'prebuilt' as const, draftId: answer.id };
+  const note = 'prebuilt-answer' as const;
   const { answer: given } = answer;
   switch (given.kind) {
     case 'options': {
@@ -565,9 +592,22 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
   const defaulted = result.ok && result.candidate.note === 'eeo-decline-default';
   if (!saved && !needsSensitive && ctx.submitted !== undefined && ctx.submitted.length > 0
     && (defaulted || (!result.ok && SUBMITTED_GAPS.has(result.none.reason)))) {
-    const prior = findSubmittedAnswer(spec, ctx.submitted, { policy,
-      screened: screenForClassify(spec, ctx.vocab) !== null, sensitiveReady: ctx.sensitiveState === 'loaded' });
-    if (prior !== null && !(prior.gone && defaulted)) {
+    const screened = screenForClassify(spec, ctx.vocab) !== null;
+    const asked = { policy, screened, sensitiveReady: ctx.sensitiveState === 'loaded' };
+    // v1.5 X (PLAN decision 4): this job's own earlier answer first, then the answer TailorIT prepared for this job
+    // ahead of time (submitted.ts findDraftAnswer: never a sensitive, consent or attention-check question, nor a
+    // file, nor in place of the EEO decline default), then another job's earlier answer; any AI after them all.
+    const earlier = ctx.submitted.filter((each) => each.draft !== true);
+    const own = findSubmittedAnswer(spec, earlier.filter((each) => each.sameJob), asked);
+    const draft = own !== null || defaulted ? null : findDraftAnswer(spec, ctx.submitted, { category, policy, screened });
+    const prior = own ?? (draft !== null ? null : findSubmittedAnswer(spec, earlier.filter((each) => !each.sameJob),
+      asked));
+    if (draft !== null) {
+      classifiedBy = rules?.classifiedBy ?? 'prebuilt';
+      classifyConfidence = Math.max(rules?.confidence ?? 0, CLASSIFY_PREBUILT);
+      base = { ...base, classifiedBy, confidence: classifyConfidence, rule: 'prebuilt.draft' };
+      result = value(prebuiltCandidate(draft));
+    } else if (prior !== null && !(prior.gone && defaulted)) {
       classifiedBy = rules?.classifiedBy ?? 'submitted';
       classifyConfidence = Math.max(rules?.confidence ?? 0, CLASSIFY_SUBMITTED);
       base = { ...base, classifiedBy, confidence: classifyConfidence,

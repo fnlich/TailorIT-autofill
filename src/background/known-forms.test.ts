@@ -215,3 +215,42 @@ describe('a job\'s known form in the worker (v1.3 B)', () => {
     }
   });
 });
+
+// v1.5 X (PLAN decision 4): the person's prebuilt draft answers (forms/known's `drafts`, TailorIT v1.5).
+describe('a job\'s prebuilt draft answers in the worker (v1.5 X)', () => {
+  const DRAFTS: NonNullable<AutofillFormsKnownResponse['drafts']> = [
+    { match: 'draft', questionId: 72, questionKey: 'do you enjoy camping', optionSetHash: YES_NO,
+      questionLabel: 'Do you enjoy camping?', fieldKind: 'radio', status: 'ready', answer: { kind: 'options', labels: ['No'] },
+      provenance: 'server-ai', preparedAt: at('2026-11-08') },
+    { match: 'draft', questionId: 71, questionKey: 'do you enjoy hiking', optionSetHash: YES_NO,
+      questionLabel: 'Do you enjoy hiking?', fieldKind: 'radio', status: 'not_ready', answer: null,
+      provenance: 'server-ai', preparedAt: at('2026-11-08') },
+  ];
+
+  // Undo proof: leave draftAnswersOf out of known-forms.ts read() and no draft reaches the core; let a not_ready one
+  // through and it does.
+  it('hands the ready ones to every plan as this job’s answers marked draft, and leaves a not-ready one out', async () => {
+    const test = await worker();
+    test.tailorit.reply(KNOWN, { json: { ...FORM, drafts: DRAFTS } });
+    const runId = await beginRun(test, { applicationKey: KEY });
+    await plan(test, runId, [radio(1, 'Do you enjoy camping?')]);
+    const answers = test.core.calls.planFrame.at(-1)!.submittedAnswers ?? [];
+    expect(answers.filter((answer) => answer.draft === true)).toEqual([expect.objectContaining({
+      labelKey: 'do you enjoy camping', optionSetHash: YES_NO, sameJob: true, draft: true, questionId: 72,
+      answer: { kind: 'options', labels: ['No'] } })]);
+    // The person's own earlier answer is there as before, not a draft.
+    expect(answers.filter((answer) => answer.draft !== true)).toEqual([expect.objectContaining({ questionId: 71 })]);
+  });
+
+  it('computes a board-API question’s key and option set from its label and options, as the extension does', async () => {
+    const test = await worker();
+    const question = { ...FORM.questions[1]!, id: 90, questionKey: 'camping (approx)', optionSetHash: null,
+      source: 'ats-api' as const };
+    test.tailorit.reply(KNOWN, { json: { ...FORM, answers: [], questions: [question],
+      drafts: [{ ...DRAFTS[0]!, questionId: 90, questionKey: 'camping (approx)', optionSetHash: null }] } });
+    const runId = await beginRun(test, { applicationKey: KEY });
+    await plan(test, runId, [radio(1, 'Do you enjoy camping?')]);
+    expect(test.core.calls.planFrame.at(-1)!.submittedAnswers).toContainEqual(expect.objectContaining({
+      labelKey: 'do you enjoy camping', optionSetHash: YES_NO, draft: true }));
+  });
+});

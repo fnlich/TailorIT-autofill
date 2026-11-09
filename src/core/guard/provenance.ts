@@ -203,6 +203,10 @@ export function checkProvenanceShape(write: PlannedWrite): GuardVerdict {
       if (!nonEmpty(origin.submittedId) || typeof origin.sameJob !== 'boolean') return fail('missing-provenance');
       // A text, an option or several, or a box: never a file or a date.
       return write.value.kind === 'file' || write.value.kind === 'date' ? fail('policy-violation') : PASS;
+    // v1.5 X: an answer TailorIT prepared for this job names it; a text, an option or several, or a box.
+    case 'prebuilt':
+      if (!nonEmpty(origin.draftId)) return fail('missing-provenance');
+      return write.value.kind === 'file' || write.value.kind === 'date' ? fail('policy-violation') : PASS;
     default:
       return fail('missing-provenance');
   }
@@ -212,7 +216,8 @@ export function checkProvenanceShape(write: PlannedWrite): GuardVerdict {
 export interface ProvenanceContext {
   profile: Profile;
   savedAnswers: readonly SavedAnswer[];
-  /** v1.3 B: the run's earlier submitted answers (core/resolver/submitted.ts); absent: none. */
+  /** v1.3 B: the run's earlier submitted answers (core/resolver/submitted.ts); absent: none. v1.5 X: and the answers
+   *  TailorIT prepared for the job (`draft`). */
   submittedAnswers?: readonly SubmittedAnswer[];
 }
 
@@ -248,7 +253,13 @@ export function checkProvenance(write: PlannedWrite, spec: FieldSpec, category: 
     // v1.3 B: one the run holds, for this field's question, whose it says it is.
     case 'submitted-before': {
       const answer = ctx.submittedAnswers?.find((candidate) => candidate.id === origin.submittedId);
-      return answer !== undefined && answer.sameJob === origin.sameJob && answer.labelKey === normalizeLabel(spec.label)
+      return answer !== undefined && answer.draft !== true && answer.sameJob === origin.sameJob
+        && answer.labelKey === normalizeLabel(spec.label) ? PASS : fail('missing-provenance');
+    }
+    // v1.5 X: a draft the run holds, for this field's question.
+    case 'prebuilt': {
+      const answer = ctx.submittedAnswers?.find((candidate) => candidate.id === origin.draftId);
+      return answer !== undefined && answer.draft === true && answer.labelKey === normalizeLabel(spec.label)
         ? PASS : fail('missing-provenance');
     }
     case 'llm-pick':
@@ -275,16 +286,17 @@ const CLASS_RULES: Readonly<Record<PolicyClass, readonly RuleId[] | 'any'>> = {
 
 /** The provenances each class's values may have (§7.6, §8.2): `rule` is narrowed further by CLASS_RULES. */
 const CLASS_PROVENANCES: Readonly<Record<PolicyClass, readonly ValueOrigin['provenance'][]>> = {
-  profile: ['profile', 'saved', 'rule', 'llm-pick', 'llm-answer', 'submitted-before'],
+  // v1.5 X: an answer TailorIT prepared for the job (prebuilt) fills a profile, free-text or unknown question alone.
+  profile: ['profile', 'saved', 'rule', 'llm-pick', 'llm-answer', 'submitted-before', 'prebuilt'],
   // v1.3 B: an EEO, legal or sensitive question takes this job's own earlier answer alone (checkCategoryPolicy).
   sensitive: ['profile', 'rule', 'submitted-before'],
   legal: ['profile', 'rule', 'submitted-before'],
   eeo: ['profile', 'rule', 'submitted-before'],
   consent: ['rule'],
   attention: [],
-  'free-text': ['saved', 'llm-draft', 'llm-answer', 'rule', 'submitted-before'],
+  'free-text': ['saved', 'llm-draft', 'llm-answer', 'rule', 'submitted-before', 'prebuilt'],
   file: ['profile'],
-  unknown: ['saved', 'llm-pick', 'llm-answer', 'rule', 'submitted-before'],
+  unknown: ['saved', 'llm-pick', 'llm-answer', 'rule', 'submitted-before', 'prebuilt'],
 };
 
 /** v1.3 B: the classes another job's earlier answer may fill (core/resolver/submitted.ts): never a sensitive one, nor
@@ -322,7 +334,9 @@ export function checkCategoryPolicy(origin: ValueOrigin, category: FieldCategory
   if (origin.provenance === 'submitted-before' && !origin.sameJob && !OTHER_JOB_CLASSES.has(policy)) {
     return fail('policy-violation');
   }
-  if (origin.provenance === 'llm-answer' && policy === 'profile' && !ANSWERABLE_PROFILE_CATEGORIES.has(category)) {
+  // v1.5 X: as an AI answer, a prepared one fills only the profile categories an AI may answer.
+  if ((origin.provenance === 'llm-answer' || origin.provenance === 'prebuilt') && policy === 'profile'
+    && !ANSWERABLE_PROFILE_CATEGORIES.has(category)) {
     return fail('policy-violation');
   }
   if (origin.provenance === 'rule') {

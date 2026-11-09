@@ -35,6 +35,10 @@ export const CLASSIFY_SAVED_EXACT = 0.97;
 /** v1.3 B: the person's own answer to the same question (its normalized label, and its option set or this job's own
  *  options) in an application they submitted before (resolver/submitted.ts). */
 export const CLASSIFY_SUBMITTED = 0.97;
+/** v1.5 X (PLAN decision 4): an answer TailorIT prepared for this job's own question ahead of time (its normalized
+ *  label, and its option set or this job's own options): above the fill line, as the person chose to prepare it, and
+ *  below the person's own words. */
+export const CLASSIFY_PREBUILT = 0.9;
 /** An LLM classification, below the fill line so the field is always flagged (ARCHITECTURE.md). */
 export const CLASSIFY_LLM = 0.7;
 /** Two classifiers agree: the higher confidence plus this. */

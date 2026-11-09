@@ -22,13 +22,22 @@
  * or one the screen withholds, takes this job's own answer only while this browser may read the person's sensitive
  * answers (the sensitive part loaded): their earlier answers never reach further than their profile would.
  * Pure: nothing is logged or kept here.
+ * v1.5 X (PLAN decision 4; the owner, 2026-11-09: "all answer for question for every saved job ... stored as job
+ * application draft"): the answers TailorIT prepared for this job's questions ahead of time (its job application draft,
+ * read with the known questions as `match: 'draft'`, ready ones alone: SubmittedAnswer.draft) fill a gap after this
+ * job's own earlier answer and before another job's and any AI (findDraftAnswer; resolve.ts the order): this job's
+ * question by its label and option set (a list not read yet by its label, each option checked once read: one no longer
+ * offered leaves the gap to the AI, unflagged), only for a question that is not sensitive: the profile classes an AI may
+ * answer (ANSWERABLE_PROFILE_CATEGORIES), unknown and free text; never an EEO, legal or sensitive question, one the
+ * classify screen withholds, a consent, an attention or bot check, or an upload.
  */
 import type { FieldKind } from '../enums';
 import { cutInjected } from '../guard/injected';
 import { qualifiedLabel, sectionKey } from '../text/keys';
 import { normalizeLabel } from '../text/normalize';
+import { ANSWERABLE_PROFILE_CATEGORIES } from './categories';
 import type { FieldSpec } from '../types/field';
-import type { PolicyClass } from '../types/intent';
+import type { FieldCategory, PolicyClass } from '../types/intent';
 import type { SubmittedAnswer, SubmittedValue } from '../types/submitted';
 
 /** The classes this job's earlier answer may fill; EEO, legal and sensitive only with the sensitive part loaded. */
@@ -42,6 +51,9 @@ const OTHER_JOB_CLASSES: ReadonlySet<PolicyClass> = new Set<PolicyClass>(['profi
 const ONE_OF: ReadonlySet<FieldKind> = new Set<FieldKind>(['select', 'radio', 'combobox', 'typeahead-remote']);
 const SEVERAL: ReadonlySet<FieldKind> = new Set<FieldKind>(['checkbox-group', 'multiselect']);
 const TYPED: ReadonlySet<FieldKind> = new Set<FieldKind>(['text', 'textarea']);
+
+/** v1.5 X: the classes an answer TailorIT prepared for the job may fill (module header). */
+const DRAFT_CLASSES: ReadonlySet<PolicyClass> = new Set<PolicyClass>(['profile', 'unknown', 'free-text']);
 
 /** Whether an earlier answer's shape can be given through a field of this kind. */
 export function submittedFitsKind(answer: SubmittedValue, kind: FieldKind): boolean {
@@ -157,3 +169,31 @@ export function findSubmittedAnswer(
   }
   return null;
 }
+
+// ── v1.5 X (PLAN decision 4) ──
+
+/** What the draft step knows of the field besides its spec: its category, its class and the classify screen. */
+export interface DraftContext {
+  category: FieldCategory;
+  policy: PolicyClass;
+  /** The classify screen withholds the field (resolver/classify.ts screenForClassify): a sensitive question. */
+  screened: boolean;
+}
+
+/**
+ * The answer TailorIT prepared for this job's question ahead of time (module header), or null: none in a class a draft
+ * may not fill, none for the field's label and option set, or one whose option the field no longer offers (the gap
+ * then goes on to another job's earlier answer and the AI, unflagged).
+ */
+export function findDraftAnswer(
+  spec: Pick<FieldSpec, 'label' | 'optionSetHash' | 'kind' | 'options' | 'section' | 'ordinal'>,
+  drafts: readonly SubmittedAnswer[], ctx: DraftContext): SubmittedAnswer | null {
+  if (!DRAFT_CLASSES.has(ctx.policy) || ctx.screened || spec.kind === 'file') return null;
+  if (ctx.policy === 'profile' && !ANSWERABLE_PROFILE_CATEGORIES.has(ctx.category)) return null;
+  // Read as this job's own answers, through the same matching, with no sensitive class allowed.
+  const found = findSubmittedAnswer(spec, drafts.filter((answer) => answer.draft === true)
+    .map((answer) => ({ ...answer, sameJob: true })), { policy: ctx.policy, screened: false, sensitiveReady: false });
+  if (found === null || found.gone) return null;
+  return drafts.find((answer) => answer.id === found.answer.id) ?? null;
+}
+// ── end v1.5 X ──

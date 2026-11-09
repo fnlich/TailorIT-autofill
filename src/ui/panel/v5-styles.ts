@@ -51,6 +51,9 @@ export const PANEL_V5_CSS = `
 .tia-modal__actions { display: flex; gap: 12px; }
 .tia-modal__actions .tia-button { flex: 1 1 0; min-height: 40px; }
 .tia-modal__more { justify-self: center; }
+/* v1.5 X: the upload edit confirm's "Don't show this again". */
+.tia-modal__check { display: flex; align-items: center; gap: 8px; font: 400 13px/1.4 var(--tia-font); cursor: pointer; }
+.tia-modal__check input { width: 16px; height: 16px; margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .tia-stage > .tia-sheet.tia-dashboard { transition: none; }

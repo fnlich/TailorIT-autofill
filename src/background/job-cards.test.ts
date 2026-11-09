@@ -7,7 +7,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { AutofillLookupResponse } from '../contract/tailorit';
-import { JOB_CARD_FAILED_TTL_MS, JOB_CARD_TTL_MS, JOB_RELAY_LIMIT, jobCardOf, lookupAddressOf, recognisedPosting } from './job-cards';
+import { JOB_CARD_FAILED_TTL_MS, JOB_CARD_TTL_MS, JOB_RELAY_LIMIT, jobCardOf, lookupAddressOf, madeOf,
+  recognisedPosting } from './job-cards';
 import {
   beginRun,
   contentSender,
@@ -326,11 +327,28 @@ describe('the resume the person chose (v2)', () => {
     const worker = await withForm();
     await card(worker);
     const answer = await worker.deliver({ v: 1, type: 'panel/resumes', tabId: 7 }, pageSender());
+    // v1.5 X (PLAN decision 6): how TailorIT made each and when, for the picker's folders.
     expect(answer).toEqual({ ok: true, data: { items: [
-      { id: goldens.resumes.items[0]!.id, label: 'Senior Software Engineer', fileKind: 'pdf', kind: 'built', current: true },
-      { id: goldens.resumes.items[1]!.id, label: 'Elena Ruiz CV', fileKind: 'docx', kind: 'uploaded', current: false },
+      { id: goldens.resumes.items[0]!.id, label: 'Senior Software Engineer', fileKind: 'pdf', kind: 'built', current: true,
+        madeBy: 'tailor', createdAt: '2026-10-21T08:10:00.000Z' },
+      { id: goldens.resumes.items[1]!.id, label: 'Elena Ruiz CV', fileKind: 'docx', kind: 'uploaded', current: false,
+        madeBy: 'upload', createdAt: '2026-09-30T17:02:00.000Z' },
     ] } });
     expect(JSON.stringify(answer)).not.toContain('.pdf');
+  });
+
+  // v1.5 X: a TailorIT before v1.5 names neither, and the list reads as before; a value that does not read is left out.
+  it('lists the resumes from a TailorIT that names no madeBy or createdAt as before (v1.5 X)', async () => {
+    const worker = await withForm();
+    await card(worker);
+    worker.tailorit.reply('GET /api/autofill/resumes', { json: { ...goldens.resumes, items: goldens.resumes.items.map(
+      ({ madeBy: _madeBy, createdAt: _createdAt, ...item }: Record<string, unknown>) => item) } });
+    const answer = await worker.deliver({ v: 1, type: 'panel/resumes', tabId: 7 }, pageSender()) as {
+      data: { items: Array<Record<string, unknown>> } };
+    expect(answer.data.items.map((item) => ['madeBy' in item, 'createdAt' in item])).toEqual([[false, false], [false, false]]);
+    expect(madeOf({ madeBy: 'robot', createdAt: 'yesterday' })).toEqual({});
+    expect(madeOf({ madeBy: 'copy', createdAt: '2026-11-09T10:00:00Z' })).toEqual({ madeBy: 'copy',
+      createdAt: '2026-11-09T10:00:00Z' });
   });
 
   it("goes with the card's lookup, run/begin and Add, and a card read for another choice is not shown", async () => {

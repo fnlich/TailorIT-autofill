@@ -169,6 +169,44 @@ describe('Run auto-apply in the worker (v3 Phase 5)', () => {
     expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
   });
 
+  // v1.5 X (PLAN decision 4): the agent's run reads the person's prebuilt draft answers as any fill does (run/begin's
+  // known form), the ready ones handed to its plans marked draft, a not-ready one left to its AI path. Undo proof:
+  // leave draftAnswersOf out of known-forms.ts read() and no draft reaches the agent's plan.
+  it('hands the agent’s plans the person’s ready prebuilt draft answers, as any fill’s (v1.5 X)', async () => {
+    const { worker, win } = await withAgent();
+    worker.fakes.frameAnswers = () => ({ ok: true, data: {} });
+    const question = { id: 81, questionKey: 'notes', label: 'Notes', kind: 'text', options: [], optionSetHash: '',
+      section: 'main', required: false, step: 0, position: 0, source: 'submission',
+      firstSeenAt: '2026-11-01T00:00:00.000Z', lastSeenAt: '2026-11-01T00:00:00.000Z' };
+    const draft = (questionId: number, ready: boolean) => ({ match: 'draft', questionId, questionKey: 'notes',
+      optionSetHash: '', questionLabel: 'Notes', fieldKind: 'text', status: ready ? 'ready' : 'not_ready',
+      answer: ready ? { kind: 'text', text: 'Prepared ahead.' } : null, provenance: 'server-ai',
+      preparedAt: '2026-11-08T00:00:00.000Z' });
+    worker.tailorit.reply('POST /api/autofill/forms/known', { json: { jobId: TASK.jobId,
+      questions: [question, { ...question, id: 82, questionKey: 'more', label: 'More' }], answers: [],
+      drafts: [draft(81, true), { ...draft(82, false), questionKey: 'more', questionLabel: 'More' }] } });
+    await worker.deliver({ v: 1, type: 'agent/set', on: true, confirmed: true }, OPTIONS);
+    worker.timers.advance(1);
+    await vi.waitFor(() => expect(win.opened).toEqual([GREENHOUSE]));
+    await vi.waitFor(async () => expect(await fakeBrowser.storage.local.get(AGENT_RUN_KEY))
+      .toMatchObject({ [AGENT_RUN_KEY]: { tabId: AGENT_TAB } }));
+    const agentFrame = contentSender({ url: GREENHOUSE, tab: { id: AGENT_TAB, url: GREENHOUSE }, documentId: 'doc-a' });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, agentFrame);
+    const key = applicationOf(new URL(GREENHOUSE))!.applicationKey;
+    const begun = await worker.deliver({ v: 1, type: 'run/begin', applicationKey: key, trigger: 'agent', dryRun: false },
+      agentFrame) as { ok: boolean; data: { runId: string } };
+    expect(begun.ok).toBe(true);
+    const spec = { key: 'greenhouse|main|notes|none|0', baseKey: 'greenhouse|main|notes|0', platform: 'greenhouse',
+      section: { id: 'main' }, kind: 'text', label: 'Notes', labelSource: 'for', labelVisible: true, description: '',
+      required: false, options: [], optionSetHash: 'none', constraints: {}, autocomplete: [], nameAttr: '', idAttr: '',
+      ordinal: 0, domOrder: 0, visibility: 'visible', disabled: false, readOnly: false, current: { kind: 'empty' } };
+    await worker.deliver({ v: 1, type: 'plan/request', runId: begun.data.runId, pass: 0, specs: [spec],
+      planKeys: [spec.key], canaries: [], notices: [] }, agentFrame);
+    const drafts = (worker.core.calls.planFrame.at(-1)?.submittedAnswers ?? []).filter((answer) => answer.draft === true);
+    expect(drafts).toEqual([expect.objectContaining({ labelKey: 'notes', optionSetHash: 'none', sameJob: true,
+      questionId: 81, answer: { kind: 'text', text: 'Prepared ahead.' } })]);
+  });
+
   it('takes the entry’s note of its press from the agent’s tab’s top frame alone (round 3 of the v3 Phase 6/7b review, X8)',
     async () => {
       const { worker, win } = await withAgent();

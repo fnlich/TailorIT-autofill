@@ -100,8 +100,9 @@ describe('what the sidebar leaves to the extension\'s own pages (the review of 2
       worker.on('panel/openDocument', () => ({ ok: true, data: { opened: true } }));
       const { container } = await sidebar(worker);
       await click(container.querySelector('button[data-job-action="preview"]'));
+      // v1.5 X: the worker shows it over the page (in a frame of the extension's own) or in a full window.
       expect(worker.sentOfType('panel/openDocument')).toEqual([{ v: 1, type: 'panel/openDocument', tabId: 7,
-        kind: 'resume', how: 'preview' }]);
+        kind: 'resume', how: 'preview', kinds: ['resume'] }]);
       // No preview port, no bytes and no frame in the page's process.
       expect(worker.posted.some((message) => (message as { type?: unknown }).type === 'preview/request')).toBe(false);
       expect(container.querySelector('iframe, [data-resume-preview]')).toBeNull();

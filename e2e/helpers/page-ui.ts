@@ -104,19 +104,28 @@ export class PageUi {
     }
   }
 
-  /** The UI's elements that match a selector, in document order. */
+  /** v1.5 X: every closed shadow root of a child of <html>: the page UI's, and those a window of ours has of its own
+   *  (the applied window, the documents' dialogs). */
+  private async roots(): Promise<DomNode[]> {
+    const { root } = await this.cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+    const html = ((root as DomNode).children ?? []).find((node) => node.localName === 'html');
+    return (html?.children ?? []).flatMap((child) => child.shadowRoots?.filter((each) => each.shadowRootType === 'closed')
+      ?? []);
+  }
+
+  /** The UI's elements that match a selector, in document order; v1.5 X: in every closed root of ours (`roots`). */
   async elements(selector: string): Promise<UiElement[]> {
-    const root = await this.root();
-    if (root === null) return [];
-    const { nodeIds } = await this.cdp.send('DOM.querySelectorAll', { nodeId: root.nodeId, selector });
-    const byId = new Map<number, DomNode>();
-    walk(root, (node) => byId.set(node.nodeId, node));
     const found: UiElement[] = [];
-    for (const nodeId of nodeIds) {
-      const node = byId.get(nodeId);
-      if (node === undefined) continue;
-      found.push({ nodeId, localName: node.localName, attributes: attributesOf(node),
-        text: textOf(node).replace(/\s+/g, ' ').trim(), shown: await this.shown(nodeId) });
+    for (const root of await this.roots()) {
+      const { nodeIds } = await this.cdp.send('DOM.querySelectorAll', { nodeId: root.nodeId, selector });
+      const byId = new Map<number, DomNode>();
+      walk(root, (node) => byId.set(node.nodeId, node));
+      for (const nodeId of nodeIds) {
+        const node = byId.get(nodeId);
+        if (node === undefined) continue;
+        found.push({ nodeId, localName: node.localName, attributes: attributesOf(node),
+          text: textOf(node).replace(/\s+/g, ' ').trim(), shown: await this.shown(nodeId) });
+      }
     }
     return found;
   }

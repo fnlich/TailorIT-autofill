@@ -33,9 +33,12 @@ async function sendPdf(worker: FakeWorker): Promise<void> {
 
 describe('the full-window preview page (v1.4 F)', () => {
   it('reads its tab and its first document from its address, and nothing else', () => {
-    expect(previewTargetOf('?tabId=12&kind=coverLetter')).toEqual({ tabId: 12, kind: 'coverLetter' });
-    expect(previewTargetOf('?tabId=3')).toEqual({ tabId: 3, kind: 'resume' });
-    expect(previewTargetOf('?tabId=x&kind=letter')).toEqual({ tabId: null, kind: 'resume' });
+    expect(previewTargetOf('?tabId=12&kind=coverLetter')).toEqual({ tabId: 12, kind: 'coverLetter', grant: null });
+    expect(previewTargetOf('?tabId=3')).toEqual({ tabId: 3, kind: 'resume', grant: null });
+    expect(previewTargetOf('?tabId=x&kind=letter')).toEqual({ tabId: null, kind: 'resume', grant: null });
+    // v1.5 X: the page's dialog's grant, 32 hex digits, else none.
+    expect(previewTargetOf(`?tabId=3&grant=${'a1'.repeat(16)}`).grant).toBe('a1'.repeat(16));
+    expect(previewTargetOf('?tabId=3&grant=XYZ').grant).toBeNull();
   });
 
   it('shows the résumé from the worker’s checked bytes, then the letter on its own tab, one transfer each', async () => {

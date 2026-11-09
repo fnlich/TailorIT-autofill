@@ -7,6 +7,17 @@ import { InstantSchema } from './common';
 export const AUTOFILL_RESUME_KINDS = ['built', 'uploaded'] as const;
 export type AutofillResumeKind = (typeof AUTOFILL_RESUME_KINDS)[number];
 
+// v1.5 W
+/**
+ * v1.5 (additive within API 6): how a resume came to be, as TailorIT's Documents files it in its three folders.
+ * `upload`: an uploaded file (Uploaded resumes). `editor`: made in the on-page editor, imported or duplicated from one
+ * (Edited resumes). `copy`: an upload's editable copy, the AI's reading of the file (Edited resumes). `tailor`: made by
+ * tailoring a resume for a job (Tailored resumes, grouped by the day it was made, `createdAt`).
+ */
+export const AUTOFILL_RESUME_MADE_BY = ['upload', 'editor', 'copy', 'tailor'] as const;
+export type AutofillResumeMadeBy = (typeof AUTOFILL_RESUME_MADE_BY)[number];
+// end v1.5 W
+
 /**
  * What GET …/file answers: a built resume always prints as a PDF, exactly as Download does; an upload is sent as it
  * was uploaded, never converted. The extension refuses a legacy .doc before fetching it.
@@ -38,6 +49,12 @@ export const AutofillResumeItemSchema = z.object({
   fileName: z.string(),
   isDefault: z.boolean(),
   updatedAt: InstantSchema,
+  // v1.5 W
+  /** v1.5 (additive within API 6): how the resume came to be (AUTOFILL_RESUME_MADE_BY). Absent from an older server. */
+  madeBy: z.enum(AUTOFILL_RESUME_MADE_BY).optional(),
+  /** v1.5 (additive within API 6): when it was stored (a tailored resume's day). Absent from an older server. */
+  createdAt: InstantSchema.optional(),
+  // end v1.5 W
 });
 export type AutofillResumeItem = z.infer<typeof AutofillResumeItemSchema>;
 

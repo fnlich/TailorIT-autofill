@@ -58,6 +58,7 @@ export const AUTOFILL_FORM_LIMITS = {
 /**
  * Where an answer came from, as the extension's report names a fill (its PROVENANCES), plus `submitted-before` (a
  * previous submission's answer, from POST /api/autofill/forms/known) and `person` (typed or changed by the person).
+ * v1.5 (additive): `prebuilt`, a ready answer of the person's prebuilt draft (forms/known's `drafts`).
  */
 export const AUTOFILL_ANSWER_PROVENANCES = [
   'profile',
@@ -68,6 +69,9 @@ export const AUTOFILL_ANSWER_PROVENANCES = [
   'llm-answer',
   'submitted-before',
   'person',
+  // v1.5 P
+  'prebuilt',
+  // end v1.5 P
 ] as const;
 export type AutofillAnswerProvenance = (typeof AUTOFILL_ANSWER_PROVENANCES)[number];
 
@@ -342,15 +346,68 @@ export const AutofillKnownAnswerSchema = z.object({
 });
 export type AutofillKnownAnswer = z.infer<typeof AutofillKnownAnswerSchema>;
 
+// v1.5 P
+/**
+ * v1.5 (Prebuild, additive within API 6): a prebuilt draft answer's state. `ready`: TailorIT's AI (or the person's own
+ * AI, through TailorIT's MCP server) prepared it ahead of time, and it can be filled as it is. `not_ready`: it could not
+ * be prepared (Claude gave none, or the field is one the AI never answers ahead, such as a checkbox group): it is made
+ * during auto-apply or the fill, by the extension's own path, as before.
+ */
+export const AUTOFILL_DRAFT_ANSWER_STATUSES = ['ready', 'not_ready'] as const;
+export type AutofillDraftAnswerStatus = (typeof AUTOFILL_DRAFT_ANSWER_STATUSES)[number];
+
+/** Who prepared a draft answer: TailorIT's AI (`server-ai`), or the person's own AI through the MCP server (`mcp`). */
+export const AUTOFILL_DRAFT_PROVENANCES = ['server-ai', 'mcp'] as const;
+export type AutofillDraftProvenance = (typeof AUTOFILL_DRAFT_PROVENANCES)[number];
+
+/**
+ * v1.5: one answer of this person's prebuilt application draft for the job (Prebuild on TailorIT's Auto-apply page):
+ * always `match: 'draft'`, always one of `questions` (`questionId`), and only ever the person's own. A `ready` one has
+ * its `answer` (a text, the chosen options' labels, or a checkbox's state; never a file); a `not_ready` one has none
+ * (null) and is answered during the fill as before. A draft never answers a self-identification, legal, pay, consent,
+ * attention-check or file question: the profile fills those. Fill a ready one with the provenance `prebuilt`, below the
+ * profile, a saved answer and the person's own earlier answer to this job, and flag it when the field's options no
+ * longer hold it.
+ */
+export const AutofillDraftAnswerSchema = z
+  .object({
+    match: z.literal('draft'),
+    questionId: z.number().int().positive(),
+    questionKey: z.string().min(1).max(300),
+    optionSetHash: AutofillSavedOptionSetSchema.nullable(),
+    questionLabel: z.string().min(1).max(AUTOFILL_FORM_LIMITS.label),
+    fieldKind: z.enum(AUTOFILL_FIELD_KINDS),
+    status: z.enum(AUTOFILL_DRAFT_ANSWER_STATUSES),
+    answer: AutofillSubmittedAnswerValueSchema.nullable(),
+    provenance: z.enum(AUTOFILL_DRAFT_PROVENANCES),
+    preparedAt: InstantSchema,
+  })
+  .superRefine((draft, ctx) => {
+    if ((draft.status === 'ready') !== (draft.answer !== null)) {
+      ctx.addIssue({ code: 'custom', path: ['answer'], message: 'A ready answer has its answer; a not-ready one has none' });
+    }
+    if (draft.answer?.kind === 'file') {
+      ctx.addIssue({ code: 'custom', path: ['answer'], message: 'A draft never answers a file field' });
+    }
+  });
+export type AutofillDraftAnswer = z.infer<typeof AutofillDraftAnswerSchema>;
+// end v1.5 P
+
 /**
  * POST /api/autofill/forms/known's answer (200): the job found (null when none: the questions are then the posting's,
  * when TailorIT keeps any), its questions, and this person's earlier answers (none without profile:read). Empty lists
- * when TailorIT keeps nothing; never 404 for a page it has no job of.
+ * when TailorIT keeps nothing; never 404 for a page it has no job of. v1.5 (additive): `drafts`, this person's
+ * prebuilt draft answers for the job's questions (AutofillDraftAnswer; none without profile:read, and none when the
+ * person has no draft for the job). Kept apart from `answers`, so an extension older than v1.5 reads the rest as
+ * before.
  */
 export const AutofillFormsKnownResponseSchema = z.object({
   jobId: z.number().int().positive().nullable(),
   questions: z.array(AutofillKnownQuestionSchema).max(AUTOFILL_FORM_LIMITS.storedQuestions),
   answers: z.array(AutofillKnownAnswerSchema).max(AUTOFILL_FORM_LIMITS.storedQuestions + AUTOFILL_FORM_LIMITS.fields),
+  // v1.5 P
+  drafts: z.array(AutofillDraftAnswerSchema).max(AUTOFILL_FORM_LIMITS.storedQuestions).optional(),
+  // end v1.5 P
 });
 export type AutofillFormsKnownResponse = z.infer<typeof AutofillFormsKnownResponseSchema>;
 

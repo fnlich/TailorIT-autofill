@@ -1,17 +1,32 @@
 /*
  * The settings versions an install may still hold in storage.local, read only by the worker to migrate them
- * (background/settings.ts; core/types/settings.ts migrateSettings, migrateSettingsV2 to migrateSettingsV8). Apart from
+ * (background/settings.ts; core/types/settings.ts migrateSettings, migrateSettingsV2 to migrateSettingsV9). Apart from
  * ./settings.ts, which content scripts import, so these never reach the content script's
  * bundle (the behaviour review of 2026-11-06: its size budget, scripts/check-build.mjs).
  */
 import { z } from 'zod';
 import {
   PANEL_PLACES, PANEL_VIEWS, type SettingsV1, type SettingsV2, type SettingsV3, type SettingsV4, type SettingsV5,
-  type SettingsV6, type SettingsV7, type SettingsV8,
+  type SettingsV6, type SettingsV7, type SettingsV8, type SettingsV9,
 } from '../core/types/settings';
 import {
-  Consents, Interpretations, Llm as LlmV6, LlmV5 as Llm, ModesV4Schema, ModesV6Schema, ModesV8Schema,
+  Consents, Interpretations, Llm as LlmV6, LlmV5 as Llm, ModesSchema, ModesV4Schema, ModesV6Schema, ModesV8Schema,
 } from './settings';
+
+// v1.5 X
+/** Version 9's stored settings (before version 10's UI choices), read only to migrate them. */
+export const SettingsV9Schema = z.strictObject({
+  version: z.literal(9),
+  panel: z.enum(PANEL_PLACES),
+  view: z.enum(PANEL_VIEWS),
+  modes: ModesSchema,
+  preapprovedConsent: Consents,
+  llm: LlmV6,
+  telemetry: z.strictObject({ optIn: z.boolean() }),
+  offerToSaveAnswers: z.boolean(),
+  interpretations: Interpretations,
+}) satisfies z.ZodType<SettingsV9>;
+// end v1.5 X
 
 /** v1.3 B: version 8's stored settings (before version 9's "Keep my submitted answers in TailorIT"), read only to
  *  migrate them. */

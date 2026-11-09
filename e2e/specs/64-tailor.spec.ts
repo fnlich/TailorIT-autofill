@@ -2,14 +2,16 @@
  * v1.4 F end to end, against the mock's tailoring routes (the contract of TailorIT builder D's 32900ee): the side
  * panel's "Tailor Resume For This Job" starts TailorIT's tailoring for the tab's job (the lookup's job id and the
  * resume the card attaches), its step shows while it runs, and once done the card names the tailored resume; the
- * next Autofill attaches that resume (its file, under its own name). Preview opens the full-window preview page (an
- * extension page in a tab of its own) with the PDF from its own blob: address, never the job page.
+ * next Autofill attaches that resume (its file, under its own name). Preview (v1.5 X) shows it in a dialog over the job
+ * page, in a frame of the extension's own, with the PDF from that frame's own blob: address.
  */
 import { COPY } from '../../src/shared/copy';
 import { expect, test } from '../fixtures.ts';
 import { row } from '../helpers/extension.ts';
 import { GOLDEN_RESUME, mock } from '../helpers/mock.ts';
 import { fileHeld } from '../helpers/page-state.ts';
+import { PageUi } from '../helpers/page-ui.ts';
+import { dialogOn, previewFrameOn, shownDigest } from '../helpers/document-dialog.ts';
 import { example, TAILOR_LINE, TAILORED_RESUME } from '../mock-server/mock.mjs';
 
 const PAGE_FILE = 'fixtures/synthetic/resume-upload.html';
@@ -17,7 +19,7 @@ const at = (name: string) => `https://jobs.lever.co/tailorit-fixture/${name}/app
 const JOB_ID = (example('AutofillLookupResponse') as { job: { id: number } }).job.id;
 
 test.describe('tailoring on the job card (v1.4 F)', () => {
-  test('Tailor resume for this job, done, then Autofill attaches the tailored resume; Preview in a full window', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  test('Tailor resume for this job, done, then Autofill attaches the tailored resume; Preview over the page (v1.5 X)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
     // One running read past the first, so the step shows.
     await tailorit.scenario('tailor-slow', { times: 1, value: 2 });
     const url = at('tailor-resume');
@@ -42,17 +44,20 @@ test.describe('tailoring on the job card (v1.4 F)', () => {
     // The card names the tailored resume: the tab's choice now.
     await expect(panel.locator('[data-job-resume] [data-resume-label]')).toHaveText(TAILORED_RESUME.label);
 
-    // Preview: the full-window preview page, an extension page of its own, from the worker's checked bytes.
-    const opened = extContext.waitForEvent('page');
+    // Preview (v1.5 X): the dialog over the job page, the tailored resume drawn in the extension's own frame from the
+    // worker's checked bytes, under its own file name; no tab opened, and no frame the page's scripts can reach.
+    const tabs = extContext.pages().length;
     await panel.locator('[data-job-resume] button[data-job-action="preview"]').click();
-    const preview = await opened;
-    expect(preview.url()).toBe(ext.url(`preview.html?tabId=${tabId}&kind=resume`));
-    const frame = preview.locator('iframe[data-preview-frame]');
-    await expect(frame).toBeVisible();
-    expect(await frame.getAttribute('src')).toMatch(/^blob:chrome-extension:\/\//);
-    await expect(preview.locator('[role="tab"][aria-selected="true"]')).toHaveText(COPY.previewPage.tabs.resume);
-    await preview.close();
+    const ui = await PageUi.of(page);
+    await dialogOn(ui, 'preview');
+    expect((await ui.elements('[data-document-file]'))[0]?.text).toBe(TAILORED_RESUME.fileName);
+    expect((await ui.elements('[role="tab"][aria-selected="true"]'))[0]?.text).toBe(COPY.documentDialog.tabs.resume);
+    expect((await shownDigest(await previewFrameOn(page, 'resume'))).src).toMatch(/^blob:chrome-extension:\/\//);
+    expect(extContext.pages()).toHaveLength(tabs);
     expect(await page.locator('iframe').count()).toBe(0);
+    await page.keyboard.press('Escape');
+    await expect.poll(async () => (await ui.elements('dialog[data-document-dialog]')).length).toBe(0);
+    await ui.close();
 
     // The next Autofill attaches the tailored resume.
     await ext.fill(page);

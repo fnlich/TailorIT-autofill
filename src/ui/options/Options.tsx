@@ -32,7 +32,8 @@
  *   read: nothing is sent), and cleared (telemetry/clear).
  * - Saved runs: Clear (runs/clear), showing how many went.
  * - v1.4 F (PLAN decision 18): Documents, after the modes: the resume template and the cover-letter template TailorIT
- *   writes a tailored resume and its letter on, kept in the profile (ui/page/documents.tsx: panel/documents).
+ *   writes a tailored resume and its letter on, kept in the profile (ui/page/documents.tsx: panel/documents). v1.5 X:
+ *   "Ask before editing an uploaded resume" (settings version 10, ui.skipUploadEditConfirm the other way round).
  * v4 ui (the owner, 2026-11-07: "all explanation will be tooltip"): each card's and each setting's explanation is a "?"
  * (HelpTip) beside its title or its name, still describing its control; what a setting is now, the first-run
  * disclosure, the plan's sentence on what never goes to the AI and the list of what the counters count stay as text.
@@ -302,6 +303,12 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
       {/* v1.4 F (PLAN decision 18): the templates a tailored resume and its letter are written on (the profile's). */}
       <Card title={COPY.documents.title} name="documents" help={COPY.documents.help}>
         <DocumentsFields platform={platform} readKey={documentsKeyOf(auth.status)} />
+        {/* v1.5 X (PLAN decision 3): settings version 10's ui.skipUploadEditConfirm, the other way round: on here, the
+            confirm before Edit opens an uploaded resume's editable copy shows; the confirm's "Don't show this again"
+            turns it off, and this turns it back on. */}
+        <Toggle setting="ui.askBeforeUploadEdit" name={COPY.documents.askBeforeUploadEdit}
+          help={COPY.documents.askBeforeUploadEditHelp} checked={!shown.ui.skipUploadEditConfirm} disabled={saving}
+          onChange={(ask) => set({ ui: { ...shown.ui, skipUploadEditConfirm: !ask } })} />
       </Card>
 
       <AutoApply platform={platform} auth={auth} />

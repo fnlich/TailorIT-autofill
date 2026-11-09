@@ -36,4 +36,9 @@ export interface SubmittedAnswer {
   sameJob: boolean;
   /** When it was submitted (ms since the epoch): the newest wins among equals. */
   submittedAt: number;
+  /** v1.5 X (PLAN decision 4): an answer TailorIT prepared for this job's question ahead of time (a job application
+   *  draft, POST /forms/known's `match: 'draft'`, ready), not the person's own: it fills after this job's own earlier
+   *  answer and before another job's and any AI, never a sensitive, consent or attention-check question
+   *  (core/resolver/submitted.ts findDraftAnswer), with provenance prebuilt. Always this job's (`sameJob`). */
+  draft?: true;
 }

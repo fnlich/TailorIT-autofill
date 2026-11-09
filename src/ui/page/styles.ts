@@ -205,6 +205,24 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-picker__label { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .tia-picker__meta { font-size: 12px; color: var(--tia-muted); }
 .tia-picker__actions { display: flex; justify-content: flex-end; gap: 4px; }
+/* v1.5 X: the list in folders (Uploaded, Edited, Tailored by day), each folding. */
+.tia-folders { display: grid; gap: 4px; }
+.tia-folder { display: grid; gap: 4px; }
+.tia-folder__head {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-height: 32px; margin: 0; padding: 4px 6px; border: 0;
+  border-radius: var(--tia-r-control); background: transparent; color: var(--tia-fg); font: 700 13px/1.3 var(--tia-font);
+  text-align: left; cursor: pointer;
+}
+.tia-folder__head:hover:not(:disabled) { background: var(--tia-track); }
+.tia-folder__head:disabled { color: var(--tia-muted); cursor: default; }
+.tia-folder__head:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-folder__name { flex: 1 1 auto; }
+.tia-folder__count { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--tia-chip); color: var(--tia-muted);
+  font: 600 11px/18px var(--tia-font); text-align: center; }
+.tia-folder > .tia-picker__list, .tia-folder__days { padding-left: 20px; }
+.tia-folder__days { display: grid; gap: 6px; }
+.tia-folder__day { display: grid; gap: 4px; }
+.tia-folder__date { margin: 0; color: var(--tia-muted); font: 600 12px/1.4 var(--tia-font); }
 
 /* Ask a custom question (v4 ui): an outline button under Autofill that unfolds the box. */
 .tia-ask { display: grid; gap: 10px; }

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'wxt';
-import { ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CONTENT_SCRIPT_FILE } from './src/shared/hosts';
+import { ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CONTENT_SCRIPT_FILE, WEB_ACCESSIBLE_PAGE } from './src/shared/hosts';
 import { CAPTURE_PAGE, captureCommands } from './src/background/capture';
 import { CAPTURE_COPY } from './src/shared/copy';
 
@@ -51,6 +51,11 @@ export default defineConfig({
     // ftp or websocket pages).
     host_permissions: [...ALL_SITES_HOST_PERMISSIONS, `${TAILORIT_ORIGIN}/*`],
     externally_connectable: { matches: [`${TAILORIT_ORIGIN}/*`] },
+    // v1.5 X (PLAN decision 2, docs/PRIVACY.md): the preview page, embedded in the dialog over the tab's page, is the
+    // extension's one web-accessible resource, at its dynamic address alone, on every https and http page (where the
+    // sidebar may run); its sub-resources load from the extension's own origin. check-build allows exactly this.
+    web_accessible_resources: [{ resources: [WEB_ACCESSIBLE_PAGE], matches: [...ALL_SITES_HOST_PERMISSIONS],
+      use_dynamic_url: true }],
     // TailorIT's mark (apps/web/public/logo-mark.svg), rendered by scripts/icons.mjs; check-build checks each size.
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },
     action: { default_title: 'TailorIT Autofill', default_icon: { 16: 'icon/16.png', 32: 'icon/32.png' } },

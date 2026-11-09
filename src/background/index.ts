@@ -50,6 +50,7 @@ import { categoryOfSpec } from './submitted-forms';
 import { createKnownForms, type KnownForms } from './known-forms';
 import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT, type Reports } from './reports';
 import { createTailoring, editorUrlOf, OPEN_DOCUMENT_LIMIT, TAILOR_LIMIT, type Tailoring } from './tailor'; // v1.4 F
+import { createDocumentDialogs } from './document-dialog'; // v1.5 X
 import { fillsFromProfileOnly, latestReport, saysNoAi } from '../shared/report';
 import { createResumeChooser } from './resume-choice';
 import { createResumeTransfer } from './resume-transfer';
@@ -285,15 +286,37 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     profileOnlyHeld: async (tabId) => (await reports.ofTab(tabId)).some(fillsFromProfileOnly) });
   tailorings = tailoring;
   const openLimit = createRateLimit(OPEN_DOCUMENT_LIMIT.count, OPEN_DOCUMENT_LIMIT.windowMs, now);
-  /** panel/openDocument: Preview opens the full-window preview page (an extension page: never the job page) for the
-   *  tab; Edit opens TailorIT's editor for what the tab attaches (the tailored document, else the attached resume or
-   *  the person's letter), its id read here alone. */
-  async function openDocument({ tabId, kind, how }: { tabId: number; kind: 'resume' | 'coverLetter';
-    how: 'preview' | 'edit' }) {
+  // v1.5 X (PLAN decisions 2 and 3): the documents' dialogs over the tab's page, and their grants.
+  const dialogs = createDocumentDialogs({ tabs: platform.tabs, timers, now,
+    randomBytes: (count) => platform.randomBytes(count),
+    // The web-accessible preview page's address of this session (its dynamic one: what a page may load).
+    previewPage: () => platform.runtime.getURL('/preview.html') });
+  /** v1.5 X: the full-window preview page of a tab, at the extension's own address (never the dynamic one). */
+  const openPreviewTab = (tabId: number, kind: 'resume' | 'coverLetter') =>
+    platform.tabs.create(`${platform.runtime.getURL('/')}preview.html?tabId=${tabId}&kind=${kind}`);
+  /** v1.5 X: the dialog's title names the resume's file (the person's own: the list's `fileName`), never an id. */
+  const documentNames = async (tabId: number, kinds: readonly ('resume' | 'coverLetter')[]) => {
+    const resume = kinds.includes('resume') ? await attachedResumeOf(tabId) : null;
+    return resume === null || resume.fileName.trim() === '' ? {} : { resume: resume.fileName.slice(0, 255) };
+  };
+  /** panel/openDocument: Preview (v1.5 X) shows the tab's documents in the dialog over its page (the top frame's, with
+   *  a grant), else opens the full-window preview page (an extension page: a page with no frame of ours, a restricted
+   *  page, a refusal); Edit opens TailorIT's editor for what the tab attaches (the tailored document, else the
+   *  attached resume or the person's letter), its id read here alone: v1.5 X, an uploaded resume's editable copy
+   *  (`/resumes/<id>/edit`, TailorIT's route that makes or reuses it) after the confirm, over the page (`confirm:
+   *  'page'`) or the panel's own (`confirm: 'panel'`, then `confirmed`), unless the person said "Don't show this again". */
+  async function openDocument({ tabId, kind, how, kinds, confirmed, skipConfirm }: { tabId: number;
+    kind: 'resume' | 'coverLetter'; how: 'preview' | 'edit'; kinds?: ('resume' | 'coverLetter')[] | undefined;
+    confirmed?: true | undefined; skipConfirm?: boolean | undefined }) {
     const retry = openLimit.take(`${tabId}/`);
     if (retry !== null) return { ok: false as const, error: 'rate_limited' as const, retryAfterSeconds: retry };
     if (how === 'preview') {
-      await platform.tabs.create(platform.runtime.getURL(`/preview.html?tabId=${tabId}&kind=${kind}`));
+      const tabs = kinds ?? [kind];
+      if (await dialogs.preview(tabId, kind, tabs, await documentNames(tabId, tabs))) {
+        log('tailor.opened', { preview: true, letter: kind === 'coverLetter', page: true });
+        return ok({ opened: true, onPage: true as const });
+      }
+      await openPreviewTab(tabId, kind);
       log('tailor.opened', { preview: true, letter: kind === 'coverLetter' });
       return ok({ opened: true });
     }
@@ -305,11 +328,25 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     } else {
       const attached = await attachedResumeOf(tabId);
       url = attached === null ? null : editorUrlOf(origin, 'resume', attached.id, attached.kind === 'built');
+      // v1.5 X: an upload's editable copy, after the confirm (the person's "Don't show this again" kept first).
+      if (attached !== null && attached.kind !== 'built' && url !== null) {
+        if (confirmed === true && skipConfirm === true) await skipUploadConfirm();
+        if (confirmed !== true && !(await settings.get()).ui.skipUploadEditConfirm) {
+          if (await dialogs.confirmEdit(tabId, attached.id)) return ok({ opened: false, confirm: 'page' as const });
+          return ok({ opened: false, confirm: 'panel' as const });
+        }
+        log('document.edit', { confirmed: confirmed === true });
+      }
     }
     if (url === null) return ok({ opened: false });
     await platform.tabs.create(url);
     log('tailor.opened', { preview: false, letter: kind === 'coverLetter' });
     return ok({ opened: true });
+  }
+  /** v1.5 X: "Don't show this again": settings version 10's ui.skipUploadEditConfirm, on the settings as stored now. */
+  async function skipUploadConfirm() {
+    const current = await settings.get();
+    if (!current.ui.skipUploadEditConfirm) await settings.save({ ...current, ui: { skipUploadEditConfirm: true } });
   }
   // v3 Phase 3b: the side panel's "Your autofill information" and "Ask TailorIT to support this site".
   const profileEditor = createProfileEditor({ server, profiles: profileCache, connected: () => auth.connected(),
@@ -887,6 +924,35 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             : `#${message.section}`}`));
           return ok({});
         },
+        // ── v1.5 X (PLAN decisions 2 and 3): the documents' dialogs over the page, the tab's top frame alone ──
+        // The preview dialog's "Open In A New Tab": the full-window page of the sender's own tab, while a preview grant of
+        // that tab names the document (its dialog was shown), under panel/openDocument's limit.
+        'preview/openTab': async (message, from) => {
+          if (!sidebarChannel(from) || !dialogs.previewing(from.tabId, message.kind)) {
+            log('document.refused', { tab: true });
+            return refuse('bad_sender');
+          }
+          const retry = openLimit.take(`${from.tabId}/`);
+          if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+          await openPreviewTab(from.tabId, message.kind);
+          log('tailor.opened', { preview: true, letter: message.kind === 'coverLetter', fromPage: true });
+          return ok({});
+        },
+        // The upload edit confirm's Continue: its grant names the resume (once); the person's "Don't show this again"
+        // is kept, then TailorIT's /resumes/<id>/edit opens. Its id never reached the page.
+        'edit/confirmed': async (message, from) => {
+          if (!sidebarChannel(from)) return refuse('bad_sender');
+          const resumeId = dialogs.takeEdit(from.tabId, message.grant);
+          if (resumeId === null) return refuse('expired');
+          if (!(await auth.connected())) return refuse('not_connected');
+          const url = editorUrlOf(origin, 'resume', resumeId, false);
+          if (url === null) return refuse('expired');
+          if (message.skip) await skipUploadConfirm();
+          await platform.tabs.create(url);
+          log('document.edit', { confirmed: true, page: true, skip: message.skip });
+          return ok({});
+        },
+        // ── end v1.5 X ──
         // v4: the account wall a tab's top or claim frame shows now (content/runtime.ts tellWall), for PageState.wall.
         'frame/wall': async (message, from) => {
           const entry = await lockTab(from.tabId, () => setWall(session, from.tabId, from.frameId,
@@ -1108,6 +1174,14 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       resume.acceptPreview(port, previewResumeOf, () => contentReady(), previewLetterOf);
       return;
     }
+    // v1.5 X (PLAN decision 2): the preview page embedded in the page's dialog (a framed extension page): its own tab's
+    // documents alone, and only those a live grant of that tab names (document-dialog.ts).
+    if (port.name === 'preview' && channel?.kind === 'framed') {
+      const framed = channel;
+      resume.acceptPreview(port, previewResumeOf, () => contentReady(), previewLetterOf,
+        (request) => request.tabId === framed.tabId && dialogs.admits(framed.tabId, request.grant, request.kind));
+      return;
+    }
     log('port.refused');
     port.disconnect();
   });
@@ -1182,6 +1256,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   platform.tabs.onRemoved((tabId) => {
     void agent.tabRemoved(tabId).catch(() => undefined);
     signUps.end(tabId);
+    dialogs.dropTab(tabId); // v1.5 X
     void signIn.forgetTab(tabId).catch(() => undefined);
     void chains.forgetTab(tabId).catch(() => undefined);
     beginLimit.forget(`${tabId}/`);

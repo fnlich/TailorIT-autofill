@@ -109,6 +109,9 @@ export const REASON_CODES = [
   // they submitted before (provenance submitted-before); then, flagged and left empty: that earlier answer's option is
   // no longer among the field's options (the form changed since), so it is not written and no AI answers it either
   'submitted-before', 'submitted-option-gone',
+  // v1.5 X (PLAN decision 4): a field filled with the answer TailorIT prepared for this job ahead of time (provenance
+  // prebuilt), where the profile, the policy and the person's own earlier answer to this job left a gap
+  'prebuilt-answer',
   // a bug
   'internal-error',
 ] as const;
