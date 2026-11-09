@@ -71,7 +71,7 @@ const SUBMIT_WATCH_FILE = 'content-scripts/submit-watch.js';
 /** The submit watcher must stay under this. Its wrappers and its protocol (src/page/submit-watch.ts,
  *  src/dom/submit-net-protocol.ts) are about 3 KiB; the rest is the page-world bridge's own address decision
  *  (src/adapters/bridge-address.ts and its parsers), which it shares so it installs exactly where the bridge would:
- *  21,86x bytes when it was added (v5 p2-detect), the bridge's 24 KiB budget alike. */
+ *  22,024 bytes when it was added (v5 p2-detect, addfa31), the bridge's 24 KiB budget alike. */
 const SUBMIT_WATCH_BUDGET = 24 * 1024;
 /** What the watcher's bundle may never name: the extension's APIs, and every way to read a request's or an answer's
  *  body or headers (it reads a request's method and address and its answer's status, nothing else: docs/PRIVACY.md). */
