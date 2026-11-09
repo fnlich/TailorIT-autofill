@@ -82,8 +82,7 @@ export interface HandFakes {
   registrations: Map<string, Record<string, unknown>>;
   /** v3 Phase 8: every scripting.executeScript the worker made, in order. */
   injections: Array<{ target: { tabId: number; frameIds?: number[]; documentIds?: string[] }; files: string[];
-    /** v5 p2-fill: 'MAIN' for an injection in the page's own world. */
-    world?: 'MAIN' }>;
+    world?: string }>;
   /** What executeScript does with an injection: returning resolves it, a thrown error rejects it; a promise holds it
    *  until it settles. */
   injectAnswer: (injection: HandFakes['injections'][number]) => void | Promise<void>;

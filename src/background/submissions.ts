@@ -41,6 +41,8 @@
  */
 import { z } from 'zod';
 import { applicationOf, type ApplicationRef } from '../adapters';
+// v5 p2-detect
+import { confirmsApplication } from '../adapters/address';
 import { AUTOFILL_LOOKUP_URL_MAX } from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import { SUBMITTED_STATES, SUBMIT_PRESSERS, type ContentMessage, type SubmittedState } from '../messaging/schemas';
@@ -164,6 +166,26 @@ export function createSubmissions(deps: SubmissionsDeps) {
     }
   }
 
+  // ── v5 p2-detect ──
+  /** The tab's Submit armed in the frame `from` names, not yet confirmed, within CONFIRMATION_PAGE_MS, on the posting
+   *  whose page after submitting the frame's address is (adapters/address.ts confirmsApplication, by the posting's
+   *  address the arm keeps): the newest, with its application's key, else null. */
+  async function confirmedArm(from: FrameRef): Promise<{ applicationKey: string; key: string; held: Arm } | null> {
+    const prefix = `${SUBMIT_ARM_PREFIX}${from.tabId}|`;
+    let best: { applicationKey: string; key: string; held: Arm } | null = null;
+    for (const [key, value] of Object.entries(await deps.session.getMany(prefix))) {
+      const parsed = ArmSchema.safeParse(value);
+      if (!parsed.success) continue;
+      const arm = parsed.data;
+      const age = deps.now() - arm.at;
+      if (arm.frameId !== from.frameId || arm.detectedAt !== undefined || age < 0 || age > CONFIRMATION_PAGE_MS
+        || arm.url === undefined || !confirmsApplication(arm.url, from.url)) continue;
+      if (best === null || arm.at > best.held.at) best = { applicationKey: key.slice(prefix.length), key, held: arm };
+    }
+    return best;
+  }
+  // ── end v5 p2-detect ──
+
   /** POST /applied for an arm whose sign was taken; the state follows, and the arm goes once TailorIT answered for
    *  good. */
   async function record(applicationKey: string, held: Arm, from: FrameRef, docKey: string): Promise<void> {
@@ -264,8 +286,15 @@ export function createSubmissions(deps: SubmissionsDeps) {
       if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
       if (from.incognito === true) return refuse('expired');
       if (!keyFitsFrame(message.applicationKey, from.url)) return refuse('bad_message');
-      const key = armKey(from.tabId, message.applicationKey);
-      const held = await armOf(key);
+      let applicationKey = message.applicationKey;
+      let key = armKey(from.tabId, applicationKey);
+      let held = await armOf(key);
+      // ── v5 p2-detect: a page after submitting whose own address names its posting but not the whole application
+      // (JazzHR's /apply/confirm/<code>): the tab's Submit armed in this frame on that posting (confirmedArm). ──
+      if (held === null && message.evidence === 'confirmation-page') {
+        const found = await confirmedArm(from);
+        if (found !== null) ({ applicationKey, key, held } = found);
+      }
       const age = held === null ? Number.POSITIVE_INFINITY : deps.now() - held.at;
       const page = message.evidence === 'confirmation-page';
       // ── v5 p2-detect: a network sign is the arming document's own (its page-world watcher's, content/submitted.ts
@@ -283,14 +312,14 @@ export function createSubmissions(deps: SubmissionsDeps) {
       }
       // A confirmation page's own address, when it names the same application, is the posting's too.
       const ref = refOf(from.url);
-      const seenUrl = ref !== null && ref.applicationKey === message.applicationKey && held.url === undefined
+      const seenUrl = ref !== null && ref.applicationKey === applicationKey && held.url === undefined
         ? lookupAddressOf(from.url) : null;
       const taken: Arm = { ...held, detectedAt: deps.now(),
         ...(seenUrl !== null && seenUrl.length <= AUTOFILL_LOOKUP_URL_MAX ? { url: seenUrl } : {}) };
       await deps.session.set({ [key]: taken });
       log('submit.detected', { page });
       seenIn.set(from.tabId, { tabId: from.tabId, frameId: from.frameId, documentId: from.documentId, url: from.url });
-      await recordOnce(message.applicationKey, taken, from, docKeyOf(from));
+      await recordOnce(applicationKey, taken, from, docKeyOf(from));
       return ok({});
     },
 

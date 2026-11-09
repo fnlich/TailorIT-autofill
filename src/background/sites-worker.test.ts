@@ -362,3 +362,30 @@ describe('the side panel on a company page no frame of ours is on (the Phase 8 r
     expect(await page()).not.toHaveProperty('reload');
   });
 });
+
+// ── v5 p2-detect: Oracle's Candidate Experience on a company's own domain (the owner's word of 2026-11-08) ──
+describe("page/recognised on Oracle's Candidate Experience on a company's own domain (v5 p2-detect)", () => {
+  const ORACLE_OWN = 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345/apply/section/1';
+
+  it("injects the content script, then the submit watcher in the page's own world, and the frame is Oracle's", async () => {
+    await withSites(true, true);
+    expect(await recognised(ORACLE_OWN, 'platform')).toEqual({ ok: true, data: { injected: true } });
+    expect(worker.fakes.injections).toEqual([
+      { target: { tabId: 7, documentIds: ['doc-co'] }, files: ['content-script.js'] },
+      { target: { tabId: 7, documentIds: ['doc-co'] }, files: ['content-scripts/submit-watch.js'], world: 'MAIN' }]);
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, offAts(ORACLE_OWN));
+    const frame = (await fakeBrowser.storage.session.get('frames:7:0'))['frames:7:0'] as { platform: string };
+    expect(frame.platform).toBe('oracle');
+  });
+
+  it("runs no page-world script on any other company page, and records the content script's injection even when the watcher's fails", async () => {
+    await withSites(true, true);
+    expect(await recognised(COMPANY)).toEqual({ ok: true, data: { injected: true } });
+    expect(worker.fakes.injections.filter((each) => each.world === 'MAIN')).toEqual([]);
+    worker.fakes.injectAnswer = (injection) => {
+      if (injection.world === 'MAIN') throw new Error('Cannot access contents of the page.');
+    };
+    expect(await recognised(ORACLE_OWN, 'platform', { documentId: 'doc-2' })).toEqual({ ok: true, data: { injected: true } });
+  });
+});
+// ── end v5 p2-detect ──

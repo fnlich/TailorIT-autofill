@@ -39,6 +39,7 @@ import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { platformOfUrl } from '../../shared/hosts';
 import { genericAdapter } from '../generic';
+import { successSignsOf } from '../success';
 import type { Adapter, SignInForm, SignInWall, UploadState, WidgetDecl } from '../types';
 import type { AtsConfig, ConfiguredHooks, Css, PageState, QuestionRule, StateAuth, UploadRule, WidgetRule } from './types';
 
@@ -283,8 +284,8 @@ function finalityOf(config: AtsConfig, doc: Document): 'final' | 'not-final' | '
  *  is never among them, and reads as new once the page shows it. */
 export function configuredSuccessSigns(doc: Document, config: AtsConfig | undefined): Element[] {
   if (config?.success === undefined) return [];
-  const cache = newScanCache();
-  return all(doc, config.success.css).filter((sign) => isUserVisible(sign, cache));
+  // v5 p2-detect: the rule's words and companion too, where it names them (adapters/success.ts).
+  return successSignsOf(doc, [config.success]);
 }
 
 /** The hooks an AtsConfig builds (module header), without the adapter's identity: for a full adapter to spread. */

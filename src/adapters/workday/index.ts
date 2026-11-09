@@ -49,6 +49,7 @@
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
+import type { SuccessRule } from '../success';
 import type { Adapter, SignInForm, SignInWall } from '../types';
 import {
   accountErrors, dateFor, descriptionFor, fieldAlerts, isBusy, isFinalStep, labelFor, neverPressedOnSteps, nextButton, repeatables,
@@ -238,6 +239,24 @@ function neverPress(root: Element): Element[] {
 }
 
 /** The Workday adapter. */
+// ── v5 p2-detect ──
+/** Workday's page after submitting, in no snapshot (the owner, 2026-11-08: "Jobright is sample, and it works perfectly.
+ *  you can use it"): Jobright 1.25.2's rules 'myworkday-task-submitted-title', 'myworkday-task-application-submitted'
+ *  and 'myworkday-submitted' (its ats-submission-rules), read as their behaviour and written here: the candidate home's
+ *  task dialog (with its Return to home) titled Application Submitted, or saying so in its own words; or the sign-in
+ *  content's "Congratulations" heading above the words that the application was submitted
+ *  (fixtures/synthetic/success/workday.html). The finalize answered is its network sign (page/submit-watch.ts). */
+export const WORKDAY_SUCCESS: readonly SuccessRule[] = [
+  { css: '[data-automation-id="candidateHomeTaskModal"][role="dialog"]:has(button[data-automation-id="returnToHome"]) h2',
+    text: /^Application Submitted$/, from: "Jobright 1.25.2 ats-submission-rules 'myworkday-task-submitted-title'" },
+  { css: '[data-automation-id="candidateHomeTaskModal"][role="dialog"]',
+    text: /^(?:Application Submitted|Congratulations!?)\s*Your application has (?:been submitted successfully|successfully been submitted)\./,
+    from: "Jobright 1.25.2 ats-submission-rules 'myworkday-task-application-submitted'" },
+  { css: '[data-automation-id="signInContent"] h1 + div', text: /^Your application has successfully been submitted\.$/,
+    companion: { css: 'h1', text: /^Congratulations!?$/ }, from: "Jobright 1.25.2 ats-submission-rules 'myworkday-submitted'" },
+];
+// ── end v5 p2-detect ──
+
 export const workdayAdapter: Adapter = {
   id: 'workday',
   matchesUrl,

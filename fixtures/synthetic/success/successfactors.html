@@ -1,0 +1,33 @@
+<!doctype html>
+<!--
+  Synthetic (v5 p2-detect): a SuccessFactors career site's application form and its page after submitting, in no
+  snapshot, drawn from Jobright 1.25.2's reading (its successfactors-submission-network module and its rule
+  'successfactors-application-sent', read as their behaviour; src/adapters/successfactors/index.ts): form#careerform
+  holding input#career_ns = job_application, the company and the posting's id, one question, and the page's Submit,
+  a span[role=button] whose id ends _submitBtn; then #jobAppPageTitle's #success_message beside the "Jobs applied"
+  button (hidden until a test shows it, the form hidden then). Served at
+  https://career2.successfactors.eu/career?company=tailoritfixture&career_job_req_id=48659&career_ns=job_application.
+  Nothing here is any person's; nothing is posted.
+-->
+<html lang="en">
+<head><meta charset="utf-8"><title>Career Opportunities: Apply for Fixture Engineer (48659)</title>
+<style>body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; } [hidden] { display: none; }
+  label { display: block; margin-top: 12px; } span[role="button"] { display: inline-block; padding: 8px 16px; border: 1px solid #333; }</style>
+</head>
+<body>
+  <form id="careerform" name="careerform" action="/__submitted" method="post">
+    <input type="hidden" id="career_ns" name="career_ns" value="job_application">
+    <input type="hidden" id="company" name="company" value="tailoritfixture">
+    <input type="hidden" id="career_job_req_id" name="career_job_req_id" value="48659">
+    <h1>Apply for Fixture Engineer (48659)</h1>
+    <label for="fbfa_city">City</label><input type="text" id="fbfa_city" name="city">
+    <div><span role="button" tabindex="0" id="fbja_submitBtn">Apply</span></div>
+  </form>
+  <div id="jobAppPageTitle" hidden>
+    <h1 id="candidateProfileTitle">Fixture Engineer (48659)</h1>
+    <div id="success_message">Your application has been sent. Thank you!</div>
+    <button type="button" id="fbja_jobsApplied">Return to Jobs applied</button>
+    <button type="button" id="fbja_jobSearch">Return to Job Search</button>
+  </div>
+</body>
+</html>
