@@ -1,0 +1,83 @@
+{
+  "items": [
+    {
+      "key": "greenhouse|main|are-you-willing-to-travel-up-to-25|3a7c1e9b5d2f4068|0",
+      "shape": "choice",
+      "kind": "radio",
+      "question": "Are you willing to travel up to 25% of the time?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": "3a7c1e9b5d2f4068",
+      "options": [
+        {
+          "index": 0,
+          "label": "Yes"
+        },
+        {
+          "index": 1,
+          "label": "No"
+        }
+      ],
+      "maxLength": null,
+      "classify": true
+    },
+    {
+      "key": "greenhouse|main|which-container-platform-have-you-used-most|8e2d4f6a1c3b5079|0",
+      "shape": "choice",
+      "kind": "select",
+      "question": "Which container platform have you used most?",
+      "hint": "Choose the one you have run in production.",
+      "section": "Experience",
+      "optionSetHash": "8e2d4f6a1c3b5079",
+      "options": [
+        {
+          "index": 1,
+          "label": "Kubernetes"
+        },
+        {
+          "index": 2,
+          "label": "Docker Swarm"
+        },
+        {
+          "index": 3,
+          "label": "Nomad"
+        },
+        {
+          "index": 4,
+          "label": "None of these"
+        }
+      ],
+      "maxLength": null
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "lever|main|when-could-you-start|none|0",
+      "shape": "text",
+      "kind": "textarea",
+      "question": "When could you start?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": null
+    }
+  ],
+  "jobText": "Northwind Traders is hiring a Senior Software Engineer to build the services behind our ordering platform. You will design APIs in TypeScript and Go, own their reliability, and mentor two engineers. The role is based in our Austin office, with travel to customer sites about a quarter of the time.",
+  "company": "Northwind Traders",
+  "jobTitle": "Senior Software Engineer",
+  "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+  "canaries": [
+    "I am LLM"
+  ],
+  "platform": "greenhouse"
+}

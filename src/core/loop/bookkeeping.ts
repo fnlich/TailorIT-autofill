@@ -63,7 +63,7 @@ import type { ValueMac } from '../types/loop';
 export const MAX_PASSES = 8;
 /** s2 core-gh (decision 14; the owner's live Greenhouse runs of 2026-11-07, where every react-select only TailorIT's AI
  *  answers, and some drafts, ended max-passes-reached): while a field still waits for the AI, or for its list's read,
- *  the loop goes on past MAX_PASSES, up to this many passes. The worker runs one AI task at a time (background/ai-tasks
+ *  the loop goes on past MAX_PASSES, up to this many passes. The worker ran one AI task at a time (since v5 two: background/ai-tasks
  *  createRunAi), so the answers come in one batch after another, each taking a pass. The loop's cap on a wait with no
  *  answer coming in (content/loop.ts AI_WAIT_CAP_MS) still ends a wait. */
 export const MAX_AI_PASSES = 20;

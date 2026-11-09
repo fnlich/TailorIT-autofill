@@ -1102,6 +1102,10 @@ export function planFrame(asked: PlanInput): PlanOutput {
   // a field no visible label names (checkHoneypot).
   const writable = (spec: FieldSpec) => checkHoneypot(spec).ok && !spec.disabled && !spec.readOnly;
   const classify: ClassifyItem[] = [];
+  /** v5 p2-stream (one round, PlanInput.oneRound): the fields nothing classified whose classification waits for the
+   *  answer step, which asks it with their answer in one task where it can (else as a classification, as before). */
+  const oneRound = input.oneRound === true && input.settings.llm.answers && !input.dryRun;
+  const unclassified = new Map<string, ClassifyItem>();
   /** s2 core-gh (decision 14): the lazy lists nothing classified, rowed waiting-for-options so the loop reads them
    *  before they are classified. */
   const readFirst = new Set<string>();
@@ -1130,7 +1134,10 @@ export function planFrame(asked: PlanInput): PlanOutput {
       return first;
     }
     const item = classifyItemOf(spec);
-    if (item !== null) classify.push(item);
+    if (item !== null) {
+      if (oneRound) unclassified.set(spec.key, item);
+      else classify.push(item);
+    }
     return first;
   });
   if (input.sensitiveState === 'not-loaded' && resolved.some((field, at) => field.needsSensitive && writable(specs[at]!))) {
@@ -1157,7 +1164,11 @@ export function planFrame(asked: PlanInput): PlanOutput {
     noWorkAuthorization: input.sensitiveState === 'loaded' && profile.workAuthorization.length === 0 };
   const drafts: DraftItem[] = [];
   const answers: AnswerItem[] = [];
-  const classifying = new Set<string>(classify.map((item) => item.key));
+  const classifying = new Set<string>([...classify.map((item) => item.key), ...unclassified.keys()]);
+  /** v5 p2-stream (one round): the unclassified fields asked with their answer, not as a classification. */
+  const askedOnce = new Set<string>();
+  /** The classification a field gets when the AI names no category: what the answer step asks it under. */
+  const unknownClass: FieldClassification = { by: 'llm', llm: { kind: 'none', reason: 'unknown-field' } };
   const offAi = (row: FillResult): FillResult => (row.status === 'skipped' ? row
     : { ...row, status: 'flagged', reason: 'ai-off-for-posting', needsUserAction: true });
   // Cover letters (Phase G): TailorIT's AI may write one only where it may write any answer, and never in a dry run.
@@ -1235,6 +1246,19 @@ export function planFrame(asked: PlanInput): PlanOutput {
       return { spec, ...standing };
     }
     const standing = planField(spec, field, ctx);
+    // v5 p2-stream (one round): a field nothing classified asks its category with its answer, where the answer step
+    // would ask it once classified unknown; the field stands as it is until both are in.
+    if (unclassified.has(spec.key) && standing.write === undefined && standing.asked === undefined) {
+      const unknown = resolveWith(spec, unknownClass);
+      const asIfUnknown = planField(spec, unknown, ctx);
+      const once = asIfUnknown.write === undefined && asIfUnknown.asked === undefined
+        ? answerItemOf(spec, unknownClass, unknown.resolution, asIfUnknown.row, canWrite, draftContext, answerAll) : null;
+      if (once !== null) {
+        askedOnce.add(spec.key);
+        answers.push({ ...once, classify: true, platform: spec.platform });
+      }
+      return { spec, ...standing };
+    }
     const wouldAnswer = answering || (aiOff && wantedLlm.answers && !input.dryRun);
     if (!wouldAnswer || standing.write !== undefined || standing.asked !== undefined || classifying.has(spec.key)) {
       return { spec, ...standing };
@@ -1253,7 +1277,15 @@ export function planFrame(asked: PlanInput): PlanOutput {
     }
     if (aiOff) return { spec, ...standing, row: offAi(standing.row) };
     const verdict = input.ai?.answers?.get(spec.key);
-    if (verdict !== undefined) return { spec, ...planAnswer(spec, field.resolution, standing.row, verdict, ctx) };
+    // v5 p2-stream (one round): an answer asked with the question's category is used only where that category leaves
+    // the question to the AI under the scope it was asked in: never for a category the profile fills (its value, or
+    // today's own ask where it holds none), nor in another scope (asked again, as before).
+    const asked = verdict?.oneRound;
+    const usable = asked === undefined || (asked === question.scope
+      && !(classification.by === 'llm' && classification.llm.kind === 'category'));
+    if (verdict !== undefined && usable) {
+      return { spec, ...planAnswer(spec, field.resolution, standing.row, verdict, ctx) };
+    }
     answers.push(question);
     return { spec, ...standing };
   };
@@ -1264,6 +1296,9 @@ export function planFrame(asked: PlanInput): PlanOutput {
     if (one.write !== undefined) writing.set(specs[at]!.key, one.write.value);
     planned[at] = one;
   }
+  // v5 p2-stream (one round): a field nothing classified whose answer was not asked with it (a draft took it, or the
+  // answer step would not ask it) is classified first, as before.
+  for (const [key, item] of unclassified) if (!askedOnce.has(key)) classify.push(item);
   const writes = planned.filter((field) => field.write !== undefined)
     .sort((a, b) => a.spec.domOrder - b.spec.domOrder).map((field) => field.write!);
   const tiebreaks = planned.flatMap((field) => field.asked === undefined ? [] : [field.asked]);

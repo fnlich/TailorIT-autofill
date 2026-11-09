@@ -58,7 +58,7 @@ import {
   DRAFT_MIN_LENGTH, TIEBREAK_LABEL_MAX,
 } from '../confidence';
 import type { AutofillAnswerFormat } from '../../contract/tailorit';
-import type { FieldFormat, FieldKind } from '../enums';
+import type { FieldFormat, FieldKind, Platform } from '../enums';
 import { attentionHits, namesBotCheck, PERSON_ONLY_ATTENTION } from '../guard/attention';
 import { detectionViews } from '../guard/fold';
 import { llmMaySeeLabel } from '../guard/honeypot';
@@ -123,6 +123,10 @@ export interface AnswerItem {
   maxLength: number | null;
   /** The layout a text's answer must have (answerFormatOf); null for any short text, and for a choice. */
   format: AutofillAnswerFormat | null;
+  /** v5 p2-stream (one round): a question nothing classified asks its category too, in the same task, on its frame's
+   *  platform (frame.ts): its answer is used only as the category then allows (planFrame). */
+  classify?: true;
+  platform?: Platform;
 }
 
 /** Why an answer is not written (the worker maps TailorIT's reasons to these; the frame adds the checks of its own). */
@@ -131,11 +135,16 @@ export type AnswerDiscard = Extract<ReasonCode, 'llm-no-answer' | 'llm-invalid-o
 
 /** TailorIT's answer for one field, as the worker read it: a chosen option (its index, the hash of its label as sent),
  *  a text, or why there is none. */
-export type AnswerVerdict =
+export type AnswerVerdict = (
   | { key: FieldKey; kind: 'choice'; optionSetHash: string; index: number; labelHash: string; basis: AnswerBasis;
       taskId: string }
   | { key: FieldKey; kind: 'text'; text: string; basis: AnswerBasis; taskId: string }
-  | { key: FieldKey; kind: 'none'; why: AnswerDiscard };
+  | { key: FieldKey; kind: 'none'; why: AnswerDiscard }
+) & {
+  /** v5 p2-stream (one round): the answer came with its question's category, asked before any classification under
+   *  this scope; planFrame uses it only where the category leaves the question to the AI under the same scope. */
+  oneRound?: AnswerScope;
+};
 
 /** The kinds each shape answers (the contract's AUTOFILL_ANSWER_KINDS). */
 const CHOICE_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['select', 'radio', 'combobox']);

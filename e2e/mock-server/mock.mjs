@@ -424,6 +424,9 @@ const SAVED_ANSWER_LIMIT = 500;
 /** How long a slow scenario waits when the test names no delay. @type {Partial<Record<ScenarioName, number>>} */
 const DEFAULT_DELAYS = { 'lookup-slow': 30_000, 'resume-slow': 8_000, 'ai-slow': 4_000,
   'letter-generating-then-ready': 4_000, 'ai-paced': 1500 };
+/** v5 p2-stream (one round): the categories whose answer TailorIT never keeps under the standard scope. */
+const NEVER_ANSWERED_STANDARD = new Set(['sensitive_eeo', 'sensitive_legal', 'sensitive_compensation', 'consent',
+  'attention_check']);
 /** v5 p2-stream: ai-paced's wait between two items when the test names none. */
 const PACED_ITEM_MS = 400;
 /** v5 p2-stream: how long an AI route waits for its task before it answers 202 (the contract's AUTOFILL_AI_WAIT_MS). */
@@ -907,22 +910,35 @@ export function createMock() {
     const amount = take('ai-answer-amount');
     const answering = amount ?? take('ai-answer');
     const basis = typeof answering?.value === 'string' ? answering.value : 'guess';
+    // v5 p2-stream (one round): an item that asks its category gets it as a classify task would (its question as the
+    // label, the classify scenarios applying), and, as TailorIT, no answer kept for a needs-user category.
+    const asking = items.filter((item) => item.classify === true);
+    const classes = new Map(asking.length === 0 ? [] : classifyResult(asking.map((item) => ({ key: item.key,
+      label: String(item.question ?? '') }))).items.map((entry) => [entry.key, { category: entry.category,
+      reason: entry.reason }]));
+    const answers = items.map((item) => {
+      const optionSetHash = item.shape === 'choice' ? item.optionSetHash : null;
+      const none = { key: item.key, optionSetHash, index: null, text: null, basis: null, reason: 'no_answer' };
+      if (answering === null) return none;
+      if (item.shape === 'choice') {
+        const first = Array.isArray(item.options) ? item.options[0] : undefined;
+        return first === undefined ? none : { ...none, index: first.index, basis, reason: 'answered' };
+      }
+      const cap = typeof item.maxLength === 'number' ? item.maxLength : 500;
+      const format = typeof item.format === 'string' ? item.format : null;
+      const said = amount !== null ? AMOUNT_ANSWER : format !== null ? FORMAT_ANSWERS[format] ?? CLEAN_ANSWER
+        : CLEAN_ANSWER;
+      const text = format === null ? said : answerInFormat(said, format);
+      if (text === null) return { ...none, reason: 'invalid' };
+      return { ...none, text: text.slice(0, cap), basis, reason: 'answered' };
+    });
     return {
-      answers: items.map((item) => {
-        const optionSetHash = item.shape === 'choice' ? item.optionSetHash : null;
-        const none = { key: item.key, optionSetHash, index: null, text: null, basis: null, reason: 'no_answer' };
-        if (answering === null) return none;
-        if (item.shape === 'choice') {
-          const first = Array.isArray(item.options) ? item.options[0] : undefined;
-          return first === undefined ? none : { ...none, index: first.index, basis, reason: 'answered' };
-        }
-        const cap = typeof item.maxLength === 'number' ? item.maxLength : 500;
-        const format = typeof item.format === 'string' ? item.format : null;
-        const said = amount !== null ? AMOUNT_ANSWER : format !== null ? FORMAT_ANSWERS[format] ?? CLEAN_ANSWER
-          : CLEAN_ANSWER;
-        const text = format === null ? said : answerInFormat(said, format);
-        if (text === null) return { ...none, reason: 'invalid' };
-        return { ...none, text: text.slice(0, cap), basis, reason: 'answered' };
+      answers: answers.map((answer) => {
+        const classification = classes.get(answer.key);
+        if (classification === undefined) return answer;
+        const never = NEVER_ANSWERED_STANDARD.has(String(classification.category));
+        return { ...(never ? { key: answer.key, optionSetHash: answer.optionSetHash, index: null, text: null, basis: null,
+          reason: 'sensitive' } : answer), classification };
       }),
     };
   }

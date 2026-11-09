@@ -137,17 +137,19 @@ describe('plan/request and plan/poll with the LLM', () => {
     expect(answer.data).toMatchObject({ writes: [], results: [{ key: spec.key, status: 'flagged', reason: 'llm-pick-rejected' }] });
   });
 
-  it('keeps one task in flight per run: the next batch goes once the first is done', async () => {
+  // v5 p2-stream (two at once): two tasks per run fly together, as TailorIT runs two of an account at once.
+  it('keeps two tasks in flight per run: the third batch goes once one is done', async () => {
     const worker = await startTestWorker({ token: tokenRecord(), core: askingCore() });
     slowPick(worker, null, 2);
     const runId = await beginRun(worker);
     await request(worker, runId, [sourceSpec(1)]);
     await request(worker, runId, [sourceSpec(2)]);
-    await vi.waitFor(() => expect(worker.tailorit.count(PICK)).toBe(1));
-    await advance(worker, AUTOFILL_AI_POLL_MS);
-    expect(worker.tailorit.count(PICK)).toBe(1);
-    await advance(worker, 3 * AUTOFILL_AI_POLL_MS);
+    await request(worker, runId, [sourceSpec(3)]);
     await vi.waitFor(() => expect(worker.tailorit.count(PICK)).toBe(2));
+    await advance(worker, AUTOFILL_AI_POLL_MS);
+    expect(worker.tailorit.count(PICK)).toBe(2);
+    await advance(worker, 3 * AUTOFILL_AI_POLL_MS);
+    await vi.waitFor(() => expect(worker.tailorit.count(PICK)).toBe(3));
   });
 
   it('after a worker restart, answers expired, and the field asked again is read by its task id', async () => {

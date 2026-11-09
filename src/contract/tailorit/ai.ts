@@ -595,12 +595,25 @@ export const AutofillAnswerItemSchema = z.object({
    * for any short text, as an extension that never sends it gets. Null for a choice.
    */
   format: z.enum(AUTOFILL_ANSWER_FORMATS).nullable().optional(),
+  /**
+   * v5 (one round, additive within API 6): true asks for the question's category too (AUTOFILL_FIELD_CATEGORIES, as
+   * POST …/ai/classify answers it) in the same task, so a question no rule classified is classified and answered at
+   * once; its answer then carries `classification`. Needs the request's `platform`. Absent: answered as before.
+   */
+  classify: z.literal(true).optional(),
 });
 export type AutofillAnswerItem = z.infer<typeof AutofillAnswerItemSchema>;
 
 /** A choice names its kind, its option set and 2 to 30 options, each index once, and no maxLength or format; a text
  *  names its kind (a date field with a date format only) and neither an option set nor options. */
-function checkAnswerRequest(request: { items: readonly AutofillAnswerItem[] }, ctx: z.RefinementCtx): void {
+function checkAnswerRequest(
+  request: { items: readonly AutofillAnswerItem[]; platform?: string | undefined },
+  ctx: z.RefinementCtx,
+): void {
+  // v5 (one round): a classification is asked on the request's platform.
+  if (request.platform === undefined && request.items.some((item) => item.classify === true)) {
+    ctx.addIssue({ code: 'custom', path: ['platform'], message: 'An item that asks its category needs the platform' });
+  }
   request.items.forEach((item, at) => {
     const issue = (field: string, message: string) =>
       ctx.addIssue({ code: 'custom', path: ['items', at, field], message });
@@ -679,6 +692,8 @@ export const AutofillAnswerRequestSchema = z
       .array(z.string().min(2).max(AUTOFILL_AI_LIMITS.answer.canary))
       .max(AUTOFILL_AI_LIMITS.answer.canaries)
       .default([]),
+    /** v5 (one round): the form's ATS, as a classify request names it; needed when an item asks `classify`. */
+    platform: z.enum(ATS_KINDS).optional(),
   })
   .superRefine(checkAnswerRequest);
 export type AutofillAnswerRequest = z.infer<typeof AutofillAnswerRequestSchema>;
@@ -724,6 +739,7 @@ interface AnswerEntry {
   text: string | null;
   basis: AutofillAnswerBasis | null;
   reason: AutofillAnswerReason;
+  classification?: { category: string | null; reason: string } | undefined;
 }
 
 /** An answered item carries its basis and one value of its own shape (a choice an index, a text a text); any other
@@ -737,6 +753,11 @@ function checkAnswer(answer: AnswerEntry, ctx: z.RefinementCtx): void {
     ctx.addIssue({ code: 'custom', path: [], message: 'A choice answers an index and a text answers a text' });
   } else if (answer.reason === 'answered' ? !holds : !empty) {
     ctx.addIssue({ code: 'custom', path: [], message: 'Only an answered item carries a value and its basis' });
+  }
+  // v5 (one round): a classification names a category exactly when it is `classified`.
+  const classification = answer.classification;
+  if (classification !== undefined && (classification.category !== null) !== (classification.reason === 'classified')) {
+    ctx.addIssue({ code: 'custom', path: ['classification'], message: 'Only a classified item names a category' });
   }
 }
 
@@ -752,6 +773,21 @@ export const AutofillAnswerSchema = z
     /** Null unless answered. */
     basis: z.enum(AUTOFILL_ANSWER_BASES).nullable(),
     reason: z.enum(AUTOFILL_ANSWER_REASONS),
+    /**
+     * v5 (one round): present exactly for an item asked with `classify`: its category, as a classification answers it
+     * (`classified` with a category from AUTOFILL_FIELD_CATEGORIES, `unknown` for none, `invalid` for an answer not in
+     * the list or a reply not trusted, `sensitive` for an item TailorIT did not ask). The answer never depends on it;
+     * but under the `standard` scope an item classified into a needs-user category but `free_text_question`
+     * (self-identification, legal, pay, consent, an attention check), and in any scope one classified `sensitive_eeo`
+     * or `consent`, is answered `sensitive`, with no value. The extension uses the category first: a category its
+     * profile fills takes the profile's value, never this answer.
+     */
+    classification: z
+      .object({
+        category: z.enum(AUTOFILL_FIELD_CATEGORIES).nullable(),
+        reason: z.enum(AUTOFILL_CLASSIFY_REASONS),
+      })
+      .optional(),
   })
   .superRefine(checkAnswer);
 export type AutofillAnswer = z.infer<typeof AutofillAnswerSchema>;

@@ -68,6 +68,11 @@ export interface PlanInput {
   /** Edit with AI: the one field whose text the person asked TailorIT to rewrite (its draft, with what it holds now).
    *  Only that key is planned. */
   rewrite?: FieldKey;
+  /** v5 p2-stream (one round): a question nothing classified, which the AI would answer once classified unknown, asks
+   *  its category and its answer in one task (AnswerItem.classify) instead of a classification first; the category,
+   *  once in, decides as before, and the answer is used only where it then leaves the question to the AI. Absent: a
+   *  classification first, as before (and always where the answer would not be used: AI answers off, a dry run). */
+  oneRound?: boolean;
   /** The run's cover letter as the worker knows it (Phase G; memory only). Absent: not asked yet, so a cover-letter
    *  upload the plan could fill waits for it (PlanOutput.coverLetter). Ready: the plan attaches it (withCoverLetter). */
   coverLetter?: CoverLetterState;
