@@ -57,9 +57,16 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  brings (never one asked during a wait), the person shown how many, and answering the site's own file picker with
  *  the chosen resume, only to that button's own file input or the picker its press opens; either visible to the site's
  *  scripts; rich-text boxes typed with the browser's own editing; Open Application; the AI's answers streamed back;
- *  the Phase 2 review reworded the dialogs and the picker, still 11, as it had reached no one). Raise it whenever the
- *  disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 11;
+ *  the Phase 2 review reworded the dialogs and the picker, still 11, as it had reached no one); 12, v1.3 and v1.4
+ *  (2026-11-09: once a site confirms an application the person submitted, its questions, and its answers unless "Keep
+ *  my submitted answers in TailorIT" is off, sent to their TailorIT, the questions kept for everyone on it and the
+ *  answers for them alone, never given to the AI; the auto-apply agent's submitted jobs too; the job's known questions
+ *  and earlier answers asked for as a page loads and at a fill, the open questions named by their wording and a
+ *  fingerprint of their options; a job TailorIT lacks added for everyone, on some sites with the posting's text; never a
+ *  password, a human check, a hidden field or a file's content; the known open questions asked of the AI together at a
+ *  fill's start; tailoring a resume and a cover letter on the person's click, on their templates; the previews in a
+ *  full window of the extension's own, Edit in TailorIT). Raise it whenever the disclosure's substance changes. */
+export const DISCLOSURE_VERSION = 12;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */
