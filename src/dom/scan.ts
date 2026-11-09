@@ -38,7 +38,8 @@
  * - v5 p2-fill: a rich-text box, an editing host by the HTML standard (kinds.ts isEditingHost: contenteditable "",
  *   "true" or "plaintext-only", editable now, its parent not), is a text field of its own ('textarea', or 'text' where
  *   it says aria-multiline="false"), labelled and judged visible by the same rules, its text what it shows
- *   (values.ts editableText); one a person cannot see is a honeypot, only counted; an editable element inside another
+ *   (values.ts editableVisibleText, v5 p2-fill review: only the text a person can see of it, by visibleText's rules;
+ *   innerText is our own write's read-back alone); one a person cannot see is a honeypot, only counted; an editable element inside another
  *   box is that box's content. Nothing but the standard attribute is read.
  * - v5 p2-fill: a résumé control its adapter declares to open the site's own file picker (Adapter.uploadPickers: a
  *   button with no file input in the form) is a 'file' field of its own while a person can see it, its target marked

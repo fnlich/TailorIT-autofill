@@ -265,7 +265,8 @@ export function aiEditableField(spec: FieldSpec, classification: FieldClassifica
 }
 
 /** What a box holds now, quoted line by line (asUntrusted folds a line's spaces, so lines are cleaned one at a time),
- *  at most DRAFT_CURRENT_MAX; '' when nothing is left. */
+ *  at most DRAFT_CURRENT_MAX; '' when nothing is left. A rich-text box's `current` is the visibleText walker's reading
+ *  of it (dom/values.ts editableVisibleText: v5 p2-fill review, security 3), so no text a person cannot see is here. */
 function currentOf(spec: FieldSpec): UntrustedText {
   if (spec.current.kind !== 'text') return '' as UntrustedText;
   const lines = spec.current.text.split(/\r\n?|\n/).map((line) => asUntrusted(line as VisibleText, DRAFT_CURRENT_MAX));

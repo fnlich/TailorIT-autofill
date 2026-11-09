@@ -65,6 +65,11 @@ function asShown(text: string): string {
  * and its text unchanged) ignored the write (needs-your-click); one whose editor took an insert but shows nothing yet
  * (Lexical draws on a microtask) reads as written and not verified, and the pass's verification after its settle has
  * the last word.
+ * v5 p2-fill review (L6): an editor that takes its selection from the document's selectionchange (Lexical, and others
+ * that sync it on a task) would insert at the caret it last saw, not over the box's content, were the insert offered at
+ * once: so a run selects the box first (selectEditable) and waits until the editor can have seen that selection (past
+ * the document's next selectionchange and one task more, at most SELECTION_SEEN_MS); fillEditable then keeps a
+ * selection that is the box's whole content already, and makes it only where it is not.
  */
 export function fillEditable(el: HTMLElement, text: string, rule: ReadBackRule): FillOutcome {
   const before = editableText(el);
@@ -76,10 +81,8 @@ export function fillEditable(el: HTMLElement, text: string, rule: ReadBackRule):
   el.focus({ preventScroll: true });
   const tree = el.getRootNode() as Document | ShadowRoot;
   if (tree.activeElement !== el) return refused('needs-your-click');
-  const range = doc.createRange();
-  range.selectNodeContents(el);
-  selection.removeAllRanges();
-  selection.addRange(range);
+  // v5 p2-fill review (L6): selected already by selectEditable, its editor past the change: kept as it is.
+  if (!selectsAll(selection, el)) selectAll(selection, el);
   let taken = false;
   /** One insert: offered to the box's editor first, else the browser's own command. Answers whether it was made. */
   const insert = (inputType: 'insertText' | 'insertParagraph' | 'deleteContentBackward', data: string | null): boolean => {
@@ -108,5 +111,64 @@ export function fillEditable(el: HTMLElement, text: string, rule: ReadBackRule):
   if (sameText(after, text, rule)) return done(true, 'ok');
   if (after === before) return taken ? mismatch('verify-mismatch') : refused('needs-your-click');
   return mismatch(after === '' ? 'value-rejected-by-site' : 'verify-mismatch');
+}
+
+// v5 p2-fill review (L6)
+/** The longest the writer waits for a rich-text box's editor to see its selection. */
+export const SELECTION_SEEN_MS = 100;
+
+/** Selects the whole content of `el`. */
+function selectAll(selection: Selection, el: HTMLElement): void {
+  const range = el.ownerDocument.createRange();
+  range.selectNodeContents(el);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/** Whether the selection is the whole content of `el`, as selectAll makes it. */
+function selectsAll(selection: Selection, el: HTMLElement): boolean {
+  if (selection.rangeCount !== 1) return false;
+  const range = selection.getRangeAt(0);
+  const whole = el.ownerDocument.createRange();
+  whole.selectNodeContents(el);
+  try {
+    return range.compareBoundaryPoints(whole.START_TO_START, whole) === 0
+      && range.compareBoundaryPoints(whole.END_TO_END, whole) === 0;
+  } catch {
+    // Another tree than the box's (a shadow root's selection, as the document reports it).
+    return false;
+  }
+}
+
+/**
+ * Selects the whole content of a rich-text box, as fillEditable would (the box takes the focus, no scroll), and waits
+ * until its editor can have seen that selection: past the document's next selectionchange and one task more (an editor
+ * that syncs on a microtask or a task, as Lexical does), at most `capMs` (SELECTION_SEEN_MS), and no longer than the
+ * run. Nothing is inserted; a box that does not take the focus is left as it is (fillEditable then refuses it).
+ */
+export async function selectEditable(el: HTMLElement, signal?: AbortSignal, capMs = SELECTION_SEEN_MS): Promise<void> {
+  const view = windowOf(el);
+  const doc = el.ownerDocument;
+  const selection = view.getSelection();
+  if (selection === null || signal?.aborted === true) return;
+  el.focus({ preventScroll: true });
+  if ((el.getRootNode() as Document | ShadowRoot).activeElement !== el) return;
+  await new Promise<void>((resolve) => {
+    let timer = 0;
+    const finish = (): void => {
+      doc.removeEventListener('selectionchange', seen);
+      signal?.removeEventListener('abort', finish);
+      view.clearTimeout(timer);
+      resolve();
+    };
+    const seen = (): void => {
+      view.clearTimeout(timer);
+      timer = view.setTimeout(finish, 0);
+    };
+    doc.addEventListener('selectionchange', seen);
+    signal?.addEventListener('abort', finish, { once: true });
+    timer = view.setTimeout(finish, capMs);
+    selectAll(selection, el);
+  });
 }
 // ── end v5 p2-fill ──

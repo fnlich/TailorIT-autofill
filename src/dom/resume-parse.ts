@@ -9,8 +9,17 @@
  *   MutationObserver could hear, so the form's text boxes, rich-text boxes, lists, radios and boxes are read every
  *   PARSE_POLL_MS (in this frame's memory only, compared, never kept, sent or logged), with the page's busy signs
  *   (dom/settle.ts busySigns: aria-busy, a progress bar, the adapter's own: iCIMS's "Parsing resume");
- * - 'none': nothing changed and nothing showed busy within PARSE_START_MS (a page that parses nothing this time);
- * - 'parsed': the values changed or a busy sign showed, and then PARSE_QUIET_MS passed with no change and no busy sign;
+ * - 'none': nothing changed and nothing showed busy within PARSE_IDLE_MS (a page that parses nothing this time);
+ * - 'parsed': the values changed or a busy sign showed, and then a quiet window passed with no change and no busy sign:
+ *   PARSE_QUIET_MS once a busy sign showed (the page says when it works), PARSE_SETTLE_MS where none did;
+ * - v5 p2-fill review (L1), what was chosen: a page whose parse shows no sign (Rippling's adapter declares none, and
+ *   a configured adapter's isBusy cannot say whether it would) fills the form when its server has read the file,
+ *   seconds after the upload. So the values must stay as they are for PARSE_IDLE_MS (8 s, in place of the 3 s before)
+ *   before the page is taken to parse nothing, and for PARSE_SETTLE_MS (1.5 s) after a change before the parse is taken
+ *   to be over (a parse may fill the form in batches); a busy sign (iCIMS's "Parsing resume") ends the idle window as
+ *   soon as it shows, so the longer window costs only a page that parses nothing (once a run, on a parsing site).
+ *   PARSE_CAP_MS (20 s) bounds it all. The pass then reads the form again before its other writes (content/pass.ts
+ *   WriteResult.reread, content/loop.ts), so what the parse put in is reconciled and an overwrite of it flagged;
  * - 'timed-out': still changing or busy at PARSE_CAP_MS (the pass goes on: its own settle and verification follow);
  * - 'aborted': the run ended (the document going away, as iCIMS's reload takes it, ends it too).
  * Bounded at every step; nothing here writes, clicks or focuses.
@@ -23,10 +32,14 @@ import { textOfControl } from './values';
 
 /** How often the form's values are read while a parse may be under way. */
 export const PARSE_POLL_MS = 100;
-/** How long a parse has to show (a value changed, a busy sign) before the page is taken to parse nothing. */
-export const PARSE_START_MS = 3_000;
-/** How long the form stays as it is, with no busy sign, before a parse is taken to be over. */
+/** How long a parse has to show (a value changed, a busy sign) before the page is taken to parse nothing (v5 p2-fill
+ *  review, L1: 8 s, was 3 s; see the header). */
+export const PARSE_IDLE_MS = 8_000;
+/** How long the form stays as it is, with no busy sign, before a parse a busy sign showed is taken to be over. */
 export const PARSE_QUIET_MS = 800;
+/** v5 p2-fill review (L1): how long the form's values stay as they are after a change, where no busy sign showed,
+ *  before the parse is taken to be over. */
+export const PARSE_SETTLE_MS = 1_500;
 /** The longest a parse is waited for. */
 export const PARSE_CAP_MS = 20_000;
 
@@ -66,8 +79,7 @@ function valuesOf(root: Element): string {
 export async function awaitResumeParse(root: () => Element, adapter: Adapter | null, signal: AbortSignal,
   timings: ParseTimings = {}): Promise<{ outcome: ParseOutcome; ms: number; changed: boolean }> {
   const pollMs = timings.pollMs ?? PARSE_POLL_MS;
-  const startMs = timings.startMs ?? PARSE_START_MS;
-  const quietMs = timings.quietMs ?? PARSE_QUIET_MS;
+  const startMs = timings.startMs ?? PARSE_IDLE_MS;
   const capMs = timings.capMs ?? PARSE_CAP_MS;
   const started = monotonicNow();
   let last = valuesOf(root());
@@ -91,6 +103,8 @@ export async function awaitResumeParse(root: () => Element, adapter: Adapter | n
     }
     const ms = now - started;
     if (!changed && !busySeen && ms >= startMs) return { outcome: 'none', ms, changed };
+    // v5 p2-fill review (L1): the quiet window is the shorter one only where the page showed it was busy.
+    const quietMs = timings.quietMs ?? (busySeen ? PARSE_QUIET_MS : PARSE_SETTLE_MS);
     if ((changed || busySeen) && !busy && now - quietSince >= quietMs) return { outcome: 'parsed', ms, changed };
     if (ms >= capMs) return { outcome: 'timed-out', ms, changed };
     if ((await deadline(pollMs, signal)) === 'aborted') return { outcome: 'aborted', ms: monotonicNow() - started, changed };

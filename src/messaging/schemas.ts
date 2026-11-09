@@ -432,7 +432,10 @@ const contentMessages = [
     waits: z.enum(WALL_WAITS).optional(),
     // v5 p2-fill: a posting page with no form whose adapter offers its own Apply now (Adapter.entryControl, from its
     // fixtures): the panel's main button reads "Open Application" there and presses it (content/runtime.ts atWall).
-    entry: z.literal(true).optional() }),
+    entry: z.literal(true).optional(),
+    // v5 p2-fill review (L5): the person's last Open Application could not press that Apply (none shows now, none was
+    // drawn in time, or what shows instead is the person's): the panel says why until the next press.
+    entryRefused: z.literal(true).optional() }),
   /** v3 Phase 8: the sentinel recognised its top frame (src/sentinel): why, from a closed list. The worker checks the
    *  frame's address again itself (Chrome's, never a payload's), limits the asks per tab and injects the content script
    *  into that one document. The only message a company's own page sends before then. */
@@ -533,6 +536,9 @@ export const PageStateSchema = z.strictObject({
   // whose adapter offers its own Apply (frame/wall's `entry`): the panel's main button reads "Open Application", and
   // its panel/fill presses that Apply, then fills the form it brings.
   entry: z.literal(true).optional(),
+  // v5 p2-fill review (L5): the last Open Application of the tab's application frame could not press the posting's
+  // Apply (frame/wall's `entryRefused`): the panel says why.
+  entryRefused: z.literal(true).optional(),
 });
 export type PageState = z.infer<typeof PageStateSchema>;
 

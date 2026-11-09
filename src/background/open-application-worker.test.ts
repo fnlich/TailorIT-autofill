@@ -51,6 +51,22 @@ describe('Open Application on a posting (v5 p2-fill)', () => {
     expect((await pageOf(test))?.entry).toBeUndefined();
   });
 
+  // v5 p2-fill review (L5): the frame's refused press reaches the panel, never beside a wall or a choice.
+  it('PageState.entryRefused follows frame/wall {entryRefused}, cleared by the next word and never beside a wall', async () => {
+    const test = await worker();
+    await test.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false }, at(POSTING, 'doc-posting'));
+    await test.deliver({ v: 1, type: 'frame/wall', wall: null, entry: true }, at(POSTING, 'doc-posting'));
+    expect((await pageOf(test))?.entryRefused).toBeUndefined();
+    await test.deliver({ v: 1, type: 'frame/wall', wall: null, entryRefused: true }, at(POSTING, 'doc-posting'));
+    expect(await pageOf(test)).toMatchObject({ support: 'no-form', entryRefused: true });
+    await test.deliver({ v: 1, type: 'frame/wall', wall: 'sign-in', entryRefused: true }, at(POSTING, 'doc-posting'));
+    expect((await pageOf(test))?.entryRefused).toBeUndefined();
+    await test.deliver({ v: 1, type: 'frame/wall', wall: null, entryRefused: true }, at(POSTING, 'doc-posting'));
+    expect((await pageOf(test))?.entryRefused).toBe(true);
+    await test.deliver({ v: 1, type: 'frame/wall', wall: null, entry: true }, at(POSTING, 'doc-posting'));
+    expect((await pageOf(test))?.entryRefused).toBeUndefined();
+  });
+
   it('is never kept beside a wall or a choice, nor from a subframe', async () => {
     const test = await worker();
     await test.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false }, at(POSTING, 'doc-posting'));

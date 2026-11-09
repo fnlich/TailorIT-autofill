@@ -5,10 +5,13 @@
  * - a résumé control its adapter declares to open the page's own picker (Adapter.uploadPickers; a synthetic page that
  *   makes its file input at the press, as Dropzone does) gets the résumé through the picker armed for that press, with
  *   the page patches installed as the worker's injection installs them; the page's alert on taking the file is held,
- *   counted; with no patches in the frame nothing is pressed and the row asks the person;
+ *   counted, and the count shown on the page (v5 p2-fill review, security 4); with no patches in the frame nothing is
+ *   pressed and the row asks the person;
  * - Rippling's application (fixtures/rippling/qu-careers-form.html, its résumé help "The résumé will be parsed to fill
  *   in the application details": quirks.resumeParse) gets its résumé first and its parse waited for, so the profile's
- *   answers are written over what the page's parse put in, never under it.
+ *   answers are written over what the page's parse put in, never under it; v5 p2-fill review (L1): a parse slower than
+ *   3 s too (Rippling shows no busy sign), and the form read again after it, so the parsed first name we overwrite is
+ *   a flagged prefill-conflict row.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import ripplingHtml from '../../fixtures/rippling/qu-careers-form.html?raw';
@@ -20,6 +23,7 @@ import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { deadline } from '../dom/time';
 import { editableText } from '../dom/values';
 import { installPatches } from '../page/patches';
+import { PAGE_COPY } from '../shared/copy';
 import { createFakeWorker, fakePdf, GOLDEN_RESUME, goldenProfile, testVocab } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
@@ -48,7 +52,7 @@ async function run(doc: Document, adapters: Adapter[], href = HREF) {
   runtimes.push(runtime);
   await runtime.fill({});
   const report = fake.reports.at(-1) ?? fake.liveReports.at(-1);
-  return { rows: (report?.fields ?? []) as FillResult[], fake };
+  return { rows: (report?.fields ?? []) as FillResult[], fake, runtime };
 }
 
 describe('a rich-text box in a run', () => {
@@ -62,6 +66,35 @@ describe('a rich-text box in a run', () => {
     const first = rows.find((row) => row.category === 'identity.firstName');
     expect(first).toMatchObject({ kind: 'text', wrote: true, verification: 'verified' });
     expect(editableText(fixture.doc.getElementById('first')!)).toBe(goldenProfile().identity.firstName);
+  }, 60_000);
+
+  // v5 p2-fill review (L6): an editor whose selection follows the document's selectionchange on a later task.
+  it('lets an editor that syncs its selection on selectionchange see it before the insert', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <span id="fl">First name</span>
+      <div id="first" contenteditable="true" role="textbox" aria-multiline="false" aria-labelledby="fl"
+        style="display:block;min-height:24px;border:1px solid #888;padding:4px">Old</div>
+      <label for="e">Email</label><input id="e" type="email" style="border:1px solid #888"></form></body>`);
+    const box = fixture.doc.getElementById('first')!;
+    let all = false;
+    fixture.doc.addEventListener('selectionchange', () => {
+      const selection = fixture.view.getSelection();
+      const now = selection !== null && selection.rangeCount === 1 && selection.getRangeAt(0).toString() === box.textContent;
+      fixture.view.setTimeout(() => {
+        all = now;
+      }, 0);
+    });
+    box.addEventListener('beforeinput', (event) => {
+      event.preventDefault();
+      if ((event as InputEvent).inputType !== 'insertText') return;
+      const data = (event as InputEvent).data ?? '';
+      box.textContent = all ? data : `${box.textContent ?? ''}${data}`;
+      all = false;
+    });
+    const { rows } = await run(fixture.doc, [genericAdapter]);
+    expect(editableText(box)).toBe(goldenProfile().identity.firstName);
+    expect(rows.find((row) => row.category === 'identity.firstName')).toMatchObject({ wrote: true,
+      verification: 'verified' });
   }, 60_000);
 });
 
@@ -93,7 +126,7 @@ describe('a résumé control that opens the page\'s own picker (Adapter.uploadPi
     removals.push(installPatches(fixture.doc));
     const alert = vi.fn();
     Object.assign(fixture.view, { alert });
-    const { rows, fake } = await run(fixture.doc, [withPicker]);
+    const { rows, fake, runtime } = await run(fixture.doc, [withPicker]);
     // The run asked the worker once for the page patches in this document (the test installed them itself).
     expect(fake.of('page/patches')).toHaveLength(1);
     const resume = rows.find((row) => row.category === 'file.resume');
@@ -102,6 +135,12 @@ describe('a résumé control that opens the page\'s own picker (Adapter.uploadPi
     expect(input.files?.[0]?.name).toBe(GOLDEN_RESUME.fileName);
     expect(fixture.doc.getElementById('taken')!.textContent).toBe('1 file');
     expect(alert).not.toHaveBeenCalled();
+    // v5 p2-fill review (security 4): the person sees the count, in our words, never the page's.
+    await vi.waitFor(() => expect(runtime.ui!.toasts.shown).toContain('dialogs'));
+    const said = runtime.ui!.shadow.querySelector('.toast[data-kind="dialogs"] .notice')?.textContent;
+    expect(said).toBe(PAGE_COPY.toasts.dialogs(1, 0));
+    expect(said).toBe('The page showed 1 message while Autofill filled it. Autofill closed it; check the page.');
+    expect(said).not.toContain('Resume uploaded');
   }, 60_000);
 
   it('presses nothing where no patches answer: the row is the person\'s (needs-your-click)', async () => {
@@ -128,7 +167,7 @@ describe('a résumé control that opens the page\'s own picker (Adapter.uploadPi
  *  page saw the résumé, the parse and the run's first-name write in. */
 const PARSE_AFTER_MS = 2_400;
 
-function parseOnUpload(doc: Document, view: Window & typeof globalThis): string[] {
+function parseOnUpload(doc: Document, view: Window & typeof globalThis, afterMs = PARSE_AFTER_MS): string[] {
   const seen: string[] = [];
   // The first-name box of the fixture (<input data-testid="input-first_name" ...>).
   const firstName = doc.querySelector<HTMLInputElement>('input[data-testid="input-first_name"]')!;
@@ -156,7 +195,7 @@ function parseOnUpload(doc: Document, view: Window & typeof globalThis): string[
       setter.call(firstName, 'Parsed');
       firstName.dispatchEvent(new view.Event('input', { bubbles: true }));
       seen.push('parsed');
-    }, PARSE_AFTER_MS);
+    }, afterMs);
   });
   return seen;
 }
@@ -173,7 +212,23 @@ describe('the résumé first where the page parses it (quirks.resumeParse)', () 
     // Nothing else was written under the parse either: every other write came after it.
     expect(seen.slice(0, seen.indexOf('parsed'))).toEqual(['resume']);
     const first = rows.find((row) => row.category === 'identity.firstName');
-    expect(first).toMatchObject({ wrote: true, verification: 'verified' });
+    // v5 p2-fill review (L1): read again after the parse, the parsed name we wrote over is flagged.
+    expect(first).toMatchObject({ wrote: true, verification: 'verified', status: 'flagged', reason: 'prefill-conflict' });
+  }, 60_000);
+
+  // v5 p2-fill review (L1): Rippling shows no sign of its parse, which lands when its server answers.
+  it('Rippling: waits for a parse slower than 3 s, and flags the parsed value it writes over', async () => {
+    const fixture = await loadFixture(document, ripplingHtml, { width: 1280, height: 2600 });
+    const seen = parseOnUpload(fixture.doc, fixture.view, 5_000);
+    const { rows } = await run(fixture.doc, (await import('../adapters')).adaptersFor(new URL(href)), href);
+    expect(seen[0]).toBe('resume');
+    expect(seen.indexOf('parsed')).toBeGreaterThan(0);
+    expect(seen.slice(0, seen.indexOf('parsed'))).toEqual(['resume']);
+    expect(seen.indexOf('parsed')).toBeLessThan(seen.indexOf('first-name'));
+    const first = rows.find((row) => row.category === 'identity.firstName');
+    expect(first).toMatchObject({ wrote: true, status: 'flagged', reason: 'prefill-conflict' });
+    expect((fixture.doc.querySelector('input[data-testid="input-first_name"]') as HTMLInputElement).value)
+      .toBe(goldenProfile().identity.firstName);
   }, 60_000);
 
   it('without the quirk the parse lands after the profile\'s answer (undo proof)', async () => {
@@ -221,6 +276,25 @@ describe('Open Application on a posting page (v5 p2-fill)', () => {
     await vi.waitFor(() => expect(pressed).toEqual(['apply']));
   }, 30_000);
 
+  // v5 p2-fill review (L5): a press that cannot be made is told, so the panel says why; the next press clears it.
+  it('tells the worker when its Apply could not be pressed, and clears it at the next press', async () => {
+    const { fixture, fake, pressed } = await posting([withEntry]);
+    await vi.waitFor(() => expect(fake.of('frame/wall').at(-1)).toMatchObject({ wall: null, entry: true }), { timeout: 5_000 });
+    // The page takes its Apply away before the panel's press comes.
+    const link = fixture.doc.getElementById('apply')!;
+    link.remove();
+    await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+    await vi.waitFor(() => expect(fake.of('frame/wall').at(-1)).toMatchObject({ wall: null, entryRefused: true }),
+      { timeout: 5_000 });
+    expect(pressed).toEqual([]);
+    // Back, and pressed: the refusal is cleared.
+    fixture.doc.querySelector('main')!.append(link);
+    await vi.waitFor(() => expect(fake.of('frame/wall').at(-1)).toMatchObject({ entry: true }), { timeout: 5_000 });
+    await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+    await vi.waitFor(() => expect(pressed).toEqual(['apply']));
+    expect(fake.of('frame/wall').at(-1)?.entryRefused).toBeUndefined();
+  }, 30_000);
+
   it('a posting whose adapter declares no entry offers none and presses nothing (undo proof)', async () => {
     const { fake, pressed } = await posting([genericAdapter]);
     await deadline(1_500);
@@ -228,5 +302,7 @@ describe('Open Application on a posting page (v5 p2-fill)', () => {
     await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
     await deadline(500);
     expect(pressed).toEqual([]);
+    // Nor says it refused a press nobody was offered.
+    expect(fake.of('frame/wall').some((message) => message.entryRefused === true)).toBe(false);
   }, 30_000);
 });

@@ -8,7 +8,11 @@
  *   dispatched and answered synchronously;
  * - through a wait (withDialogsHeldWhile), the person's own pointer or key on the page (a trusted pointerdown,
  *   mousedown, touchstart or keydown anywhere in the document, heard first, in the capture phase) ends the hold at
- *   once, before the page's handlers of that action run, so the dialog their action brings shows as always.
+ *   once, before the page's handlers of that action run, so the dialog their action brings shows as always;
+ * - v5 p2-fill review (security 4): through a wait only the page's alert is held (dialogs.hold-alerts): a confirm is
+ *   a question only the person answers, so one asked during a wait (a session's "Stay signed in?") shows as always,
+ *   and only a confirm the write's own synchronous events brought is answered Cancel. What a hold held back reaches
+ *   the person as counts, one line on the page (content/orchestrator.ts, PassEnv.dialogsHeld), never the words.
  * The commands go to the document's root element, which is no field: nothing of the write is named, and a field the
  * page replaces meanwhile cannot leave a hold standing. Without the patches in the frame (a run not begun, a page that
  * answered our probe itself) nothing is held, and the page's dialogs show as before. Counts come back, never words.
@@ -25,10 +29,10 @@ export interface DialogsHeld {
 /** The person's own actions that end a hold made through a wait. */
 const PERSON_ACTIONS = ['pointerdown', 'mousedown', 'touchstart', 'keydown'] as const;
 
-/** Holds `doc`'s dialogs (see the header). */
-export function holdDialogs(doc: Document): DialogsHeld {
+/** Holds `doc`'s dialogs (see the header): its alert and confirm, or (`alertsOnly`, a wait) its alert alone. */
+export function holdDialogs(doc: Document, alertsOnly = false): DialogsHeld {
   const root = doc.documentElement;
-  const held = root === null ? null : askPatches(root, 'dialogs.hold');
+  const held = root === null ? null : askPatches(root, alertsOnly ? 'dialogs.hold-alerts' : 'dialogs.hold');
   if (held?.ok !== true) return { release: () => null };
   let done = false;
   return {
@@ -57,11 +61,12 @@ export function withDialogsHeld<T>(doc: Document, work: () => T, heard: (held: H
   }
 }
 
-/** withDialogsHeld for work that waits (an upload's confirmation, a picker's press): the person's own pointer or key
- *  on the page ends the hold at once (see the header). */
+/** withDialogsHeld for work that waits (an upload's confirmation, a picker's press): the page's alert alone is held
+ *  (v5 p2-fill review, security 4), and the person's own pointer or key on the page ends the hold at once (see the
+ *  header). */
 export async function withDialogsHeldWhile<T>(doc: Document, work: () => Promise<T>,
   heard: (held: HeldDialogs) => void): Promise<T> {
-  const hold = holdDialogs(doc);
+  const hold = holdDialogs(doc, true);
   let early: HeldDialogs | null = null;
   const onPerson = (event: Event): void => {
     if (!event.isTrusted) return;

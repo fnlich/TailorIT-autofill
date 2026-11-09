@@ -9,7 +9,10 @@
  * - picker.arm / picker.disarm (page/picker.ts): a page's click() on a file input of its own during the arm opens no
  *   picker and the input is handed to the isolated world, which puts the file in; a click() made after a promise
  *   (react-dropzone's fallback) too; a showOpenFilePicker() is answered with the file alone; a click() on any other
- *   input, and every call once disarmed, goes through; the arm ends at its first use and puts back what it shadowed.
+ *   input, and every call once disarmed, goes through; the arm ends at its first use and puts back what it shadowed;
+ *   v5 p2-fill review (security 7c): only a file input inside the pressed control's scope (its parent, or what its
+ *   adapter declares), or one made at the press, is taken: another upload's input is the page's, and the person's own
+ *   pointer during the wait disarms at once.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
@@ -19,6 +22,7 @@ import { fillThroughPicker } from '../dom/fillers/picker';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
 import { PICKED } from '../dom/patch-protocol';
 import { installPatches } from './patches';
+import { genericAdapter } from '../adapters/generic';
 
 const removals: Array<() => void> = [];
 afterEach(() => {
@@ -71,6 +75,30 @@ describe('the page\'s dialogs held through a write', () => {
     expect(own.alert.mock.calls).toEqual([['Yours']]);
     expect(heard).toHaveBeenCalledWith({ alerts: 1, confirms: 0 });
     expect(fixture.view.alert).toBe(own.alert);
+  });
+
+  // v5 p2-fill review (security 4): through a wait only the alert is held.
+  it('never answers a confirm the page asks during a wait: the person gets it; its alert is held, counted', async () => {
+    const fixture = await page('<!doctype html><body><input id="a"></body>');
+    const own = withOwnDialogs(fixture);
+    const heard = vi.fn();
+    let answered: boolean | null = null;
+    await withDialogsHeldWhile(fixture.doc, () => new Promise<void>((done) => {
+      fixture.view.setTimeout(() => {
+        answered = fixture.view.confirm('Stay signed in?');
+        fixture.view.alert('Saved');
+        done();
+      }, 50);
+    }), heard);
+    expect(own.confirm.mock.calls).toEqual([['Stay signed in?']]);
+    expect(answered).toBe(true);
+    expect(own.alert).not.toHaveBeenCalled();
+    expect(heard).toHaveBeenCalledWith({ alerts: 1, confirms: 0 });
+    // A write's own synchronous events still hold both, the confirm answered Cancel.
+    expect(withDialogsHeld(fixture.doc, () => fixture.view.confirm('Replace?'), heard)).toBe(false);
+    expect(own.confirm).toHaveBeenCalledTimes(1);
+    expect(heard).toHaveBeenLastCalledWith({ alerts: 0, confirms: 1 });
+    expect(fixture.view.confirm).toBe(own.confirm);
   });
 
   it('adds nothing on a second install in the same document', async () => {
@@ -149,6 +177,80 @@ const UPLOADER = `<!doctype html><body><form id="f"><span id="l">Resume</span>
 
 const RESUME = () => new File([new Uint8Array([37, 80, 68, 70, 45, 49])], 'Alex Rivera Resume.pdf',
   { type: 'application/pdf' });
+
+/** v5 p2-fill review (security 7c): two uploads on one page, each its input beside its button; the résumé's button
+ *  clicks the input `window.__which` names, at once, or (`window.__later`) when the test calls window.__pending. */
+const TWO_UPLOADS = `<!doctype html><body><form id="f">
+  <div id="a"><span id="l">Resume</span> <button type="button" id="attach" aria-labelledby="l">Attach</button>
+    <input id="mine" type="file" hidden><p id="mine-name"></p></div>
+  <div id="b"><span>Cover letter</span> <button type="button" id="letter" style="width:120px;height:40px">Attach letter</button>
+    <input id="other" type="file" hidden><p id="other-name"></p></div></form>
+  <script>
+    window.__which = 'mine';
+    window.__later = false;
+    for (const id of ['mine', 'other']) {
+      document.getElementById(id).addEventListener('change', function () {
+        document.getElementById(id + '-name').textContent = this.files[0].name;
+      });
+    }
+    document.getElementById('attach').addEventListener('click', function () {
+      var input = document.getElementById(window.__which);
+      if (window.__later) window.__pending = function () { input.click(); };
+      else input.click();
+    });
+  </script></body>`;
+
+describe('the picker takes only an input of the pressed control\'s own (v5 p2-fill review, security 7c)', () => {
+  it('gives the résumé to the input beside its button', async () => {
+    const fixture = await page(TWO_UPLOADS);
+    const result = await fillThroughPicker(fixture.doc.getElementById('attach')!, RESUME(),
+      { adapter: null, root: fixture.doc.getElementById('f') });
+    expect(result).toMatchObject({ picked: 'input', outcome: { wrote: true, verification: 'verified' } });
+    expect(result.input?.id).toBe('mine');
+    expect(fixture.doc.getElementById('mine-name')!.textContent).toBe('Alex Rivera Resume.pdf');
+  });
+
+  it('never takes another upload\'s input the page clicks during the press: it is the page\'s', async () => {
+    const fixture = await page(TWO_UPLOADS);
+    (fixture.view as unknown as { __which: string }).__which = 'other';
+    const opened = vi.fn();
+    fixture.doc.addEventListener(PICKED, opened, true);
+    const result = await fillThroughPicker(fixture.doc.getElementById('attach')!, RESUME(),
+      { adapter: null, root: fixture.doc.getElementById('f'), waitMs: 300 });
+    expect(result).toMatchObject({ picked: null, outcome: { wrote: false, reason: 'needs-your-click' } });
+    expect(opened).not.toHaveBeenCalled();
+    expect((fixture.doc.getElementById('other') as HTMLInputElement).files?.length ?? 0).toBe(0);
+    expect(fixture.doc.getElementById('other-name')!.textContent).toBe('');
+  });
+
+  it('takes it where the adapter declares the scope wider (Adapter.uploadPickerScope)', async () => {
+    const fixture = await page(TWO_UPLOADS);
+    (fixture.view as unknown as { __which: string }).__which = 'other';
+    const form = fixture.doc.getElementById('f')!;
+    const result = await fillThroughPicker(fixture.doc.getElementById('attach')!, RESUME(),
+      { adapter: { ...genericAdapter, uploadPickerScope: () => form }, root: form, waitMs: 300 });
+    expect(result).toMatchObject({ picked: 'input', outcome: { wrote: true } });
+    expect(result.input?.id).toBe('other');
+  });
+
+  it('is disarmed by the person\'s own pointer during the wait: their press is theirs', async () => {
+    const fixture = await page(TWO_UPLOADS);
+    const own = fixture.view as unknown as { __later: boolean; __pending?: () => void };
+    own.__later = true;
+    const opened = vi.fn();
+    fixture.doc.addEventListener(PICKED, opened, true);
+    const pressing = fillThroughPicker(fixture.doc.getElementById('attach')!, RESUME(),
+      { adapter: null, root: fixture.doc.getElementById('f'), waitMs: 1_500 });
+    const box = fixture.doc.getElementById('letter')!.getBoundingClientRect();
+    await userEvent.click(fixture.frame, { position: { x: box.left + box.width / 2, y: box.top + box.height / 2 } });
+    // The page's own click on the résumé's input comes after the person's press: it is no longer ours to take.
+    own.__pending?.();
+    const result = await pressing;
+    expect(result).toMatchObject({ picked: null, outcome: { wrote: false, reason: 'needs-your-click' } });
+    expect(opened).not.toHaveBeenCalled();
+    expect((fixture.doc.getElementById('mine') as HTMLInputElement).files?.length ?? 0).toBe(0);
+  });
+});
 
 describe('the page\'s own file picker, armed for one press', () => {
   it('hands the input the page clicked to the isolated world, which puts the résumé in: the page reads it', async () => {
