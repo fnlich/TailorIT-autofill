@@ -314,6 +314,17 @@ export const LOG_CODES = [
   'tailor.opened',
   'profile.documents',
   // ── end v1.4 F ──
+  // v1.3 B (counts only): the form capture failed in a frame; a submitted form held, refused or dropped by the worker;
+  // sent to TailorIT (its status, how many questions and answers); its 400 fell back to POST /applied; the job's known
+  // questions read (how many questions and earlier answers); a known answer filled; the run-start AI batch asked.
+  'content.capture-failed',
+  'submit.form-held',
+  'submit.form-refused',
+  'submit.form-sent',
+  'submit.form-fallback',
+  'forms.known',
+  'forms.known-failed',
+  'ai.known-batch',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

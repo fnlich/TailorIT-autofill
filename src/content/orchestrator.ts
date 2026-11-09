@@ -350,6 +350,9 @@ export interface RunEnv {
   /** What the runtime reads right before a press (submitted.ts PressSnapshot: the application, the form, the success
    *  signs already shown), since the click may move the page before the press is armed (the review, M1 and M6). */
   beforePress?(): PressSnapshot | null;
+  /** v1.3 B: the run is about to press the step's Next (its own, or the panel's): the runtime reads the step's
+   *  questions and answers first (form-capture.ts), as the step's fields go once it is left. */
+  stepLeaving?(): void;
   /** The review: the steps Submit mode Auto pressed in this document (application key, step index and signature),
    *  shared by every run of the document, so Auto presses a step at most once whatever starts the run again. */
   autoPressed?: Set<string>;
@@ -1344,6 +1347,12 @@ export class FillRun {
         this.looking = false;
       }
     })();
+  }
+
+  /** v1.3 B: every canary the run holds in memory (the frame's own scans' and the carried ones), for the form capture's
+   *  screen (form-capture.ts). Never sent anywhere. */
+  canariesNow(): readonly string[] {
+    return this.inMemory;
   }
 
   /**
@@ -2678,6 +2687,8 @@ export class FillRun {
     }
     // v4 (D7): no Next to press, or a click the page refused: no hand-off, the run rests for the person's own Next.
     if (next === null || !isUserVisible(next, newScanCache())) return { type: 'NEXT_WITHHELD', reason: 'not-pressable' };
+    // v1.3 B: the step's questions and answers, read before it is left.
+    this.env.stepLeaving?.();
     if (!clickIfAllowed(next, { adapter, root, allowNext: true })) {
       log('content.next-refused');
       return { type: 'NEXT_WITHHELD', reason: 'not-pressable' };
@@ -2921,6 +2932,8 @@ export class FillRun {
     const page = this.pressPage();
     const before = target === 'submit' ? this.env.beforePress?.() : undefined;
     if (target === 'submit') this.noteCheckAtSubmit(page.root);
+    // v1.3 B: a Next leaves the step: its questions and answers are read first (a Submit's are, as it is armed).
+    if (target === 'next') this.env.stepLeaving?.();
     const answer = pressStep(page, target, { confirmed });
     log(answer.outcome === 'pressed' ? 'content.step-pressed' : 'content.step-press-refused',
       { submit: target === 'submit', confirmed });

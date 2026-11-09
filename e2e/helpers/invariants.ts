@@ -185,6 +185,19 @@ function sentinelBody(request: MockRequest, rowKeys: ReadonlySet<string>, rewrit
   /** A request's canaries less the page's declared ones. */
   const unknownCanaries = (canaries: unknown) => (Array.isArray(canaries)
     ? { canaries: canaries.filter((canary) => !pageCanaries.has(lower(String(canary)))) } : {});
+  // v1.3 B (docs/SPEC-AMENDMENTS.md §16): the form a site confirmed the person submitted, sent to their own TailorIT:
+  // its questions (page text), the person's answers to them and the page's posting are what that request is for;
+  // e2e/specs/64-submitted-answers.spec.ts checks what never goes in it (a password, a file's content). The rest of
+  // its body (the job, the address, the resume) is checked as any request's.
+  if (request.method === 'POST' && request.path === '/api/autofill/submissions') {
+    try {
+      const { questions: _questions, answers: _answers, posting: _posting, ...rest } = JSON.parse(request.body) as
+        Record<string, unknown>;
+      return JSON.stringify(rest);
+    } catch {
+      return request.body;
+    }
+  }
   if (request.method === 'POST' && request.path === '/api/autofill/ai/draft') {
     try {
       const { jobText: _job, company: _company, jobTitle: _title, questions, canaries, ...rest } = JSON.parse(request.body) as

@@ -1,0 +1,28 @@
+{
+  "jobId": 1042,
+  "questions": [
+    {
+      "ref": "greenhouse|application|why do you want to work at northwind|none|0",
+      "questionKey": "why do you want to work at northwind",
+      "label": "Why do you want to work\nat Northwind?\t",
+      "kind": "textarea",
+      "options": [],
+      "optionSetHash": "",
+      "section": "  Application\n",
+      "required": true,
+      "step": 0,
+      "position": 3,
+      "category": "free_text_question"
+    }
+  ],
+  "answers": [
+    {
+      "ref": "greenhouse|application|why do you want to work at northwind|none|0",
+      "answer": {
+        "kind": "text",
+        "text": "Northwind's data platform serves millions of riders, and I have built streaming pipelines at that scale."
+      },
+      "provenance": "llm-draft"
+    }
+  ]
+}

@@ -79,6 +79,15 @@
  *   suggests it (reason application: TailorIT linked it to the tracker entry). The contract's golden task is always
  *   there. GET /templates answers the contract's example. Scenarios: tailor-needs-copy, tailor-rate-limited,
  *   tailor-ai-off, tailor-failed, tailor-slow.
+ * - v1.3 B: POST /submissions checks its body as TailorIT's contract does in brief (a page or a job, each question's
+ *   ref once, each answer naming a question and fitting its kind, a file's name alone), records it as POST /applied
+ *   does (every later lookup says Applied), and keeps the form by its job (the golden job for an address the contract
+ *   reads, else the address): its questions (each kept once, by key, option set and section, never deleted) and the
+ *   answers of the latest submission that had any. Every later lookup of that job says `formKnown`. POST /forms/known
+ *   answers the job's questions in form order, this person's answers to them (sameJob), and, for the questions it keeps
+ *   and the `fields` named, the latest answer another job's form kept to the same key and option set (otherJob), never
+ *   a self-identification, legal, pay, consent, attention-check or file question's. GET /__mock/forms lists what it
+ *   keeps. Scenarios: submissions-bad-request (400), submissions-fails (500).
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -356,6 +365,9 @@ export const MOCK_SCENARIOS = Object.freeze({
   'tailor-ai-off': 'POST /tailor gets 503 ai_unavailable: Claude is off, signed out or paused.',
   'tailor-failed': 'The tailoring reads failed (ai_failed) once it stops running.',
   'tailor-slow': 'The tailoring reads running for `value` polls (default 3) before it ends: analyzing, then writing.',
+  // v1.3 B
+  'submissions-bad-request': 'POST /submissions gets 400 validation_failed: nothing is kept.',
+  'submissions-fails': 'POST /submissions gets 500: nothing is kept.',
 });
 
 /** The words GET /cover-letters/:id/text answers (v3 Phase 3b): `GOLDEN_LETTER.sentinel` among them, so a spec can
@@ -650,6 +662,12 @@ export function createMock() {
     tailored: false,
     /** v3 Phase 4: the bodies POST /applied took; every later lookup says Applied. @type {Array<Record<string, unknown>>} */
     applied: [],
+    /** v1.3 B: the forms POST /submissions kept, by `job:<id>` or `url:<address>`: their questions by id, and the latest
+     *  submission's answers by question id. @type {Map<string, { questions: Array<Record<string, any>>;
+     *  answers: Map<number, { answer: unknown; submittedAt: string }> }>} */
+    forms: new Map(),
+    /** v1.3 B: the next question id. */
+    questionId: 7001,
     /** v3 Phase 5: the agent's queue: its rows (the task, its state and reason, the connection that claimed it), every
      *  result taken and every one refused.
      *  @type {{ rows: Array<{ task: Record<string, unknown>; state: string; reason: string | null;
@@ -822,6 +840,8 @@ export function createMock() {
         fileKind: TAILORED_RESUME.fileKind, fileName: TAILORED_RESUME.fileName, reason: 'application' };
       if (answer.match) answer.match = { ...answer.match, resumeId: TAILORED_RESUME.id };
     }
+    // v1.3 B: a job whose form POST /submissions kept.
+    if (answer.job && state.forms.has(`job:${answer.job.id}`)) answer.formKnown = true;
     // v3 Phase 4: a job POST /applied marked is Applied in the tracker from then on.
     if (state.applied.length > 0 && answer.job) {
       answer.application = { ...(answer.application ?? { id: 'app-applied', trackedOn: iso(Date.now()), archived: false,
@@ -829,6 +849,142 @@ export function createMock() {
     }
     return jsonAnswer(200, withChosen(answer, json.resumeId));
   }
+
+  // ── v1.3 B: the forms POST /submissions keeps (module header) ──
+  const SENSITIVE_FORM_CATEGORIES = new Set(['sensitive_eeo', 'sensitive_legal', 'sensitive_compensation', 'consent',
+    'attention_check']);
+  const ONE_OPTION_KINDS = new Set(['select', 'radio', 'combobox', 'typeahead-remote']);
+  const SEVERAL_OPTION_KINDS = new Set(['checkbox-group', 'multiselect']);
+  /** Whether an answer fits a field's kind (the contract's submittedAnswerFits). @param {any} answer @param {string} kind */
+  function answerFits(answer, kind) {
+    if (answer?.kind === 'text') return typeof answer.text === 'string' && answer.text.trim() !== ''
+      && answer.text.length <= 10_000 && ['text', 'textarea', 'date'].includes(kind);
+    if (answer?.kind === 'options') return Array.isArray(answer.labels) && answer.labels.length >= 1
+      && (SEVERAL_OPTION_KINDS.has(kind) || (ONE_OPTION_KINDS.has(kind) && answer.labels.length === 1));
+    if (answer?.kind === 'checked') return typeof answer.checked === 'boolean' && kind === 'checkbox';
+    if (answer?.kind === 'file') return typeof answer.fileName === 'string' && answer.fileName.trim() !== ''
+      && !/[\\/]/.test(answer.fileName) && kind === 'file';
+    return false;
+  }
+  /** The job a body names: the golden job for an address the contract reads (as the lookup finds it), or its id.
+   *  @param {Record<string, any>} json */
+  function formKeyOf(json) {
+    if (Number.isInteger(json.jobId)) return `job:${json.jobId}`;
+    if (typeof json.url === 'string' && contractReads(json.url)) {
+      const job = state.added?.job ?? lookupAnswer('golden').job;
+      return `job:${job.id}`;
+    }
+    return typeof json.url === 'string' ? `url:${json.url}` : null;
+  }
+  /** POST /submissions (module header). @param {Record<string, any>} json @returns {Answer} */
+  function submissionOf(json) {
+    if (take('submissions-bad-request') !== null) return invalid('questions: Check the questions');
+    if (take('submissions-fails') !== null) return serverError();
+    const key = formKeyOf(json);
+    const questions = Array.isArray(json.questions) ? json.questions : null;
+    if (key === null || questions === null || questions.length > 300) return invalid('url: Name the page or the job');
+    /** @type {Map<string, string>} */
+    const kinds = new Map();
+    for (const question of questions) {
+      if (typeof question?.ref !== 'string' || kinds.has(question.ref) || typeof question.questionKey !== 'string'
+        || question.questionKey === '' || typeof question.label !== 'string' || question.label.trim() === ''
+        || /[\n\r]/.test(question.label) || typeof question.kind !== 'string') return invalid('questions: Check the questions');
+      if (Array.isArray(question.options) && question.options.length > 0 && !/^[0-9a-f]{16}$/.test(question.optionSetHash)) {
+        return invalid('questions: A field with options has their hash');
+      }
+      kinds.set(question.ref, question.kind);
+    }
+    const answers = json.answers === undefined ? null : Array.isArray(json.answers) ? json.answers : undefined;
+    if (answers === undefined) return invalid('answers: Check the answers');
+    for (const item of answers ?? []) {
+      const kind = kinds.get(item?.ref);
+      if (kind === undefined || !answerFits(item.answer, kind)) return invalid('answers: This answer does not fit the field');
+    }
+    state.applied.push({ ...(json.jobId === undefined ? { url: json.url } : { jobId: json.jobId }),
+      ...(json.resumeId === undefined ? {} : { resumeId: json.resumeId }) });
+    const form = state.forms.get(key) ?? /** @type {{ questions: Array<Record<string, any>>;
+      answers: Map<number, { answer: unknown; submittedAt: string }> }} */ ({ questions: [], answers: new Map() });
+    const at = iso(Date.now());
+    let added = 0;
+    /** @type {Map<string, number>} */
+    const ids = new Map();
+    for (const question of questions) {
+      let kept = form.questions.find((/** @type {any} */ entry) => entry.questionKey === question.questionKey
+        && entry.optionSetHash === (question.optionSetHash ?? '') && entry.section === (question.section ?? ''));
+      if (kept === undefined) {
+        added += 1;
+        kept = { id: state.questionId++, questionKey: question.questionKey, label: question.label, kind: question.kind,
+          options: question.options ?? [], optionSetHash: question.optionSetHash ?? '', section: question.section ?? '',
+          required: question.required === true, step: question.step ?? 0, position: question.position ?? 0,
+          source: 'submission', firstSeenAt: at, lastSeenAt: at, category: question.category ?? null };
+        form.questions.push(kept);
+      } else kept.lastSeenAt = at;
+      ids.set(question.ref, kept.id);
+    }
+    if (answers !== null) {
+      form.answers = new Map();
+      for (const item of answers) form.answers.set(/** @type {number} */ (ids.get(item.ref)), { answer: item.answer, submittedAt: at });
+    }
+    state.forms.set(key, form);
+    const lookup = lookupAnswer(json.jobId === undefined ? 'golden' : 'job-chosen');
+    lookup.application = { ...(lookup.application ?? { id: 'app-applied', trackedOn: iso(Date.now()), archived: false,
+      resumeId: null, matchedBy: 'job' }), status: 2 };
+    if (lookup.job) lookup.formKnown = true;
+    return jsonAnswer(200, { lookup: withChosen(lookup, json.resumeId), job: 'shared', questionsAdded: added,
+      questionsKnown: form.questions.length, answersKept: answers === null ? null : answers.length });
+  }
+  /** A kept question as POST /forms/known names it. @param {Record<string, any>} question */
+  const knownQuestion = (question) => {
+    const { category: _category, ...rest } = question;
+    return rest;
+  };
+  /** POST /forms/known (module header). @param {Record<string, any>} json @returns {Answer} */
+  function knownFormOf(json) {
+    const key = formKeyOf(json);
+    if (key === null) return invalid('url: Name the page or the job');
+    const form = state.forms.get(key) ?? /** @type {{ questions: Array<Record<string, any>>;
+      answers: Map<number, { answer: unknown; submittedAt: string }> }} */ ({ questions: [], answers: new Map() });
+    const questions = [...form.questions].sort((a, b) => a.step - b.step || a.position - b.position);
+    const answers = [];
+    /** @type {Set<string>} */
+    const answered = new Set();
+    for (const question of questions) {
+      const held = form.answers.get(question.id);
+      if (held === undefined) continue;
+      answered.add(`${question.questionKey}|${question.optionSetHash}`);
+      answers.push({ match: 'sameJob', questionId: question.id, questionKey: question.questionKey,
+        optionSetHash: question.optionSetHash, questionLabel: question.label, fieldKind: question.kind,
+        answer: held.answer, submittedAt: held.submittedAt });
+    }
+    const wanted = [...questions.map((question) => ({ questionKey: question.questionKey, optionSetHash: question.optionSetHash })),
+      ...(Array.isArray(json.fields) ? json.fields : [])];
+    for (const field of wanted) {
+      const id = `${field.questionKey}|${field.optionSetHash}`;
+      if (answered.has(id)) continue;
+      /** @type {any} */
+      let best = null;
+      for (const [other, kept] of state.forms) {
+        if (other === key) continue;
+        for (const question of kept.questions) {
+          const held = kept.answers.get(question.id);
+          if (held === undefined || question.questionKey !== field.questionKey || question.optionSetHash !== field.optionSetHash
+            || question.kind === 'file' || SENSITIVE_FORM_CATEGORIES.has(question.category)) continue;
+          if (best === null || held.submittedAt > best.submittedAt) {
+            best = { match: 'otherJob', questionId: null, questionKey: question.questionKey,
+              optionSetHash: question.optionSetHash, questionLabel: question.label, fieldKind: question.kind,
+              answer: held.answer, submittedAt: held.submittedAt };
+          }
+        }
+      }
+      if (best !== null) {
+        answered.add(id);
+        answers.push(best);
+      }
+    }
+    const jobId = key.startsWith('job:') ? Number(key.slice(4)) : null;
+    return jsonAnswer(200, { jobId, questions: questions.map(knownQuestion), answers });
+  }
+  // ── end v1.3 B ──
 
   /** POST /jobs (version 2): TailorIT's refusals by scenario, else the contract's created answer (or existing.json), its
    *  lookup kept for the lookups after it. @param {Record<string, unknown>} json @returns {Answer} */
@@ -1414,6 +1570,9 @@ export function createMock() {
         resumeId: null, matchedBy: 'job' }), status: 2 };
       return jsonAnswer(200, withChosen(answer, json.resumeId));
     },
+    // v1.3 B (module header).
+    'POST /api/autofill/submissions': ({ json }) => submissionOf(json),
+    'POST /api/autofill/forms/known': ({ json }) => knownFormOf(json),
     'POST /api/autofill/site-requests': ({ json }) => {
       const host = typeof json.host === 'string' ? json.host : '';
       if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/.test(host) || host.length > 253) {
@@ -1594,6 +1753,11 @@ export function createMock() {
   function control(method, path, raw) {
     if (path === '/__mock/health') return jsonAnswer(200, { ok: true });
     if (path === '/__mock/requests' && method === 'GET') return jsonAnswer(200, state.requests);
+    // v1.3 B: the forms POST /submissions kept.
+    if (path === '/__mock/forms' && method === 'GET') {
+      return jsonAnswer(200, [...state.forms.entries()].map(([key, form]) => ({ key, questions: form.questions,
+        answers: [...form.answers.entries()].map(([questionId, held]) => ({ questionId, ...held })) })));
+    }
     if (path === '/__mock/resume' && method === 'GET') return jsonAnswer(200, GOLDEN_RESUME);
     if (path === '/__mock/letter' && method === 'GET') return jsonAnswer(200, GOLDEN_LETTER);
     if (path === '/__mock/agent' && method === 'GET') {

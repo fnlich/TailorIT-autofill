@@ -1,8 +1,8 @@
 /*
  * The settings schema and where they are kept. The worker reads and writes them; content scripts receive the part
- * they need with run/begin and never touch storage. Version 8 (v5: "Where the panel shows", On the page or Chrome's side
- * panel) is stored under the same key; a version 1 to 7 value read there is migrated (core/types/settings.ts
- * migrateSettings, migrateSettingsV2 to migrateSettingsV7) and stored again.
+ * they need with run/begin and never touch storage. Version 9 (v1.3: "Keep my submitted answers in TailorIT") is stored
+ * under the same key; a version 1 to 8 value read there is migrated (core/types/settings.ts migrateSettings,
+ * migrateSettingsV2 to migrateSettingsV8) and stored again.
  * The older versions' schemas, which only the worker reads, are in ./settings-stored.ts (the behaviour review of
  * 2026-11-06: kept out of the content script's bundle, and its budget).
  */
@@ -43,12 +43,16 @@ export const ModesV4Schema = z.strictObject({
 /** Version 5 (the behaviour review of 2026-11-06): "Résumé already on the page"; versions 5 and 6 stored these. */
 export const ModesV6Schema = ModesV4Schema.extend({ resumeOnPage: z.enum(MODE_CHOICES.resumeOnPage) });
 
-/** Version 7 (snapshot round 2): "When a list has no match" and how long the page's notifications stay. */
-export const ModesSchema = ModesV6Schema.extend({ noMatch: z.enum(NO_MATCH_MODES),
+/** Version 7 (snapshot round 2): "When a list has no match" and how long the page's notifications stay; versions 7 and 8
+ *  stored these. */
+export const ModesV8Schema = ModesV6Schema.extend({ noMatch: z.enum(NO_MATCH_MODES),
   notifications: z.enum(NOTIFICATION_TIMES) });
 
+/** v1.3 B (version 9): "Keep my submitted answers in TailorIT". */
+export const ModesSchema = ModesV8Schema.extend({ keepAnswers: z.enum(MODE_CHOICES.keepAnswers) });
+
 export const SettingsSchema = z.strictObject({
-  version: z.literal(8),
+  version: z.literal(9),
   panel: z.enum(PANEL_PLACES),
   view: z.enum(PANEL_VIEWS),
   modes: ModesSchema,

@@ -12,6 +12,11 @@
  *
  * v3 Phase 3b: the job the person chose for the page ("Autofill for another job") goes with the lookup as `jobId`, so
  * the run's job (the card, the match, the resume, the AI's company and title, the cover letter's job) is that one.
+ *
+ * v1.3 B (the coordinator's decision 5): once the lookup names the job (or says TailorIT keeps the questions of a
+ * posting it has no job of: `formKnown`), its known questions and the person's earlier answers are read (known-forms.ts,
+ * prefetched as the page loaded when it could be), not waited for here: the run's plans wait for them, a short while
+ * at most (planner.ts).
  */
 import { AUTOFILL_LOOKUP_URL_MAX, type AutofillLookupResponse } from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
@@ -24,7 +29,8 @@ import type { CoreFunctions } from './core';
 import type { createRateLimit } from './locks';
 import { storedCopyState, type PolicyBook } from './policy';
 import type { ProfileCache } from './profile-cache';
-import type { JobCards } from './job-cards';
+import { lookupAddressOf, type JobCards } from './job-cards';
+import type { KnownForms } from './known-forms';
 import type { FrameRef, RunRegistry } from './runs';
 import type { RunStateStore } from './runstate-store';
 import type { ServerClient } from './server-client';
@@ -54,6 +60,8 @@ export interface RunBeginDeps {
   jobs?: Pick<JobCards, 'chosen' | 'remember' | 'epoch' | 'addressStale'> & Partial<Pick<JobCards, 'chosenJob'>>;
   /** The token keeper's generation (auth.ts). */
   generation?(): number;
+  /** v1.3 B: the jobs' known forms (known-forms.ts). Absent: none is read. */
+  knownForms?: KnownForms;
 }
 
 /** Whether an application key fits the frame: `${platform}:${hex16}`, its platform the frame host's (when known). A
@@ -115,6 +123,15 @@ export async function beginRun(deps: RunBeginDeps, message: RunBegin,
     deps.jobs?.remember(from, lookup, { generation, epoch, chosen, job });
     // The audit of 2026-11-06 (M6): the job's id in the run's record too, for a Submit after the worker was stopped.
     await deps.runs.noteAttached(run.runId, { jobId: lookup?.job?.id ?? null });
+    // v1.3 B: the job's known questions and the person's earlier answers, read now and waited for by the plans.
+    if (deps.knownForms !== undefined && lookup !== null && !message.dryRun) {
+      const jobId = lookup.job?.id ?? null;
+      const target = jobId !== null ? { jobId } : { url: lookupAddressOf(from.url) };
+      const reads = jobId !== null ? lookup.formKnown !== false : lookup.formKnown === true;
+      memo.known = { first: !reads ? Promise.resolve(null) : jobId !== null ? deps.knownForms.get(jobId)
+        : deps.knownForms.byUrl(lookupAddressOf(from.url)), answers: [], asked: new Set(), reads: 0, prestarted: false,
+      target };
+    }
   }
   const [postingPage, settings] = await Promise.all([deps.policy.postingPage(message.applicationKey), deps.settings.content()]);
   const storedCopy = storedCopyState(lookup?.job?.postingText, deps.core);

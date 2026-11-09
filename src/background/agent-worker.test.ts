@@ -136,6 +136,39 @@ describe('Run auto-apply in the worker (v3 Phase 5)', () => {
       data: { doneToday: 1, last: { state: 'submitted', reason: null }, pending: false } });
   });
 
+  // v1.3 B: the agent's own Submit sends its form's questions and answers once its result recorded the job. Undo proof:
+  // drop sendForm from submissions.ts record()'s agent branch and nothing is sent.
+  it('sends the agent’s submitted form to TailorIT by the task’s job, once its result recorded it (v1.3 B)', async () => {
+    const { worker, win } = await withAgent();
+    worker.fakes.frameAnswers = () => ({ ok: true, data: {} });
+    worker.tailorit.reply('POST /api/autofill/submissions', { json: { lookup: { ats: null, job: null, application: null,
+      suggestedResume: null }, job: 'shared', questionsAdded: 1, questionsKnown: 1, answersKept: 1 } });
+    await worker.deliver({ v: 1, type: 'agent/set', on: true, confirmed: true }, OPTIONS);
+    worker.timers.advance(1);
+    await vi.waitFor(() => expect(win.opened).toEqual([GREENHOUSE]));
+    await vi.waitFor(async () => expect(await fakeBrowser.storage.local.get(AGENT_RUN_KEY))
+      .toMatchObject({ [AGENT_RUN_KEY]: { tabId: AGENT_TAB } }));
+    const agentFrame = contentSender({ url: GREENHOUSE, tab: { id: AGENT_TAB, url: GREENHOUSE }, documentId: 'doc-a' });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, agentFrame);
+    const key = applicationOf(new URL(GREENHOUSE))!.applicationKey;
+    const begun = await worker.deliver({ v: 1, type: 'run/begin', applicationKey: key, trigger: 'agent', dryRun: false },
+      agentFrame) as { ok: boolean; data: { runId: string } };
+    await worker.deliver({ v: 1, type: 'submit/armed', applicationKey: key, by: 'auto', runId: begun.data.runId },
+      agentFrame);
+    const spec = { key: 'greenhouse|main|notes|none|0', baseKey: 'greenhouse|main|notes|0', platform: 'greenhouse',
+      section: { id: 'main' }, kind: 'text', label: 'Notes', labelSource: 'for', labelVisible: true, description: '',
+      required: false, options: [], optionSetHash: 'none', constraints: {}, autocomplete: [], nameAttr: '', idAttr: '',
+      ordinal: 0, domOrder: 0, visibility: 'visible', disabled: false, readOnly: false, current: { kind: 'empty' } };
+    expect(await worker.deliver({ v: 1, type: 'submit/form', applicationKey: key, fields: [{ spec, step: 0,
+      answer: { kind: 'text', text: 'Hello' } }] }, agentFrame)).toEqual({ ok: true, data: {} });
+    await worker.deliver({ v: 1, type: 'submit/detected', applicationKey: key, evidence: 'success-message' }, agentFrame);
+    const sent = worker.tailorit.requests.filter((request) => request.path === '/api/autofill/submissions')
+      .map((request) => JSON.parse(request.body!) as Record<string, unknown>);
+    expect(sent).toEqual([expect.objectContaining({ jobId: TASK.jobId, questions: [expect.objectContaining({
+      ref: spec.key, questionKey: 'notes' })], answers: [expect.objectContaining({ answer: { kind: 'text', text: 'Hello' } })] })]);
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
+  });
+
   it('takes the entry’s note of its press from the agent’s tab’s top frame alone (round 3 of the v3 Phase 6/7b review, X8)',
     async () => {
       const { worker, win } = await withAgent();

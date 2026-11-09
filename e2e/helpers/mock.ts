@@ -63,6 +63,11 @@ export const mock = {
     await control('/__mock/credentials', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }) });
   },
+  /** v1.3 B: the forms POST /submissions kept: each job's questions and its latest submission's answers. */
+  async forms(): Promise<Array<{ key: string; questions: Array<Record<string, unknown> & { id: number; label: string }>;
+    answers: Array<{ questionId: number; answer: Record<string, unknown> }> }>> {
+    return (await control('/__mock/forms')).json() as never;
+  },
   /** The requests to one route ("POST /api/autofill/lookup"); a path ending in * matches its prefix. */
   async requestsTo(route: string): Promise<MockRequest[]> {
     const [method, path] = route.split(' ') as [string, string];

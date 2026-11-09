@@ -16,6 +16,7 @@ import { RUN_PREFIX, RunRecordSchema, type RunRecord } from '../shared/stored';
 import { toBase64Url } from './bytes';
 import type { RunAi } from './ai-tasks';
 import type { RunLetter } from './cover-letters';
+import type { RunKnown } from './known-forms';
 import type { ResumeChoice } from './resume-choice';
 
 /** At most this many runs are remembered at once; the oldest go first. */
@@ -47,6 +48,8 @@ export interface RunMemo {
   tabId?: number;
   /** The run's cover letter (Phase G, cover-letters.ts): asked once, stopped when the run goes. */
   letter?: RunLetter;
+  /** v1.3 B: the job's known questions and the person's earlier answers (known-forms.ts), memory only. */
+  known?: RunKnown;
 }
 
 /** The runs the worker knows, by id. */
@@ -183,6 +186,8 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
         // A cover letter asked with the old token is never uploaded with the new one (Phase G).
         memo.letter?.stop();
         memo.letter = undefined;
+        // v1.3 B: what the old connection's TailorIT knew of the form.
+        memo.known = undefined;
       }
       // The ids the old connection's lookup gave go from the records too (M6).
       for (const record of await all()) {

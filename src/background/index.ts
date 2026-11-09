@@ -45,6 +45,9 @@ import { createSiteRequests, SITE_REQUEST_LIMIT } from './site-requests';
 import {
   CONFIRMATION_PAGE_MS, createSubmissions, SUBMIT_ARM_PREFIX, SUBMIT_MESSAGE_LIMIT, type Submissions,
 } from './submissions';
+// v1.3 B
+import { categoryOfSpec } from './submitted-forms';
+import { createKnownForms, type KnownForms } from './known-forms';
 import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT, type Reports } from './reports';
 import { createTailoring, editorUrlOf, OPEN_DOCUMENT_LIMIT, TAILOR_LIMIT, type Tailoring } from './tailor'; // v1.4 F
 import { fillsFromProfileOnly, latestReport, saysNoAi } from '../shared/report';
@@ -163,6 +166,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   let tailorings: Tailoring | null = null; // v1.4 F
   let submissions: Submissions | null = null;
   let agentRef: Agent | null = null;
+  // v1.3 B
+  let knownFormsRef: KnownForms | null = null;
   const keeper = createTokenKeeper(platform, () => {
     profiles?.drop();
     void runRegistry?.dropTokenData().catch(() => undefined);
@@ -170,6 +175,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     letterRows?.dropTokenData();
     tailorings?.dropTokenData(); // v1.4 F
     submissions?.dropTokenData();
+    knownFormsRef?.dropTokenData();
     // v3 Phase 5: the agent's job closes; its result waits for a connection to tell it.
     void agentRef?.tokenChanged().catch(() => undefined);
     // Every side panel reads the connection again and drops the card it holds, whichever window the change came from.
@@ -220,9 +226,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const visitKey = (tabId: number) => `launcher-visit:${tabId}`;
   panelReports = reports;
   // The side panel's job card and custom question (v2): read through the tab's form frame, kept in memory only.
+  // v1.3 B: the jobs' known questions and the person's earlier answers (known-forms.ts), memory only.
+  const knownForms = createKnownForms({ server, now, generation: () => keeper.generation });
+  knownFormsRef = knownForms;
   const jobs = createJobCards({ session, tabs: platform.tabs, server, connected: () => auth.connected(),
     onLoadLimit: createRateLimit(LOOKUP_ON_LOAD_LIMIT.count, LOOKUP_ON_LOAD_LIMIT.windowMs, now),
-    generation: () => keeper.generation, now, limit: relayLimit });
+    generation: () => keeper.generation, now, limit: relayLimit, prefetchForm: (jobId) => knownForms.prefetch(jobId) });
   jobCards = jobs;
   // One chooser for the planner and the resume port: it follows the token and the tab's resume choice (v2: a Change
   // mid-run applies to every file not uploaded yet).
@@ -237,7 +246,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // Cover letters (Phase G): a run asks TailorIT for its letter once (cover-letters.ts), and the resume port sends it.
   const letters = { server, timers, now };
   const planner = createPlanner({ runs, profiles: profileCache, settings, core, chooseResume, ai: aiTasks,
-    aiTaskIds: runStates, cache: matchCache, accepts, letters, now,
+    aiTaskIds: runStates, cache: matchCache, accepts, letters, now, knownForms, timers,
     withoutResume: (tabId, applicationKey) => jobs.without(tabId, applicationKey),
     // v5 p2-stream: a run's frame is told when its AI answers come in (plan/ready).
     tabs: platform.tabs });
@@ -320,7 +329,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     // v3 Phase 5: the agent's own tab's sign finishes its job (its result records Applied).
     agentSubmitted: (tabId, applicationKey) => agent.submitted(tabId, applicationKey),
     // v5 p1-panel (PLAN decision 5): the page's "Application Submitted!" window, in the tab's top frame.
-    applied: (tabId) => void tellTopFrame(tabId, { v: 1, type: 'applied/popup' }) });
+    applied: (tabId) => void tellTopFrame(tabId, { v: 1, type: 'applied/popup' }),
+    // v1.3 B: a submitted form's answers kept unless the person turned it off; its questions classified as the
+    // resolver does; where each answer came from, by the frame's report.
+    keepAnswers: async () => (await settings.get()).modes.keepAnswers === 'on',
+    categoryOf: (spec) => categoryOfSpec(spec, core.vocab()),
+    rowsOf: async (tabId, frameId) => (await reports.ofTab(tabId)).find((report) => report.frameId === frameId)?.fields
+      ?? [] });
   submissions = submitted;
   /** The resume a fill of the tab would attach, for the side panel's preview (v3 Phase 3b): the person's choice, else
    *  the card's; read from the account's list, for its file kind and name. None while the tab applies without one. */
@@ -473,6 +488,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     (frame) => contentSettingsFor(frame.tabId, frame.applicationKey, frame.documentId, frame.origin));
   const beginDeps = {
     jobs,
+    knownForms,
     generation: () => keeper.generation,
     storageAccess: () => state.storageAccess,
     connected: () => auth.connected(),
@@ -829,6 +845,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           return answer;
         },
         'submit/detected': async (message, from) => submitted.detected(message, await tailoritFromNow(from)),
+        // v1.3 B: the armed Submit's form, held for it in memory only (submissions.ts).
+        'submit/form': async (message, from) => submitted.form(message, await tailoritFromNow(from)),
         // v3 Phase 5: Sign-in mode Auto's credential, to the asking top frame alone (sign-in.ts).
         'signin/credential': (message, from) => signIn.credential(message, from),
         // Round 3 of the v3 Phase 6/7b review (X8): the agent's entry pressed in the top frame, told before the entry

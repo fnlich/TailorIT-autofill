@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  Synthetic (v1.3 B): a Greenhouse job-boards application form as its adapter reads one (form#application-form
+  .application--form, its Submit in .application--submit), the shape of fixtures/synthetic/submit/greenhouse.html,
+  with the golden profile's questions, a resume upload (its file input visible), and one question no profile answers
+  ("Do you enjoy hiking on weekends?", Yes or No: an unknown question, which TailorIT's AI is asked about until an
+  earlier application answered it). A test may add a password box to the form (a site's "Create a password"), which
+  the scanner never makes a field. Served at https://job-boards.greenhouse.io/tailoritfixture/jobs/<id>. The page's
+  own script stands for Greenhouse's: on its form's submit event it posts nothing, shows the confirmation in the form's
+  place (main > div.confirmation > div.confirmation__content), moves to /confirmation (history.pushState) and counts
+  the submissions on the body (data-submitted). It dispatches no event, and clicks, focuses or submits nothing itself.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Job Application for Senior Backend Engineer at Northwind</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    label, legend { display: block; margin-top: 12px; font-weight: 600; }
+    .choice { display: inline-block; font-weight: 400; margin-right: 16px; }
+    input[type="text"], input[type="email"], input[type="password"] { display: block; width: 100%; box-sizing: border-box;
+      padding: 6px; border: 1px solid #888; }
+    fieldset { border: 0; padding: 0; margin: 0; }
+    .application--submit button { margin-top: 20px; padding: 10px 20px; }
+  </style>
+</head>
+<body data-submitted="0">
+  <main class="main">
+    <h1>Senior Backend Engineer</h1>
+    <p>Northwind builds tools for the people who build things. You will design and run our payment services.</p>
+    <form id="application-form" class="application--form">
+      <div class="field-wrapper"><label for="first_name">First Name<span aria-hidden="true">*</span></label>
+        <input id="first_name" name="first_name" type="text" aria-required="true"></div>
+      <div class="field-wrapper"><label for="last_name">Last Name<span aria-hidden="true">*</span></label>
+        <input id="last_name" name="last_name" type="text" aria-required="true"></div>
+      <div class="field-wrapper"><label for="email">Email<span aria-hidden="true">*</span></label>
+        <input id="email" name="email" type="email" aria-required="true"></div>
+      <div class="field-wrapper"><label for="resume">Resume/CV</label>
+        <input id="resume" name="resume" type="file"></div>
+      <div class="field-wrapper" id="hiking-question"><fieldset>
+        <legend>Do you enjoy hiking on weekends?</legend>
+        <label class="choice"><input type="radio" name="hiking" value="1"> Yes</label>
+        <label class="choice"><input type="radio" name="hiking" value="0"> No</label>
+      </fieldset></div>
+      <div class="application--submit"><button class="btn btn--pill" type="submit">Submit application</button></div>
+    </form>
+  </main>
+  <script>
+    (() => {
+      const form = document.getElementById('application-form');
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        document.body.dataset.submitted = String(Number(document.body.dataset.submitted) + 1);
+        const box = document.createElement('div');
+        box.className = 'confirmation';
+        const content = document.createElement('div');
+        content.className = 'confirmation__content';
+        const heading = document.createElement('h1');
+        heading.textContent = 'Thank you for applying to Northwind!';
+        content.append(heading);
+        box.append(content);
+        document.querySelector('main').replaceChildren(box);
+        history.pushState({}, '', `${location.pathname}/confirmation`);
+      });
+    })();
+  </script>
+</body>
+</html>

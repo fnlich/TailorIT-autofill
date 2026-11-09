@@ -1094,6 +1094,9 @@ export function planFrame(asked: PlanInput): PlanOutput {
     profile, sensitiveState: input.sensitiveState, savedAnswers: input.savedAnswers, settings: input.settings, aiFree,
     vocab: input.vocab, now: input.now, separatePhoneCountry: phoneCountrySections.has(sectionKey(spec.section)),
     ...(input.company !== undefined ? { company: input.company } : {}),
+    // v1.3 B: the person's earlier submitted answers.
+    ...(input.submittedAnswers !== undefined && input.submittedAnswers.length > 0
+      ? { submitted: input.submittedAnswers } : {}),
     ...(repeatables.length > 0 ? { blockEntries } : {}),
     ...(postingCountry !== undefined ? { postingCountry } : {}),
     ...(posting.company !== undefined && posting.company.trim() !== '' ? { postingCompany: posting.company } : {}),
@@ -1148,6 +1151,7 @@ export function planFrame(asked: PlanInput): PlanOutput {
   // The canaries any label of the frame carries, the context's too: more to scan for is never less safe.
   const guard: GuardContext = { canaries: [...input.canaries, ...input.specs.flatMap(labelCanaries)], profile,
     profileIndex: profileIndex(profile), savedAnswers: input.savedAnswers,
+    ...(input.submittedAnswers !== undefined ? { submittedAnswers: input.submittedAnswers } : {}),
     answerAll: input.settings.llm.answers && input.settings.modes.ai === 'all' };
   const ctx: FieldPlanContext = { input, guard, drops: new Set(),
     legal: { settings: input.settings, ...(postingCountry !== undefined ? { postingCountry } : {}) },

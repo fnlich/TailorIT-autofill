@@ -1,0 +1,49 @@
+{
+  "url": "https://job-boards.greenhouse.io/northwind/jobs/5512345002",
+  "questions": [
+    {
+      "ref": "greenhouse|application|first name|none|0",
+      "questionKey": "first name",
+      "label": "First Name",
+      "kind": "text",
+      "options": [],
+      "optionSetHash": "",
+      "section": "Application",
+      "required": true,
+      "step": 0,
+      "position": 0,
+      "category": "first_name"
+    },
+    {
+      "ref": "greenhouse|application|resume cv|none|0",
+      "questionKey": "resume cv",
+      "label": "Resume/CV",
+      "kind": "file",
+      "options": [],
+      "optionSetHash": "",
+      "section": "Application",
+      "required": true,
+      "step": 0,
+      "position": 1,
+      "category": "resume_upload"
+    },
+    {
+      "ref": "greenhouse|application|how did you hear about us|9a1c3e5f7b2d4068|0",
+      "questionKey": "how did you hear about us",
+      "label": "How did you hear about us?",
+      "kind": "select",
+      "options": [
+        "LinkedIn",
+        "Company website",
+        "Referral",
+        "Other"
+      ],
+      "optionSetHash": "9a1c3e5f7b2d4068",
+      "section": "Application",
+      "required": false,
+      "step": 0,
+      "position": 2,
+      "category": "referral_source"
+    }
+  ]
+}

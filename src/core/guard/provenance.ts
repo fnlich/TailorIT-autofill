@@ -39,6 +39,7 @@ import {
 } from '../types/intent';
 import type { Profile } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
+import type { SubmittedAnswer } from '../types/submitted';
 import type { VisibleText } from '../types/text';
 import { cutInjected } from './injected';
 
@@ -197,6 +198,11 @@ export function checkProvenanceShape(write: PlannedWrite): GuardVerdict {
       }
       // A text, or (TailorIT's API 4) a date input's one date, which TailorIT and the worker checked in its format.
       return write.value.kind === 'text' || write.value.kind === 'date' ? PASS : fail('policy-violation');
+    // v1.3 B: an earlier submitted answer names it, and whose it was.
+    case 'submitted-before':
+      if (!nonEmpty(origin.submittedId) || typeof origin.sameJob !== 'boolean') return fail('missing-provenance');
+      // A text, an option or several, or a box: never a file or a date.
+      return write.value.kind === 'file' || write.value.kind === 'date' ? fail('policy-violation') : PASS;
     default:
       return fail('missing-provenance');
   }
@@ -206,6 +212,8 @@ export function checkProvenanceShape(write: PlannedWrite): GuardVerdict {
 export interface ProvenanceContext {
   profile: Profile;
   savedAnswers: readonly SavedAnswer[];
+  /** v1.3 B: the run's earlier submitted answers (core/resolver/submitted.ts); absent: none. */
+  submittedAnswers?: readonly SubmittedAnswer[];
 }
 
 /** The key a saved answer is matched by: the field's normalized label and its observed option-set hash. */
@@ -237,6 +245,12 @@ export function checkProvenance(write: PlannedWrite, spec: FieldSpec, category: 
       const answer = ctx.savedAnswers.find((candidate) => candidate.id === origin.savedAnswerId);
       return answer !== undefined && savedAnswerFits(answer, spec) ? PASS : fail('missing-provenance');
     }
+    // v1.3 B: one the run holds, for this field's question, whose it says it is.
+    case 'submitted-before': {
+      const answer = ctx.submittedAnswers?.find((candidate) => candidate.id === origin.submittedId);
+      return answer !== undefined && answer.sameJob === origin.sameJob && answer.labelKey === normalizeLabel(spec.label)
+        ? PASS : fail('missing-provenance');
+    }
     case 'llm-pick':
       return llmPickStillValid(write, spec) ? PASS : fail('llm-pick-rejected');
     case 'llm-draft':
@@ -261,16 +275,21 @@ const CLASS_RULES: Readonly<Record<PolicyClass, readonly RuleId[] | 'any'>> = {
 
 /** The provenances each class's values may have (§7.6, §8.2): `rule` is narrowed further by CLASS_RULES. */
 const CLASS_PROVENANCES: Readonly<Record<PolicyClass, readonly ValueOrigin['provenance'][]>> = {
-  profile: ['profile', 'saved', 'rule', 'llm-pick', 'llm-answer'],
-  sensitive: ['profile', 'rule'],
-  legal: ['profile', 'rule'],
-  eeo: ['profile', 'rule'],
+  profile: ['profile', 'saved', 'rule', 'llm-pick', 'llm-answer', 'submitted-before'],
+  // v1.3 B: an EEO, legal or sensitive question takes this job's own earlier answer alone (checkCategoryPolicy).
+  sensitive: ['profile', 'rule', 'submitted-before'],
+  legal: ['profile', 'rule', 'submitted-before'],
+  eeo: ['profile', 'rule', 'submitted-before'],
   consent: ['rule'],
   attention: [],
-  'free-text': ['saved', 'llm-draft', 'llm-answer', 'rule'],
+  'free-text': ['saved', 'llm-draft', 'llm-answer', 'rule', 'submitted-before'],
   file: ['profile'],
-  unknown: ['saved', 'llm-pick', 'llm-answer', 'rule'],
+  unknown: ['saved', 'llm-pick', 'llm-answer', 'rule', 'submitted-before'],
 };
+
+/** v1.3 B: the classes another job's earlier answer may fill (core/resolver/submitted.ts): never a sensitive one, nor
+ *  free text, which was that job's. */
+const OTHER_JOB_CLASSES: ReadonlySet<PolicyClass> = new Set<PolicyClass>(['profile', 'unknown']);
 
 /** What the category policy reads besides the origin and the category. */
 export interface CategoryPolicyOptions {
@@ -299,6 +318,10 @@ export function checkCategoryPolicy(origin: ValueOrigin, category: FieldCategory
   }
   const policy = policyClassOf(category);
   if (!CLASS_PROVENANCES[policy].includes(origin.provenance)) return fail('policy-violation');
+  // v1.3 B: another job's earlier answer fills only a question that is not sensitive, and no free text.
+  if (origin.provenance === 'submitted-before' && !origin.sameJob && !OTHER_JOB_CLASSES.has(policy)) {
+    return fail('policy-violation');
+  }
   if (origin.provenance === 'llm-answer' && policy === 'profile' && !ANSWERABLE_PROFILE_CATEGORIES.has(category)) {
     return fail('policy-violation');
   }

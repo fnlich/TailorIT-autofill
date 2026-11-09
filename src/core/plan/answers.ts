@@ -387,7 +387,9 @@ function answerScope(spec: FieldSpec, classification: FieldClassification, resol
   writable: boolean, context: DraftContext, answerAll: boolean): AnswerScope | null {
   if (!writable || !classifiable(spec) || !llmMaySeeLabel(spec.labelSource)) return null;
   if (classification.by === 'tripwire') return null;
-  if (resolution.classifiedBy === 'saved' || row.status === 'blocked' || row.wrote) return null;
+  // v1.3 B: nor one an earlier submitted answer settles (its option gone included).
+  if (resolution.classifiedBy === 'saved' || resolution.classifiedBy === 'submitted' || row.status === 'blocked'
+    || row.wrote) return null;
   if (namesAnotherPerson(spec)) return null;
   if (standardAnswerable(spec, classification, resolution, row, context)) return 'standard';
   return answerAll && openAnswerable(spec, classification, resolution, row, context) !== null ? 'all' : null;

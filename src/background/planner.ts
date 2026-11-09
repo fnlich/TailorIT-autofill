@@ -70,6 +70,20 @@
  * (PlanInput.oneRound), unless TailorIT showed it does not classify within an answer task (ai-tasks.ts).
  * The P2 review (security 5): plan/ready names the keys whose answer or draft the run took from its stream and whose
  * reply TailorIT then voided as a whole (`reviews`, RunAi.takeReviews): the frame flags what it wrote from them.
+ *
+ * v1.3 B (the coordinator's decision 5; docs/SPEC-AMENDMENTS.md §16):
+ * - Every plan reads the person's earlier submitted answers (known-forms.ts: the job's read at run/begin, waited for
+ *   KNOWN_FORM_WAIT_MS at most) and plans with them (PlanInput.submittedAnswers): they fill a gap the profile leaves,
+ *   with no AI (core/resolver/submitted.ts). The questions a plan leaves open (no write; visible, labelled, enabled;
+ *   no upload) that TailorIT keeps none of for the job are then read once each (readOpen, KNOWN_FIELDS_READS a run at
+ *   most) for the person's answers on other jobs, and planned again with them: a question the profile fills, or a
+ *   hidden one, is never named to TailorIT before the Submit.
+ * - The run-start AI batch: at a run's first plan/request, when TailorIT keeps the job's questions, every one of them
+ *   is planned once as a spec of its own (known-forms.ts knownSpecsOf: no value, no cache, no sensitive read, nothing
+ *   written), and the answer items that plan asks (those neither the profile nor an earlier answer covers, across
+ *   every step) go to the run's RunAi.prefetch at once, with the frame's posting text and canaries, as one batch (or
+ *   as few as the caps allow). A later step's fields take those answers at once (ai-tasks.ts signatureOf). Never in a
+ *   dry run, a profile-only run, or with AI-written answers off: the same screens as any plan's.
  */
 import type { z } from 'zod';
 import type { PlanAsk, PlanOutput, PlanSensitiveState } from '../core/plan/types';
@@ -91,6 +105,16 @@ import type { FrameRef, RunMemo, RunRegistry } from './runs';
 import type { RunStateStore } from './runstate-store';
 import type { SettingsStore } from './settings';
 import type { WorkerPlatform } from '../platform/types';
+// v1.3 B
+import { canaryWords, profileIndex } from '../core/guard/canary';
+import { checkHoneypot } from '../core/guard/honeypot';
+import type { Profile } from '../core/types/profile';
+import type { Platform } from '../core/enums';
+import type { SubmittedAnswer } from '../core/types/submitted';
+import {
+  fieldKeyOf, KNOWN_FIELDS_READS, KNOWN_FORM_WAIT_MS, knownSpecsOf, within, type KnownForms,
+} from './known-forms';
+import type { Timers } from './timers';
 
 type PlanAnswer = z.infer<typeof PlanAnswerSchema>;
 type PlanRequest = Extract<ContentMessage, { type: 'plan/request' }>;
@@ -125,6 +149,11 @@ export interface PlannerDeps {
   withoutResume?(tabId: number, applicationKey: string | null): boolean;
   /** v5 p2-stream: where a run's frame is told its answers came in (plan/ready). Absent: the frame's polls find them. */
   tabs?: Pick<WorkerPlatform['tabs'], 'sendToFrame'>;
+  /** v1.3 B: the person's earlier answers to the questions a frame shows (known-forms.ts). Absent: only the run's
+   *  first read. */
+  knownForms?: Pick<KnownForms, 'fields'>;
+  /** v1.3 B: how long a plan waits for a read of the known form (KNOWN_FORM_WAIT_MS). Absent: it waits for it. */
+  timers?: Timers;
 }
 
 const profileRefusal = (failure: 'not-connected' | 'unavailable' | 'internal') =>
@@ -176,6 +205,90 @@ export function createPlanner(deps: PlannerDeps) {
   }
   // v5 p2-stream end
 
+  // v1.3 B
+  /** A read, or `fallback` once KNOWN_FORM_WAIT_MS passed. */
+  function waitFor<T>(promise: Promise<T>, fallback: T): Promise<T> {
+    const timers = deps.timers;
+    return timers === undefined ? promise : within(promise, KNOWN_FORM_WAIT_MS, fallback,
+      (ms) => new Promise<void>((resolve) => void timers.after(ms, resolve)));
+  }
+
+  /** The person's earlier answers the run knows (module header): its first read's, waited for a short while. */
+  async function submittedOf(run: RunRecord): Promise<readonly SubmittedAnswer[]> {
+    const memo = deps.runs.memo(run.runId).known;
+    if (memo === undefined) return [];
+    const first = await waitFor(memo.first, null);
+    if (first !== null && memo.merged !== true) {
+      memo.merged = true;
+      memo.answers.push(...first.answers);
+    }
+    return [...memo.answers];
+  }
+
+  /**
+   * The questions a plan leaves open (no write; visible, labelled and enabled; no upload, and no lone box, whose label
+   * is often an answer itself: a skill, a language, a place) that TailorIT keeps none of for the job: their keys (their
+   * labels normalized, their options' hash) are read once each, at most KNOWN_FIELDS_READS a run, for the person's
+   * answers to the same questions on other jobs. So a question the profile fills is never named to TailorIT before the
+   * Submit, nor a hidden one, nor one whose key holds any of the person's own profile values (a title, a skill, a
+   * place: "years of software engineering experience" names the person's title): no profile value is ever sent but as
+   * an AI request's page text. True when that brought an answer.
+   */
+  async function readOpen(run: RunRecord, specs: readonly FieldSpec[], planKeys: readonly FieldKey[],
+    output: PlanOutput, profile: Profile): Promise<boolean> {
+    const memo = deps.runs.memo(run.runId).known;
+    if (memo === undefined || deps.knownForms === undefined || memo.target === null || memo.reads >= KNOWN_FIELDS_READS) {
+      return false;
+    }
+    const first = await waitFor(memo.first, null);
+    const kept = new Set((first?.questions ?? []).map((question) => `${question.questionKey}|${question.optionSetHash ?? ''}`));
+    const planned = new Set<string>(planKeys);
+    const written = new Set<string>(output.writes.map((write) => write.key));
+    const rows = new Map(output.results.map((row) => [row.key, row] as const));
+    const own = profileIndex(profile).values;
+    const fresh = specs.flatMap((spec) => {
+      const row = rows.get(spec.key);
+      if (!planned.has(spec.key) || written.has(spec.key) || row === undefined || row.status === 'blocked'
+        || row.provenance !== null || spec.disabled || !checkHoneypot(spec).ok || spec.kind === 'checkbox') return [];
+      const named = fieldKeyOf(spec);
+      if (named === null) return [];
+      const words = canaryWords(named.questionKey);
+      if (own.some((value) => words.includes(value))) return [];
+      const id = `${named.questionKey}|${named.optionSetHash}`;
+      if (kept.has(id) || memo.asked.has(id)) return [];
+      memo.asked.add(id);
+      return [named];
+    });
+    if (fresh.length === 0) return false;
+    memo.reads += 1;
+    const got = await waitFor(deps.knownForms.fields(memo.target, fresh), null);
+    if (got === null || got.length === 0) return false;
+    memo.answers.push(...got);
+    return true;
+  }
+
+  /** The run-start AI batch (module header), once per run, at its first plan/request. */
+  async function prestart(run: RunRecord, url: string, asked: AskContext): Promise<void> {
+    const memo = deps.runs.memo(run.runId).known;
+    if (memo === undefined || memo.prestarted || run.dryRun || aiOffFor(run, asked)) return;
+    memo.prestarted = true;
+    const form = await waitFor(memo.first, null);
+    if (form === null || form.questions.length === 0) return;
+    const settings = await deps.settings.get();
+    if (!settings.llm.answers) return;
+    const specs = knownSpecsOf(form.questions, run.applicationKey.split(':')[0] as Platform);
+    if (specs.length === 0) return;
+    const context: AskContext = { specs, canaries: asked.canaries,
+      ...(asked.postingText === undefined ? {} : { postingText: asked.postingText }),
+      ...(asked.posting === undefined ? {} : { posting: asked.posting }) };
+    const planned = await planOnce(run, url, context, specs.map((spec) => spec.key), true);
+    if ('refusal' in planned) return;
+    const items = planned.output.ask?.answers ?? [];
+    if (items.length === 0) return;
+    aiOf(run).prefetch?.(items, await withDraftContext(run, url, context), settings.llm);
+  }
+  // v1.3 B end
+
   /** The run's LLM questions and answers, made at its first need. */
   function aiOf(run: RunRecord): RunAi {
     const memo = deps.runs.memo(run.runId);
@@ -195,19 +308,23 @@ export function createPlanner(deps: PlannerDeps) {
    * One plan of `planKeys` over a scan and its canaries: the sensitive part fetched once per run when the plan needs
    * it (then planned again), and the run's resume attached when it plans a file field.
    */
-  async function planOnce(run: RunRecord, url: string, context: AskContext, planKeys: readonly FieldKey[]):
-    Promise<Planned> {
+  async function planOnce(run: RunRecord, url: string, context: AskContext, planKeys: readonly FieldKey[],
+    known?: true): Promise<Planned> {
     let loaded = await deps.profiles.get();
     if (!loaded.ok) return { refusal: profileRefusal(loaded.failure) };
     const planned = new Set<string>(planKeys);
-    const resume = context.specs.some((spec) => spec.kind === 'file' && planned.has(spec.key))
+    const resume = known !== true && context.specs.some((spec) => spec.kind === 'file' && planned.has(spec.key))
       ? await deps.chooseResume(run.runId, url) : null;
+    // v1.3 B: the person's earlier submitted answers (the run-start batch's plan reads no more than the first read's).
+    let submittedAnswers = await submittedOf(run);
     // v3 Phase 3b: "Apply without resume": the resume upload is left for the person, and nothing is attached.
     const tabOf = deps.runs.memo(run.runId).tabId;
     const withoutResume = tabOf !== undefined && deps.withoutResume?.(tabOf, run.applicationKey) === true;
     const ai = aiOf(run);
     const settings = await deps.settings.get();
-    await deps.cache?.ready();
+    // v1.3 B: the run-start batch's plan reads no cache (it may drop nothing, nor be cached).
+    const cache = known === true ? undefined : deps.cache;
+    await cache?.ready();
     // The company the frame's address names: a free-text saved answer applies only to its own (Phase 6).
     const company = companyOfUrl(url);
     deps.runs.memo(run.runId).company = company;
@@ -227,10 +344,11 @@ export function createPlanner(deps: PlannerDeps) {
       profile: deps.core.attachResume(profile.value.profile, withoutResume ? null : resume),
       sensitiveState: state,
       savedAnswers: profile.value.savedAnswers,
+      ...(submittedAnswers.length > 0 ? { submittedAnswers } : {}),
       ...(company === null ? {} : { company }),
       settings,
       vocab: deps.core.vocab(),
-      ...(deps.cache === undefined ? {} : { cache: deps.cache }),
+      ...(cache === undefined ? {} : { cache }),
       dryRun: run.dryRun,
       now: ymdOf(deps.now()),
       ai: ai.answers,
@@ -251,6 +369,8 @@ export function createPlanner(deps: PlannerDeps) {
       let state: PlanSensitiveState = memory !== 'not-loaded' ? memory
         : run.sensitive === 'not-shared' || run.sensitive === 'unavailable' ? run.sensitive : 'not-loaded';
       let output = plan(state, loaded);
+      // v1.3 B: the run-start batch's plan never reads the sensitive part: those questions wait for their step.
+      if (output.needsSensitive && state === 'not-loaded' && known === true) output = plan('unavailable', loaded);
       if (output.needsSensitive && state === 'not-loaded') {
         const fetched = await deps.profiles.loadSensitive();
         await deps.runs.setSensitive(run.runId, fetched);
@@ -264,8 +384,15 @@ export function createPlanner(deps: PlannerDeps) {
         output = plan(state, loaded);
       }
       if (output.needsSensitive) throw new Error('the plan still needs the sensitive part');
-      if (output.cacheDrops !== undefined) await deps.cache?.drop(output.cacheDrops);
-      if (output.cacheCandidates !== undefined && !run.dryRun) {
+      // v1.3 B: the questions it leaves open, read for the person's answers on other jobs, then planned again with them
+      // (the run-start batch's plan reads only the job's).
+      if (known !== true && await readOpen(run, context.specs, planKeys, output, loaded.value.profile)) {
+        submittedAnswers = await submittedOf(run);
+        output = plan(state, loaded);
+        if (output.needsSensitive) throw new Error('the plan still needs the sensitive part');
+      }
+      if (output.cacheDrops !== undefined) await cache?.drop(output.cacheDrops);
+      if (output.cacheCandidates !== undefined && !run.dryRun && known !== true) {
         deps.accepts?.planned(run.applicationKey, output.cacheCandidates);
       }
       return { output, revision: loaded.value.revision };
@@ -421,6 +548,8 @@ export function createPlanner(deps: PlannerDeps) {
         ...(message.noAi === true ? { noAi: true } : {}),
         ...(message.posting === undefined ? {} : { posting: message.posting }) };
       const planKeys = message.planKeys as unknown as FieldKey[];
+      // v1.3 B: the run-start AI batch, once, before the step's own questions (module header).
+      await prestart(run, from.url, asked);
       const planned = await planOnce(run, from.url, asked, planKeys);
       if ('refusal' in planned) return planned.refusal;
       const context = withEntries(asked, planned.output);

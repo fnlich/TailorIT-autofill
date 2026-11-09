@@ -136,6 +136,12 @@
  * hid the launcher on this site or everywhere; the views' minimise folds it back to the pill. The worker's sidebar/open
  * (the toolbar icon) opens it on any page of ours. A frame inside another page keeps its corner launcher and in-page
  * card (the panel 'page' acts there as the in-page card did).
+ *
+ * v1.3 B (the owner, 2026-11-09; docs/SPEC-AMENDMENTS.md §16): the form's questions and the person's answers are read
+ * as each step is left (the run's own Next: RunEnv.stepLeaving; the person's own click on the adapter's Next) and at
+ * every armed Submit press, into the document's memory only (form-capture.ts), and handed to the worker with the arm
+ * (submit/form, with the posting's names and visible text from the top frame), which sends them to TailorIT only once
+ * the site confirmed that Submit.
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from '../adapters/address';
@@ -173,7 +179,7 @@ import { createChannel, Invalidated } from './channel';
 import { watchWxtEvents } from './forged';
 import { LATE_FORM_CAP_MS, lateAdapters, lateFormMs, watchForLateForm, watchForSiteForm } from './late-form';
 import { watchLocation } from './location';
-import { postingTextOf, relayJob } from './job-relay';
+import { postingNamesOf, postingTextOf, relayJob } from './job-relay';
 import {
   FillRun, RunFailure, type HeldAnswer, type RunEnd, type RunOptions, type RunPage, type RunRequest,
 } from './orchestrator';
@@ -188,6 +194,11 @@ import { loadPagePatches } from './page-patches';
 import { signIn } from './sign-in';
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { createReportLimiter } from './report';
+// v1.3 B
+import { captureStep, createFormCapture, stepNameOf } from './form-capture';
+import type { CapturedPosting } from '../messaging/schemas';
+import { MAX_POSTING_TEXT } from '../messaging/schemas';
+import { visibleTextWithout } from '../dom/visible-text';
 import { showField } from './targets';
 import { TouchLog } from './touches';
 import { showApplied } from './ui/applied';
@@ -334,6 +345,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   let ui: PageUi | null = null;
   let page: RunPage | null = null;
   let app: ApplicationRef | null = null;
+  /** v1.3 B: the form's questions and answers, step by step, memory only (form-capture.ts). */
+  const formCapture = createFormCapture();
   let current: FillRun | null = null;
   let frameId: number | null = null;
   /** The hasForm the worker was last told. */
@@ -394,7 +407,51 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     lifetime.abort();
     ui?.destroy();
     ui = null;
+    formCapture.clear();
   }
+
+  // ── v1.3 B: the form's questions and answers (form-capture.ts) ──
+  /** The step the page shows now, read into the capture (it replaces what that step held). Never throws. */
+  function captureNow(): void {
+    const on = stopped ? null : pageNow();
+    if (on === null || app === null || on.app.applicationKey !== app.applicationKey) return;
+    try {
+      const canaries = current?.canariesNow() ?? [];
+      formCapture.note(app.applicationKey, stepNameOf(on.adapter, doc),
+        (step) => captureStep(scanPage(on), step, canaries));
+    } catch {
+      log('content.capture-failed');
+    }
+  }
+
+  /** The posting as the top frame's page shows it: the names its title gives, and its visible text outside the form;
+   *  none in a frame inside another page, or when the title names no company and job. */
+  function postingNow(on: RunPage): CapturedPosting | null {
+    if (!isTop || doc.body === null) return null;
+    const names = postingNamesOf(doc, on.app.platform);
+    if (names === null) return null;
+    let description = '';
+    try {
+      description = visibleTextWithout(doc.body, [on.root], { cap: MAX_POSTING_TEXT }).trim();
+    } catch {
+      description = '';
+    }
+    return description === '' ? null : { title: names.title.slice(0, 300), company: names.company.slice(0, 200),
+      description: [...description].slice(0, MAX_POSTING_TEXT).join('') };
+  }
+
+  /** An armed Submit's form, handed to the worker at once (the page may leave as it sends): the step shown now, read
+   *  first, then every step's. The worker keeps it for the arm alone. */
+  function sendForm(applicationKey: string): void {
+    if (app !== null && app.applicationKey === applicationKey) captureNow();
+    const fields = formCapture.all(applicationKey);
+    if (fields.length === 0) return;
+    const on = pageNow();
+    const posting = on === null ? null : postingNow(on);
+    void channel.request({ v: 1, type: 'submit/form', applicationKey, fields,
+      ...(posting === null ? {} : { posting }) }).catch(() => undefined);
+  }
+  // ── end v1.3 B ──
 
   /** v3 Phase 8: the worker injected this document's script (a company's own page: the static content script runs on
    *  the ATS hosts alone), read once from the address the document was loaded at. */
@@ -721,6 +778,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const resume = runId !== undefined && current !== null && current.begunAs === runId && current.resumeAttached();
     armedHeard = channel.request({ v: 1, type: 'submit/armed', applicationKey: at.applicationKey, by,
       ...(runId === undefined ? {} : { runId }), ...(resume ? { resume: true as const } : {}) }).catch(() => undefined);
+    // v1.3 B: the form's questions and answers go with the arm (the worker sends them only once it is confirmed).
+    sendForm(at.applicationKey);
     if (armed !== null) endArm(armed, 'replaced');
     const view = doc.defaultView;
     const watch = new AbortController();
@@ -847,6 +906,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       return;
     }
     if ((event as MouseEvent).button !== 0) return;
+    // v1.3 B: the person's own Next leaves the step: its questions and answers are read first.
+    let next: HTMLElement | null = null;
+    try {
+      next = on.adapter.nextButton?.(on.root) ?? null;
+    } catch {
+      next = null;
+    }
+    if (next !== null && path.includes(next)) captureNow();
     let submit: HTMLElement | null = null;
     try {
       submit = on.adapter.submitButton?.(on.root) ?? null;
@@ -1052,6 +1119,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       answers,
       // v3 Phase 4: a Submit this run pressed is armed here, so its platform's sign is watched for.
       submitPressed: (by, runId, before) => arm(by, runId, before ?? undefined),
+      // v1.3 B: the run is about to press Next: the step's questions and answers are read first.
+      stepLeaving: () => {
+        if (current === run) captureNow();
+      },
       beforePress: () => (app === null || page === null ? null : { applicationKey: app.applicationKey,
         platform: app.platform, root: page.root, adapter: page.adapter, signs: shownSignsOf(doc, app.platform) }),
       autoPressed,

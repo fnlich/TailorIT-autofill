@@ -1,4 +1,5 @@
 /*
+ * Settings version 9 (v1.3 B: "Keep my submitted answers in TailorIT", On by default; every version 8 value takes On).
  * Settings version 8 (v5 p1-shell: "Where the panel shows", On the page or Chrome's side panel, version 7's in-page card
  * read as the page; Default view's new meaning). Version 7 (version 4: v3 Phase 3, the owner's modes; version 5: "Résumé already on the page", the behaviour
  * review of 2026-11-06; version 6: v4's "decide, don't flag", no "Ask me each time" and no draft confirmation; version
@@ -10,12 +11,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_MODES, DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4,
-  migrateSettingsV5, migrateSettingsV6, migrateSettingsV7, MODE_CHOICES, NO_MATCH_MODES, NOTIFICATION_TIMES,
-  PANEL_PLACES, SETTINGS_VERSION, type ModesV6, type SettingsV1, type SettingsV2, type SettingsV3, type SettingsV4,
-  type SettingsV5, type SettingsV6, type SettingsV7,
+  migrateSettingsV5, migrateSettingsV6, migrateSettingsV7, migrateSettingsV8, MODE_CHOICES, NO_MATCH_MODES,
+  NOTIFICATION_TIMES, PANEL_PLACES, SETTINGS_VERSION, type ModesV6, type ModesV8, type SettingsV1, type SettingsV2,
+  type SettingsV3, type SettingsV4, type SettingsV5, type SettingsV6, type SettingsV7, type SettingsV8,
 } from './settings';
 
 const { modes: _modes, view: _view, version: _version, panel: _panel, llm, ...rest } = DEFAULT_SETTINGS;
+/** Version 8's modes at their defaults (before "Keep my submitted answers in TailorIT"). */
+const { keepAnswers: _keepAnswers, ...MODES_V8 } = DEFAULT_MODES;
 /** Versions 1 to 7's default place: Chrome's side panel, which version 8 keeps (v5 p1-shell). */
 const shared = { ...rest, panel: 'side' as const };
 /** What versions 1 to 7's defaults read as in version 8: every default, the panel on the page (the owner's word). */
@@ -24,26 +27,49 @@ const DEFAULTS_FROM_OLD = { ...DEFAULT_SETTINGS, panel: 'page' as const };
 const llmV5 = { ...llm, confirmDrafts: false };
 const V3: SettingsV3 = { ...shared, version: 3, autoAdvance: false, llm: { ...llmV5, answerAll: true } };
 /** Version 6's modes at their defaults (before "When a list has no match" and the notifications' time). */
-const { noMatch: _noMatch, notifications: _notifications, ...MODES_V6 } = DEFAULT_MODES;
+const { noMatch: _noMatch, notifications: _notifications, ...MODES_V6 } = MODES_V8;
 const modesV6 = (change: Partial<ModesV6> = {}): ModesV6 => ({ ...MODES_V6, agentSkip: { ...MODES_V6.agentSkip },
   ...change });
-/** Version 7's modes from version 6's: the two new ones at their defaults. */
-const withV7 = <T extends object>(modes: T) => ({ ...modes, noMatch: 'other', notifications: 'until-closed' });
+/** Version 7's modes from version 6's: the two new ones at their defaults, and (version 9) Keep my answers On. */
+const withV7 = <T extends object>(modes: T) => ({ ...modes, noMatch: 'other', notifications: 'until-closed',
+  keepAnswers: 'on' });
+
+describe('settings version 9 (v1.3 B)', () => {
+  it('keeps the answers of submitted applications by default, in version 9', () => {
+    expect(SETTINGS_VERSION).toBe(9);
+    expect(DEFAULT_SETTINGS.version).toBe(9);
+    expect(DEFAULT_SETTINGS.modes.keepAnswers).toBe('on');
+    expect(MODE_CHOICES.keepAnswers).toEqual(['on', 'off']);
+  });
+
+  it('migrates version 8: every choice kept, Keep my submitted answers in TailorIT On', () => {
+    const modes: ModesV8 = { ...MODES_V8, next: 'auto', recordOwn: 'off', notifications: '10s',
+      agentSkip: { requiredEmpty: false, noAi: true, legalGuess: true } };
+    const v8: SettingsV8 = { ...DEFAULT_SETTINGS, version: 8, panel: 'side', view: 'minimized', modes,
+      llm: { ...llm, drafts: false }, telemetry: { optIn: true }, preapprovedConsent: ['privacy'] };
+    const migrated = migrateSettingsV8(v8);
+    expect(migrated).toEqual({ ...v8, version: 9, modes: { ...modes, keepAnswers: 'on' } });
+    // Nothing of the old object is shared.
+    expect(migrated.modes).not.toBe(v8.modes);
+    expect(migrated.modes.agentSkip).not.toBe(v8.modes.agentSkip);
+    expect(migrated.llm).not.toBe(v8.llm);
+    expect(migrated.preapprovedConsent).not.toBe(v8.preapprovedConsent);
+  });
+});
 
 describe('settings version 8', () => {
-  it('shows the panel on the page by default, in version 8 (v5 p1-shell)', () => {
-    expect(SETTINGS_VERSION).toBe(8);
-    expect(DEFAULT_SETTINGS.version).toBe(8);
+  it('shows the panel on the page by default (v5 p1-shell)', () => {
     expect(DEFAULT_SETTINGS.panel).toBe('page');
     expect(PANEL_PLACES).toEqual(['page', 'side']);
   });
 
   it('migrates version 7: the panel on the page and Default view Expanded for every install (the owner, 2026-11-08; the review, F9), every other choice kept', () => {
     const v7: SettingsV7 = { ...DEFAULT_SETTINGS, version: 7, panel: 'in-page', view: 'minimized',
-      modes: { ...DEFAULT_MODES, next: 'auto', agentSkip: { requiredEmpty: false, noAi: true, legalGuess: true } },
+      modes: { ...MODES_V8, next: 'auto', agentSkip: { requiredEmpty: false, noAi: true, legalGuess: true } },
       llm: { ...llm, drafts: false }, telemetry: { optIn: true } };
     const migrated = migrateSettingsV7(v7);
-    expect(migrated).toEqual({ ...v7, version: 8, panel: 'page', view: 'expanded' });
+    expect(migrated).toEqual({ ...v7, version: 9, panel: 'page', view: 'expanded',
+      modes: { ...v7.modes, keepAnswers: 'on' } });
     expect(migrateSettingsV7({ ...v7, panel: 'side' }).panel).toBe('page');
     expect(migrateSettingsV7({ ...v7, view: 'expanded' }).view).toBe('expanded');
     // Nothing of the old object is shared.
@@ -60,7 +86,8 @@ describe('settings version 7', () => {
     expect(DEFAULT_SETTINGS.llm.whenForbidden).toBe('profile-only');
     expect(DEFAULT_SETTINGS.modes).toEqual({ signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual',
       recordOwn: 'on', consents: 'all', ai: 'all', resumeOnPage: 'keep',
-      agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false }, noMatch: 'other', notifications: 'until-closed' });
+      agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false }, noMatch: 'other', notifications: 'until-closed',
+      keepAnswers: 'on' });
     // s2 profile: each new mode's choices are its whole list, its default first.
     expect([...MODE_CHOICES.noMatch].sort()).toEqual([...NO_MATCH_MODES].sort());
     expect([...MODE_CHOICES.notifications].sort()).toEqual([...NOTIFICATION_TIMES].sort());
@@ -76,7 +103,7 @@ describe('settings version 7', () => {
       llm: { ...V3.llm, answerAll: false, drafts: false, whenForbidden: 'ask' }, offerToSaveAnswers: false,
       telemetry: { optIn: true }, interpretations: { ...V3.interpretations, twoOrMoreRaces: false } };
     const migrated = migrateSettingsV3(chosen);
-    expect(migrated).toEqual({ version: 8, panel: 'page', view: 'expanded',
+    expect(migrated).toEqual({ version: 9, panel: 'page', view: 'expanded',
       modes: { ...DEFAULT_MODES, next: 'auto', ai: 'profile' }, preapprovedConsent: ['privacy', 'sms'],
       llm: { ...llm, drafts: false, whenForbidden: 'profile-only' }, offerToSaveAnswers: false, telemetry: { optIn: true },
       interpretations: { ...V3.interpretations, twoOrMoreRaces: false } });
@@ -96,7 +123,7 @@ describe('settings version 7', () => {
       preapprovedConsent: ['privacy'], llm: { ...llmV5, drafts: false }, telemetry: { optIn: true },
       offerToSaveAnswers: false, interpretations: { ...DEFAULT_SETTINGS.interpretations, twoOrMoreRaces: false } };
     const migrated = migrateSettingsV4(v4);
-    expect(migrated).toEqual({ ...v4, version: 8, panel: 'page', view: 'expanded', modes: withV7({ ...v4.modes, resumeOnPage: 'keep' }),
+    expect(migrated).toEqual({ ...v4, version: 9, panel: 'page', view: 'expanded', modes: withV7({ ...v4.modes, resumeOnPage: 'keep' }),
       llm: { ...llm, drafts: false } });
     // Nothing of the old object is shared.
     expect(migrated.modes.agentSkip).not.toBe(v4.modes.agentSkip);
@@ -108,7 +135,7 @@ describe('settings version 7', () => {
     const v5: SettingsV5 = { ...DEFAULT_SETTINGS, version: 5, panel: 'in-page', modes: modesV6({ next: 'auto' }),
       llm: { ...llmV5, confirmDrafts: true, whenForbidden: 'ask', answers: false } };
     const migrated = migrateSettingsV5(v5);
-    expect(migrated).toEqual({ ...v5, version: 8, panel: 'page', view: 'expanded', modes: withV7(v5.modes),
+    expect(migrated).toEqual({ ...v5, version: 9, panel: 'page', view: 'expanded', modes: withV7(v5.modes),
       llm: { ...llm, answers: false, whenForbidden: 'profile-only' } });
     expect('confirmDrafts' in migrated.llm).toBe(false);
     // "Use AI anyway" and Profile only are kept as they were.
@@ -125,7 +152,7 @@ describe('settings version 7', () => {
         agentSkip: { requiredEmpty: false, noAi: false, legalGuess: true } }),
       llm: { ...llm, drafts: false }, telemetry: { optIn: true } };
     const migrated = migrateSettingsV6(v6);
-    expect(migrated).toEqual({ ...v6, version: 8, panel: 'page', view: 'expanded', modes: withV7(v6.modes) });
+    expect(migrated).toEqual({ ...v6, version: 9, panel: 'page', view: 'expanded', modes: withV7(v6.modes) });
     // Nothing of the old object is shared.
     expect(migrated.modes.agentSkip).not.toBe(v6.modes.agentSkip);
     expect(migrated.llm).not.toBe(v6.llm);

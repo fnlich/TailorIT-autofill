@@ -36,6 +36,18 @@
  *   included), the tab's top frame is told (`applied`: applied/popup), once per recorded submission, and shows
  *   "Application Submitted!" over the page. Never for the auto-apply agent's own tab (its job's result records it), nor
  *   for one not recorded.
+ * - v1.3 B (the owner, 2026-11-09; docs/SPEC-AMENDMENTS.md §16): submit/form (content): the questions and answers of
+ *   the form whose Submit the frame armed (content/form-capture.ts), held in this worker's memory only (never storage),
+ *   for that frame and document's arm, SUBMIT_ARM_MS at most. Once the site confirmed that Submit, the form goes to
+ *   POST /api/autofill/submissions (submitted-forms.ts): the questions always, the answers only while "Keep my
+ *   submitted answers in TailorIT" is on. For a job TailorIT has (the arm names its id), after POST /applied recorded
+ *   it, as before (/submissions moves the entry to Applied again, which changes nothing); for a posting TailorIT has
+ *   no job of, in place of /applied (it does what /applied does, in one transaction, and also adds the posting, from
+ *   its ATS or the page's own posting, which /applied could only refuse): its 400 changes nothing on TailorIT's side,
+ *   so POST /applied then records the application as before; offline or a failure on TailorIT's side keeps the form
+ *   for Try again. The form goes once sent (or the arm goes, the tab closes, the token changes). The auto-apply agent's
+ *   own tab: once its result recorded the job, the same body is sent. With no confirmed Submit nothing is ever sent,
+ *   and a frame that sent no form (a worker restarted meanwhile) records with POST /applied alone.
  * No log line names the job, the address or the person; storage holds ids, keys and times, and an arm's posting address
  * in storage.session only, never in storage.local.
  */
@@ -54,6 +66,11 @@ import type { ContentChannel } from './router';
 import { keyFitsFrame } from './run-begin';
 import type { RunRegistry } from './runs';
 import type { ServerClient } from './server-client';
+// v1.3 B
+import type { FieldSpec } from '../core/types/field';
+import type { FieldCategory } from '../core/types/intent';
+import type { FrameReport } from '../shared/report';
+import { submissionBodyOf, type HeldForm } from './submitted-forms';
 
 /** How long after a Submit was pressed its success message counts. */
 export const SUBMIT_ARM_MS = 10 * 60_000;
@@ -72,7 +89,7 @@ type FrameRef = Pick<ContentChannel, 'tabId' | 'frameId' | 'documentId' | 'url'>
 
 /** What recording needs. */
 export interface SubmissionsDeps {
-  server: Pick<ServerClient, 'applied'>;
+  server: Pick<ServerClient, 'applied'> & Partial<Pick<ServerClient, 'submissions'>>;
   session: StorageArea;
   runs: Pick<RunRegistry, 'find' | 'memo'>;
   jobs: Pick<JobCards, 'remember' | 'epoch' | 'chosen' | 'chosenJob' | 'without'>;
@@ -94,6 +111,12 @@ export interface SubmissionsDeps {
   /** v5 p1-panel: TailorIT recorded the tab's application: its top frame shows "Application Submitted!" (module
    *  header). */
   applied?(tabId: number): void;
+  /** v1.3 B: "Keep my submitted answers in TailorIT" (settings.modes.keepAnswers 'on'). Absent: on. */
+  keepAnswers?(): Promise<boolean>;
+  /** v1.3 B: the extension's classification of a question (classifyField's category), for TailorIT's screen. */
+  categoryOf?(spec: FieldSpec): FieldCategory | null;
+  /** v1.3 B: the frame's report rows, for where each answer came from. */
+  rowsOf?(tabId: number, frameId: number): Promise<FrameReport['fields']>;
 }
 
 /** A Submit armed, as storage.session keeps it: ids, keys and times only. */
@@ -123,6 +146,47 @@ export function createSubmissions(deps: SubmissionsDeps) {
   const recording = new Map<number, Promise<void>>();
   /** The frame that saw each tab's confirmation, with its address, memory only: Try again records through it. */
   const seenIn = new Map<number, FrameRef>();
+  /** v1.3 B: each armed Submit's form, by `${tabId}|${applicationKey}`: memory only, never storage (module header). */
+  const forms = new Map<string, HeldForm>();
+  const formKey = (tabId: number, applicationKey: string) => `${tabId}|${applicationKey}`;
+  /** The form held for an arm: sent from the frame and document that armed it, within SUBMIT_ARM_MS of the press. */
+  function formOf(tabId: number, applicationKey: string, held: Arm): HeldForm | null {
+    const form = forms.get(formKey(tabId, applicationKey));
+    if (form === undefined) return null;
+    if (deps.now() - form.at > SUBMIT_ARM_MS) {
+      forms.delete(formKey(tabId, applicationKey));
+      return null;
+    }
+    return form.frameId === held.frameId && form.documentId === held.documentId ? form : null;
+  }
+  /** POST /submissions for a held form, or null when it has none to send (no form, no body, or a TailorIT client
+   *  without the route). */
+  async function sendForm(tabId: number, applicationKey: string, held: Arm, ids: { jobId: number | null;
+    url: string | null }): Promise<Awaited<ReturnType<ServerClient['submissions']>> | null> {
+    const form = formOf(tabId, applicationKey, held);
+    if (form === null || deps.server.submissions === undefined) return null;
+    // Taken at once: a second record of the same arm running beside this one (two signs at once) sends nothing more.
+    forms.delete(formKey(tabId, applicationKey));
+    const rows = new Map(((await deps.rowsOf?.(tabId, form.frameId).catch(() => undefined)) ?? [])
+      .map((row) => [row.key, row] as const));
+    const keepAnswers = (await deps.keepAnswers?.()) ?? true;
+    const body = submissionBodyOf(form, { ...ids, resumeId: held.resumeId, keepAnswers,
+      categoryOf: (spec) => deps.categoryOf?.(spec) ?? null, rowOf: (key) => rows.get(key) });
+    if (body === null) {
+      log('submit.form-refused', { fields: form.fields.length });
+      return null;
+    }
+    const answer = await deps.server.submissions(body);
+    log('submit.form-sent', { status: answer.ok ? 200 : answer.status ?? 0, questions: body.questions.length,
+      answers: body.answers?.length ?? 0, posting: body.posting !== undefined });
+    // Gone once TailorIT answered for good (as the arm: submissions.ts record), its 400 included (POST /applied
+    // records it then): back only for a Try again after offline or a failure on TailorIT's side.
+    if (!answer.ok && !['forbidden', 'bad-request', 'not-found', 'unauthorized', 'not-connected'].includes(answer.failure)
+      && !forms.has(formKey(tabId, applicationKey))) {
+      forms.set(formKey(tabId, applicationKey), form);
+    }
+    return answer;
+  }
   const armKey = (tabId: number, applicationKey: string) => `${SUBMIT_ARM_PREFIX}${tabId}|${applicationKey}`;
   const docKeyOf = (from: Pick<ContentChannel, 'tabId' | 'frameId' | 'documentId'>) =>
     `${from.tabId}:${from.frameId}:${from.documentId ?? ''}`;
@@ -196,6 +260,9 @@ export function createSubmissions(deps: SubmissionsDeps) {
     const agent = (await deps.agentSubmitted?.(tabId, applicationKey)) ?? 'not-ours';
     if (agent !== 'not-ours') {
       await dropArm(key);
+      // v1.3 B: the agent's result recorded the job: its form's questions and answers go with the same body.
+      if (agent === 'recorded') await sendForm(tabId, applicationKey, held, { jobId: held.jobId, url: held.url ?? null });
+      forms.delete(formKey(tabId, applicationKey));
       await set(tabId, { state: agent, docKey, applicationKey });
       return;
     }
@@ -208,20 +275,40 @@ export function createSubmissions(deps: SubmissionsDeps) {
       await set(tabId, { state: 'not-recorded', docKey, applicationKey });
       return;
     }
-    const answer = await deps.server.applied({ ...body, ...(held.resumeId === null ? {} : { resumeId: held.resumeId }) });
+    // v1.3 B (module header): for a job TailorIT has no id of, a held form goes as POST /submissions in place of
+    // /applied, so TailorIT can add the posting; its 400 changed nothing: /applied then.
+    const first = held.jobId === null ? await sendForm(tabId, applicationKey, held, { jobId: null, url })
+      .catch(() => null) : null;
+    if (first !== null && !first.ok && first.failure === 'bad-request') log('submit.form-fallback');
+    const answer = first !== null && (first.ok || first.failure !== 'bad-request')
+      ? (first.ok ? { ok: true as const, value: first.value.lookup } : first)
+      : await deps.server.applied({ ...body, ...(held.resumeId === null ? {} : { resumeId: held.resumeId }) });
     log('submit.recorded', { status: answer.ok ? 200 : answer.status ?? 0 });
-    if ((await submittedOf(tabId))?.docKey !== docKey) return;
+    // v1.3 B: a job TailorIT has: once /applied recorded it (and the page says so), the form's questions and answers;
+    // their own outcome changes nothing of the record.
+    const thenForm = answer.ok && first === null
+      ? () => sendForm(tabId, applicationKey, held, { jobId: held.jobId, url }).catch(() => {
+        log('submit.form-refused', { fields: 0 });
+        return null;
+      }) : async () => null;
+    if ((await submittedOf(tabId))?.docKey !== docKey) {
+      await thenForm();
+      return;
+    }
     if (answer.ok) {
       await dropArm(key);
       deps.jobs.remember(from, answer.value, { generation, epoch, chosen: deps.jobs.chosen(tabId),
         job: deps.jobs.chosenJob(tabId, applicationKey) });
       await set(tabId, { state: 'recorded', docKey, applicationKey });
       deps.applied?.(tabId); // v5 p1-panel
+      await thenForm();
       return;
     }
     // Refused for good: the arm goes. Offline or a failure on TailorIT's side: it stays for Try again.
     if (['forbidden', 'bad-request', 'not-found', 'unauthorized', 'not-connected'].includes(answer.failure)) {
       await dropArm(key);
+      // v1.3 B: its form with it.
+      forms.delete(formKey(tabId, applicationKey));
     }
     await set(tabId, { state: answer.failure === 'forbidden' ? 'not-allowed' : 'not-recorded', docKey, applicationKey });
   }
@@ -277,6 +364,26 @@ export function createSubmissions(deps: SubmissionsDeps) {
       await deps.session.set({ [key]: arm });
       log('submit.armed', { page: message.by === 'page', panel: message.by === 'panel', auto: message.by === 'auto',
         run: run !== null });
+      return ok({});
+    },
+
+    /** v1.3 B: submit/form (module header): held for the arm of the same frame and document, memory only. */
+    async form(message: Of<'submit/form'>, from: ContentChannel): Promise<Answer<Record<string, never>>> {
+      const retry = deps.limit.take(`${from.tabId}/`);
+      if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+      if (from.incognito === true) return refuse('expired');
+      if (!keyFitsFrame(message.applicationKey, from.url)) return refuse('bad_message');
+      const ref = refOf(from.url);
+      const fits = ref !== null ? ref.applicationKey === message.applicationKey
+        : (await deps.frameKey(from.tabId, from.frameId)) === message.applicationKey;
+      if (!fits) return refuse('bad_message');
+      if (!(await deps.disclosed())) {
+        log('submit.form-refused', { fields: message.fields.length });
+        return refuse('expired');
+      }
+      forms.set(formKey(from.tabId, message.applicationKey), { at: deps.now(), frameId: from.frameId,
+        documentId: from.documentId ?? null, fields: message.fields, posting: message.posting ?? null });
+      log('submit.form-held', { fields: message.fields.length });
       return ok({});
     },
 
@@ -362,6 +469,7 @@ export function createSubmissions(deps: SubmissionsDeps) {
     async forgetTab(tabId: number): Promise<void> {
       states.delete(tabId);
       seenIn.delete(tabId);
+      for (const key of [...forms.keys()]) if (key.startsWith(`${tabId}|`)) forms.delete(key);
       const prefix = `${SUBMIT_ARM_PREFIX}${tabId}|`;
       const stored = Object.keys(await deps.session.getMany(prefix));
       await deps.session.remove([`${SUBMITTED_PREFIX}${tabId}`, ...stored]);
@@ -377,6 +485,8 @@ export function createSubmissions(deps: SubmissionsDeps) {
         .filter((tabId) => Number.isInteger(tabId)));
       states.clear();
       seenIn.clear();
+      // v1.3 B: a form armed under the old connection is never sent under the next.
+      forms.clear();
       await deps.session.remove([...Object.keys(await deps.session.getMany(SUBMIT_ARM_PREFIX)), ...held]);
       for (const tabId of tabs) deps.changed(tabId);
     },

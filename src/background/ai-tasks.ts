@@ -90,6 +90,16 @@
  * classified first, by a classify task, as before one round (RunAi.answers.classifyFirst).
  * v5 p2-stream (two at once): a run has up to AI_RUN_TASKS (2) tasks in flight, in the order its batches were asked,
  * as TailorIT runs two CLI processes of an account at once (AI_CLI_PER_ACCOUNT); idle() waits for every one.
+ *
+ * v1.3 B (the coordinator's decision 5, the run-start batch): when the job's questions are known (POST /forms/known),
+ * the planner plans them once at the run's first plan and hands RunAi.prefetch the answer items that neither the
+ * profile nor an earlier answer covers, across every step: they go as answer batches at once, under keys of their own
+ * (`known|…`, never a field's). A later plan's answer item whose question, kind, shape, scope, options (by their
+ * labels' hashes), cap and layout are the same (signatureOf) takes that answer instead of being asked again: at once
+ * when it is in, else with its batch (its stream included); a choice's option index is the field's own option with the
+ * same label hash. An answer that failed, or none at all, is asked again as before. The item went through the same
+ * screens as any (answerBatches' own, the core's): a sensitive question, hidden text, a profile-only run and a dry run
+ * are never asked, here as anywhere.
  */
 import {
   answerInFormat, ATS_KINDS, AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AtsKind,
@@ -99,7 +109,7 @@ import {
   type AutofillDraftResult, type AutofillPickItem, type AutofillPickRequest, type AutofillPickResult,
   type AutofillTaskView,
 } from '../contract/tailorit';
-import { ANSWER_MAX_ITEMS, DRAFT_MAX_QUESTIONS, TIEBREAK_REQUEST_TEXT_SHARE } from '../core/confidence';
+import { ANSWER_MAX_ITEMS, ANSWER_TEXT_MAX, DRAFT_MAX_QUESTIONS, TIEBREAK_REQUEST_TEXT_SHARE } from '../core/confidence';
 import type { Platform } from '../core/enums';
 import { readTiebreakReply, tiebreakRequests } from '../core/matcher/tiebreak';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
@@ -116,6 +126,8 @@ import {
   type ClassifyVerdict,
 } from '../core/resolver/classify';
 import { sha256Hex } from '../core/text/sha256';
+// v1.3 B
+import { normalizeLabel } from '../core/text/normalize';
 import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
 import type { Settings } from '../core/types/settings';
 import type { VisibleText } from '../core/types/text';
@@ -994,6 +1006,32 @@ export interface RunAi {
    *  voided as a whole (`streamedThenVoided`), not yet told to the frame: taken once, so the fields written from them
    *  are flagged for review (ai-reply-voided). */
   takeReviews(): FieldKey[];
+  /** v1.3 B: the run-start batch (module header): answer items of the job's known questions, asked at once under their
+   *  own keys; a later plan's item with the same signature takes their answers. Answers how many were sent. */
+  prefetch?(items: readonly AnswerItem[], context: AskContext, llm: Settings['llm']): number;
+}
+
+/** v1.3 B: what makes two answer items one question (module header): never the key, the hint or the section's words,
+ *  nor a text's cap (claimedVerdict and capFits check it). */
+export function signatureOf(item: AnswerItem): string {
+  return JSON.stringify([normalizeLabel(item.question), item.kind, item.shape, item.scope, item.optionSetHash,
+    item.options.map((option) => option.labelHash).sort(), item.format, item.classify === true]);
+}
+
+/** v1.3 B: whether a text the prefetched item was asked under any cap of fits the field's: its cap is no larger. */
+export function capFits(from: AnswerItem, to: AnswerItem): boolean {
+  return from.shape !== 'text' || (from.maxLength ?? ANSWER_TEXT_MAX) <= (to.maxLength ?? ANSWER_TEXT_MAX);
+}
+
+/** v1.3 B: a prefetched answer as the field's: its key, and a choice's index the field's own option with the label hash
+ *  the answer named; null when the field offers none, or a text is longer than the field takes. */
+export function claimedVerdict(verdict: AnswerVerdict, from: AnswerItem, to: AnswerItem): AnswerVerdict | null {
+  if (verdict.kind === 'text' && [...verdict.text].length > (to.maxLength ?? ANSWER_TEXT_MAX)) return null;
+  if (verdict.kind !== 'choice') return { ...verdict, key: to.key };
+  const option = to.options.find((candidate) => candidate.labelHash === verdict.labelHash);
+  const named = from.options.find((candidate) => candidate.index === verdict.index);
+  if (option === undefined || named === undefined || named.labelHash !== verdict.labelHash) return null;
+  return { ...verdict, key: to.key, index: option.index };
 }
 
 /** The field a tiebreak item or verdict is for: its id is the field's key, with a value's reference after '#' when one
@@ -1029,6 +1067,36 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
   /** The P2 review (security 5): streamed keys whose reply was then voided, until the frame is told (takeReviews). */
   const reviews = new Set<FieldKey>();
   const halt = new AbortController();
+  // v1.3 B: the run-start batch's items by signature, and the fields that took one while its batch flies.
+  const prefetched = new Map<string, { item: AnswerItem; hash: string }>();
+  const claims = new Map<string, Array<{ item: AnswerItem; pre: AnswerItem }>>();
+
+  /** v1.3 B: a prefetched answer is in for `pre`: each field that took it gets it as its own (module header). */
+  function settleClaims(hash: string, preKey?: string): void {
+    const list = claims.get(hash);
+    if (list === undefined) return;
+    const done: string[] = [];
+    const left = list.filter(({ item, pre }) => {
+      if (preKey !== undefined && pre.key !== preKey) return true;
+      const verdict = answers.get(pre.key);
+      const claimed = verdict === undefined ? null : claimedVerdict(verdict, pre, item);
+      answers.set(item.key, claimed ?? { key: item.key, kind: 'none', why: 'llm-invalid-output' });
+      const classified = classifications.get(pre.key);
+      if (classified !== undefined) classifications.set(item.key, { ...classified, key: item.key });
+      if (preKey !== undefined) streamed.set(item.key, hash);
+      done.push(item.key);
+      return false;
+    });
+    if (left.length === 0) claims.delete(hash);
+    else claims.set(hash, left);
+    ready(done);
+  }
+
+  /** v1.3 B: whether a prefetched answer may stand for another item: in, and no failure (asked again then). */
+  function usablePrefetched(pre: AnswerItem): boolean {
+    const verdict = answers.get(pre.key);
+    return verdict !== undefined && !(verdict.kind === 'none' && verdict.why !== 'llm-no-answer');
+  }
 
   /** Tells the run that keys' answers are in (the planner tells the frame). Never throws. */
   function ready(keys: readonly string[]): void {
@@ -1063,6 +1131,8 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
     if (key === null) return;
     streamed.set(key, hash);
     ready([key]);
+    // v1.3 B: a prefetched answer streamed: the fields that took it have it now.
+    settleClaims(hash, key);
   }
 
   /** The keys a batch answers. */
@@ -1169,6 +1239,8 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
           { signal: halt.signal, onItem: (item, taskId) => streamedItem(batch, hash, item, taskId) });
       record(batch, hash, outcome);
       entry.done = true;
+      // v1.3 B: the fields that took this batch's prefetched answers have them now.
+      settleClaims(hash);
       // v5 p2-stream: the batch's other keys are in now: the frame plans them at once (H1: by this batch's stream);
       // the frame is told too when a streamed one waits for review (security 5).
       const wake = keysOf(batch).filter((key) => streamed.get(key) !== hash);
@@ -1223,7 +1295,27 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
         owner.set(verdict.key, null);
       }
       // Answers (the owner's amendments): only with the setting on and a context to send them with.
-      const questions = ask.answers ?? [];
+      // v1.3 B: an item the run-start batch asked takes its answer (at once, or with its batch); the rest are asked.
+      const questions = (ask.answers ?? []).filter((item) => {
+        const pre = llm.answers ? prefetched.get(signatureOf(item)) : undefined;
+        if (pre === undefined || pre.item.key === item.key) return true;
+        const entry = batches.get(pre.hash);
+        if (entry?.done === true || streamed.get(pre.item.key) === pre.hash) {
+          if (!usablePrefetched(pre.item)) return true;
+          const claimed = claimedVerdict(answers.get(pre.item.key)!, pre.item, item);
+          if (claimed === null) return true;
+          answers.set(item.key, claimed);
+          const classified = classifications.get(pre.item.key);
+          if (classified !== undefined) classifications.set(item.key, { ...classified, key: item.key });
+          owner.set(item.key, null);
+          return false;
+        }
+        if (entry === undefined || !capFits(pre.item, item)) return true;
+        claims.set(pre.hash, [...(claims.get(pre.hash) ?? []), { item, pre: pre.item }]);
+        owner.set(item.key, pre.hash);
+        answeredBy.set(item.key, pre.hash);
+        return false;
+      });
       const answered = llm.answers && context.draft !== undefined
         ? answerBatches(questions, context.draft, context.canaries, vocab)
         : { batches: [], withheld: questions.map((item): AnswerVerdict => ({ key: item.key, kind: 'none',
@@ -1287,6 +1379,22 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
       const taken = [...reviews];
       reviews.clear();
       return taken;
+    },
+    // v1.3 B: the run-start batch (module header).
+    prefetch(items, context, llm) {
+      if (stopped || !llm.answers || context.draft === undefined || items.length === 0) return 0;
+      const fresh = items.filter((item) => !prefetched.has(signatureOf(item)));
+      const answered = answerBatches(fresh, context.draft, context.canaries, vocab);
+      let sent = 0;
+      for (const batch of answered.batches) {
+        const hash = enqueue(batch);
+        for (const item of batch.items) {
+          prefetched.set(signatureOf(item), { item, hash });
+          sent += 1;
+        }
+      }
+      if (sent > 0) log('ai.known-batch', { items: sent, batches: answered.batches.length });
+      return sent;
     },
   };
 }

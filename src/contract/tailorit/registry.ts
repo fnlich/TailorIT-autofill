@@ -80,6 +80,14 @@ import {
   AutofillJobSearchQuerySchema,
   AutofillJobSearchResponseSchema,
 } from './tracker';
+// v1.3 A
+import {
+  AutofillFormsKnownRequestSchema,
+  AutofillFormsKnownResponseSchema,
+  AutofillSubmissionRequestSchema,
+  AutofillSubmissionResponseSchema,
+} from './forms';
+// end v1.3 A
 
 /**
  * Every schema of the autofill API, by name. `npm run autofill:contract` writes each one's JSON Schema into
@@ -154,6 +162,12 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillTailorTask: AutofillTailorTaskSchema,
   AutofillTemplateList: AutofillTemplateListSchema,
   // end v1.4 D
+  // v1.3 A
+  AutofillSubmissionRequest: AutofillSubmissionRequestSchema,
+  AutofillSubmissionResponse: AutofillSubmissionResponseSchema,
+  AutofillFormsKnownRequest: AutofillFormsKnownRequestSchema,
+  AutofillFormsKnownResponse: AutofillFormsKnownResponseSchema,
+  // end v1.3 A
 } satisfies Record<string, z.ZodType>;
 export type AutofillContractName = keyof typeof AUTOFILL_CONTRACT_SCHEMAS;
 
@@ -689,4 +703,26 @@ export const AUTOFILL_ROUTES = [
     accepted: null,
   },
   // end v1.4 D
+  // v1.3 A (additive within API 6): a confirmed submission's questions and answers, and a job's known questions.
+  {
+    method: 'POST',
+    path: '/api/autofill/submissions',
+    caller: 'either',
+    scope: 'tracker:write',
+    request: 'AutofillSubmissionRequest',
+    status: 200,
+    response: 'AutofillSubmissionResponse',
+    accepted: null,
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/forms/known',
+    caller: 'either',
+    scope: 'jobs:lookup',
+    request: 'AutofillFormsKnownRequest',
+    status: 200,
+    response: 'AutofillFormsKnownResponse',
+    accepted: null,
+  },
+  // end v1.3 A
 ] as const satisfies readonly AutofillRoute[];

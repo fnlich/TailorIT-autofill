@@ -235,6 +235,9 @@ const REASONS = {
   // v5 p2-stream review end
   // v5 p2-fill review (security 3): a draft for the owner's review.
   'hidden-text-in-box': "This box holds text you can't see, so it was not sent to the AI. Check it on the page.",
+  // v1.3 B: a field filled from an application the person submitted before, and one whose earlier option is gone.
+  'submitted-before': 'Filled with your answer from an application you submitted before.',
+  'submitted-option-gone': "Your earlier answer to this is no longer one of its options, so it was left for you.",
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was not filled.',
 } as const satisfies Record<ReasonCode, string>;
@@ -257,6 +260,8 @@ const PROVENANCES = {
   'llm-pick': 'AI pick',
   'llm-draft': 'AI draft',
   'llm-answer': 'AI answer',
+  // v1.3 B
+  'submitted-before': 'Your earlier application',
 } as const satisfies Record<Provenance, string>;
 
 /** Which stage of the matcher chose the option. */
@@ -1159,6 +1164,13 @@ const OPTIONS = {
       on: 'On',
       off: 'Off',
       help: 'On: when you submit an application yourself, without Autofill, on a site that shows it went through (today Greenhouse, Lever, Ashby, Workable, iCIMS, Breezy HR and Pinpoint), your TailorIT tracker marks the job Applied. Off: only applications Autofill filled are recorded.',
+    },
+    // v1.3 B (settings version 9): the answers of an application the person submits, kept in their own TailorIT.
+    keepAnswers: {
+      name: 'Keep my submitted answers in TailorIT',
+      on: 'On',
+      off: 'Off',
+      help: "On: when a site confirms an application you submitted, its questions and your answers go to your TailorIT. The questions are kept for everyone who uses your TailorIT, never shown on Jobs; your answers are yours alone, shown in the Tracker's Submitted answers, and fill the same questions for you next time. Off: only the questions go. Never sent: passwords, CAPTCHAs, hidden fields, or what your files contain (only that a file was attached, and its name).",
     },
     afterPageTurn: {
       name: 'Autofill after page turn',
