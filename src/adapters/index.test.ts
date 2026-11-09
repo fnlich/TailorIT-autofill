@@ -197,14 +197,29 @@ describe("a company page's address to TailorIT (the Phase 8 review, P3)", () => 
 
 // ── v5 p2-detect ──
 describe("adaptersFor on Oracle's Candidate Experience on a company's own domain (v5 p2-detect)", () => {
-  it("gives the Oracle adapter (then the generic one), not the site adapter, and reads its application as Oracle's", () => {
-    const own = new URL('https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345/apply/section/1');
-    expect(adaptersFor(own).map((adapter) => adapter.id).filter((id) => !id.startsWith('tailorit-e2e')))
-      .toEqual(['oracle', 'generic']);
+  /** A document that holds Oracle Candidate Experience's markup (dom/page-signals.ts oracleCandidateExperienceShown:
+   *  every selector it asks finds an element), or none of it; the DOM tests read the real fixtures. */
+  const docWith = (markup: boolean) => ({ querySelector: () => (markup ? {} : null) }) as unknown as Document;
+  const ids = (url: URL, doc?: Document) => adaptersFor(url, doc).map((adapter) => adapter.id)
+    .filter((id) => !id.startsWith('tailorit-e2e'));
+  const own = new URL('https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345/apply/section/1');
+
+  it("gives the Oracle adapter (then the generic one) where the document shows the app, and reads its application as Oracle's", () => {
+    expect(ids(own, docWith(true))).toEqual(['oracle', 'generic']);
     expect(applicationOf(own)).toMatchObject({ platform: 'oracle', page: 'application',
       applicationUrl: 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345' });
-    expect(adaptersFor(new URL('https://careers.acme-corp.example/jobs/1')).map((adapter) => adapter.id)
-      .filter((id) => !id.startsWith('tailorit-e2e'))).toEqual(['site']);
+    expect(ids(new URL('https://careers.acme-corp.example/jobs/1'), docWith(true))).toEqual(['site']);
+  });
+
+  // The P2 review (security 1): the address alone (a page anyone may host there) keeps the site adapter and its guards.
+  it('gives the site adapter alone where the document shows no Oracle markup, or none is given', () => {
+    expect(ids(own, docWith(false))).toEqual(['site']);
+    expect(ids(own)).toEqual(['site']);
+    expect(ids(new URL('https://acme.github.io/hcmUI/CandidateExperience/en/sites/CX_1/job/1/apply/section/1'), docWith(false)))
+      .toEqual(['site']);
+    // Oracle's own hosts keep their adapter by their static match, whatever the document holds.
+    expect(ids(new URL('https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/section/1'),
+      docWith(false))).toEqual(['oracle', 'generic']);
   });
 });
 // ── end v5 p2-detect ──

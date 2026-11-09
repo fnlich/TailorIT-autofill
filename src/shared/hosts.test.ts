@@ -4,7 +4,7 @@ import {
   ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CAPTCHA_VENDOR_MATCHES, careerSiteOf, HR_HOST_MATCHES, isCaptchaVendorUrl,
   isCompanySiteUrl, isHrHost, isLinkedInHost, onAtsMatch, onOwnOrigin, platformOfUrl, registrationsFor, SITES_MATCH,
   // v5 p2-detect
-  LINKEDIN_HOST_MATCHES, ORACLE_REFUSED_DOMAINS, oracleOwnDomain, SUBMIT_WATCH_MATCHES,
+  LINKEDIN_HOST_MATCHES, ORACLE_REFUSED_DOMAINS, oracleOwnDomain, staticPlatformOfUrl, SUBMIT_WATCH_MATCHES,
 } from './hosts';
 import { ORACLE_REFUSED_DOMAINS as PARSER_REFUSED } from '../adapters/oracle/url';
 
@@ -235,12 +235,15 @@ describe('the company career sites (v3 Phase 8)', () => {
         'https://*.dayforcehcm.com/*', 'https://*.ultipro.com/*', 'https://*.ukg.net/*', 'https://*.paylocity.com/*',
         'https://*.paycor.com/*', 'https://*.rippling.com/*', 'https://*.hibob.com/*', 'https://*.adp.com/*',
         'https://app.careerplug.com/*',
+        // The P2 review (security 2): UKG Pro Canada's employee hosts.
+        'https://*.ultipro.ca/*',
         // ── v5 p1-rules (PLAN decision 9): the CAPTCHA and anti-bot vendors' own pages ──
         '*://*.google.com/recaptcha/*', '*://*.recaptcha.net/*', '*://*.hcaptcha.com/*', '*://challenges.cloudflare.com/*',
         '*://*.arkoselabs.com/*', '*://*.funcaptcha.com/*', '*://*.captcha-delivery.com/*', '*://*.protechts.net/*',
         '*://*.geetest.com/*'], allFrames: false, runAt: 'document_idle', persistAcrossSessions: true,
       world: 'ISOLATED' }]);
-    expect(HR_HOST_MATCHES).toHaveLength(18);
+    // The P2 review (security 2): UKG Pro Canada's employee hosts, the 19th.
+    expect(HR_HOST_MATCHES).toHaveLength(19);
   });
 
   // Every address the registration reaches is one isCompanySiteUrl takes, and the other way round.
@@ -378,9 +381,12 @@ describe('the address variants (v5 p2-detect)', () => {
     ['https://sfagentcareers.com/jobs/1234567/apps/new', 'careerplug'],
     ['https://www.apscareerportal.com/jobs/1234567/apps/new', 'careerplug'],
   ];
-  /** Their hosts' other pages: the employee systems on UKG's domains among them. */
+  /** Their hosts' other pages: the employee systems on UKG's domains among them (the P2 review's security 2: an
+   *  employer's own UKG Pro host's job board, for its staff, too). */
   const OFF = ['https://n12.ultipro.com/default.aspx', 'https://n12.ultipro.com/pages/login.aspx?JobBoard=1',
-    'https://recruiting2.ultipro.com/ACM1000ACME/AuthCode/Register', 'https://acme.ukg.net/ACM1000/JobBoard/x',
+    'https://n12.ultipro.com/ACM1000/JobBoard/00000000-0000-4000-8000-000000000001/OpportunityDetail?opportunityId=x',
+    'https://n12.ultipro.ca/ACM1000/JobBoard/00000000-0000-4000-8000-000000000001/OpportunityDetail?opportunityId=x',
+    'https://acme.ukg.net/ACM1000/JobBoard/x',
     'https://acme.rec.pro.ukg.net/', 'https://acme.pinpointhq.com/a/b/postings/x', 'https://smith-agency.sfagentjobs.com/about',
     'https://wd5.myworkdayjobs-impl.com/x', 'https://recruiting.paylocity.com/RECRUITING/x'];
 
@@ -397,12 +403,22 @@ describe('the address variants (v5 p2-detect)', () => {
       // onAtsMatch reads a `*` inside a pattern's path as Chrome does.
       expect(onAtsMatch(url), url).toBe(patterns.some((p) => p.includes(url)));
     }
+    // The P2 review (security 2): an employer's own UKG Pro host is no static match and no company page: no content
+    // script, no bridge, no sentinel.
+    for (const url of OFF.filter((each) => /^https:\/\/n12\.ultipro\.(?:com|ca)\//.test(each))) {
+      expect(patterns.some((p) => p.includes(url)), url).toBe(false);
+      expect(isCompanySiteUrl(url), url).toBe(false);
+    }
+    // recruiting2.ultipro.com and recruiting.ultipro.ca are candidate-only and whole, as recruiting.ultipro.com.
+    expect(onAtsMatch('https://recruiting2.ultipro.com/ACM1000ACME/AuthCode/Register')).toBe(true);
   });
 
   it('reads a pattern with a `*` inside its path exactly as Chrome does', () => {
-    const glob = ['https://*.ultipro.com/*/JobBoard/*', 'https://*.pinpointhq.com/*/postings/*'].map((p) => new MatchPattern(p));
-    for (const url of ['https://a.ultipro.com/T/JobBoard/x', 'https://a.ultipro.com/T/U/JobBoard/x', 'https://a.ultipro.com/JobBoard/x',
-      'https://a.ultipro.com//JobBoard/x', 'https://a.ultipro.com/T/jobboard/x', 'https://a.pinpointhq.com/en/postings/x',
+    // UKG's <x>.rec.pro.ukg.net job boards and Pinpoint's localised postings are the static matches with one.
+    const glob = ['https://*.rec.pro.ukg.net/*/JobBoard/*', 'https://*.pinpointhq.com/*/postings/*'].map((p) => new MatchPattern(p));
+    for (const url of ['https://a.rec.pro.ukg.net/T/JobBoard/x', 'https://a.rec.pro.ukg.net/T/U/JobBoard/x',
+      'https://a.rec.pro.ukg.net/JobBoard/x', 'https://a.rec.pro.ukg.net//JobBoard/x', 'https://a.rec.pro.ukg.net/T/jobboard/x',
+      'https://a.ultipro.com/T/JobBoard/x', 'https://a.pinpointhq.com/en/postings/x',
       'https://a.pinpointhq.com/postings/x', 'https://a.pinpointhq.com/xpostings/x', 'https://a.pinpointhq.com/en/postings']) {
       expect(onAtsMatch(url), url).toBe(patterns(url, glob) || patterns(url, ATS_MATCHES.map((p) => new MatchPattern(p))));
     }
@@ -438,8 +454,10 @@ describe("Oracle's Candidate Experience on a company's own domain (v5 p2-detect)
   const OWN = 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345/apply/section/1';
 
   it('names it Oracle by its address alone, never a static match: the sentinel reaches it as a company page', () => {
-    for (const url of [OWN, 'https://jobs.acme.example/careers/CandidateExperience/fr-CA/sites/External/job/7',
-      'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/jobs/preview/12345']) {
+    for (const url of [OWN, 'https://jobs.acme.example/hcmUI/CandidateExperience/fr-CA/sites/External/job/7',
+      'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/jobs/preview/12345',
+      // The P2 review (M3): the app's job list, under the same prefix.
+      'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/requisitions']) {
       expect(platformOfUrl(url), url).toBe('oracle');
       expect(onAtsMatch(url), url).toBe(false);
       expect(isCompanySiteUrl(url), url).toBe(true);
@@ -447,9 +465,15 @@ describe("Oracle's Candidate Experience on a company's own domain (v5 p2-detect)
     }
     for (const url of ['https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites', 'https://careers.acme-corp.example/',
       'https://careers.acme-corp.example/CandidateExperience/en/sites/CX_1/job/1', 'https://localhost/hcmUI/CandidateExperience/en/sites/X/job/1',
-      'http://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345']) {
+      'http://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345',
+      // The P2 review (security 1): the /hcmUI/ prefix alone, never another first segment.
+      'https://jobs.acme.example/careers/CandidateExperience/fr-CA/sites/External/job/7',
+      'https://acme.github.io/x/CandidateExperience/en/sites/CX_1/job/12345']) {
       expect(platformOfUrl(url), url).toBeNull();
     }
+    // The P2 review (L3): the static reading names none of them.
+    expect(staticPlatformOfUrl(OWN)).toBeNull();
+    expect(staticPlatformOfUrl('https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/1')).toBe('oracle');
   });
 
   it('never on LinkedIn, an employee HR system, a CAPTCHA vendor or Oracle\'s own domains\' other hosts', () => {

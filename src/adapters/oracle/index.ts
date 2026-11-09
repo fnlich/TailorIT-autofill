@@ -73,7 +73,10 @@
  * tenant's cover image, so the trap rules cannot work out its colours), is oracle.browser.test.ts's KNOWN list.
  * Nothing here reads, logs or sends a value.
  */
+// The P2 review (security 1)
+import { oracleCandidateExperienceShown } from '../../dom/page-signals';
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
+import { oracleOwnDomain } from '../../shared/hosts';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
 import type { Adapter, SignInForm, SignInWall } from '../types';
@@ -139,8 +142,19 @@ function postingText(doc: Document): Element | null {
   return shown(Array.from(doc.querySelectorAll('.job-details__description-content')));
 }
 
+/** The P2 review (security 1): whether the document is at an employer's own domain's Candidate Experience address
+ *  (shared/hosts.ts oracleOwnDomain) without the app's own markup (dom/page-signals.ts oracleCandidateExperienceShown):
+ *  a page anyone may host there. Nothing of it is ever pressed: no Submit, no final step, no APPLY NOW. (adaptersFor
+ *  gives such a page the site adapter; this holds it again for a run that picked Oracle's.) */
+function unprovenOwnDomain(doc: Document): boolean {
+  const address = addressOf(doc);
+  return address !== null && oracleOwnDomain(address.hostname.toLowerCase(), address.pathname)
+    && !oracleCandidateExperienceShown(doc);
+}
+
 /** APPLY NOW: <div class="job-details__section-apply-button"><button class="... apply-now-button ...">. */
 function entryControl(doc: Document): HTMLElement | null {
+  if (unprovenOwnDomain(doc)) return null;
   return shown(Array.from(doc.querySelectorAll<HTMLElement>(
     '.job-details__section-apply-button button.apply-now-button')));
 }
@@ -198,6 +212,7 @@ function requiredFor(control: Element): boolean {
 /** Submit: the one-page flow's <div class="apply-flow-pagination"> ... <button type="button" class="button
  *  apply-flow-pagination__button apply-flow-pagination__submit-button ...">Submit</button> (hjf-apply-section.html). */
 function submitButton(root: Element): HTMLElement | null {
+  if (unprovenOwnDomain(root.ownerDocument)) return null;
   return shown(Array.from(root.ownerDocument.querySelectorAll<HTMLElement>(
     '.apply-flow-pagination button.apply-flow-pagination__submit-button')));
 }

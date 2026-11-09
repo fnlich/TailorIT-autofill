@@ -5,7 +5,7 @@
  */
 import { browser } from 'wxt/browser';
 import { postingAddressOf } from '../adapters/address';
-import { isCompanySiteUrl, platformOfUrl, type SiteRegistration } from '../shared/hosts';
+import { isCompanySiteUrl, staticPlatformOfUrl, type SiteRegistration } from '../shared/hosts';
 import type {
   AgentAlarms,
   AgentWindows,
@@ -27,10 +27,13 @@ import type {
 import type { CapturePagePlatform, CaptureTarget, CaptureWorkerPlatform } from './types';
 
 /** What a page shows by its address (tabs.atsPageOf): a posting or another page on an applicant-tracking host, and
- *  that host's platform; null off those hosts or for an address that does not parse. */
+ *  that host's platform; null off those hosts or for an address that does not parse. The P2 review (L3): the hosts the
+ *  manifest's script runs on (shared/hosts.ts staticPlatformOfUrl): an employer's own domain at Oracle's Candidate
+ *  Experience address is a company's own page here (reports.ts pageNow offers its reload only while the career sites
+ *  act). */
 function atsPageAt(url: string | undefined): AtsPage | null {
   if (url === undefined) return null;
-  const platform = platformOfUrl(url);
+  const platform = staticPlatformOfUrl(url);
   if (platform === null) return null;
   try {
     return { page: postingAddressOf(new URL(url)) === null ? 'other' : 'posting', platform };
@@ -358,7 +361,8 @@ export function createWorkerPlatform(): WorkerPlatform {
       async onAtsHost(tabId) {
         try {
           const url = (await browser.tabs.get(tabId)).url;
-          return url !== undefined && platformOfUrl(url) !== null;
+          // The P2 review (L3): as atsPageAt reads it.
+          return url !== undefined && staticPlatformOfUrl(url) !== null;
         } catch {
           return false;
         }

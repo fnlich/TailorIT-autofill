@@ -28,6 +28,10 @@
  *   document the same way (injectTop), so the sidebar draws there: the person's click, never in a private tab, while the
  *   career sites act, its address checked again as the frame reads it (isCompanySiteUrl: never LinkedIn, an HR system,
  *   a CAPTCHA vendor's frame or an http page). The script fills only what it fills on such a page anyway.
+ * - v5 p2-detect, the P2 review (security 1): Oracle's Candidate Experience on an employer's own domain has no static
+ *   page-world script. Its submit watcher is injected into one document (watch) only when the content script the worker
+ *   injected there asks, once the Oracle adapter detected the app's own form in that document: never by the address
+ *   alone, never at recognition.
  * Nothing here requests a page, and nothing is sent to TailorIT.
  */
 import { ok, refuse, type Answer } from '../messaging/envelope';
@@ -97,6 +101,14 @@ export interface Sites {
   /** Whether the career sites act now (the side panel's reload hint). */
   active(): Promise<boolean>;
   forgetTab(tabId: number): void;
+  /** v5 p2-detect, the P2 review (security 1): the page-world submit watcher (SUBMIT_WATCH_FILE, world MAIN) injected
+   *  into the one document the sender is, at most once: a frame the worker injected the content script into (kind
+   *  `site`), at an employer's own domain's Oracle Candidate Experience address (shared/hosts.ts platformOfUrl, never
+   *  Oracle's own hosts, whose manifest entry runs it), while the career sites act, never in a private tab. The content
+   *  script asks only once the Oracle adapter detected the app's form there (content/runtime.ts): the address alone
+   *  never brings it. Remembered in memory per document (a worker that restarted may inject it again: the content
+   *  script asks once per document). */
+  watch(from: ContentChannel): Promise<Answer<Record<string, never>>>;
 }
 
 const keyOf = (tabId: number, documentId: string) => `${INJECTED_PREFIX}${tabId}:${documentId}`;
@@ -115,6 +127,8 @@ export const siteAddress = isCompanySiteUrl;
 export function createSites(deps: SitesDeps): Sites {
   const queue = createKeyedQueue();
   const memory = new Map<string, InjectedEntry>();
+  /** v5 p2-detect: the documents the submit watcher was injected into (watch), by their record's key. */
+  const watched = new Set<string>();
   let loaded = false;
   /** Whether the career sites act, as the last reconcile found (undefined before the first). */
   let acting: boolean | undefined;
@@ -137,6 +151,7 @@ export function createSites(deps: SitesDeps): Sites {
   /** Everything injected stops (the module header): the records forgotten, every tab's top frame told. */
   async function stopInjected(): Promise<void> {
     memory.clear();
+    watched.clear();
     const stored = await deps.session.getMany(INJECTED_PREFIX).catch(() => ({}));
     await deps.session.remove([...Object.keys(stored), ACTING_KEY]).catch(() => undefined);
     await deps.stopPages?.().catch(() => undefined);
@@ -260,13 +275,6 @@ export function createSites(deps: SitesDeps): Sites {
           log('sites.inject-failed');
           return refuse('unavailable');
         }
-        // ── v5 p2-detect: Oracle's Candidate Experience on a company's own domain (shared/hosts.ts platformOfUrl) has no
-        // static page-world script: its submit watcher runs in the page's own world now, for its "applied" sign (it
-        // installs only where the bridge's address decision says, as on Oracle's own hosts). ──
-        if (platformOfUrl(from.url) === 'oracle') {
-          await deps.scripting.inject(from.tabId, { frameId: from.frameId, documentId }, SUBMIT_WATCH_FILE, 'MAIN')
-            .catch(() => log('sites.inject-failed'));
-        }
         return ok({ injected: true });
       });
       if (injected === null) return refused();
@@ -303,6 +311,33 @@ export function createSites(deps: SitesDeps): Sites {
         return true;
       });
     },
+    // ── v5 p2-detect, the P2 review (security 1) ──
+    async watch(from) {
+      if (from.reach !== 'site' || from.incognito === true || from.documentId === undefined) return refuse('bad_sender');
+      // An employer's own domain's Oracle Candidate Experience address alone (Oracle's own hosts run the watcher from
+      // the manifest), from Chrome's description of the sender, never the page's word.
+      if (platformOfUrl(from.url) !== 'oracle' || onAtsMatch(from.url) || !companySite(from.url)) return refuse('bad_message');
+      const documentId = from.documentId;
+      const key = keyOf(from.tabId, documentId);
+      if (watched.has(key)) return ok({});
+      // One at a time with the reconcile, as an injection is: never after the career sites stopped.
+      return queue.run('reconcile', async (): Promise<Answer<Record<string, never>>> => {
+        if (!(await active())) return refuse('unavailable');
+        if (kindIn(await entryOf(from.tabId, documentId), from.frameId) !== 'site') return refuse('bad_sender');
+        if (watched.has(key)) return ok({});
+        watched.add(key);
+        try {
+          await deps.scripting.inject(from.tabId, { frameId: from.frameId, documentId }, SUBMIT_WATCH_FILE, 'MAIN');
+        } catch {
+          watched.delete(key);
+          log('sites.inject-failed');
+          return refuse('unavailable');
+        }
+        log('sites.injected', { watch: true });
+        return ok({});
+      });
+    },
+    // ── end v5 p2-detect ──
     injected: {
       // From memory: undefined until both the records and the first reconcile are in (a worker that restarted), null
       // while the career sites do not act.
@@ -319,6 +354,7 @@ export function createSites(deps: SitesDeps): Sites {
     forgetTab(tabId) {
       const prefix = `${INJECTED_PREFIX}${tabId}:`;
       for (const key of [...memory.keys()].filter((each) => each.startsWith(prefix))) memory.delete(key);
+      for (const key of [...watched].filter((each) => each.startsWith(prefix))) watched.delete(key);
       void deps.session.getMany(prefix).then((stored) => deps.session.remove(Object.keys(stored))).catch(() => undefined);
       deps.limit.forget(`${tabId}/`);
     },

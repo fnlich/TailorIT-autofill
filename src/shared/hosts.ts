@@ -40,8 +40,10 @@
  * v5 p2-detect (the engine audit's gap 1a; each from Jobright's site list, read as its behaviour, never its code): the
  * address variants of platforms already here, each read by that platform's own url.ts: a Workday tenant's
  * implementation host (<tenant>[.wd<n>].myworkdayjobs-impl.com); Pinpoint's postings under any locale or none
- * (PINPOINT_PATH); Paylocity's /recruiting/ in lower case; UKG's other recruiting hosts, recruiting2.ultipro.com,
- * recruiting.ultipro.ca and <x>.rec.pro.ukg.net, on their job boards' paths alone (/<tenant>/JobBoard/, ULTIPRO_BOARD_PATH:
+ * (PINPOINT_PATH); Paylocity's /recruiting/ in lower case; UKG's other recruiting hosts, recruiting2.ultipro.com and
+ * recruiting.ultipro.ca (whole, as recruiting.ultipro.com) and <x>.rec.pro.ukg.net, on its job boards' paths alone
+ * (/<tenant>/JobBoard/, ULTIPRO_BOARD_PATH; the P2 review's security 2: never another <n>.ultipro.com or ultipro.ca host,
+ * an employer's UKG Pro for its staff, and never any other ukg.net host:
  * each of those domains also serves an employee HR system, which stays no platform's, and HR_HOST_MATCHES keeps the
  * sentinel off all of them); and CareerPlug's partner domains, sfagentjobs.com, sfagentcareers.com and
  * apscareerportal.com (CAREERPLUG_PARTNER_HOST), under /jobs/. A `*` inside a pattern's path is read as Chrome reads it
@@ -97,8 +99,9 @@ export const ATS_MATCHES = [
   'https://*.pinpointhq.com/*/postings/*',
   'https://*.pinpointhq.com/postings/*',
   'https://recruiting.paylocity.com/recruiting/*',
-  'https://*.ultipro.com/*/JobBoard/*',
-  'https://*.ultipro.ca/*/JobBoard/*',
+  // The P2 review (security 2): UKG's recruiting hosts by name, never <n>.ultipro.com or ultipro.ca's employee portals.
+  'https://recruiting2.ultipro.com/*',
+  'https://recruiting.ultipro.ca/*',
   'https://*.rec.pro.ukg.net/*/JobBoard/*',
   'https://*.sfagentjobs.com/jobs/*',
   'https://*.sfagentcareers.com/jobs/*',
@@ -120,7 +123,7 @@ export const SUBMIT_WATCH_MATCHES = ['https://*.myworkdayjobs.com/*', 'https://*
 // ── v5 p2-detect: the address variants' own readings (each platform's url.ts reads the same) ──
 /** Pinpoint's posting paths: /<locale>/postings/ (en, de, fr-ca...) or /postings/. */
 export const PINPOINT_PATH = /^\/(?:[A-Za-z]{2}(?:[-_][A-Za-z]{2})?\/)?postings\//;
-/** A UKG job board's paths on the hosts beside recruiting.ultipro.com: /<tenant>/JobBoard/. */
+/** A UKG job board's paths on <x>.rec.pro.ukg.net: /<tenant>/JobBoard/. */
 export const ULTIPRO_BOARD_PATH = /^\/[A-Za-z0-9_-]{1,64}\/JobBoard\//;
 /** CareerPlug's partner domains, each host under them (Jobright reads them as CareerPlug's). */
 export const CAREERPLUG_PARTNER_HOST = /^(?:[a-z0-9-]+\.)*(?:sfagentjobs|sfagentcareers|apscareerportal)\.com$/;
@@ -171,8 +174,10 @@ const HOST_PLATFORMS: ReadonlyArray<{ host: RegExp; platform: Platform; paths?: 
   { host: /^recruiting\.ultipro\.com$/, platform: 'ultipro' },
   // v5 p2-detect: UKG's other recruiting hosts (recruiting2.ultipro.com, recruiting.ultipro.ca, <x>.rec.pro.ukg.net:
   // Jobright's site list), their job boards' paths alone: each domain also serves an employee HR system.
-  { host: /^(?:[a-z0-9-]+\.)+ultipro\.(?:com|ca)$|^[a-z0-9-]+\.rec\.pro\.ukg\.net$/, platform: 'ultipro',
-    pathPattern: ULTIPRO_BOARD_PATH },
+  // The P2 review (security 2): recruiting2.ultipro.com and recruiting.ultipro.ca whole (candidate-only, as
+  // recruiting.ultipro.com), <x>.rec.pro.ukg.net by its job boards' paths.
+  { host: /^recruiting2\.ultipro\.com$|^recruiting\.ultipro\.ca$/, platform: 'ultipro' },
+  { host: /^[a-z0-9-]+\.rec\.pro\.ukg\.net$/, platform: 'ultipro', pathPattern: ULTIPRO_BOARD_PATH },
   { host: /^jobs\.dayforcehcm\.com$/, platform: 'dayforce' },
   // v5 p2-detect: /recruiting/ in lower case too (Jobright's site list and its page after submitting).
   { host: /^recruiting\.paylocity\.com$/, platform: 'paylocity', paths: ['/Recruiting/', '/recruiting/'] },
@@ -204,10 +209,16 @@ export function onAtsMatch(url: string): boolean {
 }
 
 // ── v5 p2-detect: Oracle Recruiting Cloud on a company's own domain (adapters/oracle/url.ts reads the same) ──
-/** Its Candidate Experience's paths: /<prefix>/CandidateExperience/<lang>/sites/<site>/ (Jobright 1.25.2's site
- *  registry, read as its behaviour; adapters/oracle/url.ts ORACLE_OWN_DOMAIN_PATH). */
+/** Its Candidate Experience's paths: /hcmUI/CandidateExperience/<lang>/sites/<site>/ (Jobright 1.25.2's site registry,
+ *  read as its behaviour; adapters/oracle/url.ts ORACLE_OWN_DOMAIN_PATH). The P2 review (security 1): the hcmUI prefix
+ *  alone, the one every Oracle fixture shows; and the address alone never makes a page Oracle's to fill or press:
+ *  the sentinel and the adapters' choice also need the page's own Oracle markup (dom/page-signals.ts
+ *  oracleCandidateExperienceShown), and its "applied" a confirmation in the page beside its network signs. */
 export const ORACLE_OWN_DOMAIN_PATH =
-  /^\/[A-Za-z0-9_-]{1,40}\/CandidateExperience\/[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?\/sites\/[A-Za-z0-9_-]{1,40}\//;
+  /^\/hcmUI\/CandidateExperience\/[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?\/sites\/[A-Za-z0-9_-]{1,40}\//;
+/** The P2 review (security 1, M3): the path every page of Oracle's Candidate Experience app sits under (Oracle's own
+ *  tenants' and, recognised by its markup, an employer's own domain's), where the submit watcher installs. */
+export const ORACLE_CANDIDATE_APP = '/hcmUI/CandidateExperience/';
 
 /** Whether a host and path are Oracle's Candidate Experience on a company's own domain: never a static match (no ATS
  *  host of ours), never Oracle's own domains (their tenants are HOST_PLATFORMS'), LinkedIn's, an employee HR system's
@@ -224,6 +235,8 @@ export function oracleOwnDomain(host: string, path: string): boolean {
 export const ORACLE_REFUSED_DOMAINS: readonly string[] = ['oraclecloud.com', 'oraclegovcloud.com', 'linkedin.com',
   'linkedin.cn', 'lnkd.in', 'licdn.com', 'myworkday.com', 'sapsf.com', 'sapsf.eu', 'bamboohr.com', 'clearcompany.com',
   'dayforcehcm.com', 'ultipro.com', 'ukg.net', 'paylocity.com', 'paycor.com', 'rippling.com', 'hibob.com', 'adp.com',
+  // The P2 review (security 2)
+  'ultipro.ca',
   'paycomonline.net', 'careerplug.com', 'google.com', 'recaptcha.net', 'hcaptcha.com', 'cloudflare.com', 'arkoselabs.com',
   'funcaptcha.com', 'captcha-delivery.com', 'protechts.net', 'geetest.com'];
 // ── end v5 p2-detect ──
@@ -232,6 +245,14 @@ export const ORACLE_REFUSED_DOMAINS: readonly string[] = ['oraclecloud.com', 'or
 function globPath(path: string): RegExp {
   const parts = path.split('*').map((part) => part.replace(/[.+?^$|()[\]{}\\]/g, '\\$&'));
   return new RegExp(`^${parts.join('.*')}`);
+}
+
+/** The P2 review (L3): the platform of an address the manifest's static content script runs at (onAtsMatch), else null:
+ *  never an employer's own domain platformOfUrl names by its address alone (Oracle's Candidate Experience there), whose
+ *  pages only the sentinel's path reaches. The launcher's per-site key, the agent's addresses and the reload offer
+ *  read this one. */
+export function staticPlatformOfUrl(url: string): Platform | null {
+  return onAtsMatch(url) ? platformOfUrl(url) : null;
 }
 
 /** The platform of an https address on one of the ATS hosts (a path-scoped host's under one of its candidate paths,
@@ -388,6 +409,8 @@ export const HR_HOST_MATCHES = ['https://*.oraclecloud.com/*', 'https://*.mywork
   'https://*.paycor.com/*', 'https://*.rippling.com/*', 'https://*.hibob.com/*', 'https://*.adp.com/*',
   'https://app.careerplug.com/*',
   // ── end of the security fix's block (S5) ──
+  // The P2 review (security 2): UKG Pro Canada's employee hosts (<n>.ultipro.ca), as <n>.ultipro.com's.
+  'https://*.ultipro.ca/*',
 ] as const;
 
 /** The HR_HOST_MATCHES written for one host (no `*.`): that host alone, never one under it. */
@@ -401,7 +424,9 @@ export function isHrHost(host: string): boolean {
     // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
     'oraclegovcloud.com',
     // ── The security fix of 2026-11-06 (S5) ──
-    'dayforcehcm.com', 'ultipro.com', 'ukg.net', 'paylocity.com', 'paycor.com', 'rippling.com', 'hibob.com', 'adp.com'])
+    'dayforcehcm.com', 'ultipro.com', 'ukg.net', 'paylocity.com', 'paycor.com', 'rippling.com', 'hibob.com', 'adp.com',
+    // The P2 review (security 2)
+    'ultipro.ca'])
     || HR_HOSTS_EXACT.includes(host.toLowerCase().replace(/\.+$/, ''));
 }
 

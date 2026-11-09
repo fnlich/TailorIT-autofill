@@ -20,11 +20,12 @@
  * its API 5 (src/adapters/url.test.ts).
  * v5 p2-detect (the owner, 2026-11-08: "Jobright is sample, and it works perfectly. you can use it"; Jobright 1.25.2's
  * site registry: any host's .../CandidateExperience/.../sites/.../job/... and its jobs/preview form, read as its behaviour): the
- * same Candidate Experience on a company's own https domain, /<prefix>/CandidateExperience/<lang>/sites/<site>/..., read
- * alike (ORACLE_OWN_DOMAIN_PATH) on any host but Oracle's own domains and those shared/hosts.ts keeps the extension off
- * (no static match: shared/hosts.ts platformOfUrl names it, and the sentinel recognises it, dom/page-signals.ts); its
- * canonical address keeps its host and prefix. And .../jobs/preview/<id>, Jobright's other spelling of a posting, is read
- * as .../job/<id> is.
+ * same Candidate Experience on a company's own https domain, /hcmUI/CandidateExperience/<lang>/sites/<site>/..., read
+ * alike (ORACLE_OWN_DOMAIN_PATH; the P2 review's security 1: the hcmUI prefix alone, the one every fixture shows) on any
+ * host but Oracle's own domains and those shared/hosts.ts keeps the extension off (no static match: shared/hosts.ts
+ * platformOfUrl names it by its address, and the sentinel and the adapters' choice take it only with its Oracle markup,
+ * dom/page-signals.ts oracleCandidateExperienceShown); its canonical address keeps its host. And .../jobs/preview/<id>,
+ * Jobright's other spelling of a posting, is read as .../job/<id> is.
  */
 import type { ApplicationUrl } from '../application-key';
 
@@ -37,29 +38,31 @@ const SITE = /^[A-Za-z0-9_-]{1,40}$/;
 const POSTING_ID = /^\d{1,15}$/;
 
 /** v5 p2-detect: Oracle's Candidate Experience on a company's own domain (module header), as shared/hosts.ts reads it:
- *  /<prefix>/CandidateExperience/<lang>/sites/<site>/. */
+ *  /hcmUI/CandidateExperience/<lang>/sites/<site>/ (the P2 review's security 1: hcmUI alone). */
 export const ORACLE_OWN_DOMAIN_PATH =
-  /^\/[A-Za-z0-9_-]{1,40}\/CandidateExperience\/[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?\/sites\/[A-Za-z0-9_-]{1,40}\//;
+  /^\/hcmUI\/CandidateExperience\/[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?\/sites\/[A-Za-z0-9_-]{1,40}\//;
 /** The domains no company's own Candidate Experience is read on: Oracle's own clouds (their tenants are HOST's), and
  *  those src/shared/hosts.ts keeps the extension off (isLinkedInHost, isHrHost, the CAPTCHA vendors), as it lists them
  *  (src/shared/hosts.test.ts holds the two readings to each other). */
 export const ORACLE_REFUSED_DOMAINS: readonly string[] = ['oraclecloud.com', 'oraclegovcloud.com', 'linkedin.com',
   'linkedin.cn', 'lnkd.in', 'licdn.com', 'myworkday.com', 'sapsf.com', 'sapsf.eu', 'bamboohr.com', 'clearcompany.com',
   'dayforcehcm.com', 'ultipro.com', 'ukg.net', 'paylocity.com', 'paycor.com', 'rippling.com', 'hibob.com', 'adp.com',
+  // The P2 review (security 2)
+  'ultipro.ca',
   'paycomonline.net', 'careerplug.com', 'google.com', 'recaptcha.net', 'hcaptcha.com', 'cloudflare.com', 'arkoselabs.com',
   'funcaptcha.com', 'captcha-delivery.com', 'protechts.net', 'geetest.com'];
 const ORACLE_DOMAINS = new RegExp(`(?:^|\\.)(?:${ORACLE_REFUSED_DOMAINS.map((domain) => domain.replace(/\./g, '\\.'))
   .join('|')})$`);
 
-/** The path up to and with /CandidateExperience/ an address's candidate pages start with: ROOT on a tenant's host, the
- *  company's own prefix on its own domain (v5 p2-detect); null where the address is no candidate page. */
+/** The path up to and with /CandidateExperience/ an address's candidate pages start with (ROOT, on a tenant's host or,
+ *  v5 p2-detect, a company's own domain); null where the address is no candidate page. */
 function rootOf(url: URL): string | null {
   if (url.protocol !== 'https:' || url.port !== '' || url.username !== '' || url.password !== '') return null;
   if (HOST.test(url.hostname)) return url.pathname.startsWith(ROOT) ? ROOT : null;
   if (ORACLE_DOMAINS.test(url.hostname) || !url.hostname.includes('.') || !ORACLE_OWN_DOMAIN_PATH.test(url.pathname)) {
     return null;
   }
-  return url.pathname.slice(0, url.pathname.indexOf('/CandidateExperience/') + '/CandidateExperience/'.length);
+  return ROOT;
 }
 
 /** Whether an address is a candidate page of an Oracle Recruiting Cloud tenant (v5 p2-detect: or of its Candidate

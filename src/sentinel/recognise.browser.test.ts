@@ -11,6 +11,9 @@ import netflixJobHtml from '../../fixtures/sites/netflix-eightfold-job.html?raw'
 import walmartGateHtml from '../../fixtures/sites/walmart-email-gate.html?raw';
 import applyHtml from '../../fixtures/synthetic/sites/apply.html?raw';
 import ordinaryHtml from '../../fixtures/synthetic/sites/ordinary.html?raw';
+// The P2 review (security 1): Oracle's own pages, read at an employer's own domain.
+import oracleApplyHtml from '../../fixtures/oracle/hjf-apply-section.html?raw';
+import oraclePostingHtml from '../../fixtures/oracle/jpmc-posting.html?raw';
 import corpus from '../../fixtures/synthetic/sites/corpus/index.json';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { recognisePage } from './recognise';
@@ -89,19 +92,37 @@ describe("the sentinel's recognition", () => {
 });
 
 // ── v5 p2-detect: Oracle's Candidate Experience on a company's own domain (the owner's word of 2026-11-08) ──
+/** The Oracle app's shell tags (dom/page-signals.ts ORACLE_SHELL, ORACLE_NAVIGATION) renamed to plain divs: the same
+ *  page, its address and its form, without the app's own markup. */
+const withoutShell = (html: string) => html
+  .replace(/<(oj-dialog|minimal-dialog|skip-navigation-link|sitemap-link)(?=[\s>])/g, '<div data-was="$1"')
+  .replace(/<\/(?:oj-dialog|minimal-dialog|skip-navigation-link|sitemap-link)>/g, '</div>');
+
 describe("Oracle's Candidate Experience on a company's own domain (v5 p2-detect)", () => {
-  it("recognises it by its address alone, as a career-site platform's page, before anything is drawn", async () => {
-    expect(await at(ordinaryHtml, 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345'))
-      .toBe('platform');
-    expect(await at(ordinaryHtml, 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345/apply'))
-      .toBe('platform');
+  const OWN = 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345';
+
+  // The P2 review (security 1): the address and the app's own markup (every Oracle fixture's), never the address alone.
+  it("recognises it by its address and the app's own markup, as a career-site platform's page", async () => {
+    expect(await at(oraclePostingHtml, OWN)).toBe('platform');
+    expect(await at(oracleApplyHtml, `${OWN}/apply/section/1`)).toBe('platform');
     // Not on LinkedIn, an HR system or Oracle's own clouds (the static script's there), nor any other path.
     for (const href of ['https://www.linkedin.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1',
       'https://acme.paylocity.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1',
       'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1',
-      'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites']) {
-      expect(await at(ordinaryHtml, href), href).toBeNull();
+      'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites',
+      'https://careers.acme-corp.example/careers/CandidateExperience/en/sites/CX_1/job/12345']) {
+      expect(await at(oraclePostingHtml, href), href).not.toBe('platform');
     }
+  });
+
+  it('never by the address alone: a page anyone may host there is read as any other page', async () => {
+    // A github.io-like page at the address: nothing of Oracle's, so nothing at all (a shop) or the form's score.
+    expect(await at(ordinaryHtml, OWN)).toBeNull();
+    expect(await at(ordinaryHtml, 'https://acme.github.io/hcmUI/CandidateExperience/en/sites/CX_1/job/12345')).toBeNull();
+    expect(await at(applyHtml, `${OWN}/apply/section/1`)).toBe('application-form');
+    // Oracle's own page classes without the app's shell: not Oracle's platform (its form may still score as any form's).
+    expect(await at(withoutShell(oraclePostingHtml), OWN)).not.toBe('platform');
+    expect(await at(withoutShell(oracleApplyHtml), `${OWN}/apply/section/1`)).not.toBe('platform');
   });
 });
 // ── end v5 p2-detect ──

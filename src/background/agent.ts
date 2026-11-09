@@ -73,7 +73,7 @@ import { ok, type Answer } from '../messaging/envelope';
 import { type AgentBlock, type AgentPause, type AgentStatus, type EntryAnswer, type EntryBlock } from '../messaging/schemas';
 import { AGENT_PAUSES } from '../messaging/page-schemas';
 import type { AgentAlarms, AgentWindows, AtsPage, StorageArea } from '../platform/types';
-import { platformOfUrl } from '../shared/hosts';
+import { staticPlatformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
 import type { FrameReport } from '../shared/report';
 import type { FrameEntry } from './frames';
@@ -379,10 +379,13 @@ function applicationKeyOf(url: string): string | null {
 }
 
 /** The address the agent opens for a task's `url`: the canonical application address the agent fills
- *  (agentApplicationUrl), https on an applicant-tracking host, with an application key; null when there is none. */
+ *  (agentApplicationUrl), https on an applicant-tracking host, with an application key; null when there is none. The
+ *  P2 review (L3): an applicant-tracking host the manifest's script runs on (shared/hosts.ts staticPlatformOfUrl); an
+ *  employer's own domain at Oracle's Candidate Experience address is never the agent's (its content script comes only
+ *  through the sentinel, once the page shows the app), whether or not the career sites act. */
 export function agentAddressOf(url: string): { address: string; applicationKey: string } | null {
   const address = agentApplicationUrl(url);
-  if (address === null || platformOfUrl(address) === null) return null;
+  if (address === null || staticPlatformOfUrl(address) === null) return null;
   const applicationKey = applicationKeyOf(address);
   return applicationKey === null ? null : { address, applicationKey };
 }

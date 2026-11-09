@@ -24,6 +24,8 @@ import hjfApplySectionHtml from '../../../fixtures/oracle/hjf-apply-section.html
 import hjfAfterSubmitExpect from '../../../fixtures/oracle/hjf-after-submit.expect.json';
 import hjfAfterSubmitHtml from '../../../fixtures/oracle/hjf-after-submit.html?raw';
 import { isUserVisible } from '../../dom/visibility';
+// The P2 review (security 1)
+import { oracleCandidateExperienceShown, oracleShellShown } from '../../dom/page-signals';
 import { detectPause } from '../../dom/pause-detect';
 import { scan } from '../../dom/scan';
 import { signInFormOf, signInRefusal } from '../../dom/sign-in-form';
@@ -363,3 +365,52 @@ describe("the agent's entry (v3 Phase 7b)", () => {
     expect(pressed).toEqual([fixture.doc.querySelectorAll('.job-details__section-apply-button button.apply-now-button')[0]]);
   });
 });
+
+// ── v5 p2-detect, the P2 review (security 1): Oracle's Candidate Experience on an employer's own domain ──
+/** The Oracle app's shell tags (dom/page-signals.ts) renamed to plain divs: the same page without the app's markup. */
+const withoutShell = (html: string) => html
+  .replace(/<(oj-dialog|minimal-dialog|skip-navigation-link|sitemap-link)(?=[\s>])/g, '<div data-was="$1"')
+  .replace(/<\/(?:oj-dialog|minimal-dialog|skip-navigation-link|sitemap-link)>/g, '</div>');
+const OWN_ROOT = 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551';
+
+describe("an employer's own domain (the P2 review, security 1)", () => {
+  it('every snapshot holds the app’s own markup, the shell alone after it, and a page without it holds none', async () => {
+    for (const { name, html, address } of CASES) {
+      const fixture = await load(html, address);
+      expect(oracleCandidateExperienceShown(fixture.doc), name).toBe(true);
+      expect(oracleShellShown(fixture.doc), name).toBe(true);
+      removeFixtures(document);
+      const stripped = await load(withoutShell(html), address);
+      expect(oracleCandidateExperienceShown(stripped.doc), name).toBe(false);
+      expect(oracleShellShown(stripped.doc), name).toBe(false);
+      removeFixtures(document);
+    }
+  });
+
+  it('presses nothing at the address without the app’s markup: no Submit, no final step, no APPLY NOW', async () => {
+    const section = await load(withoutShell(hjfApplySectionHtml), `${OWN_ROOT}/apply/section/1`);
+    const root = oracleAdapter.detect(section.doc)!.formRoot;
+    expect(oracleAdapter.submitButton!(root)).toBeNull();
+    expect(oracleAdapter.isFinalStep!(section.doc)).toBe('unknown');
+    removeFixtures(document);
+    const posting = await load(withoutShell(jpmcPostingHtml), OWN_ROOT);
+    expect(oracleAdapter.entryControl!(posting.doc)).toBeNull();
+    expect(await pressEntry(posting.doc, [oracleAdapter], new AbortController().signal, 300, 300))
+      .not.toEqual({ outcome: 'pressed' });
+  });
+
+  it('reads the genuine app on the employer’s domain as on Oracle’s own hosts', async () => {
+    const section = await load(hjfApplySectionHtml, `${OWN_ROOT}/apply/section/1`);
+    const root = oracleAdapter.detect(section.doc)!.formRoot;
+    expect(oracleAdapter.submitButton!(root)?.textContent?.trim()).toBe('Submit');
+    expect(oracleAdapter.isFinalStep!(section.doc)).toBe('final');
+    removeFixtures(document);
+    const posting = await load(jpmcPostingHtml, OWN_ROOT);
+    expect(oracleAdapter.entryControl!(posting.doc)).not.toBeNull();
+    // Oracle's own hosts keep every hook whatever the markup (their static match is the proof).
+    removeFixtures(document);
+    const tenant = await load(withoutShell(hjfApplySectionHtml), CASES[3].address);
+    expect(oracleAdapter.submitButton!(oracleAdapter.detect(tenant.doc)!.formRoot)).not.toBeNull();
+  });
+});
+// ── end v5 p2-detect ──

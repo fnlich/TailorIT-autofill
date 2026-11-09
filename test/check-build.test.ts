@@ -10,10 +10,12 @@
  * exactly every https and http page plus TailorIT, with no optional ones, and neither the sentinel's registration nor
  * a static content script reaches a CAPTCHA or anti-bot vendor's frame. v5 p1-shell: the sidebar's bundle is in every
  * build, listed nowhere in the manifest, within its budget, and holds no WXT content-script context. v5 p2-detect: a
- * third content script, the page-world submit watcher (world MAIN, Workday's and ClearCompany's hosts alone, every
- * frame, from document_start, within its budget), whose bundle is one anonymous function naming no extension API and
- * no way to read a body or a header, adding no global and no listener, and wrapping fetch and XMLHttpRequest exactly
- * at a Workday or ClearCompany posting or form.
+ * third content script, the page-world submit watcher (world MAIN, Workday's, ClearCompany's, Oracle's and
+ * SuccessFactors' hosts alone, every frame, from document_start, within its budget), whose bundle is one anonymous
+ * function naming no extension API, no header and no body reader beyond the copies its yes-or-no facts need, adding no
+ * global and no listener, wrapping fetch and XMLHttpRequest exactly at a posting or form and (the P2 review, M3) the
+ * candidate apps' job lists, SuccessFactors' applyJob at its form, reading no body it has no use for and dispatching a
+ * sign alone. The P2 review (security 2): no static content script runs on an employee HR system's page.
  * The script runs as it is, copied with what it reads (proc.mjs, the host list, the public key) into a
  * temporary folder that holds three fixture builds, and each case breaks the builds in one way.
  */
@@ -23,7 +25,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CAPTURE_MARKER } from '../src/background/capture';
-import { ATS_MATCHES, SUBMIT_WATCH_MATCHES } from '../src/shared/hosts';
+import { ATS_MATCHES, isCompanySiteUrl, onAtsMatch, SUBMIT_WATCH_MATCHES } from '../src/shared/hosts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
@@ -94,9 +96,14 @@ const BRIDGE_SCRIPT = { all_frames: true, run_at: 'document_start', js: ['conten
 /** v5 p2-detect: the page-world submit watcher's entry, as WXT writes it (src/entrypoints/submit-watch.content.ts). */
 const WATCH_SCRIPT = { all_frames: true, run_at: 'document_start', js: ['content-scripts/submit-watch.js'], world: 'MAIN' };
 /** v5 p2-detect: a watcher bundle as the real one behaves: it wraps fetch and XMLHttpRequest's open and send at a
- *  Workday, ClearCompany or Oracle posting or form (check-build's own addresses), SuccessFactors' applyJob proxy at a
- *  career site's form, and nothing elsewhere; it reads no body and tells nothing. */
+ *  Workday, ClearCompany or Oracle posting or form and (the P2 review, M3) their candidate apps' job lists
+ *  (check-build's own addresses), SuccessFactors' applyJob proxy at a career site's form, and nothing elsewhere; it
+ *  reads no body and tells nothing. */
 const WATCH_AT = 'var h=String(document.location&&document.location.href||"");'
+  + 'if(/myworkdayjobs(?:-impl)?\\.com\\/|\\/recruiting\\/acme\\/External|\\/careers\\/jobs'
+  + '|\\/hcmUI\\/CandidateExperience\\//.test(h))';
+/** The P2 review (M3): the watcher before it, installing at a posting or its form alone (the bridge's decision). */
+const WATCH_AT_FORMS = 'var h=String(document.location&&document.location.href||"");'
   + 'if(/myworkdayjobs(?:-impl)?\\.com\\/|\\/job\\/Remote\\/Engineer_JR-1|\\/careers\\/jobs\\/[0-9a-f-]+\\/apply'
   + '|\\/CandidateExperience\\/.*\\/apply\\//.test(h))';
 const WATCH_WRAP = '{var f=window.fetch;window.fetch=function(){return f.apply(this,arguments)};'
@@ -430,6 +437,11 @@ describe("check-build's three content scripts: ours, the page-world bridge and (
       [`(function(){${WATCH_WRAP}})();`,
         'the submit watcher wraps fetch and XMLHttpRequest at https://career2.successfactors.eu/career?company=danfossas'],
       ['(function(){window.fetch=function(){}})();', `the submit watcher does not wrap fetch and XMLHttpRequest at ${installs}`],
+      // The P2 review (M3): a watcher that installs at a posting or its form alone misses the candidate apps' job lists.
+      [`(function(){${WATCH_AT_FORMS}${WATCH_WRAP}${WATCH_PROXY}})();`,
+        'the submit watcher does not wrap fetch and XMLHttpRequest at https://wd5.myworkdaysite.com/recruiting/acme/External'],
+      [`(function(){${WATCH_AT_FORMS}${WATCH_WRAP}${WATCH_PROXY}})();`, 'the submit watcher does not wrap fetch and '
+        + 'XMLHttpRequest at https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions'],
     ];
     for (const [bundle, message] of cases) {
       const { status, output } = checkBuild(project((write) => {
@@ -598,6 +610,34 @@ describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel an
       expect(output, pattern).toContain(`.output/chrome-mv3: the page-world bridge runs in a CAPTCHA vendor's frame at ${address}`);
       expect(status, pattern).toBe(1);
     }
+  });
+
+  // The P2 review (security 2): UKG's candidate hosts by name; an employer's own UKG Pro host (<n>.ultipro.com, .ca),
+  // whose job boards are for its staff, gets no content script, no bridge and no sentinel.
+  it("fail a static content script that would run on an employer's own UKG Pro job board", () => {
+    for (const pattern of ['https://*.ultipro.com/*/JobBoard/*', 'https://*.ultipro.ca/*/JobBoard/*']) {
+      const address = pattern.includes('.ca/')
+        ? 'https://n12.ultipro.ca/ACME1000/JobBoard/0d3f6a2e-1111-2222-3333-444455556666/'
+        : 'https://n12.ultipro.com/ACME1000/JobBoard/0d3f6a2e-1111-2222-3333-444455556666/OpportunityDetail?opportunityId=1';
+      const { status, output } = checkBuild(project((write) => {
+        const hosts = readFileSync(join(ROOT, 'src', 'shared', 'hosts.ts'), 'utf8');
+        write('src/shared/hosts.ts', hosts.replace("export const ATS_MATCHES = [\n", `export const ATS_MATCHES = [\n  '${pattern}',\n`));
+        everyManifest(write, (changed) => {
+          contentScript(changed).matches = [pattern, ...ATS_MATCHES];
+          bridgeScript(changed).matches = [pattern, ...ATS_MATCHES];
+        });
+      }));
+      expect(output, pattern).toContain(`.output/chrome-mv3: the content script runs on an HR system at ${address}`);
+      expect(output, pattern).toContain(`.output/chrome-mv3: the page-world bridge runs on an HR system at ${address}`);
+      expect(status, pattern).toBe(1);
+    }
+    // The match list itself: no static match covers an employer's UKG Pro host, the sentinel excludes it.
+    for (const address of ['https://n12.ultipro.com/ACME1000/JobBoard/x/', 'https://n12.ultipro.ca/ACME1000/JobBoard/x/']) {
+      expect(onAtsMatch(address), address).toBe(false);
+      expect(isCompanySiteUrl(address), address).toBe(false);
+    }
+    for (const address of ['https://recruiting2.ultipro.com/ACME1000/JobBoard/x/', 'https://recruiting.ultipro.ca/ACME1000/JobBoard/x/',
+      'https://acme.rec.pro.ukg.net/ACME1000/JobBoard/x/']) expect(onAtsMatch(address), address).toBe(true);
   });
 
   it('fail a sentinel that is missing, listed in the manifest, over its budget, or that names React, zod or a DOM write', () => {

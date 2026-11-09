@@ -19,7 +19,7 @@
  * postingAddressOf) over every address of its table, and to the rule that every shared-domain platform is here.
  */
 import type { Platform } from '../core/enums';
-import { platformOfUrl } from '../shared/hosts';
+import { ORACLE_CANDIDATE_APP, platformOfUrl } from '../shared/hosts';
 import type { ApplicationPage, ApplicationUrl } from './application-key';
 import { parseAdpUrl } from './adp/url';
 import { parseBambooHrUrl } from './bamboohr/url';
@@ -46,6 +46,8 @@ export const PUBLIC_JOB_HOSTS: ReadonlyArray<RegExp> = [/^(?:job-)?boards\.green
   /^(?!(?:www|wd\d{1,3})\.)[a-z0-9-]+\.(?:wd\d{1,3}\.)?myworkdayjobs(?:-impl)?\.com$/,
   // ── New ATSs (DESIGN-NEW-ATS §4, Phase 0): the candidate-only hosts, never a path-scoped shared one ──
   /^jobs\.jobvite\.com$/, /^ats\.rippling\.com$/, /^recruiting\.ultipro\.com$/, /^jobs\.dayforcehcm\.com$/,
+  // The P2 review (security 2): UKG's other candidate-only recruiting hosts, by name.
+  /^recruiting2\.ultipro\.com$/, /^recruiting\.ultipro\.ca$/,
   /^[a-z0-9-]+\.careers\.hibob\.com$/,
   // ── end New ATSs ──
 ];
@@ -58,7 +60,8 @@ export const SHARED_DOMAIN_PARSERS: Partial<Record<Platform, (url: URL) => Appli
   adp: parseAdpUrl, clearcompany: parseClearCompanyUrl, dice: parseDiceUrl, paylocity: parsePaylocityUrl,
   jazzhr: parseJazzhrUrl, bamboohr: parseBambooHrUrl, breezy: parseBreezyUrl, careerplug: parseCareerPlugUrl,
   pinpoint: parsePinpointUrl, paycor: parsePaycorUrl,
-  // v5 p2-detect: UKG's other recruiting hosts (shared/hosts.ts), each on a domain that also serves an HR system.
+  // v5 p2-detect: UKG's recruiting tenants' hosts, <x>.rec.pro.ukg.net (shared/hosts.ts), on a domain that also serves
+  // an HR system.
   ultipro: parseUltiproUrl,
 };
 
@@ -163,3 +166,49 @@ export function framedByEmployerPage(href: string, ancestors: readonly string[])
     }
   });
 }
+
+// ── v5 p2-detect: where the page-world submit watcher installs (the P2 review, M3) ──
+/** Workday's shared host's candidate app: /[<locale>/]recruiting/<tenant>/<site>[/...] on wd<n>.myworkdaysite.com
+ *  (workday/url.ts reads the same prefix), its job list as much as a posting or its form. */
+const WORKDAY_SITE_APP = /^\/(?:[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,4})?\/)?recruiting\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+(?:\/|$)/;
+/** Workday's shared host (wd<n>.myworkdaysite.com), as workday/url.ts reads it. */
+const WORKDAY_SITE_HOST = /^wd\d{1,3}\.myworkdaysite\.com$/;
+
+/** Whether the page-world submit watcher (src/entrypoints/submit-watch.content.ts) installs in a frame at `href` with
+ *  `ancestors` (readableAncestors) for `platform` (one with a network sign: dom/submit-net-protocol.ts NET_PLATFORMS).
+ *  The P2 review (M3): Oracle's Candidate Experience and Workday's candidate sites are single-page apps a person
+ *  enters at a job list and leaves for a posting and its form without a new document, so the watcher installs anywhere
+ *  under the candidate app's own path, not only where the bridge would (bridgeInstallsAt, decided once from the address
+ *  the document was loaded at):
+ *  - Oracle: every address platformOfUrl reads as Oracle's is under /hcmUI/CandidateExperience/ (its tenants' hosts by
+ *    their path; an employer's own domain by ORACLE_OWN_DOMAIN_PATH, where the worker injects the watcher only once the
+ *    Oracle adapter detected the app's form in that document: background/sites.ts watch);
+ *  - Workday: a tenant's own host on any path (bridgeInstallsAt: a host of public postings alone), and the shared
+ *    myworkdaysite.com host under /[<locale>/]recruiting/<tenant>/<site> (WORKDAY_SITE_APP);
+ *  - ClearCompany: every address platformOfUrl reads as ClearCompany's is under a tenant's /careers/;
+ *  - SuccessFactors: where the bridge installs (a posting or its application form; its career site loads a document
+ *    for each page, so the address it was loaded at is the page's).
+ *  Never in a frame on a shared domain below one of its own origin that is no posting's (framedByEmployerPage). The
+ *  watcher stays inert there until the isolated world arms a Submit (content/submitted.ts watchNetworkSigns listens only
+ *  while one is armed). */
+export function submitWatchInstallsAt(href: string, platform: Platform, ancestors: readonly string[]): boolean {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return false;
+  }
+  if (platformOfUrl(url.href) !== platform || framedByEmployerPage(url.href, ancestors)) return false;
+  if (bridgeInstallsAt(url.href)) return true;
+  switch (platform) {
+    case 'oracle':
+      return url.pathname.startsWith(ORACLE_CANDIDATE_APP);
+    case 'workday':
+      return WORKDAY_SITE_HOST.test(url.hostname) && WORKDAY_SITE_APP.test(url.pathname);
+    case 'clearcompany':
+      return url.pathname.startsWith('/careers/');
+    default:
+      return false;
+  }
+}
+// ── end v5 p2-detect ──

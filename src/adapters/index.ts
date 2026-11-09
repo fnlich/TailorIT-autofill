@@ -25,7 +25,9 @@
  * the switch on with vi.stubGlobal.
  */
 import type { Platform } from '../core/enums';
-import { platformOfUrl } from '../shared/hosts';
+import { onAtsMatch, platformOfUrl } from '../shared/hosts';
+// The P2 review (security 1)
+import { oracleCandidateExperienceShown } from '../dom/page-signals';
 import { postingAddressOf } from './address';
 import { applicationKey, type ApplicationPage } from './application-key';
 import { ashbyAdapter } from './ashby';
@@ -95,12 +97,16 @@ const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = {
 /** The adapters that may handle a frame at `url`, in the order the content runtime tries their detect(). A company's
  *  own page (v3 Phase 8: shared/hosts.ts isCompanySiteUrl), where the content script runs only once the sentinel
  *  recognised it, gets the site adapter alone, which claims a page by the application-form score. */
-export function adaptersFor(url: URL): Adapter[] {
+export function adaptersFor(url: URL, doc?: Document): Adapter[] {
   const platform = platformOfUrl(url.href);
   const own = platform === null ? undefined : PLATFORM_ADAPTERS[platform];
   // v5 p2-detect: a platform's own pages on a company's own domain (Oracle's Candidate Experience: shared/hosts.ts
-  // platformOfUrl) are that platform's adapter's, the page the sentinel recognised and the worker injected into.
-  const ownHere = own !== undefined && own.matchesUrl(url);
+  // platformOfUrl) are that platform's adapter's, the page the sentinel recognised and the worker injected into. The
+  // P2 review (security 1): only where the document shows the app's own markup (dom/page-signals.ts
+  // oracleCandidateExperienceShown); the address alone, off the static hosts, keeps the site adapter and its guards
+  // (its form-score claim, nothing pressed).
+  const ownHere = own !== undefined && own.matchesUrl(url)
+    && (onAtsMatch(url.href) || (doc !== undefined && oracleCandidateExperienceShown(doc)));
   if (!ownHere && siteAdapter.matchesUrl(url)) return __E2E__ ? [...e2eAdaptersFor(url), siteAdapter] : [siteAdapter];
   const candidates = ownHere ? [own, genericAdapter] : [genericAdapter];
   return __E2E__ ? [...e2eAdaptersFor(url), ...candidates] : candidates;

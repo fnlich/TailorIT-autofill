@@ -22,7 +22,7 @@ import { oracleAdapter } from '../adapters/oracle';
 import { successFactorsAdapter } from '../adapters/successfactors';
 import reviewExpect from '../../fixtures/workday/web-review.expect.json';
 import { clearCompanyAdapter } from '../adapters/clearcompany';
-import { applicationOf } from '../adapters';
+import { adaptersFor, applicationOf } from '../adapters';
 import { workdayAdapter } from '../adapters/workday';
 import type { Adapter } from '../adapters/types';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
@@ -187,6 +187,96 @@ describe("Oracle's and SuccessFactors' signs make the application sent (v5 p2-de
       evidence: 'success-message' })]));
   });
 });
+
+// ── v5 p2-detect, the P2 review (security 1): Oracle's Candidate Experience on an employer's own domain ──
+/** The snapshot's own posting and section, at an employer's own domain. */
+const OWN = 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551/apply/section/1';
+/** The Oracle app's shell tags (dom/page-signals.ts) renamed to plain divs: the same page without the app's markup. */
+const withoutShell = (html: string) => html
+  .replace(/<(oj-dialog|minimal-dialog|skip-navigation-link|sitemap-link)(?=[\s>])/g, '<div data-was="$1"')
+  .replace(/<\/(?:oj-dialog|minimal-dialog|skip-navigation-link|sitemap-link)>/g, '</div>');
+
+/** The runtime on `html` at `href`, its base address `href` too (the adapter reads the document's own address), with the
+ *  adapters the extension gives that address and document (none given) or `adapter` alone. */
+async function startAt(html: string, href: string, adapter?: Adapter) {
+  const fixture = await loadFixture(document, html, { width: 1280, height: 1600 });
+  const base = fixture.doc.createElement('base');
+  base.href = href;
+  fixture.doc.head.prepend(base);
+  fixture.doc.addEventListener('submit', (event) => event.preventDefault());
+  // The snapshot's education entry the page marked invalid, gone: the page shows no error.
+  for (const mark of Array.from(fixture.doc.querySelectorAll('.beautiful-timeline-item--invalid-block'))) mark.remove();
+  const worker = createFakeWorker({ settings: DEFAULT_SETTINGS });
+  const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => href, isTop: true,
+    ...(adapter === undefined ? {} : { adapters: () => [adapter] }), settle: { quietMs: 40 } });
+  runtimes.push(runtime);
+  return { fixture, worker };
+}
+
+describe("Oracle on an employer's own domain (the P2 review, security 1)", () => {
+  it('the genuine page: the watcher asked once the adapter found the form, Applied on the signs and the app leaving its form', async () => {
+    const { fixture, worker } = await startAt(oracleHtml, OWN, oracleAdapter);
+    await vi.waitFor(() => expect(worker.of('site/watch')).toHaveLength(1));
+    await personSubmits(fixture, oracleAdapter);
+    await vi.waitFor(() => expect(worker.of('submit/armed')).toEqual([expect.objectContaining({ by: 'page' })]));
+    tell(fixture, 'oracle-created');
+    tell(fixture, 'oracle-confirmed');
+    // The signs alone, while the form still shows its Submit: not yet.
+    await deadline(200);
+    expect(worker.of('submit/detected')).toEqual([]);
+    // The app moves on from its form, as it does once the application is sent: its shell stays.
+    fixture.doc.querySelector('.apply-flow-pagination')!.remove();
+    await vi.waitFor(() => expect(worker.of('submit/detected')).toEqual([expect.objectContaining({
+      applicationKey: applicationOf(new URL(OWN))!.applicationKey, evidence: 'network' })]));
+    expect(worker.of('site/watch')).toHaveLength(1);
+  });
+
+  it("forged signs alone record nothing while the page keeps its form, and nothing once the app's shell is gone", async () => {
+    const { fixture, worker } = await startAt(oracleHtml, OWN, oracleAdapter);
+    await personSubmits(fixture, oracleAdapter);
+    await vi.waitFor(() => expect(worker.of('submit/armed')).toHaveLength(1));
+    tell(fixture, 'oracle-created');
+    tell(fixture, 'oracle-confirmed');
+    await deadline(300);
+    expect(worker.of('submit/detected')).toEqual([]);
+    // A page that drops the app's own shell with its form confirms nothing either.
+    for (const el of Array.from(fixture.doc.querySelectorAll('oj-dialog, minimal-dialog'))) el.remove();
+    fixture.doc.querySelector('.apply-flow-pagination')!.remove();
+    await deadline(300);
+    expect(worker.of('submit/detected')).toEqual([]);
+  });
+
+  it("on Oracle's own hosts the signs stand alone, and the manifest's watcher is never asked for", async () => {
+    const { fixture, worker } = await startAt(oracleHtml, ORACLE, oracleAdapter);
+    await personSubmits(fixture, oracleAdapter);
+    await vi.waitFor(() => expect(worker.of('submit/armed')).toHaveLength(1));
+    tell(fixture, 'oracle-created');
+    tell(fixture, 'oracle-confirmed');
+    await vi.waitFor(() => expect(worker.of('submit/detected')).toEqual([expect.objectContaining({ evidence: 'network' })]));
+    expect(worker.of('site/watch')).toEqual([]);
+  });
+
+  it("the address without the app's markup (a page anyone may host there): the site adapter, nothing pressed, no watcher",
+    async () => {
+      const page = withoutShell(oracleHtml);
+      const { fixture, worker } = await startAt(page, OWN);
+      // The extension's own adapters for that address and document: the site adapter alone.
+      expect(adaptersFor(new URL(OWN), fixture.doc).map((adapter) => adapter.id).filter((id) => !id.startsWith('tailorit-e2e')))
+        .toEqual(['site']);
+      // Oracle's adapter, were it picked, presses nothing there: no Submit, no final step, no APPLY NOW.
+      const root = oracleAdapter.detect(fixture.doc)!.formRoot;
+      expect(oracleAdapter.submitButton!(root)).toBeNull();
+      expect(oracleAdapter.isFinalStep!(fixture.doc)).toBe('unknown');
+      await deadline(300);
+      expect(worker.of('site/watch')).toEqual([]);
+      // The same page with the app's markup is Oracle's.
+      removeFixtures(document);
+      const genuine = await loadFixture(document, oracleHtml, { width: 1280, height: 1600 });
+      expect(adaptersFor(new URL(OWN), genuine.doc).map((adapter) => adapter.id).filter((id) => !id.startsWith('tailorit-e2e')))
+        .toEqual(['oracle', 'generic']);
+    });
+});
+// ── end v5 p2-detect ──
 
 describe('watchNetworkSigns (v5 p2-detect)', () => {
   it('adds no listener for a platform with no network sign, and stops with its signal', async () => {

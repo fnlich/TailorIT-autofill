@@ -150,6 +150,8 @@ import type { ValueMac } from '../core/types/loop';
 import type { RunState } from '../core/types/run';
 import { awaitEntrance } from '../dom/entrance';
 import { embedsAts, jobSignalOf } from '../dom/page-signals';
+// v5 p2-detect, the P2 review (security 1)
+import { oracleShellShown } from '../dom/page-signals';
 import { detectPause } from '../dom/pause-detect';
 import { newScanCache } from '../dom/scan-cache';
 import { scan, toFieldSpec } from '../dom/scan';
@@ -317,7 +319,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   const view = doc.defaultView;
   const lifetime = new AbortController();
   const readHref = options.href ?? (() => doc.location.href);
-  const adapters = options.adapters ?? adaptersFor;
+  // The P2 review (security 1): the document too, whose own markup an employer's own domain's Oracle page needs.
+  const adapters = options.adapters ?? ((url: URL) => adaptersFor(url, doc));
   const isTop = options.isTop ?? (view !== null && view.top === view);
   // The audit of 2026-11-06 (S-9): a frame on a domain that also holds an employer's own pages, below a page of its own
   // origin that is no posting's (an HR page framing a posting-looking address to learn whether the extension is
@@ -396,6 +399,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** v3 Phase 8: the worker injected this document's script (a company's own page: the static content script runs on
    *  the ATS hosts alone), read once from the address the document was loaded at. */
   const injectedHere = isCompanySiteUrl(options.href === undefined ? loadedHref(view) ?? readHref() : readHref());
+  /** v5 p2-detect: whether this document asked the worker for the submit watcher (resolvePage). */
+  let watchAsked = false;
 
   // ── The worker's messages: listened for before frame/hello goes out ─────────────────────────────────────────────
   platform.runtime.onMessage(async (message: unknown, sender: Sender) => {
@@ -731,8 +736,26 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         watch.abort();
       } };
     armed = record;
+    // ── v5 p2-detect: the network sign, once heard (netSeen), taken while the page shows no error. The P2 review
+    // (security 1): on an employer's own domain (ownOracle: Oracle's Candidate Experience there, the page's own scripts
+    // the employer's) the sign alone, which the page could dispatch itself, is never enough: the document must confirm it
+    // too (oracleLeftForm: the app's shell still there, the Submit the press saw gone), read again at each change of the
+    // page until the watch ends. On the platforms' own hosts the sign is read once, as it came. ──
+    const ownOracle = injectedHere && at.platform === 'oracle';
+    let netSeen = false;
+    const netConfirmed = () => {
+      if (!netSeen || armed !== record || stopped) return;
+      if (refusalNow({ doc, adapter: at.adapter, root: at.root }) > 0) return;
+      if (ownOracle && !oracleLeftForm(at.adapter, at.root)) return;
+      record.stopWatch();
+      armed = null;
+      void detected('network', record);
+    };
+    // ── end v5 p2-detect ──
     const check = () => {
       if (armed !== record || stopped) return record.stopWatch();
+      if (ownOracle) netConfirmed();
+      if (armed !== record) return;
       if (newSuccessSign(doc, record.platform, record) === null) return;
       record.stopWatch();
       armed = null;
@@ -752,17 +775,27 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     void refusalAfter({ doc, adapter: at.adapter, root: at.root }, watch.signal).then((count) => {
       if (armed === record && count > 0) endArm(record, { refused: count });
     });
-    // ── v5 p2-detect: the platform's network sign (submitted.ts watchNetworkSigns: Workday's finalize answered, or
-    // ClearCompany's last answers and completed message), this Submit's while it is armed and the page shows no error.
+    // ── v5 p2-detect: the platform's network sign (submitted.ts watchNetworkSigns: Workday's finalize, ClearCompany's
+    // last answers and completed message, Oracle's CREATE then CONFIRM, SuccessFactors' applyJob taken), this Submit's
+    // while it is armed and the page shows no error (netConfirmed above: and, on an employer's own domain, the
+    // document's confirmation).
     watchNetworkSigns(doc, at.platform, watch.signal, () => {
-      if (armed !== record || stopped) return;
-      if (refusalNow({ doc, adapter: at.adapter, root: at.root }) > 0) return;
-      record.stopWatch();
-      armed = null;
-      void detected('network', record);
+      netSeen = true;
+      netConfirmed();
     });
     // ── end v5 p2-detect ──
     check();
+  }
+
+  /** v5 p2-detect, the P2 review (security 1): the document's confirmation of a Submit on an employer's own domain's
+   *  Oracle page: the app's shell is still there (dom/page-signals.ts oracleShellShown, all five Oracle fixtures' own
+   *  markup) and the Submit the press saw (the adapter's submitButton, fixtures/oracle/hjf-apply-section.html's
+   *  pagination button) is no longer one a person can see: the app has moved on from its form, as it does once the
+   *  application is sent (a refused Submit keeps the form and shows its errors: hjf-after-submit.html). Oracle draws no
+   *  message of its own after sending (Jobright reads Oracle's network alone: its oraclecloud-confirmed-application rule
+   *  is network-only), so the form's leaving is the document's part. */
+  function oracleLeftForm(adapter: Adapter, root: Element): boolean {
+    return oracleShellShown(doc) && (adapter.submitButton?.(root) ?? null) === null;
   }
 
   /** The platform's sign was seen (module header): the worker takes it only for an application this tab armed; then the
@@ -1256,6 +1289,13 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const claim = (at: URL) => (lateClosed === href ? adapters(at) : lateAdapters(adapters(at)));
     const picked = url !== null && app !== null && app.page === 'application' ? pickAdapter(doc, url, claim) : null;
     page = picked === null || app === null ? null : { app, adapter: picked.adapter, root: picked.root };
+    // ── v5 p2-detect, the P2 review (security 1): on an employer's own domain the Oracle adapter claims a page only where
+    // the document shows the app's own markup (adapters/index.ts adaptersFor) and its detect found the app's form; only
+    // then, once per document, is the worker asked for the page-world submit watcher here (background/sites.ts watch). ──
+    if (page !== null && page.adapter.id === 'oracle' && injectedHere && !watchAsked && !stopped) {
+      watchAsked = true;
+      void channel.request({ v: 1, type: 'site/watch' }).catch(() => undefined);
+    }
   }
 
   /** An application page whose adapters found no form root (core pass Z2 of 2026-11-06: the first scan's entrance

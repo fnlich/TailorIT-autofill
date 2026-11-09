@@ -7,6 +7,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { encodeNetSign, SUBMIT_NET_EVENT, type NetPlatform } from '../dom/submit-net-protocol';
+// The P2 review (M3)
+import { submitWatchInstallsAt } from '../adapters/bridge-address';
 import { installSubmitWatch } from './submit-watch';
 
 const PAGE = 'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote/Engineer_JR-1/apply/applyManually';
@@ -327,3 +329,63 @@ describe('the page-world submit watcher (v5 p2-detect)', () => {
     expect(proxy.applyJob).toBe(apply);
   });
 });
+
+// ── v5 p2-detect, the P2 review (M3): installed anywhere under a single-page candidate app's own path ──
+describe("where the submit watcher installs (the P2 review, M3)", () => {
+  const ORACLE_LIST = 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions';
+  const OWN_LIST = 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/requisitions';
+
+  it("installs at the candidate apps' job lists as at their postings and forms", () => {
+    for (const [href, platform] of [[ORACLE_LIST, 'oracle'], [ORACLE_PAGE, 'oracle'],
+      ['https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946', 'oracle'],
+      // An employer's own domain: the worker injects it only once the Oracle adapter detected the app there.
+      [OWN_LIST, 'oracle'],
+      ['https://wd5.myworkdaysite.com/recruiting/acme/External', 'workday'],
+      ['https://wd5.myworkdaysite.com/en-US/recruiting/acme/External/jobs', 'workday'],
+      ['https://wd5.myworkdaysite.com/recruiting/acme/External/job/Remote/Engineer_JR-1', 'workday'],
+      ['https://acme.wd5.myworkdayjobs.com/en-US/External', 'workday'], [PAGE, 'workday'],
+      ['https://vafb.clearcompany.com/careers/jobs', 'clearcompany'], [CC_PAGE, 'clearcompany'], [SF_PAGE, 'successfactors'],
+    ] as const) {
+      expect(submitWatchInstallsAt(href, platform, []), href).toBe(true);
+    }
+  });
+
+  it('stays out elsewhere: outside the app, another platform, an employer frame, an address that does not read', () => {
+    for (const [href, platform] of [['https://wd5.myworkdaysite.com/recruiting/acme', 'workday'],
+      ['https://wd5.myworkdaysite.com/wday/authgwy/acme/login', 'workday'], ['https://wd5.myworkdaysite.com/', 'workday'],
+      ['https://elhr.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'oracle'],
+      ['https://careers.acme-corp.example/careers/CandidateExperience/en/sites/CX_1/requisitions', 'oracle'],
+      ['https://vafb.clearcompany.com/app/home', 'clearcompany'],
+      ['https://career2.successfactors.eu/career?company=danfossas&career_ns=job_listing', 'successfactors'],
+      ['https://performancemanager4.successfactors.com/sf/home', 'successfactors'],
+      [ORACLE_LIST, 'workday'], ['not an address', 'oracle']] as const) {
+      expect(submitWatchInstallsAt(href, platform, []), href).toBe(false);
+    }
+    // A frame on Oracle's host below a page of its own origin that is no posting's.
+    expect(submitWatchInstallsAt(ORACLE_LIST, 'oracle', ['https://elhr.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome']))
+      .toBe(false);
+  });
+
+  it("tells Oracle's CREATE and CONFIRM once the app moved from its job list to a posting's form, by the address then", async () => {
+    expect(submitWatchInstallsAt(ORACLE_LIST, 'oracle', [])).toBe(true);
+    const doc = new EventTarget() as EventTarget & { querySelector(selector: string): unknown };
+    doc.querySelector = () => null;
+    const told: unknown[] = [];
+    doc.addEventListener(SUBMIT_NET_EVENT, (event) => told.push((event as CustomEvent<unknown>).detail));
+    let response = new Response(CREATED, { status: 201 });
+    const location = { href: ORACLE_LIST };
+    const view = { document: doc, location, fetch: vi.fn(() => Promise.resolve(response)), XMLHttpRequest: FakeXhr,
+      CustomEvent, Request, HTMLInputElement: class {}, setInterval: globalThis.setInterval,
+      clearInterval: globalThis.clearInterval };
+    // Installed at the list, reading the page's address as each request goes (its default).
+    removers.push(installSubmitWatch(view as unknown as Window & typeof globalThis, 'oracle'));
+    // The app's own move to the posting's apply flow: the same document, a new address.
+    location.href = ORACLE_PAGE;
+    await (view as unknown as { fetch: typeof fetch }).fetch(APPLICATIONS, { method: 'POST', body: CREATE });
+    response = new Response(CONFIRMED, { status: 200 });
+    await (view as unknown as { fetch: typeof fetch }).fetch(APPLICATIONS, { method: 'POST', body: CONFIRM });
+    await settle();
+    expect(told).toEqual([sign('oracle-created'), sign('oracle-confirmed')]);
+  });
+});
+// ── end v5 p2-detect ──

@@ -20,7 +20,8 @@
  *   Submit, /jobs/<id>/<slug>/job?mode=submit_apply (adapters/icims/url.ts reads it as the confirmation page), shows
  *   div.iCIMS_Message.iCIMS_SuccessMessage "Your application has been submitted successfully." (uscareers-nyu's,
  *   adapters/icims icimsSubmitted); the same block drawn in the form's own document counts too.
- * Workday and the generic adapter read none yet (v5 p2-detect: Workday's sign is its network sign, below).
+ * The generic adapter reads none (v5 p2-detect: Workday's and SuccessFactors' drawn signs are below, beside their network
+ * signs).
  * v5 p2-detect (PLAN decision 14; the engine audit's J11 and gap 3): the platforms whose page after submitting no
  * snapshot shows are told sent by other signs, each from Jobright's observed behaviour (never its code):
  * - a confirmation address (each platform's url.ts reads it as the application's page after submitting, under its
@@ -28,10 +29,17 @@
  *   Paylocity's /recruiting/jobs/success/<id>, SmartRecruiters' .../publication/<uuid>/success, Paycor's
  *   ShowConfirmation.action, Jobvite's .../applyConfirmation and Dayforce's .../apply/success;
  * - the answer to the platform's own request that sends the application, which the page-world submit watcher sees
- *   (page/submit-watch.ts; dom/submit-net-protocol.ts): Workday's finalize, ClearCompany's last answers and completed
- *   message. watchNetworkSigns reads them in this document while a Submit is armed, in the platform's order, and the
- *   runtime takes them only while the page shows no error (content/press.ts refusalNow): `submit/detected` with
- *   evidence 'network', which the worker takes only from the frame and document that armed it.
+ *   (page/submit-watch.ts; dom/submit-net-protocol.ts): Workday's finalize answered naming the application (its answer's
+ *   id, no errors), ClearCompany's last answers and completed message (status alone), Oracle's CREATE then CONFIRM for
+ *   the page's posting (the request's action, the answers' submissionId and flags) and SuccessFactors' applyJob callback
+ *   saying it took this posting's new application, each a yes or no the watcher reads and drops. watchNetworkSigns
+ *   reads them in this document while a Submit is armed, in the platform's order, and the runtime takes them only while
+ *   the page shows no error (content/press.ts refusalNow): `submit/detected` with evidence 'network', which the worker
+ *   takes only from the frame and document that armed it. The P2 review (security 1): on an employer's own domain
+ *   (Oracle's Candidate Experience there) the signs alone never count: the document must show the app moved on from its
+ *   form as well (content/runtime.ts oracleLeftForm);
+ * - drawn signs from Jobright's rules (adapters/success.ts): Workday's and SuccessFactors' (signsOf below), BambooHR's
+ *   and JazzHR's (their configs).
  *
  * A sign drawn in the form's own document (the v3 Phase 4 review, M1 and M6) counts only when it is new: not one of the
  * signs the page showed when the Submit was pressed (shownSignsOf, read at the press: the behaviour review of

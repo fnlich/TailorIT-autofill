@@ -18,7 +18,7 @@
  */
 import { PLATFORMS } from '../core/enums';
 import { sha256Hex } from '../core/text/sha256';
-import { platformOfUrl } from '../shared/hosts';
+import { staticPlatformOfUrl } from '../shared/hosts';
 import type { LauncherPrefs } from '../messaging/schemas';
 import type { StorageArea } from '../platform/types';
 import { log } from '../shared/log';
@@ -55,7 +55,10 @@ export function registrableDomainOf(host: string): string {
 }
 
 /** A site's key (see the header): the platform of an applicant-tracking host, else the first 16 hex digits of the
- *  SHA-256 of the host's registrable domain; null for an address with no host. */
+ *  SHA-256 of the host's registrable domain; null for an address with no host. The P2 review (L3): the platform only
+ *  where the manifest's script runs (shared/hosts.ts staticPlatformOfUrl): an employer's own domain at Oracle's
+ *  Candidate Experience address is that employer's own site, keyed by its own domain, never the 'oracle' every Oracle
+ *  tenant shares. */
 export function siteKeyOf(url: string): string | null {
   let host: string;
   try {
@@ -64,7 +67,7 @@ export function siteKeyOf(url: string): string | null {
     return null;
   }
   if (host === '') return null;
-  return platformOfUrl(url) ?? sha256Hex(registrableDomainOf(host)).slice(0, 16);
+  return staticPlatformOfUrl(url) ?? sha256Hex(registrableDomainOf(host)).slice(0, 16);
 }
 
 /** Whether a stored key is one siteKeyOf makes. */

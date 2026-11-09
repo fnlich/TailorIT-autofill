@@ -366,26 +366,70 @@ describe('the side panel on a company page no frame of ours is on (the Phase 8 r
 // ── v5 p2-detect: Oracle's Candidate Experience on a company's own domain (the owner's word of 2026-11-08) ──
 describe("page/recognised on Oracle's Candidate Experience on a company's own domain (v5 p2-detect)", () => {
   const ORACLE_OWN = 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345/apply/section/1';
+  const WATCHER = { target: { tabId: 7, documentIds: ['doc-co'] }, files: ['content-scripts/submit-watch.js'], world: 'MAIN' };
+  const watch = (url: string, overrides: Record<string, unknown> = {}) =>
+    worker.deliver({ v: 1, type: 'site/watch' }, offAts(url, overrides)) as Promise<{ ok: boolean; error?: string }>;
 
-  it("injects the content script, then the submit watcher in the page's own world, and the frame is Oracle's", async () => {
+  // The P2 review (security 1): recognition injects the content script alone; the watcher waits for the Oracle
+  // adapter's detect in that document (the content script's site/watch).
+  it("injects the content script alone at recognition, and the frame is Oracle's", async () => {
     await withSites(true, true);
     expect(await recognised(ORACLE_OWN, 'platform')).toEqual({ ok: true, data: { injected: true } });
-    expect(worker.fakes.injections).toEqual([
-      { target: { tabId: 7, documentIds: ['doc-co'] }, files: ['content-script.js'] },
-      { target: { tabId: 7, documentIds: ['doc-co'] }, files: ['content-scripts/submit-watch.js'], world: 'MAIN' }]);
+    expect(worker.fakes.injections).toEqual([{ target: { tabId: 7, documentIds: ['doc-co'] }, files: ['content-script.js'] }]);
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, offAts(ORACLE_OWN));
     const frame = (await fakeBrowser.storage.session.get('frames:7:0'))['frames:7:0'] as { platform: string };
     expect(frame.platform).toBe('oracle');
   });
 
-  it("runs no page-world script on any other company page, and records the content script's injection even when the watcher's fails", async () => {
+  it("injects the submit watcher in the page's own world once its content script asks, once per document", async () => {
     await withSites(true, true);
-    expect(await recognised(COMPANY)).toEqual({ ok: true, data: { injected: true } });
+    await recognised(ORACLE_OWN, 'platform');
+    expect(await watch(ORACLE_OWN)).toEqual({ ok: true, data: {} });
+    expect(await watch(ORACLE_OWN)).toEqual({ ok: true, data: {} });
+    expect(worker.fakes.injections.filter((each) => each.world === 'MAIN')).toEqual([WATCHER]);
+    // The app's job list in the same document (M3): the same one watcher.
+    expect(await watch('https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/requisitions'))
+      .toEqual({ ok: true, data: {} });
+    expect(worker.fakes.injections.filter((each) => each.world === 'MAIN')).toEqual([WATCHER]);
+  });
+
+  it("refuses the watcher anywhere else: another company page, a document it did not inject, Oracle's own hosts, the career sites off", async () => {
+    await withSites(true, true);
+    await recognised(COMPANY);
+    expect(await watch(COMPANY)).toMatchObject({ ok: false, error: 'bad_message' });
+    // A document the worker never injected sends nothing at all.
+    expect(await watch(ORACLE_OWN, { documentId: 'doc-other' })).toMatchObject({ ok: false });
+    // Oracle's own hosts run the watcher from the manifest.
+    expect(await worker.deliver({ v: 1, type: 'site/watch' }, contentSender({
+      url: 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/section/1' })))
+      .toMatchObject({ ok: false });
     expect(worker.fakes.injections.filter((each) => each.world === 'MAIN')).toEqual([]);
+    await recognised(ORACLE_OWN, 'platform', { documentId: 'doc-2' });
+    await worker.deliver({ v: 1, type: 'sites/set', on: false }, pageSender('options.html'));
+    expect(await watch(ORACLE_OWN, { documentId: 'doc-2' })).toMatchObject({ ok: false });
+    expect(worker.fakes.injections.filter((each) => each.world === 'MAIN')).toEqual([]);
+  });
+
+  // The P2 review (L3): the side panel's reload there is a company page's: only while the career sites act.
+  it("offers the side panel's reload only while the career sites act", async () => {
+    await withSites(true, true);
+    const tab = await fakeBrowser.tabs.create({ url: ORACLE_OWN });
+    const page = async () => ((await worker.deliver({ v: 1, type: 'panel/reports', tabId: tab.id }, pageSender())) as {
+      data?: { page?: unknown } }).data?.page;
+    expect(await page()).toMatchObject({ support: 'none', reload: true, site: true });
+    await worker.deliver({ v: 1, type: 'sites/set', on: false }, pageSender('options.html'));
+    expect(await page()).not.toHaveProperty('reload');
+  });
+
+  it('answers unavailable when Chrome refuses the watcher, and asks again later', async () => {
+    await withSites(true, true);
+    await recognised(ORACLE_OWN, 'platform');
     worker.fakes.injectAnswer = (injection) => {
       if (injection.world === 'MAIN') throw new Error('Cannot access contents of the page.');
     };
-    expect(await recognised(ORACLE_OWN, 'platform', { documentId: 'doc-2' })).toEqual({ ok: true, data: { injected: true } });
+    expect(await watch(ORACLE_OWN)).toMatchObject({ ok: false, error: 'unavailable' });
+    worker.fakes.injectAnswer = () => undefined;
+    expect(await watch(ORACLE_OWN)).toEqual({ ok: true, data: {} });
   });
 });
 // ── end v5 p2-detect ──

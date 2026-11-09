@@ -41,6 +41,12 @@ describe('the launcher’s place and hiding (v3 Phase 3)', () => {
     expect(registrableDomainOf('jobs.acme.com')).toBe('acme.com');
     expect(siteKeyOf('https://careers.acme.com/jobs')).toBe(siteKeyOf('https://www.acme.com/'));
     expect(siteKeyOf('https://careers.acme.com/jobs')).toMatch(/^[0-9a-f]{16}$/);
+    // The P2 review (L3): an employer's own domain at Oracle's Candidate Experience address is that employer's own site,
+    // keyed by its own domain, never the 'oracle' every Oracle tenant shares.
+    expect(siteKeyOf('https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345'))
+      .toBe(siteKeyOf('https://www.acme-corp.example/'));
+    expect(siteKeyOf('https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345')).toMatch(/^[0-9a-f]{16}$/);
+    expect(siteKeyOf('https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946')).toBe('oracle');
     // Another site keeps its own place.
     expect(await hello(worker, EMBED)).toMatchObject({ ok: true, data: { launcher: { top: null, hidden: false } } });
     // A place outside the window's height, or anything else, is refused by the schema.

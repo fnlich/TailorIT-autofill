@@ -22,12 +22,14 @@
 // worker runs in a tab's top frame on sidebar/load) is in every build, listed nowhere in the manifest, within its own
 // budget, holding no WXT content-script context; React lives there, never in the content script.
 // v5 p2-detect (PLAN decision 14, adopted for "applied" detection): a third content script, the page-world submit
-// watcher (world MAIN, content-scripts/submit-watch.js), on Workday's and ClearCompany's candidate hosts alone
-// (SUBMIT_WATCH_MATCHES, each one of ATS_MATCHES), every frame, from document_start, within its own budget; its bundle
-// is one anonymous function, names no extension API and no way to read a request's or an answer's body or headers,
-// and, run in a bare context, adds no global and no listener, and wraps fetch and XMLHttpRequest exactly where it
-// installs (a Workday or ClearCompany posting or form, as the bridge decides) and nowhere else. The watcher is told
-// from the bridge by its file.
+// watcher (world MAIN, content-scripts/submit-watch.js), on Workday's, ClearCompany's, Oracle's and SuccessFactors'
+// candidate hosts alone (SUBMIT_WATCH_MATCHES, each one of ATS_MATCHES), every frame, from document_start, within its
+// own budget; its bundle is one anonymous function, names no extension API, no header and no body reader beyond the
+// copies its yes-or-no facts need (SUBMIT_WATCH_NEVER_NAMES), and, run in a bare context, adds no global and no
+// listener, wraps fetch and XMLHttpRequest exactly where it installs (a posting or form, and, the P2 review's M3,
+// anywhere under a single-page candidate app's own path: SUBMIT_WATCH_INSTALLS_AT), SuccessFactors' applyJob exactly
+// at its career site's form, and nowhere else, and, driven, reads no body it has no use for and dispatches a sign
+// alone. The watcher is told from the bridge by its file.
 // Usage: node scripts/check-build.mjs [--all]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -90,18 +92,27 @@ const SUBMIT_WATCH_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage', '.json('
   'getReader', 'responseXML', 'getResponseHeader', 'getAllResponseHeaders', '.headers', 'localStorage',
   'sessionStorage', 'indexedDB', 'document.cookie'];
 /** Where the watcher wraps fetch and XMLHttpRequest (a Workday, ClearCompany or Oracle posting or form, as the bridge
- *  decides), where it wraps SuccessFactors' applyJob proxy instead (a career site's posting or form), and where it does
- *  nothing (a shared host's other page, another platform's page, an address with none). */
+ *  decides; and, the P2 review's M3, anywhere under those single-page candidate apps' own paths, their job lists
+ *  included: src/adapters/bridge-address.ts submitWatchInstallsAt; the last address is an employer's own domain's,
+ *  where no manifest entry runs it and the worker injects it once the Oracle adapter detected the app's form), where it
+ *  wraps SuccessFactors' applyJob proxy instead (a career site's posting or form), and where it does nothing (a shared
+ *  host's page outside a candidate app, another platform's page, an address with none). */
 const SUBMIT_WATCH_INSTALLS_AT = [
   'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote/Engineer_JR-1/apply/applyManually',
   'https://acme.wd5.myworkdayjobs.com/en-US/External', 'https://wd5.myworkdaysite.com/recruiting/acme/External/job/Remote/Engineer_JR-1',
   'https://acme.wd5.myworkdayjobs-impl.com/en-US/External/job/Remote/Engineer_JR-1',
   'https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply',
-  'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/section/1'];
+  'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/section/1',
+  // The P2 review (M3): the candidate apps' job lists, where a person enters before the app takes them to a form.
+  'https://wd5.myworkdaysite.com/recruiting/acme/External', 'https://vafb.clearcompany.com/careers/jobs',
+  'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions',
+  'https://careers.example.com/hcmUI/CandidateExperience/en/sites/CX_1/requisitions'];
 const SUBMIT_WATCH_PROXY_AT = [
   'https://career2.successfactors.eu/career?company=danfossas&career_job_req_id=48659&career_ns=job_application'];
-const SUBMIT_WATCH_SILENT_AT = ['https://wd5.myworkdaysite.com/recruiting/acme/External',
-  'https://job-boards.greenhouse.io/acme/jobs/4012345', 'https://vafb.clearcompany.com/careers/blank',
+const SUBMIT_WATCH_SILENT_AT = ['https://wd5.myworkdaysite.com/recruiting/acme',
+  'https://wd5.myworkdaysite.com/wday/authgwy/acme/login',
+  'https://job-boards.greenhouse.io/acme/jobs/4012345', 'https://vafb.clearcompany.com/hr/home',
+  'https://careers.example.com/careers/CandidateExperience/en/sites/CX_1/requisitions',
   'https://elhr.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'https://performancemanager4.successfactors.com/sf/home',
   ''];
 /** The watcher driven at an address where it wraps fetch: the page's request, the answer the page's own fetch gives,
@@ -257,6 +268,14 @@ function checkManifest(build, manifest) {
         fail(build, `${name} runs in a CAPTCHA vendor's frame at ${address}`);
       }
     }
+    // The P2 review (security 2, the S5 principle): nor on an employee HR system's page (HR_ADDRESSES), the job boards
+    // of an employer's own UKG Pro for its staff among them. (CareerPlug's employers' host, app.careerplug.com, is under
+    // the *.careerplug.com/jobs/* match, which Chrome's patterns cannot narrow: the platform rule refuses it, as before.)
+    for (const address of HR_ADDRESSES.filter((each) => !each.startsWith('https://app.careerplug.com/'))) {
+      if ((script?.matches ?? []).some((pattern) => patternMatches(pattern, address))) {
+        fail(build, `${name} runs on an HR system at ${address}`);
+      }
+    }
   }
   if (ours) {
     if (!sameSet(ours.matches ?? [], expected)) fail(build, 'content script matches differ from the ATS list');
@@ -271,7 +290,7 @@ function checkManifest(build, manifest) {
     if (!Array.isArray(bridge.js) || bridge.js.length !== 1) fail(build, 'the page-world bridge is not one script file');
     for (const key of NEVER_IN_A_CONTENT_SCRIPT) if (key in bridge) fail(build, `the page-world bridge has ${key}`);
   }
-  // ── v5 p2-detect: the submit watcher, on Workday's and ClearCompany's candidate hosts alone (each an ATS match) ──
+  // ── v5 p2-detect: the submit watcher, on the network platforms' candidate hosts alone (each an ATS match) ──
   if (watcher) {
     const watched = fallback ? [...SUBMIT_WATCH_MATCHES, 'http://127.0.0.1/*'] : [...SUBMIT_WATCH_MATCHES];
     if (!sameSet(watcher.matches ?? [], watched)) fail(build, "the submit watcher's matches differ from SUBMIT_WATCH_MATCHES");
@@ -616,7 +635,9 @@ const HR_EXCLUDED = ['https://*.oraclecloud.com/*', 'https://*.myworkday.com/*',
   // ── The security fix of 2026-11-06 (S5): the new ATS vendors' employee systems, CareerPlug's employers' host ──
   'https://*.dayforcehcm.com/*', 'https://*.ultipro.com/*', 'https://*.ukg.net/*', 'https://*.paylocity.com/*',
   'https://*.paycor.com/*', 'https://*.rippling.com/*', 'https://*.hibob.com/*', 'https://*.adp.com/*',
-  'https://app.careerplug.com/*'];
+  'https://app.careerplug.com/*',
+  // The P2 review (security 2): UKG Pro Canada's employee hosts.
+  'https://*.ultipro.ca/*'];
 const HR_ADDRESSES = ['https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'https://objectstorage.us-ashburn-1.oraclecloud.com/n/x',
   'https://wd5.myworkday.com/acme/d/home.htmld', 'https://performancemanager4.sapsf.com/sf/home', 'https://hcm.sapsf.eu/sf/home',
   // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
@@ -627,7 +648,10 @@ const HR_ADDRESSES = ['https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelc
   // ── The security fix of 2026-11-06 (S5) ──
   'https://www.dayforcehcm.com/mydayforce/login.aspx', 'https://n12.ultipro.com/default.aspx', 'https://acme.ukg.net/',
   'https://access.paylocity.com/', 'https://secure.paycor.com/Accounts/Signin', 'https://app.rippling.com/dashboard',
-  'https://app.hibob.com/home', 'https://my.adp.com/', 'https://app.careerplug.com/jobs/1'];
+  'https://app.hibob.com/home', 'https://my.adp.com/', 'https://app.careerplug.com/jobs/1',
+  // The P2 review (security 2): an employer's own UKG Pro hosts' job boards, for its staff (internal postings).
+  'https://n12.ultipro.com/ACME1000/JobBoard/0d3f6a2e-1111-2222-3333-444455556666/OpportunityDetail?opportunityId=1',
+  'https://n12.ultipro.ca/ACME1000/JobBoard/0d3f6a2e-1111-2222-3333-444455556666/'];
 
 /** v5 p1-rules (PLAN decision 9): addresses of the CAPTCHA and anti-bot vendors' own frames (reCAPTCHA's anchor,
  *  challenge and enterprise frames on google.com and recaptcha.net, hCaptcha's, Turnstile's, Arkose's, DataDome's,
@@ -642,7 +666,9 @@ const VENDOR_ADDRESSES = ['https://www.google.com/recaptcha/api2/anchor?ar=1&k=x
   'https://li.protechts.net/index.html', 'https://static.geetest.com/static/js/gt.0.4.9.js'];
 
 /** Whether a Chrome match pattern (https://, http:// or *:// for both; <host>/<path>, `*.` a host's first labels)
- *  matches an address. */
+ *  matches an address. The P2 review (security 2): a `*` anywhere in the path matches any run of characters, as
+ *  Chrome reads it (its path is matched against the address's path and query), so a pattern with a `*` between two
+ *  segments (UKG's old employee-board one, before /JobBoard/) is read whole. */
 function patternMatches(pattern, address) {
   const [, scheme, host, path] = /^(\*|https?):\/\/([^/]+)(\/.*)$/.exec(pattern) ?? [];
   if (scheme === undefined || host === undefined || path === undefined) return false;
@@ -650,8 +676,9 @@ function patternMatches(pattern, address) {
   if (scheme === '*' ? !/^https?:$/.test(url.protocol) : url.protocol !== `${scheme}:`) return false;
   const name = url.hostname;
   const hostFits = host === '*' || (host.startsWith('*.') ? name === host.slice(2) || name.endsWith(host.slice(1)) : name === host);
-  const prefix = path.replace(/\*$/, '');
-  return hostFits && (path === '/*' || url.pathname.startsWith(prefix));
+  const escaped = path.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, (char) => `\\${char}`));
+  const glob = new RegExp(`^${escaped.join('.*')}$`);
+  return hostFits && glob.test(`${url.pathname}${url.search}`);
 }
 
 /** v3 Phase 8: registrationsFor, pure, as the worker reconciles Chrome's registration to it: nothing while the career

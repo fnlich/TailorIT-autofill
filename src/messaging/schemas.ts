@@ -437,6 +437,10 @@ const contentMessages = [
    *  frame's address again itself (Chrome's, never a payload's), limits the asks per tab and injects the content script
    *  into that one document. The only message a company's own page sends before then. */
   z.strictObject({ v, type: z.literal('page/recognised'), reason: z.enum(RECOGNITION_REASONS) }),
+  // v5 p2-detect, the P2 review (security 1): the content script the worker injected into an employer's own page at
+  // Oracle's Candidate Experience address, once the Oracle adapter detected the app's form there (its own markup, never
+  // the address alone), asks for the page-world submit watcher in that one document (background/sites.ts watch).
+  z.strictObject({ v, type: z.literal('site/watch') }),
   // ── s2 lists (snapshot round 2, decision 1: learned lists) ──
   /** The lists the sending frame's host showed before (background/learned-lists.ts), and the stored lists of the ids
    *  its scan's adapter names (`stored`: background/stored-lists.ts, the lists the content script never carries),
@@ -793,6 +797,8 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'agent/entered': DoneAnswerSchema,
   'frame/wall': DoneAnswerSchema,
   'page/recognised': PageRecognisedAnswerSchema,
+  // v5 p2-detect
+  'site/watch': DoneAnswerSchema,
   // s2 lists
   'lists/known': LearnedListsAnswerSchema,
   'lists/learn': DoneAnswerSchema,

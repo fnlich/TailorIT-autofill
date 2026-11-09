@@ -789,6 +789,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // waits on what the press brings (agent.ts entered).
         // v3 Phase 8: the sentinel's one message (sites.ts).
         'page/recognised': (message, from) => sites.recognised(message, from),
+        // v5 p2-detect, the P2 review (security 1): the submit watcher, on an employer's own Oracle page whose app showed.
+        'site/watch': (_message, from) => sites.watch(from),
         // s2 lists: the sending frame's host's learned lists, and one learned (learned-lists.ts), by Chrome's address;
         // with them the stored lists its adapter names (stored-lists.ts: the content script carries none of them).
         'lists/known': async (message, from) => {

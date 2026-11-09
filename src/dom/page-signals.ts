@@ -159,6 +159,38 @@ export function jobPosting(doc: Document): boolean {
   return false;
 }
 
+// ── The P2 review (security 1): Oracle Candidate Experience's own markup ──
+/** The Oracle Candidate Experience app's shell, as every Oracle fixture holds it (fixtures/oracle/: its posting, its
+ *  email gate, its emailed code, its apply section and after its Submit): an Oracle JET dialog (oj-dialog) and the app's
+ *  own minimal-dialog, beside its skip-navigation-link or sitemap-link components; and on top of them its apply flow
+ *  (apply-flow-* elements or the .apply-flow-header) or its job details (job-details-* elements or
+ *  .job-details-page-container). Present in the markup whether or not shown (the app keeps its dialogs closed). */
+const ORACLE_SHELL = ['oj-dialog', 'minimal-dialog'] as const;
+const ORACLE_NAVIGATION = 'skip-navigation-link, sitemap-link';
+const ORACLE_PAGE = 'apply-flow-section, apply-flow-block, .apply-flow-header, main[aria-labelledby="apply-flow-main-heading"], '
+  + 'job-details-similar-jobs-item-header, .job-details-page-container';
+
+/** Whether a document holds the app's shell alone (ORACLE_SHELL and ORACLE_NAVIGATION), whatever page the app shows:
+ *  read after a Submit on an employer's own domain (content/runtime.ts), where the app has moved on from its form. */
+export function oracleShellShown(doc: Document): boolean {
+  try {
+    return ORACLE_SHELL.every((tag) => doc.querySelector(tag) !== null) && doc.querySelector(ORACLE_NAVIGATION) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a document shows Oracle Candidate Experience's own markup (ORACLE_SHELL above): read where only an address
+ *  names a page Oracle's (an employer's own domain), by the sentinel's verdict and the adapters' choice alike. */
+export function oracleCandidateExperienceShown(doc: Document): boolean {
+  try {
+    return oracleShellShown(doc) && doc.querySelector(ORACLE_PAGE) !== null;
+  } catch {
+    return false;
+  }
+}
+// ── end the P2 review ──
+
 /** The job signals a page is recognised by (the module header), but the score's. */
 export type JobSignal = 'career-site' | 'platform' | 'job-posting';
 
@@ -166,9 +198,10 @@ export type JobSignal = 'career-site' | 'platform' | 'job-posting';
  *  JobPosting in its JSON-LD; or null. */
 export function jobSignalOf(doc: Document, url: URL): JobSignal | null {
   if (careerSiteOf(url.href) !== null) return 'career-site';
-  // v5 p2-detect: Oracle Recruiting Cloud's Candidate Experience on a company's own domain, by its address (shared/
-  // hosts.ts oracleOwnDomain; platformOfUrl names it Oracle's, the worker injects, and the Oracle adapter reads it).
-  if (oracleOwnDomain(url.hostname.toLowerCase(), url.pathname)) return 'platform';
+  // v5 p2-detect: Oracle Recruiting Cloud's Candidate Experience on a company's own domain: its address (shared/hosts.ts
+  // oracleOwnDomain) and, the P2 review's security 1, the app's own markup (oracleCandidateExperienceShown). The address
+  // alone (a page anyone can host there) is no Oracle page: it goes on to the other signals as any page does.
+  if (oracleOwnDomain(url.hostname.toLowerCase(), url.pathname) && oracleCandidateExperienceShown(doc)) return 'platform';
   if (platformFingerprint(doc)) return 'platform';
   if (jobPosting(doc)) return 'job-posting';
   return null;
