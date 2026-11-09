@@ -144,6 +144,14 @@ test.describe('the job card', () => {
     const line = panel.locator('[data-job-resume]');
     await expect(line.locator('[data-resume-label]')).toHaveText(GOLDEN_RESUME.label);
     await line.getByRole('button', { name: COPY.job.change, exact: true }).click();
+    // v1.5 X (PLAN decision 6): in folders, by how TailorIT made each; the attached one's folder open, the others
+    // folded until the person opens them.
+    const folders = panel.locator('[data-resume-folder]');
+    await expect(folders).toHaveCount(3);
+    for (const folder of await folders.all()) {
+      const head = folder.locator('.tia-folder__head');
+      if (await head.isEnabled() && await head.getAttribute('aria-expanded') === 'false') await head.click();
+    }
     const choices = panel.locator('[data-resume-choice=""]');
     await expect(choices).toHaveCount(RESUMES.length);
     const other = RESUMES.find((resume) => resume.id !== GOLDEN_RESUME.id)!;
