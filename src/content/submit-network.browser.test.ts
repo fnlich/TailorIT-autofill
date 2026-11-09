@@ -18,6 +18,8 @@ import reviewHtml from '../../fixtures/workday/web-review.html?raw';
 import oracleHtml from '../../fixtures/oracle/hjf-apply-section.html?raw';
 import oracleExpect from '../../fixtures/oracle/hjf-apply-section.expect.json';
 import sfHtml from '../../fixtures/synthetic/success/successfactors.html?raw';
+// The P2 review (security 1): a company's own form at Oracle's address.
+import siteApplyHtml from '../../fixtures/synthetic/sites/apply.html?raw';
 import { oracleAdapter } from '../adapters/oracle';
 import { successFactorsAdapter } from '../adapters/successfactors';
 import reviewExpect from '../../fixtures/workday/web-review.expect.json';
@@ -275,6 +277,14 @@ describe("Oracle on an employer's own domain (the P2 review, security 1)", () =>
       expect(adaptersFor(new URL(OWN), genuine.doc).map((adapter) => adapter.id).filter((id) => !id.startsWith('tailorit-e2e')))
         .toEqual(['oracle', 'generic']);
     });
+
+  it("a company's own form at the address (the site adapter claims it): still no watcher asked", async () => {
+    const { worker } = await startAt(siteApplyHtml, OWN);
+    // The site adapter claimed the form (the page says hello with it) and nothing asked for the watcher.
+    await vi.waitFor(() => expect(worker.of('frame/hello')).toContainEqual(expect.objectContaining({ hasForm: true })));
+    await deadline(200);
+    expect(worker.of('site/watch')).toEqual([]);
+  });
 });
 // ── end v5 p2-detect ──
 
