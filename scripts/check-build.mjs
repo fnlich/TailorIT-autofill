@@ -67,7 +67,7 @@ const SIDEBAR_APP_BUDGET = 800 * 1024;
  *  host outside the public job hosts (sixteen), so it is 20,921 bytes, under a budget of 24 KiB. v5 p2-detect: 26 KiB,
  *  for the address variants and the pages after submitting its parsers now read (UltiPro's parser joined them for UKG's
  *  other recruiting hosts; Oracle's reads its Candidate Experience on a company's own domain, which platformOfUrl names
- *  with the HR and LinkedIn hosts it keeps off): 20,939 bytes on main 019f489, 25,564 with them. */
+ *  with the HR and LinkedIn hosts it keeps off): 20,939 bytes on main 019f489, 26,507 with them (983c81e). */
 const BRIDGE_BUDGET = 26 * 1024;
 // ── v5 p2-detect: the page-world submit watcher (src/entrypoints/submit-watch.content.ts) ──
 /** The submit watcher's file, as WXT writes it (the page-world bridge is the manifest's other world MAIN script). */
@@ -77,7 +77,7 @@ const SUBMIT_WATCH_FILE = 'content-scripts/submit-watch.js';
  *  (src/adapters/bridge-address.ts and its parsers), which it shares so it installs exactly where the bridge would:
  *  22,024 bytes when it was added (v5 p2-detect, addfa31), under the bridge's 24 KiB. The owner's word of 2026-11-08
  *  ("Jobright is sample ... you can use it") added Oracle's and SuccessFactors' signs and the body facts of Workday and
- *  Oracle (about 4 KiB: 26,209 bytes), so 28 KiB. */
+ *  Oracle, and Oracle's own-domain reading (28,571 bytes at 983c81e), so 28 KiB. */
 const SUBMIT_WATCH_BUDGET = 28 * 1024;
 /** What the watcher's bundle may never name: the extension's APIs, headers, storage, and the body readers it has no
  *  use for. The owner's word of 2026-11-08 ("Jobright is sample ... you can use it") relaxed the rest of this rule for
@@ -130,7 +130,8 @@ const BRIDGE_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage'];
  *  onAtsMatch, isCompanySiteUrl): about 0.7 KiB of host and path text. v5 p1-rules (PLAN decision 9): 18 KiB, for the
  *  CAPTCHA and anti-bot vendors' pages isCompanySiteUrl refuses too (isCaptchaVendorUrl): 17,194 bytes on main 9ac709e,
  *  17,529 with them. v5 p2-detect: 19 KiB, for the address variants' patterns it rules out and Oracle's Candidate
- *  Experience on a company's own domain it recognises by its address (shared/hosts.ts oracleOwnDomain): 18,322 bytes. */
+ *  Experience on a company's own domain it recognises by its address (shared/hosts.ts oracleOwnDomain): 18,657 bytes
+ *  (983c81e). */
 const SENTINEL_BUDGET = 19 * 1024;
 /** What the sentinel's bundle may never name: React and zod (it renders and parses nothing), any DOM write, and window
  *  messaging. It reads the page and sends the worker one message. */
