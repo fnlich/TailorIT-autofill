@@ -803,3 +803,34 @@ export const AutofillTaskViewSchema = z.discriminatedUnion('kind', [
   AutofillAnswerTaskSchema,
 ]);
 export type AutofillTaskView = z.infer<typeof AutofillTaskViewSchema>;
+
+// v5 (Jobright parity, Phase 2; additive within API 6): the streamed view of an AI task. GET /api/ai/tasks/:id/stream
+// answers `text/event-stream`: each answer (an answer task's) or draft (a draft task's) as TailorIT settles it, while
+// Claude is still writing the rest, then the finished task, then the stream ends. Every message is
+// `event: <type>\ndata: <the event's JSON>\n\n`, its `type` repeated in the JSON; a comment line (`: ping`) at least
+// every AUTOFILL_AI_STREAM_HEARTBEAT_MS keeps the connection open while nothing settles. An item sent on the stream is
+// final: the finished task's result holds it unchanged. A stream that ends without its `task` event (the connection
+// went, TailorIT restarted, the stream's own cap) leaves the task to GET /api/ai/tasks/:id. A pick or a classification
+// is never sent alone: their tasks' streams carry the finished task only. An item streams only when each of its own
+// checks and the reply up to it pass: a reply that speaks as an AI before it holds every item after it back to the
+// finished task's checks, and a request that carries canaries never streams an item (its reply is checked whole).
+// A TailorIT older than this answers the stream 404, and the extension polls as before.
+//
+// `Prefer: respond-async` (RFC 7240) on an AI route answers 202 {taskId} at once instead of waiting up to
+// AUTOFILL_AI_WAIT_MS, for a caller that then reads the task's stream; that answer names `Preference-Applied`.
+
+/** The longest quiet on a task's stream: a `: ping` comment line is sent at least this often. */
+export const AUTOFILL_AI_STREAM_HEARTBEAT_MS = 10_000;
+/** The preference an AI route takes to answer 202 at once (RFC 7240's `Prefer: respond-async`). */
+export const AUTOFILL_AI_RESPOND_ASYNC = 'respond-async';
+/** The event types a task's stream sends. */
+export const AUTOFILL_AI_STREAM_EVENTS = ['answer', 'draft', 'task'] as const;
+export type AutofillAiStreamEventType = (typeof AUTOFILL_AI_STREAM_EVENTS)[number];
+
+/** One message of GET /api/ai/tasks/:id/stream: an answer or a draft as it settles, then the finished task. */
+export const AutofillTaskStreamEventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('answer'), answer: AutofillAnswerSchema }),
+  z.object({ type: z.literal('draft'), draft: AutofillDraftSchema }),
+  z.object({ type: z.literal('task'), task: AutofillTaskViewSchema }),
+]);
+export type AutofillTaskStreamEvent = z.infer<typeof AutofillTaskStreamEventSchema>;

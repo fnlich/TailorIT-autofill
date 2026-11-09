@@ -270,7 +270,9 @@ export interface FakeWorkerOptions {
   onMessage?(message: { type: string }): void;
   /** The LLM's answers never come: every plan/poll says the keys asked still wait (v3 Phase 3 review: Skip on the
    *  AI's wait). */
-  aiHold?: boolean;
+  aiHold?: boolean | (() => boolean);
+  /** v5 p2-stream: the keys whose answers come at this poll (the others still wait); every key's without it. */
+  aiGate?(keys: readonly FieldKey[]): readonly FieldKey[];
   /** The profile it plans with (the golden one by default). */
   profile?: Profile;
   /** The platform's extension id. */
@@ -482,16 +484,18 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         if (run === undefined) return { ok: false, error: 'expired' };
         const keys = (message.keys as FieldKey[]).filter((key) => run.ai.waiting.has(key));
         if (keys.length === 0) return { ok: false, error: 'expired' };
-        if (options.aiHold === true) {
+        // v5 p2-stream: held while a function says so, too.
+        if (typeof options.aiHold === 'function' ? options.aiHold() : options.aiHold === true) {
           return { ok: true, data: { writes: [], results: [], awaiting: keys, persistableCanaries: [], savable: [],
             aiEditable: [] } };
         }
         // The LLM's answers come in now: the keys they answer are planned again over the scan they were asked from.
         const byContext = new Map<AskContext, FieldKey[]>();
         const still: FieldKey[] = [];
+        const released = new Set(options.aiGate?.(keys) ?? keys);
         for (const key of keys) {
           const coming = run.ai.coming.get(key);
-          if (coming === undefined) {
+          if (coming === undefined || !released.has(key)) {
             still.push(key);
             continue;
           }

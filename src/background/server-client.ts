@@ -6,6 +6,11 @@
  * differ only when an answer's header says so, never because of a status. Every answer is parsed with the contract's
  * schema, so drift fails here, loudly, as 'bad-answer'. It logs statuses and timings only: never a URL, a header or a
  * body.
+ * v5 p2-stream (Jobright parity, Phase 2): GET `<origin>/api/ai/tasks/<uuid>/stream` too, a task's streamed view
+ * (aiTaskStream): its headers within the same 25 s, then read for as long as the caller's signal allows, ended by
+ * TailorIT after the finished task, or here after AI_STREAM_IDLE_MS with no byte (its heartbeat is every 10 s), past
+ * AI_STREAM_MAX_BYTES, or at the first message that breaks the contract. An AI route asked with `async` carries
+ * `Prefer: respond-async` and is answered 202 at once by a TailorIT that streams.
  */
 import { z } from 'zod';
 import {
@@ -56,7 +61,11 @@ import {
   AutofillSessionSchema,
   AutofillTaskAcceptedSchema,
   AutofillTaskIdSchema,
+  AutofillTaskStreamEventSchema,
   AutofillTaskViewSchema,
+  AUTOFILL_AI_RESPOND_ASYNC,
+  AUTOFILL_AI_STREAM_HEARTBEAT_MS,
+  type AutofillTaskStreamEvent,
   type AutofillAnswerRequest,
   type AutofillAnswerTask,
   type AutofillClassifyRequest,
@@ -111,6 +120,25 @@ export type ServerResult<T> =
 /** An AI route's answer (Phase 4): its task, finished within TailorIT's wait (200), or the id to poll (202). */
 export type AiSubmitted<T> = { done: true; task: T } | { done: false; taskId: string };
 
+// v5 p2-stream
+/** How an AI route is asked: `async` asks TailorIT to answer 202 at once (Prefer: respond-async), for a caller that
+ *  reads the task's stream. */
+export interface AiSubmitOptions {
+  async?: boolean;
+}
+/** A task's stream gives up after this long with no byte: TailorIT sends a comment line every 10 s. */
+export const AI_STREAM_IDLE_MS = Math.round(AUTOFILL_AI_STREAM_HEARTBEAT_MS * 2.5);
+/** A task's stream is read up to this many bytes (ten answers, three drafts of 5,000 characters and the task again
+ *  are far less). */
+export const AI_STREAM_MAX_BYTES = 2 * 1024 * 1024;
+/** What reading a task's stream needs: where its items go, and the signal that ends it (the run went, the task's
+ *  cap). */
+export interface AiStreamOptions {
+  onEvent(event: Exclude<AutofillTaskStreamEvent, { type: 'task' }>): void;
+  signal: AbortSignal;
+}
+// v5 p2-stream end
+
 /** The resume file as GET /resumes/:id/file sent it: the bytes and the headers that describe them. */
 export interface ResumeFile {
   bytes: Uint8Array;
@@ -162,14 +190,24 @@ export interface ServerClient {
   resumes(): Promise<ServerResult<AutofillResumeList>>;
   /** GET /resumes/:id/file, refused above `maxBytes` (TailorIT's 10 MiB cap) before or while reading. */
   resumeFile(id: string, maxBytes?: number): Promise<ServerResult<ResumeFile>>;
-  /** POST /ai/pick (Phase 4): the finished task, or its id to poll. A 409 `ai_busy` is a conflict with that code. */
-  aiPick(body: AutofillPickRequest): Promise<ServerResult<AiSubmitted<AutofillPickTask>>>;
+  /** POST /ai/pick (Phase 4): the finished task, or its id to poll. A 409 `ai_busy` is a conflict with that code.
+   *  v5 p2-stream: `async` asks for the 202 at once (AiSubmitOptions). */
+  aiPick(body: AutofillPickRequest, options?: AiSubmitOptions): Promise<ServerResult<AiSubmitted<AutofillPickTask>>>;
   /** POST /ai/classify (Phase 4), as aiPick. */
-  aiClassify(body: AutofillClassifyRequest): Promise<ServerResult<AiSubmitted<AutofillClassifyTask>>>;
+  aiClassify(body: AutofillClassifyRequest, options?: AiSubmitOptions):
+    Promise<ServerResult<AiSubmitted<AutofillClassifyTask>>>;
   /** POST /ai/draft (Phase 6), as aiPick. */
-  aiDraft(body: AutofillDraftRequest): Promise<ServerResult<AiSubmitted<AutofillDraftTask>>>;
+  aiDraft(body: AutofillDraftRequest, options?: AiSubmitOptions): Promise<ServerResult<AiSubmitted<AutofillDraftTask>>>;
   /** POST /ai/answer (version 2: the owner's amendments), as aiPick. */
-  aiAnswer(body: AutofillAnswerRequest): Promise<ServerResult<AiSubmitted<AutofillAnswerTask>>>;
+  aiAnswer(body: AutofillAnswerRequest, options?: AiSubmitOptions):
+    Promise<ServerResult<AiSubmitted<AutofillAnswerTask>>>;
+  /**
+   * v5 p2-stream: GET /api/ai/tasks/:id/stream, read to its end: each answer or draft goes to `onEvent` as it comes,
+   * and the answer is the finished task (null when the stream ended without it: the caller polls). A TailorIT older
+   * than the stream answers not-found (404), as does a task that is gone. An id that is not a task id is refused
+   * before any request. Nothing of what streams is logged.
+   */
+  aiTaskStream(id: string, options: AiStreamOptions): Promise<ServerResult<AutofillTaskView | null>>;
   /** GET /answers (Phase 6): the account's saved answers, read with the profile. */
   answers(): Promise<ServerResult<AutofillSavedAnswerList>>;
   /** PUT /answers (Phase 6): saves one answer the person asked to save, as TailorIT then keeps it. A refusal's 400
@@ -236,6 +274,9 @@ type Method = (typeof METHODS)[number];
 /** TailorIT's own token routes (its tokenScope), anchored and case-sensitive: no dot segments, no encoding. */
 const AUTOFILL_PATH = /^\/api\/autofill\/[a-z0-9/-]+$/;
 const AI_TASK_PATH = /^\/api\/ai\/tasks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** v5 p2-stream: a task's streamed view, GET only. */
+const AI_TASK_STREAM_PATH =
+  /^\/api\/ai\/tasks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/stream$/;
 /** What a resume id may be to become part of a path. */
 const RESUME_ID = /^[a-z0-9-]{1,64}$/;
 
@@ -245,6 +286,8 @@ export function isAllowedRequest(method: string, path: string): boolean {
   if (path.includes('//')) return false;
   if (AUTOFILL_PATH.test(path)) return (METHODS as readonly string[]).includes(method);
   if (AI_TASK_PATH.test(path)) return method === 'GET';
+  // v5 p2-stream: a task's streamed view.
+  if (AI_TASK_STREAM_PATH.test(path)) return method === 'GET';
   return false;
 }
 
@@ -262,6 +305,8 @@ interface Call {
   token: 'current' | string | null;
   json?: unknown;
   answer: Body;
+  /** v5 p2-stream: an AI route asked to answer 202 at once (Prefer: respond-async). */
+  async?: boolean;
 }
 
 type Raw = { ok: true; value: unknown; response: Response } | Extract<ServerResult<never>, { ok: false }>;
@@ -362,6 +407,7 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     if (call.answer.kind === 'json' || call.answer.kind === 'task') headers.Accept = 'application/json';
     if (token !== null) headers.Authorization = `Bearer ${token}`;
     if (call.json !== undefined) headers['Content-Type'] = 'application/json';
+    if (call.async === true) headers.Prefer = AUTOFILL_AI_RESPOND_ASYNC;
     const init: RequestInit = {
       method: call.method,
       headers,
@@ -450,10 +496,154 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     return raw.ok ? { ok: true, value: raw.value as T } : raw;
   }
 
-  async function submit<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<ServerResult<AiSubmitted<T>>> {
-    const raw = await send({ method: 'POST', path, token: 'current', json: body, answer: { kind: 'task', schema } });
+  async function submit<T>(path: string, body: unknown, schema: z.ZodType<T>, options: AiSubmitOptions = {}):
+    Promise<ServerResult<AiSubmitted<T>>> {
+    const raw = await send({ method: 'POST', path, token: 'current', json: body, answer: { kind: 'task', schema },
+      ...(options.async === true ? { async: true } : {}) });
     return raw.ok ? { ok: true, value: raw.value as AiSubmitted<T> } : raw;
   }
+
+  // v5 p2-stream
+  /** A read of the stream's body that gives up once `signal` aborts. */
+  function readOrAbort(reader: ReadableStreamDefaultReader<Uint8Array>, signal: AbortSignal):
+    Promise<ReadableStreamReadResult<Uint8Array> | 'aborted'> {
+    if (signal.aborted) return Promise.resolve('aborted');
+    return new Promise((resolve, reject) => {
+      const onAbort = () => resolve('aborted');
+      signal.addEventListener('abort', onAbort, { once: true });
+      reader.read().then((result) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(result);
+      }, (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      });
+    });
+  }
+
+  /** One server-sent event's name and its data lines joined, or null for a message with no data (a comment). */
+  function sseMessage(message: string): { name: string; data: string } | null {
+    let name = 'message';
+    const data: string[] = [];
+    for (const line of message.split('\n')) {
+      if (line.startsWith(':')) continue;
+      const colon = line.indexOf(':');
+      const field = colon < 0 ? line : line.slice(0, colon);
+      const value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '');
+      if (field === 'event') name = value;
+      else if (field === 'data') data.push(value);
+    }
+    return data.length === 0 ? null : { name, data: data.join('\n') };
+  }
+
+  /** GET /api/ai/tasks/:id/stream (ServerClient.aiTaskStream). */
+  async function taskStream(id: string, options: AiStreamOptions): Promise<ServerResult<AutofillTaskView | null>> {
+    const path = `/api/ai/tasks/${id}/stream`;
+    if (!AutofillTaskIdSchema.safeParse(id).success || !isAllowedRequest('GET', path)) {
+      log('server.path-refused');
+      return failure('refused-path');
+    }
+    const token = await deps.token();
+    if (token === null) return failure('not-connected');
+    const started = deps.platform.now();
+    // The headers within the usual 25 s; the body as long as the caller's signal allows (each read within the idle
+    // limit, below): the 25 s timeout ends the request only while its headers have not come.
+    const request = new AbortController();
+    let answered = false;
+    const end = () => request.abort();
+    const headersLate = deps.platform.timeout(SERVER_TIMEOUT_MS);
+    headersLate.addEventListener('abort', () => {
+      if (!answered) request.abort(headersLate.reason);
+    }, { once: true });
+    if (options.signal.aborted) request.abort();
+    else options.signal.addEventListener('abort', end, { once: true });
+    let response: Response;
+    try {
+      response = await deps.platform.fetch(`${deps.origin}${path}`, {
+        method: 'GET',
+        headers: { [AUTOFILL_API_HEADER]: String(AUTOFILL_API_VERSION), Accept: 'text/event-stream',
+          Authorization: `Bearer ${token}` },
+        credentials: 'omit',
+        redirect: 'error',
+        cache: 'no-store',
+        referrerPolicy: 'no-referrer',
+        signal: request.signal,
+      });
+      answered = true;
+    } catch (error) {
+      if (isTimeout(error)) {
+        log('server.timeout', { stream: true });
+        return failure('timeout');
+      }
+      log('server.unreachable', { stream: true });
+      return failure('unreachable');
+    }
+    const version = response.headers.get(AUTOFILL_API_HEADER);
+    if (version !== null) {
+      const matches = version === String(AUTOFILL_API_VERSION);
+      deps.onVersion(matches);
+      if (!matches) {
+        log('server.version-mismatch', { status: response.status, stream: true });
+        await response.body?.cancel().catch(() => undefined);
+        return failure('version-mismatch', { status: response.status });
+      }
+    }
+    if (!response.ok) {
+      const detail = await errorOf(response);
+      log('server.refused', { status: response.status, stream: true });
+      if (response.status === 401) await deps.onUnauthorized(token);
+      return failure(failureOfStatus(response.status), { status: response.status, ...detail });
+    }
+    const reader = response.body?.getReader();
+    if (!(response.headers.get('content-type') ?? '').startsWith('text/event-stream') || reader === undefined) {
+      log('server.bad-answer', { status: response.status, stream: true });
+      await response.body?.cancel().catch(() => undefined);
+      return failure('bad-answer', { status: response.status });
+    }
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let bytes = 0;
+    let items = 0;
+    /** The stream's end: its reader let go, and one log line of counts. */
+    const done = (result: ServerResult<AutofillTaskView | null>, why: string): ServerResult<AutofillTaskView | null> => {
+      void reader.cancel().catch(() => undefined);
+      log('server.stream-ended', { status: response.status, items, ms: deps.platform.now() - started,
+        task: result.ok && result.value !== null, [why]: true });
+      return result;
+    };
+    try {
+      for (;;) {
+        const read = await readOrAbort(reader,
+          AbortSignal.any([options.signal, deps.platform.timeout(AI_STREAM_IDLE_MS)]));
+        if (read === 'aborted') return done({ ok: true, value: null }, options.signal.aborted ? 'stopped' : 'idle');
+        if (read.done) return done({ ok: true, value: null }, 'closed');
+        bytes += read.value.byteLength;
+        if (bytes > AI_STREAM_MAX_BYTES) return done(failure('too-large'), 'tooLarge');
+        buffer += decoder.decode(read.value, { stream: true }).replace(/\r\n?/g, '\n');
+        for (let cut = buffer.indexOf('\n\n'); cut >= 0; cut = buffer.indexOf('\n\n')) {
+          const message = sseMessage(buffer.slice(0, cut));
+          buffer = buffer.slice(cut + 2);
+          if (message === null) continue;
+          let json: unknown;
+          try {
+            json = JSON.parse(message.data);
+          } catch {
+            return done(failure('bad-answer', { status: response.status }), 'badAnswer');
+          }
+          const parsed = AutofillTaskStreamEventSchema.safeParse(json);
+          if (!parsed.success || parsed.data.type !== message.name) {
+            return done(failure('bad-answer', { status: response.status }), 'badAnswer');
+          }
+          if (parsed.data.type === 'task') return done({ ok: true, value: parsed.data.task }, 'finished');
+          items += 1;
+          options.onEvent(parsed.data);
+        }
+      }
+    } catch (error) {
+      return done({ ok: true, value: null }, isTimeout(error) ? 'idle' : 'broken');
+    }
+  }
+  // v5 p2-stream end
 
   /** GET on one task, its id checked before it becomes part of a path. */
   async function task(id: string): Promise<ServerResult<AutofillTaskView>> {
@@ -508,10 +698,11 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
         },
       };
     },
-    aiPick: (body) => submit('/api/autofill/ai/pick', body, AutofillPickTaskSchema),
-    aiClassify: (body) => submit('/api/autofill/ai/classify', body, AutofillClassifyTaskSchema),
-    aiDraft: (body) => submit('/api/autofill/ai/draft', body, AutofillDraftTaskSchema),
-    aiAnswer: (body) => submit('/api/autofill/ai/answer', body, AutofillAnswerTaskSchema),
+    aiPick: (body, options) => submit('/api/autofill/ai/pick', body, AutofillPickTaskSchema, options),
+    aiClassify: (body, options) => submit('/api/autofill/ai/classify', body, AutofillClassifyTaskSchema, options),
+    aiDraft: (body, options) => submit('/api/autofill/ai/draft', body, AutofillDraftTaskSchema, options),
+    aiAnswer: (body, options) => submit('/api/autofill/ai/answer', body, AutofillAnswerTaskSchema, options),
+    aiTaskStream: (id, options) => taskStream(id, options),
     answers: () => json({ method: 'GET', path: '/api/autofill/answers', token: 'current' }, AutofillSavedAnswerListSchema),
     putAnswer: (body) =>
       json({ method: 'PUT', path: '/api/autofill/answers', token: 'current', json: body }, AutofillSavedAnswerSchema),

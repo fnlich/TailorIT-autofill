@@ -63,6 +63,13 @@
  *   answers the host's own, else `*` on a page signInHostCovered covers (its patterns, copied below; API 6: on
  *   ADP's and ClearCompany's hosts by the optional `path`, the pathname alone, which a query or fragment makes 400),
  *   else 404 not_found; without a host it answers the golden example, as the route table's check reads it.
+ * - v5 p2-stream: GET /api/ai/tasks/:id/stream, an AI task's streamed view as TailorIT sends it (text/event-stream):
+ *   an answer task's answers and a draft task's drafts as they land, then the finished task, then the end; nothing
+ *   but the task for a pick, a classification, or a request that carries canaries; a `: ping` comment every 10 s.
+ *   `Prefer: respond-async` makes an AI route answer 202 at once (Preference-Applied). Scenario ai-paced lands a
+ *   task's items one at a time (its first after delayMs, then one every `value` ms), and an AI route asked without
+ *   respond-async then waits for its task as TailorIT does (AUTOFILL_AI_WAIT_MS, 10 s) before it answers 202;
+ *   ai-stream-off is a TailorIT before the stream (its stream 404, respond-async not heard).
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -279,6 +286,13 @@ export const MOCK_SCENARIOS = Object.freeze({
   'ai-busy': 'An AI route answers 409 ai_busy.',
   'ai-timeout': 'An AI route answers 202 {taskId}, and its task never finishes: past the 120 s cap the extension keeps.',
   'ai-unavailable': 'An AI route answers 503 ai_unavailable.',
+  // v5 p2-stream: the streamed view's pace, and a TailorIT without it. Each holds until the next reset.
+  'ai-paced': "Every AI task's items land one at a time: the first after delayMs (default 1500, a CLI's start), then "
+    + "one every `value` ms (default 400); the task finishes with its last item. Its stream sends each answer or draft as "
+    + 'it lands; a route asked without Prefer: respond-async waits for the task up to 10 s (AUTOFILL_AI_WAIT_MS), then '
+    + 'answers 202.',
+  'ai-stream-off': "A TailorIT before v5's stream: GET /api/ai/tasks/:id/stream answers 404, and Prefer: respond-async "
+    + 'is not heard.',
   // Phase 6: drafts. Without one, every question gets the fake CLI's clean draft (CLEAN_DRAFT, or CLEAN_REWRITE for a
   // question with a currentAnswer), reason drafted.
   'ai-draft-canary': 'POST /ai/draft answers every question with a draft holding the word in value (default '
@@ -409,7 +423,13 @@ const SAVED_ANSWER_LIMIT = 500;
 
 /** How long a slow scenario waits when the test names no delay. @type {Partial<Record<ScenarioName, number>>} */
 const DEFAULT_DELAYS = { 'lookup-slow': 30_000, 'resume-slow': 8_000, 'ai-slow': 4_000,
-  'letter-generating-then-ready': 4_000 };
+  'letter-generating-then-ready': 4_000, 'ai-paced': 1500 };
+/** v5 p2-stream: ai-paced's wait between two items when the test names none. */
+const PACED_ITEM_MS = 400;
+/** v5 p2-stream: how long an AI route waits for its task before it answers 202 (the contract's AUTOFILL_AI_WAIT_MS). */
+const AI_WAIT_MS = 10_000;
+/** v5 p2-stream: a task stream's comment line, at least this often (the contract's AUTOFILL_AI_STREAM_HEARTBEAT_MS). */
+const STREAM_HEARTBEAT_MS = 10_000;
 /** How long a letter the mock writes takes when no scenario says (Phase G): less than the worker's first poll (2 s). */
 const LETTER_WRITE_MS = 500;
 const MAX_DELAY_MS = 120_000;
@@ -448,9 +468,10 @@ const formatCode = (code) => code.match(/.{1,4}/g)?.join('-') ?? code;
 // ── Answers ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * What the mock sends: a status with JSON, bytes or a page, its own headers, and an optional wait first.
+ * What the mock sends: a status with JSON, bytes or a page, its own headers, and an optional wait first. v5 p2-stream:
+ * or a server-sent event stream, which `stream` writes and ends.
  * @typedef {{ status: number; json?: unknown; bytes?: Uint8Array; html?: string; headers?: Record<string, string>;
- *   delayMs?: number }} Answer
+ *   delayMs?: number; stream?: (res: import('node:http').ServerResponse) => Promise<void>; lateJson?: string }} Answer
  */
 
 /** @param {number} status @param {unknown} json @returns {Answer} */
@@ -516,6 +537,8 @@ export function mockSignInHostCovered(host, path) {
 /** The token routes, as TailorIT's tokenScope allows them: anchored, case-sensitive, no dot segments or encoding. */
 const TOKEN_PATH = /^\/api\/autofill\/[a-z0-9/-]+$/;
 const AI_TASK_PATH = /^\/api\/ai\/tasks\/[0-9a-f-]{36}$/;
+/** v5 p2-stream: a task's streamed view, GET only (TailorIT's tokenScope). */
+const AI_TASK_STREAM_PATH = /^\/api\/ai\/tasks\/[0-9a-f-]{36}\/stream$/;
 
 const ROUTE_MATCHERS = CONTRACT_ROUTES.map((route) => ({
   route,
@@ -565,9 +588,12 @@ export function createMock() {
     scenarios: [],
     /** @type {Map<string, { scopes: string[]; expiresAt: number; used: boolean }>} */
     codes: new Map(),
-    /** The AI tasks the AI routes made, by id: finished at readyAt (never when null), or cancelled.
+    /** The AI tasks the AI routes made, by id: finished at readyAt (never when null), or cancelled. v5 p2-stream:
+     *  `itemsAt`, when each of an ai-paced task's items lands (null: all at readyAt); `streams`, whether its stream
+     *  sends its items (an answer or draft task asked without canaries).
      *  @type {Map<string, { id: string; kind: AiKind; createdAt: number;
-     *    readyAt: number | null; cancelledAt: number | null; result: unknown }>} */
+     *    readyAt: number | null; cancelledAt: number | null; result: unknown; itemsAt?: number[] | null;
+     *    streams?: boolean }>} */
     tasks: new Map(),
     /** The saved answers PUT /answers kept (Phase 6), by id, in the order they were first saved.
      *  @type {Map<string, Record<string, unknown>>} */
@@ -601,6 +627,8 @@ export function createMock() {
   let state = freshState();
   /** The query string of the request being answered (GET /jobs/search's q). */
   let currentQuery = new URL('http://localhost/').searchParams;
+  /** v5 p2-stream: the headers of the request being answered (an AI route's Prefer). @type {import('node:http').IncomingHttpHeaders} */
+  let currentHeaders = {};
   /** Slow answers still waiting: a reset or a close ends them. @type {Set<{ res: import('node:http').ServerResponse; done: () => void }>} */
   const waiting = new Set();
 
@@ -938,14 +966,81 @@ export function createMock() {
     if (take('ai-unavailable') !== null) return { status: 503, json: example('AutofillErrorBody', 'ai-unavailable') };
     const slow = take('ai-slow');
     const endless = take('ai-timeout');
+    // v5 p2-stream: an ai-paced task's items land one at a time; a TailorIT with the stream hears respond-async.
+    const paced = state.scenarios.find((scenario) => scenario.name === 'ai-paced') ?? null;
+    const prefer = String(currentHeaders.prefer ?? '').toLowerCase().split(',').map((part) => part.split(';')[0]?.trim());
+    const respondAsync = !isOn('ai-stream-off') && prefer.includes('respond-async');
     const now = Date.now();
+    const perItem = typeof paced?.value === 'number' && Number.isInteger(paced.value) && paced.value >= 0
+      ? paced.value : PACED_ITEM_MS;
+    const itemsAt = paced === null || endless !== null ? null
+      : items.map((_, at) => now + paced.delayMs + (at + 1) * perItem);
     const task = { id: randomUUID(), kind, createdAt: now, cancelledAt: null,
-      readyAt: endless !== null ? null : slow !== null ? now + slow.delayMs : now,
+      readyAt: endless !== null ? null : itemsAt !== null ? itemsAt.at(-1) ?? now : slow !== null ? now + slow.delayMs : now,
       result: kind === 'autofill_pick' ? pickResult(items) : kind === 'autofill_classify' ? classifyResult(items)
-        : kind === 'autofill_answer' ? answerResult(items) : draftResult(items) };
+        : kind === 'autofill_answer' ? answerResult(items) : draftResult(items),
+      itemsAt,
+      streams: (kind === 'autofill_answer' || kind === 'autofill_draft')
+        && !(Array.isArray(json.canaries) && json.canaries.length > 0) };
     state.tasks.set(task.id, task);
-    return slow !== null || endless !== null ? jsonAnswer(202, { taskId: task.id }) : jsonAnswer(200, viewOf(task));
+    const accepted = jsonAnswer(202, { taskId: task.id });
+    if (respondAsync) return { ...accepted, headers: { 'Preference-Applied': 'respond-async' } };
+    if (itemsAt !== null && task.readyAt !== null) {
+      // TailorIT waits for its task up to AUTOFILL_AI_WAIT_MS: the finished task within it, else 202.
+      const left = task.readyAt - now;
+      return left <= AI_WAIT_MS ? { ...jsonAnswer(200, null), json: undefined, delayMs: left, lateJson: task.id }
+        : { ...accepted, delayMs: AI_WAIT_MS };
+    }
+    return slow !== null || endless !== null ? accepted : jsonAnswer(200, viewOf(task));
   }
+
+  // v5 p2-stream
+  /**
+   * GET /api/ai/tasks/:id/stream: the task's items as they land (an answer or draft task's, asked without canaries),
+   * then the finished task, then the end; a `: ping` comment every STREAM_HEARTBEAT_MS. The golden task, finished, is
+   * the task alone. A cancelled task ends it with the task at once. ai-stream-off answers 404.
+   * @param {string} id @returns {Answer}
+   */
+  function taskStream(id) {
+    if (isOn('ai-stream-off')) return notFound();
+    const task = state.tasks.get(id);
+    if (task === undefined && id !== GOLDEN_TASK.id) return notFound();
+    const headers = { 'Cache-Control': 'no-store, no-transform', 'X-Accel-Buffering': 'no' };
+    /** @param {import('node:http').ServerResponse} res @param {unknown} event */
+    const write = (res, event) => {
+      const type = /** @type {{ type: string }} */ (event).type;
+      if (!res.destroyed && !res.writableEnded) res.write(`event: ${type}\ndata: ${JSON.stringify(event)}\n\n`);
+    };
+    return { status: 200, headers, stream: async (res) => {
+      if (task === undefined) {
+        write(res, { type: 'task', task: GOLDEN_TASK });
+        return;
+      }
+      const result = /** @type {{ answers?: unknown[]; drafts?: unknown[] }} */ (task.result);
+      const entries = task.kind === 'autofill_answer' ? result.answers ?? [] : task.kind === 'autofill_draft'
+        ? result.drafts ?? [] : [];
+      let sent = 0;
+      for (;;) {
+        if (res.destroyed || res.writableEnded) return;
+        const now = Date.now();
+        if (task.cancelledAt !== null) break;
+        // Each item whose time has come (all of them once the task is done, when it is not paced).
+        while (task.streams === true && sent < entries.length
+          && ((task.itemsAt?.[sent] ?? task.readyAt ?? Number.POSITIVE_INFINITY) <= now)) {
+          const entry = entries[sent];
+          write(res, task.kind === 'autofill_answer' ? { type: 'answer', answer: entry } : { type: 'draft', draft: entry });
+          sent += 1;
+        }
+        if (task.readyAt !== null && task.readyAt <= now) break;
+        const next = Math.min(task.itemsAt?.[sent] ?? task.readyAt ?? now + STREAM_HEARTBEAT_MS,
+          task.readyAt ?? now + STREAM_HEARTBEAT_MS, now + STREAM_HEARTBEAT_MS);
+        await wait(Math.max(0, next - now), res);
+        if (Date.now() >= now + STREAM_HEARTBEAT_MS && !res.destroyed && !res.writableEnded) res.write(': ping\n\n');
+      }
+      write(res, { type: 'task', task: viewOf(task) });
+    } };
+  }
+  // v5 p2-stream end
 
   // ── Saved answers (Phase 6) ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -1271,6 +1366,8 @@ export function createMock() {
     'PUT /api/autofill/answers': ({ json }) => saveAnswer(json),
     'DELETE /api/autofill/answers/:id': ({ params }) => (state.answers.delete(params[0] ?? '') ? { status: 204 } : notFound()),
     'GET /api/ai/tasks/:id': ({ params }) => taskAnswer(params[0] ?? '', false),
+    // v5 p2-stream: the task's streamed view.
+    'GET /api/ai/tasks/:id/stream': ({ params }) => taskStream(params[0] ?? ''),
     'DELETE /api/ai/tasks/:id': ({ params }) => taskAnswer(params[0] ?? '', true),
     'POST /api/autofill/cover-letters': ({ json }) => coverLetter(json),
     'GET /api/autofill/cover-letters/:id': ({ params }) => {
@@ -1327,7 +1424,9 @@ export function createMock() {
     const token = state.token;
     if (take('unauthorized') !== null) return named(notSignedIn());
     if (bearer !== token.value || token.revoked || token.expiresAt <= Date.now()) return named(notSignedIn());
-    const allowed = !path.includes('//') && ((TOKEN_PATH.test(path)) || (AI_TASK_PATH.test(path) && ['GET', 'DELETE'].includes(method)));
+    const allowed = !path.includes('//') && ((TOKEN_PATH.test(path)) || (AI_TASK_PATH.test(path) && ['GET', 'DELETE'].includes(method))
+      // v5 p2-stream: a task's streamed view, read only.
+      || (AI_TASK_STREAM_PATH.test(path) && method === 'GET'));
     if (!allowed) return named(refusal(403, 'forbidden', 'The TailorIT extension cannot use that part of TailorIT.'));
     const theirs = headers[API_HEADER.toLowerCase()];
     if (theirs !== String(speaks)) return named(refusal(409, 'conflict', versionMessage(theirs, speaks)));
@@ -1486,6 +1585,7 @@ export function createMock() {
     const method = req.method ?? 'GET';
     const raw = await readBody(req);
     currentQuery = url.searchParams;
+    currentHeaders = req.headers;
     if (url.pathname.startsWith('/__mock/')) return send(res, control(method, url.pathname, raw ?? ''));
     /** @type {LoggedRequest} */
     const entry = { at: Date.now(), method, path: url.pathname, query: url.search, headers: redact(req.headers),
@@ -1501,7 +1601,22 @@ export function createMock() {
     if (answer.delayMs) await wait(answer.delayMs, res);
     // A client that went away during a slow answer never got one: its log entry keeps status 0.
     if (res.destroyed || res.writableEnded) return;
+    // v5 p2-stream: an ai-paced task TailorIT waited for is answered finished, as it is after the wait.
+    const late = /** @type {{ lateJson?: string }} */ (answer).lateJson;
+    if (late !== undefined) {
+      const task = state.tasks.get(late);
+      answer = task === undefined ? notFound() : { ...answer, json: viewOf(task) };
+    }
     entry.status = answer.status;
+    // v5 p2-stream: a server-sent event stream is written, then ended.
+    if (answer.stream !== undefined) {
+      res.writeHead(answer.status, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store',
+        ...answer.headers });
+      res.flushHeaders();
+      await answer.stream(res);
+      if (!res.destroyed && !res.writableEnded) res.end();
+      return;
+    }
     send(res, answer);
   }
 

@@ -584,6 +584,10 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
   // tracker recorded it: the worker's alone, to the tab's top frame, once per recorded submission. The page shows
   // "Application Submitted!" over itself while the tab is visible (content/ui/applied.ts). Nothing names the job.
   z.strictObject({ v, type: z.literal('applied/popup') }),
+  // v5 p2-stream (each AI answer fills as it lands): answers the run's frame waits for came in (an item on its task's
+  // stream, or a batch's end): the frame polls at once (plan/poll) instead of at its next tick. The worker's alone, to
+  // the run's own frame and document; it names the run only, never a key or an answer.
+  z.strictObject({ v, type: z.literal('plan/ready'), runId: Id }),
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -808,6 +812,7 @@ export const FRAME_ANSWER_SCHEMAS = {
   // v5 p1-shell
   'sidebar/open': SidebarOpenAnswerSchema,
   'applied/popup': DoneAnswerSchema, // v5 p1-panel
+  'plan/ready': DoneAnswerSchema, // v5 p2-stream
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 // ── The resume port ───────────────────────────────────────────────────────────────────────────────────────────────

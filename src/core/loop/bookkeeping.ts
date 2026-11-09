@@ -67,6 +67,10 @@ export const MAX_PASSES = 8;
  *  createRunAi), so the answers come in one batch after another, each taking a pass. The loop's cap on a wait with no
  *  answer coming in (content/loop.ts AI_WAIT_CAP_MS) still ends a wait. */
 export const MAX_AI_PASSES = 20;
+/** v5 p2-stream: the AI's answers now come one by one as they land (TailorIT's stream), so a pass that only writes
+ *  answers that came in (no field planned, none held back) is not counted against MAX_PASSES or MAX_AI_PASSES: each
+ *  such pass writes at least one answer, and each answer comes once. This cap still ends a loop of any passes. */
+export const MAX_LOOP_PASSES = 80;
 /** A field whose value flips more often than this is stopped for good (value-oscillated). */
 export const MAX_VALUE_FLIPS = 2;
 /** A list whose options change more often than this is stopped for good (options-oscillated). */
@@ -185,6 +189,9 @@ export interface LoopState {
   signature: string | null;
   /** The latest scan repeated the one before it (the same keys), with no write between and nothing new to plan. */
   stalled: boolean;
+  /** v5 p2-stream: the passes that only wrote answers that came in from the AI (noteArrivalPass): not counted against
+   *  MAX_PASSES or MAX_AI_PASSES. Absent: none. */
+  arrivalPasses?: number;
 }
 
 /** What happened at a scan. Value-free: keys and counts only. */
@@ -594,7 +601,8 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
   const newlyPending = [...fields].some(([baseKey, field]) => field.status === 'pending'
     && state.fields.get(baseKey)?.status !== 'pending');
   const next: LoopState = { pass, fields, edges, priorEdges: state.priorEdges, writers: [], signature,
-    stalled: pass > 0 && state.writers.length === 0 && signature === state.signature && !newlyPending };
+    stalled: pass > 0 && state.writers.length === 0 && signature === state.signature && !newlyPending,
+    ...(state.arrivalPasses === undefined ? {} : { arrivalPasses: state.arrivalPasses }) };
   return { state: next, pending: presentWith(fields, 'pending').map((field) => field.key),
     waiting: presentWith(fields, 'waiting-options').map((field) => field.key), events, verdict: loopVerdict(next) };
 }
@@ -701,10 +709,18 @@ export function requeueAwaiting(state: LoopState, keys: Iterable<FieldKey>): { s
  * settle cap, one more scan (observeScan) gives the fields the busy page revealed or changed meanwhile their
  * page-busy rows.
  */
+/** v5 p2-stream: the pass now ending only wrote answers that came in from the AI (no field planned or held back): it
+ *  is not counted against MAX_PASSES or MAX_AI_PASSES (MAX_LOOP_PASSES still is). */
+export function noteArrivalPass(state: LoopState): LoopState {
+  return { ...state, arrivalPasses: (state.arrivalPasses ?? 0) + 1 };
+}
+
 export function loopVerdict(state: LoopState, options: { cut?: ReasonCode } = {}): LoopVerdict {
   const pending = presentWith(state.fields, 'pending');
   const waiting = presentWith(state.fields, 'waiting-options');
   const awaiting = presentWith(state.fields, 'awaiting-llm');
+  // v5 p2-stream: the passes that only wrote what the AI's stream brought are not counted.
+  const counted = state.pass - (state.arrivalPasses ?? 0);
   // s2 core-gh (decision 14): past MAX_PASSES the loop goes on, up to MAX_AI_PASSES, while a field waits for the AI or
   // for its list to be read (a lazy list is read, then classified or answered with its options: one pass each).
   const listRead = (field: TrackedField) => field.cause === 'options-changed'
@@ -712,7 +728,8 @@ export function loopVerdict(state: LoopState, options: { cut?: ReasonCode } = {}
   const stillComing = awaiting.length > 0 || waiting.length > 0 || pending.some(listRead);
   const end: LoopEnd | null = options.cut !== undefined ? 'cut'
     : pending.length + waiting.length + awaiting.length === 0 ? 'nothing-pending'
-      : state.pass >= MAX_PASSES && (!stillComing || state.pass >= MAX_AI_PASSES) ? 'max-passes'
+      : (counted >= MAX_PASSES && (!stillComing || counted >= MAX_AI_PASSES)) || state.pass >= MAX_LOOP_PASSES
+        ? 'max-passes'
         : state.stalled && awaiting.length === 0 ? 'stalled' : null;
   if (end === null) return { done: false, end, unresolved: [] };
   const reasonOf = (field: TrackedField): ReasonCode | null => {

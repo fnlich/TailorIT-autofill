@@ -61,6 +61,11 @@
  * where TailorIT's AI may write it, the request's posting text and canaries), and wait for it as awaiting keys the frame
  * polls; plan/poll plans them again once the letter is settled, with the letter's state in PlanInput.coverLetter. The
  * letter's id stays in the run's memo for the resume port.
+ *
+ * v5 p2-stream (Jobright parity, Phase 2: each AI answer fills as it lands): when a run's answers come in (an answer or
+ * draft on its task's stream, or a batch's end: ai-tasks.ts onReady), the run's own frame and document are told,
+ * `plan/ready {runId}` (one message per burst, never a key or an answer), and poll at once; the frame's own poll every
+ * AI_POLL_MS stays the fallback and keeps the worker awake.
  */
 import type { z } from 'zod';
 import type { PlanAsk, PlanOutput, PlanSensitiveState } from '../core/plan/types';
@@ -81,6 +86,7 @@ import type { ResumeChooser } from './resume-choice';
 import type { FrameRef, RunMemo, RunRegistry } from './runs';
 import type { RunStateStore } from './runstate-store';
 import type { SettingsStore } from './settings';
+import type { WorkerPlatform } from '../platform/types';
 
 type PlanAnswer = z.infer<typeof PlanAnswerSchema>;
 type PlanRequest = Extract<ContentMessage, { type: 'plan/request' }>;
@@ -113,6 +119,8 @@ export interface PlannerDeps {
   now(): number;
   /** v3 Phase 3b: whether the person chose "Apply without resume" for a tab (job-cards.ts): its runs attach none. */
   withoutResume?(tabId: number, applicationKey: string | null): boolean;
+  /** v5 p2-stream: where a run's frame is told its answers came in (plan/ready). Absent: the frame's polls find them. */
+  tabs?: Pick<WorkerPlatform['tabs'], 'sendToFrame'>;
 }
 
 const profileRefusal = (failure: 'not-connected' | 'unavailable' | 'internal') =>
@@ -144,10 +152,28 @@ function withEntries(context: AskContext, output: PlanOutput): AskContext {
 
 /** The plan/request and plan/poll handlers. */
 export function createPlanner(deps: PlannerDeps) {
+  // v5 p2-stream
+  /** The runs whose frame is about to be told (one plan/ready per burst of answers). */
+  const ringing = new Set<string>();
+  /** Tells the run's own frame and document that answers it waits for came in: it polls at once. */
+  function ready(run: RunRecord): void {
+    const tabs = deps.tabs;
+    if (tabs === undefined || ringing.has(run.runId)) return;
+    ringing.add(run.runId);
+    queueMicrotask(() => {
+      ringing.delete(run.runId);
+      const target = run.documentId === null ? { frameId: run.frameId }
+        : { frameId: run.frameId, documentId: run.documentId };
+      void tabs.sendToFrame(run.tabId, { v: 1, type: 'plan/ready', runId: run.runId }, target).catch(() => undefined);
+    });
+  }
+  // v5 p2-stream end
+
   /** The run's LLM questions and answers, made at its first need. */
   function aiOf(run: RunRecord): RunAi {
     const memo = deps.runs.memo(run.runId);
-    memo.ai ??= createRunAi(deps.ai, deps.aiTaskIds.aiTasks(run.applicationKey, run.tabId), deps.core.vocab());
+    memo.ai ??= createRunAi(deps.ai, deps.aiTaskIds.aiTasks(run.applicationKey, run.tabId), deps.core.vocab(),
+      () => ready(run));
     return memo.ai;
   }
 

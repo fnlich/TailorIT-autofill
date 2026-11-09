@@ -22,6 +22,7 @@ import {
   AutofillPickResultSchema,
   AutofillPickTaskSchema,
   AutofillTaskAcceptedSchema,
+  AutofillTaskStreamEventSchema,
   AutofillTaskViewSchema,
 } from './ai';
 import { AutofillSavedAnswerListSchema, AutofillSavedAnswerSchema, PutAutofillSavedAnswerBodySchema } from './answers';
@@ -115,6 +116,7 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillAnswerTask: AutofillAnswerTaskSchema,
   AutofillTaskAccepted: AutofillTaskAcceptedSchema,
   AutofillTaskView: AutofillTaskViewSchema,
+  AutofillTaskStreamEvent: AutofillTaskStreamEventSchema,
   AutofillSavedAnswer: AutofillSavedAnswerSchema,
   AutofillSavedAnswerList: AutofillSavedAnswerListSchema,
   PutAutofillSavedAnswerBody: PutAutofillSavedAnswerBodySchema,
@@ -179,7 +181,8 @@ export interface AutofillRoute {
  * to a token request carries the X-TailorIT-Autofill-Api header; a refusal's body is an AutofillErrorBody (409
  * `conflict` for another API version, 401 for a dead token, 403 for a missing scope, 429 when rate-limited). The AI
  * routes refuse with AUTOFILL_AI_REFUSALS too; their tasks are polled and cancelled on /api/ai/tasks/:id, the one path
- * outside /api/autofill a token reaches, where a token sees only the autofill kinds (404 for any other task). The
+ * outside /api/autofill a token reaches (with, since v5, the task's stream on /api/ai/tasks/:id/stream), where a token
+ * sees only the autofill kinds (404 for any other task). The
  * saved-answer routes refuse with AUTOFILL_SAVED_ANSWER_REFUSALS, adding a job (and, version 5, adding one from its page) with AUTOFILL_ADD_JOB_REFUSALS and the
  * cover-letter routes with AUTOFILL_COVER_LETTER_REFUSALS (both version 2), marking a job Applied with
  * AUTOFILL_APPLIED_REFUSALS (version 3). The extension reads the saved answers (GET /api/autofill/answers, with
@@ -436,6 +439,17 @@ export const AUTOFILL_ROUTES = [
     request: null,
     status: 200,
     response: 'AutofillTaskView',
+    accepted: null,
+  },
+  // v5 (additive within API 6): the task's streamed view, `text/event-stream`; `response` names each message's JSON.
+  {
+    method: 'GET',
+    path: '/api/ai/tasks/:id/stream',
+    caller: 'either',
+    scope: 'ai:run',
+    request: null,
+    status: 200,
+    response: 'AutofillTaskStreamEvent',
     accepted: null,
   },
   {

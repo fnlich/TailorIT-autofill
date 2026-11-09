@@ -63,6 +63,18 @@
  * A run's questions (createRunAi): one task in flight per run, batches in the order they were asked (classify, pick,
  * draft, answer), the answers kept for the run only (memory). Nothing here logs an item, a label or an answer: counts
  * and statuses only.
+ *
+ * v5 p2-stream (Jobright parity, Phase 2: each answer fills as it lands). Where TailorIT streams (GET
+ * /api/ai/tasks/:id/stream), a batch is asked with `Prefer: respond-async` (202 at once) and its task's stream is read:
+ * each answer or draft TailorIT settles comes as it lands and is that key's verdict at once (a key of the batch, once;
+ * the same translation as the finished task's, answerVerdicts and draftVerdicts over that one item), so the key's
+ * state is done before its batch is, and the run's `onReady` hears it (the planner then tells the frame, plan/ready,
+ * which polls at once). The stream's finished task ends the batch as a poll's would. Polling stays the fallback: a
+ * stream that ends without its task (cut, idle 25 s, the cap), a stream TailorIT does not have (its 404 while the task
+ * itself answers: streamOff for the worker's life) or any failure of it goes on polling the same task within the same
+ * cap. A key answered on the stream keeps that verdict when its task then fails (what was written stands); a finished
+ * task whose result differs from what streamed (TailorIT promises it never does) wins for later plans, logged as a
+ * count. A batch's end tells `onReady` too, so the frame plans its keys at once instead of at its next poll.
  */
 import {
   answerInFormat, ATS_KINDS, AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AtsKind,
@@ -94,7 +106,7 @@ import type { Settings } from '../core/types/settings';
 import type { VisibleText } from '../core/types/text';
 import type { Vocab } from '../core/vocab/types';
 import { log } from '../shared/log';
-import type { ServerClient, ServerResult } from './server-client';
+import type { AiStreamOptions, ServerClient, ServerResult } from './server-client';
 import type { Timers } from './timers';
 
 /** A batch's task is given up this long after it was first submitted (docs/ARCHITECTURE.md: the 120 s cap). */
@@ -598,7 +610,9 @@ export type TaskOutcome =
 /** What the task client needs. Never a cancel: a task TailorIT deduplicated may be another caller's too, and TailorIT
  *  prunes every task within its hour (the review, T-F2). */
 export interface AiTasksDeps {
-  server: Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiDraft' | 'aiAnswer' | 'aiTask'>;
+  /** v5 p2-stream: `aiTaskStream` where the worker reads a task's stream (absent: it polls, as before). */
+  server: Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiDraft' | 'aiAnswer' | 'aiTask'>
+    & Partial<Pick<ServerClient, 'aiTaskStream'>>;
   timers: Timers;
   now(): number;
 }
@@ -609,11 +623,21 @@ const TRANSIENT: ReadonlySet<string> = new Set(['timeout', 'unreachable', 'serve
 const TASK_KIND = { pick: 'autofill_pick', classify: 'autofill_classify', draft: 'autofill_draft',
   answer: 'autofill_answer' } as const;
 
+/** v5 p2-stream: an answer or a draft as the task's stream brought it. */
+export type StreamedItem = Parameters<AiStreamOptions['onEvent']>[0];
+
+/** v5 p2-stream: what a run gives a batch's task besides its questions: where streamed items go (with the task's id),
+ *  and the signal that ends the stream when the run goes. */
+export interface RunHooks {
+  onItem?(item: StreamedItem, taskId: string): void;
+  signal?: AbortSignal;
+}
+
 /** The task client: runs one batch's task to its end. */
 export interface AiTasks {
   /** Submits a batch (or reads its known task), polls it, and answers how it ended. `active` false stops it (the run
-   *  went), cancelling the task. */
-  run(batch: AiBatch, ids: AiTaskIds, active: () => boolean): Promise<TaskOutcome>;
+   *  went), cancelling the task. v5 p2-stream: reads the task's stream first, where TailorIT has one (`hooks`). */
+  run(batch: AiBatch, ids: AiTaskIds, active: () => boolean, hooks?: RunHooks): Promise<TaskOutcome>;
 }
 
 export function createAiTasks(deps: AiTasksDeps): AiTasks {
@@ -630,6 +654,10 @@ export function createAiTasks(deps: AiTasksDeps): AiTasks {
     return { done, cancel };
   };
   const wait = (ms: number) => timer(ms).done;
+  // v5 p2-stream: TailorIT answered a task's stream 404 while the task itself answered: it has no stream, so this
+  // worker polls from now on (a new worker tries again).
+  let streamOff = false;
+  const streams = () => deps.server.aiTaskStream !== undefined && !streamOff;
 
   /** A finished view as an outcome ('cancelled' for a task someone cancelled), or null while it is queued or running. */
   function settled(batch: AiBatch, view: AutofillTaskView): TaskOutcome | 'cancelled' | null {
@@ -641,12 +669,40 @@ export function createAiTasks(deps: AiTasksDeps): AiTasks {
   }
 
   async function submit(batch: AiBatch): Promise<ServerResult<{ done: true; task: AutofillTaskView } | { done: false; taskId: string }>> {
-    if (batch.kind === 'pick') return deps.server.aiPick(batch.body);
-    if (batch.kind === 'answer') return deps.server.aiAnswer(batch.body);
-    return batch.kind === 'draft' ? deps.server.aiDraft(batch.body) : deps.server.aiClassify(batch.body);
+    // v5 p2-stream: a worker that reads the stream asks for the 202 at once.
+    const options = streams() ? { async: true } : undefined;
+    if (batch.kind === 'pick') return deps.server.aiPick(batch.body, options);
+    if (batch.kind === 'answer') return deps.server.aiAnswer(batch.body, options);
+    return batch.kind === 'draft' ? deps.server.aiDraft(batch.body, options) : deps.server.aiClassify(batch.body, options);
   }
 
-  async function execute(batch: AiBatch, ids: AiTaskIds, active: () => boolean, self: Promise<unknown>): Promise<TaskOutcome> {
+  // v5 p2-stream
+  /**
+   * The task's stream, read until its finished task, the cap, or the run's end: its items go to `hooks.onItem` as they
+   * land. Answers the finished task's outcome ('cancelled' for one someone cancelled), 'poll' when the stream ended
+   * without it (or failed), and 'probe' when TailorIT answered it 404 (no stream, or the task gone: the next poll says).
+   */
+  async function streamOf(batch: AiBatch, taskId: string, cap: number, hooks: RunHooks):
+    Promise<TaskOutcome | 'cancelled' | 'poll' | 'probe'> {
+    const left = cap - deps.now();
+    const read = deps.server.aiTaskStream;
+    if (left <= 0 || read === undefined) return 'poll';
+    const ended = new AbortController();
+    const cancel = deps.timers.after(left, () => ended.abort());
+    try {
+      const signal = hooks.signal === undefined ? ended.signal : AbortSignal.any([ended.signal, hooks.signal]);
+      const answer = await read(taskId, { signal, onEvent: (item) => hooks.onItem?.(item, taskId) });
+      if (!answer.ok) return answer.failure === 'not-found' ? 'probe' : 'poll';
+      if (answer.value === null) return 'poll';
+      return settled(batch, answer.value) ?? 'poll';
+    } finally {
+      cancel();
+    }
+  }
+  // v5 p2-stream end
+
+  async function execute(batch: AiBatch, ids: AiTaskIds, active: () => boolean, self: Promise<unknown>,
+    hooks: RunHooks = {}): Promise<TaskOutcome> {
     const hash = batchHash(batch);
     const cap = deps.now() + AI_TASK_CAP_MS;
     let taskId: string | null = await ids.get(hash);
@@ -723,12 +779,31 @@ export function createAiTasks(deps: AiTasksDeps): AiTasks {
       }
 
       let cancelled = false;
+      // v5 p2-stream: the task's stream first, where TailorIT has one; what it leaves is polled as before.
+      let probe = false;
+      if (streams() && active()) {
+        const streamed = await streamOf(batch, taskId, cap, hooks);
+        if (streamed === 'cancelled') cancelled = true;
+        else if (streamed === 'probe') probe = true;
+        else if (streamed !== 'poll') {
+          if (streamed.ok) await ids.note(hash, streamed.taskId);
+          log('ai.answered', { items: batch.items.length, waited: true, ok: streamed.ok, streamed: true });
+          return streamed;
+        }
+      }
       for (;;) {
+        if (cancelled) break;
         const left = cap - deps.now();
         if (left <= 0 || !active()) break;
         await wait(Math.min(AUTOFILL_AI_POLL_MS, left));
         if (!active()) break;
         const view = await deps.server.aiTask(taskId);
+        // v5 p2-stream: the task answers where its stream did not: this TailorIT has none.
+        if (probe && view.ok) {
+          probe = false;
+          streamOff = true;
+          log('ai.stream-unsupported');
+        }
         if (view.ok) {
           const outcome = settled(batch, view.value);
           if (outcome === 'cancelled') {
@@ -760,9 +835,9 @@ export function createAiTasks(deps: AiTasksDeps): AiTasks {
   }
 
   return {
-    run(batch, ids, active) {
+    run(batch, ids, active, hooks) {
       let self: Promise<TaskOutcome> | null = null;
-      const started = Promise.resolve().then(() => execute(batch, ids, active, self!))
+      const started = Promise.resolve().then(() => execute(batch, ids, active, self!, hooks))
         .catch((): TaskOutcome => ({ ok: false, why: 'llm-unavailable' }));
       self = started;
       inFlight.add(started);
@@ -833,8 +908,10 @@ export interface RunAi {
 const fieldKeyOf = (item: { id: string }): string => item.id.split('#')[0]!;
 
 /** Creates a run's questions over the task client and the run's task ids; `vocab` screens a rewrite's current text
- *  (draftBatches). */
-export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi {
+ *  (draftBatches). v5 p2-stream: `onReady` hears the keys whose answers came in (an item on its task's stream, or a
+ *  batch's end), so the frame is told to plan them now. */
+export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
+  onReady?: (keys: readonly FieldKey[]) => void): RunAi {
   const verdicts = new Map<string, AnsweredVerdict>();
   const classifications = new Map<string, ClassifyVerdict>();
   const drafts = new Map<string, DraftVerdict>();
@@ -848,14 +925,52 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
   let chain: Promise<void> = Promise.resolve();
   let stopped = false;
   let submitted = false;
+  // v5 p2-stream: the keys whose verdict came on their task's stream, before the task ended, and the stream's end.
+  const streamed = new Set<string>();
+  const halt = new AbortController();
+
+  /** Tells the run that keys' answers are in (the planner tells the frame). Never throws. */
+  function ready(keys: readonly string[]): void {
+    if (stopped || keys.length === 0 || onReady === undefined) return;
+    try {
+      onReady(keys as FieldKey[]);
+    } catch {
+      // The frame is told at its next poll anyway.
+    }
+  }
+
+  /** One answer or draft from a batch's stream: that key's verdict now, once. */
+  function streamedItem(batch: AiBatch, item: StreamedItem, taskId: string): void {
+    if (stopped) return;
+    let key: string | null = null;
+    if (batch.kind === 'answer' && item.type === 'answer') {
+      const asked = batch.items.find((entry) => entry.key === item.answer.key);
+      if (asked === undefined || streamed.has(asked.key)) return;
+      answers.set(asked.key, answerVerdicts([asked], { answers: [item.answer] }, taskId).get(asked.key)!);
+      key = asked.key;
+    } else if (batch.kind === 'draft' && item.type === 'draft') {
+      const asked = batch.items.find((entry) => entry.key === item.draft.key);
+      if (asked === undefined || streamed.has(asked.key)) return;
+      drafts.set(asked.key, draftVerdicts([asked], { drafts: [item.draft] }, taskId).get(asked.key)!);
+      key = asked.key;
+    }
+    if (key === null) return;
+    streamed.add(key);
+    ready([key]);
+  }
+
+  /** The keys a batch answers. */
+  const keysOf = (batch: AiBatch): string[] => batch.items.map((item) => (batch.kind === 'pick'
+    ? fieldKeyOf(item as TiebreakItem) : (item as ClassifyItem | DraftItem | AnswerItem).key));
 
   function record(batch: AiBatch, outcome: TaskOutcome): void {
     if (!outcome.ok) {
       const failed = failedVerdicts(batch, outcome.why);
       for (const verdict of failed.picks) verdicts.set(verdict.id, { verdict, taskId: '' });
       for (const verdict of failed.classes) classifications.set(verdict.key, verdict);
-      for (const verdict of failed.drafts) drafts.set(verdict.key, verdict);
-      for (const verdict of failed.answers) answers.set(verdict.key, verdict);
+      // v5 p2-stream: what came on the stream before the task failed stands (it may be written already).
+      for (const verdict of failed.drafts) if (!streamed.has(verdict.key)) drafts.set(verdict.key, verdict);
+      for (const verdict of failed.answers) if (!streamed.has(verdict.key)) answers.set(verdict.key, verdict);
       return;
     }
     if (batch.kind === 'pick') {
@@ -863,13 +978,19 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
         verdicts.set(id, { verdict, taskId: outcome.taskId });
       }
     } else if (batch.kind === 'draft') {
+      let differ = 0;
       for (const [key, verdict] of draftVerdicts(batch.items, outcome.result as AutofillDraftResult, outcome.taskId)) {
+        if (streamed.has(key) && JSON.stringify(drafts.get(key)) !== JSON.stringify(verdict)) differ += 1;
         drafts.set(key, verdict);
       }
+      if (differ > 0) log('ai.stream-differs', { items: differ });
     } else if (batch.kind === 'answer') {
+      let differ = 0;
       for (const [key, verdict] of answerVerdicts(batch.items, outcome.result as AutofillAnswerResult, outcome.taskId)) {
+        if (streamed.has(key) && JSON.stringify(answers.get(key)) !== JSON.stringify(verdict)) differ += 1;
         answers.set(key, verdict);
       }
+      if (differ > 0) log('ai.stream-differs', { items: differ });
     } else {
       for (const [key, verdict] of classifyVerdicts(batch.items, outcome.result as AutofillClassifyResult)) {
         classifications.set(key, verdict);
@@ -885,9 +1006,12 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
     if (!stopped) submitted = true;
     chain = chain.then(async () => {
       const outcome = stopped ? { ok: false as const, why: 'llm-unavailable' as const }
-        : await tasks.run(batch, ids, () => !stopped);
+        : await tasks.run(batch, ids, () => !stopped,
+          { signal: halt.signal, onItem: (item, taskId) => streamedItem(batch, item, taskId) });
       record(batch, outcome);
       entry.done = true;
+      // v5 p2-stream: the batch's other keys are in now: the frame plans them at once.
+      ready(keysOf(batch).filter((key) => !streamed.has(key)));
     });
     return hash;
   }
@@ -934,9 +1058,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
       if (withheld > 0) log('ai.withheld', { items: withheld });
       for (const batch of [...classes.batches, ...picks.batches, ...written.batches, ...answered.batches]) {
         const hash = enqueue(batch);
-        for (const item of batch.items) {
-          const key = batch.kind === 'pick' ? fieldKeyOf(item as TiebreakItem)
-            : (item as ClassifyItem | DraftItem | AnswerItem).key;
+        for (const key of keysOf(batch)) {
           owner.set(key, hash);
           answeredBy.set(key as FieldKey, hash);
         }
@@ -947,6 +1069,8 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
       const entry = waiting.get(key);
       if (entry === undefined) return 'unknown';
       if (entry.batch === null) return 'done';
+      // v5 p2-stream: an answer or draft that came on its task's stream is in before its batch ends.
+      if (streamed.has(key) && answeredBy.get(key) === entry.batch) return 'done';
       return batches.get(entry.batch)?.done === true ? 'done' : 'waiting';
     },
     contextOf: (key) => waiting.get(key)?.context,
@@ -957,6 +1081,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
       for (const key of keys) {
         drafts.delete(key);
         answers.delete(key);
+        streamed.delete(key);
         // The batch that answered it, once ended, is enqueued afresh when asked again (its name may be the same: then
         // its task is read again by its id).
         const hash = answeredBy.get(key);
@@ -969,6 +1094,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
     used: () => submitted,
     stop() {
       stopped = true;
+      halt.abort();
     },
   };
 }
