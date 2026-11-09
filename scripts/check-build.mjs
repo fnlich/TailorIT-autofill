@@ -79,8 +79,10 @@ const SUBMIT_WATCH_FILE = 'content-scripts/submit-watch.js';
  *  (src/adapters/bridge-address.ts and its parsers), which it shares so it installs exactly where the bridge would:
  *  22,024 bytes when it was added (v5 p2-detect, addfa31), under the bridge's 24 KiB. The owner's word of 2026-11-08
  *  ("Jobright is sample ... you can use it") added Oracle's and SuccessFactors' signs and the body facts of Workday and
- *  Oracle, and Oracle's own-domain reading (28,571 bytes at 983c81e), so 28 KiB. */
-const SUBMIT_WATCH_BUDGET = 28 * 1024;
+ *  Oracle, and Oracle's own-domain reading (28,571 bytes at 983c81e), so 28 KiB. The P2 review's M3 added its own
+ *  install decision, anywhere under the single-page candidate apps' paths (src/adapters/bridge-address.ts
+ *  submitWatchInstallsAt: 29,146 bytes at be29014), so 30 KiB. */
+const SUBMIT_WATCH_BUDGET = 30 * 1024;
 /** What the watcher's bundle may never name: the extension's APIs, headers, storage, and the body readers it has no
  *  use for. The owner's word of 2026-11-08 ("Jobright is sample ... you can use it") relaxed the rest of this rule for
  *  the three platforms whose sign is one yes-or-no fact of a body, as Jobright reads it (src/dom/submit-net-protocol.ts:

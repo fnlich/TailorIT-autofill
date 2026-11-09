@@ -397,12 +397,12 @@ describe("check-build's three content scripts: ours, the page-world bridge and (
     }
   }, 30_000);
 
-  it('fail a submit watcher over its 28 KiB budget, or one that reads a body, adds a global or a listener, or wraps elsewise (v5 p2-detect)', () => {
+  it('fail a submit watcher over its 30 KiB budget, or one that reads a body, adds a global or a listener, or wraps elsewise (v5 p2-detect)', () => {
     const big = checkBuild(project((write) => {
-      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/submit-watch.js`, `var big="${'a'.repeat(28 * 1024)}";`);
+      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/submit-watch.js`, `var big="${'a'.repeat(30 * 1024)}";`);
     }));
     expect(big.output).toContain('.output/chrome-mv3: the submit watcher is');
-    expect(big.output).toContain('over the 28672-byte budget');
+    expect(big.output).toContain('over the 30720-byte budget');
     expect(big.status).toBe(1);
 
     const installs = 'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote/Engineer_JR-1/apply/applyManually';
