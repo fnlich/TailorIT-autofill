@@ -122,7 +122,8 @@ test.describe('the LLM steps', () => {
 
   test('version 2’s defaults live: nothing sensitive reaches any AI request, the answer and draft routes included (MINOR 7)', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
     // The same page with an unknown question and a free-text one more (fixtures/synthetic/ai-steps/v2-defaults.html),
-    // filled with version 2's defaults: classify, pick, answer and draft all live.
+    // filled with version 2's defaults: pick, answer and draft all live, and since v5's one round the answer route
+    // classifies the questions nothing classified too (no classify request of their own).
     const url = fixtureAddress('ai-steps-v2');
     routeLog.serve({ [url]: V2_PAGE });
     await tailorit.scenario('ai-pick-index', { value: LINKEDIN_POST });
@@ -136,7 +137,9 @@ test.describe('the LLM steps', () => {
     expect(row(report, V2_WHY)).toMatchObject({ provenance: 'llm-draft', reason: 'llm-draft-written', wrote: true });
     const sent = await aiRequests();
     expect([...new Set(sent.map((request) => request.path))].sort()).toEqual(['/api/autofill/ai/answer',
-      '/api/autofill/ai/classify', '/api/autofill/ai/draft', '/api/autofill/ai/pick']);
+      '/api/autofill/ai/draft', '/api/autofill/ai/pick']);
+    expect(sent.some((request) => request.path === '/api/autofill/ai/answer'
+      && request.body.includes('"classify":true'))).toBe(true);
     for (const request of sent) {
       expect(request.headers.authorization).toBe('REDACTED');
       // The page's canaries go to TailorIT on purpose (its own screen reads them): set aside, never anything else.
@@ -211,9 +214,11 @@ test.describe('the LLM steps', () => {
     expect(row(report, SOURCE)).toMatchObject({ provenance: 'llm-pick', reason: 'llm-pick-needs-review', wrote: true });
     await expect(page.locator('#source')).toHaveValue('post');
     expect(row(report, WORK)).toMatchObject({ reason: 'llm-classified-needs-review', wrote: true });
-    // Asked once each: the new worker read the tasks again by their ids (GET), never a second POST.
+    // Asked once each: the new worker read the tasks again by their ids (GET), never a second POST. (Since v5's one
+    // round the work question is classified within its answer task, never a classify task of its own.)
     expect(await mock.requestsTo(PICK)).toHaveLength(1);
-    expect(await mock.requestsTo(CLASSIFY)).toHaveLength(1);
+    expect(await mock.requestsTo('POST /api/autofill/ai/answer')).toHaveLength(1);
+    expect(await mock.requestsTo(CLASSIFY)).toHaveLength(0);
     expect((await mock.requestsTo('GET /api/ai/tasks/*')).length).toBeGreaterThan(0);
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: ['HIDDEN-MARKER-AI'],
       canaries: ['I am LLM'], labels: LABELS, applicationKey: applicationKeyOf(url) });

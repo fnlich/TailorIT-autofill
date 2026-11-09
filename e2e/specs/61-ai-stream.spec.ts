@@ -4,8 +4,9 @@
  * The mock paces every AI task as a CLI writes (ai-paced: its first item after CLI_START_MS, then one every ITEM_MS):
  * with TailorIT's stream the extension writes each answer as it lands; with ai-stream-off (a TailorIT before the
  * stream) it polls as before. Both runs fill the same fields; the streamed one writes its first answer sooner (the
- * last lands with its task's end either way: the tasks run one after another). The times, from the run's first write to
- * each AI answer written, are printed (the before/after of the P2 report).
+ * last lands with its task's end either way). The times, from the run's first write to each AI answer written, are
+ * printed (the before/after of the P2 report). Since the follow-up, the open questions are classified and answered in
+ * one round (no classify task) and a run has two tasks in flight.
  */
 import { expect, test } from '../fixtures.ts';
 import { row } from '../helpers/extension.ts';
@@ -85,6 +86,8 @@ test.describe('AI answers as they land (v5 p2-stream)', () => {
     // Streamed first: a worker that met a TailorIT without the stream polls for the rest of its life.
     const streamed = await run(false);
     const asked = await mock.requestsTo('POST /api/autofill/ai/answer');
+    // v5 p2-stream (one round): the open questions were classified and answered in the same tasks.
+    const classifies = await mock.requestsTo('POST /api/autofill/ai/classify');
     const streams = (await mock.requests()).filter((request) => /^\/api\/ai\/tasks\/[0-9a-f-]{36}\/stream$/.test(request.path));
     const polled = await run(true);
     // The worker that met it starts afresh, so the specs after this one read streams again.
@@ -103,5 +106,7 @@ test.describe('AI answers as they land (v5 p2-stream)', () => {
     expect(asked.length).toBeGreaterThan(0);
     for (const request of asked) expect(request.headers.prefer).toBe('respond-async');
     expect(streams.length).toBeGreaterThanOrEqual(asked.length);
+    expect(classifies).toEqual([]);
+    expect(asked.some((request) => request.body.includes('"classify":true'))).toBe(true);
   });
 });

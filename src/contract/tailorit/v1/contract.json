@@ -3,7 +3,7 @@
   "zod": "4.6.7",
   "files": {
     "agent.ts": "f5e936bfd780aab1810818876eb1faa2e3efbc97b45c2dfe72b581f523afb002",
-    "ai.ts": "0f2f17e967f10eae6e92b577ff4a6c70e8b53c742d238698c0fa0ac183f3faa6",
+    "ai.ts": "8d6d5ebc75d6831829c96bee225aa616601cc5cf1dd49743d6ea332b8a1338f8",
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "49960ec62489547d78a01bdc51d82142b6ce44168c31a81f060a282774da20f1",
     "connect.ts": "c7c32bda21eb64b78ec9e8085549144384fbf1d5c676b72918dbe726588b0071",
@@ -53,6 +53,7 @@
     "AutofillAnswerRequest/invalid/choice-with-max-length.json": "73e8fcc9468d3f4c3b3294da5ca6c62079fea40914331248e6df5daa100799d1",
     "AutofillAnswerRequest/invalid/choice-with-one-option.json": "87cd67a80aa3760e4c53dd05cb84c6e6877dba23a841b2e23df3ba9b0232a54c",
     "AutofillAnswerRequest/invalid/choice-without-option-set.json": "ade884e0d1571ca6a520c985832c43636ec5db29c26cee81b493f9022bc1b1c6",
+    "AutofillAnswerRequest/invalid/classify-without-platform.json": "282c339ff4de6697d7cb108d68ee3e7575d32623d6e4718bcbdea6f3745f0cae",
     "AutofillAnswerRequest/invalid/date-field-without-a-date-format.json": "012a519c14bd5c3135ed842082ae7208c62dbc4347a63ef4ef7c4583ac7eb210",
     "AutofillAnswerRequest/invalid/eleven-items.json": "6916e17748e481d092195f1cb9e77b952e82ece99efbef0c24ca689d00752436",
     "AutofillAnswerRequest/invalid/empty-question.json": "e8aa49b1537a6530137c592296e91ceae571a714ccd647f388cbccedd5e9e24a",
@@ -69,16 +70,19 @@
     "AutofillAnswerRequest/invalid/unknown-format.json": "aea08430995320094ef9a94f7b954ab8c1235b5495897a22a4110cfa0ac858d0",
     "AutofillAnswerRequest/invalid/unknown-scope.json": "e19f30a117c69d4bd4e037c355e6a9716ec0bbe03f24524bc78f4ca8998021c6",
     "AutofillAnswerRequest/valid/all-scope.json": "fa26c755d44e15b7beeb05aafd6e30af801a3c3714f22db383822f24db72d6a5",
+    "AutofillAnswerRequest/valid/classify.json": "ce2d8ad03ed5de45a260cec37ee7b02a6ae4a5bb5ece28a3a704ca528ce2be9b",
     "AutofillAnswerRequest/valid/embedded-form.json": "3de37f26bbb87f03af2aae169ad562285f5e26c14301e20e294b582cc7fffd02",
     "AutofillAnswerRequest/valid/formats.json": "0052bb7a4829d48a7c8e17ae04b5f2f4807d95db113064475fd15a2af09e858a",
     "AutofillAnswerRequest/valid/golden.json": "733701c61af16b788a5820dabfd8406f74239bc432e10c52c71b8cb6bb366b8f",
     "AutofillAnswerResult/invalid/answered-without-basis.json": "0b4e9b688f9cd776e38777ecdcd1e8a62cd197e1f134e19f61b8f135df2693a0",
     "AutofillAnswerResult/invalid/basis-without-answer.json": "1d453bc98211f148a59e7ad00801bb92d02d34be05ca4c2206791445b6d480c5",
     "AutofillAnswerResult/invalid/choice-with-text.json": "e00356090adf88e3e22fe619fb13fd87cd7cabac71862a294e1fa36bf44c5575",
+    "AutofillAnswerResult/invalid/classified-without-category.json": "6374be2553058fa1b37eab1adbfa7bea107481b254c6024b7652bafcc6c9ca4b",
     "AutofillAnswerResult/invalid/text-over-500.json": "1bd245e5f39f69fbc54efed554a202c1561ad2fe5239110c90b2556d6e862956",
     "AutofillAnswerResult/invalid/text-with-index.json": "6441a4f0e54ffca294383094ba95d516cbd59e86ae1f08562de9a46d83c30847",
     "AutofillAnswerResult/invalid/unknown-basis.json": "3c881f48aaa1b7b199f5ad947013e62d126b37938ca68e4657289e1f55ca62d8",
     "AutofillAnswerResult/invalid/unknown-reason.json": "bd28892281d537b4ea6cf24e75edce7fa79b74738bd5342370cd5b9ef8654a23",
+    "AutofillAnswerResult/valid/classified.json": "3946c4dc84d86902655b5d8b1bfad03899f8864c8659d5cd763e3a2f3c4d7aa2",
     "AutofillAnswerResult/valid/golden.json": "8b5ddb3576a9b5206b1b815c4c0396889e1463fb45e19aa182ac7eb375f600c5",
     "AutofillAnswerResult/valid/screened.json": "8aac808cceb4154f755a2a48b80adf52e7b0229fb3a36f9bb120d9ffca17249b",
     "AutofillAnswerTask/invalid/answers-as-drafts.json": "cd32d778d314c354703f1dad10981ac62a247ba9c20ca55e942852fd288b9558",
@@ -12447,6 +12451,10 @@
                     "type": "null"
                   }
                 ]
+              },
+              "classify": {
+                "type": "boolean",
+                "const": true
               }
             },
             "required": [
@@ -12505,6 +12513,36 @@
             "minLength": 2,
             "maxLength": 200
           }
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "greenhouse",
+            "lever",
+            "ashby",
+            "workday",
+            "workable",
+            "icims",
+            "taleo",
+            "successfactors",
+            "oracle",
+            "jobvite",
+            "jazzhr",
+            "bamboohr",
+            "rippling",
+            "breezy",
+            "careerplug",
+            "pinpoint",
+            "paycor",
+            "hibob",
+            "ultipro",
+            "dayforce",
+            "paylocity",
+            "dice",
+            "clearcompany",
+            "adp",
+            "smartrecruiters"
+          ]
         }
       },
       "required": [
@@ -12596,6 +12634,84 @@
                   "contact",
                   "sensitive"
                 ]
+              },
+              "classification": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "first_name",
+                          "middle_name",
+                          "last_name",
+                          "full_name",
+                          "preferred_name",
+                          "email",
+                          "phone",
+                          "phone_country_code",
+                          "address_line1",
+                          "address_line2",
+                          "city",
+                          "region",
+                          "postal_code",
+                          "country",
+                          "location",
+                          "linkedin",
+                          "github",
+                          "portfolio",
+                          "website",
+                          "current_employer",
+                          "current_title",
+                          "employer",
+                          "job_title",
+                          "role_description",
+                          "years_experience",
+                          "school",
+                          "degree",
+                          "field_of_study",
+                          "graduation_date",
+                          "gpa",
+                          "language",
+                          "language_proficiency",
+                          "skills",
+                          "start_date",
+                          "end_date",
+                          "notice_period",
+                          "relocation",
+                          "work_arrangement",
+                          "referral_source",
+                          "resume_upload",
+                          "cover_letter_upload",
+                          "sensitive_eeo",
+                          "sensitive_legal",
+                          "sensitive_compensation",
+                          "consent",
+                          "attention_check",
+                          "free_text_question"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "classified",
+                      "unknown",
+                      "invalid",
+                      "sensitive"
+                    ]
+                  }
+                },
+                "required": [
+                  "category",
+                  "reason"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -12716,6 +12832,84 @@
                           "contact",
                           "sensitive"
                         ]
+                      },
+                      "classification": {
+                        "type": "object",
+                        "properties": {
+                          "category": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "first_name",
+                                  "middle_name",
+                                  "last_name",
+                                  "full_name",
+                                  "preferred_name",
+                                  "email",
+                                  "phone",
+                                  "phone_country_code",
+                                  "address_line1",
+                                  "address_line2",
+                                  "city",
+                                  "region",
+                                  "postal_code",
+                                  "country",
+                                  "location",
+                                  "linkedin",
+                                  "github",
+                                  "portfolio",
+                                  "website",
+                                  "current_employer",
+                                  "current_title",
+                                  "employer",
+                                  "job_title",
+                                  "role_description",
+                                  "years_experience",
+                                  "school",
+                                  "degree",
+                                  "field_of_study",
+                                  "graduation_date",
+                                  "gpa",
+                                  "language",
+                                  "language_proficiency",
+                                  "skills",
+                                  "start_date",
+                                  "end_date",
+                                  "notice_period",
+                                  "relocation",
+                                  "work_arrangement",
+                                  "referral_source",
+                                  "resume_upload",
+                                  "cover_letter_upload",
+                                  "sensitive_eeo",
+                                  "sensitive_legal",
+                                  "sensitive_compensation",
+                                  "consent",
+                                  "attention_check",
+                                  "free_text_question"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "classified",
+                              "unknown",
+                              "invalid",
+                              "sensitive"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "category",
+                          "reason"
+                        ],
+                        "additionalProperties": false
                       }
                     },
                     "required": [
@@ -13408,6 +13602,84 @@
                               "contact",
                               "sensitive"
                             ]
+                          },
+                          "classification": {
+                            "type": "object",
+                            "properties": {
+                              "category": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "first_name",
+                                      "middle_name",
+                                      "last_name",
+                                      "full_name",
+                                      "preferred_name",
+                                      "email",
+                                      "phone",
+                                      "phone_country_code",
+                                      "address_line1",
+                                      "address_line2",
+                                      "city",
+                                      "region",
+                                      "postal_code",
+                                      "country",
+                                      "location",
+                                      "linkedin",
+                                      "github",
+                                      "portfolio",
+                                      "website",
+                                      "current_employer",
+                                      "current_title",
+                                      "employer",
+                                      "job_title",
+                                      "role_description",
+                                      "years_experience",
+                                      "school",
+                                      "degree",
+                                      "field_of_study",
+                                      "graduation_date",
+                                      "gpa",
+                                      "language",
+                                      "language_proficiency",
+                                      "skills",
+                                      "start_date",
+                                      "end_date",
+                                      "notice_period",
+                                      "relocation",
+                                      "work_arrangement",
+                                      "referral_source",
+                                      "resume_upload",
+                                      "cover_letter_upload",
+                                      "sensitive_eeo",
+                                      "sensitive_legal",
+                                      "sensitive_compensation",
+                                      "consent",
+                                      "attention_check",
+                                      "free_text_question"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "classified",
+                                  "unknown",
+                                  "invalid",
+                                  "sensitive"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "category",
+                              "reason"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [
@@ -13580,6 +13852,84 @@
                     "contact",
                     "sensitive"
                   ]
+                },
+                "classification": {
+                  "type": "object",
+                  "properties": {
+                    "category": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "first_name",
+                            "middle_name",
+                            "last_name",
+                            "full_name",
+                            "preferred_name",
+                            "email",
+                            "phone",
+                            "phone_country_code",
+                            "address_line1",
+                            "address_line2",
+                            "city",
+                            "region",
+                            "postal_code",
+                            "country",
+                            "location",
+                            "linkedin",
+                            "github",
+                            "portfolio",
+                            "website",
+                            "current_employer",
+                            "current_title",
+                            "employer",
+                            "job_title",
+                            "role_description",
+                            "years_experience",
+                            "school",
+                            "degree",
+                            "field_of_study",
+                            "graduation_date",
+                            "gpa",
+                            "language",
+                            "language_proficiency",
+                            "skills",
+                            "start_date",
+                            "end_date",
+                            "notice_period",
+                            "relocation",
+                            "work_arrangement",
+                            "referral_source",
+                            "resume_upload",
+                            "cover_letter_upload",
+                            "sensitive_eeo",
+                            "sensitive_legal",
+                            "sensitive_compensation",
+                            "consent",
+                            "attention_check",
+                            "free_text_question"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "classified",
+                        "unknown",
+                        "invalid",
+                        "sensitive"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "category",
+                    "reason"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -14250,6 +14600,84 @@
                                       "contact",
                                       "sensitive"
                                     ]
+                                  },
+                                  "classification": {
+                                    "type": "object",
+                                    "properties": {
+                                      "category": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "enum": [
+                                              "first_name",
+                                              "middle_name",
+                                              "last_name",
+                                              "full_name",
+                                              "preferred_name",
+                                              "email",
+                                              "phone",
+                                              "phone_country_code",
+                                              "address_line1",
+                                              "address_line2",
+                                              "city",
+                                              "region",
+                                              "postal_code",
+                                              "country",
+                                              "location",
+                                              "linkedin",
+                                              "github",
+                                              "portfolio",
+                                              "website",
+                                              "current_employer",
+                                              "current_title",
+                                              "employer",
+                                              "job_title",
+                                              "role_description",
+                                              "years_experience",
+                                              "school",
+                                              "degree",
+                                              "field_of_study",
+                                              "graduation_date",
+                                              "gpa",
+                                              "language",
+                                              "language_proficiency",
+                                              "skills",
+                                              "start_date",
+                                              "end_date",
+                                              "notice_period",
+                                              "relocation",
+                                              "work_arrangement",
+                                              "referral_source",
+                                              "resume_upload",
+                                              "cover_letter_upload",
+                                              "sensitive_eeo",
+                                              "sensitive_legal",
+                                              "sensitive_compensation",
+                                              "consent",
+                                              "attention_check",
+                                              "free_text_question"
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "reason": {
+                                        "type": "string",
+                                        "enum": [
+                                          "classified",
+                                          "unknown",
+                                          "invalid",
+                                          "sensitive"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "category",
+                                      "reason"
+                                    ],
+                                    "additionalProperties": false
                                   }
                                 },
                                 "required": [

@@ -66,6 +66,8 @@
  * draft on its task's stream, or a batch's end: ai-tasks.ts onReady), the run's own frame and document are told,
  * `plan/ready {runId}` (one message per burst, never a key or an answer), and poll at once; the frame's own poll every
  * AI_POLL_MS stays the fallback and keeps the worker awake.
+ * v5 p2-stream (one round): every plan asks a question nothing classified its category with its answer
+ * (PlanInput.oneRound), unless TailorIT showed it does not classify within an answer task (ai-tasks.ts).
  */
 import type { z } from 'zod';
 import type { PlanAsk, PlanOutput, PlanSensitiveState } from '../core/plan/types';
@@ -235,6 +237,9 @@ export function createPlanner(deps: PlannerDeps) {
       ...(context.rewrite === undefined ? {} : { rewrite: context.rewrite }),
       ...(letter === undefined ? {} : { coverLetter: letter }),
       ...(withoutResume ? { withoutResume: true } : {}),
+      // v5 p2-stream (one round): a question nothing classified asks its category with its answer, while TailorIT
+      // answers both (ai-tasks.ts oneRoundUsable).
+      ...(deps.ai.oneRoundUsable?.() === false ? {} : { oneRound: true }),
     });
     try {
       const memory = loaded.value.sensitiveState;

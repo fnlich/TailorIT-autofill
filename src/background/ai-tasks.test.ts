@@ -9,7 +9,7 @@ import { sha256Hex } from '../core/text/sha256';
 import type { FieldKey, OptionSetHash } from '../core/types/field';
 import type { UntrustedText } from '../core/types/text';
 import {
-  AI_TASK_CAP_MS, batchHash, batchIdentity, classifyBatches, classifyItemOfCore, classifyVerdicts, createAiTasks,
+  AI_RUN_TASKS, AI_TASK_CAP_MS, batchHash, batchIdentity, classifyBatches, classifyItemOfCore, classifyVerdicts, createAiTasks,
   createRunAi, pickBatches, pickItemOf, pickVerdicts, type AiBatch, type AiTaskIds,
 } from './ai-tasks';
 import type { ServerClient, ServerResult } from './server-client';
@@ -460,24 +460,29 @@ describe('the task client', () => {
 });
 
 describe('a run’s questions', () => {
-  it('keeps one task in flight per run, batch after batch, and answers each key once its batch is done', async () => {
+  // v5 p2-stream (two at once): a run keeps AI_RUN_TASKS (2) tasks in flight, as TailorIT runs two of an account.
+  it('keeps two tasks in flight per run, the third once one is done, and answers each key once its batch is done', async () => {
     const accepted: ServerResult<unknown> = { ok: true, value: { done: false, taskId: TASK_ID } };
     const { server, calls } = fakeServer({ pick: [accepted], task: [running, succeeded(MATCHED), succeeded([])] });
     const time = clockedTimers();
     const ai = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds(), vocab);
     const other = { ...SCHOOL, id: 'lever|main|other|0e7f3a9c5b1d2468|0', intended: 'Rice University' };
+    const third = { ...SCHOOL, id: 'lever|main|third|0e7f3a9c5b1d2468|0', intended: 'Baylor University' };
     const context = { specs: [], canaries: [] };
     const llm = { tiebreak: true, classify: true, drafts: false, answers: false,
       whenForbidden: 'profile-only' as const };
     ai.ask({ tiebreaks: [SCHOOL], classify: [] }, [SCHOOL.id as FieldKey], context, llm, 1);
     ai.ask({ tiebreaks: [other], classify: [] }, [other.id as FieldKey], context, llm, 1);
+    ai.ask({ tiebreaks: [third], classify: [] }, [third.id as FieldKey], context, llm, 1);
     await flush();
-    expect(calls).toEqual(['pick']);
-    expect([ai.state(SCHOOL.id as FieldKey), ai.state(other.id as FieldKey)]).toEqual(['waiting', 'waiting']);
-    await time.advance(2 * AUTOFILL_AI_POLL_MS);
+    expect(AI_RUN_TASKS).toBe(2);
+    expect(calls).toEqual(['pick', 'pick']);
+    expect([SCHOOL, other, third].map((item) => ai.state(item.id as FieldKey))).toEqual(['waiting', 'waiting', 'waiting']);
+    await time.advance(4 * AUTOFILL_AI_POLL_MS);
     expect(ai.state(SCHOOL.id as FieldKey)).toBe('done');
-    expect(ai.answers.verdicts.get(SCHOOL.id)).toMatchObject({ taskId: TASK_ID, verdict: { picked: 0, why: 'ok' } });
-    expect(calls.filter((call) => call === 'pick')).toHaveLength(2);
+    expect(calls.filter((call) => call === 'pick')).toHaveLength(3);
+    await ai.idle();
+    expect([SCHOOL, other, third].map((item) => ai.state(item.id as FieldKey))).toEqual(['done', 'done', 'done']);
     expect(ai.state('lever|main|unknown|none|0' as FieldKey)).toBe('unknown');
     expect(ai.contextOf(SCHOOL.id as FieldKey)).toBe(context);
   });

@@ -60,9 +60,9 @@
  * llm-disabled-for-category, and every other reason, a value of the wrong shape, or an item answered twice or not at
  * all, llm-invalid-output.
  *
- * A run's questions (createRunAi): one task in flight per run, batches in the order they were asked (classify, pick,
- * draft, answer), the answers kept for the run only (memory). Nothing here logs an item, a label or an answer: counts
- * and statuses only.
+ * A run's questions (createRunAi): AI_RUN_TASKS (two since v5) tasks in flight per run, batches in the order they
+ * were asked (classify, pick, draft, answer), the answers kept for the run only (memory). Nothing here logs an item,
+ * a label or an answer: counts and statuses only.
  *
  * v5 p2-stream (Jobright parity, Phase 2: each answer fills as it lands). Where TailorIT streams (GET
  * /api/ai/tasks/:id/stream), a batch is asked with `Prefer: respond-async` (202 at once) and its task's stream is read:
@@ -75,6 +75,17 @@
  * cap. A key answered on the stream keeps that verdict when its task then fails (what was written stands); a finished
  * task whose result differs from what streamed (TailorIT promises it never does) wins for later plans, logged as a
  * count. A batch's end tells `onReady` too, so the frame plans its keys at once instead of at its next poll.
+ *
+ * v5 p2-stream (one round; the coordinator's follow-up): an answer item the core marks `classify` (a question nothing
+ * classified: frame.ts) goes with its category asked too, on the request's `platform` (one batch per platform; an item
+ * of a platform TailorIT's contract does not name is asked as a plain answer, its classification unknown-field at
+ * once, as a classify batch would withhold it). Its answer comes with `classification`, which becomes the key's
+ * classification verdict as a classify task's would (oneRoundClassifications), and its answer verdict is marked
+ * `oneRound` with its scope, so planFrame uses it only where that category leaves the question to the AI. A TailorIT
+ * that answers such an item with no classification (one before v5's one round) has its answer dropped, unread, and
+ * the worker asks classifications first for the rest of its life (oneRoundUsable false).
+ * v5 p2-stream (two at once): a run has up to AI_RUN_TASKS (2) tasks in flight, in the order its batches were asked,
+ * as TailorIT runs two CLI processes of an account at once (AI_CLI_PER_ACCOUNT); idle() waits for every one.
  */
 import {
   answerInFormat, ATS_KINDS, AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AtsKind,
@@ -111,6 +122,10 @@ import type { Timers } from './timers';
 
 /** A batch's task is given up this long after it was first submitted (docs/ARCHITECTURE.md: the 120 s cap). */
 export const AI_TASK_CAP_MS = 120_000;
+
+/** v5 p2-stream: the tasks one run has in flight at once (TailorIT's AUTOFILL_AI_MAX_ACTIVE_PER_KIND places, and its
+ *  two CLI processes an account runs at once). */
+export const AI_RUN_TASKS = 2;
 
 /** The kinds of task the worker submits: picks and classifications (Phase 4), drafts (Phase 6), answers (the owner's
  *  amendments). */
@@ -400,7 +415,9 @@ export function answerItemOfCore(item: AnswerItem, vocab?: Vocab): AutofillAnswe
     options: item.options.map((option) => ({ index: option.index, label: option.label as string })),
     maxLength: item.shape === 'text' ? item.maxLength : null,
     // API 4: the layout a text's answer must have (a number box, a date box); never sent for a choice.
-    ...(item.shape === 'text' && item.format !== null ? { format: item.format } : {}) };
+    ...(item.shape === 'text' && item.format !== null ? { format: item.format } : {}),
+    // v5 p2-stream (one round): its category is asked too.
+    ...(item.classify === true ? { classify: true as const } : {}) };
 }
 
 /** The text an answer item holds, as TailorIT counts it. */
@@ -411,17 +428,25 @@ const answerTextOf = (item: AutofillAnswerItem) => [item.key, item.shape, item.k
  *  context and the canaries, the items of each scope in batches of their own: the `all` scope only for the questions
  *  the standard one would not ask), and the verdicts of those never sent. */
 export function answerBatches(items: readonly AnswerItem[], context: DraftContext, canaries: readonly string[],
-  vocab?: Vocab): { batches: AnswerBatch[]; withheld: AnswerVerdict[] } {
+  vocab?: Vocab): { batches: AnswerBatch[]; withheld: AnswerVerdict[]; classified: ClassifyVerdict[] } {
   const limits = AUTOFILL_AI_LIMITS.answer;
   const withheld: AnswerVerdict[] = [];
+  /** v5 p2-stream (one round): the classifications of items asked as plain answers (a platform TailorIT does not
+   *  name: unknown-field, as classifyBatches withholds it), and of items never sent (screened, as classify's). */
+  const classified: ClassifyVerdict[] = [];
   const sendable: Array<{ item: AnswerItem; sent: AutofillAnswerItem }> = [];
   const seen = new Set<string>();
-  for (const item of items) {
-    if (seen.has(item.key)) continue;
-    seen.add(item.key);
+  for (const asked of items) {
+    if (seen.has(asked.key)) continue;
+    seen.add(asked.key);
+    const unnamed = asked.classify === true && (asked.platform === undefined || !knownToTailorIt(asked.platform));
+    const item: AnswerItem = unnamed ? withoutClassify(asked) : asked;
+    if (unnamed) classified.push({ key: item.key, category: null, why: 'unknown-field' });
     const sent = answerItemOfCore(item, vocab);
-    if (sent === null) withheld.push({ key: item.key, kind: 'none', why: 'llm-disabled-for-category' });
-    else sendable.push({ item, sent });
+    if (sent === null) {
+      withheld.push({ key: item.key, kind: 'none', why: 'llm-disabled-for-category' });
+      if (item.classify === true) classified.push({ key: item.key, category: null, why: 'llm-disabled-for-category' });
+    } else sendable.push({ item, sent });
   }
   const shared = {
     jobText: cutAtWord(context.jobText, limits.jobText),
@@ -434,25 +459,65 @@ export function answerBatches(items: readonly AnswerItem[], context: DraftContex
   const sharedText = shared.jobText.length + shared.company.length + shared.jobTitle.length
     + (shared.resumeId ?? '').length + shared.canaries.reduce((sum, canary) => sum + canary.length, 0);
   const batches: AnswerBatch[] = [];
+  // v5 p2-stream (one round): items that ask their category go in batches of their platform, which names it.
+  const platformOf = (item: AnswerItem): AtsKind | null => (item.classify === true ? item.platform as AtsKind : null);
   for (const scope of ['standard', 'all'] as const satisfies readonly AnswerScope[]) {
-    let chunk: typeof sendable = [];
-    let size = sharedText;
-    const flush = () => {
-      if (chunk.length === 0) return;
-      batches.push({ kind: 'answer', body: { items: chunk.map(({ sent }) => sent), scope, ...shared },
-        items: chunk.map(({ item }) => item) });
-      chunk = [];
-      size = sharedText;
-    };
-    for (const entry of sendable.filter(({ item }) => item.scope === scope)) {
-      const text = answerTextOf(entry.sent);
-      if (chunk.length === ANSWER_MAX_ITEMS || (chunk.length > 0 && size + text > ANSWER_TEXT_BUDGET)) flush();
-      chunk.push(entry);
-      size += text;
+    const inScope = sendable.filter(({ item }) => item.scope === scope);
+    for (const platform of [...new Set(inScope.map(({ item }) => platformOf(item)))]) {
+      let chunk: typeof sendable = [];
+      let size = sharedText;
+      const flush = () => {
+        if (chunk.length === 0) return;
+        batches.push({ kind: 'answer', body: { items: chunk.map(({ sent }) => sent), scope, ...shared,
+          ...(platform === null ? {} : { platform }) }, items: chunk.map(({ item }) => item) });
+        chunk = [];
+        size = sharedText;
+      };
+      for (const entry of inScope.filter(({ item }) => platformOf(item) === platform)) {
+        const text = answerTextOf(entry.sent);
+        if (chunk.length === ANSWER_MAX_ITEMS || (chunk.length > 0 && size + text > ANSWER_TEXT_BUDGET)) flush();
+        chunk.push(entry);
+        size += text;
+      }
+      flush();
     }
-    flush();
   }
-  return { batches, withheld };
+  return { batches, withheld, classified };
+}
+
+/** v5 p2-stream (one round): an item asked as a plain answer, its category not asked. */
+function withoutClassify(item: AnswerItem): AnswerItem {
+  const { classify: _classify, platform: _platform, ...plain } = item;
+  return plain;
+}
+
+/**
+ * v5 p2-stream (one round): the classifications an answer task's result gives the items asked with `classify`, as a
+ * classify task's would (classifyVerdicts): `classified` with a category is that category; `unknown` unknown-field;
+ * `sensitive` llm-disabled-for-category; anything else llm-invalid-output. 'missing' for an item answered with no
+ * classification (a TailorIT before v5's one round), or answered twice or not at all (llm-invalid-output then).
+ */
+export function oneRoundClassifications(items: readonly AnswerItem[], result: AutofillAnswerResult):
+  Map<string, ClassifyVerdict | 'missing'> {
+  const byKey = new Map<string, AutofillAnswerResult['answers']>();
+  for (const answer of result.answers) byKey.set(answer.key, [...(byKey.get(answer.key) ?? []), answer]);
+  const verdicts = new Map<string, ClassifyVerdict | 'missing'>();
+  for (const item of items) {
+    if (item.classify !== true) continue;
+    const answers = byKey.get(item.key) ?? [];
+    const classification = answers.length === 1 ? answers[0]!.classification : null;
+    let verdict: ClassifyVerdict | 'missing';
+    if (classification === undefined) verdict = 'missing';
+    else if (classification === null) verdict = { key: item.key, category: null, why: 'llm-invalid-output' };
+    else if (classification.reason === 'classified' && classification.category !== null) {
+      verdict = { key: item.key, category: classification.category, why: 'ok' };
+    } else if (classification.reason === 'unknown') verdict = { key: item.key, category: null, why: 'unknown-field' };
+    else if (classification.reason === 'sensitive') {
+      verdict = { key: item.key, category: null, why: 'llm-disabled-for-category' };
+    } else verdict = { key: item.key, category: null, why: 'llm-invalid-output' };
+    verdicts.set(item.key, verdict);
+  }
+  return verdicts;
 }
 
 /** TailorIT's reasons for no answer, as the core's (module header). */
@@ -497,7 +562,8 @@ export function answerVerdicts(items: readonly AnswerItem[], result: AutofillAns
         if (text !== null) verdict = { key: item.key, kind: 'text', text, basis: answer.basis, taskId };
       }
     }
-    verdicts.set(item.key, verdict);
+    // v5 p2-stream (one round): asked with its category, under this scope.
+    verdicts.set(item.key, item.classify === true ? { ...verdict, oneRound: item.scope } : verdict);
   }
   return verdicts;
 }
@@ -638,6 +704,10 @@ export interface AiTasks {
   /** Submits a batch (or reads its known task), polls it, and answers how it ended. `active` false stops it (the run
    *  went), cancelling the task. v5 p2-stream: reads the task's stream first, where TailorIT has one (`hooks`). */
   run(batch: AiBatch, ids: AiTaskIds, active: () => boolean, hooks?: RunHooks): Promise<TaskOutcome>;
+  /** v5 p2-stream (one round): whether TailorIT classifies within an answer task, as far as this worker knows. */
+  oneRoundUsable?(): boolean;
+  /** v5 p2-stream (one round): TailorIT answered an item asked with its category without one. */
+  oneRoundMissing?(): void;
 }
 
 export function createAiTasks(deps: AiTasksDeps): AiTasks {
@@ -834,7 +904,15 @@ export function createAiTasks(deps: AiTasksDeps): AiTasks {
     }
   }
 
+  // v5 p2-stream (one round): TailorIT answered an item asked with its category without one (a TailorIT before it).
+  let oneRoundOff = false;
+
   return {
+    oneRoundUsable: () => !oneRoundOff,
+    oneRoundMissing() {
+      if (!oneRoundOff) log('ai.one-round-unsupported');
+      oneRoundOff = true;
+    },
     run(batch, ids, active, hooks) {
       let self: Promise<TaskOutcome> | null = null;
       const started = Promise.resolve().then(() => execute(batch, ids, active, self!, hooks))
@@ -881,8 +959,8 @@ export interface AskContext {
 export interface RunAi {
   /** The answers so far, as planFrame reads them. */
   readonly answers: PlanAi;
-  /** Takes what a plan asks: its awaiting keys wait for their batches, submitted one task at a time; an item never sent
-   *  is answered at once. `context` is what the keys are planned again with once answered, `revision` the profile's
+  /** Takes what a plan asks: its awaiting keys wait for their batches, two tasks at a time (v5); an item never sent is
+   *  answered at once. `context` is what the keys are planned again with once answered, `revision` the profile's
    *  revision the plan read (a pick batch's name holds it instead of the values). */
   ask(ask: PlanAsk, awaiting: readonly FieldKey[], context: AskContext, llm: Settings['llm'], revision: number): void;
   /** Whether a key's answer is in (plan it again), still waited for, or unknown to this run (a worker that restarted). */
@@ -922,7 +1000,10 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
   const batches = new Map<string, { done: boolean }>();
   /** The batch that last answered each key, so Edit with AI can ask it again (forget). */
   const answeredBy = new Map<FieldKey, string>();
-  let chain: Promise<void> = Promise.resolve();
+  // v5 p2-stream (two at once): the batches waiting for a place, those in flight, and who waits for all to end.
+  const queue: Array<() => Promise<void>> = [];
+  let flying = 0;
+  let quiet: Array<() => void> = [];
   let stopped = false;
   let submitted = false;
   // v5 p2-stream: the keys whose verdict came on their task's stream, before the task ended, and the stream's end.
@@ -946,6 +1027,10 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
     if (batch.kind === 'answer' && item.type === 'answer') {
       const asked = batch.items.find((entry) => entry.key === item.answer.key);
       if (asked === undefined || streamed.has(asked.key)) return;
+      // v5 p2-stream (one round): its classification first; an answer with none is never taken.
+      const classified = oneRoundClassifications([asked], { answers: [item.answer] }).get(asked.key);
+      if (classified === 'missing') return;
+      if (classified !== undefined) classifications.set(asked.key, classified);
       answers.set(asked.key, answerVerdicts([asked], { answers: [item.answer] }, taskId).get(asked.key)!);
       key = asked.key;
     } else if (batch.kind === 'draft' && item.type === 'draft') {
@@ -971,6 +1056,14 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
       // v5 p2-stream: what came on the stream before the task failed stands (it may be written already).
       for (const verdict of failed.drafts) if (!streamed.has(verdict.key)) drafts.set(verdict.key, verdict);
       for (const verdict of failed.answers) if (!streamed.has(verdict.key)) answers.set(verdict.key, verdict);
+      // v5 p2-stream (one round): an item asked with its category has none either.
+      if (batch.kind === 'answer') {
+        for (const item of batch.items) {
+          if (item.classify === true && !streamed.has(item.key)) {
+            classifications.set(item.key, { key: item.key, category: null, why: outcome.why });
+          }
+        }
+      }
       return;
     }
     if (batch.kind === 'pick') {
@@ -986,10 +1079,22 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
       if (differ > 0) log('ai.stream-differs', { items: differ });
     } else if (batch.kind === 'answer') {
       let differ = 0;
-      for (const [key, verdict] of answerVerdicts(batch.items, outcome.result as AutofillAnswerResult, outcome.taskId)) {
+      const result = outcome.result as AutofillAnswerResult;
+      // v5 p2-stream (one round): each classification first; an answer that came without the one it was asked is
+      // dropped, unread (a TailorIT before v5's one round), and the worker classifies first from now on.
+      const classified = oneRoundClassifications(batch.items, result);
+      let missing = 0;
+      for (const [key, verdict] of answerVerdicts(batch.items, result, outcome.taskId)) {
+        const classification = classified.get(key);
+        if (classification === 'missing') {
+          missing += 1;
+          continue;
+        }
+        if (classification !== undefined) classifications.set(key, classification);
         if (streamed.has(key) && JSON.stringify(answers.get(key)) !== JSON.stringify(verdict)) differ += 1;
         answers.set(key, verdict);
       }
+      if (missing > 0) tasks.oneRoundMissing?.();
       if (differ > 0) log('ai.stream-differs', { items: differ });
     } else {
       for (const [key, verdict] of classifyVerdicts(batch.items, outcome.result as AutofillClassifyResult)) {
@@ -1004,7 +1109,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
     const entry = { done: false };
     batches.set(hash, entry);
     if (!stopped) submitted = true;
-    chain = chain.then(async () => {
+    queue.push(async () => {
       const outcome = stopped ? { ok: false as const, why: 'llm-unavailable' as const }
         : await tasks.run(batch, ids, () => !stopped,
           { signal: halt.signal, onItem: (item, taskId) => streamedItem(batch, item, taskId) });
@@ -1013,7 +1118,25 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
       // v5 p2-stream: the batch's other keys are in now: the frame plans them at once.
       ready(keysOf(batch).filter((key) => !streamed.has(key)));
     });
+    pump();
     return hash;
+  }
+
+  /** v5 p2-stream (two at once): starts the batches waiting, in order, while fewer than AI_RUN_TASKS fly. */
+  function pump(): void {
+    while (flying < AI_RUN_TASKS && queue.length > 0) {
+      const job = queue.shift()!;
+      flying += 1;
+      void job().catch(() => undefined).finally(() => {
+        flying -= 1;
+        pump();
+        if (flying === 0 && queue.length === 0) {
+          const waiting = quiet;
+          quiet = [];
+          for (const resolve of waiting) resolve();
+        }
+      });
+    }
   }
 
   return {
@@ -1048,11 +1171,13 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
       const answered = llm.answers && context.draft !== undefined
         ? answerBatches(questions, context.draft, context.canaries, vocab)
         : { batches: [], withheld: questions.map((item): AnswerVerdict => ({ key: item.key, kind: 'none',
-          why: 'llm-disabled-for-category' })) };
+          why: 'llm-disabled-for-category' })), classified: [] as ClassifyVerdict[] };
       for (const verdict of answered.withheld) {
         answers.set(verdict.key, verdict);
         owner.set(verdict.key, null);
       }
+      // v5 p2-stream (one round): the classifications its answer batches settle at once.
+      for (const verdict of answered.classified) classifications.set(verdict.key, verdict);
       const withheld = picks.withheld.length + classes.withheld.length + written.withheld.length
         + answered.withheld.length;
       if (withheld > 0) log('ai.withheld', { items: withheld });
@@ -1090,7 +1215,8 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
         waiting.delete(key);
       }
     },
-    idle: () => chain,
+    idle: () => (flying === 0 && queue.length === 0 ? Promise.resolve()
+      : new Promise<void>((resolve) => void quiet.push(resolve))),
     used: () => submitted,
     stop() {
       stopped = true;
