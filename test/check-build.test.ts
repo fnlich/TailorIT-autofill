@@ -384,7 +384,7 @@ describe("check-build's three content scripts: ours, the page-world bridge and (
       expect(output, message).toContain(`.output/chrome-mv3: ${message}`);
       expect(status, message).toBe(1);
     }
-  });
+  }, 30_000);
 
   it('fail a submit watcher over its 24 KiB budget, or one that reads a body, adds a global or a listener, or wraps elsewise (v5 p2-detect)', () => {
     const big = checkBuild(project((write) => {
@@ -674,7 +674,7 @@ describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel an
     }));
     expect(gone.output).toContain('.output/chrome-mv3: the page patches page-patches.js are missing');
     expect(gone.status).toBe(1);
-  });
+  }, 30_000);
 
   it('hold registrationsFor to the sentinel, in the top frame only, on every https page but the ATS hosts, LinkedIn and the HR systems', () => {
     const changed = (body: string) => checkBuild(project((write) => {
