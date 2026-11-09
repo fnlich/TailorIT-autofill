@@ -27,7 +27,10 @@ test.describe('rich-text boxes and the page\'s dialogs (v5 p2-fill)', () => {
     routeLog.serve({ [URL]: PAGE_FILE });
     const page = await extContext.newPage();
     const dialogs: string[] = [];
+    const consoleLines: string[] = [];
+    page.on('console', (message) => consoleLines.push(message.text()));
     page.on('dialog', (dialog) => {
+      consoleLines.push('DIALOG ' + dialog.message() + ' ' + Date.now());
       dialogs.push(dialog.type());
       void dialog.dismiss();
     });
@@ -39,6 +42,7 @@ test.describe('rich-text boxes and the page\'s dialogs (v5 p2-fill)', () => {
     expect(await page.locator('#preferred').innerText()).toBe('Alex');
     // The page's change listener ran (it counts), and its alert was held: no dialog showed.
     expect(await page.evaluate(() => (window as unknown as { __alerts: number }).__alerts)).toBeGreaterThan(0);
+    console.log(JSON.stringify(consoleLines.filter((line) => /tailorit|DIALOG/.test(line)), null, 1));
     expect(dialogs).toEqual([]);
     // Nothing submitted; the hidden box untouched.
     expect(routeLog.submitted).toEqual([]);

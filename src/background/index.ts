@@ -57,6 +57,7 @@ import { channelOf, isConnectPage, offAtsChannelOf, offAtsSenderOf, SIDEBAR_PORT
 import { createServerClient } from './server-client';
 import { contentSettingsOf, createSettingsStore, pushSettings } from './settings';
 import { createSidebar, createSidebarVet, iconReachesPage, scopedPort, SIDEBAR_LOAD_LIMIT } from './sidebar';
+import { createPagePatches, PAGE_PATCHES_LIMIT } from './page-patches';
 import { createSignIn } from './sign-in';
 import { createSignUps } from './sign-up';
 import { createSites, RECOGNISED_LIMIT } from './sites';
@@ -399,6 +400,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const onPage = async () => (await settings.get()).panel === 'page';
   const sidebar = createSidebar({ scripting: platform.scripting, local, onPage,
     limit: createRateLimit(SIDEBAR_LOAD_LIMIT.count, SIDEBAR_LOAD_LIMIT.windowMs, now) });
+  /** v5 p2-fill (PLAN decision 14): the page patches, run in a frame's page world as a run begins there. */
+  const pagePatches = createPagePatches({ scripting: platform.scripting, session,
+    limit: createRateLimit(PAGE_PATCHES_LIMIT.count, PAGE_PATCHES_LIMIT.windowMs, now) });
   /** v5 p1-shell: Chrome opens the side panel on the toolbar icon's click only while the panel's place is the side
    *  panel; on the page, the click comes to the action's listener below. */
   const placeIcon = async () => {
@@ -805,6 +809,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         },
         // v5 p1-shell: the sidebar's bundle, for the tab's top frame (sidebar.ts), and its link to the settings page.
         'sidebar/load': (_message, from) => sidebar.load(from),
+        // v5 p2-fill: the page patches in the asking frame's page world (page-patches.ts).
+        'page/patches': (_message, from) => pagePatches.load(from),
         'sidebar/options': async (message, from) => {
           if (!sidebarChannel(from)) return refuse('bad_sender');
           const retry = launcherLimit.take(`${from.tabId}/`);

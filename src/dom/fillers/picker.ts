@@ -2,25 +2,25 @@
  * v5 p2-fill (PLAN decision 14; Jobright's file-picker interception, in our own design): a résumé control its adapter
  * declares (Adapter.uploadPickers: a button with no file input in the form, which opens the site's own file picker by
  * calling a file input's click() or showOpenFilePicker()) gets the run's chosen file instead of an OS dialog. The
- * page's side is page/picker.ts, through the page-world bridge (dom/bridge.ts):
+ * page's side is page/picker.ts, among the page patches the worker runs in the frame once a run begins (dom/patches.ts):
  * 1. the control is armed (picker.arm, on the control): for this one press, the page's click() on a file input opens
- *    no picker and the bridge tells which input it was (BRIDGE_PICKED, its relatedTarget), and its showOpenFilePicker()
+ *    no picker and the patch tells which input it was (PICKED, its relatedTarget), and its showOpenFilePicker()
  *    waits for our answer;
  * 2. the control is pressed with an untrusted click(), through the never-submit door (not-submit.ts clickIfAllowed);
  * 3. what the page opened is waited for, PICKER_WAIT_MS at most (a page may open it after a promise: react-dropzone
  *    falls back to its input's click() once showOpenFilePicker refuses an untrusted press);
  * 4. a file input of this document is given the file as any file input is (file.ts fillFile: its accept list checked,
  *    the file set through a DataTransfer, input and change), and read back; a showOpenFilePicker() is answered with the
- *    file alone (BRIDGE_SUPPLY, a detached input holding it: the page reads it from the handle it resolves with), never
+ *    file alone (SUPPLY, a detached input holding it: the page reads it from the handle it resolves with), never
  *    read back (upload-not-confirmed, flagged for the person, unless the adapter reads the page's own word);
  * 5. the control is disarmed (picker.disarm), whatever happened.
  * Only the planned write's own file is ever supplied, only in answer to this one press. Nothing is pressed where no
- * bridge answers the arm (a frame it does not install in): the field is needs-your-click, the person's to attach, as is
+ * patch answers the arm (no run began in the frame, or the page answered our probe itself): the field is needs-your-click, the person's to attach, as is
  * a press the page answered with no picker. Nothing here reads or logs a value.
  */
 import type { Adapter } from '../../adapters/types';
-import { askBridge } from '../bridge';
-import { BRIDGE_PICKED, BRIDGE_SUPPLY, PICKED_FILE_SYSTEM, PICKED_INPUT } from '../bridge-protocol';
+import { PICKED, PICKED_FILE_SYSTEM, PICKED_INPUT, SUPPLY } from '../patch-protocol';
+import { askPatches } from '../patches';
 import { isInOwnUi } from '../own-ui';
 import { deadline } from '../time';
 import type { FillOutcome } from '../types';
@@ -66,7 +66,7 @@ function supply(control: HTMLElement, file: File): void {
   const carrier = control.ownerDocument.createElement('input');
   carrier.type = 'file';
   setFiles(carrier, file);
-  control.dispatchEvent(new view.FocusEvent(BRIDGE_SUPPLY, { relatedTarget: carrier, bubbles: false, cancelable: false,
+  control.dispatchEvent(new view.FocusEvent(SUPPLY, { relatedTarget: carrier, bubbles: false, cancelable: false,
     composed: false }));
 }
 
@@ -90,17 +90,17 @@ export async function fillThroughPicker(control: HTMLElement, file: File | undef
     }
     if (picked !== null) wake();
   };
-  control.addEventListener(BRIDGE_PICKED, onPicked);
+  control.addEventListener(PICKED, onPicked);
   try {
-    const armed = askBridge(control, { op: 'picker.arm' }, ctx.signal);
+    const armed = askPatches(control, 'picker.arm', ctx.signal);
     if (armed?.ok !== true) return { outcome: refused('needs-your-click'), input: null, picked: null };
     if (!clickIfAllowed(control, { adapter: ctx.adapter, root: ctx.root })) {
       return { outcome: refused('needs-your-click'), input: null, picked: null };
     }
     if (picked === null) await Promise.race([woken, deadline(ctx.waitMs ?? PICKER_WAIT_MS, ctx.signal)]);
   } finally {
-    control.removeEventListener(BRIDGE_PICKED, onPicked);
-    if (control.isConnected) askBridge(control, { op: 'picker.disarm' });
+    control.removeEventListener(PICKED, onPicked);
+    if (control.isConnected) askPatches(control, 'picker.disarm');
   }
   const now = picked as Picked | null;
   if (now === null) return { outcome: refused('needs-your-click'), input: null, picked: null };

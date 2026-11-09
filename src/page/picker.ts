@@ -1,29 +1,27 @@
 /*
  * v5 p2-fill (PLAN decision 14, Jobright's file-picker interception in our own design): a page's own file picker,
  * armed for one press of a résumé control its adapter declares (Adapter.uploadPickers), in the page's own world
- * (page/bridge.ts installs nothing of this until it is asked).
+ * (page/patches.ts makes this arm only once first asked).
  * - picker.arm, sent by the isolated world on the control right before it presses it (dom/fillers/picker.ts), shadows
  *   HTMLInputElement.prototype.click with a wrapper and, where the browser has it, window.showOpenFilePicker; they are
  *   put back as they were at the first of: the page opening its picker once, picker.disarm, or PICKER_ARM_MS.
- * - While armed, the page's click() on a file input of this document opens no picker: the bridge tells the isolated
- *   world which input it was (BRIDGE_PICKED on the armed control, the input as its relatedTarget, detail PICKED_INPUT),
+ * - While armed, the page's click() on a file input of this document opens no picker: the patch tells the isolated
+ *   world which input it was (PICKED on the armed control, the input as its relatedTarget, detail PICKED_INPUT),
  *   and the isolated world puts the chosen résumé into that input itself, as any file is put in (fillers/file.ts). A
  *   click() on any other input, and every call once disarmed, goes to the page's own click as before.
- * - While armed, the page's showOpenFilePicker() is answered with a promise and BRIDGE_PICKED (no input, detail
- *   PICKED_FILE_SYSTEM); the isolated world answers with BRIDGE_SUPPLY on the armed control, its relatedTarget a detached
+ * - While armed, the page's showOpenFilePicker() is answered with a promise and PICKED (no input, detail
+ *   PICKED_FILE_SYSTEM); the isolated world answers with SUPPLY on the armed control, its relatedTarget a detached
  *   file input holding the one file, and the promise resolves with one handle (kind 'file', the file's name, getFile).
  *   No answer within PICKER_ARM_MS, or an answer without exactly one file, rejects it as a person's Cancel would
  *   (AbortError).
  * - It holds no data: the armed control while armed, and a pending promise's resolution. The résumé crosses into this
  *   world only in answer to the page's own showOpenFilePicker during the arm, to the page that asked for a file, as the
  *   upload itself hands it to the page.
- * The page fully controls this world: it can call the click it kept, see the wrappers, and forge BRIDGE_PICKED during
+ * The page fully controls this world: it can call the click it kept, see the wrappers, and forge PICKED during
  * an arm (the isolated world then puts the résumé into an input of the page's own choosing on this document: the page
  * the résumé is being uploaded to).
  */
-import {
-  BRIDGE_PICKED, BRIDGE_SUPPLY, PICKED_FILE_SYSTEM, PICKED_INPUT, PICKER_ARM_MS,
-} from '../dom/bridge-protocol';
+import { PICKED, PICKED_FILE_SYSTEM, PICKED_INPUT, PICKER_ARM_MS, SUPPLY } from '../dom/patch-protocol';
 
 /** A page's own file picker, armed for one press at a time. */
 export interface PickerArm {
@@ -55,19 +53,19 @@ export function pickerArm(doc: Document, view: Window & typeof globalThis): Pick
   /** Tells the isolated world, on the armed control, what the page opened. */
   const tell = (control: Element, input: HTMLInputElement | null, detail: number): void => {
     try {
-      control.dispatchEvent(new view.FocusEvent(BRIDGE_PICKED, { relatedTarget: input, detail, bubbles: false,
+      control.dispatchEvent(new view.FocusEvent(PICKED, { relatedTarget: input, detail, bubbles: false,
         cancelable: false, composed: false }));
     } catch {
       // Nothing heard: the isolated world's wait ends by itself.
     }
   };
 
-  /** showOpenFilePicker's answer, by the isolated world's BRIDGE_SUPPLY on `control`, or a Cancel. */
+  /** showOpenFilePicker's answer, by the isolated world's SUPPLY on `control`, or a Cancel. */
   const supplied = (control: Element): Promise<Handle[]> => new view.Promise<Handle[]>((resolve, reject) => {
     let timer = 0;
     const onSupply = (event: Event): void => {
       if (event.target !== control) return;
-      control.removeEventListener(BRIDGE_SUPPLY, onSupply);
+      control.removeEventListener(SUPPLY, onSupply);
       view.clearTimeout(timer);
       const carrier = (event as FocusEvent).relatedTarget;
       const files = carrier instanceof view.HTMLInputElement && carrier.type === 'file' ? carrier.files : null;
@@ -78,9 +76,9 @@ export function pickerArm(doc: Document, view: Window & typeof globalThis): Pick
       }
       resolve([{ kind: 'file', name: file.name, getFile: () => view.Promise.resolve(file) }]);
     };
-    control.addEventListener(BRIDGE_SUPPLY, onSupply);
+    control.addEventListener(SUPPLY, onSupply);
     timer = view.setTimeout(() => {
-      control.removeEventListener(BRIDGE_SUPPLY, onSupply);
+      control.removeEventListener(SUPPLY, onSupply);
       reject(new view.DOMException('The user aborted a request.', 'AbortError'));
     }, PICKER_ARM_MS);
   });

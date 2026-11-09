@@ -249,8 +249,11 @@ export type SubmitPresser = (typeof SUBMIT_PRESSERS)[number];
 
 /** What showed that an application was sent (v3 Phase 4): the platform's page after submitting (Lever's /thanks,
  *  Greenhouse's /confirmation), or its success message in the form's place (Ashby's, or Greenhouse's confirmation
- *  drawn in the same document). */
-export const SUBMIT_EVIDENCE = ['confirmation-page', 'success-message'] as const;
+ *  drawn in the same document). // v5 p2-detect: or (`network`) the answer to the platform's own request that sends the
+ *  application, seen by the page-world submit watcher in the arming document (content/submitted.ts watchNetworkSigns). */
+export const SUBMIT_EVIDENCE = ['confirmation-page', 'success-message',
+  // v5 p2-detect
+  'network'] as const;
 export type SubmitEvidence = (typeof SUBMIT_EVIDENCE)[number];
 
 /** The page's own buttons the panel may press for the person (v3 Phase 4): Next on a step the adapter says is not the
@@ -455,6 +458,12 @@ const contentMessages = [
   /** The sidebar's link to the extension's own settings page (a page may not open an extension page itself): the
    *  worker opens options.html at `section` (its fragment, an id of that page) in a new tab. Frame 0 alone. */
   z.strictObject({ v, type: z.literal('sidebar/options'), section: z.string().regex(/^[a-z][a-z-]{0,39}$/).optional() }),
+  // ── v5 p2-fill (PLAN decision 14) ──
+  /** A frame of ours with a form, as a run begins there: the worker runs the page patches' bundle
+   *  (background/page-patches.ts PAGE_PATCHES_FILE) in that one document, world MAIN, once; the patches then hold the
+   *  page's dialogs through a write and arm its own file picker for a résumé control's press, on command alone. */
+  z.strictObject({ v, type: z.literal('page/patches') }),
+  // ── end v5 p2-fill ──
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -786,6 +795,8 @@ export const CONTENT_ANSWER_SCHEMAS = {
   // v5 p1-shell
   'sidebar/load': SidebarLoadAnswerSchema,
   'sidebar/options': DoneAnswerSchema,
+  // v5 p2-fill
+  'page/patches': DoneAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of a frame's answer to each message the worker sends it. */

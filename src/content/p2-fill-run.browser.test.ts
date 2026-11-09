@@ -4,8 +4,8 @@
  * - a rich-text box (contenteditable) takes the profile's answer through the browser's own insert, read back verified;
  * - a résumé control its adapter declares to open the page's own picker (Adapter.uploadPickers; a synthetic page that
  *   makes its file input at the press, as Dropzone does) gets the résumé through the picker armed for that press, with
- *   the page-world bridge installed as the extension installs it; the page's alert on taking the file is held, counted;
- *   with no bridge in the frame nothing is pressed and the row asks the person;
+ *   the page patches installed as the worker's injection installs them; the page's alert on taking the file is held,
+ *   counted; with no patches in the frame nothing is pressed and the row asks the person;
  * - Rippling's application (fixtures/rippling/qu-careers-form.html, its résumé help "The résumé will be parsed to fill
  *   in the application details": quirks.resumeParse) gets its résumé first and its parse waited for, so the profile's
  *   answers are written over what the page's parse put in, never under it.
@@ -19,7 +19,7 @@ import type { FillResult } from '../core/types/fill';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { deadline } from '../dom/time';
 import { editableText } from '../dom/values';
-import { installBridge } from '../page/bridge';
+import { installPatches } from '../page/patches';
 import { createFakeWorker, fakePdf, GOLDEN_RESUME, goldenProfile, testVocab } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
@@ -90,10 +90,12 @@ const withPicker: Adapter = { ...genericAdapter,
 describe('a résumé control that opens the page\'s own picker (Adapter.uploadPickers)', () => {
   it('gets the résumé through the picker armed for its press; the page\'s alert is held, counted', async () => {
     const fixture = await loadFixture(document, PICKER_PAGE);
-    removals.push(installBridge(fixture.doc));
+    removals.push(installPatches(fixture.doc));
     const alert = vi.fn();
     Object.assign(fixture.view, { alert });
-    const { rows } = await run(fixture.doc, [withPicker]);
+    const { rows, fake } = await run(fixture.doc, [withPicker]);
+    // The run asked the worker once for the page patches in this document (the test installed them itself).
+    expect(fake.of('page/patches')).toHaveLength(1);
     const resume = rows.find((row) => row.category === 'file.resume');
     expect(resume).toMatchObject({ kind: 'file', wrote: true, verification: 'verified' });
     const input = (fixture.view as unknown as { __input: HTMLInputElement }).__input;
@@ -102,7 +104,7 @@ describe('a résumé control that opens the page\'s own picker (Adapter.uploadPi
     expect(alert).not.toHaveBeenCalled();
   }, 60_000);
 
-  it('presses nothing where no bridge answers: the row is the person\'s (needs-your-click)', async () => {
+  it('presses nothing where no patches answer: the row is the person\'s (needs-your-click)', async () => {
     const fixture = await loadFixture(document, PICKER_PAGE);
     const clicks = vi.fn();
     fixture.doc.getElementById('attach')!.addEventListener('click', clicks);
@@ -114,7 +116,7 @@ describe('a résumé control that opens the page\'s own picker (Adapter.uploadPi
 
   it('without the declaration the control is no field (undo proof for uploadPickers)', async () => {
     const fixture = await loadFixture(document, PICKER_PAGE);
-    removals.push(installBridge(fixture.doc));
+    removals.push(installPatches(fixture.doc));
     const { rows } = await run(fixture.doc, [genericAdapter]);
     expect(rows.some((row) => row.category === 'file.resume')).toBe(false);
   }, 60_000);

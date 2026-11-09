@@ -174,11 +174,12 @@ export default tseslint.config(
       'no-restricted-globals': ['error', ...TIMERS, ...['chrome', 'browser', 'window', 'document', 'postMessage', 'fetch',
         'XMLHttpRequest', 'localStorage', 'sessionStorage', 'indexedDB'].map((name) => ({
         name, message: 'The page-world bridge works from the document it is given, and reaches no extension or network API.' }))],
+      // v5 p2-detect: the page-world submit watcher (src/page/submit-watch.ts) imports only its own protocol too.
       '@typescript-eslint/no-restricted-imports': restrictImports([
-        // v5 p2-fill (PLAN decision 14): and its own two page patches beside it (./dialogs, ./picker), which import only
-        // the protocol in turn, so the bridge still reaches nothing of the app but its protocol.
-        { regex: String.raw`^(?!\.\./dom/bridge-protocol$|\./(?:dialogs|picker)$)`,
-          message: 'The page-world bridge imports only its protocol (and, v5 p2-fill, its own page patches beside it).' },
+        // v5 p2-fill (PLAN decision 14): the page patches (src/page/patches.ts) import their protocol and their two
+        // patches beside them (./dialogs, ./picker), which import only the protocol in turn.
+        { regex: String.raw`^(?!\.\./dom/(?:bridge-protocol|submit-net-protocol|patch-protocol)$|\./(?:dialogs|picker)$)`,
+          message: 'A page-world script imports only its protocol (the page patches, their two patches beside them).' },
       ]),
     },
   },

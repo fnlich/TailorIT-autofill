@@ -287,6 +287,9 @@ export const LOG_CODES = [
   'content.picker',
   'content.resume-parse',
   'content.open-application',
+  // The page patches' bundle run in a frame's page world, or refused (why, as flags).
+  'patches.injected',
+  'patches.refused',
   // ── end v5 p2-fill ──
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];

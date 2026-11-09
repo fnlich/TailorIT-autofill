@@ -21,6 +21,13 @@
 // v5 p1-shell (PLAN decision 1, the sidebar on the page): the sidebar's bundle (sidebar-app.js, an unlisted script the
 // worker runs in a tab's top frame on sidebar/load) is in every build, listed nowhere in the manifest, within its own
 // budget, holding no WXT content-script context; React lives there, never in the content script.
+// v5 p2-detect (PLAN decision 14, adopted for "applied" detection): a third content script, the page-world submit
+// watcher (world MAIN, content-scripts/submit-watch.js), on Workday's and ClearCompany's candidate hosts alone
+// (SUBMIT_WATCH_MATCHES, each one of ATS_MATCHES), every frame, from document_start, within its own budget; its bundle
+// is one anonymous function, names no extension API and no way to read a request's or an answer's body or headers,
+// and, run in a bare context, adds no global and no listener, and wraps fetch and XMLHttpRequest exactly where it
+// installs (a Workday or ClearCompany posting or form, as the bridge decides) and nowhere else. The watcher is told
+// from the bridge by its file.
 // Usage: node scripts/check-build.mjs [--all]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -31,7 +38,7 @@ import { paint } from './proc.mjs';
 const ROOT = resolve(import.meta.dirname, '..');
 const requireAll = process.argv.includes('--all');
 const { ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CAPTCHA_VENDOR_MATCHES, CONTENT_SCRIPT_FILE, registrationsFor, SENTINEL_FILE,
-  SITES_MATCH, SITES_REGISTRATION_ID } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
+  SITES_MATCH, SITES_REGISTRATION_ID, SUBMIT_WATCH_MATCHES } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
 const { SIDEBAR_APP_FILE } = await import(new URL('../src/shared/sidebar.ts', import.meta.url).href);
 const MANIFEST_KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
 /** The content script must stay under this: every file the manifest's content script lists, together. The snapshot
@@ -56,11 +63,46 @@ const SIDEBAR_APP_BUDGET = 800 * 1024;
  *  bundle (16,670 bytes without them, 21,520 with, on Phase 0); with builders A's, B's and C's merged the bundle is
  *  28,897 bytes in both builds (the integration of 2026-11-06). The snapshot build's core pass Z1 (items 26 and 39)
  *  slimmed it: the bridge's decision (src/adapters/bridge-address.ts) reads only the parsers of the platforms with a
- *  host outside the public job hosts (sixteen), so it is 20,921 bytes, under a budget of 24 KiB. v5 p2-fill (PLAN
- *  decision 14): 26 KiB, for the two page patches the bridge makes on command alone (src/page/dialogs.ts, the page's
- *  alert and confirm held through one write; src/page/picker.ts, the page's own file picker armed for one press), about
- *  3.4 KB: 24,289 bytes in both builds. Nothing is patched at install: the bundle check below still finds one listener. */
-const BRIDGE_BUDGET = 26 * 1024;
+ *  host outside the public job hosts (sixteen), so it is 20,921 bytes, under a budget of 24 KiB. */
+const BRIDGE_BUDGET = 24 * 1024;
+// ── v5 p2-detect: the page-world submit watcher (src/entrypoints/submit-watch.content.ts) ──
+/** The submit watcher's file, as WXT writes it (the page-world bridge is the manifest's other world MAIN script). */
+const SUBMIT_WATCH_FILE = 'content-scripts/submit-watch.js';
+/** The submit watcher must stay under this. Its wrappers and its protocol (src/page/submit-watch.ts,
+ *  src/dom/submit-net-protocol.ts) are about 3 KiB; the rest is the page-world bridge's own address decision
+ *  (src/adapters/bridge-address.ts and its parsers), which it shares so it installs exactly where the bridge would:
+ *  22,024 bytes when it was added (v5 p2-detect, addfa31), the bridge's 24 KiB budget alike. */
+const SUBMIT_WATCH_BUDGET = 24 * 1024;
+/** What the watcher's bundle may never name: the extension's APIs, and every way to read a request's or an answer's
+ *  body or headers (it reads a request's method and address and its answer's status, nothing else: docs/PRIVACY.md). */
+const SUBMIT_WATCH_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage', '.clone(', '.json(', '.text(', '.arrayBuffer(',
+  '.blob(', '.formData(', 'getReader', 'responseText', 'responseXML', '.body', 'getResponseHeader',
+  'getAllResponseHeaders', '.headers', 'localStorage', 'sessionStorage', 'indexedDB'];
+/** Where the watcher installs (a Workday or ClearCompany posting or form, as the bridge decides) and where it does
+ *  nothing (a shared host's other page, another platform's page, Oracle's, an address with none). */
+const SUBMIT_WATCH_INSTALLS_AT = [
+  'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote/Engineer_JR-1/apply/applyManually',
+  'https://acme.wd5.myworkdayjobs.com/en-US/External', 'https://wd5.myworkdaysite.com/recruiting/acme/External/job/Remote/Engineer_JR-1',
+  'https://acme.wd5.myworkdayjobs-impl.com/en-US/External/job/Remote/Engineer_JR-1',
+  'https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply'];
+const SUBMIT_WATCH_SILENT_AT = ['https://wd5.myworkdaysite.com/recruiting/acme/External',
+  'https://job-boards.greenhouse.io/acme/jobs/4012345', 'https://vafb.clearcompany.com/careers/blank',
+  'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946', ''];
+// ── end v5 p2-detect ──
+// ── v5 p2-fill: the page patches (src/entrypoints/page-patches.ts, PLAN decision 14) ──
+/** The page patches' bundle, an unlisted script the worker runs in one frame's page world (world MAIN) as a run begins
+ *  there (src/background/page-patches.ts PAGE_PATCHES_FILE): never a content script, never a web-accessible resource. */
+const PAGE_PATCHES_FILE = 'page-patches.js';
+/** The page patches must stay under this: the page's alert and confirm held through one write (src/page/dialogs.ts),
+ *  its own file picker armed for one press (src/page/picker.ts), their listener and protocol (src/page/patches.ts,
+ *  src/dom/patch-protocol.ts) and WXT's unlisted-script wrapper: 4,825 bytes when they were added (v5 p2-fill). They
+ *  hold no address reading: the worker decides where they run (a frame of ours with a form, as its run begins). */
+const PAGE_PATCHES_BUDGET = 8 * 1024;
+/** What the patches' bundle may never name: the extension's APIs and window messaging, and any network or storage API
+ *  (they observe nothing and keep nothing: docs/PRIVACY.md). */
+const PAGE_PATCHES_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage', 'fetch', 'XMLHttpRequest', 'localStorage',
+  'sessionStorage', 'indexedDB', 'sendBeacon'];
+// ── end v5 p2-fill ──
 /** What the bridge's bundle may never name: the extension's APIs (it runs in the page's world, which has none of
  *  them, and must not look for any) and window messaging. */
 const BRIDGE_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage'];
@@ -122,13 +164,18 @@ const failures = [];
 const fail = (build, message) => failures.push(`${build.dir}: ${message}`);
 const sameSet = (a, b) => a.length === b.length && [...a].sort().join('\n') === [...b].sort().join('\n');
 
-/** The manifest's two content scripts: ours, with no world key (the isolated world), and the page-world bridge, the
- *  one whose world is MAIN. A script in any other world, or a second one of either, is neither. */
+/** The manifest's content scripts: ours, with no world key (the isolated world), and the page-world bridge, the one
+ *  whose world is MAIN; v5 p2-detect: and the page-world submit watcher, also MAIN, the one script of that world whose
+ *  one file is SUBMIT_WATCH_FILE (the bridge is the other). A script in any other world, or a second one of any, is
+ *  none of them. */
 function contentScripts(manifest) {
   const scripts = manifest.content_scripts ?? [];
   const isolated = scripts.filter((script) => !('world' in script));
+  const isWatcher = (script) => Array.isArray(script.js) && script.js.length === 1 && script.js[0] === SUBMIT_WATCH_FILE;
   const main = scripts.filter((script) => script.world === 'MAIN');
-  return { ours: isolated.length === 1 ? isolated[0] : undefined, bridge: main.length === 1 ? main[0] : undefined };
+  const [bridge, watcher] = [main.filter((script) => !isWatcher(script)), main.filter(isWatcher)];
+  return { ours: isolated.length === 1 ? isolated[0] : undefined, bridge: bridge.length === 1 ? bridge[0] : undefined,
+    watcher: watcher.length === 1 ? watcher[0] : undefined };
 }
 
 function files(dir) {
@@ -160,14 +207,16 @@ function checkManifest(build, manifest) {
   if (manifest.minimum_chrome_version !== '144') fail(build, 'minimum_chrome_version is not 144');
   if (!manifest.action) fail(build, 'action is missing');
   const scripts = manifest.content_scripts ?? [];
-  const { ours, bridge } = contentScripts(manifest);
-  if (scripts.length !== 2 || ours === undefined || bridge === undefined) {
-    fail(build, `expected two content scripts, ours and the page-world bridge (world MAIN), found ${scripts.length}: `
-      + JSON.stringify(scripts.map((script) => script.world ?? 'isolated')));
+  const { ours, bridge, watcher } = contentScripts(manifest);
+  // v5 p2-detect: three, the submit watcher (world MAIN) beside the page-world bridge.
+  if (scripts.length !== 3 || ours === undefined || bridge === undefined || watcher === undefined) {
+    fail(build, 'expected three content scripts, ours, the page-world bridge and the submit watcher (both world MAIN), '
+      + `found ${scripts.length}: ${JSON.stringify(scripts.map((script) => script.world ?? 'isolated'))}`);
   }
   const expected = fallback ? [...ATS_MATCHES, 'http://127.0.0.1/*'] : [...ATS_MATCHES];
   // v5 p1-rules (PLAN decision 9): no static content script ever runs in a CAPTCHA or anti-bot vendor's own frame.
-  for (const [script, name] of [[ours, 'the content script'], [bridge, 'the page-world bridge']]) {
+  for (const [script, name] of [[ours, 'the content script'], [bridge, 'the page-world bridge'],
+    [watcher, 'the submit watcher']]) {
     for (const address of VENDOR_ADDRESSES) {
       if ((script?.matches ?? []).some((pattern) => patternMatches(pattern, address))) {
         fail(build, `${name} runs in a CAPTCHA vendor's frame at ${address}`);
@@ -186,6 +235,17 @@ function checkManifest(build, manifest) {
     if (bridge.run_at !== 'document_start') fail(build, 'the page-world bridge does not run at document_start');
     if (!Array.isArray(bridge.js) || bridge.js.length !== 1) fail(build, 'the page-world bridge is not one script file');
     for (const key of NEVER_IN_A_CONTENT_SCRIPT) if (key in bridge) fail(build, `the page-world bridge has ${key}`);
+  }
+  // ── v5 p2-detect: the submit watcher, on Workday's and ClearCompany's candidate hosts alone (each an ATS match) ──
+  if (watcher) {
+    const watched = fallback ? [...SUBMIT_WATCH_MATCHES, 'http://127.0.0.1/*'] : [...SUBMIT_WATCH_MATCHES];
+    if (!sameSet(watcher.matches ?? [], watched)) fail(build, "the submit watcher's matches differ from SUBMIT_WATCH_MATCHES");
+    for (const pattern of SUBMIT_WATCH_MATCHES) {
+      if (!ATS_MATCHES.includes(pattern)) fail(build, `the submit watcher matches ${pattern}, which is no ATS match`);
+    }
+    if (watcher.all_frames !== true) fail(build, 'the submit watcher is not all_frames');
+    if (watcher.run_at !== 'document_start') fail(build, 'the submit watcher does not run at document_start');
+    for (const key of NEVER_IN_A_CONTENT_SCRIPT) if (key in watcher) fail(build, `the submit watcher has ${key}`);
   }
   // The whole object: `ids` would let other extensions connect, `accepts_tls_channel_id` adds a channel.
   if (!isDeepStrictEqual(manifest.externally_connectable, { matches: [`${build.origin}/*`] })) {
@@ -264,9 +324,7 @@ const BRIDGE_SILENT_AT = ['https://internal-acme.icims.com/jobs/1/engineer/job',
  * naming none of BRIDGE_NEVER_NAMES; and, run in a bare context whose document only records its listeners and has an
  * address, it adds no global and throws nothing; at a posting or its form it listens for exactly one event on the
  * document, its command (src/dom/bridge-protocol.ts), in the capture phase, and anywhere else for none. The page's world
- * is the page's: a global there would be the page's to read and to change. v5 p2-fill (PLAN decision 14): and it
- * patches nothing of the page at install (its alert, confirm, showOpenFilePicker and file-input click stay the page's):
- * the bridge's two page patches are made on a command alone, during one write, and put back after it.
+ * is the page's: a global there would be the page's to read and to change.
  */
 function checkBridgeBundle(build, dir, bridge) {
   const [path] = Array.isArray(bridge?.js) ? bridge.js : [];
@@ -281,16 +339,8 @@ function checkBridgeBundle(build, dir, bridge) {
     const listeners = [];
     const document = { addEventListener: (type, _listener, capture) => listeners.push([type, capture === true]),
       removeEventListener: () => undefined, location: { href } };
-    // v5 p2-fill (PLAN decision 14): what the bridge's page patches act on, only ever on command (src/page/dialogs.ts,
-    // src/page/picker.ts): at install each is left exactly as the page has it, in the window and as globals.
-    const pagePatched = () => ({ alert() {}, confirm() {}, showOpenFilePicker() {},
-      HTMLInputElement: { prototype: { click() {} } } });
-    const own = pagePatched();
-    const view = { document, ...own, HTMLInputElement: { prototype: { ...own.HTMLInputElement.prototype } } };
-    document.defaultView = view;
-    const sandbox = { document, URL, ...pagePatched() };
-    const globals = { alert: sandbox.alert, confirm: sandbox.confirm, showOpenFilePicker: sandbox.showOpenFilePicker,
-      click: sandbox.HTMLInputElement.prototype.click };
+    document.defaultView = { document };
+    const sandbox = { document, URL };
     const before = new Set(Object.getOwnPropertyNames(sandbox));
     try {
       vm.runInContext(text, vm.createContext(sandbox), { timeout: 1_000 });
@@ -300,20 +350,76 @@ function checkBridgeBundle(build, dir, bridge) {
     }
     const added = Object.getOwnPropertyNames(sandbox).filter((name) => !before.has(name));
     if (added.length > 0) fail(build, `the page-world bridge adds globals: ${added.join(', ')}`);
-    const untouched = view.alert === own.alert && view.confirm === own.confirm
-      && view.showOpenFilePicker === own.showOpenFilePicker
-      && view.HTMLInputElement.prototype.click === own.HTMLInputElement.prototype.click
-      && Object.keys(view.HTMLInputElement.prototype).length === 1
-      && sandbox.alert === globals.alert && sandbox.confirm === globals.confirm
-      && sandbox.showOpenFilePicker === globals.showOpenFilePicker
-      && sandbox.HTMLInputElement.prototype.click === globals.click;
-    if (!untouched) fail(build, `the page-world bridge patches the page at install at ${href || 'no address'}`);
     const wanted = BRIDGE_INSTALLS_AT.includes(href) ? [['tailorit:bridge', true]] : [];
     if (!isDeepStrictEqual(listeners, wanted)) {
       fail(build, `the page-world bridge listens for ${JSON.stringify(listeners)} at ${href || 'no address'}, not `
         + `${JSON.stringify(wanted)}`);
     }
   }
+}
+
+/**
+ * v5 p2-detect: the submit watcher's bundle (src/entrypoints/submit-watch.content.ts): WXT's anonymous wrapper, naming
+ * none of SUBMIT_WATCH_NEVER_NAMES; and, run in a bare context whose window holds stand-ins for fetch and
+ * XMLHttpRequest and whose document and window record their listeners, it adds no global, throws nothing and adds no
+ * listener, and replaces fetch, open and send exactly at SUBMIT_WATCH_INSTALLS_AT, leaving them as they were anywhere
+ * else.
+ */
+function checkSubmitWatchBundle(build, dir, watcher) {
+  const [path] = Array.isArray(watcher?.js) ? watcher.js : [];
+  const file = typeof path === 'string' ? join(dir, path) : null;
+  if (file === null || !existsSync(file)) return;
+  const text = readFileSync(file, 'utf8').trim();
+  // The same bundle in another build is read once (each address runs it in a context of its own).
+  if (!watchProblems.has(text)) watchProblems.set(text, submitWatchProblems(text));
+  for (const problem of watchProblems.get(text)) fail(build, problem);
+}
+
+/** What checkSubmitWatchBundle found wrong with a bundle's text, by its text. */
+const watchProblems = new Map();
+
+/** The submit watcher's bundle's problems (checkSubmitWatchBundle), each as check-build says it. */
+function submitWatchProblems(text) {
+  const problems = [];
+  if (!text.startsWith('(function(){') || !text.endsWith('})();')) {
+    problems.push('the submit watcher is not one anonymous function called at once');
+  }
+  for (const name of SUBMIT_WATCH_NEVER_NAMES) if (text.includes(name)) problems.push(`the submit watcher names "${name}"`);
+  for (const href of [...SUBMIT_WATCH_INSTALLS_AT, ...SUBMIT_WATCH_SILENT_AT]) {
+    const listeners = [];
+    const listen = (type) => listeners.push(type);
+    const fetch = function fetch() { return undefined; };
+    function XMLHttpRequest() { /* a stand-in */ }
+    const open = function open() { return undefined; };
+    const send = function send() { return undefined; };
+    XMLHttpRequest.prototype.open = open;
+    XMLHttpRequest.prototype.send = send;
+    const document = { addEventListener: listen, removeEventListener: () => undefined, location: { href } };
+    const window = { document, location: { href }, fetch, XMLHttpRequest, addEventListener: listen,
+      removeEventListener: () => undefined, Request: function Request() { /* a stand-in */ },
+      CustomEvent: function CustomEvent() { /* a stand-in */ } };
+    window.parent = window;
+    window.top = window;
+    document.defaultView = window;
+    const sandbox = { window, document, URL };
+    const before = new Set(Object.getOwnPropertyNames(sandbox));
+    try {
+      vm.runInContext(text, vm.createContext(sandbox), { timeout: 1_000 });
+    } catch (error) {
+      problems.push(`the submit watcher throws on its own at ${href || 'no address'}: ${String(error).slice(0, 120)}`);
+      return problems;
+    }
+    const added = Object.getOwnPropertyNames(sandbox).filter((name) => !before.has(name));
+    if (added.length > 0) problems.push(`the submit watcher adds globals: ${added.join(', ')}`);
+    if (listeners.length > 0) problems.push(`the submit watcher listens for ${JSON.stringify(listeners)} at ${href || 'no address'}`);
+    const wrapped = [window.fetch !== fetch, XMLHttpRequest.prototype.open !== open, XMLHttpRequest.prototype.send !== send];
+    const wanted = SUBMIT_WATCH_INSTALLS_AT.includes(href);
+    if (!wrapped.every((each) => each === wanted)) {
+      problems.push(`the submit watcher ${wanted ? 'does not wrap' : 'wraps'} fetch and XMLHttpRequest at `
+        + `${href || 'no address'} (${JSON.stringify(wrapped)})`);
+    }
+  }
+  return problems;
 }
 
 /** v3 Phase 8: the sentinel's bundle: in the build, at its root, listed nowhere in the manifest, within its budget,
@@ -350,6 +456,65 @@ function checkSidebarApp(build, dir, manifest) {
   const text = readFileSync(file, 'utf8');
   for (const name of WXT_CONTEXT_NAMES) if (text.includes(name)) fail(build, `the sidebar's bundle names "${name}"`);
 }
+
+// ── v5 p2-fill ──
+/**
+ * The page patches' bundle (PAGE_PATCHES_FILE): in the build, at its root, listed nowhere in the manifest (the worker
+ * runs it on page/patches, in one document's page world), within PAGE_PATCHES_BUDGET, one anonymous function called at
+ * once, naming none of PAGE_PATCHES_NEVER_NAMES nor WXT's content-script context; and, run in a bare context whose
+ * document records its listeners (its root answering nothing, as in a page where none is installed yet) and whose window
+ * holds the page's own alert, confirm, showOpenFilePicker and file-input click, it adds no global, throws nothing,
+ * listens for exactly its command (src/dom/patch-protocol.ts PATCH_COMMAND) on the document in the capture phase, and
+ * leaves every one of those as the page has it: its patches are made on a command alone, during one write.
+ */
+function checkPagePatches(build, dir, manifest) {
+  const file = join(dir, PAGE_PATCHES_FILE);
+  if (!existsSync(file)) {
+    fail(build, `the page patches ${PAGE_PATCHES_FILE} are missing`);
+    return;
+  }
+  const listed = JSON.stringify([manifest.content_scripts ?? [], manifest.web_accessible_resources ?? [], manifest.background ?? {}]);
+  if (listed.includes(PAGE_PATCHES_FILE)) fail(build, 'the page patches are listed in the manifest: the worker runs them on page/patches');
+  const size = statSync(file).size;
+  if (size > PAGE_PATCHES_BUDGET) fail(build, `the page patches are ${size} bytes, over the ${PAGE_PATCHES_BUDGET}-byte budget`);
+  const text = readFileSync(file, 'utf8').trim();
+  if (!text.startsWith('(function(){') || !text.endsWith('})();')) {
+    fail(build, 'the page patches are not one anonymous function called at once');
+  }
+  for (const name of [...PAGE_PATCHES_NEVER_NAMES, ...WXT_CONTEXT_NAMES]) {
+    if (text.includes(name)) fail(build, `the page patches name "${name}"`);
+  }
+  const listeners = [];
+  const own = { alert() {}, confirm() {}, showOpenFilePicker() {}, click() {} };
+  const input = { prototype: { click: own.click } };
+  function CustomEvent(type, init) {
+    this.type = type;
+    this.detail = init?.detail;
+  }
+  const document = { addEventListener: (type, _listener, capture) => listeners.push([type, capture === true]),
+    removeEventListener: () => undefined, documentElement: { dispatchEvent: () => true }, location: { href: '' } };
+  const window = { document, alert: own.alert, confirm: own.confirm, showOpenFilePicker: own.showOpenFilePicker,
+    HTMLInputElement: input, CustomEvent };
+  document.defaultView = window;
+  const sandbox = { document, window, URL };
+  const before = new Set(Object.getOwnPropertyNames(sandbox));
+  try {
+    vm.runInContext(text, vm.createContext(sandbox), { timeout: 1_000 });
+  } catch (error) {
+    fail(build, `the page patches throw on their own: ${String(error).slice(0, 120)}`);
+    return;
+  }
+  const added = Object.getOwnPropertyNames(sandbox).filter((name) => !before.has(name));
+  if (added.length > 0) fail(build, `the page patches add globals: ${added.join(', ')}`);
+  if (!isDeepStrictEqual(listeners, [['tailorit:patch', true]])) {
+    fail(build, `the page patches listen for ${JSON.stringify(listeners)}, not [["tailorit:patch",true]]`);
+  }
+  const untouched = window.alert === own.alert && window.confirm === own.confirm
+    && window.showOpenFilePicker === own.showOpenFilePicker && input.prototype.click === own.click
+    && Object.keys(input.prototype).length === 1;
+  if (!untouched) fail(build, 'the page patches patch the page at install');
+}
+// ── end v5 p2-fill ──
 
 /** LinkedIn's hosts as patterns (v3 Phase 8: deferred to v5), each of which the career sites' registration must
  *  exclude, and addresses on them it must never reach. */
@@ -459,14 +624,19 @@ function checkNoWxtContext(build, dir, manifest) {
   }
 }
 
-/** Each content script's budget: ours (no React since v5 p1-shell: the sidebar's bundle holds it) and the page-world
- *  bridge's. */
+/** Each content script's budget: ours (no React since v5 p1-shell: the sidebar's bundle holds it), the page-world
+ *  bridge's and (v5 p2-detect) the submit watcher's. */
 function checkContentScriptSize(build, dir, manifest) {
-  const { ours, bridge } = contentScripts(manifest);
+  const { ours, bridge, watcher } = contentScripts(manifest);
   if (ours) checkScriptSize(build, dir, ours, 'the content script', CONTENT_SCRIPT_BUDGET);
   if (bridge) {
     checkScriptSize(build, dir, bridge, 'the page-world bridge', BRIDGE_BUDGET);
     checkBridgeBundle(build, dir, bridge);
+  }
+  // ── v5 p2-detect ──
+  if (watcher) {
+    checkScriptSize(build, dir, watcher, 'the submit watcher', SUBMIT_WATCH_BUDGET);
+    checkSubmitWatchBundle(build, dir, watcher);
   }
 }
 
@@ -500,6 +670,8 @@ for (const build of BUILDS) {
   checkNoWxtContext(build, dir, manifest);
   checkSentinel(build, dir, manifest);
   checkSidebarApp(build, dir, manifest);
+  // v5 p2-fill
+  checkPagePatches(build, dir, manifest);
   checkIcons(build, dir, manifest);
   checked.push({ build, sizes: all.map((file) => [relative(dir, file), statSync(file).size]) });
 }

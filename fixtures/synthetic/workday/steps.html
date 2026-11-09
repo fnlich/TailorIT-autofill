@@ -19,6 +19,10 @@
   whether a person made it (isTrusted): { step, next: [{ step, trusted }], back: [...], add: [...], submit: [...] }, and
   what each step held when its Next was pressed (values[step], by box id: the test's dummy profile only). Nothing is
   ever posted: there is no form.
+  v5 p2-detect (e2e/specs/61-submit-network.spec.ts): with ?review in the address the page opens at Review; with
+  ?finalize, Review's Submit then sends the application as Workday's page does, POST
+  /wday/cxs/tailoritfixture/jobapplication/JA-0000002/finalize on its own origin (by fetch, or by XMLHttpRequest with
+  ?xhr), which the test's route answers; window.__wd.finalized keeps each answer's status. Without them, nothing changes.
 -->
 <html lang="en">
 <head>
@@ -62,7 +66,8 @@
     (() => {
       const NAMES = ['My Information', 'My Experience', 'Review'];
       const PAGES = ['applyFlowMyInfoPage', 'applyFlowMyExpPage', 'applyFlowReviewPage'];
-      const record = { step: 1, next: [], back: [], add: [], submit: [], values: {} };
+      const record = { step: 1, next: [], back: [], add: [], submit: [], values: {}, finalized: [] };
+      const query = new URLSearchParams(location.search);
       window.__wd = record;
       const make = (tag, attributes = {}, ...children) => {
         const el = document.createElement(tag);
@@ -208,6 +213,19 @@
           const entry = { step: record.step, trusted: event.isTrusted };
           if (record.step === 3) {
             record.submit.push(entry);
+            // v5 p2-detect: ?finalize sends the application by Workday's finalize (the header).
+            if (query.has('finalize')) {
+              const path = '/wday/cxs/tailoritfixture/jobapplication/JA-0000002/finalize';
+              if (query.has('xhr')) {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', path);
+                xhr.addEventListener('loadend', () => record.finalized.push(xhr.status));
+                xhr.send('{}');
+              } else {
+                fetch(path, { method: 'POST', body: '{}' })
+                  .then((answer) => record.finalized.push(answer.status), () => record.finalized.push(0));
+              }
+            }
             return;
           }
           record.next.push(entry);
@@ -226,7 +244,7 @@
           show(record.step - 1);
         }
       });
-      show(1);
+      show(query.has('review') ? 3 : 1);
     })();
   </script>
 </body>

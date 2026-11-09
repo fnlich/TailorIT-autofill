@@ -15,11 +15,19 @@
  * canonical application URL is https://recruiting.ultipro.com/<tenant>/JobBoard/<board uuid>/OpportunityApply
  * ?opportunityId=<uuid>. Every other page of the host (the documents upload, the sign-in frames, the consent banner's
  * address) is none, and so is an account step whose returnUrl names no application.
+ * v5 p2-detect (the engine audit's gap 1a; Jobright's site list): UKG's other recruiting hosts, recruiting2.ultipro.com,
+ * recruiting.ultipro.ca and <x>.rec.pro.ukg.net among them, on their job boards' paths alone (shared/hosts.ts
+ * ULTIPRO_BOARD_PATH: each domain also serves an employee HR system), read as recruiting.ultipro.com's board pages are,
+ * each on its own host in its key. Their account step (outside /JobBoard/) is not matched there, so it is none.
  */
 import type { ApplicationPage, ApplicationUrl } from '../application-key';
 
 /** UltiPro's candidate host, as src/shared/hosts.ts lists it. */
 const HOST = 'recruiting.ultipro.com';
+/** v5 p2-detect: UKG's other recruiting hosts, as src/shared/hosts.ts lists them (their job boards' paths alone). */
+const OTHER_HOST = /^(?:[a-z0-9-]+\.)+ultipro\.(?:com|ca)$|^[a-z0-9-]+\.rec\.pro\.ukg\.net$/;
+/** Their job boards' paths, as src/shared/hosts.ts ULTIPRO_BOARD_PATH scopes them. */
+const BOARD_PATH = /^\/[A-Za-z0-9_-]{1,64}\/JobBoard\//;
 /** A tenant (ultipro-0 to -2: letters and digits), a uuid. */
 const TENANT = /^[A-Za-z0-9_-]{1,64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -32,12 +40,12 @@ const REGISTER = ['AuthCode', 'Register'] as const;
 /** Whether an address is on UltiPro's candidate host, over https on the default port and without credentials. */
 export function matchesUrl(url: URL): boolean {
   return url.protocol === 'https:' && url.port === '' && url.username === '' && url.password === ''
-    && url.hostname === HOST;
+    && (url.hostname === HOST || (OTHER_HOST.test(url.hostname) && BOARD_PATH.test(url.pathname)));
 }
 
 /** A board page's posting: /<tenant>/JobBoard/<uuid>/<page>?opportunityId=<uuid> (its opportunityId read by `param`),
  *  or null. */
-function boardPosting(path: string, param: (name: string) => string | null): ApplicationUrl | null {
+function boardPosting(path: string, param: (name: string) => string | null, host = HOST): ApplicationUrl | null {
   const [tenant, jobBoard, board, name, ...rest] = path.split('/').slice(1);
   const page = name === undefined ? undefined : PAGES.get(name);
   const id = param('opportunityId') ?? '';
@@ -47,7 +55,7 @@ function boardPosting(path: string, param: (name: string) => string | null): App
   const boardId = board.toLowerCase();
   const jobId = id.toLowerCase();
   return { platform: 'ultipro', board: lower, jobId, page,
-    applicationUrl: `https://${HOST}/${lower}/JobBoard/${boardId}/OpportunityApply?opportunityId=${jobId}` };
+    applicationUrl: `https://${host}/${lower}/JobBoard/${boardId}/OpportunityApply?opportunityId=${jobId}` };
 }
 
 /** A query's parameter as written (`a=1&b=2`), decoded once, or null; a value that does not decode is none. */
@@ -67,8 +75,8 @@ function paramOf(query: string, name: string): string | null {
 /** The posting an address shows (see the header), or null on every other page of the host. */
 export function parseUltiproUrl(url: URL): ApplicationUrl | null {
   if (!matchesUrl(url)) return null;
-  const direct = boardPosting(url.pathname, (name) => url.searchParams.get(name));
-  if (direct !== null) return direct;
+  const direct = boardPosting(url.pathname, (name) => url.searchParams.get(name), url.hostname);
+  if (direct !== null || url.hostname !== HOST) return direct;
   const [tenant, auth, register, ...rest] = url.pathname.split('/').slice(1);
   if (tenant === undefined || !TENANT.test(tenant) || auth !== REGISTER[0] || register !== REGISTER[1] || rest.length > 0) {
     return null;

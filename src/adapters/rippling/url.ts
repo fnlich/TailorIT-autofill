@@ -6,7 +6,9 @@
  *   application form (rippling-0 to -3; src=LinkedIn came from the posting, Jobright's jr_id on one), step=application
  *   on every one, so the address's query is not read: the path decides;
  * - https://ats.rippling.com/<board>/jobs is the board (the posting's breadcrumb): no posting;
- * - no page after submitting is seen, so none is read.
+ * - no page after submitting is in the snapshots; v5 p2-detect (Jobright's record of Rippling's page after submitting,
+ *   read as its behaviour, never its code): the form's own path with step=confirmation (the query's one step) is it,
+ *   the confirmation, under the form's key. Every other step value reads as the form, as before.
  * The canonical application URL is the form's address as the snapshots show it without src and jr_id: the board, the
  * posting's uuid, /apply, and jobBoardSlug, jobId and step=application in that order. Whether the form loads without
  * that query is a live check no snapshot answers (DESIGN-NEW-ATS §7), so it is kept.
@@ -38,7 +40,10 @@ export function parseRipplingUrl(url: URL): ApplicationUrl | null {
   const page = PAGES.get(rest.join('/'));
   if (board === undefined || !BOARD.test(board) || jobs !== 'jobs' || id === undefined || !UUID.test(id)
     || page === undefined) return null;
-  return { platform: 'rippling', board, jobId: id, page,
+  // v5 p2-detect: the form's path with step=confirmation is the page after submitting (module header).
+  const confirmed = page === 'application' && url.searchParams.getAll('step').length === 1
+    && url.searchParams.get('step') === 'confirmation';
+  return { platform: 'rippling', board, jobId: id, page: confirmed ? 'confirmation' : page,
     applicationUrl: `https://${HOST}/${board}/jobs/${id}/apply?jobBoardSlug=${board}&jobId=${id}&step=application` };
 }
 

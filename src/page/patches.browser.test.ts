@@ -1,21 +1,24 @@
 /*
- * v5 p2-fill (PLAN decision 14): the bridge's two page patches, in a fixture frame it is installed in as the extension
- * installs it, driven through the isolated world's client (dom/fillers/dialogs.ts, dom/fillers/picker.ts) and, as a
+ * v5 p2-fill (PLAN decision 14): the page patches (page/patches.ts), in a fixture frame they are installed in as the
+ * worker's injection installs them, driven through the isolated world's client (dom/fillers/dialogs.ts, dom/fillers/picker.ts) and, as a
  * page would, by raw calls:
  * - dialogs.hold / dialogs.release (page/dialogs.ts): the page's alert and confirm held only while a hold stands and
- *   only for dialogs no action of the person's brought (the browser's user activation), counted, never read; put back
- *   as they were (the page's own property, or none); nothing patched before a hold;
+ *   only for dialogs no action of the person's brought (a hold through a wait ends at the person's own pointer or key),
+ *   counted, never read; put back as they were (the page's own property, or none); nothing patched before a hold; a
+ *   second install in the same document adds nothing;
  * - picker.arm / picker.disarm (page/picker.ts): a page's click() on a file input of its own during the arm opens no
  *   picker and the input is handed to the isolated world, which puts the file in; a click() made after a promise
  *   (react-dropzone's fallback) too; a showOpenFilePicker() is answered with the file alone; a click() on any other
  *   input, and every call once disarmed, goes through; the arm ends at its first use and puts back what it shadowed.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { askBridge } from '../dom/bridge';
-import { holdDialogs, withDialogsHeld } from '../dom/fillers/dialogs';
+import { userEvent } from 'vitest/browser';
+import { askPatches } from '../dom/patches';
+import { holdDialogs, withDialogsHeld, withDialogsHeldWhile } from '../dom/fillers/dialogs';
 import { fillThroughPicker } from '../dom/fillers/picker';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
-import { installBridge } from './bridge';
+import { PICKED } from '../dom/patch-protocol';
+import { installPatches } from './patches';
 
 const removals: Array<() => void> = [];
 afterEach(() => {
@@ -25,7 +28,7 @@ afterEach(() => {
 
 async function page(html: string): Promise<Fixture> {
   const fixture = await loadFixture(document, html);
-  removals.push(installBridge(fixture.doc));
+  removals.push(installPatches(fixture.doc));
   return fixture;
 }
 
@@ -55,15 +58,28 @@ describe('the page\'s dialogs held through a write', () => {
     expect(own.alert).toHaveBeenCalledTimes(1);
   });
 
-  it('lets a dialog that follows the person\'s own action show (the browser\'s user activation)', async () => {
-    const fixture = await page('<!doctype html><body></body>');
+  it('ends a hold made through a wait at the person\'s own pointer: the dialog their click brings shows', async () => {
+    const fixture = await page('<!doctype html><body><button id="b" style="width:120px;height:40px">Mine</button></body>');
     const own = withOwnDialogs(fixture);
-    Object.defineProperty(fixture.view.navigator, 'userActivation', { configurable: true,
-      value: { isActive: true, hasBeenActive: true } });
+    fixture.doc.getElementById('b')!.addEventListener('click', () => fixture.view.alert('Yours'));
+    const heard = vi.fn();
+    await withDialogsHeldWhile(fixture.doc, async () => {
+      fixture.view.alert('Ours');
+      const box = fixture.doc.getElementById('b')!.getBoundingClientRect();
+      await userEvent.click(fixture.frame, { position: { x: box.left + box.width / 2, y: box.top + box.height / 2 } });
+    }, heard);
+    expect(own.alert.mock.calls).toEqual([['Yours']]);
+    expect(heard).toHaveBeenCalledWith({ alerts: 1, confirms: 0 });
+    expect(fixture.view.alert).toBe(own.alert);
+  });
+
+  it('adds nothing on a second install in the same document', async () => {
+    const fixture = await page('<!doctype html><body></body>');
+    const listeners = vi.spyOn(fixture.doc, 'addEventListener');
+    removals.push(installPatches(fixture.doc));
+    expect(listeners).not.toHaveBeenCalled();
+    withOwnDialogs(fixture);
     const held = holdDialogs(fixture.doc);
-    fixture.view.alert('Yours');
-    expect(fixture.view.confirm('Yours?')).toBe(true);
-    expect(own.alert).toHaveBeenCalledTimes(1);
     expect(held.release()).toEqual({ alerts: 0, confirms: 0 });
   });
 
@@ -88,7 +104,7 @@ describe('the page\'s dialogs held through a write', () => {
     expect(fixture.view.alert).toBe(theirs);
   });
 
-  it('holds nothing where no bridge answers (a frame it does not install in)', async () => {
+  it('holds nothing where no patches answer (a frame no run began in)', async () => {
     const fixture = await loadFixture(document, '<!doctype html><body></body>');
     const own = withOwnDialogs(fixture);
     const heard = vi.fn();
@@ -165,7 +181,7 @@ describe('the page\'s own file picker, armed for one press', () => {
     await vi.waitFor(() => expect(fixture.doc.getElementById('name')!.textContent).toBe('fs:Alex Rivera Resume.pdf'));
   });
 
-  it('presses nothing and gives nothing where no bridge answers the arm (undo proof for the arm)', async () => {
+  it('presses nothing and gives nothing where no patches answer the arm (undo proof for the arm)', async () => {
     const fixture = await loadFixture(document, UPLOADER);
     const clicks = vi.fn();
     fixture.doc.getElementById('attach')!.addEventListener('click', clicks);
@@ -186,14 +202,14 @@ describe('the page\'s own file picker, armed for one press', () => {
   it('leaves every other click alone: a checkbox\'s, and any input\'s once disarmed', async () => {
     const fixture = await page('<!doctype html><body><input type="checkbox" id="c"><button id="b">x</button></body>');
     const box = fixture.doc.getElementById('c') as HTMLInputElement;
-    expect(askBridge(fixture.doc.getElementById('b')!, { op: 'picker.arm' })?.ok).toBe(true);
+    expect(askPatches(fixture.doc.getElementById('b')!, 'picker.arm')?.ok).toBe(true);
     box.click();
     expect(box.checked).toBe(true);
-    askBridge(fixture.doc.getElementById('b')!, { op: 'picker.disarm' });
+    askPatches(fixture.doc.getElementById('b')!, 'picker.disarm');
     const other = fixture.doc.createElement('input');
     other.type = 'file';
     const opened = vi.fn();
-    fixture.doc.addEventListener('tailorit:bridge-picked', opened, true);
+    fixture.doc.addEventListener(PICKED, opened, true);
     other.click();
     expect(opened).not.toHaveBeenCalled();
   });

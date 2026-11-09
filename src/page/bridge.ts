@@ -16,12 +16,7 @@
  *   which closes its menu and leaves its text box as its props say, exactly as a click on the option in its list does.
  *   Never an onChange with an object of ours, never an event;
  * - react.field: the nearest React component above the element whose props hold a field (props.field, else
- *   props.fieldEntry.field: Ashby's), read as {type, path}, each a short printable string; no value, no label;
- * - v5 p2-fill (PLAN decision 14): dialogs.hold and dialogs.release, the page's alert and confirm held through one
- *   write, only for dialogs no action of the person's brought (page/dialogs.ts: counts back, never words); picker.arm
- *   and picker.disarm, the page's own file picker armed for one press of a résumé control its adapter declares
- *   (page/picker.ts: the input the page clicked told back on the control, the résumé put in by the isolated world). Both
- *   patch nothing until first asked, and put back what they shadowed.
+ *   props.fieldEntry.field: Ashby's), read as {type, path}, each a short printable string; no value, no label.
  * The page fully controls this world: it can read every command, wrap every function the bridge calls, forge commands
  * (they can only make the bridge choose its own widget's own option, which the page could do itself) and forge
  * answers (the isolated world never trusts one: it reads the widget back itself). So nothing may be sent here that the
@@ -35,8 +30,6 @@ import {
   BRIDGE_COMMAND, BRIDGE_RESULT, bridgeLabel, encodeAnswer, fieldText, parseCommand, type BridgeAnswer,
   type BridgeCommand, type BridgeField,
 } from '../dom/bridge-protocol';
-import { dialogHold, type DialogHold } from './dialogs';
-import { pickerArm, type PickerArm } from './picker';
 
 /** The furthest up the fiber tree the bridge looks, from the element. */
 const MAX_DEPTH = 60;
@@ -64,7 +57,7 @@ interface SelectInstance {
   isOptionSelected?(option: unknown, selectValue: readonly unknown[]): boolean;
 }
 
-type Outcome = Pick<BridgeAnswer, 'ok' | 'reason' | 'field' | 'dialogs'>;
+type Outcome = Pick<BridgeAnswer, 'ok' | 'reason' | 'field'>;
 
 /** Installs the bridge on a document; answers its removal (the tests remove it). */
 export function installBridge(doc: Document): () => void {
@@ -148,30 +141,6 @@ export function installBridge(doc: Document): () => void {
     return { ok: false, reason: 'no-field' };
   };
 
-  // v5 p2-fill (PLAN decision 14): the page's dialogs and its own file picker, made only once first asked for, so
-  // nothing of the page is patched until a write holds its dialogs or arms its picker (page/dialogs.ts, page/picker.ts).
-  let dialogs: DialogHold | null = null;
-  let picker: PickerArm | null = null;
-  /** The ops that need no React: the dialogs' hold and the picker's arm. Null for a React op. */
-  const pagePatch = (target: Element, command: BridgeCommand): Outcome | null => {
-    switch (command.op) {
-      case 'dialogs.hold':
-        dialogs ??= dialogHold(view);
-        dialogs.hold();
-        return { ok: true, reason: 'ok' };
-      case 'dialogs.release':
-        return { ok: true, reason: 'ok', dialogs: dialogs?.release() ?? { alerts: 0, confirms: 0 } };
-      case 'picker.arm':
-        picker ??= pickerArm(doc, view);
-        return picker.arm(target) ? { ok: true, reason: 'ok' } : { ok: false, reason: 'failed' };
-      case 'picker.disarm':
-        picker?.disarm();
-        return { ok: true, reason: 'ok' };
-      default:
-        return null;
-    }
-  };
-
   const listener = (event: Event): void => {
     // The element itself, inside an open shadow root too (a closed root's is its host, which is no select's text box).
     const target = event.composedPath()[0] as Element | undefined;
@@ -182,10 +151,8 @@ export function installBridge(doc: Document): () => void {
     event.stopImmediatePropagation();
     let outcome: Outcome;
     try {
-      const patched = pagePatch(target, command);
-      const fiber = patched === null ? fiberOf(target) : null;
-      if (patched !== null) outcome = patched;
-      else if (fiber === null) outcome = { ok: false, reason: 'no-react' };
+      const fiber = fiberOf(target);
+      if (fiber === null) outcome = { ok: false, reason: 'no-react' };
       else outcome = command.op === 'react-select.choose' ? choose(target, fiber, command) : field(fiber);
     } catch {
       outcome = { ok: false, reason: 'failed' };
@@ -195,10 +162,5 @@ export function installBridge(doc: Document): () => void {
       composed: false }));
   };
   doc.addEventListener(BRIDGE_COMMAND, listener, true);
-  return () => {
-    doc.removeEventListener(BRIDGE_COMMAND, listener, true);
-    // v5 p2-fill: a removed bridge leaves nothing patched.
-    picker?.disarm();
-    dialogs?.clear();
-  };
+  return () => doc.removeEventListener(BRIDGE_COMMAND, listener, true);
 }

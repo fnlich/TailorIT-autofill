@@ -16,7 +16,9 @@
  * - submit/detected (content): the platform's sign that it was sent, seen after the press: Lever's /thanks page,
  *   Greenhouse's /confirmation page or its confirmation drawn in place, Ashby's success message. It counts only for an
  *   application this tab armed, once: a success message within SUBMIT_ARM_MS; a confirmation page only from the frame
- *   that armed it and within CONFIRMATION_PAGE_MS of the press that led to it (the review, M6). Never from page text
+ *   that armed it and within CONFIRMATION_PAGE_MS of the press that led to it (the review, M6); v5 p2-detect: a network
+ *   sign (Workday's finalize answered, ClearCompany's completed message) only from the frame and document that armed
+ *   it, within SUBMIT_ARM_MS. Never from page text
  *   alone, never in a private tab. Then POST /api/autofill/applied {jobId}, else {url} (the canonical posting address,
  *   as the lookup on load sends it), with the resume; its lookup becomes the card of the frame that saw it.
  * - The arm goes only once TailorIT recorded it (or refused it for good: 403, 400, 404); offline or a failure on
@@ -266,9 +268,13 @@ export function createSubmissions(deps: SubmissionsDeps) {
       const held = await armOf(key);
       const age = held === null ? Number.POSITIVE_INFINITY : deps.now() - held.at;
       const page = message.evidence === 'confirmation-page';
+      // ── v5 p2-detect: a network sign is the arming document's own (its page-world watcher's, content/submitted.ts
+      // watchNetworkSigns): only from the frame and document that armed it. ──
+      const own = message.evidence !== 'network' || (held !== null && held.frameId === from.frameId
+        && held.documentId === (from.documentId ?? null));
       // A confirmation page counts only in the frame that pressed, soon after the press that led to it; a success
       // message within SUBMIT_ARM_MS. Once: a sign already taken records nothing more.
-      const fresh = held !== null && held.detectedAt === undefined && age >= 0
+      const fresh = held !== null && held.detectedAt === undefined && age >= 0 && own
         && (page ? held.frameId === from.frameId && age <= CONFIRMATION_PAGE_MS : age <= SUBMIT_ARM_MS);
       if (held === null || !fresh) {
         if (held !== null && held.detectedAt === undefined && age > SUBMIT_ARM_MS) await dropArm(key);

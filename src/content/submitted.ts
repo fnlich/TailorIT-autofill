@@ -20,7 +20,18 @@
  *   Submit, /jobs/<id>/<slug>/job?mode=submit_apply (adapters/icims/url.ts reads it as the confirmation page), shows
  *   div.iCIMS_Message.iCIMS_SuccessMessage "Your application has been submitted successfully." (uscareers-nyu's,
  *   adapters/icims icimsSubmitted); the same block drawn in the form's own document counts too.
- * Workday and the generic adapter read none yet.
+ * Workday and the generic adapter read none yet (v5 p2-detect: Workday's sign is its network sign, below).
+ * v5 p2-detect (PLAN decision 14; the engine audit's J11 and gap 3): the platforms whose page after submitting no
+ * snapshot shows are told sent by other signs, each from Jobright's observed behaviour (never its code):
+ * - a confirmation address (each platform's url.ts reads it as the application's page after submitting, under its
+ *   key, so it counts as Lever's /thanks does): Rippling's ?step=confirmation, CareerPlug's /jobs/<id>/apps/<n>,
+ *   Paylocity's /recruiting/jobs/success/<id>, SmartRecruiters' .../publication/<uuid>/success, Paycor's
+ *   ShowConfirmation.action, Jobvite's .../applyConfirmation and Dayforce's .../apply/success;
+ * - the answer to the platform's own request that sends the application, which the page-world submit watcher sees
+ *   (page/submit-watch.ts; dom/submit-net-protocol.ts): Workday's finalize, ClearCompany's last answers and completed
+ *   message. watchNetworkSigns reads them in this document while a Submit is armed, in the platform's order, and the
+ *   runtime takes them only while the page shows no error (content/press.ts refusalNow): `submit/detected` with
+ *   evidence 'network', which the worker takes only from the frame and document that armed it.
  *
  * A sign drawn in the form's own document (the v3 Phase 4 review, M1 and M6) counts only when it is new: not one of the
  * signs the page showed when the Submit was pressed (shownSignsOf, read at the press: the behaviour review of
@@ -36,6 +47,9 @@ import type { Adapter } from '../adapters/types';
 import { workableSubmitted } from '../adapters/workable';
 import type { Platform } from '../core/enums';
 import { newScanCache } from '../dom/scan-cache';
+// ── v5 p2-detect ──
+import { isNetPlatform, NET_SEQUENCES, parseNetSign, SUBMIT_NET_EVENT } from '../dom/submit-net-protocol';
+// ── end v5 p2-detect ──
 import { isUserVisible } from '../dom/visibility';
 
 /** How long after the panel's or Submit mode Auto's press the platform's confirmation is waited for in the form's own
@@ -108,3 +122,23 @@ export function newSuccessSign(doc: Document, platform: Platform, armedWith: { b
   return signsOf(doc, platform).find((sign) => !armedWith.before.has(sign) && isUserVisible(sign, cache)
     && (posting === null || !posting.contains(sign))) ?? null;
 }
+
+// ── v5 p2-detect: the platform's network signs (module header; dom/submit-net-protocol.ts) ──────────────────────────
+/** Listens in this document, until `signal` aborts, for the page-world watcher's signs of the platform's application
+ *  being sent, and calls `onSent` once each time they have all come in the platform's order (NET_SEQUENCES); a sign out
+ *  of its turn, or any other event of that name, changes nothing. A platform with no network sign adds no listener at
+ *  all (nothing keyed to the extension sits on a page that has no use for it). */
+export function watchNetworkSigns(doc: Document, platform: Platform, signal: AbortSignal, onSent: () => void): void {
+  if (!isNetPlatform(platform) || signal.aborted) return;
+  const order = NET_SEQUENCES[platform];
+  let next = 0;
+  doc.addEventListener(SUBMIT_NET_EVENT, (event) => {
+    const sign = parseNetSign((event as CustomEvent<unknown>).detail);
+    if (sign === null || sign !== order[next]) return;
+    next += 1;
+    if (next < order.length) return;
+    next = 0;
+    onSent();
+  }, { signal });
+}
+// ── end v5 p2-detect ──

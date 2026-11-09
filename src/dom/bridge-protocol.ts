@@ -20,43 +20,9 @@ export const BRIDGE_COMMAND = 'tailorit:bridge';
 export const BRIDGE_RESULT = 'tailorit:bridge-result';
 
 /** What the bridge may be asked: react-select's own choice of one of its options, by label, and a value-free reading
- *  of the React field an element belongs to. v5 p2-fill (PLAN decision 14): holding the page's alert and confirm
- *  through one write (dialogs.hold, dialogs.release), and arming the page's own file picker for one press of a
- *  résumé control (picker.arm, picker.disarm). */
-export const BRIDGE_OPS = ['react-select.choose', 'react.field', 'dialogs.hold', 'dialogs.release', 'picker.arm',
-  'picker.disarm'] as const;
+ *  of the React field an element belongs to. */
+export const BRIDGE_OPS = ['react-select.choose', 'react.field'] as const;
 export type BridgeOp = (typeof BRIDGE_OPS)[number];
-
-// ── v5 p2-fill: the page's dialogs and its own file picker (PLAN decision 14) ──
-/** The ops that carry nothing but their name and id. */
-const BARE_OPS: ReadonlySet<string> = new Set(['react.field', 'dialogs.hold', 'dialogs.release', 'picker.arm',
-  'picker.disarm']);
-/** From the bridge to the isolated world, on the armed control, when the page opened its own picker during the arm: a
- *  FocusEvent (the one event kind that carries an element across the worlds, as relatedTarget) whose relatedTarget is
- *  the file input the page clicked (detail PICKED_INPUT), or none where the page called showOpenFilePicker (detail
- *  PICKED_FILE_SYSTEM). It carries no value. */
-export const BRIDGE_PICKED = 'tailorit:bridge-picked';
-/** From the isolated world to the bridge, on the armed control, answering a PICKED_FILE_SYSTEM: a FocusEvent whose
- *  relatedTarget is a detached file input holding the one file the page's showOpenFilePicker then resolves with. */
-export const BRIDGE_SUPPLY = 'tailorit:bridge-supply';
-/** BRIDGE_PICKED's detail: the page clicked a file input. */
-export const PICKED_INPUT = 1;
-/** BRIDGE_PICKED's detail: the page called showOpenFilePicker. */
-export const PICKED_FILE_SYSTEM = 2;
-/** How long an armed picker stays armed at most, in the page's world, whatever the isolated world says: the press's
- *  wait (dom/fillers/picker.ts) and a little more. */
-export const PICKER_ARM_MS = 2_000;
-/** How long the page's dialogs stay held at most, in the page's world, whatever the isolated world says: an upload's
- *  confirmation wait (dom/thresholds.ts UPLOAD_CONFIRM_CAP_MS, 10 s) and a little more. */
-export const DIALOGS_HOLD_MS = 12_000;
-/** The most dialogs one hold counts, of each kind. */
-export const DIALOGS_COUNT_MAX = 99;
-/** What one hold of the page's dialogs held back: counts only, never a dialog's words. */
-export interface HeldDialogs {
-  alerts: number;
-  confirms: number;
-}
-// ── end v5 p2-fill ──
 
 /** Why the bridge did or did not do what it was asked. 'chosen': the option is chosen already (a multi-select's would
  *  be removed by choosing it again, so it never is). */
@@ -71,18 +37,15 @@ export const BRIDGE_DETAIL_MAX = 2_048;
 /** Each string of a field's reading, at most this many characters. */
 export const BRIDGE_FIELD_MAX = 100;
 
-/** The ops that carry nothing but their name (v5 p2-fill: and the dialogs' and the picker's). */
-export type BareOp = 'react.field' | 'dialogs.hold' | 'dialogs.release' | 'picker.arm' | 'picker.disarm';
-
 /** A command, as both sides read it. */
 export type BridgeCommand =
   | { v: 1; id: string; op: 'react-select.choose'; label: string; multi: boolean }
-  | { v: 1; id: string; op: BareOp };
+  | { v: 1; id: string; op: 'react.field' };
 
 /** A command before its id is given (the client's). */
 export type BridgeRequest =
   | { op: 'react-select.choose'; label: string; multi: boolean }
-  | { op: BareOp };
+  | { op: 'react.field' };
 
 /** A React field's reading (react.field): its type and its path, each a short printable string, and nothing else. */
 export interface BridgeField {
@@ -97,8 +60,6 @@ export interface BridgeAnswer {
   ok: boolean;
   reason: BridgeReason;
   field?: BridgeField;
-  /** v5 p2-fill: dialogs.release's counts of what the hold held back. */
-  dialogs?: HeldDialogs;
 }
 
 const ID = /^[A-Za-z0-9_-]{8,64}$/;
@@ -151,8 +112,8 @@ export function parseCommand(detail: unknown): BridgeCommand | null {
     if (!isBridgeLabel(base.label) || typeof base.multi !== 'boolean') return null;
     return { v: 1, id: base.id, op: base.op, label: base.label, multi: base.multi };
   }
-  if (typeof base.op === 'string' && BARE_OPS.has(base.op)) {
-    return 'label' in base || 'multi' in base ? null : { v: 1, id: base.id, op: base.op as BareOp };
+  if (base.op === 'react.field') {
+    return 'label' in base || 'multi' in base ? null : { v: 1, id: base.id, op: base.op };
   }
   return null;
 }
@@ -164,20 +125,11 @@ export function encodeAnswer(answer: BridgeAnswer): string {
 
 /** The answer to the command `id`, when the detail is exactly one (see the header); null otherwise. */
 export function parseAnswer(detail: unknown, id: string): BridgeAnswer | null {
-  const parsed = onlyKeys(parsedDetail(detail), ['v', 'id', 'ok', 'reason', 'field', 'dialogs']);
+  const parsed = onlyKeys(parsedDetail(detail), ['v', 'id', 'ok', 'reason', 'field']);
   if (parsed === null || parsed.v !== 1 || parsed.id !== id || typeof parsed.ok !== 'boolean') return null;
   const reason = parsed.reason;
   if (typeof reason !== 'string' || !(BRIDGE_REASONS as readonly string[]).includes(reason)) return null;
   const answer: BridgeAnswer = { v: 1, id, ok: parsed.ok, reason: reason as BridgeReason };
-  // v5 p2-fill: dialogs.release's counts, two small whole numbers and nothing else.
-  if ('dialogs' in parsed) {
-    if ('field' in parsed) return null;
-    const counts = onlyKeys(parsed.dialogs, ['alerts', 'confirms']);
-    const count = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && value >= 0
-      && value <= DIALOGS_COUNT_MAX;
-    if (counts === null || !count(counts.alerts) || !count(counts.confirms)) return null;
-    return { ...answer, dialogs: { alerts: counts.alerts as number, confirms: counts.confirms as number } };
-  }
   if (!('field' in parsed)) return answer;
   const field = onlyKeys(parsed.field, ['type', 'path']);
   if (field === null) return null;

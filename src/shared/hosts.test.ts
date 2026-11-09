@@ -3,6 +3,8 @@ import { MatchPattern } from 'wxt/utils/match-patterns';
 import {
   ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CAPTCHA_VENDOR_MATCHES, careerSiteOf, HR_HOST_MATCHES, isCaptchaVendorUrl,
   isCompanySiteUrl, isHrHost, isLinkedInHost, onAtsMatch, onOwnOrigin, platformOfUrl, registrationsFor, SITES_MATCH,
+  // v5 p2-detect
+  SUBMIT_WATCH_MATCHES,
 } from './hosts';
 
 describe('the ATS host list', () => {
@@ -114,7 +116,9 @@ describe('the ATS host list', () => {
         'https://app.careerplug.com/jobs/1234567/apps/new']],
     ['pinpoint', ['https://acme.pinpointhq.com/en/postings/00000000-0000-4000-8000-000000000001',
       'https://acme.pinpointhq.com/en/postings/00000000-0000-4000-8000-000000000001/applications/new'],
-    ['https://app.pinpointhq.com/en/postings/x', 'https://acme.pinpointhq.com/', 'https://acme.pinpointhq.com/fr/postings/x']],
+    // v5 p2-detect: another locale's postings, or none, are Pinpoint's too (fr/postings/x was none before).
+    ['https://app.pinpointhq.com/en/postings/x', 'https://acme.pinpointhq.com/', 'https://acme.pinpointhq.com/a/b/postings/x',
+      'https://acme.pinpointhq.com/english/postings/x']],
     ['paycor', ['https://recruitingbypaycor.com/career/JobIntroduction.action?clientId=x&id=y'],
       ['https://recruitingbypaycor.com/', 'https://www.recruitingbypaycor.com/career/x']],
     ['hibob', ['https://acme.careers.hibob.com/jobs/00000000-0000-4000-8000-000000000001'],
@@ -123,8 +127,11 @@ describe('the ATS host list', () => {
       ['https://acme.ultipro.com/login', 'https://www.ultipro.com/']],
     ['dayforce', ['https://jobs.dayforcehcm.com/en-US/acme/CANDIDATEPORTAL/jobs/1234/apply'],
       ['https://www.dayforcehcm.com/', 'https://acme.dayforcehcm.com/x']],
-    ['paylocity', ['https://recruiting.paylocity.com/Recruiting/Jobs/Apply/1234567'],
-      ['https://recruiting.paylocity.com/recruiting/Jobs/Apply/1234567', 'https://access.paylocity.com/', 'https://recruiting.paylocity.com/']],
+    // v5 p2-detect: /recruiting/ in lower case is Paylocity's too (it was none before).
+    ['paylocity', ['https://recruiting.paylocity.com/Recruiting/Jobs/Apply/1234567',
+      'https://recruiting.paylocity.com/recruiting/Jobs/Apply/1234567'],
+    ['https://recruiting.paylocity.com/RECRUITING/Jobs/Apply/1234567', 'https://access.paylocity.com/',
+      'https://recruiting.paylocity.com/']],
     ['dice', ['https://www.dice.com/job-applications/00000000-0000-4000-8000-000000000001/wizard'],
       ['https://www.dice.com/job-detail/00000000-0000-4000-8000-000000000001', 'https://www.dice.com/dashboard/login', 'https://dice.com/job-applications/x']],
     ['clearcompany', ['https://acme.clearcompany.com/careers/jobs/00000000-0000-4000-8000-000000000001/apply'],
@@ -352,3 +359,72 @@ describe('the company career sites (v3 Phase 8)', () => {
     for (const [url, site] of cases) expect(careerSiteOf(url)?.name ?? null, url).toBe(site);
   });
 });
+
+// ── v5 p2-detect: the address variants of platforms already here (the engine audit's gap 1a; Jobright's site list) ──
+describe('the address variants (v5 p2-detect)', () => {
+  const VARIANTS: Array<[string, string]> = [
+    ['https://acme.wd5.myworkdayjobs-impl.com/en-US/External/job/Remote/Engineer_JR-1', 'workday'],
+    ['https://acme.myworkdayjobs-impl.com/External', 'workday'],
+    ['https://acme.pinpointhq.com/de/postings/00000000-0000-4000-8000-000000000001', 'pinpoint'],
+    ['https://acme.pinpointhq.com/fr-ca/postings/00000000-0000-4000-8000-000000000001/applications/new', 'pinpoint'],
+    ['https://acme.pinpointhq.com/postings/00000000-0000-4000-8000-000000000001', 'pinpoint'],
+    ['https://recruiting.paylocity.com/recruiting/jobs/success/1234567', 'paylocity'],
+    ['https://recruiting2.ultipro.com/ACM1000ACME/JobBoard/00000000-0000-4000-8000-000000000001/OpportunityApply?opportunityId=x',
+      'ultipro'],
+    ['https://recruiting.ultipro.ca/ACM1000/JobBoard/00000000-0000-4000-8000-000000000001/OpportunityDetail', 'ultipro'],
+    ['https://acme.rec.pro.ukg.net/ACM1000/JobBoard/00000000-0000-4000-8000-000000000001/OpportunityApply', 'ultipro'],
+    ['https://smith-agency.sfagentjobs.com/jobs/1234567/apps/new', 'careerplug'],
+    ['https://sfagentcareers.com/jobs/1234567/apps/new', 'careerplug'],
+    ['https://www.apscareerportal.com/jobs/1234567/apps/new', 'careerplug'],
+  ];
+  /** Their hosts' other pages: the employee systems on UKG's domains among them. */
+  const OFF = ['https://n12.ultipro.com/default.aspx', 'https://n12.ultipro.com/pages/login.aspx?JobBoard=1',
+    'https://recruiting2.ultipro.com/ACM1000ACME/AuthCode/Register', 'https://acme.ukg.net/ACM1000/JobBoard/x',
+    'https://acme.rec.pro.ukg.net/', 'https://acme.pinpointhq.com/a/b/postings/x', 'https://smith-agency.sfagentjobs.com/about',
+    'https://wd5.myworkdayjobs-impl.com/x', 'https://recruiting.paylocity.com/RECRUITING/x'];
+
+  it('names each variant its platform, through the manifest patterns and onAtsMatch alike, and the sentinel never', () => {
+    const patterns = ATS_MATCHES.map((p) => new MatchPattern(p));
+    for (const [url, platform] of VARIANTS) {
+      expect(platformOfUrl(url), url).toBe(platform);
+      expect(patterns.some((p) => p.includes(url)), url).toBe(true);
+      expect(onAtsMatch(url), url).toBe(true);
+      expect(isCompanySiteUrl(url), url).toBe(false);
+    }
+    for (const url of OFF) {
+      expect(platformOfUrl(url), url).toBeNull();
+      // onAtsMatch reads a `*` inside a pattern's path as Chrome does.
+      expect(onAtsMatch(url), url).toBe(patterns.some((p) => p.includes(url)));
+    }
+  });
+
+  it('reads a pattern with a `*` inside its path exactly as Chrome does', () => {
+    const glob = ['https://*.ultipro.com/*/JobBoard/*', 'https://*.pinpointhq.com/*/postings/*'].map((p) => new MatchPattern(p));
+    for (const url of ['https://a.ultipro.com/T/JobBoard/x', 'https://a.ultipro.com/T/U/JobBoard/x', 'https://a.ultipro.com/JobBoard/x',
+      'https://a.ultipro.com//JobBoard/x', 'https://a.ultipro.com/T/jobboard/x', 'https://a.pinpointhq.com/en/postings/x',
+      'https://a.pinpointhq.com/postings/x', 'https://a.pinpointhq.com/xpostings/x', 'https://a.pinpointhq.com/en/postings']) {
+      expect(onAtsMatch(url), url).toBe(patterns(url, glob) || patterns(url, ATS_MATCHES.map((p) => new MatchPattern(p))));
+    }
+  });
+
+  it("matches the submit watcher on Workday's and ClearCompany's candidate hosts alone, each an ATS match", () => {
+    expect([...SUBMIT_WATCH_MATCHES].every((pattern) => (ATS_MATCHES as readonly string[]).includes(pattern))).toBe(true);
+    const watch = SUBMIT_WATCH_MATCHES.map((p) => new MatchPattern(p));
+    for (const url of ['https://acme.wd5.myworkdayjobs.com/x', 'https://wd5.myworkdaysite.com/recruiting/acme/x',
+      'https://acme.myworkdayjobs-impl.com/x', 'https://vafb.clearcompany.com/careers/jobs/x/apply']) {
+      expect(watch.some((p) => p.includes(url)), url).toBe(true);
+      expect(['workday', 'clearcompany', null]).toContain(platformOfUrl(url));
+    }
+    for (const url of ['https://job-boards.greenhouse.io/acme/jobs/1', 'https://acme.icims.com/jobs/1/job',
+      'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/1', 'https://vafb.clearcompany.com/app/home',
+      'https://career2.successfactors.eu/career']) {
+      expect(watch.some((p) => p.includes(url)), url).toBe(false);
+    }
+  });
+});
+
+/** Whether any of `list` takes `url`. */
+function patterns(url: string, list: MatchPattern[]): boolean {
+  return list.some((p) => p.includes(url));
+}
+// ── end v5 p2-detect ──

@@ -28,8 +28,10 @@
  */
 import type { ApplicationPage, ApplicationUrl } from '../application-key';
 
-/** A tenant's own host: <tenant>.wd<n>.myworkdayjobs.com, or <tenant>.myworkdayjobs.com (never www or a bare wd<n>). */
-const JOBS_HOST = /^(?!(?:www|wd\d{1,3})\.)([a-z0-9-]+)\.(?:wd\d{1,3}\.)?myworkdayjobs\.com$/;
+/** A tenant's own host: <tenant>.wd<n>.myworkdayjobs.com, or <tenant>.myworkdayjobs.com (never www or a bare wd<n>).
+ *  v5 p2-detect: and a tenant's implementation (pre-production) host, <tenant>[.wd<n>].myworkdayjobs-impl.com, read
+ *  alike (Jobright's site list names the domain; shared/hosts.ts matches it): its own host in its key. */
+const JOBS_HOST = /^(?!(?:www|wd\d{1,3})\.)([a-z0-9-]+)\.(?:wd\d{1,3}\.)?myworkdayjobs(?:-impl)?\.com$/;
 /** The shared host of myworkdaysite.com: wd<n>.myworkdaysite.com, the tenant in the path. */
 const SITE_HOST = /^wd\d{1,3}\.myworkdaysite\.com$/;
 /** A locale (en-US as the capture writes it, en-us, fr, zh-Hans-CN's first two parts): read only where a site follows. */

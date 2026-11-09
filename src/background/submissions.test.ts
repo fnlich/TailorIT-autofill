@@ -158,3 +158,36 @@ describe('the applied popup: the tab’s top frame told once TailorIT recorded t
     expect(popups(worker)).toEqual([]);
   });
 });
+
+// ── v5 p2-detect: a network sign (the page-world submit watcher's, content/submitted.ts watchNetworkSigns) ──
+describe('a network sign: only from the frame and document that armed the Submit (v5 p2-detect)', () => {
+  const network = (worker: TestWorker, sender = contentSender()) => worker.deliver({ v: 1, type: 'submit/detected',
+    applicationKey: KEY, evidence: 'network' }, sender);
+
+  it('records the application when the arming document tells it', async () => {
+    const worker = await withForm();
+    worker.tailorit.reply('POST /api/autofill/applied', { json: goldens.lookup });
+    await worker.deliver({ v: 1, type: 'submit/armed', applicationKey: KEY, by: 'page' }, contentSender());
+    expect(await network(worker)).toEqual({ ok: true, data: {} });
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(1);
+    // Once: the same Submit's second sign records nothing more.
+    expect(await network(worker)).toEqual({ ok: false, error: 'expired' });
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(1);
+  });
+
+  it('refuses one from another document of the frame, or another frame of the tab, and one with no Submit armed', async () => {
+    const worker = await withForm();
+    worker.tailorit.reply('POST /api/autofill/applied', { json: goldens.lookup });
+    expect(await network(worker)).toEqual({ ok: false, error: 'expired' });
+    await worker.deliver({ v: 1, type: 'submit/armed', applicationKey: KEY, by: 'page' }, contentSender());
+    expect(await network(worker, contentSender({ documentId: 'doc-2' }))).toEqual({ ok: false, error: 'expired' });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: true }, contentSender({ frameId: 3,
+      documentId: 'doc-3' }));
+    expect(await network(worker, contentSender({ frameId: 3, documentId: 'doc-3' }))).toEqual({ ok: false, error: 'expired' });
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
+    // The arming document's own still counts afterwards: a refused sign takes nothing from the arm.
+    expect(await network(worker)).toEqual({ ok: true, data: {} });
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(1);
+  });
+});
+// ── end v5 p2-detect ──

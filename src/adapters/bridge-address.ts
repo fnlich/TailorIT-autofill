@@ -35,13 +35,15 @@ import { parsePaylocityUrl } from './paylocity/url';
 import { parsePinpointUrl } from './pinpoint/url';
 import { parseSuccessFactorsUrl } from './successfactors/url';
 import { parseTaleoUrl } from './taleo/url';
+import { parseUltiproUrl } from './ultipro/url';
 import { parseWorkableUrl } from './workable/url';
 import { parseWorkdayUrl } from './workday/url';
 
 /** The hosts that serve only public job postings (module header), each on its platform's own candidate host. */
 export const PUBLIC_JOB_HOSTS: ReadonlyArray<RegExp> = [/^(?:job-)?boards\.greenhouse\.io$/, /^jobs\.(?:eu\.)?lever\.co$/,
   /^jobs\.ashbyhq\.com$/, /^jobs\.smartrecruiters\.com$/, /^apply\.workable\.com$/,
-  /^(?!(?:www|wd\d{1,3})\.)[a-z0-9-]+\.(?:wd\d{1,3}\.)?myworkdayjobs\.com$/,
+  // v5 p2-detect: and a tenant's implementation host, <tenant>[.wd<n>].myworkdayjobs-impl.com (shared/hosts.ts).
+  /^(?!(?:www|wd\d{1,3})\.)[a-z0-9-]+\.(?:wd\d{1,3}\.)?myworkdayjobs(?:-impl)?\.com$/,
   // ── New ATSs (DESIGN-NEW-ATS §4, Phase 0): the candidate-only hosts, never a path-scoped shared one ──
   /^jobs\.jobvite\.com$/, /^ats\.rippling\.com$/, /^recruiting\.ultipro\.com$/, /^jobs\.dayforcehcm\.com$/,
   /^[a-z0-9-]+\.careers\.hibob\.com$/,
@@ -56,6 +58,8 @@ export const SHARED_DOMAIN_PARSERS: Partial<Record<Platform, (url: URL) => Appli
   adp: parseAdpUrl, clearcompany: parseClearCompanyUrl, dice: parseDiceUrl, paylocity: parsePaylocityUrl,
   jazzhr: parseJazzhrUrl, bamboohr: parseBambooHrUrl, breezy: parseBreezyUrl, careerplug: parseCareerPlugUrl,
   pinpoint: parsePinpointUrl, paycor: parsePaycorUrl,
+  // v5 p2-detect: UKG's other recruiting hosts (shared/hosts.ts), each on a domain that also serves an HR system.
+  ultipro: parseUltiproUrl,
 };
 
 /** Whether `host` is one of PUBLIC_JOB_HOSTS. */

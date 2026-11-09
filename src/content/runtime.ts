@@ -176,8 +176,13 @@ import {
   FillRun, RunFailure, type HeldAnswer, type RunEnd, type RunOptions, type RunPage, type RunRequest,
 } from './orchestrator';
 import { readPostingPage } from './policy';
-import { newSuccessSign, shownSignsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot } from './submitted';
-import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter } from './press';
+import { newSuccessSign, shownSignsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot,
+  // v5 p2-detect
+  watchNetworkSigns } from './submitted';
+import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter,
+  // v5 p2-detect
+  refusalNow } from './press';
+import { loadPagePatches } from './page-patches';
 import { signIn } from './sign-in';
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { createReportLimiter } from './report';
@@ -743,6 +748,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     void refusalAfter({ doc, adapter: at.adapter, root: at.root }, watch.signal).then((count) => {
       if (armed === record && count > 0) endArm(record, { refused: count });
     });
+    // ── v5 p2-detect: the platform's network sign (submitted.ts watchNetworkSigns: Workday's finalize answered, or
+    // ClearCompany's last answers and completed message), this Submit's while it is armed and the page shows no error.
+    watchNetworkSigns(doc, at.platform, watch.signal, () => {
+      if (armed !== record || stopped) return;
+      if (refusalNow({ doc, adapter: at.adapter, root: at.root }) > 0) return;
+      record.stopWatch();
+      armed = null;
+      void detected('network', record);
+    });
+    // ── end v5 p2-detect ──
     check();
   }
 
@@ -970,6 +985,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // paused one (the audit's m13): its Sign-in Auto may still be typing or pressing, which must never go on beside a
     // new run of the frame (abort ends it, writing the password it typed empty again).
     if (current !== null && (current.watching || current.ended === 'paused')) current.abort();
+    // v5 p2-fill (PLAN decision 14): the page patches in this document's page world, asked for once, as the first run
+    // that writes begins (content/page-patches.ts); a write waits for that answer a moment at most.
+    if (!request.dryRun) loadPagePatches(doc, () => channel.request({ v: 1, type: 'page/patches' }));
     const run = new FillRun({
       doc,
       content: platform,

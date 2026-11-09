@@ -55,7 +55,7 @@ import { accepts, acceptTokens, fill } from '../dom/fillers';
 import { fillDateParts } from '../dom/fillers/date-parts';
 import { mismatch } from '../dom/fillers/outcome';
 import { awaitUpload, uploadStateOf } from '../dom/fillers/upload';
-import type { HeldDialogs } from '../dom/bridge-protocol';
+import type { HeldDialogs } from '../dom/patch-protocol';
 import { withDialogsHeld, withDialogsHeldWhile } from '../dom/fillers/dialogs';
 import { fillThroughPicker, type PickerResult } from '../dom/fillers/picker';
 import { awaitResumeParse } from '../dom/resume-parse';
@@ -79,6 +79,7 @@ import {
 } from '../dom/widgets';
 import type { ContentPlatform } from '../platform/types';
 import type { AnswerData } from './channel';
+import { pagePatchesSettled } from './page-patches';
 import { receiveResume, type ReceivedResume, type ResumeFailure } from './transfer';
 import { readBack } from './values';
 
@@ -393,6 +394,7 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   // v5 p2-fill (PLAN decision 14): the page's alert and confirm held through the write's own events and an upload's
   // wait, for the dialogs no action of the person's brought (dom/fillers/dialogs.ts; counts logged, never words).
   const doc = target.control.ownerDocument;
+  await pagePatchesSettled(doc, env.signal);
   const heard = (dialogs: HeldDialogs) => log('content.dialogs-held', { alerts: dialogs.alerts,
     confirms: dialogs.confirms });
   // v5 p2-fill: a résumé control that opens the page's own file picker (Adapter.uploadPickers) gets its file through

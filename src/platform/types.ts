@@ -186,8 +186,9 @@ export interface SitesScripting {
   register(scripts: readonly SiteRegistration[]): Promise<void>;
   unregister(ids: readonly string[]): Promise<void>;
   /** Runs the extension's file `file` in one document of a tab (its frame, when Chrome gave no document id); rejects
-   *  when Chrome refused (no host permission, the document gone). */
-  inject(tabId: number, target: { frameId: number; documentId?: string }, file: string): Promise<void>;
+   *  when Chrome refused (no host permission, the document gone). v5 p2-fill: `world` 'MAIN' runs it in the page's own
+   *  world (the page patches: background/page-patches.ts); the extension's isolated world otherwise. */
+  inject(tabId: number, target: { frameId: number; documentId?: string }, file: string, world?: 'MAIN'): Promise<void>;
   /** v5 p1-shell: a tab's top frame now: its document id (Chrome's answer to a function run there names it), so an
    *  injection can be recorded before its script runs, and its address as the frame itself reads it (location.href, in
    *  the extension's isolated world: never the page's word); null where Chrome refused or named no document. */

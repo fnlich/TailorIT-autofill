@@ -18,6 +18,10 @@ function scripts(dir: string): string[] {
 const PAGE_BRIDGE = join(ENTRYPOINTS, 'page-bridge.content.ts');
 /** v3 Phase 8: the sentinel's entry, on every https page the person turned on: it parses nothing, so it holds no zod. */
 const SENTINEL = join(ENTRYPOINTS, 'sentinel.ts');
+/** v5 p2-detect: the page-world submit watcher's entry: it runs in the page's own world and holds no zod. */
+const SUBMIT_WATCH = join(ENTRYPOINTS, 'submit-watch.content.ts');
+/** v5 p2-fill: the page patches' entry, which the worker runs in a frame's own world: it holds no zod. */
+const PAGE_PATCHES = join(ENTRYPOINTS, 'page-patches.ts');
 
 /** A file's import sources, in order (an import's source ends its statement's last line, in either quotes), then
  *  one 'import()' or 'require()' for each dynamic import or require it holds. */
@@ -31,7 +35,8 @@ const importsOf = (file: string) => {
 
 describe('entrypoints', () => {
   it("import zod's setup before anything else, because MV3's CSP refuses zod's JIT", () => {
-    const files = scripts(ENTRYPOINTS).filter((file) => file !== PAGE_BRIDGE && file !== SENTINEL);
+    const files = scripts(ENTRYPOINTS).filter((file) => file !== PAGE_BRIDGE && file !== SENTINEL && file !== SUBMIT_WATCH
+      && file !== PAGE_PATCHES);
     expect(files.length).toBeGreaterThanOrEqual(4);
     for (const file of files) {
       const first = readFileSync(file, 'utf8').split('\n').find((line) => line.startsWith('import '));
@@ -52,13 +57,26 @@ describe('entrypoints', () => {
     expect(address.filter((source) => !/^\.\/[a-z]+\/url$/.test(source))).toEqual(['../core/enums', '../shared/hosts',
       './application-key', './bridge-address']);
     expect(importsOf(join(ENTRYPOINTS, '..', 'shared', 'hosts.ts'))).toEqual(['../core/enums']);
-    // v5 p2-fill (PLAN decision 14): the bridge's two page patches beside it, which import only the protocol.
-    expect(importsOf(join(ENTRYPOINTS, '..', 'page', 'bridge.ts'))).toEqual(['../dom/bridge-protocol', './dialogs',
+    expect(importsOf(join(ENTRYPOINTS, '..', 'page', 'bridge.ts'))).toEqual(['../dom/bridge-protocol']);
+    expect(importsOf(join(ENTRYPOINTS, '..', 'dom', 'bridge-protocol.ts'))).toEqual([]);
+  });
+
+  it("keep the submit watcher to the watcher, its protocol, the hosts and the bridge's address decision: no zod, no React (v5 p2-detect)",
+    () => {
+      expect(importsOf(SUBMIT_WATCH)).toEqual(['wxt/utils/define-content-script', '../adapters/bridge-address',
+        '../dom/submit-net-protocol', '../page/submit-watch', '../shared/hosts']);
+      expect(importsOf(join(ENTRYPOINTS, '..', 'page', 'submit-watch.ts'))).toEqual(['../dom/submit-net-protocol']);
+      expect(importsOf(join(ENTRYPOINTS, '..', 'dom', 'submit-net-protocol.ts'))).toEqual([]);
+    });
+
+  it('keep the page patches to their two patches and their protocol: no zod, no React, no address reading (v5 p2-fill)', () => {
+    expect(importsOf(PAGE_PATCHES)).toEqual(['wxt/utils/define-unlisted-script', '../page/patches']);
+    expect(importsOf(join(ENTRYPOINTS, '..', 'page', 'patches.ts'))).toEqual(['../dom/patch-protocol', './dialogs',
       './picker']);
     for (const patch of ['dialogs.ts', 'picker.ts']) {
-      expect(importsOf(join(ENTRYPOINTS, '..', 'page', patch)), patch).toEqual(['../dom/bridge-protocol']);
+      expect(importsOf(join(ENTRYPOINTS, '..', 'page', patch)), patch).toEqual(['../dom/patch-protocol']);
     }
-    expect(importsOf(join(ENTRYPOINTS, '..', 'dom', 'bridge-protocol.ts'))).toEqual([]);
+    expect(importsOf(join(ENTRYPOINTS, '..', 'dom', 'patch-protocol.ts'))).toEqual([]);
   });
 
   it('keep the sentinel to its platform and its reading: no zod, no React, no form runtime (v3 Phase 8)', () => {
