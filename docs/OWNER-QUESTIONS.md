@@ -546,6 +546,41 @@ Your requests of 2026-11-09 (v1.3: an application's questions kept for every job
 
 **What v1.3 and v1.4 need you to do:** reload the extension in `chrome://extensions`; choose I understand on the disclosure when Chrome's side panel or the options page shows it again (version 12; until then Submit and Sign-in stay Manual, nothing is recorded as Applied, so no submitted form is sent, no page is looked up as it loads, and Run auto-apply takes no job); and run a TailorIT that holds v1.3's forms routes and v1.4's tailoring (`d48e133` or later). Nobody connects again.
 
+## 18. v1.5: the preview over the page, Edit, prepared answers and the folders (decided under your "I approved all"; each yours to overrule)
+
+Your requests of 2026-11-09 for v1.5 (the preview as a dialog over the page, Edit in Show's place with its question for an uploaded resume, Prebuild's job application drafts, the MCP server, the resume folders) are built on the extension's `v15-ui` line (builder X's `9c4d110` and `14afa2c`), against TailorIT `v1.5` `2ad0fbf`, as docs/SPEC-AMENDMENTS.md §17 says (docs/ARCHITECTURE.md "v1.5 (TailorIT v1.5)"). Prebuild, the MCP server, the web's folders and the `/resumes/<id>/edit` route are TailorIT's.
+
+**Prepared answers**
+
+342. **Ask.** The order is: your earlier answer to this same job, then the answer TailorIT prepared for the job (Prebuild), then your earlier answer to another job, then the AI. So a prepared answer (written by an AI) wins over your own words from another job's application. Put other jobs' answers before prepared ones? Default: as built (the prepared answer was written for this very job).
+343. **Ask.** A prepared answer whose option the form no longer offers is skipped without a flag: the question goes on to another job's earlier answer, then to the AI, as a not-ready one does. TailorIT's contract comment says to flag it (left for you, as an earlier answer whose option is gone is). Builder X read your "not ready answer will be made during auto-apply" as covering it. Flag it instead? Default: as built (skipped, unflagged).
+344. **Ask.** Edit from the panel on the page with `confirmed: true` (the panel's own question's Continue) skips the question over the page. A page process taken over by an exploit could send that message too; the question guards your time and TailorIT's AI use (an editable copy made from your file), not your data, which never moves. Keep it? Default: keep.
+345. **Lead.** A prepared answer is written as a note, not flagged (confidence 0.9, the provenance "Prepared by TailorIT"), and is never used for a self-identification, legal, pay, consent, attention-check or bot-check question, a profile question the AI may not answer, or a file, nor in place of the self-identification decline default. A filled one is named `prebuilt` in the submitted answers sent to TailorIT.
+346. **Ask.** The extension reads TailorIT's prepared answers but not the lookup's new `draftReady` flag, and shows nothing of a draft on the job card (the tailored resume and letter reach the fill through TailorIT's tracker link, as in v1.4). Show "Draft ready" on the job card? Default: no.
+
+**The preview over the page and the one web-accessible page**
+
+347. **Lead.** `preview.html` is now the extension's one web-accessible resource, at an address that changes each browser session (`use_dynamic_url`), on every https and http page. This changes the standing "no web-accessible resources" rule (docs/SPEC-AMENDMENTS.md §17), because a page can frame an extension page only when it is web-accessible, and the extension's own frame keeps your résumé out of the page's process. check-build allows exactly that one entry. A page that loads or frames it itself is shown none of your files.
+348. **Lead.** Preview from Chrome's side panel also opens the dialog over the page (the worker asks the tab's top frame); the full-window page opens only where the page cannot show it (a browser page, a page no script of ours reaches, a hidden tab, no answer in 3 s), and from the dialog's "Open In A New Tab".
+349. **Ask.** The dialog's title shows the attached resume's file name, so that name is in the page's process (in our closed shadow root, which the site's scripts cannot read), even when you chose Chrome's side panel. Show the resume's title instead, or nothing? Default: the file name, as the plan said.
+
+**Edit and its question**
+
+350. **Lead.** Edit replaces Show on the review's résumé row only while a resume is attached and the application is not submitted (as its Change); every other row keeps Show.
+351. **Lead.** The question before editing an uploaded resume shows over the page; only where the page cannot show it does the panel ask itself. "Don't show this again" is this browser's setting (settings version 10), turned back on in Options' Documents card ("Ask before editing an uploaded resume"), not in the panel's Settings.
+
+**The folders**
+
+352. **Ask.** In Change's list only the folder holding the attached resume opens (none attached: the first that holds any); the others stay folded, and an empty one cannot open. Open them all? Default: as built.
+353. **Lead.** The Tailored folder in the extension is always by day, newest first (no Total / By date switch, which TailorIT's Documents page has); a resume TailorIT gives no date sits under "No date", last.
+
+**Copy**
+
+354. **Copy.** The dialog's words ("Your Resume", "Your Cover Letter", "Résumé", "Cover Letter", "Open In A New Tab", "Close"), the question's ("Edit An Uploaded Resume", "Editing an uploaded resume needs an editable copy. TailorIT's AI reads your file to make it, which can take a little while. Continue?", "Don't show this again", "Continue", "Cancel"; the plan suggested "…needs an editable copy, and TailorIT's AI takes a little while to read your file. Continue?"), the folders' ("Uploaded Resumes", "Edited Resumes", "Tailored Resumes", "No date"), the setting's ("Ask before editing an uploaded resume" and its "?"), and the prepared answer's reason and provenance ("Filled with the answer TailorIT prepared for this job ahead of time.", "Prepared by TailorIT"): drafts for your review.
+355. **Copy.** The first-run disclosure is version 13 (docs/PRIVACY.md "First-run disclosure"): the panel sentence now says the previews open over the page you are on, inside a frame of the extension's own that the page's scripts cannot read (from Chrome's side panel too, in a full window on Open In A New Tab or where the page cannot show it), that an uploaded resume opens in TailorIT as an editable copy its AI makes, after a question unless you chose Don't show this again, and that the extension has one page that web pages could load, at an address that changes each browser session; that Chrome's side panel still lets a preview and that question open over the page; the paragraph on submitted answers adds the answers TailorIT prepared with Prebuild, fetched with the job's questions and filling before other jobs' answers and any AI; and the AI paragraph says the fill-start batch asks only what those leave open. A draft for your review, as before.
+
+**What v1.5 needs you to do:** reload the extension in `chrome://extensions`; choose I understand on the disclosure when Chrome's side panel or the options page shows it again (version 13; until then Submit and Sign-in stay Manual, nothing is recorded as Applied, no page is looked up as it loads, and Run auto-apply takes no job); and run TailorIT `v1.5` (`2ad0fbf` or later), whose `/resumes/<id>/edit` route Edit of an uploaded resume opens and which sends the prepared answers and the resumes' folders (an older TailorIT sends neither, and the folders then file uploads as Uploaded and built resumes as Edited). Nobody connects again.
+
 ## Snapshots and owner-only inputs still needed
 
 ### Still lacking, per platform (after the snapshots of 2026-11-06)

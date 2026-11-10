@@ -65,8 +65,15 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  fingerprint of their options; a job TailorIT lacks added for everyone, on some sites with the posting's text; never a
  *  password, a human check, a hidden field or a file's content; the known open questions asked of the AI together at a
  *  fill's start; tailoring a resume and a cover letter on the person's click, on their templates; the previews in a
- *  full window of the extension's own, Edit in TailorIT). Raise it whenever the disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 12;
+ *  full window of the extension's own, Edit in TailorIT); 13, v1.5 (2026-11-09: the resume and letter previews over
+ *  the page the person is on, inside a frame of the extension's own that the page's scripts cannot read, from Chrome's
+ *  side panel too, a full window when they choose Open In A New Tab or the page cannot show it; the extension's one page
+ *  web pages could load, at an address that changes each browser session, showing no other page their files; Edit of an
+ *  uploaded resume opening an editable copy TailorIT's AI makes from the file, asked first unless they chose "Don't show
+ *  this again"; the answers TailorIT prepared for a job ahead of time with Prebuild, fetched with its questions, filling
+ *  a question the profile and their earlier answer to that job leave open, before other jobs' answers and any AI, never
+ *  a sensitive, consent or attention-check question or a file). Raise it whenever the disclosure's substance changes. */
+export const DISCLOSURE_VERSION = 13;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */
