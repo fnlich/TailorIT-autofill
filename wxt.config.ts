@@ -2,6 +2,8 @@
  * The extension's build. The manifest is the narrowest that works (docs/PRIVACY.md justifies each key), and
  * scripts/check-build.mjs fails any build that drifts from it. The e2e variant (TAILORIT_BUILD=e2e, set only by
  * scripts/e2e.mjs) differs only in TailorIT's origin, which points at the mock, and in the compiled-in test events.
+ * A production build's TailorIT is TAILORIT_ORIGIN (the environment, or the extension's .env), by default
+ * http://localhost:3100: set it to TailorIT's APP_ORIGIN, then build, reload the extension and connect again.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -10,11 +12,14 @@ import { defineConfig } from 'wxt';
 import { ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CONTENT_SCRIPT_FILE, WEB_ACCESSIBLE_PAGE } from './src/shared/hosts';
 import { CAPTURE_PAGE, captureCommands } from './src/background/capture';
 import { CAPTURE_COPY } from './src/shared/copy';
+import { tailoritOrigin } from './scripts/tailorit-origin.mjs';
 
 const E2E = process.env.TAILORIT_BUILD === 'e2e';
 /** The fallback when Chromium injects no content script into routed pages: fixtures served from 127.0.0.1 instead. */
 const FIXTURE_FALLBACK = E2E && process.env.TAILORIT_FIXTURE_ORIGIN === '1';
-const TAILORIT_ORIGIN = E2E ? 'http://localhost:3190' : 'http://localhost:3100';
+/** TailorIT's origin (scripts/tailorit-origin.mjs): TAILORIT_ORIGIN from the environment, else from the extension's .env,
+ *  else http://localhost:3100; the e2e build's is the mock, http://localhost:3190. A bad value stops the build here. */
+const TAILORIT_ORIGIN = tailoritOrigin({ e2e: E2E, root: resolve('.') });
 /** Our content script's bundle: src/entrypoints/content-script.ts, an unlisted script WXT writes at the build's root. */
 const CONTENT_SCRIPT = CONTENT_SCRIPT_FILE;
 /** The public half of a key pair made once (the private half was never kept), so every local build has one id. */

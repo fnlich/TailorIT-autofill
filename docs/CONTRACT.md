@@ -45,7 +45,7 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 | GET, POST, PUT, DELETE | `/site-requests` (GET), `/agent/queue`, `/agent/queue/:id`, `/agent/queue/clear-finished`, `/agent/settings`, `/sign-ins`, `/sign-ins/:id` | session | v3 | TailorIT's own pages: the site requests, the auto-apply queue and its rule, the job-site sign-ins |
 
 ## How the extension calls it (`src/background/server-client.ts`, Phase 2)
-- **Only the worker calls TailorIT**, at the build's origin (`__TAILORIT_ORIGIN__`: `http://localhost:3100`, or the mock's `http://localhost:3190` in the e2e build). Content scripts and pages never do.
+- **Only the worker calls TailorIT**, at the build's origin (`__TAILORIT_ORIGIN__`: `http://localhost:3100`, or the build's `TAILORIT_ORIGIN`, or the mock's `http://localhost:3190` in the e2e build). Content scripts and pages never do.
 - **The allow-list:** `<origin>/api/autofill/*` (lower-case letters, digits, `/` and `-` only, no `//`, the server's own `tokenScope` pattern) and `GET <origin>/api/ai/tasks/<uuid>`. Never a `DELETE` on a task (the Phase 4 review, T-F2: TailorIT gives callers that ask the same one task, and prunes every task itself). Any other path, or method, is refused before a request is made. A resume id goes into a path only when it is `[a-z0-9-]{1,64}`.
 - **Every request:**
   - `credentials: 'omit'` (no cookie, ever), `redirect: 'error'`, `cache: 'no-store'`, `referrerPolicy: 'no-referrer'`;

@@ -33,7 +33,16 @@ npx playwright install chromium
 ## Loading the extension
 Build it, open `chrome://extensions` (or `edge://extensions`), turn on Developer mode, choose **Load unpacked** and pick `.output/chrome-mv3` (or `.output/edge-mv3`). The manifest carries a fixed public key, so the extension id is always `flmloalhjldmcihejnmkndbcnhaacmng`; TailorIT's `AUTOFILL_EXTENSION_IDS` defaults to it.
 
-The production build talks to TailorIT at `http://localhost:3100`. It needs Chrome or Edge 144 or later.
+The production build talks to TailorIT at `http://localhost:3100` unless you change it (below). It needs Chrome or Edge 144 or later.
+
+## TailorIT's address
+The extension must be built for the address you open TailorIT at: TailorIT's `APP_ORIGIN` (its `.env`), exactly, with the same scheme, host and port. To change it:
+
+1. Copy `.env.example` to `.env` in this folder (git ignores `.env`) and set `TAILORIT_ORIGIN`, for example `TAILORIT_ORIGIN=http://192.168.1.20:3100`. Setting it in the environment works too, and wins over the file: `$env:TAILORIT_ORIGIN='http://192.168.1.20:3100'; npm run build` in PowerShell.
+2. `npm run build` (or `npm run build:edge`). Chrome reads the address from the build's manifest (`host_permissions`, `externally_connectable`) and the worker has it compiled in, so nothing changes until you build again.
+3. Reload the extension in `chrome://extensions`, then connect again from TailorIT's Settings › Autofill.
+
+The value is an `http://` or `https://` address with a host name or an IP address and an optional port, and no path; anything else stops the build with a sentence saying what to write. Blank means `http://localhost:3100`. `npm run check:build` checks the builds against the same setting. The e2e build always talks to the mock at `http://localhost:3190`.
 
 ## Layout
 `src/core` is pure (no DOM, no browser APIs, no clock or randomness, enforced by its own tsconfig, lint and a test). `src/dom`, `src/adapters`, `src/content`, `src/background`, `src/messaging`, `src/platform`, `src/shared` and `src/ui` are the rest; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) gives the import rules. Only `src/platform/chrome.ts` touches the browser's extension APIs.

@@ -118,22 +118,26 @@ const WATCH_BUNDLE = `(function(){${WATCH_AT}${WATCH_WRAP}${WATCH_PROXY}})();`;
 
 const folders: string[] = [];
 
-/** A copy of the script and what it reads, with three clean builds; `change` then breaks what a case needs. */
-function project(change: (write: (path: string, text: string | Uint8Array) => void) => void = () => undefined): string {
+/** A copy of the script and what it reads, with three clean builds; `change` then breaks what a case needs. The
+ *  production builds are made for TailorIT at `origin` (TAILORIT_ORIGIN), by default http://localhost:3100. */
+function project(change: (write: (path: string, text: string | Uint8Array) => void) => void = () => undefined,
+  origin = 'http://localhost:3100'): string {
   const root = mkdtempSync(join(tmpdir(), 'tailorit-check-build-'));
   folders.push(root);
   const write = (path: string, text: string | Uint8Array) => {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);
   };
-  for (const path of ['scripts/check-build.mjs', 'scripts/proc.mjs', 'src/shared/hosts.ts', 'src/shared/sidebar.ts',
-    'keys/manifest-key.txt']) {
+  for (const path of ['scripts/check-build.mjs', 'scripts/proc.mjs', 'scripts/tailorit-origin.mjs', 'src/shared/hosts.ts',
+    'src/shared/sidebar.ts', 'keys/manifest-key.txt']) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     copyFileSync(join(ROOT, path), join(root, path));
   }
   for (const [name, dir] of Object.entries(BUILDS)) {
-    write(`${dir}/manifest.json`, JSON.stringify(manifest(name === 'e2e' ? 'http://localhost:3190' : 'http://localhost:3100')));
-    write(`${dir}/background.js`, 'var background=(function(){return {}})();');
+    const own = name === 'e2e' ? 'http://localhost:3190' : origin;
+    write(`${dir}/manifest.json`, JSON.stringify(manifest(own)));
+    // The worker names its TailorIT (__TAILORIT_ORIGIN__), as the real bundle does.
+    write(`${dir}/background.js`, `var background=(function(){return {o:${JSON.stringify(own)}}})();`);
     write(`${dir}/content-scripts/content.js`, 'var content=(function(){return {}})();');
     write(`${dir}/content-scripts/page-bridge.js`, BRIDGE_BUNDLE);
     write(`${dir}/content-scripts/submit-watch.js`, WATCH_BUNDLE);
@@ -155,9 +159,10 @@ function project(change: (write: (path: string, text: string | Uint8Array) => vo
   return root;
 }
 
-function checkBuild(root: string): { status: number | null; output: string } {
+/** Runs the copy's check-build with TAILORIT_ORIGIN unset unless `env` sets it (a .env a case writes then decides). */
+function checkBuild(root: string, env: Record<string, string> = {}): { status: number | null; output: string } {
   const run = spawnSync(process.execPath, [join(root, 'scripts', 'check-build.mjs'), '--all'], { cwd: root, encoding: 'utf8',
-    env: { ...process.env, NO_COLOR: '1' } });
+    env: { ...process.env, NO_COLOR: '1', TAILORIT_ORIGIN: '', ...env } });
   return { status: run.status, output: `${run.stdout}\n${run.stderr}` };
 }
 
@@ -817,4 +822,81 @@ describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel an
       expect(status, message).toBe(1);
     }
   }, 30_000); // v1.5 X: as the file's other many-build cases (a loaded machine takes over 5 s).
+});
+
+// v1.5 (the owner's "all ip address should be changable on .env", 2026-11-10): the production builds' TailorIT is
+// TAILORIT_ORIGIN (the environment, else the extension's .env, else http://localhost:3100), and check-build holds their
+// manifests to exactly that origin.
+describe("check-build's TailorIT origin (TAILORIT_ORIGIN)", () => {
+  afterEach(() => {
+    for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
+  });
+  const LAN = 'http://192.168.1.20:3100';
+
+  it('pass production builds made for a configured origin, whose manifests name exactly it', () => {
+    const root = project(undefined, LAN);
+    const passed = checkBuild(root, { TAILORIT_ORIGIN: LAN });
+    expect(passed.output).toContain('3 build(s) match the manifest the plan allows');
+    expect(passed.status).toBe(0);
+    const manifestOf = JSON.parse(readFileSync(join(root, BUILDS.chrome, 'manifest.json'), 'utf8'));
+    expect(manifestOf.host_permissions).toEqual(['https://*/*', 'http://*/*', `${LAN}/*`]);
+    expect(manifestOf.externally_connectable).toEqual({ matches: [`${LAN}/*`] });
+    // A trailing slash or upper case in the setting is the same origin.
+    expect(checkBuild(root, { TAILORIT_ORIGIN: 'HTTP://192.168.1.20:3100/' }).status).toBe(0);
+  }, 30_000);
+
+  it('fail builds made for another TailorIT than the configured one, saying which', () => {
+    const { status, output } = checkBuild(project(), { TAILORIT_ORIGIN: LAN });
+    expect(output).toContain('.output/chrome-mv3: host_permissions are ["https://*/*","http://*/*","http://localhost:3100/*"], '
+      + `not every https and http page plus TailorIT (${LAN}, TAILORIT_ORIGIN: build again after changing it)`);
+    expect(output).toContain(`.output/edge-mv3: externally_connectable is not exactly TailorIT (${LAN}, TAILORIT_ORIGIN`);
+    expect(status).toBe(1);
+    // And the other way round: builds for the LAN address, checked against the default.
+    const back = checkBuild(project(undefined, LAN));
+    expect(back.output).toContain('externally_connectable is not exactly TailorIT (http://localhost:3100, TAILORIT_ORIGIN');
+    expect(back.status).toBe(1);
+  }, 30_000);
+
+  it('fail a manifest that names the configured origin and another beside it', () => {
+    const { status, output } = checkBuild(project((write) => {
+      for (const dir of [BUILDS.chrome, BUILDS.edge]) {
+        write(`${dir}/manifest.json`, JSON.stringify({ ...manifest(LAN),
+          host_permissions: ['https://*/*', 'http://*/*', `${LAN}/*`, 'http://localhost:3100/*'],
+          externally_connectable: { matches: [`${LAN}/*`, 'http://localhost:3100/*'] } }));
+      }
+    }, LAN), { TAILORIT_ORIGIN: LAN });
+    expect(output).toContain('.output/chrome-mv3: host_permissions are');
+    expect(output).toContain(`.output/chrome-mv3: externally_connectable is not exactly TailorIT (${LAN}`);
+    expect(status).toBe(1);
+  }, 30_000);
+
+  it('read TAILORIT_ORIGIN from the .env in the extension\'s root, the environment winning over it', () => {
+    const root = project((write) => write('.env', '# TailorIT on the LAN\nTAILORIT_ORIGIN=http://tailorit.lan:3100\n'),
+      'http://tailorit.lan:3100');
+    expect(checkBuild(root).status).toBe(0);
+    const overridden = checkBuild(root, { TAILORIT_ORIGIN: 'http://localhost:3100' });
+    expect(overridden.output).toContain('externally_connectable is not exactly TailorIT (http://localhost:3100');
+    expect(overridden.status).toBe(1);
+  }, 30_000);
+
+  it('stop at once on a TAILORIT_ORIGIN that is no origin, saying what to write', () => {
+    for (const [value, why] of [['http://192.168.1.20:3100/app', 'must be an origin, with no path'],
+      ['192.168.1.20:3100', 'is not an address'], ['ftp://192.168.1.20', 'must start with http:// or https://'],
+      ['http://localhost:3190', "is the e2e mock's address"]] as const) {
+      const { status, output } = checkBuild(project(), { TAILORIT_ORIGIN: value });
+      expect(output, value).toContain(`TAILORIT_ORIGIN=${value} ${why}`);
+      expect(output, value).not.toContain('match the manifest');
+      expect(status, value).toBe(1);
+    }
+  }, 30_000);
+
+  it("pass a TailorIT at 127.0.0.1, whose bundles name it, and still fail the e2e sender's escaped address there", () => {
+    const local = 'http://127.0.0.1:3100';
+    expect(checkBuild(project(undefined, local), { TAILORIT_ORIGIN: local }).status).toBe(0);
+    const { status, output } = checkBuild(project((write) => write(`${BUILDS.chrome}/background.js`,
+      String.raw`var background=(function(){function a(e){return /^http:\/\/127\.0\.0\.1:\d+\//.test(e)}return {o:"http://127.0.0.1:3100",a}})();`),
+    local), { TAILORIT_ORIGIN: local });
+    expect(output).toContain(String.raw`.output/chrome-mv3: background.js contains "127\.0\.0\.1"`);
+    expect(status).toBe(1);
+  }, 30_000);
 });

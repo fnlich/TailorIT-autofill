@@ -15,5 +15,6 @@ fixtures/.generated/
 vocab/.sources/
 .env
 .env.*
+!.env.example
 .DS_Store
 Thumbs.db

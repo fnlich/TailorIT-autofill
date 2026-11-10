@@ -32,6 +32,9 @@
 // alone. The watcher is told from the bridge by its file.
 // v1.5 X (PLAN decision 2, the in-page preview dialog): exactly one web-accessible resource, the preview page
 // (WEB_ACCESSIBLE_PAGE), at its dynamic address alone, on every https and http page, and in the build.
+// v1.5 (the owner's "all ip address should be changable on .env", 2026-11-10): the production builds' TailorIT is
+// TAILORIT_ORIGIN, read as wxt.config.ts reads it (scripts/tailorit-origin.mjs: the environment, else the extension's
+// .env, else http://localhost:3100), and their manifests name exactly that origin.
 // Usage: node scripts/check-build.mjs [--all]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -39,9 +42,18 @@ import { isDeepStrictEqual } from 'node:util';
 import { setImmediate as nextTurn } from 'node:timers';
 import vm from 'node:vm';
 import { paint } from './proc.mjs';
+import { E2E_TAILORIT_ORIGIN, tailoritOrigin } from './tailorit-origin.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const requireAll = process.argv.includes('--all');
+/** The production builds' TailorIT, as wxt.config.ts reads it; a value that is no origin fails the check at once. */
+let PRODUCTION_ORIGIN;
+try {
+  PRODUCTION_ORIGIN = tailoritOrigin({ root: ROOT });
+} catch (error) {
+  console.error(paint('red', `✗ ${error instanceof Error ? error.message : String(error)}`));
+  process.exit(1);
+}
 const { ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CAPTCHA_VENDOR_MATCHES, CONTENT_SCRIPT_FILE, registrationsFor, SENTINEL_FILE,
   SITES_MATCH, SITES_REGISTRATION_ID, SUBMIT_WATCH_MATCHES, WEB_ACCESSIBLE_PAGE,
 } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
@@ -183,19 +195,23 @@ const NEVER_IN_A_CONTENT_SCRIPT = ['css', 'match_about_blank', 'match_origin_as_
   'exclude_globs', 'exclude_matches'];
 
 const BUILDS = [
-  { dir: '.output/chrome-mv3', origin: 'http://localhost:3100', production: true },
-  { dir: '.output/edge-mv3', origin: 'http://localhost:3100', production: true },
-  { dir: '.output-e2e/chrome-mv3', origin: 'http://localhost:3190', production: false },
+  { dir: '.output/chrome-mv3', origin: PRODUCTION_ORIGIN, production: true },
+  { dir: '.output/edge-mv3', origin: PRODUCTION_ORIGIN, production: true },
+  { dir: '.output-e2e/chrome-mv3', origin: E2E_TAILORIT_ORIGIN, production: false },
 ];
 /** Each build's TailorIT, as its bundles name it: none may hold another build's. */
 const ORIGIN_HOSTS = [...new Set(BUILDS.map((build) => new URL(build.origin).host))];
+/** Whether a bundle names `host` (a TailorIT's host and port) whole: localhost:3100 is not in localhost:31000. */
+const namesHost = (text, host) =>
+  new RegExp(`(?<![\\w.-])${host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.:-])`).test(text);
 /**
  * Strings that exist only in the e2e build; a production bundle containing one fails. The e2e fallback's sender check
  * (src/background/senders.ts) is a regular expression, which a bundle holds as written, its dots escaped: hence both
- * spellings of 127.0.0.1.
+ * spellings of 127.0.0.1. A production TailorIT at 127.0.0.1 (TAILORIT_ORIGIN) names the plain spelling itself, so its
+ * bundles are held to the escaped one alone.
  */
 const E2E_ONLY = ['e2e:events', 'e2e/probe', 'storage-local-probe', 'localhost:3190', '127.0.0.1', String.raw`127\.0\.0\.1`,
-  'tailorit-e2e-test-adapter'];
+  'tailorit-e2e-test-adapter'].filter((needle) => !PRODUCTION_ORIGIN.includes(needle));
 /**
  * Strings only a development build holds: the snapshot hotkeys' marker, which both command names begin with
  * (src/background/capture.ts), the capture page's pageCapture call, and the worker's address for that page. The chrome,
@@ -245,7 +261,8 @@ function checkManifest(build, manifest) {
   // v5 p1-rules (PLAN decision 10, like Jobright): every https and http page at install, and TailorIT; never <all_urls>.
   if (!sameSet(manifest.host_permissions ?? [], [...ALL_SITES_HOST_PERMISSIONS, `${build.origin}/*`])
     || !sameSet([...ALL_SITES_HOST_PERMISSIONS], ['https://*/*', 'http://*/*'])) {
-    fail(build, `host_permissions are ${JSON.stringify(manifest.host_permissions)}, not every https and http page plus TailorIT`);
+    fail(build, `host_permissions are ${JSON.stringify(manifest.host_permissions)}, not every https and http page plus TailorIT`
+      + ` (${build.origin}${build.production ? ', TAILORIT_ORIGIN: build again after changing it' : ''})`);
   }
   for (const host of manifest.host_permissions ?? []) {
     if (BEYOND_WEB_PAGES.test(host)) fail(build, `the host permission ${host} reaches more than web pages`);
@@ -308,7 +325,8 @@ function checkManifest(build, manifest) {
   }
   // The whole object: `ids` would let other extensions connect, `accepts_tls_channel_id` adds a channel.
   if (!isDeepStrictEqual(manifest.externally_connectable, { matches: [`${build.origin}/*`] })) {
-    fail(build, 'externally_connectable is not exactly TailorIT');
+    fail(build, `externally_connectable is not exactly TailorIT (${build.origin}`
+      + `${build.production ? ', TAILORIT_ORIGIN: build again after changing it' : ''})`);
   }
   if (manifest.options_ui?.open_in_tab !== true) fail(build, 'the options page does not open in a tab');
   for (const page of [manifest.options_ui?.page, manifest.side_panel?.default_path, WEB_ACCESSIBLE_PAGE]) {
@@ -805,7 +823,7 @@ for (const build of BUILDS) {
     for (const needle of DEV_ONLY) if (text.includes(needle)) fail(build, `${relative(dir, file)} contains the development-only "${needle}"`);
     const own = new URL(build.origin).host;
     for (const host of ORIGIN_HOSTS.filter((other) => other !== own && !(build.production && E2E_ONLY.includes(other)))) {
-      if (text.includes(host)) fail(build, `${relative(dir, file)} holds another build's TailorIT, "${host}"`);
+      if (namesHost(text, host)) fail(build, `${relative(dir, file)} holds another build's TailorIT, "${host}"`);
     }
   }
   for (const page of DEV_ONLY_PAGES) if (existsSync(join(dir, page))) fail(build, `${page} is a development-only page`);
@@ -825,8 +843,10 @@ checkRegistrations();
 const production = BUILDS[0]?.manifest;
 const e2e = BUILDS[2]?.manifest;
 if (production && e2e) {
-  const normalise = (m) => JSON.parse(JSON.stringify(m).replaceAll('http://localhost:3190', 'http://localhost:3100').replaceAll(',"http://127.0.0.1/*"', ''));
-  if (JSON.stringify(normalise(e2e)) !== JSON.stringify(production)) failures.push('the e2e manifest differs from production by more than the origin');
+  // The fallback match is dropped from both, so a production TailorIT at http://127.0.0.1 compares the same.
+  const strip = (text) => text.replaceAll(',"http://127.0.0.1/*"', '');
+  const normalise = (m) => strip(JSON.stringify(m).replaceAll(E2E_TAILORIT_ORIGIN, PRODUCTION_ORIGIN));
+  if (normalise(e2e) !== strip(JSON.stringify(production))) failures.push('the e2e manifest differs from production by more than the origin');
 }
 
 for (const { build, sizes } of checked) {
