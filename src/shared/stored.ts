@@ -72,8 +72,14 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  uploaded resume opening an editable copy TailorIT's AI makes from the file, asked first unless they chose "Don't show
  *  this again"; the answers TailorIT prepared for a job ahead of time with Prebuild, fetched with its questions, filling
  *  a question the profile and their earlier answer to that job leave open, before other jobs' answers and any AI, never
- *  a sensitive, consent or attention-check question or a file). Raise it whenever the disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 13;
+ *  a sensitive, consent or attention-check question or a file); 14, v1.5 part 2 (2026-11-10: Start in the panel's
+ *  Queue tab opening the jobs queued in TailorIT one by one in new tabs of this browser, on the person's timer, no more
+ *  unfinished queued tabs open at once than they allow; each filled by itself unless Autofill when a queued tab opens
+ *  is Manually, and submitted only with Submit on Auto and the rules under Modes; the list read from TailorIT, which is
+ *  told of each opening and how each went; a submitted job's tab closed a few seconds after the site confirms it unless
+ *  its window shows it; Run auto-apply and the queue never at once). Raise it whenever the disclosure's substance
+ *  changes. */
+export const DISCLOSURE_VERSION = 14;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */
