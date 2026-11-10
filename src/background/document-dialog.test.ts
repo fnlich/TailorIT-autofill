@@ -204,7 +204,7 @@ describe('Edit (v1.5 X, PLAN decision 3)', () => {
     await open(worker, { kind: 'resume', how: 'edit' });
     expect(await confirmed(worker, grantOf(worker, 'edit/confirm'), true)).toEqual({ ok: true, data: {} });
     expect((await worker.deliver({ v: 1, type: 'settings/get' }, pageSender())) as Answer).toMatchObject({ ok: true,
-      data: { settings: { version: 10, ui: { skipUploadEditConfirm: true } } } });
+      data: { settings: { version: 11, ui: { skipUploadEditConfirm: true } } } });
     expect(await open(worker, { kind: 'resume', how: 'edit' })).toEqual({ ok: true, data: { opened: true } });
     expect((await tabs()).at(-1)).toBe(`${ORIGIN}/resumes/${UPLOAD.id}/edit`);
     expect(dialogsSent(worker, 'edit/confirm')).toHaveLength(1);

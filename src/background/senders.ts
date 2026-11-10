@@ -173,6 +173,10 @@ export const SIDEBAR_PAGE_MESSAGES: ReadonlySet<string> = new Set([
   // v1.4 F (PLAN decisions 16-18): the job card's tailoring, its Preview and Edit (the worker opens an extension page or
   // TailorIT's editor: a page may open neither, and no id reaches it), and the templates of Settings and the profile.
   'panel/tailor', 'panel/openDocument', 'panel/documents',
+  // v1.5 QX (PLAN decision 9): the Queue tab: its status and list, Start, Stop, Pause and Resume (each a trusted click
+  // on a control seen CONTROL_SEEN_MS), and a row's tab brought to the front. What opens is only what the person queued
+  // in TailorIT, at the address the agent's own reading gives, and each tab fills with the person's own settings.
+  'queue/status', 'queue/list', 'queue/start', 'queue/stop', 'queue/pause', 'queue/resume', 'queue/focus',
 ]);
 
 /** The ports the sidebar's views open: the panel's live reports. The review's S6 and F10: never the preview's transfer,

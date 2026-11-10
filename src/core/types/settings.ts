@@ -45,6 +45,11 @@
  * fixed resume, can you proceed it` with `never be shown` checkbox"): `ui.skipUploadEditConfirm`, the confirm's "Don't
  * show this again" before Edit opens TailorIT's editable copy of an uploaded resume; off (the confirm shows) by default,
  * and turned back on in Options' Documents card. Every version 9 value takes the default (migrateSettingsV9).
+ * Version 11 (v1.5 QX, the owner's words of 2026-11-10: "open new tab with job link on auto-apply queue one by one ...
+ * user can set duration and accelation time on settings"): `queue`, the sequential auto-apply's timer and tabs: each
+ * queued job opens in a new tab `durationSec + k × accelerationSec` seconds after the one before (8, 8.5, 9, ... by
+ * default), at most `maxOpenTabs` of them open at once, and each fills by itself ('auto') or waits for the person's
+ * Autofill ('manual'). Every version 10 value takes the defaults (migrateSettingsV10).
  */
 import type { ConsentCategory } from '../enums';
 
@@ -153,8 +158,43 @@ export type PanelPlace = (typeof PANEL_PLACES)[number];
 /** Versions 1 to 7's places: the browser's side panel, or the small in-page review card. */
 export type PanelPlaceV7 = 'side' | 'in-page';
 
-/** The settings' version now (v1.5 X: the upload edit confirm's "Don't show this again"). */
-export const SETTINGS_VERSION = 10;
+/** The settings' version now (v1.5 QX: the sequential auto-apply's queue settings). */
+export const SETTINGS_VERSION = 11;
+
+// v1.5 QX
+/** "Autofill when a queued tab opens" (version 11): the tab's form fills by itself, as the side panel's Autofill would
+ *  ('auto', the default), or waits for the person's Autofill ('manual'). Submit follows the Submit mode either way. */
+export const QUEUE_AUTOFILL_CHOICES = ['auto', 'manual'] as const;
+export type QueueAutofill = (typeof QUEUE_AUTOFILL_CHOICES)[number];
+
+/** The bounds of the queue settings (PLAN decision 8: duration 1-600 s, acceleration 0-60 s; at most 10 tabs). The
+ *  seconds take tenths at most. */
+export const QUEUE_LIMITS = {
+  durationSec: { min: 1, max: 600 },
+  accelerationSec: { min: 0, max: 60 },
+  maxOpenTabs: { min: 1, max: 10 },
+} as const;
+
+/** The sequential auto-apply (version 11): the k-th wait after a queued tab opened is durationSec + k × accelerationSec
+ *  seconds (k from 0: 8, 8.5, 9, 9.5, ... by default); at most maxOpenTabs queued tabs are open at once, the timer
+ *  waiting while they are; each tab fills by itself or waits for the person (autofillOnOpen). */
+export interface QueueSettings {
+  durationSec: number;
+  accelerationSec: number;
+  autofillOnOpen: QueueAutofill;
+  maxOpenTabs: number;
+}
+
+/** The queue settings' defaults (PLAN decision 8). */
+export const DEFAULT_QUEUE: QueueSettings = { durationSec: 8, accelerationSec: 0.5, autofillOnOpen: 'auto', maxOpenTabs: 5 };
+
+/** The wait before the next queued tab, in ms, after `opened` tabs opened (at least one): durationSec + k ×
+ *  accelerationSec seconds with k = opened - 1 (PLAN decision 7). */
+export function queueWaitMs(queue: Pick<QueueSettings, 'durationSec' | 'accelerationSec'>, opened: number): number {
+  const k = Math.max(0, opened - 1);
+  return Math.round((queue.durationSec + k * queue.accelerationSec) * 1000);
+}
+// end v1.5 QX
 
 // v1.5 X
 /** The extension's own UI choices that are no mode (version 10). */
@@ -202,6 +242,8 @@ export interface Settings {
   };
   /** v1.5 X (version 10): the extension's own UI choices. */
   ui: UiChoices;
+  /** v1.5 QX (version 11): the sequential auto-apply's timer, tabs and fill. */
+  queue: QueueSettings;
 }
 
 /** The consents pre-approved by default (version 2): marketing and SMS stay off under Consents: Required only; an AI
@@ -226,7 +268,7 @@ export const DEFAULT_MODES: Modes = {
 export const DEFAULT_UI: UiChoices = { skipUploadEditConfirm: false };
 
 export const DEFAULT_SETTINGS: Settings = {
-  version: 10,
+  version: 11,
   panel: 'page',
   view: 'expanded',
   modes: { ...DEFAULT_MODES, agentSkip: { ...DEFAULT_MODES.agentSkip } },
@@ -236,6 +278,7 @@ export const DEFAULT_SETTINGS: Settings = {
   offerToSaveAnswers: true,
   interpretations: { postingCountryForLegal: true, twoOrMoreRaces: true, eeoDeclineByDefault: true },
   ui: { ...DEFAULT_UI },
+  queue: { ...DEFAULT_QUEUE }, // v1.5 QX
 };
 
 /** Versions 2 to 5's AI switches: the draft confirmation, and "Ask me each time" among what a posting that forbids AI
@@ -250,8 +293,15 @@ export interface LlmV5 {
   whenForbidden: AiForbiddenModeV5;
 }
 
+// v1.5 QX
+/** Version 10's settings, as an install stored them before the queue settings (version 11). */
+export interface SettingsV10 extends Omit<Settings, 'version' | 'queue'> {
+  version: 10;
+}
+// end v1.5 QX
+
 /** v1.5 X: version 9's settings, as an install stored them before the extension's UI choices (version 10). */
-export interface SettingsV9 extends Omit<Settings, 'version' | 'ui'> {
+export interface SettingsV9 extends Omit<SettingsV10, 'version' | 'ui'> {
   version: 9;
 }
 
@@ -315,14 +365,26 @@ export interface SettingsV2 extends Omit<SettingsV3, 'version' | 'llm'> {
   llm: Omit<SettingsV3['llm'], 'answerAll'>;
 }
 
+// v1.5 QX
 /**
- * v1.5 X: version 9's settings as version 10's: every choice is kept, and the confirm before editing an uploaded
- * resume shows (the extension's UI choices at their defaults).
+ * Version 10's settings as version 11's: every choice is kept, and the sequential auto-apply takes its defaults (8 s,
+ * then half a second more each time; at most 5 queued tabs; each fills by itself).
+ */
+export function migrateSettingsV10(old: SettingsV10): Settings {
+  return { ...old, version: 11, modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip } },
+    preapprovedConsent: [...old.preapprovedConsent], llm: { ...old.llm }, telemetry: { ...old.telemetry },
+    interpretations: { ...old.interpretations }, ui: { ...old.ui }, queue: { ...DEFAULT_QUEUE } };
+}
+// end v1.5 QX
+
+/**
+ * v1.5 X: version 9's settings as version 11's, through version 10: every choice is kept, and the confirm before
+ * editing an uploaded resume shows (the extension's UI choices at their defaults).
  */
 export function migrateSettingsV9(old: SettingsV9): Settings {
-  return { ...old, version: 10, modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip } },
+  return migrateSettingsV10({ ...old, version: 10, modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip } },
     preapprovedConsent: [...old.preapprovedConsent], llm: { ...old.llm }, telemetry: { ...old.telemetry },
-    interpretations: { ...old.interpretations }, ui: { ...DEFAULT_UI } };
+    interpretations: { ...old.interpretations }, ui: { ...DEFAULT_UI } });
 }
 
 /**

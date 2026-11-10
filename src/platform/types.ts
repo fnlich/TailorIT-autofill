@@ -148,6 +148,8 @@ export interface WorkerPlatform {
   windows: AgentWindows;
   /** v3 Phase 5: the auto-apply agent's wake-ups (chrome.alarms, the `alarms` permission: no install warning). */
   alarms: AgentAlarms;
+  /** v1.5 QX: the sequential auto-apply's tabs (chrome.tabs and chrome.windows, no permission needed). */
+  queueTabs: QueueTabs;
   /** The token's home (extension-origin IndexedDB). */
   secrets: SecretStore;
   fetch: FetchLike;
@@ -177,6 +179,27 @@ export interface AgentWindows {
   /** Whether a normal browser window other than `except` is open: the agent works only while the person's browser is. */
   othersOpen(except: number | null): Promise<boolean>;
 }
+
+// v1.5 QX
+/**
+ * The tabs the sequential auto-apply opens (PLAN decision 7): one per queued job, in the person's own window, in the
+ * background (never taking the focus from what they do), on an empty page first and then the job's address, so the
+ * tab is known before anything of it loads. No address is ever read back from a tab: the queue knows its tabs by id.
+ */
+export interface QueueTabs {
+  /** Opens a tab that is not active, on an empty page, in the last focused normal window; its id, or null when the
+   *  browser would not open one. */
+  open(): Promise<number | null>;
+  /** Sends the tab to `url`; false when the tab is gone. */
+  navigate(tabId: number, url: string): Promise<boolean>;
+  /** Brings the tab to the front (its window focused, the tab active); false when it is gone. */
+  focus(tabId: number): Promise<boolean>;
+  /** Whether the tab is gone, its window's active tab, or in the background. */
+  state(tabId: number): Promise<'gone' | 'active' | 'background'>;
+  /** Closes the tab; a tab already gone is no error. */
+  close(tabId: number): Promise<void>;
+}
+// end v1.5 QX
 
 /** v3 Phase 8: the dynamic content scripts (chrome.scripting): the sentinel's registrations, and the one injection of
  *  the content script into a frame the sentinel recognised. */

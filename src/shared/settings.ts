@@ -1,8 +1,8 @@
 /*
  * The settings schema and where they are kept. The worker reads and writes them; content scripts receive the part
- * they need with run/begin and never touch storage. Version 10 (v1.5 X: the extension's UI choices, `ui`) is stored
- * under the same key; a version 1 to 9 value read there is migrated (core/types/settings.ts migrateSettings,
- * migrateSettingsV2 to migrateSettingsV9) and stored again.
+ * they need with run/begin and never touch storage. Version 11 (v1.5 QX: the sequential auto-apply's `queue`; version
+ * 10, v1.5 X: the extension's UI choices, `ui`) is stored under the same key; a version 1 to 10 value read there is
+ * migrated (core/types/settings.ts migrateSettings, migrateSettingsV2 to migrateSettingsV10) and stored again.
  * The older versions' schemas, which only the worker reads, are in ./settings-stored.ts (the behaviour review of
  * 2026-11-06: kept out of the content script's bundle, and its budget).
  */
@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { CONSENT_CATEGORIES } from '../core/enums';
 import {
   AI_FORBIDDEN_MODES, AI_FORBIDDEN_MODES_V5, MODE_CHOICES, NO_MATCH_MODES, NOTIFICATION_TIMES, PANEL_PLACES, PANEL_VIEWS,
-  type Settings,
+  QUEUE_AUTOFILL_CHOICES, QUEUE_LIMITS, type QueueSettings, type Settings,
 } from '../core/types/settings';
 
 export const SETTINGS_KEY = 'settings:v1';
@@ -56,8 +56,23 @@ export const ModesSchema = ModesV8Schema.extend({ keepAnswers: z.enum(MODE_CHOIC
 export const UiChoicesSchema = z.strictObject({ skipUploadEditConfirm: z.boolean() });
 // end v1.5 X
 
+// v1.5 QX
+/** Seconds in tenths at most (8, 8.5, 0.25 is not one), within `bounds`. */
+const Tenths = (bounds: { min: number; max: number }) => z.number().min(bounds.min).max(bounds.max)
+  .refine((value) => Math.abs(Math.round(value * 10) - value * 10) < 1e-9, { message: 'Seconds in tenths' });
+
+/** Version 11: the sequential auto-apply (PLAN decision 8): duration 1-600 s, acceleration 0-60 s, at most 1-10 open
+ *  tabs, and whether a queued tab fills by itself. */
+export const QueueSettingsSchema = z.strictObject({
+  durationSec: Tenths(QUEUE_LIMITS.durationSec),
+  accelerationSec: Tenths(QUEUE_LIMITS.accelerationSec),
+  autofillOnOpen: z.enum(QUEUE_AUTOFILL_CHOICES),
+  maxOpenTabs: z.number().int().min(QUEUE_LIMITS.maxOpenTabs.min).max(QUEUE_LIMITS.maxOpenTabs.max),
+}) satisfies z.ZodType<QueueSettings>;
+// end v1.5 QX
+
 export const SettingsSchema = z.strictObject({
-  version: z.literal(10),
+  version: z.literal(11),
   panel: z.enum(PANEL_PLACES),
   view: z.enum(PANEL_VIEWS),
   modes: ModesSchema,
@@ -67,6 +82,7 @@ export const SettingsSchema = z.strictObject({
   offerToSaveAnswers: z.boolean(),
   interpretations: Interpretations,
   ui: UiChoicesSchema, // v1.5 X
+  queue: QueueSettingsSchema, // v1.5 QX
 }) satisfies z.ZodType<Settings>;
 
 /** The modes a content script acts on (v3 Phase 3 review): Next, and whether a new step fills as it appears; since v3

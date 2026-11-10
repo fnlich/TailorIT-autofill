@@ -108,6 +108,20 @@ export const ICONS = {
   // ── end v4 ui ──
   /** v5 p1-shell: fold the sidebar to the page's edge (its minimise): an arrow to a bar at the right. */
   minimise: { viewBox: GRID, stroked: true, parts: [line('M3.5 10h9.5M9.25 6.25L13 10l-3.75 3.75'), line('M16.25 4v12')] },
+  // ── v1.5 QX: the panel's tab bar (Autofill, Queue) and the Queue tab's controls ──
+  /** The Autofill tab: a pencil. */
+  pencil: { viewBox: GRID, stroked: true, parts: [line('M12.6 3.9l3.5 3.5-8.9 8.9-4.2.7.7-4.2z'), line('M11 5.5l3.5 3.5')] },
+  /** The Queue tab: a list of three rows. */
+  queue: { viewBox: GRID, stroked: true, parts: [line('M7.5 5.5h9M7.5 10h9M7.5 14.5h9'), dot('4', '5.5'), dot('4', '10'),
+    dot('4', '14.5')] },
+  /** Start and Resume: a play triangle. */
+  play: { viewBox: GRID, stroked: false, parts: [line('M6.5 4.4v11.2a.8.8 0 0 0 1.2.7l8.6-5.6a.8.8 0 0 0 0-1.4L7.7 3.7a.8.8 0 0 0-1.2.7z')] },
+  /** Pause: two bars. */
+  pause: { viewBox: GRID, stroked: false, parts: [{ tag: 'rect', attrs: { x: '5', y: '4', width: '3.4', height: '12', rx: '1' } },
+    { tag: 'rect', attrs: { x: '11.6', y: '4', width: '3.4', height: '12', rx: '1' } }] },
+  /** Stop: a square. */
+  stop: { viewBox: GRID, stroked: false, parts: [{ tag: 'rect', attrs: { x: '4.5', y: '4.5', width: '11', height: '11', rx: '1.6' } }] },
+  // ── end v1.5 QX ──
 } as const satisfies Record<string, IconDef>;
 
 /** An icon's name. */

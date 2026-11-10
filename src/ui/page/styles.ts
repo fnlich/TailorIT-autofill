@@ -73,7 +73,10 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-mode { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .tia-mode__head { display: flex; align-items: center; gap: 4px; margin: 0; }
 .tia-mode__name { font: 700 14px/1.4 var(--tia-font); color: var(--tia-fg); }
-.tia-mode__choices { display: grid; gap: 6px; }
+/* v1.5 QX (PLAN decision 10): a radio group's cards side by side, two to a row (2 x 2 for more than two); a group of
+   boxes (the skip rules) stays one per line. */
+.tia-mode__choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.tia-mode__choices--stack { grid-template-columns: minmax(0, 1fr); }
 .tia-radiocard {
   display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 14px; border-radius: var(--tia-r-control);
   background: var(--tia-track); color: var(--tia-fg); font: 500 14px/1.35 var(--tia-font); cursor: pointer;
@@ -277,6 +280,9 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-card p { margin: 0 0 8px; }
 .tia-help { margin: 2px 0 0; font-size: 13px; color: var(--tia-muted); }
 .tia-fieldset { margin: 0; padding: 0; border: 0; }
+/* v1.5 QX (PLAN decision 10): Options' radio group of what a posting that forbids AI does, side by side too. */
+.tia-fieldset[data-setting-group="llm.whenForbidden"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px; }
 .tia-field { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; align-items: start; margin: 12px 0 0; }
 .tia-field input { width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--tia-ink); }
 .tia-field__name { font-weight: 600; }
@@ -474,6 +480,25 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 }
 .tia-settings__note { margin: 0; font-size: 13px; text-align: center; }
 .tia-settings__save:disabled, .tia-settings__save:disabled:hover { opacity: 1; background: var(--tia-track); color: var(--tia-muted); }
+/* v1.5 QX (PLAN decision 10): All Settings at the head's right, the connection's line, each section under a rule, and
+   the queue settings' fields (seconds typed, tabs chosen). */
+.tia-settings__head .tia-settings__all { margin-left: auto; }
+.tia-settings__body > .tia-connection { margin: 0; }
+.tia-connection--off::before { background: var(--tia-input); }
+.tia-settings__section { display: grid; gap: 12px; padding-top: 14px; border-top: 1px solid var(--tia-line); }
+.tia-settings__section > .tia-card__title { margin: 0; }
+.tia-numberfield__row { display: flex; align-items: center; gap: 8px; }
+.tia-numberfield__input {
+  width: 96px; min-height: 40px; margin: 0; padding: 0 10px; border: 1px solid var(--tia-input);
+  border-radius: var(--tia-r-control); background: var(--tia-bg); color: var(--tia-fg); font: 500 14px/1.3 var(--tia-font);
+  font-variant-numeric: tabular-nums;
+}
+.tia-numberfield__input:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 1px; }
+.tia-numberfield__input[aria-invalid="true"] { border-color: var(--tia-tone-danger-fg); }
+.tia-numberfield__input:disabled { color: var(--tia-muted); }
+.tia-numberfield__unit { font-size: 13px; color: var(--tia-muted); }
+.tia-numberfield__error { margin: 0; font-size: 12px; }
+.tia-queue-settings__waits { margin: -10px 0 0; font-size: 12px; }
 
 /* The résumé line, under the buttons before the first run: "Résumé: <label> · Preview · Change". */
 .tia-resumeline { display: grid; gap: 6px; }

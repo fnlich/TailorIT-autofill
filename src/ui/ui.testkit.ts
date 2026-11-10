@@ -15,7 +15,8 @@ import type { TelemetryCount } from '../core/types/telemetry';
 import type {
   AgentStatus, AuthStatus, JobCard, LetterOutcome, PageState, PanelAskAnswer, ResumeListAnswer,
 } from '../messaging/schemas';
-import type { DocumentsAnswer, TailorView } from '../messaging/page-schemas';
+import type { DocumentsAnswer, QueueListItem, QueueStatus, TailorView } from '../messaging/page-schemas';
+import { QUEUE_LIST_PAGE } from '../messaging/page-schemas'; // v1.5 QX
 import { createMemoryPagePlatform, type MemoryPagePlatform } from '../platform/memory';
 import type { PortLike } from '../platform/types';
 import { historyGaps, profileGaps } from '../shared/profile-gaps';
@@ -161,7 +162,26 @@ export interface WorkerScript {
   /** v1.4 F: what panel/tailor answers (a read, or a start), and panel/documents (a read; a save keeps its choices). */
   tailor: TailorView;
   documents: DocumentsAnswer;
+  /** v1.5 QX: the sequential auto-apply, as queue/status answers it; the jobs queue/list pages through (its `source`);
+   *  Start, Stop, Pause and Resume move the phase. */
+  queue: { status: QueueStatus; items: QueueListItem[]; source: 'run' | 'queue' };
 }
+
+// v1.5 QX
+/** The queue's status at rest, nothing run yet. */
+export function queueStatus(overrides: Partial<QueueStatus> = {}): QueueStatus {
+  return { phase: 'idle', hold: null, nextInMs: null, total: 0, opened: 0,
+    counts: { queued: 0, opening: 0, opened: 0, filling: 0, ready: 0, submitted: 0, skipped: 0, failed: 0 }, openTabs: 0,
+    maxOpenTabs: 5, stoppedBy: null, agentStopped: false, agentOn: false, blocked: null, pending: false,
+    autofillOnOpen: 'auto', submit: 'manual', ...overrides };
+}
+
+/** A queued job as queue/list answers it. */
+export function queueItem(n: number, overrides: Partial<QueueListItem> = {}): QueueListItem {
+  return { id: `0000000${n % 10}-aaaa-4bbb-8ccc-${String(n).padStart(12, '0')}`, title: `Engineer ${n}`, company: 'Northwind',
+    status: 'queued', reason: null, tab: false, ...overrides };
+}
+// end v1.5 QX
 
 export interface FakeWorker {
   script: WorkerScript;
@@ -191,7 +211,9 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
     agent: { on: false, confirmed: false, phase: 'off', blocked: null, allowed: true, pending: false, job: null,
       doneToday: 0, last: null }, profile: completeProfile(), closedNotes: [],
     // v1.4 F
-    tailor: { state: 'idle' }, documents: templateLists() };
+    tailor: { state: 'idle' }, documents: templateLists(),
+    // v1.5 QX
+    queue: { status: queueStatus(), items: [], source: 'queue' } };
   /** A tab's page state, when the script names one (an older worker sends none). */
   const pageOf = (tabId: number) => (script.pages.has(tabId) ? { page: script.pages.get(tabId) } : {});
   const replies = new Map<string, (message: Record<string, unknown>) => unknown>();
@@ -264,6 +286,33 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
       }
       return ok(script.documents);
     },
+    // v1.5 QX: the Queue tab.
+    'queue/status': () => ok(script.queue.status),
+    'queue/list': (message) => {
+      const offset = message.offset as number;
+      const items = script.queue.items.slice(offset, offset + QUEUE_LIST_PAGE);
+      return ok({ source: script.queue.source, items, offset, total: script.queue.items.length,
+        more: offset + QUEUE_LIST_PAGE < script.queue.items.length });
+    },
+    'queue/start': () => {
+      const total = script.queue.items.length;
+      script.queue.status = { ...script.queue.status, phase: 'running', total, opened: Math.min(1, total), nextInMs: 8_000 };
+      script.queue.source = 'run';
+      return ok(script.queue.status);
+    },
+    'queue/stop': () => {
+      script.queue.status = { ...script.queue.status, phase: 'stopped', stoppedBy: 'person', nextInMs: null };
+      return ok(script.queue.status);
+    },
+    'queue/pause': () => {
+      script.queue.status = { ...script.queue.status, phase: 'paused' };
+      return ok(script.queue.status);
+    },
+    'queue/resume': () => {
+      script.queue.status = { ...script.queue.status, phase: 'running' };
+      return ok(script.queue.status);
+    },
+    'queue/focus': (message) => ok({ focused: script.queue.items.some((item) => item.id === message.id && item.tab) }),
     'telemetry/get': () => ok({ counts: script.counts }),
     'telemetry/clear': () => {
       script.counts = [];
@@ -361,7 +410,10 @@ export async function typeInto(input: HTMLInputElement | HTMLTextAreaElement, te
 
 /** The button whose text is `text`, exactly, under `root`. */
 export function button(root: ParentNode, text: string): HTMLButtonElement | null {
-  return [...root.querySelectorAll('button')].find((each) => each.textContent?.trim() === text) ?? null;
+  // v1.5 QX: never one of the panel's tabs (TabBar.tsx: role="tab", "Autofill" and "Queue"), which are no buttons to a
+  // person; tests reach them by their role.
+  return [...root.querySelectorAll('button:not([role="tab"])')].find((each) => each.textContent?.trim() === text) as
+    HTMLButtonElement | undefined ?? null;
 }
 
 // ── The side panel's main button clock (the v4 review, L4: panel/seen.ts) ─────────────────────────────────────────

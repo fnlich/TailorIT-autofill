@@ -19,8 +19,11 @@ const CHOSEN_CONTENT = { panel: 'side', view: 'minimized', modes: { next: CHOSEN
 const OLD_PANEL = { panel: 'side' as const };
 /** v5: every earlier install's panel on the page, and (the review's F9) its Default view Expanded. */
 const ON_PAGE = { panel: 'page' as const, view: 'expanded' as const };
-// v1.5 X: CHOSEN as versions 1 to 9 stored it, with no UI choices (each older version's test is pinned to its era).
-const { ui: _ui, ...CHOSEN_V9 } = CHOSEN;
+// v1.5 X: CHOSEN as versions 1 to 9 stored it, with no UI choices (each older version's test is pinned to its era);
+// v1.5 QX: nor the queue settings (version 11).
+const { ui: _ui, queue: _queue, ...CHOSEN_V9 } = CHOSEN;
+/** v1.5 QX: CHOSEN as version 10 stored it, before the queue settings. */
+const { queue: _queueV10, ...CHOSEN_V10 } = CHOSEN;
 /** v1.3 B: CHOSEN's modes as versions 7 and 8 stored them, before "Keep my submitted answers in TailorIT". */
 const { keepAnswers: _keepAnswers, ...CHOSEN_MODES_V8 } = CHOSEN.modes;
 /** CHOSEN's modes as version 6 stored them, before "When a list has no match" and the notifications' time. */
@@ -139,7 +142,7 @@ describe('settings', () => {
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: {
       // v5 p1-shell: version 7's 'in-page' (the small card) is the sidebar on the page (version 8).
-      version: 10, panel: 'page', view: 'expanded',
+      version: 11, panel: 'page', view: 'expanded',
       // Auto-advance became the Next mode; version 3's `all` answers took their default (All), and act only while
       // answers are on; the other modes take theirs.
       modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' },
@@ -151,6 +154,8 @@ describe('settings', () => {
       interpretations: { postingCountryForLegal: true, twoOrMoreRaces: true, eeoDeclineByDefault: true },
       // v1.5 X: version 10's UI choices at their defaults.
       ui: { skipUploadEditConfirm: false },
+      // v1.5 QX: version 11's queue settings at their defaults.
+      queue: { durationSec: 8, accelerationSec: 0.5, autofillOnOpen: 'auto', maxOpenTabs: 5 },
     } } });
   });
 
@@ -199,7 +204,7 @@ describe('settings', () => {
     const oldest = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1':
       { ...v4, modes: older } }) });
     expect(await oldest.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true,
-      data: { settings: { version: 10, modes: { recordOwn: 'on', resumeOnPage: 'keep', keepAnswers: 'on' } } } });
+      data: { settings: { version: 11, modes: { recordOwn: 'on', resumeOnPage: 'keep', keepAnswers: 'on' } } } });
   });
 
   it('migrates version 5 settings to version 9’s (v4, D6): "Ask me each time" Profile only, the draft confirmation gone, and stores them', async () => {
@@ -283,6 +288,37 @@ describe('settings', () => {
     // The content settings never carry it: the page's script has no use for it.
     expect('ui' in contentSettingsOf(skip)).toBe(false);
   });
+
+  // v1.5 QX
+  it('migrates version 10 settings to version 11’s: every choice kept, the queue at its defaults, and stores them; saves a queue within its bounds; refuses one outside them', async () => {
+    const v10 = { ...CHOSEN_V10, version: 10, ui: { skipUploadEditConfirm: true } };
+    const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v10 }) });
+    const expected = { ...CHOSEN, ui: { skipUploadEditConfirm: true },
+      queue: { durationSec: 8, accelerationSec: 0.5, autofillOnOpen: 'auto', maxOpenTabs: 5 } };
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: expected } });
+    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
+    for (const queue of [{ durationSec: 1, accelerationSec: 0, autofillOnOpen: 'manual', maxOpenTabs: 1 },
+      { durationSec: 600, accelerationSec: 60, autofillOnOpen: 'auto', maxOpenTabs: 10 },
+      { durationSec: 12.5, accelerationSec: 1.5, autofillOnOpen: 'auto', maxOpenTabs: 3 }] as const) {
+      const chosen = { ...CHOSEN, queue };
+      expect(await worker.deliver({ v: 1, type: 'settings/save', settings: chosen }, OPTIONS)).toEqual({ ok: true,
+        data: { settings: chosen } });
+    }
+    const good = CHOSEN.queue;
+    for (const queue of [{ ...good, durationSec: 0.5 }, { ...good, durationSec: 601 }, { ...good, accelerationSec: -1 },
+      { ...good, accelerationSec: 61 }, { ...good, accelerationSec: 0.25 }, { ...good, maxOpenTabs: 0 },
+      { ...good, maxOpenTabs: 11 }, { ...good, maxOpenTabs: 2.5 }, { ...good, autofillOnOpen: 'later' },
+      { ...good, extra: 1 }, {}]) {
+      expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN, queue } }, OPTIONS))
+        .toEqual({ ok: false, error: 'bad_message' });
+    }
+    // A version 10 value saved as it is: refused (the queue is version 11's).
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN_V10, version: 11 } }, OPTIONS))
+      .toEqual({ ok: false, error: 'bad_message' });
+    // The content settings never carry it: the worker opens the tabs and starts their fills.
+    expect('queue' in contentSettingsOf(CHOSEN)).toBe(false);
+  });
+  // end v1.5 QX
 
   it('saves a list with no match left empty and each notification time, gives them to a frame, and refuses a choice it does not know or a version 7 value without them', async () => {
     const worker = await startTestWorker();

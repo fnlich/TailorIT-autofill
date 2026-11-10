@@ -48,10 +48,12 @@ describe('the side panel in TailorIT’s look', () => {
     expect(root.querySelector('[data-menu], .tia-panel__foot, a[data-tailorit-link="jobs"]')).toBeNull();
     await click(gear);
     expect(gear.getAttribute('aria-pressed')).toBe('true');
-    // The modes in the side panel's order, as the options page shows them; the view second.
+    // The modes in the side panel's order, as the options page shows them; the view second. v1.5 QX (PLAN decision 10):
+    // after the queue's settings.
     const settings = root.querySelector<HTMLElement>('[data-settings-view]')!;
     expect([...settings.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => group.dataset.settingGroup))
-      .toEqual(['modes.afterPageTurn', 'view', 'panel', 'modes.next', 'modes.submit', 'modes.signIn', 'modes.consents', 'modes.ai',
+      .toEqual(['queue.durationSec', 'queue.accelerationSec', 'queue.autofillOnOpen', 'queue.maxOpenTabs',
+        'modes.afterPageTurn', 'view', 'panel', 'modes.next', 'modes.submit', 'modes.signIn', 'modes.consents', 'modes.ai',
         'modes.resumeOnPage', 'modes.recordOwn', 'modes.keepAnswers', 'modes.noMatch', 'modes.notifications',
         'modes.agentSkip']);
     // Radio cards (screenshot 5): a grey card per choice, the chosen one's ring holding a teal dot.

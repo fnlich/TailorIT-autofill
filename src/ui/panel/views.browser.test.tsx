@@ -195,7 +195,9 @@ describe('the Settings view (v4 ui)', () => {
     expect(root.querySelector('.tia-settings__heading')?.textContent).toBe(COPY.settingsView.heading);
     expect(root.querySelector('li[data-field-key], .tia-cta[data-main-action], [data-ask]')).toBeNull();
     // Jobright's groups, each title with its "?" holding its explanation.
-    const titles = [...root.querySelectorAll('.tia-mode__name')].map((name) => name.textContent);
+    // v1.5 QX (PLAN decision 10): the modes under Autofill Settings, after Queue Settings.
+    const titles = [...root.querySelectorAll('[data-settings-section="autofill"] .tia-mode__name')]
+      .map((name) => name.textContent);
     expect(titles.slice(0, 2)).toEqual([COPY.options.modes.afterPageTurn.name, COPY.options.modes.view.name]);
     const afterPageTurn = root.querySelector('[data-setting-group="modes.afterPageTurn"]')!;
     expect(afterPageTurn.querySelector('[role="tooltip"]')?.textContent).toBe(COPY.options.modes.afterPageTurn.help);

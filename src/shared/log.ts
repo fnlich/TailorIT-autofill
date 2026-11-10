@@ -332,6 +332,22 @@ export const LOG_CODES = [
   'document.refused',
   'document.edit',
   // ── end v1.5 X ──
+  // ── v1.5 QX (counts, phases and places in closed lists only; never an id, an address or a title): the sequential
+  // auto-apply started (how many jobs, whether Run auto-apply went off), a tab opened (its place k), an opening TailorIT
+  // or Chrome refused, a fill started (at a form or an entry), a job done (its status and reason as places), a result
+  // TailorIT could not take, the queue read refused, paused, resumed, stopped (why, as a place), done (how many jobs). ──
+  'queue.started',
+  'queue.opened',
+  'queue.open-failed',
+  'queue.fill-started',
+  'queue.finished',
+  'queue.report-failed',
+  'queue.read-failed',
+  'queue.paused',
+  'queue.resumed',
+  'queue.stopped',
+  'queue.done',
+  // ── end v1.5 QX ──
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

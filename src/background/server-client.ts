@@ -13,10 +13,16 @@
  * `Prefer: respond-async` and is answered 202 at once by a TailorIT that streams.
  */
 import { z } from 'zod';
+import { cursorFits, QUEUE_SOURCE_PAGE } from './queue-source'; // v1.5 QX
 import {
   AutofillAddJobResponseSchema,
   AutofillAgentIdSchema,
   AutofillAgentNextSchema,
+  // v1.5 QX
+  AutofillAgentOpenedSchema,
+  type AutofillAgentOpened,
+  AutofillAgentQueueListSchema,
+  type AutofillAgentQueueList,
   type AutofillAgentNext,
   type AutofillAgentResultBody,
   AutofillCredentialQuerySchema,
@@ -284,6 +290,17 @@ export interface ServerClient {
   /** GET /templates: the resume and cover-letter templates the profile's documents may name. */
   templates(): Promise<ServerResult<AutofillTemplateList>>;
   // ── end v1.4 F ──
+  // ── v1.5 QX (PLAN decision 6; queue-source.ts) ──
+  /** GET /agent/queue?state=queued (API 6, v1.5 Q2, scope agent:run): a page of the person's queued jobs, oldest
+   *  first, from `cursor` (null: the first page). A cursor the contract's query would refuse is refused before any
+   *  request. */
+  queuePage(cursor: string | null): Promise<ServerResult<AutofillAgentQueueList>>;
+  /** POST /agent/:id/opened (v1.5 Q2, scope agent:run): the Queue tab's run takes the queued row before it opens its
+   *  tab: the task to open, or none (TailorIT finished it at the claim, with its state and reason). Taken by the agent,
+   *  another browser or an end: conflict (409); gone: not-found (404). An id that is not a queue id is refused before
+   *  any request. */
+  queueOpened(id: string): Promise<ServerResult<AutofillAgentOpened>>;
+  // ── end v1.5 QX ──
 }
 
 /** What the server client needs. */
@@ -816,6 +833,24 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     },
     templates: () => json({ method: 'GET', path: '/api/autofill/templates', token: 'current' }, AutofillTemplateListSchema),
     // ── end v1.4 F ──
+    // ── v1.5 QX ──
+    queuePage(cursor) {
+      if (cursor !== null && !cursorFits(cursor)) {
+        log('server.path-refused');
+        return Promise.resolve(failure('refused-path'));
+      }
+      return json({ method: 'GET', path: '/api/autofill/agent/queue', token: 'current',
+        query: { state: 'queued', limit: String(QUEUE_SOURCE_PAGE), ...(cursor === null ? {} : { cursor }) } },
+      AutofillAgentQueueListSchema);
+    },
+    queueOpened(id) {
+      if (!AutofillAgentIdSchema.safeParse(id).success) {
+        log('server.path-refused');
+        return Promise.resolve(failure('refused-path'));
+      }
+      return json({ method: 'POST', path: `/api/autofill/agent/${id}/opened`, token: 'current' }, AutofillAgentOpenedSchema);
+    },
+    // ── end v1.5 QX ──
     async coverLetterFile(id, maxBytes = AUTOFILL_COVER_LETTER_MAX_BYTES) {
       if (!AutofillCoverLetterIdSchema.safeParse(id).success) {
         log('server.path-refused');

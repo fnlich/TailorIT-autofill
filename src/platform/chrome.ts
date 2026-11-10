@@ -17,6 +17,7 @@ import type {
   HostPermissions,
   PagePlatform,
   PortLike,
+  QueueTabs,
   SecretStore,
   Sender,
   SendFailure,
@@ -251,6 +252,54 @@ function agentWindows(): AgentWindows {
   };
 }
 
+// v1.5 QX
+/** The sequential auto-apply's tabs (QueueTabs): chrome.tabs and chrome.windows, no permission needed. */
+function queueTabs(): QueueTabs {
+  return {
+    async open() {
+      try {
+        const tab = await browser.tabs.create({ url: 'about:blank', active: false });
+        return tab.id ?? null;
+      } catch {
+        return null;
+      }
+    },
+    async navigate(tabId, url) {
+      try {
+        await browser.tabs.update(tabId, { url });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    async focus(tabId) {
+      try {
+        const tab = await browser.tabs.update(tabId, { active: true });
+        if (tab?.windowId !== undefined) await browser.windows.update(tab.windowId, { focused: true });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    async state(tabId) {
+      try {
+        const tab = await browser.tabs.get(tabId);
+        return tab === undefined ? 'gone' : tab.active ? 'active' : 'background';
+      } catch {
+        return 'gone';
+      }
+    },
+    async close(tabId) {
+      try {
+        await browser.tabs.remove(tabId);
+      } catch {
+        // Gone already.
+      }
+    },
+  };
+}
+// end v1.5 QX
+
 /** The auto-apply agent's alarm (v3 Phase 5). */
 function agentAlarms(): AgentAlarms {
   return {
@@ -415,6 +464,7 @@ export function createWorkerPlatform(): WorkerPlatform {
     },
     windows: agentWindows(),
     alarms: agentAlarms(),
+    queueTabs: queueTabs(), // v1.5 QX
     scripting: sitesScripting(),
     permissions: hostPermissions(),
     secrets: indexedDbSecrets(),

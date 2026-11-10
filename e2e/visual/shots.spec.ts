@@ -591,3 +591,64 @@ test('v4 ui: the set-up view, not connected, and its first step\'s disclosure', 
   await expect(panel.locator('[data-consent]')).toBeVisible();
   await shoot(panel, '31-setup-consent.png', 'Set-up view: what connecting means, before Connect');
 });
+
+// v1.5 QX (PLAN decisions 9 and 10): the tab bar, the Queue tab before a run, running, held at the cap and paused, the
+// Settings view in the owner's order with its side-by-side radio cards, and Options' Queue card.
+test('v1.5 QX: the tab bar and the Queue tab, the Settings view in the owner’s order, Options’ Queue card', async ({ extContext, connected: ext, routeLog }) => {
+  const queued = (n: number) => `https://job-boards.greenhouse.io/tailoritfixture/jobs/69${String(n).padStart(2, '0')}`;
+  const titles = ['Senior Backend Engineer', 'Platform Engineer', 'Data Engineer', 'Site Reliability Engineer',
+    'Frontend Engineer'];
+  routeLog.serve(Object.fromEntries(titles.map((_, index) => [queued(index + 1), 'fixtures/synthetic/submit/greenhouse.html'])));
+  await mock.queueAgent(titles.map((title, index) => ({ id: `0000006${index}-cccc-4bbb-8ccc-0000000069${String(index + 1)
+    .padStart(2, '0')}`, jobId: 6900 + index, url: queued(index + 1), company: ['Northwind', 'Contoso', 'Fabrikam',
+    'Litware', 'Tailspin'][index], title, resumeId: null })));
+  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+    queue: { ...DEFAULT_SETTINGS.queue, durationSec: 4, accelerationSec: 0.5, maxOpenTabs: 2 } } });
+  // A tab of the person's own, whose side panel shows the tab bar.
+  const page = await extContext.newPage();
+  const { panel } = await cardPanel(ext, page, routeLog, CARD_APPLY('690'));
+  await expect(panel.locator('[role="tablist"]')).toBeVisible();
+  await shoot(panel, '90-tabs-autofill.png', 'v1.5: the tab bar under the head, Autofill chosen (today’s view)');
+  await panel.locator('[role="tab"][data-panel-tab="queue"]').click();
+  await expect(panel.locator('[data-queue="idle"] .tia-queue__row')).toHaveCount(5);
+  await expect(panel.locator('button[data-action="queue-start"]:not(:disabled)')).toBeVisible();
+  await shoot(panel, '91-queue-idle.png', 'v1.5: the Queue tab before a run: 0 of 5, Start, the queued jobs');
+  await panel.locator('button[data-action="queue-start"]').click();
+  await expect(panel.locator('[data-queue="running"]')).toBeVisible();
+  await expect(panel.locator('[data-queue-next]')).toBeVisible();
+  await expect.poll(async () => panel.locator('.tia-queue__chip').first().textContent(), { timeout: 20_000 })
+    .toBe(COPY.queue.statuses.ready);
+  await panel.bringToFront();
+  await shoot(panel, '92-queue-running.png', 'v1.5: running: 1 of 5, "Next tab in …s", Stop and Pause, each job’s status');
+  // Two open (maxOpenTabs 2): the timer waits.
+  await expect(panel.locator('[data-queue-line="cap"]')).toBeVisible({ timeout: 20_000 });
+  await panel.bringToFront();
+  await shoot(panel, '93-queue-cap.png', 'v1.5: two queued tabs open (the settings’ most): the timer waits');
+  await panel.locator('button[data-action="queue-pause"]').click();
+  await expect(panel.locator('[data-queue="paused"]')).toBeVisible();
+  await expect(panel.locator('button[data-action="queue-resume"]:not(:disabled)')).toBeVisible();
+  await shoot(panel, '94-queue-paused.png', 'v1.5: paused, the seconds left kept; Resume');
+  await panel.locator('button[data-action="queue-stop"]').click();
+  await expect(panel.locator('[data-queue="stopped"]')).toBeVisible();
+  // The Settings view: All Settings top right, the connection, Autofill Information, Documents, Queue, Autofill.
+  await panel.locator('button[data-panel-settings]').click();
+  await expect(panel.locator('[data-settings-view]')).toBeVisible();
+  await shoot(panel, '95-settings-top.png', 'v1.5: Settings in the owner’s order (All Settings top right, the connection, Autofill Information, Documents)');
+  await panel.locator('[data-settings-section="queue"]').scrollIntoViewIfNeeded();
+  await shoot(panel, '96-settings-queue.png', 'v1.5: Queue Settings, then Autofill Settings; radio cards side by side');
+  await panel.locator('[data-setting-group="modes.notifications"]').scrollIntoViewIfNeeded();
+  await shoot(panel, '97-settings-modes.png', 'v1.5: the modes’ radio cards two to a row (2 x 2 and more for five choices)');
+  const options = await extContext.newPage();
+  await options.setViewportSize({ width: 1000, height: 900 });
+  await still(options);
+  await options.goto(ext.url('options.html'));
+  const card = options.locator('[data-card="queue"]');
+  await card.scrollIntoViewIfNeeded();
+  await shoot(options, '98-options-queue.png', 'v1.5: Options › Queue, between Documents and Modes',
+    { clip: (await card.boundingBox()) ?? undefined });
+  await options.locator('[data-card="modes"]').scrollIntoViewIfNeeded();
+  await shoot(options, '99-options-modes.png', 'v1.5: Options › Modes, radio cards side by side', {
+    clip: (await options.locator('[data-card="modes"]').boundingBox()) ?? undefined });
+  await options.close();
+  await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+});

@@ -10,7 +10,8 @@
  * two modes at their defaults, Other and Until closed (migrateSettingsV6), and every version 7 value shows the panel on
  * the page, its in-page card and its side panel alike (migrateSettingsV7, v5: the owner's word), and every version 8
  * value keeps the answers of the applications the person submits (migrateSettingsV8, v1.3 B: On), and every version 9
- * value shows the confirm before editing an uploaded resume (migrateSettingsV9, v1.5 X); each is stored again.
+ * value shows the confirm before editing an uploaded resume (migrateSettingsV9, v1.5 X), and every version 10 value
+ * takes the sequential auto-apply's defaults (migrateSettingsV10, v1.5 QX); each is stored again.
  * Content scripts get only the part they need (panel placement, the modes, the AI switches, the offer to save answers)
  * with frame/hello and run/begin, and again with settings/changed whenever the person saves them (pushSettings: every
  * registered frame with a form, so a run in progress reads the Next mode as it is now: the Phase 5 review, C-S2), each
@@ -22,14 +23,15 @@
  */
 import {
   DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4, migrateSettingsV5,
-  migrateSettingsV6, migrateSettingsV7, migrateSettingsV8, migrateSettingsV9, SETTINGS_VERSION, type Settings,
+  migrateSettingsV6, migrateSettingsV7, migrateSettingsV8, migrateSettingsV9, migrateSettingsV10, SETTINGS_VERSION,
+  type Settings,
 } from '../core/types/settings';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { SETTINGS_KEY, SettingsSchema, type ContentSettings } from '../shared/settings';
 import {
   SettingsV1Schema, SettingsV2Schema, SettingsV3Schema, SettingsV4Schema, SettingsV5Schema, SettingsV6Schema,
-  SettingsV7Schema, SettingsV8Schema, SettingsV9Schema,
+  SettingsV7Schema, SettingsV8Schema, SettingsV9Schema, SettingsV10Schema,
 } from '../shared/settings-stored';
 import { frameTarget, type FrameEntry } from './frames';
 import { createKeyedQueue } from './locks';
@@ -134,6 +136,18 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
       const parsed = SettingsSchema.safeParse(stored);
       if (parsed.success) {
         cached = withShippedModes(parsed.data);
+        return cached;
+      }
+      // v1.5 QX: version 10 (before the queue settings).
+      const v10 = SettingsV10Schema.safeParse(stored);
+      if (v10.success) {
+        cached = migrateSettingsV10(v10.data);
+        try {
+          await local.set({ [SETTINGS_KEY]: cached });
+          log('settings.migrated', { from: 10, to: SETTINGS_VERSION });
+        } catch {
+          log('settings.migrated', { from: 10, to: SETTINGS_VERSION, stored: false });
+        }
         return cached;
       }
       // v1.5 X: version 9 (before the extension's UI choices), and v1.3 B: version 8 (before "Keep my submitted answers

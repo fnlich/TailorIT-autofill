@@ -68,6 +68,10 @@
  *   Again or Refresh Page; and before a fill, the autofill information's check: no work experience or no education
  *   holds the fill in a modal (Edit Autofill Information, Autofill Anyway).
  *
+ * v1.5 QX (PLAN decision 9): under the main view's head, the tab bar (TabBar.tsx): Autofill (everything above, as it
+ * was) and Queue (QueueView.tsx: the sequential auto-apply's progress, seconds left, Start or Stop, Pause or Resume, and
+ * every queued job's status). The Settings view and the profile editor show no tab bar.
+ *
  * It never shows or receives a field value: reports hold none. The job card draws only what TailorIT's lookup said, the
  * resume's title among it (which may be the person's name: it is shown on purpose, as the resume the fill attaches);
  * the custom question's answer is the person's own request; the profile check keeps which items are missing, never a
@@ -104,6 +108,8 @@ import { useTabReports, type LinkState } from './reports';
 import { SettingsView } from './SettingsView';
 import { ProgressSheet, useSheetTop } from './Sheet';
 import { SetupView } from './Setup';
+import { QueueView } from './QueueView'; // v1.5 QX
+import { TabBar, tabIds, type PanelTab } from './TabBar'; // v1.5 QX
 import { useProfileCheck } from './profile-check';
 import { BROWSER_SEEN_CLOCK, useShownFor, type SeenClock } from './seen';
 import { useFollowedTab } from './tab';
@@ -263,6 +269,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const [launcherShown, setLauncherShown] = useState<number | null>(null);
   /** v4 ui: the view under the head. */
   const [view, setView] = useState<View>({ name: 'main' });
+  /** v1.5 QX: the main view's tab (Autofill or Queue), and the ids its tabs and panels take. */
+  const [tab, setTab] = useState<PanelTab>('autofill');
+  const tabsId = useId();
   const { refresh } = auth;
   // The card's connection key: the token's expiry, and every change the worker announced (another window may have
   // connected or disconnected), so a card read with the old connection is dropped the moment the change is heard.
@@ -611,10 +620,31 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     setModal(null);
   };
 
+  // v1.5 QX: the Queue tab in place of everything under the tab bar.
+  if (tab === 'queue') {
+    return (
+      <main className="tia-page tia-panel" ref={mainRef} data-tab-id={tabId ?? undefined} data-view="main"
+        data-panel-tab="queue">
+        {head(true)}
+        <TabBar tab={tab} onChange={setTab} idPrefix={tabsId} />
+        <div className="tia-stage">
+          <div className="tia-stage__scroll">
+            {problems}
+            <QueueView platform={platform} changes={changes.queue + changes.connection + changes.settings + changes.agent}
+              clock={seenClock} id={tabIds(tabsId, 'queue').panel} labelledBy={tabIds(tabsId, 'queue').tab} />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main className="tia-page tia-panel" ref={mainRef} data-tab-id={tabId ?? undefined} data-view="main">
+    <main className="tia-page tia-panel" ref={mainRef} data-tab-id={tabId ?? undefined} data-view="main"
+      data-panel-tab="autofill">
       {head(true)}
-      <div className="tia-stage" ref={stage} data-sheet={sheetShown ? '' : undefined}>
+      <TabBar tab={tab} onChange={setTab} idPrefix={tabsId} />
+      <div className="tia-stage" ref={stage} data-sheet={sheetShown ? '' : undefined} role="tabpanel"
+        id={tabIds(tabsId, 'autofill').panel} aria-labelledby={tabIds(tabsId, 'autofill').tab}>
         <div className="tia-stage__scroll" ref={scroller}>
           {problems}
           {auth.status.connection === 'connected' && auth.status.disclosure === 'changed' && (

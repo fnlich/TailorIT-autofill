@@ -34,6 +34,10 @@
  * - v1.4 F (PLAN decision 18): Documents, after the modes: the resume template and the cover-letter template TailorIT
  *   writes a tailored resume and its letter on, kept in the profile (ui/page/documents.tsx: panel/documents). v1.5 X:
  *   "Ask before editing an uploaded resume" (settings version 10, ui.skipUploadEditConfirm the other way round).
+ * - v1.5 QX (PLAN decision 10, settings version 11): Queue, after Documents and before Modes, as the side panel's Settings
+ *   view orders them: the seconds between tabs and added each time, Autofill when a queued tab opens, and how many
+ *   queued tabs may be open at once (src/ui/page/modes.tsx QueueFields). Every radio group's choices side by side, two
+ *   to a row, here as in the side panel.
  * v4 ui (the owner, 2026-11-07: "all explanation will be tooltip"): each card's and each setting's explanation is a "?"
  * (HelpTip) beside its title or its name, still describing its control; what a setting is now, the first-run
  * disclosure, the plan's sentence on what never goes to the AI and the list of what the counters count stay as text.
@@ -55,7 +59,7 @@ import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
 import { AgentStatusLine, useAgentStatus, type AgentState } from '../page/agent';
 import { DocumentsFields, documentsKeyOf } from '../page/documents';
-import { ModesFields, signInAvailability } from '../page/modes';
+import { ModesFields, QueueFields, signInAvailability } from '../page/modes';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
 import { animationFrames, clockText, useSecondsLeft, type FrameScheduler } from './countdown';
 import { useSettings, type SettingsState } from './settings';
@@ -295,12 +299,8 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
   const set = (patch: Partial<Settings>) => save({ ...shown, ...patch });
   return (
     <>
-      <Card title={TEXT.modes.heading} name="modes" help={TEXT.modes.intro}>
-        <ModesFields settings={shown} disabled={saving} onChange={save} idPrefix="options"
-          signIn={signInAvailability(auth.status)} />
-      </Card>
-
-      {/* v1.4 F (PLAN decision 18): the templates a tailored resume and its letter are written on (the profile's). */}
+      {/* v1.4 F (PLAN decision 18): the templates a tailored resume and its letter are written on (the profile's). v1.5 QX:
+          before the queue and the modes, as the side panel's Settings view orders them. */}
       <Card title={COPY.documents.title} name="documents" help={COPY.documents.help}>
         <DocumentsFields platform={platform} readKey={documentsKeyOf(auth.status)} />
         {/* v1.5 X (PLAN decision 3): settings version 10's ui.skipUploadEditConfirm, the other way round: on here, the
@@ -309,6 +309,16 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
         <Toggle setting="ui.askBeforeUploadEdit" name={COPY.documents.askBeforeUploadEdit}
           help={COPY.documents.askBeforeUploadEditHelp} checked={!shown.ui.skipUploadEditConfirm} disabled={saving}
           onChange={(ask) => set({ ui: { ...shown.ui, skipUploadEditConfirm: !ask } })} />
+      </Card>
+
+      {/* v1.5 QX (settings version 11): the sequential auto-apply's timer, tabs and fill. */}
+      <Card title={TEXT.queue.heading} name="queue" help={TEXT.queue.intro}>
+        <QueueFields settings={shown} disabled={saving} onChange={save} idPrefix="options" />
+      </Card>
+
+      <Card title={TEXT.modes.heading} name="modes" help={TEXT.modes.intro}>
+        <ModesFields settings={shown} disabled={saving} onChange={save} idPrefix="options"
+          signIn={signInAvailability(auth.status)} />
       </Card>
 
       <AutoApply platform={platform} auth={auth} />

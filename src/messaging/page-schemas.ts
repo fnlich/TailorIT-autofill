@@ -6,7 +6,7 @@
  * schemas.ts re-exports their types. Every rule of schemas.ts's header holds here.
  */
 import { z } from 'zod';
-import { AUTOFILL_AGENT_FINISHED_STATES, AUTOFILL_AGENT_REASONS } from '../contract/tailorit/agent';
+import { AUTOFILL_AGENT_FINISHED_STATES, AUTOFILL_AGENT_REASONS, AutofillAgentIdSchema } from '../contract/tailorit/agent';
 import { EXTENSION_SCOPES } from '../contract/tailorit/connect';
 import { RESUME_CHOICE_REASONS } from '../contract/tailorit/lookup';
 import { AutofillProfileSchema, AutofillSensitiveSchema, WORK_ARRANGEMENTS } from '../contract/tailorit/profile';
@@ -14,6 +14,7 @@ import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from '../contract/tailorit
 import { AUTOFILL_JOB_SEARCH_MAX, AUTOFILL_JOB_SEARCH_QUERY_MAX } from '../contract/tailorit/tracker';
 import { TAILOR_STEPS } from '../contract/tailorit/tailor'; // v1.4 F
 import { FIELD_KINDS, MATCHER_STAGES, PLATFORMS } from '../core/enums';
+import { QUEUE_AUTOFILL_CHOICES } from '../core/types/settings'; // v1.5 QX
 import { MAX_TELEMETRY_COUNTS, TELEMETRY_OUTCOMES } from '../core/telemetry/events';
 import { HISTORY_KINDS, PROFILE_GAPS } from '../shared/profile-gaps';
 import { FrameReportSchema } from '../shared/report';
@@ -53,6 +54,31 @@ export type TailorKind = (typeof TAILOR_KINDS)[number];
 /** A template's id, as the contract caps it (AUTOFILL_TAILOR_LIMITS.templateId). */
 const TemplateId = z.string().min(1).max(64);
 // ── end v1.4 F ──
+
+// ── v1.5 QX (PLAN decisions 7 and 9: the sequential auto-apply and the panel's Queue tab) ──
+/** Where a queued job stands in the sequential auto-apply: waiting; its tab opening; its page loaded; filling; at rest
+ *  for the person (Submit on Manual, a CAPTCHA, a sign-in, a field the skip rules hold); submitted; skipped (the person
+ *  closed its tab, or TailorIT no longer had it queued); failed (no address the extension fills, a page that never
+ *  loaded, a closed posting). */
+export const QUEUE_ITEM_STATUSES = ['queued', 'opening', 'opened', 'filling', 'ready', 'submitted', 'skipped', 'failed'] as const;
+export type QueueItemStatus = (typeof QUEUE_ITEM_STATUSES)[number];
+/** The run: none yet; opening tabs; paused (the seconds left kept); every job done; stopped. */
+export const QUEUE_PHASES = ['idle', 'running', 'paused', 'finished', 'stopped'] as const;
+export type QueuePhase = (typeof QUEUE_PHASES)[number];
+/** Why a running queue's timer waits: as many queued tabs open as the settings allow; the browser offline; TailorIT did
+ *  not answer (tried again shortly). */
+export const QUEUE_HOLDS = ['cap', 'offline', 'server'] as const;
+export type QueueHold = (typeof QUEUE_HOLDS)[number];
+/** Why the queue stopped: the person's Stop; Run auto-apply turned on (the two never run together); the connection
+ *  changed, went or lacks agent:run; the disclosure changed; Chrome opened no tab. */
+export const QUEUE_STOPS = ['person', 'agent', 'connection', 'disclosure', 'no-tab'] as const;
+export type QueueStop = (typeof QUEUE_STOPS)[number];
+/** Why the queue cannot start now (the agent's blocks that apply). */
+export const QUEUE_BLOCKS = ['not-connected', 'no-scope', 'disclosure'] as const;
+export type QueueBlock = (typeof QUEUE_BLOCKS)[number];
+/** How many jobs queue/list answers at a time. */
+export const QUEUE_LIST_PAGE = 50;
+// ── end v1.5 QX ──
 
 export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('ping') }),
@@ -189,6 +215,21 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('panel/documents'), save: z.strictObject({ resumeTemplateId: TemplateId.nullable(),
     coverLetterTemplateId: TemplateId.nullable() }).optional() }),
   // ── end v1.4 F ──
+  // ── v1.5 QX (PLAN decisions 7 and 9): the Queue tab ──
+  /** The sequential auto-apply as the Queue tab shows it (value-free: counts, phases, the seconds left). */
+  z.strictObject({ v, type: z.literal('queue/status') }),
+  /** A page of the jobs it lists, from `offset` (a multiple of QUEUE_LIST_PAGE): the run's, or TailorIT's queued ones
+   *  before a run. */
+  z.strictObject({ v, type: z.literal('queue/list'), offset: Count.max(100_000) }),
+  /** Start (the first queued tab opens at once; Run auto-apply goes off), Stop, Pause and Resume (the seconds left kept):
+   *  each a trusted click on a control seen CONTROL_SEEN_MS. */
+  z.strictObject({ v, type: z.literal('queue/start') }),
+  z.strictObject({ v, type: z.literal('queue/stop') }),
+  z.strictObject({ v, type: z.literal('queue/pause') }),
+  z.strictObject({ v, type: z.literal('queue/resume') }),
+  /** A row's click: its job's tab, while it is open, brought to the front. */
+  z.strictObject({ v, type: z.literal('queue/focus'), id: AutofillAgentIdSchema }),
+  // ── end v1.5 QX ──
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
@@ -200,7 +241,9 @@ const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(
  *  the settings. */
 export const PANEL_CHANGES = ['connection', 'settings', 'agent',
   // v1.4 F: a tab's tailoring moved on (a step, done, failed): each panel reads its own tab's with panel/tailor.
-  'tailor'] as const;
+  'tailor',
+  // v1.5 QX: the sequential auto-apply moved on (a tab opened, a job's status, a phase).
+  'queue'] as const;
 
 export const PanelPortMessageSchema = z.discriminatedUnion('type', [
   /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). `side` (v3 Phase 3):
@@ -539,6 +582,63 @@ export const TelemetryCountSchema = z.strictObject({
 export const TelemetryAnswerSchema = z.strictObject({ counts: z.array(TelemetryCountSchema).max(MAX_TELEMETRY_COUNTS) });
 export type TelemetryAnswer = z.infer<typeof TelemetryAnswerSchema>;
 
+// ── v1.5 QX ──
+/** A count per job status. */
+const QueueCountsSchema = z.strictObject({ queued: Count, opening: Count, opened: Count, filling: Count, ready: Count,
+  submitted: Count, skipped: Count, failed: Count }) satisfies z.ZodType<Record<QueueItemStatus, number>>;
+
+/** queue/status, queue/start, queue/stop, queue/pause and queue/resume's answer: value-free. `nextInMs`: running, the ms
+ *  until the next tab opens (null while none will); paused or held, the ms kept. `opened` of `total`: the jobs of the run
+ *  no longer waiting. `submit`: Submit mode as it acts now (Manual until the disclosure is acknowledged). */
+export const QueueStatusSchema = z.strictObject({
+  phase: z.enum(QUEUE_PHASES),
+  hold: z.enum(QUEUE_HOLDS).nullable(),
+  nextInMs: Count.nullable(),
+  total: Count,
+  opened: Count,
+  counts: QueueCountsSchema,
+  openTabs: Count,
+  maxOpenTabs: Count,
+  stoppedBy: z.enum(QUEUE_STOPS).nullable(),
+  /** Start turned Run auto-apply off (the two never run together). */
+  agentStopped: z.boolean(),
+  /** Run auto-apply is on now: Start turns it off. */
+  agentOn: z.boolean(),
+  blocked: z.enum(QUEUE_BLOCKS).nullable(),
+  /** A result TailorIT has not taken yet (offline, its failure): it is sent again. */
+  pending: z.boolean(),
+  autofillOnOpen: z.enum(QUEUE_AUTOFILL_CHOICES),
+  submit: z.enum(['manual', 'auto']),
+});
+export type QueueStatus = z.infer<typeof QueueStatusSchema>;
+
+/** One job of queue/list: its title and company as TailorIT named them, its status (and why, for a job not
+ *  submitted), and whether its tab is open (a click brings it to the front). */
+export const QueueListItemSchema = z.strictObject({
+  id: AutofillAgentIdSchema,
+  title: Text(300),
+  company: Text(200),
+  status: z.enum(QUEUE_ITEM_STATUSES),
+  reason: z.enum(AUTOFILL_AGENT_REASONS).nullable(),
+  tab: z.boolean(),
+});
+export type QueueListItem = z.infer<typeof QueueListItemSchema>;
+
+/** queue/list's answer: `source` 'run' (the run's jobs) or 'queue' (TailorIT's queued jobs, before a run); `total` of
+ *  them, `more` while a later page has some. */
+export const QueueListAnswerSchema = z.strictObject({
+  source: z.enum(['run', 'queue']),
+  items: z.array(QueueListItemSchema).max(QUEUE_LIST_PAGE),
+  offset: Count,
+  total: Count,
+  more: z.boolean(),
+});
+export type QueueListAnswer = z.infer<typeof QueueListAnswerSchema>;
+
+/** queue/focus's answer: whether the job's tab was brought to the front (false: it has none open now). */
+export const QueueFocusAnswerSchema = z.strictObject({ focused: z.boolean() });
+// ── end v1.5 QX ──
+
 /** v5 p1-shell: panel/notes's answer: the notes the person closed. */
 export const PanelNotesAnswerSchema = z.strictObject({ closed: z.array(z.enum(PANEL_NOTES)).max(PANEL_NOTES.length) });
 
@@ -594,6 +694,14 @@ export const PAGE_ANSWER_SCHEMAS = {
   'panel/tailor': TailorViewSchema,
   'panel/openDocument': OpenDocumentAnswerSchema,
   'panel/documents': DocumentsAnswerSchema,
+  // v1.5 QX
+  'queue/status': QueueStatusSchema,
+  'queue/list': QueueListAnswerSchema,
+  'queue/start': QueueStatusSchema,
+  'queue/stop': QueueStatusSchema,
+  'queue/pause': QueueStatusSchema,
+  'queue/resume': QueueStatusSchema,
+  'queue/focus': QueueFocusAnswerSchema,
 } as const satisfies Record<PageMessage['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */

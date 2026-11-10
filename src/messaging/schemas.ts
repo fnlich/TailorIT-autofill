@@ -962,4 +962,6 @@ export { Count, Id, Key, Text, TRANSFER_MESSAGES, v };
  *  script through here). */
 export type {
   AddJobOutcome, AgentBlock, AgentPause, AgentPhase, AgentStatus, AskLength, AskOutcome, AuthStatus, ExternalMessage, JobCard, JobCardMatch, JobSearchRefusal, LetterOutcome, PageMessage, PanelAskAnswer, PanelJobAnswer, PanelJobSearchAnswer, PanelLauncherAnswer, PanelLetterAnswer, PanelPortMessage, PanelSaveProfileAnswer, ProfileSaveRefusal, ProfileView, ResumeListAnswer, SiteRequestOutcome, SitesState, TabReports, TelemetryAnswer,
+  // v1.5 QX
+  QueueItemStatus, QueueListAnswer, QueueListItem, QueueStatus,
 } from './page-schemas';

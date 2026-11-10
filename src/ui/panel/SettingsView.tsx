@@ -12,6 +12,11 @@
  * worker says changed elsewhere while nothing here is changed are shown at once.
  * v1.4 F (PLAN decision 18): "Documents" after the modes, the templates a tailored resume and its letter are written on
  * (ui/page/documents.tsx), with a Save of their own: they are the TailorIT profile's, not this browser's settings.
+ * v1.5 QX (PLAN decision 10; the owner, 2026-11-10: "settings order: all settings(top right), connected status,
+ * Autofill Information, Documents templates, queue settings, autofill settings"): "All Settings" at the head's right;
+ * then the connection ("Connected as …", or not connected); "Autofill Information"; Documents; Queue Settings (the
+ * sequential auto-apply's, ui/page/modes.tsx QueueFields); Autofill Settings (the modes). The queue's and the modes'
+ * choices are one draft, saved together with Save; each radio group's cards side by side, two to a row.
  */
 import { useId, useState } from 'react';
 import type { Settings } from '../../core/types/settings';
@@ -20,7 +25,7 @@ import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
 import { DocumentsFields, documentsKeyOf } from '../page/documents';
-import { ModesFields, signInAvailability } from '../page/modes';
+import { ModesFields, QueueFields, signInAvailability } from '../page/modes';
 import { request } from '../page/request';
 
 const WORDS = COPY.settingsView;
@@ -80,8 +85,13 @@ export function SettingsView({ platform, settings, status, onClose, onSaved, onA
     }
   };
 
+  const connected = status?.connection === 'connected';
   const account = status?.connection === 'connected'
-    ? status.account ? COPY.panel.connectedAs(status.account.name) : COPY.panel.connected : null;
+    ? status.account ? COPY.panel.connectedAs(status.account.name) : COPY.panel.connected : WORDS.notConnected;
+  const change = (next: Settings) => {
+    setNote(null);
+    setDraft(next);
+  };
 
   return (
     <section className="tia-settings" aria-labelledby={headingId} data-settings-view="">
@@ -91,32 +101,46 @@ export function SettingsView({ platform, settings, status, onClose, onSaved, onA
           <Icon name="close" size={16} />
         </button>
         <h2 className="tia-settings__heading" id={headingId}>{WORDS.heading}</h2>
+        {/* v1.5 QX: 1. All Settings, top right. */}
+        <a className="tia-settings__all" href={settingsUrl} target="_blank" rel="noreferrer" data-open-settings="">
+          {WORDS.allSettings}
+          <Icon name="chevron-right" size={16} />
+        </a>
       </div>
       <div className="tia-settings__body">
-        {draft === null ? <p className="tia-note" role="status">{WORDS.loading}</p> : (
-          <ModesFields settings={draft} disabled={saving} idPrefix="panel" signIn={signInAvailability(status)} stored={base}
-            onChange={(next) => {
-              setNote(null);
-              setDraft(next);
-            }} />
-        )}
-        {/* v1.4 F: the profile's templates, saved on their own. */}
-        <section className="tia-settings__documents" data-settings-documents="">
-          <h3 className="tia-card__title">{COPY.documents.title}</h3>
-          <DocumentsFields platform={platform} readKey={documentsKeyOf(status)} />
-        </section>
-        <div className="tia-settings__links">
+        {/* 2. The connection. */}
+        <p className={connected ? 'tia-connection' : 'tia-connection tia-connection--off'}
+          data-connection={connected ? 'connected' : 'not-connected'} data-settings-section="connection">{account}</p>
+        {/* 3. Autofill Information. */}
+        <div className="tia-settings__links" data-settings-section="autofill-info">
           <button type="button" className="tia-linkrow" data-open-profile="" onClick={onAutofillInfo}>
             <Icon name="person" size={18} className="tia-icon tia-linkrow__icon" />
             <span className="tia-linkrow__label">{WORDS.autofillInfo}</span>
             <Icon name="chevron-right" size={16} className="tia-icon tia-linkrow__chevron" />
           </button>
-          {account !== null && <p className="tia-connection" data-connection="connected">{account}</p>}
-          <a className="tia-settings__all" href={settingsUrl} target="_blank" rel="noreferrer" data-open-settings="">
-            {WORDS.allSettings}
-            <Icon name="chevron-right" size={16} />
-          </a>
         </div>
+        {/* 4. Documents: v1.4 F, the profile's templates, saved on their own. */}
+        <section className="tia-settings__documents tia-settings__section" data-settings-documents=""
+          data-settings-section="documents">
+          <h3 className="tia-card__title">{COPY.documents.title}</h3>
+          <DocumentsFields platform={platform} readKey={documentsKeyOf(status)} />
+        </section>
+        {draft === null ? <p className="tia-note" role="status">{WORDS.loading}</p> : (
+          <>
+            {/* 5. Queue Settings (v1.5 QX). */}
+            <section className="tia-settings__section" data-settings-section="queue" aria-labelledby={`${headingId}-queue`}>
+              <h3 className="tia-card__title" id={`${headingId}-queue`}>{WORDS.queue}</h3>
+              <QueueFields settings={draft} disabled={saving} idPrefix="panel" onChange={change} />
+            </section>
+            {/* 6. Autofill Settings: the modes. */}
+            <section className="tia-settings__section" data-settings-section="autofill"
+              aria-labelledby={`${headingId}-autofill`}>
+              <h3 className="tia-card__title" id={`${headingId}-autofill`}>{WORDS.autofill}</h3>
+              <ModesFields settings={draft} disabled={saving} idPrefix="panel" signIn={signInAvailability(status)}
+                stored={base} onChange={change} />
+            </section>
+          </>
+        )}
       </div>
       <div className="tia-settings__foot">
         {note !== null && <p className="tia-settings__note" role="status">{note}</p>}

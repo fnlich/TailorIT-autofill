@@ -23,6 +23,7 @@ import type {
   ProfileSaveRefusal, SaveAnswerOutcome, SiteRequestOutcome, SubmittedState,
 } from '../messaging/schemas';
 import type { TailorFailure, TailorKind } from '../messaging/page-schemas'; // v1.4 F
+import type { QueueBlock, QueueItemStatus, QueuePhase, QueueStop } from '../messaging/page-schemas'; // v1.5 QX
 import type { FrameReport } from './report';
 
 /** A report notice's code. */
@@ -1347,6 +1348,39 @@ const OPTIONS = {
     refused: "Chrome didn't give the permission, so this stays off.",
     failed: "This couldn't be changed just now. Try again.",
   },
+  // ── v1.5 QX (settings version 11): the sequential auto-apply's settings. Drafts for the owner's review. ──
+  queue: {
+    heading: 'Queue',
+    intro: "How the panel's Queue tab opens the jobs you queue in TailorIT: one new tab after another, each the job's application, at most so many at once.",
+    durationSec: {
+      name: 'Seconds between tabs',
+      help: 'How long after a queued tab opens the next one opens. 1 to 600 seconds.',
+    },
+    accelerationSec: {
+      name: 'Seconds added each time',
+      help: 'Added to the wait after every tab, so the waits grow: with 8 and 0.5 they are 8, 8.5, 9, 9.5 seconds and so on. 0 to 60 seconds.',
+    },
+    autofillOnOpen: {
+      name: 'Autofill when a queued tab opens',
+      auto: 'Automatically',
+      manual: 'Manually',
+      help: 'Automatically fills each queued application as its tab opens, as Autofill would. Manually waits until you choose Autofill in that tab. Either way Submit follows the Submit mode below, and a check that you are human, a sign-in or a field it cannot fill waits for you.',
+    },
+    maxOpenTabs: {
+      name: 'Queued tabs open at once',
+      help: 'At most this many queued tabs are open and not done. While they are, the timer waits; a tab submitted or closed makes room. 1 to 10.',
+    },
+    seconds: 'seconds',
+    tabs: 'tabs',
+    /** "Waits: 8 s, 8.5 s, 9 s, 9.5 s …" */
+    preview: (waits: readonly string[]) => `Waits: ${waits.map((wait) => `${wait} s`).join(', ')} …`,
+    invalid: {
+      durationSec: 'Enter 1 to 600 seconds, to a tenth at most.',
+      accelerationSec: 'Enter 0 to 60 seconds, to a tenth at most.',
+      maxOpenTabs: 'Enter a whole number from 1 to 10.',
+    },
+  },
+  // ── end v1.5 QX ──
   data: {
     heading: 'Saved runs',
     intro: 'So that an application with several steps can continue after a reload, the extension keeps notes on each run for 24 hours: steps, field keys and counts, never your answers.',
@@ -1411,6 +1445,79 @@ const AGENT = {
     return `Auto-apply: ${phase} · ${status.doneToday} done today${last}${pending}`;
   },
 } as const;
+
+// ── v1.5 QX: the panel's tab bar and its Queue tab (PLAN decisions 7 and 9). Drafts for the owner's review. ──
+/** A queued job's status chip. */
+const QUEUE_STATUS_WORDS = {
+  queued: 'Queued', opening: 'Opening', opened: 'Opened', filling: 'Filling', ready: 'Ready for you',
+  submitted: 'Submitted', skipped: 'Skipped', failed: 'Failed',
+} as const satisfies Record<QueueItemStatus, string>;
+
+/** Seconds as the Queue tab says them: one decimal under ten, whole above ("8.5", "12"). */
+const secondsOf = (ms: number) => {
+  const seconds = Math.max(0, ms) / 1000;
+  return seconds < 10 ? (Math.ceil(seconds * 10) / 10).toFixed(1).replace(/\.0$/, '') : String(Math.ceil(seconds));
+};
+
+const QUEUE = {
+  tabs: { label: 'TailorIT panel', autofill: 'Autofill', queue: 'Queue' },
+  heading: 'Auto-apply Queue',
+  /** The progress bar's "3 of 12", and its accessible name. */
+  progress: (opened: number, total: number) => `${opened} of ${total}`,
+  progressLabel: 'Queued jobs opened',
+  seconds: secondsOf,
+  next: (ms: number) => `Next tab in ${secondsOf(ms)}s`,
+  held: {
+    cap: (open: number, ms: number) => `${open} queued ${open === 1 ? 'tab is' : 'tabs are'} open. The next opens ${secondsOf(ms)}s after one is done or closed.`,
+    offline: 'Waiting until this browser is back online.',
+    server: (ms: number) => `TailorIT didn't answer. Trying again in ${secondsOf(ms)}s.`,
+  },
+  paused: (ms: number | null) => (ms === null ? 'Paused.' : `Paused · the next tab opens ${secondsOf(ms)}s after Resume`),
+  allOpened: (open: number) => (open === 1 ? 'Every job is open · 1 tab still waits for you or fills'
+    : `Every job is open · ${open} tabs still wait for you or fill`),
+  finished: 'Every queued job is done.',
+  idle: (count: number) => (count === 1 ? '1 job is queued. Start opens it in a new tab.'
+    : `${count} jobs are queued. Start opens them one by one in new tabs.`),
+  stopped: {
+    person: 'Stopped. The tabs it opened stay open for you.',
+    agent: 'Stopped: Run auto-apply was turned on in the settings. The two never run together.',
+    connection: "Stopped: this browser's connection to TailorIT changed.",
+    disclosure: 'Stopped: choose I understand on the updated notice, then Start again.',
+    'no-tab': "Stopped: Chrome didn't open a tab for the next job.",
+  } satisfies Record<QueueStop, string>,
+  agentStopped: 'Run auto-apply was turned off, so it never runs beside the queue.',
+  agentOn: 'Run auto-apply is on. Start turns it off: the two never run together.',
+  blocked: {
+    'not-connected': 'Connect this browser to TailorIT to use the queue.',
+    'no-scope': "This browser's connection was made before auto-apply. Disconnect, then connect again.",
+    disclosure: 'Choose I understand on the updated notice to use the queue.',
+  } satisfies Record<QueueBlock, string>,
+  start: 'Start',
+  stop: 'Stop',
+  pause: 'Pause',
+  resume: 'Resume',
+  /** What Start does, by the settings as they act now. */
+  startHelp: (autofill: 'auto' | 'manual', submit: 'auto' | 'manual') => `Start opens your queued jobs one by one in new tabs, in the background. ${autofill === 'auto' ? 'Each fills by itself as it opens' : 'Each waits for you to choose Autofill in it'}, and ${submit === 'auto' ? 'Submit mode Auto submits it unless a rule leaves it for you' : 'you press Submit in each (Submit mode Manual)'}. Change this in Settings.`,
+  statuses: QUEUE_STATUS_WORDS,
+  reasons: AGENT_REASONS,
+  /** A row's button: its title, company and status, and that it goes to its tab. */
+  row: (title: string, company: string, status: string, tab: boolean) =>
+    `${title}${company === '' ? '' : `, ${company}`}: ${status}${tab ? '. Go to its tab' : ''}`,
+  listLabel: 'Queued jobs',
+  /** What a screen reader hears as the queue moves on (never the seconds). */
+  live: (phase: QueuePhase, opened: number, total: number) => (phase === 'idle' ? ''
+    : `Queue ${{ running: 'running', paused: 'paused', finished: 'done', stopped: 'stopped' }[phase]}: ${opened} of ${total} opened.`),
+  more: 'Show More',
+  empty: 'No jobs are queued. Queue jobs in TailorIT: Jobs or Job Tracker › Auto-apply.',
+  readFailed: "The queue couldn't be read. Try again in a moment.",
+  tryAgain: 'Try Again',
+  open: 'Open Auto-apply in TailorIT',
+  pending: 'A result TailorIT has not taken yet is sent again.',
+  /** "Submitted 3 · Ready for you 1 · Failed 1": the statuses past Opening that have a count. */
+  counts: (counts: Readonly<Record<QueueItemStatus, number>>) => (['filling', 'ready', 'submitted', 'skipped', 'failed'] as const)
+    .filter((status) => counts[status] > 0).map((status) => `${QUEUE_STATUS_WORDS[status]} ${counts[status]}`).join(' · '),
+} as const;
+// ── end v1.5 QX ──
 
 /**
  * The words of the in-page UI (src/content/ui) and the review (src/ui/report), which the content script shows: it
@@ -1667,6 +1774,10 @@ const SETTINGS_VIEW = {
   loading: 'Loading…',
   autofillInfo: 'Autofill Information', // v5 p1-panel
   allSettings: 'All Settings', // v5 p1-panel
+  // v1.5 QX (PLAN decision 10): the sections, in the owner's order.
+  notConnected: 'Not connected to TailorIT',
+  queue: 'Queue Settings',
+  autofill: 'Autofill Settings',
 } as const;
 // ── end v4 ui ──
 
@@ -1795,6 +1906,7 @@ export const COPY = {
   mainView: MAIN_VIEW,
   settingsView: SETTINGS_VIEW,
   modals: MODALS, // v5 p1-panel
+  queue: QUEUE, // v1.5 QX
   // v1.4 F
   tailor: TAILOR,
   previewPage: PREVIEW_PAGE,

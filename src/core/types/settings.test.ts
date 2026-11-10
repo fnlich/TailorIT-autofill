@@ -1,4 +1,7 @@
 /*
+ * Settings version 11 (v1.5 QX: the sequential auto-apply's queue settings, 8 s + 0.5 s each time, 5 tabs, fill by
+ * itself; every version 10 value takes them). The version 10 era's tests read their result as version 11 (`asV10` adds
+ * the queue's defaults too).
  * Settings version 10 (v1.5 X: the extension's UI choices, the upload edit confirm's "Don't show this again" off by
  * default; every version 9 value takes it). The older versions' tests are pinned to their own era: their fixtures hold
  * no `ui`, and what they expect is version 9's result, read as version 10 (`asV10`).
@@ -13,17 +16,57 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_MODES, DEFAULT_SETTINGS, DEFAULT_UI, migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4,
-  migrateSettingsV5, migrateSettingsV6, migrateSettingsV7, migrateSettingsV8, migrateSettingsV9, MODE_CHOICES,
-  NO_MATCH_MODES, NOTIFICATION_TIMES, PANEL_PLACES, SETTINGS_VERSION, type ModesV6, type ModesV8, type SettingsV1,
-  type SettingsV2, type SettingsV3, type SettingsV4, type SettingsV5, type SettingsV6, type SettingsV7, type SettingsV8,
-  type SettingsV9,
+  DEFAULT_MODES, DEFAULT_QUEUE, DEFAULT_SETTINGS, DEFAULT_UI, migrateSettings, migrateSettingsV10, migrateSettingsV2,
+  migrateSettingsV3, migrateSettingsV4, migrateSettingsV5, migrateSettingsV6, migrateSettingsV7, migrateSettingsV8,
+  migrateSettingsV9, MODE_CHOICES, NO_MATCH_MODES, NOTIFICATION_TIMES, PANEL_PLACES, QUEUE_AUTOFILL_CHOICES, QUEUE_LIMITS,
+  queueWaitMs, SETTINGS_VERSION, type ModesV6, type ModesV8, type SettingsV1, type SettingsV10, type SettingsV2,
+  type SettingsV3, type SettingsV4, type SettingsV5, type SettingsV6, type SettingsV7, type SettingsV8, type SettingsV9,
 } from './settings';
 
-// v1.5 X: the older versions' fixtures hold no `ui` (they are pinned to their own era).
-const { ui: _ui, ...DEFAULT_V9 } = { ...DEFAULT_SETTINGS, version: 9 as const };
-/** v1.5 X: what a version 9 era expected, as version 10 reads it: the UI choices at their defaults. */
-const asV10 = (era: object) => ({ ...era, version: 10, ui: { skipUploadEditConfirm: false } });
+// v1.5 X: the older versions' fixtures hold no `ui` (they are pinned to their own era); v1.5 QX: nor `queue`.
+const { ui: _ui, queue: _queue, ...DEFAULT_V9 } = { ...DEFAULT_SETTINGS, version: 9 as const };
+/** v1.5 X: what a version 9 era expected, as version 11 reads it: the UI choices and (v1.5 QX) the queue settings at
+ *  their defaults. */
+const asV10 = (era: object) => ({ ...era, version: 11, ui: { skipUploadEditConfirm: false },
+  queue: { durationSec: 8, accelerationSec: 0.5, autofillOnOpen: 'auto', maxOpenTabs: 5 } });
+
+// v1.5 QX
+describe('settings version 11 (v1.5 QX)', () => {
+  it('opens a queued tab every 8 s plus half a second more each time, at most 5 at once, filling by itself', () => {
+    expect(SETTINGS_VERSION).toBe(11);
+    expect(DEFAULT_SETTINGS.version).toBe(11);
+    expect(DEFAULT_SETTINGS.queue).toEqual({ durationSec: 8, accelerationSec: 0.5, autofillOnOpen: 'auto', maxOpenTabs: 5 });
+    expect(DEFAULT_SETTINGS.queue).not.toBe(DEFAULT_QUEUE);
+    expect(QUEUE_AUTOFILL_CHOICES).toEqual(['auto', 'manual']);
+    expect(QUEUE_LIMITS).toEqual({ durationSec: { min: 1, max: 600 }, accelerationSec: { min: 0, max: 60 },
+      maxOpenTabs: { min: 1, max: 10 } });
+  });
+
+  it('waits duration + k × acceleration after the k-th opening (8, 8.5, 9, 9.5, ...)', () => {
+    expect([1, 2, 3, 4].map((opened) => queueWaitMs(DEFAULT_QUEUE, opened))).toEqual([8000, 8500, 9000, 9500]);
+    expect(queueWaitMs({ durationSec: 3, accelerationSec: 0 }, 7)).toBe(3000);
+    expect(queueWaitMs({ durationSec: 1.5, accelerationSec: 0.1 }, 11)).toBe(2500);
+    // Before any opening it is the first wait.
+    expect(queueWaitMs(DEFAULT_QUEUE, 0)).toBe(8000);
+  });
+
+  it('migrates version 10: every choice kept, the queue at its defaults', () => {
+    const { queue: _q, ...rest } = DEFAULT_SETTINGS;
+    const v10: SettingsV10 = { ...rest, version: 10, panel: 'side', view: 'minimized',
+      modes: { ...DEFAULT_MODES, submit: 'auto', agentSkip: { requiredEmpty: false, noAi: true, legalGuess: true } },
+      llm: { ...rest.llm, drafts: false }, ui: { skipUploadEditConfirm: true } };
+    const migrated = migrateSettingsV10(v10);
+    expect(migrated).toEqual({ ...v10, version: 11, queue: DEFAULT_QUEUE });
+    // Nothing of the old object is shared, nor the defaults.
+    expect(migrated.modes).not.toBe(v10.modes);
+    expect(migrated.ui).not.toBe(v10.ui);
+    expect(migrated.queue).not.toBe(DEFAULT_QUEUE);
+    // Version 9 goes through it.
+    const { ui: _u, ...v9 } = v10;
+    expect(migrateSettingsV9({ ...v9, version: 9 })).toEqual({ ...v10, version: 11, ui: DEFAULT_UI, queue: DEFAULT_QUEUE });
+  });
+});
+// end v1.5 QX
 const { modes: _modes, view: _view, version: _version, panel: _panel, llm, ...rest } = DEFAULT_V9;
 /** Version 8's modes at their defaults (before "Keep my submitted answers in TailorIT"). */
 const { keepAnswers: _keepAnswers, ...MODES_V8 } = DEFAULT_MODES;
@@ -44,9 +87,7 @@ const withV7 = <T extends object>(modes: T) => ({ ...modes, noMatch: 'other', no
 
 // v1.5 X
 describe('settings version 10 (v1.5 X)', () => {
-  it('shows the confirm before editing an uploaded resume by default, in version 10', () => {
-    expect(SETTINGS_VERSION).toBe(10);
-    expect(DEFAULT_SETTINGS.version).toBe(10);
+  it('shows the confirm before editing an uploaded resume by default, since version 10', () => {
     expect(DEFAULT_SETTINGS.ui).toEqual({ skipUploadEditConfirm: false });
     expect(DEFAULT_UI).toEqual({ skipUploadEditConfirm: false });
     // A copy: changing one never changes the other.
@@ -58,7 +99,7 @@ describe('settings version 10 (v1.5 X)', () => {
       modes: { ...DEFAULT_MODES, next: 'auto', keepAnswers: 'off', agentSkip: { requiredEmpty: false, noAi: true,
         legalGuess: true } }, llm: { ...llm, drafts: false }, telemetry: { optIn: true }, preapprovedConsent: ['privacy'] };
     const migrated = migrateSettingsV9(v9);
-    expect(migrated).toEqual({ ...v9, version: 10, ui: { skipUploadEditConfirm: false } });
+    expect(migrated).toEqual(asV10(v9));
     // Nothing of the old object is shared.
     expect(migrated.modes).not.toBe(v9.modes);
     expect(migrated.modes.agentSkip).not.toBe(v9.modes.agentSkip);

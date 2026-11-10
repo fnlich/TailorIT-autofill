@@ -18,6 +18,7 @@ import { createWorkerPlatform } from '../platform/chrome';
 import type { PortLike, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { AGENT_ALARM, createAgent, type Agent } from './agent';
+import { createQueueRunner, QUEUE_ALARM, type QueueRunner } from './queue-runner'; // v1.5 QX
 import { createAuth, createTokenKeeper } from './auth';
 import { toBase64Url } from './bytes';
 import { createAiTasks } from './ai-tasks';
@@ -27,7 +28,7 @@ import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
 import {
   agentFramesOf, cardFrameOf, chainOf, claimFrameOf, createFrameSweep, forgetFrames, forgetTab as forgetTabFrames,
-  frameEntry, framesOfTab, frameTarget, navOf, registerFrame, setWall, type FrameChain, type FrameEntry,
+  frameEntry, framesOfTab, frameTarget, navOf, registerFrame, setWall, wallFrameOf, type FrameChain, type FrameEntry,
 } from './frames';
 import { createChains } from './chain';
 import { createJobCards, JOB_RELAY_LIMIT, LOOKUP_ON_LOAD_LIMIT, type JobCards } from './job-cards';
@@ -167,6 +168,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   let tailorings: Tailoring | null = null; // v1.4 F
   let submissions: Submissions | null = null;
   let agentRef: Agent | null = null;
+  let queueRef: QueueRunner | null = null; // v1.5 QX
   // v1.3 B
   let knownFormsRef: KnownForms | null = null;
   const keeper = createTokenKeeper(platform, () => {
@@ -179,6 +181,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     knownFormsRef?.dropTokenData();
     // v3 Phase 5: the agent's job closes; its result waits for a connection to tell it.
     void agentRef?.tokenChanged().catch(() => undefined);
+    // v1.5 QX: the sequential auto-apply stops; its results wait for a connection to tell them.
+    void queueRef?.tokenChanged().catch(() => undefined);
     // Every side panel reads the connection again and drops the card it holds, whichever window the change came from.
     panelReports?.tellPanels('connection');
   });
@@ -363,8 +367,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     frameKey: async (tabId, frameId) => (await frameEntry(session, tabId, frameId))?.applicationKey ?? null,
     disclosed: () => auth.disclosed(),
     changed: (tabId) => void reports.pageChanged(tabId).catch(() => undefined),
-    // v3 Phase 5: the agent's own tab's sign finishes its job (its result records Applied).
-    agentSubmitted: (tabId, applicationKey) => agent.submitted(tabId, applicationKey),
+    // v3 Phase 5: the agent's own tab's sign finishes its job (its result records Applied). v1.5 QX: else a queued tab's
+    // sign for its job's own application finishes that job, the same way.
+    agentSubmitted: async (tabId, applicationKey) => {
+      const byAgent = await agent.submitted(tabId, applicationKey);
+      return byAgent !== 'not-ours' ? byAgent : queueRunner.submitted(tabId, applicationKey);
+    },
     // v5 p1-panel (PLAN decision 5): the page's "Application Submitted!" window, in the tab's top frame.
     applied: (tabId) => void tellTopFrame(tabId, { v: 1, type: 'applied/popup' }),
     // v1.3 B: a submitted form's answers kept unless the person turned it off; its questions classified as the
@@ -479,6 +487,25 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     // The e2e build: its test browser routes the agent's new window before the job's address opens in it.
     windowSettleMs: __E2E__ ? AGENT_E2E_SETTLE_MS : 0 });
   agentRef = agent;
+  // v1.5 QX: the sequential auto-apply (queue-runner.ts). Its alarm's listener is registered below, with the others.
+  const queueRunner = createQueueRunner({ server, session, tabs: platform.queueTabs, alarms: platform.alarms, timers,
+    now, settings: () => settings.get(),
+    scopes: async () => (await keeper.current())?.scopes ?? null,
+    disclosed: () => auth.disclosed(),
+    online: () => (globalThis as { navigator?: { onLine?: boolean } }).navigator?.onLine !== false,
+    // The background agent never runs beside it: Start turns Run auto-apply off (its running job left for the person).
+    agentOn: async () => (await agent.status()).on,
+    stopAgent: async () => void (await agent.set(false, false)),
+    reports: (tabId) => reports.ofTab(tabId),
+    ...(platform.tabs.atsPageOf === undefined ? {} : { atsPageOf: (tabId: number) => platform.tabs.atsPageOf!(tabId) }),
+    send: (tabId, message, target) => platform.tabs.sendToFrame(tabId, message, target),
+    // The panel's Autofill, as the person's click sends it (its entry pressed, then the next form started).
+    fill: async (tabId) => void (await panel.fill({ v: 1, type: 'panel/fill', tabId, dryRun: false })),
+    assign: (tabId, applicationKey, task) => jobs.assign(tabId, applicationKey, task.jobId, task.resumeId),
+    changed: () => reports.tellPanels('queue'),
+    // The e2e build: its test browser routes the queued tab before the job's address opens in it.
+    tabSettleMs: __E2E__ ? AGENT_E2E_SETTLE_MS : 0 });
+  queueRef = queueRunner;
   /** The e2e build only: a test event in storage.session (e2e:events), never an address; one write at a time, so two
    *  frames' events at once both land. */
   const e2eWrites = createKeyedQueue();
@@ -742,6 +769,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           log('frame.registered', { frameId: entry.frameId, top: entry.isTop });
           // v3 Phase 5: the agent's window: a form's document gets the agent's run, a posting's its entry.
           void agent.hello(from.tabId, entry).catch(() => undefined);
+          // v1.5 QX: a queued tab's page is open; its first form fills with Automatically (the top frame, or the frame
+          // that claims its application, as the Sign up & Autofill start reads them).
+          void (async () => {
+            if (!(await queueRunner.ownsTab(from.tabId))) return;
+            await queueRunner.hello(from.tabId, entry, entry.frameId === 0
+              || claimFrameOf(await framesOfTab(session, from.tabId))?.frameId === entry.frameId);
+          })().catch(() => undefined);
           // The v4 review (M1): the tab's top frame shows a document on another origin than the one a grant was given
           // for: the grant ends, and the tab's frames hear their settings again.
           if (from.frameId === 0 && newDocument && signUps.moved(from.tabId, entry.origin)) {
@@ -827,11 +861,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'report/live': async (message, from) => {
           const answer = await reports.put(message, from);
           if (answer.ok) void agent.reported(from.tabId).catch(() => undefined);
+          if (answer.ok) void queueRunner.reported(from.tabId).catch(() => undefined); // v1.5 QX
           return answer;
         },
         'report/put': async (message, from) => {
           const answer = await reports.put(message, from);
           if (answer.ok) void agent.reported(from.tabId).catch(() => undefined);
+          if (answer.ok) void queueRunner.reported(from.tabId).catch(() => undefined); // v1.5 QX
           // v4: a Sign up & Autofill grant lasts one run: it ends once the tab's run rests at review, done or stopped.
           if (answer.ok && message.report.mode === 'fill' && ['review', 'done', 'stopped'].includes(message.report.status)
             && signUps.end(from.tabId)) void pushTab(from.tabId).catch(() => undefined);
@@ -964,6 +1000,16 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           if (entry === null) return refuse('expired');
           log('frame.wall', { shown: message.wall !== null, choice: message.choice === true });
           void reports.pageChanged(from.tabId).catch(() => undefined);
+          // v1.5 QX: a queued tab whose application frame (its top frame or claim frame, wallFrameOf) shows the
+          // posting's own Apply, an entry choice or an account wall, and no form: with Automatically, its Autofill.
+          if (message.wall !== null || message.choice === true || message.entry === true) {
+            void (async () => {
+              if (!(await queueRunner.ownsTab(from.tabId))) return;
+              const frames = await framesOfTab(session, from.tabId);
+              if (frames.some((frame) => frame.hasForm) || wallFrameOf(frames)?.frameId !== from.frameId) return;
+              await queueRunner.wall(from.tabId, { applicationKey: entry.applicationKey, wall: message.wall !== null });
+            })().catch(() => undefined);
+          }
           return ok({});
         },
         'agent/entered': async (_message, from) => {
@@ -1081,8 +1127,20 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'telemetry/get': async () => ok({ counts: await telemetry.read() }),
         // v3 Phase 5: the auto-apply agent's switch, status and Stop (the options page and the side panel).
         'agent/status': async () => ok(await agent.status()),
-        'agent/set': (message) => agent.set(message.on, message.confirmed === true),
+        // v1.5 QX: Run auto-apply turned on stops the sequential auto-apply first (the two never run together).
+        'agent/set': async (message) => {
+          if (message.on && (await queueRunner.active())) await queueRunner.stop('agent');
+          return agent.set(message.on, message.confirmed === true);
+        },
         'agent/stop': () => agent.stop(),
+        // v1.5 QX: the Queue tab (the sidebar's and Chrome's side panel's).
+        'queue/status': async () => ok(await queueRunner.status()),
+        'queue/list': (message) => queueRunner.list(message.offset),
+        'queue/start': () => queueRunner.start(),
+        'queue/stop': () => queueRunner.stop('person'),
+        'queue/pause': () => queueRunner.pause(),
+        'queue/resume': () => queueRunner.resume(),
+        'queue/focus': (message) => queueRunner.focus(message.id),
         // v3 Phase 8: Options › "Where Autofill works".
         'sites/get': async () => ok(await sites.state()),
         'sites/set': async (message) => ok(await sites.set(message.on)),
@@ -1245,6 +1303,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // v3 Phase 5: the agent's alarm wakes the worker while Run auto-apply is on.
   platform.alarms.onAlarm((name) => {
     if (name === AGENT_ALARM) void agent.tick().catch(() => undefined);
+    // v1.5 QX: the sequential auto-apply's, while it runs, a tab waits for its page or a result waits to be told.
+    if (name === QUEUE_ALARM) void queueRunner.tick().catch(() => undefined);
   });
 
   // Round 2 of the v3 Phase 6/7b review (K3): the agent's tab at a page that says no hello is answered at its load
@@ -1255,6 +1315,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
 
   platform.tabs.onRemoved((tabId) => {
     void agent.tabRemoved(tabId).catch(() => undefined);
+    void queueRunner.tabRemoved(tabId).catch(() => undefined); // v1.5 QX
     signUps.end(tabId);
     dialogs.dropTab(tabId); // v1.5 X
     void signIn.forgetTab(tabId).catch(() => undefined);
@@ -1299,6 +1360,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   state.ready = accessReady.then(() => runStates.prune().catch(() => undefined));
   // v3 Phase 5: the agent picks up where it was (its job, a result still to tell, the queue).
   void state.ready.then(() => agent.start()).catch(() => undefined);
+  // v1.5 QX: the sequential auto-apply picks up where it was (its timer, its tabs, a result still to tell).
+  void state.ready.then(() => queueRunner.boot()).catch(() => undefined);
   // v3 Phase 8: the injected frames back in memory, and the sentinel's registrations reconciled.
   void sites.start().catch(() => undefined);
   // v5 p1-shell: the toolbar icon as the settings say (an update keeps them, and onInstalled may not come).

@@ -19,11 +19,17 @@
  * v5 p1-shell (the review's S7): in the sidebar on the page (ui/panel/on-page.tsx), a choice that lets the extension act
  * more on its own than the settings as stored (`stored`) cannot be made: Submit's and Sign-in's Auto, and turning a
  * skip rule off; the group's "?" says where it is made, and the worker refuses such a save from the sidebar anyway.
+ * v1.5 QX (PLAN decision 10; the owner, 2026-11-10: "radio buttons should be located as horizontal(not vertical). if
+ * the number is bigger than 2, 2 by 2"): each radio group's cards side by side, two to a row (page/styles.ts), the skip
+ * rules' boxes one per line. And (settings version 11) QueueFields: the sequential auto-apply's settings, the seconds
+ * between tabs and added each time (with the waits they make), Autofill when a queued tab opens, and how many queued
+ * tabs may be open at once; drawn in the panel's Settings view before the modes, and in Options' Queue card.
  */
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { useOnPage } from '../panel/on-page';
 import {
-  MODE_CHOICES, PANEL_PLACES, PANEL_VIEWS, type Modes, type PanelPlace, type PanelView, type Settings,
+  MODE_CHOICES, PANEL_PLACES, PANEL_VIEWS, QUEUE_AUTOFILL_CHOICES, QUEUE_LIMITS, type Modes, type PanelPlace, type PanelView,
+  type QueueAutofill, type QueueSettings, type Settings,
 } from '../../core/types/settings';
 import type { AuthStatus } from '../../messaging/schemas';
 import { COPY } from '../../shared/copy';
@@ -164,7 +170,7 @@ function SkipRules({ settings, disabled, onChange, kept }: { settings: Settings;
       data-setting-group="modes.agentSkip">
       <GroupHead nameId={nameId} tipId={tipId} name={words.name}
         help={kept === null ? words.help : `${words.help} ${COPY.onPage.raise}`} />
-      <div className="tia-mode__choices">
+      <div className="tia-mode__choices tia-mode__choices--stack">
         {SKIP_RULES.map((rule) => (
           <label key={rule} className="tia-radiocard tia-radiocard--box">
             <input type="checkbox" className="tia-radiocard__input" data-setting={`modes.agentSkip.${rule}`}
@@ -179,3 +185,139 @@ function SkipRules({ settings, disabled, onChange, kept }: { settings: Settings;
     </div>
   );
 }
+
+// ── v1.5 QX (settings version 11): the sequential auto-apply's settings ──
+
+const QUEUE_WORDS = COPY.options.queue;
+
+/** A number of seconds as the settings keep it: tenths at most, within `bounds`; null otherwise. */
+export function secondsValue(raw: string, bounds: { min: number; max: number }): number | null {
+  const text = raw.trim().replace(',', '.');
+  if (!/^\d{1,3}(\.\d)?$/.test(text)) return null;
+  const value = Number(text);
+  return value >= bounds.min && value <= bounds.max ? value : null;
+}
+
+/** "8", "8.5": seconds as the waits' line says them. */
+const secondsText = (value: number) => String(Math.round(value * 10) / 10);
+
+/** The first waits the settings make: duration + k × acceleration, k from 0. */
+export function queueWaits(queue: Pick<QueueSettings, 'durationSec' | 'accelerationSec'>, count = 4): string[] {
+  return Array.from({ length: count }, (_, k) => secondsText(queue.durationSec + k * queue.accelerationSec));
+}
+
+/** The queue's settings: the seconds between tabs and added each time, with the waits they make; Autofill when a queued
+ *  tab opens (radio cards, side by side); how many queued tabs may be open at once. `onChange` gets the whole settings
+ *  with the one choice changed. */
+export function QueueFields({ settings, disabled, onChange, idPrefix }: {
+  settings: Settings;
+  disabled: boolean;
+  onChange(next: Settings): void;
+  idPrefix: string;
+}) {
+  const queue = settings.queue;
+  const set = (patch: Partial<QueueSettings>) => onChange({ ...settings, queue: { ...queue, ...patch } });
+  const tabsId = useId();
+  const tabsTip = useId();
+  const words = QUEUE_WORDS.autofillOnOpen;
+  return (
+    <div className="tia-modes tia-queue-settings" data-queue-settings="">
+      <SecondsField setting="queue.durationSec" name={QUEUE_WORDS.durationSec.name} help={QUEUE_WORDS.durationSec.help}
+        value={queue.durationSec} bounds={QUEUE_LIMITS.durationSec} invalid={QUEUE_WORDS.invalid.durationSec}
+        disabled={disabled} onCommit={(durationSec) => set({ durationSec })} />
+      <SecondsField setting="queue.accelerationSec" name={QUEUE_WORDS.accelerationSec.name}
+        help={QUEUE_WORDS.accelerationSec.help} value={queue.accelerationSec} bounds={QUEUE_LIMITS.accelerationSec}
+        invalid={QUEUE_WORDS.invalid.accelerationSec} disabled={disabled}
+        onCommit={(accelerationSec) => set({ accelerationSec })} />
+      <p className="tia-note tia-queue-settings__waits" data-queue-waits="">{QUEUE_WORDS.preview(queueWaits(queue))}</p>
+      <ModeGroup name={`${idPrefix}-queue-autofill`} setting="queue.autofillOnOpen"
+        words={{ name: words.name, help: words.help, choices: { auto: words.auto, manual: words.manual } }}
+        choices={QUEUE_AUTOFILL_CHOICES} value={queue.autofillOnOpen} disabled={disabled} blocked={null}
+        onChoose={(choice) => set({ autofillOnOpen: choice as QueueAutofill })} />
+      <div className="tia-mode tia-numberfield" data-setting-group="queue.maxOpenTabs">
+        <p className="tia-mode__head">
+          <label className="tia-mode__name" htmlFor={tabsId}>{QUEUE_WORDS.maxOpenTabs.name}</label>
+          <HelpTip text={QUEUE_WORDS.maxOpenTabs.help} topic={QUEUE_WORDS.maxOpenTabs.name} id={tabsTip} />
+        </p>
+        <span className="tia-numberfield__row">
+          <select id={tabsId} className="tia-numberfield__input" value={queue.maxOpenTabs} disabled={disabled}
+            aria-describedby={tabsTip} data-setting="queue.maxOpenTabs"
+            onChange={(event) => set({ maxOpenTabs: Number(event.target.value) })}>
+            {Array.from({ length: QUEUE_LIMITS.maxOpenTabs.max - QUEUE_LIMITS.maxOpenTabs.min + 1 },
+              (_, index) => QUEUE_LIMITS.maxOpenTabs.min + index).map((count) => (
+              <option key={count} value={count}>{count}</option>
+            ))}
+          </select>
+          <span className="tia-numberfield__unit">{QUEUE_WORDS.tabs}</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** A number of seconds typed: what is typed stays as typed while the box has the focus; a value within its bounds goes
+ *  to the settings as it is typed (or at Enter, or on leaving the box), anything else says what to enter. */
+function SecondsField({ setting, name, help, value, bounds, invalid, disabled, onCommit }: {
+  setting: string;
+  name: string;
+  help: string;
+  value: number;
+  bounds: { min: number; max: number };
+  invalid: string;
+  disabled: boolean;
+  onCommit(value: number): void;
+}) {
+  const id = useId();
+  const tipId = useId();
+  const errorId = useId();
+  const [text, setText] = useState(secondsText(value));
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState(false);
+  // The stored value, shown again while the box is not being typed in (React's pattern for state that follows a prop).
+  const [shown, setShown] = useState(value);
+  if (shown !== value) {
+    setShown(value);
+    if (!editing) {
+      setText(secondsText(value));
+      setError(false);
+    }
+  }
+  const commit = (raw: string) => {
+    const parsed = secondsValue(raw, bounds);
+    setError(parsed === null);
+    if (parsed !== null && parsed !== value) onCommit(parsed);
+  };
+  return (
+    <div className="tia-mode tia-numberfield" data-setting-group={setting}>
+      <p className="tia-mode__head">
+        <label className="tia-mode__name" htmlFor={id}>{name}</label>
+        <HelpTip text={help} topic={name} id={tipId} />
+      </p>
+      <span className="tia-numberfield__row">
+        <input id={id} type="text" inputMode="decimal" autoComplete="off" spellCheck={false} maxLength={5}
+          className="tia-numberfield__input" value={text} disabled={disabled} data-setting={setting}
+          aria-invalid={error ? true : undefined} aria-describedby={error ? `${tipId} ${errorId}` : tipId}
+          onFocus={() => setEditing(true)}
+          onChange={(event) => {
+            const raw = event.target.value;
+            setText(raw);
+            const parsed = secondsValue(raw, bounds);
+            if (parsed !== null) {
+              setError(false);
+              if (parsed !== value) onCommit(parsed);
+            }
+          }}
+          onBlur={(event) => {
+            setEditing(false);
+            commit(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commit(event.currentTarget.value);
+          }} />
+        <span className="tia-numberfield__unit">{QUEUE_WORDS.seconds}</span>
+      </span>
+      {error && <p className="tia-error tia-numberfield__error" id={errorId} role="alert">{invalid}</p>}
+    </div>
+  );
+}
+// ── end v1.5 QX ──

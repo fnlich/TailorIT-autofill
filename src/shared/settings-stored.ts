@@ -1,17 +1,34 @@
 /*
  * The settings versions an install may still hold in storage.local, read only by the worker to migrate them
- * (background/settings.ts; core/types/settings.ts migrateSettings, migrateSettingsV2 to migrateSettingsV9). Apart from
+ * (background/settings.ts; core/types/settings.ts migrateSettings, migrateSettingsV2 to migrateSettingsV10). Apart from
  * ./settings.ts, which content scripts import, so these never reach the content script's
  * bundle (the behaviour review of 2026-11-06: its size budget, scripts/check-build.mjs).
  */
 import { z } from 'zod';
 import {
   PANEL_PLACES, PANEL_VIEWS, type SettingsV1, type SettingsV2, type SettingsV3, type SettingsV4, type SettingsV5,
-  type SettingsV6, type SettingsV7, type SettingsV8, type SettingsV9,
+  type SettingsV6, type SettingsV7, type SettingsV8, type SettingsV9, type SettingsV10,
 } from '../core/types/settings';
 import {
   Consents, Interpretations, Llm as LlmV6, LlmV5 as Llm, ModesSchema, ModesV4Schema, ModesV6Schema, ModesV8Schema,
+  UiChoicesSchema,
 } from './settings';
+
+// v1.5 QX
+/** Version 10's stored settings (before version 11's queue settings), read only to migrate them. */
+export const SettingsV10Schema = z.strictObject({
+  version: z.literal(10),
+  panel: z.enum(PANEL_PLACES),
+  view: z.enum(PANEL_VIEWS),
+  modes: ModesSchema,
+  preapprovedConsent: Consents,
+  llm: LlmV6,
+  telemetry: z.strictObject({ optIn: z.boolean() }),
+  offerToSaveAnswers: z.boolean(),
+  interpretations: Interpretations,
+  ui: UiChoicesSchema,
+}) satisfies z.ZodType<SettingsV10>;
+// end v1.5 QX
 
 // v1.5 X
 /** Version 9's stored settings (before version 10's UI choices), read only to migrate them. */
