@@ -2,7 +2,7 @@
   "apiVersion": 6,
   "zod": "4.6.7",
   "files": {
-    "agent.ts": "f5e936bfd780aab1810818876eb1faa2e3efbc97b45c2dfe72b581f523afb002",
+    "agent.ts": "fcb7a79e7bbf8656a94b927c6c11bb66e22f2392863c85c31493b09fde8ddd6f",
     "ai.ts": "cb3290749fdc383f7712d72f40ad90cca189fc5bf0c16cef23d11aa712d4bbdb",
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "49960ec62489547d78a01bdc51d82142b6ce44168c31a81f060a282774da20f1",
@@ -13,7 +13,7 @@
     "index.ts": "d82fa73c2ad73e1c69f6bd2914dbac7fc0ac329a3b0b57313094d9d1b4c1f827",
     "lookup.ts": "9c4ff64ddef5114b7dfefa99cf25423a4e5d8048b065a39f942942026ba5c0b6",
     "profile.ts": "83865e029fbf8d67bb6ffe93a7eac8e3b555d853b2125199afce03706d4db15b",
-    "registry.ts": "98c87d0f4fcf93bc5186795b747a3b85271fa91657cea1ba73d8ddc09413f93e",
+    "registry.ts": "3513fcdcd94e7be83816f6697477062568d8fe7742f317f5e930ebe8be51ac31",
     "resumes.ts": "4ff18ed3654e5127b36f7c747f665dcd5e8c3f301e238a20f85fef1655de46f4",
     "sites.ts": "8277ea2ad73f9b4253f89c460af91c4635d3aee2b6f29b94024e5482e3abf3ef",
     "tailor.ts": "b7348760e889d54974f4f05af36a1c24c17a8aaeca99ed21c2af120d7adb5a92",
@@ -43,8 +43,19 @@
     "AutofillAgentNext/valid/nothing-to-do.json": "a73ebc758b664f98871eb9325cd7ac5ed0e557b7a2b9957e67981f299e9f606b",
     "AutofillAgentNext/valid/pinpoint.json": "321df56547c6ae64e02eb1270039d058cf805625a7e462444fb52e3bf71ece2d",
     "AutofillAgentNext/valid/workable.json": "f496f17f3cb73eafdc6dc8d423d5ca1a4683d26be6caa80157167c6ea391d99e",
+    "AutofillAgentOpened/invalid/unknown-state.json": "ec51554793ef683937d80e2e012ad03c91c8a0e2735344cd113cb4a48a2b8eac",
+    "AutofillAgentOpened/valid/finished-at-claim.json": "f2d9c3b502de36f98f70099b362182eb908087b93efec2fd3735f0f8fb6201d6",
+    "AutofillAgentOpened/valid/golden.json": "18c4ff12ddbb60a905a2aaf59855b0a3cd5a984013a5ce40f4538e95f020feaa",
     "AutofillAgentQueueList/invalid/unknown-reason.json": "7c14ba466b8613a44a8b78250ab687a240218571c65bf4c8898050eed49427c6",
-    "AutofillAgentQueueList/valid/golden.json": "1fcd08744658c08f3fc7b7cae22f3e0cb715b6605a7533bfaf8abf6250f644bb",
+    "AutofillAgentQueueList/invalid/unknown-run.json": "95ec89e7e5e9ebf016316d294c8514cfb1a5ffdff46a1f08f53ef3fd2b23c620",
+    "AutofillAgentQueueList/valid/golden.json": "e60b9e0ca6b1d14638ca6ea749adc4346cf777cef03ce28a878261adca44cf51",
+    "AutofillAgentQueueList/valid/older-server.json": "1fcd08744658c08f3fc7b7cae22f3e0cb715b6605a7533bfaf8abf6250f644bb",
+    "AutofillAgentQueueList/valid/whole-list.json": "10fccb59ab4ae6bc2235ab7fa2915428dcc916555b62de48dfc98ea722a2e120",
+    "AutofillAgentQueueQuery/invalid/limit-too-large.json": "c5a9b4a26e91801f30f75185965dc1b0377f6cba0f695c2e1b6a47b5950a76ad",
+    "AutofillAgentQueueQuery/invalid/unknown-state.json": "16a0ee99472c8c058c76aabda6381ed83ea595bd07f73a6d5266a2daa28b8e28",
+    "AutofillAgentQueueQuery/valid/golden.json": "d97835a56df1c60679da1ef9630202ebe34df23e7ee041fbd384a23ecb6bf767",
+    "AutofillAgentQueueQuery/valid/none.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+    "AutofillAgentQueueQuery/valid/one-state.json": "f9a28a6144557a5225fe194b016e9efaf5d9ec061f61c2df7eeb8b71e6b2ccc4",
     "AutofillAgentResultBody/invalid/skipped-without-reason.json": "c333cb86e09f5d2401ce187cc101250105dc3aab644f738f1afb324ec7c75ae1",
     "AutofillAgentResultBody/invalid/still-running.json": "0dc882a8060d8e26519483d020b6a3c955a0ad8b9688eaedc1bcd2b9435d934b",
     "AutofillAgentResultBody/valid/golden.json": "c80a5eeb2e3c3506e58c9b71528deb443755e297811819e09b939ace04127e9c",
@@ -16230,6 +16241,31 @@
                     "type": "null"
                   }
                 ]
+              },
+              "applyUrl": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "run": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "agent",
+                      "tab"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -16261,6 +16297,10 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991
+        },
+        "nextCursor": {
+          "type": "string",
+          "maxLength": 200
         }
       },
       "required": [
@@ -16301,6 +16341,126 @@
       "required": [
         "ruleEnabled",
         "minMatch"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillAgentQueueQuery": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "maxLength": 80,
+          "pattern": "^(?:queued|running|submitted|skipped|needs-you|failed)(?:,(?:queued|running|submitted|skipped|needs-you|failed))*$"
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "AutofillAgentOpened": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "item": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "jobId": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "url": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "pattern": "^https?:\\/\\/\\S+$"
+                },
+                "company": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "resumeId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "jobId",
+                "url",
+                "company",
+                "title",
+                "resumeId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "submitted",
+            "skipped",
+            "needs-you",
+            "failed"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "required_field_empty",
+                "posting_forbids_ai",
+                "ai_guess_legal",
+                "captcha",
+                "sign_in",
+                "sign_in_failed",
+                "email_code",
+                "validation_error",
+                "unsupported_site",
+                "posting_closed",
+                "page_error",
+                "timed_out",
+                "already_applied",
+                "cancelled",
+                "other"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "item",
+        "state",
+        "reason"
       ],
       "additionalProperties": false
     },
@@ -18795,6 +18955,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/autofill/agent/:id/opened",
+      "caller": "token",
+      "scope": "agent:run",
+      "request": null,
+      "status": 200,
+      "response": "AutofillAgentOpened",
+      "accepted": null
+    },
+    {
+      "method": "POST",
       "path": "/api/autofill/agent/:id/result",
       "caller": "token",
       "scope": "agent:run",
@@ -18816,9 +18986,9 @@
     {
       "method": "GET",
       "path": "/api/autofill/agent/queue",
-      "caller": "session",
-      "scope": null,
-      "request": null,
+      "caller": "either",
+      "scope": "agent:run",
+      "request": "AutofillAgentQueueQuery",
       "status": 200,
       "response": "AutofillAgentQueueList",
       "accepted": null

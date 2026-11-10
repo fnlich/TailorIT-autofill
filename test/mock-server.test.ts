@@ -160,6 +160,13 @@ describe('the routes', () => {
         await call('/api/autofill/agent/next', { headers: asToken() });
         path = `/api/autofill/agent/${id}/result`;
       }
+      // v1.5 QX: the Queue tab's run takes a row the queue holds, queued (TailorIT v1.5 Q2's rules).
+      if (route.path === '/api/autofill/agent/:id/opened') {
+        const id = '7c1e4f2a-9b3d-4a6e-8f50-2d9c1b7e3a65';
+        await call('/__mock/agent', { method: 'POST', json: { items: [{ id, jobId: 2, company: 'Northwind', title: 'Engineer',
+          url: 'https://job-boards.greenhouse.io/northwind/jobs/2', resumeId: null }] } });
+        path = `/api/autofill/agent/${id}/opened`;
+      }
       // The job-site sign-in needs credentials:read, which the token holds only when the person allowed it (version 3).
       if (route.scope === 'credentials:read') await scenario('sign-in-allowed');
       const sendsBody = (route.method === 'POST' || route.method === 'PUT') && route.request !== null;
@@ -768,6 +775,34 @@ describe('the auto-apply queue (v3 Phase 5), as TailorIT keeps it', () => {
     expect(held.running?.id).toBe(task(3).id);
     expect(held.refused.map((each) => each.status)).toEqual([404, 409, 409]);
     expect(held.results).toHaveLength(5);
+  });
+
+  // v1.5 QX (TailorIT v1.5 Q2): the Queue tab's list and its run's claim.
+  it('pages the queued rows for a token, and lets the Queue tab take a queued row the agent then never takes', async () => {
+    await call('/__mock/agent', { method: 'POST', json: { items: [task(1), task(2), task(3)] } });
+    const page = async (query: string) => (await (await call(`/api/autofill/agent/queue?${query}`, { headers: asToken() }))
+      .json()) as { items: Array<{ id: string; state: string; run: string | null }>; total: number; nextCursor?: string };
+    const first = await page('state=queued&limit=2');
+    expect([first.items.map((item) => item.id), first.total, first.nextCursor]).toEqual([[task(1).id, task(2).id], 3, 'c2']);
+    expect((await page(`state=queued&limit=2&cursor=${first.nextCursor}`)).items.map((item) => item.id)).toEqual([task(3).id]);
+    expect((await call('/api/autofill/agent/queue?limit=500', { headers: asToken() })).status).toBe(400);
+    const opened = async (id: string) => call(`/api/autofill/agent/${id}/opened`, { method: 'POST', headers: asToken() });
+    const taken = await opened(task(1).id);
+    expect([taken.status, await taken.json()]).toEqual([200, { item: task(1), state: 'running', reason: null }]);
+    // The same connection again (a worker that restarted): the same task.
+    expect((await opened(task(1).id)).status).toBe(200);
+    // The agent never takes it, nor is it handed back to it: it takes the next queued row.
+    expect(await next()).toBe(task(2).id);
+    expect(await next()).toBe(task(2).id);
+    // A row the agent runs, or one the mock does not hold: refused.
+    expect((await opened(task(2).id)).status).toBe(409);
+    expect((await opened('0000000f-aaaa-4bbb-8ccc-00000000000f')).status).toBe(404);
+    // The list says which run took each row, running first.
+    const all = await page('state=queued,running&limit=10');
+    expect(all.items.map((item) => [item.id, item.state, item.run])).toEqual([[task(1).id, 'running', 'tab'],
+      [task(2).id, 'running', 'agent'], [task(3).id, 'queued', null]]);
+    // Its result goes as the agent's does.
+    expect(await result(task(1).id, 'needs-you', 'cancelled')).toBe(204);
   });
 });
 

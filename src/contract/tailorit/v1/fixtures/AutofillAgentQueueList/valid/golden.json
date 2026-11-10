@@ -1,6 +1,25 @@
 {
   "items": [
     {
+      "id": "3f6a9c2e-8d1b-4e7f-a053-1c9e7b2d4f86",
+      "jobId": 1104,
+      "title": "Site Reliability Engineer",
+      "company": "Northwind",
+      "location": "Remote in USA",
+      "url": "https://boards.greenhouse.io/northwind/jobs/5512399001",
+      "active": true,
+      "state": "running",
+      "reason": null,
+      "source": "manual",
+      "attempts": 1,
+      "aiGuesses": null,
+      "createdAt": "2026-11-01T14:58:00.000Z",
+      "startedAt": "2026-11-01T15:01:00.000Z",
+      "finishedAt": null,
+      "applyUrl": "https://job-boards.greenhouse.io/northwind/jobs/5512399001",
+      "run": "tab"
+    },
+    {
       "id": "2b9d6e1f-4c7a-4f3e-9a12-6e8b0c5d7f41",
       "jobId": 1077,
       "title": "Backend Engineer, Payments",
@@ -15,26 +34,12 @@
       "aiGuesses": null,
       "createdAt": "2026-11-01T15:00:00.000Z",
       "startedAt": null,
-      "finishedAt": null
-    },
-    {
-      "id": "7c1e4f2a-9b3d-4a6e-8f50-2d9c1b7e3a64",
-      "jobId": 1042,
-      "title": "Senior Backend Engineer",
-      "company": "Northwind",
-      "location": "Austin, TX, USA",
-      "url": "https://job-boards.greenhouse.io/northwind/jobs/5512345002",
-      "active": true,
-      "state": "needs-you",
-      "reason": "sign_in",
-      "source": "manual",
-      "attempts": 1,
-      "aiGuesses": null,
-      "createdAt": "2026-11-01T15:00:00.000Z",
-      "startedAt": "2026-11-01T15:02:00.000Z",
-      "finishedAt": "2026-11-01T15:05:30.000Z"
+      "finishedAt": null,
+      "applyUrl": "https://jobs.ashbyhq.com/northwind/d3bc1ced-3ce4-4086-a050-555055dbb1ff/application",
+      "run": null
     }
   ],
-  "total": 2,
-  "limit": 500
+  "total": 3,
+  "limit": 500,
+  "nextCursor": "WzEsIjIwMjYtMTEtMDFUMTU6MDA6MDAuMDAwWiIsMl0"
 }

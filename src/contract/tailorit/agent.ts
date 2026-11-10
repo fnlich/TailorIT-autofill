@@ -241,6 +241,45 @@ export const AutofillAgentEnqueueResponseSchema = z.object({
 });
 export type AutofillAgentEnqueueResponse = z.infer<typeof AutofillAgentEnqueueResponseSchema>;
 
+// v1.5 Q2: the extension's Queue tab (a sequential run that opens queued jobs in new tabs, one by one).
+/**
+ * Which run took a row: `agent`, the background "Run auto-apply" worker (GET …/agent/next), or `tab`, the Queue tab's
+ * sequential run (POST …/agent/:id/opened). A row one run took is never handed to the other: GET …/next takes only
+ * `queued` rows and gives a browser back only its own `agent` runs, and …/opened takes only a `queued` row (or this
+ * browser's own `tab` run again).
+ */
+export const AUTOFILL_AGENT_RUNS = ['agent', 'tab'] as const;
+export type AutofillAgentRun = (typeof AUTOFILL_AGENT_RUNS)[number];
+
+/** The most rows one page of GET /api/autofill/agent/queue answers, and the page size when `cursor` comes alone. */
+export const AUTOFILL_AGENT_QUEUE_PAGE_MAX = 100;
+export const AUTOFILL_AGENT_QUEUE_PAGE_DEFAULT = 50;
+/** The longest page cursor. */
+export const AUTOFILL_AGENT_QUEUE_CURSOR_MAX = 200;
+
+const AGENT_STATE_LIST = new RegExp(
+  `^(?:${AUTOFILL_AGENT_STATES.join('|')})(?:,(?:${AUTOFILL_AGENT_STATES.join('|')}))*$`,
+);
+
+/**
+ * GET /api/autofill/agent/queue's query (the Queue tab, with a token of scope agent:run; the Auto-apply page sends
+ * none). `state`: one state, or several joined by commas ("queued,running"). `limit`: 1 to AUTOFILL_AGENT_QUEUE_PAGE_MAX
+ * rows. `cursor`: the last page's `nextCursor`, read under the same `state` (under another one the list starts again
+ * from the top). With none of the three, the answer is the whole list, as the Auto-apply page reads it.
+ */
+export const AutofillAgentQueueQuerySchema = z.object({
+  state: z.string().max(80).regex(AGENT_STATE_LIST).optional(),
+  cursor: z
+    .string()
+    .min(1)
+    .max(AUTOFILL_AGENT_QUEUE_CURSOR_MAX)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(AUTOFILL_AGENT_QUEUE_PAGE_MAX).optional(),
+});
+export type AutofillAgentQueueQuery = z.infer<typeof AutofillAgentQueueQuerySchema>;
+// end v1.5 Q2
+
 /** One row of the Auto-apply page. */
 export const AutofillAgentQueueItemSchema = z.object({
   id: AutofillAgentIdSchema,
@@ -263,21 +302,54 @@ export const AutofillAgentQueueItemSchema = z.object({
   createdAt: InstantSchema,
   startedAt: InstantSchema.nullable(),
   finishedAt: InstantSchema.nullable(),
+  // v1.5 Q2 (optional, so an older server's list still parses)
+  /** The application form's address a run opens (agentApplicationUrl), or null when the agent cannot open it. */
+  applyUrl: z.string().max(AUTOFILL_AGENT_URL_MAX).nullable().optional(),
+  /** Which run took the row (AUTOFILL_AGENT_RUNS); null while no run took it. */
+  run: z.enum(AUTOFILL_AGENT_RUNS).nullable().optional(),
+  // end v1.5 Q2
 });
 export type AutofillAgentQueueItem = z.infer<typeof AutofillAgentQueueItemSchema>;
 
 /**
- * GET /api/autofill/agent/queue (the Auto-apply page): the account's queue, running first, then queued (oldest first,
- * the order the agent takes them), then the finished ones (latest first). `limit` is AUTOFILL_AGENT_QUEUE_MAX.
- * DELETE /api/autofill/agent/queue/:id removes one (204); POST /api/autofill/agent/queue/clear-finished removes the
- * finished ones ({removed}).
+ * GET /api/autofill/agent/queue (the Auto-apply page; v1.5 Q2: also a token of scope agent:run, the Queue tab): the
+ * account's queue, running first, then queued (oldest first, the order the agent takes them), then the finished ones
+ * (latest first). `limit` is AUTOFILL_AGENT_QUEUE_MAX. DELETE /api/autofill/agent/queue/:id removes one (204);
+ * POST /api/autofill/agent/queue/clear-finished removes the finished ones ({removed}).
+ *
+ * v1.5 Q2: with a query (AutofillAgentQueueQuery), `items` is one page in that order, of the rows in `state` when it is
+ * given; `total` counts every row the query names (all pages); `nextCursor` is present while more rows follow.
  */
 export const AutofillAgentQueueListSchema = z.object({
   items: z.array(AutofillAgentQueueItemSchema),
   total: z.number().int().nonnegative(),
   limit: z.number().int().positive(),
+  // v1.5 Q2
+  nextCursor: z.string().max(AUTOFILL_AGENT_QUEUE_CURSOR_MAX).optional(),
+  // end v1.5 Q2
 });
 export type AutofillAgentQueueList = z.infer<typeof AutofillAgentQueueListSchema>;
+
+// v1.5 Q2
+/**
+ * POST /api/autofill/agent/:id/opened (scope agent:run, no body): the Queue tab's sequential run takes this queued row
+ * before it opens the job in a new tab. The row is then `running` for this browser's tab run (attempts + 1, started
+ * now, the tracker entry's resume to attach), so GET …/agent/next never hands it to the background agent; its result
+ * goes to POST …/agent/:id/result as the agent's does (a run that never reports is `needs-you`, `timed_out`, after
+ * AUTOFILL_AGENT_RUN_TIMEOUT_MS, as the agent's). The row is checked as the agent's claim checks it: a job tracked past
+ * Saved by now is `skipped` (`already_applied`), a closed one `failed` (`posting_closed`), one the agent can no longer
+ * open `failed` (`unsupported_site`); `item` is then null, with that state and reason (open the next one). The same
+ * browser asking again for its own tab run gets the same `item` (a worker that restarted). 409 `conflict` when the row
+ * is running for the background agent or for another browser, or finished; 404 for another account's row or one
+ * removed.
+ */
+export const AutofillAgentOpenedSchema = z.object({
+  item: AutofillAgentTaskSchema.nullable(),
+  state: z.enum(AUTOFILL_AGENT_STATES),
+  reason: z.enum(AUTOFILL_AGENT_REASONS).nullable(),
+});
+export type AutofillAgentOpened = z.infer<typeof AutofillAgentOpenedSchema>;
+// end v1.5 Q2
 
 /** POST /api/autofill/agent/queue/clear-finished's answer: how many finished rows were removed. */
 export const AutofillAgentClearedSchema = z.object({ removed: z.number().int().nonnegative() });

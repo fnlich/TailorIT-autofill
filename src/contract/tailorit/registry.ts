@@ -4,7 +4,9 @@ import {
   AutofillAgentEnqueueBodySchema,
   AutofillAgentEnqueueResponseSchema,
   AutofillAgentNextSchema,
+  AutofillAgentOpenedSchema,
   AutofillAgentQueueListSchema,
+  AutofillAgentQueueQuerySchema,
   AutofillAgentResultBodySchema,
   AutofillAgentSettingsSchema,
 } from './agent';
@@ -151,6 +153,10 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillAgentQueueList: AutofillAgentQueueListSchema,
   AutofillAgentCleared: AutofillAgentClearedSchema,
   AutofillAgentSettings: AutofillAgentSettingsSchema,
+  // v1.5 Q2: the extension's Queue tab.
+  AutofillAgentQueueQuery: AutofillAgentQueueQuerySchema,
+  AutofillAgentOpened: AutofillAgentOpenedSchema,
+  // end v1.5 Q2
   AutofillCredentialQuery: AutofillCredentialQuerySchema,
   AutofillCredential: AutofillCredentialSchema,
   AutofillSignInList: AutofillSignInListSchema,
@@ -559,6 +565,17 @@ export const AUTOFILL_ROUTES = [
     response: 'AutofillAgentNext',
     accepted: null,
   },
+  // v1.5 Q2: the Queue tab's sequential run takes a queued row before it opens the job's tab.
+  {
+    method: 'POST',
+    path: '/api/autofill/agent/:id/opened',
+    caller: 'token',
+    scope: 'agent:run',
+    request: null,
+    status: 200,
+    response: 'AutofillAgentOpened',
+    accepted: null,
+  },
   {
     method: 'POST',
     path: '/api/autofill/agent/:id/result',
@@ -580,11 +597,12 @@ export const AUTOFILL_ROUTES = [
     accepted: null,
   },
   {
+    // v1.5 Q2: a token too (the Queue tab), with the paged query.
     method: 'GET',
     path: '/api/autofill/agent/queue',
-    caller: 'session',
-    scope: null,
-    request: null,
+    caller: 'either',
+    scope: 'agent:run',
+    request: 'AutofillAgentQueueQuery',
     status: 200,
     response: 'AutofillAgentQueueList',
     accepted: null,

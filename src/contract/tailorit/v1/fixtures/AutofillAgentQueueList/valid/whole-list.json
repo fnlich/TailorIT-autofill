@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "id": "7c1e4f2a-9b3d-4a6e-8f50-2d9c1b7e3a64",
+      "jobId": 1042,
+      "title": "Senior Backend Engineer",
+      "company": "Northwind",
+      "location": "Austin, TX, USA",
+      "url": "https://job-boards.greenhouse.io/northwind/jobs/5512345002",
+      "active": true,
+      "state": "needs-you",
+      "reason": "sign_in",
+      "source": "manual",
+      "attempts": 1,
+      "aiGuesses": null,
+      "createdAt": "2026-11-01T15:00:00.000Z",
+      "startedAt": "2026-11-01T15:02:00.000Z",
+      "finishedAt": "2026-11-01T15:05:30.000Z",
+      "applyUrl": "https://job-boards.greenhouse.io/northwind/jobs/5512345002",
+      "run": "agent"
+    },
+    {
+      "id": "9d2f7b4c-6e1a-4c3b-8d27-5a0e3f9c1b68",
+      "jobId": 1188,
+      "title": "Data Engineer",
+      "company": "Contoso",
+      "location": "Denver, CO, USA",
+      "url": "https://contoso.example.com/careers/1188",
+      "active": false,
+      "state": "failed",
+      "reason": "posting_closed",
+      "source": "manual",
+      "attempts": 0,
+      "aiGuesses": null,
+      "createdAt": "2026-10-30T09:00:00.000Z",
+      "startedAt": null,
+      "finishedAt": "2026-11-01T15:00:10.000Z",
+      "applyUrl": null,
+      "run": null
+    }
+  ],
+  "total": 2,
+  "limit": 500
+}

@@ -58,7 +58,13 @@
  *   replaced by a newer connection), 409 while its claimant works; for a row no longer running, the same result again is
  *   unchanged (204) and any other 409. Each connection the mock mints is a new claimant (its `generation`). GET
  *   /__mock/agent lists the queue, the running task, every row and the results taken (204: {id, body}) and refused
- *   ({id, body, status}). POST /__mock/credentials {items} replaces the saved sign-ins ({host, email,
+ *   ({id, body, status}). v1.5 QX (TailorIT v1.5 Q2, eafe54f): GET /agent/queue with a token and a query
+ *   (?state=queued&limit=&cursor=) pages the rows the mock holds (running, then queued oldest first, then finished),
+ *   `total` all of them, `nextCursor` while more follow (without a query, the Settings page's contract example); POST
+ *   /agent/:id/opened takes a queued row for this connection's tab run ({item: its task, state: 'running'}; the same
+ *   connection's tab run again: the same; 409 while the agent, another connection or an end has it; 404 for a row it
+ *   does not hold), and GET /agent/next never takes or gives back a tab run's row. POST /__mock/credentials {items}
+ *   replaces the saved sign-ins ({host, email,
  *   password}; by default the contract's example for every site, `*`, every-site.json); GET /credentials?host=&path=
  *   answers the host's own, else `*` on a page signInHostCovered covers (its patterns, copied below; API 6: on
  *   ADP's and ClearCompany's hosts by the optional `path`, the pathname alone, which a query or fragment makes 400),
@@ -679,7 +685,7 @@ export function createMock() {
     /** v3 Phase 5: the agent's queue: its rows (the task, its state and reason, the connection that claimed it), every
      *  result taken and every one refused.
      *  @type {{ rows: Array<{ task: Record<string, unknown>; state: string; reason: string | null;
-     *    claimedBy: number | null }>; results: Array<{ id: string; body: unknown }>;
+     *    claimedBy: number | null; run?: 'agent' | 'tab' | null }>; results: Array<{ id: string; body: unknown }>;
      *    refused: Array<{ id: string; body: unknown; status: number }> }} */
     agent: { rows: [], results: [], refused: [] },
     /** v3 Phase 5: the job-site sign-ins saved, the golden one for every site by default.
@@ -1613,13 +1619,25 @@ export function createMock() {
     'GET /api/autofill/site-requests': () => jsonAnswer(200, example('AutofillSiteRequestList')),
     'GET /api/autofill/agent/next': () => {
       const rows = state.agent.rows;
-      const own = rows.find((row) => row.state === 'running' && row.claimedBy === state.token.generation);
+      // v1.5 QX: never a tab run's row (the Queue tab's), given back or taken.
+      const own = rows.find((row) => row.state === 'running' && row.claimedBy === state.token.generation
+        && row.run !== 'tab');
       if (own !== undefined) return jsonAnswer(200, { item: own.task });
       const queued = rows.find((row) => row.state === 'queued');
       if (queued === undefined) return jsonAnswer(200, { item: null });
-      queued.state = 'running';
-      queued.claimedBy = state.token.generation;
+      Object.assign(queued, { state: 'running', claimedBy: state.token.generation, run: 'agent' });
       return jsonAnswer(200, { item: queued.task });
+    },
+    // v1.5 QX (TailorIT v1.5 Q2): the Queue tab's run takes a queued row before it opens its tab.
+    'POST /api/autofill/agent/:id/opened': ({ params }) => {
+      const row = state.agent.rows.find((each) => each.task.id === params[0]);
+      if (row === undefined) return notFound();
+      const mine = row.state === 'running' && row.run === 'tab' && row.claimedBy === state.token.generation;
+      if (!mine && row.state !== 'queued') {
+        return refusal(409, 'conflict', 'That auto-apply job is not queued any more.');
+      }
+      Object.assign(row, { state: 'running', claimedBy: state.token.generation, run: 'tab' });
+      return jsonAnswer(200, { item: row.task, state: 'running', reason: null });
     },
     'POST /api/autofill/agent/:id/result': ({ json, params }) => {
       const id = params[0] ?? '';
@@ -1646,7 +1664,32 @@ export function createMock() {
       return { status: 204 };
     },
     'POST /api/autofill/agent/queue': () => jsonAnswer(200, example('AutofillAgentEnqueueResponse')),
-    'GET /api/autofill/agent/queue': () => jsonAnswer(200, example('AutofillAgentQueueList')),
+    // v1.5 QX (TailorIT v1.5 Q2): with a query (the Queue tab's token), a page of the rows the mock holds; without one
+    // (the Settings page), the contract's example.
+    'GET /api/autofill/agent/queue': ({ query }) => {
+      if (!query.has('state') && !query.has('limit') && !query.has('cursor')) {
+        return jsonAnswer(200, example('AutofillAgentQueueList'));
+      }
+      const states = (query.get('state') ?? '').split(',').filter((each) => each !== '');
+      const limit = Number(query.get('limit') ?? '50');
+      const cursor = query.get('cursor');
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100 || (cursor !== null && !/^c\d{1,6}$/.test(cursor))) {
+        return invalid('Name the page as the query takes it.');
+      }
+      const order = { running: 0, queued: 1 };
+      const rows = state.agent.rows.filter((row) => states.length === 0 || states.includes(row.state))
+        .map((row, index) => ({ row, index }))
+        .sort((a, b) => (order[/** @type {'running'} */ (a.row.state)] ?? 2) - (order[/** @type {'running'} */ (b.row.state)] ?? 2)
+          || a.index - b.index);
+      const from = cursor === null ? 0 : Number(cursor.slice(1));
+      const items = rows.slice(from, from + limit).map(({ row }) => ({ id: row.task.id, jobId: row.task.jobId,
+        title: row.task.title, company: row.task.company, location: '', url: row.task.url, active: true, state: row.state,
+        reason: row.reason, source: 'manual', attempts: row.state === 'queued' ? 0 : 1, aiGuesses: null,
+        createdAt: '2026-11-10T08:00:00.000Z', startedAt: null, finishedAt: null, applyUrl: row.task.url,
+        run: row.run ?? null }));
+      return jsonAnswer(200, { items, total: rows.length, limit,
+        ...(from + limit < rows.length ? { nextCursor: `c${from + limit}` } : {}) });
+    },
     'DELETE /api/autofill/agent/queue/:id': () => ({ status: 204 }),
     'POST /api/autofill/agent/queue/clear-finished': () => jsonAnswer(200, example('AutofillAgentCleared')),
     'GET /api/autofill/agent/settings': () => jsonAnswer(200, example('AutofillAgentSettings')),
@@ -1806,7 +1849,8 @@ export function createMock() {
         return invalid('items: A list of objects');
       }
       if (path === '/__mock/agent') {
-        state.agent.rows.push(...items.map((item) => ({ task: { ...item }, state: 'queued', reason: null, claimedBy: null })));
+        state.agent.rows.push(...items.map((item) => ({ task: { ...item }, state: 'queued', reason: null, claimedBy: null,
+          run: null })));
       }
       else state.credentials = items.map((item) => ({ ...item }));
       return { status: 204 };
