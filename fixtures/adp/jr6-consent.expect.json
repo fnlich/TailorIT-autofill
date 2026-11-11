@@ -1,0 +1,28 @@
+{
+  "fixture": "adp/jr6-consent",
+  "source": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=567e686e-7575-49d9-b29f-985e7365f987&ccId=19000101_000003&lang=en_US&selectedMenuKey=CurrentOpenings&jobId=924052&source=REDACTED",
+  "captured": "2026-11-11T03:57:11.000Z",
+  "note": "The Privacy Policy pane over the job details (snapshot6 adp2): an entry-choice state whose entry is its primary custom button, Consent & Continue; Decline & Close is never pressed.",
+  "hooks": {
+    "detect": null,
+    "authState": "entry-choice",
+    "postingText": null,
+    "entryControl": "sdf-focus-pane#jdv_privacy_dailog sdf-button[slot=\"custom-buttons\"][emphasis=\"primary\"]",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "sdf-button#recruitment_header_joinTalentCommunity",
+      "sfc-shell-left-nav-flat#recruitmentLeftNav",
+      "sdf-button#ot-sdk-btn",
+      "button#accept-recommended-btn-handler",
+      "button.save-preference-btn-handler",
+      "section#ot-fltr-modal",
+      "button#filter-apply-handler",
+      "button#recruitment_jobDescription_back",
+      "button#recruitment_jobDescription_apply",
+      "button#recruitment_jobDescription_candidateApply",
+      "sdf-focus-pane#jdv_privacy_dailog sdf-button[slot=\"custom-buttons\"][emphasis=\"secondary\"]"
+    ],
+    "pressable": []
+  }
+}

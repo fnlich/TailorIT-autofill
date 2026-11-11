@@ -1,0 +1,28 @@
+{
+  "fixture": "adp/jr6-guest-send-code",
+  "source": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=567e686e-7575-49d9-b29f-985e7365f987&ccId=19000101_000003&lang=en_US&selectedMenuKey=CurrentOpenings&jobId=924052&source=REDACTED",
+  "captured": "2026-11-11T03:57:39.000Z",
+  "note": "\"Get your verification code\" over the guest page (snapshot6 adp2): the person's email-code pause; Send is never pressed (its Close, in the pane's shadow root, neither).",
+  "hooks": {
+    "detect": null,
+    "authState": "email-code",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "sdf-button#recruitment_login_signInWithLinkedIn",
+      "sdf-button#recruitment_login_signInWithGoogle",
+      "sdf-button#recruitment_login_signInWithFaceBook",
+      "sdf-button#recruitment_header_joinTalentCommunity",
+      "sfc-shell-left-nav-flat#recruitmentLeftNav",
+      "sdf-button#ot-sdk-btn",
+      "button#accept-recommended-btn-handler",
+      "button.save-preference-btn-handler",
+      "section#ot-fltr-modal",
+      "button#filter-apply-handler",
+      "sdf-button#recruitment_login_guestLogin"
+    ],
+    "pressable": []
+  }
+}

@@ -1174,8 +1174,9 @@ describe('jr6 PRIV-1 (review: privacy): no row of ADP’s lists or radio groups 
   // PRIV-1 itself. A widget's roving tab stop stands on its first row or nowhere: the converter moves a stop that stands
   // on another row to the first (TOOLING's fix, PRIV-2), so where it stands tells nothing, and ADP's radio groups draw it
   // there whatever is checked. As converted before that fix, jr6-questions2-filled's source list and the State list open
-  // on jr6-personal-filled and -us-state held it on the chosen row: this test failed on exactly those three.
-  it.fails('no list or radio group holds its tab stop on a row but its first (every jr6 page)', () => {
+  // on jr6-personal-filled and -us-state held it on the chosen row: this test failed on exactly those three, and passes
+  // since ADP converted its jr6 cases again with TOOLING's fixed converter (jr6-tooling 708ac5c).
+  it('no list or radio group holds its tab stop on a row but its first (every jr6 page)', () => {
     const told: string[] = [];
     const walked = { list: 0, radios: 0 };
     for (const [path, html] of Object.entries(PAGES)) {
@@ -1199,8 +1200,9 @@ describe('jr6 PRIV-1 (review: privacy): no row of ADP’s lists or radio groups 
   // chosen row alone: sdf-select-item's div#checked-icon, sdf-radio-button's circle.radio-dot and its svg's `toggled`.
   // As converted before it, this failed on jr6-personal-filled and -us-state (the State list), jr6-questions2-filled (its
   // source and currency lists, its Yes/No groups and its pay basis), jr6-questions-filled, jr6-resume-choice, and
-  // jr6-questions2-blank's pay basis (drawn there too: a site default or not, it cannot be told apart).
-  it.fails('no row of a list or radio group draws more than the others in its tree (every jr6 page)', () => {
+  // jr6-questions2-blank's pay basis (drawn there too: a site default or not, it cannot be told apart). It passes since
+  // the reconversion.
+  it('no row of a list or radio group draws more than the others in its tree (every jr6 page)', () => {
     const told: string[] = [];
     for (const [path, html] of Object.entries(PAGES)) {
       for (const group of choiceRowsOf(html)) {
