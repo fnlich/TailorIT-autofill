@@ -8,6 +8,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import bertelsmannExpiredExpect from '../../../fixtures/smartrecruiters/bertelsmann-expired.expect.json';
 import bertelsmannExpiredHtml from '../../../fixtures/smartrecruiters/bertelsmann-expired.html?raw';
+import wiserOneClickExpect from '../../../fixtures/smartrecruiters/jr6-wiser-one-click.expect.json';
+import wiserOneClickHtml from '../../../fixtures/smartrecruiters/jr6-wiser-one-click.html?raw';
+import wiserScreeningExpect from '../../../fixtures/smartrecruiters/jr6-wiser-screening.expect.json';
+import wiserScreeningHtml from '../../../fixtures/smartrecruiters/jr6-wiser-screening.html?raw';
+import xplorFilledExpect from '../../../fixtures/smartrecruiters/jr6-xplor-one-click-filled.expect.json';
+import xplorFilledHtml from '../../../fixtures/smartrecruiters/jr6-xplor-one-click-filled.html?raw';
 import xplorOneClickExpect from '../../../fixtures/smartrecruiters/xplor-one-click.expect.json';
 import xplorOneClickHtml from '../../../fixtures/smartrecruiters/xplor-one-click.html?raw';
 import xplorPostingExpect from '../../../fixtures/smartrecruiters/xplor-posting.expect.json';
@@ -23,7 +29,7 @@ import { adaptersFor } from '../index';
 import { fillabilityOf, readExpectation, sectionIdOf, SNAPSHOT_VIEWPORT, type Expectation } from '../test/expectations.testkit';
 import { compareHooks, readHooks } from '../test/hooks.testkit';
 import type { Adapter } from '../types';
-import { SMARTRECRUITERS_SNAPSHOTS, smartRecruitersAdapter } from './index';
+import { SMARTRECRUITERS_JR6_SNAPSHOTS, SMARTRECRUITERS_SNAPSHOTS, smartRecruitersAdapter } from './index';
 
 const FORM = 'https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/publication/189a97ff-58b4-4671-bd81-6ed11d3bcfd1';
 const CASES = [
@@ -31,6 +37,14 @@ const CASES = [
   { name: 'bertelsmann-expired', html: bertelsmannExpiredHtml, json: bertelsmannExpiredExpect, address: 'https://jobs.smartrecruiters.com/Bertelsmann-Jobs/744000159908317--senior-infrastructure-engineer-ai-ml-penguin-random-house-open-to-remote-' },
   { name: 'xplor-one-click', html: xplorOneClickHtml, json: xplorOneClickExpect, address: `${FORM}?dcr_ci=Xplor` },
   { name: 'xplor-screening', html: xplorScreeningHtml, json: xplorScreeningExpect, address: `${FORM}/screening?dcr_ci=Xplor` },
+] as const;
+/** jr6 (FIXPLAN §6.9, SR-8): the owner's filled first pages and answered screening, converted with the jr6 converter. */
+const WISER = 'https://jobs.smartrecruiters.com/oneclick-ui/company/WiserSolutions/publication/1477f9aa-cf19-47a8-93a4-7178574f6b11';
+const JR6_CASES = [
+  { name: 'jr6-xplor-one-click-filled', html: xplorFilledHtml, json: xplorFilledExpect, address: `${FORM}?dcr_ci=Xplor` },
+  { name: 'jr6-wiser-one-click', html: wiserOneClickHtml, json: wiserOneClickExpect, address: `${WISER}?dcr_ci=WiserSolutions` },
+  { name: 'jr6-wiser-screening', html: wiserScreeningHtml, json: wiserScreeningExpect,
+    address: `${WISER}/screening?dcr_ci=WiserSolutions` },
 ] as const;
 
 /** A page's own base address (a srcdoc page's is about:srcdoc), after it loaded: its links resolve there. */
@@ -111,12 +125,20 @@ function compareDeep(doc: Document, result: ScanResult, expectation: Expectation
 }
 
 /**
- * What the scanner reads differently from a case's expectation, and why: nothing now. The core pass of 2026-11-06 made
- * dom/scan.ts adapterParts take a widget root across open shadow roots (holdsComposed), so xplor-screening's six
- * Yes/No questions (spl-radio-group elements in sr-screening-questions-form's shadow root, declared by the adapter's
- * widgetRoots and widgetFor) are fields; until then each was "no field" here.
+ * What the scanner reads differently from a case's expectation, and why. The core pass of 2026-11-06 made dom/scan.ts
+ * adapterParts take a widget root across open shadow roots (holdsComposed), so xplor-screening's six Yes/No questions
+ * (spl-radio-group elements in sr-screening-questions-form's shadow root, declared by the adapter's widgetRoots and
+ * widgetFor) are fields; until then each was "no field" here.
+ * jr6 SR-1 (FIXPLAN §6.9 item 1): xplor-screening's five dropdowns are declared with the whole list the page publishes
+ * (WidgetDecl.knownOptions), which the scanner reads as each field's options from ENGINE E1 on (tag jr6-engine-e1, not
+ * merged into this branch in P1): until then each still reads 'lazy'. The package's P2, merging jr6-engine, removes
+ * these five (the comparison then fails while one is left).
  */
-const KNOWN: Record<string, readonly string[]> = {};
+const KNOWN: Record<string, readonly string[]> = {
+  'xplor-screening': ['a0151063-d62b-49e7-9c6f-d17e59b99090', '562715e2-4960-44f3-9e8d-2750ae765f9a',
+    '9320d6d5-0b22-4e3f-b913-e7076e5e8083', '5d965982-4693-4ca6-91ff-9dde3767755c', 'd9203a60-8103-4251-8402-eb366923db58']
+    .map((id) => `spl-autocomplete#question_${id} >>> input[role="combobox"]: options lazy`),
+};
 
 /** The scan of a case's root with `adapter` (the SmartRecruiters adapter, or one with a hook taken away). */
 async function scanWith(index: 2 | 3, adapter: Adapter) {
@@ -153,6 +175,24 @@ describe('the SmartRecruiters adapter: its hooks on the snapshots', () => {
     const known = KNOWN[name] ?? [];
     for (const each of known) expect(found).toContain(each);
     expect(found.filter((each) => !known.includes(each))).toEqual([]);
+  });
+
+  // jr6 (SR-8): the three jr6 cases, their hooks and their scans held against their expectations, as the owner's four.
+  it('names each jr6 snapshot it reads', () => {
+    expect(JR6_CASES.map((each) => `fixtures/smartrecruiters/${each.name}.html`)).toEqual([...SMARTRECRUITERS_JR6_SNAPSHOTS]);
+    for (const { address } of JR6_CASES) expect(adaptersFor(new URL(address))[0]).toBe(smartRecruitersAdapter);
+  });
+
+  it.each(JR6_CASES)('$name: every hook answers what the page shows', async ({ html, json, address }) => {
+    const fixture = await load(html, address);
+    expect(compareHooks(fixture.doc, smartRecruitersAdapter, readHooks(json))).toEqual([]);
+  });
+
+  it.each(JR6_CASES)('$name: the scan of its root is the expectation', async ({ html, json, address }) => {
+    const fixture = await load(html, address);
+    const root = smartRecruitersAdapter.detect(fixture.doc)!.formRoot;
+    const result = scan(root, smartRecruitersAdapter, { platform: 'smartrecruiters' });
+    expect(compareDeep(fixture.doc, result, readExpectation(json))).toEqual([]);
   });
 });
 

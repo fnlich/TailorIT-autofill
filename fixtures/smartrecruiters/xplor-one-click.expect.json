@@ -38,25 +38,23 @@
     },
     {
       "label": "City",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": true,
       "section": "main",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "spl-autocomplete[data-test=\"location-autocomplete\"] >>> input[role=\"combobox\"]",
-      "note": "A location search whose suggestions no snapshot shows."
+      "note": "jr6 SR-2: the City search its adapter declares (widgetFor): a remote search whose rows (spl-select-option) are drawn in the menu its box names by aria-controls, in spl-autocomplete's shadow root (results.list); never typed shorter than its minquerylength (3); its manual-mode row never chosen; a choice clicks the row's inner .c-spl-dropdown-item (pressTarget). Its rows show open in jr6-wiser-one-click."
     },
     {
-      "label": "Country code",
+      "label": "Phone number country code",
       "kind": "combobox",
       "required": false,
       "section": "main",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "spl-phone-field >>> spl-select >>> button[role=\"combobox\"]",
-      "note": "The phone's country (United States by default): a list of 245 countries drawn in the capture, hidden by style on the live page; no snapshot shows it open."
+      "note": "jr6 SR-6: the phone's country (United States by default), declared on its button (widgetFor): its 245 rows are spl-select's own children slotted into its menu (results.options), drawn whole, chosen on their inner .c-spl-dropdown-item (pressTarget), shown chosen by the select's value (shownAnswer); labelled by the phone's own label with \"country code\" after it (labelFor, labelSuffix), its \"Country code\" being an aria-label and a hover tooltip only."
     },
     {
       "label": "Phone number",
