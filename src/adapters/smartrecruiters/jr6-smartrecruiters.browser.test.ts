@@ -8,16 +8,22 @@
  * prints a value of the owner's.
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import bertelsmannHtml from '../../../fixtures/smartrecruiters/bertelsmann-expired.html?raw';
 import wiserOneClickHtml from '../../../fixtures/smartrecruiters/jr6-wiser-one-click.html?raw';
+import wiserScreeningHtml from '../../../fixtures/smartrecruiters/jr6-wiser-screening.html?raw';
 import xplorFilledHtml from '../../../fixtures/smartrecruiters/jr6-xplor-one-click-filled.html?raw';
 import xplorOneClickHtml from '../../../fixtures/smartrecruiters/xplor-one-click.html?raw';
+import xplorPostingHtml from '../../../fixtures/smartrecruiters/xplor-posting.html?raw';
 import xplorScreeningHtml from '../../../fixtures/smartrecruiters/xplor-screening.html?raw';
-import { createFakeWorker, testVocab } from '../../content/content.testkit';
+import { createFakeWorker, goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { lateAdapters, lateFormMs } from '../../content/late-form';
 import { startContentRuntime, type ContentRuntime } from '../../content/runtime';
+import { planFrame } from '../../core/plan/frame';
+import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
-import { scan } from '../../dom/scan';
+import { scan, toFieldSpec } from '../../dom/scan';
 import { quietWait } from '../../dom/settle';
+import { platformOfUrl } from '../../shared/hosts';
 import { genericAdapter } from '../generic';
 import { adaptersFor } from '../index';
 import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
@@ -520,4 +526,96 @@ describe("SR-6: the phone's country, a combobox on its button", () => {
     const unsuffixed = scan(root, without('labelSuffix'), { platform: 'smartrecruiters' });
     expect(unsuffixed.fields.find((each) => unsuffixed.target(each.key)?.control === button)!.label).toBe('Phone number');
   });
+});
+
+// ── The auditor's harness (SP\jr6\audit\smartrecruiters.md §3), as asserts ────────────────────────────────────────────
+// Its pass 1 on every page: our real adapter detection, the step hooks, the scan and the planner with the golden
+// synthetic profile and DEFAULT_SETTINGS. The rows that wait on ENGINE E1 to E3 or on RULES' new rules (the
+// screening's dropdowns and Yes/No questions, the phone's country, Country/Region, Facebook, "Additional attachments",
+// the sponsorship question) are the package's P2 asserts (SP\jr6\build\SMARTRECRUITERS.md).
+
+const ALL_PAGES = {
+  posting: { html: xplorPostingHtml, address: XPLOR_POSTING },
+  expired: { html: bertelsmannHtml,
+    address: 'https://jobs.smartrecruiters.com/Bertelsmann-Jobs/744000159908317--senior-infrastructure-engineer-ai-ml' },
+  ...PAGES,
+  wiserScreening: { html: wiserScreeningHtml, address: `${WISER}/screening?dcr_ci=WiserSolutions` },
+} as const;
+
+/** A page of ALL_PAGES, loaded at its address. */
+async function loadAny(page: keyof typeof ALL_PAGES) {
+  const { html, address } = ALL_PAGES[page];
+  const fixture = await loadFixture(document, html, SNAPSHOT_VIEWPORT);
+  const base = fixture.doc.createElement('base');
+  base.href = address;
+  fixture.doc.head.prepend(base);
+  return fixture.doc;
+}
+
+/** The planner's pass 1 on a page's scan, with the golden synthetic profile. */
+function planOf(root: Element, company: string) {
+  const specs = scan(root, smartRecruitersAdapter, { platform: 'smartrecruiters' }).fields.map(toFieldSpec);
+  const out = planFrame({ specs, canaries: [], profile: goldenProfile(), sensitiveState: 'loaded', savedAnswers: [],
+    settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+    posting: { company, location: 'Austin, TX, USA' } });
+  const row = (label: string) => {
+    const found = out.results.find((each) => each.label === label);
+    expect(found, label).toBeDefined();
+    const write = out.writes.find((each) => each.key === found!.key);
+    return { status: found!.status, reason: found!.reason, category: found!.category, write: write?.value.kind ?? null };
+  };
+  return { out, row };
+}
+
+describe("the auditor's harness, as asserts: every SmartRecruiters page", () => {
+  it.each(Object.keys(ALL_PAGES) as Array<keyof typeof ALL_PAGES>)('%s: our adapter, its root and its steps', async (page) => {
+    const doc = await loadAny(page);
+    const url = new URL(ALL_PAGES[page].address);
+    expect(platformOfUrl(url.href)).toBe('smartrecruiters');
+    expect(adaptersFor(url).map((each) => each.id)).toEqual(['smartrecruiters', 'generic']);
+    const root = smartRecruitersAdapter.detect(doc)?.formRoot ?? null;
+    const wanted = { posting: null, expired: null, blank: 'oc-oneclick-form', xplorFilled: 'oc-oneclick-form',
+      wiser: 'oc-oneclick-form', screening: 'oc-screening-questions', wiserScreening: 'oc-screening-questions' }[page];
+    expect(root?.localName ?? null).toBe(wanted);
+    if (root === null) {
+      // The postings: their text, and "I'm interested" on the live one only.
+      expect(smartRecruitersAdapter.postingText!(doc)).not.toBeNull();
+      expect(smartRecruitersAdapter.entryControl!(doc)?.getAttribute('data-sr-track-position') ?? null)
+        .toBe(page === 'posting' ? 'bottom' : null);
+      return;
+    }
+    const first = root.localName === 'oc-oneclick-form';
+    expect(smartRecruitersAdapter.isFinalStep!(doc)).toBe(first ? 'not-final' : 'final');
+    expect(smartRecruitersAdapter.nextButton!(root) !== null).toBe(first);
+    expect(smartRecruitersAdapter.submitButton!(root) !== null).toBe(!first);
+    expect(smartRecruitersAdapter.stepSignature!(doc)).toEqual(first ? { urlPart: 'first', anchors: ['oc-oneclick-form'] }
+      : { urlPart: 'screening', anchors: ['oc-screening-questions'] });
+    // Excluded: the Easy Apply block on a first page; drop zones: the Easy Apply's and the Resume's, or the screening's.
+    expect(smartRecruitersAdapter.excluded!(root)).toHaveLength(first ? 1 : 0);
+    expect(smartRecruitersAdapter.uploadWidgets!(root)).toHaveLength(first ? 2 : page === 'screening' ? 1 : 0);
+    expect(smartRecruitersAdapter.errors!(root)).toEqual([]);
+    // Not built this round (SR-5, SR-16: no capture of an entry editor, no live evidence): none declared.
+    expect([smartRecruitersAdapter.repeatables, smartRecruitersAdapter.sections, smartRecruitersAdapter.isBusy])
+      .toEqual([undefined, undefined, undefined]);
+  });
+
+  it.each([['blank', 'Xplor'], ['xplorFilled', 'Xplor'], ['wiser', 'Wiser Solutions']] as const)(
+    '%s: the first page plans its boxes from the golden profile, the City as a query, a résumé shown kept', async (page, company) => {
+      const { root } = await load(page);
+      const { row } = planOf(root, company);
+      for (const label of ['First name', 'Last name', 'Email', 'Confirm your email', 'Phone number', 'LinkedIn']) {
+        expect(row(label), `${page} ${label}`).toMatchObject({ status: 'verified', reason: 'ok', write: 'text' });
+      }
+      if (page === 'xplorFilled') {
+        // The manual location mode: its City is a plain box.
+        expect(row('City')).toMatchObject({ status: 'verified', reason: 'ok', category: 'address.city', write: 'text' });
+      } else {
+        // SR-2: the declared search is planned on pass 1, a query (it waited for options before).
+        expect(row('City')).toMatchObject({ status: 'verified', reason: 'ok', category: 'address.city', write: 'query' });
+      }
+      // SR-11: a résumé the drop zone shows is kept under the default "Résumé already on the page: keep"; a blank page
+      // gets the profile's.
+      expect(row('Resume')).toMatchObject(page === 'blank' ? { status: 'verified', reason: 'ok', write: 'file' }
+        : { status: 'flagged', reason: 'prefill-kept', write: null });
+    });
 });
