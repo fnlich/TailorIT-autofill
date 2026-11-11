@@ -137,13 +137,14 @@ describe('the Greenhouse adapter on the captures of 2026-11-06', () => {
   });
 
   // Snapshot round 2, decision 17: the owner's capture kept five chips' "Remove <answer>" labels in clear (the
-  // converter read the chip's words, not its remove button's label): scrubbed by hand, and held so here.
+  // converter read the chip's words, not its remove button's label): scrubbed by hand, and held so here. Converted again
+  // by the jr6 privacy check (jr6-tooling's converter), each chip's labels read REDACTED whole.
   it("seatgeek: no chip's remove button names its answer", async () => {
     const sending = await loadGreenhouse(seatgeekFrameHtml);
-    const labels = Array.from(sending.doc.querySelectorAll('.select__multi-value [aria-label^="Remove " i]'))
+    const labels = Array.from(sending.doc.querySelectorAll('.select__multi-value [aria-label]'))
       .map((el) => el.getAttribute('aria-label'));
     expect(labels.length).toBeGreaterThanOrEqual(5);
-    expect(labels.filter((label) => label !== 'Remove REDACTED' && label !== 'Remove selection')).toEqual([]);
+    expect(labels.filter((label) => label !== 'REDACTED')).toEqual([]);
   });
 
   it('reads a required answer missing after Submit by the control marked invalid, its error text beside it', async () => {

@@ -3938,13 +3938,12 @@ for (const option of root.querySelectorAll('spl-select-option')) {
 /**
  * jr6 fixes (REVC-4 b): the committed fixtures converted before the converter refused it, which still hold lists where
  * one REDACTED row stands beside public ones (each file's count): UltiPro's two education pages (the field-of-study
- * selects, REVC-2: ULTIPRO converts them again; SP\jr6\leakscan\VERDICTS.md 4.2) and SeatGeek's site menus (a company
- * page, no package this round). A file converted again holds none, and its entry then goes.
+ * selects, REVC-2: ULTIPRO converts them again; SP\jr6\leakscan\VERDICTS.md 4.2). A file converted again holds none,
+ * and its entry then goes (SeatGeek's site menus went so: the jr6 privacy check gave its menu bar synthetic text).
  */
 const ELIMINATED_FIXTURES: Record<string, number> = {
   'ultipro/application.html': 2,
   'ultipro/resume-review.html': 2,
-  'sites/seatgeek-greenhouse-embed.html': 5,
 };
 
 /** jr6 (item 8): every jr6 case's page and frame in a platform's folder (or sites/), outside the frozen lists above. */
