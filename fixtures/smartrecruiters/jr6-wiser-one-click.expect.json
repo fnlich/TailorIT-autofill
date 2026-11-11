@@ -1,0 +1,136 @@
+{
+  "fixture": "smartrecruiters/jr6-wiser-one-click",
+  "source": "https://jobs.smartrecruiters.com/oneclick-ui/company/WiserSolutions/publication/1477f9aa-cf19-47a8-93a4-7178574f6b11?dcr_ci=WiserSolutions",
+  "captured": "2026-11-06T15:27:25.000Z",
+  "note": "Wiser Solutions' first page, filled by the owner (every value cleared or redacted by the converter): the phone is optional, a hidden photo uploader sits under the avatar (a hidden control, no field), the City search's results are drawn open (a redacted city row and the manual-mode row). Controls are written as shadow-piercing chains, \" >>> \" between steps: the first step is looked for anywhere in the document, each next one anywhere inside the open shadow root of the element before it (smartrecruiters.browser.test.ts deepControl).",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#first-name-input >>> input"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#last-name-input >>> input"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#email-input >>> input"
+    },
+    {
+      "label": "Confirm your email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#confirm-email-input >>> input"
+    },
+    {
+      "label": "City",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": "lazy",
+      "control": "spl-autocomplete[data-test=\"location-autocomplete\"] >>> input[role=\"combobox\"]",
+      "note": "jr6 SR-2: the City search, as on xplor-one-click; its two rows show here, in the menu its box names (results.list), the manual-mode one never chosen (results.unchoosable)."
+    },
+    {
+      "label": "Phone number country code",
+      "kind": "combobox",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": "lazy",
+      "control": "spl-phone-field >>> spl-select >>> button[role=\"combobox\"]",
+      "note": "jr6 SR-6, as on xplor-one-click: declared on its button, its 245 rows slotted into its menu (results.options), labelled by the phone's own label with \"country code\" after it."
+    },
+    {
+      "label": "Phone number",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-phone-field >>> spl-input >>> input[type=\"tel\"]",
+      "note": "Labelled by spl-phone-field's label[slot=label] (labelFor). Optional on this page."
+    },
+    {
+      "label": "LinkedIn",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#linkedin-input >>> input"
+    },
+    {
+      "label": "Facebook",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#facebook-input >>> input"
+    },
+    {
+      "label": "X (fka Twitter)",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#twitter-input >>> input"
+    },
+    {
+      "label": "Website",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#website-input >>> input"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-dropzone[data-test=\"resume-upload\"] >>> input[type=\"file\"]",
+      "note": "jr6 SR-11: its drop zone shows a file in its list (one li.c-spl-file-list-item, its name redacted): the field holds a file (uploadHeld, uploadHeldNames). The \"Easy Apply\" drop zone stays excluded."
+    },
+    {
+      "label": "Let the company know about your interest working there",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-textarea#hiring-manager-message-input >>> textarea"
+    }
+  ],
+  "hooks": {
+    "detect": "oc-oneclick-form",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.external-apply-button",
+      "oc-apply-with-linked-in iframe",
+      "oc-button[data-test=\"add-experience\"] spl-button",
+      "oc-button[data-test=\"add-education\"] spl-button",
+      ".ot-sdk-show-settings"
+    ],
+    "pressable": [
+      "oc-button[data-test=\"footer-next\"]"
+    ]
+  }
+}
