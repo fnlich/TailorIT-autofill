@@ -250,7 +250,9 @@ describe('jr6 E2 item 7 (O4): a borderless control drawn by its declared box', (
       removeFixtures(document);
       return field?.camouflaged;
     };
-    expect(await numberBox(oracleAdapter)).toBe(true);
+    // ORACLE declares the hook since jr6-oracle P1 (9661473): the adapter without it reads the box camouflaged.
+    const { controlBox: _drawn, ...undeclared } = oracleAdapter;
+    expect(await numberBox(undeclared)).toBe(true);
     expect(await numberBox({ ...oracleAdapter, controlBox: (control) => (control.matches('input.phone-row__input')
       ? control.closest('.input-row-composite__inputs.phone-row[role="group"]') : null) })).toBe(false);
   });
