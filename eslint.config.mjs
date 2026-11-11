@@ -64,6 +64,14 @@ const UPLOAD_REVEAL_RULE = {
     + "MemberExpression[property.name='clickUploadReveal']",
   message: "Only src/dom/fillers/upload.ts presses an upload's reveal link.",
 };
+/** jr6 line W review revD-05 (the forms merge, round 2): the reveal door's wrapper, upload.ts revealUpload, is called
+ *  by src/content/pass.ts alone (the pass's guarded write of a file), as the other doors' wrappers are by runtime.ts; so
+ *  no other module reaches the reveal press through it, named or read off a namespace. */
+const UPLOAD_REVEAL_WRAPPER_RULE = {
+  selector: "ImportSpecifier[imported.name='revealUpload'], ExportSpecifier[local.name='revealUpload'], "
+    + "MemberExpression[property.name='revealUpload']",
+  message: "Only src/content/pass.ts calls upload.ts's revealUpload (the pass's write of a file).",
+};
 
 /** Raw HTML, eval and form submission, banned everywhere in src: nothing may submit, and nothing parses markup. */
 const UNSAFE_SYNTAX = [
@@ -74,6 +82,7 @@ const UNSAFE_SYNTAX = [
   ENTRY_WRAPPER_RULE,
   SIGN_IN_WRAPPER_RULE,
   UPLOAD_REVEAL_RULE, // jr6 ENGINE E2 (JZ-4)
+  UPLOAD_REVEAL_WRAPPER_RULE, // jr6 revD-05
   { selector: "AssignmentExpression[left.property.name=/^(innerHTML|outerHTML)$/]", message: 'Build DOM nodes; never assign markup.' },
   { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'Build DOM nodes; never insert markup.' },
   { selector: "CallExpression[callee.object.name='document'][callee.property.name=/^write(ln)?$/]", message: 'No document.write.' },
@@ -249,13 +258,16 @@ export default tseslint.config(
   // jr6 ENGINE E2 (JZ-4): the one module that presses an upload's declared reveal link (dom/fillers/upload.ts's header).
   { files: ['src/dom/fillers/upload.ts'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_REVEAL_RULE)] } },
+  // jr6 revD-05: the one module that calls the reveal door's wrapper (content/pass.ts, a file's write).
+  { files: ['src/content/pass.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_REVEAL_WRAPPER_RULE)] } },
   // Tests drive the wrappers directly (never the doors).
   { files: ['src/**/*.test.{ts,tsx}'], rules: { 'no-restricted-syntax': ['error',
-    ...UNSAFE_SYNTAX.filter((rule) => rule !== ENTRY_WRAPPER_RULE && rule !== SIGN_IN_WRAPPER_RULE)] } },
+    ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, UPLOAD_REVEAL_WRAPPER_RULE].includes(rule))] } },
   // But for the one test of Sign-in mode Auto's two doors on their own (the v3 Phase 6/7b review, C2).
   { files: ['src/dom/fillers/sign-in-doors.browser.test.ts'], rules: { 'no-restricted-syntax': ['error',
-    ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, SIGN_IN_PRESS_RULE,
-      SIGN_IN_PRELUDE_RULE].includes(rule))] } },
+    ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, UPLOAD_REVEAL_WRAPPER_RULE,
+      SIGN_IN_PRESS_RULE, SIGN_IN_PRELUDE_RULE].includes(rule))] } },
   {
     files: ['src/ui/**/*.{ts,tsx}'],
     rules: {

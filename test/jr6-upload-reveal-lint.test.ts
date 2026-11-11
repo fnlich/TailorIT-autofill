@@ -5,6 +5,10 @@
  * (test/allow-submit.test.ts holds the structural half: defined once, named by upload.ts alone, not exported by
  * fillers/index.ts). A filler, the loop or an adapter that could press a reveal link would press a control that stays
  * never-pressed for every other path.
+ *
+ * jr6 line W review revD-05 (the forms merge, round 2): the door's wrapper, upload.ts revealUpload, is banned the same
+ * way everywhere in src but content/pass.ts (and the tests, which drive the wrappers as they drive pressEntry and
+ * signIn), so a namespace read of it from another module (the structural test catches named imports only) fails lint.
  */
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,12 +18,14 @@ import { describe, expect, it } from 'vitest';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SRC = join(ROOT, 'src');
 const MESSAGE = "Only src/dom/fillers/upload.ts presses an upload's reveal link.";
+const WRAPPER_MESSAGE = "Only src/content/pass.ts calls upload.ts's revealUpload (the pass's write of a file).";
 
-/** The messages of the reveal door's rule on `text` linted as if it were the file at `path` (under src). */
-async function revealMessages(eslint: ESLint, text: string, path: string): Promise<string[]> {
+/** The messages of the reveal door's rule (or, given `message`, another rule's) on `text` linted as if it were the file
+ *  at `path` (under src). */
+async function revealMessages(eslint: ESLint, text: string, path: string, message = MESSAGE): Promise<string[]> {
   const [result] = await eslint.lintText(text, { filePath: join(SRC, path) });
-  return result!.messages.filter((message) => message.ruleId === 'no-restricted-syntax'
-    && message.message === MESSAGE).map((message) => message.message);
+  return result!.messages.filter((found) => found.ruleId === 'no-restricted-syntax'
+    && found.message === message).map((found) => found.message);
 }
 
 describe('the upload reveal door in lint (jr6 ENGINE E2, JZ-4)', () => {
@@ -44,5 +50,30 @@ describe('the upload reveal door in lint (jr6 ENGINE E2, JZ-4)', () => {
     const submit = "import { clickAdapterSubmit } from './not-submit';\nexport const press = clickAdapterSubmit;\n";
     const [result] = await eslint.lintText(submit, { filePath: join(SRC, 'dom/fillers/upload.ts') });
     expect(result!.messages.map((message) => message.ruleId)).toContain('no-restricted-syntax');
+  }, 60_000);
+});
+
+describe('the reveal door’s wrapper in lint (jr6 revD-05)', () => {
+  const named = "import { revealUpload } from '../dom/fillers/upload';\nexport const reveal = revealUpload;\n";
+  const read = "import * as upload from '../dom/fillers/upload';\nexport const reveal = upload.revealUpload;\n";
+  const reexport = "export { revealUpload } from './upload';\n";
+  const fromTest = "import { revealUpload } from './upload';\nexport const reveal = revealUpload;\n";
+
+  it('is refused outside content/pass.ts: the orchestrator named or by a namespace read, a widget, a re-export', async () => {
+    const eslint = new ESLint({ cwd: ROOT });
+    expect(await revealMessages(eslint, named, 'content/orchestrator.ts', WRAPPER_MESSAGE)).toEqual([WRAPPER_MESSAGE]);
+    expect(await revealMessages(eslint, read, 'content/orchestrator.ts', WRAPPER_MESSAGE)).toEqual([WRAPPER_MESSAGE]);
+    expect(await revealMessages(eslint, read.replace('../dom/fillers/upload', '../fillers/upload'),
+      'dom/widgets/typeahead.ts', WRAPPER_MESSAGE)).toEqual([WRAPPER_MESSAGE]);
+    expect(await revealMessages(eslint, reexport, 'dom/fillers/index.ts', WRAPPER_MESSAGE)).toEqual([WRAPPER_MESSAGE]);
+  }, 60_000);
+
+  it('lets content/pass.ts and the tests call it, and leaves the door itself banned in pass.ts', async () => {
+    const eslint = new ESLint({ cwd: ROOT });
+    expect(await revealMessages(eslint, named, 'content/pass.ts', WRAPPER_MESSAGE)).toEqual([]);
+    expect(await revealMessages(eslint, read, 'content/pass.ts', WRAPPER_MESSAGE)).toEqual([]);
+    expect(await revealMessages(eslint, fromTest, 'dom/fillers/jr6-doors.browser.test.ts', WRAPPER_MESSAGE)).toEqual([]);
+    const door = "import { clickUploadReveal } from '../dom/fillers/not-submit';\nexport const press = clickUploadReveal;\n";
+    expect(await revealMessages(eslint, door, 'content/pass.ts')).toEqual([MESSAGE]);
   }, 60_000);
 });
