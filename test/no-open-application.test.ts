@@ -58,12 +58,6 @@ const PENDING: Readonly<Record<string, readonly string[]>> = {
     // The disclosure's quote, reworded with it (version 15).
     "Open Application in its panel presses the site's own Apply when you choose it",
   ],
-  'src/shared/log.ts': [
-    // The code and its comments go when integration drops the unused code (APPLYPLAN §7 item 4; F2 no longer logs it).
-    'and Open Application on a posting (whether its Apply was pressed)',
-    "'content.open-application',",
-    'content.open-application stays until integration.',
-  ],
 };
 
 function files(dir: string, kinds = /\.(ts|tsx|css|html)$/): string[] {

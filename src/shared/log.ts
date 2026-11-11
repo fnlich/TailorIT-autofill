@@ -291,17 +291,17 @@ export const LOG_CODES = [
   'action.clicked',
   // ── v5 p2-fill: the page's dialogs a write held back (counts), the page's own file picker armed for a résumé
   // control's press (what the page opened, as flags), a résumé the page parses waited for (how long, whether it
-  // changed the form), and Open Application on a posting (whether its Apply was pressed). Never a value. ──
+  // changed the form). Never a value. (Its code for a posting's Apply pressed went with jr6, whose content.entry
+  // below says how an entry ended.) ──
   'content.dialogs-held',
   'content.picker',
   'content.resume-parse',
-  'content.open-application',
   // ── jr6 apply A0 (the owner, 2026-11-10: Autofill presses the site's own Apply; APPLYPLAN F2, F3a, F4a): numbers and
   // flags only, never an address, a host, a key, a label or a word of the page. The frame's entry: how it ended (its
   // refusal as its place in ENTRY_REFUSALS, whether it pressed, waited, followed; F2), and a step on the way (a choice,
   // a consent, a second step pressed; F2). The worker's entry grant: armed by entry/pressed (whether with a next key),
   // a step it started (a wall or a choice, its count), ended (why, as flags; F3a). A queued job started at an entry
-  // that never reported, made Ready for you after its wait (F4a). content.open-application stays until integration.
+  // that never reported, made Ready for you after its wait (F4a).
   'content.entry',
   'content.entry-step',
   'grant.armed',
