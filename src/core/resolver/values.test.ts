@@ -6,7 +6,7 @@ import type { FieldCategory } from '../types/intent';
 import type { ExperienceEntry, Profile } from '../types/profile';
 import type { ValueResult } from './candidate';
 import { ANSWERABLE_PROFILE_CATEGORIES } from './categories';
-import { addWeeks, NO_VALUE_PLACEHOLDERS, placeholderAsked, profileValue, yearsOfExperience } from './values';
+import { addWeeks, MANY_SEPARATOR, NO_VALUE_PLACEHOLDERS, placeholderAsked, profileValue, yearsOfExperience } from './values';
 
 const profile = goldenProfile();
 const valueOf = (category: FieldCategory, spec: FieldSpec, of: Profile = profile, separatePhoneCountry = false) =>
@@ -111,6 +111,13 @@ describe('sets', () => {
       none: { reason: 'ambiguous-options', flagged: true } });
     expect(candidate(valueOf('languages.language', field('Language', 'select', { section: { id: 'languages',
       block: 1 } })))).toMatchObject({ text: 'Spanish', choice: { domain: 'language', intended: { id: 'lang:es' } } });
+  });
+
+  // jr6 RULES R0: a tags box (ENGINE's filler) splits the joined text on the same separator to add each value again.
+  it('joins a text box values with MANY_SEPARATOR, so a tags box can split them again', () => {
+    expect(MANY_SEPARATOR).toBe(', ');
+    const text = candidate(valueOf('skills.list', field('Skills', 'text'))).text;
+    expect(text.split(MANY_SEPARATOR)).toEqual(profile.skills);
   });
 
   it('reads the language a proficiency question names', () => {
