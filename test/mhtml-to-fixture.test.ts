@@ -63,6 +63,12 @@ import {
   ROW_WORD_DATA_SOURCE,
   TYPED_LIST_BOXES,
   TYPED_LISTS,
+  // ── jr6 fixes (TOOLING; the line W reviews) ──
+  CHOICE_ROW_INPUT,
+  CHOSEN_MARK_LABELS,
+  CLEAR_CHOICE_INPUT,
+  deepenInPage,
+  ROVING_ROLES,
   // ── snapshot build 2026-11-06 (core pass Z1, item 36) ──
   CHOSEN_MARKS,
   PROFILE_PLACES,
@@ -2469,6 +2475,24 @@ const CHOSEN_STATE_FIXTURES = [
 ];
 
 /**
+ * jr6 fixes (PRIV-2, REVC-4): the committed fixtures converted before the converter cleared these marks, which still hold
+ * one (a privacy finding, not an exception): ADP's main questions page draws its chosen radio's dot (CHOSEN_DRAWINGS),
+ * Oracle's two apply-flow pages keep each answered pill group's tab stop on the chosen pill, and HiBob's form and
+ * SmartRecruiters' two one-click pages keep Angular's state classes on their components. Each is to be converted again
+ * with this converter by its package (ADP, ORACLE, SMARTRECRUITERS; HiBob's has none this round: SP\jr6\build\TOOLING.md,
+ * round 3), and its entry then goes: each lets through only the marks named here, and only while the file still holds
+ * exactly them.
+ */
+const MARKED_FIXTURES: Record<string, string[]> = {
+  'adp/questions.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
+  'hibob/mplc-form.html': [CHOSEN_MARK_LABELS.angularComponent],
+  'oracle/hjf-after-submit.html': [CHOSEN_MARK_LABELS.roving],
+  'oracle/hjf-apply-section.html': [CHOSEN_MARK_LABELS.roving],
+  'smartrecruiters/xplor-one-click.html': [CHOSEN_MARK_LABELS.angularComponent],
+  'smartrecruiters/xplor-screening.html': [CHOSEN_MARK_LABELS.angularComponent],
+};
+
+/**
  * jr6 (jobvite-new-4): the committed fixtures converted before the converter cleared AngularJS's state classes, which
  * still hold them on their controls (ng-dirty on a clicked radio, ng-not-empty on a ticked box: a privacy finding, not an
  * exception). Each is to be converted again with this converter: JOBVITE's six NinjaOne pages (fixtures/jobvite/**), and
@@ -2485,8 +2509,14 @@ describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
     const pages = committedFixtureFiles().filter((file) => file.endsWith('.html'));
     expect(pages.length).toBeGreaterThan(300);
     const marked = pages.filter((file) => chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'))
-      .some((label) => !(ANGULAR_STATE_FIXTURES.includes(file) && label === ANGULAR_STATE_MARK)));
+      .some((label) => !(ANGULAR_STATE_FIXTURES.includes(file) && label === ANGULAR_STATE_MARK)
+        && !(MARKED_FIXTURES[file] ?? []).includes(label)));
     expect(marked.filter((file) => !CHOSEN_STATE_FIXTURES.includes(file))).toEqual([]);
+    // jr6 fixes (PRIV-2, REVC-4): each file let through for this round's marks still holds exactly them.
+    for (const [file, labels] of Object.entries(MARKED_FIXTURES)) {
+      expect(pages, file).toContain(file);
+      expect(chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8')), file).toEqual(labels);
+    }
     // jr6 (jobvite-new-4): each file let through for AngularJS's classes still holds them, and nothing else.
     for (const file of ANGULAR_STATE_FIXTURES) {
       expect(pages, file).toContain(file);
@@ -2497,7 +2527,8 @@ describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
       'smartrecruiters/xplor-one-click.html', 'greenhouse/rushdown-country-open.html', 'workable/jobs-salvo-apply.html',
       'workable/raydar-attached.html', 'workday/resolvetech-source-open.html']) {
       expect(pages, file).toContain(file);
-      expect(chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8')), file).toEqual([]);
+      expect(chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'))
+        .filter((label) => !(MARKED_FIXTURES[file] ?? []).includes(label)), file).toEqual([]);
     }
     // Each exception is still there, and is hand-written or captured before the owner's snapshots of 2026-11-06.
     for (const file of CHOSEN_STATE_FIXTURES) {
@@ -2726,7 +2757,7 @@ for (const id of ['avatar', 'avatar-menu']) document.getElementById(id).attachSh
 document.getElementById('question_7').attachShadow({ mode: 'open' }).innerHTML = '<div class="combo"><div class="trigger-button" role="button" part="frame">'
   + '<span id="selected-label" part="selected-label"><span>Referral Board</span></span></div>'
   + '<div role="status" aria-live="polite" class="sr-only">Referral Board</div><div role="listbox">'
-  + '<sdf-select-item role="option" aria-selected="false" value="Job Fair">Job Fair</sdf-select-item>'
+  + '<sdf-select-item role="option" aria-selected="false" class="hydrated" value="Job Fair">Job Fair</sdf-select-item>'
   + '<sdf-select-item role="option" aria-selected="true" class="hydrated selected" value="Referral Board">Referral Board</sdf-select-item></div></div>';
 document.getElementById('question_8').attachShadow({ mode: 'open' }).innerHTML = '<div class="combo"><div class="trigger-button" role="button" part="frame">'
   + '<span class="selected-label-placeholder" id="select-placeholder" part="placeholder">Choose an option</span></div>'
@@ -2804,9 +2835,10 @@ document.getElementById('photo').attachShadow({ mode: 'open' }).innerHTML = '<la
       }
       expect(text.match(/class="icon icon-radio-empty" role="radio" aria-selected="false"/g)).toHaveLength(3);
       expect(text.match(/class="icon icon-checkbox-blank" role="checkbox">/g)).toHaveLength(2);
-      // A form's own state (Breezy reads its root's validity) and an element that is no control keep theirs.
+      // A form's own state (Breezy reads its root's validity) keeps its classes; jr6 fixes (PRIV-2): any other element's
+      // Angular state classes go too.
       for (const kept of ['<form name="apply" class="ng-dirty ng-invalid ng-submitted"', 'class="jv-text"',
-        '<div ng-form="sub" class="sub-form">', '<p class="ng-dirty">']) {
+        '<div ng-form="sub" class="sub-form">', '<p class="">']) {
         expect(text, kept).toContain(kept);
       }
       expect(chosenMarksIn(text)).toEqual([]);
@@ -2814,7 +2846,8 @@ document.getElementById('photo').attachShadow({ mode: 'open' }).innerHTML = '<la
       const context = await browser.newContext({ viewport: VIEWPORT });
       const page = await context.newPage();
       await page.setContent(text);
-      expect(await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS })).toEqual([{ groups: 2, uneven: 0 }]);
+      expect((await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS, ...CHOICE_ROW_INPUT }))[0])
+        .toEqual({ groups: 2, uneven: 0 });
       await context.close();
     }, 60_000);
 
@@ -2827,28 +2860,28 @@ document.getElementById('photo').attachShadow({ mode: 'open' }).innerHTML = '<la
     expect(error).toBeInstanceOf(ConversionError);
     expect((error as ConversionError).reasons).toEqual(['jr6-rows-uneven.html: choice groups (fieldset.jv-input-group) '
       + 'whose option rows still differ once cleared: 1, a chosen mark the converter does not know']);
-    expect(CHOICE_ROWS.map(({ group, row }) => `${group} ${row}`)).toEqual(['fieldset.jv-input-group label.jv-input-group-row']);
+    expect(CHOICE_ROWS[0]).toMatchObject({ group: 'fieldset.jv-input-group', row: 'label.jv-input-group-row' });
   }, 60_000);
 
-  it("reads AngularJS's state classes on controls and ng-model or ng-form elements alone (jobvite-new-4)", async () => {
+  it("reads AngularJS's state classes on controls and ng-model or ng-form elements (jobvite-new-4), Angular's elsewhere (PRIV-2)", async () => {
     const markup = '<form id="f" class="ng-dirty ng-invalid"><input id="a" class="x ng-dirty ng-not-empty ng-valid-required ng-touched">'
       + '<textarea id="b" class="ng-pristine ng-untouched ng-empty ng-invalid ng-invalid-required"></textarea>'
       + '<select id="c" class="ng-valid ng-pending"></select><div id="d" ng-model="v" class="ng-dirty y"></div>'
       + '<div id="e" data-ng-form="f" class="ng-valid-email"></div><ng-form id="g" class="ng-dirty"></ng-form>'
       + '<p id="h" class="ng-dirty ng-hide">no control</p><input id="i" class="ng-scope ng-isolate-scope ng-hide"></form>';
-    expect(chosenMarksIn(markup)).toEqual(['an AngularJS state class on a control']);
-    // Not on a form (Breezy's root), an element that is no control, or AngularJS's other classes (ng-hide hides).
-    expect(chosenMarksIn('<form class="ng-dirty"></form><p class="ng-dirty"></p><input class="ng-scope ng-hide">')).toEqual([]);
+    // jr6 fixes (PRIV-2): an element that is no control is read too, under its own label (Angular's components).
+    expect(chosenMarksIn(markup)).toEqual(['an AngularJS state class on a control', CHOSEN_MARK_LABELS.angularComponent]);
+    // Not on a form (Breezy's root), or AngularJS's other classes (ng-hide hides).
+    expect(chosenMarksIn('<form class="ng-dirty"></form><p class="ng-hide"></p><input class="ng-scope ng-hide">')).toEqual([]);
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body>${markup}</body></html>`);
-    expect((await page.evaluate(clearChoicesInPage, { redacted: 'REDACTED', marks: CHOSEN_MARKS })).choices).toBe(6);
+    expect((await page.evaluate(clearChoicesInPage, { redacted: 'REDACTED', marks: CHOSEN_MARKS })).choices).toBe(7);
     expect(await page.evaluate(() => Object.fromEntries(Array.from(document.querySelectorAll('[id]'),
       (element) => [element.id, element.getAttribute('class')])))).toEqual({ f: 'ng-dirty ng-invalid', a: 'x', b: '', c: '',
-      d: 'y', e: '', g: '', h: 'ng-dirty ng-hide', i: 'ng-scope ng-isolate-scope ng-hide' });
+      d: 'y', e: '', g: '', h: 'ng-hide', i: 'ng-scope ng-isolate-scope ng-hide' });
     await context.close();
     expect(new RegExp(ANGULAR_STATE_SOURCE).test('ng-valid-maxlength')).toBe(true);
-    expect(ANGULAR_STATE_ELEMENTS).toContain('[ng-model]');
   }, 30_000);
 
   it('refuses the redaction list met in an option, a label, a legend or a posting description, naming no value (jobvite-new-2)',
@@ -3364,6 +3397,268 @@ ${select('country', '', ['Portugal', 'Spain'])}</form>`);
     }, 60_000);
 });
 // ── end jr6 round 2 ──
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ── jr6 fixes (TOOLING; the line W reviews of 2026-11-11: PRIV-2, PRIV-4, PRIV-6, PRIV-7, REVC-4). Each shape on a
+// synthetic page in the platform's own markup, captured by Chrome itself where the platform draws in shadow roots; the
+// privacy review's synthetic cases (T1 to T7) among them. Every value is made up. ──
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** ADP's sdf-select-simple list drawn open after a choice (snapshot6 adp1's State list, adp2's Questions; the review's
+ *  T1): the chosen item marked by its class, its aria-selected, the roving tab stop and the check mark its shadow root
+ *  draws. */
+const ADP_CHOSEN_LIST = `<label for="q1">How did you hear about this job?</label><sdf-select-simple id="q1"></sdf-select-simple>
+<script>
+const root = document.getElementById('q1').attachShadow({ mode: 'open' });
+root.innerHTML = '<div class="combo"><span id="selected-label" part="selected-label"><span>Beta Board</span></span>'
+  + '<div role="status" aria-live="polite" class="sr-only">Beta Board</div><div role="listbox" id="listbox">'
+  + ['Alpha Board', 'Beta Board', 'Gamma Board'].map((words, at) => '<sdf-select-item role="option" aria-selected="'
+    + (at === 1) + '" tabindex="' + (at === 1 ? 0 : -1) + '" class="hydrated' + (at === 1 ? ' selected' : '') + '" value="'
+    + words + '" aria-label="' + words + '">' + words + '</sdf-select-item>').join('') + '</div></div>';
+for (const [at, item] of [...root.querySelectorAll('sdf-select-item')].entries()) {
+  item.attachShadow({ mode: 'open' }).innerHTML = '<div id="content"><slot></slot></div>' + (at === 1
+    ? '<div id="checked-icon"><sdf-icon aria-hidden="true" role="presentation" class="hydrated"></sdf-icon></div>' : '');
+}
+</script>`;
+
+/** SmartRecruiters' screening Yes/No answered (the Wiser screening capture; the review's T2): the chosen spl-radio
+ *  reflects checked="true", holds the roving tab stop and alone carries a name; each radio's shadow root says only where
+ *  it stands (first, last). */
+const SR_CHOSEN_RADIO = `<p>Are you 18 or older?</p><spl-radio-group id="g" required>
+<spl-radio id="r1" role="radio" aria-checked="false" tabindex="-1" label="Alpha" value="1" variant="default"></spl-radio>
+<spl-radio id="r2" role="radio" aria-checked="true" checked="true" tabindex="0" name="question_1" label="Beta" value="2" variant="default"></spl-radio>
+</spl-radio-group>
+<script>
+for (const [at, radio] of [...document.querySelectorAll('spl-radio')].entries()) {
+  radio.attachShadow({ mode: 'open' }).innerHTML = '<spl-internal-form-field class="c-spl-radio-wrapper c-spl-radio-wrapper--'
+    + (at === 0 ? 'first' : 'last') + '"><div class="c-spl-radio"><div class="c-spl-radio__ring"></div></div></spl-internal-form-field>';
+}
+</script>`;
+
+/** ADP's drawn Yes/No answered (snapshot6 adp2's Questions): the chosen sdf-radio-button holds the tab stop, and its
+ *  shadow root draws the dot (svg.toggled > circle.radio-dot); each radio's own class names its option. */
+const ADP_CHOSEN_RADIO = `<fieldset><legend>Are you 18 or older?</legend><sdf-radio-group id="rg" class="hydrated">
+<sdf-radio-button id="yes" class="question-yes-option hydrated" role="radio" aria-checked="false" tabindex="-1" label="Yes" value="Yes">Yes</sdf-radio-button>
+<sdf-radio-button id="no" class="question-no-option hydrated" role="radio" aria-checked="true" tabindex="0" label="No" value="No">No</sdf-radio-button>
+</sdf-radio-group></fieldset>
+<script>
+for (const [at, radio] of [...document.querySelectorAll('sdf-radio-button')].entries()) {
+  radio.attachShadow({ mode: 'open' }).innerHTML = '<div class="radio-button"><svg part="graphic" class="' + (at === 1 ? 'toggled' : '')
+    + '" viewBox="0 0 20 20"><circle class="radio-outline" cx="10" cy="10" r="9"></circle>'
+    + (at === 1 ? '<circle class="radio-dot" cx="10" cy="10" r="5"></circle>' : '')
+    + '</svg></div><div class="label-container" part="label-container"><label part="label"><slot></slot></label></div>';
+}
+</script>`;
+
+/** A converted page served as the e2e harness serves it, read with its shadow roots: each CHOICE_ROWS entry's groups
+ *  and how many read apart (unevenChoiceRowsInPage, as the conversion runs it). */
+async function rowsOf(conversion: Awaited<ReturnType<typeof convertMhtml>>, url: string) {
+  const { context } = await servedContext(conversion);
+  try {
+    const page = await context.newPage();
+    await page.goto(url);
+    await page.evaluate(deepenInPage);
+    return await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS, ...CHOICE_ROW_INPUT });
+  } finally {
+    await context.close();
+  }
+}
+
+/** The CHOICE_ROWS entry of a row tag. */
+const rowEntry = (row: string) => CHOICE_ROWS.findIndex((entry) => entry.row === row);
+
+describe('jr6 fixes: the chosen marks the line W reviews found (PRIV-2, REVC-4)', () => {
+  it("ADP's list: the chosen item's tab stop moves to the first item, its class and check mark go, rows alike (T1)",
+    async () => {
+      const file = await liveCapture(ADP_PAGE, ADP_CHOSEN_LIST, 'jr6fix-adp-list');
+      const conversion = await convertMhtml({ file, platform: 'adp', caseName: 'jr6fix-adp-list', redact: LISTED,
+        outDir: work });
+      const text = conversion.files[0]?.text ?? '';
+      expect(text).toContain('<span id="selected-label" part="selected-label"><span>REDACTED</span></span>');
+      expect(text).toContain('<sdf-select-item role="option" aria-selected="false" tabindex="0" class="hydrated" '
+        + 'value="Alpha Board" aria-label="Alpha Board"><template shadowrootmode="open"><div id="content"><slot></slot></div>'
+        + '</template>Alpha Board</sdf-select-item>');
+      expect(text).toContain('<sdf-select-item role="option" aria-selected="false" tabindex="-1" class="hydrated" '
+        + 'value="Beta Board" aria-label="Beta Board"><template shadowrootmode="open"><div id="content"><slot></slot></div>'
+        + '</template>Beta Board</sdf-select-item>');
+      const body = text.slice(text.indexOf(' -->') + 4);
+      for (const gone of ['checked-icon', '<sdf-icon', 'selected"', 'aria-selected="true"']) expect(body, gone).not.toContain(gone);
+      expect(text.match(/tabindex="0"/g)).toHaveLength(1);
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect((await rowsOf(conversion, ADP_PAGE))[rowEntry('sdf-select-item')]).toEqual({ groups: 1, uneven: 0 });
+    }, 60_000);
+
+  it("SmartRecruiters' Yes/No: the chosen radio's checked, name and tab stop go, the rows then alike (T2, REVC-4)",
+    async () => {
+      const file = await liveCapture(SR_ONE_CLICK, SR_CHOSEN_RADIO, 'jr6fix-sr-radio');
+      const conversion = await convertMhtml({ file, platform: 'smartrecruiters', caseName: 'jr6fix-sr-radio',
+        redact: LISTED, outDir: work });
+      const text = conversion.files[0]?.text ?? '';
+      expect(text).toContain('<spl-radio id="r1" role="radio" aria-checked="false" tabindex="0" label="Alpha" value="1" '
+        + 'variant="default"><template shadowrootmode="open">');
+      expect(text).toContain('<spl-radio id="r2" role="radio" aria-checked="false" tabindex="-1" label="Beta" value="2" '
+        + 'variant="default"><template shadowrootmode="open">');
+      for (const gone of [' checked=', 'name="question_1"', 'aria-checked="true"']) expect(text, gone).not.toContain(gone);
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect((await rowsOf(conversion, SR_ONE_CLICK))[rowEntry('spl-radio')]).toEqual({ groups: 1, uneven: 0 });
+    }, 60_000);
+
+  it("ADP's Yes/No: the chosen radio's toggled svg, its dot and its tab stop go, the rows then alike", async () => {
+    const file = await liveCapture(ADP_PAGE, ADP_CHOSEN_RADIO, 'jr6fix-adp-radio');
+    const conversion = await convertMhtml({ file, platform: 'adp', caseName: 'jr6fix-adp-radio', redact: LISTED,
+      outDir: work });
+    const text = conversion.files[0]?.text ?? '';
+    for (const gone of ['toggled', 'radio-dot', 'aria-checked="true"']) expect(text, gone).not.toContain(gone);
+    expect(text.match(/<svg part="graphic" class="" viewBox="0 0 20 20"><circle class="radio-outline" cx="10" cy="10" r="9">/g))
+      .toHaveLength(2);
+    expect(text).toContain('<sdf-radio-button id="yes" class="question-yes-option hydrated" role="radio" aria-checked="false" '
+      + 'tabindex="0" label="Yes" value="Yes">');
+    expect(text).toContain('<sdf-radio-button id="no" class="question-no-option hydrated" role="radio" aria-checked="false" '
+      + 'tabindex="-1" label="No" value="No">');
+    expect(chosenMarksIn(text)).toEqual([]);
+    expect((await rowsOf(conversion, ADP_PAGE))[rowEntry('sdf-radio-button')]).toEqual({ groups: 1, uneven: 0 });
+  }, 60_000);
+
+  it("strips Angular's state classes from a reactive form's components and groups, a form keeping its own (T3)",
+    async () => {
+      const { text } = await convertPage(SR_ONE_CLICK, 'smartrecruiters', 'jr6fix-angular', `<form class="ng-dirty ng-invalid">
+<div data-test="web" class="form-section ng-touched ng-dirty ng-valid">
+<oc-input formcontrolname="facebook" class="ng-touched ng-dirty ng-valid"><spl-input id="facebook-input" type="text" class="ng-touched ng-dirty ng-valid" value=""></spl-input></oc-input>
+<oc-input formcontrolname="twitter" class="ng-untouched ng-pristine ng-valid"><spl-input id="twitter-input" type="text" class="ng-untouched ng-pristine ng-valid" value=""></spl-input></oc-input>
+</div><spl-checkbox id="consent" data-test="consent-box" required class="ng-pristine ng-touched ng-valid"></spl-checkbox>
+<p class="note ng-hide ng-scope">AngularJS's other classes stay.</p></form>`);
+      for (const gone of ['ng-touched', 'ng-untouched', 'ng-pristine', 'ng-valid']) expect(text, gone).not.toContain(gone);
+      for (const kept of ['<form class="ng-dirty ng-invalid"', '<div data-test="web" class="form-section">',
+        '<oc-input formcontrolname="facebook" class="">', '<spl-input id="twitter-input" type="text" class="" value="">',
+        '<spl-checkbox id="consent" data-test="consent-box" required="" class="">', '<p class="note ng-hide ng-scope">']) {
+        expect(text, kept).toContain(kept);
+      }
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect(ANGULAR_STATE_ELEMENTS).toBe('[class*="ng-"]:not(form)');
+    }, 60_000);
+
+  it("moves a plain listbox's tab stop to its first option; a tab, a box group and an unanswered list keep theirs (T5)",
+    async () => {
+      const { text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-roving', `
+<label id="l" for="b">Favourite colour</label><button id="b" type="button" aria-haspopup="listbox">Choose</button>
+<div id="colours" role="listbox" aria-labelledby="l"><div role="option" tabindex="-1" aria-selected="false">Red</div>
+<div role="option" tabindex="0" aria-selected="true">Blue</div><div role="option" tabindex="-1" aria-selected="false">Green</div></div>
+<div id="sizes" role="listbox"><div role="option" tabindex="0">Small</div><div role="option" tabindex="-1">Large</div></div>
+<div role="tablist"><a role="tab" tabindex="-1" aria-selected="false" href="#o">Overview</a><a role="tab" tabindex="0" aria-selected="true" href="#a">Application</a></div>
+<div class="boxes"><div role="checkbox" tabindex="0" aria-checked="true">Remote</div><div role="checkbox" tabindex="0" aria-checked="false">Hybrid</div></div>
+<ul class="week"><li><span role="gridcell" tabindex="-1">1</span></li><li><span role="gridcell" tabindex="0">2</span></li></ul>
+<div id="towns" role="listbox"><spl-select-option tabindex="-1" value="n">North</spl-select-option><spl-select-option tabindex="0" value="s">South</spl-select-option></div>`);
+      expect(text).toContain('<div id="colours" role="listbox" aria-labelledby="l"><div role="option" tabindex="0" '
+        + 'aria-selected="false">Red</div>\n<div role="option" tabindex="-1" aria-selected="false">Blue</div>');
+      expect(text).toContain('<div id="sizes" role="listbox"><div role="option" tabindex="0">Small</div><div role="option" '
+        + 'tabindex="-1">Large</div></div>');
+      // No answer: the open tab keeps its stop (and its aria-selected); each box is a stop of its own.
+      expect(text).toContain('<a role="tab" tabindex="0" aria-selected="true" href="#a">Application</a>');
+      expect(text).toContain('<div role="checkbox" tabindex="0" aria-checked="false">Remote</div><div role="checkbox" '
+        + 'tabindex="0" aria-checked="false">Hybrid</div>');
+      // Rows of one kind in no widget roll up to the nearest element holding two of them.
+      expect(text).toContain('<li><span role="gridcell" tabindex="0">1</span></li><li><span role="gridcell" tabindex="-1">2</span></li>');
+      // A row that carries no role of its own (ROVING_TAGS: SmartRecruiters' spl-select-option) is read by its tag.
+      expect(text).toContain('<spl-select-option tabindex="0" value="n">North</spl-select-option><spl-select-option '
+        + 'tabindex="-1" value="s">South</spl-select-option>');
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect(ROVING_ROLES).not.toContain('tab');
+    }, 60_000);
+
+  it('reads each new kind of mark by its markup (the write check and the sweep), and no tab, box group or form', () => {
+    const kinds = (markup: string) => chosenMarksIn(`<!doctype html><html><body>${markup}</body></html>`);
+    const labels = CHOSEN_MARK_LABELS;
+    // T1: a lone stop off a list's first row, inside a declarative shadow root (its rows standing in their widget).
+    expect(kinds('<sdf-select-simple><template shadowrootmode="open"><div role="listbox"><sdf-select-item role="option" '
+      + 'tabindex="-1">A</sdf-select-item><sdf-select-item role="option" tabindex="0">B</sdf-select-item></div></template>'
+      + '</sdf-select-simple>')).toEqual([labels.roving]);
+    // T2: a reflected checked, and its tab stop; T5: a plain listbox's.
+    expect(kinds('<spl-radio-group><spl-radio role="radio" tabindex="-1"></spl-radio><spl-radio role="radio" checked="true" '
+      + 'tabindex="0"></spl-radio></spl-radio-group>')).toEqual([labels.reflected, labels.roving]);
+    expect(kinds('<div role="listbox"><div role="option" tabindex="-1">a</div><div role="option" tabindex="0">b</div>'
+      + '<div role="option">c</div></div>')).toEqual([labels.roving]);
+    expect(kinds('<div role="listbox"><spl-select-option tabindex="-1">a</spl-select-option><spl-select-option tabindex="0">'
+      + 'b</spl-select-option></div>')).toEqual([labels.roving]);
+    expect(kinds('<x-chip selected></x-chip><x-switch checked=""></x-switch>')).toEqual([labels.reflected]);
+    // A custom list item's selected keeps its own label (the security fix's rule), not this one too.
+    expect(kinds('<sl-tree-item selected></sl-tree-item>')).toEqual(['a list item that says it is selected']);
+    // T3: Angular's classes on a component or a group (AngularJS's on a control keep their own label).
+    expect(kinds('<oc-input formcontrolname="x" class="ng-touched ng-dirty ng-valid"></oc-input>')).toEqual([labels.angularComponent]);
+    expect(kinds('<div class="form-section ng-valid"></div><input class="ng-dirty">'))
+      .toEqual([labels.angularComponent, 'an AngularJS state class on a control']);
+    // ADP's drawn marks: the toggled svg (a CHOSEN_MARKS class) and the dot, the check mark in an item's shadow root.
+    expect(kinds('<sdf-radio-button role="radio"><template shadowrootmode="open"><svg class="toggled"><circle class="radio-dot">'
+      + '</circle></svg></template></sdf-radio-button>')).toEqual(['a chosen class CHOSEN_MARKS names', labels.drawing]);
+    expect(kinds('<sdf-select-item role="option"><template shadowrootmode="open"><div id="checked-icon"></div></template>'
+      + '</sdf-select-item>')).toEqual([labels.drawing]);
+    // No answer: a stop on the first row, every box a stop, an open tab, a form's own classes, an input's and an
+    // option's own state (each its own rule), a check mark id outside its host, a stop two rows hold.
+    expect(kinds('<div role="listbox"><div role="option" tabindex="0">a</div><div role="option" tabindex="-1">b</div></div>'
+      + '<div><span role="checkbox" tabindex="0"></span><span role="checkbox" tabindex="0"></span></div>'
+      + '<div role="tablist"><a role="tab" tabindex="-1"></a><a role="tab" tabindex="0"></a></div>'
+      + '<form class="ng-dirty ng-invalid"></form><select><option selected>x</option></select><div id="checked-icon"></div>'
+      + '<div role="radiogroup"><b role="radio" tabindex="0"></b><b role="radio" tabindex="0"></b><b role="radio" tabindex="-1"></b></div>'))
+      .toEqual([]);
+  });
+
+  it('refuses a page whose chosen row the clearing left marked, as it refuses any chosen mark (the backstop)', async () => {
+    const { roving, drawings } = CLEAR_CHOICE_INPUT;
+    const at = CHOSEN_MARKS.findIndex((mark) => mark.attributes?.includes('checked'));
+    expect(at).toBeGreaterThan(-1);
+    const [reflected] = CHOSEN_MARKS.splice(at, 1);
+    delete (CLEAR_CHOICE_INPUT as { roving?: unknown }).roving;
+    try {
+      const file = await liveCapture(SR_ONE_CLICK, SR_CHOSEN_RADIO, 'jr6fix-sr-refused');
+      const error = await convertMhtml({ file, platform: 'smartrecruiters', caseName: 'jr6fix-sr-refused', redact: LISTED,
+        outDir: work }).then(() => null, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConversionError);
+      expect((error as ConversionError).reasons).toEqual([
+        'jr6fix-sr-refused.html: choice groups (spl-radio-group) whose option rows still differ once cleared: 1, a chosen '
+          + 'mark the converter does not know',
+        `jr6fix-sr-refused.html: ${CHOSEN_MARK_LABELS.reflected} is still in the file`,
+        `jr6fix-sr-refused.html: ${CHOSEN_MARK_LABELS.roving} is still in the file`]);
+    } finally {
+      CHOSEN_MARKS.splice(at, 0, reflected!);
+      Object.assign(CLEAR_CHOICE_INPUT, { roving, drawings });
+    }
+  }, 60_000);
+
+  it('reads choice rows alike but for what names them, where they stand and an unanswered tab stop (REVC-4)', async () => {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    const uneven = async (markup: string) => {
+      await page.setContent(`<!doctype html><html><body>${markup}</body></html>`);
+      return (await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS, ...CHOICE_ROW_INPUT }))[rowEntry('spl-radio')];
+    };
+    const group = (rows: string[]) => `<spl-radio-group>${rows.join('')}</spl-radio-group>`;
+    // Alike: own values (id, value, label, a data- id), an unanswered tab stop on the first row, a class saying where.
+    expect(await uneven(group(['<spl-radio id="a" value="1" label="A" data-sr-id="q-a" tabindex="0" class="r r--first"></spl-radio>',
+      '<spl-radio id="b" value="2" label="B" data-sr-id="q-b" tabindex="-1" class="r r--last"></spl-radio>'])))
+      .toEqual({ groups: 1, uneven: 0 });
+    // Apart: a stop off the first row, a name on one row alone, an attribute only one row holds.
+    for (const rows of [['<spl-radio tabindex="-1"></spl-radio>', '<spl-radio tabindex="0"></spl-radio>'],
+      ['<spl-radio></spl-radio>', '<spl-radio name="q1"></spl-radio>'],
+      ['<spl-radio></spl-radio>', '<spl-radio data-picked="1"></spl-radio>']]) {
+      expect(await uneven(group(rows)), rows.join('')).toEqual({ groups: 1, uneven: 1 });
+    }
+    // A part one row's shadow root draws alone reads apart; the site's own row (FIXED_ROWS) is left out.
+    await page.setContent('<!doctype html><html><body><spl-radio-group><spl-radio></spl-radio><spl-radio></spl-radio>'
+      + '</spl-radio-group><div role="listbox"><spl-select-option value="a"></spl-select-option>'
+      + '<spl-select-option value="goToManualLocationMode"><b>Enter it</b></spl-select-option></div></body></html>');
+    await page.evaluate(() => {
+      for (const [at, radio] of [...document.querySelectorAll('spl-radio')].entries()) {
+        radio.attachShadow({ mode: 'open' }).innerHTML = at === 1 ? '<i class="dot"></i>' : '';
+      }
+    });
+    const read = await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS, ...CHOICE_ROW_INPUT });
+    expect(read[rowEntry('spl-radio')]).toEqual({ groups: 1, uneven: 1 });
+    expect(read[rowEntry('spl-select-option')]).toEqual({ groups: 0, uneven: 0 });
+    expect(CHOICE_ROWS.map(({ group: holder, row }) => `${holder} ${row}`)).toEqual(['fieldset.jv-input-group label.jv-input-group-row',
+      'spl-radio-group spl-radio', 'sdf-radio-group sdf-radio-button', '[role="listbox" i] sdf-select-item',
+      '[role="listbox" i] spl-select-option']);
+    await context.close();
+  }, 30_000);
+});
 
 /** jr6 (item 8): every jr6 case's page and frame in a platform's folder (or sites/), outside the frozen lists above. */
 const JR6_FILES = readdirSync(join(ROOT, 'fixtures'), { withFileTypes: true })

@@ -141,6 +141,17 @@
 //     written, its route answering it;
 //   and it refuses a file where a listed string survives in any attribute, as written or respelled (respelledIn: a
 //   frame's host, say).
+// - jr6 fixes (TOOLING; the line W reviews of 2026-11-11), on every platform, before anything is measured
+//   (clearChoicesInPage):
+//   - PRIV-2, REVC-4: a custom control's reflected checked or selected (any element but an input or an option: the
+//     chosen spl-radio's checked="true"), the name SmartRecruiters gives its chosen spl-radio alone, Angular's state
+//     classes on any element but a form (ANGULAR_STATE_ELEMENTS: a reactive form's components and groups), ADP's
+//     toggled radio svg, and the parts a widget draws on its chosen row alone (CHOSEN_DRAWINGS: ADP's radio dot and
+//     list check mark, removed) go; a widget's roving tab stop (tabindex="0") on a row but its first moves to the first
+//     row, as an unanswered widget draws it (ROVING_ROLES and ROVING_TAGS rows in ROVING_GROUP_ROLES or
+//     ROVING_GROUP_TAGS widgets); and CHOICE_ROWS reads SmartRecruiters' spl-radio and spl-select-option and ADP's
+//     sdf-radio-button and sdf-select-item groups too, a row's shadow root and its tab stop included;
+//   and it refuses a file that still holds any of them (chosenMarksIn, CHOSEN_MARK_LABELS).
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -484,6 +495,50 @@ export const CHOSEN_OPTION_ROLES = ['option', 'gridcell', 'treeitem'];
 export const CHOSEN_OPTIONS = CHOSEN_OPTION_ROLES.map((role) => `[role="${role}" i]:not([data-value=""])`).join(', ');
 // ── end of the security fix's block ──
 
+// ── jr6 fixes (TOOLING; the line W reviews, PRIV-2 and REVC-4): a chosen row told by its roving tab stop, by a custom
+// control's reflected state or name, by Angular's state classes on its components, and by a part only it draws ──
+/** The rows that can hold a widget's one roving tab stop (WAI-ARIA's roving tabindex: tabindex="0" on the chosen or
+ *  last-focused row, "-1" on the others): an ARIA option, radio, box, switch, menu item, tree item, grid cell or grid row
+ *  (by its role's first word), and the rows that carry no such role: a native option, SmartRecruiters' spl-select-option
+ *  (its role=option is inside its own shadow root). A tab (role=tab) is no answer: the open tab keeps its stop. Snapshot6
+ *  adp1's State list and adp2's Questions lists (ADP's sdf-select-item, role=option: the chosen row tabindex="0", every
+ *  other "-1"; the blank pages' lists hold the stop on their first row) and the Wiser screening capture's Yes/No
+ *  (SmartRecruiters' spl-radio, role=radio: likewise; an unanswered group, xplor-screening.html, on its first radio). */
+export const ROVING_ROLES = ['option', 'radio', 'checkbox', 'switch', 'menuitem', 'menuitemradio', 'menuitemcheckbox',
+  'treeitem', 'gridcell', 'row'];
+/** The rows ROVING_ROLES does not reach by role. */
+export const ROVING_TAGS = ['option', 'spl-select-option', 'sdf-select-item'];
+/** The widget a row's tab stop roves in: its nearest ancestor (a shadow root's host included) with one of these roles or
+ *  tags, else the nearest ancestor that holds another row of the row's kind (its role, else its tag). */
+export const ROVING_GROUP_ROLES = ['listbox', 'grid', 'treegrid', 'tree', 'radiogroup', 'menu', 'menubar'];
+/** The widgets ROVING_GROUP_ROLES does not reach by role. */
+export const ROVING_GROUP_TAGS = ['select', 'datalist'];
+/** The parts a widget draws, inside its shadow root, on its chosen row alone, removed before anything is measured
+ *  (clearChoicesInPage), so the visibility check compares the page without them; refused where they stay
+ *  (chosenMarksIn). Found while building REVC-4's row check on the line W fixtures: ADP's sdf-radio-button draws its dot
+ *  (svg.toggled > circle.radio-dot) on the chosen radio alone, a radio the page chooses by default included (snapshot6
+ *  adp2's Questions and its salary basis, adp's Resume choice), and ADP's sdf-select-item a check mark
+ *  (div#checked-icon > sdf-icon) on the chosen item alone (adp1's State list, adp2's Questions lists). Each names the
+ *  host whose tree draws it and the part by its tag, id or class. @type {Array<{ host: string; tag?: string; id?: string;
+ *  className?: string }>} */
+export const CHOSEN_DRAWINGS = [
+  { host: 'sdf-radio-button', tag: 'circle', className: 'radio-dot' },
+  { host: 'sdf-select-item', id: 'checked-icon' },
+];
+/** A CHOSEN_DRAWINGS part as a selector, in its host's light tree or its shadow root (deepenInPage reaches both).
+ *  @param {{ host: string; tag?: string; id?: string; className?: string }} part */
+const drawingSelector = ({ host, tag = '', id, className }) => {
+  const own = `${tag}${id === undefined ? '' : `#${id}`}${className === undefined ? '' : `.${className}`}`;
+  return `${host} ${own}, :host(${host}) ${own}`;
+};
+/** What clearChoicesInPage reads beside CHOSEN_MARKS on every conversion: the roving rows and their widgets, and the
+ *  CHOSEN_DRAWINGS parts. */
+export const CLEAR_CHOICE_INPUT = {
+  roving: { roles: ROVING_ROLES, tags: ROVING_TAGS, groupRoles: ROVING_GROUP_ROLES, groupTags: ROVING_GROUP_TAGS },
+  drawings: CHOSEN_DRAWINGS.map(drawingSelector),
+};
+// ── end jr6 fixes ──
+
 /** jr6 (jobvite-new-4): AngularJS's (and Angular's) state classes, which a filled capture leaves on its controls: an
  *  answered or clicked control's validity (ng-valid, ng-invalid, ng-pending and each ng-valid-<rule> and
  *  ng-invalid-<rule>: ng-valid-required beside an answer, ng-valid-parse on a clicked radio), its emptiness (ng-empty,
@@ -491,9 +546,13 @@ export const CHOSEN_OPTIONS = CHOSEN_OPTION_ROLES.map((role) => `[role="${role}"
  *  Snapshot6 jobvite1 (6), (7) and jobvite2 (5): the clicked radio alone ng-dirty, a ticked box alone ng-not-empty. */
 export const ANGULAR_STATE_SOURCE =
   '^ng-(?:(?:valid|invalid|pending)(?:-[\\w-]+)?|not-empty|empty|dirty|pristine|touched|untouched)$';
-/** The elements that carry them: every control, and every element bound by ng-model or grouping them by ng-form. */
-export const ANGULAR_STATE_ELEMENTS = 'input, select, textarea, [ng-model], [data-ng-model], [ng-form], [data-ng-form], '
-  + 'ng-form';
+/** The elements that carry them. jobvite-new-4 read every control and every element bound by ng-model or grouping them
+ *  by ng-form; jr6 fixes (PRIV-2): every element but a form, since Angular (2+) puts them on its reactive forms' custom
+ *  controls and their groups too, where no attribute need say so (SmartRecruiters' one-click pages: oc-input,
+ *  spl-input, spl-checkbox, spl-autocomplete, spl-phone-field and the sections around them, the required box's
+ *  ng-valid telling it ticked; HiBob's b-input, b-checkbox, b-single-select). A <form> keeps its own: Breezy's adapter
+ *  test reads its root's validity. */
+export const ANGULAR_STATE_ELEMENTS = '[class*="ng-"]:not(form)';
 
 /** The marks a drawn control or a list shows on the chosen answer, beside the input whose checked or selected state is
  *  dropped (the new ATSs, keyed by markup): every element `selector` names loses `classes` and the classes `patterns`
@@ -549,22 +608,53 @@ export const CHOSEN_MARKS = [
     swap: { 'icon-radio-checked': 'icon-radio-empty', 'icon-checkbox-checked': 'icon-checkbox-blank' },
     attributes: ['aria-checked'] },
   // jr6 (jobvite-new-4): AngularJS's state classes, from every control and every ng-model or ng-form element alike (the
-  // audit's change cleared them on Jobvite's radios and boxes; the verifier found them on every control).
+  // audit's change cleared them on Jobvite's radios and boxes; the verifier found them on every control). jr6 fixes
+  // (PRIV-2): and Angular's, from every element but a form (ANGULAR_STATE_ELEMENTS).
   { selector: ANGULAR_STATE_ELEMENTS, patterns: [ANGULAR_STATE_SOURCE], aria: false },
   // jr6 (adp-new-4; adp.md section 2): ADP's sdf-select-simple list marks its chosen <sdf-select-item role="option"
   // class="... selected" aria-selected="true"> inside its shadow root (snapshot6 adp2's Questions lists).
   { selector: 'sdf-select-item.selected, sdf-select-item[aria-selected="true" i]', classes: ['selected'] },
   // ── end jr6 ──
+  // ── jr6 fixes (the line W reviews: PRIV-2, REVC-4) ──
+  // A custom control's reflected state: SmartRecruiters' chosen spl-radio says checked="true" (the Wiser screening
+  // capture); any element but an input or an option (whose own state transformInPage drops) that says it is checked or
+  // selected says the answer.
+  { selector: '[checked]:not(input, option), [selected]:not(input, option)', attributes: ['checked', 'selected'],
+    aria: false },
+  // SmartRecruiters names the chosen spl-radio alone (name="<the question's>"; the Wiser screening capture): an
+  // unanswered group's radios carry no name (xplor-screening.html).
+  { selector: 'spl-radio[name]', attributes: ['name'], aria: false },
+  // ADP's chosen sdf-radio-button draws its dot's svg toggled (the dot itself is a CHOSEN_DRAWINGS part).
+  { selector: 'sdf-radio-button svg.toggled, :host(sdf-radio-button) svg.toggled', classes: ['toggled'], aria: false },
+  // ── end jr6 fixes ──
 ];
 
 /** jr6 (JV-10): the option rows of a choice group, which hold no answer once cleared, so every row of one group must
  *  read alike but for its text, ids, names, values and labels (unevenChoiceRowsInPage refuses a page where they do
- *  not: a chosen mark CHOSEN_MARKS does not know yet). Each entry names a group and its rows by markup.
- *  @type {Array<{ group: string; row: string; from: string }>} */
+ *  not: a chosen mark CHOSEN_MARKS does not know yet). Each entry names a group and its rows by markup, and (`own`) any
+ *  attribute of the row element itself that names its option there, read by its presence alone.
+ *  @type {Array<{ group: string; row: string; from: string; own?: string[] }>} */
 export const CHOICE_ROWS = [
   { group: 'fieldset.jv-input-group', row: 'label.jv-input-group-row',
     from: 'snapshot6 jobvite1 (6), (7), jobvite2 (5): Jobvite\'s radio and box groups' },
+  // ── jr6 fixes (PRIV-2, REVC-4): the widgets whose chosen row the line W reviews found told by a mark the converter did
+  // not know (a roving tab stop, a reflected checked, a name, a drawn dot or check mark) ──
+  { group: 'spl-radio-group', row: 'spl-radio', from: 'the Wiser screening capture: SmartRecruiters\' Yes/No' },
+  { group: 'sdf-radio-group', row: 'sdf-radio-button', own: ['class'],
+    from: 'snapshot6 adp2\'s Questions: ADP\'s Yes/No and salary basis (each radio\'s own class names its option)' },
+  { group: '[role="listbox" i]', row: 'sdf-select-item', from: 'snapshot6 adp1\'s State list, adp2\'s Questions lists' },
+  { group: '[role="listbox" i]', row: 'spl-select-option',
+    from: 'SmartRecruiters\' lists (the Wiser capture\'s City results; the site\'s own rows, FIXED_ROWS, aside)' },
 ];
+/** What unevenChoiceRowsInPage reads beside CHOICE_ROWS (jr6 fixes): a row's own naming attributes, read by their
+ *  presence alone in every element of the row (its ids, names, values and labels, as redactListRowsInPage reads them),
+ *  and the site's own rows, left out. */
+export const CHOICE_ROW_INPUT = {
+  own: [...new Set(['id', 'for', 'name', 'value', 'aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-label',
+    'title', ...ROW_ID_ATTRIBUTES, ...ROW_WORD_ATTRIBUTES])],
+  ownData: [ROW_ID_DATA_SOURCE, ROW_WORD_DATA_SOURCE],
+  fixed: FIXED_ROWS.join(', '),
+};
 
 /** The account's and the profile's own text (the new ATSs, DESIGN-NEW-ATS §6.4): a welcome line, an account menu, a
  *  signature's date stamp, read-only summaries of what was entered or parsed. Cleared, words and all. */
@@ -1442,10 +1532,17 @@ export function stripInjectedInPage(input) {
  *   (Workable's phone, the Raydar and Salvo captures): they become REDACTED, the flag's region dropped;
  * - the marks `marks` names (CHOSEN_MARKS: the new ATSs' drawn controls and lists) lose their chosen classes (jr6,
  *   JV-10: or have them swapped for their unchosen twins), and an option's aria-selected="true" becomes "false" (s2 wd:
- *   and an aria-activedescendant naming that option goes).
+ *   and an aria-activedescendant naming that option goes);
+ * - jr6 fixes (PRIV-2, REVC-4): the parts a widget draws on its chosen row alone (`drawings`: CHOSEN_DRAWINGS) go; and a
+ *   widget's roving tab stop (`roving`: ROVING_ROLES and ROVING_TAGS rows, in their ROVING_GROUP_ROLES or
+ *   ROVING_GROUP_TAGS widget, else in the nearest ancestor holding another row of their kind) that stands on a row but
+ *   the widget's first, every other row of its kind "-1" or without a tabindex, moves to the first row, the two rows
+ *   swapping their tabindex: the stop an unanswered widget draws (ADP's blank lists, SmartRecruiters' and Workable's
+ *   unanswered radios), so a page converted again where nothing was chosen stays as it was.
  * Returns how many it cleared.
  * @param {{ redacted: string; marks?: Array<{ selector: string; classes?: string[]; patterns?: string[];
- *   attributes?: string[]; aria?: boolean; swap?: Record<string, string> }> }} input
+ *   attributes?: string[]; aria?: boolean; swap?: Record<string, string> }>; drawings?: string[];
+ *   roving?: { roles: string[]; tags: string[]; groupRoles: string[]; groupTags: string[] } }} input
  * @returns {{ choices: number }}
  */
 export function clearChoicesInPage(input) {
@@ -1494,6 +1591,87 @@ export function clearChoicesInPage(input) {
       if (!unselected.has((element.getAttribute('aria-activedescendant') ?? '').trim())) continue;
       element.removeAttribute('aria-activedescendant');
       choices += 1;
+    }
+  }
+  // jr6 fixes (PRIV-2, REVC-4): the parts a widget draws on its chosen row alone (CHOSEN_DRAWINGS).
+  for (const part of (input.drawings ?? []).length > 0 ? doc.querySelectorAll((input.drawings ?? []).join(', ')) : []) {
+    part.remove();
+    choices += 1;
+  }
+  // jr6 fixes (PRIV-2 a, REVC-4): a widget's roving tab stop on a row but its first moves to its first row (see above).
+  // The rows are read in the order the page is written (a shadow root's before its host's children, as the deep
+  // serializer writes them, and chosenMarksIn reads them back), each standing in its parent or, at a shadow root's top,
+  // in its host.
+  if (input.roving !== undefined) {
+    const { roles, tags, groupRoles, groupTags } = input.roving;
+    /** @type {Element[]} */
+    const order = [];
+    /** @type {Map<Element, Element | null>} */
+    const parents = new Map();
+    /** @param {ParentNode} scope @param {Element | null} parent */
+    const visit = (scope, parent) => {
+      for (const child of Array.from(scope.children)) {
+        order.push(child);
+        parents.set(child, parent);
+        if (child.shadowRoot) visit(child.shadowRoot, child);
+        visit(child, child);
+      }
+    };
+    visit(doc, null);
+    /** @param {Element} element */
+    const roleOf = (element) => (element.getAttribute('role') ?? '').trim().toLowerCase().split(/\s+/)[0] ?? '';
+    /** A row's kind (its role, else its tag), or null for no row. @param {Element} element */
+    const kindOf = (element) => {
+      const role = roleOf(element);
+      return roles.includes(role) ? role : tags.includes(element.localName) ? element.localName : null;
+    };
+    /** @param {Element} element */
+    const isWidget = (element) => groupRoles.includes(roleOf(element)) || groupTags.includes(element.localName);
+    /** @param {Element} element */
+    const stopOf = (element) => element.getAttribute('tabindex')?.trim() ?? null;
+    const rows = order.filter((element) => kindOf(element) !== null);
+    if (rows.some((row) => stopOf(row) === '0')) {
+      /** How many rows of each kind each ancestor holds, up to the rows' widget. @type {Map<Element, Map<string, number>>} */
+      const held = new Map();
+      for (const row of rows) {
+        const kind = kindOf(row) ?? '';
+        for (let at = parents.get(row) ?? null; at !== null; at = parents.get(at) ?? null) {
+          const counts = held.get(at) ?? new Map();
+          counts.set(kind, (counts.get(kind) ?? 0) + 1);
+          held.set(at, counts);
+          if (isWidget(at)) break;
+        }
+      }
+      /** Each widget's rows, by kind, in order. @type {Map<Element, Map<string, Element[]>>} */
+      const widgets = new Map();
+      for (const row of rows) {
+        const kind = kindOf(row) ?? '';
+        let widget = null;
+        for (let at = parents.get(row) ?? null; at !== null && widget === null; at = parents.get(at) ?? null) {
+          if (isWidget(at) || (held.get(at)?.get(kind) ?? 0) >= 2) widget = at;
+        }
+        if (widget === null) continue;
+        const kinds = widgets.get(widget) ?? new Map();
+        const members = kinds.get(kind) ?? [];
+        members.push(row);
+        kinds.set(kind, members);
+        widgets.set(widget, kinds);
+      }
+      for (const kinds of widgets.values()) {
+        for (const members of kinds.values()) {
+          const stops = members.flatMap((row, at) => (stopOf(row) === '0' ? [at] : []));
+          if (members.length < 2 || stops.length !== 1 || stops[0] === 0) continue;
+          if (!members.every((row, at) => at === stops[0] || [null, '-1'].includes(stopOf(row)))) continue;
+          const [first] = members;
+          const stop = members[stops[0] ?? 0];
+          if (first === undefined || stop === undefined) continue;
+          const was = first.getAttribute('tabindex');
+          first.setAttribute('tabindex', '0');
+          if (was === null) stop.removeAttribute('tabindex');
+          else stop.setAttribute('tabindex', was);
+          choices += 1;
+        }
+      }
     }
   }
   const region = /^iti__[a-z]{2}$/;
@@ -3078,31 +3256,60 @@ export function redactListRowsInPage(input) {
 
 /**
  * jr6 (JV-10): the option rows of each choice group CHOICE_ROWS names, compared once every mark is cleared: in one
- * group every row's shape (its tags and attributes, nested, read without text and comments, without the attributes that
- * name the option itself (id, for, name, value, aria-labelledby, aria-describedby, aria-controls, aria-label, title),
- * digits read alike) must be the same; a row that reads apart still tells the chosen option, by a mark CHOSEN_MARKS does
- * not know. Answers, per entry, how many groups it read and how many held rows apart; never a value.
- * @param {{ rows: Array<{ group: string; row: string }> }} input
+ * group every row's shape (its tags and attributes, nested, read without text and comments, digits read alike) must be
+ * the same; a row that reads apart still tells the chosen option, by a mark CHOSEN_MARKS does not know. The attributes
+ * that name the option itself (id, for, name, value, aria-labelledby, aria-describedby, aria-controls, aria-label,
+ * title) are left out. jr6 fixes (PRIV-2, REVC-4): they, the other attributes a row names itself by (`own`, `ownData`:
+ * CHOICE_ROW_INPUT) and an entry's `own` attributes of the row element itself are read by their presence alone (a name
+ * on the chosen row alone tells it: SmartRecruiters' spl-radio); a row's shadow root is read before its children (ADP's
+ * chosen sdf-radio-button and sdf-select-item draw their marks there); a class that only says where a row stands
+ * (…-first, …-last, …-only) reads alike; the first row's roving tab stop (tabindex="0") reads as its siblings' tabindex,
+ * an unanswered group's own, so the tab stop counts in the shape; the site's own rows (`fixed`: FIXED_ROWS) are left out.
+ * Answers, per entry, how many groups it read and how many held rows apart; never a value.
+ * @param {{ rows: Array<{ group: string; row: string; own?: string[] }>; own?: string[]; ownData?: string[];
+ *   fixed?: string }} input
  * @returns {Array<{ groups: number; uneven: number }>}
  */
 export function unevenChoiceRowsInPage(input) {
   const doc = globalThis.document;
   const own = new Set(['id', 'for', 'name', 'value', 'aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-label',
-    'title']);
-  /** @param {Element} element @returns {string} */
-  const shape = (element) => {
-    const attributes = Array.from(element.attributes).filter((attribute) => !own.has(attribute.name.toLowerCase()))
-      .map((attribute) => `${attribute.name.toLowerCase()}=${attribute.value.replace(/\d+/g, '#')}`).sort().join(' ');
-    return `<${element.localName} ${attributes}>${Array.from(element.children, shape).join('')}</>`;
+    'title', ...(input.own ?? [])]);
+  const ownData = (input.ownData ?? []).map((source) => new RegExp(source, 'i'));
+  const position = /(?:^|[-_])(?:first|last|only)(?:-(?:child|of-type))?$/i;
+  /** @param {Element} element @param {string[]} named the row element's own attributes (CHOICE_ROWS' `own`)
+   *  @param {string | null | undefined} stop the first row's tabindex read as its siblings' (null: none)
+   *  @returns {string} */
+  const shape = (element, named = [], stop = undefined) => {
+    const attributes = Array.from(element.attributes).flatMap((attribute) => {
+      const name = attribute.name.toLowerCase();
+      if (own.has(name) || named.includes(name) || ownData.some((pattern) => pattern.test(name))) return [name];
+      if (name === 'tabindex' && stop === null) return [];
+      const value = name === 'tabindex' && stop !== undefined && stop !== null ? stop
+        : name === 'class' ? attribute.value.split(/\s+/).filter((token) => token !== '' && !position.test(token)).sort().join(' ')
+          : attribute.value;
+      return [`${name}=${value.replace(/\d+/g, '#')}`];
+    }).sort().join(' ');
+    const children = [...Array.from(element.shadowRoot?.children ?? []), ...Array.from(element.children)];
+    return `<${element.localName} ${attributes}>${children.map((child) => shape(child)).join('')}</>`;
   };
-  return input.rows.map(({ group, row }) => {
+  return input.rows.map(({ group, row, own: named = [] }) => {
     let groups = 0;
     let uneven = 0;
     for (const holder of doc.querySelectorAll(group)) {
-      const rows = Array.from(holder.querySelectorAll(row));
+      const rows = Array.from(holder.querySelectorAll(row))
+        .filter((each) => input.fixed === undefined || input.fixed === '' || !each.matches(input.fixed));
       if (rows.length < 2) continue;
       groups += 1;
-      if (new Set(rows.map(shape)).size > 1) uneven += 1;
+      // The siblings' most common tabindex (null: none), which an unanswered group's first row would read as.
+      /** @type {Map<string | null, number>} */
+      const tally = new Map();
+      for (const each of rows.slice(1)) {
+        const value = each.getAttribute('tabindex')?.trim() ?? null;
+        tally.set(value, (tally.get(value) ?? 0) + 1);
+      }
+      const common = [...tally].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+      const first = rows[0]?.getAttribute('tabindex')?.trim() === '0' ? common : undefined;
+      if (new Set(rows.map((each, at) => shape(each, named, at === 0 ? first : undefined))).size > 1) uneven += 1;
     }
     return { groups, uneven };
   });
@@ -3317,6 +3524,121 @@ function attributesOf(text) {
   return attributes;
 }
 
+/** Elements that hold nothing a closing tag ends. */
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track',
+  'wbr', 'param', 'keygen']);
+
+/**
+ * jr6 fixes (PRIV-2, REVC-4): a written file's elements in order, read from its markup (stylesheets, scripts and comments
+ * aside), for the checks that need to know what holds what: each element's tag, its attributes (names in lower case,
+ * values as written), the element it stands in (`parent`, -1 for none; a declarative shadow root's top elements stand in
+ * its host, as the page draws them and clearChoicesInPage reads them), the last element inside it (`end`: its
+ * descendants are the elements after it up to there), and the text written directly inside it (`text`, entities
+ * decoded).
+ * @param {string} text
+ * @returns {Array<{ tag: string; attributes: Map<string, string>; parent: number; end: number; text: string }>}
+ */
+export function markupElements(text) {
+  const markup = text.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  /** @type {Array<{ tag: string; attributes: Map<string, string>; parent: number; end: number; text: string }>} */
+  const nodes = [];
+  /** The open elements, outermost first. @type {number[]} */
+  const open = [];
+  /** Closes the open elements from `at` on. @param {number} at */
+  const close = (at) => {
+    for (const index of open.splice(at)) {
+      const node = nodes[index];
+      if (node !== undefined) node.end = nodes.length - 1;
+    }
+  };
+  for (const [whole, slash, name = '', rest = '', run] of markup.matchAll(/<(\/?)([a-zA-Z][\w-]*)((?:\s[^<>]*?)?)\/?>|([^<]+)/g)) {
+    if (run !== undefined) {
+      const holder = nodes[open.at(-1) ?? -1];
+      if (holder !== undefined) holder.text += decodeEntities(run);
+      continue;
+    }
+    const tag = name.toLowerCase();
+    if (slash === '/') {
+      const at = open.findLastIndex((index) => nodes[index]?.tag === tag);
+      if (at >= 0) close(at);
+      continue;
+    }
+    const holderAt = open.at(-1) ?? -1;
+    const holder = nodes[holderAt];
+    const parent = holder !== undefined && holder.tag === 'template' && holder.attributes.has('shadowrootmode')
+      ? holder.parent : holderAt;
+    nodes.push({ tag, attributes: attributesOf(rest), parent, end: nodes.length, text: '' });
+    if (!VOID_TAGS.has(tag) && !whole.endsWith('/>')) open.push(nodes.length - 1);
+  }
+  close(0);
+  return nodes;
+}
+
+/**
+ * jr6 fixes (PRIV-2 a, REVC-4): the widgets of a written file whose roving tab stop stands on a row but their first
+ * (clearChoicesInPage's rule, read back over markupElements): their rows (ROVING_ROLES, ROVING_TAGS), each in its
+ * ROVING_GROUP_ROLES or ROVING_GROUP_TAGS widget, else in its nearest ancestor holding another row of its kind; one row
+ * with tabindex="0", not the first, every other "-1" or none. Answers each such widget's row kind, never which row.
+ * @param {ReturnType<typeof markupElements>} nodes @returns {string[]}
+ */
+function rovingStopsOffFirst(nodes) {
+  /** @param {number} at */
+  const roleOf = (at) => (nodes[at]?.attributes.get('role') ?? '').trim().toLowerCase().split(/\s+/)[0] ?? '';
+  /** A row's kind (its role, else its tag), or null for no row. @param {number} at */
+  const kindOf = (at) => {
+    const role = roleOf(at);
+    const tag = nodes[at]?.tag ?? '';
+    return ROVING_ROLES.includes(role) ? role : ROVING_TAGS.includes(tag) ? tag : null;
+  };
+  /** @param {number} at */
+  const isWidget = (at) => ROVING_GROUP_ROLES.includes(roleOf(at)) || ROVING_GROUP_TAGS.includes(nodes[at]?.tag ?? '');
+  /** @param {number} at */
+  const stopOf = (at) => nodes[at]?.attributes.get('tabindex')?.trim() ?? null;
+  /** @param {number} at */
+  const parentOf = (at) => nodes[at]?.parent ?? -1;
+  const rows = nodes.flatMap((_node, at) => (kindOf(at) === null ? [] : [at]));
+  if (!rows.some((at) => stopOf(at) === '0')) return [];
+  /** How many rows of each kind each ancestor holds, up to the rows' widget. @type {Map<string, number>} */
+  const held = new Map();
+  for (const at of rows) {
+    const kind = kindOf(at);
+    for (let up = parentOf(at); up >= 0; up = parentOf(up)) {
+      held.set(`${up} ${kind}`, (held.get(`${up} ${kind}`) ?? 0) + 1);
+      if (isWidget(up)) break;
+    }
+  }
+  /** Each widget's rows of one kind, in order. @type {Map<string, number[]>} */
+  const widgets = new Map();
+  for (const at of rows) {
+    const kind = kindOf(at);
+    let widget = -1;
+    for (let up = parentOf(at); up >= 0 && widget < 0; up = parentOf(up)) {
+      if (isWidget(up) || (held.get(`${up} ${kind}`) ?? 0) >= 2) widget = up;
+    }
+    if (widget < 0) continue;
+    const members = widgets.get(`${widget} ${kind}`) ?? [];
+    members.push(at);
+    widgets.set(`${widget} ${kind}`, members);
+  }
+  /** @type {Set<string>} */
+  const found = new Set();
+  for (const [key, members] of widgets) {
+    const stops = members.flatMap((at, index) => (stopOf(at) === '0' ? [index] : []));
+    if (members.length < 2 || stops.length !== 1 || stops[0] === 0) continue;
+    if (!members.every((at, index) => index === stops[0] || [null, '-1'].includes(stopOf(at)))) continue;
+    found.add(key.slice(key.indexOf(' ') + 1));
+  }
+  return [...found];
+}
+
+/** What chosenMarksIn names jr6 fixes' marks by (PRIV-2, REVC-4). */
+export const CHOSEN_MARK_LABELS = {
+  angularComponent: 'an Angular state class on a component or a group',
+  reflected: 'a custom control that says it is checked or selected (checked, selected)',
+  roving: "a widget's roving tab stop on a row but its first (tabindex)",
+  drawing: 'a part a widget draws on its chosen row alone (CHOSEN_DRAWINGS)',
+};
+
 /**
  * The kinds of chosen mark a written fixture still holds (the security fix of 2026-11-06, S2, S3, S10), by their
  * labels alone (never a value): the conversion refuses a file that holds one, as it refuses jr_id, and
@@ -3331,7 +3653,10 @@ function attributesOf(text) {
  * - a custom list item or option that says it is selected (<spl-dropdown-item selected>; jr6: or by its class,
  *   <sdf-select-item class="selected">), and a radio or box input that says it is checked;
  * - jr6 (JV-10): a chosen class CHOSEN_MARKS swaps for its twin (Jobvite's icon-radio-checked);
- * - jr6 (jobvite-new-4): an AngularJS state class (ANGULAR_STATE_SOURCE) on a control or an ng-model or ng-form element.
+ * - jr6 (jobvite-new-4): an AngularJS state class (ANGULAR_STATE_SOURCE) on a control or an ng-model or ng-form element;
+ * - jr6 fixes (PRIV-2, REVC-4; CHOSEN_MARK_LABELS): an Angular state class on any other element but a form; a checked or
+ *   selected attribute on an element but an input or an option (a custom list item's selected keeps its own label); a
+ *   widget's roving tab stop on a row but its first (rovingStopsOffFirst); a CHOSEN_DRAWINGS part inside its host.
  * @param {string} text @returns {string[]}
  */
 export function chosenMarksIn(text) {
@@ -3363,16 +3688,35 @@ export function chosenMarksIn(text) {
     if (dataChecked !== undefined && ['', 'true'].includes(dataChecked.trim().toLowerCase())) {
       found.add('a ticked control (data-checked)');
     }
-    if (name.includes('-') && /(?:item|option)$/.test(name) && (attributes.has('selected') || classes.includes('selected'))) {
-      found.add('a list item that says it is selected');
-    }
+    const listItem = name.includes('-') && /(?:item|option)$/.test(name)
+      && (attributes.has('selected') || classes.includes('selected'));
+    if (listItem) found.add('a list item that says it is selected');
     if (name === 'input' && attributes.has('checked') && /^(?:radio|checkbox)$/i.test(attributes.get('type') ?? '')) {
       found.add('a radio or box input that says it is checked');
     }
+    // jr6 fixes (PRIV-2 b, REVC-4): a custom control's reflected state (SmartRecruiters' spl-radio checked="true").
+    if (!['input', 'option'].includes(name) && (attributes.has('checked') || (attributes.has('selected') && !listItem))) {
+      found.add(CHOSEN_MARK_LABELS.reflected);
+    }
     const angularElement = ['input', 'select', 'textarea', 'ng-form'].includes(name)
       || ['ng-model', 'data-ng-model', 'ng-form', 'data-ng-form'].some((attribute) => attributes.has(attribute));
-    if (angularElement && classes.some((each) => angular.test(each))) found.add('an AngularJS state class on a control');
+    if (classes.some((each) => angular.test(each))) {
+      if (angularElement) found.add('an AngularJS state class on a control');
+      // jr6 fixes (PRIV-2 c): Angular's, on a reactive form's component or group (a <form> keeps its own).
+      else if (name !== 'form') found.add(CHOSEN_MARK_LABELS.angularComponent);
+    }
   }
+  // jr6 fixes (PRIV-2 a, REVC-4): what holds what: a roving tab stop on a row but its widget's first, and a part only a
+  // chosen row draws.
+  const nodes = markupElements(text);
+  if (rovingStopsOffFirst(nodes).length > 0) found.add(CHOSEN_MARK_LABELS.roving);
+  const drawn = nodes.some((node, at) => CHOSEN_DRAWINGS.some(({ host, tag, id, className }) => {
+    if ((tag !== undefined && node.tag !== tag) || (id !== undefined && node.attributes.get('id') !== id)) return false;
+    if (className !== undefined && !(node.attributes.get('class') ?? '').split(/\s+/).includes(className)) return false;
+    for (let up = nodes[at]?.parent ?? -1; up >= 0; up = nodes[up]?.parent ?? -1) if (nodes[up]?.tag === host) return true;
+    return false;
+  }));
+  if (drawn) found.add(CHOSEN_MARK_LABELS.drawing);
   return [...found];
 }
 // ── end of the security fix's block ──
@@ -3622,7 +3966,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       stripped.push({ ...await frame.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: PER_LOAD_SOURCE,
         dropOverlays: !deep, redacted: REDACTED, closedMark: CLOSED_ROOT_MARK }),
         ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
-        marks: CHOSEN_MARKS }) });
+        marks: CHOSEN_MARKS, ...CLEAR_CHOICE_INPUT }) });
       replaced.push(replacements.length === 0 ? [] : await frame.evaluate(replaceTextInPage, { replacements }));
     }
     for (const [index] of replacements.entries()) {
@@ -3681,7 +4025,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
             + 'where a REDACTED tells the value by elimination; give each synthetic text with --replace-text');
         }
       }
-      const rows = await frame.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS });
+      const rows = await frame.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS, ...CHOICE_ROW_INPUT });
       for (const [at, { uneven }] of rows.entries()) {
         if (uneven > 0) {
           reasons.push(`${basename(path)}: choice groups (${CHOICE_ROWS[at]?.group}) whose option rows still differ once `
