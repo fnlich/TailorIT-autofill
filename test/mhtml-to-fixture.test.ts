@@ -3008,9 +3008,14 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
       expect([...ids].every((id) => /^00000000-0000-4000-8000-0000000000\d\d$/.test(id ?? '')), name).toBe(true);
       expect(html).not.toMatch(/name="csp-nonce"[^>]*content="(?!REDACTED")/);
     }
-    // The hCaptcha site key and widget ids, and iCIMS's hashed=, normalised away (S9).
-    expect(body).not.toMatch(/[?&;#]sitekey=(?!REDACTED)[^&"'\s]/);
-    expect(body).not.toMatch(/data-(?:hcaptcha-widget-id|sitekey)="(?!REDACTED")/);
+    // The hCaptcha site key and widget ids, and iCIMS's hashed=, normalised away (S9). Only the hCaptcha platforms'
+    // site key is normalised: a reCAPTCHA site key (JazzHR's classic board) is the page's public key and stays, as in
+    // the older JazzHR fixtures (jr6 JAZZHR P1).
+    expect(body).not.toMatch(/data-hcaptcha-widget-id="(?!REDACTED")/);
+    if (folder === 'icims' || folder === 'oracle') {
+      expect(body).not.toMatch(/[?&;#]sitekey=(?!REDACTED)[^&"'\s]/);
+      expect(body).not.toMatch(/data-sitekey="(?!REDACTED")/);
+    }
     expect(body).not.toMatch(/\bhashed=-?\d/);
     // No chosen mark, as the conversion refuses one (chosenMarksIn).
     expect(chosenMarksIn(html)).toEqual([]);
