@@ -1716,8 +1716,10 @@ const SETUP = {
   notNow: 'Not Now', // v5 p1-panel
 } as const;
 
-/** jr6 apply F1: no application form and no Apply on the page: the entry's refusal 'none' and the "no form" modal. */
-const NO_FORM = "Autofill found no application form and no Apply button on this page. Open the job's application, then press Autofill.";
+/** jr6 apply F1: no application form and no Apply on the page: the entry's refusal 'none' and the "no form" modal.
+ *  jr6 apply merge (F2's door): 'none' is also said, before any press, for an Apply that downloads a file, so the words
+ *  say no Apply that opens a form, never that the page shows no Apply. */
+const NO_FORM = "Autofill found no application form on this page, and no Apply that opens one. Open the job's application, then press Autofill.";
 
 /** The main view's new parts (Panel.tsx, JobCard.tsx). */
 const MAIN_VIEW = {
@@ -1739,7 +1741,9 @@ const MAIN_VIEW = {
     ambiguous: 'This page shows more than one Apply. Press the one you want, then press Autofill on the application.',
     blocked: "Something on the page needs you first, such as a check that you're human or a code. Finish it, then press Autofill.",
     'new-tab': 'This site opens its application in a new tab. Press Apply on the page, then press Autofill in that tab.',
-    elsewhere: 'Apply took you to another site. Press Autofill there if TailorIT supports it.',
+    // jr6 apply merge: said before any press (F2's door: the declared Apply links to another site, nothing pressed) and
+    // after one (F3a: the press took the tab to another site), so the words claim no press and no move.
+    elsewhere: "This job's Apply leads to another site, where Autofill doesn't go on by itself. Open the application there, then press Autofill if TailorIT supports that site.",
     'nothing-followed': 'Autofill pressed Apply, but no application opened. Press Apply on the page yourself, then press Autofill.',
   } satisfies Record<EntryRefusal, string>,
   // ── end jr6 apply F1 ──

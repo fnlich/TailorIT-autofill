@@ -11,7 +11,8 @@
  * - the resume's PDF preview, from the worker's checked bytes (v1.4 F: in the full-window preview page; v1.5 X: in a
  *   dialog over the job page, in a frame of the extension's own);
  * - a cover-letter text box gets the person's letter typed in;
- * - a posting page with no form is looked up as it loads, and its card shows without Autofill.
+ * - a posting page with no form is looked up as it loads, and its card shows with Autofill (jr6 apply F1, APPLYPLAN D2:
+ *   Autofill is offered on every page of ours with no form; this posting tells no Apply, so the button means 'fill').
  */
 import { createHash } from 'node:crypto';
 import { COPY } from '../../src/shared/copy';
@@ -244,7 +245,7 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     expect(JSON.stringify(await ext.storage())).not.toContain(GOLDEN_LETTER.sentinel);
   });
 
-  test('a posting page with no form is looked up as it loads, and its card shows without Autofill', async ({ extContext, connected: ext, routeLog }) => {
+  test('a posting page with no form is looked up as it loads, and its card shows with Autofill (jr6 apply F1)', async ({ extContext, connected: ext, routeLog }) => {
     const posting = at('a6');
     routeLog.serve({ [posting]: 'fixtures/synthetic/policy-posting.html' });
     const page = await extContext.newPage();
@@ -257,6 +258,8 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     expect((await bodies(LOOKUP))[0]).toMatchObject({ url: posting, includePostingText: false });
     await expect(panel.locator('[data-job-card]')).toHaveAttribute('data-job-state', 'found');
     await expect(panel.locator('[data-strip="no-form"]')).toHaveText(COPY.strip.noForm);
-    await expect(panel.getByRole('button', { name: COPY.panel.fill, exact: true })).toHaveCount(0);
+    // jr6 apply F1 (D2): Autofill is offered here too. The posting links to another posting's form, so Lever's entry
+    // (adapters/entry.ts applicationLinkOf: this posting's own /apply) tells no Apply and the button means 'fill'.
+    await expect(panel.locator('button.tia-cta[data-main-action="fill"]')).toHaveText(COPY.panel.fill);
   });
 });

@@ -461,7 +461,9 @@ test('v3 Phase 3b: another job, the resume’s preview, without resume, the prof
   const panel = await sidePanel(ext, await ext.tabIdOf(page));
   await panel.bringToFront();
   await expect(panel.locator('[data-job-card]')).toHaveAttribute('data-job-state', 'found');
-  await shoot(panel, '48-side-panel-posting.png', 'Side panel: a posting page with no form, its card without Autofill');
+  // jr6 apply F1 (D2): Autofill is offered on a posting with no form; shot once it takes clicks (no longer grey).
+  await expect(panel.locator('button.tia-cta[data-main-action="fill"]')).toBeEnabled();
+  await shoot(panel, '48-side-panel-posting.png', 'Side panel: a posting page with no form, its card with Autofill');
 });
 
 test('the v3 Phase 4 review: the disclosure shown again when it changed', async ({ extContext, connected: ext, routeLog }) => {

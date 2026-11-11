@@ -192,6 +192,35 @@ describe('Autofill on a page with no form presses the site\'s Apply (jr6 apply F
     }
   });
 
+  // jr6 apply merge (BUILD 4b, F2's note to F1's copy): F2's door refuses, before any press, an Apply that links to
+  // another site ('elsewhere') or downloads a file ('none'); F3a says 'elsewhere' after a press took the tab away.
+  it('says "elsewhere" and "none" in words that hold before any press as after one (the door\'s refusals)', async () => {
+    const worker = createFakeWorker();
+    worker.script.pages.set(5, { ...posting, entry: true });
+    const root = await open(worker);
+    // Before any press: the posting's own Apply leads to another site; nothing was pressed, nothing moved.
+    await showPage(worker, 5, { ...posting, entry: true, entryRefused: true, refusal: 'elsewhere' });
+    expect([refusalLine(root)?.dataset.reason, refusalLine(root)?.textContent]).toEqual(['elsewhere',
+      COPY.mainView.entryRefused.elsewhere]);
+    expect(modalOf(root)).toBeNull();
+    expect(shown(root)).toEqual([COPY.panel.fill, 'open', false]);
+    // After a press: the tab is on the other site, a page of ours with no form (the worker's grant ended there).
+    await showPage(worker, 5, { support: 'no-form', platform: 'workday', formKey: '0:away', posting: true,
+      entryRefused: true, refusal: 'elsewhere' });
+    expect(refusalLine(root)?.textContent).toBe(COPY.mainView.entryRefused.elsewhere);
+    // So the line claims no press and no move, and names where the application is.
+    expect(COPY.mainView.entryRefused.elsewhere).not.toMatch(/\b(took|pressed|moved|went)\b/i);
+    expect(COPY.mainView.entryRefused.elsewhere).toMatch(/another site/);
+    // 'none' before any press, for an Apply that downloads a file (the page shows that Apply): no Apply that opens a
+    // form, never "no Apply" outright; the "no form" modal shares the words.
+    await showPage(worker, 5, { ...posting, entry: true, entryRefused: true, refusal: 'none' });
+    expect([refusalLine(root)?.dataset.reason, refusalLine(root)?.textContent]).toEqual(['none',
+      COPY.mainView.entryRefused.none]);
+    expect(COPY.mainView.entryRefused.none).not.toMatch(/no Apply button/i);
+    expect(COPY.mainView.entryRefused.none).toMatch(/no Apply that opens/);
+    expect(COPY.modals.errors['no-form']).toBe(COPY.mainView.entryRefused.none);
+  });
+
   it('opens the "no form" modal for a \'none\' that answers this panel\'s own Autofill within 30 s, with Try Again', async () => {
     const worker = createFakeWorker();
     worker.script.pages.set(5, posting);
