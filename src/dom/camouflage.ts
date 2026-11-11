@@ -14,6 +14,7 @@
  * rounded corner, stands for everything beneath it (opaqueLayerUnder); a layer the content overflows or lies outside
  * does not (the v3 Phase 6/7b review, S4).
  */
+import type { Adapter } from '../adapters/types';
 import { BLACK, between, contrast, fade, gradientStops, leastContrast, over, parseColor, type Rgba, WHITE } from './color';
 import { CONTROL_SELECTOR, kindOf } from './kinds';
 import { isInOwnUi } from './own-ui';
@@ -216,9 +217,13 @@ export function textAgainstBackground(text: Rgba, el: Element, cache: ScanCache 
  * always show themselves, but only where their colours can be judged: a control under an effect this cannot work out
  * (a filter other than opacity(), a blend mode, a mask) or in front of colours it cannot work out (a background image,
  * too many gradient stops) counts as camouflaged (fails closed: DOM-3).
+ * jr6 ENGINE E2 (FIXPLAN §6.2 item 7, O4): before the wrapper rule, the box its adapter declares (Adapter.controlBox:
+ * Oracle's phone number, borderless inside the bordered group it shares with its country code) draws it, where that box
+ * is visible, holds the control (across shadow roots) and encloses it, and shows a border, an outline, a shadow or a
+ * background (drawnByDeclaredBox). `adapter`: the scan's (null: none declares a box).
  */
 export function isControlCamouflaged(control: Element, placeholderVisible: boolean,
-  cache: ScanCache = newScanCache()): boolean {
+  cache: ScanCache = newScanCache(), adapter: Adapter | null = null): boolean {
   const style = styleOf(control, cache);
   if (style === null) return true;
   const parent = flatParent(control);
@@ -247,8 +252,36 @@ export function isControlCamouflaged(control: Element, placeholderVisible: boole
   if (drawnShadows(style.boxShadow, doc).some(shows)) return false;
   if (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 1
     && shows(parseColor(style.outlineColor, doc))) return false;
+  if (drawnByDeclaredBox(control, adapter, cache)) return false; // jr6 ENGINE
   return !drawnByWrapper(control, cache);
 }
+
+// ── jr6 ENGINE E2 (FIXPLAN §6.2 item 7, O4): the box an adapter declares draws a borderless control ──
+/**
+ * Whether the element the adapter declares as the control's drawn box (Adapter.controlBox) draws it: Oracle's
+ * input.phone-row__input has no border, background or outline of its own, and the bordered white box a person types in
+ * is its group div.input-row-composite__inputs.phone-row[role=group], which also holds the country code's picker
+ * (fixtures/oracle/hjf-apply-section.html; the jr6 Oracle audit's O4), so the wrapper rule (drawnByWrapper) refuses it
+ * as shared. The declared box counts where it is not the control, holds it (across shadow roots), a person can see it,
+ * its visibility is 'visible', its box encloses the control's, and it shows a border, an outline or a shadow
+ * (drawnByWrapper's reading) or a background, against what is behind it. Unlike a wrapper, it may hold other controls:
+ * the adapter wrote it from a snapshot. None declared, or a hook that throws: false.
+ */
+function drawnByDeclaredBox(control: Element, adapter: Adapter | null, cache: ScanCache): boolean {
+  if (adapter?.controlBox === undefined) return false;
+  let box: Element | null;
+  try {
+    box = adapter.controlBox(control) ?? null;
+  } catch {
+    return false;
+  }
+  if (box === null || box === control || !flatContains(box, control) || !isUserVisible(box, cache)) return false;
+  const style = styleOf(box, cache);
+  const outer = box.getBoundingClientRect();
+  if (style === null || style.visibility !== 'visible' || !encloses(outer, control.getBoundingClientRect())) return false;
+  return drawsBox(box, style, outer, cache, true);
+}
+// ── end jr6 ENGINE E2 item 7 ──
 
 /**
  * Some forms draw a control's box on an element around it instead of on the control: Greenhouse outlines the
@@ -272,7 +305,6 @@ export function isControlCamouflaged(control: Element, placeholderVisible: boole
  */
 function drawnByWrapper(control: Element, cache: ScanCache): boolean {
   const inner = control.getBoundingClientRect();
-  const doc = control.ownerDocument;
   for (let at = control.parentElement; at !== null; at = at.parentElement) {
     if (at.localName === 'form' || at.localName === 'body' || at.localName === 'html') return false;
     if (holdsAnotherControl(at, control, cache)) return false;
@@ -284,24 +316,38 @@ function drawnByWrapper(control: Element, cache: ScanCache): boolean {
       const content = contentBox(outer, style);
       if (decorated === null || !hugs(content, decorated) || !spansMost(inner, content)) continue;
     }
-    const parent = flatParent(at);
-    const behind = parent === null ? [canvasOf(doc, cache)] : backdropOf(parent, cache, outer);
-    if (behind === 'unknown') continue;
-    const opacity = opacityOf(at, cache);
-    const shows = (colour: Rgba | null) => colour !== null && colour.a * opacity >= MIN_OPACITY
-      && against(fade(colour, opacity), behind, CONTROL_DRAWN_MIN_CONTRAST) === 'clear';
-    const edge = (['top', 'right', 'bottom', 'left'] as const).some((side) => {
-      const lineStyle = style.getPropertyValue(`border-${side}-style`);
-      return lineStyle !== 'none' && lineStyle !== 'hidden'
-        && parseFloat(style.getPropertyValue(`border-${side}-width`)) >= 1
-        && shows(parseColor(style.getPropertyValue(`border-${side}-color`), doc));
-    });
-    const outline = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 1
-      && shows(parseColor(style.outlineColor, doc));
-    const shadow = drawnShadows(style.boxShadow, doc).some(shows);
-    if (edge || outline || shadow) return true;
+    if (drawsBox(at, style, outer, cache, false)) return true;
   }
   return false;
+}
+
+/** Whether `el` draws a box a person sees around what it holds: a border on any side, an outline or a box shadow (and,
+ *  with `background`, a background colour or gradient) in a colour that shows against what is behind it. Behind it
+ *  unknown: no. drawnByWrapper reads it without the background; jr6 ENGINE E2's declared box (drawnByDeclaredBox)
+ *  with it. */
+function drawsBox(el: Element, style: CSSStyleDeclaration, outer: DOMRect, cache: ScanCache, background: boolean):
+  boolean {
+  const doc = el.ownerDocument;
+  const parent = flatParent(el);
+  const behind = parent === null ? [canvasOf(doc, cache)] : backdropOf(parent, cache, outer);
+  if (behind === 'unknown') return false;
+  const opacity = opacityOf(el, cache);
+  const shows = (colour: Rgba | null) => colour !== null && colour.a * opacity >= MIN_OPACITY
+    && against(fade(colour, opacity), behind, CONTROL_DRAWN_MIN_CONTRAST) === 'clear';
+  const edge = (['top', 'right', 'bottom', 'left'] as const).some((side) => {
+    const lineStyle = style.getPropertyValue(`border-${side}-style`);
+    return lineStyle !== 'none' && lineStyle !== 'hidden'
+      && parseFloat(style.getPropertyValue(`border-${side}-width`)) >= 1
+      && shows(parseColor(style.getPropertyValue(`border-${side}-color`), doc));
+  });
+  const outline = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 1
+    && shows(parseColor(style.outlineColor, doc));
+  if (edge || outline || drawnShadows(style.boxShadow, doc).some(shows)) return true;
+  if (!background) return false;
+  // jr6 ENGINE E2 (item 7): a background a person sees, its colour or a gradient's stop that paints.
+  const stops = gradientStops(style.backgroundImage, doc);
+  if (stops !== null && stops.length > 0 && gradientCover(style) !== 'none' && stops.some(shows)) return true;
+  return shows(parseColor(style.backgroundColor, doc));
 }
 
 /** The box of a control together with its own visible labels inside `wrapper`. */

@@ -5,10 +5,17 @@
  * - item 6 (ICIMS-04): an account part declared as rows (Adapter.accountRows: careers-sentinel's Login, Password and
  *   Re-enter rows beside the profile's name and email) is the form's account part: no pause, the other questions read,
  *   its boxes counted by accountLeft; rows holding anything else of the application, or missing a box, are none;
- * Every value is synthetic (no owner data).
+ * - item 7 (O4): a borderless control inside the bordered box it shares with another control (Oracle's phone number
+ *   beside its country code) is drawn by the box its adapter declares (Adapter.controlBox), and only by a box that holds
+ *   it, encloses it, shows and draws something; on the owner's Oracle section page too (fixtures/oracle/
+ *   hjf-apply-section.html, whose expectation lists the number box as camouflaged without the hook);
+ * Every value is synthetic (no owner data), but the Oracle fixture's, which is the converted, redacted capture.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import hjfApplySectionHtml from '../../fixtures/oracle/hjf-apply-section.html?raw';
 import { genericAdapter } from '../adapters/generic';
+import { oracleAdapter } from '../adapters/oracle';
+import { SNAPSHOT_VIEWPORT } from '../adapters/test/expectations.testkit';
 import type { Adapter } from '../adapters/types';
 import { accountFormOf, accountLeft, accountRowsIn, accountSectionOf } from './account-section';
 import { loadFixture, removeFixtures } from './fixture.testkit';
@@ -133,5 +140,96 @@ describe('jr6 E2 item 6 (ICIMS-04): an account part declared as rows', () => {
     });
     expect(page.section).toBe(page.doc.getElementById('login-group'));
     expect([page.rows, page.left, page.pause]).toEqual([['login-group'], 3, null]);
+  });
+});
+
+// ── item 7 (O4): the box an adapter declares draws a borderless control ─────────────────────────────────────────────
+
+/** Oracle's phone row as the audit measured it (O4): a bordered white group, 680 by 41 px, holding the country code's
+ *  picker and the number box, each with no border, background or outline of its own. */
+const PHONE_ROW = `<!doctype html><html><head><style>
+  body { background: #fff; font: 14px sans-serif; margin: 16px; }
+  .phone-row { display: flex; width: 680px; height: 41px; border: 1px solid #8a8a8a; border-radius: 4px; background: #fff; }
+  .phone-row input { border: none; background: transparent; outline: none; height: 39px; padding: 0 8px; }
+  .code { width: 120px; } .number { flex: 1; }
+  label { display: block; margin: 8px 0 4px; }
+</style></head><body>
+  <form id="f">
+    <label for="code">Country code</label><label for="phone">Phone Number</label>
+    <div class="phone-row" id="phone-row" role="group"><input id="code" class="code"><input id="phone" class="number" type="tel"></div>
+    <div id="beside" style="border: 1px solid #8a8a8a; width: 680px; height: 41px"></div>
+  </form></body></html>`;
+
+/** The hook as ORACLE declares it (oracle.md O4): the number box's group. `pick` overrides the element answered. */
+const phoneBox = (pick: (phone: Element) => Element | null = (phone) => phone.closest('.phone-row[role="group"]')):
+  Adapter => ({ ...genericAdapter, id: 'generic', controlBox: (control) => (control.id === 'phone' ? pick(control) : null) });
+
+async function phoneCamouflaged(declared: Adapter | null, change?: (doc: Document) => void): Promise<boolean | undefined> {
+  const fixture = await loadFixture(document, PHONE_ROW, { width: 1280, height: 900 });
+  change?.(fixture.doc);
+  const result = scan(fixture.doc.getElementById('f')!, declared, { platform: 'oracle' });
+  const camouflaged = result.fields.find((field) => field.label === 'Phone Number')?.camouflaged;
+  removeFixtures(document);
+  return camouflaged;
+}
+
+describe('jr6 E2 item 7 (O4): a borderless control drawn by its declared box', () => {
+  it('control: with no box declared, the shared group draws no box for it (the wrapper rule refuses a shared one)',
+    async () => {
+      expect(await phoneCamouflaged(null)).toBe(true);
+      expect(await phoneCamouflaged({ ...genericAdapter, id: 'generic' })).toBe(true);
+    });
+
+  it('is drawn by the group its adapter declares, which a person sees with a border', async () => {
+    expect(await phoneCamouflaged(phoneBox())).toBe(false);
+    // A background that shows draws it too.
+    expect(await phoneCamouflaged(phoneBox(), (doc) => {
+      doc.getElementById('phone-row')!.style.cssText = 'display: flex; width: 680px; height: 41px; border: none; background: #d8d8d8';
+    })).toBe(false);
+  });
+
+  it('is not drawn by a box that draws nothing, holds it not, does not enclose it, is hidden, or by a failing hook',
+    async () => {
+      // No border, no background a person sees against the page.
+      expect(await phoneCamouflaged(phoneBox(), (doc) => {
+        doc.getElementById('phone-row')!.style.cssText = 'display: flex; width: 680px; height: 41px; border: none; background: transparent';
+      })).toBe(true);
+      // A bordered box beside it, not around it.
+      expect(await phoneCamouflaged(phoneBox((phone) => phone.ownerDocument.getElementById('beside')))).toBe(true);
+      // A bordered box drawn over the row, enclosing it on screen, that does not hold it.
+      expect(await phoneCamouflaged(phoneBox((phone) => phone.ownerDocument.getElementById('beside')), (doc) => {
+        const row = doc.getElementById('phone-row')!.getBoundingClientRect();
+        doc.getElementById('beside')!.style.cssText = `position: absolute; left: ${row.left - 4}px; top: ${row.top - 4}px;`
+          + ` width: ${row.width + 8}px; height: ${row.height + 8}px; border: 1px solid #8a8a8a; pointer-events: none`;
+      })).toBe(true);
+      // Around it, but too short to enclose it (the box overflows).
+      expect(await phoneCamouflaged(phoneBox(), (doc) => {
+        doc.getElementById('phone-row')!.style.height = '10px';
+      })).toBe(true);
+      // Hidden itself (its box drawn by nobody a person sees).
+      expect(await phoneCamouflaged(phoneBox(), (doc) => {
+        doc.getElementById('phone-row')!.style.visibility = 'hidden';
+        for (const input of Array.from(doc.querySelectorAll<HTMLElement>('.phone-row input'))) input.style.visibility = 'visible';
+      })).toBe(true);
+      // The control itself.
+      expect(await phoneCamouflaged(phoneBox((phone) => phone))).toBe(true);
+      expect(await phoneCamouflaged(phoneBox(() => {
+        throw new Error('hook');
+      }))).toBe(true);
+    });
+
+  it('reads the Oracle section page’s phone number as drawn once the hook is declared', async () => {
+    const numberBox = async (declared: Adapter) => {
+      const fixture = await loadFixture(document, hjfApplySectionHtml, SNAPSHOT_VIEWPORT);
+      const root = declared.detect(fixture.doc)!.formRoot;
+      const result = scan(root, declared, { platform: 'oracle' });
+      const phone = fixture.doc.querySelector('input.phone-row__input')!;
+      const field = result.fields.find((each) => result.target(each.key)?.control === phone);
+      removeFixtures(document);
+      return field?.camouflaged;
+    };
+    expect(await numberBox(oracleAdapter)).toBe(true);
+    expect(await numberBox({ ...oracleAdapter, controlBox: (control) => (control.matches('input.phone-row__input')
+      ? control.closest('.input-row-composite__inputs.phone-row[role="group"]') : null) })).toBe(false);
   });
 });

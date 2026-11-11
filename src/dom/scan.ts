@@ -657,7 +657,9 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
       || (parts.length > 0 && parts.every(isRequired)),
     disabled: isDisabled(control) || (parts.length > 0 && parts.every(isDisabled)),
     readOnly: isReadOnly(control) || (parts.length > 0 && parts.every(isReadOnly)),
-    camouflaged: first.visibility === 'visible' && isControlCamouflaged(control, placeholder !== null, cache),
+    // jr6 ENGINE E2 (FIXPLAN §6.2 item 7, O4): the adapter's declared box (Adapter.controlBox) may draw it.
+    camouflaged: first.visibility === 'visible'
+      && isControlCamouflaged(control, placeholder !== null, cache, ctx.adapter),
     nameAttr: attribute(control, 'name'), idAttr: attribute(control, 'id'),
     autocomplete: autocompleteTokens(control).slice(0, MAX_AUTOCOMPLETE_TOKENS)
       .map((token) => capCodePoints(token, TEXT_CAP_AUTOCOMPLETE_TOKEN)),
