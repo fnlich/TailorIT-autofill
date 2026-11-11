@@ -25,6 +25,12 @@
  * through one queue per tab, reading the reports and the page inside it, so an older state is never posted last. A
  * change of connection or settings goes to every open panel port as panel/changed {what} (tellPanels), with nothing
  * else in it: the panel reads them again itself, and drops a card it read with the old connection.
+ *
+ * jr6 apply F3a (APPLYPLAN §5 F3a item 5): the page state says the tab is entering (PageState.entering) while its
+ * application frame says so, or while the worker's entry grant for the tab is armed and nothing of its press was taken
+ * yet (sign-up.ts waiting: the frame that pressed may be gone with its document); and why its last press went nowhere
+ * Autofill follows (refusal 'elsewhere', beside entryRefused) once that grant ended on another origin. Neither on a
+ * page with a form.
  */
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import { type ContentMessage, type PageState } from '../messaging/schemas';
@@ -107,6 +113,8 @@ export interface ReportsDeps {
   submitted?(tabId: number): Promise<PageState['submitted']> | PageState['submitted'];
   /** v3 Phase 8 (the review's B10): whether the company career sites act now (sites.ts). */
   sitesActive?(): Promise<boolean>;
+  /** jr6 apply F3a: what the tab's entry grant says (sign-up.ts waiting and elsewhere). */
+  entryOf?(tabId: number): { waiting: boolean; elsewhere: boolean };
 }
 
 /** The reports over storage.session, with no panel watching yet. */
@@ -122,6 +130,19 @@ export function createReports(deps: ReportsDeps): Reports {
    *  board, a sign-in that names no job, an employer's own pages, where the content script says nothing: the v3 Phase
    *  6/7b review's S3) shows no application form, as it did when every page said hello (round 2, K1). */
   async function pageNow(tabId: number): Promise<PageState> {
+    return withEntry(tabId, await pageRead(tabId));
+  }
+
+  /** jr6 apply F3a: the tab's entry grant in its page state (module header), on a page with no form alone. */
+  function withEntry(tabId: number, page: PageState): PageState {
+    const grant = page.support === 'form' ? undefined : deps.entryOf?.(tabId);
+    if (grant === undefined) return page;
+    return { ...page, ...(grant.waiting && page.entering !== true ? { entering: true as const } : {}),
+      ...(grant.elsewhere && page.entryRefused !== true ? { entryRefused: true as const, refusal: 'elsewhere' as const }
+        : {}) };
+  }
+
+  async function pageRead(tabId: number): Promise<PageState> {
     const read = await pageOfTab(session, tabId);
     const submitted = await deps.submitted?.(tabId);
     const page = submitted === undefined ? read : { ...read, submitted };
