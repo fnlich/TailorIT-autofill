@@ -63,6 +63,18 @@ import {
   ROW_WORD_DATA_SOURCE,
   TYPED_LIST_BOXES,
   TYPED_LISTS,
+  // ── jr6 fixes (TOOLING; the line W reviews) ──
+  CHOICE_ROW_INPUT,
+  CHOSEN_MARK_LABELS,
+  CLEAR_CHOICE_INPUT,
+  deepenInPage,
+  ROVING_ROLES,
+  REFERRAL_PARAMS,
+  REFERRAL_PREFIXES,
+  redactReferralParams,
+  referralNeedles,
+  eliminatedListsIn,
+  LISTED_LISTS,
   // ── snapshot build 2026-11-06 (core pass Z1, item 36) ──
   CHOSEN_MARKS,
   PROFILE_PLACES,
@@ -196,8 +208,10 @@ function mhtml(snapshot: string, parts: Part[]): Buffer {
 
 /** The synthetic company page: every kind of thing the converter inlines, removes or redacts, and probe elements.
  *  With `encoded`, a link also carries the owner's name percent-encoded (jr6 round 2: an attribute's respelling, which
- *  the converter now redacts), and so does a text run, which the DOM redaction cannot see and the final check refuses. */
-const mainHtml = (encoded: boolean) => `<!DOCTYPE html><html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+ *  the converter now redacts), and so does a text run, which the DOM redaction cannot see and the final check refuses
+ *  (jr6 fixes, PRIV-6: the page's text is respelled too now, so for a refusal that run stands in a <template>
+ *  (`'template'`), whose content no in-page pass reaches). */
+const mainHtml = (encoded: boolean | 'template') => `<!DOCTYPE html><html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <link rel="stylesheet" type="text/css" href="cid:css-cssom@mhtml.blink" />
 <link rel="stylesheet" href="${ORIGIN}/site.css">
 <link rel="preload" href="${ORIGIN}/font.woff2" as="font"><link rel="icon" href="${ORIGIN}/icon.png">
@@ -223,7 +237,7 @@ const mainHtml = (encoded: boolean) => `<!DOCTYPE html><html lang="en"><head><me
 <p>Welcome back, Jane Roe. <!-- prepared for Jane Roe --> Questions: jobs@tailorit-fixture.example or
 +1 (555) 010-0199, or our office line 555-010-0142.</p>
 <p><a href="mailto:jobs@tailorit-fixture.example">Write to us</a> <a href="tel:+15550100199">Call us</a>
-<a href="javascript:alert(1)">Run</a> <a href="java&#9;script:alert(2)">Run too</a>${encoded ? ` <a href="${ORIGIN}/search?q=Jane%20Roe">Jobs like yours</a> <span>Saved search: q=Jane%20Roe</span>` : ''}</p>
+<a href="javascript:alert(1)">Run</a> <a href="java&#9;script:alert(2)">Run too</a>${encoded ? ` <a href="${ORIGIN}/search?q=Jane%20Roe">Jobs like yours</a> ${encoded === 'template' ? '<template>' : ''}<span>Saved search: q=Jane%20Roe</span>${encoded === 'template' ? '</template>' : ''}` : ''}</p>
 <form action="${ORIGIN}/apply" method="get">
 <label for="first" data-probe="label" data-expect="shown">First name</label>
 <input id="first" name="first" data-probe="first" data-expect="shown" value="Jane typed" title="Jane Roe" data-owner="jane roe">
@@ -264,7 +278,7 @@ const SITE_CSS = `@charset "utf-8";
 .badge { background: url("badge.png"); }`;
 
 /** The synthetic capture: the page, a cid: sheet, the stylesheets, three images and three frames. */
-function syntheticCapture(encoded = false): Buffer {
+function syntheticCapture(encoded: boolean | 'template' = false): Buffer {
   return mhtml(PAGE, [
     { type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: PAGE, body: mainHtml(encoded) },
     { type: 'text/css', location: 'cid:css-cssom@mhtml.blink', body: '@charset "utf-8";\n.cssom-hidden { display: none; }\n.order-a { display: none; }' },
@@ -477,13 +491,15 @@ describe('mhtml-to-fixture on a synthetic capture', () => {
 describe('mhtml-to-fixture refusals', () => {
   it('refuses a listed string that survives percent-encoded, and names the entry, not the value', async () => {
     const file = join(work, 'refuse.mhtml');
-    writeFileSync(file, syntheticCapture(true));
+    writeFileSync(file, syntheticCapture('template'));
     const error = await convertMhtml({ file, platform: 'greenhouse', caseName: 'refuse', redact: ['Jane Roe'], outDir: work })
       .then(() => null, (caught: unknown) => caught);
     expect(error).toBeInstanceOf(ConversionError);
     const reasons = (error as ConversionError).reasons;
-    // The text run's (jr6 round 2: the link's, an attribute, is respelled away, so it is no reason of its own).
-    expect(reasons).toEqual(['refuse.html: redact entry 1 is still in the file']);
+    // The text run's (jr6 round 2: the link's, an attribute, is respelled away, so it is no reason of its own; jr6 fixes,
+    // PRIV-6: a run in the page is respelled away too, so this one stands in a <template>, read by the final check alone).
+    expect(reasons).toEqual(['refuse.html: redact entry 1 is still in the file',
+      "refuse.html: redact entry 1 survives in the page's text"]);
     expect(reasons.join(' ')).not.toContain('Jane');
     expect(existsSync(join(work, 'greenhouse', 'refuse.html'))).toBe(false);
   }, 60_000);
@@ -1035,7 +1051,7 @@ describe('mhtml-to-fixture command line', () => {
 
   it('exits 1 and writes nothing when the conversion is refused', () => {
     const file = join(work, 'cli-refused.mhtml');
-    writeFileSync(file, syntheticCapture(true));
+    writeFileSync(file, syntheticCapture('template'));
     const redact = join(work, 'redact-refused.txt');
     writeFileSync(redact, 'Jane Roe\n');
     const out = join(work, 'cli-refused-out');
@@ -1366,8 +1382,9 @@ describe('mhtml-to-fixture, snapshot build: boards', () => {
     expect(withoutInjectedParams('https://apply.workable.com/x/j/2F8F576E57/apply?utm_source=Simplify'))
       .toBe('https://apply.workable.com/x/j/2F8F576E57/apply');
     expect(withoutInjectedParams('https://x.example/a?utm_source=Simplify&b=2')).toBe('https://x.example/a?b=2');
-    expect(withoutInjectedParams('https://x.example/a?utm_source=SimplifyJobs')).toBe('https://x.example/a?utm_source=SimplifyJobs');
-    expect(withoutInjectedParams('https://x.example/a?utm_source=LinkedIn')).toBe('https://x.example/a?utm_source=LinkedIn');
+    // jr6 fixes (PRIV-4): any other utm_source is a referral: it stays, its value REDACTED (where the person came from).
+    expect(withoutInjectedParams('https://x.example/a?utm_source=SimplifyJobs')).toBe('https://x.example/a?utm_source=REDACTED');
+    expect(withoutInjectedParams('https://x.example/a?utm_source=LinkedIn')).toBe('https://x.example/a?utm_source=REDACTED');
     expect(INJECTED_PARAMS).toEqual(['jr_id', 'utm_source=Simplify']);
     // The fix of 2026-11-08: Jobright's Edit with AI hosts too (snapshot5).
     expect(INJECTED_UI).toEqual(['plasmo-csui#jobright-helper-plugin', '#swooped-extension-root', '.jr-edit-ai-host']);
@@ -2469,6 +2486,24 @@ const CHOSEN_STATE_FIXTURES = [
 ];
 
 /**
+ * jr6 fixes (PRIV-2, REVC-4): the committed fixtures converted before the converter cleared these marks, which still hold
+ * one (a privacy finding, not an exception): ADP's main questions page draws its chosen radio's dot (CHOSEN_DRAWINGS),
+ * Oracle's two apply-flow pages keep each answered pill group's tab stop on the chosen pill, and HiBob's form and
+ * SmartRecruiters' two one-click pages keep Angular's state classes on their components. Each is to be converted again
+ * with this converter by its package (ADP, ORACLE, SMARTRECRUITERS; HiBob's has none this round: SP\jr6\build\TOOLING.md,
+ * round 3), and its entry then goes: each lets through only the marks named here, and only while the file still holds
+ * exactly them.
+ */
+const MARKED_FIXTURES: Record<string, string[]> = {
+  'adp/questions.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
+  'hibob/mplc-form.html': [CHOSEN_MARK_LABELS.angularComponent],
+  'oracle/hjf-after-submit.html': [CHOSEN_MARK_LABELS.roving],
+  'oracle/hjf-apply-section.html': [CHOSEN_MARK_LABELS.roving],
+  'smartrecruiters/xplor-one-click.html': [CHOSEN_MARK_LABELS.angularComponent],
+  'smartrecruiters/xplor-screening.html': [CHOSEN_MARK_LABELS.angularComponent],
+};
+
+/**
  * jr6 (jobvite-new-4): the committed fixtures converted before the converter cleared AngularJS's state classes, which
  * still hold them on their controls (ng-dirty on a clicked radio, ng-not-empty on a ticked box: a privacy finding, not an
  * exception). Each is to be converted again with this converter: JOBVITE's six NinjaOne pages (fixtures/jobvite/**), and
@@ -2485,8 +2520,14 @@ describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
     const pages = committedFixtureFiles().filter((file) => file.endsWith('.html'));
     expect(pages.length).toBeGreaterThan(300);
     const marked = pages.filter((file) => chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'))
-      .some((label) => !(ANGULAR_STATE_FIXTURES.includes(file) && label === ANGULAR_STATE_MARK)));
+      .some((label) => !(ANGULAR_STATE_FIXTURES.includes(file) && label === ANGULAR_STATE_MARK)
+        && !(MARKED_FIXTURES[file] ?? []).includes(label)));
     expect(marked.filter((file) => !CHOSEN_STATE_FIXTURES.includes(file))).toEqual([]);
+    // jr6 fixes (PRIV-2, REVC-4): each file let through for this round's marks still holds exactly them.
+    for (const [file, labels] of Object.entries(MARKED_FIXTURES)) {
+      expect(pages, file).toContain(file);
+      expect(chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8')), file).toEqual(labels);
+    }
     // jr6 (jobvite-new-4): each file let through for AngularJS's classes still holds them, and nothing else.
     for (const file of ANGULAR_STATE_FIXTURES) {
       expect(pages, file).toContain(file);
@@ -2497,7 +2538,8 @@ describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
       'smartrecruiters/xplor-one-click.html', 'greenhouse/rushdown-country-open.html', 'workable/jobs-salvo-apply.html',
       'workable/raydar-attached.html', 'workday/resolvetech-source-open.html']) {
       expect(pages, file).toContain(file);
-      expect(chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8')), file).toEqual([]);
+      expect(chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'))
+        .filter((label) => !(MARKED_FIXTURES[file] ?? []).includes(label)), file).toEqual([]);
     }
     // Each exception is still there, and is hand-written or captured before the owner's snapshots of 2026-11-06.
     for (const file of CHOSEN_STATE_FIXTURES) {
@@ -2726,7 +2768,7 @@ for (const id of ['avatar', 'avatar-menu']) document.getElementById(id).attachSh
 document.getElementById('question_7').attachShadow({ mode: 'open' }).innerHTML = '<div class="combo"><div class="trigger-button" role="button" part="frame">'
   + '<span id="selected-label" part="selected-label"><span>Referral Board</span></span></div>'
   + '<div role="status" aria-live="polite" class="sr-only">Referral Board</div><div role="listbox">'
-  + '<sdf-select-item role="option" aria-selected="false" value="Job Fair">Job Fair</sdf-select-item>'
+  + '<sdf-select-item role="option" aria-selected="false" class="hydrated" value="Job Fair">Job Fair</sdf-select-item>'
   + '<sdf-select-item role="option" aria-selected="true" class="hydrated selected" value="Referral Board">Referral Board</sdf-select-item></div></div>';
 document.getElementById('question_8').attachShadow({ mode: 'open' }).innerHTML = '<div class="combo"><div class="trigger-button" role="button" part="frame">'
   + '<span class="selected-label-placeholder" id="select-placeholder" part="placeholder">Choose an option</span></div>'
@@ -2804,9 +2846,10 @@ document.getElementById('photo').attachShadow({ mode: 'open' }).innerHTML = '<la
       }
       expect(text.match(/class="icon icon-radio-empty" role="radio" aria-selected="false"/g)).toHaveLength(3);
       expect(text.match(/class="icon icon-checkbox-blank" role="checkbox">/g)).toHaveLength(2);
-      // A form's own state (Breezy reads its root's validity) and an element that is no control keep theirs.
+      // A form's own state (Breezy reads its root's validity) keeps its classes; jr6 fixes (PRIV-2): any other element's
+      // Angular state classes go too.
       for (const kept of ['<form name="apply" class="ng-dirty ng-invalid ng-submitted"', 'class="jv-text"',
-        '<div ng-form="sub" class="sub-form">', '<p class="ng-dirty">']) {
+        '<div ng-form="sub" class="sub-form">', '<p class="">']) {
         expect(text, kept).toContain(kept);
       }
       expect(chosenMarksIn(text)).toEqual([]);
@@ -2814,7 +2857,8 @@ document.getElementById('photo').attachShadow({ mode: 'open' }).innerHTML = '<la
       const context = await browser.newContext({ viewport: VIEWPORT });
       const page = await context.newPage();
       await page.setContent(text);
-      expect(await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS })).toEqual([{ groups: 2, uneven: 0 }]);
+      expect((await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS, ...CHOICE_ROW_INPUT }))[0])
+        .toEqual({ groups: 2, uneven: 0 });
       await context.close();
     }, 60_000);
 
@@ -2827,28 +2871,28 @@ document.getElementById('photo').attachShadow({ mode: 'open' }).innerHTML = '<la
     expect(error).toBeInstanceOf(ConversionError);
     expect((error as ConversionError).reasons).toEqual(['jr6-rows-uneven.html: choice groups (fieldset.jv-input-group) '
       + 'whose option rows still differ once cleared: 1, a chosen mark the converter does not know']);
-    expect(CHOICE_ROWS.map(({ group, row }) => `${group} ${row}`)).toEqual(['fieldset.jv-input-group label.jv-input-group-row']);
+    expect(CHOICE_ROWS[0]).toMatchObject({ group: 'fieldset.jv-input-group', row: 'label.jv-input-group-row' });
   }, 60_000);
 
-  it("reads AngularJS's state classes on controls and ng-model or ng-form elements alone (jobvite-new-4)", async () => {
+  it("reads AngularJS's state classes on controls and ng-model or ng-form elements (jobvite-new-4), Angular's elsewhere (PRIV-2)", async () => {
     const markup = '<form id="f" class="ng-dirty ng-invalid"><input id="a" class="x ng-dirty ng-not-empty ng-valid-required ng-touched">'
       + '<textarea id="b" class="ng-pristine ng-untouched ng-empty ng-invalid ng-invalid-required"></textarea>'
       + '<select id="c" class="ng-valid ng-pending"></select><div id="d" ng-model="v" class="ng-dirty y"></div>'
       + '<div id="e" data-ng-form="f" class="ng-valid-email"></div><ng-form id="g" class="ng-dirty"></ng-form>'
       + '<p id="h" class="ng-dirty ng-hide">no control</p><input id="i" class="ng-scope ng-isolate-scope ng-hide"></form>';
-    expect(chosenMarksIn(markup)).toEqual(['an AngularJS state class on a control']);
-    // Not on a form (Breezy's root), an element that is no control, or AngularJS's other classes (ng-hide hides).
-    expect(chosenMarksIn('<form class="ng-dirty"></form><p class="ng-dirty"></p><input class="ng-scope ng-hide">')).toEqual([]);
+    // jr6 fixes (PRIV-2): an element that is no control is read too, under its own label (Angular's components).
+    expect(chosenMarksIn(markup)).toEqual(['an AngularJS state class on a control', CHOSEN_MARK_LABELS.angularComponent]);
+    // Not on a form (Breezy's root), or AngularJS's other classes (ng-hide hides).
+    expect(chosenMarksIn('<form class="ng-dirty"></form><p class="ng-hide"></p><input class="ng-scope ng-hide">')).toEqual([]);
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body>${markup}</body></html>`);
-    expect((await page.evaluate(clearChoicesInPage, { redacted: 'REDACTED', marks: CHOSEN_MARKS })).choices).toBe(6);
+    expect((await page.evaluate(clearChoicesInPage, { redacted: 'REDACTED', marks: CHOSEN_MARKS })).choices).toBe(7);
     expect(await page.evaluate(() => Object.fromEntries(Array.from(document.querySelectorAll('[id]'),
       (element) => [element.id, element.getAttribute('class')])))).toEqual({ f: 'ng-dirty ng-invalid', a: 'x', b: '', c: '',
-      d: 'y', e: '', g: '', h: 'ng-dirty ng-hide', i: 'ng-scope ng-isolate-scope ng-hide' });
+      d: 'y', e: '', g: '', h: 'ng-hide', i: 'ng-scope ng-isolate-scope ng-hide' });
     await context.close();
     expect(new RegExp(ANGULAR_STATE_SOURCE).test('ng-valid-maxlength')).toBe(true);
-    expect(ANGULAR_STATE_ELEMENTS).toContain('[ng-model]');
   }, 30_000);
 
   it('refuses the redaction list met in an option, a label, a legend or a posting description, naming no value (jobvite-new-2)',
@@ -3165,13 +3209,19 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
       // No typed text and no typed-list mark: only the listed string ("Roeville Heights", made up) takes the row's
       // words; its value and data-sr-id spell the place in a form no list holds ("roeville-hts-nj"), as the Wiser
       // capture's did before SMARTRECRUITERS P1 listed that form.
+      // (jr6 fixes, PRIV-7: a list holding that row beside a public one is refused now, a REDACTED among public rows
+      // telling it by elimination; so the public row stands in a list of its own here.)
       const file = await liveCapture(SR_ONE_CLICK, `<spl-autocomplete id="city" data-sr-id="location-autocomplete-other"></spl-autocomplete>
+<spl-autocomplete id="city2" data-sr-id="location-autocomplete-other"></spl-autocomplete>
 <script>
 const root = document.getElementById('city').attachShadow({ mode: 'open' });
 root.innerHTML = '<spl-input id="spl-form-element_4" type="text" value="" ariacontrols="menu-spl-form-element_4"></spl-input>'
   + '<div slot="menu" id="menu-spl-form-element_4" data-sr-id="location-autocomplete-other-menu" role="listbox">'
   + '<spl-select-option value="roeville-hts-nj" data-sr-id="location-autocomplete-other-option-roeville-hts-nj">'
-  + '<spl-truncate title="Roeville Heights, NJ, United States">Roeville Heights, NJ, United States</spl-truncate></spl-select-option>'
+  + '<spl-truncate title="Roeville Heights, NJ, United States">Roeville Heights, NJ, United States</spl-truncate></spl-select-option></div>';
+const other = document.getElementById('city2').attachShadow({ mode: 'open' });
+other.innerHTML = '<spl-input id="spl-form-element_5" type="text" value="" ariacontrols="menu-spl-form-element_5"></spl-input>'
+  + '<div slot="menu" id="menu-spl-form-element_5" data-sr-id="location-autocomplete-other-menu" role="listbox">'
   + '<spl-select-option value="alder-pa" data-sr-id="location-autocomplete-other-option-alder-pa">'
   + '<spl-truncate title="Alder, PA, United States">Alder, PA, United States</spl-truncate></spl-select-option></div>';
 </script>`, 'jr6r2-sr-gap');
@@ -3364,6 +3414,539 @@ ${select('country', '', ['Portugal', 'Spain'])}</form>`);
     }, 60_000);
 });
 // ── end jr6 round 2 ──
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ── jr6 fixes (TOOLING; the line W reviews of 2026-11-11: PRIV-2, PRIV-4, PRIV-6, PRIV-7, REVC-4). Each shape on a
+// synthetic page in the platform's own markup, captured by Chrome itself where the platform draws in shadow roots; the
+// privacy review's synthetic cases (T1 to T7) among them. Every value is made up. ──
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** ADP's sdf-select-simple list drawn open after a choice (snapshot6 adp1's State list, adp2's Questions; the review's
+ *  T1): the chosen item marked by its class, its aria-selected, the roving tab stop and the check mark its shadow root
+ *  draws. */
+const ADP_CHOSEN_LIST = `<label for="q1">How did you hear about this job?</label><sdf-select-simple id="q1"></sdf-select-simple>
+<script>
+const root = document.getElementById('q1').attachShadow({ mode: 'open' });
+root.innerHTML = '<div class="combo"><span id="selected-label" part="selected-label"><span>Beta Board</span></span>'
+  + '<div role="status" aria-live="polite" class="sr-only">Beta Board</div><div role="listbox" id="listbox">'
+  + ['Alpha Board', 'Beta Board', 'Gamma Board'].map((words, at) => '<sdf-select-item role="option" aria-selected="'
+    + (at === 1) + '" tabindex="' + (at === 1 ? 0 : -1) + '" class="hydrated' + (at === 1 ? ' selected' : '') + '" value="'
+    + words + '" aria-label="' + words + '">' + words + '</sdf-select-item>').join('') + '</div></div>';
+for (const [at, item] of [...root.querySelectorAll('sdf-select-item')].entries()) {
+  item.attachShadow({ mode: 'open' }).innerHTML = '<div id="content"><slot></slot></div>' + (at === 1
+    ? '<div id="checked-icon"><sdf-icon aria-hidden="true" role="presentation" class="hydrated"></sdf-icon></div>' : '');
+}
+</script>`;
+
+/** SmartRecruiters' screening Yes/No answered (the Wiser screening capture; the review's T2): the chosen spl-radio
+ *  reflects checked="true", holds the roving tab stop and alone carries a name; each radio's shadow root says only where
+ *  it stands (first, last). */
+const SR_CHOSEN_RADIO = `<p>Are you 18 or older?</p><spl-radio-group id="g" required>
+<spl-radio id="r1" role="radio" aria-checked="false" tabindex="-1" label="Alpha" value="1" variant="default"></spl-radio>
+<spl-radio id="r2" role="radio" aria-checked="true" checked="true" tabindex="0" name="question_1" label="Beta" value="2" variant="default"></spl-radio>
+</spl-radio-group>
+<script>
+for (const [at, radio] of [...document.querySelectorAll('spl-radio')].entries()) {
+  radio.attachShadow({ mode: 'open' }).innerHTML = '<spl-internal-form-field class="c-spl-radio-wrapper c-spl-radio-wrapper--'
+    + (at === 0 ? 'first' : 'last') + '"><div class="c-spl-radio"><div class="c-spl-radio__ring"></div></div></spl-internal-form-field>';
+}
+</script>`;
+
+/** ADP's drawn Yes/No answered (snapshot6 adp2's Questions): the chosen sdf-radio-button holds the tab stop, and its
+ *  shadow root draws the dot (svg.toggled > circle.radio-dot); each radio's own class names its option. */
+const ADP_CHOSEN_RADIO = `<fieldset><legend>Are you 18 or older?</legend><sdf-radio-group id="rg" class="hydrated">
+<sdf-radio-button id="yes" class="question-yes-option hydrated" role="radio" aria-checked="false" tabindex="-1" label="Yes" value="Yes">Yes</sdf-radio-button>
+<sdf-radio-button id="no" class="question-no-option hydrated" role="radio" aria-checked="true" tabindex="0" label="No" value="No">No</sdf-radio-button>
+</sdf-radio-group></fieldset>
+<script>
+for (const [at, radio] of [...document.querySelectorAll('sdf-radio-button')].entries()) {
+  radio.attachShadow({ mode: 'open' }).innerHTML = '<div class="radio-button"><svg part="graphic" class="' + (at === 1 ? 'toggled' : '')
+    + '" viewBox="0 0 20 20"><circle class="radio-outline" cx="10" cy="10" r="9"></circle>'
+    + (at === 1 ? '<circle class="radio-dot" cx="10" cy="10" r="5"></circle>' : '')
+    + '</svg></div><div class="label-container" part="label-container"><label part="label"><slot></slot></label></div>';
+}
+</script>`;
+
+/** A converted page served as the e2e harness serves it, read with its shadow roots: each CHOICE_ROWS entry's groups
+ *  and how many read apart (unevenChoiceRowsInPage, as the conversion runs it). */
+async function rowsOf(conversion: Awaited<ReturnType<typeof convertMhtml>>, url: string) {
+  const { context } = await servedContext(conversion);
+  try {
+    const page = await context.newPage();
+    await page.goto(url);
+    await page.evaluate(deepenInPage);
+    return await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS, ...CHOICE_ROW_INPUT });
+  } finally {
+    await context.close();
+  }
+}
+
+/** The CHOICE_ROWS entry of a row tag. */
+const rowEntry = (row: string) => CHOICE_ROWS.findIndex((entry) => entry.row === row);
+
+describe('jr6 fixes: the chosen marks the line W reviews found (PRIV-2, REVC-4)', () => {
+  it("ADP's list: the chosen item's tab stop moves to the first item, its class and check mark go, rows alike (T1)",
+    async () => {
+      const file = await liveCapture(ADP_PAGE, ADP_CHOSEN_LIST, 'jr6fix-adp-list');
+      const conversion = await convertMhtml({ file, platform: 'adp', caseName: 'jr6fix-adp-list', redact: LISTED,
+        outDir: work });
+      const text = conversion.files[0]?.text ?? '';
+      expect(text).toContain('<span id="selected-label" part="selected-label"><span>REDACTED</span></span>');
+      expect(text).toContain('<sdf-select-item role="option" aria-selected="false" tabindex="0" class="hydrated" '
+        + 'value="Alpha Board" aria-label="Alpha Board"><template shadowrootmode="open"><div id="content"><slot></slot></div>'
+        + '</template>Alpha Board</sdf-select-item>');
+      expect(text).toContain('<sdf-select-item role="option" aria-selected="false" tabindex="-1" class="hydrated" '
+        + 'value="Beta Board" aria-label="Beta Board"><template shadowrootmode="open"><div id="content"><slot></slot></div>'
+        + '</template>Beta Board</sdf-select-item>');
+      const body = text.slice(text.indexOf(' -->') + 4);
+      for (const gone of ['checked-icon', '<sdf-icon', 'selected"', 'aria-selected="true"']) expect(body, gone).not.toContain(gone);
+      expect(text.match(/tabindex="0"/g)).toHaveLength(1);
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect((await rowsOf(conversion, ADP_PAGE))[rowEntry('sdf-select-item')]).toEqual({ groups: 1, uneven: 0 });
+    }, 60_000);
+
+  it("SmartRecruiters' Yes/No: the chosen radio's checked, name and tab stop go, the rows then alike (T2, REVC-4)",
+    async () => {
+      const file = await liveCapture(SR_ONE_CLICK, SR_CHOSEN_RADIO, 'jr6fix-sr-radio');
+      const conversion = await convertMhtml({ file, platform: 'smartrecruiters', caseName: 'jr6fix-sr-radio',
+        redact: LISTED, outDir: work });
+      const text = conversion.files[0]?.text ?? '';
+      expect(text).toContain('<spl-radio id="r1" role="radio" aria-checked="false" tabindex="0" label="Alpha" value="1" '
+        + 'variant="default"><template shadowrootmode="open">');
+      expect(text).toContain('<spl-radio id="r2" role="radio" aria-checked="false" tabindex="-1" label="Beta" value="2" '
+        + 'variant="default"><template shadowrootmode="open">');
+      for (const gone of [' checked=', 'name="question_1"', 'aria-checked="true"']) expect(text, gone).not.toContain(gone);
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect((await rowsOf(conversion, SR_ONE_CLICK))[rowEntry('spl-radio')]).toEqual({ groups: 1, uneven: 0 });
+    }, 60_000);
+
+  it("ADP's Yes/No: the chosen radio's toggled svg, its dot and its tab stop go, the rows then alike", async () => {
+    const file = await liveCapture(ADP_PAGE, ADP_CHOSEN_RADIO, 'jr6fix-adp-radio');
+    const conversion = await convertMhtml({ file, platform: 'adp', caseName: 'jr6fix-adp-radio', redact: LISTED,
+      outDir: work });
+    const text = conversion.files[0]?.text ?? '';
+    for (const gone of ['toggled', 'radio-dot', 'aria-checked="true"']) expect(text, gone).not.toContain(gone);
+    expect(text.match(/<svg part="graphic" class="" viewBox="0 0 20 20"><circle class="radio-outline" cx="10" cy="10" r="9">/g))
+      .toHaveLength(2);
+    expect(text).toContain('<sdf-radio-button id="yes" class="question-yes-option hydrated" role="radio" aria-checked="false" '
+      + 'tabindex="0" label="Yes" value="Yes">');
+    expect(text).toContain('<sdf-radio-button id="no" class="question-no-option hydrated" role="radio" aria-checked="false" '
+      + 'tabindex="-1" label="No" value="No">');
+    expect(chosenMarksIn(text)).toEqual([]);
+    expect((await rowsOf(conversion, ADP_PAGE))[rowEntry('sdf-radio-button')]).toEqual({ groups: 1, uneven: 0 });
+  }, 60_000);
+
+  it("strips Angular's state classes from a reactive form's components and groups, a form keeping its own (T3)",
+    async () => {
+      const { text } = await convertPage(SR_ONE_CLICK, 'smartrecruiters', 'jr6fix-angular', `<form class="ng-dirty ng-invalid">
+<div data-test="web" class="form-section ng-touched ng-dirty ng-valid">
+<oc-input formcontrolname="facebook" class="ng-touched ng-dirty ng-valid"><spl-input id="facebook-input" type="text" class="ng-touched ng-dirty ng-valid" value=""></spl-input></oc-input>
+<oc-input formcontrolname="twitter" class="ng-untouched ng-pristine ng-valid"><spl-input id="twitter-input" type="text" class="ng-untouched ng-pristine ng-valid" value=""></spl-input></oc-input>
+</div><spl-checkbox id="consent" data-test="consent-box" required class="ng-pristine ng-touched ng-valid"></spl-checkbox>
+<p class="note ng-hide ng-scope">AngularJS's other classes stay.</p></form>`);
+      for (const gone of ['ng-touched', 'ng-untouched', 'ng-pristine', 'ng-valid']) expect(text, gone).not.toContain(gone);
+      for (const kept of ['<form class="ng-dirty ng-invalid"', '<div data-test="web" class="form-section">',
+        '<oc-input formcontrolname="facebook" class="">', '<spl-input id="twitter-input" type="text" class="" value="">',
+        '<spl-checkbox id="consent" data-test="consent-box" required="" class="">', '<p class="note ng-hide ng-scope">']) {
+        expect(text, kept).toContain(kept);
+      }
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect(ANGULAR_STATE_ELEMENTS).toBe('[class*="ng-"]:not(form)');
+    }, 60_000);
+
+  it("moves a plain listbox's tab stop to its first option; a tab, a box group and an unanswered list keep theirs (T5)",
+    async () => {
+      const { text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-roving', `
+<label id="l" for="b">Favourite colour</label><button id="b" type="button" aria-haspopup="listbox">Choose</button>
+<div id="colours" role="listbox" aria-labelledby="l"><div role="option" tabindex="-1" aria-selected="false">Red</div>
+<div role="option" tabindex="0" aria-selected="true">Blue</div><div role="option" tabindex="-1" aria-selected="false">Green</div></div>
+<div id="sizes" role="listbox"><div role="option" tabindex="0">Small</div><div role="option" tabindex="-1">Large</div></div>
+<div role="tablist"><a role="tab" tabindex="-1" aria-selected="false" href="#o">Overview</a><a role="tab" tabindex="0" aria-selected="true" href="#a">Application</a></div>
+<div class="boxes"><div role="checkbox" tabindex="0" aria-checked="true">Remote</div><div role="checkbox" tabindex="0" aria-checked="false">Hybrid</div></div>
+<ul class="week"><li><span role="gridcell" tabindex="-1">1</span></li><li><span role="gridcell" tabindex="0">2</span></li></ul>
+<div id="towns" role="listbox"><spl-select-option tabindex="-1" value="n">North</spl-select-option><spl-select-option tabindex="0" value="s">South</spl-select-option></div>`);
+      expect(text).toContain('<div id="colours" role="listbox" aria-labelledby="l"><div role="option" tabindex="0" '
+        + 'aria-selected="false">Red</div>\n<div role="option" tabindex="-1" aria-selected="false">Blue</div>');
+      expect(text).toContain('<div id="sizes" role="listbox"><div role="option" tabindex="0">Small</div><div role="option" '
+        + 'tabindex="-1">Large</div></div>');
+      // No answer: the open tab keeps its stop (and its aria-selected); each box is a stop of its own.
+      expect(text).toContain('<a role="tab" tabindex="0" aria-selected="true" href="#a">Application</a>');
+      expect(text).toContain('<div role="checkbox" tabindex="0" aria-checked="false">Remote</div><div role="checkbox" '
+        + 'tabindex="0" aria-checked="false">Hybrid</div>');
+      // Rows of one kind in no widget roll up to the nearest element holding two of them.
+      expect(text).toContain('<li><span role="gridcell" tabindex="0">1</span></li><li><span role="gridcell" tabindex="-1">2</span></li>');
+      // A row that carries no role of its own (ROVING_TAGS: SmartRecruiters' spl-select-option) is read by its tag.
+      expect(text).toContain('<spl-select-option tabindex="0" value="n">North</spl-select-option><spl-select-option '
+        + 'tabindex="-1" value="s">South</spl-select-option>');
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect(ROVING_ROLES).not.toContain('tab');
+    }, 60_000);
+
+  it('reads each new kind of mark by its markup (the write check and the sweep), and no tab, box group or form', () => {
+    const kinds = (markup: string) => chosenMarksIn(`<!doctype html><html><body>${markup}</body></html>`);
+    const labels = CHOSEN_MARK_LABELS;
+    // T1: a lone stop off a list's first row, inside a declarative shadow root (its rows standing in their widget).
+    expect(kinds('<sdf-select-simple><template shadowrootmode="open"><div role="listbox"><sdf-select-item role="option" '
+      + 'tabindex="-1">A</sdf-select-item><sdf-select-item role="option" tabindex="0">B</sdf-select-item></div></template>'
+      + '</sdf-select-simple>')).toEqual([labels.roving]);
+    // T2: a reflected checked, and its tab stop; T5: a plain listbox's.
+    expect(kinds('<spl-radio-group><spl-radio role="radio" tabindex="-1"></spl-radio><spl-radio role="radio" checked="true" '
+      + 'tabindex="0"></spl-radio></spl-radio-group>')).toEqual([labels.reflected, labels.roving]);
+    expect(kinds('<div role="listbox"><div role="option" tabindex="-1">a</div><div role="option" tabindex="0">b</div>'
+      + '<div role="option">c</div></div>')).toEqual([labels.roving]);
+    expect(kinds('<div role="listbox"><spl-select-option tabindex="-1">a</spl-select-option><spl-select-option tabindex="0">'
+      + 'b</spl-select-option></div>')).toEqual([labels.roving]);
+    expect(kinds('<x-chip selected></x-chip><x-switch checked=""></x-switch>')).toEqual([labels.reflected]);
+    // A custom list item's selected keeps its own label (the security fix's rule), not this one too.
+    expect(kinds('<sl-tree-item selected></sl-tree-item>')).toEqual(['a list item that says it is selected']);
+    // T3: Angular's classes on a component or a group (AngularJS's on a control keep their own label).
+    expect(kinds('<oc-input formcontrolname="x" class="ng-touched ng-dirty ng-valid"></oc-input>')).toEqual([labels.angularComponent]);
+    expect(kinds('<div class="form-section ng-valid"></div><input class="ng-dirty">'))
+      .toEqual([labels.angularComponent, 'an AngularJS state class on a control']);
+    // ADP's drawn marks: the toggled svg (a CHOSEN_MARKS class) and the dot, the check mark in an item's shadow root.
+    expect(kinds('<sdf-radio-button role="radio"><template shadowrootmode="open"><svg class="toggled"><circle class="radio-dot">'
+      + '</circle></svg></template></sdf-radio-button>')).toEqual(['a chosen class CHOSEN_MARKS names', labels.drawing]);
+    expect(kinds('<sdf-select-item role="option"><template shadowrootmode="open"><div id="checked-icon"></div></template>'
+      + '</sdf-select-item>')).toEqual([labels.drawing]);
+    // No answer: a stop on the first row, every box a stop, an open tab, a form's own classes, an input's and an
+    // option's own state (each its own rule), a check mark id outside its host, a stop two rows hold.
+    expect(kinds('<div role="listbox"><div role="option" tabindex="0">a</div><div role="option" tabindex="-1">b</div></div>'
+      + '<div><span role="checkbox" tabindex="0"></span><span role="checkbox" tabindex="0"></span></div>'
+      + '<div role="tablist"><a role="tab" tabindex="-1"></a><a role="tab" tabindex="0"></a></div>'
+      + '<form class="ng-dirty ng-invalid"></form><select><option selected>x</option></select><div id="checked-icon"></div>'
+      + '<div role="radiogroup"><b role="radio" tabindex="0"></b><b role="radio" tabindex="0"></b><b role="radio" tabindex="-1"></b></div>'))
+      .toEqual([]);
+  });
+
+  it('refuses a page whose chosen row the clearing left marked, as it refuses any chosen mark (the backstop)', async () => {
+    const { roving, drawings } = CLEAR_CHOICE_INPUT;
+    const at = CHOSEN_MARKS.findIndex((mark) => mark.attributes?.includes('checked'));
+    expect(at).toBeGreaterThan(-1);
+    const [reflected] = CHOSEN_MARKS.splice(at, 1);
+    delete (CLEAR_CHOICE_INPUT as { roving?: unknown }).roving;
+    try {
+      const file = await liveCapture(SR_ONE_CLICK, SR_CHOSEN_RADIO, 'jr6fix-sr-refused');
+      const error = await convertMhtml({ file, platform: 'smartrecruiters', caseName: 'jr6fix-sr-refused', redact: LISTED,
+        outDir: work }).then(() => null, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConversionError);
+      expect((error as ConversionError).reasons).toEqual([
+        'jr6fix-sr-refused.html: choice groups (spl-radio-group) whose option rows still differ once cleared: 1, a chosen '
+          + 'mark the converter does not know',
+        `jr6fix-sr-refused.html: ${CHOSEN_MARK_LABELS.reflected} is still in the file`,
+        `jr6fix-sr-refused.html: ${CHOSEN_MARK_LABELS.roving} is still in the file`]);
+    } finally {
+      CHOSEN_MARKS.splice(at, 0, reflected!);
+      Object.assign(CLEAR_CHOICE_INPUT, { roving, drawings });
+    }
+  }, 60_000);
+
+  it('reads choice rows alike but for what names them, where they stand and an unanswered tab stop (REVC-4)', async () => {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    const uneven = async (markup: string) => {
+      await page.setContent(`<!doctype html><html><body>${markup}</body></html>`);
+      return (await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS, ...CHOICE_ROW_INPUT }))[rowEntry('spl-radio')];
+    };
+    const group = (rows: string[]) => `<spl-radio-group>${rows.join('')}</spl-radio-group>`;
+    // Alike: own values (id, value, label, a data- id), an unanswered tab stop on the first row, a class saying where.
+    expect(await uneven(group(['<spl-radio id="a" value="1" label="A" data-sr-id="q-a" tabindex="0" class="r r--first"></spl-radio>',
+      '<spl-radio id="b" value="2" label="B" data-sr-id="q-b" tabindex="-1" class="r r--last"></spl-radio>'])))
+      .toEqual({ groups: 1, uneven: 0 });
+    // Apart: a stop off the first row, a name on one row alone, an attribute only one row holds.
+    for (const rows of [['<spl-radio tabindex="-1"></spl-radio>', '<spl-radio tabindex="0"></spl-radio>'],
+      ['<spl-radio></spl-radio>', '<spl-radio name="q1"></spl-radio>'],
+      ['<spl-radio></spl-radio>', '<spl-radio data-picked="1"></spl-radio>']]) {
+      expect(await uneven(group(rows)), rows.join('')).toEqual({ groups: 1, uneven: 1 });
+    }
+    // A part one row's shadow root draws alone reads apart; the site's own row (FIXED_ROWS) is left out.
+    await page.setContent('<!doctype html><html><body><spl-radio-group><spl-radio></spl-radio><spl-radio></spl-radio>'
+      + '</spl-radio-group><div role="listbox"><spl-select-option value="a"></spl-select-option>'
+      + '<spl-select-option value="goToManualLocationMode"><b>Enter it</b></spl-select-option></div></body></html>');
+    await page.evaluate(() => {
+      for (const [at, radio] of [...document.querySelectorAll('spl-radio')].entries()) {
+        radio.attachShadow({ mode: 'open' }).innerHTML = at === 1 ? '<i class="dot"></i>' : '';
+      }
+    });
+    const read = await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS, ...CHOICE_ROW_INPUT });
+    expect(read[rowEntry('spl-radio')]).toEqual({ groups: 1, uneven: 1 });
+    expect(read[rowEntry('spl-select-option')]).toEqual({ groups: 0, uneven: 0 });
+    expect(CHOICE_ROWS.map(({ group: holder, row }) => `${holder} ${row}`)).toEqual(['fieldset.jv-input-group label.jv-input-group-row',
+      'spl-radio-group spl-radio', 'sdf-radio-group sdf-radio-button', '[role="listbox" i] sdf-select-item',
+      '[role="listbox" i] spl-select-option']);
+    await context.close();
+  }, 30_000);
+});
+
+/** iCIMS's posting reached from a job board (snapshot6 icims1's careers-sentinel shape, values made up): the wrapper's
+ *  address and its portal frame's carry iis, iisn and utm_source; the page links to Apply and to a sign-in whose
+ *  redirect holds them percent-encoded; a text run shows a campaign link. `value(name)` gives each parameter's value. */
+function icimsReferred(name: string, value: (parameter: string) => string): { file: string; top: string; portal: string } {
+  const top = `https://careers-acme.icims.com/jobs/1/engineer/job?iis=${value('iis')}&iisn=${value('iisn')}`
+    + `&utm_source=${value('utm_source')}`;
+  const portal = `${top}&in_iframe=1`;
+  const file = join(work, `${name}.mhtml`);
+  writeFileSync(file, mhtml(top, [
+    { type: 'text/html', id: 'frame-TOP@mhtml.blink', location: top, body: '<!DOCTYPE html><html><head><title>Careers</title>'
+      + `</head><body><h1>Careers</h1><a href="/jobs/1/engineer/job?mode=apply&amp;iis=${value('iis')}&amp;iisn=`
+      + `${value('iisn')}">Apply</a><iframe id="icims_content_iframe" src="cid:frame-PORTAL@mhtml.blink" width="900" `
+      + 'height="700"></iframe></body></html>' },
+    { type: 'text/html', id: 'frame-PORTAL@mhtml.blink', location: portal, body: '<!DOCTYPE html><html><body>'
+      + '<h1 class="iCIMS_Header">Engineer</h1><a class="iCIMS_ApplyOnlineButton" title="Apply for this job online" '
+      + `href="https://careers-acme.icims.com/jobs/1/engineer/login?iis=${value('iis')}&amp;iisn=${value('iisn')}&amp;`
+      + `utm_source=${value('utm_source')}&amp;mode=apply">Apply</a><a href="https://careers-acme.icims.com/jobs/1/`
+      + `engineer/login?redirect=%2Fjobs%2F1%3Fiis%3D${encodeURIComponent(value('iis'))}%26iisn%3D${value('iisn')}">Sign in</a>`
+      + `<p>Shared from https://careers-acme.icims.com/jobs/1/engineer/job?utm_campaign=${value('utm_campaign')}</p>`
+      + '</body></html>' },
+  ]));
+  return { file, top, portal };
+}
+
+describe('jr6 fixes: where the person came from (PRIV-4)', () => {
+  /** The made-up job board's values (none in the redaction list). */
+  const BOARD: Record<string, string> = { iis: 'Fixture+Board', iisn: 'FixtureBoard', utm_source: 'FixtureBoard',
+    utm_campaign: 'FixtureFall' };
+  const BOARD_WORDS = /Fixture(?:\+|%2B|%20| )?(?:Board|Fall)/i;
+
+  it("iCIMS's iis, iisn and utm_* read REDACTED in the header, the route map, the frame's src, the links and the text",
+    async () => {
+      const { file } = icimsReferred('jr6fix-referral', (name) => BOARD[name] ?? '');
+      const conversion = await convertMhtml({ file, platform: 'icims', caseName: 'jr6fix-referral', redact: LISTED,
+        outDir: work });
+      const [top = '', portal = ''] = conversion.files.map((output) => output.text);
+      const page = 'https://careers-acme.icims.com/jobs/1/engineer/job?iis=REDACTED&iisn=REDACTED&utm_source=REDACTED';
+      expect(headerOf(top).source).toBe(page);
+      expect(headerOf(portal).source).toBe(`${page}&in_iframe=1`);
+      expect(Object.keys(conversion.routes)).toEqual([page, `${page}&in_iframe=1`]);
+      expect(top).toContain('<iframe id="icims_content_iframe" src="https://careers-acme.icims.com/jobs/1/engineer/job?'
+        + 'iis=REDACTED&amp;iisn=REDACTED&amp;utm_source=REDACTED&amp;in_iframe=1"');
+      expect(top).toContain('<a href="/jobs/1/engineer/job?mode=apply&amp;iis=REDACTED&amp;iisn=REDACTED">Apply</a>');
+      expect(portal).toContain('href="https://careers-acme.icims.com/jobs/1/engineer/login?iis=REDACTED&amp;iisn=REDACTED&amp;'
+        + 'utm_source=REDACTED&amp;mode=apply">Apply</a>');
+      expect(portal).toContain('login?redirect=%2Fjobs%2F1%3Fiis%3DREDACTED%26iisn%3DREDACTED">Sign in</a>');
+      expect(portal).toContain('<p>Shared from https://careers-acme.icims.com/jobs/1/engineer/job?utm_campaign=REDACTED</p>');
+      expect(headerOf(top).redacted.referral).toBe(2);
+      expect(headerOf(portal).redacted.referral).toBe(6);
+      for (const output of conversion.files) expect(output.text, output.path).not.toMatch(BOARD_WORDS);
+      expect(JSON.stringify(conversion.routes)).not.toMatch(BOARD_WORDS);
+      // Served by its route map, the page loads its frame and asks for nothing else.
+      const { context, unexpected } = await servedContext(conversion);
+      const served = await context.newPage();
+      await served.goto(page);
+      expect(served.frames().map((each) => each.url())).toEqual([page, `${page}&in_iframe=1`]);
+      await context.close();
+      expect(unexpected).toEqual([]);
+      // The same capture whose addresses carry no board's value converts to the same files but the header's count.
+      const twin = icimsReferred('jr6fix-referral-twin', () => 'REDACTED');
+      const again = await convertMhtml({ file: twin.file, platform: 'icims', caseName: 'jr6fix-referral',
+        redact: LISTED, outDir: join(work, 'twin') });
+      const uncounted = (text: string) => text.replace(/,"referral":\d+/, '');
+      expect(again.files.map((output) => output.text)).toEqual(conversion.files.map((output) => uncounted(output.text)));
+      expect(Object.keys(again.routes)).toEqual(Object.keys(conversion.routes));
+    }, 60_000);
+
+  it("ADP's source reads REDACTED in its address and links; the other boards' tags by the same rule", async () => {
+    const { conversion, text } = await convertPage(`${ADP_PAGE}&source=XB&lang=en_US`, 'adp', 'jr6fix-adp-source',
+      `<a href="${ADP_PAGE}&amp;source=XB&amp;jobId=1">Engineer</a>`);
+    expect(headerOf(text).source).toBe(`${ADP_PAGE}&source=REDACTED&lang=en_US`);
+    expect(Object.keys(conversion.routes)).toEqual([`${ADP_PAGE}&source=REDACTED&lang=en_US`]);
+    expect(text).toContain(`<a href="${ADP_PAGE}&amp;source=REDACTED&amp;jobId=1">Engineer</a>`);
+    expect(text).not.toMatch(/source=XB/);
+    // Every name and prefix, plain, after &amp;, or percent-encoded once or twice; the value ends at the next separator.
+    expect(REFERRAL_PARAMS).toEqual(['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source']);
+    expect(REFERRAL_PREFIXES).toEqual(['utm_']);
+    const cases: Array<[string, string]> = [
+      ['https://jobs.jobvite.com/acme/job/oX1?__jvst=Job%20Board&__jvsd=FixtureBoard&nl=0',
+        'https://jobs.jobvite.com/acme/job/oX1?__jvst=REDACTED&__jvsd=REDACTED&nl=0'],
+      ['https://acme.wd1.myworkdayjobs.com/en-US/External/job/Remote/Engineer_R1?source=FixtureBoard',
+        'https://acme.wd1.myworkdayjobs.com/en-US/External/job/Remote/Engineer_R1?source=REDACTED'],
+      ['https://job-boards.greenhouse.io/acme/jobs/1?gh_src=1a2b3c4d5e#app', 'https://job-boards.greenhouse.io/acme/jobs/1?gh_src=REDACTED#app'],
+      ['https://jobs.lever.co/acme/1-2?lever-source=FixtureBoard&lever-origin=applied',
+        'https://jobs.lever.co/acme/1-2?lever-source=REDACTED&lever-origin=applied'],
+      ['/x?utm_medium=cpc&amp;utm_term=fixture+word&amp;utm_id=7', '/x?utm_medium=REDACTED&amp;utm_term=REDACTED&amp;utm_id=REDACTED'],
+      ['/login?redirect=%2Fjob%3Fsource%3DFixture%2520Board%26x%3D1', '/login?redirect=%2Fjob%3Fsource%3DREDACTED%26x%3D1'],
+      ['/a?r=%252Fjob%253Fiis%253DFixture%252BBoard%2526y%253D2', '/a?r=%252Fjob%253Fiis%253DREDACTED%2526y%253D2'],
+      // Not a referral parameter: another name holding the word, a fragment, an empty value, Simplify's own tag (which
+      // stripInjectedParams drops whole).
+      ['/y?resource=a&data_source=b&sourceId=c#source=d&source=', '/y?resource=a&data_source=b&sourceId=c#source=d&source='],
+      ['/z?utm_source=Simplify&k=1', '/z?utm_source=Simplify&k=1'],
+    ];
+    for (const [address, expectedAddress] of cases) expect(redactReferralParams(address).text, address).toBe(expectedAddress);
+    expect(withoutInjectedParams('https://acme.example/z?utm_source=Simplify&utm_medium=FixtureBoard'))
+      .toBe('https://acme.example/z?utm_medium=REDACTED');
+    expect(redactReferralParams('?iis=REDACTED&iisn=x')).toEqual({ text: '?iis=REDACTED&iisn=REDACTED', count: 1 });
+  }, 60_000);
+
+  it("refuses a referral parameter's value the redaction missed, in any form the final check reads (its needle)", () => {
+    const [needle] = referralNeedles();
+    const hits = (text: string) => checkedForms(text).some((form) => needle!.pattern.test(form));
+    for (const missed of ['<a href="/j?x=1&amp;gh_src=abc">', '<a href="/l?r=%2Fj%3Fiisn%3DBoard">', '<p>?utm_campaign=fall</p>',
+      '{"https://acme.example/j?source=XB":"fixtures/x.html"}']) {
+      expect(hits(missed), missed).toBe(true);
+    }
+    for (const kept of ['<a href="/j?x=1&amp;gh_src=REDACTED">', '<a href="/l?r=%2Fj%3Fiisn%3DREDACTED%26a%3D1">',
+      '<a href="/j?resource=a&amp;sourceId=b">', '<a href="/j?source=&amp;a=1">', '<p>open source=good</p>']) {
+      expect(hits(kept), kept).toBe(false);
+    }
+    expect(needle!.label).toBe('a referral-source parameter');
+  });
+
+  it('refuses a page whose referral value the redaction cannot read (the backstop)', async () => {
+    // A value written as an entity (">") ends the redaction's reading at once; the final check reads it decoded.
+    const error = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-referral-refused',
+      '<p>Shared from https://acme.example/jobs/1?gh_src=&gt;FixtureBoard</p>').then(() => null, (caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConversionError);
+    expect((error as ConversionError).reasons).toEqual(['jr6fix-referral-refused.html: a referral-source parameter is still '
+      + 'in the file']);
+  }, 60_000);
+});
+
+/** SmartRecruiters' list drawn open in shadow roots, untyped (a county, a school), values made up: each row an
+ *  spl-select-option whose role=option is inside its own shadow root, its words slotted; one row's words are a listed
+ *  string. With `typed`, the menu is the City search's (TYPED_LISTS), the manual row last (FIXED_ROWS). */
+const srList = (rows: string[], typed = false) => `<label for="county">County</label><spl-select id="county"></spl-select>
+<script>
+const root = document.getElementById('county').attachShadow({ mode: 'open' });
+root.innerHTML = '<div role="listbox" id="menu"${typed ? ' data-sr-id="location-autocomplete-search-menu"' : ''}>'
+  + ${JSON.stringify(rows)}.map((words) => '<spl-select-option value="' + words.toLowerCase().replace(/ /g, '-') + '">'
+    + words + '</spl-select-option>').join('')
+  + '${typed ? '<spl-select-option value="goToManualLocationMode">Enter it yourself</spl-select-option>' : ''}</div>';
+for (const option of root.querySelectorAll('spl-select-option')) {
+  option.attachShadow({ mode: 'open' }).innerHTML = '<div role="option" class="c-spl-select-option"><slot></slot></div>';
+}
+</script>`;
+
+describe('jr6 fixes: a listed string respelled in text (PRIV-6), in a list drawn in shadow roots (PRIV-7, REVC-4)', () => {
+  it("redacts a listed name respelled in the page's text, as attributes are, and counts it in the header (T4)", async () => {
+    const { text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-respelled-text', '<p>Your resume '
+      + '<b class="attached">Jane_Roe_Resume.pdf</b> is attached.</p><p>Signed by JaneRoe on the day.</p>'
+      + '<p>jane-roe and JANE.ROE and Jane%20Roe stay out; Roebuck and Janet Roe are other names.</p>');
+    expect(text).toContain('<b class="attached">REDACTED_Resume.pdf</b>');
+    expect(text).toContain('<p>Signed by REDACTED on the day.</p>');
+    expect(text).toContain('<p>REDACTED and REDACTED and REDACTED stay out; Roebuck and Janet Roe are other names.</p>');
+    expect(text).not.toMatch(/jane[\s_.%-]*(?:20)?roe/i);
+    expect(headerOf(text).redacted.respelledText).toBe(5);
+  }, 60_000);
+
+  it("refuses a listed name respelled in a text run no in-page pass reaches (the final check reads the page's text)",
+    async () => {
+      const error = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-respelled-refused',
+        '<p>Apply</p><template><p>Signed by JaneRoe</p></template>').then(() => null, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConversionError);
+      expect((error as ConversionError).reasons).toEqual(["jr6fix-respelled-refused.html: redact entry 1 survives in the "
+        + "page's text"]);
+      // Read by the conversion only: respelledIn's text reading is asked for (attributes alone by default).
+      const sources = respelledSources(LISTED);
+      expect(respelledIn('<p>JaneRoe</p><style>.jane-roe{}</style><!-- JaneRoe -->', sources)).toEqual([]);
+      expect(respelledIn('<p>JaneRoe</p><style>.jane-roe{}</style><!-- JaneRoe -->', sources, { text: true }))
+        .toEqual(["redact entry 1 survives in the page's text"]);
+      expect(respelledIn('<p title="a>b">Jane &amp; Roe? no: jane&#95;roe</p>', sources, { text: true }))
+        .toEqual(["redact entry 1 survives in the page's text"]);
+    }, 60_000);
+
+  it('refuses a fixed list in shadow roots with one listed row among public ones; a typed list and the site\'s row pass (T7)',
+    async () => {
+      const tail = ', where a REDACTED tells the value by elimination; give each synthetic text with --replace-text';
+      const fixed = await liveCapture(SR_ONE_CLICK, srList(['Adams', 'Jane Roe', 'Zephyr']), 'jr6fix-sr-fixed-list');
+      const error = await convertMhtml({ file: fixed, platform: 'smartrecruiters', caseName: 'jr6fix-sr-fixed-list',
+        redact: LISTED, outDir: work }).then(() => null, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConversionError);
+      expect((error as ConversionError).reasons).toEqual([
+        `jr6fix-sr-fixed-list.html: options (an <option> or a role=option) whose page text the redaction list met: 1${tail}`]);
+      // Respelled alone (its value, "jane-roe", and a joined spelling in its words) it is refused the same way.
+      const respelledRow = await liveCapture(SR_ONE_CLICK, srList(['Adams', 'JaneRoe', 'Zephyr']), 'jr6fix-sr-respelled-row');
+      await expect(convertMhtml({ file: respelledRow, platform: 'smartrecruiters', caseName: 'jr6fix-sr-respelled-row',
+        redact: LISTED, outDir: work })).rejects.toThrow('options (an <option> or a role=option) whose page text the '
+        + 'redaction list met: 1');
+      // A typed query's results lose their words whole, so they tell nothing; the site's own row is no candidate.
+      const typed = await liveCapture(SR_ONE_CLICK, srList(['Adams', 'Jane Roe', 'Zephyr'], true), 'jr6fix-sr-typed-list');
+      const conversion = await convertMhtml({ file: typed, platform: 'smartrecruiters', caseName: 'jr6fix-sr-typed-list',
+        redact: LISTED, outDir: work });
+      const text = conversion.files[0]?.text ?? '';
+      expect(text).toContain('Enter it yourself');
+      expect(text).not.toMatch(/Adams|Zephyr|jane/i);
+      // And a list whose one listed row the replacement gives synthetic words passes.
+      const replaced = await convertMhtml({ file: fixed, platform: 'smartrecruiters', caseName: 'jr6fix-sr-fixed-list',
+        redact: LISTED, outDir: work, replaceText: [{ selector: '#menu', text: 'Alder\nBirch\nCedar' }] });
+      expect(replaced.files[0]?.text).toContain('Alder');
+      expect(eliminatedListsIn(replaced.files[0]?.text ?? '')).toBe(0);
+      // Rows a level of shadow roots below their list, each drawing its words in its own shadow root: one place, the
+      // outermost row, read in its list across the shadow roots, its neighbours' words read from their shadow roots.
+      const deep = await liveCapture(SR_ONE_CLICK, `<div role="listbox" id="menu"><x-rows id="rows"></x-rows></div>
+<script>
+const root = document.getElementById('rows').attachShadow({ mode: 'open' });
+root.innerHTML = ['Adams', 'Jane Roe', 'Zephyr'].map((words) => '<spl-select-option value="' + words + '"></spl-select-option>').join('');
+for (const option of root.querySelectorAll('spl-select-option')) {
+  option.attachShadow({ mode: 'open' }).innerHTML = '<div role="option">' + option.getAttribute('value') + '</div>';
+}
+</script>`, 'jr6fix-sr-deep-list');
+      const deepError = await convertMhtml({ file: deep, platform: 'smartrecruiters', caseName: 'jr6fix-sr-deep-list',
+        redact: LISTED, outDir: work }).then(() => null, (caught: unknown) => caught);
+      expect((deepError as ConversionError).reasons).toEqual([
+        `jr6fix-sr-deep-list.html: options (an <option> or a role=option) whose page text the redaction list met: 1${tail}`]);
+    }, 90_000);
+
+  it('passes a native list whose REDACTED row stands beside a placeholder alone (a résumé picker), refuses one beside '
+    + 'public rows', async () => {
+    const picker = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-picker', '<label for="r">Resume</label>'
+      + '<select id="r"><option value="">Select a resume</option><option value="">Jane Roe CV.pdf</option></select>');
+    // (The row's words go whole once a listed string touched them: jr6 round 2.)
+    expect(picker.text).toContain('<option value="">Select a resume</option><option value="">REDACTED</option>');
+    await expect(convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-public-list', '<label for="m">Major</label>'
+      + '<select id="m"><option value="">Select</option><option value="1">Art</option><option value="2">Jane Roe</option>'
+      + '<option value="3">Zoology</option></select>')).rejects.toThrow('options (an <option> or a role=option) whose '
+      + 'page text the redaction list met: 1');
+  }, 60_000);
+
+  it('reads a written list that holds a REDACTED row beside public ones (eliminatedListsIn, the sweep)', () => {
+    const html = (body: string) => `<!doctype html><html><body>${body}</body></html>`;
+    // One REDACTED option among public ones tells it: a native select, an ARIA listbox, rows in declarative shadow roots.
+    expect(eliminatedListsIn(html('<select><option value="">Select</option><option value="1">Art</option>'
+      + '<option value="2">REDACTED</option></select>'))).toBe(1);
+    expect(eliminatedListsIn(html('<div role="listbox"><div role="option">Adams</div><div role="option">REDACTED, NJ</div>'
+      + '</div><ul role="menu"><li role="menuitem">Home</li><li role="menuitem">REDACTED</li></ul>'))).toBe(2);
+    expect(eliminatedListsIn(html('<spl-select><template shadowrootmode="open"><div role="listbox"><spl-select-option '
+      + 'value="a"><template shadowrootmode="open"><div role="option"><slot></slot></div></template>Adams'
+      + '</spl-select-option><spl-select-option value="REDACTED">REDACTED</spl-select-option></div></template></spl-select>')))
+      .toBe(1);
+    // Nothing told: every row REDACTED or blank (a typed query's results), a placeholder beside it, the site's own row
+    // beside it, a row nested in a row (read with it), a row in no list, or a list with no REDACTED row.
+    for (const body of ['<select><option>REDACTED</option><option>REDACTED</option><option></option></select>',
+      '<select><option value="">Select a resume</option><option value="">REDACTED</option></select>',
+      '<div role="listbox"><spl-select-option value="REDACTED">REDACTED</spl-select-option><spl-select-option '
+        + 'value="goToManualLocationMode">Enter it yourself</spl-select-option></div>',
+      '<div role="listbox"><div role="option">REDACTED <span role="option">Adams</span></div></div>',
+      '<div><div role="option">Adams</div><div role="option">REDACTED</div></div>',
+      '<select><option>Art</option><option>Zoology</option></select>']) {
+      expect(eliminatedListsIn(html(body)), body).toBe(0);
+    }
+    expect(LISTED_LISTS).toContain('[role="listbox" i]');
+  });
+
+  it('every committed fixture: no list tells a listed value by elimination, but the files handed back (REVC-4)', () => {
+    const pages = committedFixtureFiles().filter((file) => file.endsWith('.html'));
+    expect(pages.length).toBeGreaterThan(300);
+    const told = Object.fromEntries(pages.flatMap((file) => {
+      const lists = eliminatedListsIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'));
+      return lists > 0 ? [[file, lists]] : [];
+    }));
+    // Each file let through holds no more such lists than it did; converted again, it holds none and its entry goes.
+    for (const [file, lists] of Object.entries(told)) {
+      expect(lists, file).toBeLessThanOrEqual(ELIMINATED_FIXTURES[file] ?? 0);
+    }
+  });
+});
+
+/**
+ * jr6 fixes (REVC-4 b): the committed fixtures converted before the converter refused it, which still hold lists where
+ * one REDACTED row stands beside public ones (each file's count): UltiPro's two education pages (the field-of-study
+ * selects, REVC-2: ULTIPRO converts them again; SP\jr6\leakscan\VERDICTS.md 4.2) and SeatGeek's site menus (a company
+ * page, no package this round). A file converted again holds none, and its entry then goes.
+ */
+const ELIMINATED_FIXTURES: Record<string, number> = {
+  'ultipro/application.html': 2,
+  'ultipro/resume-review.html': 2,
+  'sites/seatgeek-greenhouse-embed.html': 5,
+};
 
 /** jr6 (item 8): every jr6 case's page and frame in a platform's folder (or sites/), outside the frozen lists above. */
 const JR6_FILES = readdirSync(join(ROOT, 'fixtures'), { withFileTypes: true })
