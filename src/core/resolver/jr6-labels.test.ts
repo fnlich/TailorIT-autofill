@@ -222,9 +222,12 @@ const NEAR_MISSES: Array<[string, Case, FieldCategory]> = [
   ['14', { label: 'Did you attend a school in the United Kingdom?', kind: 'radio' }, 'education.school'],
   // 17: text that is no message to the person.
   ['17', { label: 'Please confirm the text you entered above is correct', kind: 'checkbox' }, 'consent.sms'],
-  // 18: a referral that names no employee; how the person heard.
+  // 16: the person's own country of residence.
+  ['16', { label: 'Country of residence', kind: 'select' }, 'location.policyResidence'],
+  // 18: a referral that names no employee; how the person heard; the source, not a name.
   ['18', { label: 'Were you referred by a recruiter?', kind: 'radio' }, 'referral.employeeReferred'],
   ['18', { label: 'How did you hear about us?', kind: 'select' }, 'referral.employeeReferred'],
+  ['18', { label: 'Referral source', kind: 'select' }, 'referral.referrerName'],
   // 19: a residence asked outright, or a place outside.
   ['19', { label: 'Do you live in Illinois?', kind: 'radio' }, 'location.residesIn'],
   ['19', { label: 'If you live outside the United States, which time zone are you in?', kind: 'select' },

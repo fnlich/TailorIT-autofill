@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { inputOf as matchInputOf, outcomeOf } from '../matcher/matcher.testkit';
+import { openTopicsOfTexts } from '../resolver/classify';
 import { classifyField, datePartChoice, datePartOf, dayOfLabel } from '../resolver/resolve';
 import { countyChoice } from '../resolver/values';
 import { DEFAULT_SETTINGS } from '../types/settings';
@@ -200,6 +201,12 @@ describe('10 (ICIMS-10): a date’s day part', () => {
       .toEqual({ kind: 'text', text: '14' });
   });
 
+  it('reads "day" as a part only in a box that holds one: a whole date box keeps the whole date', () => {
+    const whole = specOf('Start date day', 'text', { section: { id: 'experience', block: 0 },
+      constraints: { pattern: 'MM/YYYY' } });
+    expect(written(planned([whole], whole).write)).toBe('06/2021');
+  });
+
   it('types the year alone into the year box, and the day alone into a two-character day box', () => {
     const year = specOf('Start Date (if you do not know the day, enter 1) year', 'text', {
       section: { id: 'experience', block: 0 }, constraints: { maxLength: 4 } });
@@ -308,8 +315,12 @@ describe('16 (JV-9): the privacy policy’s residence', () => {
       'United States - English', 'Global - English']);
     const single = gate(['Select...', 'Global NinjaOne Candidate Privacy Policy - English']);
     const global = gate(['Select...', 'EU - Deutsch', 'Global - English', 'Japan - 日本語']);
+    // NinjaOne's own two options (fixtures/jobvite/ninjaone-consent-empty).
+    const ninjaone = gate(['Select your location of residence and language',
+      'Global NinjaOne Candidate Privacy Policy - English']);
     for (const [spec, label] of [[byCountry, 'United States - English'], [single,
-      'Global NinjaOne Candidate Privacy Policy - English'], [global, 'Global - English']] as const) {
+      'Global NinjaOne Candidate Privacy Policy - English'], [global, 'Global - English'],
+    [ninjaone, 'Global NinjaOne Candidate Privacy Policy - English']] as const) {
       expect(planned([spec], spec).write, label).toMatchObject({ value: { cleanLabel: label },
         origin: { provenance: 'rule', ruleId: 'location.policy-residence' } });
       expect(planned([spec], spec).row.status).toBe('flagged');
@@ -398,6 +409,14 @@ describe('20 (jobvite-new-1): a restrictive agreement asked as a fact goes to th
   it('never opens an ask to agree to one', () => {
     const ask = specOf('Do you agree to sign a non-compete agreement?', 'radio', { optionLabels: ['Yes', 'No'] });
     expect(planOf([ask]).ask?.answers ?? []).toEqual([]);
+  });
+
+  it('reads "agreement" as a contract only in a restrictive agreement, never in a consent', () => {
+    expect(openTopicsOfTexts(['Are you currently subject to a non-compete, non-solicitation or any other restrictive '
+      + 'employment agreement?'], ['Yes', 'No'], vocab, false)).toEqual(new Set());
+    expect(openTopicsOfTexts(['Do you agree to our terms of employment?'], ['Yes', 'No'], vocab, false)).toBeNull();
+    expect(openTopicsOfTexts(['Do you agree to sign a confidentiality agreement?'], ['Yes', 'No'], vocab, false))
+      .toBeNull();
   });
 });
 
