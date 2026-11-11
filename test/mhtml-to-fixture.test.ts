@@ -69,6 +69,10 @@ import {
   CLEAR_CHOICE_INPUT,
   deepenInPage,
   ROVING_ROLES,
+  REFERRAL_PARAMS,
+  REFERRAL_PREFIXES,
+  redactReferralParams,
+  referralNeedles,
   // ── snapshot build 2026-11-06 (core pass Z1, item 36) ──
   CHOSEN_MARKS,
   PROFILE_PLACES,
@@ -1372,8 +1376,9 @@ describe('mhtml-to-fixture, snapshot build: boards', () => {
     expect(withoutInjectedParams('https://apply.workable.com/x/j/2F8F576E57/apply?utm_source=Simplify'))
       .toBe('https://apply.workable.com/x/j/2F8F576E57/apply');
     expect(withoutInjectedParams('https://x.example/a?utm_source=Simplify&b=2')).toBe('https://x.example/a?b=2');
-    expect(withoutInjectedParams('https://x.example/a?utm_source=SimplifyJobs')).toBe('https://x.example/a?utm_source=SimplifyJobs');
-    expect(withoutInjectedParams('https://x.example/a?utm_source=LinkedIn')).toBe('https://x.example/a?utm_source=LinkedIn');
+    // jr6 fixes (PRIV-4): any other utm_source is a referral: it stays, its value REDACTED (where the person came from).
+    expect(withoutInjectedParams('https://x.example/a?utm_source=SimplifyJobs')).toBe('https://x.example/a?utm_source=REDACTED');
+    expect(withoutInjectedParams('https://x.example/a?utm_source=LinkedIn')).toBe('https://x.example/a?utm_source=REDACTED');
     expect(INJECTED_PARAMS).toEqual(['jr_id', 'utm_source=Simplify']);
     // The fix of 2026-11-08: Jobright's Edit with AI hosts too (snapshot5).
     expect(INJECTED_UI).toEqual(['plasmo-csui#jobright-helper-plugin', '#swooped-extension-root', '.jr-edit-ai-host']);
@@ -3658,6 +3663,129 @@ describe('jr6 fixes: the chosen marks the line W reviews found (PRIV-2, REVC-4)'
       '[role="listbox" i] spl-select-option']);
     await context.close();
   }, 30_000);
+});
+
+/** iCIMS's posting reached from a job board (snapshot6 icims1's careers-sentinel shape, values made up): the wrapper's
+ *  address and its portal frame's carry iis, iisn and utm_source; the page links to Apply and to a sign-in whose
+ *  redirect holds them percent-encoded; a text run shows a campaign link. `value(name)` gives each parameter's value. */
+function icimsReferred(name: string, value: (parameter: string) => string): { file: string; top: string; portal: string } {
+  const top = `https://careers-acme.icims.com/jobs/1/engineer/job?iis=${value('iis')}&iisn=${value('iisn')}`
+    + `&utm_source=${value('utm_source')}`;
+  const portal = `${top}&in_iframe=1`;
+  const file = join(work, `${name}.mhtml`);
+  writeFileSync(file, mhtml(top, [
+    { type: 'text/html', id: 'frame-TOP@mhtml.blink', location: top, body: '<!DOCTYPE html><html><head><title>Careers</title>'
+      + `</head><body><h1>Careers</h1><a href="/jobs/1/engineer/job?mode=apply&amp;iis=${value('iis')}&amp;iisn=`
+      + `${value('iisn')}">Apply</a><iframe id="icims_content_iframe" src="cid:frame-PORTAL@mhtml.blink" width="900" `
+      + 'height="700"></iframe></body></html>' },
+    { type: 'text/html', id: 'frame-PORTAL@mhtml.blink', location: portal, body: '<!DOCTYPE html><html><body>'
+      + '<h1 class="iCIMS_Header">Engineer</h1><a class="iCIMS_ApplyOnlineButton" title="Apply for this job online" '
+      + `href="https://careers-acme.icims.com/jobs/1/engineer/login?iis=${value('iis')}&amp;iisn=${value('iisn')}&amp;`
+      + `utm_source=${value('utm_source')}&amp;mode=apply">Apply</a><a href="https://careers-acme.icims.com/jobs/1/`
+      + `engineer/login?redirect=%2Fjobs%2F1%3Fiis%3D${encodeURIComponent(value('iis'))}%26iisn%3D${value('iisn')}">Sign in</a>`
+      + `<p>Shared from https://careers-acme.icims.com/jobs/1/engineer/job?utm_campaign=${value('utm_campaign')}</p>`
+      + '</body></html>' },
+  ]));
+  return { file, top, portal };
+}
+
+describe('jr6 fixes: where the person came from (PRIV-4)', () => {
+  /** The made-up job board's values (none in the redaction list). */
+  const BOARD: Record<string, string> = { iis: 'Fixture+Board', iisn: 'FixtureBoard', utm_source: 'FixtureBoard',
+    utm_campaign: 'FixtureFall' };
+  const BOARD_WORDS = /Fixture(?:\+|%2B|%20| )?(?:Board|Fall)/i;
+
+  it("iCIMS's iis, iisn and utm_* read REDACTED in the header, the route map, the frame's src, the links and the text",
+    async () => {
+      const { file } = icimsReferred('jr6fix-referral', (name) => BOARD[name] ?? '');
+      const conversion = await convertMhtml({ file, platform: 'icims', caseName: 'jr6fix-referral', redact: LISTED,
+        outDir: work });
+      const [top = '', portal = ''] = conversion.files.map((output) => output.text);
+      const page = 'https://careers-acme.icims.com/jobs/1/engineer/job?iis=REDACTED&iisn=REDACTED&utm_source=REDACTED';
+      expect(headerOf(top).source).toBe(page);
+      expect(headerOf(portal).source).toBe(`${page}&in_iframe=1`);
+      expect(Object.keys(conversion.routes)).toEqual([page, `${page}&in_iframe=1`]);
+      expect(top).toContain('<iframe id="icims_content_iframe" src="https://careers-acme.icims.com/jobs/1/engineer/job?'
+        + 'iis=REDACTED&amp;iisn=REDACTED&amp;utm_source=REDACTED&amp;in_iframe=1"');
+      expect(top).toContain('<a href="/jobs/1/engineer/job?mode=apply&amp;iis=REDACTED&amp;iisn=REDACTED">Apply</a>');
+      expect(portal).toContain('href="https://careers-acme.icims.com/jobs/1/engineer/login?iis=REDACTED&amp;iisn=REDACTED&amp;'
+        + 'utm_source=REDACTED&amp;mode=apply">Apply</a>');
+      expect(portal).toContain('login?redirect=%2Fjobs%2F1%3Fiis%3DREDACTED%26iisn%3DREDACTED">Sign in</a>');
+      expect(portal).toContain('<p>Shared from https://careers-acme.icims.com/jobs/1/engineer/job?utm_campaign=REDACTED</p>');
+      expect(headerOf(top).redacted.referral).toBe(2);
+      expect(headerOf(portal).redacted.referral).toBe(6);
+      for (const output of conversion.files) expect(output.text, output.path).not.toMatch(BOARD_WORDS);
+      expect(JSON.stringify(conversion.routes)).not.toMatch(BOARD_WORDS);
+      // Served by its route map, the page loads its frame and asks for nothing else.
+      const { context, unexpected } = await servedContext(conversion);
+      const served = await context.newPage();
+      await served.goto(page);
+      expect(served.frames().map((each) => each.url())).toEqual([page, `${page}&in_iframe=1`]);
+      await context.close();
+      expect(unexpected).toEqual([]);
+      // The same capture whose addresses carry no board's value converts to the same files but the header's count.
+      const twin = icimsReferred('jr6fix-referral-twin', () => 'REDACTED');
+      const again = await convertMhtml({ file: twin.file, platform: 'icims', caseName: 'jr6fix-referral',
+        redact: LISTED, outDir: join(work, 'twin') });
+      const uncounted = (text: string) => text.replace(/,"referral":\d+/, '');
+      expect(again.files.map((output) => output.text)).toEqual(conversion.files.map((output) => uncounted(output.text)));
+      expect(Object.keys(again.routes)).toEqual(Object.keys(conversion.routes));
+    }, 60_000);
+
+  it("ADP's source reads REDACTED in its address and links; the other boards' tags by the same rule", async () => {
+    const { conversion, text } = await convertPage(`${ADP_PAGE}&source=XB&lang=en_US`, 'adp', 'jr6fix-adp-source',
+      `<a href="${ADP_PAGE}&amp;source=XB&amp;jobId=1">Engineer</a>`);
+    expect(headerOf(text).source).toBe(`${ADP_PAGE}&source=REDACTED&lang=en_US`);
+    expect(Object.keys(conversion.routes)).toEqual([`${ADP_PAGE}&source=REDACTED&lang=en_US`]);
+    expect(text).toContain(`<a href="${ADP_PAGE}&amp;source=REDACTED&amp;jobId=1">Engineer</a>`);
+    expect(text).not.toMatch(/source=XB/);
+    // Every name and prefix, plain, after &amp;, or percent-encoded once or twice; the value ends at the next separator.
+    expect(REFERRAL_PARAMS).toEqual(['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source']);
+    expect(REFERRAL_PREFIXES).toEqual(['utm_']);
+    const cases: Array<[string, string]> = [
+      ['https://jobs.jobvite.com/acme/job/oX1?__jvst=Job%20Board&__jvsd=FixtureBoard&nl=0',
+        'https://jobs.jobvite.com/acme/job/oX1?__jvst=REDACTED&__jvsd=REDACTED&nl=0'],
+      ['https://acme.wd1.myworkdayjobs.com/en-US/External/job/Remote/Engineer_R1?source=FixtureBoard',
+        'https://acme.wd1.myworkdayjobs.com/en-US/External/job/Remote/Engineer_R1?source=REDACTED'],
+      ['https://job-boards.greenhouse.io/acme/jobs/1?gh_src=1a2b3c4d5e#app', 'https://job-boards.greenhouse.io/acme/jobs/1?gh_src=REDACTED#app'],
+      ['https://jobs.lever.co/acme/1-2?lever-source=FixtureBoard&lever-origin=applied',
+        'https://jobs.lever.co/acme/1-2?lever-source=REDACTED&lever-origin=applied'],
+      ['/x?utm_medium=cpc&amp;utm_term=fixture+word&amp;utm_id=7', '/x?utm_medium=REDACTED&amp;utm_term=REDACTED&amp;utm_id=REDACTED'],
+      ['/login?redirect=%2Fjob%3Fsource%3DFixture%2520Board%26x%3D1', '/login?redirect=%2Fjob%3Fsource%3DREDACTED%26x%3D1'],
+      ['/a?r=%252Fjob%253Fiis%253DFixture%252BBoard%2526y%253D2', '/a?r=%252Fjob%253Fiis%253DREDACTED%2526y%253D2'],
+      // Not a referral parameter: another name holding the word, a fragment, an empty value, Simplify's own tag (which
+      // stripInjectedParams drops whole).
+      ['/y?resource=a&data_source=b&sourceId=c#source=d&source=', '/y?resource=a&data_source=b&sourceId=c#source=d&source='],
+      ['/z?utm_source=Simplify&k=1', '/z?utm_source=Simplify&k=1'],
+    ];
+    for (const [address, expectedAddress] of cases) expect(redactReferralParams(address).text, address).toBe(expectedAddress);
+    expect(withoutInjectedParams('https://acme.example/z?utm_source=Simplify&utm_medium=FixtureBoard'))
+      .toBe('https://acme.example/z?utm_medium=REDACTED');
+    expect(redactReferralParams('?iis=REDACTED&iisn=x')).toEqual({ text: '?iis=REDACTED&iisn=REDACTED', count: 1 });
+  }, 60_000);
+
+  it("refuses a referral parameter's value the redaction missed, in any form the final check reads (its needle)", () => {
+    const [needle] = referralNeedles();
+    const hits = (text: string) => checkedForms(text).some((form) => needle!.pattern.test(form));
+    for (const missed of ['<a href="/j?x=1&amp;gh_src=abc">', '<a href="/l?r=%2Fj%3Fiisn%3DBoard">', '<p>?utm_campaign=fall</p>',
+      '{"https://acme.example/j?source=XB":"fixtures/x.html"}']) {
+      expect(hits(missed), missed).toBe(true);
+    }
+    for (const kept of ['<a href="/j?x=1&amp;gh_src=REDACTED">', '<a href="/l?r=%2Fj%3Fiisn%3DREDACTED%26a%3D1">',
+      '<a href="/j?resource=a&amp;sourceId=b">', '<a href="/j?source=&amp;a=1">', '<p>open source=good</p>']) {
+      expect(hits(kept), kept).toBe(false);
+    }
+    expect(needle!.label).toBe('a referral-source parameter');
+  });
+
+  it('refuses a page whose referral value the redaction cannot read (the backstop)', async () => {
+    // A value written as an entity (">") ends the redaction's reading at once; the final check reads it decoded.
+    const error = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-referral-refused',
+      '<p>Shared from https://acme.example/jobs/1?gh_src=&gt;FixtureBoard</p>').then(() => null, (caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConversionError);
+    expect((error as ConversionError).reasons).toEqual(['jr6fix-referral-refused.html: a referral-source parameter is still '
+      + 'in the file']);
+  }, 60_000);
 });
 
 /** jr6 (item 8): every jr6 case's page and frame in a platform's folder (or sites/), outside the frozen lists above. */

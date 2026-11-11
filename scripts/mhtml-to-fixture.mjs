@@ -152,6 +152,12 @@
 //     ROVING_GROUP_TAGS widgets); and CHOICE_ROWS reads SmartRecruiters' spl-radio and spl-select-option and ADP's
 //     sdf-radio-button and sdf-select-item groups too, a row's shadow root and its tab stop included;
 //   and it refuses a file that still holds any of them (chosenMarksIn, CHOSEN_MARK_LABELS).
+//   - PRIV-4: where the person came to the posting from (REFERRAL_PARAMS: iCIMS's iis and iisn, ADP's and Workday's
+//     source, Jobvite's __jvst and __jvsd, Greenhouse's gh_src, Lever's lever-source; every utm_*) is a per-visit value:
+//     REDACTED in every address the converter writes (the header's source, the route map, the frames' src: by
+//     withoutInjectedParams) and in each frame's written links and text (redactReferralParams), plain, after &amp; or
+//     percent-encoded once or twice; the header counts them (redacted.referral) and the final check refuses one left
+//     (referralNeedles).
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -730,10 +736,54 @@ export const PER_LOAD_PARAMS = ['validityToken', 'bft', 'hsutk', '__hstc', '__hs
  *  withoutInjectedParams and stripInjectedInPage read it. */
 const PER_LOAD_SOURCE = `([?&](?:${PER_LOAD_PARAMS.join('|')})=)[^&#]*`;
 
+// ── jr6 fixes (TOOLING; the line W privacy review, PRIV-4): where the person came to the posting from ──
+/** Query parameters that say how the person arrived at a posting: a job board's or a campaign's tag, which is the very
+ *  fact FIXPLAN §0 protects as the owner's answer to ADP's "How did you learn about this position?". A per-visit value:
+ *  it becomes REDACTED in every address the converter writes (the header's source, the route map, the frames' src) and
+ *  in every link and text of the page (redactReferralParams), on every platform. iCIMS's iis and iisn (snapshot6 icims1:
+ *  careers-sentinel's posting, its frame, links and route map), ADP's source (snapshot6 adp1 and adp2: every address of
+ *  the application), and for the same reason Workday's source, Jobvite's __jvst and __jvsd, Greenhouse's gh_src and
+ *  Lever's lever-source; every REFERRAL_PREFIXES parameter too. Simplify's utm_source=Simplify stays INJECTED_PARAMS'
+ *  (dropped whole). */
+export const REFERRAL_PARAMS = ['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source'];
+/** The prefixes of referral parameters: every utm_* (utm_source, utm_medium, utm_campaign, utm_term, utm_content...;
+ *  careers-sentinel's address and frame, a company's own links). */
+export const REFERRAL_PREFIXES = ['utm_'];
+/** The pattern source (flags gi) of a referral parameter's value wherever an address holds one: its separator before
+ *  (?, &, &amp;, or percent-encoded once or twice inside another address), its name and = (or %3D, %253D) in group 1,
+ *  kept; its value up to the next separator, plain or percent-encoded (an INJECTED_PARAMS value is left for
+ *  stripInjectedParams, which drops it whole). */
+export const REFERRAL_SOURCE = `((?:\\?|&amp;|&|%3F|%26|%253F|%2526)(?:${[...REFERRAL_PARAMS.map(escapeSource),
+  ...REFERRAL_PREFIXES.map((prefix) => `${escapeSource(prefix)}[A-Za-z0-9_]+`)].join('|')})(?:=|%3D|%253D))`
+  + `(?!(?:${INJECTED_PARAMS.flatMap((entry) => (entry.includes('=') ? [escapeSource(entry.split('=')[1] ?? '')] : []))
+    .join('|')})(?![\\w-]))(?:(?!%26|%23|%2526|%2523)[^&#"'\\s<>])*`;
+
+/**
+ * jr6 fixes (PRIV-4): a text (an address, an attribute, a frame's whole serialized HTML) with each referral parameter's
+ * value REDACTED (REFERRAL_SOURCE); the values replaced go into `values` (kept in memory so the suspicious-token list
+ * leaves them out; never printed or written). Answers the text and how many it replaced.
+ * @param {string} text @param {string[]} [values] @returns {{ text: string; count: number }}
+ */
+export function redactReferralParams(text, values = []) {
+  let count = 0;
+  const out = text.replace(new RegExp(REFERRAL_SOURCE, 'gi'), (whole, key) => {
+    const value = whole.slice(key.length);
+    if (value === REDACTED || value === '') return whole;
+    values.push(value);
+    count += 1;
+    return `${key}${REDACTED}`;
+  });
+  return { text: out, count };
+}
+// ── end jr6 fixes (PRIV-4) ──
+
 /** An address with the INJECTED_PARAMS dropped from its query (stripInjectedParams), the PER_LOAD_PARAMS' values and
- *  its sign-in tokens REDACTED (redactSignInTokens; a relative address too), the rest as written. @param {string} url */
+ *  its sign-in tokens REDACTED (redactSignInTokens; a relative address too), the rest as written. jr6 fixes (PRIV-4):
+ *  and its referral parameters' values (redactReferralParams), so the header, the route map and the frames' src agree.
+ *  @param {string} url */
 export function withoutInjectedParams(url) {
-  return redactSignInTokens(stripInjectedParams(url).text.replace(new RegExp(PER_LOAD_SOURCE, 'g'), `$1${REDACTED}`));
+  return redactReferralParams(redactSignInTokens(stripInjectedParams(url).text
+    .replace(new RegExp(PER_LOAD_SOURCE, 'g'), `$1${REDACTED}`))).text;
 }
 
 /** Sign-in tokens an address carries, which no other check reads, being base64: an OpenID Connect id_token, a JWT whose
@@ -3512,6 +3562,18 @@ export function tokenNeedles() {
 }
 // ── end core pass Z1, item 38 ──
 
+/**
+ * jr6 fixes (PRIV-4): the final check's needle for a referral parameter (REFERRAL_PARAMS, REFERRAL_PREFIXES) whose value
+ * is not REDACTED, read over checkedForms' forms (so percent-encoded once too). Only a conversion reads it: committed
+ * fixtures converted before it carry public links' utm_* values (a company's footer), which the sweep leaves alone.
+ * @returns {Array<{ label: string; pattern: RegExp }>}
+ */
+export function referralNeedles() {
+  const names = [...REFERRAL_PARAMS.map(escapeSource), ...REFERRAL_PREFIXES.map((prefix) => `${escapeSource(prefix)}[a-z0-9_]+`)];
+  return [{ label: 'a referral-source parameter',
+    pattern: new RegExp(`[?&;](?:${names.join('|')})=(?!${REDACTED}(?:[&#"'\\s<]|$))(?=[^&#"'\\s<])`, 'i') }];
+}
+
 // ── The security fix of 2026-11-06 (S2, S3, S10): the chosen marks a written fixture may not hold ──
 /** The attributes of a start tag's text: name (lower case) to value, entities as written (none of the checks need them
  *  decoded). @param {string} text @returns {Map<string, string>} */
@@ -4049,9 +4111,15 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       // Another extension's parameters leave the frame's text by the one rule, wherever they stand (stripInjectedParams),
       // and so do its sign-in tokens (redactSignInTokens), on every platform.
       const injected = stripInjectedParams(serialized.html);
+      // jr6 fixes (PRIV-4): the referral parameters' values, in every link, frame address and text the frame writes
+      // (redactReferralParams), its shadow roots' included; the header's source and the route map read them from
+      // addressOf, which withoutInjectedParams gives the same rule.
+      /** @type {string[]} */
+      const referralValues = [];
+      const referred = redactReferralParams(injected.text, referralValues);
       /** @type {string[]} */
       const signInTokens = [];
-      const pageText = redactSignInTokens(injected.text, signInTokens);
+      const pageText = redactSignInTokens(referred.text, signInTokens);
       const normalised = platform === 'ashby' ? normaliseAshby(pageText)
         : platform === 'workable' ? { ...normaliseWorkable(pageText), nonces: 0 }
           : ['workday', 'icims', 'taleo', 'successfactors', 'oracle'].includes(platform)
@@ -4063,6 +4131,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       // sign-in token redacted is gone from the files: it is not listed.
       result.tokens.push(...outcome.tokens.filter(({ token }) => !injected.removed.some(({ value }) => value !== ''
         && token.includes(value)) && !signInTokens.some((value) => token.includes(value))
+        && !referralValues.some((value) => token.includes(value))
         && (normalised === null || !normalised.renderIds.some((id) => token.includes(id))
         && !(normalised.nonces > 0 && !html.includes(token))))
         .map((token) => ({ ...token, file: basename(path) })));
@@ -4084,6 +4153,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
           ...(counts.respelled > 0 ? { respelled: counts.respelled } : {}),
           ...(rowNames.rows > 0 ? { listRows: rowNames } : {}),
           ...(signInTokens.length > 0 ? { signInTokens: signInTokens.length } : {}),
+          // jr6 fixes (PRIV-4): the referral parameters' values redacted in the frame's text (only when there was one).
+          ...(referred.count > 0 ? { referral: referred.count } : {}),
           ...(own?.counts === 'header' && ownCounts !== null ? { [platform]: ownCounts } : {}) },
         removed: { scripts: counts.scripts, eventHandlers: counts.eventHandlers, javascriptUrls: counts.javascriptUrls,
           bases: counts.bases, metaRefresh: counts.metaRefresh, metaHttpEquiv: counts.metaHttpEquiv,
@@ -4106,6 +4177,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         ...((replaced[index] ?? []).some((count) => count > 0) ? { replacedText: replaced[index] } : {}),
       };
       result.counts[basename(path)] = { ...counts, ...took, choices, applicantText: applicant.applicantText, jrIds,
+        referral: referred.count,
         listRows: rowNames.rows, rowWords: rowNames.words, rowNames: rowNames.names, rowIds: rowNames.ids };
       const comment = `<!-- TailorIT fixture, converted by scripts/mhtml-to-fixture.mjs: convert the capture again ` +
         `rather than editing it.\n${commentJson(header)} -->`;
@@ -4181,7 +4253,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       ...[...found].filter((value) => value.includes('@')).map((value) => ({ label: 'a redacted email', pattern: new RegExp(escapeRegExp(value), 'i') })),
       // A file name the page showed (redactApplicantTextInPage), and Jobright's jr_id anywhere (DESIGN-NEW-ATS §6.4, §6.5).
       ...[...fileNames].map((value) => ({ label: 'a redacted file name', pattern: new RegExp(escapeRegExp(value), 'i') })),
-      ...tokenNeedles()];
+      ...tokenNeedles(), ...referralNeedles()];
     for (const output of [...result.files, { path: join(folder, `${caseName}.routes.json`), text: JSON.stringify(result.routes) }]) {
       const forms = checkedForms(output.text);
       for (const { label, pattern } of needles) {
