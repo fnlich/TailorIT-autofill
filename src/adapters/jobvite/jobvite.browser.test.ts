@@ -246,9 +246,11 @@ describe('the three steps (ninjaone-step1 to -step3)', () => {
     expect(pairs.map((field) => [field.label, field.labelSource, field.required])).toEqual([
       ['Your Name signature', 'adapter', true], ["Today's Date signature", 'adapter', true],
       ['Your Name signature', 'adapter', true], ["Today's Date signature", 'adapter', true]]);
-    // The name is the signature consent, never the profile's full name; the date asks a signature too (the person's).
+    // The name is the signature consent, never the profile's full name; the date is today's, on the signature's terms
+    // (consent.signature-date; jr6 RULES item 11, JV-1).
     expect(classifyByRules(toFieldSpec(pairs[0]!))?.category).toBe('consent.signature');
-    expect(classifyByRules(toFieldSpec(pairs[1]!))).toMatchObject({ asks: 'consent.signature', needsUser: 'kind-mismatch' });
+    expect(classifyByRules(toFieldSpec(pairs[1]!))).toMatchObject({ category: 'consent.signatureDate',
+      rule: 'label.signature-date' });
     // Step 1's names (JVA_NAME, but no self-identification form's) keep their own label[for].
     removeFixtures(document);
     const step1 = scanned(await open(step1Html)).fields;

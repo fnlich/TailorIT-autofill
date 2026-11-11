@@ -30,8 +30,8 @@
  * div.jv-form-field-input.JVA_NAME "Your Name" and .JVA_DATE "Today's Date", each labelled by its own label[for]), the
  * form's signature: their label is read with the word "signature" after it, before the label[for] alone (labelFirst),
  * so the name is the signature consent (resolver/labelRules.ts label.consent-signature), never the profile's full name
- * typed unasked, and the date asks the same (the person's: no rule fills a signature's date). No word on the page says
- * "signature": the pair's place at each form's end and its classes are all the markup shows.
+ * typed unasked, and the date is today's (labelRules label.signature-date, policy.ts signatureDateValue; jr6 JV-1). No
+ * word on the page says "signature": the pair's place at each form's end and its classes are all the markup shows.
  */
 import type { AtsConfig, ConfiguredHooks } from '../configured';
 import { configuredHooks } from '../configured';
