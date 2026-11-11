@@ -10,7 +10,8 @@
  *
  * The F1 fixer (the line P review, C7): the docs (docs/**.md) and the shared code beside the copy (src/shared/log.ts,
  * src/shared/stored.ts) too, words and the old log code `content.open-application`. File names keep the old name
- * (e2e 62-open-application, open-application-worker.test.ts, open-application.browser.test.tsx). History is kept as
+ * (e2e 62-open-application, open-application-worker.test.ts, open-application.browser.test.tsx, and since the jr6
+ * docs fold this test's own, which the docs name among the tests). History is kept as
  * written (APPLYPLAN §7): what v5 decided and asked then (docs/SPEC-AMENDMENTS.md §15, docs/OWNER-QUESTIONS.md §16 with
  * Q300-Q309) and what the disclosure's past versions said (ARCHITECTURE's "Disclosure version 11", PRIVACY's "This
  * wording changed" line, stored.ts's DISCLOSURE_VERSION comment). Every other line that still names it describes the
@@ -30,7 +31,8 @@ const OLD_NAME = /Open Application|openApplication/;
 /** In the docs and the shared code, its log code too. */
 const OLD_IN_DOCS = /Open Application|openApplication|open-application/;
 /** The file names that keep it. */
-const FILE_NAMES = /\b62-open-application(?:\.spec\.ts)?|\bopen-application-worker\.test\.ts|\bopen-application\.browser\.test\.tsx/g;
+const FILE_NAMES =
+  /\b62-open-application(?:\.spec\.ts)?|\bopen-application-worker\.test\.ts|\bopen-application\.browser\.test\.tsx|\bno-open-application\.test\.ts/g;
 
 /** History kept as written (module header): a section (its heading, to the next heading of its level or above), or one
  *  line, each found by words of its own. */
