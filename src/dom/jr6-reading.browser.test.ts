@@ -9,18 +9,26 @@
  *   beside its country code) is drawn by the box its adapter declares (Adapter.controlBox), and only by a box that holds
  *   it, encloses it, shows and draws something; on the owner's Oracle section page too (fixtures/oracle/
  *   hjf-apply-section.html, whose expectation lists the number box as camouflaged without the hook);
+ * - item 8 (ICIMS-14): a radio whose option words no label element holds (iCIMS's self-identification IForms: each
+ *   radio in its wrapper, its bare words after it) is read with the words its adapter reads (Adapter.optionTextFor),
+ *   only while a person sees them beside it; a label element still wins; the radio filler chooses by those words; on
+ *   the owner's IForm page too (fixtures/icims/edgewater-self-id-veteran.frame-2.html);
  * Every value is synthetic (no owner data), but the Oracle fixture's, which is the converted, redacted capture.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import edgewaterVeteranHtml from '../../fixtures/icims/edgewater-self-id-veteran.frame-2.html?raw';
 import hjfApplySectionHtml from '../../fixtures/oracle/hjf-apply-section.html?raw';
 import { genericAdapter } from '../adapters/generic';
+import { icimsAdapter } from '../adapters/icims';
 import { oracleAdapter } from '../adapters/oracle';
 import { SNAPSHOT_VIEWPORT } from '../adapters/test/expectations.testkit';
 import type { Adapter } from '../adapters/types';
 import { accountFormOf, accountLeft, accountRowsIn, accountSectionOf } from './account-section';
 import { loadFixture, removeFixtures } from './fixture.testkit';
+import { fill } from './fillers';
 import { detectPause } from './pause-detect';
 import { scan } from './scan';
+import { visibleText } from './visible-text';
 
 afterEach(() => removeFixtures(document));
 
@@ -231,5 +239,136 @@ describe('jr6 E2 item 7 (O4): a borderless control drawn by its declared box', (
     expect(await numberBox(oracleAdapter)).toBe(true);
     expect(await numberBox({ ...oracleAdapter, controlBox: (control) => (control.matches('input.phone-row__input')
       ? control.closest('.input-row-composite__inputs.phone-row[role="group"]') : null) })).toBe(false);
+  });
+});
+
+// ── item 8 (ICIMS-14): an option's words that no label element holds ───────────────────────────────────────────────
+
+/** An iCIMS self-identification IForm as the audit describes it (ICIMS-14): a title, an instruction, and three radios,
+ *  each in its wrapper span and followed by its bare words up to a line break. */
+const SELF_ID = `<!doctype html><html><head><style>body { font: 14px sans-serif; margin: 16px; }</style></head><body>
+  <form id="f" name="icims_form" class="iCIMS_FormMainStyle">
+    <div id="title">Voluntary Self-Identification of Protected Veteran Status</div>
+    <p>Please check one of the boxes below:</p>
+    <span id="group">
+      <span class="iCIMS_Forms_RadioGroup"><input type="radio" id="v1" name="vet" value="Protected"></span> I IDENTIFY AS
+        ONE OR MORE OF THE CLASSIFICATIONS OF PROTECTED VETERAN LISTED ABOVE<br><br>
+      <span class="iCIMS_Forms_RadioGroup"><input type="radio" id="v2" name="vet" value="NotProtected"></span> I AM NOT A
+        PROTECTED VETERAN<br><br>
+      <span class="iCIMS_Forms_RadioGroup"><input type="radio" id="v3" name="vet" value="Decline"></span> I DON'T WISH TO
+        ANSWER<br>
+    </span>
+  </form></body></html>`;
+
+/** The text the page draws after a radio's wrapper (or the radio), up to the next line break or control: the words the
+ *  ICIMS package's optionTextFor reads (FIXPLAN §6.5, ICIMS-14), as a test adapter writes it. */
+function wordsAfter(input: HTMLInputElement): string | null {
+  const wrapper = input.parentElement?.matches('.iCIMS_Forms_RadioGroup') === true ? input.parentElement : input;
+  let words = '';
+  for (let node = wrapper.nextSibling; node !== null; node = node.nextSibling) {
+    if (node.nodeType === 1 && ((node as Element).localName === 'br' || (node as Element).querySelector('input') !== null
+      || (node as Element).localName === 'input')) break;
+    words += ` ${node.textContent ?? ''}`;
+  }
+  const text = words.replace(/\s+/g, ' ').trim();
+  return text === '' ? null : text;
+}
+
+/** The group and its title, as ICIMS declares them (groupOf, labelFor), and `words` as its optionTextFor (null: none). */
+const selfId = (words: ((input: HTMLInputElement) => string | null) | null = wordsAfter): Adapter => ({
+  ...genericAdapter, id: 'generic',
+  detect: (doc) => ({ formRoot: doc.getElementById('f')! }),
+  groupOf: (control) => (control.getAttribute('name') === 'vet' ? control.ownerDocument.getElementById('group') : null),
+  labelFor: (el) => (el.id === 'group' ? el.ownerDocument.getElementById('title') : null),
+  ...(words === null ? {} : { optionTextFor: words }),
+});
+
+async function veteran(declared: Adapter, change?: (doc: Document) => void) {
+  const fixture = await loadFixture(document, SELF_ID, { width: 1280, height: 900 });
+  change?.(fixture.doc);
+  const root = fixture.doc.getElementById('f')!;
+  const result = scan(root, declared, { platform: 'icims' });
+  const field = result.fields.find((each) => each.kind === 'radio');
+  const options = field === undefined || field.options === 'lazy' ? [] : field.options.map((option) => option.label);
+  return { doc: fixture.doc, result, field, options };
+}
+
+describe('jr6 E2 item 8 (ICIMS-14): a radio named by the words its adapter reads after it', () => {
+  it('control: with no optionTextFor, the radios show no option a person can read', async () => {
+    const { options } = await veteran(selfId(null));
+    expect(options).toEqual([]);
+  });
+
+  it('reads each option by the words a person sees after it, and the radio filler chooses by them', async () => {
+    const { doc, result, field, options } = await veteran(selfId());
+    expect(options).toEqual(['I IDENTIFY AS ONE OR MORE OF THE CLASSIFICATIONS OF PROTECTED VETERAN LISTED ABOVE',
+      'I AM NOT A PROTECTED VETERAN', "I DON'T WISH TO ANSWER"]);
+    expect(field?.label).toBe('Voluntary Self-Identification of Protected Veteran Status');
+    const target = result.target(field!.key)!;
+    const outcome = fill(target, { kind: 'option', index: 1, cleanLabel: 'I AM NOT A PROTECTED VETERAN' },
+      { adapter: selfId(), root: doc.getElementById('f') });
+    expect(outcome).toMatchObject({ wrote: true, verification: 'verified' });
+    expect((doc.getElementById('v2') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('never takes words a person cannot see beside the radio, nor a failing hook’s', async () => {
+    // Words the page does not draw beside it.
+    expect((await veteran(selfId((input) => (input.id === 'v2' ? 'I AM A PROTECTED VETERAN' : wordsAfter(input)))))
+      .options).toEqual(['I IDENTIFY AS ONE OR MORE OF THE CLASSIFICATIONS OF PROTECTED VETERAN LISTED ABOVE',
+      "I DON'T WISH TO ANSWER"]);
+    removeFixtures(document);
+    // Words the page draws hidden.
+    const hidden = await veteran(selfId(), (doc) => {
+      const v2 = doc.getElementById('v2')!.parentElement!;
+      const words = doc.createElement('span');
+      words.style.display = 'none';
+      words.append(v2.nextSibling!);
+      v2.after(words);
+    });
+    expect(hidden.options).not.toContain('I AM NOT A PROTECTED VETERAN');
+    expect(hidden.options).toHaveLength(2);
+    removeFixtures(document);
+    expect((await veteran(selfId(() => {
+      throw new Error('hook');
+    }))).options).toEqual([]);
+  });
+
+  it('lets a label element win over the adapter’s words', async () => {
+    const { options } = await veteran(selfId(), (doc) => {
+      const label = doc.createElement('label');
+      label.htmlFor = 'v3';
+      label.textContent = 'Decline to self-identify';
+      doc.getElementById('v3')!.parentElement!.after(label);
+    });
+    expect(options[2]).toBe('Decline to self-identify');
+  });
+
+  it('reads the owner’s veteran IForm’s three options by the words drawn after them', async () => {
+    const fixture = await loadFixture(document, edgewaterVeteranHtml, SNAPSHOT_VIEWPORT);
+    const doc = fixture.doc;
+    const IFORM = 'form[name="icims_form"].iCIMS_FormMainStyle';
+    const radios = Array.from(doc.querySelectorAll<HTMLInputElement>(`${IFORM} input[type="radio"][name="icims_f_Veteran"]`));
+    expect(radios).toHaveLength(3);
+    const declared: Adapter = { ...icimsAdapter,
+      groupOf: (control) => {
+        if (!radios.includes(control as HTMLInputElement)) return null;
+        let at = control.parentElement;
+        while (at !== null && !radios.every((radio) => at!.contains(radio))) at = at.parentElement;
+        return at;
+      },
+      optionTextFor: (input) => (radios.includes(input) ? wordsAfter(input) : null) };
+    const without = scan(icimsAdapter.detect(doc)!.formRoot, { ...declared, optionTextFor: undefined },
+      { platform: 'icims' });
+    const result = scan(icimsAdapter.detect(doc)!.formRoot, declared, { platform: 'icims' });
+    const veteranOptions = (scanned: typeof result) => {
+      const field = scanned.fields.find((each) => each.kind === 'radio' && scanned.target(each.key)?.members
+        ?.some((member) => radios.includes(member as HTMLInputElement)));
+      return field === undefined || field.options === 'lazy' ? [] : field.options.map((option) => option.label);
+    };
+    expect(veteranOptions(without)).toEqual([]);
+    const read = veteranOptions(result);
+    expect(read).toHaveLength(3);
+    const shown = visibleText(doc.body, { singleLine: true }).replace(/\s+/g, ' ');
+    for (const words of read) expect(shown).toContain(words);
   });
 });

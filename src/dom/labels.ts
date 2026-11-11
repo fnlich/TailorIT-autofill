@@ -17,7 +17,9 @@
  * cut and sets `required`; "(optional)" is cut.
  *
  * Groups (radios, checkbox groups) take their question from the container: its aria-labelledby, its legend, the
- * adapter's label, then its aria-label. Each member's own visible label is the option's label.
+ * adapter's label, then its aria-label. Each member's own visible label is the option's label; jr6 ENGINE E2 (FIXPLAN
+ * §6.2 item 8, ICIMS-14): where no label element holds it, the words its adapter reads after it (optionTextFor: iCIMS's
+ * self-identification radios, each followed by its bare words), only while a person can see those words beside it.
  *
  * The adapter's label is the visible text of the element its labelFor names, with the words its labelSuffix adds for a
  * control that shares that element with others (Ashby's month and year lists under one "Start Date"). One inside the
@@ -323,7 +325,8 @@ export function labelOfGroup(members: readonly HTMLInputElement[], container: El
 }
 
 /** The visible label of one radio or checkbox as an option of its group: its label[for], else its wrapping label, else
- *  the adapter's. '' when it shows none. */
+ *  the adapter's, else (jr6 ENGINE E2) the words its adapter reads after it (adapterOptionText). '' when it shows
+ *  none. */
 export function optionLabelOf(input: HTMLInputElement, ctx: LabelContext): { text: string; element: Element | null } {
   const tied = tiedLabels(input);
   const explicit = explicitLabels(input, tied.explicit, ctx);
@@ -334,8 +337,45 @@ export function optionLabelOf(input: HTMLInputElement, ctx: LabelContext): { tex
     if (text !== '') return { text, element: joined.first };
   }
   const adapter = adapterLabelOf(input, ctx);
-  return adapter ? { text: adapter.text, element: adapter.element } : { text: '', element: null };
+  if (adapter) return { text: adapter.text, element: adapter.element };
+  const words = adapterOptionText(input, ctx); // jr6 ENGINE
+  return { text: words ?? '', element: null };
 }
+
+// ── jr6 ENGINE E2 (FIXPLAN §6.2 item 8, ICIMS-14): an option's words that no label element holds ──
+/** How many ancestors above a radio or checkbox the words its adapter reads for it are looked for in. */
+const OPTION_TEXT_DEPTH = 4;
+
+/**
+ * The words of a radio's or a checkbox's option that its adapter reads where no label element holds them
+ * (Adapter.optionTextFor: iCIMS's self-identification IForms, <span class="... iCIMS_Forms_RadioGroup ..."><input
+ * type="radio" ...></span> followed by the option's bare words up to a <br>: fixtures/icims/edgewater-self-id-veteran
+ * .frame-2.html, nyu-self-id-disability.frame-2.html), cleaned and cut as a label is; null where the adapter reads none
+ * (or its hook throws), for any other control, and where a person cannot see those words beside it: they must stand
+ * whole and in order (at least MIN_ARIA_LABEL_CHARS letters or digits), as the page shows them, in the visible text of
+ * one of the control's nearest OPTION_TEXT_DEPTH ancestors below its form, as an aria-label's words must (DOM-11), so a
+ * page can never name an option one thing on screen and another to us.
+ */
+function adapterOptionText(input: HTMLInputElement, ctx: LabelContext): string | null {
+  if (ctx.adapter?.optionTextFor === undefined || (input.type !== 'radio' && input.type !== 'checkbox')) return null;
+  let raw: string | null;
+  try {
+    raw = ctx.adapter.optionTextFor(input) ?? null;
+  } catch {
+    return null;
+  }
+  const { text } = cleanLabel(raw ?? '');
+  if (text === '') return null;
+  // The words uncut: a label's cut (TEXT_CAP_LABEL) may fall inside a word.
+  const wanted = wordsOf(raw ?? '');
+  let depth = 0;
+  for (let at = input.parentElement; at !== null && depth < OPTION_TEXT_DEPTH; at = at.parentElement, depth += 1) {
+    if (at.localName === 'form' || at.localName === 'body' || at.localName === 'html') break;
+    if (containsWords(wordsOf(textOf(at, ctx)), wanted)) return text;
+  }
+  return null;
+}
+// ── end jr6 ENGINE E2 item 8 ──
 
 /** Visible help text: the aria-describedby targets a person can see, joined; else the adapter's (descriptionFor). */
 export function descriptionOf(el: Element, ctx: LabelContext): string {
