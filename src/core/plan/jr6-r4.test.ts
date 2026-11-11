@@ -159,6 +159,25 @@ describe('70 (ADP-20): a high-school diploma from the education entries', () => 
     expect(planned([spec], spec, { profile: none }).write).toBeUndefined();
     expect(asked([spec], { profile: none }).answers).toEqual([spec.key]);
   });
+
+  // jr6 fix (RULES-R70): a question that asks for more than the diploma is no rule's: the AI's, as before.
+  it('gives no rule answer to a question that asks for more than the diploma', () => {
+    for (const label of ['Do you have a high school diploma and a valid driver’s license?',
+      'Question 1: Do you have a minimum of a High School diploma or GED along with relevant/required work experience?',
+      'Do you have a high school diploma and at least 2 years of experience in retail sales?',
+      'Do you have a high school diploma or GED and are you able to lift 50 pounds?']) {
+      const compound = specOf(label, 'radio', { optionLabels: YES_NO, required: true });
+      const out = planned([compound], compound);
+      expect(out.write, label).toBeUndefined();
+      expect(out.row.category, label).not.toBe('education.highSchool');
+    }
+    for (const label of ['Do you have a high school diploma or equivalent?', 'Do you have a high school diploma or GED?',
+      'Have you earned a high school diploma or its equivalent?']) {
+      const alone = specOf(label, 'radio', { optionLabels: YES_NO, required: true });
+      expect(planned([alone], alone).write, label).toMatchObject({ value: { cleanLabel: 'Yes' },
+        origin: { provenance: 'rule', ruleId: 'education.high-school' } });
+    }
+  });
 });
 
 describe('71 (adp-new-3): “I have a preferred or chosen name”', () => {

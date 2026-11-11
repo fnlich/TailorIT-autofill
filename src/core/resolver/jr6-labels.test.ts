@@ -767,6 +767,17 @@ const LABELS_FIX: Array<[string, Case, FieldCategory | null, string | null]> = [
   ['R51', { label: 'Desired Salary currency', kind: 'text' }, 'salary.currency', 'label.currency'],
   ['R51', { label: 'What currency would you like to be paid in?', kind: 'select' }, 'salary.currency',
     'label.currency'],
+  // RULES-R70: a question of the diploma alone, never one that asks for more.
+  ['R70', { label: 'Do you have a high school diploma or equivalent?', kind: 'radio', options: ['Yes', 'No'] },
+    'education.highSchool', 'label.high-school'],
+  ['R70', { label: 'Are you a high school graduate or passed the GED?', kind: 'radio', options: ['Yes', 'No'] },
+    'education.highSchool', 'label.high-school'],
+  ['R70', { label: 'Do you have a high school diploma and a valid driver’s license?', kind: 'radio',
+    options: ['Yes', 'No'] }, null, null],
+  ['R70', { label: 'Question 1: Do you have a minimum of a High School diploma or GED along with relevant/required work '
+    + 'experience?', kind: 'radio', options: ['Yes', 'No'] }, null, null],
+  ['R70', { label: 'Do you have a high school diploma or GED and are you able to lift 50 pounds?', kind: 'radio',
+    options: ['Yes', 'No'] }, null, null],
 ];
 
 describe('jr6 fix round 1: what the fixed rules read', () => {

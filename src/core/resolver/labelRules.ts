@@ -1147,6 +1147,25 @@ const RESUME_METHOD = /\bhow\s+(?:would|do|will|can)\s+you\s+(?:like\s+to\s+|wan
 /** jr6 RULES R4 (ADP-20: ADP's "Are you a high school graduate or passed the GED?", fixtures jr6-questions2-blank): a
  *  high-school diploma or its equivalent, asked yes or no. */
 const HIGH_SCHOOL = /\bhigh\s+school\s+(?:graduate|diploma|degree|education)\b|\bged\b|\bg\s+e\s+d\b/;
+/** jr6 fix (RULES-R70): what may stand between two of HIGH_SCHOOL's phrases ("… graduate or passed the GED"), and after
+ *  the last ("… diploma or (its) equivalent"); anything else asks for more than the diploma. */
+const DIPLOMA_BETWEEN = /^\s+or\s+(?:(?:have\s+|has\s+)?(?:passed|completed|obtained|earned|received|hold|have)\s+)?(?:the\s+|a\s+|an\s+|its\s+)?$/;
+const DIPLOMA_AFTER = /^(?:\s+or\s+(?:(?:have\s+|has\s+)?(?:passed|completed|obtained|earned|received|hold|have)\s+)?(?:the\s+|a\s+|an\s+|its\s+)?(?:equivalent|equivalency|high\s+school\s+equivalency|ged|g\s+e\s+d)(?:\s+(?:diploma|certificate|degree|test|exam|education))?)*\s*$/;
+/** jr6 fix (RULES-R70: "Do you have a high school diploma and a valid driver's license?", VHL's "Question 1: Do you have
+ *  a minimum of a High School diploma or GED along with relevant/required work experience?"): whether a question asks
+ *  for the diploma (or its equivalent) and nothing more; a compound question is the AI's, as before. */
+function asksDiplomaAlone(text: string): boolean {
+  const found = [...text.matchAll(new RegExp(HIGH_SCHOOL.source, 'g'))];
+  if (found.length === 0) return false;
+  const first = found[0]!;
+  const last = found.at(-1)!;
+  if (/\b(?:and|with|along|plus|also)\b/.test(text.slice(0, first.index))) return false;
+  for (let at = 1; at < found.length; at += 1) {
+    const before = found[at - 1]!;
+    if (!DIPLOMA_BETWEEN.test(text.slice(before.index + before[0].length, found[at]!.index))) return false;
+  }
+  return DIPLOMA_AFTER.test(text.slice(last.index + last[0].length));
+}
 /** jr6 RULES R4 (JV-19: VHL's "Mailing Address, if different from above", fixtures jr6-vhl-step1): a second address
  *  asked only where it differs, which the profile never holds. */
 const ADDRESS_IF_DIFFERENT = /\b(?:mailing|postal|address)\b(?:\s+\w+){0,4}?\s+if\s+(?:it\s+is\s+)?different\s+(?:from|than)\s+(?:the\s+)?(?:above|home|current|permanent|residential|physical|your)\b/;
@@ -1201,8 +1220,9 @@ const JR6_RULES: readonly Jr6Rule[] = [
   { id: 'label.address3', re: ADDRESS_LINE3, category: 'address.line3', strength: 'strong' },
   { id: 'label.pay-basis', re: PAY_BASIS, category: 'salary.period', strength: 'normal' },
   { id: 'label.resume-method', re: RESUME_METHOD, category: 'application.resumeMethod', strength: 'normal' },
-  { id: 'label.high-school', re: HIGH_SCHOOL, category: (c) => (YES_NO_QUESTION.test(c.label) ? 'education.highSchool'
-    : null), strength: 'normal' },
+  // jr6 fix (RULES-R70): only a question of the diploma alone (asksDiplomaAlone).
+  { id: 'label.high-school', re: HIGH_SCHOOL, category: (c) => (YES_NO_QUESTION.test(c.label)
+    && asksDiplomaAlone(c.label) ? 'education.highSchool' : null), strength: 'normal' },
   { id: 'label.address-if-different', re: ADDRESS_IF_DIFFERENT, category: 'address.mailing', strength: 'normal' },
   { id: 'label.facebook', re: FACEBOOK, category: 'links.facebook', strength: 'strong' },
 ];
