@@ -148,6 +148,13 @@ export const TAGS_ADD_CAP_MS = 3_000;
 /** ...and a box's adds, all its values together, add no further value once they have run this long (checked before each
  *  value after the first added): Workday's Skills takes up to its adapter's cap of them, each one a search. */
 export const TAGS_FIELD_BUDGET_MS = 60_000;
+/** jr6 ENGINE E3 (FIXPLAN §6.2 item 14: ICIMS-02, O3, ADP-2): after the write of a field others depend on
+ *  (Adapter.dependsOn), the page counts as having answered once it has been quiet this long with no dependent showing a
+ *  busy sign (Jobright reads iCIMS's State list every 100 ms until three reads agree)... */
+export const DEPENDENT_QUIET_MS = 300;
+/** ...at most this long after the write (Jobright waits up to 8 s for iCIMS's State list and for Oracle's dependents
+ *  after the country). */
+export const DEPENDENT_WAIT_CAP_MS = 8_000;
 /** After an auto-advance click, the step transition waits at most this long. */
 export const TRANSITION_CAP_MS = 20_000;
 /** The URL poll, where the Navigation API is missing. */

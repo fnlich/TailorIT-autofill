@@ -64,12 +64,20 @@ import type { HeldDialogs } from '../dom/patch-protocol';
 import { withDialogsHeld, withDialogsHeldWhile } from '../dom/fillers/dialogs';
 import { fillThroughPicker, type PickerResult } from '../dom/fillers/picker';
 import { awaitResumeParse } from '../dom/resume-parse';
+import { isOptionList, optionsState } from '../dom/await-options';
+import { holdsComposed } from '../dom/composed';
+import { windowOf } from '../dom/fillers/events';
+import { quietWait } from '../dom/settle';
+import { widgetListOf } from '../dom/widgets/aria';
+import { widgetBusy } from '../dom/widgets/options';
 import { log } from '../shared/log';
 import { sameOptionLabel } from '../dom/fillers/verify';
 import { domGuardBeforeWrite, type PlannedField } from '../dom/guard';
 import { hashOfOptions } from '../dom/option-hash';
 import { toFieldSpec } from '../dom/scan';
-import { SEARCH_FIELD_BUDGET_MS, TEXT_CAP_LABEL } from '../dom/thresholds';
+import {
+  DEPENDENT_QUIET_MS, DEPENDENT_WAIT_CAP_MS, SEARCH_FIELD_BUDGET_MS, TEXT_CAP_LABEL,
+} from '../dom/thresholds';
 import { monotonicNow } from '../dom/time';
 import type {
   FieldTarget, FillOutcome as DomFillOutcome, ReadBackRule, ScannedField, ScanResult, WidgetOptionRead, WidgetReading,
@@ -326,12 +334,140 @@ export function plannedFieldOf(field: ScannedField): PlannedField {
   return { key: field.key, baseKey: field.baseKey, label: field.label, kind: field.kind };
 }
 
+// ── jr6 ENGINE E3 (FIXPLAN §6.2 item 14: ICIMS-02, O3, ICIMS-19, ADP-2): a write that resets other fields ──
+
+/** The field of a scan that `el` is: its control, its widget's element, text box or opener, its proxy or a member;
+ *  else the first field whose own elements hold it; null for none. */
+function fieldOwning(scanned: ScanResult, el: Element): ScannedField | null {
+  let holding: ScannedField | null = null;
+  for (const field of scanned.fields) {
+    const target = scanned.target(field.key);
+    if (target === null) continue;
+    const own = [target.control, target.widget?.element, target.widget?.input, target.widget?.opener, target.proxy,
+      ...target.members].filter((part): part is Element => part !== null && part !== undefined);
+    if (own.includes(el)) return field;
+    if (holding === null && own.some((part) => holdsComposed(part, el))) holding = field;
+  }
+  return holding;
+}
+
+/**
+ * Each field of a scan whose adapter names another field's control as the one whose write resets it
+ * (Adapter.dependsOn: iCIMS's State under its Country and "Please specify" under its source list, ADP's State under
+ * Country, Oracle's address block), child to parent by base key. A hook that throws, or names no field of the scan or
+ * the field itself, names none. Keys only.
+ */
+export function dependenciesOf(scanned: ScanResult, adapter: Adapter): Map<BaseKey, BaseKey> {
+  const parents = new Map<BaseKey, BaseKey>();
+  if (adapter.dependsOn === undefined) return parents;
+  for (const field of scanned.fields) {
+    const target = scanned.target(field.key);
+    if (target === null) continue;
+    let named: Element | null = null;
+    try {
+      named = adapter.dependsOn(target.control) ?? null;
+    } catch {
+      named = null;
+    }
+    const parent = named === null ? null : fieldOwning(scanned, named);
+    if (parent !== null && parent.baseKey !== field.baseKey) parents.set(field.baseKey, parent.baseKey);
+  }
+  return parents;
+}
+
+/**
+ * A pass's writes with each parent before the fields it resets (dependenciesOf): a dependent the queue holds before its
+ * parent is written right after it (its own dependents after it in turn); every other write keeps its place. Writes on
+ * a cycle keep their order. Jobright writes the country first and reads its dependents again after it
+ * (~contents/sites/icims fillCountry, ~contents/sites/adp-workforcenow runPreFillForm, Oracle's
+ * prefillCountryBeforeRules).
+ */
+export function parentsFirst<T extends { write: PlannedWrite }>(queue: readonly T[], scanned: ScanResult,
+  adapter: Adapter): T[] {
+  const parents = dependenciesOf(scanned, adapter);
+  if (parents.size === 0 || queue.length < 2) return [...queue];
+  const baseOf = (entry: T): BaseKey | undefined => scanned.fields.find((field) => field.key === entry.write.key)?.baseKey;
+  const queued = new Set(queue.map(baseOf).filter((base): base is BaseKey => base !== undefined));
+  const out: T[] = [];
+  const placed = new Set<BaseKey>();
+  const waiting = new Map<BaseKey, T[]>();
+  const place = (entry: T): void => {
+    out.push(entry);
+    const base = baseOf(entry);
+    if (base === undefined) return;
+    placed.add(base);
+    const children = waiting.get(base) ?? [];
+    waiting.delete(base);
+    for (const child of children) place(child);
+  };
+  for (const entry of queue) {
+    const base = baseOf(entry);
+    const parent = base === undefined ? undefined : parents.get(base);
+    if (parent !== undefined && queued.has(parent) && !placed.has(parent)) {
+      waiting.set(parent, [...(waiting.get(parent) ?? []), entry]);
+      continue;
+    }
+    place(entry);
+  }
+  // A cycle leaves its writes waiting: they keep their order.
+  for (const entry of queue) if (!out.includes(entry)) out.push(entry);
+  return out;
+}
+
+/** Whether a dependent shows its page still loading it: a widget's own busy signs (its declared ones beside its list
+ *  included), or a native list's busy sign or loading option (awaitOptions' optionsState). */
+function dependentBusy(target: FieldTarget): boolean {
+  if (target.widget !== undefined) return widgetBusy(target.widget, widgetListOf(target.widget));
+  if (!isOptionList(target.control)) return false;
+  const state = optionsState(target.control, null);
+  return !state.ready && (state.waiting === 'busy' || state.waiting === 'loading');
+}
+
+/**
+ * After the write of a field others depend on (dependenciesOf): the page's answer awaited before the next write, so a
+ * dependent is written into the list its parent's value brings, never into the old one the page is about to replace:
+ * quiet windows of DEPENDENT_QUIET_MS on the form root until no dependent shows a busy sign, at most
+ * DEPENDENT_WAIT_CAP_MS (Jobright waits up to 8 s for iCIMS's State list to settle, ~contents/sites/icims
+ * waitForIcimsStateProvinceOptionsRefresh, and for Oracle's own address fill). Each window's end finds the dependents
+ * again on a fresh scan (the page may draw them anew: ADP's State, a text box that becomes a list). The person's Skip
+ * and the run's end cut it short: the parent's write stands. Nothing is read of any value.
+ */
+async function awaitDependents(env: PassEnv, last: ScanResult, parent: BaseKey): Promise<void> {
+  if (env.adapter.dependsOn === undefined || env.signal.aborted) return;
+  const children = (scanned: ScanResult) => [...dependenciesOf(scanned, env.adapter)]
+    .filter(([, of]) => of === parent).map(([child]) => child);
+  if (children(last.rescan()).length === 0) return;
+  const busy = (): boolean => {
+    const now = last.rescan();
+    return children(now).some((child) => {
+      const field = now.fields.find((candidate) => candidate.baseKey === child);
+      const target = field === undefined ? null : now.target(field.key);
+      return target !== null && dependentBusy(target);
+    });
+  };
+  const wait = quietWait<boolean>({ view: windowOf(env.root), quietMs: DEPENDENT_QUIET_MS, capMs: DEPENDENT_WAIT_CAP_MS,
+    signal: env.signal, aborted: false, atQuiet: () => (busy() ? null : true), atCap: () => false });
+  wait.observe(env.root);
+  await wait.done;
+}
+
+// ── end jr6 ENGINE E3 (item 14) ──
+
 /**
  * Writes one planned value through both Guards: the row it ends with, and what was written. `last` is any earlier scan
  * of the form root (the guard scans afresh from it), `field` the field as the plan saw it, and `held` the run's
- * heldPlaceholders, which every scan of the run reads.
+ * heldPlaceholders, which every scan of the run reads. jr6 ENGINE E3 (FIXPLAN §6.2 item 14): a write of a field others
+ * depend on (Adapter.dependsOn) is followed by the page's answer to it (awaitDependents) before the next write.
  */
 export async function writeField(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
+  planned: FillResult, held: WeakMap<Element, string>, options: WriteOptions = {}): Promise<WriteResult> {
+  const result = await writeOnce(env, last, field, write, planned, held, options);
+  if (result.written !== undefined) await awaitDependents(env, last, result.written.field.baseKey);
+  return result;
+}
+
+/** One planned value written through both Guards (writeField, before the wait for what it resets). */
+async function writeOnce(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
   planned: FillResult, held: WeakMap<Element, string>, options: WriteOptions = {}): Promise<WriteResult> {
   const wanted = plannedFieldOf(field);
   // Nothing is written while the page asks for the person (a CAPTCHA, a code or a sign-in anywhere in the document),
