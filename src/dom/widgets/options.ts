@@ -309,11 +309,31 @@ export function busyScopes(widget: WidgetTarget, listbox: Element | null): Eleme
 
 /** Whether a widget shows a busy sign of its own now: a visible aria-busy or indeterminate progress bar in its list or
  *  its own box, or one of the busy signs its adapter declared (WidgetDecl.busy: react-select's "Loading..." notice and
- *  its loading dots) drawn there. */
+ *  its loading dots) drawn there, or (jr6 ENGINE E2) beside its declared list or text box (declaredBusyBeside). */
 export function widgetBusy(widget: WidgetTarget, listbox: Element | null, cache: ScanCache = newScanCache()): boolean {
   const scopes = busyScopes(widget, listbox);
-  return busyIn(scopes, cache) || declaredBusy(scopes, widget.busy ?? []);
+  return busyIn(scopes, cache)
+    || declaredBusy([...scopes, ...declaredBusyBeside(widget, listbox)], widget.busy ?? []); // jr6 ENGINE
 }
+
+// ── jr6 ENGINE E2 (the ICIMS package's edit 2, ICIMS-01/-02): a declared busy sign beside the declared list ──
+/**
+ * Where else a declared widget's own declared busy signs (WidgetDecl.busy) are read: the parent of its declared
+ * results list (WidgetDecl.results), and the parent of its declared text box where that box sits outside its element
+ * (WidgetDecl.input). iCIMS draws its dropdown's loading bar, .dropdown-loading, beside the results list in the
+ * container's div[aria-live], outside the list and outside the anchor's own box (widgetBox stops at the row's cell,
+ * which also holds the hidden select): the ICIMS package's ICIMS-01 and ICIMS-02. Never the body, the html or a form
+ * (a list drawn at the end of the body, ADP's portal, adds no scope), and only the adapter's own selectors, never the
+ * generic busy signs; a sign only makes a wait longer, never a write.
+ */
+function declaredBusyBeside(widget: WidgetTarget, listbox: Element | null): Element[] {
+  if (!widget.declared || (widget.busy ?? []).length === 0) return [];
+  const box = widget.input !== null && !widget.element.contains(widget.input) ? widget.input.parentElement : null;
+  const around: Array<Element | null> = [widget.results !== undefined && listbox !== null ? listbox.parentElement : null,
+    box];
+  return around.filter((el): el is Element => el !== null && !['body', 'html', 'form'].includes(el.localName));
+}
+// ── end jr6 ENGINE E2 (ICIMS edit 2) ──
 
 /** One of the adapter's busy signs, drawn in any of `scopes`. A sign only makes a wait longer, never a write, so it
  *  counts once it has a box and is not hidden by display or visibility: react-select's loading dots are aria-hidden. */

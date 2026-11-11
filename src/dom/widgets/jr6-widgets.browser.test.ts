@@ -17,6 +17,9 @@
  * - item 12 (icims-new-2, O10): a combobox no adapter declares whose popup is a grid, or that has no list ARIA can find
  *   and no text box, is refused before any click; an activation that opened something with no list a reader finds is
  *   put back.
+ * jr6 ENGINE E2 (the ICIMS package's edit 2, ICIMS-01/-02): a declared busy sign drawn beside the declared list (iCIMS's
+ * .dropdown-loading, the list's sibling in its container's div[aria-live]) holds the widget's wait; one elsewhere, or a
+ * generic sign there, does not.
  * Every value is synthetic (no owner data); every event the helpers cause is untrusted and on the fillers' list.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -29,6 +32,7 @@ import { loadFixture, logEvents, removeFixtures, untrustedViolations, type Event
 import { scan } from '../scan';
 import type { FieldTarget, ScanResult, WidgetReading } from '../types';
 import { closeUnlisted, fillWidget, isActionable, openList, readWidget, searchTypeahead, widgetHolds } from './index';
+import { widgetBusy } from './options';
 import type { TypeaheadHooks } from './index';
 
 interface Page {
@@ -968,5 +972,63 @@ describe('item 12 (icims-new-2, O10): an undeclared combobox the helpers refuse 
     page.events.events.length = 0;
     await closeUnlisted(page.target('Kind').widget!, page.ctx());
     expect(page.events.events.filter((event) => !event.trusted)).toEqual([]);
+  });
+});
+
+// ── jr6 ENGINE E2 (the ICIMS package's edit 2, ICIMS-01/-02): a declared busy sign beside the declared list ──────────
+
+describe('jr6 E2 (ICIMS edit 2): a declared busy sign beside the declared list holds the wait', () => {
+  /** iCIMS's dropdowns as above, with their loading bar declared (WidgetDecl.busy), as the ICIMS package does. */
+  const loading = (doc: Document): Adapter => {
+    const base = icimsAdapter(doc);
+    return { widgetFor: (control: Element) => {
+      const declared = base.widgetFor!(control);
+      return declared === null ? null : { ...declared, busy: ['.dropdown-loading:not(.hide)'] };
+    } } as unknown as Adapter;
+  };
+
+  /** Country's container opened, its list wrapped in iCIMS's div[aria-live] beside its loading bar (shown unless
+   *  `hidden`); `place` moves the bar elsewhere. */
+  async function country(change: (doc: Document) => void = () => undefined, declared = loading) {
+    const page = await open(ICIMS, 'icims', declared);
+    const doc = page.doc;
+    const list = doc.getElementById('country_dropdown-results')!;
+    const live = doc.createElement('div');
+    live.setAttribute('aria-live', 'polite');
+    const bar = doc.createElement('div');
+    bar.id = 'bar';
+    bar.className = 'dropdown-loading';
+    bar.textContent = 'Loading';
+    list.replaceWith(live);
+    live.append(bar, list);
+    doc.getElementById('country_icimsDropdown_ctnr')!.hidden = false;
+    change(doc);
+    const widget = page.target('Country').widget!;
+    return widgetBusy(widget, list);
+  }
+
+  it('reads the loading bar beside the list as the widget’s, while it shows', async () => {
+    expect(await country()).toBe(true);
+    removeFixtures(document);
+    expect(await country((doc) => {
+      doc.getElementById('bar')!.classList.add('hide');
+    })).toBe(false);
+  });
+
+  it('never reads a bar elsewhere in the form, a generic sign beside the list, or a sign of no declaration', async () => {
+    // The same bar in the row, beside the anchor's hidden select: outside the list's container.
+    expect(await country((doc) => {
+      doc.getElementById('country')!.before(doc.getElementById('bar')!);
+    })).toBe(false);
+    removeFixtures(document);
+    // A generic aria-busy beside the list, the declared bar gone: only the adapter's own selectors are read there.
+    expect(await country((doc) => {
+      const bar = doc.getElementById('bar')!;
+      bar.className = '';
+      bar.setAttribute('aria-busy', 'true');
+    })).toBe(false);
+    removeFixtures(document);
+    // A widget that declares no busy sign.
+    expect(await country(() => undefined, icimsAdapter)).toBe(false);
   });
 });
