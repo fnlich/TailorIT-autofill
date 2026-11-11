@@ -749,6 +749,8 @@ const TYPED_YES_NO: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['workAu
   'workAuth.sponsorshipNow', 'workAuth.sponsorshipFuture']);
 /** A yes-or-no question: an auxiliary verb leads it. */
 export const YES_NO_QUESTION = /^(?:are|is|am|was|were|do|does|did|have|has|had|will|would|can|could|may|might|shall|should)\b/;
+/** jr6 RULES R4 (WD-28): any text that is no yes-or-no question. */
+const NOT_YES_NO = new RegExp(`^(?!${YES_NO_QUESTION.source.slice(1)})`);
 
 /** The rules s2 core-gh adds, tried in order before §8.3's list, each on a kind its category takes. */
 const S2_RULES: ReadonlyArray<{ id: string; re: RegExp; category: FieldCategory; strength: RuleStrength;
@@ -859,7 +861,9 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.city': { category: (c) => ENTRY_PLACE[c.entry ?? 'home'].city },
   // jr6 RULES R3 (ADP-4): a territory too (REGION_TERRITORY).
   'label.region': { also: REGION_TERRITORY, category: (c) => ENTRY_PLACE[c.entry ?? 'home'].region },
-  'label.country': { also: /^(?:what\s+is\s+your\s+)?(?:current\s+)?country(?:\s+of\s+(?:current\s+)?residence)?$|^what\s+country\s+do\s+you\s+(?:currently\s+)?(?:live|reside)\s+in$/,
+  // jr6 RULES R4 (SR-10: SmartRecruiters' "Country/Region" in the location's manual mode, fixtures
+  // jr6-xplor-one-click-filled; SuccessFactors' "Country/Region of Residence"): a country or region.
+  'label.country': { also: /^(?:what\s+is\s+your\s+)?(?:current\s+)?country(?:\s+(?:or\s+)?region)?(?:\s+of\s+(?:current\s+)?residence)?$|^what\s+country\s+do\s+you\s+(?:currently\s+)?(?:live|reside)\s+in$/,
     category: (c) => ENTRY_PLACE[c.entry ?? 'home'].country },
   // s2 core-gh: a residence asked as a question (RESIDENCE). s2 core-wd: "Location" inside a job's block is that job's
   // place (Workday's formField-location in each Work Experience block, fixtures/workday/s2-exelixis-my-experience),
@@ -893,6 +897,8 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.orientation': { also: ORIENTATION_WIDE, only: ORIENTATION_SELF, otherwise: SENSITIVE_TOPIC },
   'label.transgender': { also: TRANSGENDER_WIDE, only: TRANSGENDER_SELF, otherwise: SENSITIVE_TOPIC },
   'label.field': { only: FIELD_NOUN, ask: true },
+  // jr6 RULES R4 (O7: Oracle's education editor "Average Grade", fixtures/oracle/hjf-after-submit): the GPA.
+  'label.gpa': { also: /^(?:average\s+grade|grade\s+average)$/ },
   'label.company': { only: COMPANY_NOUN, ask: true },
   'label.title': { only: TITLE_NOUN, ask: true },
   'label.years': { only: TOTAL_YEARS,
@@ -919,6 +925,10 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
     // WD-17: AEP's "Are you now or have you ever been a contractor at AEP?", fixtures aep-application-questions-2):
     // worked for a company previously, before, in the past or in any capacity; a contractor at or for it.
     unless: OUTSIDE_BUSINESS },
+  // jr6 RULES R4 (WD-28, Workday's Dana-Farber "Have you ever, or are you currently participating in a student training
+  // program …", fixtures jr6-danafarber-application-questions-1): skills never on a yes or no question (a list that takes
+  // several answers aside: "Do you have any of these skills?" over the skills themselves).
+  'label.skills': { onlyFor: (kind) => (kind === 'checkbox-group' || kind === 'multiselect' ? undefined : NOT_YES_NO) },
   'label.travel': { unless: /\btravel\s+(?:restrictions?|limitations?|constraints?|bans?|reimbursements?|expenses?|polic(?:y|ies)|documents?|history)\b|\brestrictions?\s+on\s+(?:your\s+)?travel\b/ },
   // "Which languages do you speak?" (Phase 2): §8.3's rule takes "languages you speak" with nothing between. Only
   // "speak": "What programming languages do you know?" asks about skills.
@@ -1003,7 +1013,8 @@ const WORKDAY_INFO_RULES: readonly InfoRule[] = [
   { id: 'label.suffix', re: /^(?:name\s+)?suffix$|^suffix\s+name$/, category: 'identity.suffix', strength: 'strong' },
   { id: 'label.phone-extension', re: /^(?:phone\s+|telephone\s+)?(?:extension|ext)(?:\s+number)?$/,
     category: 'contact.phoneExtension', strength: 'strong' },
-  { id: 'label.has-preferred-name', re: /^(?:i\s+have|do\s+you\s+have|i\s+use|do\s+you\s+use)\s+a\s+preferred\s+(?:first\s+)?name$/,
+  // jr6 RULES R4 (adp-new-3: ADP's "I have a preferred or chosen name", fixtures/adp/personal): or a chosen one.
+  { id: 'label.has-preferred-name', re: /^(?:i\s+have|do\s+you\s+have|i\s+use|do\s+you\s+use)\s+a\s+(?:preferred\s+(?:or\s+chosen\s+)?|chosen\s+)(?:first\s+)?name$/,
     category: 'identity.hasPreferredName', strength: 'strong' },
   // jr6 RULES R3 (ICIMS-13, Jobright's normalizeIcimsAddressTypeLabel relabels iCIMS's address "Type" so: cited): an
   // address's own type.
@@ -1113,6 +1124,31 @@ const IN_COUNTRY_NOT = /\b(?:willing|open|prepared|happy|want|wish|like|prefer|p
 /** jr6 RULES R3 (U-11: UltiPro's "Former Name", fixtures/ultipro/application and resume-review): a former, previous,
  *  prior, maiden or other name, which the profile never holds: left as the page has it, never asked of an AI. */
 const FORMER_NAME = /^(?:(?:your|any)\s+)?(?:former|previous|prior|maiden|other)\s+(?:(?:last|first|legal|family|full)\s+)?names?(?:\s+(?:used|if\s+any|if\s+applicable))*$|^name\s+at\s+birth$/;
+/** jr6 RULES R4 (WD-25: Workday's "Prefix" in Legal Name, fixtures resolvetech-source-open, s2-exelixis-state-open): a
+ *  name's prefix, salutation or honorific, which the profile never holds (classifyRules reads a "Title" whose options
+ *  are honorifics so). */
+const PREFIX = /^(?:(?:name|your)\s+)?(?:prefix|salutation|honorific)(?:\s+name)?$/;
+/** jr6 RULES R4 (ICIMS-25: NYU's iCIMS "Did You Graduate?" in an education block, fixtures jr6-nyu-profile-parsed): the
+ *  entry's graduation, asked yes or no. */
+const GRADUATED = /^(?:did|have)\s+you\s+graduated?(?:\s+from\s+(?:this|the)\s+(?:school|program|institution|university|college))?$|^graduated$/;
+/** jr6 RULES R4 (ADP-14: ADP's "Address Line 3", fixtures/adp/personal; Oracle's, hjf-apply-section): an address's third
+ *  line, which the profile never holds. */
+const ADDRESS_LINE3 = /^(?:street\s+)?address\s+(?:line\s*)?3$/;
+/** jr6 RULES R4 (ADP-16: ADP's desired-salary Annually | Hourly radios, "<block title> pay basis" by the label contract
+ *  of FIXPLAN §3.2): the period the pay is asked in. */
+const PAY_BASIS = /\b(?:pay|salary|compensation|wage|rate)\s+(?:basis|period|frequency)\b/;
+/** jr6 RULES R4 (ADP-18: ADP's "How would you like to provide the candidate's resume?", Upload File | Enter Professional
+ *  Details, fixtures jr6-resume-choice): how the résumé is given, chosen; never a consent. */
+const RESUME_METHOD = /\bhow\s+(?:would|do|will|can)\s+you\s+(?:like\s+to\s+|want\s+to\s+|prefer\s+to\s+)?(?:provide|submit|share|send|add|give|attach|upload)\s+(?:the\s+candidates?\s+|your\s+|a\s+|the\s+)?(?:resume|cv)\b/;
+/** jr6 RULES R4 (ADP-20: ADP's "Are you a high school graduate or passed the GED?", fixtures jr6-questions2-blank): a
+ *  high-school diploma or its equivalent, asked yes or no. */
+const HIGH_SCHOOL = /\bhigh\s+school\s+(?:graduate|diploma|degree|education)\b|\bged\b|\bg\s+e\s+d\b/;
+/** jr6 RULES R4 (JV-19: VHL's "Mailing Address, if different from above", fixtures jr6-vhl-step1): a second address
+ *  asked only where it differs, which the profile never holds. */
+const ADDRESS_IF_DIFFERENT = /\b(?:mailing|postal|address)\b(?:\s+\w+){0,4}?\s+if\s+(?:it\s+is\s+)?different\s+(?:from|than)\s+(?:the\s+)?(?:above|home|current|permanent|residential|physical|your)\b/;
+/** jr6 RULES R4 (SR-13: SmartRecruiters' "Facebook", fixtures/smartrecruiters/xplor-one-click): a Facebook link's own
+ *  box; Jobright keeps only a facebook.com address there (cited). */
+const FACEBOOK = /^(?:your\s+)?facebook(?:\s+(?:profile|page|url|link|username|user\s+name|handle|account))*$/;
 
 /** A jr6 label rule: its pattern, the category (or none, for a section or kind it does not fit). */
 interface Jr6Rule {
@@ -1152,6 +1188,16 @@ const JR6_RULES: readonly Jr6Rule[] = [
     category: 'salary.currency', strength: 'normal' },
   { id: 'label.in-country', re: IN_COUNTRY, unless: IN_COUNTRY_NOT, category: 'location.inCountry', strength: 'normal' },
   { id: 'label.former-name', re: FORMER_NAME, category: 'identity.formerName', strength: 'strong' },
+  // jr6 RULES R4 (WD-25, ICIMS-25, ADP-14, ADP-16, ADP-18, ADP-20, JV-19, SR-13).
+  { id: 'label.prefix', re: PREFIX, category: 'identity.prefix', strength: 'strong' },
+  { id: 'label.graduated', re: GRADUATED, category: 'education.graduated', strength: 'normal' },
+  { id: 'label.address3', re: ADDRESS_LINE3, category: 'address.line3', strength: 'strong' },
+  { id: 'label.pay-basis', re: PAY_BASIS, category: 'salary.period', strength: 'normal' },
+  { id: 'label.resume-method', re: RESUME_METHOD, category: 'application.resumeMethod', strength: 'normal' },
+  { id: 'label.high-school', re: HIGH_SCHOOL, category: (c) => (YES_NO_QUESTION.test(c.label) ? 'education.highSchool'
+    : null), strength: 'normal' },
+  { id: 'label.address-if-different', re: ADDRESS_IF_DIFFERENT, category: 'address.mailing', strength: 'normal' },
+  { id: 'label.facebook', re: FACEBOOK, category: 'links.facebook', strength: 'strong' },
 ];
 
 /** The first jr6 rule that reads `text` on a field of this kind, or null. */

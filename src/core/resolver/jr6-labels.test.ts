@@ -621,3 +621,118 @@ describe('jr6 RULES R3 (items 49 to 61): the widened rules’ near misses', () =
       expect(read({ label: 'Middle', kind: 'text' }).category).toBeNull();
     });
 });
+
+// ── jr6 RULES R4 (FIXPLAN §6.3 items 62 to 79) ──────────────────────────────────────────────────────────────────────
+
+const DANAFARBER_TRAINING = 'Have you ever, or are you currently participating in a student training program offered by '
+  + 'Dana-Farber’s Office of Workforce Development (such as scientific skills training or a summer internship)?';
+const ADP_RESUME_CHOICE = ['Upload File', 'Enter Professional Details'];
+
+/** [item and finding, the field, the category it asks, the rule id]. */
+const LABELS_R4: Array<[string, Case, FieldCategory, string]> = [
+  // 62. WD-25: Workday's "Prefix"; a salutation; a "Title" list of honorifics.
+  ['62 WD-25', { label: 'Prefix', kind: 'combobox' }, 'identity.prefix', 'label.prefix'],
+  ['62 WD-25', { label: 'Salutation', kind: 'select' }, 'identity.prefix', 'label.prefix'],
+  ['62 WD-25', { label: 'Name Prefix', kind: 'text' }, 'identity.prefix', 'label.prefix'],
+  ['62 WD-25', { label: 'Title', kind: 'select', options: ['Mr.', 'Mrs.', 'Ms.', 'Dr.'] }, 'identity.prefix',
+    'options.honorifics'],
+  // 63. WD-28: a list of skills that takes several answers stays the skills question.
+  ['63 WD-28', { label: 'Do you have any of these skills?', kind: 'checkbox-group', options: ['Python', 'SQL'] },
+    'skills.list', 'label.skills'],
+  ['63 WD-28', { label: 'Skills', kind: 'text' }, 'skills.list', 'label.skills'],
+  // 66. ICIMS-25: NYU's "Did You Graduate?".
+  ['66 ICIMS-25', { label: 'Did You Graduate?', kind: 'select', options: ['Yes', 'No'] }, 'education.graduated',
+    'label.graduated'],
+  ['66 ICIMS-25', { label: 'Have you graduated?', kind: 'radio', options: ['Yes', 'No'] }, 'education.graduated',
+    'label.graduated'],
+  // 67. ADP-14: "Address Line 3".
+  ['67 ADP-14', { label: 'Address Line 3', kind: 'text' }, 'address.line3', 'label.address3'],
+  // 68. ADP-16: the pay basis (the label contract: "<block title> pay basis"); Breezy's "Desired Salary period".
+  ['68 ADP-16', { label: 'What is your desired salary? pay basis', kind: 'radio', options: ['Annually', 'Hourly'] },
+    'salary.period', 'label.pay-basis'],
+  ['68 ADP-16', { label: 'Desired Salary period', kind: 'select' }, 'salary.period', 'label.pay-basis'],
+  // 69. ADP-18: how the résumé is provided.
+  ['69 ADP-18', { label: 'How would you like to provide the candidate\'s resume?', kind: 'radio',
+    options: ADP_RESUME_CHOICE }, 'application.resumeMethod', 'label.resume-method'],
+  // 70. ADP-20: a high-school diploma or the GED.
+  ['70 ADP-20', { label: 'Are you a high school graduate or passed the GED?', kind: 'radio', options: ['Yes', 'No'] },
+    'education.highSchool', 'label.high-school'],
+  ['70 ADP-20', { label: 'Do you have a high school diploma or equivalent?', kind: 'select', options: ['Yes', 'No'] },
+    'education.highSchool', 'label.high-school'],
+  // 71. adp-new-3: ADP's "I have a preferred or chosen name".
+  ['71 adp-new-3', { label: 'I have a preferred or chosen name', kind: 'checkbox' }, 'identity.hasPreferredName',
+    'label.has-preferred-name'],
+  ['71 adp-new-3', { label: 'Do you have a chosen name?', kind: 'radio', options: ['Yes', 'No'] },
+    'identity.hasPreferredName', 'label.has-preferred-name'],
+  // 72. JV-19: VHL's "Mailing Address, if different from above".
+  ['72 JV-19', { label: 'Mailing Address, if different from above', kind: 'textarea' }, 'address.mailing',
+    'label.address-if-different'],
+  ['72 JV-19', { label: 'Mailing address if different than your home address', kind: 'text' }, 'address.mailing',
+    'label.address-if-different'],
+  // 74. SR-10: "Country/Region", "Country or Region", "Country/Region of Residence".
+  ['74 SR-10', { label: 'Country/Region', kind: 'select' }, 'address.country', 'label.country'],
+  ['74 SR-10', { label: 'Country or Region', kind: 'combobox' }, 'address.country', 'label.country'],
+  ['74 SR-10', { label: 'Country/Region of Residence', kind: 'select' }, 'address.country', 'label.country'],
+  // 75. SR-13: "Facebook".
+  ['75 SR-13', { label: 'Facebook', kind: 'text' }, 'links.facebook', 'label.facebook'],
+  ['75 SR-13', { label: 'Facebook Profile URL', kind: 'text' }, 'links.facebook', 'label.facebook'],
+  // 78. O7: Oracle's "Average Grade".
+  ['78 O7', { label: 'Average Grade', kind: 'text', section: SCHOOL }, 'education.gpa', 'label.gpa'],
+  // 79. O13: Oracle's "Link 1" by its name (the label contract).
+  ['79 O13', { label: 'Link 1', kind: 'text', nameAttr: 'siteLink-1' }, 'links.numbered', 'name-id.site-link'],
+  ['79 O13', { label: 'Link 3', kind: 'text', nameAttr: 'siteLink-3' }, 'links.numbered', 'name-id.site-link'],
+];
+
+describe('jr6 RULES R4 (items 62 to 79): the audits’ labels', () => {
+  it.each(LABELS_R4)('%s: %j', (_item, field, category, rule) => {
+    expect(read(field)).toMatchObject({ category, rule, needsUser: null });
+  });
+});
+
+/** [item and finding, the field, what it must not be read as]: near misses of the items 62 to 79 rules. */
+const NEAR_MISSES_R4: Array<[string, Case, FieldCategory]> = [
+  // 62: a job title, a list of titles that are no honorifics, a phone's prefix.
+  ['62', { label: 'Title', kind: 'text' }, 'identity.prefix'],
+  ['62', { label: 'Title', kind: 'select', options: ['Engineer', 'Manager', 'Director'] }, 'identity.prefix'],
+  ['62', { label: 'Phone Prefix', kind: 'text' }, 'identity.prefix'],
+  // 63: a yes or no question that names skills.
+  ['63 WD-28', { label: DANAFARBER_TRAINING, kind: 'radio', options: ['Yes', 'No'] }, 'skills.list'],
+  ['63', { label: 'Do you have strong communication skills?', kind: 'select', options: ['Yes', 'No'] }, 'skills.list'],
+  // 66: a graduation of another kind.
+  ['66', { label: 'Did you graduate with honors?', kind: 'radio', options: ['Yes', 'No'] }, 'education.graduated'],
+  ['66', { label: 'Graduation Date', kind: 'date', section: SCHOOL }, 'education.graduated'],
+  // 67: the second line stays the second line.
+  ['67', { label: 'Address Line 2', kind: 'text' }, 'address.line3'],
+  // 68: the pay itself.
+  ['68', { label: 'What is your desired salary?', kind: 'text' }, 'salary.period'],
+  // 69: the résumé's own upload.
+  ['69', { label: 'Resume', kind: 'file' }, 'application.resumeMethod'],
+  // 70: a high school's name, a question that asks for no diploma.
+  ['70', { label: 'High School Name', kind: 'text' }, 'education.highSchool'],
+  ['70', { label: 'Did you attend high school in the United States?', kind: 'radio', options: ['Yes', 'No'] },
+    'education.highSchool'],
+  // 71: the preferred name itself.
+  ['71', { label: 'Preferred Name', kind: 'text' }, 'identity.hasPreferredName'],
+  // 72: the address itself.
+  ['72', { label: 'Mailing Address', kind: 'textarea' }, 'address.mailing'],
+  ['72', { label: 'Phone (if different from above)', kind: 'text' }, 'address.mailing'],
+  // 74: a phone's country code.
+  ['74', { label: 'Country/Region Code', kind: 'select' }, 'address.country'],
+  // 75: Facebook as a field of work.
+  ['75', { label: 'Do you have experience with Facebook Ads?', kind: 'radio', options: ['Yes', 'No'] },
+    'links.facebook'],
+  // 78: a grade of another kind.
+  ['78', { label: 'Grade level taught', kind: 'text' }, 'education.gpa'],
+  // 79: a numbered link without Oracle's name.
+  ['79', { label: 'Link 1', kind: 'text' }, 'links.numbered'],
+];
+
+describe('jr6 RULES R4 (items 62 to 79): the widened rules’ near misses', () => {
+  it.each(NEAR_MISSES_R4)('%s: %j is no %s', (_item, field, category) => {
+    expect(read(field).category).not.toBe(category);
+  });
+
+  it('keeps "Phone (if different from above)" the phone (72: the bracket is left out)', () => {
+    expect(read({ label: 'Phone (if different from above)', kind: 'text' }).category).toBe('contact.phone');
+  });
+});

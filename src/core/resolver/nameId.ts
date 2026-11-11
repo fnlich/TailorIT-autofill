@@ -53,6 +53,9 @@ export const NAME_ID_RULES: readonly NameIdRule[] = [
   // "How did you hear about us?" is chosen): the source specified further. Its text twin (rcf3049_Text) is no list.
   { id: 'name-id.referral-detail', pattern: 'rcf3049',
     category: (kind) => (kind === 'select' || kind === 'combobox' ? 'referral.detail' : null) },
+  // jr6 RULES R4 (O13, fixtures/oracle/hjf-apply-section: Oracle's "Link 1", name="siteLink-1", by the label contract of
+  // FIXPLAN §3.2): a numbered link box, the profile's links in order (values.ts numberedLinkValue).
+  { id: 'name-id.site-link', pattern: 'site_?link_?\\d{1,2}', category: 'links.numbered' },
 ];
 
 /**

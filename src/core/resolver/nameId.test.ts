@@ -25,6 +25,8 @@ describe('NAME_ID_RULES (§8.3)', () => {
       ['name-id.phone-type', 'phone_?type'],
       ['name-id.address-type', 'address_?type'],
       ['name-id.referral-detail', 'rcf3049'],
+      // jr6 RULES R4: Oracle's numbered link boxes, name="siteLink-N" (O13, the label contract of FIXPLAN §3.2).
+      ['name-id.site-link', String.raw`site_?link_?\d{1,2}`],
     ]);
     for (const abbreviation of WHOLE_TOKEN_ONLY) {
       expect(NAME_ID_RULES.some((rule) => rule.pattern.split('|').includes(abbreviation)), abbreviation).toBe(true);

@@ -68,6 +68,10 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   'skills.experienceWith': 'profile',
   // jr6 RULES R3 (items 49 to 61): the profile's address, and a name the profile never holds.
   'location.inCountry': 'profile', 'identity.formerName': 'profile',
+  // jr6 RULES R4 (items 62 to 79): the pay's period is the expected pay's (sensitive); the rest the profile's.
+  'identity.prefix': 'profile', 'education.graduated': 'profile', 'address.line3': 'profile', 'salary.period': 'sensitive',
+  'application.resumeMethod': 'profile', 'education.highSchool': 'profile', 'address.mailing': 'profile',
+  'links.facebook': 'profile', 'links.numbered': 'profile',
   unknown: 'unknown',
 };
 
@@ -202,6 +206,11 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'skills.experienceWith': YES_NO,
   // jr6 RULES R3: living or working in a country, yes or no; a former name typed.
   'location.inCountry': YES_NO, 'identity.formerName': LINE,
+  // jr6 RULES R4: a prefix typed or chosen; yes or no; a line typed; a period, a method chosen; a box of an address or a
+  // link.
+  'identity.prefix': ['text', ...CHOICE], 'education.graduated': YES_NO, 'address.line3': LINE, 'salary.period': CHOICE,
+  'application.resumeMethod': CHOICE, 'education.highSchool': YES_NO, 'address.mailing': PROSE,
+  'links.facebook': PROSE, 'links.numbered': PROSE,
   unknown: ANY,
 };
 
@@ -328,4 +337,6 @@ export const ANSWERABLE_PROFILE_CATEGORIES: ReadonlySet<FieldCategory> = new Set
   // jr6 RULES R3 (JV-16): years in something, experience with something, and a time zone the rules do not settle.
   'experience.yearsIn', 'skills.experienceWith', 'location.inTimeZone',
   // jr6 RULES R3 (JZ-11): living or working in a country the address does not settle (a place no country names).
-  'location.inCountry']);
+  'location.inCountry',
+  // jr6 RULES R4 (ICIMS-25, ADP-20): a graduation, a high-school diploma the education entries do not settle.
+  'education.graduated', 'education.highSchool']);

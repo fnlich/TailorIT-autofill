@@ -375,6 +375,10 @@ const VETERAN_STATEMENT = /\bveterans?\b/;
 const ETHNIC_ORIGIN = /^ethnic\s+origin$/;
 const HISPANIC_OPTION = /\bhispanic\b|\blatin[aoxe]\b/;
 const VETERAN_OPTIONS_RULE = 'options.veteran-statements';
+/** jr6 RULES R4 (WD-25, "Title as honorific"): a list labelled "Title" whose options are honorifics (Mr., Ms., Dr.). */
+const TITLE_ALONE = /^(?:name\s+)?title$/;
+const HONORIFIC = /^(?:mr|mrs|ms|miss|mx|dr|doctor|prof|professor|rev|reverend|sir|madam|dame|lord|lady|mister|misses)$/;
+const HONORIFIC_OPTIONS_RULE = 'options.honorifics';
 const ETHNIC_ORIGIN_RULE = 'label.ethnic-origin';
 const WORK_STATUS_OPTIONS_RULE = 'options.work-status';
 
@@ -412,6 +416,10 @@ function optionsRule(spec: FieldSpec, label: string, rules: RuleClassification |
   }
   if (ETHNIC_ORIGIN.test(label) && options.some((text) => HISPANIC_OPTION.test(text))) {
     return classification('eeo.hispanicLatino', { ...base, rule: ETHNIC_ORIGIN_RULE });
+  }
+  // jr6 RULES R4 (WD-25): a "Title" list of honorifics is the name's prefix, which the profile never holds.
+  if (TITLE_ALONE.test(label) && options.filter((text) => HONORIFIC.test(text)).length >= 2) {
+    return classification('identity.prefix', { ...base, rule: HONORIFIC_OPTIONS_RULE });
   }
   return null;
 }

@@ -34,6 +34,7 @@ import type { Vocab } from '../vocab/types';
 import { none, value, type Choice, type ValueResult } from './candidate';
 import { phoneText } from './format';
 import { EMPLOYED_NOW, entryOf, EXPERIENCE_WITH, IN_TIME_ZONE, X_LINK, YEARS_IN } from './labelRules';
+import { nameIdText } from './nameId';
 import { US_TIME_ZONES, ZONE_SPELLINGS, zonesOfState, type UsTimeZone } from './usTimeZones';
 
 /** The profile entry each block of a repeatable section is filled from, by block index (null: no entry), for the
@@ -1191,6 +1192,25 @@ function jr6Value(category: FieldCategory, ctx: ValueContext): ValueResult | und
     // jr6 RULES R3 (ADP-7): the pay's currency, by its ISO code in the list's own words.
     case 'salary.currency':
       return currencyValue(ctx.spec, ctx.profile);
+    // jr6 RULES R4 (WD-25, ADP-14, JV-19): a prefix, an address's third line, a mailing address only where it differs:
+    // the profile holds none of them, so they are left as the page has them, never asked of an AI.
+    case 'identity.prefix':
+    case 'address.line3':
+    case 'address.mailing':
+      return none('no-profile-value', false);
+    // jr6 RULES R4 (ICIMS-25, ADP-16, ADP-18, ADP-20, SR-13, O13).
+    case 'education.graduated':
+      return graduatedValue(ctx);
+    case 'salary.period':
+      return payPeriodValue(ctx.profile, ctx.vocab);
+    case 'application.resumeMethod':
+      return resumeMethodValue(ctx.spec, ctx.profile);
+    case 'education.highSchool':
+      return highSchoolValue(ctx.profile);
+    case 'links.facebook':
+      return facebookValue(ctx.profile.links);
+    case 'links.numbered':
+      return numberedLinkValue(ctx.spec, ctx.profile.links);
     default:
       return undefined;
   }
@@ -1353,6 +1373,117 @@ function currencyValue(spec: FieldSpec, profile: Profile): ValueResult {
   const text = named.length === 1 ? named[0]! : code;
   return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT, text: code,
     choice: { intended: intendedText(text), domain: 'generic' } });
+}
+
+// ── jr6 RULES R4 (FIXPLAN §6.3 items 62 to 79) ─────────────────────────────────────────────────────────────────────
+
+/** Whether a year-month is before a day's month. */
+const beforeMonth = (date: YearMonth, now: Ymd) => date.y < now.y || (date.y === now.y && (date.m ?? 12) < now.m);
+
+/**
+ * ICIMS-25 (NYU's iCIMS "Did You Graduate?" in an education block, fixtures jr6-nyu-profile-parsed): yes when the
+ * block's entry (else the most recent) holds a degree, is no longer in progress and ended before this month; no while it
+ * is in progress (education.graduated). Nothing otherwise: TailorIT's AI answers it (ANSWERABLE_PROFILE_CATEGORIES).
+ */
+function graduatedValue(ctx: ValueContext): ValueResult {
+  const { spec, profile, now } = ctx;
+  const index = entryIndex(spec, profile.education, 'education', ctx.blockEntries);
+  if (index === null) return none('no-profile-value', false);
+  const entry = profile.education[index]!;
+  const degree = entry.degree.level !== 'other' || entry.degree.type !== undefined;
+  const answer = entry.inProgress ? false
+    : degree && entry.endDate !== undefined && beforeMonth(entry.endDate, now) ? true : null;
+  if (answer === null) return none('no-profile-value', false);
+  return value({ origin: byRule('education.graduated', `education[${index}]`), confidence: VALUE_TRANSFORM,
+    choice: { intended: { kind: 'boolean', value: answer }, domain: 'polarity' }, check: answer });
+}
+
+/**
+ * ADP-20 (ADP's "Are you a high school graduate or passed the GED?", fixtures jr6-questions2-blank): yes when an
+ * education entry holds a degree past high school, or a completed high-school one (education.high-school). Nothing
+ * otherwise: TailorIT's AI answers it.
+ */
+function highSchoolValue(profile: Profile): ValueResult {
+  const past = profile.education.some((entry) => entry.degree.level !== 'other'
+    && (DEGREE_LEVEL_RANK[entry.degree.level] > DEGREE_LEVEL_RANK.highSchool || !entry.inProgress));
+  if (!past) return none('no-profile-value', false);
+  return value({ origin: byRule('education.high-school', 'education'), confidence: VALUE_TRANSFORM,
+    choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' }, check: true });
+}
+
+/** The words each pay period is written with on a list ("Annually | Hourly", ADP's), the first a box's. */
+const PERIOD_WORDS: Readonly<Record<'year' | 'month' | 'hour', readonly [string, ...string[]]>> = {
+  year: ['Annually', 'Annual', 'Yearly', 'Per Year', 'Per Annum', 'Salary', 'Salaried'],
+  month: ['Monthly', 'Per Month', 'Month'],
+  hour: ['Hourly', 'Per Hour', 'Hour'],
+};
+
+/**
+ * ADP-16 (ADP's desired-salary Annually | Hourly radios, "<block title> pay basis" by the label contract): the expected
+ * pay's period (preferences.expectedSalary); none without it, so the field is left (no default: Jobright's preselected
+ * Annually is not taken).
+ */
+function payPeriodValue(profile: Profile, vocab: Vocab): ValueResult {
+  const salary = profile.preferences.expectedSalary;
+  if (salary === undefined || salary.kind === 'decline') return none('no-profile-value');
+  const [first, ...rest] = PERIOD_WORDS[salary.value.period];
+  return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT, text: first,
+    choice: { intended: intendedUnknown('generic', first, rest, vocab), domain: 'generic' } });
+}
+
+/** ADP-18: an option that uploads a file ("Upload File"), and one that types the résumé's parts in instead ("Enter
+ *  Professional Details"), which is never chosen. */
+const UPLOAD_OPTION = /\b(?:upload|attach|my\s+computer|from\s+(?:my\s+)?(?:device|computer))\b/i;
+const TYPED_OPTION = /\b(?:enter|type|fill|manual\w*|professional\s+details|paste)\b/i;
+
+/**
+ * ADP-18 (ADP's "How would you like to provide the candidate's resume?", Upload File | Enter Professional Details,
+ * fixtures jr6-resume-choice): the one option that uploads a file, for a run that has a résumé to upload, where no
+ * option is chosen yet (resume.upload-method); one chosen already is kept (prefill-kept). Never the typed alternative.
+ */
+function resumeMethodValue(spec: FieldSpec, profile: Profile): ValueResult {
+  if (profile.resume === undefined) return none('no-profile-value', false);
+  if (spec.options === 'lazy') return none('waiting-for-options');
+  const options = spec.options.filter((option) => !option.disabled && cutInjected(option.label).clean.trim() !== '');
+  if (options.some((option) => option.selected && !PROMPT.test(option.label))
+    || (spec.current.kind === 'selected' && spec.current.labels.some((label) => label.trim() !== ''))) {
+    return none('prefill-kept', false);
+  }
+  const uploads = options.filter((option) => UPLOAD_OPTION.test(option.label) && !TYPED_OPTION.test(option.label));
+  if (uploads.length !== 1) return none('no-match');
+  return value({ origin: byRule('resume.upload-method', 'resume'), confidence: VALUE_TRANSFORM,
+    choice: { intended: intendedText(cutInjected(uploads[0]!.label).clean.trim()), domain: 'generic' } });
+}
+
+/** SR-13: a Facebook address (facebook.com, fb.com, m.facebook.com). */
+const FACEBOOK_LINK = /^(?:https?:\/\/)?(?:www\.|m\.|web\.)?(?:facebook|fb)\.com\//i;
+
+/** SR-13 (SmartRecruiters' "Facebook", fixtures/smartrecruiters/xplor-one-click): the profile's one Facebook address
+ *  among its other links, else nothing (never asked of an AI; Jobright keeps only a facebook.com address there). */
+function facebookValue(links: Profile['links']): ValueResult {
+  const found = links.other.map((link, index) => ({ link, index }))
+    .filter(({ link }) => FACEBOOK_LINK.test(link.url.trim()));
+  if (found.length !== 1) return none(found.length === 0 ? 'no-profile-value' : 'ambiguous-options', found.length > 1);
+  return textValue(found[0]!.link.url, `links.other[${found[0]!.index}].url`);
+}
+
+/** O13: Oracle's numbered link boxes, name="siteLink-N" (the label contract of FIXPLAN §3.2), their number captured. */
+const SITE_LINK = /(?:^|[_ ])site_?link_?(\d{1,2})(?=[_ ]|$)/;
+
+/**
+ * O13 (Oracle's "Link 1" … in Supporting Documents and URLs, fixtures/oracle/hjf-apply-section; Jobright's
+ * applyOracleProfileLinkAnswers fills LinkedIn, GitHub and the website into Link 1..n: cited): the box's number picks
+ * the profile's links in that order (the website, else the portfolio), then its other links; none past them.
+ */
+function numberedLinkValue(spec: FieldSpec, links: Profile['links']): ValueResult {
+  const number = Number(SITE_LINK.exec(nameIdText(spec.nameAttr, spec.idAttr))?.[1] ?? Number.NaN);
+  const website = (links.website?.trim() ?? '') !== '' ? { url: links.website ?? '', at: 'links.website' }
+    : { url: links.portfolio ?? '', at: 'links.portfolio' };
+  const ordered = [{ url: links.linkedin ?? '', at: 'links.linkedin' }, { url: links.github ?? '', at: 'links.github' },
+    website, ...links.other.map((link, index) => ({ url: link.url, at: `links.other[${index}].url` }))]
+    .filter((link) => link.url.trim() !== '');
+  const chosen = Number.isInteger(number) && number >= 1 ? ordered[number - 1] : undefined;
+  return chosen === undefined ? none('no-profile-value', false) : textValue(chosen.url, chosen.at);
 }
 
 // jr6 RULES end

@@ -28,7 +28,9 @@ const PROFILE_FAMILIES = ['identity.', 'contact.', 'address.', 'location.', 'lin
   'languages.', 'skills.', 'referral.', 'preferences.relocation', 'preferences.workArrangement', 'preferences.travel',
   'availability.',
   // jr6 RULES R3 (ICIMS-26): the person's time zone, from their state.
-  'preferences.timeZone'];
+  'preferences.timeZone',
+  // jr6 RULES R4 (ADP-18): how the résumé is given, from the run's résumé.
+  'application.'];
 
 describe('CATEGORY_CLASS (§8.2)', () => {
   it('covers exactly the field categories', () => {

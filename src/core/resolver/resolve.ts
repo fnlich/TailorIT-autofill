@@ -142,7 +142,8 @@ export function classifyField(field: FieldSpec, vocab?: Vocab): FieldClassificat
 
 /** The value in the shape the field's kind takes. */
 export type Shaped =
-  | { shape: 'text'; text: string }
+  /** `shorter` (jr6 RULES R4, U-17): a place's shorter forms, for a box whose maxlength the whole text passes. */
+  | { shape: 'text'; text: string; shorter?: string[] }
   /** `search` (v4, drop): the candidate answers a long list's search types when none of its options read is the value
    *  (listSearchFor). */
   | { shape: 'choice'; choice: Choice; search?: string[] }
@@ -393,7 +394,10 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
   const plain = (shaped: Shaped) => ({ shaped, guessed: false });
   switch (SHAPE_OF_KIND[spec.kind]) {
     case 'text': {
-      if (candidate.text !== undefined) return plain({ shape: 'text', text: candidate.text });
+      if (candidate.text !== undefined) {
+        const shorter = shorterPlaces(candidate.text, candidate.choice?.place);
+        return plain({ shape: 'text', text: candidate.text, ...(shorter.length > 0 ? { shorter } : {}) });
+      }
       if (candidate.date === undefined) return null;
       if (datePartOf(spec.label) === 'year') return plain({ shape: 'text', text: String(candidate.date.y) });
       // jr6 RULES (ICIMS-10): a box of two characters at most that asks for the day takes the day alone.
@@ -431,6 +435,17 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
       return queries.length === 0 ? null : plain({ shape: 'search', queries, choice });
     }
   }
+}
+
+/** jr6 RULES R4 (U-17: UltiPro's experience "Location", maxlength 20, fixtures/ultipro/resume-review; Jobright cuts
+ *  it to 20 characters: ours never cuts a value): a place's shorter forms built from its parts, shortest last: its city
+ *  with its region's code ("San Francisco, CA"), then its city alone; none for a value that is no place. */
+function shorterPlaces(text: string, place: Choice['place']): string[] {
+  const city = place?.city?.trim() ?? '';
+  if (city === '') return [];
+  const code = place?.region?.code?.trim() ?? '';
+  return [...new Set([code === '' ? '' : `${city}, ${code}`, city])]
+    .filter((form) => form !== '' && form.length < text.trim().length);
 }
 
 /** The intended value a shaped value stands for, for the Resolution. */

@@ -138,6 +138,10 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'skills.experience-with': (category) => category === 'skills.experienceWith',
   // jr6 RULES R3 (JZ-11): living or working in a country, from the address.
   'location.in-country': (category) => category === 'location.inCountry',
+  // jr6 RULES R4 (ICIMS-25, ADP-20, ADP-18).
+  'education.graduated': (category) => category === 'education.graduated',
+  'education.high-school': (category) => category === 'education.highSchool',
+  'resume.upload-method': (category) => category === 'application.resumeMethod',
   // jr6 RULES end
 };
 

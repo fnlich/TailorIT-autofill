@@ -94,6 +94,7 @@ import { guardWrite, type GuardContext, type WriteSubject } from '../guard/write
 import { cacheEntryFor } from '../matcher/cache';
 import { noMatch, matchOne } from '../matcher/cascade';
 import { matchPlace, matchStreet } from '../matcher/place';
+import { settleSchoolCompanions, settleSecondaryPhones } from './neighbours';
 import { completeTiebreak } from '../matcher/tiebreak';
 import { dialCodeOf } from '../matcher/dialCode';
 import { prepareOptions } from '../matcher/prepare';
@@ -201,6 +202,23 @@ function showsResume(names: readonly string[] | undefined, resume: PlanInput['pr
   return names.some((name) => mine.has(spaced(name)));
 }
 // ── end behaviour review (M2) ──
+
+/** jr6 RULES R4 (ICIMS-23): the platforms whose held résumé's input a person reaches only through a replace control the
+ *  extension never presses (iCIMS's "Replace Resume", button#PortalProfileFields.Resume_Button, the hidden input's
+ *  visible control: the iCIMS package's uploadWidgets; pressing it waits on owner question 2). Workday's drop zone takes
+ *  a file beside the one it holds, so its held résumé is uploaded again under "Upload mine again", as before. */
+const REPLACED_ONLY_BY_CONTROL: ReadonlySet<FieldSpec['platform']> = new Set<FieldSpec['platform']>(['icims']);
+
+/** jr6 RULES R4 (ICIMS-23, FIXPLAN §6.3 item 64): whether a held résumé's input is not visible itself, only its
+ *  replace control (REPLACED_ONLY_BY_CONTROL): it is never written. */
+function behindReplaceControl(spec: FieldSpec): boolean {
+  return spec.visibility === 'hidden-file-with-visible-control' && REPLACED_ONLY_BY_CONTROL.has(spec.platform);
+}
+
+/** jr6 RULES R4 (U-17): the origin of a place written in its shorter form: the profile's place, composed. */
+function shortPlaceOrigin(origin: ValueOrigin | null): ValueOrigin | undefined {
+  return origin?.provenance === 'profile' ? { ...origin, transform: 'location.compose' } : undefined;
+}
 
 /** The status of a field the Guard keeps from being written: a honeypot is blocked; a field with no label at all is
  *  skipped, since it may be no question at all; one named only by a label nobody sees is flagged, since it names a
@@ -591,9 +609,13 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
   const current = spec.current;
   switch (shaped.shape) {
     case 'text': {
-      const { text } = shaped;
       const maxLength = spec.constraints.maxLength;
-      if (maxLength !== undefined && codePoints(text) > maxLength) return blank('flagged', 'maxlength-exceeded');
+      // jr6 RULES R4 (U-17): a place too long for the box is written in its shorter form ("City, ST"), never cut.
+      const over = maxLength !== undefined && codePoints(shaped.text) > maxLength;
+      const fitting = over ? shaped.shorter?.find((form) => codePoints(form) <= maxLength!) : undefined;
+      if (over && fitting === undefined) return blank('flagged', 'maxlength-exceeded');
+      const text = fitting ?? shaped.text;
+      const origin = fitting === undefined ? undefined : shortPlaceOrigin(resolution.origin);
       if (current.kind === 'text' && current.text.trim() !== '') {
         if (sameText(category, current.text, text)) return blank('skipped', 'already-correct');
         // The page drew the number nationally beside a country control that shows its dial code: it holds the number.
@@ -604,9 +626,10 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
         // A page's own text in a box of prose is the person's to judge; in a structured field the profile wins.
         // jr6 RULES (WD-07): and so does it in a box of prose of a block the run assigned, from that block's entry.
         if (spec.kind === 'textarea' && !fromAssignedBlock(spec, resolution, ctx)) return blank('flagged', 'prefill-kept');
-        return { value: { kind: 'text', text }, match: NOT_APPLICABLE, flag: 'prefill-conflict' };
+        return { value: { kind: 'text', text }, match: NOT_APPLICABLE, flag: 'prefill-conflict',
+          ...(origin !== undefined ? { origin } : {}) };
       }
-      return { value: { kind: 'text', text }, match: NOT_APPLICABLE };
+      return { value: { kind: 'text', text }, match: NOT_APPLICABLE, ...(origin !== undefined ? { origin } : {}) };
     }
     case 'date':
       if (current.kind === 'text' && current.text.trim() === shaped.iso) return blank('skipped', 'already-correct');
@@ -617,6 +640,10 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       // and the person chose "Résumé already on the page: Upload mine again" (uploadsHeldResume).
       if (current.kind === 'files' && current.count > 0 && !uploadsHeldResume(spec, category, ctx.input)) {
         return blank('flagged', 'prefill-kept');
+      }
+      // jr6 RULES R4 (ICIMS-23): one whose input sits behind a replace control is never written: the person's.
+      if (uploadsHeldResume(spec, category, ctx.input) && behindReplaceControl(spec)) {
+        return blank('flagged', 'resume-held-no-input');
       }
       return { value: { kind: 'file', ref: shaped.ref }, match: NOT_APPLICABLE };
     case 'check': {
@@ -1464,6 +1491,19 @@ export function planFrame(asked: PlanInput): PlanOutput {
   // jr6 RULES (U-09, ADP-17): an EEO decline box ticked only where the list beside it lacks a decline of its own.
   settleDeclineBoxes(planned, new Map(resolved.map((field) => [field.resolution.key, field.resolution])), classified,
     input.vocab);
+  // jr6 RULES R4 (ICIMS-24): a school's companion box only where its list lacks the school; (U-16) a secondary phone
+  // left empty beside the primary.
+  settleSchoolCompanions(planned, classified, input.vocab);
+  settleSecondaryPhones(planned, classified);
+  // jr6 RULES R4 (jobvite-new-5, Sikich's optional "If yes, …" after a question answered No, fixtures jr6-sikich-step3):
+  // an optional follow-up whose answer above is the opposite of what it follows is never classified (one AI round
+  // less); it stays skipped, conditional-question.
+  const opposed = new Set<string>(specs.filter((spec) => {
+    const condition = spec.required ? null : conditionOf(spec.label);
+    return condition !== null && conditionOpposed(condition, answerAbove(spec));
+  }).map((spec) => spec.key));
+  for (let at = classify.length - 1; at >= 0; at -= 1) if (opposed.has(classify[at]!.key)) classify.splice(at, 1);
+  for (const key of opposed) unclassified.delete(key);
   // v5 p2-stream (one round): a field nothing classified whose answer was not asked with it (a draft took it, or the
   // answer step would not ask it) is classified first, as before.
   for (const [key, item] of unclassified) if (!askedOnce.has(key)) classify.push(item);

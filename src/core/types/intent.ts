@@ -65,6 +65,12 @@ export const FIELD_CATEGORIES = [
   // jr6 RULES R3 (FIXPLAN §6.3 items 49 to 61): whether the person lives or will work in a country a question names
   // (JZ-11); a former, previous or maiden name, which the profile never holds (U-11).
   'location.inCountry', 'identity.formerName',
+  // jr6 RULES R4 (FIXPLAN §6.3 items 62 to 79): a name's prefix or salutation, which the profile never holds (WD-25); a
+  // school entry's graduation (ICIMS-25); an address's third line (ADP-14); the pay's period (ADP-16); how the résumé is
+  // provided (ADP-18); a high-school diploma or GED (ADP-20); a mailing address only if it differs (JV-19); a Facebook
+  // link (SR-13); a numbered link box, the profile's links in order (O13).
+  'identity.prefix', 'education.graduated', 'address.line3', 'salary.period', 'application.resumeMethod',
+  'education.highSchool', 'address.mailing', 'links.facebook', 'links.numbered',
   // jr6 RULES end
   'unknown',
 ] as const;
@@ -119,6 +125,9 @@ export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.
   // jr6 RULES R3 (FIXPLAN §6.3 items 49 to 61): yes or no to living or working in the country a question names, from the
   // profile's address (JZ-11).
   'location.in-country',
+  // jr6 RULES R4 (FIXPLAN §6.3 items 62 to 79): a school entry graduated from its degree and end date (ICIMS-25); a high
+  // school diploma from the education entries (ADP-20); "Upload File" for a run that has a résumé (ADP-18).
+  'education.graduated', 'education.high-school', 'resume.upload-method',
   // jr6 RULES end
 ] as const;
 export type RuleId = (typeof RULE_IDS)[number];
