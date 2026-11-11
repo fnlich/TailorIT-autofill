@@ -85,6 +85,7 @@ import verilyVerify from '../../../fixtures/workday/verily-sign-in-verify.html?r
 import danaVd from '../../../fixtures/workday/danafarber-voluntary-disclosures.html?raw';
 import resolveSource from '../../../fixtures/workday/resolvetech-source-open.html?raw';
 import aepAq2 from '../../../fixtures/workday/aep-application-questions-2.html?raw';
+import webAq from '../../../fixtures/workday/web-application-questions.html?raw';
 import exelixisState from '../../../fixtures/workday/s2-exelixis-state-open.html?raw';
 import pureDegree from '../../../fixtures/workday/s2-pureinsurance-degree-open.html?raw';
 
@@ -849,6 +850,7 @@ describe('jr6 WD-17, WD-29 and WD-30 on AEP’s Application Questions 2 of 2 (RU
     const CONTRACTOR = 'Are you now or have you ever been a contractor at AEP?';
     const OPT = 'Will you be using Optional Practical Training (OPT) or STEM OPT to begin employment at AEP?';
     const MILITARY = 'Do you have military training or a military certification related to this position?';
+    const RELATIVES = 'Do you have relatives employed by American Electric Power?';
 
     it('golden: a contractor at AEP is the posting company’s own question: No; OPT: No (the posting’s country, '
       + 'flagged); military training asked of the AI (the all scope)', async () => {
@@ -863,6 +865,9 @@ describe('jr6 WD-17, WD-29 and WD-30 on AEP’s Application Questions 2 of 2 (RU
         reason: 'legal-not-in-profile' });
       expect(step.write(MILITARY)).toBeUndefined();
       expect(step.ask(MILITARY)).toBe('answer');
+      // RULES item 20 (its moved row): relatives the profile leaves open are asked in the all scope.
+      expect(step.row(RELATIVES)).toMatchObject({ category: 'screening.relatives', reason: 'legal-not-in-profile' });
+      expect(step.ask(RELATIVES)).toBe('answer');
     });
 
     it('with the screening answers (no military service, not a veteran): military training No', async () => {
@@ -871,8 +876,23 @@ describe('jr6 WD-17, WD-29 and WD-30 on AEP’s Application Questions 2 of 2 (RU
       expect(step.write(MILITARY)?.origin).toMatchObject({ provenance: 'profile', path: 'screening.governmentService',
         transform: 'legal.military-training' });
       expect(step.ask(MILITARY)).toBeNull();
+      expect(optionOf(step.write(RELATIVES))).toBe('No');
     });
   });
+
+describe('jr6 RULES item 20 on Workday (its moved row): a restrictive covenant asked in the all scope', () => {
+  it('web-application-questions: asked of the AI while the profile leaves it open; with the screening answers, No '
+    + '(assumed list)', async () => {
+    const COVENANTS = /^Are you subject to any restrictive covenants from prior employment/;
+    const golden = await stepPlan(webAq, 'Newfold Digital');
+    expect(golden.row(COVENANTS)).toMatchObject({ category: 'screening.restrictiveAgreement',
+      reason: 'legal-not-in-profile' });
+    expect(golden.ask(COVENANTS)).toBe('answer');
+    removeFixtures(document);
+    const answered = await stepPlan(webAq, 'Newfold Digital', { profile: screened() });
+    expect(optionOf(answered.write(COVENANTS))).toBe('No');
+  });
+});
 
 describe('jr6 WD-25 and WD-26 (RULES items 62 and 13): a prefix and a county the profile never holds', () => {
   it.each([['resolvetech-source-open', resolveSource, 'Resolve Tech Solutions'],
