@@ -11,7 +11,9 @@
  * - each job's status from its tab (opened, filling, ready for you, submitted, skipped, failed) and what TailorIT is
  *   told; only the queued address, read the agent's way, ever opens; nothing opens while disconnected, without
  *   agent:run, or before the disclosure is acknowledged;
- * - Automatically starts the first form once; Manually leaves the tab to the person.
+ * - Automatically starts the first form once; Manually leaves the tab to the person;
+ * - jr6 apply F4a (AF-5): a job started at a page with no form whose tab no run reported from is Ready for you after
+ *   QUEUE_ENTRY_WAIT_MS, keeping its open-tab place; a run that reports leads, as before.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type {
