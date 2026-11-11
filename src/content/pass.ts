@@ -591,8 +591,9 @@ const OTHER_QUERY_STOPS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['needs-y
  *  (WriteValue query `other`), no Guard refused anything, it found nothing for a reason no stop names, and the run goes
  *  on. */
 function otherQueryFollows(value: WriteValue, result: TypeaheadResult, env: PassEnv): boolean {
-  return value.kind === 'query' && value.other === true && result.chosen === null && !result.blocked
-    && !OTHER_QUERY_STOPS.has(result.reason) && !env.signal.aborted && !env.stopped() && !runOver(env);
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 5): a free-text search's typed text stood: no "Other" follows it.
+  return value.kind === 'query' && value.other === true && result.chosen === null && result.freeText === undefined
+    && !result.blocked && !OTHER_QUERY_STOPS.has(result.reason) && !env.signal.aborted && !env.stopped() && !runOver(env);
 }
 
 // end s2 core-wd
@@ -690,13 +691,23 @@ async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, 
   if (otherQueryFollows(write.value, result, env) && monotonicNow() - started < SEARCH_FIELD_BUDGET_MS) {
     const again = last.rescan().target(write.key) ?? target;
     const other = await searchTypeahead(again, [NO_MATCH_OTHER_QUERY], ctx, hooksFor(true),
-      SEARCH_FIELD_BUDGET_MS - (monotonicNow() - started));
+      SEARCH_FIELD_BUDGET_MS - (monotonicNow() - started), { freeText: false });
     if (other.chosen !== null || other.blocked) {
       result = other;
       searched = again;
     }
   }
-  afterWait(env, result.chosen !== null);
+  afterWait(env, result.chosen !== null || result.freeText !== undefined);
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 5, U-04): nothing matched and the typed text stood as the answer of a search its
+  // adapter declares free text (WidgetDecl.freeText: UltiPro's School Name): the planner's row, written, read back now
+  // and after the settle by the box's value (widgetHolds' 'text'), as a text write of that one query is.
+  if (result.chosen === null && result.freeText !== undefined) {
+    const row = result.verified ? settleRow(planned, { kind: 'verified' }) : mismatchRow(planned, 'verify-mismatch');
+    const now = last.rescan().target(write.key) ?? target;
+    // Its origin is the query write's own (the profile's, transform typeahead.query: core/plan/frame.ts).
+    const typed: PlannedWrite = { ...write, value: { kind: 'text', text: result.freeText } };
+    return { row, written: writtenWidget(wanted, typed, planned, target.field, result.verified), readBack: readBack(now) };
+  }
   const picked = chosen as { row: FillResult; write: PlannedWrite } | null;
   if (result.chosen === null || picked === null) {
     return { row: settleRow(planned, result.blocked ? { kind: 'blocked', reason: result.reason }

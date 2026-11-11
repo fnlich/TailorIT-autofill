@@ -50,7 +50,9 @@ export {
   newReadiness, openList, pressDeclaredKey, type BridgeChoice, type BridgeRun, type WidgetContext, type WidgetReadiness,
 } from './interact';
 export { chosenLabels, hashOfRead, memberLabel, readList, readShownList, shownOptions, widgetCurrentValue } from './options';
-export { searchForOption, searchTypeahead, type TypeaheadHooks, type TypeaheadResult } from './typeahead';
+export {
+  searchForOption, searchTypeahead, type SearchOptions, type TypeaheadHooks, type TypeaheadResult,
+} from './typeahead';
 
 /** Writes one planned value into a widget (fill.ts); a query is searchTypeahead's. `origin` is the write's: an
  *  llm-pick is checked once more on what the widget shows right before its click (the Phase 4 review, R1). */

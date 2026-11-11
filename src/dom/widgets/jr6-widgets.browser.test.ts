@@ -1,5 +1,5 @@
 /*
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 4): the widget helpers on synthetic pages shaped as the jr6 audits
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 5): the widget helpers on synthetic pages shaped as the jr6 audits
  * describe each platform's widget (SP\jr6\audit\oracle.md, icims.md, smartrecruiters.md, adp.md, ultipro.md), each
  * declared by a test adapter as its platform package will declare it (FIXPLAN §6.5, §6.6, §6.9 to §6.11), driven only
  * by calling the helpers:
@@ -13,6 +13,7 @@
  *   rows that load into the host watched directly, and the page's shortest query (WidgetDecl.minQueryLength);
  * - item 4 (ADP-2, ADP-3, ADP-15 core): a shadow trigger with no ARIA list, its list a portal at the end of the body,
  *   its filter box in its shadow tree a part;
+ * - item 5 (U-04 core): a free-text search (WidgetDecl.freeText): its typed text stands when nothing matches;
  * Every value is synthetic (no owner data); every event the helpers cause is untrusted and on the fillers' list.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -756,5 +757,121 @@ describe('item 4 (ADP-2, ADP-3, ADP-15 core): a shadow trigger with a body porta
       expect(fields.map((field) => [field.label, field.kind]), `rooted: ${rooted}`).toEqual([[QUESTION, 'combobox']]);
       removeFixtures(document);
     }
+  });
+});
+
+// ── Item 5 (U-04 core): a free-text search ────────────────────────────────────────────────────────────────────────
+
+/** UltiPro's School Name as SP\jr6\audit\ultipro.md reads it (fixtures/ultipro/resume-review.html: an
+ *  input[role=combobox].tt-input in a span.twitter-typeahead, its suggestions .tt-suggestion in the sibling
+ *  .tt-menu[role=listbox]; the texts synthetic): each typed text lists the schools containing it, else "No matches";
+ *  a suggestion's click takes its words; the menu hides when the box is left, which keeps its text. window.__changes:
+ *  the box's change events. */
+const FREE = `<!doctype html><html><head><style>[hidden] { display: none !important; }</style></head><body>
+<form id="f">
+  <label for="school">School Name</label>
+  <span class="twitter-typeahead">
+    <input id="school" class="tt-input" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false"
+      aria-owns="school-menu" autocomplete="off">
+    <div id="school-menu" class="tt-menu" role="listbox" hidden><div class="tt-dataset"></div></div>
+  </span>
+</form>
+<script>
+  window.__changes = 0;
+  const SCHOOLS = ['Lakeside University', 'Riverside College', 'Hillcrest Institute'];
+  const box = document.getElementById('school');
+  const menu = document.getElementById('school-menu');
+  const dataset = menu.querySelector('.tt-dataset');
+  box.addEventListener('change', () => { window.__changes += 1; });
+  box.addEventListener('input', () => {
+    const query = box.value.trim().toLowerCase();
+    const found = SCHOOLS.filter((name) => query !== '' && name.toLowerCase().includes(query));
+    dataset.replaceChildren(...(found.length === 0 ? [Object.assign(document.createElement('div'),
+      { className: 'tt-empty', textContent: 'No matches' })] : found.map((name) => {
+      const row = document.createElement('div');
+      row.className = 'tt-suggestion';
+      row.textContent = name;
+      row.addEventListener('click', () => { box.value = name; menu.hidden = true; });
+      return row;
+    })));
+    menu.hidden = query === '';
+    box.setAttribute('aria-expanded', String(!menu.hidden));
+  });
+  box.addEventListener('focusout', () => { menu.hidden = true; box.setAttribute('aria-expanded', 'false'); });
+</script></body></html>`;
+
+/** UltiPro's typeaheads as its adapter declares them (FIXPLAN §6.10 item 3): typeahead-remote, results the sibling menu
+ *  and its .tt-suggestion rows, emptyAfterMs, and free text for School (unless `free` is false). */
+function ultiproAdapter(doc: Document, free = true): Adapter {
+  return {
+    widgetFor: (control: Element) => (control.id === 'school' ? { kind: 'typeahead-remote', opener: control,
+      results: { list: doc.getElementById('school-menu')!, option: '.tt-suggestion' }, emptyAfterMs: 400,
+      ...(free ? { freeText: true } : {}), snapshot: 'synthetic UltiPro school' } : null),
+  } as unknown as Adapter;
+}
+
+describe('item 5 (U-04 core): a search whose typed text stands where nothing matches (WidgetDecl.freeText)', () => {
+  const SCHOOL = 'Northgate Community College';
+  /** Hooks that choose a listed school whose words are the query's, as the worker's fill band does; `refuse` refuses
+   *  every guard from that call on (1-based). */
+  function hooks(page: Page, refuse = Infinity): TypeaheadHooks & { guards: string[] } {
+    const guards: string[] = [];
+    return {
+      guards,
+      guard: async (query) => {
+        guards.push(query);
+        return guards.length >= refuse ? { ok: false, reason: 'canary-in-value', blocked: true }
+          : { ok: true, target: page.target('School Name') };
+      },
+      match: async (results) => {
+        const index = results.findIndex((result) => result.label === 'Lakeside University');
+        return index < 0 ? { choose: null, reason: 'no-match', blocked: false }
+          : { choose: { index, cleanLabel: 'Lakeside University' } };
+      },
+    };
+  }
+
+  it('keeps the planner\'s first query in the box when no result matches, committed and read back', async () => {
+    const page = await open(FREE, 'ultipro', (doc) => ultiproAdapter(doc));
+    const used = hooks(page);
+    const result = await searchTypeahead(page.target('School Name'), [SCHOOL, 'Northgate College'], page.ctx(), used);
+    expect(result).toEqual({ chosen: null, verified: true, reason: 'ok', blocked: false, typed: 2, freeText: SCHOOL });
+    const box = page.doc.getElementById('school') as HTMLInputElement;
+    expect(box.value).toBe(SCHOOL);
+    // The second query was in the box: the first is typed again, a guarded write as each query is.
+    expect(used.guards).toEqual([SCHOOL, 'Northgate College', SCHOOL]);
+    expect(page.win<number>('__changes')).toBe(1);
+    expect(page.doc.getElementById('school-menu')!.hidden).toBe(true);
+    expect(widgetHolds(page.target('School Name'), { kind: 'text', text: SCHOOL })).toBe(true);
+    expect(widgetHolds(page.target('School Name'), { kind: 'text', text: 'Northgate College' })).toBe(false);
+    expectOurEventsOnly(page.events);
+  });
+
+  it('chooses a result that matches as any search does, with no free text', async () => {
+    const page = await open(FREE, 'ultipro', (doc) => ultiproAdapter(doc));
+    const result = await searchTypeahead(page.target('School Name'), ['Lakeside'], page.ctx(), hooks(page));
+    expect(result).toMatchObject({ chosen: { cleanLabel: 'Lakeside University' }, verified: true, reason: 'ok' });
+    expect(result.freeText).toBeUndefined();
+    expect((page.doc.getElementById('school') as HTMLInputElement).value).toBe('Lakeside University');
+  });
+
+  it('puts the box back where a guard refuses, where it is no free-text search, or where the caller says so', async () => {
+    const refused = await open(FREE, 'ultipro', (doc) => ultiproAdapter(doc));
+    // The free text's own guard refuses it: blocked, the box as it was.
+    expect(await searchTypeahead(refused.target('School Name'), [SCHOOL, 'Northgate College'], refused.ctx(),
+      hooks(refused, 3))).toMatchObject({ chosen: null, reason: 'canary-in-value', blocked: true });
+    expect((refused.doc.getElementById('school') as HTMLInputElement).value).toBe('');
+    removeFixtures(document);
+    const plain = await open(FREE, 'ultipro', (doc) => ultiproAdapter(doc, false));
+    expect(await searchTypeahead(plain.target('School Name'), [SCHOOL], plain.ctx(), hooks(plain)))
+      .toMatchObject({ chosen: null, reason: 'no-match', blocked: false });
+    expect((plain.doc.getElementById('school') as HTMLInputElement).value).toBe('');
+    removeFixtures(document);
+    const option = await open(FREE, 'ultipro', (doc) => ultiproAdapter(doc));
+    const result = await searchTypeahead(option.target('School Name'), [SCHOOL], option.ctx(), hooks(option), undefined,
+      { freeText: false });
+    expect(result).toMatchObject({ chosen: null, reason: 'no-match' });
+    expect(result.freeText).toBeUndefined();
+    expect((option.doc.getElementById('school') as HTMLInputElement).value).toBe('');
   });
 });

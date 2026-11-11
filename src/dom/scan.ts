@@ -763,9 +763,10 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
       // (WidgetResults.options) and the element a choice presses (WidgetResults.pressTarget).
       ...(declared.results !== undefined ? { results: declared.results } : {}),
       ...(declared.queryKey !== undefined ? { queryKey: declared.queryKey } : {}),
-      // jr6 ENGINE E1 (FIXPLAN §6.2 item 3): the page's shortest query.
+      // jr6 ENGINE E1 (FIXPLAN §6.2 items 3 and 5): the page's shortest query, and a search whose typed text stands.
       ...(Number.isInteger(declared.minQueryLength) && declared.minQueryLength! > 0
         ? { minQueryLength: declared.minQueryLength! } : {}),
+      ...(declared.freeText === true && kind === 'typeahead-remote' ? { freeText: true as const } : {}),
       // s2 lists: a list its adapter stored (a combobox's only), and a list drawn whole.
       // s2 lists: the stored list its adapter names (a combobox's only), when the worker served it.
       ...(declared.storedList !== undefined && kind === 'combobox' ? { storedList: declared.storedList } : {}),

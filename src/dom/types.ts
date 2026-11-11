@@ -185,6 +185,8 @@ export interface WidgetTarget {
   // ── jr6 ENGINE E1 ──
   /** FIXPLAN §6.2 item 3 (SR-2): a query shorter than this is never typed (WidgetDecl.minQueryLength). */
   readonly minQueryLength?: number;
+  /** FIXPLAN §6.2 item 5 (U-04): a search whose typed text stands when no result matches (WidgetDecl.freeText). */
+  readonly freeText?: true;
   // ── end jr6 ENGINE E1 ──
   // ── s2 lists ──
   /** The stored whole list the scan gave the field as its options (WidgetDecl.storedList's, the list the page publishes
