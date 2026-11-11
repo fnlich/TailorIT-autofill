@@ -95,6 +95,32 @@
 //   that also stands in addresses becomes REDACTED there and in the page (redactNewAtsAddress, by platform:
 //   NEW_ATS_ADDRESS_VALUES: ClearCompany's xdChannel, Pinpoint's and CareerPlug's csrf-token and csp-nonce metas,
 //   Pinpoint's confirmation token and per-render link keys).
+// - jr6 (the owner's snapshot6 of 2026-11-10; FIXPLAN 6.1, TOOLING), on every platform:
+//   - ADP's places (adp-new-4), keyed by markup and reached inside shadow roots: the signed-in avatar (its button, every
+//     sdf-avatar, the account menu's name heading), the Review step's summary, the posting's applied date
+//     (PROFILE_PLACES); the uploaded résumé's name (FILE_NAME_PLACES) and its Remove button's label (FILE_LINK_PLACES);
+//     sdf-select-simple's chosen label and live region (CHOSEN_PLACES, by :host()), its list's chosen sdf-select-item
+//     (CHOSEN_MARKS) and react-select's chip label (CHOSEN_PLACES);
+//   - SmartRecruiters' (SR-8): the saved experience and education entries and their buttons' labels, spl-avatar, a drop
+//     zone's file names (the places), and in its own pass the avatar's name attributes and spl-dropzone's files JSON;
+//   - Jobvite's drawn choices (JV-10): the chosen row's class, its icon swapped for the unchosen one (a CHOSEN_MARKS
+//     `swap`), its aria-selected and aria-checked; and AngularJS's state classes on every control and ng-model or
+//     ng-form element (jobvite-new-4: validity, emptiness and touch, which mark a clicked option or a ticked box);
+//   - iCIMS's pnumber= and ccode= (ICIMS-28: the phone gate's phone and country code, encrypted) with its per-person
+//     values;
+//   - --replace-text <css>=<file> (jobvite-new-2, repeatable): before anything is measured, every element the selector
+//     names in a converted frame gets the file's synthetic text: a select's options become one per non-blank line (a
+//     first option with an empty value kept before them); a meta element's content becomes its lines on one line; an
+//     element holding no form control keeps only that text; any other element keeps its controls, its first text run
+//     taking the text and the others emptied. Its title, aria-label and label, and an option's value, where present,
+//     take the text's first line. The same capture and file always give the same fixture; the header counts what each
+//     replacement took (replacedText), never its text.
+//   It refuses a page where (jobvite-new-2) the redaction list matched the page's own text inside an <option> (or a
+//   role=option), a <label>, a <legend>, or a posting's description or its copy in the page's description metadata
+//   (POSTING_TEXT_PLACES): a REDACTED there tells the value by elimination, so such an element is replaced with
+//   --replace-text first (an option whose whole list ends REDACTED or empty, as iCIMS's server-loaded dropdowns are,
+//   tells nothing and passes); and (JV-10) a page where the option rows of one choice group (CHOICE_ROWS) still differ
+//   after clearing, beyond their text, ids, names and values.
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -104,9 +130,11 @@
 // Usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <greenhouse|lever|ashby|workday|workable|icims|taleo|
 //          successfactors|oracle|smartrecruiters|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|
 //          ultipro|dayforce|paylocity|dice|clearcompany|adp> --case <name>
-//          [--redact <file>] [--out <folder>] [--folder <name>]
+//          [--redact <file>] [--out <folder>] [--folder <name>] [--replace-text <css>=<file>]...
 // The redact file holds one string per line (blank lines and lines starting with # are skipped); a string that looks
-// like a phone number matches whatever its punctuation. --out defaults to fixtures/.
+// like a phone number matches whatever its punctuation. --out defaults to fixtures/. Each --replace-text names a CSS
+// selector and, after its last "=", a UTF-8 file of synthetic text (made up, never a person's); a selector that names
+// no element in any converted frame is refused, by its position among the --replace-text options.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -286,6 +314,15 @@ export const FILE_NAME_PLACES = ['.file-upload__filename', '.ashby-application-f
   '[data-automation-id*="_uploaded"]', // paylocity-1: its data-automation-id is built from the name too
   'div:has(> button[aria-label="File options"]) > div.min-w-0', // dice-2, -8: the résumé card
   '[data-test-id="sc-resume"] > .text-font-light', // dice-1, -4, -6, -7: the review step's résumé
+  // jr6 (adp-new-4; SP\jr6\audit\adp.md section 2): ADP's Resume step, snapshot6 adp2's uploaded résumé row,
+  // <div class="fileDetails"><i class="fa fa-file-text"></i><span class="fileName">NAME</span><button
+  // id="recruitment_afterResumeUpload_remove_0" aria-label="Remove,NAME,Resume">. (The success banner beside it is a
+  // span.fileName too, holding ADP's own words: not this place.)
+  '.fileDetails span.fileName',
+  // jr6 (SR-8): SmartRecruiters' drop zone lists the attached file inside its shadow root (snapshot capture 5, the
+  // one-click page: <span class="c-spl-file-list-item-name">NAME</span>, its delete spl-button's splarialabel repeating
+  // the name).
+  '.c-spl-file-list-item-name',
 ];
 /** Chosen answers drawn outside a native control (a select's shown value, a chip; the new ATSs, DESIGN-NEW-ATS §6.4):
  *  cleared, their words (aria-label, title, alt) and all, a list's own options kept (redactApplicantTextInPage). */
@@ -309,6 +346,16 @@ export const CHOSEN_PLACES = [
   // (s2-lightning-0..2). Their words become REDACTED (the guidance, span#aria-guidance, is react-select's own).
   '.select__multi-value__remove[aria-label]',
   'span[id="aria-selection"], span[id="aria-focused"], span[id="aria-results"]',
+  // jr6 (adp-new-4; adp.md section 2): ADP's sdf-select-simple draws its chosen option inside its shadow root, its
+  // trigger's <span id="selected-label" part="selected-label"><span>ANSWER</span></span> (a blank one draws
+  // span#select-placeholder instead) and the live region beside it, <div role="status" class="sr-only">ANSWER</div>
+  // (snapshot6 adp1's State / Territory, adp2's Questions lists). :host() keeps both to that element's own tree, where
+  // the deep walk of SHADOW_ROOT_PLATFORMS reaches them.
+  ':host(sdf-select-simple) #selected-label[part="selected-label"]',
+  ':host(sdf-select-simple) [role="status"].sr-only',
+  // jr6 (adp-new-4): ADP's react-select (classNamePrefix MDFSelectBox) names the chosen chip in its remove button,
+  // aria-label="Remove ANSWER" (adp2's multi-select questions).
+  '.MDFSelectBox__multi-value__remove[aria-label]',
 ];
 /** s2 wd (the eeo study's converter findings): a search's results that list the applicant's own answer, an option of
  *  the list or not: each result's text, title and aria-label become REDACTED, inside a role=option too (redactApplicant-
@@ -316,6 +363,35 @@ export const CHOSEN_PLACES = [
  *  id="react-select-candidate-location-option-0">) and Lever's (s2-ahead-0: <div class="... dropdown-location"
  *  id="location-0">). */
 export const SEARCH_RESULT_PLACES = ['[id^="react-select-candidate-location-option-"]', '.dropdown-location'];
+
+/** jr6 (jobvite-new-2): a posting's description, where the redaction list may meet the page's own words (a town, a
+ *  school, an employer the posting names): each adapter's posting text (src/adapters/<platform> postingText or its
+ *  config's posting.text), and ADP's (BUILD.md section 4, E-ADP). A REDACTED there would tell the listed value by
+ *  elimination, so the conversion refuses it until the element is replaced (--replace-text). */
+export const POSTING_TEXT_PLACES = [
+  '[data-automation-id="jobPostingDescription"]', // workday
+  '.iCIMS_JobContent', // icims
+  '.job-details__description-content', // oracle
+  'main.jobad-main .job-sections', // smartrecruiters
+  '[data-ui="job-description"]', '[data-ui="job-requirements"]', '[data-ui="job-benefits"]', // workable
+  '.editablesection', // taleo
+  '.joqReqDescription', // successfactors
+  '.ashby-job-posting-description', // ashby
+  'div.jv-job-detail-description', // jobvite
+  '#job-description', // jazzhr
+  'div.job-description-container', // careerplug
+  '#external-jobs-show-description', // pinpoint
+  'div.ATS_htmlPreview', // rippling
+  'div.job-description-data', // adp
+  // The page's description metadata, a copy of the posting's text (the owner's Workday postings of 2026-11-06:
+  // <meta name="description" content="...">; iCIMS's og:description and twitter:description beside it).
+  'meta[name="description" i]', 'meta[property="og:description" i]', 'meta[name="twitter:description" i]',
+  'meta[property="twitter:description" i]',
+];
+
+/** How a refusal names each kind of place listedPlacesInPage counts. @type {Record<string, string>} */
+const LISTED_PLACE_WORDS = { option: 'options (an <option> or a role=option)', label: 'labels', legend: 'legends',
+  posting: 'posting descriptions (POSTING_TEXT_PLACES)' };
 
 // ── The security fix of 2026-11-06 (S2, S3, S10): chosen marks keyed by markup, cleared and refused ──
 /** A CSS module's chosen class, whatever its hash (Ashby's `_checked_132c8_44`). */
@@ -337,12 +413,25 @@ export const CHOSEN_OPTION_ROLES = ['option', 'gridcell', 'treeitem'];
 export const CHOSEN_OPTIONS = CHOSEN_OPTION_ROLES.map((role) => `[role="${role}" i]:not([data-value=""])`).join(', ');
 // ── end of the security fix's block ──
 
+/** jr6 (jobvite-new-4): AngularJS's (and Angular's) state classes, which a filled capture leaves on its controls: an
+ *  answered or clicked control's validity (ng-valid, ng-invalid, ng-pending and each ng-valid-<rule> and
+ *  ng-invalid-<rule>: ng-valid-required beside an answer, ng-valid-parse on a clicked radio), its emptiness (ng-empty,
+ *  ng-not-empty: a ticked box) and its touch (ng-pristine, ng-dirty, ng-untouched, ng-touched: the radio clicked).
+ *  Snapshot6 jobvite1 (6), (7) and jobvite2 (5): the clicked radio alone ng-dirty, a ticked box alone ng-not-empty. */
+export const ANGULAR_STATE_SOURCE =
+  '^ng-(?:(?:valid|invalid|pending)(?:-[\\w-]+)?|not-empty|empty|dirty|pristine|touched|untouched)$';
+/** The elements that carry them: every control, and every element bound by ng-model or grouping them by ng-form. */
+export const ANGULAR_STATE_ELEMENTS = 'input, select, textarea, [ng-model], [data-ng-model], [ng-form], [data-ng-form], '
+  + 'ng-form';
+
 /** The marks a drawn control or a list shows on the chosen answer, beside the input whose checked or selected state is
  *  dropped (the new ATSs, keyed by markup): every element `selector` names loses `classes` and the classes `patterns`
- *  match, and the attributes `attributes` names; and, unless `aria` is false, its aria-selected="true" becomes "false"
- *  (clearChoicesInPage, before anything is measured). The security fix of 2026-11-06 (S2, S3, S10) adds the generic
- *  marks of every platform; chosenMarksIn refuses a written fixture that still holds one.
- *  @type {Array<{ selector: string; classes?: string[]; patterns?: string[]; attributes?: string[]; aria?: boolean }>} */
+ *  match, and the attributes `attributes` names; each class `swap` names is replaced by its unchosen twin (jr6, JV-10);
+ *  and, unless `aria` is false, its aria-selected="true" becomes "false" (clearChoicesInPage, before anything is
+ *  measured). The security fix of 2026-11-06 (S2, S3, S10) adds the generic marks of every platform; chosenMarksIn
+ *  refuses a written fixture that still holds one.
+ *  @type {Array<{ selector: string; classes?: string[]; patterns?: string[]; attributes?: string[]; aria?: boolean;
+ *    swap?: Record<string, string> }>} */
 export const CHOSEN_MARKS = [
   // Builder A: Ant Design's drawn radios and boxes, chosen by their wrapper's and span's classes (dayforce-0: the
   // questionnaire's answers; dayforce-1: the acknowledgement).
@@ -377,6 +466,33 @@ export const CHOSEN_MARKS = [
   // its shadow root).
   { selector: 'spl-dropdown-item[selected]', attributes: ['selected'], aria: false },
   // ── end of the security fix's block ──
+  // ── jr6 (JV-10, adopted from the Jobvite audit's converter change in wt-s2gh): Jobvite's drawn radios and boxes
+  // (snapshot6 jobvite1 (6), (7) and jobvite2 (5)). Each option is <label class="jv-input-group-row ...
+  // jv-input-group-row-active"><i class="icon icon-radio-checked" role="radio" aria-selected="true"> beside its native
+  // input; an unchosen one draws icon-radio-empty and aria-selected="false" (a box: icon-checkbox-checked and
+  // icon-checkbox-blank). The chosen row's class goes; its icon is swapped for the unchosen one (removing it alone would
+  // still single the row out) and its aria-selected becomes "false"; a drawn box's aria-checked ("" until touched,
+  // "true" ticked, which the generic pass makes "false") goes from every box, as untouched. ──
+  { selector: 'label.jv-input-group-row', classes: ['jv-input-group-row-active'], aria: false },
+  { selector: 'label.jv-input-group-row i[role="radio"], label.jv-input-group-row i[role="checkbox"]',
+    swap: { 'icon-radio-checked': 'icon-radio-empty', 'icon-checkbox-checked': 'icon-checkbox-blank' },
+    attributes: ['aria-checked'] },
+  // jr6 (jobvite-new-4): AngularJS's state classes, from every control and every ng-model or ng-form element alike (the
+  // audit's change cleared them on Jobvite's radios and boxes; the verifier found them on every control).
+  { selector: ANGULAR_STATE_ELEMENTS, patterns: [ANGULAR_STATE_SOURCE], aria: false },
+  // jr6 (adp-new-4; adp.md section 2): ADP's sdf-select-simple list marks its chosen <sdf-select-item role="option"
+  // class="... selected" aria-selected="true"> inside its shadow root (snapshot6 adp2's Questions lists).
+  { selector: 'sdf-select-item.selected, sdf-select-item[aria-selected="true" i]', classes: ['selected'] },
+  // ── end jr6 ──
+];
+
+/** jr6 (JV-10): the option rows of a choice group, which hold no answer once cleared, so every row of one group must
+ *  read alike but for its text, ids, names, values and labels (unevenChoiceRowsInPage refuses a page where they do
+ *  not: a chosen mark CHOSEN_MARKS does not know yet). Each entry names a group and its rows by markup.
+ *  @type {Array<{ group: string; row: string; from: string }>} */
+export const CHOICE_ROWS = [
+  { group: 'fieldset.jv-input-group', row: 'label.jv-input-group-row',
+    from: 'snapshot6 jobvite1 (6), (7), jobvite2 (5): Jobvite\'s radio and box groups' },
 ];
 
 /** The account's and the profile's own text (the new ATSs, DESIGN-NEW-ATS §6.4): a welcome line, an account menu, a
@@ -395,12 +511,39 @@ export const PROFILE_PLACES = [
   '[data-automation="global-notification"] [data-bind*="message"]', // ultipro-1: the résumé pre-fill notice
   '[data-test-id^="sc-"] > .text-font-light', // dice-1, -4, -6, -7: the review step's answers
   'tr.file-row td.file-created-date', // clearcompany-0: when the file was uploaded
+  // ── jr6 (adp-new-4; SP\jr6\audit\adp.md section 2, snapshot6 adp1 and adp2, signed in) ──
+  // The signed-in shell's account: the avatar button, <div class="logged-in-user"><div class="avatar-button"
+  // aria-label="<initials>, Show user menu">, every <sdf-avatar aria-label="<name>"> (its initials the text of its
+  // shadow root), and the account menu's header naming the person (<div class="avatar-menu avatar-menu-header">
+  // <sdf-avatar></sdf-avatar><h2>NAME</h2>, also shown on the confirmation page).
+  '.logged-in-user .avatar-button', 'sdf-avatar', '.avatar-menu-header > h2',
+  // The Review step's summary (adp1's Review your application): each personal-information line (<div
+  // class="self-review-content-personalInfo"><sdf-icon icon="user"></sdf-icon><span>LINE</span>), the résumé's name and
+  // preview (span.self-review-content-resume-content, its aria-label the same words), the additional documents' line and
+  // each answer (<label class="self-review-content-question-answer">ANSWER</label>).
+  '.self-review-content-personalInfo > span', '.self-review-content-resume-content',
+  '.self-review-content-additionaldocs > span', 'label.self-review-content-question-answer',
+  // The posting page signed in: the applicant's own date (<span class="job-description-applied-date">).
+  'span.job-description-applied-date',
+  // ── jr6 (SR-8; SP\jr6\audit\smartrecruiters.md SR-8, snapshot captures 4 and 5): SmartRecruiters' one-click page ──
+  // Each saved entry, <oc-experience-entry data-test="experience-entry"> and <oc-education-entry>: its title, company or
+  // institution, dates, degree, major and description (data-test="experience-entry-title", ...) and its Edit and Delete
+  // spl-buttons, whose splarialabel (and their shadow button's aria-label) names the entry; and spl-avatar, the typed
+  // name in its aria-label and the initials in its shadow root (its firstname and lastname attributes are
+  // redactPlatformInPage's).
+  'oc-experience-entry [data-test^="experience-entry-"]', 'oc-education-entry [data-test^="education-entry-"]',
+  'spl-avatar',
 ];
 
 /** The controls beside an uploaded file that name it, and link to it: Workable's <a data-action="view" href="<the
  *  file's signed storage address>" aria-label="view NAME"> and <button data-action="delete" aria-label="delete NAME">
- *  (the Raydar capture). Their aria-label and title become "<their data-action> REDACTED", their address "#". */
-export const FILE_LINK_PLACES = ['[data-role="dropzone"] [role="menu"] [data-action]'];
+ *  (the Raydar capture). Their aria-label and title become "<their data-action> REDACTED", their address "#". One with
+ *  neither a data-action nor a title keeps its label's own words around a file name the page showed
+ *  (FILE_NAME_PLACES), the name REDACTED; any other label becomes REDACTED whole. */
+export const FILE_LINK_PLACES = ['[data-role="dropzone"] [role="menu"] [data-action]',
+  // jr6 (adp-new-4; adp.md section 2): ADP's Remove beside the uploaded résumé, aria-label="Remove,NAME,Resume"
+  // (snapshot6 adp1's Resume step).
+  'button[id^="recruitment_afterResumeUpload_remove_"]'];
 /** Where a page shows an entry it read from the applicant's resume, as text: Workable's saved Education and Experience
  *  entries, <li><div data-ui="group"><dl><dt>School</dt><dd data-ui="school"><span>NAME</span></dd></dl> ... <dd
  *  data-ui="period"> ... (and title, company, summary, field_of_study, degree), filled by its "Import resume from"
@@ -616,7 +759,9 @@ export function normaliseTokens(platform, html) {
     // code=), each step's csrf=, an IForm frame's token=, user= (the person's id), item=, aid= and applicationStartId=,
     // and the analytics ids a portal's links carry (_ga=, ga=, _gl=, _sp=, _jsqid=); each select's hash="..." and the
     // hCaptcha response a frame holds (data-hcaptcha-response).
-    redactValue(/\b(?:csrf|eem|code|token|user|item|aid|applicationStartId)=([^&"'\s<]+)/g);
+    // jr6 (ICIMS-28, adopted from the iCIMS audit's change in wt-s2cwd): careers-ars's profile link from the phone gate
+    // also carries pnumber= and ccode= (snapshot6 icims2: the gate's phone and its country code, encrypted).
+    redactValue(/\b(?:csrf|eem|code|token|user|item|aid|applicationStartId|pnumber|ccode)=([^&"'\s<]+)/g);
     redactValue(/\b(?:_ga|ga|_gl|_sp|_jsqid)=([^&"'\s<]+)/g);
     redactValue(/\bhash="([^"]+)"/g);
     redactValue(/\bdata-hcaptcha-response="([^"]+)"/g);
@@ -1145,11 +1290,12 @@ export function stripInjectedInPage(input) {
  *   country, [job-boards.greenhouse.io] ...at Axle (1).mht) loses its region;
  * - intl-tel-input's country button names the chosen country in its title and aria-label, beside its flag and dial code
  *   (Workable's phone, the Raydar and Salvo captures): they become REDACTED, the flag's region dropped;
- * - the marks `marks` names (CHOSEN_MARKS: the new ATSs' drawn controls and lists) lose their chosen classes, and an
- *   option's aria-selected="true" becomes "false" (s2 wd: and an aria-activedescendant naming that option goes).
+ * - the marks `marks` names (CHOSEN_MARKS: the new ATSs' drawn controls and lists) lose their chosen classes (jr6,
+ *   JV-10: or have them swapped for their unchosen twins), and an option's aria-selected="true" becomes "false" (s2 wd:
+ *   and an aria-activedescendant naming that option goes).
  * Returns how many it cleared.
  * @param {{ redacted: string; marks?: Array<{ selector: string; classes?: string[]; patterns?: string[];
- *   attributes?: string[]; aria?: boolean }> }} input
+ *   attributes?: string[]; aria?: boolean; swap?: Record<string, string> }> }} input
  * @returns {{ choices: number }}
  */
 export function clearChoicesInPage(input) {
@@ -1172,7 +1318,7 @@ export function clearChoicesInPage(input) {
   // an option's aria-selected="true" becomes "false".
   /** The ids of the options unselected here. @type {Set<string>} */
   const unselected = new Set();
-  for (const { selector, classes = [], patterns = [], attributes = [], aria = true } of input.marks ?? []) {
+  for (const { selector, classes = [], patterns = [], attributes = [], aria = true, swap = {} } of input.marks ?? []) {
     const matchers = patterns.map((source) => new RegExp(source));
     for (const element of doc.querySelectorAll(selector)) {
       const named = [...element.classList].filter((name) => classes.includes(name)
@@ -1183,7 +1329,10 @@ export function clearChoicesInPage(input) {
       if (selected && element.id !== '') unselected.add(element.id);
       if (named.length > 0) element.classList.remove(...named);
       for (const name of held) element.removeAttribute(name);
-      if (selected || named.length > 0 || held.length > 0) choices += 1;
+      // jr6 (JV-10): a chosen class swapped for its unchosen twin, as the page draws an unchosen option.
+      const swapped = Object.entries(swap).filter(([from]) => element.classList.contains(from));
+      for (const [from, to] of swapped) element.classList.replace(from, to);
+      if (selected || named.length > 0 || held.length > 0 || swapped.length > 0) choices += 1;
     }
   }
   // s2 wd (the wd study's converter finding 1): an aria-activedescendant that names an option unselected above names the
@@ -1235,8 +1384,9 @@ export function clearChoicesInPage(input) {
  * - an open searchable Ant select's options' words and titles (dayforce-2), and UltiPro's Race row drawn open (its
  *   state told the Hispanic-origin answer: ultipro-0, -1);
  * - each file or entry control keeps the words before the name that say what it does (its data-action, or its title,
- *   which names nothing else) in its aria-label and title, the rest REDACTED; its address becomes "#" and its download
- *   name REDACTED;
+ *   which names nothing else) in its aria-label and title, the rest REDACTED (jr6: one with neither keeps its label's
+ *   words around a file name the page showed, the name REDACTED); its address becomes "#" and its download name
+ *   REDACTED;
  * - a custom element's typed or chosen value and default-value (ukg-input, an answered sdf-radio-group; never an
  *   option's own element: -button, -option, -item, -radio, -checkbox, -tab), a date widget's data-date-value, and the
  *   data-gtm-form-interact-* attributes a tag manager adds once a form is typed into;
@@ -1289,7 +1439,8 @@ export function redactApplicantTextInPage(input) {
       const title = element.getAttribute('title');
       if (title !== null && title.trim() !== '' && title !== redacted) held.push(title.trim());
       if (!words) continue;
-      for (const name of ['aria-label', 'title', 'alt']) {
+      // jr6 (SR-8): SmartRecruiters' spl-button names what it acts on in its splarialabel (an entry's Edit and Delete).
+      for (const name of ['aria-label', 'title', 'alt', 'splarialabel']) {
         const value = element.getAttribute(name);
         if (value !== null && value.trim() !== '' && value !== redacted) element.setAttribute(name, redacted);
       }
@@ -1354,6 +1505,14 @@ export function redactApplicantTextInPage(input) {
       for (const name of ['aria-label', 'title']) {
         const value = element.getAttribute(name);
         if (!value || (name === 'title' && value.trim() === action && !element.hasAttribute('data-action'))) continue;
+        // jr6 (adp-new-4): a control with no word of its own to keep (ADP's Remove, aria-label="Remove,NAME,Resume")
+        // keeps its label's words around a file name the page showed, the name REDACTED; any other label goes whole.
+        const shown = action === '' ? [...names].filter((each) => value.includes(each)) : [];
+        if (shown.length > 0) {
+          element.setAttribute(name, shown.sort((a, b) => b.length - a.length)
+            .reduce((out, each) => out.split(each).join(redacted), value));
+          continue;
+        }
         const kept = action !== '' && value.toLowerCase().startsWith(`${action.toLowerCase()} `) ? value.slice(0, action.length + 1) : '';
         element.setAttribute(name, `${kept}${redacted}`);
       }
@@ -1722,10 +1881,12 @@ export function redactWorkdayInPage(input) {
 /**
  * Turns the frame's document into a fixture in place: inlining, removal, form actions and redaction. Returns counts,
  * the emails and phone numbers it found (kept in memory for the final check, never printed or written) and the
- * suspicious tokens left over.
+ * suspicious tokens left over. jr6 (jobvite-new-2): each place where a listed string met the page's own text (an
+ * option, a label, a legend, a posting's description: `postingPlaces`) is kept in the page for listedPlacesInPage.
  * @param {{ resources: Record<string, Resource>; frameUrls: Record<string, string | null>; frameUrl: string;
  *   redact: string[]; email: string; notEmail: string; phone: string;
- *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; redacted: string }} input
+ *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; redacted: string;
+ *   postingPlaces?: string }} input
  */
 export function transformInPage(input) {
   const doc = globalThis.document;
@@ -2043,12 +2204,30 @@ export function transformInPage(input) {
     const min = match.trimStart().startsWith('+') ? input.phoneDigits.minWithPlus : input.phoneDigits.min;
     return digits >= min && digits <= input.phoneDigits.max;
   };
-  /** @param {string} text @param {boolean} phones */
-  const scrub = (text, phones) => {
+  // jr6 (jobvite-new-2): the kinds of the page's own text where a listed string tells its value by elimination, and the
+  // places a listed string met there (read by listedPlacesInPage once the platform's own redactions ran).
+  /** @type {Array<[string, string]>} */
+  const placeKinds = [['option', 'option, [role="option" i]'], ['label', 'label'], ['legend', 'legend'],
+    ['posting', input.postingPlaces ?? '']];
+  /** @type {Array<{ element: Element; kind: string }>} */
+  const listedAt = [];
+  /** @param {Element | null | undefined} at */
+  const noteListed = (at) => {
+    if (!at) return;
+    for (const [kind, selector] of placeKinds) {
+      const place = selector === '' ? null : at.closest(selector);
+      if (place === null) continue;
+      listedAt.push({ element: place, kind });
+      return;
+    }
+  };
+  /** @param {string} text @param {boolean} phones @param {Element | null} [at] */
+  const scrub = (text, phones, at) => {
     let out = text;
     for (const pattern of listed) {
       out = out.replace(pattern, () => {
         counts.listed += 1;
+        noteListed(at);
         return redacted;
       });
     }
@@ -2072,7 +2251,7 @@ export function transformInPage(input) {
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     if (node.nodeType === 3 && node.parentElement?.closest('style')) continue;
     const value = node.nodeValue ?? '';
-    const clean = scrub(value, true);
+    const clean = scrub(value, true, node.parentElement);
     if (clean !== value) node.nodeValue = clean;
   }
   for (const element of doc.querySelectorAll('*')) {
@@ -2082,10 +2261,12 @@ export function transformInPage(input) {
       const lowerValue = attribute.value.trim().toLowerCase();
       const phones = input.phoneAttributes.includes(name) || name.startsWith('data-') ||
         (name === 'href' && (lowerValue.startsWith('tel:') || lowerValue.startsWith('sms:')));
-      const clean = scrub(attribute.value, phones);
+      const clean = scrub(attribute.value, phones, element);
       if (clean !== attribute.value) element.setAttribute(attribute.name, clean);
     }
   }
+  const view = /** @type {any} */ (globalThis);
+  view.__fixtureListed = listedAt;
 
   // The fixture is written as UTF-8.
   const head = doc.head ?? doc.documentElement.insertBefore(doc.createElement('head'), doc.body);
@@ -2349,8 +2530,152 @@ export function redactPlatformInPage(input) {
         }
       }
     }
+    // jr6 (SR-8; snapshot capture 5): the avatar names the person in its firstname and lastname attributes (its text and
+    // aria-label are PROFILE_PLACES'), and a drop zone holding a file lists it, its name, size, type and time, in its
+    // files JSON: <spl-dropzone files='[{"name":"...","size":...}]'>, an empty one files="[]", which it becomes.
+    for (const avatar of doc.querySelectorAll('spl-avatar')) {
+      for (const name of ['firstname', 'lastname']) {
+        if (!avatar.hasAttribute(name) || ['', input.redacted].includes(avatar.getAttribute(name) ?? '')) continue;
+        avatar.setAttribute(name, input.redacted);
+        counts.typedValues += 1;
+      }
+    }
+    for (const zone of doc.querySelectorAll('spl-dropzone[files]')) {
+      if ((zone.getAttribute('files') ?? '').trim() === '[]') continue;
+      zone.setAttribute('files', '[]');
+      counts.typedValues += 1;
+    }
   }
   return counts;
+}
+
+/**
+ * jr6 (jobvite-new-2): where the redaction list met the page's own text, as transformInPage noted each place, read once
+ * the platform's own redactions ran: an <option> or a role=option, a <label>, a <legend>, or a posting's description
+ * (POSTING_TEXT_PLACES). A REDACTED there tells the listed value by elimination (a county among the page's 1950, a town
+ * the posting names), so the conversion refuses it until the element is replaced (--replace-text). An option whose
+ * whole list ends REDACTED or empty (iCIMS's server-loaded dropdowns, which icimsRedactInPage blanks whole) tells
+ * nothing and is left out. Answers how many places of each kind, never a value.
+ * @param {string} redacted
+ * @returns {{ option: number; label: number; legend: number; posting: number }}
+ */
+export function listedPlacesInPage(redacted) {
+  const view = /** @type {any} */ (globalThis);
+  /** @type {Array<{ element: Element; kind: 'option' | 'label' | 'legend' | 'posting' }>} */
+  const noted = view.__fixtureListed ?? [];
+  view.__fixtureListed = [];
+  const counts = { option: 0, label: 0, legend: 0, posting: 0 };
+  /** @param {Element} option */
+  const blank = (option) => ['', redacted].includes((option.textContent ?? '').trim());
+  /** @type {Set<Element>} */
+  const seen = new Set();
+  for (const { element, kind } of noted) {
+    if (!element.isConnected || seen.has(element)) continue;
+    seen.add(element);
+    if (kind === 'option') {
+      const list = element.closest('select, datalist, [role="listbox" i]');
+      const options = list === null ? [element] : Array.from(list.querySelectorAll('option, [role="option" i]'));
+      if (options.every(blank)) continue;
+    }
+    counts[kind] += 1;
+  }
+  return counts;
+}
+
+/**
+ * jr6 (JV-10): the option rows of each choice group CHOICE_ROWS names, compared once every mark is cleared: in one
+ * group every row's shape (its tags and attributes, nested, read without text and comments, without the attributes that
+ * name the option itself (id, for, name, value, aria-labelledby, aria-describedby, aria-controls, aria-label, title),
+ * digits read alike) must be the same; a row that reads apart still tells the chosen option, by a mark CHOSEN_MARKS does
+ * not know. Answers, per entry, how many groups it read and how many held rows apart; never a value.
+ * @param {{ rows: Array<{ group: string; row: string }> }} input
+ * @returns {Array<{ groups: number; uneven: number }>}
+ */
+export function unevenChoiceRowsInPage(input) {
+  const doc = globalThis.document;
+  const own = new Set(['id', 'for', 'name', 'value', 'aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-label',
+    'title']);
+  /** @param {Element} element @returns {string} */
+  const shape = (element) => {
+    const attributes = Array.from(element.attributes).filter((attribute) => !own.has(attribute.name.toLowerCase()))
+      .map((attribute) => `${attribute.name.toLowerCase()}=${attribute.value.replace(/\d+/g, '#')}`).sort().join(' ');
+    return `<${element.localName} ${attributes}>${Array.from(element.children, shape).join('')}</>`;
+  };
+  return input.rows.map(({ group, row }) => {
+    let groups = 0;
+    let uneven = 0;
+    for (const holder of doc.querySelectorAll(group)) {
+      const rows = Array.from(holder.querySelectorAll(row));
+      if (rows.length < 2) continue;
+      groups += 1;
+      if (new Set(rows.map(shape)).size > 1) uneven += 1;
+    }
+    return { groups, uneven };
+  });
+}
+
+/**
+ * jr6 (jobvite-new-2): --replace-text, run before anything is measured: every element each replacement's selector names
+ * gets that replacement's synthetic text (see the header): a select's options become one per non-blank line (a first
+ * option whose value is empty, its placeholder, kept before them); a meta element's content becomes the text's lines
+ * on one line; an element holding no form control keeps only the text; any other element keeps its controls, its first
+ * text run taking the text and its other runs emptied. Its title, aria-label and label, and an option's or an input's
+ * value, where present, take the text's first line.
+ * Answers how many elements each replacement took, in order: -1 for a selector the page cannot read.
+ * @param {{ replacements: Array<{ selector: string; text: string }> }} input
+ * @returns {number[]}
+ */
+export function replaceTextInPage(input) {
+  const doc = globalThis.document;
+  const controls = 'input, select, textarea, button';
+  return input.replacements.map(({ selector, text }) => {
+    /** @type {Element[]} */
+    let elements;
+    try {
+      elements = Array.from(doc.querySelectorAll(selector));
+    } catch {
+      return -1;
+    }
+    const lines = text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+    const first = lines[0] ?? '';
+    for (const element of elements) {
+      // A meta element's words are its content (a description copied into the page's metadata), on one line.
+      if (element.localName === 'meta') {
+        element.setAttribute('content', lines.join(' '));
+        continue;
+      }
+      if (element.localName === 'select') {
+        const placeholder = element.querySelector('option');
+        const kept = placeholder !== null && placeholder.getAttribute('value') === '' ? [placeholder] : [];
+        element.replaceChildren(...kept, ...lines.map((line) => {
+          const option = doc.createElement('option');
+          option.setAttribute('value', line);
+          option.textContent = line;
+          return option;
+        }));
+        continue;
+      }
+      if (element.querySelectorAll(controls).length === 0) {
+        element.replaceChildren(doc.createTextNode(text));
+      } else {
+        const walker = doc.createTreeWalker(element, 4 /* NodeFilter.SHOW_TEXT */);
+        /** @type {Node[]} */
+        const runs = [];
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (node.nodeValue?.trim() && !node.parentElement?.closest('style, script, select, textarea')) runs.push(node);
+        }
+        runs.forEach((node, index) => {
+          node.nodeValue = index === 0 ? text : '';
+        });
+        if (runs.length === 0) element.append(doc.createTextNode(text));
+      }
+      for (const name of ['title', 'aria-label', 'label']) if (element.hasAttribute(name)) element.setAttribute(name, first);
+      if (['option', 'input'].includes(element.localName) && element.hasAttribute('value')) {
+        element.setAttribute('value', first);
+      }
+    }
+    return elements.length;
+  });
 }
 
 /** The frame's document as text: its doctype, if it had one, then the root element. @returns {string} */
@@ -2509,8 +2834,10 @@ function attributesOf(text) {
  * - aria-selected="true" on an option, a calendar's day or a tree's item (CHOSEN_OPTION_ROLES; Workday's own
  *   data-value="" "Select One" aside);
  * - aria-checked="true", aria-pressed="true", data-checked="true" or a bare data-checked;
- * - a custom list item or option that says it is selected (<spl-dropdown-item selected>), and a radio or box input that
- *   says it is checked.
+ * - a custom list item or option that says it is selected (<spl-dropdown-item selected>; jr6: or by its class,
+ *   <sdf-select-item class="selected">), and a radio or box input that says it is checked;
+ * - jr6 (JV-10): a chosen class CHOSEN_MARKS swaps for its twin (Jobvite's icon-radio-checked);
+ * - jr6 (jobvite-new-4): an AngularJS state class (ANGULAR_STATE_SOURCE) on a control or an ng-model or ng-form element.
  * @param {string} text @returns {string[]}
  */
 export function chosenMarksIn(text) {
@@ -2518,8 +2845,9 @@ export function chosenMarksIn(text) {
   const module = new RegExp(MODULE_CHOSEN_SOURCE);
   const bem = new RegExp(BEM_CHOSEN_SOURCE);
   const choiceClass = new RegExp(CHOICE_CLASS_SOURCE, 'i');
-  const named = new Set(CHOSEN_MARKS.flatMap((mark) => mark.classes ?? []).filter((name) => name !== 'selected'
-    && !MUI_CHOSEN.includes(name)));
+  const angular = new RegExp(ANGULAR_STATE_SOURCE);
+  const named = new Set(CHOSEN_MARKS.flatMap((mark) => [...(mark.classes ?? []), ...Object.keys(mark.swap ?? {})])
+    .filter((name) => name !== 'selected' && !MUI_CHOSEN.includes(name)));
   /** @type {Set<string>} */
   const found = new Set();
   for (const [, tag = '', rest = ''] of markup.matchAll(/<([a-zA-Z][\w-]*)((?:\s[^<>]*?)?)\/?>/g)) {
@@ -2541,12 +2869,15 @@ export function chosenMarksIn(text) {
     if (dataChecked !== undefined && ['', 'true'].includes(dataChecked.trim().toLowerCase())) {
       found.add('a ticked control (data-checked)');
     }
-    if (name.includes('-') && /(?:item|option)$/.test(name) && attributes.has('selected')) {
+    if (name.includes('-') && /(?:item|option)$/.test(name) && (attributes.has('selected') || classes.includes('selected'))) {
       found.add('a list item that says it is selected');
     }
     if (name === 'input' && attributes.has('checked') && /^(?:radio|checkbox)$/i.test(attributes.get('type') ?? '')) {
       found.add('a radio or box input that says it is checked');
     }
+    const angularElement = ['input', 'select', 'textarea', 'ng-form'].includes(name)
+      || ['ng-model', 'data-ng-model', 'ng-form', 'data-ng-form'].some((attribute) => attributes.has(attribute));
+    if (angularElement && classes.some((each) => angular.test(each))) found.add('an AngularJS state class on a control');
   }
   return [...found];
 }
@@ -2653,16 +2984,26 @@ const commentJson = (value) => JSON.stringify(value).replace(/--/g, '-\\u002d');
 /**
  * Converts a capture into fixture files, in memory: nothing is written. Throws a ConversionError, naming each failed
  * check, when the result would leak a listed string, an email or a phone number, when it would make a request, or when
- * visibility changed.
- * @param {{ file: string; platform: string; caseName: string; redact?: string[]; outDir?: string; folderName?: string }} options
+ * visibility changed. jr6: `replaceText` (--replace-text) gives each element its selector names synthetic text before
+ * anything is measured (replaceTextInPage); a listed string met in the page's own text where it tells its value by
+ * elimination (listedPlacesInPage), or choice rows that differ after clearing (unevenChoiceRowsInPage), are refused.
+ * @param {{ file: string; platform: string; caseName: string; redact?: string[]; outDir?: string; folderName?: string;
+ *   replaceText?: Array<{ selector: string; text: string }> }} options
  * @returns {Promise<Conversion>}
  */
 export async function convertMhtml({ file, platform, caseName, redact = [], outDir = join(ROOT, 'fixtures'),
-  folderName = platform }) {
+  folderName = platform, replaceText = [] }) {
   if (!FIXTURE_PLATFORMS.includes(platform)) fail(`--platform must be one of ${FIXTURE_PLATFORMS.join(', ')}`);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(caseName)) fail('--case must be lower-case words joined by hyphens');
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(folderName)) fail('--folder must be lower-case words joined by hyphens');
   if (!/\.mht(?:ml)?$/i.test(file)) fail('the capture must be an .mhtml file');
+  // jr6 (jobvite-new-2): each replacement names an element and the synthetic text it takes; named by position, never by
+  // its selector or text, in what is printed.
+  for (const [index, { selector, text }] of replaceText.entries()) {
+    if (selector.trim() === '' || text.trim() === '') fail(`--replace-text #${index + 1} needs a selector and a non-empty file`);
+  }
+  const replacements = replaceText.map(({ selector, text }) => ({ selector: selector.trim(),
+    text: text.replace(/\r\n?/g, '\n').trim() }));
   const mhtml = parseMhtml(readFileSync(file));
   const htmlParts = mhtml.parts.filter((part) => part.contentType === 'text/html');
   const main = htmlParts[0];
@@ -2746,12 +3087,23 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     // cleared (clearChoicesInPage), so the visibility check compares the site's own page (the snapshot build, boards).
     /** @type {Array<{ injected: number; shadowOverlays: number; injectedParams: number; choices: number }>} */
     const stripped = [];
+    // jr6 (jobvite-new-2): what each frame's --replace-text took (replaceTextInPage), before it is measured, so the
+    // visibility check compares the page as the replacements left it.
+    /** @type {number[][]} */
+    const replaced = [];
     for (const { frame } of converted) {
       if (deep) await frame.evaluate(deepenInPage);
       stripped.push({ ...await frame.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: PER_LOAD_SOURCE,
         dropOverlays: !deep, redacted: REDACTED, closedMark: CLOSED_ROOT_MARK }),
         ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
         marks: CHOSEN_MARKS }) });
+      replaced.push(replacements.length === 0 ? [] : await frame.evaluate(replaceTextInPage, { replacements }));
+    }
+    for (const [index] of replacements.entries()) {
+      if (replaced.some((counts) => counts[index] === -1)) fail(`--replace-text #${index + 1} is not a selector the page can read`);
+      if (replaced.every((counts) => (counts[index] ?? 0) === 0)) {
+        fail(`--replace-text #${index + 1} names no element in any converted frame`);
+      }
     }
     for (const { frame } of converted) before.push(await frame.evaluate(measureInPage));
 
@@ -2778,12 +3130,28 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       for (const name of applicant.names) fileNames.add(name);
       const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
-        ...patterns });
+        ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', ') });
       const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const ownCounts = ownBefore ?? ownAfter;
       if (own?.counts === 'frame' && ownCounts !== null) {
         for (const [key, count] of Object.entries(ownCounts)) {
           outcome.counts[/** @type {keyof typeof outcome.counts} */ (key)] += count;
+        }
+      }
+      // jr6 (jobvite-new-2): a listed string met in the page's own text where a REDACTED tells it by elimination; (JV-10)
+      // choice rows that still read apart once cleared. Counts only, never a value.
+      const listedIn = await frame.evaluate(listedPlacesInPage, REDACTED);
+      for (const [kind, count] of Object.entries(listedIn)) {
+        if (count > 0) {
+          reasons.push(`${basename(path)}: ${LISTED_PLACE_WORDS[kind]} whose page text the redaction list met: ${count}, `
+            + 'where a REDACTED tells the value by elimination; give each synthetic text with --replace-text');
+        }
+      }
+      const rows = await frame.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS });
+      for (const [at, { uneven }] of rows.entries()) {
+        if (uneven > 0) {
+          reasons.push(`${basename(path)}: choice groups (${CHOICE_ROWS[at]?.group}) whose option rows still differ once `
+            + `cleared: ${uneven}, a chosen mark the converter does not know`);
         }
       }
       // A company's page (--folder sites, the snapshot build: boards) is pruned too, its sheets being most of its weight.
@@ -2852,6 +3220,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         // choices cleared, each named only when there was something.
         ...(Object.values(took).some((count) => count > 0) ? { injected: took } : {}),
         ...(choices > 0 ? { cleared: { choices } } : {}),
+        // jr6 (jobvite-new-2): the elements each --replace-text gave synthetic text in this frame, by position.
+        ...((replaced[index] ?? []).some((count) => count > 0) ? { replacedText: replaced[index] } : {}),
       };
       result.counts[basename(path)] = { ...counts, ...took, choices, applicantText: applicant.applicantText, jrIds };
       const comment = `<!-- TailorIT fixture, converted by scripts/mhtml-to-fixture.mjs: convert the capture again ` +
@@ -2971,18 +3341,34 @@ export function writeConversion(conversion, folder, caseName) {
 // The command line
 // ---------------------------------------------------------------------------------------------------------------------
 
+/**
+ * jr6 (jobvite-new-2): a --replace-text value, <css>=<file>, split at its last "=" (a selector may hold "=" in an
+ * attribute test; a path does not). @param {string} value @param {number} position
+ * @returns {{ selector: string; file: string }}
+ */
+export function readReplaceOption(value, position) {
+  const at = value.lastIndexOf('=');
+  const selector = at < 0 ? '' : value.slice(0, at).trim();
+  const file = at < 0 ? '' : value.slice(at + 1).trim();
+  if (selector === '' || file === '') fail(`--replace-text #${position} must be <css>=<file>`);
+  return { selector, file };
+}
+
 /** @param {string[]} argv */
 function parseArgs(argv) {
   /** @type {Record<string, string>} */
   const options = {};
   /** @type {string[]} */
   const positional = [];
+  /** @type {Array<{ selector: string; file: string }>} */
+  const replaceText = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? '';
-    if (['--platform', '--case', '--redact', '--out', '--folder'].includes(arg)) {
+    if (['--platform', '--case', '--redact', '--out', '--folder', '--replace-text'].includes(arg)) {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) fail(`${arg} needs a value`);
-      options[arg.slice(2)] = value;
+      if (arg === '--replace-text') replaceText.push(readReplaceOption(value, replaceText.length + 1));
+      else options[arg.slice(2)] = value;
       index += 1;
     } else if (arg.startsWith('--')) {
       fail(`unknown option ${arg}`);
@@ -2991,19 +3377,25 @@ function parseArgs(argv) {
     }
   }
   if (positional.length !== 1 || !options.platform || !options.case) {
-    fail('usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <platform> --case <name> [--redact <file>] [--out <folder>] [--folder <name>]');
+    fail('usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <platform> --case <name> [--redact <file>] [--out <folder>] [--folder <name>] [--replace-text <css>=<file>]...');
   }
   return { file: positional[0] ?? '', platform: options.platform, caseName: options.case, redactFile: options.redact,
-    outDir: options.out ? resolve(options.out) : join(ROOT, 'fixtures'), folderName: options.folder ?? options.platform };
+    outDir: options.out ? resolve(options.out) : join(ROOT, 'fixtures'), folderName: options.folder ?? options.platform,
+    replaceText };
 }
 
 async function main() {
   try {
-    const { file, platform, caseName, redactFile, outDir, folderName } = parseArgs(process.argv.slice(2));
+    const { file, platform, caseName, redactFile, outDir, folderName, replaceText: replaceFiles } =
+      parseArgs(process.argv.slice(2));
     if (!existsSync(file)) fail(`${file} does not exist`);
     if (redactFile !== undefined && !existsSync(redactFile)) fail(`${redactFile} does not exist`);
     const redact = redactFile === undefined ? [] : readRedactList(readFileSync(redactFile, 'utf8'));
-    const conversion = await convertMhtml({ file, platform, caseName, redact, outDir, folderName });
+    const replaceText = replaceFiles.map(({ selector, file: textFile }, index) => {
+      if (!existsSync(textFile)) fail(`--replace-text #${index + 1}: its file does not exist`);
+      return { selector, text: readFileSync(textFile, 'utf8') };
+    });
+    const conversion = await convertMhtml({ file, platform, caseName, redact, outDir, folderName, replaceText });
     const written = writeConversion(conversion, join(outDir, folderName), caseName);
     console.log(paint('green', `✓ ${basename(file)} -> ${platform}/${caseName} (Chromium ${conversion.chrome})`));
     for (const path of written) {

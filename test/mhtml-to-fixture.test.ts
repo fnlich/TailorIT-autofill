@@ -38,6 +38,14 @@ import {
   stripJrId,
   stripInjectedInPage,
   CHOSEN_PLACES,
+  // ── jr6 (FIXPLAN 6.1, TOOLING) ──
+  ANGULAR_STATE_ELEMENTS,
+  ANGULAR_STATE_SOURCE,
+  CHOICE_ROWS,
+  keepsShadowRoots,
+  POSTING_TEXT_PLACES,
+  readReplaceOption,
+  unevenChoiceRowsInPage,
   // ── snapshot build 2026-11-06 (core pass Z1, item 36) ──
   CHOSEN_MARKS,
   PROFILE_PLACES,
@@ -1345,10 +1353,11 @@ describe('mhtml-to-fixture, snapshot build: boards', () => {
     // The fix of 2026-11-08: Jobright's Edit with AI hosts too (snapshot5).
     expect(INJECTED_UI).toEqual(['plasmo-csui#jobright-helper-plugin', '#swooped-extension-root', '.jr-edit-ai-host']);
     expect(PER_LOAD_PARAMS).toEqual(['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp']);
-    // Greenhouse's, Ashby's and Workable's (boards), Workday's upload preview and the new ATSs' eleven (the generic
-    // applicant-text pass, redactApplicantTextInPage).
-    expect(FILE_NAME_PLACES).toHaveLength(15);
-    expect(FILE_LINK_PLACES).toHaveLength(1);
+    // Greenhouse's, Ashby's and Workable's (boards), Workday's upload preview, the new ATSs' eleven and (jr6) ADP's
+    // résumé row and SmartRecruiters' drop zone list (the generic applicant-text pass, redactApplicantTextInPage).
+    expect(FILE_NAME_PLACES).toHaveLength(17);
+    // Workable's file menu and (jr6) ADP's résumé Remove.
+    expect(FILE_LINK_PLACES).toHaveLength(2);
     expect(ENTRY_SUMMARY_PLACES).toHaveLength(2);
     expect(ENTRY_SUMMARY_CONTROLS).toHaveLength(2);
   });
@@ -1371,6 +1380,11 @@ interface Expectation {
     reason?: string; options?: number | 'lazy'; control: string; note?: string }>;
 }
 
+/** jr6 (FIXPLAN 6.1 item 8): a case of the jr6 build (2026-11-10: the owner's snapshot6 and the Apply audits' pages),
+ *  named jr6-*. The frozen counts and lists below leave them out; every jr6 file still goes through the per-file checks
+ *  (its platform's, and those of every jr6 case: JR6_FILES). */
+const isJr6 = (name: string): boolean => /(?:^|\/)jr6-/.test(name);
+
 /** The reasons a control is not fillable (docs/FIXTURES.md). */
 const NOT_FILLABLE = ['widget-phase-4', 'not-user-visible'];
 const CHOICE_KINDS = ['select', 'radio', 'checkbox-group', 'combobox', 'multiselect', 'typeahead-remote'];
@@ -1385,7 +1399,8 @@ const LIST_STATES = ['ashby/multiverse-select-open', 'ashby/openai-location-resu
 
 describe('the committed Lever, Greenhouse and Ashby fixtures', () => {
   it('are the six cases from the owner\'s captures, the six closed forms of the Greenhouse widget capture, the BeyondTrust form and the Ashby capture', () => {
-    expect(CASES.sort()).toEqual(['ashby/ashby-embed-closed.frame-1', 'ashby/cohere-closed', 'ashby/incident-closed',
+    // jr6 cases (item 8) are left out of the list; each still goes through the per-file checks below.
+    expect(CASES.filter((name) => !isJr6(name)).sort()).toEqual(['ashby/ashby-embed-closed.frame-1', 'ashby/cohere-closed', 'ashby/incident-closed',
       'ashby/multiverse-closed', 'ashby/notion-closed', 'ashby/openai-checkbox-ticked',
       'ashby/openai-closed', 'ashby/openai-datepicker-open', 'ashby/openai-gh-closed',
       'ashby/openai-radio-chosen', 'ashby/openai-yesno-chosen', 'ashby/plaid-closed', 'greenhouse/affirm-job',
@@ -1396,7 +1411,7 @@ describe('the committed Lever, Greenhouse and Ashby fixtures', () => {
     // Every other Ashby fixture is one of the open-list captures, or a page around a form, or (snapshot build, boards:
     // the owner's capture of 2026-11-06) the form sending its application, read by the adapter's DOM tests.
     const ashby = readdirSync(join(ROOT, 'fixtures', 'ashby')).filter((name) => name.endsWith('.html'))
-      .map((name) => `ashby/${name.slice(0, -'.html'.length)}`).filter((name) => !CASES.includes(name));
+      .map((name) => `ashby/${name.slice(0, -'.html'.length)}`).filter((name) => !CASES.includes(name) && !isJr6(name));
     expect(ashby.sort()).toEqual(['ashby/ashby-embed-closed', ...LIST_STATES, 'ashby/rivian-submitting',
       'ashby/rivian-submitting.third-party-frame']);
   });
@@ -1560,8 +1575,10 @@ describe('the committed Workday, iCIMS, Taleo, SuccessFactors and Oracle fixture
     // 26 from the public capture of 2026-11-04/05; the owner's iCIMS snapshots of 2026-11-06 add 24 (ICIMS_SNAPSHOT_FILES),
     // the oracle-sf-sr snapshot build 3 (Oracle's code page and government-cloud section, DFIN's account), the behaviour
     // review of 2026-11-06 1 (M4: that section 12 s after its Submit, oracle/hjf-after-submit), and the Workday
-    // application steps of the owner's snapshots are counted below (WORKDAY_STEP_FILES).
-    expect(PHASE_67_FILES.filter((name) => !WORKDAY_STEP_FILES.includes(name)).length).toBe(26 + 3 + 1 + ICIMS_SNAPSHOT_FILES);
+    // application steps of the owner's snapshots are counted below (WORKDAY_STEP_FILES). jr6 cases (item 8) are left
+    // out; each still goes through the per-file checks.
+    expect(PHASE_67_FILES.filter((name) => !WORKDAY_STEP_FILES.includes(name) && !isJr6(name)).length)
+      .toBe(26 + 3 + 1 + ICIMS_SNAPSHOT_FILES);
     for (const platform of PHASE_67_PLATFORMS) {
       expect(PHASE_67_FILES.some((name) => name.startsWith(`${platform}/`)), platform).toBe(true);
     }
@@ -1754,13 +1771,15 @@ describe('mhtml-to-fixture on iCIMS’s signed-in pages', () => {
 
 describe('the committed iCIMS fixtures of the owner’s snapshots', () => {
   it('are the 24 pages and frames of their 12 cases', () => {
-    expect(ICIMS_OWNER_FILES.length).toBe(ICIMS_SNAPSHOT_FILES);
+    // jr6 cases (item 8) are left out of the count; each still goes through the check below.
+    expect(ICIMS_OWNER_FILES.filter((name) => !isJr6(name)).length).toBe(ICIMS_SNAPSHOT_FILES);
   });
 
   it.each(ICIMS_OWNER_FILES)('%s: holds no per-person value of the snapshot, nor its name, file or choices', (name) => {
     const html = readFileSync(join(ROOT, 'fixtures', `${name}.html`), 'utf8');
     const body = html.slice(html.indexOf('-->') + 3);
-    expect(body).not.toMatch(/\b(?:csrf|eem|code|token|user|item|aid|applicationStartId|_ga|ga|_gl|_sp|_jsqid)=(?!REDACTED)[^&"'\s<]/);
+    // jr6 (ICIMS-28): the phone gate's pnumber= and ccode= too.
+    expect(body).not.toMatch(/\b(?:csrf|eem|code|token|user|item|aid|applicationStartId|pnumber|ccode|_ga|ga|_gl|_sp|_jsqid)=(?!REDACTED)[^&"'\s<]/);
     expect(body).not.toMatch(/\bhash="(?!REDACTED")/);
     expect(body).not.toMatch(/\bdata-hcaptcha-response="(?!REDACTED")[^"]/);
     expect(body).not.toMatch(/class="iCIMS_userMenuName"[^>]*>\s*(?!REDACTED)[^<\s]/);
@@ -1913,7 +1932,9 @@ describe("Workday's application steps: the converter's redaction (docs/OWNER-QUE
     await context.close();
   }, 60_000);
 
-  it.each(WORKDAY_STEP_FILES)('%s holds no answer, upload name, chosen state, date or jr_id', (name) => {
+  // jr6 (item 8): every jr6 Workday case (the owner's snapshots too) goes through the same check, outside the frozen list.
+  it.each([...WORKDAY_STEP_FILES, ...PHASE_67_FILES.filter((name) => name.startsWith('workday/') && isJr6(name))])(
+    '%s holds no answer, upload name, chosen state, date or jr_id', (name) => {
     const html = readFileSync(join(ROOT, 'fixtures', `${name}.html`), 'utf8');
     const body = markupOf(html.slice(html.indexOf('-->') + 3));
     const header = JSON.parse(/<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(html)?.[1] ?? '{}');
@@ -2265,8 +2286,10 @@ describe('the committed SmartRecruiters fixtures (the snapshot build of 2026-11-
     .map((name) => `smartrecruiters/${name.slice(0, -'.html'.length)}`);
 
   it("are the owner's four pages", () => {
-    expect([...SR_FILES].sort()).toEqual(['smartrecruiters/bertelsmann-expired', 'smartrecruiters/xplor-one-click',
-      'smartrecruiters/xplor-posting', 'smartrecruiters/xplor-screening']);
+    // jr6 cases (item 8) are left out of the list; each still goes through the per-file check below, its .expect.json
+    // required.
+    expect(SR_FILES.filter((name) => !isJr6(name)).sort()).toEqual(['smartrecruiters/bertelsmann-expired',
+      'smartrecruiters/xplor-one-click', 'smartrecruiters/xplor-posting', 'smartrecruiters/xplor-screening']);
   });
 
   it.each(SR_FILES)('%s: its file, route map, header and expectations agree; its shadow roots are declarative ones', (name) => {
@@ -2426,12 +2449,30 @@ const CHOSEN_STATE_FIXTURES = [
   'workable/labella-yesno-chosen.html', 'workable/verneek-closed.html',
 ];
 
+/**
+ * jr6 (jobvite-new-4): the committed fixtures converted before the converter cleared AngularJS's state classes, which
+ * still hold them on their controls (ng-dirty on a clicked radio, ng-not-empty on a ticked box: a privacy finding, not an
+ * exception). Each is to be converted again with this converter: JOBVITE's six NinjaOne pages (fixtures/jobvite/**), and
+ * Breezy's form (no package this round). Only that one mark is let through, and only while the file still holds it, so
+ * this list shrinks as each is converted again (SP\jr6\build\TOOLING.md, open issues).
+ */
+const ANGULAR_STATE_FIXTURES = ['breezy/concurrent-form.html', 'jobvite/ninjaone-consent-empty.html',
+  'jobvite/ninjaone-consent.html', 'jobvite/ninjaone-step1-resume.html', 'jobvite/ninjaone-step1.html',
+  'jobvite/ninjaone-step2.html', 'jobvite/ninjaone-step3.html'];
+const ANGULAR_STATE_MARK = 'an AngularJS state class on a control';
+
 describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
   it('every committed fixture holds no chosen mark (chosenMarksIn), but the captures whose choices are no answer', () => {
     const pages = committedFixtureFiles().filter((file) => file.endsWith('.html'));
     expect(pages.length).toBeGreaterThan(300);
-    const marked = pages.filter((file) => chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8')).length > 0);
+    const marked = pages.filter((file) => chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'))
+      .some((label) => !(ANGULAR_STATE_FIXTURES.includes(file) && label === ANGULAR_STATE_MARK)));
     expect(marked.filter((file) => !CHOSEN_STATE_FIXTURES.includes(file))).toEqual([]);
+    // jr6 (jobvite-new-4): each file let through for AngularJS's classes still holds them, and nothing else.
+    for (const file of ANGULAR_STATE_FIXTURES) {
+      expect(pages, file).toContain(file);
+      expect(chosenMarksIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8')), file).toEqual([ANGULAR_STATE_MARK]);
+    }
     // The owner's re-converted pages among them (S2, S3, S10).
     for (const file of ['ashby/rivian-submitting.html', 'bamboohr/swyfft-form.html', 'oracle/hjf-apply-section.html',
       'smartrecruiters/xplor-one-click.html', 'greenhouse/rushdown-country-open.html', 'workable/jobs-salvo-apply.html',
@@ -2574,3 +2615,405 @@ describe("the applicant's choices on Rippling's and HiBob's pages (rippling-0, h
   }, 30_000);
 });
 // ── end core pass Z1, item 36 ──
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ── jr6 (FIXPLAN 6.1, TOOLING; SP\jr6\BUILD.md): the converter's rules for the owner's snapshot6 of 2026-11-10, each on a
+// synthetic page in the platform's own markup (the audits name the captures it was read from). Every value is made up. ──
+// ---------------------------------------------------------------------------------------------------------------------
+
+const ADP_PAGE = 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=tailorit-fixture';
+const SR_ONE_CLICK = 'https://jobs.smartrecruiters.com/oneclick-ui/company/Acme/publication/00000000-0000-4000-8000-000000000002';
+/** A made-up applicant's name and file name, neither in the redaction list the tests pass. */
+const JR6_NAME = 'Avery Quill';
+const JR6_FILE = 'cv final 2026.pdf';
+
+/** A live page saved by Chrome itself (Page.captureSnapshot), so the shadow roots its script attaches are saved as
+ *  Chrome saves them. */
+async function liveCapture(url: string, body: string, name: string): Promise<string> {
+  const live = await browser.newContext({ viewport: VIEWPORT });
+  await live.route('**/*', (route) => (route.request().url() === url
+    ? route.fulfill({ status: 200, contentType: 'text/html',
+      body: `<!DOCTYPE html><html><head><title>Apply</title></head><body>${body}</body></html>` })
+    : route.abort()));
+  const page = await live.newPage();
+  await page.goto(url);
+  const session = await live.newCDPSession(page);
+  const { data } = await session.send('Page.captureSnapshot', { format: 'mhtml' });
+  await live.close();
+  const file = join(work, `${name}.mhtml`);
+  writeFileSync(file, data);
+  return file;
+}
+
+/** A converted file's header. */
+const headerOf = (text: string) => JSON.parse(/<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(text)?.[1] ?? '{}');
+
+/** Jobvite's radio and box groups as snapshot6 jobvite1 (6) draws them filled: the chosen row's class and icon, the
+ *  clicked radio's and the ticked box's AngularJS classes; `extra` goes on the third row. */
+const jobviteRows = (extra = '') => `<!DOCTYPE html><html><head><title>Apply</title></head><body>
+<form name="apply" class="ng-dirty ng-invalid ng-submitted"><fieldset class="jv-input-group" ng-form="q1"><legend>Pick one</legend>
+<label class="jv-input-group-row"><input type="radio" name="g" value="a" ng-model="option.answer" class="ng-pristine ng-untouched ng-valid ng-not-empty"><i class="icon icon-radio-empty" role="radio" aria-selected="false"></i><span>Alpha</span></label>
+<label class="jv-input-group-row jv-input-group-row-active"><input type="radio" name="g" value="b" ng-model="option.answer" class="ng-dirty ng-valid-parse ng-touched ng-valid ng-not-empty" checked><i class="icon icon-radio-checked" role="radio" aria-selected="true"></i><span>Beta</span></label>
+<label class="jv-input-group-row"${extra}><input type="radio" name="g" value="c" ng-model="option.answer" class="ng-pristine ng-untouched ng-valid ng-not-empty"><i class="icon icon-radio-empty" role="radio" aria-selected="false"></i><span>Gamma</span></label>
+</fieldset><fieldset class="jv-input-group"><legend>Pick any</legend>
+<label class="jv-input-group-row"><input type="checkbox" ng-model="option.ticked" class="ng-dirty ng-valid ng-not-empty ng-touched" checked><i class="icon icon-checkbox-checked" role="checkbox" aria-checked="true"></i><span>Delta</span></label>
+<label class="jv-input-group-row"><input type="checkbox" ng-model="option.ticked" class="ng-pristine ng-untouched ng-valid ng-empty"><i class="icon icon-checkbox-blank" role="checkbox" aria-checked=""></i><span>Epsilon</span></label>
+</fieldset><label for="city">City</label><input type="text" id="city" ng-model="x.city" class="jv-text ng-dirty ng-valid ng-not-empty ng-valid-required" value="Fixture Town" required>
+<div ng-form="sub" class="sub-form ng-dirty ng-valid"><select ng-model="x.s" class="ng-touched ng-valid"><option>One</option><option>Two</option></select></div>
+<p class="ng-dirty">An ordinary paragraph keeps its classes.</p></form></body></html>`;
+
+/** A Jobvite posting and its form where a listed word (Roeville, made up) is also the page's own word: a county among
+ *  the page's list, a question's legend, an option's label, the posting's description and its copy in the page's
+ *  description metadata. */
+const JOBVITE_LISTED = `<!DOCTYPE html><html><head><title>Apply</title>
+<meta name="description" content="This role sits in our Roeville office."></head><body>
+<div class="jv-job-detail-description"><p>This role sits in our Roeville office.</p><p>It is a made-up posting.</p></div>
+<form><label for="county">County of Residence</label><select id="county"><option value="">Select...</option>
+<option value="1">Adams</option><option value="2">Roeville</option><option value="3">Zephyr</option></select>
+<fieldset><legend>Have you lived in Roeville?</legend><label><input type="radio" name="lived" value="y"> Yes, in Roeville</label>
+<label><input type="radio" name="lived" value="n"> No</label></fieldset></form></body></html>`;
+
+/** The replacements that give JOBVITE_LISTED's four places synthetic text. */
+const JOBVITE_REPLACEMENTS = [
+  { selector: '#county', text: 'Alder\r\nBirch\n\nCedar\n' },
+  { selector: 'fieldset > legend', text: 'Have you lived in Fixture Town?' },
+  { selector: 'fieldset > label:first-of-type', text: 'Yes, in Fixture Town' },
+  { selector: 'div.jv-job-detail-description', text: 'A synthetic description.\nIts second line.' },
+  { selector: 'meta[name="description"]', text: 'A synthetic summary.\nOn one line.' },
+];
+
+describe('jr6: the owner\'s snapshot6 places (FIXPLAN 6.1, TOOLING)', () => {
+  it("clears ADP's signed-in account, Review summary, résumé row and chosen answers, inside its shadow roots (adp-new-4)",
+    async () => {
+      // snapshot6 adp1 and adp2's markup (SP\jr6\audit\adp.md section 2), values made up: the avatar's initials (too
+      // short for any redaction list), the name, the résumé's name, a Review line and answer, a chip and a chosen list.
+      const file = await liveCapture(ADP_PAGE, `
+<div class="logged-in-user"><div class="avatar-button" role="button" tabindex="0" aria-label="AQ,  Show user menu">
+  <div class="avatar-container"><sdf-avatar id="avatar" role="img" aria-label="${JR6_NAME}"></sdf-avatar></div></div></div>
+<div id="avatar-menu-pane"><div class="avatar-menu avatar-menu-header"><sdf-avatar id="avatar-menu" aria-hidden="true"></sdf-avatar><h2>${JR6_NAME}</h2></div></div>
+<p>Applied on <span class="job-description-applied-date">11/03/2026</span></p>
+<label for="question_7">How did you hear about this job?</label><sdf-select-simple id="question_7" placeholder="Choose an option"></sdf-select-simple>
+<label for="question_8">Shift</label><sdf-select-simple id="question_8" placeholder="Choose an option"></sdf-select-simple>
+<div class="MDFSelectBox__multi-value"><div class="MDFSelectBox__multi-value__label">Kubernetes</div><div role="button" class="MDFSelectBox__multi-value__remove" aria-label="Remove Kubernetes">x</div></div>
+<div class="additional-document-success"><span class="fileName"><span>Great! Your resume is in.</span></span></div>
+<div class="fileDetails"><i class="fa fa-file-text"></i><span class="fileName">${JR6_FILE}</span><button id="recruitment_afterResumeUpload_remove_0" type="button" aria-label="Remove,${JR6_FILE},Resume"><span>Remove</span></button></div>
+<div class="self-review-content-personalInfo"><sdf-icon icon="user"></sdf-icon><span>${JR6_NAME}</span></div>
+<div class="self-review-content-personalInfo"><sdf-icon icon="phone"></sdf-icon><span>Lisbon, Portugal</span></div>
+<span class="self-review-content-resume-content" aria-label="${JR6_FILE}">${JR6_FILE}</span>
+<div class="self-review-content-additionaldocs"><sdf-icon icon="media-file"></sdf-icon><span>2 documents</span></div>
+<div class="self-review-content-question"><label class="self-review-content-question-label">Are you at least 18?</label><label class="self-review-content-question-answer">Yes, since 2001</label></div>
+<script>
+for (const id of ['avatar', 'avatar-menu']) document.getElementById(id).attachShadow({ mode: 'open' }).textContent = 'AQ';
+document.getElementById('question_7').attachShadow({ mode: 'open' }).innerHTML = '<div class="combo"><div class="trigger-button" role="button" part="frame">'
+  + '<span id="selected-label" part="selected-label"><span>Referral Board</span></span></div>'
+  + '<div role="status" aria-live="polite" class="sr-only">Referral Board</div><div role="listbox">'
+  + '<sdf-select-item role="option" aria-selected="false" value="Job Fair">Job Fair</sdf-select-item>'
+  + '<sdf-select-item role="option" aria-selected="true" class="hydrated selected" value="Referral Board">Referral Board</sdf-select-item></div></div>';
+document.getElementById('question_8').attachShadow({ mode: 'open' }).innerHTML = '<div class="combo"><div class="trigger-button" role="button" part="frame">'
+  + '<span class="selected-label-placeholder" id="select-placeholder" part="placeholder">Choose an option</span></div>'
+  + '<div role="status" aria-live="polite" class="sr-only"></div></div>';
+</script>`, 'jr6-adp');
+      const conversion = await convertMhtml({ file, platform: 'adp', caseName: 'jr6-adp', redact: LISTED, outDir: work });
+      const text = conversion.files[0]?.text ?? '';
+      for (const gone of ['Avery', 'Quill', '>AQ<', 'AQ,', 'cv final', 'cv%20final', '11/03/2026', 'Kubernetes', 'Lisbon',
+        'since 2001', '2 documents', 'hydrated selected', 'aria-selected="true"']) {
+        expect(text, gone).not.toContain(gone);
+      }
+      // ... while ADP's own words stay: the banner, the Remove label's words, the placeholder, the questions, the list.
+      for (const kept of ['Great! Your resume is in.', 'aria-label="Remove,REDACTED,Resume"', '<span>Remove</span>',
+        'id="select-placeholder" part="placeholder">Choose an option</span>', 'How did you hear about this job?',
+        '>Are you at least 18?</label>', 'value="Job Fair">Job Fair</sdf-select-item>',
+        '<span id="selected-label" part="selected-label"><span>REDACTED</span></span>',
+        '<div role="status" aria-live="polite" class="sr-only">REDACTED</div>', '<h2>REDACTED</h2>']) {
+        expect(text, kept).toContain(kept);
+      }
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect(headerOf(text)).toMatchObject({ shadowRoots: 4, redacted: { applicantText: expect.any(Number) } });
+    }, 60_000);
+
+  it("clears SmartRecruiters' saved entries, their buttons' labels, the avatar and the drop zone's file (SR-8)", async () => {
+    // Snapshot captures 4 and 5's markup (SP\jr6\audit\smartrecruiters.md SR-8), values made up.
+    const file = await liveCapture(SR_ONE_CLICK, `
+<oc-experience-entry data-test="experience-entry"><div data-test="experience-entry" class="entry"><div data-test="experience-entry-is-edit-enabled">
+  <p data-test="experience-entry-title">Staff Engineer<span data-test="experience-entry-date">2019 - 2024</span></p>
+  <p data-test="experience-entry-company">Initech</p><p data-test="experience-entry-description">Ran the build farm</p></div>
+  <spl-button id="edit" data-test="experience-entry-edit" tooltip="Edit" splarialabel="Edit Staff Engineer"></spl-button>
+  <spl-button id="delete" data-test="experience-entry-delete" tooltip="Delete" splarialabel="Delete Staff Engineer"></spl-button></div></oc-experience-entry>
+<oc-education-entry data-test="education-entry"><div data-test="education-entry"><p data-test="education-entry-institution">Lisbon Tech</p>
+  <p data-test="education-entry-degree">BSc</p><p data-test="education-entry-major">Physics</p></div></oc-education-entry>
+<spl-avatar id="avatar" role="img" firstname="Avery" lastname="Quill" aria-label="${JR6_NAME}"></spl-avatar>
+<spl-dropzone id="zone" data-test="resume-upload" files='[{"name":"${JR6_FILE}","size":4321,"type":"application/pdf"}]'></spl-dropzone>
+<spl-dropzone id="photo" data-test="photo-upload" files="[]"></spl-dropzone>
+<script>
+for (const id of ['edit', 'delete']) {
+  const button = document.getElementById(id);
+  button.attachShadow({ mode: 'open' }).innerHTML = '<button type="button" aria-label="' + button.getAttribute('splarialabel') + '">o</button>';
+}
+document.getElementById('avatar').attachShadow({ mode: 'open' }).innerHTML = '<div class="c-spl-avatar"><span class="c-spl-avatar-thumb">AQ</span></div>';
+document.getElementById('zone').attachShadow({ mode: 'open' }).innerHTML = '<label>Browse files</label><ul><li class="c-spl-file-list-item">'
+  + '<span class="c-spl-file-list-item-name">${JR6_FILE}</span><spl-button class="c-spl-file-list-item-delete-button" tooltip="Delete file" '
+  + 'splarialabel="Delete file ${JR6_FILE}"></spl-button></li></ul>';
+document.getElementById('photo').attachShadow({ mode: 'open' }).innerHTML = '<label>Browse files</label>';
+</script>`, 'jr6-sr');
+    const conversion = await convertMhtml({ file, platform: 'smartrecruiters', caseName: 'jr6-sr', redact: LISTED,
+      outDir: work });
+    const text = conversion.files[0]?.text ?? '';
+    for (const gone of ['Avery', 'Quill', 'Staff Engineer', '2019 - 2024', 'Initech', 'build farm', 'Lisbon Tech', '>BSc<',
+      'Physics', 'cv final', '4321', 'application/pdf', '>AQ<']) {
+      expect(text, gone).not.toContain(gone);
+    }
+    for (const kept of ['tooltip="Edit"', 'tooltip="Delete"', 'tooltip="Delete file"', 'splarialabel="Delete file REDACTED"',
+      'firstname="REDACTED" lastname="REDACTED"', 'Browse files']) {
+      expect(text, kept).toContain(kept);
+    }
+    expect(text.match(/splarialabel="REDACTED"/g)).toHaveLength(2);
+    expect(text.match(/files="\[\]"/g)).toHaveLength(2);
+    expect(chosenMarksIn(text)).toEqual([]);
+  }, 60_000);
+
+  it("unchooses Jobvite's drawn rows and strips AngularJS's state classes, the rows then alike (JV-10, jobvite-new-4)",
+    async () => {
+      const file = join(work, 'jr6-rows.mhtml');
+      writeFileSync(file, mhtml(NEW_PAGE, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: NEW_PAGE,
+        body: jobviteRows() }]));
+      const text = (await convertMhtml({ file, platform: 'jobvite', caseName: 'jr6-rows', redact: LISTED, outDir: work }))
+        .files[0]?.text ?? '';
+      for (const gone of ['jv-input-group-row-active', 'icon-radio-checked', 'icon-checkbox-checked', 'aria-selected="true"',
+        'aria-checked', 'ng-dirty ng-valid', 'ng-not-empty', 'ng-valid-parse', 'ng-touched', 'ng-pristine', 'ng-untouched',
+        'ng-empty', 'ng-valid-required', ' checked', 'Fixture Town']) {
+        expect(text, gone).not.toContain(gone);
+      }
+      expect(text.match(/class="icon icon-radio-empty" role="radio" aria-selected="false"/g)).toHaveLength(3);
+      expect(text.match(/class="icon icon-checkbox-blank" role="checkbox">/g)).toHaveLength(2);
+      // A form's own state (Breezy reads its root's validity) and an element that is no control keep theirs.
+      for (const kept of ['<form name="apply" class="ng-dirty ng-invalid ng-submitted"', 'class="jv-text"',
+        '<div ng-form="sub" class="sub-form">', '<p class="ng-dirty">']) {
+        expect(text, kept).toContain(kept);
+      }
+      expect(chosenMarksIn(text)).toEqual([]);
+      // Every option row of each group now reads alike.
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await page.setContent(text);
+      expect(await page.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS })).toEqual([{ groups: 2, uneven: 0 }]);
+      await context.close();
+    }, 60_000);
+
+  it('refuses choice rows that still differ once cleared, by a mark it does not know (JV-10)', async () => {
+    const file = join(work, 'jr6-rows-uneven.mhtml');
+    writeFileSync(file, mhtml(NEW_PAGE, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: NEW_PAGE,
+      body: jobviteRows(' data-picked="1"') }]));
+    const error = await convertMhtml({ file, platform: 'jobvite', caseName: 'jr6-rows-uneven', outDir: work })
+      .then(() => null, (caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConversionError);
+    expect((error as ConversionError).reasons).toEqual(['jr6-rows-uneven.html: choice groups (fieldset.jv-input-group) '
+      + 'whose option rows still differ once cleared: 1, a chosen mark the converter does not know']);
+    expect(CHOICE_ROWS.map(({ group, row }) => `${group} ${row}`)).toEqual(['fieldset.jv-input-group label.jv-input-group-row']);
+  }, 60_000);
+
+  it("reads AngularJS's state classes on controls and ng-model or ng-form elements alone (jobvite-new-4)", async () => {
+    const markup = '<form id="f" class="ng-dirty ng-invalid"><input id="a" class="x ng-dirty ng-not-empty ng-valid-required ng-touched">'
+      + '<textarea id="b" class="ng-pristine ng-untouched ng-empty ng-invalid ng-invalid-required"></textarea>'
+      + '<select id="c" class="ng-valid ng-pending"></select><div id="d" ng-model="v" class="ng-dirty y"></div>'
+      + '<div id="e" data-ng-form="f" class="ng-valid-email"></div><ng-form id="g" class="ng-dirty"></ng-form>'
+      + '<p id="h" class="ng-dirty ng-hide">no control</p><input id="i" class="ng-scope ng-isolate-scope ng-hide"></form>';
+    expect(chosenMarksIn(markup)).toEqual(['an AngularJS state class on a control']);
+    // Not on a form (Breezy's root), an element that is no control, or AngularJS's other classes (ng-hide hides).
+    expect(chosenMarksIn('<form class="ng-dirty"></form><p class="ng-dirty"></p><input class="ng-scope ng-hide">')).toEqual([]);
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>${markup}</body></html>`);
+    expect((await page.evaluate(clearChoicesInPage, { redacted: 'REDACTED', marks: CHOSEN_MARKS })).choices).toBe(6);
+    expect(await page.evaluate(() => Object.fromEntries(Array.from(document.querySelectorAll('[id]'),
+      (element) => [element.id, element.getAttribute('class')])))).toEqual({ f: 'ng-dirty ng-invalid', a: 'x', b: '', c: '',
+      d: 'y', e: '', g: '', h: 'ng-dirty ng-hide', i: 'ng-scope ng-isolate-scope ng-hide' });
+    await context.close();
+    expect(new RegExp(ANGULAR_STATE_SOURCE).test('ng-valid-maxlength')).toBe(true);
+    expect(ANGULAR_STATE_ELEMENTS).toContain('[ng-model]');
+  }, 30_000);
+
+  it('refuses the redaction list met in an option, a label, a legend or a posting description, naming no value (jobvite-new-2)',
+    async () => {
+      const file = join(work, 'jr6-listed.mhtml');
+      writeFileSync(file, mhtml(NEW_PAGE, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: NEW_PAGE,
+        body: JOBVITE_LISTED }]));
+      const error = await convertMhtml({ file, platform: 'jobvite', caseName: 'jr6-listed', redact: ['Roeville'], outDir: work })
+        .then(() => null, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConversionError);
+      const tail = ', where a REDACTED tells the value by elimination; give each synthetic text with --replace-text';
+      expect((error as ConversionError).reasons).toEqual([
+        `jr6-listed.html: options (an <option> or a role=option) whose page text the redaction list met: 1${tail}`,
+        `jr6-listed.html: labels whose page text the redaction list met: 1${tail}`,
+        `jr6-listed.html: legends whose page text the redaction list met: 1${tail}`,
+        // The description and its copy in the page's description metadata.
+        `jr6-listed.html: posting descriptions (POSTING_TEXT_PLACES) whose page text the redaction list met: 2${tail}`]);
+      expect((error as ConversionError).reasons.join(' ')).not.toContain('Roeville');
+      expect(existsSync(join(work, 'jobvite', 'jr6-listed.html'))).toBe(false);
+      expect(POSTING_TEXT_PLACES).toContain('div.jv-job-detail-description');
+    }, 60_000);
+
+  it("passes an option whose whole list ends REDACTED, as iCIMS's server-loaded dropdowns do, and refuses a native list",
+    async () => {
+      const url = 'https://careers-acme.icims.com/jobs/1/engineer/candidate';
+      const dropdown = '<label for="rcf1">State</label><select id="rcf1" class="dropdown-hide" icimsdropdown-enabled="1" '
+        + 'icimsdropdown-ajax="1" icimsdropdown-search="0"><option value="501">Roeville</option></select>'
+        + '<a id="rcf1_icimsDropdown" class="dropdown-select" role="combobox"><span class="dropdown-text">Roeville</span></a>';
+      const native = '<label for="Q6">County</label><select id="Q6" icimsdropdown-enabled="0"><option value="">Make a Selection'
+        + '</option><option value="1">Adams</option><option value="2">Roeville</option></select>';
+      const page = (form: string) => `<!DOCTYPE html><html><body><form>${form}</form></body></html>`;
+      const passing = join(work, 'jr6-icims-dropdown.mhtml');
+      writeFileSync(passing, mhtml(url, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: url, body: page(dropdown) }]));
+      const text = (await convertMhtml({ file: passing, platform: 'icims', caseName: 'jr6-icims-dropdown', redact: ['Roeville'],
+        outDir: work })).files[0]?.text ?? '';
+      expect(text).not.toContain('Roeville');
+      expect(text).toContain('<option value="REDACTED">REDACTED</option>');
+      const refused = join(work, 'jr6-icims-native.mhtml');
+      writeFileSync(refused, mhtml(url, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: url, body: page(native) }]));
+      await expect(convertMhtml({ file: refused, platform: 'icims', caseName: 'jr6-icims-native', redact: ['Roeville'],
+        outDir: work })).rejects.toThrow('jr6-icims-native.html: options (an <option> or a role=option) whose page text the '
+        + 'redaction list met: 1');
+    }, 60_000);
+
+  it('gives the named elements synthetic text before measuring, the same fixture every time (jobvite-new-2: --replace-text)',
+    async () => {
+      const file = join(work, 'jr6-replaced.mhtml');
+      writeFileSync(file, mhtml(NEW_PAGE, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: NEW_PAGE,
+        body: JOBVITE_LISTED }]));
+      const convert = () => convertMhtml({ file, platform: 'jobvite', caseName: 'jr6-replaced', redact: ['Roeville'],
+        outDir: work, replaceText: JOBVITE_REPLACEMENTS });
+      const one = await convert();
+      const two = await convert();
+      expect(two.files.map((output) => output.text)).toEqual(one.files.map((output) => output.text));
+      expect(two.routes).toEqual(one.routes);
+      const text = one.files[0]?.text ?? '';
+      expect(text).not.toContain('Roeville');
+      // A select's options become one per line, its placeholder first; an element holding no control keeps only the
+      // text; a label keeps its radio, its text run replaced.
+      expect(text).toContain('<select id="county"><option value="">Select...</option><option value="Alder">Alder</option>'
+        + '<option value="Birch">Birch</option><option value="Cedar">Cedar</option></select>');
+      expect(text).toContain('<legend>Have you lived in Fixture Town?</legend>');
+      expect(text).toContain('<label><input type="radio" name="lived" value="y">Yes, in Fixture Town</label>');
+      expect(text).toContain('<div class="jv-job-detail-description">A synthetic description.\nIts second line.</div>');
+      expect(text).toContain('<label><input type="radio" name="lived" value="n"> No</label>');
+      // A meta element's content takes the text, on one line.
+      expect(text).toContain('<meta name="description" content="A synthetic summary. On one line.">');
+      expect(headerOf(text).replacedText).toEqual([1, 1, 1, 1, 1]);
+    }, 60_000);
+
+  it('refuses a replacement that names nothing, one the page cannot read and one without text, by its position', async () => {
+    const file = join(work, 'jr6-replace-refused.mhtml');
+    writeFileSync(file, mhtml(NEW_PAGE, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: NEW_PAGE,
+      body: JOBVITE_LISTED }]));
+    const options = { file, platform: 'jobvite', caseName: 'jr6-replace-refused', outDir: work };
+    await expect(convertMhtml({ ...options, replaceText: [JOBVITE_REPLACEMENTS[0]!, { selector: '#nothing-here', text: 'x' }] }))
+      .rejects.toThrow('--replace-text #2 names no element in any converted frame');
+    await expect(convertMhtml({ ...options, replaceText: [{ selector: '##county', text: 'x' }] }))
+      .rejects.toThrow('--replace-text #1 is not a selector the page can read');
+    await expect(convertMhtml({ ...options, replaceText: [{ selector: '#county', text: ' \n ' }] }))
+      .rejects.toThrow('--replace-text #1 needs a selector and a non-empty file');
+  }, 60_000);
+
+  it('reads --replace-text on the command line, splitting at the last "=", and prints neither selector nor text', () => {
+    expect(readReplaceOption('select[id="county"]=C:\\fixtures\\county.txt', 1))
+      .toEqual({ selector: 'select[id="county"]', file: 'C:\\fixtures\\county.txt' });
+    expect(() => readReplaceOption('#county', 2)).toThrow('--replace-text #2 must be <css>=<file>');
+    const file = join(work, 'jr6-cli.mhtml');
+    writeFileSync(file, mhtml(NEW_PAGE, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: NEW_PAGE,
+      body: JOBVITE_LISTED }]));
+    const redact = join(work, 'jr6-cli-redact.txt');
+    writeFileSync(redact, 'Roeville\n');
+    const args = JOBVITE_REPLACEMENTS.flatMap(({ selector, text }, index) => {
+      const textFile = join(work, `jr6-cli-text-${index + 1}.txt`);
+      writeFileSync(textFile, text);
+      return ['--replace-text', `${selector === '#county' ? 'select[id="county"]' : selector}=${textFile}`];
+    });
+    const out = join(work, 'jr6-cli-out');
+    const run = spawnSync(process.execPath, [SCRIPT, file, '--platform', 'jobvite', '--case', 'jr6-cli', '--redact', redact,
+      '--out', out, ...args], { encoding: 'utf8', windowsHide: true, timeout: 60_000 });
+    expect(run.stderr).toBe('');
+    expect(run.status).toBe(0);
+    const written = readFileSync(join(out, 'jobvite', 'jr6-cli.html'), 'utf8');
+    expect(written).toContain('<option value="Cedar">Cedar</option>');
+    expect(written).not.toContain('Roeville');
+    expect(run.stdout).not.toMatch(/county|Fixture Town|synthetic description|Roeville/i);
+  }, 60_000);
+
+  it("redacts iCIMS's pnumber= and ccode= with its per-person values (ICIMS-28)", () => {
+    const { text } = normaliseTokens('icims', '<a href="/jobs/1/x/candidate?from=login&amp;eem=a1&amp;pnumber=Zm9vYmFy'
+      + '&amp;ccode=MQ%3D%3D&amp;code=b2">profile</a><p>A phonenumber=5 and pnumbers stay words.</p>');
+    expect(text).toContain('from=login&amp;eem=REDACTED&amp;pnumber=REDACTED&amp;ccode=REDACTED&amp;code=REDACTED');
+    expect(text).not.toMatch(/Zm9vYmFy|MQ%3D/);
+    expect(text).toContain('A phonenumber=5 and pnumbers stay words.');
+  });
+});
+
+/** jr6 (item 8): every jr6 case's page and frame in a platform's folder (or sites/), outside the frozen lists above. */
+const JR6_FILES = readdirSync(join(ROOT, 'fixtures'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && (FIXTURE_PLATFORMS.includes(entry.name) || entry.name === 'sites'))
+  .flatMap((entry) => readdirSync(join(ROOT, 'fixtures', entry.name))
+    .filter((name) => isJr6(name) && name.endsWith('.html') && !name.endsWith('.third-party-frame.html'))
+    .map((name) => `${entry.name}/${name.slice(0, -'.html'.length)}`));
+
+describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
+  it('has a route map that serves its own files alone, every page and frame of the case among them', () => {
+    const maps = readdirSync(join(ROOT, 'fixtures'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && (FIXTURE_PLATFORMS.includes(entry.name) || entry.name === 'sites'))
+      .flatMap((entry) => readdirSync(join(ROOT, 'fixtures', entry.name))
+        .filter((name) => isJr6(name) && name.endsWith('.routes.json'))
+        .map((name) => `${entry.name}/${name.slice(0, -'.routes.json'.length)}`));
+    const served = new Set<string>();
+    for (const map of maps) {
+      for (const path of Object.values(JSON.parse(readFileSync(join(ROOT, 'fixtures', `${map}.routes.json`), 'utf8')) as
+        Record<string, string>)) {
+        expect(path.startsWith(`fixtures/${map}.`) && existsSync(join(ROOT, path)), path).toBe(true);
+        served.add(path);
+      }
+    }
+    for (const name of JR6_FILES) expect(served, name).toContain(`fixtures/${name}.html`);
+  });
+
+  it.each(JR6_FILES)('%s: its header, route map and markup agree, and its shadow roots and per-load ids are as kept', (name) => {
+    const [folder = ''] = name.split('/');
+    const html = readFileSync(join(ROOT, 'fixtures', `${name}.html`), 'utf8');
+    const routes = JSON.parse(readFileSync(routesOf(name), 'utf8')) as Record<string, string>;
+    const header = headerOf(html);
+    expect(header).toMatchObject({ fixture: name, captured: expect.any(String) });
+    expect(header.chrome).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+    expect(routes[header.source]).toBe(`fixtures/${name}.html`);
+    for (const [url, path] of Object.entries(routes)) {
+      expect(new URL(url).hash, url).toBe('');
+      expect(path.startsWith(`fixtures/${name.replace(/\.frame-\d+$/, '')}.`) && existsSync(join(ROOT, path)), path).toBe(true);
+    }
+    const expectation = join(ROOT, 'fixtures', `${name}.expect.json`);
+    if (existsSync(expectation)) {
+      expect(JSON.parse(readFileSync(expectation, 'utf8'))).toMatchObject({ fixture: name, source: header.source,
+        captured: header.captured });
+    }
+    const body = html.slice(html.indexOf('-->') + 3);
+    const markup = markupOf(body);
+    expect(markup).not.toMatch(/<script|<noscript|<base\b|http-equiv|<link[^>]*stylesheet|\r/i);
+    expect(markup).not.toMatch(/(?:href|src|action|formaction)\s*=\s*["']?\s*javascript:/i);
+    expect(attributeNames(markup).filter((attribute) => attribute.startsWith('on'))).toEqual([]);
+    expect([...markup.matchAll(/<form(?=[\s>])[^>]*>/gi)].every(([form]) => form.includes('action="/__submitted"'))).toBe(true);
+    // A platform that keeps shadow roots writes each as a declarative one, as its header counts; another keeps none.
+    if (keepsShadowRoots(folder)) {
+      expect(body.match(/<template shadowrootmode="open"/g)?.length ?? 0).toBe(header.shadowRoots);
+    } else {
+      expect(body).not.toMatch(/shadowrootmode=/);
+    }
+    expect(body).not.toMatch(/shadowmode="/);
+    // Ashby's per-load ids are normalised, as the Ashby cases' are.
+    if (folder === 'ashby') {
+      const ids = new Set([...html.matchAll(/data-field-entry-id="([0-9a-f-]{36})_/g)].map((match) => match[1]));
+      expect([...ids].every((id) => /^00000000-0000-4000-8000-0000000000\d\d$/.test(id ?? '')), name).toBe(true);
+      expect(html).not.toMatch(/name="csp-nonce"[^>]*content="(?!REDACTED")/);
+    }
+    // The hCaptcha site key and widget ids, and iCIMS's hashed=, normalised away (S9).
+    expect(body).not.toMatch(/[?&;#]sitekey=(?!REDACTED)[^&"'\s]/);
+    expect(body).not.toMatch(/data-(?:hcaptcha-widget-id|sitekey)="(?!REDACTED")/);
+    expect(body).not.toMatch(/\bhashed=-?\d/);
+    // No chosen mark, as the conversion refuses one (chosenMarksIn).
+    expect(chosenMarksIn(html)).toEqual([]);
+  });
+});
+// ── end jr6 ──
