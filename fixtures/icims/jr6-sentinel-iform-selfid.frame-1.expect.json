@@ -1,6 +1,6 @@
 {
   "fixture": "icims/jr6-sentinel-iform-selfid.frame-1",
-  "source": "https://careers-sentinel.icims.com/jobs/5157/azure-devops-engineer-%e2%80%93-release-coordinator/form?form=SelfID&step=6&isPacket=1&type=4&hashed=REDACTED&in_iframe=1",
+  "source": "https://careers-sentinel.icims.com/jobs/5157/azure-REDACTED-%e2%80%93-release-coordinator/form?form=SelfID&step=6&isPacket=1&type=4&hashed=REDACTED&in_iframe=1",
   "captured": "2026-11-11T04:08:43.000Z",
   "note": "Hooks only (jr6 P1): careers-sentinel's IForm step, the portal page: its bar's last step frames the self-ID form (chainStepFacts). No root: the portal page frames the IForm, whose own frame holds the fields.",
   "fields": [],

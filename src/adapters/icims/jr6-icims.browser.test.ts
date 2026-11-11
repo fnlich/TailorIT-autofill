@@ -17,6 +17,7 @@ import { createFakeWorker, goldenProfile, NOW, testVocab } from '../../content/c
 import { pressEntry } from '../../content/press';
 import { startContentRuntime, type ContentRuntime } from '../../content/runtime';
 import { planFrame } from '../../core/plan/frame';
+import { CAUTIOUS_SETTINGS } from '../../core/plan/settings.testkit';
 import type { PlanInput } from '../../core/plan/types';
 import { classifyField } from '../../core/resolver/resolve';
 import { stepSignature as hashSignature } from '../../core/steps/signature';
@@ -144,6 +145,65 @@ describe('the snapshot6 cases', () => {
       expect(genericAdapter.detect(fixture.doc), name).toBeNull();
       expect(icimsAdapter.applicationFrame!(fixture.doc), name).toBe(fixture.doc.querySelector('iframe#icims_content_iframe'));
       removeFixtures(document);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// FX-R1 (the jr6 fixers' review, platforms-a): careers-sentinel's posting title holds a string the owner's redaction
+// list gained after its six cases were converted. They were converted again with the current converter (jr6-tooling's
+// round 2) and list, the posting's own title, which nothing reads, given synthetic text (--replace-text "head >
+// title=…" and "h1.iCIMS_Header=…", the files in fixtures/synthetic/jr6-icims/): a REDACTED inside a posting's title
+// would tell the listed value by elimination (the converter refuses that in a posting's description, not in its title).
+// ---------------------------------------------------------------------------------------------------------------------
+
+const SYNTHETIC = import.meta.glob('../../../fixtures/synthetic/jr6-icims/*.txt',
+  { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
+/** A page's or frame's own document, parsed (nothing loaded), and its fixture header. */
+function parsedOf(name: string): { doc: Document; header: { replacedText?: readonly number[] } } {
+  const { html } = fileOf(name);
+  const header = JSON.parse(/<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(html)?.[1] ?? '{}') as
+    { replacedText?: readonly number[] };
+  return { doc: new DOMParser().parseFromString(html, 'text/html'), header };
+}
+
+describe('careers-sentinel’s posting title (FX-R1)', () => {
+  /** Each case, and the synthetic page title of its step (the step's own words, then the synthetic posting title). */
+  const STEP_TITLES = [['jr6-sentinel-basic-info', 'title-basic-information'],
+    ['jr6-sentinel-basic-info-filled', 'title-basic-information'], ['jr6-sentinel-profile', 'title-candidate-profile'],
+    ['jr6-sentinel-profile-filled', 'title-candidate-profile'],
+    ['jr6-sentinel-job-questions', 'title-job-specific-questions'], ['jr6-sentinel-iform-selfid', 'title-iform']] as const;
+
+  it.each(STEP_TITLES)('%s: the page’s and its frame’s title and the frame’s posting heading are synthetic text',
+    (name, titleFile) => {
+      const title = byFile(SYNTHETIC, `${titleFile}.txt`)!.trim();
+      const heading = byFile(SYNTHETIC, 'posting-title.txt')!.trim();
+      expect(title).toBe(`${title.split(' - ')[0]} - ${heading}`);
+      const wrapper = parsedOf(name);
+      const frame = parsedOf(`${name}.frame-1`);
+      expect(wrapper.doc.title).toBe(title);
+      expect(frame.doc.title).toBe(title);
+      expect([...frame.doc.querySelectorAll('h1.iCIMS_Header')].map((h1) => h1.textContent!.trim())).toEqual([heading]);
+      // The converter's own record, by position (head > title, then h1.iCIMS_Header): the wrapper has no posting heading.
+      expect(wrapper.header.replacedText).toEqual([1, 0]);
+      expect(frame.header.replacedText).toEqual([1, 1]);
+    });
+
+  // TOOLING's shared Apply postings (BUILD.md D-b, `jr6-apply-*`) are TOOLING's to convert: its fix round (TOOLING.md
+  // F.2, `708ac5c`) gave careers-sentinel's posting heading and description synthetic text and left the page's title to
+  // the converter (REDACTED where the list's generic job title stands: recorded as public there). So the guard reads
+  // every iCIMS case's title and heading, and only the posting heading of TOOLING's pages.
+  it('no jr6 page or frame shows REDACTED in its title or its posting heading (TOOLING’s postings: the heading)', () => {
+    const names = Object.keys(PAGES).map((path) => path.split('/').pop()!.replace(/\.html$/, ''))
+      .filter((name) => !name.endsWith('.third-party-frame'));
+    expect(names.length).toBe(30);
+    expect(names.filter((name) => name.startsWith('jr6-apply-')).length).toBe(3);
+    for (const name of names) {
+      const { doc } = parsedOf(name);
+      const headings = [...doc.querySelectorAll('h1.iCIMS_Header')].map((h1) => h1.textContent ?? '');
+      const shown = name.startsWith('jr6-apply-') ? headings : [doc.title, ...headings];
+      expect(shown.filter((text) => text.includes('REDACTED')), name).toEqual([]);
     }
   });
 });
@@ -550,7 +610,7 @@ describe('ICIMS-10: a date’s parts, each its date’s label with its part', ()
     }
   });
 
-  it.each([['jr6-sentinel-iform-selfid.frame-2', "Today's Date"], ['nyu-self-id-disability.frame-2', 'Date'],
+  it.each([['jr6-sentinel-iform-selfid.frame-2', "Today's Date"], ['nyu-self-id-disability.frame-2', 'Date signature'],
     ['edgewater-self-id-veteran.frame-2', "Today's Date"]] as const)('%s: the IForm’s date by the words drawn before it',
     async (name, words) => {
       const fixture = await load(name);
@@ -1271,6 +1331,29 @@ describe('P2: what the rules decide on the snapshots (RULES R1-R4 on the iCIMS a
     }
   });
 
+  // jr6 RULES fix IC-R1 (jr6-rules 9656079, with labelSuffix's "signature" for NYU's bare "Date"): an IForm's signature
+  // date drawn in parts is today, part by part, on the signature's terms; never sent to the AI.
+  it('IC-R1 (edgewater-self-id-veteran.frame-2, nyu-self-id-disability.frame-2): the IForm’s signature date is today, '
+    + 'part by part', async () => {
+    const PARTS = ['icims_f_Date_Month', 'icims_f_Date_Date', 'icims_f_Date_Year'];
+    for (const name of ['edgewater-self-id-veteran.frame-2', 'nyu-self-id-disability.frame-2']) {
+      const fixture = await load(name);
+      const ran = planOn(fixture.doc);
+      for (const id of PARTS) {
+        expect(ran.row(id), `${name} ${id}`).toMatchObject({ category: 'consent.signatureDate', status: 'verified',
+          needsUserAction: false });
+        expect(ran.write(id)?.origin, `${name} ${id}`).toEqual({ provenance: 'rule', ruleId: 'consent.signature-date' });
+        expect(ran.awaits(id), `${name} ${id}`).toBe(false);
+      }
+      expect(textOf(ran.write('icims_f_Date_Year')), name).toBe(String(NOW.y));
+      removeFixtures(document);
+    }
+    // Consents: Required only, the signature not pre-approved: Sentinel's optional parts are left.
+    const sentinel = await load('jr6-sentinel-iform-selfid.frame-2');
+    const cautious = planOn(sentinel.doc, { settings: CAUTIOUS_SETTINGS });
+    for (const id of PARTS) expect(cautious.write(id), id).toBeUndefined();
+  });
+
   it('ICIMS-16 (jr6-nyu-iform-offer.frame-2): the cover letter typed into its box once written; waited for until then', async () => {
     const fixture = await load('jr6-nyu-iform-offer.frame-2');
     expect(planOn(fixture.doc).row('icims_f_OfferText')).toMatchObject({ category: 'freeText.coverLetter',
@@ -1392,20 +1475,17 @@ describe('P2: what the rules decide on the snapshots (RULES R1-R4 on the iCIMS a
       .toEqual([true]);
   });
 
-  // RULES regression (reported): iCIMS declares Time Zone a remote search (its select says icimsdropdown-search="1",
-  // FIXPLAN §6.5 item 1), and RULES' preferences.timeZone (src/core/resolver/categories.ts) takes text, select, radio
-  // and combobox only, so the field stays unknown. Flip to it() once the category takes typeahead-remote.
-  it.fails('ICIMS-26 (jr6-ars-profile): Time Zone is the profile’s time zone (preferences.timeZone)', async () => {
+  // iCIMS declares Time Zone a remote search (its select says icimsdropdown-search="1", FIXPLAN §6.5 item 1);
+  // preferences.timeZone takes typeahead-remote since jr6-rules 4b91326.
+  it('ICIMS-26 (jr6-ars-profile): Time Zone is the profile’s time zone (preferences.timeZone)', async () => {
     const fixture = await load('jr6-ars-profile');
     const ran = planOn(fixture.doc, { lists: { rcf3077: TIME_ZONES } });
     expect([ran.row('rcf3077').category, ran.rule('rcf3077')]).toEqual(['preferences.timeZone', 'label.time-zone']);
   });
 
-  // RULES regression (reported): in a run, the companion box RULES leaves waiting (flagged waiting-for-options while the
-  // School list is a search) is read by the loop's books as a list waiting for its options: OPTION_WAIT_PASSES scans
-  // later it is options-never-loaded and needs the person, though the list took the school (dependsAgain never takes a
-  // waiting field). RULES edit 17 expects it skipped (conditional-question). Flip to it() once fixed.
-  it.fails('ICIMS-24 in a run (jr6-nyu-profile-parsed.frame-1): the companion box’s row says skipped once the list took the school', async () => {
+  // In a run the companion box is left (skipped, conditional-question) while the School list types its search, never
+  // rowed waiting-for-options, which the loop's books ended options-never-loaded (jr6-rules fa6bd2b).
+  it('ICIMS-24 in a run (jr6-nyu-profile-parsed.frame-1): the companion box’s row says skipped once the list took the school', async () => {
     const runtimes: ContentRuntime[] = [];
     try {
       const { doc, rows } = await runOn(runtimes, 'jr6-nyu-profile-parsed.frame-1');
