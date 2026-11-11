@@ -130,15 +130,11 @@ function compareDeep(doc: Document, result: ScanResult, expectation: Expectation
  * (spl-radio-group elements in sr-screening-questions-form's shadow root, declared by the adapter's widgetRoots and
  * widgetFor) are fields; until then each was "no field" here.
  * jr6 SR-1 (FIXPLAN §6.9 item 1): xplor-screening's five dropdowns are declared with the whole list the page publishes
- * (WidgetDecl.knownOptions), which the scanner reads as each field's options from ENGINE E1 on (tag jr6-engine-e1, not
- * merged into this branch in P1): until then each still reads 'lazy'. The package's P2, merging jr6-engine, removes
- * these five (the comparison then fails while one is left).
+ * (WidgetDecl.knownOptions), which the scanner reads as each field's options from ENGINE E1 on (merged in the package's
+ * P2): each now reads its published list (14, 5, 2, 8 and 4 options), as xplor-screening.expect.json says, and P1's five
+ * "options lazy" entries are gone. No difference is known today.
  */
-const KNOWN: Record<string, readonly string[]> = {
-  'xplor-screening': ['a0151063-d62b-49e7-9c6f-d17e59b99090', '562715e2-4960-44f3-9e8d-2750ae765f9a',
-    '9320d6d5-0b22-4e3f-b913-e7076e5e8083', '5d965982-4693-4ca6-91ff-9dde3767755c', 'd9203a60-8103-4251-8402-eb366923db58']
-    .map((id) => `spl-autocomplete#question_${id} >>> input[role="combobox"]: options lazy`),
-};
+const KNOWN: Record<string, readonly string[]> = {};
 
 /** The scan of a case's root with `adapter` (the SmartRecruiters adapter, or one with a hook taken away). */
 async function scanWith(index: 2 | 3, adapter: Adapter) {
