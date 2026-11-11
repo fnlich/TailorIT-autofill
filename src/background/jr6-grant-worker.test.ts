@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { SITES_MATCH } from '../shared/hosts';
 import type { RawSender } from '../platform/fake';
+import { answerSchema } from '../messaging/envelope';
+import { CONTENT_ANSWER_SCHEMAS } from '../messaging/schemas';
 import { FRAME_PROBE_GRACE_MS } from './frames';
 import {
   createSignUps, ENTRY_ARM_MS, ENTRY_ELSEWHERE_MS, ENTRY_NEXT_MS, ENTRY_PRESSED_LIMIT, ENTRY_WAITING_MS, SIGN_UP_GRANT_MS,
@@ -208,6 +210,21 @@ describe('entry/pressed: who may say it (item 3)', () => {
     await press(worker, posting, keyOf(LEVER_OTHER));
     const armed = logs.mock.calls.filter((call) => String(call[0]).includes('grant.armed'));
     expect(armed).toEqual([['[tailorit-autofill] grant.armed', { armed: true, nextKey: true }]]);
+  });
+
+  it('answers what the frame\'s schema parses: armed, refused, expired, rate-limited', async () => {
+    const worker = await applyWorker();
+    const posting = await postingTab(worker, LEVER_POSTING);
+    await fill(worker);
+    const answers = [await press(worker, posting), await press(worker, at(LEVER_POSTING, 'doc-old'))];
+    const other = await postingTab(worker, LEVER_POSTING, 'doc-13', true, 13);
+    answers.push(await press(worker, other));
+    for (let n = 0; n < ENTRY_PRESSED_LIMIT.count; n += 1) answers.push(await press(worker, posting));
+    expect(answers.map((answer) => (answer as { ok: boolean; error?: string }).error ?? 'ok'))
+      .toEqual(['ok', 'bad_sender', 'expired', 'ok', 'ok', 'ok', 'ok', 'rate_limited', 'rate_limited']);
+    for (const answer of answers) {
+      expect(answerSchema(CONTENT_ANSWER_SCHEMAS['entry/pressed']).safeParse(answer).success).toBe(true);
+    }
   });
 });
 
