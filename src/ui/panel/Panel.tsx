@@ -36,10 +36,11 @@
  *     after this panel's own click is the "no form" modal). The F1 fixer (the line P review): no line under the button
  *     meanwhile, as no report comes while the frame presses or waits, and one no-form strip until a refusal says why,
  *     a posting's promising the site's Apply and any other page's not (C1, C2); a status a screen reader hears,
- *     mounted before it has words (the press, then the refusal), and Cancel taking the focus the button had (C4).
- *     Whenever what it says and sends changes, it takes no click until the new label has been shown CONTROL_SEEN_MS
- *     (seen.ts, the v4 review's L4: a page cannot flip it as the pointer comes). While a run works it spins, and the
- *     progress below has Cancel. No Dry run, Continue or Cancel buttons (the messages stay);
+ *     mounted before it has words (the press, then the refusal), and Cancel taking the focus the button had (C4); the
+ *     refusal said on a page Autofill does not work on too, where the press took the tab (C5). Whenever what it says
+ *     and sends changes, it takes no click until the new label has been shown CONTROL_SEEN_MS (seen.ts, the v4
+ *     review's L4: a page cannot flip it as the pointer comes). While a run works it spins, and the progress below has
+ *     Cancel. No Dry run, Continue or Cancel buttons (the messages stay);
  *   - "Ask custom question" (Ask.tsx: panel/ask), an outline button that unfolds the box;
  *   - "Résumé: <label> · Preview · Edit · Change" (JobCard.tsx ResumeLine: panel/resumes, panel/setResume,
  *     panel/withoutResume; v1.4 F: Preview and Edit are panel/openDocument) until a run lists the résumé's own row,
@@ -329,8 +330,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   // jr6 apply F1 (APPLYPLAN F1 item 4, AF-12): why the tab's last entry was refused (an older frame's names no reason:
   // 'none'). 'none' that answers this panel's own Autofill (`asked`, within ENTRY_MODAL_MS, once the page showed no
   // 'none' since the click: an old refusal is not its answer) opens the "no form" modal, with Try Again; else, and every
-  // other reason, it is the strip's one line.
-  const refusal = page?.support === 'no-form' && page.entryRefused === true ? page.refusal ?? 'none' : null;
+  // other reason, it is the strip's one line. The F1 fixer (the line P review, C5): on any page without a form, one
+  // Autofill does not work on included, where the worker says the press took the tab ('elsewhere', reports.ts).
+  const refusal = page?.entryRefused === true && page.support !== 'form' ? page.refusal ?? 'none' : null;
   if (asked !== null && asked.message.tabId === tabId) {
     // Adjusted while rendering, as the gate above.
     if (refusal !== 'none') {
@@ -681,7 +683,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const said = tabId === null || refusal === null || (refusal === 'none' && shownModal !== null) ? null
     : COPY.mainView.entryRefused[refusal];
   const pressing = offersFill && tabId !== null && entering && !working;
-  // v5 p2-fill review (L5), jr6 apply F1 (AF-12): that one line, under the main button.
+  // v5 p2-fill review (L5), jr6 apply F1 (AF-12): that one line (under the main button; above the sites Autofill works
+  // on where the press took the tab to a page it does not work on, the F1 fixer's C5).
   const refusalLine = said !== null && (
     <p className="tia-strip" data-strip="entry-refused" data-reason={refusal ?? undefined} data-tone="warning">
       {said}
@@ -733,6 +736,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
               {pinnedTabId === null ? COPY.panel.launcherShownAfterPanel : COPY.panel.launcherShown}
             </p>
           )}
+          {page?.support === 'none' && refusalLine}
           {tabId === null ? (
             <p className="tia-strip" data-strip="no-tab" data-tone="neutral">{COPY.panel.noTab}</p>
           ) : page?.support === 'none' && reports.length === 0 ? (
@@ -780,7 +784,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
               {pressing ? COPY.mainView.entering : said}
             </p>
           )}
-          {refusalLine}
+          {page?.support !== 'none' && refusalLine}
           {tabId !== null && page?.support !== 'none' && (
             <AskQuestion key={viewKey} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
               connected={connection !== undefined && connection !== null} aiOff={aiOff === true}

@@ -16,7 +16,8 @@
  * - C1, C2: one thing said at a time (no run line under the button while the frame presses or waits, the no-form strip
  *   once and only until a refusal's line); only a posting's strip promises the site's Apply, and the "no form" words
  *   claim neither a search nor a page without an Apply;
- * - C4: the press is busy, says so to a screen reader, and hands the button's focus to Cancel.
+ * - C4: the press is busy, says so to a screen reader, and hands the button's focus to Cancel;
+ * - C5: the refusal shows on a page Autofill does not work on too.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { ENTRY_REFUSALS, type PageState } from '../../messaging/schemas';
@@ -430,4 +431,24 @@ describe('Autofill on a page with no form says one thing at a time (the F1 fixer
     expect(mainOf(root)?.getAttribute('aria-busy')).toBe('true');
   });
 
+  // C5: the worker says 'elsewhere' (reports.ts) on any page without a form, one Autofill does not work on included,
+  // where its grant ended because the press took the tab to another site.
+  it('says why on a page Autofill does not work on, above the sites it works on, when the press took the tab there', async () => {
+    const worker = createFakeWorker();
+    worker.script.pages.set(5, posting);
+    const root = await open(worker);
+    const away: PageState = { support: 'none', platform: null, formKey: null };
+    await showPage(worker, 5, { ...away, entryRefused: true, refusal: 'elsewhere' });
+    const line = root.querySelector('[data-strip="entry-refused"][data-reason="elsewhere"]');
+    expect(line?.textContent).toBe(COPY.mainView.entryRefused.elsewhere);
+    const sites = root.querySelector('[data-unsupported]');
+    expect(sites).not.toBeNull();
+    expect(line!.compareDocumentPosition(sites!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(statusOf(root)?.textContent).toBe(COPY.mainView.entryRefused.elsewhere);
+    expect(mainOf(root)).toBeNull();
+    // Gone with the worker's word (the next press, or 60 s).
+    await showPage(worker, 5, away);
+    expect(refusalLine(root)).toBeNull();
+    expect(root.querySelector('[data-unsupported]')).not.toBeNull();
+  });
 });
