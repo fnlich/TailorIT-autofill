@@ -16,6 +16,17 @@ describe('NAME_ID_RULES (§8.3)', () => {
       ['name-id.twitter', 'twitter'],
       ['name-id.resume', 'resume|cv'],
       ['name-id.cover-letter', 'cover_?letter'],
+      // jr6 RULES: Workday's agreement box, name="acceptTermsAndAgreements" (WD-09), and iCIMS's address search, name
+      // "…PersonProfileFields.AddressStreet1" (ICIMS-08), each read from an owner's snapshot.
+      ['name-id.accept-terms', 'accepttermsandagreements'],
+      ['name-id.address-street1', 'addressstreet1'],
+      // jr6 RULES R3: iCIMS's phone and address "Type" (ICIMS-12, ICIMS-13) and its "Please specify" list, select#rcf3049
+      // (ICIMS-19), each read from an owner's snapshot.
+      ['name-id.phone-type', 'phone_?type'],
+      ['name-id.address-type', 'address_?type'],
+      ['name-id.referral-detail', 'rcf3049'],
+      // jr6 RULES R4: Oracle's numbered link boxes, name="siteLink-N" (O13, the label contract of FIXPLAN §3.2).
+      ['name-id.site-link', String.raw`site_?link_?\d{1,2}`],
     ]);
     for (const abbreviation of WHOLE_TOKEN_ONLY) {
       expect(NAME_ID_RULES.some((rule) => rule.pattern.split('|').includes(abbreviation)), abbreviation).toBe(true);
@@ -95,7 +106,8 @@ describe('nameIdRule', () => {
     // The space between the two attributes is never crossed.
     ['first', 'name', 'text'],
     // A category the kind cannot hold is no match.
-    ['phone_type', '', 'select'],
+    // jr6 RULES R3 (ICIMS-12): a phone's type is a list's (contact.phoneType), never a text box's.
+    ['phone_type', '', 'text'],
     ['email', '', 'checkbox'],
     ['resume', '', 'text'],
     ['cover_letter', '', 'select'],
@@ -125,5 +137,22 @@ describe('nameIdRule', () => {
   it('tries the next pattern when the kind cannot hold the first one’s category', () => {
     expect(nameIdRule('upload_email_resume', '', 'file')).toMatchObject({ category: 'file.resume',
       rule: 'name-id.resume' });
+  });
+
+  it('reads Workday’s agreement box and iCIMS’s address search by their names (jr6 RULES: WD-09, ICIMS-08)', () => {
+    expect(nameIdRule('acceptTermsAndAgreements', '', 'checkbox')).toEqual({ category: 'consent.terms',
+      confidence: 0.95, rule: 'name-id.accept-terms', exact: true });
+    expect(nameIdRule('', 'acceptTermsAndAgreements', 'radio')?.category).toBe('consent.terms');
+    // A box is a consent's only on a box or a radio.
+    expect(nameIdRule('acceptTermsAndAgreements', '', 'text')).toBeNull();
+    expect(nameIdRule('acceptTerms', '', 'checkbox')).toBeNull();
+    const street = 'rcf3048_PersonProfileFields.AddressStreet1';
+    expect(nameIdRule(street, '-1_PersonProfileFields.AddressStreet1_icimsDropdown', 'combobox')).toMatchObject({
+      category: 'address.lookup', rule: 'name-id.address-street1', exact: true });
+    expect(nameIdRule(street, '', 'select')?.category).toBe('address.lookup');
+    // The box that replaces the search takes the street; never a remote search.
+    expect(nameIdRule(street, '', 'text')?.category).toBe('address.line1');
+    expect(nameIdRule(street, '', 'typeahead-remote')).toBeNull();
+    expect(nameIdRule('PersonProfileFields.AddressStreet2', '', 'combobox')).toBeNull();
   });
 });

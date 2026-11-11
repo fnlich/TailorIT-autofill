@@ -24,3 +24,24 @@ export function resumeFirst<T extends OrderedWrite>(queue: readonly T[]): T[] {
   const resume = queue.filter(isResumeWrite);
   return resume.length === 0 ? [...queue] : [...resume, ...queue.filter((item) => !isResumeWrite(item))];
 }
+
+// ── jr6 RULES R3 (FIXPLAN §6.3 item 44, ICIMS-15) ──────────────────────────────────────────────────────────────────
+
+/** A queued write with the category its row names, as signatureLast reads one. */
+export interface CategorizedWrite {
+  write: Pick<PlannedWrite, 'value'>;
+  planned: { category: string };
+}
+
+/** Whether a queued write ticks a signature box (iCIMS's IForm `icims_f_signature`: consent.signature on a box). */
+export function isSignatureTick(item: CategorizedWrite): boolean {
+  return item.planned.category === 'consent.signature' && item.write.value.kind === 'check';
+}
+
+/** jr6 RULES R3 (ICIMS-15): the queue with its signature ticks last, after the form's other answers (Jobright's
+ *  fillSignatureCheckboxes ticks the IForm's signature once the rest is filled: cited), every other write keeping its
+ *  order. Pure. */
+export function signatureLast<T extends CategorizedWrite>(queue: readonly T[]): T[] {
+  const signatures = queue.filter(isSignatureTick);
+  return signatures.length === 0 ? [...queue] : [...queue.filter((item) => !isSignatureTick(item)), ...signatures];
+}
