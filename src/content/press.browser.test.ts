@@ -33,7 +33,8 @@ import { workableAdapter } from '../adapters/workable';
 import { oracleAdapter } from '../adapters/oracle';
 import { workdayAdapter } from '../adapters/workday';
 import { genericAdapter } from '../adapters/generic';
-import { ENTRY_WAIT_CAP_MS, ENTRY_WAIT_MS, entryWaitOf, pressEntry, pressStep, requiredLeftOf, stepButtonsOf } from './press';
+import { ENTRY_FOLLOW_MS, ENTRY_WAIT_CAP_MS, ENTRY_WAIT_MS, entryWaitOf, pressEntry, pressStep, requiredLeftOf,
+  stepButtonsOf } from './press';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
 const GREENHOUSE = 'https://job-boards.greenhouse.io/tailoritfixture/jobs/4401';
@@ -137,7 +138,11 @@ describe('the agent\u2019s entry waits and follows (round 2 of the v3 Phase 6/7b
     expect(entryWaitOf([])).toBe(8_000);
   });
 
-  it('answers blocked, other, when an Apply that allows a second press draws no choice within the follow-up wait (C6)', async () => {
+  // jr6 apply F2 item 3 (apply-b-new-1): a press made is a press made, its follow-up control drawn or not; the follow-up
+  // wait is at least 8 s (the verifier's choice drawn 6 s after Workday's Apply).
+  it('answers pressed, not followed, when an Apply that allows a second press draws no choice in the follow-up wait (jr6 F2 3)',
+    async () => {
+    expect(ENTRY_FOLLOW_MS).toBe(8_000);
     const fixture = await loadFixture(document, `<!doctype html><body><main>
       <a id="apply" href="https://jobs.example/apply" role="button" style="display:inline-block;padding:8px">Apply</a></main></body>`);
     const clicks: string[] = [];
@@ -149,7 +154,7 @@ describe('the agent\u2019s entry waits and follows (round 2 of the v3 Phase 6/7b
     const twice: Adapter = { ...genericAdapter, detect: () => null, entryControl: (doc) => doc.getElementById('apply'),
       entryNeverPressed: true, quirks: { entryPresses: 2 } };
     expect(await pressEntry(fixture.doc, [twice], new AbortController().signal, 300, 300))
-      .toEqual({ outcome: 'blocked', block: 'other' });
+      .toEqual({ outcome: 'pressed', followed: false });
     expect(clicks).toEqual(['apply']);
   });
 
@@ -166,17 +171,114 @@ describe('the agent\u2019s entry waits and follows (round 2 of the v3 Phase 6/7b
         entryNeverPressed: true, quirks: { entryPresses: 2 } };
       const told: number[] = [];
       let answered = false;
-      const entry = pressEntry(fixture.doc, [twice], new AbortController().signal, 300, 300, () => told.push(clicks))
+      const pressedOnes: Element[] = [];
+      const entry = pressEntry(fixture.doc, [twice], new AbortController().signal, 300, 300, (pressed) => {
+        told.push(clicks);
+        pressedOnes.push(pressed);
+      })
         .then((answer) => {
           answered = true;
           return answer;
         });
       // Told at the press, the follow-up wait still ahead.
       expect([told, answered]).toEqual([[1], false]);
-      expect(await entry).toEqual({ outcome: 'blocked', block: 'other' });
+      expect(await entry).toEqual({ outcome: 'pressed', followed: false });
       expect(told).toEqual([1]);
+      // jr6 apply F2: with the element pressed.
+      expect(pressedOnes).toEqual([fixture.doc.getElementById('apply')]);
     });
 });
+
+// ── jr6 apply F2 item 4 (APPLYPLAN D4; AP-7, C7): the entry door refuses a control by where its press would go ──
+describe('the entry door: never a new tab, a download or another origin (jr6 apply F2 item 4)', () => {
+  const ADDRESS = 'https://jobs.lever.co/acme/1b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00';
+  /** A posting whose Apply is `link`, its clicks recorded and held. */
+  async function posting(link: string, head = '') {
+    const fixture = await loadFixture(document, `<!doctype html><html><head>${head}</head><body><main>
+      <h1>Platform Engineer</h1>${link}</main></body></html>`);
+    const clicks: string[] = [];
+    fixture.doc.addEventListener('click', (event) => {
+      clicks.push((event.target as Element).id);
+      event.preventDefault();
+    });
+    return { fixture, clicks };
+  }
+  const apply: Adapter = { ...genericAdapter, id: 'lever', detect: () => null,
+    entryControl: (doc) => doc.getElementById('apply') };
+  const enter = (doc: Document, address?: URL) => pressEntry(doc, [apply], new AbortController().signal, 300, 300,
+    undefined, address === undefined ? {} : { address });
+
+  it('refuses a link that opens another tab or window, at once, and says so', async () => {
+    for (const target of ['_blank', '_BLANK', 'jobs', ' _new ']) {
+      const { fixture, clicks } = await posting(`<a id="apply" href="${ADDRESS}/apply" target="${target}">Apply</a>`);
+      const started = performance.now();
+      expect(await enter(fixture.doc), target).toEqual({ outcome: 'not-offered', refusal: 'new-tab' });
+      // No wait for a control that will never be pressed.
+      expect(performance.now() - started, target).toBeLessThan(250);
+      expect(clicks, target).toEqual([]);
+      removeFixtures(document);
+    }
+  });
+
+  it('presses a link that stays in this tab: no target, _self, _top, _parent', async () => {
+    for (const target of [null, '', '_self', '_TOP', '_parent']) {
+      const attribute = target === null ? '' : ` target="${target}"`;
+      const { fixture, clicks } = await posting(`<a id="apply" href="${ADDRESS}/apply"${attribute}>Apply</a>`);
+      expect(await enter(fixture.doc, new URL(ADDRESS)), String(target)).toEqual({ outcome: 'pressed' });
+      expect(clicks, String(target)).toEqual(['apply']);
+      removeFixtures(document);
+    }
+  });
+
+  it('reads the document’s base target where the link names none', async () => {
+    const { fixture, clicks } = await posting(`<a id="apply" href="${ADDRESS}/apply">Apply</a>`, '<base target="_blank">');
+    expect(await enter(fixture.doc)).toEqual({ outcome: 'not-offered', refusal: 'new-tab' });
+    expect(clicks).toEqual([]);
+    removeFixtures(document);
+    const own = await posting(`<a id="apply" href="${ADDRESS}/apply" target="_self">Apply</a>`, '<base target="_blank">');
+    expect(await enter(own.fixture.doc)).toEqual({ outcome: 'pressed' });
+  });
+
+  it('refuses a link that downloads', async () => {
+    const { fixture, clicks } = await posting(`<a id="apply" href="${ADDRESS}/apply" download>Apply</a>`);
+    expect(await enter(fixture.doc)).toEqual({ outcome: 'not-offered', refusal: 'download' });
+    expect(clicks).toEqual([]);
+  });
+
+  it('refuses a link to another origin, given the frame’s address; one on its own origin is pressed', async () => {
+    const other = await posting('<a id="apply" href="https://apply.example-ats.com/job/1/apply">Apply</a>');
+    expect(await enter(other.fixture.doc, new URL(ADDRESS))).toEqual({ outcome: 'not-offered', refusal: 'elsewhere' });
+    expect(other.clicks).toEqual([]);
+    removeFixtures(document);
+    const own = await posting(`<a id="apply" href="${ADDRESS}/apply">Apply</a>`);
+    expect(await enter(own.fixture.doc, new URL(ADDRESS))).toEqual({ outcome: 'pressed' });
+    expect(own.clicks).toEqual(['apply']);
+  });
+
+  it('refuses a consent form’s submitter whose form or own formtarget opens another tab (the Jobvite door)',
+    async () => {
+      for (const [where, form, button] of [['form target', ' target="_blank"', ''],
+        ['formtarget', '', ' formtarget="_blank"']] as const) {
+        const { fixture, clicks } = await posting(`<form id="consent" method="post" action="${ADDRESS}/consent"${form}>
+          <button id="apply" type="submit"${button}>I Accept</button></form>`);
+        const consent: Adapter = { ...apply, authState: () => 'entry-choice',
+          entryConsentForm: (doc) => ({ form: doc.getElementById('consent') as HTMLFormElement, selects: [] }) };
+        expect(await pressEntry(fixture.doc, [consent], new AbortController().signal, 300, 300), where)
+          .toEqual({ outcome: 'not-offered', refusal: 'new-tab' });
+        expect(clicks, where).toEqual([]);
+        removeFixtures(document);
+      }
+      // Undone: the same consent form with no target is submitted by its one button.
+      const { fixture, clicks } = await posting(`<form id="consent" method="post" action="${ADDRESS}/consent">
+        <button id="apply" type="submit">I Accept</button></form>`);
+      const consent: Adapter = { ...apply, authState: () => 'entry-choice',
+        entryConsentForm: (doc) => ({ form: doc.getElementById('consent') as HTMLFormElement, selects: [] }) };
+      expect(await pressEntry(fixture.doc, [consent], new AbortController().signal, 300, 300))
+        .toEqual({ outcome: 'pressed' });
+      expect(clicks).toEqual(['apply']);
+    });
+});
+// ── end jr6 apply F2 item 4 ──
 
 describe('press.ts', () => {
   it('reads the step’s buttons, counts the required fields left empty, and presses Submit only with the person’s word', async () => {
