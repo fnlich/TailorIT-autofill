@@ -378,7 +378,7 @@ export const POSTING_TEXT_PLACES = [
   '.joqReqDescription', // successfactors
   '.ashby-job-posting-description', // ashby
   'div.jv-job-detail-description', // jobvite
-  '#job-description', // jazzhr
+  '#job-description', '#resumator-job-description', // jazzhr (the Bootstrap boards; the classic board, jr6 JAZZHR P1)
   'div.job-description-container', // careerplug
   '#external-jobs-show-description', // pinpoint
   'div.ATS_htmlPreview', // rippling
