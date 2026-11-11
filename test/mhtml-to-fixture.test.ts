@@ -2505,11 +2505,11 @@ const MARKED_FIXTURES: Record<string, string[]> = {
 /**
  * jr6 (jobvite-new-4): the committed fixtures converted before the converter cleared AngularJS's state classes, which
  * still hold them on their controls (ng-dirty on a clicked radio, ng-not-empty on a ticked box: a privacy finding, not an
- * exception). Each is to be converted again with this converter: JOBVITE's six NinjaOne pages (fixtures/jobvite/**), and
- * Breezy's form (no package this round). Only that one mark is let through, and only while the file still holds it, so
- * this list shrinks as each is converted again (SP\jr6\build\TOOLING.md, open issues).
+ * exception). Each is to be converted again with this converter: JOBVITE's six NinjaOne pages (fixtures/jobvite/**).
+ * Only that one mark is let through, and only while the file still holds it, so this list shrinks as each is converted
+ * again (SP\jr6\build\TOOLING.md, open issues). (Breezy's form, converted again by the jr6 privacy check, holds none now.)
  */
-const ANGULAR_STATE_FIXTURES = ['breezy/concurrent-form.html', 'jobvite/ninjaone-consent-empty.html',
+const ANGULAR_STATE_FIXTURES = ['jobvite/ninjaone-consent-empty.html',
   'jobvite/ninjaone-consent.html', 'jobvite/ninjaone-step1-resume.html', 'jobvite/ninjaone-step1.html',
   'jobvite/ninjaone-step2.html', 'jobvite/ninjaone-step3.html'];
 const ANGULAR_STATE_MARK = 'an AngularJS state class on a control';
