@@ -19,10 +19,12 @@
  *     and presses its row's Add); an Add that does not show, or that is refused, gets the box back as it was, and the
  *     field is the person's (needs-your-click);
  *   then the chips are awaited until they show the value (TAGS_ADD_CAP_MS: quiet windows on the form root, never a
- *   fixed sleep);
- * - it stops once the box holds its `cap` of chips (the values past it: max-selections-reached), once the field's adds
- *   have run TAGS_FIELD_BUDGET_MS, at a Guard's refusal or a page that does not answer, and at the person's Skip or the
- *   run's end;
+ *   fixed sleep); an Add the page took nothing of (no chip, and the box still holds the value: a page that wants a
+ *   trusted click) is a page that does not answer: the box gets back what it held and the field is the person's
+ *   (needs-your-click), no further value typed (jr6 line W review, ENG-REV-1);
+ * - it stops once the box holds its `cap` of chips (the values past it: max-selections-reached), once the field's
+ *   values have run TAGS_FIELD_BUDGET_MS (checked before each value after the first tried, added or not: ENG-REV-1), at
+ *   a Guard's refusal or a page that does not answer, and at the person's Skip or the run's end;
  * - it is verified by the chips: every planned value shows as one (tag-chips.ts holdsTags).
  * Values stay in memory: nothing here logs or sends one.
  */
@@ -157,14 +159,19 @@ async function addOne(target: FieldTarget, value: string, ctx: WidgetContext, ho
     return { ok: false, reason: 'needs-your-click', blocked: false, stop: true, target: current };
   }
   const shown = await chipShown(tags, value, ctx);
-  // A value the page took nothing of is put back where the box still holds it.
-  if (!shown && box.value === value) putBack();
+  // jr6 line W review (ENG-REV-1): an Add the page took nothing of (no chip, the box still holding the value: a page
+  // that wants a trusted click) is a page that does not answer: the box is put back, and no further value is typed.
+  if (!shown && box.value === value) {
+    putBack();
+    return { ok: false, reason: 'needs-your-click', blocked: false, stop: true, target: current };
+  }
   return { ok: shown, reason: shown ? 'ok' : 'verify-mismatch', blocked: false, stop: false, target: current };
 }
 
-/** Writes a planned text into a box of several answers and reads it back by its chips (see the header). */
-export async function fillTags(target: FieldTarget, text: string, ctx: WidgetContext, hooks: TagsHooks):
-  Promise<TagsResult> {
+/** Writes a planned text into a box of several answers and reads it back by its chips (see the header). `budgetMs` is
+ *  the time after which no further value is tried (TAGS_FIELD_BUDGET_MS). */
+export async function fillTags(target: FieldTarget, text: string, ctx: WidgetContext, hooks: TagsHooks,
+  budgetMs: number = TAGS_FIELD_BUDGET_MS): Promise<TagsResult> {
   const none = (reason: ReasonCode, blocked = false): TagsResult => ({ added: 0, verified: false, reason, blocked });
   const widget = target.widget;
   const tags = declaredTags(widget?.tags);
@@ -186,9 +193,12 @@ export async function fillTags(target: FieldTarget, text: string, ctx: WidgetCon
   let reason: ReasonCode = 'ok';
   let blocked = false;
   let capped = false;
+  let tried = 0;
   for (const value of missing()) {
     if (ctx.signal?.aborted) break;
-    if (added > 0 && monotonicNow() - started >= TAGS_FIELD_BUDGET_MS) break;
+    // jr6 line W review (ENG-REV-1): the field's budget, checked before each value after the first tried, added or
+    // not: values none of which the page takes would otherwise each cost a search or an Add's wait.
+    if (tried > 0 && monotonicNow() - started >= budgetMs) break;
     const now = current.widget?.tags ?? tags;
     const chips = chipWords(now);
     // The page may have added it meanwhile; a box at its cap takes no more.
@@ -197,6 +207,7 @@ export async function fillTags(target: FieldTarget, text: string, ctx: WidgetCon
       capped = true;
       break;
     }
+    tried += 1;
     // A box that declares its Add is added by it; one that declares only a search, by its result.
     const step = now.add === undefined
       ? await searchOne(current, value, ctx, hooks, SEARCH_FIELD_BUDGET_MS)

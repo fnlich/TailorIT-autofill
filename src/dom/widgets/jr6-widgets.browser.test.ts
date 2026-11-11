@@ -1273,6 +1273,35 @@ describe('item 13 (U-05, WD-18): a box of several answers (WidgetDecl.tags)', ()
     expect((page.doc.getElementById('skill-input') as HTMLInputElement).value).toBe('');
   });
 
+  // jr6 line W review (ENG-REV-1): a page that does not answer, and the field's budget, bound the box's values.
+  it('stops at an Add the page takes nothing of: one press, the box put back, the field the person’s', async () => {
+    const page = await open(ADDS(), 'ultipro', (doc) => addsAdapter(doc));
+    // The page ignores an untrusted click on its Add (as one that wants a trusted event): no chip, the text kept.
+    let presses = 0;
+    page.doc.getElementById('add')!.addEventListener('click', (event) => {
+      presses += 1;
+      event.stopImmediatePropagation();
+    }, { capture: true });
+    const used = tagHooks(page, 'Skills');
+    expect(await fillTags(page.target('Skills'), SKILLS, page.ctx(), used))
+      .toEqual({ added: 0, verified: false, reason: 'needs-your-click', blocked: false });
+    expect([presses, page.win<number>('__adds')]).toEqual([1, 0]);
+    expect(used.guards).toEqual(['TypeScript']);
+    expect(chipLabels(page.doc, '#chips strong')).toEqual([]);
+    expect((page.doc.getElementById('skill-input') as HTMLInputElement).value).toBe('');
+  });
+
+  it('tries no value past the field’s budget, though none was added (TAGS_FIELD_BUDGET_MS)', async () => {
+    const page = await open(PILLS, 'workday', (doc) => pillsAdapter(doc));
+    const used = tagHooks(page, 'Type to Add Skills');
+    // Each value's results only hold words that contain it: none is chosen. The budget lowered to 1 ms for the test.
+    expect(await fillTags(page.target('Type to Add Skills'), 'Type, Postgre, Kube', page.ctx(), used, 1))
+      .toEqual({ added: 0, verified: false, reason: 'no-match', blocked: false });
+    expect(used.guards).toEqual(['Type']);
+    expect(page.win<string[]>('__chosen')).toEqual([]);
+    expect(chipLabels(page.doc, '#pills .pill')).toEqual(['Docker']);
+  });
+
   it('counts a required box answered while it shows a chip, its text box empty (content/press.ts requiredLeftOf)',
     async () => {
       const page = await open(ADDS(), 'ultipro', (doc) => addsAdapter(doc));
