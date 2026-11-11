@@ -4005,13 +4005,12 @@ for (const option of root.querySelectorAll('spl-select-option')) {
 
 /**
  * jr6 fixes (REVC-4 b): the committed fixtures converted before the converter refused it, which still hold lists where
- * one REDACTED row stands beside public ones (each file's count): UltiPro's two education pages (the field-of-study
- * selects, REVC-2: ULTIPRO converts them again; SP\jr6\leakscan\VERDICTS.md 4.2) and SeatGeek's site menus (a company
- * page, no package this round). A file converted again holds none, and its entry then goes.
+ * one REDACTED row stands beside public ones (each file's count): SeatGeek's site menus (a company page, no package this
+ * round). A file converted again holds none, and its entry then goes. (UltiPro's two education pages, the field-of-study
+ * selects of REVC-2, were converted again by ULTIPRO with a synthetic list (9b5ce3d; SP\jr6\leakscan\VERDICTS.md 4.2):
+ * their entries went at the forms merge.)
  */
 const ELIMINATED_FIXTURES: Record<string, number> = {
-  'ultipro/application.html': 2,
-  'ultipro/resume-review.html': 2,
   'sites/seatgeek-greenhouse-embed.html': 5,
 };
 
