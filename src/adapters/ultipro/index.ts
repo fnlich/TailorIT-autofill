@@ -34,6 +34,16 @@
  * - Never pressed: Cancel (the application's, to the posting; the review's; a panel editor's), Sign Out, a panel's
  *   Remove, a document's delete link, the résumé parser (its upload and its choice of a saved résumé), the navigation's
  *   menus and Sign In, the accessibility banner's links and the EEOC definition link.
+ * - jr6 (FIXPLAN §6.10, the audit SP\jr6\audit\ultipro.md), P1's adapter parts:
+ *   - U-01: the review's Work Experience and Education are repeatable sections, each panel-list-item a block (so the
+ *     planner finds each parsed entry by its fingerprint); their Add is never offered (Decision 16, owner question
+ *     Q1), each block's own Delete is its removeButton, still never pressed by a run;
+ *   - U-02: a period box whose own label is the part word alone ("Month", "Year (YYYY)") is labelled by its group too,
+ *     the adapter's label read first ("From Month", "From Year (YYYY)");
+ *   - U-04: School Name and Level of Education / Degree are twitter-typeahead searches, their results the sibling
+ *     .tt-dropdown-menu's .tt-suggestion rows; School's typed text stands where no result matches (freeText); Degree
+ *     takes the page's own degree list (knownOptions) where the page publishes it in a script;
+ *   - U-05: the review's Skills box takes several skills, one at a time, each a chip once its row's Add is pressed.
  * Turnstile (the account step and the application, ultipro-0 to -2) is drawn in a closed shadow root: the extension
  * cannot read it (dom/pause-detect.ts's known limit), and Submit and Create account are the page's to enable.
  * Nothing here reads, logs or sends a value.
@@ -44,7 +54,7 @@ import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { configuredHooks } from '../configured';
 import type { AtsConfig } from '../configured/types';
-import type { Adapter, SignInForm } from '../types';
+import type { Adapter, SignInForm, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, matchesUrl, parseUltiproUrl } from './url';
 
 /** The fixtures the adapter was read from (fixtures/ultipro/<case>.html). */
@@ -138,30 +148,198 @@ function startDateLabel(control: Element): Element | null {
   return group?.querySelector(':scope > label[data-automation="start-date-label"]') ?? null;
 }
 
-/** A month or year box with no label of its own in a "From" or "To" group (ultipro-0, -1: the experience editor's To,
- *  the education editor's From and To), its group's label and its own box's label, or null. */
+/** The words a period box's own label holds when it names the part alone (jr6 U-02: ultipro-1's "Month", "Year
+ *  (YYYY)"). */
+const PART_WORDS = /^(?:month|year(?:\s*\(yyyy\))?)$/i;
+
+/** A month or year box in a "From" or "To" group with no label of its own, or (jr6 U-02) whose own label is the part
+ *  word alone (ultipro-0, -1: the experience editor's From, whose label[for] says "Month" and "Year (YYYY)"; its To, the
+ *  education editor's From and To, with none): its group's label and its own box's label, or null. */
 function periodLabels(control: Element): { group: Element; part: Element } | null {
   // ultipro-1: <div class="form-group" role="group"><label class="control-label" ... id="NewWorkExperience_ToLabel0">To
   // </label><div class="form-inline"><div class="form-group"><label ...>Month</label><br><select class="form-control"
   // data-automation="to-month-dropdown" aria-label="To month"> ... <div class="form-group"><label ...>Year (YYYY)</label>
-  // <br><input type="text" ... placeholder="YYYY" ... data-automation="to-year-textbox" aria-label="To year">.
+  // <br><input type="text" ... placeholder="YYYY" ... data-automation="to-year-textbox" aria-label="To year">. The From
+  // group (jr6 U-02): <label class="control-label required" id="NewWorkExperience_FromLabel0">From</label> ... <label
+  // for="NewWorkExperience_FromMonth0">Month</label><br><select id="NewWorkExperience_FromMonth0"
+  // data-automation="from-month-dropdown" aria-label="From month">, and "Year (YYYY)" over from-year-textbox the same.
   if (!/^(?:from|to)-(?:month-dropdown|year-textbox)$/.test(control.getAttribute('data-automation') ?? '')) return null;
-  if (((control as HTMLInputElement).labels?.length ?? 0) > 0) return null;
   const own = control.parentElement;
   const group = own?.parentElement?.parentElement ?? null;
   if (own === null || group === null || !own.matches('div.form-group') || !own.parentElement!.matches('div.form-inline')
     || !group.matches('div.form-group[role="group" i]')) return null;
   const groupLabel = group.querySelector(':scope > label.control-label');
   const part = own.querySelector(':scope > label');
-  return groupLabel === null || part === null ? null : { group: groupLabel, part };
+  if (groupLabel === null || part === null) return null;
+  // jr6 U-02: a box with a label of its own takes its group's only where that label is its part's, the part word alone.
+  const labels = Array.from((control as HTMLInputElement).labels ?? []);
+  if (labels.length > 0 && (labels.length > 1 || labels[0] !== part || !PART_WORDS.test(wordsOf(part)))) return null;
+  return { group: groupLabel, part };
 }
+
+/** An element's visible words on one line (page text). */
+function wordsOf(el: Element): string {
+  return visibleText(el, { singleLine: true, cap: TEXT_CAP_LABEL, cache: newScanCache() }).trim();
+}
+
 
 /** The Skills panel's typeahead (ultipro-0, -1: <input role="combobox" type="text" required=""
  *  data-automation="item-typeahead" aria-label="Skills" ...>, labelled by nothing a person sees): its panel's h2. */
 function skillsTitle(control: Element): Element | null {
   if (!control.matches('input[data-automation="item-typeahead"]')) return null;
-  return control.closest('div[role="region" i][aria-label="Skills"]')?.querySelector('h2') ?? null;
+  return skillsRegion(control)?.querySelector('h2') ?? null;
 }
+
+/** The Skills panel around a control (ultipro-0, -1: <div role="region" ... aria-label="Skills">), or null. */
+function skillsRegion(control: Element): Element | null {
+  return control.closest('div[role="region" i][aria-label="Skills"]');
+}
+
+// ── jr6 ULTIPRO P1: the review's widgets (FIXPLAN §6.10 items 3 and 4, U-04 and U-05) ──
+/** How long a school or degree search that shows no suggestion is taken to have found none: Jobright 1.25.2 waits up
+ *  to 1 s for a typeahead's candidates (UltiPro operations, fillUltiproTypeaheadField). */
+export const ULTIPRO_TYPEAHEAD_EMPTY_MS = 1_000;
+
+/** The education editor's School Name and Level of Education / Degree (ultipro-1: <span class="twitter-typeahead"><input
+ *  type="text" id="NewEducation_SchoolId0" class="form-control tt-input" role="combobox" aria-autocomplete="list"
+ *  aria-labelledby="lblNewEducation_SchoolId0" data-automation="school-textbox" placeholder="Choose..."
+ *  data-bind="value: SchoolName, typeahead: {source: ...}"><pre ...></pre><span class="tt-dropdown-menu"
+ *  role="listbox" style="... display: none ..."><div class="tt-dataset-1"></div></span></span>; the Degree box
+ *  data-automation="degree-textbox" the same). The Skills box (data-automation="item-typeahead", its role combobox in
+ *  the application layout) is no education box. */
+const SCHOOL_BOX = 'input.tt-input[role="combobox" i][data-automation="school-textbox"]';
+const DEGREE_BOX = 'input.tt-input[role="combobox" i][data-automation="degree-textbox"]';
+
+/** The suggestions list typeahead.js draws beside its box, in its span.twitter-typeahead (above), or null. */
+function suggestionsOf(control: Element): Element | null {
+  const wrapper = control.parentElement;
+  return wrapper !== null && wrapper.matches('span.twitter-typeahead')
+    ? wrapper.querySelector(':scope > span.tt-dropdown-menu[role="listbox" i]') : null;
+}
+
+/** The longest inline script read for the page's degree list (characters). */
+const SCRIPT_TEXT_CAP = 2_000_000;
+
+/** The degree list the page publishes for its Degree box, where the box's typeahead source names it (its data-bind's
+ *  `typeahead: {source: ...degreeOptions}`) and an inline script declares it as a JSON array of objects whose `Name`
+ *  is each degree's label (`var degreeOptions = [...]`; the page's own words, in its order, each once). Jobright 1.25.2
+ *  reads the same list for the same box (UltiPro rules, the Degree typeahead's static options). None where either is
+ *  missing or the list is not JSON (the fixtures hold no script: the converter keeps none). */
+export function pageDegreeOptions(control: Element): string[] {
+  if (!/\bsource\s*:\s*[\w$.[\]]*\bdegreeOptions\b/.test(control.getAttribute('data-bind') ?? '')) return [];
+  for (const script of Array.from(control.ownerDocument.scripts)) {
+    const text = script.src === '' ? script.textContent ?? '' : '';
+    if (text.length > SCRIPT_TEXT_CAP || !text.includes('degreeOptions')) continue;
+    const list = /\b(?:var|let|const)\s+degreeOptions\s*=\s*(\[[\s\S]*?\])\s*;/.exec(text)?.[1];
+    if (list === undefined) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(list);
+    } catch {
+      return [];
+    }
+    if (!Array.isArray(parsed)) return [];
+    const names = parsed.map((each: unknown) => {
+      const name = typeof each === 'object' && each !== null ? (each as { Name?: unknown }).Name : undefined;
+      return typeof name === 'string' ? name.replace(/\s+/g, ' ').trim() : '';
+    }).filter((name) => name !== '');
+    return [...new Set(names)];
+  }
+  return [];
+}
+
+/** jr6 U-04: School Name and Degree as searches whose results are the sibling list's .tt-suggestion rows, chosen by
+ *  click() (typeahead.js chooses on a suggestion's click); School keeps its typed text where no result matches (the
+ *  page binds the box's own text, value: SchoolName; Jobright types the school as plain text); Degree, where the page
+ *  publishes its list, is a combobox whose options are that list, else a search too. Null for any other control, or
+ *  where the box has no suggestions list beside it. */
+function educationSearch(control: Element): WidgetDecl | null {
+  const school = control.matches(SCHOOL_BOX);
+  if (!school && !control.matches(DEGREE_BOX)) return null;
+  const list = suggestionsOf(control);
+  if (list === null) return null;
+  const known = school ? [] : pageDegreeOptions(control);
+  return {
+    kind: known.length > 0 ? 'combobox' : 'typeahead-remote',
+    opener: control as HTMLElement,
+    results: { list, option: '.tt-suggestion' },
+    emptyAfterMs: ULTIPRO_TYPEAHEAD_EMPTY_MS,
+    ...(school ? { freeText: true as const } : {}),
+    ...(known.length > 0 ? { knownOptions: known } : {}),
+    snapshot: 'ultipro-1',
+  };
+}
+
+/** jr6 U-05: the review's Skills box (ultipro-1: in the Skills panel, <div class="form-inline"><div class="form-group">
+ *  <span class="twitter-typeahead"><input type="text" class="form-control focus-on-edit typeahead-control tt-input"
+ *  maxlength="80" required="" data-automation="item-typeahead" aria-label="Skills" ...></span></div><button
+ *  type="button" class="btn btn-default add-button" data-automation="item-add-button" disabled="">Add</button></div>,
+ *  each skill held a chip: <div data-automation="selected-item" ...><span><div data-automation="skill" class="skill">
+ *  <div class="form-group"><strong data-automation="skill-label">...</strong>) takes several skills one at a time:
+ *  typed, then its row's Add pressed, the chips read again (Jobright 1.25.2's UltiPro fillSkills). Its kind is the
+ *  typeahead it is drawn as; the tags filler (ENGINE E3) reads it as one text field. Null for any other control. The
+ *  application layout's Skills (behind "Edit Skills") is declared alike, and waits with U-14 for its editor. */
+function skillsBox(control: Element): WidgetDecl | null {
+  if (!control.matches('input[data-automation="item-typeahead"]')) return null;
+  const region = skillsRegion(control);
+  if (region === null) return null;
+  const row = control.closest('div.form-inline');
+  return {
+    kind: 'typeahead-remote',
+    opener: control as HTMLElement,
+    tags: {
+      chips: () => {
+        const cache = newScanCache();
+        return Array.from(region.querySelectorAll('strong[data-automation="skill-label"]'))
+          .filter((chip) => isUserVisible(chip, cache));
+      },
+      add: () => {
+        const button = row?.querySelector<HTMLElement>('button[data-automation="item-add-button"]') ?? null;
+        return button !== null && isUserVisible(button) ? button : null;
+      },
+    },
+    snapshot: 'ultipro-1',
+  };
+}
+// ── end jr6 ULTIPRO P1 (U-04, U-05) ──
+
+// ── jr6 ULTIPRO P1: the review's entries (FIXPLAN §6.10 item 1, U-01) ──
+/** The review's Work Experience and Education panels (ultipro-1: <div data-automation="work-experience-section"
+ *  data-bind="with: workExperienceViewModel"><multi-edit-only-panel><collapsible-panel><div role="region" ...
+ *  aria-label="Work Experience"> ... <button data-automation="primary-action-button" ... aria-label="Add Experience">
+ *  ... <div data-automation="panel-list-item" role="form" class="row" aria-label="Work Experience 1"><button
+ *  data-automation="remove-button" class="btn btn-default pull-right" aria-label="Delete Work Experience 1"> ... <div
+ *  data-automation="work-experience-item"> its Job Title, Company / Organization, Location, From, To and Description;
+ *  data-automation="education-section" the same, "Add Education", "Education 1"). */
+const REVIEW_SECTIONS = [
+  { kind: 'experience', css: `${REVIEW} div[data-automation="work-experience-section"]` },
+  { kind: 'education', css: `${REVIEW} div[data-automation="education-section"]` },
+] as const;
+const REVIEW_BLOCK = 'div[data-automation="panel-list-item"][role="form" i]';
+
+/** jr6 U-01: the review's two panels as repeatable sections, each block one parsed entry, so the planner finds the
+ *  profile entry each holds by its fingerprint (core/steps/blocks.ts) and never writes job 1 into every block. Their
+ *  Add is never offered (addButton null): adding, deleting or editing the parser's entries waits for owner question Q1
+ *  (Decision 16). A block's own Delete is its removeButton, pressed by no run (ENGINE's gated door alone, after Q1).
+ *  Jobright reconciles the parsed rows with the profile by "title, company" and deletes the others
+ *  (removeUltiproSavedEntriesOutsideFillV2). None in the application layout (its entries are summaries: U-03). */
+function reviewRepeatables(root: Element): ReturnType<NonNullable<Adapter['repeatables']>> {
+  return REVIEW_SECTIONS.flatMap(({ kind, css }) => {
+    const section = root.matches(css) ? root : root.querySelector(css);
+    if (section === null) return [];
+    return [{
+      kind,
+      blocks: () => Array.from(section.querySelectorAll(REVIEW_BLOCK)),
+      addButton: () => null,
+      removeButton: (block: Element) => {
+        // ultipro-1: one per block, in its pull-right column (<div class="col-xs-6 col-sm-4 col-md-2 pull-right">).
+        const buttons = Array.from(block.querySelectorAll<HTMLElement>('button[data-automation="remove-button"]'));
+        return buttons.length === 1 && isUserVisible(buttons[0]!) ? buttons[0]! : null;
+      },
+    }];
+  });
+}
+// ── end jr6 ULTIPRO P1 (U-01) ──
 
 const hooks = configuredHooks(ULTIPRO_CONFIG);
 
@@ -203,9 +381,16 @@ export const ultiproAdapter: Adapter = {
     ?? hooks.labelFor?.(control) ?? null,
   labelSuffix(control) {
     if (startDateLabel(control) !== null) return DATE_PARTS.get(control.getAttribute('data-automation') ?? '') ?? null;
-    const period = periodLabels(control);
-    if (period === null) return null;
-    const words = visibleText(period.part, { singleLine: true, cap: TEXT_CAP_LABEL, cache: newScanCache() });
+    const part = periodLabels(control)?.part ?? null;
+    if (part === null) return null;
+    const words = wordsOf(part);
     return words === '' ? null : words;
   },
+  // jr6 U-02: a period box's own label is only its part's words ("Month"): the adapter's label, its group's with those
+  // words, is read first.
+  labelFirst: (control) => periodLabels(control) !== null,
+  // jr6 U-04, U-05.
+  widgetFor: (control) => educationSearch(control) ?? skillsBox(control) ?? hooks.widgetFor?.(control) ?? null,
+  // jr6 U-01.
+  repeatables: (root) => [...(hooks.repeatables?.(root) ?? []), ...reviewRepeatables(root)],
 };
