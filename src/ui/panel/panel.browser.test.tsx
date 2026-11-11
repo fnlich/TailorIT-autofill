@@ -249,10 +249,11 @@ describe('the review panel', () => {
     worker.script.pages.set(5, posting);
     const root = await open(worker, 5);
     // jr6 apply F1 (APPLYPLAN D2): a posting alone shows Autofill too (a plain fill: its frame looks for the site's
-    // Apply), and the strip says what it does there.
+    // Apply), and the strip says what it does there (the F1 fixer: once, though no card shows).
     const alone = root.querySelector<HTMLButtonElement>('button.tia-cta')!;
     expect([alone.textContent, alone.dataset.mainAction, alone.disabled]).toEqual([COPY.panel.fill, 'fill', false]);
-    expect(root.querySelector('[data-strip="no-form"]')?.textContent).toBe(COPY.strip.noForm);
+    expect([...root.querySelectorAll('[data-strip="no-form"]')].map((strip) => strip.textContent))
+      .toEqual([COPY.strip.posting]);
     // Workday's "Start Your Application" (its address read as the posting's): Autofill, a plain fill, which presses the
     // declared entry; nothing says there is no form to fill.
     await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [], page: { ...posting, choice: true } }));

@@ -33,10 +33,12 @@
  *     Application"), but the platform's page after submitting, it reads Autofill and sends a plain panel/fill: the
  *     frame presses the site's own Apply (told, PageState.entry, or drawn late) and fills what it opens; meanwhile
  *     (PageState.entering) it spins with Cancel beside it; when it cannot, one line says why (PageState.refusal; 'none'
- *     after this panel's own click is the "no form" modal). Whenever what it says and sends changes, it takes no click
- *     until the new label has been shown CONTROL_SEEN_MS (seen.ts, the v4 review's L4: a page cannot flip it as the
- *     pointer comes). While a run works it spins, and the progress below has Cancel. No Dry run, Continue or Cancel
- *     buttons (the messages stay);
+ *     after this panel's own click is the "no form" modal). The F1 fixer (the line P review): no line under the button
+ *     meanwhile, as no report comes while the frame presses or waits, and one no-form strip until a refusal says why,
+ *     a posting's promising the site's Apply and any other page's not (C1, C2). Whenever what it says and sends
+ *     changes, it takes no click until the new label has been shown CONTROL_SEEN_MS (seen.ts, the v4 review's L4: a
+ *     page cannot flip it as the pointer comes). While a run works it spins, and the progress below has Cancel. No Dry
+ *     run, Continue or Cancel buttons (the messages stay);
  *   - "Ask custom question" (Ask.tsx: panel/ask), an outline button that unfolds the box;
  *   - "Résumé: <label> · Preview · Edit · Change" (JobCard.tsx ResumeLine: panel/resumes, panel/setResume,
  *     panel/withoutResume; v1.4 F: Preview and Edit are panel/openDocument) until a run lists the résumé's own row,
@@ -385,6 +387,11 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const run = async (message: RunMessage) => {
     const newest = newestReport;
     if (message.type === 'panel/fill') setAsked({ message, at: now(), armed: refusal !== 'none' }); // jr6 apply F1
+    // The F1 fixer (the line P review, C1): Autofill or its Cancel on a page with no form says nothing under the button
+    // once the worker took it. The frame looks again, presses the site's Apply or waits for what it brings, and no
+    // report comes meanwhile, so a run line would stand beside the strip and every refusal: the button's spinner and
+    // Cancel, then the run's progress or the refusal's line say what happens.
+    const quiet = page?.support === 'no-form' && message.type !== 'panel/continue';
     setBusy(true);
     const answer = await request(platform, message);
     setBusy(false);
@@ -392,9 +399,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     // Page only where the host can reload its page.
     const stop = stopOf(message, answer, page?.support === 'form',
       refreshPage !== undefined && !answer.ok && !platform.runtime.isValid());
-    if (stop !== null) {
+    if (stop !== null || (quiet && answer.ok)) {
       setFeedback(null);
-      setModal({ tabId: message.tabId, state: { kind: 'error', reason: stop }, message });
+      if (stop !== null) setModal({ tabId: message.tabId, state: { kind: 'error', reason: stop }, message });
       return;
     }
     setFeedback({ tabId: message.tabId, text: feedbackOf(message, answer), newest });
@@ -599,8 +606,10 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   // confirmed (`submitted`). On a posting with no told Apply it is a plain fill: the frame looks again, waits for a late
   // Apply, presses it, or says why not (PageState.refusal). The strip says what Autofill does there.
   const afterSubmit = page?.support === 'no-form' && page.confirmation === true;
+  // The F1 fixer (the line P review, C1): drawn once (PageStrip draws no posting's), and only until a refusal's line
+  // says why instead.
   const postingStrip = page?.support === 'no-form' && page.posting === true && !afterSubmit && !choice && !wall
-    && !entry;
+    && !entry && refusal === null;
   // jr6 apply F1 (APPLYPLAN F1 item 3): the frame presses the site's Apply or waits for what it brings: the button
   // spins, disabled, its word unchanged, and Cancel shows.
   const entering = page?.entering === true;
@@ -723,7 +732,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
           {/* v5 p1-panel: where the sheet's top goes while it is up (Sheet.tsx): just under the job card. */}
           <div className="tia-sheet-anchor" ref={anchor} aria-hidden="true" />
           {tabId !== null && postingStrip && (
-            <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.noForm}</p>
+            <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.posting}</p>
           )}
           {tabId !== null && pageWaits !== null && (
             <p className="tia-strip" data-strip="page-waits" data-page-waits={pageWaits} data-tone="warning" role="status">
@@ -989,13 +998,16 @@ function Unsupported({ reload, ask }: { reload: 'ats' | 'site' | null;
 
 /** Before any run, when no job card says more: what the tab's page holds, from the worker's frame registry; nothing
  *  until it is known, and no "No application form" where the page shows an entry choice or an account wall, which the
- *  main button answers (the v4 review, M4). jr6 apply F1: a page with no form says that Autofill presses the site's
- *  Apply first (STRIP.noForm), but the platform's page after submitting, which offers no Autofill. */
+ *  main button answers (the v4 review, M4). jr6 apply F1: nor on the platform's page after submitting, which offers no
+ *  Autofill. The F1 fixer (the line P review, C1 and C2): a page with no form that is no posting says to open a job's
+ *  application (STRIP.noForm: it promises no Apply, as a list of jobs shows several); a posting's strip, which says
+ *  Autofill presses the site's Apply first, the main view draws once, under its card; and none once an entry was
+ *  refused, whose line says why. */
 function PageStrip({ page }: { page: PageState | null }) {
   if (page === null) return null;
   // v5 p2-fill: nor where the site offers its own Apply (the main button's "?" says what Autofill does there).
   if (page.support === 'no-form' && (page.choice === true || page.wall !== undefined || page.entry === true
-    || page.confirmation === true)) return null;
+    || page.confirmation === true || page.posting === true || page.entryRefused === true)) return null;
   if (page.support === 'form') {
     return (
       <p className="tia-strip" data-strip="form" data-tone="brand">

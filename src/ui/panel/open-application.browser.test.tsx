@@ -11,11 +11,16 @@
  * - says why it could not in one line per reason (PageState.refusal); 'none' (no Apply and no form) that answers this
  *   panel's own Autofill within 30 s is the "no form" modal, with Try Again.
  * Sign Up & Autofill at an account wall is unchanged (OQ1).
+ *
+ * The F1 fixer (the line P review), last describe block:
+ * - C1, C2: one thing said at a time (no run line under the button while the frame presses or waits, the no-form strip
+ *   once and only until a refusal's line); only a posting's strip promises the site's Apply, and the "no form" words
+ *   claim neither a search nor a page without an Apply.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { ENTRY_REFUSALS, type PageState } from '../../messaging/schemas';
 import { COPY } from '../../shared/copy';
-import { click, createFakeWorker, frameReport, manualClock, mount, settle, SEEN_AT_ONCE, showPage, unmountAll,
+import { click, createFakeWorker, frameReport, jobCard, manualClock, mount, settle, SEEN_AT_ONCE, showPage, unmountAll,
   type FakeWorker } from '../ui.testkit';
 import { Panel } from './Panel';
 import { CONTROL_SEEN_MS, type SeenClock } from './seen';
@@ -35,6 +40,13 @@ const shown = (root: ParentNode) => {
 };
 const refusalLine = (root: ParentNode) => root.querySelector<HTMLElement>('[data-strip="entry-refused"]');
 const modalOf = (root: ParentNode) => root.querySelector<HTMLElement>('[data-modal]');
+/** The F1 fixer: every line of words the main view shows (strips, the line under the button, a modal's text), in order,
+ *  each with its kind. */
+const lines = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('.tia-strip, .tia-feedback, .tia-modal__text')]
+  .map((each) => {
+    const kind = each.dataset.strip ?? (each.classList.contains('tia-feedback') ? 'feedback' : 'modal');
+    return `[${kind}] ${each.textContent}`;
+  });
 
 describe('Autofill on a page with no form presses the site\'s Apply (jr6 apply F1)', () => {
   afterEach(() => unmountAll());
@@ -59,10 +71,11 @@ describe('Autofill on a page with no form presses the site\'s Apply (jr6 apply F
     const root = await open(worker);
     expect(shown(root)).toEqual([COPY.panel.fill, 'fill', false]);
     expect(root.querySelector('.tia-toolbar [role="tooltip"]')).toBeNull();
-    expect(root.querySelector('[data-strip="no-form"]')?.textContent).toBe(COPY.strip.noForm);
+    expect(root.querySelector('[data-strip="no-form"]')?.textContent).toBe(COPY.strip.posting);
     await click(mainOf(root));
     expect(worker.sentOfType('panel/fill')).toEqual([{ v: 1, type: 'panel/fill', tabId: 5, dryRun: false }]);
-    // A page of ours with no form that is no posting (no job card): the same button, and the strip before any run.
+    // A page of ours with no form that is no posting (no job card): the same button, and the strip before any run,
+    // which promises no Apply there (the F1 fixer, the line P review's C2).
     await showPage(worker, 5, { support: 'no-form', platform: 'lever', formKey: '0:other' });
     expect(shown(root)).toEqual([COPY.panel.fill, 'fill', false]);
     expect(root.querySelector('[data-strip="no-form"]')?.textContent).toBe(COPY.strip.noForm);
@@ -186,7 +199,8 @@ describe('Autofill on a page with no form presses the site\'s Apply (jr6 apply F
     // The words: one line each, every reason its own, none with the old name.
     const lines = ENTRY_REFUSALS.map((reason) => COPY.mainView.entryRefused[reason]);
     expect(new Set(lines).size).toBe(ENTRY_REFUSALS.length);
-    for (const line of [...lines, COPY.mainView.entryHelp, COPY.strip.noForm, COPY.modals.errors['no-form']]) {
+    for (const line of [...lines, COPY.mainView.entryHelp, COPY.strip.noForm, COPY.strip.posting,
+      COPY.modals.errors['no-form']]) {
       expect(line).not.toMatch(/open application/i);
       expect(line).toMatch(/Autofill/);
     }
@@ -211,13 +225,16 @@ describe('Autofill on a page with no form presses the site\'s Apply (jr6 apply F
     // So the line claims no press and no move, and names where the application is.
     expect(COPY.mainView.entryRefused.elsewhere).not.toMatch(/\b(took|pressed|moved|went)\b/i);
     expect(COPY.mainView.entryRefused.elsewhere).toMatch(/another site/);
-    // 'none' before any press, for an Apply that downloads a file (the page shows that Apply): no Apply that opens a
-    // form, never "no Apply" outright; the "no form" modal shares the words.
+    // 'none' before any press, for an Apply that downloads a file (the page shows that Apply): never "no Apply"
+    // outright; the "no form" modal shares the words. The F1 fixer (the line P review, C2): nor that no Apply opens a
+    // form (a list of jobs shows several), nor that Autofill looked (a click that reached no frame of ours opens the
+    // same modal): no Apply that Autofill could press.
     await showPage(worker, 5, { ...posting, entry: true, entryRefused: true, refusal: 'none' });
     expect([refusalLine(root)?.dataset.reason, refusalLine(root)?.textContent]).toEqual(['none',
       COPY.mainView.entryRefused.none]);
-    expect(COPY.mainView.entryRefused.none).not.toMatch(/no Apply button/i);
-    expect(COPY.mainView.entryRefused.none).toMatch(/no Apply that opens/);
+    expect(COPY.mainView.entryRefused.none).not.toMatch(/no Apply button|no Apply that opens|no Apply on/i);
+    expect(COPY.mainView.entryRefused.none).not.toMatch(/\b(found|looked|searched|checked)\b/i);
+    expect(COPY.mainView.entryRefused.none).toMatch(/no Apply that Autofill could press/);
     expect(COPY.modals.errors['no-form']).toBe(COPY.mainView.entryRefused.none);
   });
 
@@ -272,4 +289,90 @@ describe('Autofill on a page with no form presses the site\'s Apply (jr6 apply F
     await showPage(worker, 5, { ...posting, entryRefused: true, refusal: 'none' });
     expect(modalOf(root)?.dataset.modalReason).toBe('no-form');
   });
+});
+
+describe('Autofill on a page with no form says one thing at a time (the F1 fixer, the line P review)', () => {
+  afterEach(() => unmountAll());
+
+  // C1: the worker answers Autofill on a page with no form with the frame it reached (frames 1), and no report comes
+  // while the frame presses or waits, or when it refuses: a run line ("Filling the form.") would stand all along.
+  for (const card of [false, true]) {
+    it(`after Autofill on a posting with no told Apply: the strip while the frame presses, then each refusal's words alone (${card ? 'a job card' : 'no card'})`, async () => {
+      for (const reason of ENTRY_REFUSALS) {
+        const worker = createFakeWorker();
+        worker.script.pages.set(5, posting);
+        if (card) worker.script.cards.set(5, jobCard());
+        let time = 100_000;
+        const root = await open(worker, SEEN_AT_ONCE, () => time);
+        // Before any run: the posting's strip, once (no card: PageStrip drew it a second time, before the review).
+        expect(lines(root), reason).toEqual([`[no-form] ${COPY.strip.posting}`]);
+        await click(mainOf(root));
+        expect(lines(root), reason).toEqual([`[no-form] ${COPY.strip.posting}`]);
+        await showPage(worker, 5, { ...posting, entering: true });
+        expect(lines(root), reason).toEqual([`[no-form] ${COPY.strip.posting}`]);
+        time += 3_000;
+        await showPage(worker, 5, { ...posting, entryRefused: true, refusal: reason });
+        if (reason === 'none') {
+          // This panel's own click answered within 30 s: the "no form" modal says it, then the line alone.
+          expect(lines(root), reason).toEqual([`[modal] ${COPY.mainView.entryRefused.none}`]);
+          await click(root.querySelector('[data-modal-action="cancel"]'));
+        }
+        expect(lines(root), reason).toEqual([`[entry-refused] ${COPY.mainView.entryRefused[reason]}`]);
+        expect(root.querySelector('.tia-feedback'), reason).toBeNull();
+        unmountAll();
+      }
+    });
+  }
+
+  it('says nothing under the button after Cancel while the frame presses, whatever it reached', async () => {
+    for (const frames of [0, 1]) {
+      const worker = createFakeWorker();
+      worker.script.pages.set(5, { ...posting, entering: true });
+      worker.script.frames = frames;
+      const root = await open(worker);
+      await click(root.querySelector('[data-action="cancel"]'));
+      expect(worker.sentOfType('panel/cancel'), String(frames)).toEqual([{ v: 1, type: 'panel/cancel', tabId: 5 }]);
+      expect(root.querySelector('.tia-feedback'), String(frames)).toBeNull();
+      expect(lines(root), String(frames)).toEqual([`[no-form] ${COPY.strip.posting}`]);
+      unmountAll();
+    }
+    // A refusal of the worker's is still said under the button (a page with no form, as on any other).
+    const worker = createFakeWorker();
+    worker.script.pages.set(5, posting);
+    worker.on('panel/fill', () => ({ ok: false, error: 'rate_limited' }));
+    const root = await open(worker);
+    await click(mainOf(root));
+    expect(root.querySelector('.tia-feedback')?.textContent).toBe(COPY.panel.rateLimited);
+  });
+
+  // C2: a list of jobs on an applicant-tracking host (a frame of ours, no posting), and a page there no frame of ours
+  // is on (reports.ts K1): the frame finds no Apply of one job's to press, or none is reached.
+  it('promises the site\'s Apply only on a posting, and the "no form" words claim no search and no page without an Apply', async () => {
+    const pages: PageState[] = [{ support: 'no-form', platform: 'lever', formKey: '0:board' },
+      { support: 'no-form', platform: null, formKey: null }];
+    for (const page of pages) {
+      const worker = createFakeWorker();
+      worker.script.pages.set(5, page);
+      const root = await open(worker);
+      expect(lines(root), page.formKey ?? 'K1').toEqual([`[no-form] ${COPY.strip.noForm}`]);
+      expect(shown(root), page.formKey ?? 'K1').toEqual([COPY.panel.fill, 'fill', false]);
+      // Refused (no click of this panel's: no modal): its line alone, as on a posting.
+      await showPage(worker, 5, { ...page, entryRefused: true, refusal: 'none' });
+      expect(lines(root), page.formKey ?? 'K1').toEqual([`[entry-refused] ${COPY.mainView.entryRefused.none}`]);
+      unmountAll();
+    }
+    expect(COPY.strip.noForm).not.toMatch(/Apply|presses/);
+    expect(COPY.strip.posting).toMatch(/presses the site's Apply/);
+    // K1: the click reaches no frame: the "no form" modal, in words that claim no search.
+    const worker = createFakeWorker();
+    worker.script.pages.set(5, pages[1]!);
+    worker.script.frames = 0;
+    const root = await open(worker);
+    await click(mainOf(root));
+    expect(modalOf(root)?.dataset.modalReason).toBe('no-form');
+    expect(lines(root)).toEqual([`[no-form] ${COPY.strip.noForm}`, `[modal] ${COPY.modals.errors['no-form']}`]);
+    expect(COPY.modals.errors['no-form']).not.toMatch(/\b(found|looked|searched|checked)\b/i);
+    expect(COPY.modals.errors['no-form']).not.toMatch(/no Apply button|no Apply that opens|no Apply on/i);
+  });
+
 });

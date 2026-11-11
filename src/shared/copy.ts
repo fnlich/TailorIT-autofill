@@ -32,6 +32,12 @@ type NoticeCode = FrameReport['notices'][number]['code'];
 /** "1 form", "2 forms". */
 const forms = (count: number) => (count === 1 ? 'the form' : `${count} forms`);
 
+/** jr6 apply F1 fixer (the line P review, C2): where Autofill has no application to fill, and what to do there, said by
+ *  the no-form strips (STRIP.noForm, STRIP.posting) and the "no form" modal (NO_FORM); written once (the sidebar's
+ *  bundle carries every word of this file). */
+const NO_FORM_HERE = 'No application form on this page';
+const OPEN_A_JOB = "Open a job's application, then press Autofill.";
+
 /** What each notice says. The first three are the plan's exact sentences. */
 const NOTICES = {
   tripwire: 'This page contains text addressed to AI tools. It was ignored.',
@@ -653,7 +659,10 @@ const PANEL = {
 /** The side panel's strip before any run (v2): what the tab's page holds. */
 const STRIP = {
   form: (platform: string | null) => (platform === null ? 'Application form found' : `${platform} application form found`),
-  noForm: "No application form on this page yet. Autofill presses the site's Apply first.", // jr6 apply F1
+  // jr6 apply F1 fixer (the line P review, C2): a page of ours with no form that is no posting (a list of jobs, a page
+  // no frame of ours is on) promises no Apply; a posting (`posting`) says Autofill presses its Apply first.
+  noForm: `${NO_FORM_HERE}. ${OPEN_A_JOB}`,
+  posting: `${NO_FORM_HERE} yet. Autofill presses the site's Apply first.`, // jr6 apply F1
   // DESIGN-NEW-ATS Phase 0: the new ATSs too.
   none: 'Open a job application on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany or ADP Workforce Now to use Autofill.',
 } as const;
@@ -1713,8 +1722,10 @@ const SETUP = {
 
 /** jr6 apply F1: no application form and no Apply on the page: the entry's refusal 'none' and the "no form" modal.
  *  jr6 apply merge (F2's door): 'none' is also said, before any press, for an Apply that downloads a file, so the words
- *  say no Apply that opens a form, never that the page shows no Apply. */
-const NO_FORM = "Autofill found no application form on this page, and no Apply that opens one. Open the job's application, then press Autofill.";
+ *  say no Apply that opens a form, never that the page shows no Apply. The F1 fixer (the line P review, C2): nor that
+ *  no Apply opens one (a list of jobs shows several, none Autofill's to choose), nor that Autofill looked (a click that
+ *  reached no frame of ours, on a page no frame of ours is on, opens this modal too). */
+const NO_FORM = `${NO_FORM_HERE}, and no Apply that Autofill could press. ${OPEN_A_JOB}`;
 
 /** The main view's new parts (Panel.tsx, JobCard.tsx). */
 const MAIN_VIEW = {
