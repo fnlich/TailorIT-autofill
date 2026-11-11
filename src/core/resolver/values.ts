@@ -21,10 +21,11 @@ import {
   intendedUnknown,
 } from '../matcher/intended';
 import type { PlaceParts } from '../matcher/place';
+import { cutInjected } from '../guard/injected';
 import { DEGREE_LEVEL_RANK } from '../profile/degreeParse';
 import { placeText } from '../profile/canonicalize';
-import { normalize } from '../text/normalize';
-import type { FieldSpec } from '../types/field';
+import { normalize, normalizeLabel } from '../text/normalize';
+import type { FieldSpec, Option } from '../types/field';
 import { COVER_LETTER_TEXT_PATH, type FieldCategory, type NoValuePlaceholder, type ProfilePath, type RuleId,
   type ValueOrigin } from '../types/intent';
 import type { EducationEntry, ExperienceEntry, PhoneDeviceType, Profile, YearMonth, Ymd } from '../types/profile';
@@ -32,7 +33,9 @@ import type { RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
 import { none, value, type Choice, type ValueResult } from './candidate';
 import { phoneText } from './format';
-import { EMPLOYED_NOW, X_LINK } from './labelRules';
+import { EMPLOYED_NOW, entryOf, EXPERIENCE_WITH, IN_TIME_ZONE, X_LINK, YEARS_IN } from './labelRules';
+import { nameIdText } from './nameId';
+import { US_TIME_ZONES, ZONE_SPELLINGS, zonesOfState, type UsTimeZone } from './usTimeZones';
 
 /** The profile entry each block of a repeatable section is filled from, by block index (null: no entry), for the
  *  sections the plan assigned (steps/blocks.ts). */
@@ -298,6 +301,10 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
   const { spec, profile, vocab, now } = ctx;
   const { identity, contact, links } = profile;
   const address = profile.address;
+  // jr6 RULES (ICIMS-09, O7): a job's or a school's own block never takes the home address.
+  if (HOME_PLACE_CATEGORIES.has(category) && entryOf(spec.section) !== null) return none('no-profile-value', false);
+  const jr6 = jr6Value(category, ctx);
+  if (jr6 !== undefined) return jr6;
   switch (category) {
     case 'identity.fullName':
       return textValue(identity.fullName, 'identity.fullName');
@@ -348,14 +355,16 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
     case 'identity.hasPreferredName':
       return hasPreferredNameValue(identity);
     // end s2 core-wd
+    // jr6 RULES R3 (O2): a search's results that start with the street or the postal code, and name the city or the
+    // state after it (Choice.street).
     case 'address.line1':
-      return textValue(address?.line1, 'address.line1');
+      return withStreet(textValue(address?.line1, 'address.line1'), address);
     case 'address.line2':
       return textValue(address?.line2, 'address.line2');
     case 'address.city':
       return textValue(address?.city, 'address.city');
     case 'address.postalCode':
-      return textValue(address?.postalCode, 'address.postalCode');
+      return withStreet(textValue(address?.postalCode, 'address.postalCode'), address);
     case 'address.region': {
       const region = address?.region;
       if (region === undefined) return none('no-profile-value', false);
@@ -476,12 +485,6 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
       const { min, currency, period } = salary.value;
       return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT, text: String(min),
         choice: { intended: { kind: 'number', value: min, unit: `currency-${period}`, currency }, domain: 'number' } });
-    }
-    case 'salary.currency': {
-      const salary = profile.preferences.expectedSalary;
-      if (salary === undefined) return none('no-profile-value');
-      if (salary.kind === 'decline') return none('no-profile-value');
-      return textValue(salary.value.currency, 'preferences.expectedSalary');
     }
     case 'availability.startDate': {
       const start = profile.preferences.startDate;
@@ -716,6 +719,9 @@ const PLACEHOLDER_INSTRUCTIONS: readonly RegExp[] = [
   new RegExp(String.raw`\bif\s+(?:none|not\s+applicable|n\/a)\s*,?\s*(?:then\s+)?(?:please\s+)?${TYPE_VERB}\s+${TOKEN}`),
   new RegExp(String.raw`\b${TYPE_VERB}\s+${TOKEN}\s+if\s+(?:none|not\s+applicable|you\s+${DONT_HAVE}\s+(?:one|any|an?\s+\w+))\b`),
   new RegExp(String.raw`\(\s*${TOKEN}\s+if\s+(?:none|not\s+applicable|you\s+${DONT_HAVE}\s+(?:one|any|an?\s+\w+))\s*\)`),
+  // jr6 RULES (JV-15, fixtures ninjaone-step3: "If yes, please provide their name or enter N/A if you were not
+  // referred."): "enter N/A if you were (or are, have, did) not …".
+  new RegExp(String.raw`\b${TYPE_VERB}\s+${TOKEN}\s+if\s+you\s+(?:were|are|have|had|did|do)\s+(?:not|never)\b`),
 ];
 const TOKEN_PLACEHOLDER: Readonly<Record<string, NoValuePlaceholder>> = { 'n/a': 'N/A', na: 'NA', none: 'None' };
 
@@ -815,13 +821,57 @@ export function companyKey(name: string): string {
 const NAMES_THIS_COMPANY = /\b(?:this|our|the\s+same)\s+(?:company|organi[sz]ation|firm|business|employer|group)\b|\bhere\b|\b(?:former|ex|previous|past)\s+employees?\b|\bboomerang\b|\balumn(?:us|a|i|ae)\b/;
 const US = /\bus\b/;
 
+/** jr6 RULES (WD-16, JV-12): the words a company's initials leave out ("Bank of America": "BOA" or "BA"). */
+const INITIALS_SKIP = new Set(['of', 'and', 'the', 'for', 'at', 'de']);
+
+/** jr6 RULES (WD-16: "RTS" for Resolve Tech Solutions, fixtures resolvetech-source-open; JV-12: "VHL" for Vista Higher
+ *  Learning, fixtures jr6-vhl-step1; WD-17: "AEP" for American Electric Power): a company's initials, three letters or
+ *  more, of a name of two words or more, every word's or the main words'. */
+function initialsOf(company: string): string[] {
+  const words = company.split(' ').filter((token) => token !== '');
+  if (words.length < 2) return [];
+  const every = words.map((word) => word[0]!).join('');
+  const main = words.filter((word) => !INITIALS_SKIP.has(word)).map((word) => word[0]!).join('');
+  return [...new Set([every, main])].filter((initials) => initials.length >= 3 && /^[a-z]+$/.test(initials));
+}
+
 /** Whether a question names the posting's company (its companyKey's words, in order) or points at it ("here", "this
- *  company", "us", "former employee"). */
+ *  company", "us", "former employee"). jr6 RULES (WD-16, JV-12): or writes its initials in capitals ("Have you
+ *  previously been employed by RTS?"). */
 export function namesPostingCompany(question: string, company: string): boolean {
   if (NAMES_THIS_COMPANY.test(question.toLowerCase()) || US.test(question)) return true;
   const name = company.split(' ').filter((token) => token !== '');
   const tokens = normalize(question, 'label').tokens;
-  return name.length > 0 && tokens.some((_, at) => name.every((token, offset) => tokens[at + offset] === token));
+  if (name.length > 0 && tokens.some((_, at) => name.every((token, offset) => tokens[at + offset] === token))) {
+    return true;
+  }
+  return initialsOf(company).some((initials) => new RegExp(String.raw`(?<![\p{L}\p{N}])${initials.toUpperCase()}`
+    + String.raw`(?![\p{L}\p{N}])`, 'u').test(question));
+}
+
+/** jr6 RULES (WD-17, Workday's Genworth "Have you or your spouse previously worked for KPMG?"): a question that asks of
+ *  someone else besides the person (a spouse, a partner, a relative): theirs (owner Q14), never answered by rule. */
+const ALSO_ANOTHER = /\b(?:or|and)\s+(?:your|their|his|her)\s+(?:spouse|partner|husband|wife|family|relatives?|domestic\s+partner|immediate\s+family(?:\s+members?)?)\b|\bspouse\b/i;
+/** jr6 RULES (WD-17): the employer a question names by its own capitals after the verb ("worked for KPMG", "a
+ *  contractor at Acme Corp"), never an article or a pronoun ("a government agency", "any of our competitors"). */
+const NAMED_EMPLOYER = /\b(?:[Ww]orked|[Ee]mployed|[Cc]ontractor|[Cc]ontracted|[Aa]ppointed|[Ii]nterned)\s+(?:[Bb]y|[Ff]or|[Aa]t|[Ww]ith)\s+(?:[Tt]he\s+)?(\p{Lu}[\p{L}\p{N}&.'\u2019-]*(?:\s+(?:\p{Lu}[\p{L}\p{N}&.'\u2019-]*|&|of|and))*)([^?.;]*)/u;
+const NOT_A_NAME = /^(?:A|An|The|Any|Our|This|That|These|Those|Your|One|Another|Other|Some|Each|Either|Neither|Us|Me)$/;
+/** jr6 RULES R3: a company a question sets aside ("outside of Twitch", "other than GitHub", "excluding …"), to the end
+ *  of its clause. */
+const SET_ASIDE = /\b(?:outside\s+of|other\s+than|excluding|except(?:\s+for)?|besides|not\s+including)\s+[^?.;,()]*/gi;
+/** jr6 RULES (WD-17): companies a name does not settle: its subsidiaries, affiliates, parent or partners. */
+const RELATED_COMPANIES = /\b(?:subsidiar(?:y|ies)|affiliat\w*|parent\s+compan\w*|sister\s+compan\w*|partners?|divisions?|brands?)\b/i;
+
+/** jr6 RULES (WD-17): the one employer a question names, or null (none, a determiner, several: "Google, Meta or
+ *  Amazon", or a name with its subsidiaries or affiliates, which the profile's entries do not settle). */
+function namedEmployer(question: string): string | null {
+  const found = NAMED_EMPLOYER.exec(question);
+  if (found === null || RELATED_COMPANIES.test(question)) return null;
+  const name = found[1]!.replace(/['\u2019]s$/, '').replace(/\s+(?:of|and|&)$/, '').trim();
+  const first = name.split(/\s+/)[0]!;
+  if (NOT_A_NAME.test(first)) return null;
+  if (/(?:,|\bor\b|\band\b|\/)\s*(?:the\s+)?\p{Lu}/u.test(found[2]!)) return null;
+  return name;
 }
 
 /**
@@ -834,10 +884,27 @@ export function namesPostingCompany(question: string, company: string): boolean 
  */
 export function previouslyEmployedValue(profile: Profile, postingCompany: string | undefined,
   question: string): ValueResult {
+  // jr6 RULES (WD-17): a question that also asks of a spouse or a relative is theirs too (owner Q14).
+  if (ALSO_ANOTHER.test(question)) return none('unknown-field', false);
   const company = postingCompany === undefined ? '' : companyKey(postingCompany);
-  if (company === '' || !namesPostingCompany(question, company)) return none('unknown-field', false);
   // s2 core-gh (s2-horacemann-certify-open question_20182378004): employed there now asks of the current entries only.
   const now = EMPLOYED_NOW.test(normalize(question, 'label').key);
+  // jr6 RULES R3 (JV-13's neighbours: Twitch's "Are you a current employee with Amazon or any Amazon subsidiary (outside
+  // of Twitch)?", fixtures/greenhouse/twitch-job; GitHub's "… at Microsoft or a Microsoft subsidiary other than
+  // GitHub?", fixtures/icims/githubinc-candidate-questions.frame-1): a company the question sets aside is not the one it
+  // asks about.
+  const asked = question.replace(SET_ASIDE, ' ');
+  if (company === '' || !namesPostingCompany(asked, company)) {
+    // jr6 RULES (WD-17: "Have you previously worked for KPMG?" on Genworth's form): another employer the question
+    // names is answered from the profile's entries too, Yes only for an entry of that employer, flagged for review.
+    const other = namedEmployer(asked);
+    const key = other === null ? '' : companyKey(other);
+    if (key === '') return none('unknown-field', false);
+    const there = profile.experience.some((entry) => (!now || entry.current) && companyKey(entry.company) === key);
+    return value({ origin: { provenance: 'rule', ruleId: 'screening.previously-employed' }, confidence: VALUE_TRANSFORM,
+      choice: { intended: { kind: 'boolean', value: there }, domain: 'polarity' }, check: there,
+      flag: 'filled-low-confidence' });
+  }
   const worked = profile.experience.some((entry) => (!now || entry.current) && companyKey(entry.company) === company);
   return value({ origin: { provenance: 'rule', ruleId: 'screening.previously-employed' }, confidence: VALUE_TRANSFORM,
     choice: { intended: { kind: 'boolean', value: worked }, domain: 'polarity' }, check: worked });
@@ -920,3 +987,503 @@ function experienceValue(category: FieldCategory, ctx: ValueContext): ValueResul
       return none('no-profile-value', false);
   }
 }
+
+// ── jr6 RULES (FIXPLAN §6.3 R1): the values of the eight platform audits' categories ─────────────────────────────
+
+/** ICIMS-09, O7: the home address's categories, which a job's or a school's own block never takes (labelRules
+ *  entryOf): ClearCompany's and iCIMS's employer blocks hold an Address and a City of the employer's. */
+const HOME_PLACE_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['address.line1', 'address.line2',
+  'address.city', 'address.region', 'address.postalCode', 'address.country', 'address.full', 'address.county',
+  'address.lookup', 'location.current']);
+
+/** A region as a place part: typed by its code (else its name), chosen in its country's list. */
+function regionValue(region: { code?: string; name: string } | undefined, country: string | undefined, at: string,
+  vocab: Vocab): ValueResult {
+  if (region === undefined) return none('no-profile-value', false);
+  const text = region.code ?? region.name;
+  return value({ origin: fromProfile(at), confidence: VALUE_EXPLICIT, text,
+    choice: { intended: intendedRegion(region, country, text, vocab), domain: 'region' } });
+}
+
+/** A country as a place part: typed by its name, chosen as a country. */
+function countryValue(country: string | undefined, at: string, vocab: Vocab): ValueResult {
+  if (country === undefined) return none('no-profile-value', false);
+  return value({ origin: fromProfile(at), confidence: VALUE_EXPLICIT, text: vocab.countries.byAlpha2(country)?.name
+    ?? country, choice: { intended: intendedCountry(country, country, vocab), domain: 'country' } });
+}
+
+/**
+ * ICIMS-09, O7: a job's or a school's City, State/Region or Country, from that entry's own place (a job's location, a
+ * school's institution), never the home address. A block the plan assigned no entry, or past the profile's entries,
+ * gets nothing.
+ */
+function entryPlaceValue(category: FieldCategory, ctx: ValueContext): ValueResult {
+  const { spec, profile, vocab } = ctx;
+  const part = category.slice(category.indexOf('.') + 1);
+  if (category.startsWith('experience.')) {
+    const index = entryIndex(spec, profile.experience, 'experience', ctx.blockEntries);
+    const place = index === null ? undefined : profile.experience[index]!.location;
+    if (index === null || place === undefined) return none('no-profile-value', false);
+    const at = `experience[${index}].location`;
+    if (part === 'city') return textValue(place.city, `${at}.city`);
+    if (part === 'region') return regionValue(place.region, place.country, `${at}.region`, vocab);
+    return countryValue(place.country, `${at}.country`, vocab);
+  }
+  const index = entryIndex(spec, profile.education, 'education', ctx.blockEntries);
+  if (index === null) return none('no-profile-value', false);
+  const { institution } = profile.education[index]!;
+  const at = `education[${index}].institution`;
+  if (part === 'city') return textValue(institution.city, `${at}.city`);
+  if (part === 'region') {
+    const region = institution.region?.trim() ?? '';
+    return region === '' ? none('no-profile-value', false) : regionValue({ ...(/^[A-Z]{2}$/.test(region)
+      ? { code: region } : {}), name: region }, institution.country, `${at}.region`, vocab);
+  }
+  return countryValue(institution.country, `${at}.country`, vocab);
+}
+
+/** workday-new-1: a form's own language (Workday's disability form "Language", "Language of this form"): English, the
+ *  language the rule read the label in, where the list offers it (form.language); never the person's languages. */
+function formLanguageValue(spec: FieldSpec, vocab: Vocab): ValueResult {
+  if (spec.options !== 'lazy' && !spec.options.some((option) => /^english\b/.test(normalizeLabel(option.label)))) {
+    return none('no-match', false);
+  }
+  const english = vocab.languages.byCode('en');
+  return value({ origin: { provenance: 'rule', ruleId: 'form.language' }, confidence: VALUE_TRANSFORM, text: 'English',
+    choice: { intended: english ? intendedEntity(vocab, 'language', english, 'English')
+      : intendedText('English'), domain: english ? 'language' : 'generic' } });
+}
+
+/** ICIMS-08: the other spellings of an address search's "Enter manually" option (Jobright's ./operations picks the
+ *  result `#result-selectable_<id>_-2` "enter manually", cited as a fact). */
+const ENTER_MANUALLY = ['Enter address manually', 'Enter it manually', 'Enter manually instead', 'Manual entry',
+  'Enter manual address', 'Manually enter address'];
+
+/** ICIMS-08: iCIMS's address search (its dropdown, name …PersonProfileFields.AddressStreet1): its "Enter manually" is
+ *  chosen when the profile holds a street, which the box it reveals then takes as the street (address.line1); a street
+ *  is never typed into the search itself. */
+function addressLookupValue(profile: Profile, vocab: Vocab): ValueResult {
+  if ((profile.address?.line1?.trim() ?? '') === '') return none('no-profile-value', false);
+  return value({ origin: byRule('address.enter-manually', 'address.line1'), confidence: VALUE_TRANSFORM,
+    choice: { intended: intendedUnknown('generic', 'Enter manually', ENTER_MANUALLY, vocab), domain: 'generic' } });
+}
+
+/** The words a county's name is written with or without ("Travis County", "Orleans Parish", "Nome Census Area"). */
+const COUNTY_SUFFIX = /\s+(?:county|parish|borough|census\s+area|municipality|city\s+and\s+borough)$/i;
+
+/**
+ * JV-3, WD-26, ADP-14, O3: a county as a list chooses it, matched with or without its County, Parish, Borough or
+ * Census Area ("Travis" and "Travis County" alike). The profile holds no county yet (owner question 13: a county
+ * worked out once from the ZIP code, or a table here), so profileValue gives none: the question is skipped, and never
+ * sent to an AI (address.county is no category an AI answers).
+ */
+export function countyChoice(county: string, vocab: Vocab): Choice {
+  const base = county.trim().replace(COUNTY_SUFFIX, '');
+  const spellings = [base, `${base} County`, `${base} Parish`, `${base} Borough`, `${base} Census Area`];
+  return { intended: intendedUnknown('generic', county.trim(), spellings, vocab), domain: 'generic' };
+}
+
+/** JV-15, ADP-19, U-11: the referral sources that may name a person at the company (an employee's referral, a friend,
+ *  a recruiter), and the person's own text, which no rule reads. */
+const PERSON_SOURCES: ReadonlySet<string> = new Set(['employee-referral', 'friend', 'recruiter', 'other']);
+
+/** JV-15, ADP-19, U-11: whether a current employee referred the person ("Were you referred to this role by a current
+ *  NinjaOne employee?", "Did any of our employees inform you about this position?"): No when the profile's referral
+ *  source is none that could name someone at the company (a job board, a site, an advertisement, …); otherwise, or
+ *  with no source, nothing. */
+function employeeReferredValue(profile: Profile): ValueResult {
+  const source = profile.referralSource;
+  if (source === undefined || PERSON_SOURCES.has(source.id)
+    || (source.category !== undefined && PERSON_SOURCES.has(source.category))) return none('no-profile-value', false);
+  return value({ origin: byRule('referral.not-employee', 'referralSource'), confidence: VALUE_TRANSFORM,
+    choice: { intended: { kind: 'boolean', value: false }, domain: 'polarity' }, check: false });
+}
+
+/** JV-5: an option that states a qualification ("3. Experience with relational databases (such as PostgreSQL and
+ *  MySQL)", "1. Associate or bachelor's degree …"): a sentence of three words or more about experience, a degree,
+ *  years, knowledge or a skill. */
+const QUALIFICATION = /\b(?:experience[ds]?|degrees?|years?|knowledge|familiar\w*|proficien\w*|certif\w*|background|skills?|understanding|ability|working)\b/;
+/** The words each degree level is named by in a qualification. */
+const DEGREE_WORDS: Readonly<Partial<Record<EducationEntry['degree']['level'], RegExp>>> = {
+  highSchool: /\bhigh\s+school\b|\bged\b/,
+  associate: /\bassociates?\s+(?:degree|of)\b|\bassociates?\b(?=.*\bdegree\b)/,
+  bachelor: /\bbachelors?\b|\bbaccalaureate\b|\bundergraduate\s+degree\b/,
+  master: /\bmasters?\b|\bgraduate\s+degree\b/,
+  doctorate: /\bdoctorates?\b|\bdoctoral\b|\bph\s?d\b/,
+  professional: /\b(?:mba|jd|md|professional\s+degree)\b/,
+};
+
+/** A whole word or phrase of the person's own in a text, whatever its case and its marks ("PostgreSQL", "C++"). */
+function namesWhole(text: string, word: string): boolean {
+  const escaped = word.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return escaped !== '' && new RegExp(String.raw`(?<![\p{L}\p{N}])${escaped}(?![\p{L}\p{N}+#])`, 'iu').test(text);
+}
+
+/**
+ * JV-5 (VHL's "Please select the education, skills and/or experience that you currently possess", fixtures
+ * jr6-vhl-step3-filled): a checkbox group (or a list that takes several) whose options are qualification sentences
+ * ticks, flagged, only the options naming one of the person's skills, or a degree they hold, as a whole word; the rest
+ * stays for the person (owner question 12: a multi-choice AI answer). Undefined for any other field (the skills are
+ * then chosen as before); none when no option names one.
+ */
+function qualificationsValue(spec: FieldSpec, profile: Profile): ValueResult | undefined {
+  if (!SEVERAL.includes(spec.kind) || spec.options === 'lazy') return undefined;
+  const options = spec.options.filter((option) => !option.disabled && option.label.trim() !== '');
+  const sentences = options.filter((option) => {
+    const words = normalizeLabel(option.label);
+    return words.split(' ').length >= 3 && QUALIFICATION.test(words);
+  });
+  if (options.length < 2 || sentences.length * 3 < options.length * 2) return undefined;
+  const levels = profile.education.filter((entry) => !entry.inProgress).map((entry) => DEGREE_WORDS[entry.degree.level])
+    .filter((re): re is RegExp => re !== undefined);
+  let skilled = false;
+  const named = sentences.filter((option) => {
+    const bySkill = profile.skills.some((skill) => namesWhole(option.label, skill));
+    skilled ||= bySkill;
+    return bySkill || levels.some((re) => re.test(normalizeLabel(option.label)));
+  });
+  if (named.length === 0) return none('no-profile-value', false);
+  const set = named.map((option): Choice => ({ intended: intendedText(option.label.trim()), domain: 'generic' }));
+  return value({ origin: byRule('skills.qualifications', skilled ? 'skills' : 'education'), confidence: VALUE_DERIVED,
+    set, flag: 'filled-low-confidence', ...(set.length === 1 ? { choice: set[0]! } : {}) });
+}
+
+/** The value of a jr6 category, or undefined for a category the table above answers. */
+function jr6Value(category: FieldCategory, ctx: ValueContext): ValueResult | undefined {
+  switch (category) {
+    // workday-new-1: an employer's own number for the person, which the profile never holds: skipped, never sent to
+    // an AI (identity.employeeId is no category an AI answers).
+    case 'identity.employeeId':
+      return none('no-profile-value', false);
+    case 'languages.formLanguage':
+      return formLanguageValue(ctx.spec, ctx.vocab);
+    case 'experience.city':
+    case 'experience.region':
+    case 'experience.country':
+    case 'education.city':
+    case 'education.region':
+    case 'education.country':
+      return entryPlaceValue(category, ctx);
+    case 'address.lookup':
+      return addressLookupValue(ctx.profile, ctx.vocab);
+    // The profile holds no county yet (owner question 13; countyChoice).
+    case 'address.county':
+      return none('no-profile-value', false);
+    case 'referral.employeeReferred':
+      return employeeReferredValue(ctx.profile);
+    case 'skills.list':
+      return qualificationsValue(ctx.spec, ctx.profile);
+    // jr6 RULES R3 (ICIMS-13, ICIMS-19, ICIMS-26, JV-16).
+    case 'address.type':
+      return addressTypeValue(ctx.spec, ctx.profile, ctx.vocab);
+    case 'referral.detail':
+      return profileValue('referral.source', ctx);
+    case 'preferences.timeZone':
+      return timeZoneValue(ctx.profile, ctx.vocab);
+    case 'location.inTimeZone':
+      return inTimeZoneValue(ctx.spec, ctx.profile);
+    case 'experience.yearsIn':
+      return yearsInValue(ctx.spec, ctx.profile, ctx.now);
+    case 'skills.experienceWith':
+      return experienceWithValue(ctx.spec, ctx.profile);
+    // jr6 RULES R3 (U-11): a former name the profile never holds: left as the page has it, never asked of an AI.
+    case 'identity.formerName':
+      return none('no-profile-value', false);
+    // jr6 RULES R3 (ADP-7): the pay's currency, by its ISO code in the list's own words.
+    case 'salary.currency':
+      return currencyValue(ctx.spec, ctx.profile);
+    // jr6 RULES R4 (WD-25, ADP-14, JV-19): a prefix, an address's third line, a mailing address only where it differs:
+    // the profile holds none of them, so they are left as the page has them, never asked of an AI.
+    case 'identity.prefix':
+    case 'address.line3':
+    case 'address.mailing':
+      return none('no-profile-value', false);
+    // jr6 RULES R4 (ICIMS-25, ADP-16, ADP-18, ADP-20, SR-13, O13).
+    case 'education.graduated':
+      return graduatedValue(ctx);
+    case 'salary.period':
+      return payPeriodValue(ctx.profile, ctx.vocab);
+    case 'application.resumeMethod':
+      return resumeMethodValue(ctx.spec, ctx.profile);
+    case 'education.highSchool':
+      return highSchoolValue(ctx.profile);
+    case 'links.facebook':
+      return facebookValue(ctx.profile.links);
+    case 'links.numbered':
+      return numberedLinkValue(ctx.spec, ctx.profile.links);
+    default:
+      return undefined;
+  }
+}
+
+// ── jr6 RULES R3 (FIXPLAN §6.3 items 35 to 48) ─────────────────────────────────────────────────────────────────────
+
+/** A list's prompt rather than a choice ("— Make a Selection —", "Select…", "Please choose"). */
+const PROMPT = /^[\s\-–—]*(?:select|make\s+a\s+selection|choose|please\s+(?:select|choose)|none\s+selected)\b/i;
+
+/**
+ * ICIMS-13 (iCIMS's address "Type": Work, Home, Other; required on Sentinel's and GitHub's profiles): a home address's
+ * type, "Home", derived (address.type-home: the profile's address is the person's home), where the profile holds one.
+ * A type the page already shows is kept (Jobright's getIcimsPreservedAddressTypeRules keeps a real preselected choice:
+ * cited): prefill-kept.
+ */
+function addressTypeValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
+  if (profile.address === undefined) return none('no-profile-value', false);
+  const shown = spec.current.kind === 'selected' ? spec.current.labels.filter((label) => label.trim() !== ''
+    && !PROMPT.test(label)) : [];
+  const chosen = spec.options !== 'lazy' && spec.options.some((option) => option.selected && option.label.trim() !== ''
+    && !PROMPT.test(option.label)) && spec.kind !== 'select';
+  if (shown.length > 0 || chosen) return none('prefill-kept', false);
+  return value({ origin: byRule('address.type-home', 'address'), confidence: VALUE_DERIVED, text: 'Home',
+    choice: { intended: intendedUnknown('generic', 'Home', ['Home Address', 'Residence', 'Residential', 'Primary Home'],
+      vocab), domain: 'generic' } });
+}
+
+/** The person's US time zones (their state's), or null where the profile holds no US state. */
+function personZones(profile: Profile): readonly UsTimeZone[] | null {
+  const address = profile.address;
+  const code = address?.region?.code;
+  if (code === undefined || (address?.country !== undefined && address.country !== 'US')) return null;
+  return zonesOfState(code);
+}
+
+/**
+ * ICIMS-26 (ARS's required "Time Zone"): the person's time zone from their state (usTimeZones.ts, public facts):
+ * location.time-zone, typed by its name or chosen by its spellings ("Central Time (US & Canada)", "CST", "US/Central");
+ * flagged for a state that spans two zones. None without a US state.
+ */
+function timeZoneValue(profile: Profile, vocab: Vocab): ValueResult {
+  const zones = personZones(profile);
+  if (zones === null || zones.length === 0) return none('no-profile-value', false);
+  const [first, ...rest] = ZONE_SPELLINGS[zones[0]!];
+  return value({ origin: byRule('location.time-zone', 'address.region'), confidence: VALUE_DERIVED, text: first,
+    choice: { intended: intendedUnknown('generic', first, rest, vocab), domain: 'generic' },
+    ...(zones.length > 1 ? { flag: 'filled-low-confidence' as const } : {}) });
+}
+
+/**
+ * JV-16 (VHL's "Question 9: Do you currently reside in a state located within the Eastern US Time Zone?"): yes when the
+ * person's state keeps that zone (flagged for a state that spans two), no when it keeps none of it
+ * (location.time-zone); nothing without a US state, or where the zone asked is only the state's smaller part.
+ */
+function inTimeZoneValue(spec: FieldSpec, profile: Profile): ValueResult {
+  const asked = IN_TIME_ZONE.exec(questionKey(spec.label))?.[1] as UsTimeZone | undefined;
+  const zones = personZones(profile);
+  if (asked === undefined || !US_TIME_ZONES.includes(asked) || zones === null || zones.length === 0) {
+    return none('no-profile-value', false);
+  }
+  if (zones.includes(asked) && zones[0] !== asked) return none('no-profile-value', false);
+  const yes = zones[0] === asked;
+  return value({ origin: byRule('location.time-zone', 'address.region'), confidence: VALUE_TRANSFORM,
+    choice: { intended: { kind: 'boolean', value: yes }, domain: 'polarity' }, check: yes,
+    ...(zones.length > 1 ? { flag: 'filled-low-confidence' as const } : {}) });
+}
+
+/** A question's label as the rules read it: normalized, a leading "Question N" set aside (classifyRules). */
+function questionKey(label: string): string {
+  return normalize(label, 'label').key.replace(/^question\s+\d+\s+/, '');
+}
+
+/** Words a role's or a field's name is written around ("in a DevOps role", "as an engineer", "in the field of"). */
+const ROLE_FILLER = new Set(['a', 'an', 'the', 'role', 'roles', 'position', 'positions', 'capacity', 'field', 'fields',
+  'of', 'or', 'and', 'similar', 'related', 'environment', 'industry', 'setting', 'professional', 'experience']);
+
+/** Whether a job title names every word of what a question asks experience in ("Engineering" in "Senior Software
+ *  Engineer", "management" in "Engineering Manager"): the same word, one starting the other (four letters at least), or
+ *  the same first six letters. */
+function titleNames(title: string, words: readonly string[]): boolean {
+  const own = normalizeLabel(title).split(' ').filter((word) => word !== '');
+  const alike = (word: string, titleWord: string) => word === titleWord
+    || (Math.min(word.length, titleWord.length) >= 4 && (titleWord.startsWith(word) || word.startsWith(titleWord)))
+    || (word.length >= 6 && titleWord.length >= 6 && word.slice(0, 6) === titleWord.slice(0, 6));
+  return words.every((word) => own.some((titleWord) => alike(word, titleWord)));
+}
+
+/**
+ * JV-16 (VHL's "Question 2: Do you have 10+ years of work experience in Engineering?"): N years of experience in or as
+ * something, from the experience entries' durations (overlaps once: yearsOfExperience), flagged
+ * (experience.years-in): yes when the entries whose titles name it reach N; no when all the person's experience falls
+ * short of N; otherwise nothing (TailorIT's AI answers it: ANSWERABLE_PROFILE_CATEGORIES).
+ */
+function yearsInValue(spec: FieldSpec, profile: Profile, now: Ymd): ValueResult {
+  const found = YEARS_IN.exec(questionKey(spec.label));
+  if (found === null) return none('no-profile-value', false);
+  const asked = Number(found[1]);
+  const words = found[2]!.split(' ').filter((word) => word !== '' && !ROLE_FILLER.has(word));
+  const total = yearsOfExperience(profile.experience, now);
+  if (total === null) return none('no-profile-value', false);
+  const named = words.length === 0 ? null
+    : yearsOfExperience(profile.experience.filter((entry) => titleNames(entry.title, words)), now);
+  const answer = named !== null && named >= asked ? true : total < asked ? false : null;
+  if (answer === null) return none('no-profile-value', false);
+  return value({ origin: byRule('experience.years-in', 'experience'), confidence: VALUE_DERIVED,
+    choice: { intended: { kind: 'boolean', value: answer }, domain: 'polarity' }, check: answer,
+    flag: 'filled-low-confidence' });
+}
+
+/**
+ * JV-16 (VHL's "Question 4: Do you have experience with …?"): experience with a tool or a field, yes when the person's
+ * skills, or an experience entry's title or description, name it as a whole word (each of "A and B"; any of "A, B or
+ * C") (skills.experience-with); otherwise nothing, never a no (TailorIT's AI answers it).
+ */
+function experienceWithValue(spec: FieldSpec, profile: Profile): ValueResult {
+  const found = EXPERIENCE_WITH.exec(questionKey(spec.label));
+  if (found === null) return none('no-profile-value', false);
+  const asked = found[1]!.replace(/^(?:a|an|the)\s+/, '').trim();
+  const all = /\s+and\s+/.test(asked);
+  const parts = asked.split(/\s+(?:and|or)\s+|\s*,\s*/).map((part) => part.replace(/^(?:a|an|the)\s+/, '').trim())
+    .filter((part) => part !== '');
+  const own = normalizeLabel([...profile.skills, ...profile.experience.flatMap((entry) => [entry.title,
+    entry.description ?? ''])].join(' | '));
+  const named = (part: string) => new RegExp(String.raw`(?<![\p{L}\p{N}])${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+')}(?![\p{L}\p{N}])`, 'u').test(own);
+  const yes = parts.length > 0 && (all ? parts.every(named) : parts.some(named));
+  if (!yes) return none('no-profile-value', false);
+  const bySkill = parts.some((part) => profile.skills.some((skill) => normalizeLabel(skill) === part));
+  return value({ origin: byRule('skills.experience-with', bySkill ? 'skills' : 'experience'),
+    confidence: VALUE_TRANSFORM, choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' },
+    check: true });
+}
+
+/** jr6 RULES R3 (O2): an address line's or a postal code's value with the places a search's result names after it
+ *  (Choice.street: the city, the state's code and name). */
+function withStreet(result: ValueResult, address: Profile['address']): ValueResult {
+  if (!result.ok || result.candidate.choice === undefined || result.candidate.text === undefined) return result;
+  const places = [address?.city, address?.region?.code, address?.region?.name]
+    .filter((place): place is string => place !== undefined && place.trim() !== '');
+  if (places.length === 0) return result;
+  return value({ ...result.candidate, choice: { ...result.candidate.choice,
+    street: { text: result.candidate.text, places } } });
+}
+
+/**
+ * jr6 RULES R3 (ADP-7: ADP's required "Select currency type", 158 options written "United States Dollar ( USD )",
+ * fixtures/adp/questions): the pay's currency (preferences.expectedSalary), typed as its ISO code, or chosen as the one
+ * option that is the code or writes it in capitals ("( USD )"), else matched by the code. None without an expected
+ * salary, or for a declined one (a default from the posting's country waits on the owner, question 8).
+ */
+function currencyValue(spec: FieldSpec, profile: Profile): ValueResult {
+  const salary = profile.preferences.expectedSalary;
+  if (salary === undefined || salary.kind === 'decline') return none('no-profile-value');
+  const code = salary.value.currency.trim();
+  if (!/^[A-Z]{3}$/.test(code) || spec.options === 'lazy') return textValue(code, 'preferences.expectedSalary');
+  const writes = new RegExp(String.raw`(?<![\p{L}\p{N}])${code}(?![\p{L}\p{N}])`, 'u');
+  const named = spec.options.map((option) => cutInjected(option.label).clean.trim())
+    .filter((clean, at) => clean !== '' && !(spec.options as Option[])[at]!.disabled && writes.test(clean));
+  const text = named.length === 1 ? named[0]! : code;
+  return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT, text: code,
+    choice: { intended: intendedText(text), domain: 'generic' } });
+}
+
+// ── jr6 RULES R4 (FIXPLAN §6.3 items 62 to 79) ─────────────────────────────────────────────────────────────────────
+
+/** Whether a year-month is before a day's month. */
+const beforeMonth = (date: YearMonth, now: Ymd) => date.y < now.y || (date.y === now.y && (date.m ?? 12) < now.m);
+
+/**
+ * ICIMS-25 (NYU's iCIMS "Did You Graduate?" in an education block, fixtures jr6-nyu-profile-parsed): yes when the
+ * block's entry (else the most recent) holds a degree, is no longer in progress and ended before this month; no while it
+ * is in progress (education.graduated). Nothing otherwise: TailorIT's AI answers it (ANSWERABLE_PROFILE_CATEGORIES).
+ */
+function graduatedValue(ctx: ValueContext): ValueResult {
+  const { spec, profile, now } = ctx;
+  const index = entryIndex(spec, profile.education, 'education', ctx.blockEntries);
+  if (index === null) return none('no-profile-value', false);
+  const entry = profile.education[index]!;
+  const degree = entry.degree.level !== 'other' || entry.degree.type !== undefined;
+  const answer = entry.inProgress ? false
+    : degree && entry.endDate !== undefined && beforeMonth(entry.endDate, now) ? true : null;
+  if (answer === null) return none('no-profile-value', false);
+  return value({ origin: byRule('education.graduated', `education[${index}]`), confidence: VALUE_TRANSFORM,
+    choice: { intended: { kind: 'boolean', value: answer }, domain: 'polarity' }, check: answer });
+}
+
+/**
+ * ADP-20 (ADP's "Are you a high school graduate or passed the GED?", fixtures jr6-questions2-blank): yes when an
+ * education entry holds a degree past high school, or a completed high-school one (education.high-school). Nothing
+ * otherwise: TailorIT's AI answers it.
+ */
+function highSchoolValue(profile: Profile): ValueResult {
+  const past = profile.education.some((entry) => entry.degree.level !== 'other'
+    && (DEGREE_LEVEL_RANK[entry.degree.level] > DEGREE_LEVEL_RANK.highSchool || !entry.inProgress));
+  if (!past) return none('no-profile-value', false);
+  return value({ origin: byRule('education.high-school', 'education'), confidence: VALUE_TRANSFORM,
+    choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' }, check: true });
+}
+
+/** The words each pay period is written with on a list ("Annually | Hourly", ADP's), the first a box's. */
+const PERIOD_WORDS: Readonly<Record<'year' | 'month' | 'hour', readonly [string, ...string[]]>> = {
+  year: ['Annually', 'Annual', 'Yearly', 'Per Year', 'Per Annum', 'Salary', 'Salaried'],
+  month: ['Monthly', 'Per Month', 'Month'],
+  hour: ['Hourly', 'Per Hour', 'Hour'],
+};
+
+/**
+ * ADP-16 (ADP's desired-salary Annually | Hourly radios, "<block title> pay basis" by the label contract): the expected
+ * pay's period (preferences.expectedSalary); none without it, so the field is left (no default: Jobright's preselected
+ * Annually is not taken).
+ */
+function payPeriodValue(profile: Profile, vocab: Vocab): ValueResult {
+  const salary = profile.preferences.expectedSalary;
+  if (salary === undefined || salary.kind === 'decline') return none('no-profile-value');
+  const [first, ...rest] = PERIOD_WORDS[salary.value.period];
+  return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT, text: first,
+    choice: { intended: intendedUnknown('generic', first, rest, vocab), domain: 'generic' } });
+}
+
+/** ADP-18: an option that uploads a file ("Upload File"), and one that types the résumé's parts in instead ("Enter
+ *  Professional Details"), which is never chosen. */
+const UPLOAD_OPTION = /\b(?:upload|attach|my\s+computer|from\s+(?:my\s+)?(?:device|computer))\b/i;
+const TYPED_OPTION = /\b(?:enter|type|fill|manual\w*|professional\s+details|paste)\b/i;
+
+/**
+ * ADP-18 (ADP's "How would you like to provide the candidate's resume?", Upload File | Enter Professional Details,
+ * fixtures jr6-resume-choice): the one option that uploads a file, for a run that has a résumé to upload, where no
+ * option is chosen yet (resume.upload-method); one chosen already is kept (prefill-kept). Never the typed alternative.
+ */
+function resumeMethodValue(spec: FieldSpec, profile: Profile): ValueResult {
+  if (profile.resume === undefined) return none('no-profile-value', false);
+  if (spec.options === 'lazy') return none('waiting-for-options');
+  const options = spec.options.filter((option) => !option.disabled && cutInjected(option.label).clean.trim() !== '');
+  if (options.some((option) => option.selected && !PROMPT.test(option.label))
+    || (spec.current.kind === 'selected' && spec.current.labels.some((label) => label.trim() !== ''))) {
+    return none('prefill-kept', false);
+  }
+  const uploads = options.filter((option) => UPLOAD_OPTION.test(option.label) && !TYPED_OPTION.test(option.label));
+  if (uploads.length !== 1) return none('no-match');
+  return value({ origin: byRule('resume.upload-method', 'resume'), confidence: VALUE_TRANSFORM,
+    choice: { intended: intendedText(cutInjected(uploads[0]!.label).clean.trim()), domain: 'generic' } });
+}
+
+/** SR-13: a Facebook address (facebook.com, fb.com, m.facebook.com). */
+const FACEBOOK_LINK = /^(?:https?:\/\/)?(?:www\.|m\.|web\.)?(?:facebook|fb)\.com\//i;
+
+/** SR-13 (SmartRecruiters' "Facebook", fixtures/smartrecruiters/xplor-one-click): the profile's one Facebook address
+ *  among its other links, else nothing (never asked of an AI; Jobright keeps only a facebook.com address there). */
+function facebookValue(links: Profile['links']): ValueResult {
+  const found = links.other.map((link, index) => ({ link, index }))
+    .filter(({ link }) => FACEBOOK_LINK.test(link.url.trim()));
+  if (found.length !== 1) return none(found.length === 0 ? 'no-profile-value' : 'ambiguous-options', found.length > 1);
+  return textValue(found[0]!.link.url, `links.other[${found[0]!.index}].url`);
+}
+
+/** O13: Oracle's numbered link boxes, name="siteLink-N" (the label contract of FIXPLAN §3.2), their number captured. */
+const SITE_LINK = /(?:^|[_ ])site_?link_?(\d{1,2})(?=[_ ]|$)/;
+
+/**
+ * O13 (Oracle's "Link 1" … in Supporting Documents and URLs, fixtures/oracle/hjf-apply-section; Jobright's
+ * applyOracleProfileLinkAnswers fills LinkedIn, GitHub and the website into Link 1..n: cited): the box's number picks
+ * the profile's links in that order (the website, else the portfolio), then its other links; none past them.
+ */
+function numberedLinkValue(spec: FieldSpec, links: Profile['links']): ValueResult {
+  const number = Number(SITE_LINK.exec(nameIdText(spec.nameAttr, spec.idAttr))?.[1] ?? Number.NaN);
+  const website = (links.website?.trim() ?? '') !== '' ? { url: links.website ?? '', at: 'links.website' }
+    : { url: links.portfolio ?? '', at: 'links.portfolio' };
+  const ordered = [{ url: links.linkedin ?? '', at: 'links.linkedin' }, { url: links.github ?? '', at: 'links.github' },
+    website, ...links.other.map((link, index) => ({ url: link.url, at: `links.other[${index}].url` }))]
+    .filter((link) => link.url.trim() !== '');
+  const chosen = Number.isInteger(number) && number >= 1 ? ordered[number - 1] : undefined;
+  return chosen === undefined ? none('no-profile-value', false) : textValue(chosen.url, chosen.at);
+}
+
+// jr6 RULES end
