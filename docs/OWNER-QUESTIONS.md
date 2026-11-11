@@ -696,7 +696,7 @@ Your words of 2026-11-10 (autofill as good as Jobright's on Workday, iCIMS, ADP,
 
 ### Still lacking, per platform (after the snapshots of 2026-11-06)
 
-One line per platform: what no snapshot shows yet, and (live) what only a live check can show. A throwaway account and dummy data, submitting nothing, as before.
+One line per platform: what no snapshot shows yet, and (live) what only a live check can show. A throwaway account and dummy data, submitting nothing, as before. Since jr6 (your snapshots of 2026-11-10 answered much of iCIMS's, ADP's, Jobvite's and JazzHR's lines below), items 399 and 421 list what the eight platforms' build still asks for.
 
 - **Greenhouse:** a school search showing results; Discipline's list open (item 183); the standard race and disability lists open, and the X and Telegram boxes (items 233, 234); an upload error; a second education block after "Add another"; an embed's confirmation inside a company page; what the email-code step does once the code is typed.
 - **Lever:** ~~the location search with suggestions open (and whether it takes typed text without a pick)~~ (answered by a read-only live capture of a public page, 2026-11-07: its results open, and its script empties the box when it is left while its list shows, so a result is chosen); the résumé parse's busy sign and what it fills (m12); a failed Submit's errors.
