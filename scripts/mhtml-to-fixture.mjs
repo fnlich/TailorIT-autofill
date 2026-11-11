@@ -135,8 +135,12 @@
 //     attributes (ROW_ID_ATTRIBUTES: id, name, href, data-*-id, data-*-key) are normalised, each value, word or opaque
 //     token naming the row REDACTED and the rest kept, a renamed id unique and every reference to it following;
 //   - a listed string respelled in any attribute (respelledSources: joined, camel-cased, its separators changed or
-//     percent-encoded) becomes REDACTED there (transformInPage), a frame's src aside (its route answers it as written);
-//   and it refuses a file where a listed string survives in any attribute, as written or respelled (respelledIn).
+//     percent-encoded) becomes REDACTED there (transformInPage), and in the page's and its frames' addresses
+//     (respelledAddress: their path, query and fragment, so a frame's src, the route map and the header agree; an
+//     iCIMS IForm's or a Workday application's address spells its posting's title); a frame's src is otherwise left as
+//     written, its route answering it;
+//   and it refuses a file where a listed string survives in any attribute, as written or respelled (respelledIn: a
+//   frame's host, say).
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -1313,6 +1317,29 @@ export function respelledEdge(text, at) {
   return before !== before.toUpperCase() && after !== after.toLowerCase();
 }
 
+/**
+ * An address with each listed string respelled in its path, query or fragment made REDACTED (respelledSources; its
+ * scheme and host kept, so it is still served at the same host): the page's and its frames' addresses, which the frames'
+ * src, the route map and the header all take from here, so they still agree (an iCIMS IForm's address spells its
+ * posting's title, which the list may hold). Anything that is no absolute address is answered as given.
+ * @param {string} url @param {Array<{ index: number; source: string }>} sources
+ */
+export function respelledAddress(url, sources) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  const origin = parsed.origin === 'null' ? '' : parsed.origin;
+  if (origin === '' || !url.startsWith(origin)) return url;
+  let rest = url.slice(origin.length);
+  for (const { source } of sources) {
+    for (const [start, end] of respelledSpans(rest, source).reverse()) rest = `${rest.slice(0, start)}${REDACTED}${rest.slice(end)}`;
+  }
+  return `${origin}${rest}`;
+}
+
 /** The spans of `text` a respelledSources pattern matches at words' edges. @param {string} text @param {string} source
  *  @returns {Array<[number, number]>} */
 export function respelledSpans(text, source) {
@@ -2009,7 +2036,8 @@ export function redactWorkdayInPage(input) {
  * jr6 round 2 (TOOLING; BUILD.md 4b): a listed string respelled in an attribute (`respelled`, respelledSources: joined,
  * camel-cased, its separators changed or percent-encoded, as SmartRecruiters' location rows spell a typed city in their
  * value and data-sr-id) becomes REDACTED there too, at words' edges (respelledEdge's rule, written again here: this
- * runs in the page); a frame's src is left as it is (its route must still answer it) and the final check refuses it.
+ * runs in the page); a frame's src is left as it is (its route must still answer it: its address already lost them,
+ * respelledAddress, but in its host, which the final check refuses).
  * @param {{ resources: Record<string, Resource>; frameUrls: Record<string, string | null>; frameUrl: string;
  *   redact: string[]; email: string; notEmail: string; phone: string;
  *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; redacted: string;
@@ -2428,7 +2456,8 @@ export function transformInPage(input) {
       const phones = input.phoneAttributes.includes(name) || name.startsWith('data-') ||
         (name === 'href' && (lowerValue.startsWith('tel:') || lowerValue.startsWith('sms:')));
       const scrubbed = scrub(attribute.value, phones, element);
-      // A frame's address keeps its spelling (its route answers it as written); the final check refuses it.
+      // A frame's address keeps its spelling here (its route answers it as written; respelledAddress already took what
+      // its path and query spelled); what stays (its host) the final check refuses.
       const framed = name === 'src' && (element.localName === 'iframe' || element.localName === 'frame');
       const clean = framed ? scrubbed : respell(scrubbed);
       if (clean !== attribute.value) element.setAttribute(attribute.name, clean);
@@ -3496,7 +3525,11 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   const mhtml = parseMhtml(readFileSync(file));
   const htmlParts = mhtml.parts.filter((part) => part.contentType === 'text/html');
   const main = htmlParts[0];
-  const mainUrl = main?.location ?? mhtml.snapshotUrl;
+  // jr6 round 2 (TOOLING; BUILD.md 4b): the listed strings as they may stand respelled in an attribute or an address;
+  // the page's and its frames' addresses lose them (respelledAddress), the frames' src, route map and header alike.
+  const respelled = respelledSources(redact);
+  const capturedUrl = main?.location ?? mhtml.snapshotUrl;
+  const mainUrl = capturedUrl ? respelledAddress(capturedUrl, respelled) : capturedUrl;
   if (!main || !mainUrl || !/^https?:/i.test(mainUrl)) fail('the capture names no web address for its page');
   const captured = mhtml.date && !Number.isNaN(Date.parse(mhtml.date)) ? new Date(mhtml.date).toISOString() : null;
 
@@ -3524,15 +3557,13 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   for (const part of htmlParts.slice(1)) {
     // Snapshot build, boards: a frame's address without another extension's parameters (INJECTED_PARAMS).
     if (part.contentId) {
-      frameUrls[part.contentId] = part.location && /^https?:/i.test(part.location) ? withoutInjectedParams(part.location)
-        : null;
+      frameUrls[part.contentId] = part.location && /^https?:/i.test(part.location)
+        ? respelledAddress(withoutInjectedParams(part.location), respelled) : null;
     }
   }
   const resources = resourcesOf(mhtml);
   const patterns = { redact: redactSources(redact), email: EMAIL_SOURCE, notEmail: NOT_EMAIL_SOURCE, phone: PHONE_SOURCE,
     phoneDigits: PHONE_DIGITS, phoneAttributes: PHONE_ATTRIBUTES };
-  // jr6 round 2 (TOOLING; BUILD.md 4b): the listed strings as they may stand respelled in an attribute.
-  const respelled = respelledSources(redact);
   // The snapshot build of 2026-11-06: a platform keeping shadow roots (oracle-sf-sr), and the platform's own redactions.
   const deep = keepsShadowRoots(platform);
   const own = PLATFORM_REDACTIONS[platform];

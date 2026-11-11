@@ -52,6 +52,7 @@ import {
   LIST_ROWS,
   noteListRowsInPage,
   redactListRowsInPage,
+  respelledAddress,
   respelledEdge,
   respelledIn,
   respelledSources,
@@ -3298,7 +3299,7 @@ ${select('country', '', ['Portugal', 'Spain'])}</form>`);
         + 'Portugal</div><div id="react-select-country-option-1" class="select__option" role="option" aria-selected="false">Spain</div>');
     }, 60_000);
 
-  it('redacts a listed string respelled in any attribute but a frame\'s address, and counts it in the header', async () => {
+  it('redacts a listed string respelled in any attribute, and counts it in the header', async () => {
     const { conversion, text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6r2-respelled', `
 <a id="profile" href="/people/jane-roe?ref=JaneRoe">Profile</a>
 <div data-person="JANE_ROE" data-owner-id="u-janeroe-1">Card</div>
@@ -3313,10 +3314,37 @@ ${select('country', '', ['Portugal', 'Spain'])}</form>`);
     expect(conversion.counts['jr6r2-respelled.html']).toMatchObject({ respelled: 5 });
   }, 60_000);
 
-  it('refuses a page where a listed string survives in an attribute, respelled (a frame\'s address), naming no value',
+  it("redacts a listed string respelled in the page's and its frames' addresses: src, route map and header agree",
+    async () => {
+      // An iCIMS IForm's address spells its posting's title, which the list may hold: here the page's query and a
+      // third-party frame's path and query.
+      const page = `${GREENHOUSE_JOB}?ref=jane-roe`;
+      const card = 'https://cards.tailorit-fixture.example/card/JaneRoe?user=jane%20roe';
+      const file = join(work, 'jr6r2-addresses.mhtml');
+      writeFileSync(file, mhtml(page, [
+        { type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: page, body: '<!DOCTYPE html><html><head>'
+          + '<title>Apply</title></head><body><p>Apply</p><iframe src="cid:frame-CARD@mhtml.blink" width="300" height="80">'
+          + '</iframe></body></html>' },
+        { type: 'text/html', id: 'frame-CARD@mhtml.blink', location: card, body: '<html><body>A card</body></html>' }]));
+      const conversion = await convertMhtml({ file, platform: 'greenhouse', caseName: 'jr6r2-addresses', redact: LISTED,
+        outDir: work });
+      const text = conversion.files[0]?.text ?? '';
+      expect(headerOf(text).source).toBe(`${GREENHOUSE_JOB}?ref=REDACTED`);
+      expect(text).toContain('<iframe src="https://cards.tailorit-fixture.example/card/REDACTED?user=REDACTED" width="300" '
+        + 'height="80"></iframe>');
+      expect(Object.keys(conversion.routes)).toEqual([`${GREENHOUSE_JOB}?ref=REDACTED`,
+        'https://cards.tailorit-fixture.example/card/REDACTED?user=REDACTED']);
+      for (const output of conversion.files) expect(output.text, output.path).not.toMatch(/jane/i);
+      // Its scheme and host stay, so it is served where it was; anything else is answered as given.
+      expect(respelledAddress('https://jane-roe.example/jane-roe', respelledSources(LISTED)))
+        .toBe('https://jane-roe.example/REDACTED');
+      expect(respelledAddress('not an address jane-roe', respelledSources(LISTED))).toBe('not an address jane-roe');
+    }, 60_000);
+
+  it('refuses a page where a listed string survives in an attribute, respelled (a frame\'s host), naming no value',
     async () => {
       const file = join(work, 'jr6r2-refused.mhtml');
-      const card = 'https://cards.tailorit-fixture.example/card?user=jane-roe';
+      const card = 'https://jane-roe.cards.tailorit-fixture.example/card';
       writeFileSync(file, mhtml(GREENHOUSE_JOB, [
         { type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: GREENHOUSE_JOB, body: '<!DOCTYPE html><html><head>'
           + '<title>Apply</title></head><body><p>Apply</p><iframe src="cid:frame-CARD@mhtml.blink" width="300" height="80">'
