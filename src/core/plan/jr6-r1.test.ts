@@ -411,6 +411,35 @@ describe('20 (jobvite-new-1): a restrictive agreement asked as a fact goes to th
     expect(planOf([ask]).ask?.answers ?? []).toEqual([]);
   });
 
+  // jr6 fix (revD-01): the essential functions ask about a disability or the accommodation it needs, a
+  // self-identification's topic: the profile's explicit answer, else the person's, never an AI's (in any scope).
+  it('never asks the AI an essential-functions, accommodation or health question', () => {
+    const wordings = ['Can you perform the essential functions of this job without reasonable accommodation?',
+      'Can you perform the essential functions of this job with or without reasonable accommodation?',
+      'Do you require a reasonable accommodation to perform the essential functions of this job?',
+      'Do you need an accommodation to perform the essential functions of this position?',
+      'Do you have any physical or mental condition that would prevent you from performing the essential functions '
+        + 'of this job?',
+      // No health word at all: closed by its category alone.
+      'Are you able to perform the essential functions of this position?'];
+    for (const label of wordings) {
+      const question = specOf(label, 'radio', { optionLabels: ['Yes', 'No'], required: true });
+      expect(fieldOf(planOf([question]), question).row.category, label).toBe('screening.essentialFunctions');
+      expect(planOf([question]).ask?.answers ?? [], label).toEqual([]);
+    }
+    // A health question no rule classifies, once the classifier knows no category for it: no answer is asked either.
+    const health = specOf('Do you have any physical or mental condition that may affect your work here?', 'radio',
+      { optionLabels: ['Yes', 'No'], required: true });
+    const ai = { verdicts: new Map(), classifications: new Map([[health.key as string, { key: health.key,
+      category: null, why: 'unknown-field' as const }]]) };
+    expect(planOf([health], { ai }).ask?.answers ?? []).toEqual([]);
+    // The profile's own answer is still written by rule.
+    const able = { ...golden, screening: { ...golden.screening,
+      essentialFunctions: { kind: 'value' as const, value: true } } };
+    const first = specOf(wordings[0]!, 'radio', { optionLabels: ['Yes', 'No'], required: true });
+    expect(written(planned([first], first, { profile: able }).write)).toBe('Yes');
+  });
+
   it('reads "agreement" as a contract only in a restrictive agreement, never in a consent', () => {
     expect(openTopicsOfTexts(['Are you currently subject to a non-compete, non-solicitation or any other restrictive '
       + 'employment agreement?'], ['Yes', 'No'], vocab, false)).toEqual(new Set());

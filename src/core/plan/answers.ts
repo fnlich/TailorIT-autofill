@@ -186,8 +186,8 @@ export function answerFormatOf(spec: Pick<FieldSpec, 'kind' | 'constraints'>): A
 /**
  * What an AI answer never states, read in a question's text, its hint, its section's words and its options (the Phase
  * E review, M2): another person's details (an emergency contact, a referee or reference, a manager's, a spouse's), an
- * identifier (a number, an ID, a licence, a passport, a social security or insurance number) and a postal address.
- * Lower case, over every detection view.
+ * identifier (a number, an ID, a licence, a passport, a social security or insurance number), a postal address and, jr6
+ * fix (revD-01), the person's health. Lower case, over every detection view.
  */
 const UNANSWERABLE: readonly RegExp[] = [
   // Another person.
@@ -201,6 +201,13 @@ const UNANSWERABLE: readonly RegExp[] = [
   /\b(?:home|mailing|postal|street|current|permanent|residential|billing|physical|full|your|e\s?-?mail)\s+address(?:es)?\b/,
   /^\W*address(?:es)?\b/, /\baddress\s+(?:line|1|2|of\s+residence)\b/, /\bstreet\b/, /\bzip\b/, /\bpostal\b/,
   /\bpost\s?codes?\b/, /\bp\.?\s?o\.?\s+box\b/, /\bapartment\b/, /\bwhere\s+do\s+you\s+(?:currently\s+)?live\b/,
+  // jr6 fix (revD-01): the person's health, a disability or an accommodation they need ("Can you perform the essential
+  // functions of this job without reasonable accommodation?", "Do you have any physical or mental condition that would
+  // prevent you …?"): a self-identification's topic, which an AI answer would state for them (the owner's rule of
+  // 2026-11-01: never a self-identification question), in any scope.
+  /\baccommodations?\b/, /\bdisab(?:led|ility|ilities)\b/, /\bimpair(?:ed|ments?)\b/,
+  /\b(?:physical|mental|medical|health|psychological|psychiatric|emotional)\s+(?:or\s+(?:physical|mental|medical|health|psychological|psychiatric|emotional)\s+)?(?:conditions?|impairments?|limitations?|illness(?:es)?|disorders?)\b/,
+  /\bmedical\s+(?:history|reasons?)\b/,
 ];
 
 /** A number the question asks for, which may be an identifier ("Number of years" counts, so a number followed by

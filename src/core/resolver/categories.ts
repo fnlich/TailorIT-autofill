@@ -317,8 +317,10 @@ export const AI_OPENED_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCat
   'screening.governmentService',
   // jr6 RULES (jobvite-new-1, the owner's "absolutely all"): the other yes/no screening questions of snapshot round 2
   // (Sikich's "Are you currently subject to a non-compete, non-solicitation or any other restrictive employment
-  // agreement?"), where the profile holds no answer; marked "AI guess" unless a fact settles it.
-  'screening.restrictiveAgreement', 'screening.relatives', 'screening.essentialFunctions',
+  // agreement?"), where the profile holds no answer; marked "AI guess" unless a fact settles it. jr6 fix (revD-01):
+  // never the essential functions, which ask about a disability or the accommodation it needs (a self-identification's
+  // topic: the profile's explicit answer only, else the person's).
+  'screening.restrictiveAgreement', 'screening.relatives',
   // jr6 RULES R2 (WD-30): OPT or CPT, where the entry does not settle it.
   'workAuth.opt',
   // jr6 RULES R3 (WD-29): military training, where the service and veteran answers do not settle it.
