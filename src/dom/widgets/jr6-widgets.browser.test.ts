@@ -1,5 +1,5 @@
 /*
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 5): the widget helpers on synthetic pages shaped as the jr6 audits
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 5 and 12): the widget helpers on synthetic pages shaped as the jr6 audits
  * describe each platform's widget (SP\jr6\audit\oracle.md, icims.md, smartrecruiters.md, adp.md, ultipro.md), each
  * declared by a test adapter as its platform package will declare it (FIXPLAN §6.5, §6.6, §6.9 to §6.11), driven only
  * by calling the helpers:
@@ -14,6 +14,9 @@
  * - item 4 (ADP-2, ADP-3, ADP-15 core): a shadow trigger with no ARIA list, its list a portal at the end of the body,
  *   its filter box in its shadow tree a part;
  * - item 5 (U-04 core): a free-text search (WidgetDecl.freeText): its typed text stands when nothing matches;
+ * - item 12 (icims-new-2, O10): a combobox no adapter declares whose popup is a grid, or that has no list ARIA can find
+ *   and no text box, is refused before any click; an activation that opened something with no list a reader finds is
+ *   put back.
  * Every value is synthetic (no owner data); every event the helpers cause is untrusted and on the fillers' list.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -25,7 +28,7 @@ import { ALLOWED_EVENTS, KEY_EVENTS } from '../fillers/events';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations, type EventLog, type Fixture } from '../fixture.testkit';
 import { scan } from '../scan';
 import type { FieldTarget, ScanResult, WidgetReading } from '../types';
-import { fillWidget, isActionable, readWidget, searchTypeahead, widgetHolds } from './index';
+import { closeUnlisted, fillWidget, isActionable, openList, readWidget, searchTypeahead, widgetHolds } from './index';
 import type { TypeaheadHooks } from './index';
 
 interface Page {
@@ -88,7 +91,7 @@ function optionLabels(target: FieldTarget): string[] | 'lazy' {
 
 afterEach(() => removeFixtures(document));
 
-// ── Item 1 (oracle-new-1): Oracle's cx-select, a grid popup ─────────────────────────────────────────
+// ── Item 1 (oracle-new-1) and item 12 (O10): Oracle's cx-select, a grid popup ─────────────────────────────────────────
 
 /** Oracle's cx-select as SP\jr6\audit\oracle.md section 4 reads it: an input[role=combobox][aria-haspopup=grid] whose
  *  aria-controls names a role=grid popup of role=row > role=gridcell > span.cx-select__list-item--content, opened by
@@ -220,7 +223,7 @@ describe('item 1 (oracle-new-1): a declared list read and chosen by its declared
   });
 });
 
-// ── Item 2 (ICIMS-01 core, icims-new-1): iCIMS's dropdown, a box beside its anchor ─────────
+// ── Item 2 (ICIMS-01 core, icims-new-1) and item 12 (icims-new-2): iCIMS's dropdown, a box beside its anchor ─────────
 
 /** iCIMS's dropdown as SP\jr6\audit\icims.md reads it (fixtures/icims/nyu-profile.frame-1.html's markup, its texts
  *  synthetic): a hidden select, an a.dropdown-select[role=combobox] anchor naming no list, and beside it a container
@@ -873,5 +876,97 @@ describe('item 5 (U-04 core): a search whose typed text stands where nothing mat
     expect(result).toMatchObject({ chosen: null, reason: 'no-match' });
     expect(result.freeText).toBeUndefined();
     expect((option.doc.getElementById('school') as HTMLInputElement).value).toBe('');
+  });
+});
+
+describe('item 12 (icims-new-2, O10): an undeclared combobox the helpers refuse before any click', () => {
+  it('refuses an anchor no adapter declares, with no list ARIA can find and no text box: no click at all', async () => {
+    const page = await open(ICIMS, 'icims', () => null);
+    const anchor = page.target('Country');
+    expect([anchor.field.kind, anchor.widget?.input, isActionable(anchor.widget!)]).toEqual(['combobox', null, false]);
+    expect(fillabilityOf(anchor.field, anchor.widget)).toEqual({ fillable: false, reason: 'widget-phase-4' });
+    expect(await readWidget(anchor, page.ctx())).toEqual({ status: 'unread', reason: 'widget-unsupported' });
+    expect(await fillWidget(page.target('Country'), { kind: 'option', index: 0, cleanLabel: 'Canada' }, page.ctx()))
+      .toMatchObject({ wrote: false, reason: 'widget-unsupported' });
+    expect(page.events.events.filter((event) => !event.trusted)).toEqual([]);
+    expect(page.doc.getElementById('country_icimsDropdown_ctnr')!.hidden).toBe(true);
+  });
+
+  it('refuses a grid popup no adapter declares: no click, no remote search, widget-phase-4', async () => {
+    const page = await open(GRID, 'oracle', () => null);
+    const target = page.target('Country');
+    expect([target.field.kind, target.widget?.declared, isActionable(target.widget!)]).toEqual(['combobox', false, false]);
+    expect(fillabilityOf(target.field, target.widget)).toEqual({ fillable: false, reason: 'widget-phase-4' });
+    expect(await readWidget(target, page.ctx())).toEqual({ status: 'unread', reason: 'widget-unsupported' });
+    expect(await fillWidget(page.target('Country'), { kind: 'option', index: 0, cleanLabel: 'Canada' }, page.ctx()))
+      .toMatchObject({ wrote: false, reason: 'widget-unsupported' });
+    // Never read as a remote search: the field stays a combobox, and nothing reached the page.
+    expect(page.target('Country').field.kind).toBe('combobox');
+    expect(page.readings.size).toBe(0);
+    expect(page.events.events.filter((event) => !event.trusted)).toEqual([]);
+  });
+
+  /** Two comboboxes whose popup holds no list (a dialog): a text box that shows its dialog on a click and hides it on
+   *  focusout, and a select-only one whose dialog its click toggles. */
+  const POPUPS = `<!doctype html><html><head><style>[hidden] { display: none !important; }</style></head><body>
+  <form id="f">
+    <label for="when">Start date</label>
+    <input id="when" type="text" role="combobox" aria-haspopup="dialog" aria-expanded="false" aria-controls="when-dialog">
+    <div id="when-dialog" role="dialog" hidden><p>Pick a day</p></div>
+    <span id="kind-label">Kind</span>
+    <div id="kind" role="combobox" tabindex="0" aria-labelledby="kind-label" aria-expanded="false" aria-controls="kind-pop">Pick</div>
+    <div id="kind-pop" role="dialog" hidden><p>No list here</p></div>
+  </form>
+  <script>
+    const when = document.getElementById('when');
+    const dialog = document.getElementById('when-dialog');
+    when.addEventListener('click', () => { dialog.hidden = false; when.setAttribute('aria-expanded', 'true'); });
+    when.addEventListener('focusout', () => { dialog.hidden = true; when.setAttribute('aria-expanded', 'false'); });
+    const kind = document.getElementById('kind');
+    const pop = document.getElementById('kind-pop');
+    kind.addEventListener('click', () => { pop.hidden = !pop.hidden; kind.setAttribute('aria-expanded', String(!pop.hidden)); });
+  </script></body></html>`;
+
+  it('puts back what an activation opened with no list a reader finds: a second click, or the box left', async () => {
+    const page = await open(POPUPS, 'lever', () => null);
+    expect(await readWidget(page.target('Kind'), page.ctx())).toEqual({ status: 'unread', reason: 'widget-unsupported' });
+    expect(page.doc.getElementById('kind-pop')!.hidden).toBe(true);
+    expect(page.events.on('kind').filter((event) => !event.trusted).map((event) => event.type)).toEqual(['click', 'click']);
+    expect(await readWidget(page.target('Start date'), page.ctx()))
+      .toEqual({ status: 'unread', reason: 'widget-unsupported' });
+    expect(page.doc.getElementById('when-dialog')!.hidden).toBe(true);
+    expect(page.events.on('when').filter((event) => !event.trusted).map((event) => event.type))
+      .toEqual(['click', 'focusout', 'blur']);
+    // fillWidget's path puts it back the same way.
+    page.readings.set(page.target('Kind').field.baseKey, { kind: 'options', multiselectable: false, complete: true,
+      options: [{ label: 'Full time', disabled: false }] });
+    expect(await fillWidget(page.target('Kind'), { kind: 'option', index: 0, cleanLabel: 'Full time' }, page.ctx()))
+      .toMatchObject({ wrote: false, reason: 'widget-unsupported' });
+    expect(page.doc.getElementById('kind-pop')!.hidden).toBe(true);
+    expectOurEventsOnly(page.events);
+  });
+
+  it('is widget-phase-4 to the expectations\' testkit whatever its kind (a refused multiselect included)', async () => {
+    const page = await open(`<!doctype html><body><form id="f">
+      <label for="tags">Tags</label>
+      <input id="tags" type="text" role="combobox" aria-haspopup="grid" aria-controls="tags-list">
+      <ul id="tags-list" role="listbox" aria-multiselectable="true" hidden><li role="option">One</li></ul>
+    </form></body>`, 'lever', () => null);
+    const target = page.target('Tags');
+    expect([target.field.kind, isActionable(target.widget!)]).toEqual(['multiselect', false]);
+    expect(fillabilityOf(target.field, target.widget)).toEqual({ fillable: false, reason: 'widget-phase-4' });
+    expect(await fillWidget(target, { kind: 'options', indices: [0], cleanLabels: ['One'] }, page.ctx()))
+      .toMatchObject({ wrote: false, reason: 'widget-unsupported' });
+  });
+
+  it('sends nothing to put back a widget that says it is shut', async () => {
+    const page = await open(POPUPS, 'lever', () => null);
+    const opened = await openList(page.target('Kind').widget!, page.ctx());
+    expect(opened).toMatchObject({ open: false, reason: 'no-list', activated: true });
+    // The page shut it itself meanwhile, and says so: nothing more is clicked.
+    page.doc.getElementById('kind')!.click();
+    page.events.events.length = 0;
+    await closeUnlisted(page.target('Kind').widget!, page.ctx());
+    expect(page.events.events.filter((event) => !event.trusted)).toEqual([]);
   });
 });

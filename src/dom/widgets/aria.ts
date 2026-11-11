@@ -20,13 +20,16 @@
  * list may be the adapter's hook, asked each time (Workday's prompts draw theirs at the end of the body only while
  * open), and a result its adapter names as only opening a list of its own (a category) is one that cannot be chosen
  * (isUnchoosableResult).
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 4):
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 4 and 12):
  * - a declared list's rows are its selector's matches, or the rows its adapter's hook lists where no selector reaches
  *   them (WidgetResults.options: a slot's assigned elements); a choice presses the element its adapter names
  *   (WidgetResults.pressTarget), else the row's label part ('label'), else the row (pressTargetOf);
  * - a combobox or multiselect its adapter declares with a results list is acted on whatever ARIA its trigger carries
  *   (ADP's sdf-select-simple: a div[role=button] in a shadow root, no aria-controls; its list a portal at the end of
- *   the body).
+ *   the body);
+ * - a combobox no adapter declares is refused before any click (widget-unsupported, never read as a remote search)
+ *   where ARIA says its popup is a grid or a tree (Oracle's cx-select, aria-haspopup="grid"), or where ARIA can find no
+ *   list for it at all and it holds no text box (iCIMS's a.dropdown-select anchors): refusedUndeclared.
  */
 import { holdsComposed } from '../composed';
 import { CONTROL_SELECTOR, isTextLike } from '../kinds';
@@ -292,9 +295,37 @@ export function isActionable(widget: WidgetTarget): boolean {
   if (widget.declared && (widget.kind === 'combobox' || widget.kind === 'multiselect') && widget.results !== undefined) {
     return true;
   }
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 12): refused before any click.
+  if (!widget.declared && refusedUndeclared(widget)) return false;
   const roles = [roleOf(widget.element), widget.input === null ? '' : roleOf(widget.input)];
   return roles.includes('combobox') || roles.includes('listbox') || referencesList(widget.element, widget.input)
     || opensListbox(widget);
+}
+
+/** ARIA's popup types whose items are no options (WAI-ARIA 1.2 combobox: aria-haspopup grid or tree): a list of rows
+ *  or tree items no reader here reads. A dialog may hold a listbox (listOf finds it), so it is not one of them. */
+const NO_OPTION_POPUPS: ReadonlySet<string> = new Set(['grid', 'tree']);
+
+/**
+ * jr6 ENGINE E1 (FIXPLAN §6.2 item 12: icims-new-2, O10): whether a combobox no adapter declares is one the helpers
+ * refuse before any click, so it is widget-unsupported and never read as a remote search:
+ * - its text box (or it) says its popup is a grid or a tree (Oracle's cx-select, input[role=combobox]
+ *   [aria-haspopup="grid"][aria-controls="<id>-listbox"] whose rows are role=row > gridcell, fixtures/oracle/
+ *   hjf-apply-section.html): the rows are no options, and its filtering box (aria-autocomplete="list") would otherwise
+ *   be typed into, up to six times, with nothing ever read (O10);
+ * - ARIA can find no list for it at all (no aria-controls or aria-owns on it or its text box, no listbox it is or holds,
+ *   no aria-haspopup="listbox" that names one once open as Workday's buttons do) and it holds no text box (iCIMS's
+ *   a.dropdown-select[role=combobox] anchors, whose list is named only by the search box of a container drawn beside
+ *   them, fixtures/icims/githubinc-profile.frame-1.html): a click opens what no reader finds.
+ * A radio group, a listbox of its own and any widget its adapter declares are never refused here.
+ */
+export function refusedUndeclared(widget: Pick<WidgetTarget, 'kind' | 'element' | 'input'>): boolean {
+  if (widget.kind === 'radio' || widget.kind === 'checkbox') return false;
+  const popup = (part: Element | null) => (part?.getAttribute('aria-haspopup') ?? '').trim().toLowerCase();
+  if ([widget.input, widget.element].some((part) => part !== null && NO_OPTION_POPUPS.has(popup(part)))) return true;
+  if (widget.input !== null) return false;
+  if (referencesList(widget.element, null) || popup(widget.element) === 'listbox') return false;
+  return listOf(widget.element, null) === null;
 }
 
 /** Whether a combobox's list is searched rather than chosen from whole (dom/widgets' header): its adapter declared it,

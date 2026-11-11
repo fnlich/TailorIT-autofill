@@ -44,7 +44,7 @@
  * closed on the tidy context and nothing is chosen; an option already clicked stands, read back as the widget shows
  * it, its list closed the same way: one the widget does not show yet is written, not verified (verify-mismatch: the
  * audit of 2026-11-06, m11). Nothing here logs or reports a value.
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3): a combobox or multiselect whose list its adapter declares
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1, 3 and 12): a combobox or multiselect whose list its adapter declares
  * (WidgetDecl.results: Oracle's cx-select grid of role=row rows, iCIMS's dropdown results, ADP's sdf-select-item portal,
  * SmartRecruiters' spl-select-option menus) is read, shown again and chosen by its declared rows (the selector, or
  * WidgetResults.options where no selector reaches them), a row it names unchoosable never chosen, and each choice
@@ -52,7 +52,8 @@
  * on choose 'label', else the row; a mousedown where it declares one), the row and that element both passed by
  * assertNotSubmit; as Jobright's ~contents/sites/oraclecloud operations fillSelectField reads the grid's
  * span.cx-select__list-item--content and clicks its gridcell. A list the page publishes itself (WidgetDecl.knownOptions)
- * has its planned option found in the open list by its label (known.ts findKnown).
+ * has its planned option found in the open list by its label (known.ts findKnown). An activation the page answered
+ * with no list a reader finds is put back at once (interact.ts closeUnlisted).
  */
 import { llmPickStillValid } from '../../core/guard/provenance';
 import type { BaseKey, Option } from '../../core/types/field';
@@ -68,8 +69,8 @@ import type { BridgeReason } from '../bridge-protocol';
 import type { FieldTarget, FillOutcome, WidgetOptionRead, WidgetReading, WidgetTarget } from '../types';
 import { isActionable, isChosen, isMultiselectable, isUnavailable } from './aria';
 import {
-  afterAction, afterBridge, awaitList, bridgeChoose, chooseResult, closeList, closingContext, openList, pressAllowed,
-  skipTidyContext, type WidgetContext,
+  afterAction, afterBridge, awaitList, bridgeChoose, chooseResult, closeList, closeUnlisted, closingContext, openList,
+  pressAllowed, skipTidyContext, type OpenResult, type WidgetContext,
 } from './interact';
 import { findKnown, learnable, learnedLabels, type LearnList } from './known';
 import {
@@ -133,6 +134,15 @@ function rowsOptions(widget: WidgetTarget): { option?: NonNullable<WidgetTarget[
   return { option: results, ...(results.unchoosable === undefined ? {} : { unchoosable: results.unchoosable }) };
 }
 
+/** Why a widget's list did not open, as the write's outcome: and (jr6 ENGINE E1, FIXPLAN §6.2 item 12) what our
+ *  activation opened with no list a reader finds put back first (closeUnlisted). */
+async function notOpened(widget: WidgetTarget, ctx: WidgetFillContext,
+  opened: Extract<OpenResult, { open: false }>): Promise<FillOutcome> {
+  if (opened.reason === 'no-list' && opened.activated) await closeUnlisted(widget, ctx);
+  return refused(opened.reason === 'no-list' ? 'widget-unsupported' : opened.reason === 'gone' ? 'element-not-found'
+    : 'needs-your-click');
+}
+
 /** Opens a widget's list and reads it whole, once its options are there. Null when it would not open, with why. */
 async function openAndRead(target: FieldTarget, ctx: WidgetFillContext):
   Promise<{ listbox: Element; read: ListRead; activated: boolean } | { failed: FillOutcome }> {
@@ -146,8 +156,7 @@ async function openAndRead(target: FieldTarget, ctx: WidgetFillContext):
   const opened = await openList(widget, ctx);
   if (!opened.open) {
     if (opened.reason === 'aborted') return skipped(true);
-    return { failed: refused(opened.reason === 'no-list' ? 'widget-unsupported' : opened.reason === 'gone'
-      ? 'element-not-found' : 'needs-your-click') };
+    return { failed: await notOpened(widget, ctx, opened) };
   }
   const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
   if (wait.status === 'aborted') return skipped(opened.activated);
@@ -326,8 +335,7 @@ async function chooseKnown(target: FieldTarget, value: Extract<WriteValue, { kin
   const opened = await openList(widget, ctx);
   if (!opened.open) {
     if (opened.reason === 'aborted') return skipped(true);
-    return refused(opened.reason === 'no-list' ? 'widget-unsupported' : opened.reason === 'gone' ? 'element-not-found'
-      : 'needs-your-click');
+    return notOpened(widget, ctx, opened);
   }
   const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
   if (wait.status === 'aborted') return skipped(opened.activated);

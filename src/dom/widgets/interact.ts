@@ -30,7 +30,7 @@
  * signal, never a fixed sleep. While the person may Skip the write (v3 Phase 3: WidgetContext.runSignal), its Skip
  * ends the waits too; what the write had done to its widget is then put back (its typed text, its open list) through
  * skipTidyContext: a fresh, short-capped signal that only the run's own end aborts.
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 4):
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 4 and 12):
  * - a list its adapter declares outside the form root's own tree (another shadow tree: SmartRecruiters' menus; a portal
  *   at the end of the body: ADP's) is watched directly, with the hosts of rows slotted into it (watchList): the form
  *   root's observer sees neither;
@@ -38,7 +38,10 @@
  * - a select-only opener toggles: a list our click left open after focusout and blur is shut by a second click, also
  *   where the widget's declared text box sits beside it, not inside (iCIMS's anchor and its container's search box);
  * - what the page changes inside our activation itself (a click listener that shows a popup) is its answer
- *   (watchAnswer).
+ *   (watchAnswer);
+ * - an activation the page answered with no list a reader finds is put back (closeUnlisted): a second click on a
+ *   select-only opener, else focusout and blur to its text box and its declared Escape. Never leave a popup open; never a
+ *   key the widget does not declare (docs/SPEC-AMENDMENTS.md §12 Decision 2).
  */
 import type { Adapter } from '../../adapters/types';
 import type { OptionSetHash } from '../../core/types/field';
@@ -296,10 +299,11 @@ export async function awaitPageReady(ctx: WidgetContext): Promise<boolean> {
 }
 
 /** How opening a widget went. 'ignored': the page did nothing at all; 'no-list': it answered, but shows no list;
- *  'gone': the page replaced the widget while the run waited for it to be ready. */
+ *  'gone': the page replaced the widget while the run waited for it to be ready. jr6 ENGINE E1: `activated`, whether
+ *  our activation was sent, so a 'no-list' it opened is put back (closeUnlisted). */
 export type OpenResult =
   | { open: true; listbox: Element; activated: boolean }
-  | { open: false; reason: 'refused' | 'ignored' | 'no-list' | 'gone' | 'aborted'; mutated: boolean };
+  | { open: false; reason: 'refused' | 'ignored' | 'no-list' | 'gone' | 'aborted'; mutated: boolean; activated: boolean };
 
 /** Opens a widget's list, unless it is open already: one activation, then the page's answer. */
 export async function openList(widget: WidgetTarget, ctx: WidgetContext): Promise<OpenResult> {
@@ -308,14 +312,54 @@ export async function openList(widget: WidgetTarget, ctx: WidgetContext): Promis
   if (shown !== null && expanded !== false) return { open: true, listbox: shown, activated: false };
   // Open already, with nothing a person can see in it (a search before anything is typed): no activation, which would
   // close it.
-  if (expanded === true) return { open: false, reason: 'no-list', mutated: false };
+  if (expanded === true) return { open: false, reason: 'no-list', mutated: false, activated: false };
   const answer = await activateAndAwait(widget, ctx);
   if (answer.status === 'refused' || answer.status === 'aborted' || answer.status === 'gone') {
-    return { open: false, reason: answer.status, mutated: answer.mutated };
+    return { open: false, reason: answer.status, mutated: answer.mutated, activated: answer.status !== 'refused' };
   }
   const listbox = openListOf(widget);
   if (listbox !== null) return { open: true, listbox, activated: true };
-  return { open: false, reason: answer.status === 'answered' ? 'no-list' : 'ignored', mutated: answer.mutated };
+  return { open: false, reason: answer.status === 'answered' ? 'no-list' : 'ignored', mutated: answer.mutated,
+    activated: true };
+}
+
+/** An element's own aria-expanded: true, false, or null where it says nothing. */
+function ariaExpanded(el: Element | null): boolean | null {
+  const said = (el?.getAttribute('aria-expanded') ?? '').trim().toLowerCase();
+  return said === 'true' ? true : said === 'false' ? false : null;
+}
+
+/** jr6 ENGINE E1: whether a widget says its popup is open: the element its adapter names (WidgetDecl.expanded), else
+ *  the aria-expanded of its own element, its opener or its text box; null where none says. */
+function saysOpen(widget: WidgetTarget): boolean | null {
+  const declared = expandedState(widget);
+  if (declared !== null) return declared;
+  for (const part of [widget.element, widget.opener, widget.input]) {
+    const said = ariaExpanded(part);
+    if (said !== null) return said;
+  }
+  return null;
+}
+
+/**
+ * jr6 ENGINE E1 (FIXPLAN §6.2 item 12): puts back what our activation opened when no list a reader finds showed
+ * (openList's 'no-list' after an activation): never leave a popup open. A select-only opener (selectOnly: no text box of
+ * its own inside it) toggles, so it gets our activation once more, a click (or its declared event, only while the widget
+ * says it is open); a text box gets focusout and blur, then its declared Escape while it says it is open. Nothing is
+ * sent to a widget that says it is shut, and never a key it does not declare.
+ */
+export async function closeUnlisted(widget: WidgetTarget, ctx: WidgetContext): Promise<void> {
+  const open = saysOpen(widget);
+  if (open === false) return;
+  if (selectOnly(widget)) {
+    if (widget.activation.length > 0 && open !== true) return;
+    if (activate(widget, ctx)) await afterAction(widget, ctx);
+    return;
+  }
+  fireLeave(widget.input!);
+  const answer = await afterAction(widget, ctx);
+  if (answer.aborted) return;
+  if (pressDeclaredKey(widget, 'Escape', ctx)) await afterAction(widget, ctx);
 }
 
 /** Sends one key the widget's adapter declared (WidgetDecl.keys) to its text box, else its element, or to its open
