@@ -804,8 +804,9 @@ describe('jr6 P2 ADP-2: the State list once Country is chosen (ENGINE E1, E3)', 
     expect([box.others, list.others]).toEqual([[], []]);
   });
 
-  it.fails('ADP-2 (known gap, the option matcher): the golden region is chosen from the State’s whole list, whose rows '
-    + 'read "TX - Texas" (today a search the list cannot take: no write lands)', async () => {
+  // jr6-rules b395249 (AD-R1): the option matcher reads "TX - Texas" as the region both halves name.
+  it('ADP-2 (the option matcher): the golden region is chosen from the State’s whole list, whose rows read '
+    + '"TX - Texas"', async () => {
     const ran = await planned('jr6-personal-us-errors');
     expect(optionOf(ran.write('State / Territory'))).toBe('TX - Texas');
   });
@@ -1006,10 +1007,12 @@ describe('jr6 P2 ADP-17: the self-ID decline box beside the lists (self-id, jr6-
     }
   });
 
-  it.each(['self-id', 'jr6-self-id-blank', 'jr6-self-id-filled'])('%s: while the lists are unread, the box waits for '
-    + 'them, nobody’s to answer yet', async (name) => {
+  // jr6-rules fa6bd2b (RULES-R65-R24): a box is no list: while its lists are unread it is left unticked (skipped,
+  // conditional-question), never rowed waiting-for-options, which the loop's books ended options-never-loaded.
+  it.each(['self-id', 'jr6-self-id-blank', 'jr6-self-id-filled'])('%s: while the lists are unread, the box is left '
+    + 'unticked, nobody’s to answer', async (name) => {
     const ran = await planned(name);
-    expect(ran.row(BOX)).toMatchObject({ reason: 'waiting-for-options', needsUserAction: false });
+    expect(ran.row(BOX)).toMatchObject({ status: 'skipped', reason: 'conditional-question', needsUserAction: false });
     expect(ran.write(BOX)).toBeUndefined();
   });
 });
