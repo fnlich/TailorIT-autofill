@@ -46,9 +46,14 @@
  * - **Steps** (AF-3, `takeStep`): after a press of this grant, a top or claim frame of the grant's origin and application
  *   whose document shows a wall or a choice and no form gets one run/start per document, at most ENTRY_MAX_STEPS per
  *   grant, within the grant's time, never for a document this grant already sent run/start to or started (one mark
- *   shared with takeFill: a gate that is a form root, started by takeFill, is never started again as a step).
+ *   shared with takeFill: a gate that is a form root, started by takeFill, is never started again as a step). The line
+ *   P review (revA-1): and only within ENTRY_NEXT_MS of the grant's latest press, step or kept re-press (`lastAt`), so a
+ *   step continues the press's own chain; a page the person opens later in the tab (the job's choice, the site's
+ *   account page that names no application) is theirs, though the grant's own time still runs.
  * - **Waiting** (apply-c-new-1): from an armed press until something of it is taken (a form, a step), at most
- *   ENTRY_WAITING_MS, the tab says it is entering (PageState.entering), while the frame that pressed may be gone.
+ *   ENTRY_WAITING_MS, the tab says it is entering (PageState.entering), while the frame that pressed may be gone. The
+ *   line P review (P-B1): or until the frame of a document this grant reached says, after the press, that its entry is
+ *   over (`settled`: a wall or a choice its press drew in place, taken by the frame or left to the person).
  * - **A press again** (apply-c-new-1): a plain Autofill at the same origin and application while an armed grant waits
  *   for its form keeps that grant (`keep`) instead of replacing it; it holds Sign-in Auto no longer.
  * Logs: closed codes, flags and counts only (grant.armed in index.ts; grant.step and grant.ended here).
@@ -62,7 +67,8 @@ export const SIGN_UP_GRANT_MS = 10 * 60_000;
  *  entry wait (content/press.ts's 20 s cap) plus 10 s. */
 export const ENTRY_ARM_MS = 30_000;
 /** jr6 apply F3a: how long after a press its destination keys (nextKey) and a company page's button rule hold, and how
- *  recent a press must be for its grant's end on another origin to say 'elsewhere'. */
+ *  recent a press must be for its grant's end on another origin to say 'elsewhere'. The line P review (revA-1): and how
+ *  long after the grant's latest press, step or kept re-press a new document's wall or choice may get a step. */
 export const ENTRY_NEXT_MS = 60_000;
 /** jr6 apply F3a: how long after a press the worker says the tab is entering while nothing of it was taken yet. */
 export const ENTRY_WAITING_MS = 30_000;
@@ -118,7 +124,8 @@ export interface SignUps {
    *  (the grant's, or `nextKey`). Answers whether it was armed. */
   pressed(tabId: number, frame: FramePlace, nextKey?: string): boolean;
   /** The tab's application frame shows a wall or a choice and no form (frame/wall): whether it gets run/start now (a
-   *  step), and with Sign up & Autofill. */
+   *  step), and with Sign up & Autofill. Only within ENTRY_NEXT_MS of the grant's latest press, step or kept re-press
+   *  (the line P review, revA-1). */
   takeStep(tabId: number, frame: FramePlace & { hasForm: boolean }, kind: 'wall' | 'choice'): { signIn: boolean } | null;
   /** A plain Autofill at `frame` while an armed grant of the tab waits for its form there (same origin and
    *  application): the grant is kept (holding Sign-in Auto no longer), and `frame`'s document is one it sent run/start
@@ -131,6 +138,10 @@ export interface SignUps {
   endEntry(tabId: number): boolean;
   /** Whether the tab waits for what an armed press brings (nothing taken yet, at most ENTRY_WAITING_MS after it). */
   waiting(tabId: number): boolean;
+  /** The line P review (P-B1): the tab's application frame, in a document this grant sent run/start to (or started) on
+   *  its origin, says after the grant's latest press that its entry is over (frame/wall without `entering`): the tab
+   *  waits for that press no longer (`waiting`). Nothing else of the grant changes. Answers whether it changed that. */
+  settled(tabId: number, frame: FramePlace): boolean;
   /** Whether the tab's last armed press led to another origin within ENTRY_NEXT_MS (its grant ended there): for
    *  ENTRY_ELSEWHERE_MS, or until the next grant or press. */
   elsewhere(tabId: number): boolean;
@@ -154,6 +165,9 @@ interface EntryHeld {
   armBy: number;
   /** The latest press of this grant (absent: none yet). */
   pressedAt?: number;
+  /** The line P review (revA-1): the latest press, step or kept re-press of this grant (absent: no press yet); a step
+   *  is given within ENTRY_NEXT_MS of it alone. */
+  lastAt?: number;
   /** The destination keys this grant's presses named (nextKey), taken within ENTRY_NEXT_MS of the latest press. */
   keys: Set<string>;
   /** The steps given (takeStep). */
@@ -219,12 +233,18 @@ export function createSignUps(deps: SignUpDeps): SignUps {
   /** Whether the grant's latest press is recent enough for its destination keys (ENTRY_NEXT_MS). */
   const fresh = (held: Held): boolean => held.entry?.pressedAt !== undefined
     && now() - held.entry.pressedAt < ENTRY_NEXT_MS;
+  /** The line P review (revA-1): whether the grant's latest press, step or kept re-press is within ENTRY_NEXT_MS (a
+   *  grant never pressed: v4's, given at a wall or a choice, its own time alone). */
+  const chained = (held: Held): boolean => held.entry?.lastAt === undefined
+    || now() - held.entry.lastAt < ENTRY_NEXT_MS;
   /** Whether a frame showing `frameKey` is at the grant's application: the grant's key where both name one (the v4
    *  review, M1), or, for a grant given at a wall or a choice whose frame named no application, any (v4); jr6 apply
-   *  F3a: or a key a recent press of this grant named. `strict` (a step, an entry grant): never the keyless "any". */
+   *  F3a: or a key a recent press of this grant named. `strict` (a step, an entry grant): never the keyless "any". The
+   *  line P review (revA-1): a frame that names no application fits a pressed grant within its chain alone (chained);
+   *  the grant's own key, within the grant's time (v4). */
   const fits = (held: Held, frameKey: string | undefined, strict: boolean): boolean => {
     if (held.applicationKey !== undefined) {
-      if (frameKey === undefined || frameKey === held.applicationKey) return true;
+      if (frameKey === held.applicationKey || (frameKey === undefined && chained(held))) return true;
     } else if (!strict && !held.byEntry) {
       return true;
     }
@@ -318,6 +338,7 @@ export function createSignUps(deps: SignUpDeps): SignUps {
       const entry: EntryHeld = grant.entry ?? { pending: false, armBy: 0, keys: new Set(), steps: 0, taken: false };
       entry.pending = false;
       entry.pressedAt = now();
+      entry.lastAt = entry.pressedAt;
       entry.taken = false;
       if (nextKey !== undefined) entry.keys.add(nextKey);
       grant.entry = entry;
@@ -335,9 +356,13 @@ export function createSignUps(deps: SignUpDeps): SignUps {
       // Never without a press of this grant, never at a form, never on another origin, never twice for a document.
       if (grant === null || entry === undefined || entry.pressedAt === undefined || frame.hasForm
         || frame.origin !== grant.origin || document === null || grant.documents.has(document)) return null;
+      // The line P review (revA-1): only the press's own chain, within ENTRY_NEXT_MS of its latest press, step or kept
+      // re-press, a frame that names no application included; never a page the person opens later.
+      if (entry.lastAt === undefined || now() - entry.lastAt >= ENTRY_NEXT_MS) return null;
       if (entry.steps >= ENTRY_MAX_STEPS || !fits(grant, frame.applicationKey, true)) return null;
       entry.steps += 1;
       entry.taken = true;
+      entry.lastAt = now();
       grant.documents.add(document);
       log('grant.step', { wall: kind === 'wall', steps: entry.steps });
       tell(tabId);
@@ -349,6 +374,8 @@ export function createSignUps(deps: SignUpDeps): SignUps {
       if (grant === null || !grant.fill || grant.entry?.pressedAt === undefined || frame.origin !== grant.origin
         || document === null || !fits(grant, frame.applicationKey, true)) return false;
       grant.documents.add(document);
+      // The line P review (revA-1): the person's press again is a fresh word: the steps' window counts from it.
+      grant.entry.lastAt = now();
       // A plain Autofill is the person's latest word: Sign-in Auto ends with it.
       if (grant.signIn) {
         grant.signIn = false;
@@ -378,6 +405,16 @@ export function createSignUps(deps: SignUpDeps): SignUps {
       const entry = liveGrant(tabId)?.entry;
       return entry !== undefined && entry.pressedAt !== undefined && !entry.taken
         && now() - entry.pressedAt < ENTRY_WAITING_MS;
+    },
+    settled(tabId, frame) {
+      const grant = liveGrant(tabId);
+      const document = docOf(frame.documentId);
+      const entry = grant?.entry;
+      if (grant === null || entry === undefined || entry.pressedAt === undefined || entry.taken
+        || frame.origin !== grant.origin || document === null || !grant.documents.has(document)) return false;
+      entry.taken = true;
+      tell(tabId);
+      return true;
     },
     elsewhere(tabId) {
       const held = elsewhereUntil.get(tabId);

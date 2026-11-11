@@ -151,7 +151,8 @@ export function createPanelHandlers(deps: PanelDeps) {
     async cancel(message: Of<'panel/cancel'>): Promise<Answer<{ frames: number }>> {
       const reporting = await reportingFrames(message.tabId);
       // jr6 apply F3a (item 6): and the application frame while it presses the site's Apply or waits for what the
-      // press brings (its frame/wall's `entering`); a pending or armed entry grant of the tab ends.
+      // press brings (its frame/wall's `entering`, beside a wall or a choice its press drew too: the line P review,
+      // revA-3 and P-B3); a pending or armed entry grant of the tab ends.
       const application = wallFrameOf(await framesOfTab(platform.storage.session, message.tabId));
       const entering = application !== null && application.entering === true
         && !reporting.some((frame) => frame.frameId === application.frameId) ? [application] : [];

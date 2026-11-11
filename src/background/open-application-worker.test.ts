@@ -60,12 +60,15 @@ describe('Autofill on a posting (v5 p2-fill; jr6 apply F3a)', () => {
     await wall(test, sender, { entry: true, entering: true });
     expect(await pageOf(test)).toMatchObject({ entry: true, entering: true });
     expect((await pageOf(test))?.refusal).toBeUndefined();
-    // The same document's hello keeps the press under way; a wall or a choice drops it.
+    // The same document's hello keeps the press under way; so does a wall or a choice its press drew there (the line P
+    // review, revA-3 and P-B3: still its entry, which Cancel reaches), until the frame's word without it.
     await hello(test, sender, false);
     expect((await pageOf(test))?.entering).toBe(true);
     await wall(test, sender, { wall: 'sign-in', entering: true });
-    expect((await pageOf(test))?.entering).toBeUndefined();
+    expect(await pageOf(test)).toMatchObject({ wall: 'sign-in', entering: true });
     await wall(test, sender, { choice: true, entering: true });
+    expect(await pageOf(test)).toMatchObject({ choice: true, entering: true });
+    await wall(test, sender, { choice: true });
     expect((await pageOf(test))?.entering).toBeUndefined();
     for (const refusal of ['none', 'ambiguous', 'blocked', 'new-tab', 'elsewhere', 'nothing-followed']) {
       await wall(test, sender, { entryRefused: true, refusal });

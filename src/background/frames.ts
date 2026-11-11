@@ -71,8 +71,10 @@ export interface FrameEntry {
    *  no wall or choice shows. Not kept by a hello. */
   entryRefused?: true;
   // ── jr6 apply F3a (APPLYPLAN §5 F3a item 4) ──
-  /** The frame is pressing the site's own Apply or waiting for what the press brings (frame/wall's `entering`), while
-   *  no wall or choice shows. Kept while the same document says hello again, as `entry` is. */
+  /** The frame is pressing the site's own Apply or waiting for what the press brings (frame/wall's `entering`), a wall
+   *  or a choice its press drew in this document included (the line P review, revA-3 and P-B3: its sign-in step, the
+   *  choice it waits past, so the panel's Cancel reaches it there too). Kept while the same document says hello again
+   *  with no form, as `entry` is. */
   entering?: true;
   /** Why its last entry was refused (frame/wall's `refusal`), beside `entryRefused` alone. Not kept by a hello. */
   refusal?: EntryRefusal;
@@ -155,9 +157,10 @@ export async function setWall(session: StorageArea, tabId: number, frameId: numb
     ...(shown.entry === true && open ? { entry: true as const } : {}),
     // v5 p2-fill review (L5): its refusal, likewise.
     ...(refused ? { entryRefused: true as const } : {}),
-    // jr6 apply F3a: its press under way, likewise; why it was refused, beside the refusal alone; the entry it said,
-    // kept for the document's life (the card frame, apply-b-new-2).
-    ...(shown.entering === true && open ? { entering: true as const } : {}),
+    // jr6 apply F3a: its press under way, whatever shows (the line P review, revA-3 and P-B3: a wall or a choice its
+    // press drew in this document is still its entry, and the panel's Cancel must reach it); why it was refused, beside
+    // the refusal alone; the entry it said, kept for the document's life (the card frame, apply-b-new-2).
+    ...(shown.entering === true ? { entering: true as const } : {}),
     ...(refused && shown.refusal !== undefined ? { refusal: shown.refusal } : {}),
     ...(shown.entry === true && open ? { entrySaid: true as const } : {}) };
   await session.set({ [keyOf(tabId, frameId)]: entry });
@@ -184,7 +187,8 @@ function wallOf(frames: readonly FrameEntry[], noForm: boolean): { wall?: SignIn
     // v5 p2-fill review (L5): its last press refused: the panel says why (jr6 apply F3a: with its reason).
     ...(noForm && frame?.entryRefused === true ? { entryRefused: true as const,
       ...(frame.refusal === undefined ? {} : { refusal: frame.refusal }) } : {}),
-    // jr6 apply F3a: its press under way: the panel's Autofill shows its spinner.
+    // jr6 apply F3a: its press under way: the panel's Autofill shows its spinner, and its Cancel; the line P review
+    // (revA-3, P-B3): beside a wall or a choice its press drew too (the wall's Sign Up & Autofill spins meanwhile).
     ...(noForm && frame?.entering === true ? { entering: true as const } : {}),
     // s2 profile (P1): a page with no form whose wall's toast stands.
     ...(noForm && frame?.waits !== undefined ? { waits: frame.waits } : {}) };

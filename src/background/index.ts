@@ -731,6 +731,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
    * - its refusal, newly said, ends an entry grant that reached its document (item 2);
    * - a wall or a choice with no form, after a press of the grant, in a document the grant has not reached: one
    *   run/start there (takeStep, AF-3), with Sign up & Autofill's signIn where the grant holds it (item 3);
+   * - the line P review (P-B1): a word without `entering`, after a press, from a document the grant reached: the frame's
+   *   entry is over there (a wall or a choice its press drew in place, which it took or left to the person), so the
+   *   tab no longer says it waits for that press (settled; a press whose document went still waits, ENTRY_WAITING_MS);
    * - a top frame with no form whose document first says its adapter offers the site's own Apply (ADP's job details,
    *   apply-b-new-2) is the tab's card frame (frames.ts cardFrameOf): the job chosen follows its application, and its
    *   card is looked up once, as on load (lookupOnLoad, the connection, the disclosure).
@@ -751,6 +754,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             .catch(() => log('frame.unreachable'));
         }
       }
+      // The line P review (P-B1): the frame says no longer that it is entering (its entry ended in this document).
+      if (message.entering !== true) signUps.settled(from.tabId, entry);
     }
     if (entry.frameId === 0 && entry.entrySaid === true && before?.entrySaid !== true && entry.posting !== true
       && entry.confirmation !== true && cardFrameOf(frames)?.frameId === entry.frameId) {
