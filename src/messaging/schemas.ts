@@ -316,6 +316,31 @@ export type EntryOutcome = (typeof ENTRY_OUTCOMES)[number];
 export const ENTRY_BLOCKS = ['sign-in', 'sign-in-failed', 'email-code', 'captcha', 'other'] as const;
 export type EntryBlock = (typeof ENTRY_BLOCKS)[number];
 
+// ── jr6 apply A0 (the contract): Autofill presses the site's own Apply ──
+// The owner, 2026-11-10: "extension should also click `apply` to find and run the form [...] and `Autofill` word will
+// be kept (not open application or the other word)". The build plan is the session's jr6 APPLYPLAN (§1 D1-D13, §5 A0,
+// F1, F2, F3a, F4a). A0 lands the shapes alone; no code acts on them until those packages do.
+/** Why the panel's Autofill, on a page with no form, could not press the site's own Apply or follow it to a form
+ *  (jr6 apply A0; APPLYPLAN D3, D4 and F2's refusals): the panel says it in one line. Sent only beside frame/wall's
+ *  `entryRefused` (and PageState's), never alone.
+ *  - 'none': no Apply and no form came within the wait;
+ *  - 'ambiguous': several Applies lead to different places;
+ *  - 'blocked': a check, a code or another thing that is the person's shows;
+ *  - 'new-tab': the Apply opens a new tab or window;
+ *  - 'elsewhere': the press led to a site Autofill does not fill or does not follow;
+ *  - 'nothing-followed': Apply was pressed and nothing came within the wait. */
+export const ENTRY_REFUSALS = ['none', 'ambiguous', 'blocked', 'new-tab', 'elsewhere', 'nothing-followed'] as const;
+export type EntryRefusal = (typeof ENTRY_REFUSALS)[number];
+/** An application's key as entry/pressed names it (jr6 apply A0): `${platform}:${hex16}`, a hash of its canonical
+ *  address, never the address (adapters/application-key.ts; the same pattern as shared/stored.ts ApplicationKeySchema,
+ *  built here so the content script carries nothing of that module). */
+const ApplicationKey = z.string().regex(new RegExp(`^(?:${PLATFORMS.join('|')}):[a-f0-9]{16}$`));
+/** A `refusal` rides only beside `entryRefused: true` (jr6 apply A0): it says why that entry was refused. */
+const refusalBesideEntryRefused = (message: { refusal?: EntryRefusal; entryRefused?: true }): boolean =>
+  message.refusal === undefined || message.entryRefused === true;
+const REFUSAL_ALONE = { message: 'a refusal names why an entry was refused, beside entryRefused', path: ['refusal'] };
+// ── end jr6 apply A0 ──
+
 // ── v1.5 X (PLAN decisions 2 and 3): the documents' dialogs on the page ──
 /** The documents a fill attaches that the page's dialog shows (the preview's tabs), as the panel's TAILOR_KINDS. */
 export const DOCUMENT_KINDS = ['resume', 'coverLetter'] as const;
@@ -474,6 +499,13 @@ const contentMessages = [
    *  the document away ends it before agent/enter is answered. The worker takes it from the agent's tab's top frame,
    *  for a document it asked to enter, as the job begun. Nothing else. */
   z.strictObject({ v, type: z.literal('agent/entered') }),
+  /** jr6 apply A0 (APPLYPLAN D3, D4, F2 step 2, F3a): the frame pressed the site's own Apply for the panel's Autofill
+   *  (or the queue's), told at the press (press.ts onPress, before anything is awaited), so the worker arms the tab's
+   *  pending entry grant and the application the press brings is filled. `nextKey`: the destination's application key
+   *  (a hash, never an address), only for a same-origin link whose address that address's own parsers read as an
+   *  application or posting with another key; absent otherwise. The worker reads the frame from Chrome's sender, never
+   *  from a payload. Answered {}. No handler before F3a: the router answers not_implemented. */
+  z.strictObject({ v, type: z.literal('entry/pressed'), nextKey: ApplicationKey.optional() }),
   // ── v4 run (docs/SPEC-AMENDMENTS.md §13) ──
   /** v4: the frame's account wall (a sign-in, a create-account page, an email gate) as it shows now, or null once it
    *  went; sent by a tab's top frame or the frame that claims its application, at each change (content/runtime.ts). The
@@ -485,11 +517,20 @@ const contentMessages = [
     /** s2 profile (P1): what the page waits for now, as its wall's toast says (WALL_WAITS); absent: nothing. */
     waits: z.enum(WALL_WAITS).optional(),
     // v5 p2-fill: a posting page with no form whose adapter offers its own Apply now (Adapter.entryControl, from its
-    // fixtures): the panel's main button reads "Open Application" there and presses it (content/runtime.ts atWall).
+    // fixtures): the panel's main button presses it (content/runtime.ts atWall). jr6 apply: the button's word stays
+    // "Autofill" (APPLYPLAN D1).
     entry: z.literal(true).optional(),
-    // v5 p2-fill review (L5): the person's last Open Application could not press that Apply (none shows now, none was
+    // v5 p2-fill review (L5): the person's last Autofill there could not press that Apply (none shows now, none was
     // drawn in time, or what shows instead is the person's): the panel says why until the next press.
-    entryRefused: z.literal(true).optional() }),
+    entryRefused: z.literal(true).optional(),
+    /** jr6 apply A0 (APPLYPLAN F2, apply-flow-new-4): the frame is pressing the site's Apply, or waiting for what the
+     *  press brings (a form, a choice, a wall, the next document); cleared when that ends. The panel's Autofill shows its
+     *  spinner meanwhile, its word unchanged. A flag, never a reason or an address. */
+    entering: z.literal(true).optional(),
+    /** jr6 apply A0 (APPLYPLAN F2, AF-12): why the entry was refused (ENTRY_REFUSALS), only beside `entryRefused`;
+     *  cleared at the next press. */
+    refusal: z.enum(ENTRY_REFUSALS).optional() })
+    .refine(refusalBesideEntryRefused, REFUSAL_ALONE),
   /** v3 Phase 8: the sentinel recognised its top frame (src/sentinel): why, from a closed list. The worker checks the
    *  frame's address again itself (Chrome's, never a payload's), limits the asks per tab and injects the content script
    *  into that one document. The only message a company's own page sends before then. */
@@ -595,14 +636,21 @@ export const PageStateSchema = z.strictObject({
   /** s2 profile (the review fix P1): what the tab's application frame, with no run holding it, waits for now (its
    *  wall's toast: frame/wall's `waits`); the side panel says it when the page's toasts are not shown until closed. */
   waits: z.enum(WALL_WAITS).optional(),
-  // v5 p2-fill (PLAN Phase 2, Jobright's "Open Application"): the tab's application frame shows a posting with no form
-  // whose adapter offers its own Apply (frame/wall's `entry`): the panel's main button reads "Open Application", and
-  // its panel/fill presses that Apply, then fills the form it brings.
+  // v5 p2-fill (PLAN Phase 2, after Jobright's entry button): the tab's application frame shows a posting with no form
+  // whose adapter offers its own Apply (frame/wall's `entry`): the panel's main button's panel/fill presses that Apply,
+  // then fills the form it brings. jr6 apply: the button's word stays "Autofill" (APPLYPLAN D1).
   entry: z.literal(true).optional(),
-  // v5 p2-fill review (L5): the last Open Application of the tab's application frame could not press the posting's
-  // Apply (frame/wall's `entryRefused`): the panel says why.
+  // v5 p2-fill review (L5): the last Autofill of the tab's application frame could not press the posting's Apply
+  // (frame/wall's `entryRefused`): the panel says why.
   entryRefused: z.literal(true).optional(),
-});
+  /** jr6 apply A0 (APPLYPLAN F1 item 3, F3a item 5): the tab's application frame is pressing the site's Apply or waiting
+   *  for what the press brings (frame/wall's `entering`), or the worker's entry grant for the tab is armed and not yet
+   *  taken: the panel's Autofill is disabled with its spinner, its word unchanged, and its Cancel shows. */
+  entering: z.literal(true).optional(),
+  /** jr6 apply A0 (APPLYPLAN F1 item 4, F3a item 2): why the last entry was refused (frame/wall's `refusal`, or the
+   *  worker's 'elsewhere' when the press led to another origin), only beside `entryRefused`: the panel's one line. */
+  refusal: z.enum(ENTRY_REFUSALS).optional(),
+}).refine(refusalBesideEntryRefused, REFUSAL_ALONE);
 export type PageState = z.infer<typeof PageStateSchema>;
 
 // ── Worker → content script ───────────────────────────────────────────────────────────────────────────────────────
@@ -741,7 +789,8 @@ export const PlanAnswerSchema = z.strictObject({
 
 /** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/shown, panel/focus,
  *  panel/policyDecision, panel/confirmDraft, and a frame's answer to run/start, run/continue, run/cancel,
- *  run/policyDecision, field/focus, draft/confirm, report/update and settings/changed. A frame answers
+ *  run/policyDecision, field/focus, draft/confirm, report/update and settings/changed (and, jr6 apply A0, the worker's
+ *  answer to entry/pressed, once F3a handles it). A frame answers
  *  run/policyDecision {} once the decision settled its policy card, and `expired` when no run there waits at one; it
  *  answers draft/confirm `expired` when no draft of that field waits for the person. */
 export const DoneAnswerSchema = z.strictObject({});
@@ -891,6 +940,8 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'submit/form': DoneAnswerSchema,
   'signin/credential': SignInCredentialAnswerSchema,
   'agent/entered': DoneAnswerSchema,
+  // jr6 apply A0: its handler is F3a's (until then the router answers not_implemented)
+  'entry/pressed': DoneAnswerSchema,
   'frame/wall': DoneAnswerSchema,
   'page/recognised': PageRecognisedAnswerSchema,
   // v5 p2-detect

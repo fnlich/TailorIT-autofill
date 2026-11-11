@@ -11,7 +11,8 @@ import type { TelemetryCount } from '../core/types/telemetry';
 import type { FillResultSchema } from '../shared/report';
 import type { TelemetryCountSchema } from './page-schemas';
 import type {
-  ContentMessageSchema, FieldSpecSchema, PlanAnswerSchema, PlannedWriteSchema, RunStateSchema, WorkerToContentSchema,
+  ContentMessageSchema, EntryRefusal, FieldSpecSchema, PageState, PlanAnswerSchema, PlannedWriteSchema, RunStateSchema,
+  WorkerToContentSchema,
 } from './schemas';
 
 type Unbrand<T> = T extends string
@@ -56,3 +57,15 @@ export type TelemetryCountMatches = Assert<Same<TelemetryCount, z.infer<typeof T
  *  sends report/update to that frame alone. */
 type PanelShown = Extract<z.infer<typeof ContentMessageSchema>, { type: 'panel/shown' }>;
 export type PanelShownMatches = Assert<Same<PanelShown, { v: 1; type: 'panel/shown'; open: boolean }>>;
+// ── jr6 apply A0 (the contract of APPLYPLAN F1, F2, F3a and F4a) ──
+/** entry/pressed carries the destination's application key at most (a hash), and nothing more: no address, no reason. */
+type EntryPressed = Extract<z.infer<typeof ContentMessageSchema>, { type: 'entry/pressed' }>;
+export type EntryPressedMatches = Assert<Same<EntryPressed, { v: 1; type: 'entry/pressed'; nextKey?: string }>>;
+/** frame/wall's entry words (`entry`, `entryRefused`, `entering`, `refusal`) are PageState's, shape for shape: the worker
+ *  stores what the frame told and the panel reads it unchanged (F3a's frames.ts and reports.ts, F1's Panel.tsx). */
+type FrameWall = Extract<z.infer<typeof ContentMessageSchema>, { type: 'frame/wall' }>;
+type EntryWords = 'entry' | 'entryRefused' | 'entering' | 'refusal';
+export type EntryWordsMatch = Assert<Same<Pick<FrameWall, EntryWords>, Pick<PageState, EntryWords>>>;
+export type EntryWordsAreFlags = Assert<Same<Pick<FrameWall, EntryWords>,
+  { entry?: true; entryRefused?: true; entering?: true; refusal?: EntryRefusal }>>;
+// ── end jr6 apply A0 ──
