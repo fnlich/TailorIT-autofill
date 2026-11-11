@@ -5,7 +5,8 @@
  * as another field, before snapshot round 2: Country Phone Code (a prompt), Phone Device Type, Suffix, Phone
  * Extension, "I have a preferred name" (unrecognised consent), How Did You Hear About Us? (a prompt), Overall Result
  * (GPA), X, Role Description, and each job's Location (the person's current location in every block, an unlisted
- * parsed job's included). Prefix stays unread: Mr. or Ms. stands in for a gender (the wd study §5).
+ * parsed job's included). Prefix is the name's prefix, which the profile never holds: skipped, never asked of an AI
+ * (Mr. or Ms. stands in for a gender; the wd study §5; jr6 RULES R4 item 62, WD-25).
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import stateHtml from '../../../fixtures/workday/s2-exelixis-state-open.html?raw';
@@ -66,11 +67,12 @@ describe('s2 core-wd: My Information (exelixis, verily)', () => {
       expect(step.one('How Did You Hear About Us?').write?.value).toMatchObject({ kind: 'query', other: true });
     });
 
-  it('exelixis: Suffix is the name\'s suffix; Prefix stays unread', async () => {
+  it('exelixis: Suffix is the name\'s suffix; Prefix is the name\'s prefix, skipped (jr6 WD-25)', async () => {
     const step = await planned(stateHtml, EXELIXIS);
     expect(step.one('Suffix').row).toMatchObject({ category: 'identity.suffix', status: 'skipped',
       reason: 'no-profile-value' });
-    expect(step.one('Prefix').row).toMatchObject({ category: 'unknown' });
+    expect(step.one('Prefix').row).toMatchObject({ category: 'identity.prefix', status: 'skipped',
+      reason: 'no-profile-value' });
   });
 
   it('exelixis: with a preferred name, an extension and a device type in the profile, each is answered', async () => {

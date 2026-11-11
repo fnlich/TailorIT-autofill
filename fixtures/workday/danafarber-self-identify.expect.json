@@ -4,13 +4,14 @@
   "captured": "2026-11-06T15:13:22.000Z",
   "fields": [
     {
-      "label": "Language",
+      "label": "Language of this form",
       "kind": "combobox",
       "required": true,
       "section": "self-identify",
       "fillable": true,
       "options": "lazy",
-      "control": "button[id=\"selfIdentifiedDisabilityData--disabilityForm\"]"
+      "control": "button[id=\"selfIdentifiedDisabilityData--disabilityForm\"]",
+      "note": "jr6 workday-new-1: the disability form's own language (labelFirst, labelSuffix): RULES answers the form's language, never the person's"
     },
     {
       "label": "Name",
@@ -29,22 +30,23 @@
       "control": "input[id=\"selfIdentifiedDisabilityData--employeeId\"]"
     },
     {
-      "label": "Date",
+      "label": "Date signed",
       "kind": "date",
       "required": false,
       "section": "self-identify",
       "fillable": true,
       "control": "div[id=\"selfIdentifiedDisabilityData--dateSignedOn\"]",
-      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part; jr6 workday-new-1: the form's signature date (labelSuffix)"
     },
     {
-      "label": "Please check one of the boxes below",
+      "label": "Voluntary Self-Identification of Disability",
       "kind": "checkbox-group",
       "required": false,
       "section": "self-identify",
       "fillable": true,
       "options": 3,
-      "control": "[data-automation-id=\"formField-disabilityStatus\"] input[type=\"checkbox\"]"
+      "control": "[data-automation-id=\"formField-disabilityStatus\"] input[type=\"checkbox\"]",
+      "note": "jr6 WD-10: named by the form's title (h3), its legend naming no topic"
     },
     {
       "label": "a date part",

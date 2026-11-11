@@ -13,8 +13,15 @@
  * - .../apply/autofillWithResume and .../apply/useMyLastApplication are the choice's two other ways (never pressed by
  *   the extension: Workday reads the resume on its own server, or copies the last application), read as the posting's
  *   application all the same, under its key: the person's own choice leads to the same form (the v3 Phase 6/7b review,
- *   C1); /login, /userHome (which sends to /login) and /details/... (a search page) show no posting: none of them is
- *   read;
+ *   C1); /userHome (which sends to /login), /details/... (a search page) and /login alone show no posting: none of them
+ *   is read;
+ * - jr6 B6 (APPLYPLAN E-Workday; snapshot1's verily "Sign In (1)", fixtures/workday/verily-sign-in-verify.html): the
+ *   sign-in page Workday sends a person to from an application, /[<locale>/]<site>/login?redirect=<the application's
+ *   path, encoded> (/[<locale>/]recruiting/<tenant>/<site>/login on myworkdaysite.com), is that application's page,
+ *   under its key, where its one `redirect` is a path of this origin (it starts with one '/', never '//' or a
+ *   backslash after the '/') that reads as a posting or an application of the same tenant and site; any other /login is read as none (Jobright
+ *   1.25.2's remote Workday rules read the same parameter, URL_REDIRECT_QUERY_PARAM "redirect", on its
+ *   URL_LOGIN_PATH_PATTERN "/login"; the reading here is ours);
  * - the locale is optional (en-US; read in any case, a language of two or three letters and a region or script of two
  *   to four, and only where a site follows it), the site is case-insensitive (/workday/... and
  *   /external_career_site/... load), the location is free text ("x" and "Anywhere" load the same posting, and the apply links re-encode it: USA-CA-Pleasanton
@@ -60,28 +67,32 @@ function folded(segment: string): string | null {
   }
 }
 
-/** The posting an address shows and which page of it, or null when it shows none (a search, the sign-in, a choice
- *  that is not ours). */
-export function parseWorkdayUrl(url: URL): ApplicationUrl | null {
-  if (!matchesUrl(url)) return null;
+/** An address's host and path: a URL's, or (jr6 B6) a sign-in page's host with its redirect's path. */
+type Where = Pick<URL, 'hostname' | 'pathname'>;
+
+/** Where an address sits on a Workday host: its tenant, the path before its site (recruiting/<tenant> on
+ *  myworkdaysite.com) and its segments from the site on, the locale dropped; null where it names no tenant. */
+function locate(url: Where): { tenant: string; prefix: string; parts: string[] } | null {
   const path = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
   let parts = path.split('/').slice(1);
   const own = JOBS_HOST.exec(url.hostname);
-  // A first segment shaped like a locale is one only where a site follows it (a site named "ext" is no locale).
-  const after = own !== null ? parts[2] === 'job' : parts[1] === 'recruiting';
+  // A first segment shaped like a locale is one only where a site follows it (a site named "ext" is no locale): a
+  // posting's /job/, or (jr6 B6) the site's /login as the path's last segment.
+  const after = own !== null ? parts[2] === 'job' || (parts[2] === 'login' && parts.length === 3)
+    : parts[1] === 'recruiting';
   if (parts[0] !== undefined && LOCALE.test(parts[0]) && after) parts = parts.slice(1);
-  let tenant: string;
-  let prefix: string;
-  if (own !== null) {
-    tenant = own[1]!;
-    prefix = '';
-  } else {
-    const [recruiting, named, ...rest] = parts;
-    if (recruiting !== 'recruiting' || named === undefined || !NAME.test(named)) return null;
-    tenant = named.toLowerCase();
-    prefix = `/recruiting/${tenant}`;
-    parts = rest;
-  }
+  if (own !== null) return { tenant: own[1]!, prefix: '', parts };
+  const [recruiting, named, ...rest] = parts;
+  if (recruiting !== 'recruiting' || named === undefined || !NAME.test(named)) return null;
+  const tenant = named.toLowerCase();
+  return { tenant, prefix: `/recruiting/${tenant}`, parts: rest };
+}
+
+/** The posting a job address shows and which page of it, with its site in lower case, or null. */
+function postingOf(url: Where): (ApplicationUrl & { site: string }) | null {
+  const where = locate(url);
+  if (where === null) return null;
+  const { tenant, prefix, parts } = where;
   const [site, job, location, posting, ...rest] = parts;
   const page = PAGES.get(rest.join('/'));
   if (site === undefined || !NAME.test(site) || job !== 'job' || !location || posting === undefined
@@ -90,8 +101,43 @@ export function parseWorkdayUrl(url: URL): ApplicationUrl | null {
   const match = slug === null ? null : POSTING.exec(slug);
   if (match === null) return null;
   const board = site.toLowerCase();
-  return { platform: 'workday', board: tenant, jobId: match[2]!, page,
+  return { platform: 'workday', board: tenant, jobId: match[2]!, page, site: board,
     applicationUrl: `https://${url.hostname}${prefix}/${board}/job/x/${slug}/apply/applyManually` };
+}
+
+/** jr6 B6 (module header): the application a sign-in page's redirect names, as its page, or null. */
+function loginRedirectOf(url: URL): ApplicationUrl | null {
+  const where = locate(url);
+  if (where === null) return null;
+  const [site, login, ...rest] = where.parts;
+  if (site === undefined || !NAME.test(site) || login !== 'login' || rest.length > 0) return null;
+  const redirects = url.searchParams.getAll('redirect');
+  const redirect = redirects.length === 1 ? redirects[0]! : '';
+  // A path of this origin alone, read on this host: never protocol-relative ('//host'), never an absolute address,
+  // never a backslash (a browser reads '/\host' as '//host'), no '.' or '..' segment, no space or control character;
+  // its query and fragment set aside.
+  const path = redirect.replace(/[?#][\s\S]*$/, '');
+  if (!path.startsWith('/') || path.startsWith('//') || /[\\\s]/.test(path)
+    || Array.from(path).some((char) => char < ' ' || char === '\u007f')
+    || path.split('/').some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) return null;
+  const target: Where = { hostname: url.hostname, pathname: path };
+  const read = postingOf(target);
+  if (read === null || read.board !== where.tenant || read.site !== site.toLowerCase()) return null;
+  return { platform: read.platform, board: read.board, jobId: read.jobId, page: 'application',
+    applicationUrl: read.applicationUrl };
+}
+
+/** The posting an address shows and which page of it, or null when it shows none (a search, a sign-in page that names
+ *  no application, a choice that is not ours). jr6 B6: a sign-in page whose redirect names an application is that
+ *  application's page. */
+export function parseWorkdayUrl(url: URL): ApplicationUrl | null {
+  if (!matchesUrl(url)) return null;
+  const login = loginRedirectOf(url);
+  if (login !== null) return login;
+  const read = postingOf(url);
+  if (read === null) return null;
+  return { platform: read.platform, board: read.board, jobId: read.jobId, page: read.page,
+    applicationUrl: read.applicationUrl };
 }
 
 /** The canonical application URL when the address shows the application; null on the posting, its choice and every
