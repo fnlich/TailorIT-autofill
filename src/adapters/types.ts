@@ -436,8 +436,10 @@ export interface Adapter {
    *  facts its portal frame's bar gives an IForm leaf frame (ChainStepFacts), which SHELL passes (FIXPLAN §6.12
    *  item 2); absent or null elsewhere. No adapter reads them yet. */
   nextButton?(root: Element, facts?: ChainStepFacts | null): HTMLElement | null;
-  /** Identified so it is never clicked. */
-  submitButton?(root: Element): HTMLElement | null;
+  /** Identified so it is never clicked. jr6 ENGINE E2 (the ICIMS package's ICIMS-17: an IForm leaf frame's final
+   *  Submit, found by its portal's step facts): `facts` as for nextButton, which SHELL passes where the leaf's Submit is
+   *  asked (FIXPLAN §6.12 item 2); absent or null elsewhere, and no caller passes them yet. */
+  submitButton?(root: Element, facts?: ChainStepFacts | null): HTMLElement | null; // jr6 ENGINE
   /** Buttons beside the fields that do something else (fill the form from another service, locate the person, clear an
    *  answer, import a file from a drive): identified so they are never clicked, as Submit is not. */
   neverPress?(root: Element): Element[];
