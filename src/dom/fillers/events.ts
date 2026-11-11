@@ -13,6 +13,9 @@
  * own editing instead (text.ts fillEditable): it takes the focus (no scroll) and its content the selection, each insert
  * is offered first as an untrusted, cancelable beforeinput (EDITING_EVENTS), and document.execCommand makes it where
  * no editor took it, with the browser's own (trusted) input event; then the box loses the focus. That box alone.
+ * jr6 ENGINE E3 (FIXPLAN §6.2 item 15, WD-23): a date drawn in parts (date-parts.ts) has each part sent focus and
+ * focusin, untrusted, right before its write (FOCUS_EVENTS, fireFocus): the page's focus never moves, so no part is
+ * left between the writes.
  */
 
 /** The events the extension may cause on page elements. */
@@ -120,6 +123,22 @@ export function fireInput(el: Element, kind: 'text' | 'plain'): void {
 export function fireChange(el: Element): void {
   el.dispatchEvent(new (windowOf(el).Event)('change', { bubbles: true }));
 }
+
+// ── jr6 ENGINE E3 (FIXPLAN §6.2 item 15, WD-23) ──
+/** The events each part of a date drawn in parts gets right before its write (date-parts.ts), on that part alone, as a
+ *  person's focus would send them, untrusted (Jobright 1.25.2's MyWorkDay date fill focuses each part before its
+ *  value, input and change). */
+export const FOCUS_EVENTS = ['focus', 'focusin'] as const;
+
+/** focus (not bubbling) and focusin (bubbling), untrusted, to one part of a date drawn in parts before its write. The
+ *  page's focus does not move: no other part is left (blurred) by it, which would have the page validate the date half
+ *  written (the fix of 2026-11-08, date-parts.ts). */
+export function fireFocus(el: Element): void {
+  const view = windowOf(el);
+  el.dispatchEvent(new view.FocusEvent('focus', { bubbles: false, composed: true }));
+  el.dispatchEvent(new view.FocusEvent('focusin', { bubbles: true, composed: true }));
+}
+// ── end jr6 ENGINE E3 ──
 
 /** focusout (bubbling) and blur, so validation that runs when a field is left runs. Nothing is focused. */
 export function fireLeave(el: Element): void {

@@ -60,7 +60,7 @@
  * Detection never touches the challenge: it only reads where it is.
  */
 import type { Adapter } from '../adapters/types';
-import { accountSectionOf } from './account-section';
+import { accountRowsIn } from './account-section';
 import { isAuthField } from './kinds';
 import { labelOfControl, referenced } from './labels';
 import { isInOwnUi } from './own-ui';
@@ -119,9 +119,11 @@ export function detectPause(doc: Document, root: Element | null, adapter: Adapte
   // Account fields are the page's own: a frame of its origin is read for challenges alone. The snapshot build of
   // 2026-11-06 (core-x, item 2): an account section the adapter declares inside the application form (iCIMS's "Create
   // a login") is a section of the form, never an account page: its boxes are not read here (dom/account-section.ts).
-  const account = accountSectionOf(adapter, doc, root);
+  // jr6 ENGINE E2 (FIXPLAN §6.2 item 6, ICIMS-04): or its rows (careers-sentinel's Login, Password and Re-enter beside
+  // the profile's name and email): a box inside one of them is not read either.
+  const account = accountRowsIn(adapter, doc, root);
   const inputs = all<HTMLInputElement>(scopes.filter((each) => each.frame === null), 'input').map(({ el }) => el)
-    .filter((input) => (account === null || !account.contains(input)) && isUserVisible(input, cache));
+    .filter((input) => !account.some((row) => row.contains(input)) && isUserVisible(input, cache));
   const passwords = inputs.filter((input) => input.type === 'password');
   if (passwords.length >= 2) return { kind: 'create-account', evidence: 'password' };
   if (passwords.length === 1) {
