@@ -111,8 +111,50 @@ export interface WidgetDecl {
    *  each view read at once, and an option is shown again the same way. */
   drawnWhole?: true;
   // ── end s2 lists ──
+  // ── jr6 ENGINE E0 (FIXPLAN §3.1 items 1 to 5): declared by platform widget hooks; types only until E1 and E3 ──
+  /** jr6 FIXPLAN §3.1 item 1 (ICIMS-01 and icims-new-1; every iCIMS Candidate Profile: fixtures/icims/githubinc-profile
+   *  .frame-1.html, and snapshot6 icims1 and icims2's jr6 cases jr6-sentinel-profile.frame-1, jr6-ars-profile and
+   *  jr6-ars-profile-address): the widget's own text box where it sits outside the widget's element (iCIMS's dropdown:
+   *  its anchor opens a container beside it, whose search box takes the query). It is the widget's part, never a field
+   *  nor a control the scan counts, and a search types into it. Read from ENGINE E1 on (FIXPLAN §6.2 item 2). */
+  input?: HTMLInputElement;
+  /** jr6 FIXPLAN §3.1 item 2 (SR-2; SmartRecruiters' City search on fixtures/smartrecruiters/xplor-one-click.html and
+   *  the jr6 case jr6-wiser-one-click): a query shorter than this many characters is never typed (the page's own
+   *  minimum, its minquerylength). Read from ENGINE E1 on (FIXPLAN §6.2 item 3). */
+  minQueryLength?: number;
+  /** jr6 FIXPLAN §3.1 item 3 (U-04; UltiPro's School Name on fixtures/ultipro/resume-review.html): a search whose typed
+   *  text stands as the answer where no result matches it: the box keeps the typed text (checked by its value) instead
+   *  of being put back. Read from ENGINE E1 on (FIXPLAN §6.2 item 5). */
+  freeText?: true;
+  /** jr6 FIXPLAN §3.1 item 4 (SR-1; the screening step's required dropdowns on fixtures/smartrecruiters/xplor-screening
+   *  .html, whose options the page publishes in its questions' definition): the whole list as the page publishes it,
+   *  every option's label in the page's order. It is the field's reading at scan time, as a storedList is (never
+   *  'lazy'): its choice opens the list, finds the planned option by its label and reads it back. Read from ENGINE E1
+   *  on (FIXPLAN §6.2 item 3). */
+  knownOptions?: readonly string[];
+  /** jr6 FIXPLAN §3.1 item 5 (WD-18: Workday's "Type to Add Skills" on fixtures/workday/resolvetech-my-experience.html
+   *  and s2-exelixis-my-experience.html; U-05: UltiPro's Skills on fixtures/ultipro/resume-review.html): a box that
+   *  takes several answers one at a time (WidgetTags). Read from ENGINE E3 on (FIXPLAN §6.2 item 13). */
+  tags?: WidgetTags;
+  // ── end jr6 ENGINE E0 ──
   /** The snapshot this declaration was written from. */
   snapshot: string;
+}
+
+/** jr6 FIXPLAN §3.1 item 5 (WD-18, U-05): a box that takes several answers one at a time, each shown as a chip once it
+ *  is added (WidgetDecl.tags). It is scanned as one field of kind 'text'. Its filler (ENGINE E3) splits the planned
+ *  text on MANY_SEPARATOR (core/resolver/values.ts, RULES R0: the separator manyValues joins a text box's values with),
+ *  skips a value the chips already show (case-insensitive), adds each other one, stops at `cap` and verifies by the
+ *  chips; it never removes a chip the run did not add. */
+export interface WidgetTags {
+  /** The chips the box shows now, one per answer it holds. */
+  chips(): readonly Element[];
+  /** The control that adds the typed value (UltiPro's Add beside its Skills box), or null while none shows. */
+  add?(): HTMLElement | null;
+  /** The typed value is added by choosing the result that matches it exactly (Workday's Skills prompt). */
+  search?: true;
+  /** The most chips the box takes. */
+  cap?: number;
 }
 
 /** A search's results list that no ARIA names (WidgetDecl.results). */
@@ -132,6 +174,17 @@ export interface WidgetResults {
    *  2-level source list: a row with a chevron and no radio, fixtures/workday/s2-verily-source-open.html): read as a
    *  result that cannot be chosen, so it is never chosen. */
   unchoosable?: string;
+  // ── jr6 ENGINE E0 (FIXPLAN §3.1 items 6 and 7): declared by SmartRecruiters; types only until E1 ──
+  /** jr6 FIXPLAN §3.1 item 6 (SR-1: the screening dropdowns on fixtures/smartrecruiters/xplor-screening.html; SR-6: the
+   *  phone's country on fixtures/smartrecruiters/xplor-one-click.html): the results as the page draws them, where
+   *  `option` cannot reach them from `list` (options slotted into the list or drawn in another shadow tree: a slot's
+   *  assigned elements). Read in place of `option`'s matches from ENGINE E1 on (FIXPLAN §6.2 items 1 and 3). */
+  options?(list: Element): readonly Element[];
+  /** jr6 FIXPLAN §3.1 item 7 (SR-1, fixtures/smartrecruiters/xplor-screening.html: the inner .c-spl-dropdown-item of
+   *  each spl-select-option): the element a choice of `option` clicks, where a click on the result itself chooses
+   *  nothing; null: the result itself. Read from ENGINE E1 on (FIXPLAN §6.2 items 1 and 3). */
+  pressTarget?(option: Element): HTMLElement | null;
+  // ── end jr6 ENGINE E0 ──
 }
 
 // ── s2 wd: a date drawn in parts ──
@@ -219,6 +272,47 @@ export interface SignInForm {
   scriptSubmits?: true;
 }
 
+// ── jr6 ENGINE E0 (FIXPLAN §3.1 items 12, 13 and 15): the account pages' and the IForm chain's facts, types only ──
+/** jr6 FIXPLAN §3.1 item 12 (WD-02, ICIMS-07): a character class a page's password rules require; 'alpha' is a letter
+ *  of either case. */
+export type PagePasswordClass = 'upper' | 'lower' | 'digit' | 'special' | 'alpha';
+
+/** jr6 FIXPLAN §3.1 item 12 (WD-02: Workday's Create Account, fixtures/workday/workday-create-account.html and
+ *  s2-verily-create-account.html; ICIMS-07: iCIMS's "Create a login", fixtures/icims/githubinc-profile.frame-1.html and
+ *  the jr6 case jr6-sentinel-basic-info.frame-1): a create-account page's own password rules, as the page shows them
+ *  beside its password box (Adapter.passwordRules). Read fail open: a rule the adapter cannot read with certainty is
+ *  left out. The page's words only, never a value. */
+export interface PagePasswordRules {
+  /** The fewest characters the page takes ("A minimum of N characters", "at least: N characters"). */
+  minLength?: number;
+  /** The character classes the page requires. */
+  requires?: readonly PagePasswordClass[];
+  /** The password may not be the same as the login. */
+  notLogin?: true;
+}
+
+/** jr6 FIXPLAN §3.1 item 13 (WD-05; Workday's Sign In after Create Account, fixtures/workday/verily-sign-in-verify
+ *  .html): the kind of an account error a page shows (Adapter.accountErrorKind): 'verify-email', the account waits for
+ *  the person to verify their email; 'reset-password', the page asks for the password to be reset; 'wrong-credentials',
+ *  the email or the password is wrong, or the account is locked. */
+export type AccountErrorKind = 'verify-email' | 'reset-password' | 'wrong-credentials';
+
+/** jr6 FIXPLAN §3.1 item 15 (ICIMS-17; iCIMS's IForm steps, the jr6 cases jr6-nyu-iform-signature, jr6-nyu-iform-offer
+ *  and jr6-sentinel-iform-selfid, each a portal frame-1 and a leaf frame-2): what a portal frame's step bar says, for
+ *  the IForm leaf frame inside it, which shows no bar of its own and, on another origin, cannot read the portal's
+ *  (Adapter.chainStepFacts). Page structure only, never a value. */
+export interface ChainStepFacts {
+  /** The current step's id, as the bar names it. */
+  stepId: string;
+  /** The current step is the bar's last. */
+  lastStep: boolean;
+  /** The step's packet counter, "( n/m )" in its title: the nth form of m; null where the title shows none. */
+  packet: { n: number; m: number } | null;
+  /** How many packet counters the page shows (more than one: the facts cannot say which form is the leaf's). */
+  counters: number;
+}
+// ── end jr6 ENGINE E0 ──
+
 export interface Adapter {
   id: AdapterId;
   /** Pure (url.ts): does this adapter handle this address? */
@@ -262,6 +356,16 @@ export interface Adapter {
    *  draws the answer on the span beside an opacity-0 input, and setting .checked changes only the input); null for
    *  the input's own state. */
   checkedOf?(input: HTMLInputElement): boolean | null;
+  /** jr6 FIXPLAN §3.1 item 8 (ICIMS-14; the self-identification IForms: fixtures/icims/edgewater-self-id-veteran
+   *  .frame-2.html, nyu-self-id-disability.frame-2.html and the jr6 case jr6-sentinel-iform-selfid.frame-2): the words
+   *  of a radio's or a checkbox's option where no label element holds them, read from the text run the page draws after
+   *  it; null where the page's own labels decide. Read by the scanner from ENGINE E2 on (FIXPLAN §6.2 item 8). */
+  optionTextFor?(input: HTMLInputElement): string | null;
+  /** jr6 FIXPLAN §3.1 item 9 (O4; Oracle's phone number on fixtures/oracle/hjf-apply-section.html and hjf-after-submit
+   *  .html, a box with no border or background of its own inside a bordered group beside its country code): the element
+   *  that draws a borderless control's box, or null. dom/camouflage.ts takes it as the control's drawn box where it is
+   *  visible, encloses the control and shows a border or a background (ENGINE E2, FIXPLAN §6.2 item 7). */
+  controlBox?(control: Element): Element | null;
   /** Elements the scanner takes as widget candidates besides its own ARIA roles (Ashby's Yes/No groups), each asked of
    *  widgetFor; a native control inside one widgetFor declares is that widget's part, never a field nor a hidden
    *  control counted. */
@@ -308,19 +412,29 @@ export interface Adapter {
   uploadPickerScope?(control: HTMLElement): Element | null;
   // ── end v5 p2-fill ──
   widgetFor?(control: Element): WidgetDecl | null;
+  /** jr6 FIXPLAN §3.1 item 10 (ICIMS-02: State after Country, the jr6 cases jr6-ars-profile and
+   *  jr6-ars-profile-address; ADP-2: "State / Territory" after Country, the jr6 case jr6-personal-us-state; O3:
+   *  Oracle's address block, fixtures/oracle/hjf-apply-section.html; ICIMS-19: "Please specify" after "How did you
+   *  hear about us?", the jr6 case jr6-ars-profile-filled): the control whose write resets this one (a parent whose
+   *  answer redraws, reloads or enables it), or null. A pass writes the parent first and lets the dependent settle, and
+   *  a dependent whose parent was written is planned again (ENGINE E3, FIXPLAN §6.2 item 14). */
+  dependsOn?(control: Element): Element | null;
   /** s2 wd: a date drawn in parts (DatePartsDecl), asked of each element the scanner reads as no field and no widget
    *  (Workday's div[role=group][data-automation-id=dateInputWrapper]); null for any other. */
   dateFor?(control: Element): DatePartsDecl | null;
   isBusy?(doc: Document): boolean;
   stepSignature?(doc: Document): { heading?: string; progress?: string; urlPart?: string; anchors: string[] };
-  nextButton?(root: Element): HTMLElement | null;
+  /** jr6 FIXPLAN §3.1 item 16 (ICIMS-17), here and on isFinalStep and stepSubmitNext.laterStep: `facts`, the step
+   *  facts its portal frame's bar gives an IForm leaf frame (ChainStepFacts), which SHELL passes (FIXPLAN §6.12
+   *  item 2); absent or null elsewhere. No adapter reads them yet. */
+  nextButton?(root: Element, facts?: ChainStepFacts | null): HTMLElement | null;
   /** Identified so it is never clicked. */
   submitButton?(root: Element): HTMLElement | null;
   /** Buttons beside the fields that do something else (fill the form from another service, locate the person, clear an
    *  answer, import a file from a drive): identified so they are never clicked, as Submit is not. */
   neverPress?(root: Element): Element[];
-  /** 'unknown' is treated as final: nothing is pressed. */
-  isFinalStep?(doc: Document): 'final' | 'not-final' | 'unknown';
+  /** 'unknown' is treated as final: nothing is pressed. jr6 FIXPLAN §3.1 item 16: `facts` as for nextButton. */
+  isFinalStep?(doc: Document, facts?: ChainStepFacts | null): 'final' | 'not-final' | 'unknown';
   // ── snapshot build 2026-11-06 (core-x, items 1 and 2) ──
   /** The platform's step buttons whose words say Submit on every step, the last one's or not (iCIMS's "Submit Profile"
    *  and "Submit": docs/ARCHITECTURE.md, the snapshot build of 2026-11-06), and the page's own step bar. Only on a step isFinalStep reads 'not-final' is
@@ -331,17 +445,30 @@ export interface Adapter {
   stepSubmitNext?: {
     buttons: readonly string[];
     /** The step bar's item after the current one, a person can see; null when the bar shows none (the last step, no
-     *  bar, a bar the adapter cannot read with certainty). */
-    laterStep(doc: Document): Element | null;
+     *  bar, a bar the adapter cannot read with certainty). jr6 FIXPLAN §3.1 item 16: `facts` as for nextButton. */
+    laterStep(doc: Document, facts?: ChainStepFacts | null): Element | null;
   };
+  /** jr6 FIXPLAN §3.1 item 15 (ICIMS-17; ChainStepFacts names its snapshots): on a portal frame that draws the step bar
+   *  around an IForm leaf frame, what the bar says (its current step, whether it is the last, the packet counter); null
+   *  on any other page. Read in the portal frame; SHELL relays them to the leaf (FIXPLAN §6.12 item 2). */
+  chainStepFacts?(doc: Document): ChainStepFacts | null;
   /** The create-account part an application form holds inside one of its steps (iCIMS's Candidate Profile, "Create a
    *  login": Login, Password, Password (Re-enter)), an element inside the form root that holds the adapter's declared
    *  create-account form (signInForm 'create-account') and nothing else of the application; null where the step shows
    *  none. Its password boxes never make the page an account's creation (dom/pause-detect.ts): the rest of the form
    *  fills as usual. Nothing in it is filled from the profile (the adapter excludes it from the fields); it follows
    *  Sign-in mode (Auto types the saved job-site sign-in into it, its button the person's; Manual leaves it to the
-   *  person), and Next and Submit hold while one of its required boxes is empty (dom/account-section.ts). */
+   *  person), and Next and Submit hold while one of its required boxes is empty (dom/account-section.ts). jr6: where no
+   *  single element holds that part alone, the adapter declares its rows instead (accountRows). */
   accountSection?(root: Element): Element | null;
+  /** jr6 FIXPLAN §3.1 item 11 (ICIMS-04; snapshot6 icims1, careers-sentinel's Basic Information, the jr6 case
+   *  jr6-sentinel-basic-info.frame-1): the create-account part as rows, where no single element holds it alone (the
+   *  Login, Password and Re-enter rows of a pane that also asks the person's name and email); null where the step
+   *  shows none. Rows, where a page answers some, are read in place of accountSection's answer. The plan widens
+   *  accountSection's answer to a list; it is a hook of its own instead, so accountSection's answer stays one element
+   *  for the code and tests that read it as one (icims-core.browser.test.ts). dom/account-section.ts accountRowsOf
+   *  reads both as one list; until ENGINE E2 (FIXPLAN §6.2 item 6) only a list of one is a section. */
+  accountRows?(root: Element): readonly Element[] | null;
   /** core-x, item 3: on a company's wrapper page (never a root), the frame of the same host it draws the application
    *  in (iCIMS's iframe#icims_content_iframe, at the posting's own address with ?in_iframe=1); null on any other page.
    *  The agent's presses, Next, Submit, the success read and Sign-in Auto act in that frame (content/runtime.ts
@@ -357,6 +484,11 @@ export interface Adapter {
      *  Experience editors: "Update", which folds the editor into the entry's summary); null when the block shows none
      *  (a saved entry). Pressed once after the step's fill, never in a dry run (content/repeatables.ts saveBlocks). */
     save?(block: Element): HTMLElement | null;
+    /** jr6 FIXPLAN §3.1 item 17 (WD-07: Workday's My Experience after "Autofill with Resume", fixtures/workday/
+     *  s2-exelixis-my-experience.html; ICIMS-22: iCIMS's profile after its résumé parse, the jr6 case
+     *  jr6-nyu-profile-parsed.frame-1): the block's own Delete, or null where it shows none. Never pressed by a run:
+     *  only ENGINE's gated door may press it, after owner question Q1 (FIXPLAN §6.2 item 16). */
+    removeButton?(block: Element): HTMLElement | null;
   }>;
   /** The blocks that show a saved entry's summary, with its words (PrefillEntryView): the planner finds the entry each
    *  holds by its fingerprint, never by its place (the Phase 7a review: Workable's saved Education and Experience). */
@@ -376,6 +508,23 @@ export interface Adapter {
    *  declared). Pressed only by the sign-in prelude door of dom/fillers/not-submit.ts, for Sign-in Auto alone, and only
    *  while the page shows no form for the wall. */
   signInPrelude?(doc: Document, wall: SignInWall): HTMLElement | null;
+  // ── jr6 ENGINE E0 (FIXPLAN §3.1 items 12 to 14): declared by Workday and iCIMS, read by SHELL; types only ──
+  /** jr6 FIXPLAN §3.1 item 12 (WD-02, ICIMS-07; PagePasswordRules names their snapshots): the password rules the page
+   *  shows for `form`, a create-account form of its own (signInForm 'create-account', or its account section's), read
+   *  fail open: null where it shows none the adapter can read. SHELL checks the saved password against them before
+   *  typing it (FIXPLAN §6.12 item 1). */
+  passwordRules?(form: SignInForm): PagePasswordRules | null;
+  /** jr6 FIXPLAN §3.1 item 13 (WD-05; AccountErrorKind names its snapshot): the kind of the account error `el` shows,
+   *  `el` one of the errors the adapter reads on its sign-in or create-account page (errors: Workday's alerts above its
+   *  form); null where its words name none of the kinds. SHELL tells the person what to do by it (FIXPLAN §6.12
+   *  item 4). */
+  accountErrorKind?(el: Element): AccountErrorKind | null;
+  /** jr6 FIXPLAN §3.1 item 14 (WD-03; Workday's Sign In page of a tenant where the person has no account,
+   *  fixtures/workday/workday-sign-in.html, workday-landing.html and the jr6 case jr6-brookfield-sign-in): its "Create
+   *  Account" link while it shows, or null. Never pressed by a run: only SHELL's gated door may press it, after owner
+   *  question Q4 (FIXPLAN §6.12 item 8). */
+  createAccountSwitch?(doc: Document): HTMLElement | null;
+  // ── end jr6 ENGINE E0 ──
   /** v3 Phase 5, the auto-apply agent: on a posting page that shows no form, the one control that opens the
    *  application (Greenhouse's and Lever's Apply, Ashby's Application tab), or null. Pressed only by
    *  the entry door of dom/fillers/not-submit.ts, for the agent alone, and (v5 p2-fill) for the person's Open
@@ -426,5 +575,22 @@ export interface Adapter {
      *  (dom/resume-parse.ts) before it writes the rest over it (Jobright uploads the résumé first for the same reason). */
     resumeParse?: true;
     // ── end v5 p2-fill ──
+    /** jr6 FIXPLAN §3.1 item 18 (U-06; UltiPro's résumé parser on fixtures/ultipro/application.html): the longest a
+     *  pass waits for this page's parse (resumeParse), in place of dom/resume-parse.ts PARSE_CAP_MS (20 s), for a page
+     *  whose parse takes longer. ENGINE reads it after owner question Q3 (FIXPLAN §6.2 item 17); nothing does yet. */
+    resumeParseCapMs?: number;
+    // ── jr6 APPLYPLAN A0 item 3 (decision D5): types only; APPLYPLAN F2 builds the behaviour ──
+    /** jr6 APPLYPLAN D5 (B5; verily's steps at …/apply, snapshot1 and snapshot4, fixtures/workday/
+     *  s2-verily-my-information.html): its application can be drawn at an address its parser reads as the posting
+     *  (Workday's `…/apply`, verily): the runtime lets this adapter (never the generic one) claim the page there, and
+     *  its late-form watch runs there. */
+    formAtPosting?: true;
+    /** jr6 APPLYPLAN D5 (B4: ADP's guest view, drawn after its job details' Consent & Continue, snapshot6 adp1 and
+     *  adp2; C6: Workable's job site, whose form opens in a dialog, awaiting a capture): the platform draws its
+     *  application in place, at one address, at any time (ADP's guest view after its job details; Workable's job site's
+     *  dialog): the document is watched for its form for its life (the company-page watch's cheap way), and only the
+     *  platform's own adapter may claim it. */
+    formInPlace?: true;
+    // ── end jr6 APPLYPLAN A0 item 3 ──
   };
 }

@@ -88,3 +88,35 @@ describe('an account section inside the application form (M9: A2a, A2b, A2c)', (
     expect([outside.section, outside.form, outside.left]).toEqual([null, null, 0]);
   });
 });
+
+// jr6 ENGINE E0 (FIXPLAN §3.1 item 11, ICIMS-04): the part declared as rows (Adapter.accountRows) is read as one list
+// with accountSection's one element. ENGINE E2 (FIXPLAN §6.2 item 6) makes several rows a section; until then they are
+// none, and the page reads as before.
+describe('jr6 E0: an account part declared as rows (accountRows)', () => {
+  /** The adapter above, declaring `rows` through accountRows and no accountSection. */
+  const byRows = (rows: (root: Element) => readonly Element[] | null): Adapter =>
+    ({ ...adapter(login), accountSection: undefined, accountRows: rows });
+  const alone = (page: Document) => page.getElementById('elsewhere')!.remove();
+
+  it('a list of one is that section, read as accountSection’s element is', async () => {
+    const { doc, section, form, left, pause } = await read(byRows((root) => [login(root)!]), alone);
+    expect(section).toBe(doc.getElementById('login'));
+    expect(form?.password).toBe(doc.getElementById('pw'));
+    expect(left).toBe(3);
+    expect(pause).toBeNull();
+  });
+
+  it('several rows are no section until ENGINE E2: the page reads as before', async () => {
+    const rows = (root: Element) => ['user', 'pw', 'pw2'].map((id) => root.ownerDocument.getElementById(id)!);
+    const { section, form, left, pause } = await read(byRows(rows), alone);
+    expect([section, form, left, pause]).toEqual([null, null, 0, 'create-account']);
+  });
+
+  it('no rows (null or none) leaves accountSection’s answer', async () => {
+    for (const none of [() => null, () => []]) {
+      const { doc, section, left } = await read({ ...adapter(login), accountRows: none }, alone);
+      expect([section, left]).toEqual([doc.getElementById('login'), 3]);
+      removeFixtures(document);
+    }
+  });
+});
