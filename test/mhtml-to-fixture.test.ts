@@ -2497,8 +2497,6 @@ const CHOSEN_STATE_FIXTURES = [
 const MARKED_FIXTURES: Record<string, string[]> = {
   'adp/questions.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
   'hibob/mplc-form.html': [CHOSEN_MARK_LABELS.angularComponent],
-  'oracle/hjf-after-submit.html': [CHOSEN_MARK_LABELS.roving],
-  'oracle/hjf-apply-section.html': [CHOSEN_MARK_LABELS.roving],
   'smartrecruiters/xplor-one-click.html': [CHOSEN_MARK_LABELS.angularComponent],
   'smartrecruiters/xplor-screening.html': [CHOSEN_MARK_LABELS.angularComponent],
 };
