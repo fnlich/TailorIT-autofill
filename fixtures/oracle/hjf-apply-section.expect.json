@@ -53,11 +53,10 @@
       "kind": "combobox",
       "required": false,
       "section": "Contact Information",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "input#country-codes-dropdownphoneNumber",
-      "note": "The phone's country code (cx-select: input[role=combobox] aria-haspopup=grid aria-controls=<id>-listbox): jr6 O5 reads its own sub-label, span.input-field__label \"Country code\", before the row's label[for] (\"Phone Number\", the number box's question). Its list is drawn only when opened, and no snapshot shows it."
+      "note": "The phone's country code, a cx-select (input[role=combobox] aria-haspopup=grid aria-controls=<id>-listbox): jr6 O5 reads its own sub-label, span.input-field__label \"Country code\", before the row's label[for] (\"Phone Number\", the number box's question). jr6 O1 declares it (widgetFor: its toggle opens a grid of rows, read from ENGINE E1 on); its list is drawn only when opened, and no snapshot shows it."
     },
     {
       "label": "Phone Number",
@@ -73,21 +72,20 @@
       "kind": "combobox",
       "required": true,
       "section": "Address Please enter your home address.",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "input#country-17"
+      "control": "input#country-17",
+      "note": "A cx-select declared by jr6 O1 (widgetFor): its toggle opens the grid its aria-controls names; no snapshot shows it open."
     },
     {
       "label": "Address Line 1",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": true,
       "section": "Address Please enter your home address.",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "input#addressLine1-39",
-      "note": "An address search: \"Enter your street name and other address details to see suggestions\"."
+      "note": "An address search (Oracle Maps: \"Enter your street name and other address details to see suggestions\", cx-select-input--auto-suggest, no toggle): jr6 O2 declares it a search (typeahead-remote)."
     },
     {
       "label": "Address Line 2",
@@ -107,43 +105,43 @@
     },
     {
       "label": "ZIP Code",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": true,
       "section": "Address Please enter your home address.",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "input#postalCode-42"
+      "control": "input#postalCode-42",
+      "note": "jr6 O2: a search (typeahead-remote) over the country's postal codes."
     },
     {
       "label": "City",
       "kind": "combobox",
       "required": true,
       "section": "Address Please enter your home address.",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "input#city-43"
+      "control": "input#city-43",
+      "note": "A cx-select declared by jr6 O1, its list learned under the Country shown."
     },
     {
       "label": "State",
       "kind": "combobox",
       "required": true,
       "section": "Address Please enter your home address.",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "input#region2-44"
+      "control": "input#region2-44",
+      "note": "A cx-select declared by jr6 O1, its list learned under the Country shown."
     },
     {
       "label": "County",
       "kind": "combobox",
       "required": true,
       "section": "Address Please enter your home address.",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "input#region1-45"
+      "control": "input#region1-45",
+      "note": "A cx-select declared by jr6 O1, its list learned under the Country shown."
     },
     {
       "label": "Were you referred by an HJF employee? If so, please provide their name.",

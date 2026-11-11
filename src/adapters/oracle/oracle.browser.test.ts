@@ -161,8 +161,10 @@ describe("a section page on Oracle's government cloud (the owner's snapshot of 2
     expect(result.fields.length).toBeGreaterThan(20);
     const fillable = result.fields.filter((field) => fillabilityOf(field, result.target(field.key)?.widget).fillable);
     // Every row's label is rgb(90, 108, 119), between the veil's darkest (51) and lightest (255): refused. Three are
-    // worded in black (the drop zone's words and the two agreements), which read even on the veil over black.
-    expect(fillable.map((field) => field.label)).toEqual(['Drop Cover Letter Here',
+    // worded in black (the drop zone's words and the two agreements), which read even on the veil over black. jr6 O5,
+    // O1: the phone's country code is labelled by its own sub-label, grey too but drawn inside the phone row's opaque
+    // white group (rgb(255, 255, 255)), which no image shows through, and declared a widget: it reads.
+    expect(fillable.map((field) => field.label)).toEqual(['Country code', 'Drop Cover Letter Here',
       'I agree to receive updates about new job opportunities.', 'I agree to receive marketing communications']);
   });
 

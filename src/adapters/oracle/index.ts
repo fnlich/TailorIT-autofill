@@ -79,7 +79,10 @@
  * - Never pressed (O16): the gate's "Do you want to communicate by phone instead?".
  * - Labels (O5): the phone's country-code picker by its own sub-label, "Country code", read first (labelFirst).
  * - The phone's number box (O4): drawn by its bordered phone-row group (controlBox).
- * Nothing here reads, logs or sends a value.
+ * - Widgets (O1, O2): every cx-select (input.cx-select-input[role=combobox]) a combobox opened by its toggle, its
+ *   results the rows of the grid its aria-controls names, chosen by their label part; Address Line 1 (Oracle Maps'
+ *   search) and ZIP Code are searches (typeahead-remote); the address's dependent lists learn under the Country shown.
+ * Nothing here reads, logs or sends a value (the Country a block shows is hashed into a learned list's key only).
  */
 // The P2 review (security 1)
 import { oracleCandidateExperienceShown } from '../../dom/page-signals';
@@ -87,7 +90,7 @@ import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { oracleOwnDomain } from '../../shared/hosts';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
-import type { Adapter, SignInForm, SignInWall } from '../types';
+import type { Adapter, SignInForm, SignInWall, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl } from './url';
 
 /** The snapshots the hooks were written from (fixtures/oracle/). */
@@ -103,6 +106,10 @@ export const ORACLE_SNAPSHOTS = ['fixtures/oracle/jpmc-posting.html', 'fixtures/
 export const ORACLE_FORM_LATE_MS = 30_000;
 /** How long the agent's entry waits for APPLY NOW (the posting is drawn 5 to 6 s after the address commits). */
 export const ORACLE_ENTRY_WAIT_MS = 15_000;
+/** jr6 O1: how long a cx-select's list may show no result, no busy sign and no change after a query before the query is
+ *  taken to have found nothing (Jobright 1.25.2's operations.fillSelectField polls Oracle's rows up to 14 times, 150 to
+ *  300 ms apart, ignoring a "No results" row: 2.1 to 4.2 s). */
+export const ORACLE_EMPTY_AFTER_MS = 3_000;
 
 /** The first of `elements` a person can see. */
 function shown<T extends Element>(elements: readonly T[], cache: ScanCache = newScanCache()): T | null {
@@ -255,6 +262,103 @@ function controlBox(control: Element): Element | null {
     ? control.closest('.input-row-composite__inputs.phone-row[role="group"]') : null;
 }
 
+// ── jr6 O1, O2: Oracle's cx-select comboboxes ─────────────────────────────────────────────────────────────────────
+
+/** jr6 O1: a cx-select, hjf-apply-section.html's <input autocomplete="none" name="country" id="country-17" type="text"
+ *  role="combobox" aria-autocomplete="list" aria-haspopup="grid" aria-controls="country-17-listbox" aria-expanded="false"
+ *  ... class="cx-select-input"> beside its <button type="button" id="country-17-toggle-button" tabindex="-1"
+ *  aria-label="Open the drop-down list for Country." aria-expanded="false" aria-controls="country-17-listbox"
+ *  class="icon-dropdown-arrow">: the phone's country code, the address's Country, Address Line 1, ZIP Code, City, State
+ *  and County, and (hjf-after-submit.html) the education editor's Degree, School, the dates' Month and Year parts and
+ *  Country. Its list is drawn only while open, at the end of the page under the id its aria-controls names, and no
+ *  snapshot shows one open: what it holds is Jobright 1.25.2's reading (operations.fillSelectField and rules.getRules:
+ *  rows div[role=row] of div[role=gridcell] holding span.cx-select__list-item--content, a "No results" row when
+ *  nothing matches), to be confirmed on a capture of an open list (owner question Q23). */
+const CX_SELECT = 'input.cx-select-input[role="combobox"]';
+
+/** Oracle's own words for an empty list's one row (Jobright 1.25.2's operations reads "no results" and "no results
+ *  found" so): never a result. */
+const NO_RESULTS = /^no results(?: were)?(?: found)?[.!]*$/;
+
+/** The words of an element, white space collapsed, in lower case. */
+const wordsOf = (el: Element) => (el.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/** jr6 O1: a cx-select's results: the rows of its list, Oracle's "No results" row left out. */
+function cxRows(list: Element): readonly Element[] {
+  return Array.from(list.querySelectorAll('[role="row"]')).filter((row) => !NO_RESULTS.test(wordsOf(row)));
+}
+
+/** jr6 O1: the part of a row that is its label: its span.cx-select__list-item--content, else its gridcell (Jobright
+ *  1.25.2's operations reads the one, then the other). */
+function cxRowLabel(row: Element): Element | null {
+  return row.querySelector('.cx-select__list-item--content') ?? row.querySelector('[role="gridcell"]');
+}
+
+/** jr6 O1 (O3's block): the address block a geo-hierarchy cx-select sits in, hjf-apply-section.html's <fieldset
+ *  class="address-form__group"> (legend "Address") whose rows <div class="input-row ... geo-hierarchy-form-element">
+ *  hold Country, Address Line 1, ZIP Code, City, State and County; null for any other control. */
+function addressBlockOf(control: Element): Element | null {
+  const row = control.closest('.input-row.geo-hierarchy-form-element');
+  return row === null ? null : row.closest('fieldset.address-form__group, .apply-flow-block');
+}
+
+/** The address block's visible cx-select of that name (country, addressLine1), or null. */
+function addressPart(block: Element, name: string): HTMLInputElement | null {
+  return shown(Array.from(block.querySelectorAll<HTMLInputElement>(
+    `.input-row.geo-hierarchy-form-element ${CX_SELECT}[name="${name}"]`)));
+}
+
+/** jr6 O2: the searches among the cx-selects, typed into rather than chosen from whole: Oracle Maps' street search,
+ *  hjf-apply-section.html's Address Line 1 <input ... name="addressLine1" ... aria-describedby="oracle-maps-search-hint
+ *  ..." class="cx-select-input cx-select-input--auto-suggest"> (no toggle: Jobright 1.25.2's rules.getRules skips it as
+ *  a remote search by that class), and the address's ZIP Code, <input ... name="postalCode" ...>, whose list is every
+ *  postal code of the country (Jobright's operations types it, then its first three characters). */
+function isSearch(control: HTMLInputElement): boolean {
+  return control.classList.contains('cx-select-input--auto-suggest')
+    || (control.name === 'postalCode' && addressBlockOf(control) !== null);
+}
+
+/** jr6 O1: the Country an address block shows now, for its dependent lists (State, City, County, ZIP Code): page text,
+ *  hashed into a learned list's key (dom/widgets/known.ts learnedListKey), so another country's lists are never offered
+ *  for them; null where it shows none. */
+function countryShown(control: Element): string | null {
+  const block = addressBlockOf(control);
+  const country = block === null ? null : addressPart(block, 'country');
+  if (country === null || country === control) return null;
+  const text = country.value.replace(/\s+/g, ' ').trim();
+  return text === '' ? null : text;
+}
+
+/** jr6 O1, O2: the declaration of a cx-select (CX_SELECT): opened by its toggle where it has one, else by the box
+ *  itself, whose aria-expanded says whether it is open; closed by Escape only; its results the rows of the list its
+ *  aria-controls names (cxRows), chosen by a click on the row's label part (cxRowLabel); busy while the list says
+ *  aria-busy; a query that shows no result for ORACLE_EMPTY_AFTER_MS found nothing. Address Line 1 and ZIP Code are
+ *  searches (isSearch). Null for any other control. */
+function widgetFor(control: Element): WidgetDecl | null {
+  // By name, never instanceof: a frame's elements belong to its own window's classes.
+  if (control.localName !== 'input' || !control.matches(CX_SELECT)) return null;
+  const input = control as HTMLInputElement;
+  const doc = input.ownerDocument;
+  const toggle = input.id === '' ? null : doc.getElementById(`${input.id}-toggle-button`);
+  const opener: HTMLElement = toggle !== null && toggle.localName === 'button' ? toggle : input;
+  const listId = input.getAttribute('aria-controls') ?? opener.getAttribute('aria-controls');
+  const context = isSearch(input) ? null : countryShown(input);
+  return {
+    kind: isSearch(input) ? 'typeahead-remote' : 'combobox',
+    opener,
+    expanded: opener,
+    keys: ['Escape'],
+    results: { list: () => (listId === null || listId === '' ? null : doc.getElementById(listId)), option: '[role="row"]',
+      options: cxRows, choose: 'label' },
+    optionLabel: cxRowLabel,
+    busy: ['[aria-busy="true"]'],
+    emptyAfterMs: ORACLE_EMPTY_AFTER_MS,
+    ...(context === null ? {} : { learnContext: context }),
+    snapshot: input.closest('timeline-form-inline') === null ? 'fixtures/oracle/hjf-apply-section.html'
+      : 'fixtures/oracle/hjf-after-submit.html',
+  };
+}
+
 /** Whether the page marks a row-labelled control required: its row's label has input-row__label--required (drawn with
  *  its star, <span class="input-row__label--required-star" aria-hidden="true">). */
 function requiredFor(control: Element): boolean {
@@ -364,4 +468,5 @@ export const oracleAdapter: Adapter = {
   // ── jr6 ORACLE (FIXPLAN §6.11; module header) ──
   labelFirst,
   controlBox,
+  widgetFor,
 };

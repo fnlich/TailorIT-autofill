@@ -27,10 +27,12 @@ import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { detectPause } from '../../dom/pause-detect';
 import { scan, toFieldSpec } from '../../dom/scan';
 import { signInFormOf, signInRefusal } from '../../dom/sign-in-form';
+import { listOf, widgetListOf } from '../../dom/widgets/aria';
 import { platformOfUrl } from '../../shared/hosts';
 import { adaptersFor } from '../index';
-import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
-import { oracleAdapter } from './index';
+import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import type { WidgetDecl } from '../types';
+import { ORACLE_EMPTY_AFTER_MS, oracleAdapter } from './index';
 
 const CAESARS = 'https://edmn.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/78569';
 const ELHR_GATE = 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/email';
@@ -336,5 +338,152 @@ describe('jr6 O4: the phone’s number box is drawn by its bordered phone-row gr
       const control = doc.querySelector(other);
       if (control !== null) expect(oracleAdapter.controlBox!(control), other).toBeNull();
     }
+  });
+});
+
+// ── O1, O2: the cx-select comboboxes ──────────────────────────────────────────────────────────────────────────────
+
+/** Every cx-select of the section page, by its id, and how it is declared: a search (O2) or a list, opened by its
+ *  toggle or (Address Line 1, which has none) by the box itself. */
+const SECTION_SELECTS = [
+  { id: 'country-codes-dropdownphoneNumber', kind: 'combobox', toggle: true },
+  { id: 'country-17', kind: 'combobox', toggle: true },
+  { id: 'addressLine1-39', kind: 'typeahead-remote', toggle: false },
+  { id: 'postalCode-42', kind: 'typeahead-remote', toggle: true },
+  { id: 'city-43', kind: 'combobox', toggle: true },
+  { id: 'region2-44', kind: 'combobox', toggle: true },
+  { id: 'region1-45', kind: 'combobox', toggle: true },
+] as const;
+/** The education editor's cx-selects on the after-Submit save: Degree, School, the dates' parts, the school's Country. */
+const EDITOR_SELECTS = ['contentItemId-46', 'educationalEstablishment-48', 'month-startDate-49', 'year-startDate-49',
+  'month-endDate-50', 'year-endDate-50', 'countryCode-51'] as const;
+
+/** A grid popup shaped as Jobright 1.25.2's selectors read Oracle's (operations.fillSelectField: the element the
+ *  input's aria-controls names, its rows div[role=row] > div[role=gridcell] > span.cx-select__list-item--content):
+ *  synthetic, its words made up; `empty` draws Oracle's lone "No results" row instead. */
+function gridFor(doc: Document, input: HTMLInputElement, words: readonly string[], empty = false): HTMLElement {
+  const grid = doc.createElement('div');
+  grid.id = input.getAttribute('aria-controls')!;
+  grid.setAttribute('role', 'grid');
+  for (const label of empty ? ['No results'] : words) {
+    const row = doc.createElement('div');
+    row.setAttribute('role', 'row');
+    const cell = doc.createElement('div');
+    cell.setAttribute('role', 'gridcell');
+    const span = doc.createElement('span');
+    span.className = 'cx-select__list-item--content';
+    span.textContent = label;
+    cell.append(span);
+    row.append(cell);
+    grid.append(row);
+  }
+  doc.body.append(grid);
+  input.setAttribute('aria-expanded', 'true');
+  return grid;
+}
+
+const listNow = (decl: WidgetDecl) => (typeof decl.results!.list === 'function' ? decl.results!.list()
+  : decl.results!.list);
+
+describe('jr6 O1, O2: every cx-select is declared, its results the rows of its grid', () => {
+  it('hjf-apply-section: each cx-select’s declaration (kind, opener, Escape only, its grid, label clicks)', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+    expect(Array.from(doc.querySelectorAll('input.cx-select-input[role="combobox"]')).map((el) => el.id))
+      .toEqual(SECTION_SELECTS.map((each) => each.id));
+    for (const { id, kind, toggle } of SECTION_SELECTS) {
+      const input = doc.getElementById(id)!;
+      const decl = oracleAdapter.widgetFor!(input)!;
+      const opener = toggle ? doc.getElementById(`${id}-toggle-button`)! : input;
+      expect(decl, id).toMatchObject({ kind, keys: ['Escape'], busy: ['[aria-busy="true"]'],
+        emptyAfterMs: ORACLE_EMPTY_AFTER_MS, snapshot: 'fixtures/oracle/hjf-apply-section.html' });
+      expect(decl.opener, id).toBe(opener);
+      expect(decl.expanded, id).toBe(opener);
+      expect(decl.results, id).toMatchObject({ option: '[role="row"]', choose: 'label' });
+      // Closed, its grid is not in the page.
+      expect(listNow(decl), id).toBeNull();
+    }
+  });
+
+  it('hjf-after-submit: the education editor’s cx-selects are lists (combobox), from that save', async () => {
+    const doc = await load(hjfAfterSubmitHtml, `${HJF}/apply/section/1`, closeChecklist);
+    for (const id of EDITOR_SELECTS) {
+      const decl = oracleAdapter.widgetFor!(doc.getElementById(id)!)!;
+      expect(decl, id).toMatchObject({ kind: 'combobox', snapshot: 'fixtures/oracle/hjf-after-submit.html' });
+      expect(decl.opener, id).toBe(doc.getElementById(`${id}-toggle-button`));
+    }
+  });
+
+  it('declares nothing else: text boxes, the number box, answer pills, uploads, the toggles themselves', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+    for (const selector of ['input#lastName-18', 'input.phone-row__input', 'ul.cx-select-pills-container',
+      'input#attachment-upload-3', 'input#siteLink-1-38', 'button#country-17-toggle-button', 'textarea']) {
+      expect(oracleAdapter.widgetFor!(doc.querySelector(selector)!), selector).toBeNull();
+    }
+  });
+
+  it('a synthetic grid popup: its rows are the results, read by their label part; ARIA alone reads no list',
+    async () => {
+      const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+      const input = doc.querySelector<HTMLInputElement>('input#country-17')!;
+      const grid = gridFor(doc, input, ['Canada', 'United States']);
+      // The auditor's measure: standard ARIA finds no list in a grid.
+      expect(listOf(input, input)).toBeNull();
+      const decl = oracleAdapter.widgetFor!(input)!;
+      expect(listNow(decl)).toBe(grid);
+      const rows = decl.results!.options!(grid);
+      expect(rows).toEqual(Array.from(grid.querySelectorAll('[role="row"]')));
+      expect(rows.map((row) => decl.optionLabel!(row)?.textContent)).toEqual(['Canada', 'United States']);
+      // A row with no label span is read by its gridcell.
+      const bare = rows[0]!.querySelector('span')!;
+      bare.replaceWith(...Array.from(bare.childNodes));
+      expect(decl.optionLabel!(rows[0]!)).toBe(rows[0]!.querySelector('[role="gridcell"]'));
+      // The scan carries the declaration to the widget helpers: their list is the grid.
+      const { result } = planned(doc);
+      const target = result.fields.map((field) => result.target(field.key)).find((one) => one?.control === input)!;
+      expect(target.widget).toMatchObject({ declared: true, kind: 'combobox' });
+      expect(widgetListOf(target.widget!)).toBe(grid);
+    });
+
+  it('a synthetic grid popup with Oracle’s "No results" row: no result', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+    const input = doc.querySelector<HTMLInputElement>('input#postalCode-42')!;
+    const grid = gridFor(doc, input, [], true);
+    const decl = oracleAdapter.widgetFor!(input)!;
+    expect(decl.results!.options!(grid)).toEqual([]);
+    for (const words of ['No results found.', 'no results were found']) {
+      grid.querySelector('span')!.textContent = words;
+      expect(decl.results!.options!(grid), words).toEqual([]);
+    }
+  });
+
+  it('the scan reads each declared cx-select as a widget the helpers act on (no longer widget-phase-4)', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+    const { result } = planned(doc);
+    for (const { id, kind } of SECTION_SELECTS) {
+      const field = result.fields.find((one) => result.target(one.key)?.control.id === id)!;
+      expect(field.kind, id).toBe(kind);
+      expect(fillabilityOf(field, result.target(field.key)?.widget), id).toEqual({ fillable: true });
+    }
+  });
+
+  it('the address’s dependent lists learn under the Country the block shows; searches and other lists do not',
+    async () => {
+      const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+      const decl = (id: string) => oracleAdapter.widgetFor!(doc.getElementById(id)!)!;
+      for (const id of ['city-43', 'region2-44', 'region1-45']) expect(decl(id).learnContext, id).toBeUndefined();
+      doc.querySelector<HTMLInputElement>('input#country-17')!.value = 'Canada';
+      for (const id of ['city-43', 'region2-44', 'region1-45']) expect(decl(id).learnContext, id).toBe('Canada');
+      for (const id of ['country-17', 'addressLine1-39', 'postalCode-42', 'country-codes-dropdownphoneNumber']) {
+        expect(decl(id).learnContext, id).toBeUndefined();
+      }
+    });
+
+  it('O2: Address Line 1 is a search the planner types the profile’s street into', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+    const { result, plan } = planned(doc);
+    const field = result.fields.find((one) => result.target(one.key)?.control.id === 'addressLine1-39')!;
+    expect(plan.results.find((row) => row.key === field.key)).toMatchObject({ category: 'address.line1' });
+    expect(plan.writes.find((one) => one.key === field.key)?.value)
+      .toEqual({ kind: 'query', queries: [goldenProfile().address!.line1] });
   });
 });
