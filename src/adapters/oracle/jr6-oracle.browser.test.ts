@@ -487,3 +487,42 @@ describe('jr6 O1, O2: every cx-select is declared, its results the rows of its g
       .toEqual({ kind: 'query', queries: [goldenProfile().address!.line1] });
   });
 });
+
+// ── O3: the address block's order ─────────────────────────────────────────────────────────────────────────────────
+
+describe('jr6 O3: the address block’s parents (dependsOn)', () => {
+  const parentOf = (doc: Document, id: string) => oracleAdapter.dependsOn!(doc.getElementById(id)!);
+
+  it('hjf-apply-section: Address Line 1 waits on the Country; ZIP Code, City, State and County on Address Line 1',
+    async () => {
+      const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+      const country = doc.getElementById('country-17');
+      const street = doc.getElementById('addressLine1-39');
+      expect(parentOf(doc, 'country-17')).toBeNull();
+      expect(parentOf(doc, 'addressLine1-39')).toBe(country);
+      for (const id of ['postalCode-42', 'city-43', 'region2-44', 'region1-45']) expect(parentOf(doc, id), id).toBe(street);
+      // Nothing else of the page has a parent: the phone's code, the text boxes, the pills.
+      for (const selector of ['input#country-codes-dropdownphoneNumber', 'input#addressLine2-40', 'input#lastName-18',
+        'ul.cx-select-pills-container']) {
+        expect(oracleAdapter.dependsOn!(doc.querySelector(selector)!), selector).toBeNull();
+      }
+    });
+
+  it('a block with no street search shown: ZIP Code, City, State and County wait on the Country; none without it',
+    async () => {
+      const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+      doc.getElementById('addressLine1-39')!.closest<HTMLElement>('.input-row')!.style.display = 'none';
+      const country = doc.getElementById('country-17');
+      for (const id of ['postalCode-42', 'city-43', 'region2-44', 'region1-45']) {
+        expect(parentOf(doc, id), id).toBe(country);
+      }
+      country!.closest<HTMLElement>('.input-row')!.style.display = 'none';
+      for (const id of ['postalCode-42', 'city-43', 'region2-44', 'region1-45']) expect(parentOf(doc, id), id).toBeNull();
+    });
+
+  it('hjf-after-submit: the education editor’s Country, Degree and dates have no parent (no address block)',
+    async () => {
+      const doc = await load(hjfAfterSubmitHtml, `${HJF}/apply/section/1`, closeChecklist);
+      for (const id of EDITOR_SELECTS) expect(parentOf(doc, id), id).toBeNull();
+    });
+});

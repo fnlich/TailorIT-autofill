@@ -82,6 +82,8 @@
  * - Widgets (O1, O2): every cx-select (input.cx-select-input[role=combobox]) a combobox opened by its toggle, its
  *   results the rows of the grid its aria-controls names, chosen by their label part; Address Line 1 (Oracle Maps'
  *   search) and ZIP Code are searches (typeahead-remote); the address's dependent lists learn under the Country shown.
+ * - The address's order (O3, dependsOn): Address Line 1 after the Country; ZIP Code, City, State and County after
+ *   Address Line 1 (after the Country where the block has no street search).
  * Nothing here reads, logs or sends a value (the Country a block shows is hashed into a learned list's key only).
  */
 // The P2 review (security 1)
@@ -359,6 +361,22 @@ function widgetFor(control: Element): WidgetDecl | null {
   };
 }
 
+/** jr6 O3: the address block's order, hjf-apply-section.html's geo-hierarchy rows (addressBlockOf): the Country redraws
+ *  the block, Oracle Maps' Address Line 1 fills ZIP Code, City, State and County from the street it is given. So
+ *  Address Line 1 waits on the Country, and ZIP Code, City, State and County on Address Line 1, or on the Country
+ *  where the block shows no street search (Jobright 1.25.2's prefillCountryBeforeRules writes the Country first and
+ *  waits for its dependents; its resolveOracleAddressDependentRules waits after the street's pick and fills only what
+ *  Oracle left empty). Null for the Country and for any control outside an address block. */
+function dependsOn(control: Element): Element | null {
+  if (control.localName !== 'input' || !control.matches(CX_SELECT)) return null;
+  const block = addressBlockOf(control);
+  const name = (control as HTMLInputElement).name;
+  if (block === null || name === 'country') return null;
+  const country = addressPart(block, 'country');
+  if (name === 'addressLine1') return country;
+  return addressPart(block, 'addressLine1') ?? country;
+}
+
 /** Whether the page marks a row-labelled control required: its row's label has input-row__label--required (drawn with
  *  its star, <span class="input-row__label--required-star" aria-hidden="true">). */
 function requiredFor(control: Element): boolean {
@@ -469,4 +487,5 @@ export const oracleAdapter: Adapter = {
   labelFirst,
   controlBox,
   widgetFor,
+  dependsOn,
 };
