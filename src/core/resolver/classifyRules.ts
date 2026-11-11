@@ -218,6 +218,10 @@ const STREET_HINT =
 /** The normalized label that is the word Address alone. */
 const ADDRESS_ALONE = /^\s*address\s*$/;
 
+/** jr6 RULES R3 (smartrecruiters-new-2): help text that is a résumé's heading and nothing more ("Resume/CV", "Resume",
+ *  "Your CV", "Upload your resume"), as normalized. */
+const RESUME_HEADING = /^(?:(?:upload|attach)\s+)?(?:your\s+|a\s+)?(?:resume|cv|curriculum\s+vitae)(?:\s+(?:or\s+|and\s+)?(?:resume|cv|curriculum\s+vitae))*(?:\s+(?:upload|file|document))?$/;
+
 /** jr6 RULES R3 (SR-9: SmartRecruiters' drop zone restriction "Supported files: DOC, DOT, RMR, RSM, RESUME, OXPS, PDF,
  *  … (10MB size limit)" as the field's help, fixtures/smartrecruiters/xplor-screening, where "RESUME" is a file type): a
  *  run of three or more comma-separated single words. */
@@ -264,8 +268,9 @@ function labelRuleVote(spec: FieldSpec, label: string, context: LabelContext): R
   const onBoth = matchLabelRules(both, section, spec.kind, withDescription);
   if (onBoth === null) return null;
   // jr6 RULES R3 (smartrecruiters-new-2): help text alone never makes an upload the résumé's ("Additional attachments",
-  // "Portfolio", "Writing sample" over SmartRecruiters' restriction text): only its own label does.
-  if (onBoth.category === 'file.resume') return null;
+  // "Portfolio", "Writing sample" over SmartRecruiters' restriction text), unless it is a résumé's heading itself
+  // (Workday's drop zone "Upload a file (5MB max)" under its group heading "Resume/CV": the behaviour review's M2).
+  if (onBoth.category === 'file.resume' && !RESUME_HEADING.test(description)) return null;
   const closed = CLOSED_FROM_DESCRIPTION.includes(policyClassOf(onBoth.category));
   return labelVote(closed && onBoth.needsUser === undefined ? { ...onBoth, needsUser: 'description-only' } : onBoth,
     'description');

@@ -158,6 +158,15 @@ describe('56 (SR-9, smartrecruiters-new-2): a restriction’s file types name no
     const spec = specOf('Resume', 'file', { description: restriction });
     expect(planned([spec], spec).write).toMatchObject({ value: { kind: 'file', ref: 'resume' } });
   });
+  it('still reads a drop zone under a résumé’s own heading as the résumé (Workday’s M2), and no other help text', () => {
+    const workday = specOf('Upload a file (5MB max)', 'file', { description: 'Resume/CV' });
+    expect(planned([workday], workday).write).toMatchObject({ value: { kind: 'file', ref: 'resume' } });
+    const attachments = specOf('Upload a file (5MB max)', 'file', { description: 'Additional Attachments' });
+    expect(planned([attachments], attachments).write).toBeUndefined();
+    const sentence = specOf('Upload a file', 'file', { description: 'Attach any document, such as a resume or a cover '
+      + 'letter' });
+    expect(planned([sentence], sentence).write).toBeUndefined();
+  });
   it('drops a run of file types and keeps a list of documents', () => {
     expect(withoutFileTypes('Supported files: DOC, DOCX, PDF (5MB)').replace(/\s+/g, ' ')).toBe('Supported files: (5MB)');
     expect(withoutFileTypes('Upload your Resume, CV, Bio')).toBe('Upload your Resume, CV, Bio');
