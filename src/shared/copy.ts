@@ -383,8 +383,6 @@ const REPORT = {
   untitledSection: 'Form',
   source: 'Source',
   noSource: 'Nothing written',
-  /** Phase G: a cover-letter upload's source, the person's letters in TailorIT. */
-  coverLetterSource: "Your TailorIT cover letters",
   /** The v3 Phase 4 review: a cover letter longer than its text box takes, in characters. */
   letterLength: (length: number, limit: number) => `Your letter is ${length} characters; this box takes ${limit}.`,
   match: 'Match',
@@ -393,9 +391,6 @@ const REPORT = {
   /** Phase 6: an AI draft waits for the person (wave 2 wires what it does). */
   confirmDraft: 'Confirm draft',
   draftMark: 'AI draft',
-  /** The completion's line on the AI's answers: "3 answers written by AI · 1 is a guess". */
-  aiAnswers: (written: number, guesses: number) => `${written === 1 ? '1 answer' : `${written} answers`} written by AI${
-    guesses === 0 ? '' : guesses === 1 ? ' · 1 is a guess' : ` · ${guesses} are guesses`}`,
   /** Phase 6: offered only after the person fixed a flagged field themselves (Requirement F; wave 2 wires the save). */
   saveAnswer: 'Save my answer',
   showSuggestions: (count: number) => (count === 1 ? 'Show the closest option' : `Show the ${count} closest options`),
@@ -406,7 +401,6 @@ const REPORT = {
   frame: (platform: string, embedded: boolean) => (embedded ? `${platform} form, embedded in this page` : `${platform} form`),
   step: (index: number, of?: number) => (of === undefined ? `Step ${index + 1}` : `Step ${index + 1} of ${of}`),
   dryRun: 'Dry run: nothing was written.',
-  hiddenIgnored: (count: number) => (count === 1 ? '1 hidden field was left alone.' : `${count} hidden fields were left alone.`),
   // The progress (v3 Phase 3, the owner's choice of Jobright's percent; it was counts only): "Scanning the page…" while
   // the form is read, "Autofilling… 78%" while it fills, then "9 of 12 required fields filled · 75%". The percent is of
   // the required fields filled (shared/report.ts progressOf), of every field when none is required. Drafts for the
@@ -440,8 +434,6 @@ const REPORT = {
   /** The row's label is a button that shows the field on the page; its chevron folds the details. */
   goTo: (label: string) => `Show "${label}" on the page`,
   details: (label: string) => `Details of "${label}"`,
-  /** What the run left aside, under the lists (v3 Phase 3 review): the hidden fields left alone. */
-  moreDetails: 'More details',
   /** Skip, offered on the field being filled after 2 s on it. */
   skip: 'Skip',
   skipLabel: (label: string) => `Skip "${label}"`,
@@ -471,10 +463,7 @@ const REPORT = {
   // ── end v5 p1-panel ──
   /** Worded apart from the launcher's "Review: N fields need you", which also counts the Add buttons left. */
   needsYou: (count: number) => (count === 1 ? '1 field is left for you' : `${count} fields are left for you`),
-  needsYouDryRun: (count: number) => (count === 1 ? '1 field would be left for you' : `${count} fields would be left for you`),
   allClear: 'Nothing needs you. Check the form, then submit it yourself.',
-  /** A form among several, under its own name, when the tab holds more than one or one embedded in its page. */
-  frameLine: (name: string, status: string) => `${name} · ${status}`,
   // ── v4 ui: the résumé and cover-letter rows' Preview and Show (the owner, 2026-11-07). Drafts for the owner. ──
   preview: 'Preview',
   previewLabel: (label: string) => `Preview "${label}"`,
@@ -706,11 +695,9 @@ const JOB = {
   via: (platform: string) => `${platform} application`,
   /** The match's band by its percentage (v3 Phase 3, Jobright's wording): MATCH_BANDS. Drafts for the owner's review. */
   bands: { excellent: 'Excellent', good: 'Good', fair: 'Fair', poor: 'Poor' },
-  bandLine: { excellent: 'Excellent match', good: 'Good match', fair: 'Fair match', poor: 'Low match' },
   matchLabel: (percentage: number, band: string) => `${percentage}% match: ${band}`,
   matchTip: (matched: number, total: number) =>
     `${matched} of ${total} keywords in this posting are in your resume. The score is how well your resume covers what the job asks for.`,
-  matchTipLabel: 'About the match score',
   keywords: (matched: number, total: number) => `${matched} of ${total} keywords`,
   /** The badge on a job the tracker holds as Applied or later. */
   applied: 'Applied',
@@ -720,7 +707,6 @@ const JOB = {
   noKeywords: 'This posting names no keywords to match.',
   unreadable: "This resume's text couldn't be read, so it has no match score.",
   attaches: 'Attaches',
-  wouldAttach: 'Would attach',
   change: 'Change',
   noResume: 'No resume to attach. Add one in TailorIT.',
   closed: 'Closed',
@@ -747,7 +733,6 @@ const JOB = {
     checking: 'Checking TailorIT for your letter…',
     yours: 'Your letter for this job',
     written: "Your letter for this job, written by TailorIT's AI just now",
-    whenAsked: 'Written by AI when the form asks for one',
     profileOnly: "This posting doesn't allow AI, so only a letter you wrote is attached.",
     aiOff: 'AI-written answers are off, so only a letter you wrote is attached.',
     failed: "Your letter for this job isn't finished. Finish it in TailorIT's Cover Letters.",
@@ -755,7 +740,6 @@ const JOB = {
     write: 'Write It Now', // v5 p1-panel
     writing: 'Writing…',
     ready: 'Ready',
-    couldNot: "Couldn't write it",
     outcomes: {
       yours: 'Ready',
       written: 'Ready',
@@ -793,8 +777,6 @@ const JOB = {
   },
   /** v3 Phase 3b: Change's "Apply without resume" and the resume's preview. Drafts for the owner's review. */
   withoutResume: 'Apply Without Resume', // v5 p1-panel
-  withoutResumeHelp: 'No resume will be uploaded. Autofill uses your autofill information.',
-  withoutResumeOn: 'No resume will be attached',
   /** The review: Apply without resume could not be kept (no form or posting of ours in the tab now). */
   withoutFailed: "That couldn't be changed: the page changed. Try again.",
   preview: {
@@ -1744,7 +1726,6 @@ const MAIN_VIEW = {
   // v5 p1-panel: Title Case buttons.
   ask: 'Ask Custom Question',
   addJob: 'Add This Job In One Click',
-  addHelp: 'Adds this posting to your TailorIT jobs, and to your tracker as Saved, so you can follow it there.',
   notThisJob: 'Not This Job?', // v5 p1-panel
   // ── v5 p2-fill: Open Application on a posting page (PLAN Phase 2, Jobright's button in our own words). Drafts. ──
   openApplication: 'Open Application',
