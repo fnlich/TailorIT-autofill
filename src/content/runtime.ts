@@ -1398,13 +1398,19 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     claimed = !isTop && claimsApplication(app, options.wrapper !== undefined ? options.wrapper() : wrapperOf(view),
       adapters);
     // While the page's own adapter waits for a form it draws late, only the adapters that say so may claim the page.
-    // jr6 apply F2 item 2: where asked, the address's own adapters alone.
-    const claim = (at: URL) => (how.ownOnly === true ? ownAdapters(adapters(at))
+    // jr6 apply F2 item 2: where asked, the address's own adapters alone; item 5 (D5; B4, C6): where an adapter of the
+    // address draws its form in place (quirks.formInPlace), its own adapters alone for the document's life.
+    const claim = (at: URL) => (how.ownOnly === true || inPlaceAt(at) ? ownAdapters(adapters(at))
       : lateClosed === href ? adapters(at) : lateAdapters(adapters(at)));
-    // jr6 apply F2 item 2: a posting's address too, when asked, by its own adapters alone.
-    const atPosting = app !== null && app.page === 'posting' && how.atPosting === true;
+    // jr6 apply F2 item 2: a posting's address too, when asked, by its own adapters alone; item 5 (D5; B5): and by an
+    // adapter that draws its application at its posting's address (quirks.formAtPosting: Workday's /apply), that one
+    // alone, the address still read as the posting's for its key and its choice.
+    const atPosting = app !== null && app.page === 'posting' && url !== null
+      && (how.atPosting === true || formAtPostingAt(url));
+    const postingClaim = (at: URL) => (how.atPosting === true ? ownAdapters(claim(at))
+      : claim(at).filter((adapter) => adapter.quirks?.formAtPosting === true));
     const picked = url !== null && app !== null && (app.page === 'application' || atPosting)
-      ? pickAdapter(doc, url, atPosting ? (at) => ownAdapters(claim(at)) : claim) : null;
+      ? pickAdapter(doc, url, atPosting ? postingClaim : claim) : null;
     page = picked === null || app === null ? null : { app, adapter: picked.adapter, root: picked.root };
     // ── v5 p2-detect, the P2 review (security 1): on an employer's own domain the Oracle adapter claims a page only where
     // the document shows the app's own markup (adapters/index.ts adaptersFor) and its detect found the app's form; only
@@ -1415,10 +1421,29 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     }
   }
 
+  /** jr6 apply F2 item 5 (D5; B5): an adapter of the address draws its application at its posting's address. */
+  function formAtPostingAt(url: URL): boolean {
+    return adapters(url).some((adapter) => adapter.quirks?.formAtPosting === true);
+  }
+
+  /** jr6 apply F2 item 5 (D5; B4, C6): an adapter of the address draws its application in place, at any time. */
+  function inPlaceAt(url: URL): boolean {
+    return adapters(url).some((adapter) => adapter.quirks?.formInPlace === true);
+  }
+
+  /** jr6 apply F2 item 5: an address whose page may still draw its application: an application's, or (formAtPosting)
+   *  a posting's whose adapter draws it there. */
+  function formMayShowAt(href: string): boolean {
+    if (app === null) return false;
+    if (app.page === 'application') return true;
+    const url = urlOf(href);
+    return app.page === 'posting' && url !== null && formAtPostingAt(url);
+  }
+
   /** An application page whose adapters found no form root (core pass Z2 of 2026-11-06: the first scan's entrance
-   *  wait). */
+   *  wait). jr6 apply F2 item 5: or a posting's page whose adapter draws its application there (formAtPosting). */
   function noFormYet(): boolean {
-    return page === null && app !== null && app.page === 'application';
+    return page === null && formMayShowAt(readHref());
   }
 
   /** The watch for a form root, or a posting's text, drawn late (module header, 2), while one runs. */
@@ -1437,16 +1462,22 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   /** Watches for the form root of an application page that shows none yet, when an adapter of its address says its
    *  page draws it late; at the end of that wait every adapter may claim the page. A new address ends the watch
-   *  (onAddress starts the next one). */
+   *  (onAddress starts the next one). jr6 apply F2 item 5 (D5): a posting's page too whose adapter draws its
+   *  application there (formAtPosting, B5); and where an adapter draws its application in place at any time
+   *  (formInPlace, B4, C6), the document is watched for it for its life, cheaply, as a company's page is, its own
+   *  adapters alone claiming it. */
   function watchLateForm(): void {
     lateWatch?.();
     lateWatch = null;
-    if (stopped || page !== null || app?.page !== 'application') return;
     const href = readHref();
+    if (stopped || page !== null || app === null || !formMayShowAt(href)) return;
     // v3 Phase 8 (the review's B5): a company's own page is watched for its form for the document's life, cheaply.
-    if (app.platform === 'site') {
+    // jr6 apply F2 item 5: so is a page whose platform draws its application in place (formInPlace).
+    const url = urlOf(href);
+    if (app.platform === 'site' || (url !== null && inPlaceAt(url))) {
       lateWatch = watchForSiteForm(doc, () => {
-        if (stopped || readHref() !== href) return true;
+        // jr6 apply F2: a form another watch claimed meanwhile (an entry's) ends this one.
+        if (stopped || readHref() !== href || page !== null) return true;
         resolvePage(href);
         if (page === null) return false;
         formFound();
@@ -1454,11 +1485,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       }, lifetime.signal);
       return;
     }
-    const url = urlOf(href);
     const capMs = url === null ? 0 : lateFormMs(adapters(url));
     if (capMs === 0) return;
     lateWatch = watchForLateForm(doc, capMs, () => {
-      if (stopped || readHref() !== href) return true;
+      // jr6 apply F2: a form another watch claimed meanwhile (an entry's) ends this one.
+      if (stopped || readHref() !== href || page !== null) return true;
       resolvePage(href);
       if (page === null) return false;
       formFound();
