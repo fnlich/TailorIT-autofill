@@ -4,8 +4,15 @@
  * also read with the rule undone (the same page through the same config without it), which the test shows changes the
  * reading: the root (the generic adapter would take the page), the checkbox questions (two lone boxes "Yes" and "No",
  * the question lost), Submit (none, nothing final), the in-flight sign, the never-pressed controls and the posting text.
+ * jr6 (FIXPLAN 6.8): the classic "resumator" layout (fixtures/jazzhr/jr6-centroid-form, the owner's 2026-11-10 capture,
+ * and its hand-written twin fixtures/synthetic/jazzhr/classic.html with JazzHR's résumé toggle), each new rule likewise
+ * read with it undone: the classic questions (JZ-1, JZ-5), the paste box excluded (JZ-5), Submit whatever its tag
+ * (JZ-2), the résumé's upload rule and its reveal (JZ-4, the declaration: ENGINE's reveal door presses it, P2 measures
+ * the upload), and the field errors on both layouts (JZ-10).
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import centroidExpect from '../../../fixtures/jazzhr/jr6-centroid-form.expect.json';
+import centroidHtml from '../../../fixtures/jazzhr/jr6-centroid-form.html?raw';
 import invaluableExpect from '../../../fixtures/jazzhr/invaluable-form.expect.json';
 import invaluableHtml from '../../../fixtures/jazzhr/invaluable-form.html?raw';
 import nucleusExpect from '../../../fixtures/jazzhr/nucleussecurity-form.expect.json';
@@ -14,14 +21,19 @@ import panoptExpect from '../../../fixtures/jazzhr/panoptimization-form.expect.j
 import panoptHtml from '../../../fixtures/jazzhr/panoptimization-form.html?raw';
 import wellhiveExpect from '../../../fixtures/jazzhr/wellhive-submitting.expect.json';
 import wellhiveHtml from '../../../fixtures/jazzhr/wellhive-submitting.html?raw';
+import classicExpect from '../../../fixtures/synthetic/jazzhr/classic.expect.json';
+import classicHtml from '../../../fixtures/synthetic/jazzhr/classic.html?raw';
 import syntheticExpect from '../../../fixtures/synthetic/jazzhr/index.expect.json';
 import syntheticHtml from '../../../fixtures/synthetic/jazzhr/index.html?raw';
 import trapHtml from '../../../fixtures/traps/01-white-on-white.html?raw';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
-import { captchaRefusalShown, detectPause, pageChallenged, withoutSolvedCaptchaErrors } from '../../dom/pause-detect';
+import { captchaRefusalShown, detectPause, isCaptchaError, pageChallenged, withoutSolvedCaptchaErrors }
+  from '../../dom/pause-detect';
+import { assertNotSubmit } from '../../dom/fillers/not-submit';
 import { pressStep, refusalNow } from '../../content/press';
 import { fill } from '../../dom/fillers';
 import { verifyAfterSettle } from '../../dom/fillers/verify';
+import { isUserVisible } from '../../dom/visibility';
 import { scan, toFieldSpec } from '../../dom/scan';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { planFrame } from '../../core/plan/frame';
@@ -38,6 +50,9 @@ const CASES = [
   { name: 'wellhive-submitting', html: wellhiveHtml, expectation: readExpectation(wellhiveExpect) },
   // The e2e spec's page (fixtures/synthetic/jazzhr), written in the snapshots' shapes: read as they are.
   { name: 'synthetic', html: syntheticHtml, expectation: readExpectation(syntheticExpect) },
+  // jr6: the classic layout (the owner's 2026-11-10 capture) and its hand-written twin.
+  { name: 'jr6-centroid-form', html: centroidHtml, expectation: readExpectation(centroidExpect) },
+  { name: 'synthetic classic', html: classicHtml, expectation: readExpectation(classicExpect) },
 ] as const;
 
 /** The same config with one of its rules undone. */
@@ -215,4 +230,207 @@ describe('the JazzHR adapter: each rule, and the page read without it', () => {
     const field = scan(page.root, jazzhrAdapter, { platform: 'jazzhr' }).fields.find((each) => each.label === 'Earliest start date?');
     expect([field?.kind, field?.constraints.format]).toEqual(['text', undefined]);
   });
+});
+
+/** The adapter with JazzHR's classic question rule undone (the Bootstrap checkbox rule kept). */
+const classicRuleUndone = () => configuredAdapter({ ...JAZZHR_CONFIG, questions: JAZZHR_CONFIG.questions!.slice(0, 1) });
+
+/** The fields whose own controls hold `el` or sit inside it, as the validation's fix pass maps a page's error to the
+ *  field it is on (content/orchestrator.ts fixable). */
+function fieldsOfError(page: { root: Element }, el: Element) {
+  const scanned = scan(page.root, jazzhrAdapter, { platform: 'jazzhr' });
+  return scanned.fields.filter((field) => {
+    const target = scanned.target(field.key);
+    if (target === null) return false;
+    const own = [target.control, ...target.members, ...(target.proxy === null ? [] : [target.proxy])];
+    return own.some((each) => each === el || each.contains(el) || el.contains(each));
+  }).map((field) => field.idAttr);
+}
+
+describe('jr6 (FIXPLAN 6.8): JazzHR’s classic layout, each rule and the page read without it', () => {
+  it('JZ-1, JZ-5: reads each classic question by its div.resumator-label, its star the required mark; none without the rule',
+    async () => {
+      const page = await open(centroidHtml);
+      const read = (adapter: typeof jazzhrAdapter) => scan(page.root, adapter, { platform: 'jazzhr' }).fields
+        .filter((field) => field.kind === 'text').map((field) => [field.idAttr, field.label, field.required, field.labelSource]);
+      expect(read(jazzhrAdapter)).toEqual([
+        ['resumator-firstname-value', 'First name', true, 'adapter'],
+        ['resumator-lastname-value', 'Last name', true, 'adapter'],
+        ['resumator-email-value', 'Email address', true, 'adapter'],
+        // The Location wrapper stays out of the rule: its four boxes keep their placeholders.
+        ['resumator-address-value', 'Address', false, 'placeholder'],
+        ['resumator-city-value', 'City', false, 'placeholder'],
+        ['resumator-state-value', 'State', false, 'placeholder'],
+        ['resumator-postal-value', 'Postal', false, 'placeholder'],
+        ['resumator-phone-value', 'Phone number', true, 'adapter'],
+      ]);
+      // The golden profile writes the four identity boxes; without the rule they have no label and are left.
+      const plan = (adapter: typeof jazzhrAdapter) => {
+        const fields = scan(page.root, adapter, { platform: 'jazzhr' }).fields;
+        const out = planFrame({ specs: fields.map(toFieldSpec), canaries: [], profile: goldenProfile(),
+          sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false,
+          now: NOW });
+        return ['resumator-firstname-value', 'resumator-lastname-value', 'resumator-email-value', 'resumator-phone-value']
+          .map((id) => {
+            const key = fields.find((field) => field.idAttr === id)?.key;
+            const write = out.writes.find((each) => each.key === key);
+            return write === undefined ? out.results.find((each) => each.key === key)?.reason : write.value.kind;
+          });
+      };
+      expect(plan(jazzhrAdapter)).toEqual(['text', 'text', 'text', 'text']);
+      expect(plan(classicRuleUndone())).toEqual(['no-visible-label', 'no-visible-label', 'no-visible-label',
+        'no-visible-label']);
+      expect(read(classicRuleUndone()).filter(([, , required]) => required)).toEqual([]);
+    });
+
+  it('JZ-5: never reads “Paste resume”’s box as a question, even once shown; without the rule the classic one is “Resume”',
+    async () => {
+      for (const html of [centroidHtml, invaluableHtml]) {
+        const page = await open(html);
+        q(page.doc, '#resumator-resume-paste-wrapper').classList.remove('none');
+        const box = (adapter: typeof jazzhrAdapter) => scan(page.root, adapter, { platform: 'jazzhr' }).fields
+          .find((field) => field.idAttr === 'resumator-resumetext-value');
+        expect(box(jazzhrAdapter)).toBeUndefined();
+        expect(box(without('excluded'))).toBeDefined();
+        if (html === centroidHtml) {
+          expect([box(without('excluded'))?.label, box(without('excluded'))?.required]).toEqual(['Resume', true]);
+        }
+        removeFixtures(document);
+      }
+    });
+
+  it('JZ-2: names the classic Submit, an input[type=button], final while it shows; none with the link-only selector',
+    async () => {
+      const page = await open(centroidHtml);
+      const submit = q<HTMLInputElement>(page.doc, 'input#resumator-submit-resume');
+      expect(submit.type).toBe('button');
+      expect(jazzhrAdapter.submitButton?.(page.root)).toBe(submit);
+      expect(jazzhrAdapter.isFinalStep?.(page.doc)).toBe('final');
+      expect(jazzhrAdapter.isBusy?.(page.doc)).toBe(false);
+      expect(jazzhrAdapter.neverPress?.(page.root)).not.toContain(submit);
+      const linkOnly = configuredAdapter({ ...JAZZHR_CONFIG,
+        submit: { css: 'form#form_submit_new_resume a#resumator-submit-resume', from: 'before jr6' } });
+      expect(linkOnly.submitButton?.(page.root)).toBeNull();
+      expect(linkOnly.isFinalStep?.(page.doc)).toBe('unknown');
+      // The panel's Submit (and Submit mode Auto) presses it, with the person's word.
+      let clicks = 0;
+      submit.addEventListener('click', () => {
+        clicks += 1;
+      });
+      const press = { doc: page.doc, adapter: jazzhrAdapter, root: page.root,
+        scan: () => scan(page.root, jazzhrAdapter, { platform: 'jazzhr' }) };
+      expect(pressStep(press, 'submit', { confirmed: true })).toEqual({ outcome: 'pressed' });
+      expect(clicks).toBe(1);
+      // Jobright 1.25.2's second id for it names the same Submit; none outside the form.
+      submit.id = 'resumator-submit-resume-button';
+      expect(jazzhrAdapter.submitButton?.(page.root)).toBe(submit);
+      page.doc.body.append(submit);
+      expect(jazzhrAdapter.submitButton?.(page.root)).toBeNull();
+    });
+
+  it('JZ-4: declares the hidden résumé input, “Attach resume” its control and its reveal, never pressed by another path',
+    async () => {
+      const page = await open(centroidHtml);
+      const input = q<HTMLInputElement>(page.doc, '#resumator-resume-value');
+      const attach = q(page.doc, 'a#resumator-choose-upload');
+      expect(page.view.getComputedStyle(q(page.doc, '#resumator-resume-upload-wrapper')).display).toBe('none');
+      expect(jazzhrAdapter.uploadWidgets?.(page.root)).toEqual([{ control: attach, input }]);
+      const scanned = scan(page.root, jazzhrAdapter, { platform: 'jazzhr' });
+      const resume = scanned.fields.find((field) => field.kind === 'file')!;
+      expect([resume.label, resume.required, resume.visibility]).toEqual(['Resume', true, 'hidden-file-with-visible-control']);
+      expect(scanned.target(resume.key)?.proxy).toBe(attach);
+      // The rule's reveal (ENGINE's door reads it): the link shown inside the rule's area while the input is hidden.
+      const rule = JAZZHR_CONFIG.uploads![0]!;
+      expect([rule.input, rule.area, rule.reveal]).toEqual(['#resumator-resume-value', '#resumator-resume',
+        '#resumator-choose-upload']);
+      const area = input.closest(rule.area!)!;
+      expect(area.querySelector(rule.reveal!)).toBe(attach);
+      expect([isUserVisible(attach), isUserVisible(input)]).toEqual([true, false]);
+      // Every other path refuses it: it stays among the never-pressed controls.
+      expect(jazzhrAdapter.neverPress?.(page.root)).toContain(attach);
+      expect(assertNotSubmit(attach, { adapter: jazzhrAdapter, root: page.root }))
+        .toEqual({ ok: false, refusal: 'adapter-never-press' });
+      // Without the rule: no Resume field, and no flagged row either.
+      const undone = scan(page.root, without('uploads'), { platform: 'jazzhr' });
+      expect(undone.fields.some((field) => field.kind === 'file')).toBe(false);
+      expect(undone.unrecognisedUploads).toEqual([]);
+      removeFixtures(document);
+      // The Bootstrap layout shows its input: read by its label[for] as before; its reveal is not shown (nothing to
+      // press there).
+      const bootstrap = await open(invaluableHtml);
+      const shownInput = q<HTMLInputElement>(bootstrap.doc, '#resumator-resume-value');
+      const field = scan(bootstrap.root, jazzhrAdapter, { platform: 'jazzhr' }).fields.find((each) => each.kind === 'file')!;
+      expect([field.label, field.labelSource, field.visibility]).toEqual(['Resume', 'for', 'visible']);
+      expect([isUserVisible(shownInput), isUserVisible(q(bootstrap.doc, rule.reveal!))]).toEqual([true, false]);
+    });
+
+  it('JZ-4: on the synthetic classic page, JazzHR’s toggle shows the input on “Attach resume” and cancels the link',
+    async () => {
+      const page = await open(classicHtml);
+      const attach = q<HTMLAnchorElement>(page.doc, 'a#resumator-choose-upload');
+      const input = q<HTMLInputElement>(page.doc, '#resumator-resume-value');
+      const fileField = () => scan(page.root, jazzhrAdapter, { platform: 'jazzhr' }).fields
+        .find((field) => field.kind === 'file');
+      expect([fileField()?.label, fileField()?.required, fileField()?.visibility])
+        .toEqual(['Resume', true, 'hidden-file-with-visible-control']);
+      const address = page.view.location.href;
+      let prevented: boolean | null = null;
+      page.view.addEventListener('click', (event) => {
+        prevented = event.defaultPrevented;
+      });
+      // An untrusted click, as ENGINE's reveal door makes it (FIXPLAN 6.2 item 9); the page's own handler answers it.
+      attach.click();
+      expect(prevented).toBe(true);
+      expect(page.view.location.href).toBe(address);
+      expect((page.view as unknown as { __jazz: { toggled: string[]; pressed: string[] } }).__jazz)
+        .toMatchObject({ toggled: ['resumator-choose-upload'], pressed: [] });
+      expect([isUserVisible(input), isUserVisible(attach)]).toEqual([true, false]);
+      expect([fileField()?.label, fileField()?.required, fileField()?.visibility]).toEqual(['Resume', true, 'visible']);
+      // No other path presses it.
+      expect(assertNotSubmit(attach, { adapter: jazzhrAdapter, root: page.root }))
+        .toEqual({ ok: false, refusal: 'adapter-never-press' });
+    });
+});
+
+describe('jr6 (FIXPLAN 6.8) JZ-10: JazzHR’s field errors, on both layouts', () => {
+  it.each([['the classic layout', centroidHtml], ['the Bootstrap layout', invaluableHtml],
+    ['the synthetic classic page', classicHtml]] as const)(
+    '%s: a label marked .resumator_label_error is its question’s error, mapped to its field', async (_name, html) => {
+      const page = await open(html);
+      const press = { doc: page.doc, adapter: jazzhrAdapter, root: page.root };
+      expect(jazzhrAdapter.errors!(page.root)).toEqual([]);
+      expect(refusalNow(press)).toBe(0);
+      const label = q(page.doc, '#resumator-firstname-label');
+      label.classList.add('resumator_label_error');
+      const question = label.closest('div.form-group, div.resumator-field-wrapper')!;
+      expect(question.contains(q(page.doc, '#resumator-firstname-value'))).toBe(true);
+      expect(jazzhrAdapter.errors!(page.root)).toEqual([{ el: question }]);
+      // The press's refusal counts it, and the fix pass maps it to the field it is on.
+      expect(refusalNow(press)).toBe(1);
+      expect(fieldsOfError(page, question)).toEqual(['resumator-firstname-value']);
+      expect(isCaptchaError(question)).toBe(false);
+      // Undone (the rules' errors alone): the mark is not read.
+      expect(without('code').errors!(page.root)).toEqual([]);
+      // A mark a person cannot see is no error.
+      label.style.display = 'none';
+      expect(jazzhrAdapter.errors!(page.root)).toEqual([]);
+    });
+
+  it('the classic Human Check marked is the check’s error (its wrapper), beside #recaptcha-required-error, once each',
+    async () => {
+      const page = await open(centroidHtml);
+      q(page.doc, '#resumator-recaptcha-label').classList.add('resumator_label_error');
+      const wrapper = q(page.doc, '#resumator-recaptcha');
+      expect(jazzhrAdapter.errors!(page.root)).toEqual([{ el: wrapper }]);
+      expect(isCaptchaError(wrapper)).toBe(true);
+      const error = page.doc.createElement('div');
+      error.id = 'recaptcha-required-error';
+      error.className = 'dv_error';
+      error.textContent = 'Please complete the reCAPTCHA.';
+      q(page.doc, '#resumator-recaptcha-field').append(error);
+      expect(jazzhrAdapter.errors!(page.root)).toEqual([{ el: error }, { el: wrapper }]);
+      // Two marks on one question are one error.
+      q(page.doc, '#resumator-recaptcha-field').classList.add('resumator_label_error');
+      expect(jazzhrAdapter.errors!(page.root)).toHaveLength(2);
+    });
 });

@@ -1,0 +1,100 @@
+{
+  "fixture": "synthetic/jazzhr/classic",
+  "source": "https://tailorit-fixture.applytojob.com/apply/0000000B01/Linux-Systems-Engineer",
+  "captured": "2026-11-11T00:00:00.000Z",
+  "note": "jr6 (FIXPLAN 6.8, JZ-4): JazzHR's classic layout written by hand in jr6-centroid-form's shapes, with its own résumé toggle script; read as jr6-centroid-form is, before \"Attach resume\" is pressed.",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-firstname-value\"]"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-lastname-value\"]"
+    },
+    {
+      "label": "Email address",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-email-value\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-address-value\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-city-value\"]"
+    },
+    {
+      "label": "State",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-state-value\"]"
+    },
+    {
+      "label": "Postal",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-postal-value\"]"
+    },
+    {
+      "label": "Phone number",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-phone-value\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-resume-value\"]",
+      "note": "Hidden until \"Attach resume\"; qualified through the declared upload control, which is also the rule's reveal."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"resumator-resumetext-value\"]",
+      "note": "The paste box: its wrapper is excluded (JZ-5)."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"resumator-xml-value\"]"
+    }
+  ]
+}
