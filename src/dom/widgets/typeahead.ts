@@ -58,7 +58,11 @@
  * way, for an option the planner chose already on the list's whole read: one query, the option's own words
  * (optionQuery: "Canada" for "Canada +1"), a guarded write as each of a typeahead's is, and of what the list then shows
  * the one result that is that option as the page shows it (searchedOption) is clicked; no worker matches the results.
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3):
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1, 2 and 3):
+ * - a widget's text box may be one its adapter declares beside it (WidgetDecl.input: iCIMS's dropdown, whose anchor
+ *   opens a container drawn next to it, whose search box takes the query, as Jobright's ~contents/sites/icims
+ *   client-search-widget openIcimsSearchDropdown opens it and types into input.dropdown-search): the widget is opened
+ *   first while that box is not shown, and the query is typed only into a box a person can see, enabled and writable;
  * - a query shorter than the widget's declared minimum (WidgetDecl.minQueryLength: SmartRecruiters' minquerylength) is
  *   never typed;
  * - a declared list's rows are read and pressed as its adapter declares them (WidgetResults.options, pressTarget).
@@ -67,11 +71,13 @@ import { searchedOption } from '../../core/matcher/listSearch';
 import { MAX_SEARCH_QUERIES } from '../../core/matcher/searchLimits';
 import type { ReasonCode } from '../../core/types/fill';
 import { fireChange, fireInput, fireLeave, setValue, windowOf } from '../fillers/events';
+import { isDisabled, isReadOnly } from '../kinds';
 import { sameOptionLabel } from '../fillers/verify';
 import { SEARCH_FIELD_BUDGET_MS, TYPEAHEAD_QUERY_CAP_MS } from '../thresholds';
 import { monotonicNow } from '../time';
 import type { FieldTarget, WidgetOptionRead } from '../types';
-import { isChosen } from './aria';
+import { isUserVisible } from '../visibility';
+import { isChosen, selectOnly } from './aria';
 import { cleanOptionLabel } from '../option-hash';
 import {
   activateAndAwait, afterAction, afterBridge, awaitList, bridgeChoose, chooseResult, closeList, closingContext,
@@ -116,6 +122,17 @@ function shownHash(widget: NonNullable<FieldTarget['widget']>): ReturnType<typeo
   const listbox = openListOf(widget);
   return listbox === null ? null : hashOfRead(shownOptions(listbox, undefined, widget.optionLabel, widget.results,
     widget.results?.unchoosable));
+}
+
+/** jr6 ENGINE E1 (FIXPLAN §6.2 item 2): whether a widget's text box is one its adapter declares beside it, outside its
+ *  element (WidgetDecl.input: iCIMS's search box): typed into only once a person can see it. */
+function boxBeside(widget: NonNullable<FieldTarget['widget']>): boolean {
+  return widget.input !== null && selectOnly(widget);
+}
+
+/** jr6 ENGINE E1: whether a box beside its widget may take a query now: shown, enabled and writable. */
+function boxTakes(box: HTMLInputElement | HTMLTextAreaElement): boolean {
+  return box.isConnected && isUserVisible(box) && !isDisabled(box) && !isReadOnly(box);
 }
 
 /** Types one query (typeQuery) into a widget that declares a key to start its search (WidgetDecl.queryKey), and
@@ -236,12 +253,18 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     if (widget === undefined || box === null) return giveUp('element-not-found');
     // A query longer than the box takes is never cut: the next one is tried.
     if (box.maxLength >= 0 && query.length > box.maxLength) continue;
-    if (expandedState(widget) === false) {
+    // jr6 ENGINE E1 (FIXPLAN §6.2 item 2): a box its adapter declares beside the widget (WidgetDecl.input: iCIMS's
+    // search box, in the container its anchor opens) is shown by opening the widget first, as a closed one is.
+    const beside = boxBeside(widget);
+    const shut = expandedState(widget) === false;
+    if (shut || (beside && !boxTakes(box) && expandedState(widget) !== true)) {
       const opened = await activateAndAwait(widget, ctx);
       if (opened.status === 'aborted') return ended();
       if (opened.status === 'gone') return giveUp('element-not-found');
       if (opened.status !== 'answered') return giveUp('needs-your-click');
     }
+    // Never typed into a box beside the widget that a person cannot see, or that takes no text.
+    if (beside && !boxTakes(box)) return giveUp('needs-your-click');
     const prevHash = shownHash(widget);
     // v4 (drop): a search that starts on a keydown gets its declared key (WidgetDecl.queryKey: Lever's), once the page
     // has answered typed text itself (this query, at once, or an earlier one): a page that ignores the input event gets

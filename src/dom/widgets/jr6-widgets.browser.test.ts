@@ -1,10 +1,13 @@
 /*
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1, 3 and 4): the widget helpers on synthetic pages shaped as the jr6 audits
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 4): the widget helpers on synthetic pages shaped as the jr6 audits
  * describe each platform's widget (SP\jr6\audit\oracle.md, icims.md, smartrecruiters.md, adp.md, ultipro.md), each
  * declared by a test adapter as its platform package will declare it (FIXPLAN §6.5, §6.6, §6.9 to §6.11), driven only
  * by calling the helpers:
  * - item 1 (oracle-new-1): a grid popup (role=grid > row > gridcell > label span), for a combobox and a multiselect:
  *   read whole by the declared rows, the planned row chosen by a click on its label part, read back;
+ * - item 2 (ICIMS-01 core, icims-new-1): an anchor and a search box in a container drawn beside it (WidgetDecl.input):
+ *   the box is the widget's part, never a field nor a counted control; a search opens the anchor first and types only
+ *   into the box once a person can see it; a select-only anchor toggles shut;
  * - item 3 (SR-1, SR-2, SR-6 core): nested shadow roots with aria-controls across them and options slotted into the
  *   list (WidgetResults.options, pressTarget), the page's own list as the field's reading (WidgetDecl.knownOptions),
  *   rows that load into the host watched directly, and the page's shortest query (WidgetDecl.minQueryLength);
@@ -22,6 +25,7 @@ import { loadFixture, logEvents, removeFixtures, untrustedViolations, type Event
 import { scan } from '../scan';
 import type { FieldTarget, ScanResult, WidgetReading } from '../types';
 import { fillWidget, isActionable, readWidget, searchTypeahead, widgetHolds } from './index';
+import type { TypeaheadHooks } from './index';
 
 interface Page {
   fixture: Fixture;
@@ -215,6 +219,190 @@ describe('item 1 (oracle-new-1): a declared list read and chosen by its declared
   });
 });
 
+// ── Item 2 (ICIMS-01 core, icims-new-1): iCIMS's dropdown, a box beside its anchor ─────────
+
+/** iCIMS's dropdown as SP\jr6\audit\icims.md reads it (fixtures/icims/nyu-profile.frame-1.html's markup, its texts
+ *  synthetic): a hidden select, an a.dropdown-select[role=combobox] anchor naming no list, and beside it a container
+ *  whose search box ("— Type to Search —") names the results list. Country lists its rows whole once open (a
+ *  placeholder row dropdown-index="-1" first); School searches a list as typed (icimsdropdown-search="1"). A click on
+ *  the anchor toggles its container; a result's click chooses it (window.__chosen) and shuts it. With data-variant
+ *  "deaf" on <html>, School's anchor answers a click (it marks itself) but never shows its container. */
+const ICIMS = `<!doctype html><html><head><style>
+  [hidden] { display: none !important; }
+  .dropdown-select { display: inline-block; min-width: 200px; border: 1px solid #888; padding: 2px; }
+  .dropdown-results { margin: 0; padding: 0; list-style: none; }
+</style></head><body><form id="f">
+  <div class="row">
+    <label id="label_country" for="country">Country</label>
+    <select id="country" class="dropdown-hide" style="display:none" icimsdropdown-enabled="1" icimsdropdown-ajax="1">
+      <option value=""></option></select>
+    <a id="country_icimsDropdown" class="dropdown-select" role="combobox" tabindex="0" aria-expanded="false"
+      aria-labelledby="label_country"><span id="country_fakeSelected_icimsDropdown" class="dropdown-text"><span
+      class="dropdown-placeholder">— Make a Selection —</span></span></a>
+    <div id="country_icimsDropdown_ctnr" class="dropdown-container" aria-owns="country_dropdown-results" hidden>
+      <input type="text" class="dropdown-search" autocomplete="off" placeholder="— Type to Search —" role="combobox"
+        aria-autocomplete="list" aria-controls="country_dropdown-results">
+      <ul id="country_dropdown-results" class="dropdown-results" role="listbox">
+        <li class="dropdown-result result-selectable" role="option" dropdown-index="-1">— Make a Selection —</li>
+        <li class="dropdown-result result-selectable" role="option" dropdown-index="0">Canada</li>
+        <li class="dropdown-result result-selectable" role="option" dropdown-index="1">Mexico</li>
+        <li class="dropdown-result result-selectable" role="option" dropdown-index="2">United States</li>
+      </ul>
+    </div>
+  </div>
+  <div class="row">
+    <label id="label_school" for="school">School</label>
+    <select id="school" class="dropdown-hide" style="display:none" icimsdropdown-enabled="1" icimsdropdown-ajax="1"
+      icimsdropdown-search="1"><option value=""></option></select>
+    <a id="school_icimsDropdown" class="dropdown-select" role="combobox" tabindex="0" aria-expanded="false"
+      aria-labelledby="label_school"><span id="school_fakeSelected_icimsDropdown" class="dropdown-text"><span
+      class="dropdown-placeholder">— Make a Selection —</span></span></a>
+    <div id="school_icimsDropdown_ctnr" class="dropdown-container" aria-owns="school_dropdown-results" hidden>
+      <input type="text" class="dropdown-search" autocomplete="off" placeholder="— Type to Search —" role="combobox"
+        aria-autocomplete="list" aria-controls="school_dropdown-results">
+      <ul id="school_dropdown-results" class="dropdown-results" role="listbox"></ul>
+    </div>
+  </div>
+</form>
+<script>
+  window.__chosen = [];
+  const SCHOOLS = ['Lakeside University', 'Lakeside Community College', 'Riverside College'];
+  for (const id of ['country', 'school']) {
+    const anchor = document.getElementById(id + '_icimsDropdown');
+    const ctnr = document.getElementById(id + '_icimsDropdown_ctnr');
+    const box = ctnr.querySelector('input.dropdown-search');
+    const results = document.getElementById(id + '_dropdown-results');
+    const shown = document.getElementById(id + '_fakeSelected_icimsDropdown');
+    const open = (yes) => { ctnr.hidden = !yes; anchor.setAttribute('aria-expanded', String(yes)); };
+    if (id === 'school' && document.documentElement.dataset.variant === 'deaf') {
+      anchor.addEventListener('click', () => { anchor.dataset.clicked = String(Number(anchor.dataset.clicked ?? 0) + 1); });
+    } else {
+      anchor.addEventListener('click', () => open(ctnr.hidden));
+    }
+    results.addEventListener('click', (event) => {
+      const row = event.target.closest('li.result-selectable');
+      if (row === null || row.getAttribute('dropdown-index') === '-1') return;
+      shown.replaceChildren(row.textContent);
+      window.__chosen.push(row.textContent);
+      open(false);
+    });
+    if (id === 'school') {
+      box.addEventListener('input', () => {
+        const query = box.value.toLowerCase();
+        results.replaceChildren(...SCHOOLS.filter((name) => query !== '' && name.toLowerCase().includes(query))
+          .map((name, at) => {
+            const row = document.createElement('li');
+            row.className = 'dropdown-result result-selectable';
+            row.setAttribute('role', 'option');
+            row.setAttribute('dropdown-index', String(at));
+            row.textContent = name;
+            return row;
+          }));
+      });
+    }
+  }
+</script></body></html>`;
+
+/** iCIMS's dropdowns as its adapter declares them (FIXPLAN §6.5 item 1): opener (and, but for School here, expanded)
+ *  the anchor; `input` the search box of the container beside it; results the container's list, its placeholder row
+ *  left out; the shown answer the anchor's fake-selected text (a .dropdown-placeholder: none); typeahead-remote for a
+ *  search, else combobox; no activation. */
+function icimsAdapter(doc: Document): Adapter {
+  return {
+    widgetFor(control: Element): WidgetDecl | null {
+      if (!control.matches('a.dropdown-select[role="combobox"][id$="_icimsDropdown"]')) return null;
+      const id = control.id.replace(/_icimsDropdown$/, '');
+      const search = doc.getElementById(id)?.getAttribute('icimsdropdown-search') === '1';
+      const box = doc.getElementById(`${id}_icimsDropdown_ctnr`)?.querySelector<HTMLInputElement>('input.dropdown-search');
+      const shown = doc.getElementById(`${id}_fakeSelected_icimsDropdown`);
+      return { kind: search ? 'typeahead-remote' : 'combobox', opener: control as HTMLElement,
+        ...(search ? {} : { expanded: control }), ...(box ? { input: box } : {}),
+        results: { list: () => doc.getElementById(`${id}_dropdown-results`),
+          option: 'li.dropdown-result.result-selectable[role="option"]:not([dropdown-index="-1"])' },
+        shownAnswer: () => (shown === null || shown.querySelector('.dropdown-placeholder') !== null ? null
+          : shown.textContent?.trim() || null),
+        emptyAfterMs: 600, snapshot: 'synthetic iCIMS dropdown' };
+    },
+  } as unknown as Adapter;
+}
+
+describe('item 2 (ICIMS-01 core, icims-new-1): a widget\'s own text box beside it (WidgetDecl.input)', () => {
+  it('never makes the box a field, nor counts it, whether its container is shut or open', async () => {
+    const page = await open(ICIMS, 'icims', icimsAdapter);
+    const shut = page.scanned();
+    expect(shut.fields.map((field) => [field.label, field.kind])).toEqual([['Country', 'combobox'],
+      ['School', 'typeahead-remote']]);
+    // The two hidden selects only: the hidden search boxes are the widgets' parts.
+    expect(shut.counters.hiddenControlsIgnored).toBe(2);
+    for (const id of ['country', 'school']) page.doc.getElementById(`${id}_icimsDropdown_ctnr`)!.hidden = false;
+    const shown = page.scanned();
+    expect(shown.fields.map((field) => field.label)).toEqual(['Country', 'School']);
+    expect(shown.counters.hiddenControlsIgnored).toBe(2);
+    // The field's facts are the anchor's: its label, never the box's placeholder.
+    const country = page.target('Country');
+    expect([country.field.labelSource, country.field.nameAttr, country.field.autocomplete]).toEqual(['aria-labelledby', '', []]);
+    expect(country.widget!.input).toBe(page.doc.querySelector('#country_icimsDropdown_ctnr input'));
+    // Without the declaration, the open boxes are fields of their own ("— Type to Search —"), the shut ones counted.
+    const bare = await open(ICIMS, 'icims', () => null);
+    expect(bare.scanned().counters.hiddenControlsIgnored).toBe(4);
+    for (const id of ['country', 'school']) bare.doc.getElementById(`${id}_icimsDropdown_ctnr`)!.hidden = false;
+    expect(bare.scanned().fields.filter((field) => field.label === '— Type to Search —')).toHaveLength(2);
+  });
+
+  it('reads a combobox\'s rows without its placeholder row, chooses one, and toggles its anchor shut', async () => {
+    const page = await open(ICIMS, 'icims', icimsAdapter);
+    expect(labelsOf(await readWidget(page.target('Country'), page.ctx()))).toEqual(['Canada', 'Mexico', 'United States']);
+    // The list our click opened was toggled shut by a second click on the anchor: focusout and blur go to the box.
+    expect(page.doc.getElementById('country_icimsDropdown_ctnr')!.hidden).toBe(true);
+    expect(page.events.on('country_icimsDropdown').filter((event) => event.type === 'click')).toHaveLength(2);
+    const value = { kind: 'option' as const, index: 1, cleanLabel: 'Mexico' };
+    expect(await fillWidget(page.target('Country'), value, page.ctx()))
+      .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    expect(page.win<string[]>('__chosen')).toEqual(['Mexico']);
+    expect(page.target('Country').field.current).toEqual({ kind: 'selected', labels: ['Mexico'] });
+    expect(widgetHolds(page.target('Country'), value)).toBe(true);
+    expectOurEventsOnly(page.events);
+  });
+
+  it('opens a search\'s anchor before typing into the box beside it, then chooses the result', async () => {
+    const page = await open(ICIMS, 'icims', icimsAdapter);
+    const box = page.doc.querySelector<HTMLInputElement>('#school_icimsDropdown_ctnr input')!;
+    const hooks: TypeaheadHooks = {
+      guard: async () => ({ ok: true, target: page.target('School') }),
+      match: async (results) => {
+        const index = results.findIndex((result) => result.label === 'Lakeside University');
+        return index < 0 ? { choose: null, reason: 'no-match', blocked: false }
+          : { choose: { index, cleanLabel: 'Lakeside University' } };
+      },
+    };
+    const typedWhileShown: boolean[] = [];
+    box.addEventListener('input', () => typedWhileShown.push(!page.doc.getElementById('school_icimsDropdown_ctnr')!.hidden));
+    const result = await searchTypeahead(page.target('School'), ['Lakeside University'], page.ctx(), hooks);
+    expect(result).toMatchObject({ chosen: { cleanLabel: 'Lakeside University' }, verified: true, reason: 'ok', typed: 1 });
+    expect(typedWhileShown).toEqual([true]);
+    expect(page.win<string[]>('__chosen')).toEqual(['Lakeside University']);
+    expect(page.target('School').field.current).toEqual({ kind: 'selected', labels: ['Lakeside University'] });
+    // The anchor's click opened the container, and only then was the box typed into.
+    const ours = page.events.events.filter((event) => !event.trusted && ['click', 'input'].includes(event.type));
+    expect(ours[0]).toMatchObject({ type: 'click', target: 'school_icimsDropdown' });
+    expectOurEventsOnly(page.events);
+  });
+
+  it('never types into a box beside its widget that a person cannot see: needs-your-click, nothing typed', async () => {
+    const page = await open(ICIMS.replace('<html>', '<html data-variant="deaf">'), 'icims', icimsAdapter);
+    const box = page.doc.querySelector<HTMLInputElement>('#school_icimsDropdown_ctnr input')!;
+    const result = await searchTypeahead(page.target('School'), ['Lakeside University'], page.ctx(), {
+      guard: async () => ({ ok: true, target: page.target('School') }),
+      match: async () => ({ choose: null, reason: 'no-match', blocked: false }),
+    });
+    expect(result).toMatchObject({ chosen: null, reason: 'needs-your-click', typed: 0 });
+    expect(box.value).toBe('');
+    // The anchor answered our one click, and its box stayed hidden: never typed into.
+    expect(page.doc.getElementById('school_icimsDropdown')!.dataset.clicked).toBe('1');
+    expect(page.events.events.filter((event) => event.type === 'input')).toEqual([]);
+  });
+});
+
 // ── Item 3 (SR-1, SR-2, SR-6 core): SmartRecruiters' lists across shadow trees ────────────────────────────────────────
 
 /** SmartRecruiters' widgets as SP\jr6\audit\smartrecruiters.md reads them (fixtures/smartrecruiters/xplor-screening.html
@@ -329,8 +517,37 @@ function srAdapter(options: { known?: boolean; order?: string[] } = {}): Adapter
   } as unknown as Adapter;
 }
 
+/** The same screening question declared on its host (a widget root) instead, its own text box two shadow roots down
+ *  (WidgetDecl.input inside the element): as an adapter that takes spl-autocomplete itself for the widget would. */
+function srHostAdapter(): Adapter {
+  return {
+    widgetRoots: (root: Element) => Array.from(root.querySelectorAll('x-autocomplete')),
+    widgetFor(control: Element): WidgetDecl | null {
+      if (control.localName !== 'x-autocomplete') return null;
+      const box = control.shadowRoot!.getElementById('q1-input')!.shadowRoot!.getElementById('q1-box') as HTMLInputElement;
+      return { kind: 'combobox', opener: box, expanded: box, input: box,
+        knownOptions: ['LinkedIn', 'Indeed', 'Company website', 'Other'],
+        results: { list: () => byIdAcross(box, box.getAttribute('aria-controls') ?? ''), option: 'x-option',
+          pressTarget: innerItem }, snapshot: 'synthetic SR screening host' };
+    },
+  } as unknown as Adapter;
+}
+
 describe('item 3 (SR-1, SR-6 core): lists across shadow trees', () => {
   const QUESTION = 'How did you first hear about us?';
+
+  it('makes a host declared as the widget one field, its own box two shadow roots down never one of its own', async () => {
+    const page = await open(SHADOWS, 'smartrecruiters', () => srHostAdapter());
+    const fields = page.scanned().fields.filter((field) => field.label === QUESTION);
+    expect(fields).toHaveLength(1);
+    const target = page.scanned().target(fields[0]!.key)!;
+    // Labelled by its own box's label, the box being its own (inside it, across its shadow roots).
+    expect([target.control.localName, target.field.labelSource, optionLabels(target)])
+      .toEqual(['x-autocomplete', 'for', ['LinkedIn', 'Indeed', 'Company website', 'Other']]);
+    expect(await fillWidget(target, { kind: 'option', index: 2, cleanLabel: 'Company website' }, page.ctx()))
+      .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    expect(page.win<string[]>('__chosen')).toEqual(['c']);
+  });
 
   it('plans a list the page publishes at once, and chooses its option by label on the inner item', async () => {
     const page = await open(SHADOWS, 'smartrecruiters', () => srAdapter());

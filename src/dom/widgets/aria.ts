@@ -20,7 +20,7 @@
  * list may be the adapter's hook, asked each time (Workday's prompts draw theirs at the end of the body only while
  * open), and a result its adapter names as only opening a list of its own (a category) is one that cannot be chosen
  * (isUnchoosableResult).
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1, 3 and 4):
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 4):
  * - a declared list's rows are its selector's matches, or the rows its adapter's hook lists where no selector reaches
  *   them (WidgetResults.options: a slot's assigned elements); a choice presses the element its adapter names
  *   (WidgetResults.pressTarget), else the row's label part ('label'), else the row (pressTargetOf);
@@ -135,6 +135,13 @@ export function pressTargetOf(widget: Pick<WidgetTarget, 'results' | 'optionLabe
   if (widget.results?.choose !== 'label') return option;
   const part = widget.optionLabel?.(option) ?? null;
   return part !== null && part !== option && option.contains(part) ? part : option;
+}
+
+/** jr6 ENGINE E1: whether a widget is select-only as a person meets it, so its opener toggles its list: it has no text
+ *  box of its own inside it (none, or the one its adapter declares beside it: iCIMS's search box, in a container drawn
+ *  next to its anchor, WidgetDecl.input). */
+export function selectOnly(widget: Pick<WidgetTarget, 'element' | 'input'>): boolean {
+  return widget.input === null || !holdsComposed(widget.element, widget.input);
 }
 
 /** A widget's list now (v4, drop): the results list its adapter declared (WidgetDecl.results), while it is in the page,
@@ -273,7 +280,8 @@ export function isWidgetPart(control: Element): boolean {
 export function isActionable(widget: WidgetTarget): boolean {
   if (widget.kind === 'checkbox') return false;
   if (widget.kind === 'radio') return widget.members.length > 0;
-  // v4 (drop): a search whose results list its adapter declared from a capture (WidgetDecl.results), with a text box.
+  // v4 (drop): a search whose results list its adapter declared from a capture (WidgetDecl.results), with a text box
+  // (jr6 ENGINE E1, FIXPLAN §6.2 item 2: its own, or the one its adapter declares beside it, WidgetDecl.input).
   if (widget.declared && widget.kind === 'typeahead-remote' && widget.input !== null && widget.results !== undefined) {
     return true;
   }

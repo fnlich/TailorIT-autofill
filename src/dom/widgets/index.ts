@@ -37,8 +37,8 @@ import { awaitList, closeList, openList } from './interact';
 import { readList, type ListRead } from './options';
 
 export {
-  ariaWidgetKind, editableOf, isActionable, isWidgetPart, listOf, membersOf, pressTargetOf, searchesList, widgetListOf,
-  WIDGET_ROOT_SELECTOR,
+  ariaWidgetKind, editableOf, isActionable, isWidgetPart, listOf, membersOf, pressTargetOf, searchesList, selectOnly,
+  widgetListOf, WIDGET_ROOT_SELECTOR,
 } from './aria';
 export { chooseThroughBridge, keepReading, remember, type BridgeAttempt, type WidgetFillContext } from './fill';
 export {

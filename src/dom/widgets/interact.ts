@@ -30,11 +30,15 @@
  * signal, never a fixed sleep. While the person may Skip the write (v3 Phase 3: WidgetContext.runSignal), its Skip
  * ends the waits too; what the write had done to its widget is then put back (its typed text, its open list) through
  * skipTidyContext: a fresh, short-capped signal that only the run's own end aborts.
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1, 3 and 4):
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 4):
  * - a list its adapter declares outside the form root's own tree (another shadow tree: SmartRecruiters' menus; a portal
  *   at the end of the body: ADP's) is watched directly, with the hosts of rows slotted into it (watchList): the form
  *   root's observer sees neither;
- * - a choice presses the element its adapter names (chooseResult: pressTargetOf, with the declared event).
+ * - a choice presses the element its adapter names (chooseResult: pressTargetOf, with the declared event);
+ * - a select-only opener toggles: a list our click left open after focusout and blur is shut by a second click, also
+ *   where the widget's declared text box sits beside it, not inside (iCIMS's anchor and its container's search box);
+ * - what the page changes inside our activation itself (a click listener that shows a popup) is its answer
+ *   (watchAnswer).
  */
 import type { Adapter } from '../../adapters/types';
 import type { OptionSetHash } from '../../core/types/field';
@@ -42,12 +46,12 @@ import { askBridge } from '../bridge';
 import type { BridgeReason } from '../bridge-protocol';
 import { fireKey, fireLeave, WIDGET_KEYS, windowOf, type WidgetKey } from '../fillers/events';
 import { assertKeyTarget, assertNotSubmit, optionWordsRefusal } from '../fillers/not-submit';
-import { quietWait, type QuietWait } from '../settle';
+import { isOwnRecord, quietWait, type QuietWait } from '../settle';
 import { WIDGET_CAP_MS, WIDGET_QUIET_MS, WIDGET_READY_CAP_MS, WIDGET_READY_QUIET_MS } from '../thresholds';
 import { monotonicNow, startDeadline } from '../time';
 import type { WidgetTarget } from '../types';
 import { followsItsField, isUserVisible, stopsFollowing } from '../visibility';
-import { optionElementsOf, pressTargetOf, widgetListOf } from './aria';
+import { optionElementsOf, pressTargetOf, selectOnly, widgetListOf } from './aria';
 import { listState, widgetBusy } from './options';
 
 /** What acting on a widget needs. */
@@ -210,22 +214,51 @@ export interface Activation {
   mutated: boolean;
 }
 
+/**
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 2 and 12): starts watching for the page's answer to one action that comes inside
+ * the action itself (a click listener that shows a popup runs within click(), before afterAction's wait watches
+ * anything: iCIMS's anchor shows its container so, and its empty results list shows nothing until a query is typed),
+ * as typeWatched watches a typed query: the form root, the widget's list where it sits outside it, and the shadow tree
+ * its opener is drawn in. The function returned stops the watch and answers whether the page changed meanwhile (the
+ * extension's own records left out).
+ */
+function watchAnswer(widget: WidgetTarget, root: Element): () => boolean {
+  const view = windowOf(root);
+  const observer = new view.MutationObserver(() => undefined);
+  const init: MutationObserverInit = { subtree: true, childList: true, attributes: true, characterData: true };
+  observer.observe(root, init);
+  const listbox = widgetListOf(widget);
+  if (listbox !== null && !root.contains(listbox)) observer.observe(listbox, init);
+  const tree = (widget.opener ?? widget.element).getRootNode();
+  if (tree.nodeType === 11 && tree !== root.getRootNode()) observer.observe(tree, init);
+  return () => {
+    const changed = observer.takeRecords().some((record) => !isOwnRecord(record));
+    observer.disconnect();
+    return changed;
+  };
+}
+
 /** One activation and the page's answer (see the header): sent once more, after the run's one wait for the page, when
- *  it is a declared activation, the page has answered none yet, and it answered nothing at all to this one. */
+ *  it is a declared activation, the page has answered none yet, and it answered nothing at all to this one. jr6 ENGINE
+ *  E1: a change the page made inside the activation itself is an answer too (watchAnswer). */
 export async function activateAndAwait(widget: WidgetTarget, ctx: WidgetContext): Promise<Activation> {
   const readiness = ctx.readiness ?? newReadiness();
   let mutated = false;
   for (let attempt = 0; ; attempt += 1) {
-    if (!activate(widget, ctx)) return { status: 'refused', mutated };
+    const watched = watchAnswer(widget, ctx.root);
+    const sent = activate(widget, ctx);
+    const inside = watched();
+    if (!sent) return { status: 'refused', mutated };
     const answer = await afterAction(widget, ctx);
-    mutated ||= answer.mutated;
+    const changed = answer.mutated || inside;
+    mutated ||= changed;
     if (answer.aborted) return { status: 'aborted', mutated };
     const expanded = expandedState(widget);
-    if (expanded === true || (expanded === null && (answer.mutated || openListOf(widget) !== null))) {
+    if (expanded === true || (expanded === null && (changed || openListOf(widget) !== null))) {
       if (widget.activation.length > 0) readiness.answered = true;
       return { status: 'answered', mutated };
     }
-    if (attempt > 0 || widget.activation.length === 0 || readiness.answered || readiness.waited || answer.mutated) {
+    if (attempt > 0 || widget.activation.length === 0 || readiness.answered || readiness.waited || changed) {
       return { status: 'ignored', mutated };
     }
     readiness.waited = true;
@@ -337,8 +370,10 @@ async function closeListNow(widget: WidgetTarget, ctx: WidgetContext, opened: { 
     if (escaped.aborted || closed()) return closed();
   }
   const opener = widget.opener ?? (widget.element as HTMLElement);
-  // A select-only combobox that our click opened toggles shut on a second click; a text box does not.
-  if (opened.activated && widget.input === null && widget.activation.length === 0 && assertNotSubmit(opener, ctx).ok) {
+  // A select-only combobox that our click opened toggles shut on a second click; a text box does not. jr6 ENGINE E1: nor
+  // does a widget whose text box its adapter declares beside it (iCIMS's anchor, its search box in a container drawn
+  // next to it: WidgetDecl.input) hold that box inside: its anchor is select-only to a person and toggles too.
+  if (opened.activated && selectOnly(widget) && widget.activation.length === 0 && assertNotSubmit(opener, ctx).ok) {
     opener.click();
     await afterAction(widget, ctx);
   }

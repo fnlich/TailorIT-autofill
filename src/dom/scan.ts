@@ -196,27 +196,35 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
   const collected = collectFields(root);
   const all = extraRoots.length === 0 && pickers.size === 0 ? collected
     : inDocumentOrder([...collected, ...extraRoots, ...pickers]);
-  // jr6 ENGINE E1 (FIXPLAN §6.2 item 4): every declaration read once, before any control is judged, so what a
-  // declaration names as its widget's own is known wherever it stands in the page (declarationsOf): the native controls
-  // it names as its parts (WidgetDecl.parts: the Yes/No's display:none checkbox; ADP's lists' filter box in its shadow
-  // tree), inside its element across shadow roots, never fields, counted among the hidden controls the scan ignored, as
-  // before for a widget root's.
+  // jr6 ENGINE E1 (FIXPLAN §6.2 items 2 and 4): every declaration read once, before any control is judged, so what a
+  // declaration names as its widget's own is known wherever it stands in the page (declarationsOf):
+  // - the native controls it names as its parts (WidgetDecl.parts: the Yes/No's display:none checkbox; ADP's lists'
+  //   filter box in its shadow tree), inside its element across shadow roots, never fields, counted among the hidden
+  //   controls the scan ignored, as before for a widget root's;
+  // - the text box it declares (WidgetDecl.input), beside its element (iCIMS's search box, "— Type to Search —", in the
+  //   container its anchor opens) or inside it across shadow roots (a host whose box sits in a nested shadow tree, which
+  //   no light-DOM rule makes its part): the widget's part, never a field nor a control the scan counts.
   const declarations = declarationsOf(all, adapter, pickers);
   const absorbed = new Set<Element>();
+  const boxes = new Set<Element>();
   for (const [el, declared] of declarations) {
     if (declared === null || outside(el)) continue;
     for (const part of declared.parts ?? []) {
       if (part !== el && holdsComposed(el, part) && part.matches(CONTROL_SELECTOR)) absorbed.add(part);
     }
+    const box = declaredBox(el, declared);
+    if (box !== null && box !== el) boxes.add(box);
   }
-  const found = excluded.length === 0 && absorbed.size === 0 ? all : all.filter((el) => {
+  const found = excluded.length === 0 && absorbed.size === 0 && boxes.size === 0 ? all : all.filter((el) => {
+    if (boxes.has(el)) return false;
     if (!outside(el) && !absorbed.has(el)) return true;
     // A control the adapter keeps out of the fields is still one the scan ignored.
     if (el.matches(CONTROL_SELECTOR) && kindOf(el).field) counters.hiddenControlsIgnored += 1;
     return false;
   });
-  // Every combobox's list, so a listbox that is one is not taken for a field of its own.
-  const lists = new Set(found.filter((el) => roleOf(el) === 'combobox').map((el) => listOf(el))
+  // Every combobox's list, so a listbox that is one is not taken for a field of its own (jr6 ENGINE E1: a declared box's
+  // too, though the box itself is no field).
+  const lists = new Set([...found, ...boxes].filter((el) => roleOf(el) === 'combobox').map((el) => listOf(el))
     .filter((list): list is Element => list !== null));
   for (const el of found) {
     // v5 p2-fill: a declared picker control a person can see is a file field; one they cannot is none.
@@ -696,6 +704,15 @@ function declarationsOf(all: readonly Element[], adapter: Adapter | null, picker
   return declarations;
 }
 
+/** jr6 ENGINE E1 (FIXPLAN §6.2 item 2): the text box a declaration names as its widget's own (WidgetDecl.input: iCIMS's
+ *  search box beside its anchor), when it is one: a text input in the page, not the extension's own; else null. */
+function declaredBox(el: Element, declared: WidgetDecl): HTMLInputElement | null {
+  const box = declared.input;
+  if (box === undefined || box === null || box.localName !== 'input' || !isTextLike(box)) return null;
+  if (!box.isConnected || box.ownerDocument !== el.ownerDocument || isInOwnUi(box)) return null;
+  return box;
+}
+
 /** jr6 ENGINE E1 (FIXPLAN §6.2 item 3, SR-1): the whole list a page publishes for its widget (WidgetDecl.knownOptions), as
  *  its field's options: page text, untrusted as every option label is, each cut to TEXT_CAP_LABEL and the list to
  *  MAX_WIDGET_OPTIONS; empty labels dropped. Undefined when it gives none. */
@@ -717,6 +734,9 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
   const page = kind === 'combobox' || kind === 'multiselect' ? pageList(declared) : undefined;
   const stored = page !== undefined || declared?.storedList === undefined || kind !== 'combobox' ? undefined
     : storedLists?.get(declared.storedList);
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 2): the text box its adapter declares (WidgetDecl.input), beside its element or in
+  // it; else ARIA's (editableOf).
+  const box = declared === null ? null : declaredBox(el, declared);
   // A group: an ARIA radio group or Yes/No group, or a 'radio' its adapter declares with its members, each inside its
   // element and none the extension's own. Inside counts across open shadow roots (core pass Z2 of 2026-11-06: ADP's
   // referral radios, sdf-radio-button[role=radio] in each wfn-radio-button's shadow root, fixtures/adp/questions.html;
@@ -725,7 +745,7 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
   const members = declared?.members === undefined ? membersOf(el)
     : declared.members.filter((member) => member !== el && holdsComposed(el, member) && !isInOwnUi(member));
   return {
-    kind, element: el, input: group ? null : editableOf(el),
+    kind, element: el, input: group ? null : box ?? editableOf(el),
     opener: group || roleOf(el) === 'listbox' ? null : declared?.opener ?? (el as HTMLElement),
     members: group ? [...members] : [], activation: declared?.activation ?? [],
     declared: declared !== null,
@@ -804,8 +824,12 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
   sections: ReturnType<typeof sectionFinder>): Draft {
   const el = widget.element;
   const groupLike = widget.kind === 'radio' && widget.members.length > 0;
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 2): the field's text box, where it is the widget's own (inside its element, an
+  // ARIA 1.1 combobox's): a box its adapter declares beside the element (WidgetDecl.input: iCIMS's search box, labelled
+  // "— Type to Search —") names, requires, disables and names nothing of the field, which is the element's.
+  const own = widget.input !== null && holdsComposed(el, widget.input) ? widget.input : null;
   let label = groupLike ? labelOfGroup([], el, ctx) : labelOfControl(el, ctx);
-  if (label.source === 'none' && widget.input !== null && widget.input !== el) label = labelOfControl(widget.input, ctx);
+  if (label.source === 'none' && own !== null && own !== el) label = labelOfControl(own, ctx);
   let options: Option[] | 'lazy' = 'lazy';
   let partial = false;
   let members = widget.members;
@@ -828,21 +852,21 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
       }
     }
   }
-  const required = label.required || isRequired(el) || (widget.input !== null && isRequired(widget.input))
+  const required = label.required || isRequired(el) || (own !== null && isRequired(own))
     || adapterRequires(el, ctx.adapter);
   return {
     kind: widget.kind, control: el, members: [], selectOptions: [], container: null, label, options, selectable: [],
     section: sections.sectionOf(el, label.element), description: descriptionOf(el, ctx), constraints: {},
     visibility: first.visibility, proxy: null, required,
-    disabled: groupLike ? members.every(isUnavailable) : isDisabled(el) || (widget.input !== null && isDisabled(widget.input)),
+    disabled: groupLike ? members.every(isUnavailable) : isDisabled(el) || (own !== null && isDisabled(own)),
     // A text box its adapter declares read-only by design (WidgetDecl.readOnlyBox: a select-only dropdown) is read-only
     // only by its aria-readonly; any other widget by the scanner's rule.
-    readOnly: widget.readOnlyBox === true ? [el, widget.input].some((part) => part !== null && ariaReadOnly(part))
-      : isReadOnly(el) || (widget.input !== null && isReadOnly(widget.input)),
+    readOnly: widget.readOnlyBox === true ? [el, own].some((part) => part !== null && ariaReadOnly(part))
+      : isReadOnly(el) || (own !== null && isReadOnly(own)),
     // A widget's text box is drawn inside the widget's own box, so it is not judged on its own.
     camouflaged: false,
-    nameAttr: attribute(widget.input ?? el, 'name'), idAttr: attribute(el, 'id'),
-    autocomplete: widget.input === null ? [] : autocompleteTokens(widget.input).slice(0, MAX_AUTOCOMPLETE_TOKENS)
+    nameAttr: attribute(own ?? el, 'name'), idAttr: attribute(el, 'id'),
+    autocomplete: own === null ? [] : autocompleteTokens(own).slice(0, MAX_AUTOCOMPLETE_TOKENS)
       .map((token) => capCodePoints(token, TEXT_CAP_AUTOCOMPLETE_TOKEN)),
     widget: members === widget.members ? widget : { ...widget, members },
     ...(partial ? { optionsPartial: true as const } : {}),
