@@ -767,11 +767,13 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
       expect(h.sent).toEqual([]);
       await says(h, tab, 'review');
       expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
-      // The person's Autofill again: its run works on past the entry's wait, and stays filling.
+      // The person's Autofill again: its run works on past the entry's wait, and stays filling all along.
       await h.advance(20_000);
       await says(h, tab, 'scan-step');
-      await h.advance(QUEUE_ENTRY_WAIT_MS, 1_000);
-      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      for (let passed = 0; passed < QUEUE_ENTRY_WAIT_MS; passed += 1_000) {
+        await h.advance(1_000);
+        expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      }
       await says(h, tab, 'review');
       expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
       expect(timeouts()).toEqual([]);
@@ -821,6 +823,25 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
       expect(timeouts()).toEqual([]);
       expect(h.filled).toEqual([tab]);
       expect(h.sent).toEqual([]);
+    });
+
+    it('a run’s report heard as its message comes ends the wait, though no look at the tabs saw it', async () => {
+      seed(h, 1);
+      await h.runner.start();
+      const { tab, key } = await entered(h, 1);
+      const startedAt = h.clock.now;
+      // A slow entry: the form's run reports late in the wait, and its page turns at once (its reports go with it).
+      await h.advance(85_000);
+      await h.runner.hello(tab, { frameId: 0, documentId: 'form-1', hasForm: true, applicationKey: key }, true);
+      await says(h, tab, 'fill-step');
+      h.reports.delete(tab);
+      // Across the wait, the next step's run not heard yet: still filling (a run reported), never the timer.
+      await h.advance(7_000);
+      expect(h.clock.now - startedAt).toBeGreaterThan(QUEUE_ENTRY_WAIT_MS);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      await says(h, tab, 'review');
+      expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      expect(timeouts()).toEqual([]);
     });
 
     it('ends an entry’s wait while the run is paused too, by its own timer, the alarm kept while it waits', async () => {
