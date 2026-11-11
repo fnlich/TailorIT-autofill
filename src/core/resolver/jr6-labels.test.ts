@@ -814,6 +814,10 @@ const LABELS_FIX: Array<[string, Case, FieldCategory | null, string | null]> = [
   ['R68', { label: 'What is your desired salary? pay basis', kind: 'radio', options: ['Annually', 'Hourly'] },
     'salary.period', 'label.pay-basis'],
   ['R68', { label: 'Pay period', kind: 'select' }, 'salary.period', 'label.pay-basis'],
+  // RULES-TEST-GAPS-PER-ITEM (e): item 1's RACE_SELF alternatives, each the only one a label meets.
+  ['gaps 1', { label: 'Voluntary Self-Identification of Race/Ethnicity', kind: 'select' }, 'eeo.race', 'label.race'],
+  ['gaps 1', { label: 'Please select the ethnicity that best describes you', kind: 'select' }, 'eeo.race', 'label.race'],
+  ['gaps 1', { label: 'Select the racial category that applies to you', kind: 'radio' }, 'eeo.race', 'label.race'],
 ];
 
 /** [issue id, the field, what it must not be read as]: the fixes' near misses. */
@@ -836,6 +840,15 @@ const NEAR_MISSES_FIX: Array<[string, Case, FieldCategory]> = [
   ['R68', { label: 'Please indicate your preferred pay frequency', kind: 'select', options: ['Weekly', 'Bi-weekly',
     'Monthly'] }, 'salary.period'],
   ['R68', { label: 'What pay frequency do you prefer?', kind: 'select' }, 'salary.period'],
+  // RULES-TEST-GAPS-PER-ITEM (a): item 63's yes or no question that names skills, on the kinds skills.list takes (a
+  // Workday combobox, a text box); radio and select never take skills.list, so they test nothing of the rule.
+  ['gaps 63', { label: 'Do you have strong communication skills?', kind: 'combobox', options: ['Yes', 'No'] },
+    'skills.list'],
+  ['gaps 63', { label: 'Do you have strong communication skills?', kind: 'text' }, 'skills.list'],
+  ['gaps 63', { label: DANAFARBER_TRAINING, kind: 'combobox', options: ['Yes', 'No'] }, 'skills.list'],
+  // (b): item 38's RELATIVES_NOT: a relationship with a customer's employee.
+  ['gaps 38', { label: 'Do you have a personal relationship with any employee of our customers?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'screening.relatives'],
 ];
 
 // After the stop: RULES-R49: NinjaOne's "Chosen First Name" carries autocomplete="given-name" (jobvite/ninjaone-step1).

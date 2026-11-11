@@ -206,6 +206,12 @@ describe('56 (SR-9, smartrecruiters-new-2): a restriction’s file types name no
     expect(withoutFileTypes('Upload your Resume, CV, Bio')).toBe('Upload your Resume, CV, Bio');
     expect(withoutFileTypes('Accepted: .pdf, .docx, .txt')).not.toMatch(/pdf/);
   });
+  // jr6 fix (RULES-TEST-GAPS-PER-ITEM (c)): the classification reads the help text without its file types, so a résumé's
+  // heading followed by the types it takes is still a résumé's heading.
+  it('reads a résumé’s heading followed by its file types as the résumé’s', () => {
+    const spec = specOf('Upload a file', 'file', { description: 'Resume: PDF, DOC, DOCX' });
+    expect(planned([spec], spec).row.category).toBe('file.resume');
+  });
 });
 
 describe('57 (U-10): a whole question that ends “Please briefly explain” stands alone', () => {
