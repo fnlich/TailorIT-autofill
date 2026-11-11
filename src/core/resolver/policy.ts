@@ -74,7 +74,9 @@ export const SENSITIVE_PART_CATEGORIES: ReadonlySet<FieldCategory> = new Set<Fie
   'workAuth.clearance', 'workAuth.citizenship', 'screening.restrictiveAgreement', 'screening.governmentService',
   'screening.relatives', 'screening.essentialFunctions', 'eeo.sexualOrientation', 'eeo.transgender',
   // jr6 RULES R2 (WD-30): OPT, from the work-authorization entry.
-  'workAuth.opt']);
+  'workAuth.opt',
+  // jr6 RULES R3 (WD-29): military training, from the service and veteran answers.
+  'screening.militaryTraining']);
 
 /** What the sensitive part's state means for a field of this category: answer it ('ready'), fetch the part first
  *  ('fetch'), or leave it blank and flagged with the state's reason. */
@@ -704,6 +706,9 @@ export function legalValue(category: FieldCategory, spec: FieldSpec, profile: Pr
       return governmentServiceValue(spec, profile, legal.now);
     case 'screening.relatives':
       return relativesValue(spec, profile, legal.postingCompany);
+    // jr6 RULES R3 (WD-29).
+    case 'screening.militaryTraining':
+      return asTyped(militaryTrainingValue(profile), spec);
     default:
       break;
   }
@@ -1146,6 +1151,8 @@ export interface ConsentContext {
   /** The field is a list, a combobox or a radio group (absent: a box or a text). With no `choice`, it offers an option
    *  that does not agree (a Yes and a No): a question. */
   list?: boolean;
+  /** jr6 RULES R3 (ICIMS-15): the field is a lone box (a signature ticked, not typed). */
+  box?: boolean;
   /** v4 (D5): a binding waiver the rules once handed to the person, asked as an agreement (Yes/No), decided here: agreed
    *  only when the form requires it, under either mode, and an optional one left unanswered, decided, as an optional
    *  binding box is (the disclosure: "except a binding clause the form does not require"). A consent read from its help
@@ -1200,6 +1207,12 @@ export function consentValue(category: FieldCategory, consentKinds: readonly Fie
   // unanswered (decided, never the person's), as an optional binding box is. Both were the person's before (the audit of
   // 2026-11-06, S-5); nothing is the person's now.
 
+  // jr6 RULES R3 (ICIMS-15, iCIMS's IForm Signature box `icims_f_signature`; Jobright's fillSignatureCheckboxes ticks
+  // it: cited): a signature asked as a box is ticked on the signature's terms, as any consent box (written last in the
+  // pass: plan/order.ts signatureLast). Owner Q6 may keep IForm signatures for the person.
+  if (category === 'consent.signature' && consent.box === true) {
+    return ticked(approved ? 'consent.signature-preapproved' : 'consent.required');
+  }
   if (category === 'consent.signature') {
     const name = profile.identity.fullName.trim();
     if (name === '') return none('no-profile-value');
@@ -1339,6 +1352,21 @@ export function residesInValue(spec: FieldSpec, profile: Profile, vocab: Vocab):
   if (option === null) return none('no-match', true);
   return value({ origin: byRule('location.not-there', elsewhere.at), confidence: VALUE_TRANSFORM,
     choice: { intended: intendedText(option.clean), domain: 'generic' }, flag: 'filled-low-confidence' });
+}
+
+/**
+ * jr6 RULES R3 (WD-29, Workday's AEP "Do you have military training or a military certification related to this
+ * position?", fixtures aep-application-questions-2): a qualification, never a self-identification. No when the person
+ * served in no military branch (screening.governmentService) and is no veteran (eeo.veteran), both explicit
+ * (legal.military-training); otherwise nothing (the `all` scope's AI).
+ */
+function militaryTrainingValue(profile: Profile): ValueResult {
+  const service = profile.screening.governmentService;
+  const veteran = profile.eeo.veteran;
+  if (service?.kind !== 'value' || service.value.military || veteran?.kind !== 'value' || veteran.value.veteran) {
+    return none('legal-not-in-profile');
+  }
+  return yesNo(false, fromProfile('screening.governmentService', 'legal.military-training'), VALUE_TRANSFORM);
 }
 
 // jr6 RULES end

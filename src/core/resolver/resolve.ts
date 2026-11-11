@@ -43,6 +43,7 @@ import { hasTripwire } from '../guard/tripwire';
 import { searchCandidates, type SearchExtras } from '../matcher/candidates';
 import { dialCodeOf } from '../matcher/dialCode';
 import { intendedText } from '../matcher/intended';
+import { prepareOptions } from '../matcher/prepare';
 import { SEARCH_LIST_MIN_OPTIONS } from '../matcher/searchLimits';
 import { typeaheadQueries } from '../matcher/typeahead';
 import type { PlanSensitiveState } from '../plan/types';
@@ -470,6 +471,8 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
       return consentValue(category, rules.consentKinds, profile, settings,
         { required: spec.required, aiFree: ctx.aiFree === true, choice: consentChoiceOption(spec, vocab),
           list: LIST_KINDS.has(spec.kind),
+          // jr6 RULES R3 (ICIMS-15): a signature asked as a box.
+          ...(spec.kind === 'checkbox' ? { box: true } : {}),
           // Only DECIDED_CONSENT_CAUSES reach here with a needsUser (resolveField hands every other cause over); a
           // consent read from its help text alone is decided by its kinds, as any (the v4 review, security M3).
           ...(rules.needsUser === 'binding-waiver' ? { bindingWaiver: true as const } : {}) });
@@ -489,9 +492,45 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
       // jr6 RULES (JV-9, JV-17): a choice read from the list's own words and the profile's address.
       if (category === 'location.policyResidence') return policyResidenceValue(spec, profile, vocab);
       if (category === 'location.residesIn') return residesInValue(spec, profile, vocab);
+      // jr6 RULES R3 (ICIMS-21, JV-8, JZ-9): the state the person lives in, asked as a question.
+      if (category === 'address.region' && RESIDENCE_STATE_RULES.has(rules.rule)) {
+        return residenceStateValue(spec, rules.rule, profileValue(category, { spec, profile, vocab, now,
+          separatePhoneCountry: false }), vocab);
+      }
       return profileValue(category, { spec, profile, vocab, now, separatePhoneCountry: ctx.separatePhoneCountry ?? false,
         ...(ctx.blockEntries ? { blockEntries: ctx.blockEntries } : {}) });
   }
+}
+
+/** jr6 RULES R3: the rules that read a question as the state the person lives in (labelRules). */
+const RESIDENCE_STATE_RULES: ReadonlySet<string> = new Set(['label.residence-state', 'label.work-state']);
+/** An option that says none of the list is the answer ("none of these", "None of the above", "Other", "Not listed"). */
+const NONE_OF_THESE = /^(?:none\s+of\s+(?:these|the\s+above|the\s+listed)|other(?:\s+state)?|not\s+listed|my\s+state\s+is\s+not\s+listed|n\/?a)\b/i;
+
+/**
+ * jr6 RULES R3 (ICIMS-21: Sentinel's "What state are you physically located in today?", JV-8: NinjaOne's "In which
+ * state do you currently live?" with 20 state codes and "none of these", JZ-9: WellHive's "From which state will you be
+ * working?"): the state the person lives in, chosen from the list by its name or its code; where the list does not offer
+ * it, its one "none of these" (or Other) instead (Choice.fallback, tried only once no option is the state). The state
+ * one will work from is read as the one lived in: flagged.
+ */
+function residenceStateValue(spec: FieldSpec, rule: string, result: ValueResult, vocab: Vocab): ValueResult {
+  if (!result.ok) return result;
+  const { candidate } = result;
+  const choice = candidate.choice;
+  const options = spec.options === 'lazy' ? [] : prepareOptionsOf(spec, vocab)
+    .filter((option) => NONE_OF_THESE.test(option.clean.trim()));
+  const fallback = options.length === 1 && choice !== undefined
+    ? { fallback: { intended: intendedText(options[0]!.clean), domain: 'generic' as const } } : {};
+  return value({ ...candidate, ...(choice !== undefined ? { choice: { ...choice, ...fallback } } : {}),
+    ...(rule === 'label.work-state' ? { flag: 'filled-low-confidence' as const } : {}) });
+}
+
+/** A field's usable options, prepared in the generic domain. */
+function prepareOptionsOf(spec: FieldSpec, vocab: Vocab) {
+  if (spec.options === 'lazy') return [];
+  return prepareOptions(spec.options, 'generic', vocab).list.filter((option) => !option.unusable && !option.disabled
+    && !option.injected);
 }
 
 /** No value: needs-user for a field only the person answers, leave-blank (flagged) when a candidate existed or the

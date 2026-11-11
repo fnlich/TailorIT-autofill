@@ -358,3 +358,143 @@ describe('jr6 RULES R2: the widened rules’ near misses', () => {
     expect(read(field).category).not.toBe(category);
   });
 });
+
+// ── jr6 RULES R3 (FIXPLAN §6.3 items 35 to 48) ──────────────────────────────────────────────────────────────────────
+
+const DANAFARBER_VETERANS = 'If you believe you belong to any of the categories of protected veterans listed below, '
+  + 'please indicate by checking the appropriate box below. Submission of this information is voluntary and failing to '
+  + 'provide it will not adversely affect your application.';
+
+/** [item and finding, the field, the category it asks, the rule id]. */
+const LABELS_R3: Array<[string, Case, FieldCategory, string]> = [
+  // 35. WD-11: Workday's Voluntary Disclosures.
+  ['35 WD-11', { label: 'Please select a gender.', kind: 'combobox' }, 'eeo.gender', 'label.gender'],
+  ['35 WD-11', { label: 'Veterans Status', kind: 'select' }, 'eeo.veteran', 'label.veteran'],
+  ['35 WD-11', { label: DANAFARBER_VETERANS, kind: 'combobox' }, 'eeo.veteran', 'label.veteran'],
+  // 36. WD-12: verily's age of majority.
+  ['36 WD-12', { label: 'Are you at least the age of majority under applicable law (i.e., age 18 in most states, but '
+    + 'age 19 in Alabama and Nebraska) and have the right to contract in your own name?', kind: 'radio',
+  options: ['Yes', 'No'] }, 'screening.over18', 'label.over18'],
+  // 37. WD-14: Genworth's agreement in place.
+  ['37 WD-14', { label: 'Do you have an agreement in place with a current or former employer that would prevent or '
+    + 'limit your ability to do this role at Genworth?', kind: 'radio', options: ['Yes', 'No'] },
+  'screening.restrictiveAgreement', 'label.restrictive-agreement'],
+  // 38. WD-15: relatives at the company.
+  ['38 WD-15', { label: 'Do you have a familial or personal relationship with any current Genworth employee (Relatives '
+    + 'include spouse, parent, child, sibling)?', kind: 'radio', options: ['Yes', 'No'] }, 'screening.relatives',
+  'label.relatives'],
+  ['38 WD-15', { label: 'Are you a relative of a Parsons employee?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.relatives', 'label.relatives'],
+  // 39. WD-16, JV-12: the company by its initials; worked for it in any capacity previously.
+  ['39 WD-16', { label: 'Have you previously been employed by RTS? CURRENT EMPLOYEES: Please reach out to your '
+    + 'Recruiting Manager to discuss your options.', kind: 'radio', options: ['Yes', 'No'] },
+  'screening.previouslyEmployed', 'label.previously-employed'],
+  ['39 JV-12', { label: 'Have you worked for VHL in any capacity previously?', kind: 'select',
+    options: ['Select an option...', 'Yes, Employee / Freelancer / Contractor / Intern / Temp', 'No'] },
+  'screening.previouslyEmployed', 'label.previously-employed'],
+  // 40. WD-17: a contractor at the company; another company (with a spouse: the person's).
+  ['40 WD-17', { label: 'Are you now or have you ever been a contractor at AEP?', kind: 'combobox',
+    options: ['Yes', 'No'] }, 'screening.previouslyEmployed', 'label.previously-employed'],
+  ['40 WD-17', { label: 'Have you or your spouse previously worked for KPMG?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.previouslyEmployed', 'label.previously-employed'],
+  // 41. WD-29: AEP's military training.
+  ['41 WD-29', { label: 'Do you have military training or a military certification related to this position?',
+    kind: 'combobox', options: ['Yes', 'No'] }, 'screening.militaryTraining', 'label.military-training'],
+  // 42, 43. ICIMS-12, ICIMS-13: iCIMS's phone and address "Type", by their names; an address type by its label.
+  ['42 ICIMS-12', { label: 'Type', kind: 'select', options: ['Home', 'Mobile', 'Work', 'Email Backup', 'Other'],
+    nameAttr: '-1_PersonProfileFields.PhoneType' }, 'contact.phoneType', 'name-id.phone-type'],
+  ['43 ICIMS-13', { label: 'Type', kind: 'select', options: ['Work', 'Home', 'Other'],
+    nameAttr: '-1_PersonProfileFields.AddressType' }, 'address.type', 'name-id.address-type'],
+  ['43 ICIMS-13', { label: 'Address Type', kind: 'combobox' }, 'address.type', 'label.address-type'],
+  // 44. ICIMS-15: the IForm's Signature box.
+  ['44 ICIMS-15', { label: 'Signature', kind: 'checkbox', idAttr: 'icims_f_signature' }, 'consent.signature',
+    'label.consent-signature'],
+  // 45. ICIMS-19: "Please specify" (select#rcf3049).
+  ['45 ICIMS-19', { label: 'Please specify', kind: 'select', idAttr: 'rcf3049' }, 'referral.detail',
+    'name-id.referral-detail'],
+  // 47. ICIMS-21, JV-8, JZ-9: the state the person lives in, or will work from.
+  ['47 ICIMS-21', { label: 'What state are you physically located in today?', kind: 'select' }, 'address.region',
+    'label.residence-state'],
+  ['47 JV-8', { label: 'In which state do you currently live?', kind: 'select' }, 'address.region',
+    'label.residence-state'],
+  ['47 JZ-9', { label: 'What state do you live in?', kind: 'select' }, 'address.region', 'label.residence-state'],
+  ['47 JZ-9', { label: 'State of Residence', kind: 'select' }, 'address.region', 'label.residence-state'],
+  ['47 JZ-9', { label: 'From which state will you be working?', kind: 'select' }, 'address.region', 'label.work-state'],
+  // 48. ICIMS-26, JV-16: a time zone; living in one; years in something; experience with something.
+  ['48 ICIMS-26', { label: 'Time Zone', kind: 'combobox' }, 'preferences.timeZone', 'label.time-zone'],
+  ['48 JV-16', { label: 'Question 9: Do you currently reside in a state located within the Eastern US Time Zone?',
+    kind: 'radio', options: ['Yes', 'No'] }, 'location.inTimeZone', 'label.in-time-zone'],
+  ['48 JV-16', { label: 'Question 2: Do you have 10+ years of work experience in Engineering?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'experience.yearsIn', 'label.years-in'],
+  ['48 JV-16', { label: 'Question 3: Do you have 5+ years’ work experience in a DevOps role?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'experience.yearsIn', 'label.years-in'],
+  ['48 JV-16', { label: 'Question 4: Do you have experience with Kubernetes?', kind: 'radio', options: ['Yes', 'No'] },
+    'skills.experienceWith', 'label.experience-with'],
+];
+
+describe('jr6 RULES R3: the audits’ labels', () => {
+  it.each(LABELS_R3)('%s: %j', (_item, field, category, rule) => {
+    expect(read(field)).toMatchObject({ category, rule, needsUser: null });
+  });
+});
+
+/** [item and finding, the field, what it must not be read as]: near misses of the R3 rules. */
+const NEAR_MISSES_R3: Array<[string, Case, FieldCategory]> = [
+  // 35: a gender-neutral word, veterans as clients, a holiday.
+  ['35', { label: 'Please select a gender neutral title', kind: 'select' }, 'eeo.gender'],
+  ['35', { label: 'Do you have experience working with veterans?', kind: 'radio', options: ['Yes', 'No'] },
+    'eeo.veteran'],
+  ['35', { label: 'Veterans Day shift availability', kind: 'select' }, 'eeo.veteran'],
+  // 36: a majority owner.
+  ['36', { label: 'Are you the majority owner of a business?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.over18'],
+  // 37: an agreement that limits nothing.
+  ['37', { label: 'Do you have an agreement in place with a staffing agency?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.restrictiveAgreement'],
+  // 38: a close friend, a customer or a vendor (owner Q14), a relationship with no employee.
+  ['38', { label: 'Are you a relative or close friend of a Parsons employee?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.relatives'],
+  ['38', { label: 'Are you a relative of any Parsons customer, subcontractor or vendor?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'screening.relatives'],
+  ['38', { label: 'Describe your personal relationship with technology', kind: 'textarea' }, 'screening.relatives'],
+  // 39: having worked with something before is no employment.
+  ['39', { label: 'If you have worked with these tools before, tell us how', kind: 'textarea' },
+    'screening.previouslyEmployed'],
+  // 40: a subcontractor of another.
+  ['40', { label: 'Are you a subcontractor for a staffing agency?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.previouslyEmployed'],
+  // 41: military service itself is the veteran question.
+  ['41', { label: 'Have you served in the military?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.militaryTraining'],
+  // 42, 43: another part's type.
+  ['42', { label: 'Type', kind: 'select', options: ['Full-time', 'Part-time'], nameAttr: 'jobType' },
+    'contact.phoneType'],
+  ['43', { label: 'Type', kind: 'select', options: ['Full-time', 'Part-time'], nameAttr: 'employmentType' },
+    'address.type'],
+  // 44: a signature's typed name stays a text box's.
+  // 45: "Please specify" with no id of iCIMS's.
+  ['45', { label: 'Please specify', kind: 'select', options: ['A', 'B'] }, 'referral.detail'],
+  // 47: a company's state, a preference.
+  ['47', { label: 'In which state is your company incorporated?', kind: 'select' }, 'address.region'],
+  ['47', { label: 'Which state do you prefer to work in?', kind: 'select' }, 'address.region'],
+  // 48: a field of experience, a sensitive topic, total years, a zone's hours.
+  ['48', { label: 'Do you have experience in marketing?', kind: 'radio', options: ['Yes', 'No'] },
+    'skills.experienceWith'],
+  ['48', { label: 'Do you have experience with sponsorship sales?', kind: 'radio', options: ['Yes', 'No'] },
+    'skills.experienceWith'],
+  ['48', { label: 'How many years of experience do you have?', kind: 'text' }, 'experience.yearsIn'],
+  ['48', { label: 'Are you willing to work Eastern Time Zone hours?', kind: 'radio', options: ['Yes', 'No'] },
+    'location.inTimeZone'],
+  ['48', { label: 'What time zone are our offices in?', kind: 'select' }, 'preferences.timeZone'],
+];
+
+describe('jr6 RULES R3: the widened rules’ near misses', () => {
+  it.each(NEAR_MISSES_R3)('%s: %j is no %s', (_item, field, category) => {
+    expect(read(field).category).not.toBe(category);
+  });
+
+  it('keeps a typed signature a text box’s (44, ICIMS-15)', () => {
+    expect(read({ label: 'Signature', kind: 'text' })).toMatchObject({ category: 'consent.signature',
+      rule: 'label.consent-signature' });
+  });
+});

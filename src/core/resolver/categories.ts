@@ -61,6 +61,11 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   'referral.employeeReferred': 'profile', 'location.residesIn': 'profile',
   // jr6 RULES R2: OPT or CPT, a legal answer from the work-authorization entry (WD-30).
   'workAuth.opt': 'legal',
+  // jr6 RULES R3: military training from the sensitive part's service and veteran answers (legal); the rest the
+  // profile's, or a rule over its own values.
+  'screening.militaryTraining': 'legal', 'address.type': 'profile', 'referral.detail': 'profile',
+  'preferences.timeZone': 'profile', 'location.inTimeZone': 'profile', 'experience.yearsIn': 'profile',
+  'skills.experienceWith': 'profile',
   unknown: 'unknown',
 };
 
@@ -154,7 +159,8 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'referral.referrerName': LINE,
   'consent.privacy': CONSENT, 'consent.terms': CONSENT, 'consent.certify': CONSENT, 'consent.dataRetention': CONSENT,
   'consent.marketing': CONSENT, 'consent.sms': CONSENT, 'consent.backgroundCheck': CONSENT,
-  'consent.signature': LINE, 'consent.aiAttestation': CONSENT, 'consent.other': CONSENT,
+  // jr6 RULES R3 (ICIMS-15, iCIMS's IForm Signature box `icims_f_signature`): a signature is also a box to tick.
+  'consent.signature': ['text', 'checkbox'], 'consent.aiAttestation': CONSENT, 'consent.other': CONSENT,
   attentionCheck: ANY,
   'freeText.whyCompany': PROSE, 'freeText.whyRole': PROSE, 'freeText.coverLetter': PROSE,
   'freeText.additionalInfo': PROSE, 'freeText.other': PROSE,
@@ -182,6 +188,11 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'referral.employeeReferred': YES_NO, 'location.residesIn': CHOICE,
   // jr6 RULES R2: OPT or CPT, yes or no (WD-30).
   'workAuth.opt': YES_NO_TEXT,
+  // jr6 RULES R3: yes or no questions; an address's type, a source's detail chosen from a list; a time zone typed or
+  // chosen.
+  'screening.militaryTraining': YES_NO, 'address.type': CHOICE, 'referral.detail': CHOICE,
+  'preferences.timeZone': ['text', ...CHOICE], 'location.inTimeZone': YES_NO, 'experience.yearsIn': YES_NO,
+  'skills.experienceWith': YES_NO,
   unknown: ANY,
 };
 
@@ -291,7 +302,9 @@ export const AI_OPENED_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCat
   // agreement?"), where the profile holds no answer; marked "AI guess" unless a fact settles it.
   'screening.restrictiveAgreement', 'screening.relatives', 'screening.essentialFunctions',
   // jr6 RULES R2 (WD-30): OPT or CPT, where the entry does not settle it.
-  'workAuth.opt']);
+  'workAuth.opt',
+  // jr6 RULES R3 (WD-29): military training, where the service and veteran answers do not settle it.
+  'screening.militaryTraining']);
 
 /**
  * The profile categories an AI answer may fill when the profile holds no value for them (the owner's amendments): job
@@ -302,4 +315,6 @@ export const ANSWERABLE_PROFILE_CATEGORIES: ReadonlySet<FieldCategory> = new Set
   'preferences.relocation', 'preferences.workArrangement', 'preferences.travel', 'availability.noticePeriod',
   'availability.startDate', 'referral.source', 'experience.totalYears', 'skills.list',
   // s2 core-gh review (C4): certifications the profile does not settle, as the AI answered them before this round.
-  'skills.certifications']);
+  'skills.certifications',
+  // jr6 RULES R3 (JV-16): years in something, experience with something, and a time zone the rules do not settle.
+  'experience.yearsIn', 'skills.experienceWith', 'location.inTimeZone']);

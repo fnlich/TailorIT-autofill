@@ -185,9 +185,14 @@ function labelVote(hit: LabelRuleHit, matchedOn: LabelMatchedOn): RuleVote {
  *  "Phone#" for "Phone number", so the rules read the word without it. A one-letter word keeps it ("c#"). */
 const CLOSING_HASH = /(?<=\b[a-z]{2,})#+(?=\s|$)/g;
 
-/** The text the label rules read for a normalized label or description: CLOSING_HASH dropped. */
+/** jr6 RULES R3 (JV-16, VHL's "Question 2: Do you have 10+ years of work experience in Engineering?", fixtures
+ *  jr6-vhl-step3-filled): a question's own number before its words. */
+const QUESTION_NUMBER = /^question\s+\d+\s+(?=\S)/;
+
+/** The text the label rules read for a normalized label or description: CLOSING_HASH dropped, and (jr6 RULES R3,
+ *  JV-16) a leading "Question N" set aside. */
 export function ruleText(key: string): string {
-  return key.replace(CLOSING_HASH, '');
+  return key.replace(CLOSING_HASH, '').replace(QUESTION_NUMBER, '');
 }
 
 /** s2 core-gh (decision 13): a label's text up to its last question mark, as the rules read it, when the label states

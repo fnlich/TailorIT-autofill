@@ -238,7 +238,9 @@ describe('consent: the strictest kind wins (§8.7)', () => {
       ['consent.privacy', 'consent.terms']],
     // A kind the field cannot hold does not compete: a certification is a box, a signature is typed.
     ['Sign below to certify your answers are true and complete', 'text', 'consent.signature', ['consent.signature']],
-    ['Sign below to certify your answers are true and complete', 'checkbox', 'consent.certify', ['consent.certify']],
+    // jr6 RULES R3 (ICIMS-15): a signature is a box's kind too, so the box asks both (the strictest first).
+    ['Sign below to certify your answers are true and complete', 'checkbox', 'consent.certify',
+      ['consent.certify', 'consent.signature']],
     // The generic "I agree" is the fallback for consent nothing else recognises.
     ['I agree to the privacy policy', 'checkbox', 'consent.privacy', ['consent.privacy']],
     ['I consent to receive text messages', 'checkbox', 'consent.sms', ['consent.sms']],
@@ -287,7 +289,6 @@ describe('a rule whose category the kind cannot hold is no match', () => {
   // let a later profile rule claim it ("Will you require sponsorship for this position?" became a job title).
   it.each<[string, FieldKind, string, FieldCategory]>([
     ['Gender', 'text', 'label.gender', 'eeo.gender'],
-    ['Signature', 'checkbox', 'label.consent-signature', 'consent.signature'],
     // s2 core-gh (decision 11): a yes/no sponsorship or authorization question in a text box takes "Yes" or "No" now
     // (below); one not asked as yes or no is still the person's.
     ['Visa sponsorship needed for this position', 'text', 'label.sponsorship', 'workAuth.sponsorship'],
@@ -298,6 +299,8 @@ describe('a rule whose category the kind cannot hold is no match', () => {
     // jr6 RULES (JZ-8): a status is asked as yes or no on a lone box too ("I am a U.S. citizen"), so a text box stands
     // for the kind that cannot hold it.
     ['I am a U.S. citizen or permanent resident', 'text', 'label.citizenship', 'workAuth.status'],
+    // jr6 RULES R3 (ICIMS-15): a signature is a box's kind too, so a list stands for the kind that cannot hold it.
+    ['Signature', 'select', 'label.consent-signature', 'consent.signature'],
     ['If you require sponsorship, please explain', 'textarea', 'label.sponsorship', 'workAuth.sponsorship'],
     ['I agree to the privacy policy', 'select', 'label.consent-privacy', 'consent.privacy'],
   ])('%j (%s) is the person’s: %s on a kind that cannot hold %s', (label, kind, rule, category) => {
@@ -864,7 +867,9 @@ describe('an entity rule needs the label’s own noun, not a word in a question'
     ['How many years of experience do you have in a similar role?', 'text', 'screening.other'],
     ['How many years of experience do you have at a SaaS company?', 'text', 'screening.other'],
     ['Years of experience in cell culture', 'text', 'screening.other'],
-    ['Do you have at least 3 years of experience in a similar role?', 'combobox', 'screening.other'],
+    // jr6 RULES R3 (JV-16): N years of experience in or as something is asked of the experience entries
+    // (experience.yearsIn), never the total years.
+    ['Do you have at least 3 years of experience in a similar role?', 'combobox', 'experience.yearsIn'],
     ['What is your availability for a phone interview?', 'text', 'screening.other'],
     // The fields themselves still classify.
     ['Phone', 'text', 'contact.phone'],

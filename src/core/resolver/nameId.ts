@@ -43,6 +43,16 @@ export const NAME_ID_RULES: readonly NameIdRule[] = [
   { id: 'name-id.address-street1', pattern: 'addressstreet1',
     category: (kind) => (kind === 'select' || kind === 'combobox' ? 'address.lookup' : kind === 'text' ? 'address.line1'
       : null) },
+  // jr6 RULES R3 (ICIMS-12, fixtures jr6-ars-profile: name "-1_PersonProfileFields.PhoneType", labelled only "Type"):
+  // the phone's type (Mobile by default: values.ts phoneTypeValue). PHONE_PART keeps the phone pattern off it.
+  { id: 'name-id.phone-type', pattern: 'phone_?type', category: 'contact.phoneType' },
+  // jr6 RULES R3 (ICIMS-13, fixtures jr6-sentinel-profile: name "-1_PersonProfileFields.AddressType", labelled only
+  // "Type"; Jobright's normalizeIcimsAddressTypeLabel reads it by its id: cited): the address's type.
+  { id: 'name-id.address-type', pattern: 'address_?type', category: 'address.type' },
+  // jr6 RULES R3 (ICIMS-19, fixtures jr6-ars-profile-filled: select#rcf3049 "Please specify", which iCIMS fills once
+  // "How did you hear about us?" is chosen): the source specified further. Its text twin (rcf3049_Text) is no list.
+  { id: 'name-id.referral-detail', pattern: 'rcf3049',
+    category: (kind) => (kind === 'select' || kind === 'combobox' ? 'referral.detail' : null) },
 ];
 
 /**

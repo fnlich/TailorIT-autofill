@@ -20,6 +20,11 @@ describe('NAME_ID_RULES (§8.3)', () => {
       // "…PersonProfileFields.AddressStreet1" (ICIMS-08), each read from an owner's snapshot.
       ['name-id.accept-terms', 'accepttermsandagreements'],
       ['name-id.address-street1', 'addressstreet1'],
+      // jr6 RULES R3: iCIMS's phone and address "Type" (ICIMS-12, ICIMS-13) and its "Please specify" list, select#rcf3049
+      // (ICIMS-19), each read from an owner's snapshot.
+      ['name-id.phone-type', 'phone_?type'],
+      ['name-id.address-type', 'address_?type'],
+      ['name-id.referral-detail', 'rcf3049'],
     ]);
     for (const abbreviation of WHOLE_TOKEN_ONLY) {
       expect(NAME_ID_RULES.some((rule) => rule.pattern.split('|').includes(abbreviation)), abbreviation).toBe(true);
@@ -99,7 +104,8 @@ describe('nameIdRule', () => {
     // The space between the two attributes is never crossed.
     ['first', 'name', 'text'],
     // A category the kind cannot hold is no match.
-    ['phone_type', '', 'select'],
+    // jr6 RULES R3 (ICIMS-12): a phone's type is a list's (contact.phoneType), never a text box's.
+    ['phone_type', '', 'text'],
     ['email', '', 'checkbox'],
     ['resume', '', 'text'],
     ['cover_letter', '', 'select'],

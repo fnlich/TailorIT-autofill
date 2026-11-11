@@ -130,6 +130,12 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'legal.work-status': (category) => category.startsWith('workAuth.'),
   'legal.located-country': (category) => category.startsWith('workAuth.'),
   'legal.opt': (category) => category === 'workAuth.opt',
+  // jr6 RULES R3: each fills its own category.
+  'legal.military-training': (category) => category === 'screening.militaryTraining',
+  'address.type-home': (category) => category === 'address.type',
+  'location.time-zone': (category) => category === 'preferences.timeZone' || category === 'location.inTimeZone',
+  'experience.years-in': (category) => category === 'experience.yearsIn',
+  'skills.experience-with': (category) => category === 'skills.experienceWith',
   // jr6 RULES end
 };
 

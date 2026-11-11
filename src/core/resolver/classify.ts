@@ -45,7 +45,7 @@ import type { FieldCategory } from '../types/intent';
 import type { UntrustedText, VisibleText } from '../types/text';
 import { EEO_QUESTIONS, type Vocab } from '../vocab/types';
 import { CLASS_POLICIES, kindAllowed, policyClassOf, USER_ONLY_CATEGORIES } from './categories';
-import { namesRestrictiveAgreement, sectionKindOf, type SectionKind } from './labelRules';
+import { MILITARY_TRAINING, namesRestrictiveAgreement, sectionKindOf, type SectionKind } from './labelRules';
 
 /** One of TailorIT's classification categories (AUTOFILL_FIELD_CATEGORIES). */
 export type ServerCategory = AutofillFieldCategory;
@@ -415,10 +415,20 @@ export function namesSensitivePickValue(text: string, category: string): boolean
   return NAMED_BY_TOPIC_WORDS.has(category) ? namesSum(text) : namesSensitiveValue(text);
 }
 
+/** jr6 RULES R3 (ICIMS-19, iCIMS ARS's "Please specify" list of job boards, fixtures jr6-ars-profile-filled:
+ *  "Salary.com", "Talent.com"): a site's name, which names a site, never a topic of its words. */
+const SITE_NAME = /(?<![\p{L}\p{N}@])[\p{L}\p{N}][\p{L}\p{N}-]*(?:\.[\p{L}\p{N}-]+)*\.(?:com|net|org|io|co|jobs|ai|us|ca|uk|info|biz|careers)(?![\p{L}\p{N}])/giu;
+
 /** The option labels a field shows, clean (injected text cut) and non-empty; none for a lazy list. */
 function cleanOptions(spec: Pick<FieldSpec, 'options'>): string[] {
   if (spec.options === 'lazy') return [];
   return spec.options.map((option) => cutInjected(option.label).clean.trim()).filter((label) => label !== '');
+}
+
+/** The option labels the screens read: cleanOptions', a site's name in one read as a name (jr6 RULES R3, ICIMS-19:
+ *  SITE_NAME), never screened by its words. */
+function screenedOptions(spec: Pick<FieldSpec, 'options'>): string[] {
+  return cleanOptions(spec).map((label) => label.replace(SITE_NAME, ' ').trim()).filter((label) => label !== '');
 }
 
 /** Whether a label (its answer-context key) is a decline phrase: the generic ones or any EEO question's own. */
@@ -555,7 +565,7 @@ export function namesSensitiveAnswer(text: string, vocab: Vocab): boolean {
  *  needs-user. */
 export function screenForClassify(spec: Pick<FieldSpec, 'label' | 'description' | 'section' | 'options'>, vocab: Vocab):
   'sensitive' | 'decline' | null {
-  const options = cleanOptions(spec);
+  const options = screenedOptions(spec);
   if ([spec.label, spec.description, sectionWords(spec.section), ...options].some(namesSensitiveTopic)) return 'sensitive';
   if (options.some((label) => isEeoAnswer(label, vocab))) return 'sensitive';
   return options.some((label) => isDeclinePhrase(label, vocab)) ? 'decline' : null;
@@ -570,7 +580,7 @@ export function screenForClassify(spec: Pick<FieldSpec, 'label' | 'description' 
  */
 export function openAnswerTopics(spec: Pick<FieldSpec, 'label' | 'description' | 'section' | 'options'>, vocab: Vocab,
   attention: boolean): Set<ScreenTopic> | null {
-  return openTopicsOfTexts([spec.label, spec.description, sectionWords(spec.section)], cleanOptions(spec), vocab,
+  return openTopicsOfTexts([spec.label, spec.description, sectionWords(spec.section)], screenedOptions(spec), vocab,
     attention);
 }
 
@@ -583,13 +593,23 @@ function withoutContractAgreement(text: string): string {
   return namesRestrictiveAgreement(normalizeLabel(text)) ? text.replace(/\bagreements?\b/gi, 'contract') : text;
 }
 
+/** jr6 RULES R3 (WD-29, Workday's AEP "Do you have military training or a military certification related to this
+ *  position?"): in a question of military training or a certification for the role (labelRules MILITARY_TRAINING),
+ *  "military" names a qualification, never a veteran's self-identification: the `all` scope's AI may answer it where the
+ *  profile's service and veteran answers do not. The screens that keep text from an AI read it as before. */
+function withoutMilitaryQualification(text: string): string {
+  return MILITARY_TRAINING.test(normalizeLabel(text)) ? text.replace(/\bmilitary\b/gi, 'service') : text;
+}
+
 /** openAnswerTopics over a question's texts (its label, hint and section's words) and its clean option labels, as the
  *  worker screens an answer item again (ai-tasks.ts answerItemOfCore). */
 export function openTopicsOfTexts(asked: readonly string[], options: readonly string[], vocab: Vocab,
   attention: boolean): Set<ScreenTopic> | null {
   const topics = new Set<ScreenTopic>();
   for (const text of [...asked, ...options]) {
-    for (const topic of sensitiveTopicsOf(withoutContractAgreement(text))) topics.add(topic);
+    for (const topic of sensitiveTopicsOf(withoutMilitaryQualification(withoutContractAgreement(text)))) {
+      topics.add(topic);
+    }
   }
   if ([...topics].some((topic) => !OPEN_SCREEN_TOPICS.has(topic) && !(attention && topic === 'consent'))) return null;
   if (options.some((label) => isEeoAnswer(label, vocab))) return null;

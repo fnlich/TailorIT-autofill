@@ -82,7 +82,9 @@
  *   edited since).
  */
 import { accepts, COVER_LETTER_FILE } from '../accept';
-import { FLAG_AT, LLM_ANSWER, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX, VALUE_DERIVED } from '../confidence';
+import {
+  FLAG_AT, LABEL_RULE_CONFIDENCE, LLM_ANSWER, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX, VALUE_DERIVED,
+} from '../confidence';
 import type { MatcherStage } from '../enums';
 import { extractCanaries, persistableCanaries, profileIndex } from '../guard/canary';
 import { checkHoneypot, llmMaySeeLabel } from '../guard/honeypot';
@@ -95,7 +97,7 @@ import { matchPlace } from '../matcher/place';
 import { completeTiebreak } from '../matcher/tiebreak';
 import { dialCodeOf } from '../matcher/dialCode';
 import { prepareOptions } from '../matcher/prepare';
-import { noMatchOtherMatch } from '../matcher/other';
+import { noMatchOtherMatch, otherMatch } from '../matcher/other';
 import type { MatchInput, PreparedOptions, TiebreakItem } from '../matcher/types';
 import { parseSelectionHints, selectionLimits } from '../multiselect/hints';
 import { planMultiSelect, type MultiSelectValue } from '../multiselect/plan';
@@ -108,7 +110,7 @@ import { actionFor, classifyField, resolveField, type FieldClassification, type 
   '../resolver/resolve';
 import { planRepeatables } from '../steps/blocks';
 import { sectionKey } from '../text/keys';
-import { normalizeLabel } from '../text/normalize';
+import { normalize, normalizeLabel } from '../text/normalize';
 import { sha256Hex } from '../text/sha256';
 import { asUntrusted } from '../text/untrusted';
 import type { FieldKey, FieldSpec } from '../types/field';
@@ -123,7 +125,7 @@ import { RESUME_MIME_TYPES, uploadName, withCoverLetter } from '../profile/canon
 import { answerItemOf, answerRefusal, answerText, answerWaitsForOptions, type AnswerItem, type AnswerVerdict }
   from './answers';
 import { holdsNoAiAttestation } from './attestation';
-import { noMatchMode, noMatchOtherAllowed } from './noMatch';
+import { noMatchMode, noMatchOtherAllowed, REFERRAL_LISTS } from './noMatch';
 import {
   answerWords, antecedentOf, conditionHolds, conditionOf, conditionOpposed, notApplicableOption,
 } from './conditional';
@@ -505,12 +507,24 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
   // s2 core-wd: the list's own "Other" query's results are read for that "Other" alone.
   if (searched && spec.searchOther === true) return planNoMatchOther(spec, resolution, choice, prepared, ctx, blank);
   let matched: Matched;
+  // jr6 RULES R3 (ICIMS-19, ICIMS-20: NYU's "How did you hear about us?", uscareers | Job Fair | NYU Alumni | Other |
+  // USA Job Portal, fixtures nyu-profile.frame-1): a referral list whose own "Other" may be chosen takes the source by an
+  // exact or alias match only, else that "Other": never an LLM tiebreak among weak or parent-level matches. A list with
+  // no "Other" of its own asks the tiebreak as before.
+  const referralOther = REFERRAL_LISTS.has(resolution.category) && noMatchOtherAllowed(resolution, ctx.input.settings)
+    && prepared.list.filter((option) => option.other && !option.unusable && !option.disabled).length === 1;
   // A list read only in part never goes to the LLM, nor does a search's results.
-  if (llm && !partial && !searched) {
+  if (llm && !partial && !searched && !referralOther) {
     matched = matchChoice(input, ctx);
   } else {
     const plain = matchValue(input, ctx);
     matched = plain === 'waiting' ? { kind: 'waiting' } : { kind: 'match', match: plain };
+  }
+  if (referralOther && matched.kind === 'match' && matched.match.stage === 'fuzzy') {
+    const display = choice.intended.kind === 'entity' ? choice.intended.display
+      : choice.intended.kind === 'text' ? choice.intended.text : '';
+    const other = otherMatch(prepared, choice.freeText ?? display);
+    if (other !== null) matched = { ...matched, match: other };
   }
   if (matched.kind === 'waiting') return blank('flagged', 'waiting-for-options');
   if (matched.kind === 'match') matched = { ...matched, match: orPlace(matched.match, choice, prepared, ctx) };
@@ -967,6 +981,35 @@ function planNotApplicable(spec: FieldSpec, resolution: Resolution, classificati
 
 // jr6 RULES end
 
+/** jr6 RULES R3 (ICIMS-19): "Please specify" or "Please specify further", a list's own label for its detail. */
+const SPECIFY_FURTHER = /^please\s+specify(?:\s+further)?$|^(?:if\s+other\s+)?please\s+specify\s+(?:the\s+)?(?:source|details?)$/;
+
+/**
+ * jr6 RULES R3 (ICIMS-19: iCIMS's dependent "Please specify" / "Please specify further" list right after "How did you
+ * hear about us?", fixtures jr6-ars-profile-filled; Jobright re-reads iCIMS's combo questions once settled,
+ * getIcimsComboQuestionRules: cited): a list labelled only so, that the rules read as nothing certain, right after a
+ * referral source in its section (in the page's order), is the source specified further (referral.detail). Every other
+ * classification stands.
+ */
+function referralDetailAfterSource(classified: ReadonlyArray<{ spec: FieldSpec; classification: FieldClassification }>):
+  Array<{ spec: FieldSpec; classification: FieldClassification }> {
+  const ordered = [...classified].sort((a, b) => a.spec.domOrder - b.spec.domOrder);
+  const detail = new Set<FieldSpec>();
+  ordered.forEach((field, at) => {
+    const before = ordered[at - 1];
+    const { spec, classification } = field;
+    if (before === undefined || categoryOf(before.classification) !== 'referral.source'
+      || sectionKey(before.spec.section) !== sectionKey(spec.section)) return;
+    if (spec.kind !== 'select' && spec.kind !== 'combobox') return;
+    if (!SPECIFY_FURTHER.test(normalize(spec.label, 'label').key)) return;
+    const category = categoryOf(classification);
+    if (classification.by === 'none' || category === 'unknown' || category === 'screening.other') detail.add(spec);
+  });
+  return classified.map((field) => (detail.has(field.spec) ? { ...field, classification: { by: 'rules',
+    rules: { category: 'referral.detail', confidence: LABEL_RULE_CONFIDENCE.normal, classifiedBy: 'label-rule',
+      rule: 'label.referral-detail', reason: 'ok', matchedOn: 'label' } } } : field));
+}
+
 /**
  * s2 core-gh review (C7): a whole-address box ("Current address", "Primary Residence Address": label.full-address) is
  * the street's (address.line1) where its section has its own city or postal-code box: the form asks the rest there.
@@ -1153,8 +1196,9 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const sections = repeatables.length > 0 ? { repeatables } : {};
   // Every spec is read across the frame; only the planned ones are resolved, written and rowed.
   const wanted = input.planKeys === undefined ? null : new Set<string>(input.planKeys);
-  const classified = streetWhereSplit(input.specs.map((spec) => ({ spec,
-    classification: classifyField(spec, input.vocab) })));
+  // jr6 RULES R3 (ICIMS-19): a "Please specify" list right after a referral source is its detail.
+  const classified = referralDetailAfterSource(streetWhereSplit(input.specs.map((spec) => ({ spec,
+    classification: classifyField(spec, input.vocab) }))));
   // A phone number is written without its country code when the section has its own control for the code.
   const phoneCountrySections = new Set(classified
     .filter((field) => categoryOf(field.classification) === 'contact.phoneCountry')

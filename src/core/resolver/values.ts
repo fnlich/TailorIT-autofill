@@ -32,7 +32,8 @@ import type { RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
 import { none, value, type Choice, type ValueResult } from './candidate';
 import { phoneText } from './format';
-import { EMPLOYED_NOW, entryOf, X_LINK } from './labelRules';
+import { EMPLOYED_NOW, entryOf, EXPERIENCE_WITH, IN_TIME_ZONE, X_LINK, YEARS_IN } from './labelRules';
+import { US_TIME_ZONES, ZONE_SPELLINGS, zonesOfState, type UsTimeZone } from './usTimeZones';
 
 /** The profile entry each block of a repeatable section is filled from, by block index (null: no entry), for the
  *  sections the plan assigned (steps/blocks.ts). */
@@ -822,13 +823,54 @@ export function companyKey(name: string): string {
 const NAMES_THIS_COMPANY = /\b(?:this|our|the\s+same)\s+(?:company|organi[sz]ation|firm|business|employer|group)\b|\bhere\b|\b(?:former|ex|previous|past)\s+employees?\b|\bboomerang\b|\balumn(?:us|a|i|ae)\b/;
 const US = /\bus\b/;
 
+/** jr6 RULES (WD-16, JV-12): the words a company's initials leave out ("Bank of America": "BOA" or "BA"). */
+const INITIALS_SKIP = new Set(['of', 'and', 'the', 'for', 'at', 'de']);
+
+/** jr6 RULES (WD-16: "RTS" for Resolve Tech Solutions, fixtures resolvetech-source-open; JV-12: "VHL" for Vista Higher
+ *  Learning, fixtures jr6-vhl-step1; WD-17: "AEP" for American Electric Power): a company's initials, three letters or
+ *  more, of a name of two words or more, every word's or the main words'. */
+function initialsOf(company: string): string[] {
+  const words = company.split(' ').filter((token) => token !== '');
+  if (words.length < 2) return [];
+  const every = words.map((word) => word[0]!).join('');
+  const main = words.filter((word) => !INITIALS_SKIP.has(word)).map((word) => word[0]!).join('');
+  return [...new Set([every, main])].filter((initials) => initials.length >= 3 && /^[a-z]+$/.test(initials));
+}
+
 /** Whether a question names the posting's company (its companyKey's words, in order) or points at it ("here", "this
- *  company", "us", "former employee"). */
+ *  company", "us", "former employee"). jr6 RULES (WD-16, JV-12): or writes its initials in capitals ("Have you
+ *  previously been employed by RTS?"). */
 export function namesPostingCompany(question: string, company: string): boolean {
   if (NAMES_THIS_COMPANY.test(question.toLowerCase()) || US.test(question)) return true;
   const name = company.split(' ').filter((token) => token !== '');
   const tokens = normalize(question, 'label').tokens;
-  return name.length > 0 && tokens.some((_, at) => name.every((token, offset) => tokens[at + offset] === token));
+  if (name.length > 0 && tokens.some((_, at) => name.every((token, offset) => tokens[at + offset] === token))) {
+    return true;
+  }
+  return initialsOf(company).some((initials) => new RegExp(String.raw`(?<![\p{L}\p{N}])${initials.toUpperCase()}`
+    + String.raw`(?![\p{L}\p{N}])`, 'u').test(question));
+}
+
+/** jr6 RULES (WD-17, Workday's Genworth "Have you or your spouse previously worked for KPMG?"): a question that asks of
+ *  someone else besides the person (a spouse, a partner, a relative): theirs (owner Q14), never answered by rule. */
+const ALSO_ANOTHER = /\b(?:or|and)\s+(?:your|their|his|her)\s+(?:spouse|partner|husband|wife|family|relatives?|domestic\s+partner|immediate\s+family(?:\s+members?)?)\b|\bspouse\b/i;
+/** jr6 RULES (WD-17): the employer a question names by its own capitals after the verb ("worked for KPMG", "a
+ *  contractor at Acme Corp"), never an article or a pronoun ("a government agency", "any of our competitors"). */
+const NAMED_EMPLOYER = /\b(?:[Ww]orked|[Ee]mployed|[Cc]ontractor|[Cc]ontracted|[Aa]ppointed|[Ii]nterned)\s+(?:[Bb]y|[Ff]or|[Aa]t|[Ww]ith)\s+(?:[Tt]he\s+)?(\p{Lu}[\p{L}\p{N}&.'\u2019-]*(?:\s+(?:\p{Lu}[\p{L}\p{N}&.'\u2019-]*|&|of|and))*)([^?.;]*)/u;
+const NOT_A_NAME = /^(?:A|An|The|Any|Our|This|That|These|Those|Your|One|Another|Other|Some|Each|Either|Neither|Us|Me)$/;
+/** jr6 RULES (WD-17): companies a name does not settle: its subsidiaries, affiliates, parent or partners. */
+const RELATED_COMPANIES = /\b(?:subsidiar(?:y|ies)|affiliat\w*|parent\s+compan\w*|sister\s+compan\w*|partners?|divisions?|brands?)\b/i;
+
+/** jr6 RULES (WD-17): the one employer a question names, or null (none, a determiner, several: "Google, Meta or
+ *  Amazon", or a name with its subsidiaries or affiliates, which the profile's entries do not settle). */
+function namedEmployer(question: string): string | null {
+  const found = NAMED_EMPLOYER.exec(question);
+  if (found === null || RELATED_COMPANIES.test(question)) return null;
+  const name = found[1]!.replace(/['\u2019]s$/, '').replace(/\s+(?:of|and|&)$/, '').trim();
+  const first = name.split(/\s+/)[0]!;
+  if (NOT_A_NAME.test(first)) return null;
+  if (/(?:,|\bor\b|\band\b|\/)\s*(?:the\s+)?\p{Lu}/u.test(found[2]!)) return null;
+  return name;
 }
 
 /**
@@ -841,10 +883,22 @@ export function namesPostingCompany(question: string, company: string): boolean 
  */
 export function previouslyEmployedValue(profile: Profile, postingCompany: string | undefined,
   question: string): ValueResult {
+  // jr6 RULES (WD-17): a question that also asks of a spouse or a relative is theirs too (owner Q14).
+  if (ALSO_ANOTHER.test(question)) return none('unknown-field', false);
   const company = postingCompany === undefined ? '' : companyKey(postingCompany);
-  if (company === '' || !namesPostingCompany(question, company)) return none('unknown-field', false);
   // s2 core-gh (s2-horacemann-certify-open question_20182378004): employed there now asks of the current entries only.
   const now = EMPLOYED_NOW.test(normalize(question, 'label').key);
+  if (company === '' || !namesPostingCompany(question, company)) {
+    // jr6 RULES (WD-17: "Have you previously worked for KPMG?" on Genworth's form): another employer the question
+    // names is answered from the profile's entries too, Yes only for an entry of that employer, flagged for review.
+    const other = namedEmployer(question);
+    const key = other === null ? '' : companyKey(other);
+    if (key === '') return none('unknown-field', false);
+    const there = profile.experience.some((entry) => (!now || entry.current) && companyKey(entry.company) === key);
+    return value({ origin: { provenance: 'rule', ruleId: 'screening.previously-employed' }, confidence: VALUE_TRANSFORM,
+      choice: { intended: { kind: 'boolean', value: there }, domain: 'polarity' }, check: there,
+      flag: 'filled-low-confidence' });
+  }
   const worked = profile.experience.some((entry) => (!now || entry.current) && companyKey(entry.company) === company);
   return value({ origin: { provenance: 'rule', ruleId: 'screening.previously-employed' }, confidence: VALUE_TRANSFORM,
     choice: { intended: { kind: 'boolean', value: worked }, domain: 'polarity' }, check: worked });
@@ -1113,9 +1167,152 @@ function jr6Value(category: FieldCategory, ctx: ValueContext): ValueResult | und
       return employeeReferredValue(ctx.profile);
     case 'skills.list':
       return qualificationsValue(ctx.spec, ctx.profile);
+    // jr6 RULES R3 (ICIMS-13, ICIMS-19, ICIMS-26, JV-16).
+    case 'address.type':
+      return addressTypeValue(ctx.spec, ctx.profile, ctx.vocab);
+    case 'referral.detail':
+      return profileValue('referral.source', ctx);
+    case 'preferences.timeZone':
+      return timeZoneValue(ctx.profile, ctx.vocab);
+    case 'location.inTimeZone':
+      return inTimeZoneValue(ctx.spec, ctx.profile);
+    case 'experience.yearsIn':
+      return yearsInValue(ctx.spec, ctx.profile, ctx.now);
+    case 'skills.experienceWith':
+      return experienceWithValue(ctx.spec, ctx.profile);
     default:
       return undefined;
   }
 }
+
+// ── jr6 RULES R3 (FIXPLAN §6.3 items 35 to 48) ─────────────────────────────────────────────────────────────────────
+
+/** A list's prompt rather than a choice ("— Make a Selection —", "Select…", "Please choose"). */
+const PROMPT = /^[\s\-–—]*(?:select|make\s+a\s+selection|choose|please\s+(?:select|choose)|none\s+selected)\b/i;
+
+/**
+ * ICIMS-13 (iCIMS's address "Type": Work, Home, Other; required on Sentinel's and GitHub's profiles): a home address's
+ * type, "Home", derived (address.type-home: the profile's address is the person's home), where the profile holds one.
+ * A type the page already shows is kept (Jobright's getIcimsPreservedAddressTypeRules keeps a real preselected choice:
+ * cited): prefill-kept.
+ */
+function addressTypeValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
+  if (profile.address === undefined) return none('no-profile-value', false);
+  const shown = spec.current.kind === 'selected' ? spec.current.labels.filter((label) => label.trim() !== ''
+    && !PROMPT.test(label)) : [];
+  const chosen = spec.options !== 'lazy' && spec.options.some((option) => option.selected && option.label.trim() !== ''
+    && !PROMPT.test(option.label)) && spec.kind !== 'select';
+  if (shown.length > 0 || chosen) return none('prefill-kept', false);
+  return value({ origin: byRule('address.type-home', 'address'), confidence: VALUE_DERIVED, text: 'Home',
+    choice: { intended: intendedUnknown('generic', 'Home', ['Home Address', 'Residence', 'Residential', 'Primary Home'],
+      vocab), domain: 'generic' } });
+}
+
+/** The person's US time zones (their state's), or null where the profile holds no US state. */
+function personZones(profile: Profile): readonly UsTimeZone[] | null {
+  const address = profile.address;
+  const code = address?.region?.code;
+  if (code === undefined || (address?.country !== undefined && address.country !== 'US')) return null;
+  return zonesOfState(code);
+}
+
+/**
+ * ICIMS-26 (ARS's required "Time Zone"): the person's time zone from their state (usTimeZones.ts, public facts):
+ * location.time-zone, typed by its name or chosen by its spellings ("Central Time (US & Canada)", "CST", "US/Central");
+ * flagged for a state that spans two zones. None without a US state.
+ */
+function timeZoneValue(profile: Profile, vocab: Vocab): ValueResult {
+  const zones = personZones(profile);
+  if (zones === null || zones.length === 0) return none('no-profile-value', false);
+  const [first, ...rest] = ZONE_SPELLINGS[zones[0]!];
+  return value({ origin: byRule('location.time-zone', 'address.region'), confidence: VALUE_DERIVED, text: first,
+    choice: { intended: intendedUnknown('generic', first, rest, vocab), domain: 'generic' },
+    ...(zones.length > 1 ? { flag: 'filled-low-confidence' as const } : {}) });
+}
+
+/**
+ * JV-16 (VHL's "Question 9: Do you currently reside in a state located within the Eastern US Time Zone?"): yes when the
+ * person's state keeps that zone (flagged for a state that spans two), no when it keeps none of it
+ * (location.time-zone); nothing without a US state, or where the zone asked is only the state's smaller part.
+ */
+function inTimeZoneValue(spec: FieldSpec, profile: Profile): ValueResult {
+  const asked = IN_TIME_ZONE.exec(questionKey(spec.label))?.[1] as UsTimeZone | undefined;
+  const zones = personZones(profile);
+  if (asked === undefined || !US_TIME_ZONES.includes(asked) || zones === null || zones.length === 0) {
+    return none('no-profile-value', false);
+  }
+  if (zones.includes(asked) && zones[0] !== asked) return none('no-profile-value', false);
+  const yes = zones[0] === asked;
+  return value({ origin: byRule('location.time-zone', 'address.region'), confidence: VALUE_TRANSFORM,
+    choice: { intended: { kind: 'boolean', value: yes }, domain: 'polarity' }, check: yes,
+    ...(zones.length > 1 ? { flag: 'filled-low-confidence' as const } : {}) });
+}
+
+/** A question's label as the rules read it: normalized, a leading "Question N" set aside (classifyRules). */
+function questionKey(label: string): string {
+  return normalize(label, 'label').key.replace(/^question\s+\d+\s+/, '');
+}
+
+/** Words a role's or a field's name is written around ("in a DevOps role", "as an engineer", "in the field of"). */
+const ROLE_FILLER = new Set(['a', 'an', 'the', 'role', 'roles', 'position', 'positions', 'capacity', 'field', 'fields',
+  'of', 'or', 'and', 'similar', 'related', 'environment', 'industry', 'setting', 'professional', 'experience']);
+
+/** Whether a job title names every word of what a question asks experience in ("Engineering" in "Senior Software
+ *  Engineer", "management" in "Engineering Manager"): the same word, one starting the other (four letters at least), or
+ *  the same first six letters. */
+function titleNames(title: string, words: readonly string[]): boolean {
+  const own = normalizeLabel(title).split(' ').filter((word) => word !== '');
+  const alike = (word: string, titleWord: string) => word === titleWord
+    || (Math.min(word.length, titleWord.length) >= 4 && (titleWord.startsWith(word) || word.startsWith(titleWord)))
+    || (word.length >= 6 && titleWord.length >= 6 && word.slice(0, 6) === titleWord.slice(0, 6));
+  return words.every((word) => own.some((titleWord) => alike(word, titleWord)));
+}
+
+/**
+ * JV-16 (VHL's "Question 2: Do you have 10+ years of work experience in Engineering?"): N years of experience in or as
+ * something, from the experience entries' durations (overlaps once: yearsOfExperience), flagged
+ * (experience.years-in): yes when the entries whose titles name it reach N; no when all the person's experience falls
+ * short of N; otherwise nothing (TailorIT's AI answers it: ANSWERABLE_PROFILE_CATEGORIES).
+ */
+function yearsInValue(spec: FieldSpec, profile: Profile, now: Ymd): ValueResult {
+  const found = YEARS_IN.exec(questionKey(spec.label));
+  if (found === null) return none('no-profile-value', false);
+  const asked = Number(found[1]);
+  const words = found[2]!.split(' ').filter((word) => word !== '' && !ROLE_FILLER.has(word));
+  const total = yearsOfExperience(profile.experience, now);
+  if (total === null) return none('no-profile-value', false);
+  const named = words.length === 0 ? null
+    : yearsOfExperience(profile.experience.filter((entry) => titleNames(entry.title, words)), now);
+  const answer = named !== null && named >= asked ? true : total < asked ? false : null;
+  if (answer === null) return none('no-profile-value', false);
+  return value({ origin: byRule('experience.years-in', 'experience'), confidence: VALUE_DERIVED,
+    choice: { intended: { kind: 'boolean', value: answer }, domain: 'polarity' }, check: answer,
+    flag: 'filled-low-confidence' });
+}
+
+/**
+ * JV-16 (VHL's "Question 4: Do you have experience with …?"): experience with a tool or a field, yes when the person's
+ * skills, or an experience entry's title or description, name it as a whole word (each of "A and B"; any of "A, B or
+ * C") (skills.experience-with); otherwise nothing, never a no (TailorIT's AI answers it).
+ */
+function experienceWithValue(spec: FieldSpec, profile: Profile): ValueResult {
+  const found = EXPERIENCE_WITH.exec(questionKey(spec.label));
+  if (found === null) return none('no-profile-value', false);
+  const asked = found[1]!.replace(/^(?:a|an|the)\s+/, '').trim();
+  const all = /\s+and\s+/.test(asked);
+  const parts = asked.split(/\s+(?:and|or)\s+|\s*,\s*/).map((part) => part.replace(/^(?:a|an|the)\s+/, '').trim())
+    .filter((part) => part !== '');
+  const own = normalizeLabel([...profile.skills, ...profile.experience.flatMap((entry) => [entry.title,
+    entry.description ?? ''])].join(' | '));
+  const named = (part: string) => new RegExp(String.raw`(?<![\p{L}\p{N}])${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+')}(?![\p{L}\p{N}])`, 'u').test(own);
+  const yes = parts.length > 0 && (all ? parts.every(named) : parts.some(named));
+  if (!yes) return none('no-profile-value', false);
+  const bySkill = parts.some((part) => profile.skills.some((skill) => normalizeLabel(skill) === part));
+  return value({ origin: byRule('skills.experience-with', bySkill ? 'skills' : 'experience'),
+    confidence: VALUE_TRANSFORM, choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' },
+    check: true });
+}
+
 
 // jr6 RULES end

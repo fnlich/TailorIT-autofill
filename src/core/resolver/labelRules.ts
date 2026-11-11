@@ -439,17 +439,22 @@ const RACE_WIDE = /\b(?:your|my)\s+(?:race|races|racial|ethnicity|ethnicities|et
 const RACE_SELF = /^(?:race|races|ethnicity|ethnicities|racial|ethnic)\b|\b(?:your|my)\s+(?:race|races|racial|ethnicity|ethnicities|ethnic)\b|\b(?:race|races|ethnicity|ethnicities)\s+(?:do\s+you|you)\s+(?:most\s+)?identify\b|\b(?:which|what)\s+(?:race|races|ethnicity|ethnicities)\b|\bidentify\b(?:\s+\w+){0,8}?\s+(?:race|races|ethnicity|ethnicities|racial|ethnic)\b|\b(?:race|races|ethnicity|ethnicities|racial|ethnic)\b(?:\s+\w+){0,8}?\s+(?:identify|identification|describes?\s+(?:you|yourself)|applies\s+to\s+you)\b|\b(?:race|ethnicity)\s+(?:and|or)\s+(?:race|ethnicity)\b|\brace\s+ethnicity\b/;
 /** Gender wordings §8.3's anchored rule misses ("What best describes your gender?", "Which gender do you identify
  *  as?"). A question that sets gender identity against the sex assigned at birth is the transgender question. */
-const GENDER_WIDE = /^(?!.*\b(?:transgender|cisgender|assigned\s+at\s+birth|sexual\s+orientation)\b)(?:.*\b(?:your|my)\s+(?:gender|sex)\b|.*\b(?:which|what)\s+gender\b|.*\bgender\s+(?:do\s+you|you)\s+(?:\w+\s+)?identify\b|^(?:gender|sex)\s+(?:identity|identification|self\s+identification)$)/;
-const VETERAN_WIDE = /\b(?:have|did)\s+you\s+(?:ever\s+)?serve[d]?\s+in\s+the\s+(?:us\s+|u\s+s\s+|united\s+states\s+)?(?:military|armed\s+forces|army|navy|air\s+force|marines?|marine\s+corps|coast\s+guard|national\s+guard|reserves?|space\s+force)\b|\bmilitary\s+status\b/;
-const VETERAN_SELF = /^(?:(?:protected|military|us|u\s+s|armed\s+forces)\s+(?:and\s+|or\s+)?)*(?:veteran|military)(?:\s+(?:and\s+|or\s+)?(?:veteran|military|protected))*(?:\s+(?:status|self\s+identification|classification|information|service))*$|\b(?:are\s+you|i\s+am|you\s+are)\s+(?:not\s+)?(?:a\s+|an\s+)?(?:(?:protected|military|us|u\s+s|armed\s+forces|disabled|recently\s+separated)\s+)*veteran\b|\bidentify\s+as\s+(?:a\s+|one\s+or\s+more\s+of\s+the\s+classifications\s+of\s+)?(?:protected\s+)?veteran\b|\b(?:veteran|military)\s+status\b|\bprotected\s+veteran\b|\b(?:have|did)\s+you\s+(?:ever\s+)?serve[d]?\s+in\s+the\b|\b(?:your|my)\s+(?:veteran|military)\s+(?:status|service)\b/;
+// jr6 RULES (WD-11, Workday's Dana-Farber "Please select a gender.", web's "Veterans Status", Dana-Farber's "If you
+// believe you belong to any of the categories of protected veterans listed below, …": fixtures
+// danafarber-voluntary-disclosures, jr6-web-voluntary-disclosures): a gender asked to be selected, chosen, indicated or
+// provided (never "gender neutral"); veterans in the plural, and the categories of protected veterans one belongs to.
+const GENDER_WIDE = /^(?!.*\b(?:transgender|cisgender|assigned\s+at\s+birth|sexual\s+orientation)\b)(?:.*\b(?:your|my)\s+(?:gender|sex)\b|.*\b(?:which|what)\s+gender\b|.*\bgender\s+(?:do\s+you|you)\s+(?:\w+\s+)?identify\b|^(?:gender|sex)\s+(?:identity|identification|self\s+identification)$|.*\b(?:select|choose|indicate|provide|specify)\s+(?:a|your)\s+gender\b(?!\s+neutral))/;
+const VETERAN_WIDE = /\b(?:have|did)\s+you\s+(?:ever\s+)?serve[d]?\s+in\s+the\s+(?:us\s+|u\s+s\s+|united\s+states\s+)?(?:military|armed\s+forces|army|navy|air\s+force|marines?|marine\s+corps|coast\s+guard|national\s+guard|reserves?|space\s+force)\b|\bmilitary\s+status\b|\bveterans\b/;
+const VETERAN_SELF = /^(?:(?:protected|military|us|u\s+s|armed\s+forces)\s+(?:and\s+|or\s+)?)*(?:veterans?|military)(?:\s+(?:and\s+|or\s+)?(?:veterans?|military|protected))*(?:\s+(?:status|self\s+identification|classification|information|service))*$|\b(?:are\s+you|i\s+am|you\s+are)\s+(?:not\s+)?(?:a\s+|an\s+)?(?:(?:protected|military|us|u\s+s|armed\s+forces|disabled|recently\s+separated)\s+)*veteran\b|\bidentify\s+as\s+(?:a\s+|one\s+or\s+more\s+of\s+the\s+classifications\s+of\s+)?(?:protected\s+)?veteran\b|\b(?:veterans?|military)\s+status\b|\bprotected\s+veterans?\b|\b(?:have|did)\s+you\s+(?:ever\s+)?serve[d]?\s+in\s+the\b|\b(?:your|my)\s+(?:veteran|military)\s+(?:status|service)\b|\bbelongs?\s+to\s+(?:any\s+of\s+|one\s+or\s+more\s+of\s+)?the\s+(?:categories|classifications)\s+of\s+protected\s+veterans\b/;
 const DISABILITY_SELF = /^(?:voluntary\s+)?(?:self\s+identification\s+(?:of\s+)?)?disabilit(?:y|ies)(?:\s+(?:status|self\s+identification|disclosure|information|inclusion))*$|\bdisability\s+status\b|\b(?:do|did)\s+you\s+(?:currently\s+)?(?:identify|consider\s+yourself)\s+(?:as\s+|to\s+be\s+)?(?:a\s+)?disabled\b|\b(?:do|did)\s+you\s+(?:currently\s+)?(?:have|consider\s+yourself\s+to\s+have|identify\s+as\s+(?:having|a\s+person\s+with|an?\s+individual\s+with))\s+(?:a\s+|any\s+)?disabilit|\b(?:are\s+you|i\s+am)\s+(?:a\s+|an\s+)?(?:person|individual)\s+with\s+(?:a\s+)?disabilit|\bi\s+(?:have|do\s+not\s+have|dont\s+have)\s+(?:a\s+)?disabilit|\b(?:have\s+you\s+ever\s+had|history\s+of)\s+(?:a\s+)?disabilit|\bself\s+identif\w*(?:\s+\w+){0,4}\s+disabilit|\bdisabilit\w*(?:\s+\w+){0,4}\s+self\s+identif/;
 const ORIENTATION_WIDE = /\blgbt\w*|\bqueer\b/;
 const ORIENTATION_SELF = /^(?:your\s+)?sexual\s+orientation\b|\b(?:your|my)\s+sexual\s+orientation\b|\bsexual\s+orientation\s+(?:do\s+you|you)\s+(?:most\s+)?identify\b|\bidentify\b(?:\s+\w+){0,4}\s+sexual\s+orientation\b|\b(?:do\s+you\s+identify\s+as|are\s+you|i\s+am|i\s+identify\s+as|i\s+consider\s+myself|do\s+you\s+consider\s+yourself)\b(?:\s+\w+){0,4}?\s+(?:lgbt\w*|queer|gay|lesbian|bisexual)\b|^(?:lgbt\w*\+?|queer)(?:\s+(?:status|identity|community|community\s+member))?$/;
 const TRANSGENDER_WIDE = /\bassigned\s+at\s+birth\b|\bcisgender\b/;
 const TRANSGENDER_SELF = /^transgender(?:\s+(?:status|identity|experience|history))?$|\b(?:do\s+you\s+identify\s+as|are\s+you|i\s+am|i\s+identify\s+as|do\s+you\s+consider\s+yourself|i\s+consider\s+myself)\s+(?:to\s+be\s+)?(?:a\s+)?(?:trans|transgender|cisgender|cis)\b|\bassigned\s+at\s+birth\b|\bcisgender\b|\btransgender\s+(?:experience|history|status|identity)\b/;
 /** Over-18 wordings §8.3's rule misses ("over the age of 18", "18 or older"). "Under 18" is not among them: its yes
- *  means the opposite. */
-const OVER18_WIDE = /\b(?:over|above|older\s+than)\s+the\s+age\s+of\s+(?:18|eighteen)\b|\b(?:18|eighteen)\s+(?:years\s+)?(?:of\s+age\s+)?(?:old\s+)?(?:or|and)\s+(?:older|over|above)\b|\b(?:at\s+least|over|older\s+than)\s+eighteen\b|\beighteen\s+years\s+(?:of\s+age|or\s+older)\b/;
+ *  means the opposite. jr6 RULES (WD-12, Workday's verily "Are you at least the age of majority under applicable law
+ *  …?", fixtures jr6-verily-application-questions): the age of majority. */
+const OVER18_WIDE = /\b(?:over|above|older\s+than)\s+the\s+age\s+of\s+(?:18|eighteen)\b|\b(?:18|eighteen)\s+(?:years\s+)?(?:of\s+age\s+)?(?:old\s+)?(?:or|and)\s+(?:older|over|above)\b|\b(?:at\s+least|over|older\s+than)\s+eighteen\b|\beighteen\s+years\s+(?:of\s+age|or\s+older)\b|\bage\s+of\s+majority\b/;
 /** Criminal-history wordings §8.3's rule misses ("unspent convictions", "found guilty", "an offence"). */
 const CRIMINAL_WIDE = /\bconvictions?\b|\boffen[cs]es?\b|\boffenders?\b|\bguilty\b|\barrested\b|\bunspent\b|\bmisdemeanou?rs?\b|\bnolo\s+contendere\b|\bcharged\s+with\s+(?:a\s+|an\s+|any\s+)?(?:crime|criminal|offen[cs]e|felony|misdemeanou?r)\b|\bcrimes?\b/;
 /** Data retention as the Phase E review reads it (B1): the employer retaining, storing or keeping the application on
@@ -692,7 +697,10 @@ const CHECK_CONSENT = /\bare\s+you\s+(?:ok|okay|comfortable|fine|happy|willing|a
  *  related-open question_8152425009 "Are you subject to a non-compete or other agreement … that would preclude or
  *  restrict your employment …?"): the person's own answer (screening.restrictiveAgreement), read with the
  *  parentheticals; an ask to agree to one stays the binding waiver it is. */
-const RESTRICTIVE_TOPIC = /\bnon\s?compet\w*|\bnoncompet\w*|\bnon\s?solicit\w*|\bnonsolicit\w*|\brestrictive\s+covenants?\b|\bsubject\s+to\s+(?:any|an?)\s+(?:\w+\s+){0,2}?agreements?\b(?:\s+\w+){0,8}?\s+(?:restrict|preclude|prevent|limit|prohibit)\w*/;
+// jr6 RULES (WD-14, Workday's Genworth "Do you have an agreement in place with a current or former employer that would
+// prevent or limit your ability to do this role at Genworth?", fixtures jr6-gnw-application-questions): an agreement in
+// place with an employer that would prevent, limit or restrict the role.
+const RESTRICTIVE_TOPIC = /\bnon\s?compet\w*|\bnoncompet\w*|\bnon\s?solicit\w*|\bnonsolicit\w*|\brestrictive\s+covenants?\b|\bsubject\s+to\s+(?:any|an?)\s+(?:\w+\s+){0,2}?agreements?\b(?:\s+\w+){0,8}?\s+(?:restrict|preclude|prevent|limit|prohibit)\w*|\bagreements?\s+in\s+place\s+with\s+(?:an?\s+|any\s+|your\s+)?(?:current|former|previous|prior|past)\b(?:\s+\w+){0,4}?\s+employers?\b(?:\s+\w+){0,8}?\s+(?:prevent|limit|restrict|preclude|prohibit)\w*/;
 const RESTRICTIVE_FACT = /^(?:(?:are|were)\s+you\s+(?:currently\s+|now\s+|still\s+)?(?:subject|bound|party|a\s+party|under)\b|(?:have|did)\s+you\s+(?:ever\s+)?(?:signed|entered|agreed)\b|do\s+you\s+(?:currently\s+)?have\b)/;
 /** U.S. military or government service asked as one question (s2-onestream-related-open question_8152429009 "Are you
  *  currently or have you within the last five years served in the U.S. armed forces or been employed by any U.S.
@@ -704,7 +712,14 @@ export const GOVERNMENT_SERVICE = /\b(?:employed|worked|served|serving|working)\
 const GOVERNMENT_TRADE = /\b(?:government|federal|state|public\s+sector)\s+(?:\w+\s+)?(?:contractors?|vendors?|suppliers?|subcontractors?|contracts?|clients?|customers?)\b/;
 /** A relative at the company (s2-onestream-related-open question_8152427009 "Are you related to anyone currently
  *  employed at OneStream?"). */
-const RELATIVES = /\brelated\s+to\s+(?:anyone|anybody|someone|any\s+(?:one|employee|person|current\s+employee)|an?\s+(?:current\s+)?employee)\b|\b(?:any\s+)?(?:relatives?|family\s+members?)\s+(?:who\s+(?:currently\s+)?(?:work|works|is\s+employed|are\s+employed)|(?:currently\s+)?(?:working|employed))\b/;
+// jr6 RULES (WD-15, Workday's Genworth "Do you have a familial or personal relationship with any current Genworth
+// employee (…)?", Parsons' "Are you a relative … of a Parsons employee?"): a familial or personal relationship with an
+// employee, a relative of one. A close friend, a customer, a subcontractor or a vendor stays unclassified (owner Q14):
+// label.relatives' `unless`.
+const RELATIVES = /\brelated\s+to\s+(?:anyone|anybody|someone|any\s+(?:one|employee|person|current\s+employee)|an?\s+(?:current\s+)?employee)\b|\b(?:any\s+)?(?:relatives?|family\s+members?)\s+(?:who\s+(?:currently\s+)?(?:work|works|is\s+employed|are\s+employed)|(?:currently\s+)?(?:working|employed))\b|\b(?:familial|family|personal)\s+(?:(?:or|and)\s+(?:familial|family|personal)\s+)?relationships?\s+with\s+(?:any\s+|an?\s+)?(?:current\s+)?(?:\w+\s+){0,3}?employees?\b|\brelatives?\s+of\s+(?:an?\s+|any\s+)?(?:current\s+)?(?:\w+\s+){0,3}?employees?\b/;
+/** jr6 RULES (WD-15): a relationship the profile's relatives never answer: a close friend's, or one with a customer, a
+ *  subcontractor, a vendor or a supplier (owner Q14). */
+const RELATIVES_NOT = /\bclose\s+friends?\b|\b(?:customers?|subcontractors?|vendors?|suppliers?|clients?)\b/;
 /** The role's essential functions (s2-ahead-0 "Confirm the ability to perform the requisite duties of the role with or
  *  without reasonable accommodations"). */
 const ESSENTIAL_FUNCTIONS = /\b(?:able|ability)\s+to\s+perform\b(?:\s+\w+){0,6}?\s+(?:duties|functions|requirements|tasks)\b(?:\s+\w+){0,8}?\s+(?:with\s+or\s+without|reasonable\s+accommodations?)\b|\bessential\s+(?:job\s+)?functions\b/;
@@ -739,7 +754,7 @@ const S2_RULES: ReadonlyArray<{ id: string; re: RegExp; category: FieldCategory;
   // s2 core-gh review (C5): working for a government contractor, vendor or client is no government service.
   { id: 'label.government-service', re: GOVERNMENT_SERVICE, unless: GOVERNMENT_TRADE,
     category: 'screening.governmentService', strength: 'strong' },
-  { id: 'label.relatives', re: RELATIVES, category: 'screening.relatives', strength: 'strong' },
+  { id: 'label.relatives', re: RELATIVES, unless: RELATIVES_NOT, category: 'screening.relatives', strength: 'strong' },
   { id: 'label.essential-functions', re: ESSENTIAL_FUNCTIONS, category: 'screening.essentialFunctions',
     strength: 'strong' },
   { id: 'label.certifications', re: CERTIFICATIONS, category: 'skills.certifications', strength: 'normal' },
@@ -862,11 +877,14 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // "Have you worked here before?" (docs/SPEC-AMENDMENTS.md §8), which §8.3's rule misses. The rule's value is taken
   // only for a question that names the posting's company or points at it (values.ts, the Phase E review, M3).
   // s2 core-gh: employed or appointed before, and employed now (EMPLOYED_BEFORE, EMPLOYED_NOW).
-  'label.previously-employed': { also: new RegExp(String.raw`\bworked\s+(?:here|for\s+us|with\s+us)\b|\bemployed\s+(?:here|by\s+us)\b|\bworked\s+(?:at|for)\s+(?:\w+\s+){1,4}?before\b|\bex\s+employees?\b|\bformer\s+employees?\b|`
+  'label.previously-employed': { also: new RegExp(String.raw`\bworked\s+(?:here|for\s+us|with\s+us)\b|\bemployed\s+(?:here|by\s+us)\b|\bworked\s+(?:at|for)\s+(?:\w+\s+){1,4}?(?:previously|before|in\s+the\s+past|in\s+any\s+capacity)\b|\b(?:been\s+)?an?\s+(?:independent\s+)?contractor\s+(?:at|for|with)\b|\bex\s+employees?\b|\bformer\s+employees?\b|`
     + `${EMPLOYED_BEFORE.source}|${EMPLOYED_NOW.source}`),
     // jr6 RULES (workday-new-2, fixtures jr6-parsons-application-questions: "Are you currently the owner or employee
     // of any outside company that is currently …"): working for an outside business, for one doing business with the
     // company, or for its vendor, supplier, customer, subcontractor or competitor is no employment by the company.
+    // jr6 RULES (WD-16, JV-12: VHL's "Have you worked for VHL in any capacity previously?", fixtures jr6-vhl-step1;
+    // WD-17: AEP's "Are you now or have you ever been a contractor at AEP?", fixtures aep-application-questions-2):
+    // worked for a company previously, before, in the past or in any capacity; a contractor at or for it.
     unless: OUTSIDE_BUSINESS },
   'label.travel': { unless: /\btravel\s+(?:restrictions?|limitations?|constraints?|bans?|reimbursements?|expenses?|polic(?:y|ies)|documents?|history)\b|\brestrictions?\s+on\s+(?:your\s+)?travel\b/ },
   // "Which languages do you speak?" (Phase 2): §8.3's rule takes "languages you speak" with nothing between. Only
@@ -952,6 +970,10 @@ const WORKDAY_INFO_RULES: readonly InfoRule[] = [
     category: 'contact.phoneExtension', strength: 'strong' },
   { id: 'label.has-preferred-name', re: /^(?:i\s+have|do\s+you\s+have|i\s+use|do\s+you\s+use)\s+a\s+preferred\s+(?:first\s+)?name$/,
     category: 'identity.hasPreferredName', strength: 'strong' },
+  // jr6 RULES R3 (ICIMS-13, Jobright's normalizeIcimsAddressTypeLabel relabels iCIMS's address "Type" so: cited): an
+  // address's own type.
+  { id: 'label.address-type', re: /^(?:address\s+type|type\s+of\s+address)$/, category: 'address.type',
+    strength: 'strong' },
 ];
 
 /** "Overall Result (GPA)" (Workday's formField-gradeAverage, fixtures/workday/s2-verily-field-of-study-open): a result,
@@ -1012,6 +1034,33 @@ const RESIDES_IN = /^(?:question\s+\d+\s+)?if\s+(?:(?:you\s+(?:currently\s+)?(?:
 const PERIOD_PART = /^(from|to)\s+(?:month|year)\b/;
 /** jr6 RULES R2 (WD-30, Workday's AEP "Will you be using Optional Practical Training (OPT) or STEM OPT to begin
  *  employment at AEP?", fixtures/workday/aep-application-questions-2): OPT or CPT to begin or continue employment. */
+/** jr6 RULES R3 (WD-29, Workday's AEP "Do you have military training or a military certification related to this
+ *  position?", fixtures aep-application-questions-2): military training or a certification for the role, a
+ *  qualification, never the veteran's self-identification. */
+export const MILITARY_TRAINING = /\bmilitary\s+(?:training|certifications?|qualifications?)\b(?:\s+\w+){0,8}?\s+(?:related|relevant|applicable)\s+to\s+(?:this|the)\s+(?:position|role|job)\b/;
+/** jr6 RULES R3 (ICIMS-21: Sentinel's "What state are you physically located in today?", fixtures
+ *  jr6-sentinel-job-questions; JV-8: NinjaOne's "In which state do you currently live?", fixtures/jobvite/ninjaone-step3;
+ *  JZ-9: "What state do you live in?", "state of residence"): the state the person lives in. */
+const RESIDENCE_STATE = /^(?:in\s+)?(?:which|what)\s+state\s+(?:do|are)\s+you\s+(?:(?:currently|physically|presently|now)\s+)*(?:live|reside|located|based|living|residing)(?:\s+in)?(?:\s+(?:today|now|currently|at\s+present))?$|^(?:your\s+|current\s+|present\s+)*state\s+of\s+(?:current\s+)?residen(?:ce|cy)$/;
+/** jr6 RULES R3 (JZ-9: WellHive's "From which state will you be working?", fixtures/jazzhr/wellhive-submitting): the
+ *  state the person will work from, read as the one they live in (an inference: flagged, resolve.ts). */
+const WORK_STATE = /^(?:from\s+)?(?:which|what)\s+state\s+will\s+you\s+be\s+working(?:\s+from)?$|^(?:which|what)\s+state\s+(?:do|will)\s+you\s+(?:plan\s+to\s+)?work\s+(?:from|in)$/;
+/** jr6 RULES R3 (ICIMS-26: ARS's "Time Zone", fixtures jr6-ars-profile): the person's time zone. */
+const TIME_ZONE = /^(?:(?:your|current|preferred|local|home)\s+)*time\s?zone$|^(?:what|which)\s+time\s?zone\s+(?:are\s+you\s+(?:currently\s+)?(?:in|located\s+in|based\s+in)|do\s+you\s+(?:currently\s+)?(?:live|work|reside)\s+in)$/;
+/** jr6 RULES R3 (JV-16: VHL's "Question 9: Do you currently reside in a state located within the Eastern US Time
+ *  Zone?", fixtures jr6-vhl-step3-filled): whether the person lives in a US time zone (its name captured). */
+export const IN_TIME_ZONE = /\b(?:reside|resides|residing|live|lives|living|located|based)\b(?:\s+\w+){0,6}?\s+(?:within|in)\s+(?:the\s+)?(eastern|central|mountain|pacific|alaska|hawaii)\s+(?:us\s+|u\s+s\s+)?time\s?zone\b/;
+/** jr6 RULES R3 (JV-16: VHL's "Question 2: Do you have 10+ years of work experience in Engineering?", "Question 3: Do
+ *  you have 5+ years' work experience in a DevOps role?"): N years of experience in or as something (N and it
+ *  captured). */
+export const YEARS_IN = /^(?:do|have)\s+you\s+(?:have\s+)?(?:at\s+least\s+|a\s+minimum\s+of\s+)?(\d{1,2})\s+(?:or\s+more\s+)?years?\s+(?:of\s+)?(?:(?:professional|relevant|hands\s+on|work|working|industry)\s+)*experience\s+(?:in|as|with|working\s+(?:in|as|with))\s+(.+)$/;
+/** jr6 RULES R3 (JV-16: VHL's "Question 4: Do you have experience with …?"): experience with or using a tool (it
+ *  captured), no number of years; never "experience in" a field ("in marketing": the AI's, as before). */
+export const EXPERIENCE_WITH = /^(?:do|have)\s+you\s+(?:have\s+)?(?:any\s+)?(?:(?:prior|previous|professional|hands\s+on|practical)\s+)*experience\s+(?:with|using|working\s+with)\s+(.+)$/;
+/** jr6 RULES R3: what experience with a tool is never asked about: a self-identification, legal, pay or consent topic
+ *  ("experience with sponsorship sales", "racial equity programs": the person's own, as the sensitive screen reads them),
+ *  a government's or another client's work (the AI's, as before). */
+const EXPERIENCE_WITH_NOT = /\b(?:disabilit\w*|disabled|veterans?|military|race|races|racial|ethnic\w*|hispanic|latin[oax]|gender|sex|sexual|transgender|lgbt\w*|pronouns?|citizen\w*|nationalit\w*|visas?|sponsor\w*|immigra\w*|criminal|convict\w*|felon\w*|religio\w*|pregnan\w*|salar(?:y|ies)|compensation|pay|payroll|wages?|consent\w*|government|federal|clients?|customers?)\b/;
 const OPT_WORK = /\b(?:(?:stem\s+)?opt|cpt|optional\s+practical\s+training|curricular\s+practical\s+training)\b(?:\s+\w+){0,8}?\s+(?:to|in\s+order\s+to)\s+(?:begin|start|continue|commence|extend)\s+(?:\w+\s+){0,2}?(?:employment|working|work)\b/;
 
 /** A jr6 label rule: its pattern, the category (or none, for a section or kind it does not fit). */
@@ -1038,6 +1087,15 @@ const JR6_RULES: readonly Jr6Rule[] = [
     : found[1] === 'from' ? `${c.section}.startDate` : `${c.section}.endDate`) },
   // jr6 RULES R2 (WD-30).
   { id: 'label.opt', re: OPT_WORK, category: 'workAuth.opt', strength: 'strong' },
+  // jr6 RULES R3 (WD-29, ICIMS-21, JV-8, JZ-9, ICIMS-26, JV-16).
+  { id: 'label.military-training', re: MILITARY_TRAINING, category: 'screening.militaryTraining', strength: 'normal' },
+  { id: 'label.residence-state', re: RESIDENCE_STATE, category: 'address.region', strength: 'normal' },
+  { id: 'label.work-state', re: WORK_STATE, category: 'address.region', strength: 'normal' },
+  { id: 'label.time-zone', re: TIME_ZONE, category: 'preferences.timeZone', strength: 'normal' },
+  { id: 'label.in-time-zone', re: IN_TIME_ZONE, category: 'location.inTimeZone', strength: 'normal' },
+  { id: 'label.years-in', re: YEARS_IN, category: 'experience.yearsIn', strength: 'normal' },
+  { id: 'label.experience-with', re: EXPERIENCE_WITH, unless: EXPERIENCE_WITH_NOT, category: 'skills.experienceWith',
+    strength: 'normal' },
 ];
 
 /** The first jr6 rule that reads `text` on a field of this kind, or null. */

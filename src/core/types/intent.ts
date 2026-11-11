@@ -57,6 +57,11 @@ export const FIELD_CATEGORIES = [
   'location.policyResidence', 'referral.employeeReferred', 'location.residesIn',
   // jr6 RULES R2 (FIXPLAN §6.3 items 27 to 34): OPT or CPT to begin or continue employment (WD-30).
   'workAuth.opt',
+  // jr6 RULES R3 (FIXPLAN §6.3 items 35 to 48): military training or a certification for the role (WD-29); an address's
+  // own type (ICIMS-13); how the person heard, specified further (ICIMS-19); the person's time zone, and whether they
+  // live in one (ICIMS-26, JV-16); N years of experience in something, and experience with something (JV-16).
+  'screening.militaryTraining', 'address.type', 'referral.detail', 'preferences.timeZone', 'location.inTimeZone',
+  'experience.yearsIn', 'skills.experienceWith',
   // jr6 RULES end
   'unknown',
 ] as const;
@@ -102,6 +107,12 @@ export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.
   // JZ-7, JZ-8); the entry of the country the person is located in, among those a question qualifies so (SR-4); OPT or
   // CPT from the sponsorship answers and a student visa (WD-30).
   'legal.work-status', 'legal.located-country', 'legal.opt',
+  // jr6 RULES R3 (FIXPLAN §6.3 items 35 to 48): No to military training from no military service and no veteran status
+  // (WD-29); a home address's type (ICIMS-13); a time zone from the profile's state (ICIMS-26, JV-16); years in
+  // something from the experience entries' titles and durations, and experience with something from the skills and the
+  // entries (JV-16); an employer the question names, compared with the profile's (WD-17: screening.previously-employed
+  // as before).
+  'legal.military-training', 'address.type-home', 'location.time-zone', 'experience.years-in', 'skills.experience-with',
   // jr6 RULES end
 ] as const;
 export type RuleId = (typeof RULE_IDS)[number];

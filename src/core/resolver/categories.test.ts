@@ -12,7 +12,9 @@ const DESIGN_CLASS: Array<[PolicyClass, (category: FieldCategory) => boolean]> =
   // s2 core-gh: the screening answers of snapshot round 2 are the person's own, legal.
   ['legal', (c) => c.startsWith('workAuth.') || c === 'screening.over18' || c === 'screening.criminalHistory'
     || ['screening.restrictiveAgreement', 'screening.governmentService', 'screening.relatives',
-      'screening.essentialFunctions'].includes(c)],
+      'screening.essentialFunctions',
+      // jr6 RULES R3 (WD-29): military training, from the service and veteran answers.
+      'screening.militaryTraining'].includes(c)],
   ['eeo', (c) => c.startsWith('eeo.')],
   ['consent', (c) => c.startsWith('consent.')],
   ['attention', (c) => c === 'attentionCheck'],
@@ -24,7 +26,9 @@ const DESIGN_CLASS: Array<[PolicyClass, (category: FieldCategory) => boolean]> =
  *  skills, referral, relocation, workArrangement, travel, availability. */
 const PROFILE_FAMILIES = ['identity.', 'contact.', 'address.', 'location.', 'links.', 'education.', 'experience.',
   'languages.', 'skills.', 'referral.', 'preferences.relocation', 'preferences.workArrangement', 'preferences.travel',
-  'availability.'];
+  'availability.',
+  // jr6 RULES R3 (ICIMS-26): the person's time zone, from their state.
+  'preferences.timeZone'];
 
 describe('CATEGORY_CLASS (§8.2)', () => {
   it('covers exactly the field categories', () => {
@@ -63,7 +67,8 @@ describe('CATEGORY_KINDS (§8.2)', () => {
     }
     expect(CATEGORY_KINDS['contact.email']).toEqual(['text']);
     expect(CATEGORY_KINDS['experience.current']).toEqual(['checkbox']);
-    expect(CATEGORY_KINDS['consent.signature']).toEqual(['text']);
+    // jr6 RULES R3 (ICIMS-15): a signature is also a box to tick (iCIMS's IForm Signature).
+    expect(CATEGORY_KINDS['consent.signature']).toEqual(['text', 'checkbox']);
   });
 
   it('allows an upload only for files and the categories that take any kind', () => {
