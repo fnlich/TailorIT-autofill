@@ -167,10 +167,10 @@ describe('Workday’s date input: one date field, written part by part (s2 wd, d
       expect(readBack(after)).toEqual({ kind: 'text', text: '2025-04' });
       expect(holds(after, { kind: 'date', iso: '2025-04' }, 'text')).toBe(true);
       expect(holds(after, { kind: 'date', iso: '2025-05' }, 'text')).toBe(false);
-      // The setter's events only, on the parts: no key, no calendar.
+      // Focus and focusin (jr6 ENGINE E3, WD-23), then the setter's events, on the parts: no key, no calendar.
       expect(keys).toEqual({});
       expect(log.on(`${FROM}-dateSectionMonth-input`).map((event) => event.type))
-        .toEqual(['input', 'change', 'focusout', 'blur']);
+        .toEqual(['focus', 'focusin', 'input', 'change', 'focusout', 'blur']);
       expect(log.events.some((event) => event.target.includes('dateIcon') || event.type === 'click')).toBe(false);
       expect(untrustedViolations(log.events)).toEqual([]);
       // Written again: already right, nothing sent.

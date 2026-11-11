@@ -116,13 +116,12 @@
     },
     {
       "label": "Type to Add Skills",
-      "kind": "typeahead-remote",
+      "kind": "text",
       "required": false,
       "section": "skills",
       "fillable": true,
-      "options": "lazy",
       "control": "input[id=\"skills--skills\"]",
-      "note": "s2 wd: a prompt the widget helpers search (its results list declared, Enter after each query)"
+      "note": "jr6 WD-18 (ENGINE E3 item 13): a box of several answers (WidgetDecl.tags), one text field holding what its search box holds, no options; the tags filler searches each value and reads the pills back (was a prompt the widget helpers search, s2 wd)"
     },
     {
       "label": "Upload a file (5MB max)",
@@ -199,7 +198,7 @@
       },
       {
         "control": "input[id=\"skills--skills\"]",
-        "kind": "typeahead-remote",
+        "kind": "text",
         "answered": false
       }
     ],
