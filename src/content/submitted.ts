@@ -46,6 +46,9 @@
  * 2026-11-06, M1, a sign hidden then is not among them), shown where the form was (the form
  * root, as the press found it, is gone or hidden), and never inside the posting's own text (Adapter.postingText), which
  * a posting's author writes.
+ * jr6 ENGINE E2 (FIXPLAN §6.2 item 10, ADP-6): a sign its platform's rule reads under an open modal (SuccessRule
+ * .underModal: ADP's promo pane, whose focus trap hides "Thank You! We have received your application.") is shown for
+ * shownSignsOf, successShown and newSuccessSign as it is for the rule (adapters/success.ts shownUnderRule).
  */
 import { ashbySubmitted } from '../adapters/ashby';
 import { configuredSuccessSigns } from '../adapters/configured';
@@ -54,10 +57,10 @@ import { icimsSubmitted } from '../adapters/icims';
 import type { Adapter } from '../adapters/types';
 import { workableSubmitted } from '../adapters/workable';
 import type { Platform } from '../core/enums';
-import { newScanCache } from '../dom/scan-cache';
+import { newScanCache, type ScanCache } from '../dom/scan-cache';
 // ── v5 p2-detect ──
 import { isNetPlatform, NET_SEQUENCES, parseNetSign, SUBMIT_NET_EVENT } from '../dom/submit-net-protocol';
-import { successSignsOf } from '../adapters/success';
+import { shownUnderRule, successSignsOf, type SuccessRule } from '../adapters/success';
 import { SUCCESSFACTORS_SUCCESS } from '../adapters/successfactors';
 import { WORKDAY_SUCCESS } from '../adapters/workday';
 // ── end v5 p2-detect ──
@@ -106,18 +109,43 @@ export function signsOf(doc: Document, platform: Platform): Element[] {
   return configuredSuccessSigns(doc, ATS_CONFIGS[platform]);
 }
 
+// ── jr6 ENGINE E2 (FIXPLAN §6.2 item 10, ADP-6) ──
+/** The platform's drawn success rules (adapters/success.ts): Workday's, SuccessFactors' and a configured platform's;
+ *  none for the platforms whose signs signsOf reads otherwise. */
+function successRulesOf(platform: Platform): readonly SuccessRule[] {
+  if (platform === 'workday') return WORKDAY_SUCCESS;
+  if (platform === 'successfactors') return SUCCESSFACTORS_SUCCESS;
+  const rule = ATS_CONFIGS[platform]?.success;
+  return rule === undefined ? [] : [rule];
+}
+
+/** Whether a person sees the platform's success sign `sign`, or one of its rules matching it reads it shown under that
+ *  rule's open modal (shownUnderRule). */
+function signShown(sign: Element, platform: Platform, cache: ScanCache): boolean {
+  if (isUserVisible(sign, cache)) return true;
+  return successRulesOf(platform).some((rule) => {
+    if (rule.underModal === undefined) return false;
+    try {
+      return sign.matches(rule.css) && shownUnderRule(sign, rule, cache);
+    } catch {
+      return false;
+    }
+  });
+}
+// ── end jr6 ENGINE E2 item 10 ──
+
 /** The behaviour review of 2026-11-06 (M1): the platform's success signs a person can see now, what a press is armed
  *  with (PressSnapshot.signs). A sign the page holds hidden from the start (Breezy's confirmation, ng-hide in the form
  *  page: fixtures/breezy/concurrent-form) is not among them, so once the page shows it after the Submit it is new. */
 export function shownSignsOf(doc: Document, platform: Platform): Set<Element> {
   const cache = newScanCache();
-  return new Set(signsOf(doc, platform).filter((sign) => isUserVisible(sign, cache)));
+  return new Set(signsOf(doc, platform).filter((sign) => signShown(sign, platform, cache))); // jr6 ENGINE
 }
 
 /** Whether the document shows the platform's success message (shown, anywhere). */
 export function successShown(doc: Document, platform: Platform): boolean {
   const cache = newScanCache();
-  return signsOf(doc, platform).some((sign) => isUserVisible(sign, cache));
+  return signsOf(doc, platform).some((sign) => signShown(sign, platform, cache)); // jr6 ENGINE
 }
 
 /** A success sign that is this Submit's (module header): shown now, not among `before` (the signs at the press), the
@@ -133,7 +161,7 @@ export function newSuccessSign(doc: Document, platform: Platform, armedWith: { b
   } catch {
     posting = null;
   }
-  return signsOf(doc, platform).find((sign) => !armedWith.before.has(sign) && isUserVisible(sign, cache)
+  return signsOf(doc, platform).find((sign) => !armedWith.before.has(sign) && signShown(sign, platform, cache) // jr6 ENGINE
     && (posting === null || !posting.contains(sign))) ?? null;
 }
 
