@@ -661,8 +661,9 @@ function holdsFixed(style: CSSStyleDeclaration): boolean {
     || (style.scale !== undefined && style.scale !== 'none' && style.scale !== '');
 }
 
-/** The containing block of an absolutely positioned element: the nearest positioned (or fixed-holding) ancestor. */
-function absoluteContainingBlock(el: Element, cache: ScanCache): Element | null {
+/** The containing block of an absolutely positioned element: the nearest positioned (or fixed-holding) ancestor.
+ *  jr6 ENGINE E2: exported for dom/camouflage.ts heldUnder, whose overflow cuts follow the same blocks. */
+export function absoluteContainingBlock(el: Element, cache: ScanCache): Element | null {
   return cache.memo('abs-block', el, (): Element | null => {
     const parent = flatParent(el);
     if (parent === null) return null;
@@ -672,8 +673,9 @@ function absoluteContainingBlock(el: Element, cache: ScanCache): Element | null 
   });
 }
 
-/** The containing block of a fixed element: the nearest ancestor that holds fixed descendants, else the viewport. */
-function fixedContainingBlock(el: Element, cache: ScanCache): Element | null {
+/** The containing block of a fixed element: the nearest ancestor that holds fixed descendants, else the viewport.
+ *  jr6 ENGINE E2: exported for dom/camouflage.ts heldUnder, as absoluteContainingBlock is. */
+export function fixedContainingBlock(el: Element, cache: ScanCache): Element | null {
   return cache.memo('fixed-block', el, (): Element | null => {
     const parent = flatParent(el);
     if (parent === null) return null;

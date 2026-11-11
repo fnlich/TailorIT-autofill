@@ -23,7 +23,7 @@ import {
   CAMOUFLAGE_MAX_CONTRAST, CONTROL_DRAWN_MIN_CONTRAST, DARK_CANVAS_RGB, MAX_BACKGROUND_CANDIDATES, MIN_BOX_PX, MIN_FONT_PX,
   MIN_OPACITY, MIN_OUTLINE_PX, MIN_SHADOW_REACH_PX, WRAPPER_CONTROL_MIN_SHARE, WRAPPER_DECORATION_MAX_PX, WRAPPER_HUG_PX,
 } from './thresholds';
-import { isMasked, isUserVisible, opacityOf } from './visibility';
+import { absoluteContainingBlock, fixedContainingBlock, isMasked, isUserVisible, opacityOf } from './visibility';
 
 /** 'unknown' means the colours behind the text cannot be worked out; it counts as hidden. */
 export type CamouflageVerdict = 'clear' | 'camouflaged' | 'unknown';
@@ -701,7 +701,9 @@ function paintsCanvas(el: Element, cache: ScanCache): boolean {
 /**
  * The backdrop of content whose box is `subject`, inside `el`, held to where each layer paints (the v3 Phase 6/7b
  * review's round 3, X3 and X5). From the content out, what of it shows at each box (clipOf: a box below that clips its
- * overflow cuts it, a scrolling one brings it into view; a hidden overflow that cuts all of it leaves it 'unknown');
+ * overflow cuts it, a scrolling one brings it into view; a hidden overflow that cuts all of it leaves it 'unknown'; jr6
+ * ENGINE E2, the ICIMS package's ICIMS-01: as on screen, a box positioned absolutely escapes the overflow of the boxes
+ * between it and its containing block, a fixed one of every box below its own: escapesClipOf);
  * an outline drawn inside a box over it, or a text decoration thicker than a line: 'unknown'. Then from the canvas in,
  * each layer that makes a box and is visible is composited where it paints:
  * - one whose background changes what shows counts as far as its painted box (by background-clip, clear of its
@@ -719,19 +721,27 @@ function heldUnder(el: Element, subject: Box, cache: ScanCache): Backdrop {
   for (let at: Element | null = el; at !== null; at = flatParent(at)) chain.push(at);
   // What of the content shows at each box that paints (null: one that paints nothing).
   const shownAt: Array<Box | null> = [];
+  // jr6 ENGINE E2 (ICIMS-01): whether each box's overflow cuts the content (escapesClipOf).
+  const cutsAt: boolean[] = [];
+  let escape: Escape = null;
   let shown: Box | null = subject;
   for (const at of chain) {
     const style = styleOf(at, cache);
     if (style === null || thickDecoration(style)) return 'unknown';
     if (style.display === 'contents') {
       shownAt.push(null);
+      cutsAt.push(false);
       continue;
     }
     if (shown === null) return 'unknown';
     const paints = style.visibility === 'visible';
     if (paints && outlineOver(at, style, shown)) return 'unknown';
     shownAt.push(paints ? shown : null);
-    shown = clipOf(at, style, shown);
+    // jr6 ENGINE: a box the content escapes (between an absolute box and its containing block) cuts nothing of it.
+    const cuts = escape === null || escape.until === at;
+    cutsAt.push(cuts);
+    if (cuts) shown = clipOf(at, style, shown);
+    escape = escapesClipOf(at, style, escape, cache); // jr6 ENGINE
   }
   let candidates: Rgba[] = [canvasOf(el.ownerDocument, cache)];
   for (let index = chain.length - 1; index >= 0; index -= 1) {
@@ -743,7 +753,7 @@ function heldUnder(el: Element, subject: Box, cache: ScanCache): Backdrop {
     if (layered === 'unknown') return 'unknown';
     if (keyOf(layered) !== keyOf(candidates) && !paintsCanvas(at, cache)) {
       if (turnsAt(at, cache)) return 'unknown';
-      const covers = coverageOf(at, style, visible);
+      const covers = coverageOf(at, style, visible, cutsAt[index] !== false); // jr6 ENGINE
       candidates = covers === 'all' ? layered : covers === 'none' ? candidates : dedupe([...candidates, ...layered]);
     } else {
       candidates = layered;
@@ -762,14 +772,38 @@ function heldUnder(el: Element, subject: Box, cache: ScanCache): Backdrop {
 }
 
 /** How much of `shown`, what of some content shows at `el`, `el`'s background paints under: 'all' (its painted box, by
- *  background-clip, holds what of it shows past `el`, clear of its rounded corners), 'none', or a 'part'. */
-function coverageOf(el: Element, style: CSSStyleDeclaration, shown: Box): 'all' | 'none' | 'part' {
-  const past = clipOf(el, style, shown);
+ *  background-clip, holds what of it shows past `el`, clear of its rounded corners), 'none', or a 'part'. jr6 ENGINE
+ *  E2: `cuts` false, content that escapes `el`'s overflow (escapesClipOf) is all past it. */
+function coverageOf(el: Element, style: CSSStyleDeclaration, shown: Box, cuts = true): 'all' | 'none' | 'part' {
+  const past = cuts ? clipOf(el, style, shown) : shown;
   if (past === null) return 'all';
   const painted = paintedBox(el, style);
   if (holds(painted, past) && !cornersOver(el, style, past)) return 'all';
   return intersects(painted, past) ? 'part' : 'none';
 }
+
+// ── jr6 ENGINE E2 (the ICIMS package's ICIMS-01): overflow cuts follow the containing blocks ──
+/** Where the content being walked out from escapes the overflow of the boxes it passes: up to (not including) `until`,
+ *  its containing block, which cuts again; `until` null: every box above (the initial containing block, or the
+ *  viewport for a fixed box). Null: it escapes nothing. */
+type Escape = { until: Element | null } | null;
+
+/**
+ * The escape the walk carries past `at` (heldUnder), as the browser clips: a box positioned absolutely is cut only by
+ * the overflow of its containing block and the boxes above it (visibility.ts absoluteContainingBlock), a fixed one only
+ * by those above its own (fixedContainingBlock; none below the viewport), any other by every box it sits in. iCIMS
+ * draws an open dropdown's results in a div.dropdown-container, position: absolute, inside its row's static
+ * div.iCIMS_InfoData, 40 px tall and overflow: hidden (the ICIMS package's jr6-ars-profile-address): the cell is not
+ * the container's containing block, so it never cuts the results, which a person sees below it. Reaching `until` ends
+ * the escape, and `at`'s own position may start another.
+ */
+function escapesClipOf(at: Element, style: CSSStyleDeclaration, escape: Escape, cache: ScanCache): Escape {
+  const carried = escape !== null && escape.until !== at ? escape : null;
+  if (style.position === 'absolute') return { until: absoluteContainingBlock(at, cache) };
+  if (style.position === 'fixed') return { until: fixedContainingBlock(at, cache) };
+  return carried;
+}
+// ── end jr6 ENGINE E2 (ICIMS-01) ──
 
 /** What of `subject`, a box inside `el`, shows past `el`: all of it, or, on an axis where `el` clips what overflows it,
  *  the part inside its padding box. Where that axis scrolls (a long list, a panel), content out of view is scrolled into

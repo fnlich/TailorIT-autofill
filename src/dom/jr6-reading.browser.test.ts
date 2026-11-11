@@ -16,6 +16,10 @@
  * - item 11 (ADP-5): a label[for] or aria-labelledby label that ends with a copy of the control's own validation message
  *   (ADP's "City is required" beside validationmessage=" is required"), or of its widget host's, is read without it;
  *   any other label stands;
+ * - the ICIMS package's edit 1 (ICIMS-01's reading): an open dropdown's results, drawn in a container positioned
+ *   absolutely inside a static cell that hides its overflow (iCIMS's div.iCIMS_InfoData, 40 px tall), read clear,
+ *   as a person sees them below the cell: the cell is not the container's containing block, so its overflow never
+ *   cuts them (dom/camouflage.ts heldUnder); a cell that is the containing block, or one above it, still cuts them;
  * Every value is synthetic (no owner data), but the Oracle fixture's, which is the converted, redacted capture.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -29,11 +33,13 @@ import type { Adapter } from '../adapters/types';
 import { accountFormOf, accountLeft, accountRowsIn, accountSectionOf } from './account-section';
 import { loadFixture, removeFixtures } from './fixture.testkit';
 import { fill } from './fillers';
+import { isCamouflaged } from './camouflage';
 import { labelOfControl } from './labels';
 import { detectPause } from './pause-detect';
 import { scan } from './scan';
 import { newScanCache } from './scan-cache';
 import { visibleText } from './visible-text';
+import { isUserVisible } from './visibility';
 
 afterEach(() => removeFixtures(document));
 
@@ -455,5 +461,72 @@ describe('jr6 E2 item 11 (ADP-5): a label read without its control’s validatio
     expect(labels).toContain('City');
     expect(labels).toContain('Address Line 1');
     expect(labels).not.toContain('City is required');
+  });
+});
+
+// ── the ICIMS package's edit 1 (ICIMS-01's reading): an overflow cuts only what its containing block holds ──────────
+
+/** iCIMS's AddressStreet1 dropdown opened, as the ICIMS handoff measured it (jr6-ars-profile-address): the row
+ *  positioned, its static cell 40 px tall hiding its overflow, the results' container positioned absolutely below the
+ *  anchor, white with a grey border, its results in dark words. */
+const DROPDOWN = `<!doctype html><html><head><style>
+  body { font: 14px sans-serif; margin: 16px; background: #fff; color: #222; }
+  .row { position: relative; width: 600px; }
+  .cell { height: 40px; overflow: hidden; }
+  .container { position: absolute; top: 40px; left: 0; width: 400px; background: #fff; border: 1px solid #999; }
+  ul { margin: 0; padding: 4px; list-style: none; } li { padding: 4px; }
+</style></head><body>
+  <div class="row" id="row"><div class="cell" id="cell">
+    <a id="anchor" role="combobox" aria-expanded="true" href="#">Address</a>
+    <div class="container" id="container"><input class="dropdown-search" aria-label="Type to Search">
+      <ul role="listbox" id="results"><li role="option" id="manual">Enter manually</li>
+        <li role="option" id="other">123 Example Street</li></ul></div>
+  </div></div>
+</body></html>`;
+
+describe('jr6 E2 (ICIMS-01 reading): an overflow cuts only what its containing block holds', () => {
+  async function results(change?: (doc: Document) => void) {
+    const fixture = await loadFixture(document, DROPDOWN, { width: 1280, height: 900 });
+    change?.(fixture.doc);
+    const li = fixture.doc.getElementById('manual')!;
+    const verdict = isCamouflaged(li);
+    const shown = isUserVisible(li);
+    const words = visibleText(fixture.doc.getElementById('results')!, { singleLine: true });
+    removeFixtures(document);
+    return { verdict, shown, words };
+  }
+
+  it('reads the results drawn below a static overflow-hidden cell clear, as a person sees them', async () => {
+    expect(await results()).toEqual({ verdict: 'clear', shown: true, words: 'Enter manually 123 Example Street' });
+    // The cell's own background is not under them: a dark cell, a container with no background of its own.
+    expect((await results((doc) => {
+      doc.getElementById('cell')!.style.backgroundColor = '#333';
+      doc.getElementById('container')!.style.background = 'none';
+    })).verdict).toBe('clear');
+    // A fixed container escapes every overflow below the viewport.
+    expect((await results((doc) => {
+      doc.getElementById('container')!.style.position = 'fixed';
+      doc.getElementById('container')!.style.top = '80px';
+    })).verdict).toBe('clear');
+  });
+
+  it('still cuts them where the cell is their containing block, or a block above it hides its overflow', async () => {
+    // The cell positioned: it is the container's containing block, and its overflow hides the results.
+    const cell = await results((doc) => { doc.getElementById('cell')!.style.position = 'relative'; });
+    expect(cell.shown).toBe(false);
+    expect(cell.verdict).not.toBe('clear');
+    expect(cell.words).toBe('');
+    // The row (the containing block) hides its overflow and is as short as the cell.
+    const row = await results((doc) => { doc.getElementById('row')!.style.cssText = 'overflow: hidden; height: 40px'; });
+    expect(row.verdict).not.toBe('clear');
+    expect(row.words).toBe('');
+    // In flow (static), the cell cuts it.
+    const flow = await results((doc) => { doc.getElementById('container')!.style.position = 'static'; });
+    expect(flow.verdict).not.toBe('clear');
+  });
+
+  it('still judges the words’ colours: white results on the white container are camouflaged', async () => {
+    expect((await results((doc) => { doc.getElementById('results')!.style.color = '#fff'; })).verdict)
+      .toBe('camouflaged');
   });
 });
