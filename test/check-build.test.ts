@@ -735,6 +735,26 @@ describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel an
     expect(gone.status).toBe(1);
   });
 
+  // The jr6 review (R16): Sign-up Information's password fields are drawn on the extension's own pages alone, never in
+  // a bundle a job site's page loads (its page process hears what is typed there).
+  it('fail a sidebar bundle or a content script that holds Sign-up Information’s fields (the jr6 review, R16)', () => {
+    for (const mark of ['data-signup-password', 'Generate strong password']) {
+      const sidebar = checkBuild(project((write) => {
+        for (const dir of Object.values(BUILDS)) write(`${dir}/sidebar-app.js`, `(function(){var a=${JSON.stringify(mark)}})();`);
+      }));
+      expect(sidebar.output, mark).toContain(`.output/chrome-mv3: the sidebar's bundle holds Sign-up Information's fields ("${mark}")`);
+      expect(sidebar.status, mark).toBe(1);
+      const content = checkBuild(project((write) => {
+        for (const dir of Object.values(BUILDS)) {
+          write(`${dir}/content-scripts/content.js`, `var content=(function(){var a=${JSON.stringify(mark)};return {}})();`);
+        }
+      }));
+      expect(content.output, mark).toContain(`.output/chrome-mv3: content script content-scripts/content.js holds `
+        + `Sign-up Information's fields ("${mark}")`);
+      expect(content.status, mark).toBe(1);
+    }
+  });
+
   // v5 p2-fill (PLAN decision 14): the page patches' bundle.
   it('fail page patches that are missing, listed, over their budget, name an API, add a global, listen elsewise or patch at install', () => {
     const cases: Array<[string, string]> = [

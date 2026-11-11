@@ -15,7 +15,8 @@ import type { TelemetryCount } from '../core/types/telemetry';
 import type {
   AgentStatus, AuthStatus, JobCard, LetterOutcome, PageState, PanelAskAnswer, ResumeListAnswer,
 } from '../messaging/schemas';
-import type { DocumentsAnswer, QueueListItem, QueueStatus, TailorView } from '../messaging/page-schemas';
+import type { DocumentsAnswer, QueueListItem, QueueStatus, SignupStatus, TailorView } from '../messaging/page-schemas';
+import { signupPasswordValid } from '../core/signup-password';
 import { QUEUE_LIST_PAGE } from '../messaging/page-schemas'; // v1.5 QX
 import { createMemoryPagePlatform, type MemoryPagePlatform } from '../platform/memory';
 import type { PortLike } from '../platform/types';
@@ -115,6 +116,12 @@ export function templateLists(overrides: Partial<Extract<DocumentsAnswer, { outc
     canWrite: true, ...overrides };
 }
 
+/** jr6: the fake's Sign-up Information as signup/status answers it. */
+function signupOf(script: WorkerScript): SignupStatus {
+  const { importAs: _importAs, reverted: _reverted, ...status } = script.signup;
+  return status;
+}
+
 /** A connected status, as auth/status answers it. */
 export function authStatus(overrides: Partial<AuthStatus> = {}): AuthStatus {
   return {
@@ -165,6 +172,16 @@ export interface WorkerScript {
   /** v1.5 QX: the sequential auto-apply, as queue/status answers it; the jobs queue/list pages through (its `source`);
    *  Start, Stop, Pause and Resume move the phase. */
   queue: { status: QueueStatus; items: QueueListItem[]; source: 'run' | 'queue' };
+  /** jr6: Sign-up Information as signup/status answers it (signup/save, signup/delete and signup/import change it, the
+   *  password kept here only to tell a save's rules: the real worker never answers it). `importAs`: what signup/import
+   *  finds in TailorIT; `reverted`: what signup/delete answers. */
+  signup: SignupStatus & { importAs: 'none' | 'weak' | 'imported' | 'unavailable'; reverted: boolean };
+}
+
+/** jr6: Sign-up Information as signup/status answers it: none saved, the profile's email suggested. */
+export function signupStatus(overrides: Partial<SignupStatus> = {}): SignupStatus {
+  return { set: false, email: null, updatedAt: null, suggestedEmail: 'morgan@example.test', importable: false,
+    ...overrides };
 }
 
 // v1.5 QX
@@ -212,6 +229,8 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
       doneToday: 0, last: null }, profile: completeProfile(), closedNotes: [],
     // v1.4 F
     tailor: { state: 'idle' }, documents: templateLists(),
+    // jr6
+    signup: { ...signupStatus(), importAs: 'none', reverted: false },
     // v1.5 QX
     queue: { status: queueStatus(), items: [], source: 'queue' } };
   /** A tab's page state, when the script names one (an older worker sends none). */
@@ -285,6 +304,29 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
         script.documents = { ...script.documents, ...save, saved: true };
       }
       return ok(script.documents);
+    },
+    // jr6: Sign-up Information (the password never answered).
+    'signup/status': () => ok(signupOf(script)),
+    'signup/save': (message) => {
+      const password = message.password as string | undefined;
+      if ((password === undefined && !script.signup.set) || (password !== undefined && !signupPasswordValid(password))) {
+        return { ok: false, error: 'bad_message' };
+      }
+      script.signup = { ...script.signup, set: true, email: message.email as string, updatedAt: Date.UTC(2026, 10, 10),
+        suggestedEmail: null, importable: false };
+      return ok(signupOf(script));
+    },
+    'signup/delete': () => {
+      script.signup = { ...script.signup, set: false, email: null, updatedAt: null };
+      return ok({ status: signupOf(script), reverted: script.signup.reverted });
+    },
+    'signup/import': () => {
+      if (script.signup.importAs === 'unavailable') return { ok: false, error: 'unavailable' };
+      if (script.signup.importAs === 'imported') {
+        script.signup = { ...script.signup, set: true, email: 'morgan@example.test', updatedAt: Date.UTC(2026, 10, 10),
+          importable: false };
+      }
+      return ok({ outcome: script.signup.importAs, status: signupOf(script) });
     },
     // v1.5 QX: the Queue tab.
     'queue/status': () => ok(script.queue.status),
@@ -373,6 +415,14 @@ export async function mount(node: ReactNode): Promise<HTMLElement> {
 /** Unmounts everything mount() rendered (call it in afterEach). */
 export function unmountAll(): void {
   for (const unmount of mounted.splice(0)) unmount();
+}
+
+/** jr6 apply F1: the worker pushes the tab's page (and its reports, none by default) as panel/update does, and the
+ *  panel's answers land. */
+export async function showPage(worker: FakeWorker, tabId: number, page: PageState,
+  reports: readonly FrameReport[] = []): Promise<void> {
+  await act(async () => worker.push({ v: 1, type: 'panel/update', tabId, reports, page }));
+  await settle();
 }
 
 /** Lets pending answers and React's updates run. */

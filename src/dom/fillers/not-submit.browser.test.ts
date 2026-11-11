@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Adapter } from '../../adapters/types';
 import { loadFixture, logEvents, removeFixtures } from '../fixture.testkit';
-import { assertKeyTarget, assertNotSubmit, clickIfAllowed, type ClickRefusal } from './not-submit';
+import { deadline } from '../time';
+import { assertKeyTarget, assertNotSubmit, clickIfAllowed, entryWhereRefusal, type ClickRefusal } from './not-submit';
 
 const PAGE = `<!doctype html><body>
   <form id="f" action="/__submitted">
@@ -205,3 +206,119 @@ describe('assertNotSubmit across shadow roots (S9)', () => {
     });
 });
 // ── end of the security fix's block (S9) ──
+
+// ── jr6 apply F2 item 4 (APPLYPLAN D4; AP-7, C7): where an entry's press would go (the door's rule, read alone) ──
+describe('entryWhereRefusal: an entry that would leave this tab or this site (jr6 apply F2 item 4)', () => {
+  afterEach(() => removeFixtures(document));
+  const ADDRESS = new URL('https://careers-acme.icims.com/jobs/1234/engineer/job');
+
+  it('reads a link\u2019s download, its target (or the base target) and, given the address, its origin', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body>
+      <a id="plain" href="/jobs/1234/engineer/job?mode=apply">Apply</a>
+      <a id="self" href="?mode=apply" target="_Self">Apply</a>
+      <a id="top" href="?mode=apply" target="_top">Apply</a>
+      <a id="parent" href="?mode=apply" target="_parent">Apply</a>
+      <a id="blank" href="?mode=apply" target="_blank">Apply</a>
+      <a id="named" href="?mode=apply" target="apply-window">Apply</a>
+      <a id="download" href="?mode=apply" download="job.pdf">Apply</a>
+      <a id="other" href="https://other.example/apply">Apply</a>
+      <a id="script" href="javascript:void(0)">Apply</a>
+      <a id="fragment" href="#apply">Apply</a>
+      <button id="button" type="button">Apply</button>
+      <form id="f" target="_blank" action="/consent"><button id="in-blank-form" type="submit">I Accept</button></form>
+      <form id="g" action="/consent"><button id="formtarget" type="submit" formtarget="_blank">I Accept</button>
+        <button id="formtarget-self" type="submit" formtarget="_self">I Accept</button>
+        <button id="plain-submit" type="submit">I Accept</button></form>
+    </body>`);
+    const where = (id: string, address?: URL) => entryWhereRefusal(fixture.doc.getElementById(id)!, address);
+    const fake = new URL('https://careers-acme.icims.com/');
+    // A <base> of the page's own address, as the platform serves it (the fixture's frame is about:srcdoc).
+    const base = fixture.doc.createElement('base');
+    base.href = ADDRESS.href;
+    fixture.doc.head.prepend(base);
+    expect(['plain', 'self', 'top', 'parent', 'script', 'fragment', 'button', 'formtarget-self', 'plain-submit']
+      .map((id) => where(id, ADDRESS))).toEqual(Array.from({ length: 9 }, () => null));
+    expect(where('blank')).toBe('new-tab');
+    expect(where('named')).toBe('new-tab');
+    expect(where('download')).toBe('download');
+    expect(where('in-blank-form')).toBe('new-tab');
+    expect(where('formtarget')).toBe('new-tab');
+    // Another origin only where the frame's address is given (the runtime always gives it).
+    expect(where('other', ADDRESS)).toBe('elsewhere');
+    expect(where('other')).toBeNull();
+    expect(where('plain', fake)).toBeNull();
+    // The document's base target stands for a link that names none.
+    const target = fixture.doc.createElement('base');
+    target.target = '_blank';
+    fixture.doc.head.append(target);
+    expect(where('plain', ADDRESS)).toBe('new-tab');
+    expect(where('self', ADDRESS)).toBeNull();
+    expect(where('plain-submit', ADDRESS)).toBe('new-tab');
+  });
+
+  it('reads a form\u2019s target through Element\u2019s own getter: a control named "getAttribute" hides nothing', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body>
+      <form id="f" target="_blank" action="/consent"><input name="getAttribute" value="x">
+        <button id="accept" type="submit">I Accept</button></form></body>`);
+    expect(entryWhereRefusal(fixture.doc.getElementById('accept')!)).toBe('new-tab');
+  });
+
+  // The line P review (revA-5): a target is compared as written, never trimmed, as HTML and Chrome compare it.
+  it('reads a target as written: a keyword with white space around it names another context (revA-5)', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body>
+      <a id="go" href="#moved">Apply</a>
+      <form id="g" action="/consent"><button id="submitter" type="submit">I Accept</button></form></body>`);
+    const link = fixture.doc.getElementById('go')!;
+    const submitter = fixture.doc.getElementById('submitter')!;
+    const read = (target: string, el: HTMLElement, attribute: string) => {
+      el.setAttribute(attribute, target);
+      return entryWhereRefusal(el);
+    };
+    for (const target of [' _self', '_self ', '_top\t', '\n_parent', ' ']) {
+      expect(read(target, link, 'target'), JSON.stringify(target)).toBe('new-tab');
+      expect(read(target, submitter, 'formtarget'), JSON.stringify(target)).toBe('new-tab');
+    }
+    for (const target of ['_SELF', '_Top', '_PARENT', '']) {
+      expect(read(target, link, 'target'), JSON.stringify(target)).toBeNull();
+      expect(read(target, submitter, 'formtarget'), JSON.stringify(target)).toBeNull();
+    }
+    // A form's own target and the document's base target are read as written too.
+    submitter.removeAttribute('formtarget');
+    fixture.doc.getElementById('g')!.setAttribute('target', '_self ');
+    expect(entryWhereRefusal(submitter)).toBe('new-tab');
+    link.removeAttribute('target');
+    const base = fixture.doc.createElement('base');
+    base.setAttribute('target', ' _top');
+    fixture.doc.head.append(base);
+    expect(entryWhereRefusal(link)).toBe('new-tab');
+  });
+
+  it('agrees with Chrome on which targets keep a press in this frame (an untrusted click, as the door\u2019s)', async () => {
+    // The security reviewer's frame proof (revA-5): Chrome follows the link in this frame only for a same-tab target.
+    // Frame-local targets alone (never _top or _parent, which would navigate the test page itself), in a frame
+    // sandboxed without allow-popups: a target Chrome reads as another context's name opens no window, and this frame
+    // stays where it is.
+    for (const target of ['', '_self', '_SELF', ' _self', '_self ']) {
+      const frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-same-origin');
+      frame.srcdoc = '<!doctype html><body><a id="go" href="#moved">Apply</a></body>';
+      const loaded = new Promise((resolve) => frame.addEventListener('load', resolve, { once: true }));
+      document.body.append(frame);
+      await loaded;
+      try {
+        const link = frame.contentDocument!.getElementById('go')!;
+        link.setAttribute('target', target);
+        const door = entryWhereRefusal(link, new URL(frame.contentWindow!.location.href));
+        link.click();
+        await deadline(300);
+        const navigatedHere = frame.contentWindow!.location.hash === '#moved';
+        expect(door === null, JSON.stringify(target)).toBe(navigatedHere);
+        // Both readings are seen, so the proof holds either way round.
+        expect(navigatedHere, JSON.stringify(target)).toBe(['', '_self', '_SELF'].includes(target));
+      } finally {
+        frame.remove();
+      }
+    }
+  });
+});
+// ── end jr6 apply F2 item 4 ──

@@ -20,6 +20,10 @@ import type { FrameReport } from './report';
 /** The sidebar's width, in CSS pixels (Jobright's): the page is pushed left by as much. */
 export const SIDEBAR_WIDTH_PX = 384;
 
+/** jr6: the settings page's Sign-up Information card (its fragment: ui/options/Options.tsx's `settings-signup`), which the
+ *  sidebar's Settings view and the no-sign-in toast open through the worker (sidebar/options), a page may not. */
+export const SIGNUP_SECTION = 'settings-signup';
+
 /** The sidebar's bundle, as the build names it (src/entrypoints/sidebar-app.ts, an unlisted script at its root). */
 export const SIDEBAR_APP_FILE = 'sidebar-app.js';
 

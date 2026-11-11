@@ -27,12 +27,20 @@
  *     {dryRun: false, signIn: true}) while the tab's application frame shows an account wall (PageState.wall); and,
  *     while a run waits to go on (paused: a hand-off or a sign-in), the same "Autofill" sends panel/continue. A run
  *     resting on a new page under Autofill after page turn: Manually reports 'review' with no row (v4, D7: no
- *     page-turned notice): its Autofill is a plain panel/fill, which the run takes as going on there. On a posting page
- *     (no form) it shows only while the application frame shows an entry choice (PageState.choice: Workday's "Start
- *     Your Application", whose Autofill presses the declared entry) or an account wall. Whenever what it says and
- *     sends changes, it takes no click until the new label has been shown CONTROL_SEEN_MS (seen.ts, the v4 review's
- *     L4: a page cannot flip it as the pointer comes). While a run works it spins, and the progress below has Cancel.
- *     No Dry run, Continue or Cancel buttons (the messages stay);
+ *     page-turned notice): its Autofill is a plain panel/fill, which the run takes as going on there. jr6 apply F1
+ *     (the owner, 2026-11-10: Autofill presses the site's Apply, "and `Autofill` word will be kept"): on every page of
+ *     ours with no form (a posting, a job's details, an entry choice: PageState.choice, Workday's "Start Your
+ *     Application"), but the platform's page after submitting, it reads Autofill and sends a plain panel/fill: the
+ *     frame presses the site's own Apply (told, PageState.entry, or drawn late) and fills what it opens; meanwhile
+ *     (PageState.entering) it spins with Cancel beside it; when it cannot, one line says why (PageState.refusal; 'none'
+ *     after this panel's own click is the "no form" modal). The F1 fixer (the line P review): no line under the button
+ *     meanwhile, as no report comes while the frame presses or waits, and one no-form strip until a refusal says why,
+ *     a posting's promising the site's Apply and any other page's not (C1, C2); a status a screen reader hears,
+ *     mounted before it has words (the press, then the refusal), and Cancel taking the focus the button had (C4); the
+ *     refusal said on a page Autofill does not work on too, where the press took the tab (C5). Whenever what it says
+ *     and sends changes, it takes no click until the new label has been shown CONTROL_SEEN_MS (seen.ts, the v4
+ *     review's L4: a page cannot flip it as the pointer comes). While a run works it spins, and the progress below has
+ *     Cancel. No Dry run, Continue or Cancel buttons (the messages stay);
  *   - "Ask custom question" (Ask.tsx: panel/ask), an outline button that unfolds the box;
  *   - "Résumé: <label> · Preview · Edit · Change" (JobCard.tsx ResumeLine: panel/resumes, panel/setResume,
  *     panel/withoutResume; v1.4 F: Preview and Edit are panel/openDocument) until a run lists the résumé's own row,
@@ -169,10 +177,16 @@ const PAGE_WAITS: Readonly<Record<WallWaits, string>> = {
   'sign-in': COPY.toasts.signIn,
   'sign-in-failed': COPY.toasts.signInFailed,
   'no-sign-in': COPY.toasts.noSignIn,
+  'sign-in-typed': COPY.toasts.signInTyped,
 };
 
+/** jr6 apply F1 (APPLYPLAN F1 item 4): how long after this panel's own Autofill an entry refused 'none' (no Apply and no
+ *  form came) is its answer, said in the "no form" modal rather than the strip alone. */
+const ENTRY_MODAL_MS = 30_000;
+
 /** What the main button says and sends: Autofill, Sign up & Autofill, or (labelled Autofill) go on with a paused run;
- *  v5 p2-fill: Open Application, on a posting whose site offers its own Apply (a panel/fill: its frame presses it). */
+ *  v5 p2-fill: 'open', on a posting whose site offers its own Apply (a panel/fill: its frame presses it). jr6 apply F1
+ *  (the owner, 2026-11-10: "`Autofill` word will be kept"): 'open' reads Autofill too, and shares 'fill''s seen key. */
 type MainMeaning = 'fill' | 'sign-up' | 'continue' | 'open';
 
 /** The main button's message for what it means. */
@@ -240,6 +254,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const [modal, setModal] = useState<{ tabId: number; state: PanelModalState; message: RunMessage | null } | null>(null);
   /** v5 p1-panel: the person closed the "extension updated" modal (it is not raised again in this panel's life). */
   const [goneSeen, setGoneSeen] = useState(false);
+  /** jr6 apply F1: this panel's last Autofill (a panel/fill) and when it was sent (`now`); `armed` once the tab's page
+   *  shows no entry refused 'none' after it (see `refusal` below). */
+  const [asked, setAsked] = useState<{ message: RunMessage; at: number; armed: boolean } | null>(null);
   const sheetTop = useSheetTop(stage, anchor, scroller, true);
   /** The main view's element: the hooks' root, and where the v5 stylesheet is adopted (its document or shadow root). */
   const mainRef = useCallback((node: HTMLElement | null) => {
@@ -310,11 +327,29 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     setGate(nextGate);
     if (nextGate === 'setup' && view.name === 'settings') setView({ name: 'main' });
   }
+  // jr6 apply F1 (APPLYPLAN F1 item 4, AF-12): why the tab's last entry was refused (an older frame's names no reason:
+  // 'none'). 'none' that answers this panel's own Autofill (`asked`, within ENTRY_MODAL_MS, once the page showed no
+  // 'none' since the click: an old refusal is not its answer) opens the "no form" modal, with Try Again; else, and every
+  // other reason, it is the strip's one line. The F1 fixer (the line P review, C5): on any page without a form, one
+  // Autofill does not work on included, where the worker says the press took the tab ('elsewhere', reports.ts).
+  const refusal = page?.entryRefused === true && page.support !== 'form' ? page.refusal ?? 'none' : null;
+  if (asked !== null && asked.message.tabId === tabId) {
+    // Adjusted while rendering, as the gate above.
+    if (refusal !== 'none') {
+      if (!asked.armed) setAsked({ ...asked, armed: true });
+    } else if (asked.armed) {
+      setAsked(null);
+      if (now() - asked.at <= ENTRY_MODAL_MS) {
+        setModal({ tabId: asked.message.tabId, state: { kind: 'error', reason: 'no-form' }, message: asked.message });
+      }
+    }
+  }
 
-  // The connection changed (a token stored or dropped, in this window or another): read it again.
+  // The connection changed (a token stored or dropped, in this window or another), or (jr6) the job-site password was
+  // saved or deleted: read it again.
   useEffect(() => {
-    if (changes.connection > 0) refresh();
-  }, [changes.connection, refresh]);
+    if (changes.connection > 0 || changes.signup > 0) refresh();
+  }, [changes.connection, changes.signup, refresh]);
 
   // The settings, at the start and whenever the worker says they changed.
   useEffect(() => {
@@ -354,6 +389,12 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
 
   const run = async (message: RunMessage) => {
     const newest = newestReport;
+    if (message.type === 'panel/fill') setAsked({ message, at: now(), armed: refusal !== 'none' }); // jr6 apply F1
+    // The F1 fixer (the line P review, C1): Autofill or its Cancel on a page with no form says nothing under the button
+    // once the worker took it. The frame looks again, presses the site's Apply or waits for what it brings, and no
+    // report comes meanwhile, so a run line would stand beside the strip and every refusal: the button's spinner and
+    // Cancel, then the run's progress or the refusal's line say what happens.
+    const quiet = page?.support === 'no-form' && message.type !== 'panel/continue';
     setBusy(true);
     const answer = await request(platform, message);
     setBusy(false);
@@ -361,19 +402,31 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     // Page only where the host can reload its page.
     const stop = stopOf(message, answer, page?.support === 'form',
       refreshPage !== undefined && !answer.ok && !platform.runtime.isValid());
-    if (stop !== null) {
+    if (stop !== null || (quiet && answer.ok)) {
       setFeedback(null);
-      setModal({ tabId: message.tabId, state: { kind: 'error', reason: stop }, message });
+      if (stop !== null) setModal({ tabId: message.tabId, state: { kind: 'error', reason: stop }, message });
       return;
     }
     setFeedback({ tabId: message.tabId, text: feedbackOf(message, answer), newest });
     if (!answer.ok && answer.error === 'not_connected') refresh();
   };
 
+  /** The F1 fixer (the line P review, C4): the main button had the focus at its last click. The button is held while
+   *  the frame presses or waits (a held button keeps no focus: it goes to the page's body), so the Cancel shown
+   *  meanwhile takes it, unless the person put it somewhere since. */
+  const focusCancel = useRef(false);
+  const takeFocus = useCallback((node: HTMLButtonElement | null) => {
+    if (node === null || !focusCancel.current) return;
+    focusCancel.current = false;
+    if (node.ownerDocument.activeElement === node.ownerDocument.body) node.focus();
+  }, []);
+
   /** v5 p1-panel: the main button's click. A fill (not a Continue) first checks the autofill information for work
    *  experience and education (Jobright's resume check): either missing opens the history modal, which holds the fill
-   *  until the person chooses Autofill Anyway or edits the information. */
-  const start = (message: RunMessage) => {
+   *  until the person chooses Autofill Anyway or edits the information. The F1 fixer (C4): `focused`, whether the
+   *  button had the focus. */
+  const start = (message: RunMessage, focused: boolean) => {
+    focusCancel.current = focused;
     const missing = message.type === 'panel/fill' && profile.state === 'read' ? profile.history : [];
     if (missing.length > 0) {
       setModal({ tabId: message.tabId, state: { kind: 'history', missing }, message });
@@ -561,14 +614,20 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   // address reads as the posting's): Autofill answers it with the declared entry.
   const choice = page?.choice === true;
   // v5 p2-fill (PLAN Phase 2): a posting with no form whose site offers its own Apply (PageState.entry): the main button
-  // reads Open Application, and its panel/fill presses that Apply, then fills what it opens.
+  // (jr6 apply F1: labelled Autofill) means 'open', and its panel/fill presses that Apply, then fills what it opens.
   const entry = page?.support === 'no-form' && page.entry === true && page.confirmation !== true && !choice && !wall;
-  // A recognised posting page with no form (v3 Phase 3b): its card shows, and Autofill waits for the application; the
-  // platform's page after submitting (the review) shows the card POST /applied answered, without Autofill. A posting
-  // that shows an entry choice or an account wall is not one: Autofill (or Sign up & Autofill) answers it there; nor
-  // (v5 p2-fill) one whose site offers its own Apply: Open Application answers it.
-  const postingOnly = page?.support === 'no-form' && (page.confirmation === true
-    || (page.posting === true && !choice && !wall && !entry));
+  // jr6 apply F1 (APPLYPLAN D2, AF-2): Autofill is offered on every page of ours with no form but the platform's page
+  // after submitting (the review: its card POST /applied answered, without Autofill), and the page the platform
+  // confirmed (`submitted`). On a posting with no told Apply it is a plain fill: the frame looks again, waits for a late
+  // Apply, presses it, or says why not (PageState.refusal). The strip says what Autofill does there.
+  const afterSubmit = page?.support === 'no-form' && page.confirmation === true;
+  // The F1 fixer (the line P review, C1): drawn once (PageStrip draws no posting's), and only until a refusal's line
+  // says why instead.
+  const postingStrip = page?.support === 'no-form' && page.posting === true && !afterSubmit && !choice && !wall
+    && !entry && refusal === null;
+  // jr6 apply F1 (APPLYPLAN F1 item 3): the frame presses the site's Apply or waits for what it brings: the button
+  // spins, disabled, its word unchanged, and Cancel shows.
+  const entering = page?.entering === true;
   // The platform confirmed the tab's application (the review, Jobright's "Submitted!"): no Autofill, no Cancel or Skip.
   const submitted = page?.submitted !== undefined;
   const cardJob = answered?.job ?? null;
@@ -576,7 +635,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   // presses the entry); else go on with a run that waits; else Autofill.
   const meaning: MainMeaning = wall ? 'sign-up' : choice ? 'fill' : reports.some((report) => PAUSED.has(report.status))
     ? 'continue' : entry ? 'open' : 'fill';
-  const offersFill = tabId !== null && page?.support !== 'none' && !postingOnly && !submitted;
+  const offersFill = tabId !== null && page?.support !== 'none' && !afterSubmit && !submitted;
   // s2 profile (the review fix P1): the page's toasts may be gone (timed) or never drawn ('off') while the page still
   // waits, so the panel says what for: a paused run's line (the report's saysWaits), and a page with no run's wall.
   const toastsMayGo = settings !== null && settings.modes.notifications !== 'until-closed';
@@ -619,6 +678,18 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     if (modal === null && shownModal !== null) setGoneSeen(true);
     setModal(null);
   };
+  // jr6 apply F1: why the site's Apply was not pressed or followed, in words (not under the "no form" modal, which says
+  // it after this panel's own click); the F1 fixer (C4): while the frame presses or waits with no run working.
+  const said = tabId === null || refusal === null || (refusal === 'none' && shownModal !== null) ? null
+    : COPY.mainView.entryRefused[refusal];
+  const pressing = offersFill && tabId !== null && entering && !working;
+  // v5 p2-fill review (L5), jr6 apply F1 (AF-12): that one line (under the main button; above the sites Autofill works
+  // on where the press took the tab to a page it does not work on, the F1 fixer's C5).
+  const refusalLine = said !== null && (
+    <p className="tia-strip" data-strip="entry-refused" data-reason={refusal ?? undefined} data-tone="warning">
+      {said}
+    </p>
+  );
 
   // v1.5 QX: the Queue tab in place of everything under the tab bar.
   if (tab === 'queue') {
@@ -665,6 +736,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
               {pinnedTabId === null ? COPY.panel.launcherShownAfterPanel : COPY.panel.launcherShown}
             </p>
           )}
+          {page?.support === 'none' && refusalLine}
           {tabId === null ? (
             <p className="tia-strip" data-strip="no-tab" data-tone="neutral">{COPY.panel.noTab}</p>
           ) : page?.support === 'none' && reports.length === 0 ? (
@@ -687,8 +759,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
           )}
           {/* v5 p1-panel: where the sheet's top goes while it is up (Sheet.tsx): just under the job card. */}
           <div className="tia-sheet-anchor" ref={anchor} aria-hidden="true" />
-          {tabId !== null && postingOnly && page?.confirmation !== true && (
-            <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.noForm}</p>
+          {tabId !== null && postingStrip && (
+            <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.posting}</p>
           )}
           {tabId !== null && pageWaits !== null && (
             <p className="tia-strip" data-strip="page-waits" data-page-waits={pageWaits} data-tone="warning" role="status">
@@ -696,14 +768,23 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             </p>
           )}
           {offersFill && tabId !== null && (
-            <MainButton tabId={tabId} meaning={meaning} working={busy || working} clock={seenClock} onRun={start} />
+            <MainButton tabId={tabId} meaning={meaning} working={busy || working || entering} clock={seenClock}
+              onRun={start} saved={auth.status.signUp !== 'not-set'} />
           )}
-          {/* v5 p2-fill review (L5): the posting's own Apply could not be pressed: why, in one line. */}
-          {tabId !== null && page?.support === 'no-form' && page.entryRefused === true && (
-            <p className="tia-strip" data-strip="entry-refused" data-tone="warning" role="status">
-              {COPY.mainView.openApplicationRefused}
+          {/* jr6 apply F1: Cancel while the frame presses or waits and no run's progress offers one (the F1 fixer's
+              C4: with the focus the main button had). */}
+          {pressing && (
+            <button type="button" className="tia-linkbutton" data-action="cancel" ref={takeFocus}
+              onClick={() => void run({ v: 1, type: 'panel/cancel', tabId })}>{COPY.panel.cancel}</button>
+          )}
+          {/* The F1 fixer (the line P review, C4): a status a screen reader hears, mounted before it has anything to
+              say (a line drawn already filled may go unheard): the press, then why it stopped. */}
+          {tabId !== null && (
+            <p className="tia-visually-hidden" role="status" data-entry-status="">
+              {pressing ? COPY.mainView.entering : said}
             </p>
           )}
+          {page?.support !== 'none' && refusalLine}
           {tabId !== null && page?.support !== 'none' && (
             <AskQuestion key={viewKey} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
               connected={connection !== undefined && connection !== null} aiOff={aiOff === true}
@@ -813,29 +894,34 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
 
 /** The main button (v4 ui): big and teal, "Autofill" or "Sign up & Autofill" (its "?" beside it), spinning while a run
  *  works. The v4 review (L4): it takes no click until what it means (what it sends, to which tab) has been shown
- *  CONTROL_SEEN_MS (seen.ts), disabled meanwhile; a click then sends the message of the meaning it shows. */
-function MainButton({ tabId, meaning, working, clock, onRun }: { tabId: number; meaning: MainMeaning; working: boolean;
-  clock: SeenClock; onRun(message: RunMessage): void }) {
-  const seen = useShownFor(`${tabId}|${meaning}`, clock);
-  // v5 p2-fill: Open Application on a posting whose site offers its own Apply.
-  const label = meaning === 'sign-up' ? COPY.mainView.signUpFill : meaning === 'open' ? COPY.mainView.openApplication
-    : COPY.panel.fill;
+ *  CONTROL_SEEN_MS (seen.ts), disabled meanwhile; a click then sends the message of the meaning it shows. The jr6 review
+ *  (R5): with no job-site password saved (`saved` false), Sign up & Autofill's "?" says to save one first. jr6 apply F1:
+ *  on a page whose site offers its own Apply ('open') it reads Autofill, its "?" saying that Autofill presses that
+ *  Apply first; while the frame presses or waits (PageState.entering) it spins, disabled, its word unchanged. The F1
+ *  fixer (the line P review, C4): busy (aria-busy) while it spins, and its click says whether it had the focus. */
+function MainButton({ tabId, meaning, working, clock, onRun, saved }: { tabId: number; meaning: MainMeaning;
+  working: boolean; clock: SeenClock; onRun(message: RunMessage, focused: boolean): void; saved: boolean }) {
+  // jr6 apply F1 (APPLYPLAN D1): 'open' and 'fill' read the same word and send the same panel/fill, so they share one
+  // seen key: an Apply the page draws late, flipping 'fill' to 'open', never drops a click the person aimed at Autofill.
+  const seen = useShownFor(`${tabId}|${meaning === 'open' ? 'fill' : meaning}`, clock);
+  // jr6 apply F1: one word, Autofill, for every meaning but Sign Up & Autofill at an account wall (OQ1: kept).
+  const label = meaning === 'sign-up' ? COPY.mainView.signUpFill : COPY.panel.fill;
   return (
     <div className="tia-toolbar">
       <button type="button" className="tia-cta" disabled={working || !seen} data-working={working ? 'true' : undefined}
-        data-main-action={meaning} onClick={() => {
+        aria-busy={working ? 'true' : undefined} data-main-action={meaning} onClick={(event) => {
           // Decided at the click, on what this render shows: a meaning not yet shown long enough is never acted on.
-          if (seen && !working) onRun(mainMessageOf(meaning, tabId));
+          if (seen && !working) onRun(mainMessageOf(meaning, tabId), event.currentTarget.matches(':focus'));
         }}>
         {working && <Icon name="spinner" size={20} className="tia-icon tia-spin" />}
         {label}
       </button>
       {meaning === 'sign-up' && (
-        <HelpTip text={COPY.mainView.signUpHelp} topic={COPY.mainView.signUpFill} className="tia-toolbar__tip" />
+        <HelpTip text={saved ? COPY.mainView.signUpHelp : COPY.mainView.signUpNeedsPassword}
+          topic={COPY.mainView.signUpFill} className="tia-toolbar__tip" />
       )}
       {meaning === 'open' && (
-        <HelpTip text={COPY.mainView.openApplicationHelp} topic={COPY.mainView.openApplication}
-          className="tia-toolbar__tip" />
+        <HelpTip text={COPY.mainView.entryHelp} topic={COPY.panel.fill} className="tia-toolbar__tip" />
       )}
     </div>
   );
@@ -943,11 +1029,16 @@ function Unsupported({ reload, ask }: { reload: 'ats' | 'site' | null;
 
 /** Before any run, when no job card says more: what the tab's page holds, from the worker's frame registry; nothing
  *  until it is known, and no "No application form" where the page shows an entry choice or an account wall, which the
- *  main button answers (the v4 review, M4). */
+ *  main button answers (the v4 review, M4). jr6 apply F1: nor on the platform's page after submitting, which offers no
+ *  Autofill. The F1 fixer (the line P review, C1 and C2): a page with no form that is no posting says to open a job's
+ *  application (STRIP.noForm: it promises no Apply, as a list of jobs shows several); a posting's strip, which says
+ *  Autofill presses the site's Apply first, the main view draws once, under its card; and none once an entry was
+ *  refused, whose line says why. */
 function PageStrip({ page }: { page: PageState | null }) {
   if (page === null) return null;
-  // v5 p2-fill: nor where the site offers its own Apply (Open Application answers it).
-  if (page.support === 'no-form' && (page.choice === true || page.wall !== undefined || page.entry === true)) return null;
+  // v5 p2-fill: nor where the site offers its own Apply (the main button's "?" says what Autofill does there).
+  if (page.support === 'no-form' && (page.choice === true || page.wall !== undefined || page.entry === true
+    || page.confirmation === true || page.posting === true || page.entryRefused === true)) return null;
   if (page.support === 'form') {
     return (
       <p className="tia-strip" data-strip="form" data-tone="brand">

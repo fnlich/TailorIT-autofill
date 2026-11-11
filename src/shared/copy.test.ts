@@ -5,6 +5,7 @@ import { TELEMETRY_FIELDS } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
 import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
 import { SAVE_ANSWER_OUTCOMES } from '../messaging/schemas';
+import { SIGNUP_COPY } from '../ui/page/signup-copy';
 import { CAPTURE_COPY, COPY } from './copy';
 import { NOTICE_CODES } from './report';
 
@@ -124,6 +125,42 @@ describe('the copy', () => {
     for (const paragraph of [...COPY.options.connection.disclosure, COPY.options.connection.consentLine]) {
       expect(privacy, paragraph.slice(0, 40)).toContain(paragraph);
     }
+  });
+
+  // The jr6 review (C3): where a site asks for the email first, Autofill goes on only on Sign-in Auto or with Sign up &
+  // Autofill. Oracle's email gate is typed and its Next pressed only then (content/orchestrator.ts typeableWallShown,
+  // runtime.ts wallStep). ADP's guest page is filled like any step in every mode, and its Continue is pressed on Auto
+  // alone (signInContainerNow). So the disclosure says it in the sentence that names Sign-in on Auto, as version 14 does.
+  // Once SHELL types a gate's email on Manual too (BUILD D-d), the clause may stand in a sentence of its own, naming its
+  // Next as Auto's alone and never saying it goes on: Manual never presses it.
+  it('says what it does where a site asks for your email first for Sign-in on Auto alone, or names Next as Auto’s alone', () => {
+    const clause = 'asks for your email first';
+    const sentences = COPY.options.connection.disclosure.flatMap((paragraph) => paragraph.split(/(?<=\.)\s+(?=["A-Z])/));
+    const holding = sentences.filter((sentence) => sentence.includes(clause));
+    expect(holding, `one sentence says "${clause}" (reworded? update this test)`).toHaveLength(1);
+    const sentence = holding[0]!;
+    const lead = sentence.slice(0, sentence.indexOf(clause));
+    const autoAlone = lead.includes('Sign-in on Auto') && !lead.includes('Manual');
+    expect(autoAlone || /\bNext only\b[^.;]*\bAuto\b/.test(sentence), sentence).toBe(true);
+    if (!autoAlone) expect(sentence, sentence).not.toMatch(/\bgoes on\b/);
+  });
+
+  // The jr6 review (R3, R10): the job-site sign-in is the one saved in Sign-up Information (this browser) since jr6:
+  // no word about signing in sends the person to TailorIT's Settings › Autofill to fix it, or says TailorIT holds one.
+  it('sends the person to Sign-up Information, never TailorIT’s settings, for the job-site sign-in', () => {
+    const signInWords = [COPY.notices['sign-in-auto'], COPY.notices['sign-in-unavailable'], COPY.notices['sign-in-failed'],
+      COPY.mainView.signUpHelp, COPY.mainView.signUpNeedsPassword, COPY.toasts.signIn, COPY.toasts.signInFailed,
+      COPY.toasts.noSignIn, COPY.toasts.signInTyped, ...Object.values(COPY.options.modes.signIn)];
+    for (const words of signInWords) {
+      expect(words, words).not.toMatch(/Settings › Autofill|saved in TailorIT/);
+    }
+    for (const words of [COPY.notices['sign-in-auto'], COPY.notices['sign-in-unavailable'], COPY.notices['sign-in-failed'],
+      COPY.mainView.signUpHelp, COPY.mainView.signUpNeedsPassword, COPY.toasts.noSignIn]) {
+      expect(words, words).toContain('Sign-up Information');
+    }
+    // "Import from TailorIT" is offered without saying TailorIT holds a sign-in it may not hold.
+    expect(SIGNUP_COPY.importOffer).not.toMatch(/TailorIT keeps/);
+    expect(SIGNUP_COPY.importNone).toContain("sign-ins saved for one site aren't imported");
   });
 
   it('keeps the development capture tool out of COPY, so production bundles never carry its words', () => {

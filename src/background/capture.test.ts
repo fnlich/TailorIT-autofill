@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { createCapturePagePlatform, createCaptureWorkerPlatform, createWorkerPlatform } from '../platform/chrome';
 import { installHandFakes, type HandFakes } from '../platform/fake';
-import { createMemorySecrets } from '../platform/memory';
+import { createMemoryKeyStore, createMemorySecrets } from '../platform/memory';
 import type { CaptureTarget, CaptureWorkerPlatform } from '../platform/types';
 import { CAPTURE_COMMANDS, CAPTURE_DELAY_MS, CAPTURE_KEYS, CAPTURE_MARKER, captureCommands, registerCaptureHotkeys } from './capture';
 import { startWorker } from './index';
@@ -124,7 +124,8 @@ describe('the worker', () => {
   afterEach(() => vi.unstubAllEnvs());
 
   const start = (capture: CaptureWorkerPlatform) => {
-    const platform = { ...createWorkerPlatform(), secrets: createMemorySecrets(), fetch: createFakeTailorIT().fetch };
+    const platform = { ...createWorkerPlatform(), secrets: createMemorySecrets(), signupKey: createMemoryKeyStore(),
+      fetch: createFakeTailorIT().fetch };
     return startWorker({ platform, core: fakeCore(), timers: manualTimers(), origin: ORIGIN, capture });
   };
 

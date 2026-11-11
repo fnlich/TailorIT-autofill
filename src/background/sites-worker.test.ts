@@ -15,7 +15,7 @@ import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { SITES_MATCH } from '../shared/hosts';
 import { INJECTED_PREFIX, SITES_KEY, TAB_DOCUMENTS } from './sites';
 import {
-  contentSender, pageSender, restartTestWorker, startTestWorker, tokenRecord, typeOfSent, type TestWorker,
+  contentSender, pageSender, restartTestWorker, saveSignup, startTestWorker, tokenRecord, typeOfSent, type TestWorker,
 } from './worker.testkit';
 
 const COMPANY = 'https://careers.northwind.example/jobs/42/apply';
@@ -331,23 +331,20 @@ describe("a company page's sign-in (the Phase 8 review, P6)", () => {
   // ── snapshot build 2026-11-06 (oracle-sf-sr): jobs.smartrecruiters.com is an ATS host now; its companies' careers host
   // is still a company page (no snapshot shows a posting there), one TailorIT's every-site sign-in covers ──
   const SMART = 'https://careers.smartrecruiters.com/Northwind/744000012345-engineer';
-  it('takes a sign-in saved for its own host alone, never the one for every site', async () => {
+  it('never takes the every-site sign-in: jr6, the one saved in this browser is never a company page’s', async () => {
     worker = await startTestWorker({ token: tokenRecord(), before: async (fakes) => {
       fakes.granted.add(SITES_MATCH);
       await fakeBrowser.storage.local.set({ [SITES_KEY]: { sites: true } });
     } });
+    await saveSignup(worker);
     await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
       modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } } }, pageSender('options.html'));
     const sender = offAts(SMART, { documentId: 'doc-sr' });
     expect(await worker.deliver({ v: 1, type: 'page/recognised', reason: 'application-form' }, sender)).toMatchObject({ ok: true });
-    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: '*', email: 'alex.rivera@example.com', password: 'pw-1' } },
-      { once: true });
-    // The v4 review (M5): the every-site one is never this page's, so none for it is saved: not_found.
-    expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'sign-in' }, sender)).toEqual({ ok: false, error: 'not_found' });
-    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'careers.smartrecruiters.com', email: 'alex.rivera@example.com',
-      password: 'pw-2' } }, { once: true });
-    expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'create-account' }, sender)).toMatchObject({ ok: true,
-      data: { host: 'careers.smartrecruiters.com' } });
+    for (const wall of ['sign-in', 'create-account'] as const) {
+      expect(await worker.deliver({ v: 1, type: 'signin/credential', wall }, sender)).toEqual({ ok: false, error: 'unavailable' });
+    }
+    expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(0);
   });
 });
 

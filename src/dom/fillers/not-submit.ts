@@ -36,6 +36,10 @@
  * fourth of the same kind, clickAdapterSignInPrelude, Sign-in mode Auto's press of the one control that shows a wall's
  * form (Workday's "Sign in with email"), named by src/content/sign-in.ts alone; and Sign-in's door now refuses a button
  * the adapter names never to press anywhere on the page (Workday's Reset Password face, the social sign-ins).
+ * jr6 apply F2 (APPLYPLAN §5 F2 items 4 and 6): the entry door also refuses a control whose press would open another
+ * tab or window, download a file or (given the frame's address) leave the origin, answering why (entryWhereRefusal);
+ * and a fifth door of the same kind, clickSecondStep, presses an entry's generic second step (adapters/second-step.ts:
+ * "Apply manually" and its like, in a dialog shown after our press), named by src/content/press.ts alone.
  * A choice made through the page-world bridge (docs/SPEC-AMENDMENTS.md §12) clicks nothing, and the option it names
  * may not be drawn yet (a closed list): its text box goes through assertNotSubmit, and the option's label, as the
  * frame read it, through optionWordsRefusal, the word rule an option of an open list gets here ("confirm" chooses a
@@ -44,6 +48,7 @@
  * input). A refused option is not sent: its click, on the events' path, goes through assertNotSubmit as before.
  */
 import type { Adapter, SignInWall } from '../../adapters/types';
+import { secondStepControl } from '../../adapters/second-step'; // jr6 apply F2
 import { pageChallenged, vendorFramesShown } from '../pause-detect';
 import { flatContains } from '../scan-cache';
 import { signInContainerOf, signInFormOf, signInRefusal } from '../sign-in-form';
@@ -152,9 +157,14 @@ function pressableNow(el: HTMLElement): boolean {
  * page), or one holding or inside one, unless the adapter marks its entry as that one (entryNeverPressed: Ashby's
  * Application tab), and then that element alone. Its words ("Apply") are submit words, which is why it has a door of its
  * own: that one element, and nothing near it. Answers the element clicked, or null. Only src/content/press.ts may call
- * it (eslint.config.mjs), for the agent's agent/enter alone.
+ * it (eslint.config.mjs), for the agent's agent/enter and the person's Autofill on a page with no form.
+ * jr6 apply F2 item 4 (APPLYPLAN D4; AP-7, C7): and never one whose press would leave this tab or this site
+ * (entryWhereRefusal): a link that downloads, a link or a form's submitter that names another browsing context (a new
+ * tab or window), or, given the frame's own `address`, a link to another origin. The door then answers why, so the
+ * entry says it to the person instead of pressing it ('download', 'new-tab', 'elsewhere').
  */
-export function clickAdapterEntry(adapter: Adapter, doc: Document): HTMLElement | null {
+export function clickAdapterEntry(adapter: Adapter, doc: Document, address?: URL):
+  HTMLElement | EntryDoorRefusal | null { // jr6 apply F2
   let control: HTMLElement | null = null;
   try {
     control = adapter.entryControl?.(doc) ?? null;
@@ -182,9 +192,111 @@ export function clickAdapterEntry(adapter: Adapter, doc: Document): HTMLElement 
   if (never.some((other) => !exempt(other) && (other === control || other.contains(control) || control!.contains(other)))) {
     return null;
   }
+  // jr6 apply F2 item 4: an entry otherwise pressable, refused by where its press would go, says why.
+  const where = entryWhereRefusal(control, address);
+  if (where !== null) return where;
   control.click();
   return control;
 }
+
+// ── jr6 apply F2 item 4 (APPLYPLAN D4; AP-7, C7): where an entry's press would go ──
+/** Why the entry door refuses a control by where its press would go: it downloads a file ('download'), opens another
+ *  tab or window ('new-tab', until the owner's OQ3), or leads to another origin ('elsewhere', until OQ4). */
+export const ENTRY_DOOR_REFUSALS = ['download', 'new-tab', 'elsewhere'] as const;
+export type EntryDoorRefusal = (typeof ENTRY_DOOR_REFUSALS)[number];
+
+/** The browsing-context names that keep a press in this tab: none, this frame, the top frame, the parent frame. */
+const SAME_TAB_TARGETS: ReadonlySet<string> = new Set(['', '_self', '_top', '_parent']);
+
+/** An attribute read through Element's own getter, which a form's named controls (an input named "getAttribute")
+ *  cannot shadow. */
+function ownAttribute(el: Element, name: string): string | null {
+  const view = el.ownerDocument.defaultView as unknown as { Element?: { prototype: Element } } | null;
+  const read = view?.Element?.prototype.getAttribute;
+  return read === undefined ? null : read.call(el, name);
+}
+
+/** The browsing context a press of `control` would navigate, its ASCII letters lowercased ('' for this one): a link's
+ *  own target, a submitter's formtarget or its form's target, else the document's base target (HTML's rule). jr6 apply
+ *  F2 (the line P review, revA-5): never trimmed: HTML and Chrome compare the value as it is (ASCII case-insensitive),
+ *  so " _self" or "_self " names another browsing context, a new window, and is no same-tab keyword. */
+function navigationTargetOf(control: HTMLElement): string {
+  const doc = control.ownerDocument;
+  const base = doc.querySelector('base[target]')?.getAttribute('target') ?? '';
+  let named: string | null = null;
+  if (control.localName === 'a' || control.localName === 'area') {
+    named = control.getAttribute('target');
+  } else if (submitsForm(control)) {
+    const ctor = control.localName === 'input' ? 'HTMLInputElement' : 'HTMLButtonElement';
+    const form = protoGet(control, ctor, 'form') as HTMLFormElement | null | undefined;
+    named = control.getAttribute('formtarget') ?? (form == null ? null : ownAttribute(form, 'target'));
+  } else {
+    return '';
+  }
+  // ASCII letters alone are folded (HTML's ASCII case-insensitive match): no other letter reads as a keyword's.
+  return (named ?? base).replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
+}
+
+/**
+ * Why an entry's press would go where Autofill never follows (ENTRY_DOOR_REFUSALS), or null (it stays in this tab):
+ * - a link with `download` (Jobright's entry flows refuse it too, the audit apply-a.md AP-7);
+ * - a link whose target, or a form's submitter whose formtarget or form's target, names a context that is not this
+ *   tab's (anything but empty, _self, _top or _parent, case-insensitive and as written: " _self" is another context's
+ *   name, as Chrome reads it, revA-5; the document's <base target> where the
+ *   control names none): Chrome would open a new tab or window, which Autofill does not follow (APPLYPLAN D4, OQ3);
+ * - given the frame's own `address`, a link whose http(s) address (resolved against the document's <base> where it has
+ *   one, else against `address`) is on another origin (D4, OQ4: a grant never crosses an origin, so the press would
+ *   leave the person on a site Autofill does not follow).
+ * Pure: it reads the control and its document, never presses.
+ */
+export function entryWhereRefusal(control: HTMLElement, address?: URL): EntryDoorRefusal | null {
+  const isLink = control.localName === 'a' || control.localName === 'area';
+  if (isLink && control.hasAttribute('download')) return 'download';
+  if (!SAME_TAB_TARGETS.has(navigationTargetOf(control))) return 'new-tab';
+  if (!isLink || address === undefined) return null;
+  const href = control.getAttribute('href');
+  if (href === null) return null;
+  let to: URL;
+  try {
+    const doc = control.ownerDocument;
+    to = new URL(href, doc.querySelector('base[href]') !== null ? doc.baseURI : address.href);
+  } catch {
+    return null;
+  }
+  if (to.protocol !== 'http:' && to.protocol !== 'https:') return null;
+  return to.origin === address.origin ? null : 'elsewhere';
+}
+// ── end jr6 apply F2 item 4 ──
+
+// ── jr6 apply F2 item 6 (APPLYPLAN D7; AF-11): the generic second step's door ──
+/**
+ * After an entry press of ours, presses the generic second step once (adapters/second-step.ts secondStepControl: the
+ * one control a dialog shown since the press, `before`, offers in D7's words, "Apply manually" and its like), with an
+ * untrusted click(). It finds the control itself (a caller names no element); never one that submits a form, never one
+ * a person cannot see or press, never while any of the address's `adapters` finds an application form on the page,
+ * never one of their never-pressed controls (read over the whole page), or one holding or inside one, with no
+ * exemption (entryNeverPressed never applies: Taleo's "Apply as Guest" stays never pressed), never one whose press
+ * would go where the entry door refuses (entryWhereRefusal, `address` the frame's own). Answers the element clicked, or
+ * null. Only src/content/press.ts may call it (eslint.config.mjs), for an entry's second step alone.
+ */
+export function clickSecondStep(adapters: readonly Adapter[], doc: Document, before: ReadonlySet<Element>,
+  address?: URL): HTMLElement | null {
+  const control = secondStepControl(doc, before);
+  if (control === null || control.ownerDocument !== doc || !pressableNow(control) || submitsForm(control)) return null;
+  if (entryWhereRefusal(control, address) !== null) return null;
+  for (const adapter of adapters) {
+    let formShown: Element | null = null;
+    try {
+      formShown = adapter.detect(doc)?.formRoot ?? null;
+    } catch {
+      return null;
+    }
+    if (formShown !== null || nearNeverPressed(control, adapter, doc, true)) return null;
+  }
+  control.click();
+  return control;
+}
+// ── end jr6 apply F2 item 6 ──
 
 // ── snapshot build 2026-11-06 (core pass Z1, item 27): an entry that submits a consent form ──
 /** A property read through the getter of the element's window's `ctor` prototype, which a form's named controls (an

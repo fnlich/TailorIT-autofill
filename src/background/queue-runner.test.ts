@@ -11,18 +11,22 @@
  * - each job's status from its tab (opened, filling, ready for you, submitted, skipped, failed) and what TailorIT is
  *   told; only the queued address, read the agent's way, ever opens; nothing opens while disconnected, without
  *   agent:run, or before the disclosure is acknowledged;
- * - Automatically starts the first form once; Manually leaves the tab to the person.
+ * - Automatically starts the first form once; Manually leaves the tab to the person;
+ * - jr6 apply F4a (AF-5): a job started at a page with no form whose tab no run reported from is Ready for you after
+ *   QUEUE_ENTRY_WAIT_MS, keeping its open-tab place; a run that reports leads, as before.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type {
   AutofillAgentQueueItem, AutofillAgentReason, AutofillAgentResultBody, AutofillAgentState, AutofillAgentTask,
 } from '../contract/tailorit';
 import { DEFAULT_SETTINGS, type QueueSettings, type Settings } from '../core/types/settings';
+import { QUEUE_ITEM_STATUSES } from '../messaging/page-schemas';
 import type { AgentAlarms, AtsPage, QueueTabs, StorageArea } from '../platform/types';
 import type { FrameReport } from '../shared/report';
+import { agentAddressOf } from './agent';
 import {
-  createQueueRunner, QUEUE_ALARM, QUEUE_CLOSE_SUBMITTED_MS, QUEUE_FORM_WAIT_MS, QUEUE_RETRY_MS, QUEUE_RUN_KEY,
-  statusOfReports, type QueueRunnerDeps,
+  createQueueRunner, QUEUE_ALARM, QUEUE_CLOSE_SUBMITTED_MS, QUEUE_ENTRY_WAIT_MS, QUEUE_FORM_WAIT_MS, QUEUE_RETRY_MS,
+  QUEUE_RUN_KEY, statusOfReports, type QueueRunnerDeps,
 } from './queue-runner';
 import type { ServerResult } from './server-client';
 import { manualTimers } from './timers';
@@ -650,6 +654,274 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
     await h.runner.hello(tab, { frameId: 0, documentId: 'doc-2', hasForm: true, applicationKey: key }, true);
     await Promise.resolve();
     expect(h.sent).toEqual([]);
+  });
+
+  /*
+   * jr6 apply F4a (AF-5, as corrected: the timeout only): a job the queue's Autofill started at a page with no form
+   * (wall()) and whose tab no run reported from since is Ready for you QUEUE_ENTRY_WAIT_MS after that start, keeping its
+   * open-tab place; a run that reports leads its status as before. The queue never continues the press (the panel's
+   * grant takes the next documents' walls and choices: sign-up.ts takeStep, F3a).
+   */
+  describe('jr6 apply F4a: never Filling for ever after an entry', () => {
+    let logs: MockInstance;
+    beforeEach(() => {
+      logs = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    });
+    afterEach(() => logs.mockRestore());
+    /** What queue.entry-timeout logged, each call's data. */
+    const timeouts = () => logs.mock.calls.filter(([line]) => line === '[tailorit-autofill] queue.entry-timeout')
+      .map((call) => call[1] as unknown);
+    const FROM_FILLING = { from: QUEUE_ITEM_STATUSES.indexOf('filling') };
+    const ICIMS_POSTING = 'https://careers-northwind.icims.com/jobs/5157/job';
+    /** The job's tab heard (its posting, no form) and its frame/wall's entry taken: the queue's Autofill, once. */
+    async function entered(on: Harness, n: number, url = URL_OF(n)) {
+      const target = agentAddressOf(url)!;
+      const tab = on.tabs.find((each) => each.url === target.address)!.tabId;
+      await on.runner.hello(tab, { frameId: 0, documentId: `posting-${n}`, hasForm: false,
+        applicationKey: target.applicationKey }, true);
+      await on.runner.wall(tab, { applicationKey: target.applicationKey, wall: false });
+      return { tab, key: target.applicationKey };
+    }
+    /** The tab's run says where it stands (report/put or report/live). */
+    async function says(on: Harness, tab: number, status: FrameReport['status']) {
+      on.reports.set(tab, [report({ status })]);
+      await on.runner.reported(tab);
+    }
+    const countsOf = async (on: Harness) => (await on.runner.status()).counts;
+    /** Lets every promise the timers set off settle (no tick of the harness's own). */
+    const settled = async () => {
+      for (let step = 0; step < 3; step += 1) await new Promise((resolve) => setImmediate(resolve));
+    };
+
+    it('a refused entry (no run reports) is Ready for you QUEUE_ENTRY_WAIT_MS after its start, its open-tab place still held', async () => {
+      h = harness({ maxOpenTabs: 1 });
+      seed(h, 2);
+      await h.runner.start();
+      const { tab } = await entered(h, 1);
+      const startedAt = h.clock.now;
+      expect(h.filled).toEqual([tab]);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, queued: 1 });
+      // The frame refused its Apply (frame/wall entryRefused, which index.ts never hands the queue), and no run reports.
+      await h.advance(QUEUE_ENTRY_WAIT_MS - 100);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      expect(timeouts()).toEqual([]);
+      await h.advance(100);
+      expect(h.clock.now - startedAt).toBe(QUEUE_ENTRY_WAIT_MS);
+      expect(await h.runner.status()).toMatchObject({ phase: 'running', hold: 'cap', openTabs: 1, maxOpenTabs: 1,
+        counts: { filling: 0, ready: 1, queued: 1 } });
+      // Logged once, a place in a closed list only.
+      expect(timeouts()).toEqual([FROM_FILLING]);
+      const listed = await h.runner.list(0);
+      expect(listed.ok && listed.data.items.map((item) => [item.status, item.tab])).toEqual([['ready', true],
+        ['queued', false]]);
+      // Ten minutes on: the tab is still the person's and holds its place; nothing pressed again, nothing told.
+      await h.advance(10 * 60_000, 1_000);
+      expect(h.tabs).toHaveLength(1);
+      expect(await h.runner.status()).toMatchObject({ hold: 'cap', counts: { ready: 1, queued: 1 } });
+      expect(h.filled).toEqual([tab]);
+      expect(h.sent).toEqual([]);
+      expect(h.results).toEqual([]);
+      expect(timeouts()).toHaveLength(1);
+      // The person closes it: its place frees, and the next job opens on the schedule.
+      h.open.delete(tab);
+      await h.runner.tabRemoved(tab);
+      await h.advance(8_000);
+      expect(h.tabs).toHaveLength(2);
+    });
+
+    it('a no-form choice the press led to is Ready for you after the wait from the entry: the queue presses nothing more', async () => {
+      seed(h, 1);
+      await h.runner.start();
+      const { tab, key } = await entered(h, 1);
+      const startedAt = h.clock.now;
+      await h.advance(5_000);
+      // The next document shows a choice and no form (Workday's Apply Manually page): its frame/wall reaches the queue,
+      // which started this job once already (the panel's grant takes the step: sign-up.ts takeStep).
+      await h.runner.hello(tab, { frameId: 0, documentId: 'choice-1', hasForm: false, applicationKey: key }, true);
+      await h.runner.wall(tab, { applicationKey: key, wall: false });
+      expect(h.filled).toEqual([tab]);
+      expect(h.sent).toEqual([]);
+      // Nothing took it: Ready for you, the wait counted from the entry (not from the choice).
+      await h.advance(QUEUE_ENTRY_WAIT_MS - 5_000 - 100);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      await h.advance(100);
+      expect(h.clock.now - startedAt).toBe(QUEUE_ENTRY_WAIT_MS);
+      expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      expect(timeouts()).toEqual([FROM_FILLING]);
+      expect(h.filled).toEqual([tab]);
+      // A run that comes after all (the person's Autofill, or the grant's step and then its form) still leads.
+      await says(h, tab, 'fill-step');
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      await says(h, tab, 'review');
+      expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      expect(h.filled).toEqual([tab]);
+      expect(h.sent).toEqual([]);
+    });
+
+    it('a job whose run reports within the wait follows its reports as before, the timer gone', async () => {
+      seed(h, 1);
+      await h.runner.start();
+      const { tab, key } = await entered(h, 1);
+      await h.advance(20_000);
+      // The press's next document holds the form: the grant starts it (sign-up.ts takeFill), never a second queue start.
+      await h.runner.hello(tab, { frameId: 0, documentId: 'form-1', hasForm: true, applicationKey: key }, true);
+      await Promise.resolve();
+      expect(h.sent).toEqual([]);
+      await says(h, tab, 'review');
+      expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      // The person's Autofill again: its run works on past the entry's wait, and stays filling all along.
+      await h.advance(20_000);
+      await says(h, tab, 'scan-step');
+      for (let passed = 0; passed < QUEUE_ENTRY_WAIT_MS; passed += 1_000) {
+        await h.advance(1_000);
+        expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      }
+      await says(h, tab, 'review');
+      expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      expect(timeouts()).toEqual([]);
+      expect(h.filled).toEqual([tab]);
+    });
+
+    it('the iCIMS email gate (a form root) goes filling, then ready, from its run’s reports, not from the timer', async () => {
+      h.rows.push({ task: queued(1, ICIMS_POSTING), state: 'queued' });
+      await h.runner.start();
+      const { tab, key } = await entered(h, 1, ICIMS_POSTING);
+      const startedAt = h.clock.now;
+      expect(h.filled).toEqual([tab]);
+      // The posting's Apply moved the top frame to the email gate: a form root, so its hello starts nothing of the
+      // queue's and no frame/wall of it reaches the queue; the panel's grant starts its run (sign-up.ts takeFill).
+      await h.advance(3_000);
+      await h.runner.hello(tab, { frameId: 0, documentId: 'gate', hasForm: true, applicationKey: key }, true);
+      await Promise.resolve();
+      expect(h.sent).toEqual([]);
+      await says(h, tab, 'detect');
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      // Sign-in Manually: the gate's Next is the person's (the run rests at the AUTH pause).
+      await h.advance(1_000);
+      await says(h, tab, 'auth-needed');
+      expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      // The person presses Next: the gate's document goes, and the application form's run (Autofill after page turn)
+      // fills.
+      await h.advance(76_000);
+      h.reports.delete(tab);
+      await h.runner.hello(tab, { frameId: 0, documentId: 'form-1', hasForm: true, applicationKey: key }, true);
+      await h.advance(2_000);
+      await says(h, tab, 'fill-step');
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      // A page turn of the form across the wait: its step's reports go with its document, the next step's run has not
+      // reported yet. Still filling: the reports lead, never the timer.
+      await h.advance(6_000);
+      expect(h.clock.now - startedAt).toBe(88_000);
+      h.reports.delete(tab);
+      await h.advance(3_000);
+      expect(h.clock.now - startedAt).toBeGreaterThan(QUEUE_ENTRY_WAIT_MS);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      await says(h, tab, 'fill-step');
+      await h.advance(10_000);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      // It rests at review: Ready for you, from its report.
+      await says(h, tab, 'review');
+      expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      expect(timeouts()).toEqual([]);
+      expect(h.filled).toEqual([tab]);
+      expect(h.sent).toEqual([]);
+    });
+
+    it('a run’s report heard as its message comes ends the wait, though no look at the tabs saw it', async () => {
+      seed(h, 1);
+      await h.runner.start();
+      const { tab, key } = await entered(h, 1);
+      const startedAt = h.clock.now;
+      // A slow entry: the form's run reports late in the wait, and its page turns at once (its reports go with it).
+      await h.advance(85_000);
+      await h.runner.hello(tab, { frameId: 0, documentId: 'form-1', hasForm: true, applicationKey: key }, true);
+      await says(h, tab, 'fill-step');
+      h.reports.delete(tab);
+      // Across the wait, the next step's run not heard yet: still filling (a run reported), never the timer.
+      await h.advance(7_000);
+      expect(h.clock.now - startedAt).toBeGreaterThan(QUEUE_ENTRY_WAIT_MS);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      await says(h, tab, 'review');
+      expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      expect(timeouts()).toEqual([]);
+    });
+
+    it('ends an entry’s wait while the run is paused too, by its own timer, the alarm kept while it waits', async () => {
+      seed(h, 2);
+      await h.runner.start();
+      const tab = h.tabs[0]!.tabId;
+      const key = await KEY_OF(h, 1);
+      await h.runner.hello(tab, { frameId: 0, documentId: 'posting-1', hasForm: false, applicationKey: key }, true);
+      await h.runner.pause();
+      expect(h.alarm.on).toBe(false);
+      // The frame's entry arrives while paused: the queue's Autofill (as before), and the wait keeps the worker waking.
+      await h.runner.wall(tab, { applicationKey: key, wall: false });
+      expect(h.filled).toEqual([tab]);
+      expect(h.alarm.on).toBe(true);
+      // Only the timers run (no other tick, no alarm): the wait's own timer ends it.
+      for (let passed = 0; passed < QUEUE_ENTRY_WAIT_MS; passed += 1_000) {
+        h.clock.now += 1_000;
+        h.timers.advance(1_000);
+        await settled();
+      }
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      h.clock.now += 100;
+      h.timers.advance(100);
+      await settled();
+      expect(await h.runner.status()).toMatchObject({ phase: 'paused', counts: { filling: 0, ready: 1, queued: 1 } });
+      expect(timeouts()).toEqual([FROM_FILLING]);
+      expect(h.alarm.on).toBe(false);
+      expect(h.tabs).toHaveLength(1);
+    });
+
+    it('picks an entry’s wait up after a worker restart, from its start as saved, and never revives one a run ended', async () => {
+      h = harness({ maxOpenTabs: 2 });
+      seed(h, 2);
+      await h.runner.start();
+      await h.advance(8_000);
+      const first = await entered(h, 1);
+      const second = await entered(h, 2);
+      const startedAt = h.clock.now;
+      // The second's form run reports, seen by a look at the tabs (its message missed while the worker slept).
+      h.reports.set(second.tab, [report({ status: 'fill-step' })]);
+      await h.advance(1_000);
+      await h.advance(49_000, 1_000);
+      // The worker stops; meanwhile the second's page turns (its reports go with the document).
+      const again = h.restart();
+      again.reports.delete(second.tab);
+      await again.runner.boot();
+      expect(await countsOf(again)).toMatchObject({ filling: 2, ready: 0 });
+      await again.advance(startedAt + QUEUE_ENTRY_WAIT_MS - 100 - again.clock.now);
+      expect(await countsOf(again)).toMatchObject({ filling: 2, ready: 0 });
+      await again.advance(100);
+      const listed = await again.runner.list(0);
+      expect(listed.ok && listed.data.items.map((item) => item.status)).toEqual(['ready', 'filling']);
+      expect(timeouts()).toEqual([FROM_FILLING]);
+      expect(again.filled).toEqual([first.tab, second.tab]);
+    });
+
+    it('an account wall’s start is Ready for you at once, and its wait ends with nothing logged; Manually times nothing', async () => {
+      seed(h, 1);
+      await h.runner.start();
+      const tab = h.tabs[0]!.tabId;
+      const key = await KEY_OF(h, 1);
+      await h.runner.hello(tab, { frameId: 0, documentId: 'wall-1', hasForm: false, applicationKey: key }, true);
+      await h.runner.wall(tab, { applicationKey: key, wall: true });
+      expect(h.filled).toEqual([tab]);
+      expect(await countsOf(h)).toMatchObject({ ready: 1 });
+      await h.advance(QUEUE_ENTRY_WAIT_MS + 1_000, 1_000);
+      expect(await countsOf(h)).toMatchObject({ ready: 1 });
+      expect(timeouts()).toEqual([]);
+      expect(h.alarm.on).toBe(true); // the run still runs (its tab open)
+      const manual = harness({ autofillOnOpen: 'manual' });
+      seed(manual, 1);
+      await manual.runner.start();
+      await entered(manual, 1);
+      expect(manual.filled).toEqual([]);
+      await manual.advance(QUEUE_ENTRY_WAIT_MS + 1_000, 1_000);
+      expect(await countsOf(manual)).toMatchObject({ opened: 1, filling: 0, ready: 0 });
+      expect(timeouts()).toEqual([]);
+    });
   });
 
   it('with Manually, leaves each tab for the person’s Autofill', async () => {

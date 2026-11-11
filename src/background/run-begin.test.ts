@@ -26,7 +26,9 @@ const CONTENT_SETTINGS = { panel: DEFAULT_SETTINGS.panel, view: DEFAULT_SETTINGS
     submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip,
     signIn: DEFAULT_SETTINGS.modes.signIn, noMatch: DEFAULT_SETTINGS.modes.noMatch,
     notifications: DEFAULT_SETTINGS.modes.notifications },
-  offerToSaveAnswers: DEFAULT_SETTINGS.offerToSaveAnswers };
+  offerToSaveAnswers: DEFAULT_SETTINGS.offerToSaveAnswers,
+  // jr6: no job-site password saved in this browser: nothing is typed at a sign-in.
+  typeSignIn: false };
 const withPosting = (postingText: string) => ({ json: { ...goldens.lookup, job: { ...goldens.lookup.job, postingText } } });
 
 describe('run/begin', () => {

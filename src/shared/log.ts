@@ -238,6 +238,15 @@ export const LOG_CODES = [
   'agent.paused',
   'signin.credential',
   'signin.refused',
+  // jr6: the job-site sign-up information (background/signup-vault.ts, signup.ts): flags only, never an email, a
+  // password or a password's length.
+  'signup.key-made',
+  'signup.saved',
+  'signup.removed',
+  'signup.refused',
+  'signup.unreadable',
+  'signup.imported',
+  'signup.mode-reverted',
   'content.agent-refused',
   'content.agent-entry',
   'content.sign-in',
@@ -287,6 +296,19 @@ export const LOG_CODES = [
   'content.picker',
   'content.resume-parse',
   'content.open-application',
+  // ── jr6 apply A0 (the owner, 2026-11-10: Autofill presses the site's own Apply; APPLYPLAN F2, F3a, F4a): numbers and
+  // flags only, never an address, a host, a key, a label or a word of the page. The frame's entry: how it ended (its
+  // refusal as its place in ENTRY_REFUSALS, whether it pressed, waited, followed; F2), and a step on the way (a choice,
+  // a consent, a second step pressed; F2). The worker's entry grant: armed by entry/pressed (whether with a next key),
+  // a step it started (a wall or a choice, its count), ended (why, as flags; F3a). A queued job started at an entry
+  // that never reported, made Ready for you after its wait (F4a). content.open-application stays until integration.
+  'content.entry',
+  'content.entry-step',
+  'grant.armed',
+  'grant.step',
+  'grant.ended',
+  'queue.entry-timeout',
+  // ── end jr6 apply A0 ──
   // The page patches' bundle run in a frame's page world, or refused (why, as flags).
   'patches.injected',
   'patches.refused',

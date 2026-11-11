@@ -38,6 +38,10 @@
  *   view orders them: the seconds between tabs and added each time, Autofill when a queued tab opens, and how many
  *   queued tabs may be open at once (src/ui/page/modes.tsx QueueFields). Every radio group's choices side by side, two
  *   to a row, here as in the side panel.
+ * - jr6 (the owner, 2026-11-10): Sign-up Information (ui/page/signup.tsx), right after the connection: the job-site email
+ *   and password kept in this browser, the rules' checklist, Generate strong password, Save, Delete and the one-time
+ *   Import from TailorIT. Its card is `#settings-signup`, which the sidebar's link and the no-sign-in toast open.
+ *   Sign-in's Auto needs a saved password (src/ui/page/modes.tsx signInAvailability).
  * v4 ui (the owner, 2026-11-07: "all explanation will be tooltip"): each card's and each setting's explanation is a "?"
  * (HelpTip) beside its title or its name, still describing its control; what a setting is now, the first-run
  * disclosure, the plan's sentence on what never goes to the AI and the list of what the counters count stay as text.
@@ -60,6 +64,8 @@ import { request } from '../page/request';
 import { AgentStatusLine, useAgentStatus, type AgentState } from '../page/agent';
 import { DocumentsFields, documentsKeyOf } from '../page/documents';
 import { ModesFields, QueueFields, signInAvailability } from '../page/modes';
+import { SignUpFields } from '../page/signup';
+import { SIGNUP_COPY } from '../page/signup-copy';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
 import { animationFrames, clockText, useSecondsLeft, type FrameScheduler } from './countdown';
 import { useSettings, type SettingsState } from './settings';
@@ -78,6 +84,13 @@ export function Options({ platform, now = Date.now, frames = animationFrames }: 
   const root = useRef<HTMLElement>(null);
   const auth = useAuthStatus(platform, root);
   const settings = useSettings(platform);
+  // jr6: opened at a card (the sidebar's link and the no-sign-in toast: #settings-signup), that card is brought into
+  // view once drawn (the page draws after the browser looked for the fragment).
+  useEffect(() => {
+    const doc = root.current?.ownerDocument;
+    const hash = doc?.defaultView?.location.hash.slice(1) ?? '';
+    if (/^settings-[a-z-]{1,40}$/.test(hash)) doc?.getElementById(hash)?.scrollIntoView?.({ block: 'start' });
+  }, []);
   return (
     <main className="tia-page tia-options" ref={root}>
       <header className="tia-options__head">
@@ -90,6 +103,11 @@ export function Options({ platform, now = Date.now, frames = animationFrames }: 
         </h1>
       </header>
       <Connection platform={platform} auth={auth} now={now} frames={frames} />
+      {/* jr6: Sign-up Information, after the connection, as the side panel's Settings view orders it (after Autofill
+          Information, which this page has none of). */}
+      <Card title={SIGNUP_COPY.heading} name="signup" help={SIGNUP_COPY.help}>
+        <SignUpFields platform={platform} onChanged={auth.refresh} accountEmail={auth.status?.account?.email ?? null} />
+      </Card>
       <SettingsCards platform={platform} settings={settings} auth={auth} />
       <Counters platform={platform} settings={settings} />
       <SavedRuns platform={platform} />

@@ -164,6 +164,18 @@ describe('the review panel', () => {
     expect(button(root, COPY.panel.fill)).not.toBeNull();
   });
 
+  it('says on Sign up & Autofill’s "?" to save a job-site password first while none is saved (the jr6 review, R5)', async () => {
+    for (const [signUp, said] of [['not-set', COPY.mainView.signUpNeedsPassword], ['set', COPY.mainView.signUpHelp]] as const) {
+      const worker = createFakeWorker();
+      worker.script.auth = authStatus({ signUp });
+      worker.script.pages.set(5, formPage({ wall: 'sign-in' }));
+      const root = await open(worker, 5);
+      expect(button(root, COPY.mainView.signUpFill)?.dataset.mainAction, signUp).toBe('sign-up');
+      expect(root.querySelector('.tia-toolbar [data-helptip] [role="tooltip"]')?.textContent, signUp).toBe(said);
+      unmountAll();
+    }
+  });
+
   it('takes no click on the main button until what it says has been shown CONTROL_SEEN_MS, then sends what it shows (the v4 review, L4)', async () => {
     const worker = createFakeWorker();
     worker.script.pages.set(5, formPage());
@@ -231,14 +243,17 @@ describe('the review panel', () => {
     expect(runs().slice(1)).toEqual([{ v: 1, type: 'panel/continue', tabId: 5 }]);
   });
 
-  it('offers Autofill on a posting page whose application frame shows an entry choice; a wall there signs up (the v4 review, M4)', async () => {
+  it('offers Autofill on a posting page, and where its application frame shows an entry choice; a wall there signs up (the v4 review, M4; jr6 apply F1)', async () => {
     const worker = createFakeWorker();
     const posting: PageState = { support: 'no-form', platform: 'workday', formKey: null, posting: true };
     worker.script.pages.set(5, posting);
     const root = await open(worker, 5);
-    // A posting alone: no Autofill, and the strip says why.
-    expect(root.querySelector('button.tia-cta')).toBeNull();
-    expect(root.querySelector('[data-strip="no-form"]')?.textContent).toBe(COPY.strip.noForm);
+    // jr6 apply F1 (APPLYPLAN D2): a posting alone shows Autofill too (a plain fill: its frame looks for the site's
+    // Apply), and the strip says what it does there (the F1 fixer: once, though no card shows).
+    const alone = root.querySelector<HTMLButtonElement>('button.tia-cta')!;
+    expect([alone.textContent, alone.dataset.mainAction, alone.disabled]).toEqual([COPY.panel.fill, 'fill', false]);
+    expect([...root.querySelectorAll('[data-strip="no-form"]')].map((strip) => strip.textContent))
+      .toEqual([COPY.strip.posting]);
     // Workday's "Start Your Application" (its address read as the posting's): Autofill, a plain fill, which presses the
     // declared entry; nothing says there is no form to fill.
     await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [], page: { ...posting, choice: true } }));

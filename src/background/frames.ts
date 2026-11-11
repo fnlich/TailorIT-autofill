@@ -17,7 +17,7 @@
 import { applicationOf } from '../adapters';
 import { parseAtsUrl } from '../contract/tailorit';
 import type { Platform } from '../core/enums';
-import type { PageState, SignInWall, WallWaits } from '../messaging/schemas';
+import type { EntryRefusal, PageState, SignInWall, WallWaits } from '../messaging/schemas';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { platformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
@@ -67,9 +67,21 @@ export interface FrameEntry {
   waits?: WallWaits;
   /** v5 p2-fill: the frame shows a posting with no form whose adapter offers its own Apply (frame/wall's `entry`). */
   entry?: true;
-  /** v5 p2-fill review (L5): the frame's last Open Application could not press that Apply (frame/wall's
-   *  `entryRefused`), while no wall or choice shows. Not kept by a hello. */
+  /** v5 p2-fill review (L5): the frame's last Autofill could not press that Apply (frame/wall's `entryRefused`), while
+   *  no wall or choice shows. Not kept by a hello. */
   entryRefused?: true;
+  // ── jr6 apply F3a (APPLYPLAN §5 F3a item 4) ──
+  /** The frame is pressing the site's own Apply or waiting for what the press brings (frame/wall's `entering`), a wall
+   *  or a choice its press drew in this document included (the line P review, revA-3 and P-B3: its sign-in step, the
+   *  choice it waits past, so the panel's Cancel reaches it there too). Kept while the same document says hello again
+   *  with no form, as `entry` is. */
+  entering?: true;
+  /** Why its last entry was refused (frame/wall's `refusal`), beside `entryRefused` alone. Not kept by a hello. */
+  refusal?: EntryRefusal;
+  /** The frame's document said `entry` once (apply-b-new-2: ADP's job details, an application address with no form):
+   *  its top frame is the tab's card frame while it shows no form, through the consent and the guest view drawn in
+   *  place at the same address. Kept by setWall, and by a hello of the same document at the same address. */
+  entrySaid?: true;
 }
 
 const keyOf = (tabId: number, frameId: number) => `frames:${tabId}:${frameId}`;
@@ -88,8 +100,8 @@ export async function registerFrame(
   frame: { tabId: number; frameId: number; documentId: string | undefined; url: string; isTop: boolean; hasForm: boolean;
     nav?: number; letter?: true; keepKey?: string; wraps?: true; claimed?: true; chain?: FrameChain;
     /** v4: the same document's wall and choice, kept from its entry (frame/wall); s2 profile, what it waits for;
-     *  v5 p2-fill, its posting's own Apply. */
-    wall?: SignInWall; choice?: true; waits?: WallWaits; entry?: true },
+     *  v5 p2-fill, its posting's own Apply; jr6 apply F3a, its press under way and the entry it said. */
+    wall?: SignInWall; choice?: true; waits?: WallWaits; entry?: true; entering?: true; entrySaid?: true },
   now: number,
 ): Promise<FrameEntry> {
   const entry: FrameEntry = {
@@ -119,6 +131,9 @@ export async function registerFrame(
     ...(frame.choice === true ? { choice: true as const } : {}),
     ...(frame.waits === undefined ? {} : { waits: frame.waits }),
     ...(frame.entry === true ? { entry: true as const } : {}),
+    // jr6 apply F3a.
+    ...(frame.entering === true ? { entering: true as const } : {}),
+    ...(frame.entrySaid === true ? { entrySaid: true as const } : {}),
   };
   await session.set({ [keyOf(frame.tabId, frame.frameId)]: entry });
   return entry;
@@ -127,17 +142,27 @@ export async function registerFrame(
 /** v4: a frame's frame/wall: its entry, for the same document, takes the wall and the choice it shows now (none:
  *  gone). Answers the entry as stored, or null when the frame is not registered for that document. */
 export async function setWall(session: StorageArea, tabId: number, frameId: number, documentId: string | null,
-  shown: { wall: SignInWall | null; choice: boolean; waits?: WallWaits; entry?: boolean; entryRefused?: boolean }):
+  shown: { wall: SignInWall | null; choice: boolean; waits?: WallWaits; entry?: boolean; entryRefused?: boolean;
+    entering?: boolean; refusal?: EntryRefusal }):
   Promise<FrameEntry | null> {
   const held = await frameEntry(session, tabId, frameId);
   if (held === null || held.documentId !== documentId) return null;
-  const { wall: _wall, choice: _choice, waits: _waits, entry: _entry, entryRefused: _refused, ...rest } = held;
+  const { wall: _wall, choice: _choice, waits: _waits, entry: _entry, entryRefused: _refused, entering: _entering,
+    refusal: _refusal, ...rest } = held;
+  const open = shown.wall === null && !shown.choice;
+  const refused = shown.entryRefused === true && open;
   const entry: FrameEntry = { ...rest, ...(shown.wall === null ? {} : { wall: shown.wall }),
     ...(shown.choice ? { choice: true as const } : {}), ...(shown.waits === undefined ? {} : { waits: shown.waits }),
     // v5 p2-fill: a posting's own Apply, offered while no wall or choice shows.
-    ...(shown.entry === true && shown.wall === null && !shown.choice ? { entry: true as const } : {}),
+    ...(shown.entry === true && open ? { entry: true as const } : {}),
     // v5 p2-fill review (L5): its refusal, likewise.
-    ...(shown.entryRefused === true && shown.wall === null && !shown.choice ? { entryRefused: true as const } : {}) };
+    ...(refused ? { entryRefused: true as const } : {}),
+    // jr6 apply F3a: its press under way, whatever shows (the line P review, revA-3 and P-B3: a wall or a choice its
+    // press drew in this document is still its entry, and the panel's Cancel must reach it); why it was refused, beside
+    // the refusal alone; the entry it said, kept for the document's life (the card frame, apply-b-new-2).
+    ...(shown.entering === true ? { entering: true as const } : {}),
+    ...(refused && shown.refusal !== undefined ? { refusal: shown.refusal } : {}),
+    ...(shown.entry === true && open ? { entrySaid: true as const } : {}) };
   await session.set({ [keyOf(tabId, frameId)]: entry });
   return entry;
 }
@@ -153,14 +178,18 @@ export function wallFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
  *  the side panel then offers Autofill there, a posting page included (Workday's /apply, which its parser reads as a
  *  posting). Each goes with the frame/wall that cleared it, or with its document. */
 function wallOf(frames: readonly FrameEntry[], noForm: boolean): { wall?: SignInWall; choice?: true;
-  waits?: WallWaits; entry?: true; entryRefused?: true } {
+  waits?: WallWaits; entry?: true; entryRefused?: true; entering?: true; refusal?: EntryRefusal } {
   const frame = wallFrameOf(frames);
   return { ...(frame?.wall === undefined ? {} : { wall: frame.wall }),
     ...(noForm && frame?.choice === true ? { choice: true as const } : {}),
-    // v5 p2-fill: a posting with no form whose adapter offers its own Apply: the panel's Open Application.
+    // v5 p2-fill: a posting with no form whose adapter offers its own Apply: the panel's Autofill presses it.
     ...(noForm && frame?.entry === true ? { entry: true as const } : {}),
-    // v5 p2-fill review (L5): its last press refused: the panel says why.
-    ...(noForm && frame?.entryRefused === true ? { entryRefused: true as const } : {}),
+    // v5 p2-fill review (L5): its last press refused: the panel says why (jr6 apply F3a: with its reason).
+    ...(noForm && frame?.entryRefused === true ? { entryRefused: true as const,
+      ...(frame.refusal === undefined ? {} : { refusal: frame.refusal }) } : {}),
+    // jr6 apply F3a: its press under way: the panel's Autofill shows its spinner, and its Cancel; the line P review
+    // (revA-3, P-B3): beside a wall or a choice its press drew too (the wall's Sign Up & Autofill spins meanwhile).
+    ...(noForm && frame?.entering === true ? { entering: true as const } : {}),
     // s2 profile (P1): a page with no form whose wall's toast stands.
     ...(noForm && frame?.waits !== undefined ? { waits: frame.waits } : {}) };
 }
@@ -249,10 +278,14 @@ function applicationKeyOf(url: string, kept?: string): { applicationKey?: string
 }
 
 /** The frame a tab's job card reads through (v3 Phase 3b): its form frame, else its top frame on a recognised posting
- *  page with no form, else (the review) its top frame on the platform's page after submitting. */
+ *  page with no form, else (the review) its top frame on the platform's page after submitting, else (jr6 apply F3a,
+ *  apply-b-new-2) its top frame with no form whose document said its adapter offers the site's own Apply (ADP's job
+ *  details, at an application address). */
 export function cardFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
   return formFrameOf(frames) ?? frames.find((frame) => frame.frameId === 0 && frame.posting === true)
-    ?? frames.find((frame) => frame.frameId === 0 && frame.confirmation === true) ?? null;
+    ?? frames.find((frame) => frame.frameId === 0 && frame.confirmation === true)
+    ?? frames.find((frame) => frame.frameId === 0 && !frame.hasForm && frame.entrySaid === true
+      && frame.applicationKey !== undefined) ?? null;
 }
 
 /** The frame a tab's form is in (v2): its lowest registered frame with a form, or null. */

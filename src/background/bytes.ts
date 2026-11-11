@@ -13,6 +13,17 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** jr6: standard base64 back to bytes (the job-site password's ciphertext and nonce, signup-vault.ts); null for text
+ *  that is no base64. */
+export function fromBase64(text: string): Uint8Array | null {
+  try {
+    const binary = atob(text);
+    return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
 /** base64url without padding: 32 bytes become 43 characters, 16 bytes 22. */
 export function toBase64Url(bytes: Uint8Array): string {
   return toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

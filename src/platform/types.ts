@@ -60,9 +60,10 @@ export interface StorageArea {
 }
 
 /**
- * The extension origin's IndexedDB (database `tailorit`, store `secrets`, key `auth`): where the bearer token lives.
- * A content script runs under the page's origin, so it can never open this database. Its reader (background/auth.ts)
- * checks what comes out.
+ * The extension origin's IndexedDB (database `tailorit`, store `secrets`, key `auth`): where the bearer token lives;
+ * jr6: and (key `signup-key`) the job-site password's non-extractable key. A content script runs under the page's
+ * origin, so it can never open this database. Its readers (background/auth.ts, background/signup-vault.ts) check what
+ * comes out.
  */
 export interface SecretStore {
   get(): Promise<unknown>;
@@ -152,6 +153,9 @@ export interface WorkerPlatform {
   queueTabs: QueueTabs;
   /** The token's home (extension-origin IndexedDB). */
   secrets: SecretStore;
+  /** jr6: the job-site password's key (extension-origin IndexedDB, key `signup-key`): a CryptoKey made with extractable
+   *  false, which background/signup-vault.ts alone reads (platform/indexed-db.ts). */
+  signupKey: SecretStore;
   fetch: FetchLike;
   /** A signal that aborts after `ms` (AbortSignal.timeout). */
   timeout(ms: number): AbortSignal;

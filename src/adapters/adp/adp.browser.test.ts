@@ -151,7 +151,7 @@ describe('the page states', () => {
       event.preventDefault();
     }, true);
     const press = (adapter: Adapter, href = GUEST) => signIn({ doc: fixture.doc, adapter, href: () => href,
-      channel: { request: async () => ({ ok: true, data: { host: 'workforcenow.adp.com', email: 'guest@example.com' } }) } as unknown as
+      channel: { request: async () => ({ ok: true, data: { host: 'workforcenow.adp.com', email: 'guest@example.com', press: true } }) } as unknown as
         SignInContext['channel'],
       isTop: true, container: true, signal: new AbortController().signal, settleMs: 300 });
     expect(await press(adpAdapter, GUEST.replace('https:', 'http:'))).toBe('unavailable');

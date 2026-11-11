@@ -17,8 +17,12 @@
  * then the connection ("Connected as …", or not connected); "Autofill Information"; Documents; Queue Settings (the
  * sequential auto-apply's, ui/page/modes.tsx QueueFields); Autofill Settings (the modes). The queue's and the modes'
  * choices are one draft, saved together with Save; each radio group's cards side by side, two to a row.
+ * jr6 (the owner, 2026-11-10: "user can set and manage the password on extension settings"): "Sign-up Information"
+ * right after Autofill Information. In Chrome's side panel its fields (ui/page/signup.tsx, given by the page through
+ * ui/page/signup-slot.ts), saved on their own; in the sidebar on the page, which no password box may reach, whether a
+ * password is saved (AuthStatus.signUp) and a link to the settings page's card alone.
  */
-import { useId, useState } from 'react';
+import { useContext, useId, useState } from 'react';
 import type { Settings } from '../../core/types/settings';
 import type { AuthStatus } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
@@ -27,6 +31,8 @@ import { Icon } from '../brand/Icon';
 import { DocumentsFields, documentsKeyOf } from '../page/documents';
 import { ModesFields, QueueFields, signInAvailability } from '../page/modes';
 import { request } from '../page/request';
+import { SignUpSlot } from '../page/signup-slot';
+import { SIGNUP_SECTION } from '../../shared/sidebar';
 
 const WORDS = COPY.settingsView;
 
@@ -50,6 +56,8 @@ export interface SettingsViewProps {
 
 export function SettingsView({ platform, settings, status, onClose, onSaved, onAutofillInfo, settingsUrl }: SettingsViewProps) {
   const headingId = useId();
+  /** jr6: Sign-up Information's fields, where the page gives them (Chrome's side panel; never the sidebar). */
+  const signUpFields = useContext(SignUpSlot);
   /** What this view last read or saved (the save's base), and the person's draft over it. */
   const [base, setBase] = useState<Settings | null>(settings);
   const [draft, setDraft] = useState<Settings | null>(settings);
@@ -119,6 +127,18 @@ export function SettingsView({ platform, settings, status, onClose, onSaved, onA
             <Icon name="chevron-right" size={16} className="tia-icon tia-linkrow__chevron" />
           </button>
         </div>
+        {/* jr6: Sign-up Information, after Autofill Information: its fields where the page gives them, else (the sidebar
+            on the page) whether a password is saved and the settings page's card. */}
+        <section className="tia-settings__section" data-settings-section="signup" aria-labelledby={`${headingId}-signup`}>
+          <h3 className="tia-card__title" id={`${headingId}-signup`}>{WORDS.signUp}</h3>
+          {signUpFields !== null ? signUpFields({ platform, accountEmail: status?.account?.email ?? null }) : (
+            <p className="tia-note" data-signup-state={status?.signUp ?? 'not-set'}>
+              {status?.signUp === 'set' ? WORDS.signUpSet : WORDS.signUpNotSet}{' '}
+              <a className="tia-linkbutton" href={`${settingsUrl}#${SIGNUP_SECTION}`} target="_blank" rel="noreferrer"
+                data-open-signup="">{WORDS.signUpManage}</a>
+            </p>
+          )}
+        </section>
         {/* 4. Documents: v1.4 F, the profile's templates, saved on their own. */}
         <section className="tia-settings__documents tia-settings__section" data-settings-documents=""
           data-settings-section="documents">

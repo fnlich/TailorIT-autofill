@@ -299,7 +299,7 @@ describe('the settings’ layout (v1.5 QX, PLAN decision 10)', () => {
   const rowsOf = (group: Element) => [...new Set([...group.querySelectorAll('.tia-radiocard')]
     .map((card) => Math.round(card.getBoundingClientRect().top)))];
 
-  it('puts the panel’s Settings in the owner’s order: All Settings top right, the connection, Autofill Information, Documents, Queue, Autofill', async () => {
+  it('puts the panel’s Settings in the owner’s order: All Settings top right, the connection, Autofill Information, (jr6) Sign-up Information, Documents, Queue, Autofill', async () => {
     const root = await open(createFakeWorker());
     await click(root.querySelector('button[data-panel-settings]'));
     const settings = root.querySelector<HTMLElement>('[data-settings-view]')!;
@@ -308,10 +308,10 @@ describe('the settings’ layout (v1.5 QX, PLAN decision 10)', () => {
     expect(all.parentElement).toBe(head);
     expect(Math.round(all.getBoundingClientRect().right)).toBeGreaterThan(Math.round(head.getBoundingClientRect().right) - 20);
     expect([...settings.querySelectorAll<HTMLElement>('[data-settings-section]')].map((each) => each.dataset.settingsSection))
-      .toEqual(['connection', 'autofill-info', 'documents', 'queue', 'autofill']);
+      .toEqual(['connection', 'autofill-info', 'signup', 'documents', 'queue', 'autofill']);
     expect(settings.querySelector('[data-settings-section="connection"]')?.textContent).toBe(COPY.panel.connectedAs('Morgan Lee'));
     expect([...settings.querySelectorAll('[data-settings-section] > h3')].map((title) => title.textContent))
-      .toEqual([COPY.documents.title, COPY.settingsView.queue, COPY.settingsView.autofill]);
+      .toEqual([COPY.settingsView.signUp, COPY.documents.title, COPY.settingsView.queue, COPY.settingsView.autofill]);
   });
 
   it('lays each radio group out side by side, two to a row (2 x 2 for more), the skip rules one per line', async () => {
@@ -369,8 +369,9 @@ describe('the settings’ layout (v1.5 QX, PLAN decision 10)', () => {
     const worker = createFakeWorker();
     const root = await mount(<Options platform={worker.platform} />);
     await settle();
-    expect([...root.querySelectorAll<HTMLElement>('[data-card]')].map((card) => card.dataset.card).slice(1, 4))
-      .toEqual(['documents', 'queue', 'modes']);
+    // jr6: Sign-up Information right after the connection, as the panel's Settings orders it.
+    expect([...root.querySelectorAll<HTMLElement>('[data-card]')].map((card) => card.dataset.card).slice(1, 5))
+      .toEqual(['signup', 'documents', 'queue', 'modes']);
     const card = root.querySelector('[data-card="queue"]')!;
     expect(card.querySelector('.tia-card__head [role="tooltip"]')?.textContent).toBe(COPY.options.queue.intro);
     expect(rowsOf(card.querySelector('[data-setting-group="queue.autofillOnOpen"]')!)).toHaveLength(1);

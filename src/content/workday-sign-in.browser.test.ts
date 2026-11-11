@@ -17,7 +17,8 @@
  *   the page's script sends is cancelled while Sign-in watches, whatever its method, a stopPropagation of the page's
  *   own notwithstanding; of another form, one to another origin or not a POST; a POST home never (guardSubmission, S5);
  * - a password box that stops being one as the email is typed gets no password (S7); a declared button that the page
- *   enables once filled is waited for, and the typed password is written empty again when it never is (C4, S5);
+ *   enables once filled is waited for, and the typed password is written empty again when it never is (C4, S5), after
+ *   the jr6 review (R1) once kept a while for the person's own press, as after a sign-in the site refused;
  * - refused, with nothing asked or typed: an http page, a host the every-site sign-in does not cover for a script-sent
  *   form, a hidden password box.
  */
@@ -47,7 +48,8 @@ const ACCOUNT = `https://${WORKDAY_HOST}/en-US/Workday/job/x/Senior-Product-Mana
 const ORACLE_HOST = 'elhr.fa.us2.oraclecloud.com';
 const GATE = `https://${ORACLE_HOST}/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/email`;
 /** A synthetic sign-in: the every-site one, a dummy address and a dummy password. */
-const CREDENTIAL: SignInCredential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real' };
+const CREDENTIAL: SignInCredential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real',
+  press: true };
 
 let logs: MockInstance;
 beforeAll(() => {
@@ -106,9 +108,10 @@ function channelAnswering(answer: unknown) {
   } } as SignInContext['channel'] & { asked: unknown[] };
 }
 
-const attempt = (fixture: Fixture, adapter: SignInContext['adapter'], channel: SignInContext['channel'], href: string) =>
+const attempt = (fixture: Fixture, adapter: SignInContext['adapter'], channel: SignInContext['channel'], href: string,
+  extra: Partial<SignInContext> = {}) =>
   signIn({ doc: fixture.doc, adapter, channel, href: () => href, isTop: true, signal: new AbortController().signal,
-    settleMs: 1_500, preludeMs: 1_500 });
+    settleMs: 1_500, preludeMs: 1_500, ...extra });
 
 describe('Sign-in Auto on Workday (v3 Phase 6)', () => {
   it('signs in: the email and the password typed, the visible click_filter pressed, the honeypot left empty', async () => {
@@ -227,7 +230,7 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
   it('types the email alone, ticks the terms, presses NEXT; the honeypot stays empty', async () => {
     const fixture = await plainGate();
     const seen = actAsOracle(fixture);
-    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     expect(await attempt(fixture, oracleAdapter, channel, GATE)).toBe('continue');
     expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'email-gate' }]);
     expect(seen).toEqual({ presses: 1, typed: { email: CREDENTIAL.email, honeypot: '', terms: true } });
@@ -239,7 +242,7 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
   it('is taken as captured, its terms label read through the panel over the image', async () => {
     const fixture = await served(elhrGateHtml, GATE, 'form:has(input[name="primary-email"])');
     const seen = actAsOracle(fixture);
-    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     expect(await attempt(fixture, oracleAdapter, channel, GATE)).toBe('continue');
     expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'email-gate' }]);
     expect(seen).toEqual({ presses: 1, typed: { email: CREDENTIAL.email, honeypot: '', terms: true } });
@@ -251,7 +254,7 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
       el.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
     }
     const seen = actAsOracle(fixture);
-    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     expect(await attempt(fixture, oracleAdapter, channel, GATE)).toBe('unavailable');
     expect(channel.asked).toEqual([]);
     expect(seen.presses).toBe(0);
@@ -260,7 +263,7 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
   it('takes the gate on JPMC’s region-less host too, which the every-site sign-in covers since TailorIT’s API 5', async () => {
     const fixture = await plainGate();
     const seen = actAsOracle(fixture);
-    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     const jpmc = 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/1/apply/email';
     expect(await attempt(fixture, oracleAdapter, channel, jpmc)).toBe('continue');
     expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'email-gate' }]);
@@ -276,14 +279,14 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
     fixture.doc.querySelector('#legal-disclaimer-checkbox')!.addEventListener('click', () => {
       next.disabled = false;
     });
-    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     expect(await attempt(fixture, oracleAdapter, channel, GATE)).toBe('continue');
     expect(seen.presses).toBe(1);
     removeFixtures(document);
     const stuck = await plainGate();
     const never = actAsOracle(stuck);
     stuck.doc.querySelector<HTMLButtonElement>('button[type="submit"][title="Next"]')!.disabled = true;
-    expect(await attempt(stuck, oracleAdapter, channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } }),
+    expect(await attempt(stuck, oracleAdapter, channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } }),
       GATE)).toBe('failed');
     expect(never.presses).toBe(0);
   }, 15_000);
@@ -314,7 +317,7 @@ describe('a CAPTCHA comes first (the v3 Phase 6/7b review, S1)', () => {
     const gate = await served(elhrGateHtml, GATE, 'form:has(input[name="primary-email"])');
     for (const el of Array.from(gate.doc.querySelectorAll<HTMLElement>('.apply-flow'))) el.style.backgroundImage = 'none';
     challenge(gate.doc, gate.doc.querySelector('form:has(input[name="primary-email"])')!);
-    const asked = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const asked = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     expect(await attempt(gate, oracleAdapter, asked, GATE)).toBe('challenged');
     expect(asked.asked).toEqual([]);
     expect(gate.doc.querySelector<HTMLInputElement>('input[name="primary-email"]')!.value).toBe('');
@@ -337,7 +340,7 @@ describe('a CAPTCHA comes first (the v3 Phase 6/7b review, S1)', () => {
       event.preventDefault();
       challenge(gate.doc, gateForm);
     });
-    expect(await attempt(gate, oracleAdapter, channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } }),
+    expect(await attempt(gate, oracleAdapter, channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } }),
       GATE)).toBe('continue');
   });
 
@@ -434,7 +437,9 @@ describe('the password, written only into a password box, and never left behind 
     expect(seen.presses).toBe(0);
   });
 
-  it('writes the typed password empty again when the button the page should enable never is', async () => {
+  // The jr6 review (R1): what a press the site refused (or one its button never allowed) typed is kept for the person's
+  // own press, SIGN_IN_KEPT_MS at most, as one refused for its check is; then written empty again.
+  it('keeps the typed password for the person a while, then writes it empty, when the button the page should enable never is', async () => {
     const fixture = await served(signInHtml, ACCOUNT, 'form[data-automation-id="signInFormo"]');
     const seen = actAsWorkday(fixture);
     const face = fixture.doc.querySelector<HTMLElement>('[data-automation-id="click_filter"]')!;
@@ -444,21 +449,27 @@ describe('the password, written only into a password box, and never left behind 
       const declared = workdayAdapter.signInForm!(doc, wall);
       return declared === null ? null : { ...declared, enablesWhenFilled: true };
     } };
-    expect(await attempt(fixture, enabling, channelAnswering({ ok: true, data: CREDENTIAL }), ACCOUNT)).toBe('failed');
+    const password = fixture.doc.querySelector<HTMLInputElement>('input[data-automation-id="password"]')!;
+    expect(await attempt(fixture, enabling, channelAnswering({ ok: true, data: CREDENTIAL }), ACCOUNT, { keptMs: 500 }))
+      .toBe('failed');
     expect(seen.presses).toBe(0);
-    expect(fixture.doc.querySelector<HTMLInputElement>('input[data-automation-id="password"]')!.value).toBe('');
+    expect(password.value).toBe(CREDENTIAL.password);
+    await vi.waitFor(() => expect(password.value).toBe(''), { timeout: 3_000 });
     // Undeclared, a disabled button refuses the form before anything is asked.
     const channel = channelAnswering({ ok: true, data: CREDENTIAL });
     expect(await attempt(fixture, workdayAdapter, channel, ACCOUNT)).toBe('unavailable');
     expect(channel.asked).toEqual([]);
   }, 15_000);
 
-  it('writes the typed password empty again when the sign-in fails', async () => {
+  it('keeps the typed password for the person a while, then writes it empty, when the sign-in fails', async () => {
     const fixture = await served(signInHtml, ACCOUNT, 'form[data-automation-id="signInFormo"]');
     // A press that leaves everything in place and shows nothing: the watch ends 'failed'.
     fixture.doc.addEventListener('click', (event) => event.preventDefault());
-    expect(await attempt(fixture, workdayAdapter, channelAnswering({ ok: true, data: CREDENTIAL }), ACCOUNT)).toBe('failed');
-    expect(fixture.doc.querySelector<HTMLInputElement>('input[data-automation-id="password"]')!.value).toBe('');
+    const password = fixture.doc.querySelector<HTMLInputElement>('input[data-automation-id="password"]')!;
+    expect(await attempt(fixture, workdayAdapter, channelAnswering({ ok: true, data: CREDENTIAL }), ACCOUNT,
+      { keptMs: 500 })).toBe('failed');
+    expect(password.value).toBe(CREDENTIAL.password);
+    await vi.waitFor(() => expect(password.value).toBe(''), { timeout: 3_000 });
     expect(fixture.doc.querySelector<HTMLInputElement>('input[data-automation-id="email"]')!.value).toBe(CREDENTIAL.email);
   }, 15_000);
 });

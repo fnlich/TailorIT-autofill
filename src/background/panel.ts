@@ -20,8 +20,13 @@
  * started once it says hello. A plain panel/fill ends any grant the tab held. The v4 review (M1): the grant is given for
  * the tab's application frame as it is now (wallFrameOf: its origin, and its application key where it has one), so it
  * holds for that site alone (sign-up.ts). v5 p2-fill: and where it shows a posting whose adapter offers its own Apply
- * (frame/wall's `entry`: the panel's "Open Application"), that frame presses it, and the tab's next form is started the
- * same way.
+ * (frame/wall's `entry`), that frame presses it, and the tab's next form is started the same way.
+ * jr6 apply F3a (APPLYPLAN §1 D2-D3, §5 F3a items 1 and 6): Autofill on a page with no form reaches the tab's
+ * application frame whatever it told (it looks again, waits for a late Apply, presses it or says why not). Where that
+ * frame shows a wall or a choice the grant is given at once, as before; anywhere else it is a pending entry grant, armed
+ * only by that frame's entry/pressed (sign-up.ts). A plain Autofill while an armed grant waits for its form at the same
+ * origin and application keeps it (apply-c-new-1). The panel's Cancel also reaches the application frame while it
+ * says it is entering, and ends a pending or armed entry grant of the tab.
  * The policy card's decision has its own message, addressed to one frame: panel/policyDecision becomes
  * run/policyDecision for that frame only, and only while its report says its run waits at policy-notice. Continue
  * never stands in for Fill anyway: with one frame at the policy card and another at a CAPTCHA pause, the toolbar's
@@ -34,7 +39,7 @@ import {
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { framesOfTab, wallFrameOf, type FrameEntry } from './frames';
-import type { Grant, GrantPlace } from './sign-up';
+import type { FramePlace, Grant, GrantPlace } from './sign-up';
 import type { Reports } from './reports';
 
 type Of<T extends PageMessage['type']> = Extract<PageMessage, { type: T }>;
@@ -48,9 +53,14 @@ export interface PanelDeps {
   /** Checks, in the background, that the tab's frames are still there; what it removes reaches the panel port. */
   check?(tabId: number): void;
   /** v4: grants the tab Sign up & Autofill and/or the start of its next form (sign-up.ts), for the frame `place` names
-   *  (the v4 review, M1: the tab's application frame now), its frames told the settings as they act then; a grant of
-   *  nothing, or with no place, ends the tab's grant. */
-  signUp?(tabId: number, grant: Grant, place: GrantPlace | null): Promise<void>;
+   *  (the v4 review, M1: the tab's application frame now; jr6 apply F3a: the document run/start goes to), its frames
+   *  told the settings as they act then; a grant of nothing, or with no place, ends the tab's grant. */
+  signUp?(tabId: number, grant: Grant, place: (GrantPlace & { documentId?: string | null }) | null): Promise<void>;
+  /** jr6 apply F3a (apply-c-new-1): a plain Autofill at `frame` while an armed entry grant of the tab waits for its form
+   *  there keeps that grant (sign-up.ts keep): answers whether it did. */
+  keepEntry?(tabId: number, frame: FramePlace): boolean;
+  /** jr6 apply F3a: the panel's Cancel ends a pending or armed entry grant of the tab (sign-up.ts endEntry). */
+  endEntry?(tabId: number): Promise<void>;
 }
 
 const targetOf = (frame: FrameEntry) =>
@@ -111,18 +121,24 @@ export function createPanelHandlers(deps: PanelDeps) {
       if (!(await deps.connected())) return refuse('not_connected');
       const all = await framesOfTab(platform.storage.session, message.tabId);
       const forms = all.filter((frame) => frame.hasForm);
-      // v4: a page with no form whose application frame shows a wall or a choice of how to apply: that frame alone, and
-      // the tab's next form is started once it shows (module header).
+      // jr6 apply F3a (D2, AF-2): a page with no form: its application frame alone, whatever it told (a wall, a choice
+      // of how to apply, the site's own Apply, or nothing yet: it looks again, waits for a late Apply, presses it or
+      // says why not), and the tab's next form is started once it shows (module header).
       const application = wallFrameOf(all);
-      const wall = forms.length === 0 ? application : null;
-      // v5 p2-fill: or a posting whose adapter offers its own Apply (Open Application: the frame presses it, and the
-      // tab's next form is started once it shows).
-      const atWall = wall !== null && (wall.wall !== undefined || wall.choice === true || wall.entry === true);
+      const target = forms.length === 0 ? application : null;
+      const atWall = target !== null && (target.wall !== undefined || target.choice === true);
       const signIn = message.signIn === true && !message.dryRun;
-      // The v4 review (M1): the grant is for the tab's application frame as it is now, its origin and application.
-      await deps.signUp?.(message.tabId, { signIn, fill: atWall && !message.dryRun }, application === null ? null
-        : { origin: application.origin, applicationKey: application.applicationKey });
-      const reached = await sendTo(message.tabId, atWall ? [wall] : forms, { v: 1, type: 'run/start',
+      const fill = target !== null && !message.dryRun;
+      // apply-c-new-1: a plain Autofill while an armed entry grant waits for its form here keeps that grant.
+      const kept = fill && !signIn && deps.keepEntry?.(message.tabId, target) === true;
+      // The v4 review (M1): the grant is for the tab's application frame as it is now, its origin and application;
+      // jr6 apply F3a: at a wall or a choice at once, anywhere else pending until that frame presses the site's Apply.
+      if (!kept) {
+        await deps.signUp?.(message.tabId, { signIn, fill, ...(fill && !atWall ? { entry: true } : {}) },
+          application === null ? null : { origin: application.origin, applicationKey: application.applicationKey,
+            ...(target === null ? {} : { documentId: target.documentId }) });
+      }
+      const reached = await sendTo(message.tabId, target !== null ? [target] : forms, { v: 1, type: 'run/start',
         dryRun: message.dryRun, ...(signIn ? { signIn: true as const } : {}) });
       deps.check?.(message.tabId);
       return ok({ frames: reached });
@@ -133,7 +149,15 @@ export function createPanelHandlers(deps: PanelDeps) {
       return ok({ frames: reached });
     },
     async cancel(message: Of<'panel/cancel'>): Promise<Answer<{ frames: number }>> {
-      const reached = await sendTo(message.tabId, await reportingFrames(message.tabId), { v: 1, type: 'run/cancel' });
+      const reporting = await reportingFrames(message.tabId);
+      // jr6 apply F3a (item 6): and the application frame while it presses the site's Apply or waits for what the
+      // press brings (its frame/wall's `entering`, beside a wall or a choice its press drew too: the line P review,
+      // revA-3 and P-B3); a pending or armed entry grant of the tab ends.
+      const application = wallFrameOf(await framesOfTab(platform.storage.session, message.tabId));
+      const entering = application !== null && application.entering === true
+        && !reporting.some((frame) => frame.frameId === application.frameId) ? [application] : [];
+      await deps.endEntry?.(message.tabId);
+      const reached = await sendTo(message.tabId, [...reporting, ...entering], { v: 1, type: 'run/cancel' });
       deps.check?.(message.tabId);
       return ok({ frames: reached });
     },

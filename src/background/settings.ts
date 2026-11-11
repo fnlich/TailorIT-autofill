@@ -47,12 +47,15 @@ export interface SettingsStore {
 }
 
 /** How the settings act now, beside what the person chose: Submit stays Manual until the person acknowledged the
- *  disclosure as it reads now (the v3 Phase 4 review); Sign-in stays Manual unless the connection may read sign-ins
- *  (credentials:read) and the disclosure was acknowledged (v3 Phase 5); `agent`: the frame is in the auto-apply agent's
- *  window, whose runs press Next and Submit by themselves (v3 Phase 5). */
+ *  disclosure as it reads now (the v3 Phase 4 review); Sign-in stays Manual unless (jr6) a job-site password is saved in
+ *  this browser (background/signup-vault.ts) and the disclosure was acknowledged (v3 Phase 5: the connection's
+ *  credentials:read before jr6); `agent`: the frame is in the auto-apply agent's window, whose runs press Next and Submit
+ *  by themselves (v3 Phase 5). */
 export interface ContentHolds {
   holdSubmit?: boolean;
   holdSignIn?: boolean;
+  /** jr6: a job-site password is saved and may be typed (ContentSettings.typeSignIn). */
+  typeSignIn?: boolean;
   agent?: boolean;
   /** The agent's job's Submit was pressed in another document of its tab: Submit stays on Manual in this one. */
   agentSubmitHeld?: boolean;
@@ -77,7 +80,11 @@ export function contentSettingsOf(settings: Settings, options: ContentHolds = {}
     // Version 7 (s2 profile): the person's own, everywhere (the agent's window too).
     noMatch: settings.modes.noMatch, notifications: settings.modes.notifications },
     llm: { ...settings.llm },
-    offerToSaveAnswers: settings.offerToSaveAnswers };
+    offerToSaveAnswers: settings.offerToSaveAnswers,
+    // jr6: never where Sign-in is held (no password saved, or the disclosure not acknowledged); the jr6 review (sec-3):
+    // never in the auto-apply agent's window, where nobody is there to press what Manual types (its Sign-in on Auto
+    // still signs in).
+    typeSignIn: options.typeSignIn === true && options.holdSignIn !== true && !agent };
 }
 
 /** A plain object (not an array): its keys are merged one by one. */
@@ -231,7 +238,7 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
       });
     },
     async content() {
-      // Without the connection's word, Sign-in acts as Manual (index.ts passes the holds it knows).
+      // Without the worker's word, Sign-in acts as Manual and nothing is typed (index.ts passes the holds it knows).
       return contentSettingsOf(await store.get(), { holdSignIn: true });
     },
   };

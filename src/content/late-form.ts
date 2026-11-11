@@ -16,6 +16,10 @@
  * form, a control or JSON-LD (dom/page-signals.ts addsFormParts, by tag and attribute alone), and each look waits for
  * the browser's next frame (never in a hidden tab) and for its gap, SITE_LOOK_GAP_MS doubling up to
  * SITE_LOOK_MAX_GAP_MS.
+ * jr6 apply F2 item 5 (APPLYPLAN D5; C3, apply-c-new-1): a page may draw its form hidden and show it later by an
+ * attribute alone (a dialog's `open`, a class, a style, `hidden`: Workable's job site opens its form's dialog so), so
+ * both watches also hear those attributes (SHOWN_ATTRIBUTES); an attribute change counts only on an element that is,
+ * or holds, a control (attributesShow, a selector match: cheap), the company-page watch's its form's parts alone.
  */
 import type { Adapter } from '../adapters/types';
 import { addsFormParts } from '../dom/page-signals';
@@ -44,9 +48,43 @@ export function lateFormMs(adapters: readonly Adapter[]): number {
   return Math.min(longest, LATE_FORM_CAP_MS);
 }
 
+// ── jr6 apply F2 item 5 (APPLYPLAN D5; C3, apply-c-new-1): attributes that show what was drawn hidden ──
+/** The attributes whose change can show a form, a dialog or a control the page drew hidden. */
+export const SHOWN_ATTRIBUTES = ['class', 'style', 'hidden', 'open'] as const;
+/** What an attribute change must touch to count for the prompt watch: a form's parts, a control a press may want (an
+ *  Apply, a choice's), a dialog. */
+export const PROMPT_PARTS = 'form, input, select, textarea, button, a[href], [role="button"], [role="link"], dialog, '
+  + '[role="dialog"], [aria-modal="true"]';
+/** What an attribute change must touch to count for the company-page watch: a form's parts. */
+export const FORM_PARTS = 'form, input, select, textarea';
+/** At most this many attribute records of a batch are read; a batch with more counts (as addsFormParts's own cap). */
+export const ATTRIBUTE_RECORDS_READ = 50;
+
+/** Whether a batch of mutations changed an attribute of SHOWN_ATTRIBUTES on an element that is, or holds, `parts`
+ *  (a selector match each, never text or layout; each element read once a batch; past ATTRIBUTE_RECORDS_READ: yes). */
+export function attributesShow(records: readonly MutationRecord[], parts: string): boolean {
+  const seen = new Set<Node>();
+  for (const record of records) {
+    if (record.type !== 'attributes' || seen.has(record.target)) continue;
+    seen.add(record.target);
+    if (seen.size > ATTRIBUTE_RECORDS_READ) return true;
+    const target = record.target;
+    if (target.nodeType !== 1) continue;
+    const el = target as Element;
+    try {
+      if (el.matches(parts) || el.querySelector(parts) !== null) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+// ── end jr6 apply F2 item 5 ──
+
 /**
  * Watches `doc` for `capMs` (see the header), calling `look` once after each burst of mutations; stops as soon as a
  * look answers true, at the cap (calling `expired`), or when `signal` aborts. Answers how to stop it sooner.
+ * jr6 apply F2 item 5: a burst of attribute changes alone counts where it shows a control (attributesShow).
  */
 export function watchForLateForm(doc: Document, capMs: number, look: () => boolean, signal: AbortSignal,
   expired?: () => void): Cancel {
@@ -54,8 +92,10 @@ export function watchForLateForm(doc: Document, capMs: number, look: () => boole
   if (view === null || capMs <= 0 || signal.aborted) return () => undefined;
   let pending: Cancel | null = null;
   let done = false;
-  const observer = new view.MutationObserver(() => {
+  const observer = new view.MutationObserver((records) => {
     if (done || pending !== null) return;
+    // jr6 apply F2 item 5: nodes added count as before; attribute changes only where they show a control.
+    if (!records.some((record) => record.type === 'childList') && !attributesShow(records, PROMPT_PARTS)) return;
     pending = startDeadline(LATE_FORM_LOOK_MS, () => {
       pending = null;
       if (!done && look()) stop();
@@ -76,7 +116,9 @@ export function watchForLateForm(doc: Document, capMs: number, look: () => boole
     signal.removeEventListener('abort', stop);
   }
   signal.addEventListener('abort', stop, { once: true });
-  observer.observe(doc.documentElement ?? doc, { childList: true, subtree: true });
+  // jr6 apply F2 item 5: and the attributes that show what was drawn hidden.
+  observer.observe(doc.documentElement ?? doc, { childList: true, subtree: true, attributes: true,
+    attributeFilter: [...SHOWN_ATTRIBUTES] });
   return stop;
 }
 
@@ -86,7 +128,8 @@ export const SITE_LOOK_MAX_GAP_MS = 12_000;
 
 /** Watches a company page for its form for the document's life (the module header): calls `look` when the page adds a
  *  form's parts, at the browser's next frame once the gap is over; stops as soon as a look answers true or `signal`
- *  aborts. Answers how to stop it sooner. */
+ *  aborts. Answers how to stop it sooner. jr6 apply F2 item 5: or shows a form's parts by an attribute (attributesShow);
+ *  the same cheap watch serves a platform that draws its form in place (Adapter.quirks.formInPlace: runtime.ts). */
 export function watchForSiteForm(doc: Document, look: () => boolean, signal: AbortSignal): Cancel {
   const view = doc.defaultView;
   if (view === null || signal.aborted) return () => undefined;
@@ -95,7 +138,8 @@ export function watchForSiteForm(doc: Document, look: () => boolean, signal: Abo
   let pending: Cancel | null = null;
   let done = false;
   const observer = new view.MutationObserver((records) => {
-    if (done || pending !== null || !addsFormParts(records)) return;
+    // jr6 apply F2 item 5: or an attribute change that shows a form's parts.
+    if (done || pending !== null || !(addsFormParts(records) || attributesShow(records, FORM_PARTS))) return;
     const gap = looks === 0 ? 0 : Math.min(SITE_LOOK_GAP_MS * 2 ** (looks - 1), SITE_LOOK_MAX_GAP_MS);
     let frame: Cancel | null = null;
     const timer = startDeadline(Math.max(0, last + gap - monotonicNow()), () => {
@@ -120,6 +164,8 @@ export function watchForSiteForm(doc: Document, look: () => boolean, signal: Abo
     signal.removeEventListener('abort', stop);
   }
   signal.addEventListener('abort', stop, { once: true });
-  observer.observe(doc.documentElement ?? doc, { childList: true, subtree: true });
+  // jr6 apply F2 item 5: and the attributes that show what was drawn hidden.
+  observer.observe(doc.documentElement ?? doc, { childList: true, subtree: true, attributes: true,
+    attributeFilter: [...SHOWN_ATTRIBUTES] });
   return stop;
 }

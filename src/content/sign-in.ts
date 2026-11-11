@@ -21,11 +21,12 @@
  *    password box gone, or an email code or a CAPTCHA shown ('continue': the run scans again, and pauses for the
  *    person where it must: a challenge the press raised is theirs); an error shown with the password box still there,
  *    or nothing within the wait ('failed').
- *    A password the site did not take is never typed again (the worker answers a tab once per wall), so there is no
- *    retry loop. On every outcome but 'continue', the password and its confirmation are written empty again in the
- *    boxes they were typed into that are still in the page (the v3 Phase 6/7b review, S5, and its round 2, E3: 'left'
- *    included, which also means the run's own end, the person's Stop or a route away): no password is left behind in
- *    a form the sign-in no longer watches.
+ *    A password the site did not take is never pressed again by itself (the worker answers a tab one press per wall),
+ *    so there is no retry loop. On every outcome but 'continue', the password and its confirmation are written empty
+ *    again in the boxes they were typed into that are still in the page (the v3 Phase 6/7b review, S5, and its round 2,
+ *    E3: 'left' included, which also means the run's own end, the person's Stop or a route away): no password is left
+ *    behind in a form the sign-in no longer watches; but what is kept for the person's own press (below: 'typed', and a
+ *    press refused), guarded and watched for as long as it is kept, is written empty when that keep ends.
  * Email codes, CAPTCHA and every other check stay the person's: this module only reads where they are. A frame on a
  * challenge vendor's host shown anywhere, solved or not, refuses the sign-in too (round 2, E10), as does a frame of
  * another origin whose address, title, name or label reads like a challenge (round 3, X9), and the page is looked
@@ -90,6 +91,36 @@
  *   through the sign-in door (not-submit.ts clickAdapterSignIn, from 'container'), every guard above held: a challenge
  *   first and right before the press, challenge frames, no password box (dom/sign-in-form.ts containerShape),
  *   guardSubmission over the <form> the press would send, https and the host.
+ * jr6 (the owner's words of 2026-11-10: "store the password ... like jobright.ai. if needed, you should fetch this, and
+ * autofill it"; coordinator decisions 1 and 5): the credential is the one saved in this browser's Sign-up Information
+ * (background/signup-vault.ts), and the worker's answer says whether it may be pressed (`press`: Sign-in acting as Auto,
+ * or the tab's Sign up & Autofill grant). On Sign-in Manual with a password saved (SignInContext.typeOnly, the run's
+ * ContentSettings.typeSignIn), a sign-in or create-account page gets the email, the password and its confirmation typed
+ * and the account's required terms ticked, every guard above held, and its button is left to the person ('typed'): the
+ * boxes keep what was typed for their press until the run stops or ends or the document goes (the jr6 review's R11: no
+ * timer, as Jobright never empties them; a box the person typed into since is theirs), as Jobright's account flow fills
+ * the form and tracks the person's own press of Create Account or Sign In (its ~contents/sites/myworkday/account-preflow:
+ * steps "Email Address", "Password", "Verify New Password", "Agree Privacy Notice", then a "track_submit" step that
+ * listens for the button's click and presses nothing). The button is pressed only when both the worker's answer and this
+ * frame's own run say Auto.
+ * The jr6 review:
+ * - sec-1: guardSubmission stays on for as long as a typed password is kept in the page (the keep ends it), and over a
+ *   form whose press is the person's (SignInForm.personPresses: an account section, SuccessFactors' account page) until
+ *   the document goes (SignInContext.page): the person's own press of a form the page's script sends never goes as the
+ *   browser's GET with the password in the address, and a same-origin POST (an application's own Submit) still goes.
+ * - R1: an ask this frame never presses (typeOnly, a section) says so (`typing`), so the worker's once-per-tab press
+ *   limit neither refuses nor counts it; a press the site refused ('failed') keeps what was typed for the person, as one
+ *   refused for its check does (SIGN_IN_KEPT_MS, the v5 review's S8), rather than emptying a password the person may not
+ *   know.
+ * - sec-3: a run on Manual types only into a document shown to the person: a background tab (the sequential
+ *   auto-apply's) waits until it is shown before it asks.
+ * - sec-5: every box the password is typed into is marked (dom/secret-boxes.ts), so it stays an auth field whatever the
+ *   page makes of it (a "Show password").
+ * - sec-8: the keeps of a document end at once when no saved password may be typed any more (dropKeptSignIns: the
+ *   password deleted).
+ * - R2: a password longer than its box's own maxlength (Taleo's 60) is never typed: nothing is ('unavailable').
+ * - A form whose press is the person's, typed once in a document, is not typed again there (signInHandedOver): the run
+ *   rests at it for the person.
  */
 import { signInHostCovered } from '../contract/tailorit/credentials';
 import type { Adapter, SignInForm } from '../adapters/types';
@@ -101,6 +132,7 @@ import {
   captchaErrorsShown, checkboxCaptchasUnsolved, detectPause, pageChallenged, vendorFramesShown,
 } from '../dom/pause-detect';
 import { newScanCache } from '../dom/scan-cache';
+import { markSecretBox } from '../dom/secret-boxes';
 import {
   anchorOf, guardSubmission, passwordBoxIn, SIGN_IN_REFUSALS, signInContainerOf, signInFormOf, signInRefusal,
 } from '../dom/sign-in-form';
@@ -122,7 +154,8 @@ export const SIGN_IN_ENABLE_MS = 3_000;
 /** How often the page is looked at meanwhile. */
 const LOOK_MS = 250;
 /** v5 review (S8): how long the sign-in typed into a form the site refused for its unticked check stays there for the
- *  person's own press (a reCAPTCHA token lasts about two minutes): then the password boxes are written empty again. */
+ *  person's own press (a reCAPTCHA token lasts about two minutes): then the password boxes are written empty again. The
+ *  jr6 review (R1): one the site refused ('failed') too. A sign-in typed on Manual has no such limit (R11). */
 export const SIGN_IN_KEPT_MS = 180_000;
 /** How often a button that is still disabled is looked at. */
 const ENABLE_LOOK_MS = 100;
@@ -133,7 +166,9 @@ export const CONTAINER_WALL: SignInWall = 'email-gate';
 
 /** What came of a sign-in (module header): the v4 review (M5) tells 'none-saved' and 'challenged' apart from
  *  'unavailable'. */
-export type SignInOutcome = 'continue' | 'failed' | 'unavailable' | 'none-saved' | 'challenged' | 'left';
+export type SignInOutcome = 'continue' | 'failed' | 'unavailable' | 'none-saved' | 'challenged' | 'left'
+  // jr6: typed on Sign-in Manual, the press left to the person (module header).
+  | 'typed';
 
 /** What a sign-in needs. */
 export interface SignInContext {
@@ -160,6 +195,11 @@ export interface SignInContext {
   preludeMs?: number;
   /** v5 review (S8): how long a refused sign-in stays typed for the person (SIGN_IN_KEPT_MS by default). */
   keptMs?: number;
+  /** jr6: Sign-in on Manual with a password saved: type, never press (module header). */
+  typeOnly?: true;
+  /** The jr6 review (sec-1): aborted when the document goes (the runtime's lifetime), which `signal` also ends with: a
+   *  password typed into a form whose press is the person's stays guarded until then. Absent: `signal`. */
+  page?: AbortSignal;
 }
 
 function urlOf(href: string): URL | null {
@@ -206,10 +246,21 @@ export function signInRefusalWaits(doc: Document): boolean {
   return refusedFor.has(doc);
 }
 
+/** The jr6 review (sec-8): the keeps of each document still holding a typed password (keepForPerson's ends). */
+const keeps = new WeakMap<Document, Set<() => void>>();
+
+/** The jr6 review (sec-8): ends every keep of `doc` now, the password boxes written empty again (a box the person typed
+ *  into since is theirs): no saved password may be typed any more (it was deleted), so none is left in the page. */
+export function dropKeptSignIns(doc: Document): void {
+  for (const finish of [...(keeps.get(doc) ?? [])]) finish();
+}
+
 /** v5 review (S8): keeps the password boxes typed into for the person's own press, then writes them empty again: after
- *  `keptMs`, or at once when the sign-in's signal ends (the run stopped or ended, the document gone). A box the person
- *  typed into since (a trusted input) is theirs: never written. Nothing is read or kept but the elements. */
-function keepForPerson(ctx: SignInContext, secret: readonly HTMLInputElement[]): void {
+ *  `keptMs` (`timed`; the jr6 review's R11: never for a sign-in typed on Manual), or at once when the sign-in's signal
+ *  ends (the run stopped or ended, the document gone) or (sec-8) dropKeptSignIns. A box the person typed into since (a
+ *  trusted input) is theirs: never written. Nothing is read or kept but the elements. `release` ends the guard over the
+ *  form's submission (the jr6 review, sec-1: it lasts as long as the keep). */
+function keepForPerson(ctx: SignInContext, secret: readonly HTMLInputElement[], timed: boolean, release: () => void): void {
   const boxes = secret.filter((box) => box.isConnected);
   const theirs = new Set<EventTarget>();
   const onInput = (event: Event) => {
@@ -217,23 +268,56 @@ function keepForPerson(ctx: SignInContext, secret: readonly HTMLInputElement[]):
   };
   for (const box of boxes) box.addEventListener('input', onInput, true);
   let done = false;
+  const held = keeps.get(ctx.doc) ?? new Set<() => void>();
   const finish = () => {
     if (done) return;
     done = true;
+    held.delete(finish);
+    ctx.signal.removeEventListener('abort', finish);
     for (const box of boxes) box.removeEventListener('input', onInput, true);
     clearSecret(boxes.filter((box) => !theirs.has(box)));
+    release();
   };
   if (ctx.signal.aborted) {
     finish();
     return;
   }
+  held.add(finish);
+  keeps.set(ctx.doc, held);
   ctx.signal.addEventListener('abort', finish, { once: true });
-  startDeadline(ctx.keptMs ?? SIGN_IN_KEPT_MS, () => {
-    ctx.signal.removeEventListener('abort', finish);
-    finish();
-  });
+  if (timed) startDeadline(ctx.keptMs ?? SIGN_IN_KEPT_MS, finish);
 }
 // ── end v5 p1-rules ──
+
+/** The walls of each document whose account form, whose press is the person's (SignInForm.personPresses: SuccessFactors'
+ *  account page), was typed: the run rests at that wall for the person and never types it again (module header). */
+const handedOver = new WeakMap<Document, Set<SignInWall>>();
+
+/** Whether this document's `wall` showed an account form whose press is the person's, typed already (module header): the
+ *  run's pause never signs in again there (orchestrator.ts paused); another wall of the document is its own. */
+export function signInHandedOver(doc: Document, wall: SignInWall | null): boolean {
+  return wall !== null && (handedOver.get(doc)?.has(wall) ?? false);
+}
+
+/** The jr6 review (sec-3): whether the document is shown to the person now, or once it is (a background tab); false
+ *  when `signal` ends first. */
+function shownToPerson(doc: Document, signal: AbortSignal): Promise<boolean> {
+  if (doc.visibilityState === 'visible') return Promise.resolve(true);
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const end = (shown: boolean) => {
+      doc.removeEventListener('visibilitychange', look);
+      signal.removeEventListener('abort', gone);
+      resolve(shown);
+    };
+    const look = () => {
+      if (doc.visibilityState === 'visible') end(true);
+    };
+    const gone = () => end(false);
+    doc.addEventListener('visibilitychange', look);
+    signal.addEventListener('abort', gone, { once: true });
+  });
+}
 
 /** Whether the page shows a challenge not known solved now, anywhere (module header): a vendor's, solved or not, or a
  *  frame of another origin that reads like one (round 3, X9). The run reads it too (the v4 review, M5: a sign-in that
@@ -293,6 +377,13 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
     log('content.sign-in-refused', { password: false });
     return 'unavailable';
   }
+  // The jr6 review (R2): a password longer than a box takes (its own maxlength: Taleo's 60) is never typed, nor anything
+  // else: a person could not type it there either. Only whether it fits is read, never its length.
+  if (wall !== 'email-gate' && password !== undefined && [form.password, form.confirm].some((box) => box !== null
+    && box.maxLength > 0 && password.length > box.maxLength)) {
+    log('content.sign-in-refused', { fits: false });
+    return 'unavailable';
+  }
   const owner = anchorOf(form)?.form ?? null;
   let typed = true;
   if (form.email !== null) typed = typeInto(form.email, credential.email) && typed;
@@ -306,6 +397,8 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
         return 'failed';
       }
       secret.push(box);
+      // The jr6 review (sec-5): an auth field for good, whatever type the page gives it later (dom/secret-boxes.ts).
+      markSecretBox(box);
       typed = typeInto(box, password) && typed;
     }
   }
@@ -490,9 +583,14 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
     log('content.sign-in-refused', { captcha: true });
     return 'challenged';
   }
+  // The jr6 review (sec-3): a run on Manual types only into a document shown to the person (a background tab waits).
+  if (ctx.typeOnly === true && !(await shownToPerson(ctx.doc, ctx.signal))) return 'left';
+  // The jr6 review (R1): an ask this frame never presses says so: the worker's press limit neither refuses nor counts it.
+  const typing = ctx.typeOnly === true || ctx.section === true;
   let answer: Awaited<ReturnType<Channel['request']>>;
   try {
-    answer = await ctx.channel.request({ v: 1, type: 'signin/credential', wall });
+    answer = await ctx.channel.request({ v: 1, type: 'signin/credential', wall,
+      ...(typing ? { typing: true as const } : {}) });
   } catch (failure) {
     if (failure instanceof Invalidated) return 'left';
     throw failure;
@@ -500,42 +598,66 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
   if (ctx.signal.aborted) return 'left';
   if (!answer.ok) {
     log('content.sign-in', { asked: false, again: answer.error === 'expired', none: answer.error === 'not_found' });
-    // The v4 review (M5): no sign-in saved for the page is told apart from one not allowed or not reached.
+    // The v4 review (M5): no sign-in saved for the page is told apart from one not allowed or not reached. ('expired':
+    // a worker from before the jr6 review, which refused a second press.)
     return answer.error === 'expired' ? 'failed' : answer.error === 'not_found' ? 'none-saved' : 'unavailable';
   }
-  // From the typing to the end of the watch the browser never sends the form itself where the rules refuse (module
-  // header).
+  // From the typing to the end of the watch, and (the jr6 review, sec-1) for as long as a typed password stays in the
+  // page for the person, the browser never sends the form itself where the rules refuse (module header).
   const watching = new AbortController();
-  const stopGuard = guardSubmission(form, asked, AbortSignal.any([watching.signal, ctx.signal]));
+  const stopGuard = guardSubmission(form, asked, AbortSignal.any([watching.signal, ctx.page ?? ctx.signal]));
+  const release = () => {
+    stopGuard();
+    watching.abort();
+  };
   const secret: HTMLInputElement[] = [];
   let outcome: SignInOutcome = 'failed';
-  let kept = false;
+  /** What ends the guard, when not this function: the keep (`keep`), or the document's end (`page`). */
+  let handedTo: 'keep' | 'page' | null = null;
   try {
     // The answer is held in this frame only for the writes below (module header, 2).
-    const typed = fill(ctx, wall, asked, form, answer.data as SignInCredential, secret);
+    const credential = answer.data as SignInCredential;
+    const typed = fill(ctx, wall, asked, form, credential, secret);
     // A form whose press is the person's (SignInForm.personPresses): typed, and handed over (module header).
     if (typed === 'typed' && form.personPresses === true) {
       log('content.sign-in', { pressed: false, person: true });
       outcome = 'continue';
+      // At its wall the run rests for the person from now on (an account section is part of the form's own fill).
+      if (ctx.section !== true) handedOver.set(ctx.doc, new Set([...(handedOver.get(ctx.doc) ?? []), wall]));
+      // The jr6 review (sec-1): what was typed stays for the person's press, guarded until the document goes.
+      if (secret.length > 0 && !(ctx.page ?? ctx.signal).aborted) handedTo = 'page';
+      return outcome;
+    }
+    // jr6: pressed only when the worker says Auto and this run does too; otherwise typed for the person's press, kept
+    // for it until the run stops or ends or the document goes (module header; the jr6 review, R11).
+    if (typed === 'typed' && (credential.press !== true || ctx.typeOnly === true)) {
+      log('content.sign-in', { pressed: false, typed: true });
+      outcome = 'typed';
+      handedTo = 'keep';
+      keepForPerson(ctx, secret, false, release);
       return outcome;
     }
     const pressed = typed === 'typed' ? await press(ctx, wall, asked, form) : typed;
     log('content.sign-in', { pressed: pressed === 'pressed' });
     outcome = pressed === 'pressed' ? await outcomeAfter(ctx, form) : pressed;
-    // v5 (PLAN decision 9): refused for the page's unticked check: the boxes keep what was typed, for the person's own
-    // press once they ticked it (module header).
+    // v5 (PLAN decision 9): refused for the page's unticked check: the next press is the person's (module header).
     if (pressed === 'pressed' && outcome === 'challenged' && !ctx.signal.aborted) {
       refusedFor.add(ctx.doc);
       log('content.captcha-refused', { signIn: true });
-      kept = true;
-      keepForPerson(ctx, secret);
+    }
+    // v5 (PLAN decision 9) and the jr6 review (R1): refused for the page's check, or by the site, or its button never
+    // enabled: the boxes keep what was typed for the person's own press, SIGN_IN_KEPT_MS at most (module header).
+    if (typed === 'typed' && (outcome === 'challenged' || outcome === 'failed') && !ctx.signal.aborted) {
+      handedTo = 'keep';
+      keepForPerson(ctx, secret, true, release);
     }
     return outcome;
   } finally {
     // 'left' covers the run's own end too (the person's Stop, a route away), not only the document's: the boxes still
-    // in the page are written empty again then as well (round 2, E3).
-    if (outcome !== 'continue' && !kept) clearSecret(secret);
-    stopGuard();
-    watching.abort();
+    // in the page are written empty again then as well (round 2, E3). jr6: a keep empties them itself, later.
+    if (handedTo === null) {
+      if (outcome !== 'continue') clearSecret(secret);
+      release();
+    }
   }
 }

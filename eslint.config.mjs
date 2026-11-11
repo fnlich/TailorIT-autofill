@@ -28,6 +28,14 @@ const ENTRY_PRESS_RULE = {
   message: "Only src/content/press.ts presses a posting's entry control (the auto-apply agent's agent/enter).",
 };
 
+/** jr6 apply F2 (APPLYPLAN §5 F2 item 6, D7): an entry's generic second step ("Apply manually" in a dialog shown after
+ *  our press), named nowhere but src/content/press.ts, as clickAdapterEntry is. */
+const SECOND_STEP_PRESS_RULE = {
+  selector: "ImportSpecifier[imported.name='clickSecondStep'], ExportSpecifier[local.name='clickSecondStep'], "
+    + "MemberExpression[property.name='clickSecondStep']",
+  message: "Only src/content/press.ts presses an entry's second step (after an entry press of ours).",
+};
+
 /** v3 Phase 5: Sign-in mode Auto's press on a sign-in form's button, named nowhere but src/content/sign-in.ts. */
 const SIGN_IN_PRESS_RULE = {
   selector: "ImportSpecifier[imported.name='clickAdapterSignIn'], ExportSpecifier[local.name='clickAdapterSignIn'], "
@@ -48,8 +56,12 @@ const SIGN_IN_PRELUDE_RULE = {
  *  reach a door through them. */
 const ENTRY_WRAPPER_RULE = {
   selector: "ImportSpecifier[imported.name='pressEntry'], ExportSpecifier[local.name='pressEntry'], "
-    + "MemberExpression[property.name='pressEntry']",
-  message: "Only src/content/runtime.ts calls press.ts's pressEntry (the agent's agent/enter, from the worker alone).",
+    + "MemberExpression[property.name='pressEntry'], "
+    // jr6 apply F2: and pressSecondStep, the second step's wrapper.
+    + "ImportSpecifier[imported.name='pressSecondStep'], ExportSpecifier[local.name='pressSecondStep'], "
+    + "MemberExpression[property.name='pressSecondStep']",
+  message: "Only src/content/runtime.ts calls press.ts's pressEntry and pressSecondStep (an entry: the person's, the "
+    + "queue's, the agent's).",
 };
 const SIGN_IN_WRAPPER_RULE = {
   selector: "ImportDeclaration[source.value=/(^|\\/)sign-in$/] > ImportSpecifier[imported.name='signIn'], "
@@ -69,6 +81,7 @@ const UPLOAD_REVEAL_RULE = {
 const UNSAFE_SYNTAX = [
   SUBMIT_PRESS_RULE,
   ENTRY_PRESS_RULE,
+  SECOND_STEP_PRESS_RULE, // jr6 apply F2
   SIGN_IN_PRESS_RULE,
   SIGN_IN_PRELUDE_RULE,
   ENTRY_WRAPPER_RULE,
@@ -238,7 +251,8 @@ export default tseslint.config(
   // The one module that presses the page's Submit for the person, and (v3 Phase 5) a posting's entry control for the
   // agent (content/press.ts's header).
   { files: ['src/content/press.ts'], rules: { 'no-restricted-syntax': ['error',
-    ...UNSAFE_SYNTAX.filter((rule) => rule !== SUBMIT_PRESS_RULE && rule !== ENTRY_PRESS_RULE)] } },
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== SUBMIT_PRESS_RULE && rule !== ENTRY_PRESS_RULE
+      && rule !== SECOND_STEP_PRESS_RULE)] } }, // jr6 apply F2: and the second step's door
   // v3 Phase 5: the one module that presses a sign-in form's button, and (v3 Phase 7b) a sign-in page's prelude control
   // (content/sign-in.ts's header).
   { files: ['src/content/sign-in.ts'], rules: { 'no-restricted-syntax': ['error',

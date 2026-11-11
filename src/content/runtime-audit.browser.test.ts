@@ -76,7 +76,7 @@ describe('M3: Continue after a paused dry run', () => {
 const HOST = 'acme.wd5.myworkdayjobs.com';
 /** An application's account page on a Workday tenant (as content/sign-in.browser.test.ts's). */
 const SIGN_IN_HREF = `https://${HOST}/en-US/careers/job/x/Engineer_JR-0000001/apply/applyManually`;
-const CREDENTIAL = { host: HOST, email: 'alex.rivera@example.com', password: 'dummy-password-not-real' };
+const CREDENTIAL = { host: HOST, email: 'alex.rivera@example.com', password: 'dummy-password-not-real', press: true };
 const SIGN_IN_PAGE = `<!doctype html><html><head><title>Sign In</title><style>
     body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui; }
     input[type=email], input[type=password] { display: block; width: 300px; padding: 6px; border: 1px solid #888; }

@@ -7,10 +7,11 @@
  *   than the task's, is refused; the platform's sign after the agent's Submit reports the job submitted (never POST
  *   /applied); the agent lets go of its tab (run/cancel and the person's own settings to its frames) and closes that
  *   tab alone, never a window.
- * - Sign-in Auto's credential: only with Sign-in on Auto, credentials:read and the disclosure acknowledged; only to a
- *   tab's top frame on https, never in a private tab; for the sender's own host (Chrome's address, not the message's);
- *   once per tab, wall and host, counted only once TailorIT answered one (TailorIT down, or none saved, may be asked
- *   again); a sign-in for another host is refused; and the password is never logged or stored.
+ * - Sign-in's credential (jr6: the job-site sign-in saved in this browser's Sign-up Information, never TailorIT's):
+ *   with Sign-in on Auto, pressed; on Manual, typed alone; only with a password saved and the disclosure acknowledged;
+ *   only to a tab's top frame on https, never in a private tab; on a page the every-site sign-in covers (Chrome's
+ *   address, not the message's); once per tab, wall and host; a password whose key went is removed, and Auto goes back
+ *   to Manual; and the password is never logged or stored in the clear.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -19,7 +20,8 @@ import { DEFAULT_SETTINGS } from '../core/types/settings';
 import type { WorkerPlatform } from '../platform/types';
 import { AGENT_RUN_KEY } from './agent';
 import {
-  contentSender, frameReport, pageSender, sentToFrames, startTestWorker, tokenRecord, typeOfSent, type TestWorker,
+  contentSender, frameReport, pageSender, saveSignup, sentToFrames, SIGNUP_EMAIL, SIGNUP_PASSWORD, startTestWorker,
+  tokenRecord, typeOfSent, type TestWorker,
 } from './worker.testkit';
 
 const OPTIONS = pageSender('options.html');
@@ -28,7 +30,6 @@ const TASK = { id: '7c1e4f2a-9b3d-4a6e-8f50-2d9c1b7e3a64', jobId: 1042, url: GRE
   title: 'Senior Backend Engineer', resumeId: null };
 const AGENT_TAB = 41;
 const WORKDAY = 'https://acme.wd5.myworkdayjobs.com/en-US/careers/login';
-const PASSWORD = 'dummy-password-not-real';
 
 let logs: MockInstance;
 beforeEach(() => {
@@ -302,150 +303,143 @@ describe('Run auto-apply in the worker (v3 Phase 5)', () => {
   });
 });
 
-describe('Sign-in Auto’s credential in the worker (v3 Phase 5)', () => {
+describe('Sign-in’s credential in the worker (v3 Phase 5; jr6: this browser’s Sign-up Information)', () => {
   const top = (overrides = {}) => contentSender({ url: WORKDAY, tab: { id: 12, url: WORKDAY }, documentId: 'doc-w',
     ...overrides });
   const ask = (worker: TestWorker, sender = top(), wall: 'sign-in' | 'create-account' | 'email-gate' = 'sign-in') =>
     worker.deliver({ v: 1, type: 'signin/credential', wall }, sender);
-  async function signInWorker(options: { mode?: 'auto' | 'manual'; scopes?: boolean; disclosure?: number } = {}) {
+  /** A worker with a job-site password saved (unless `password` is false) and Sign-in on `mode` (Auto by default). Its
+   *  connection holds no credentials:read: jr6 needs none. */
+  async function signInWorker(options: { mode?: 'auto' | 'manual'; password?: boolean; disclosure?: number } = {}) {
     const record = tokenRecord();
-    const scopes = options.scopes === false ? record.scopes.filter((scope) => scope !== 'credentials:read') : record.scopes;
-    const worker = await startTestWorker({ token: tokenRecord({ scopes }),
-      ...(options.disclosure === undefined ? {} : { disclosure: options.disclosure }) });
+    const worker = await startTestWorker({ token: tokenRecord({ scopes: record.scopes.filter((scope) =>
+      scope !== 'credentials:read') }), ...(options.disclosure === undefined ? {} : { disclosure: options.disclosure }) });
+    if (options.password !== false) await saveSignup(worker);
     await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
       modes: { ...DEFAULT_SETTINGS.modes, signIn: options.mode ?? 'auto' } } }, OPTIONS);
-    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'acme.wd5.myworkdayjobs.com',
-      email: 'alex.rivera@example.com', password: PASSWORD } });
     return worker;
   }
 
-  it('answers the sender’s own host’s sign-in to its top frame, once per tab, wall and host', async () => {
+  it('answers the saved sign-in to the sender’s top frame, pressed once per tab, wall and host, asking TailorIT nothing', async () => {
     const worker = await signInWorker();
-    expect(await ask(worker)).toEqual({ ok: true, data: { host: 'acme.wd5.myworkdayjobs.com',
-      email: 'alex.rivera@example.com', password: PASSWORD } });
-    const reads = worker.tailorit.requests.filter((request) => request.path === '/api/autofill/credentials');
-    expect(reads.map((request) => new URL(request.url).searchParams.get('host'))).toEqual(['acme.wd5.myworkdayjobs.com']);
-    // The same tab and wall again (the site did not take it): never read again.
-    expect(await ask(worker)).toEqual({ ok: false, error: 'expired' });
+    expect(await ask(worker)).toEqual({ ok: true, data: { host: '*', email: SIGNUP_EMAIL, password: SIGNUP_PASSWORD,
+      press: true } });
+    // The same tab and wall again (the site did not take it): never pressed again, typed for the person (the jr6
+    // review, R1).
+    expect(await ask(worker)).toEqual({ ok: true, data: { host: '*', email: SIGNUP_EMAIL, password: SIGNUP_PASSWORD,
+      press: false } });
     // The other wall once, then another tab once.
     expect(await ask(worker, top(), 'create-account')).toMatchObject({ ok: true });
     expect(await ask(worker, top({ tab: { id: 13, url: WORKDAY } }))).toMatchObject({ ok: true });
-    expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(3);
-    // The same tab and wall on another host (the tab went on to another employer's site): that host's, once.
+    // The same tab and wall on another host (the tab went on to another employer's site): once there too.
     const other = 'https://globex.wd1.myworkdayjobs.com/en-US/careers/login';
-    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'globex.wd1.myworkdayjobs.com',
-      email: 'alex.rivera@example.com', password: PASSWORD } });
     expect(await ask(worker, top({ url: other, tab: { id: 12, url: other } }))).toMatchObject({ ok: true,
-      data: { host: 'globex.wd1.myworkdayjobs.com' } });
-    // Never logged, never stored.
-    expect(JSON.stringify(logs.mock.calls)).not.toContain(PASSWORD);
-    const stored = JSON.stringify([await fakeBrowser.storage.local.get(null), await fakeBrowser.storage.session.get(null)]);
-    expect(stored).not.toContain(PASSWORD);
-    expect(stored).not.toContain('alex.rivera@example.com');
+      data: { host: '*' } });
+    expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(0);
+    // Never logged; never stored in the clear: the record holds the email beside the ciphertext alone.
+    expect(JSON.stringify(logs.mock.calls)).not.toContain(SIGNUP_PASSWORD);
+    expect(JSON.stringify(logs.mock.calls)).not.toContain(SIGNUP_EMAIL);
+    const local = await fakeBrowser.storage.local.get(null);
+    const stored = JSON.stringify([local, await fakeBrowser.storage.session.get(null)]);
+    expect(stored).not.toContain(SIGNUP_PASSWORD);
+    expect(Object.keys(local).filter((key) => JSON.stringify(local[key]).includes(SIGNUP_EMAIL))).toEqual(['signup:v1']);
   });
 
-  it('answers an email gate the email alone, never the password, once per tab and host (v3 Phase 7b)', async () => {
+  it('answers an email gate the email alone, never the password, pressed once per tab and host (v3 Phase 7b)', async () => {
     const worker = await signInWorker();
-    expect(await ask(worker, top(), 'email-gate')).toEqual({ ok: true, data: { host: 'acme.wd5.myworkdayjobs.com',
-      email: 'alex.rivera@example.com' } });
-    expect(await ask(worker, top(), 'email-gate')).toEqual({ ok: false, error: 'expired' });
-    // The gate's answer is its own wall: the tab's sign-in is still answered once.
-    expect(await ask(worker)).toMatchObject({ ok: true, data: { password: PASSWORD } });
+    expect(await ask(worker, top(), 'email-gate')).toEqual({ ok: true, data: { host: '*', email: SIGNUP_EMAIL,
+      press: true } });
+    expect(await ask(worker, top(), 'email-gate')).toEqual({ ok: true, data: { host: '*', email: SIGNUP_EMAIL,
+      press: false } });
+    // The gate's answer is its own wall: the tab's sign-in is still pressed once.
+    expect(await ask(worker)).toMatchObject({ ok: true, data: { password: SIGNUP_PASSWORD, press: true } });
   });
 
-  it('refuses with Sign-in Manual, without credentials:read, or before the disclosure was acknowledged', async () => {
-    for (const options of [{ mode: 'manual' as const }, { scopes: false }, { disclosure: 2 }]) {
-      const worker = await signInWorker(options);
-      expect(await ask(worker), JSON.stringify(options)).toEqual({ ok: false, error: 'unavailable' });
-      expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(0);
-    }
+  it('never answers Manual’s typing in the auto-apply agent’s tab, nor tells its frames to type (the jr6 review, sec-3)', async () => {
+    const { worker, win } = await withAgent();
+    worker.fakes.frameAnswers = () => ({ ok: true, data: {} });
+    await saveSignup(worker);
+    await worker.deliver({ v: 1, type: 'agent/set', on: true, confirmed: true }, OPTIONS);
+    worker.timers.advance(1);
+    await vi.waitFor(() => expect(win.opened).toEqual([GREENHOUSE]));
+    await vi.waitFor(async () => expect(await fakeBrowser.storage.local.get(AGENT_RUN_KEY))
+      .toMatchObject({ [AGENT_RUN_KEY]: { tabId: AGENT_TAB } }));
+    // The agent's tab reaches a Workday account wall, Sign-in on Manual with a password saved.
+    const walled = contentSender({ url: WORKDAY, tab: { id: AGENT_TAB, url: WORKDAY }, documentId: 'doc-wall' });
+    expect(await ask(worker, walled)).toEqual({ ok: false, error: 'unavailable' });
+    // Another tab of the person's is answered to type it.
+    expect(await ask(worker, top())).toMatchObject({ ok: true, data: { press: false } });
+    // The agent's frames hear no typing (a Greenhouse page of its task, its own settings).
+    const agentFrame = contentSender({ url: GREENHOUSE, tab: { id: AGENT_TAB, url: GREENHOUSE }, documentId: 'doc-a' });
+    expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, agentFrame))
+      .toMatchObject({ ok: true, data: { settings: { modes: { submit: 'auto' }, typeSignIn: false } } });
+    expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top({ documentId: 'doc-w2' })))
+      .toMatchObject({ ok: true, data: { settings: { typeSignIn: true } } });
+    // On Auto, the agent's tab is pressed once per wall, and never typed for a person after it (R1's typing is the
+    // person's tabs' alone).
+    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+      modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } } }, OPTIONS);
+    expect(await ask(worker, walled)).toMatchObject({ ok: true, data: { press: true } });
+    expect(await ask(worker, walled)).toEqual({ ok: false, error: 'expired' });
   });
 
-  it('refuses a subframe and a private tab, asking TailorIT nothing', async () => {
+  it('on Manual answers it to be typed, never pressed; with none saved or before the disclosure, nothing', async () => {
+    const manual = await signInWorker({ mode: 'manual' });
+    expect(await ask(manual)).toMatchObject({ ok: true, data: { password: SIGNUP_PASSWORD, press: false } });
+    const none = await signInWorker({ mode: 'manual', password: false });
+    expect(await ask(none)).toEqual({ ok: false, error: 'unavailable' });
+    const older = await signInWorker({ disclosure: 2 });
+    expect(await ask(older)).toEqual({ ok: false, error: 'unavailable' });
+  });
+
+  it('refuses a subframe and a private tab', async () => {
     const worker = await signInWorker();
     expect(await ask(worker, top({ frameId: 2 }))).toEqual({ ok: false, error: 'bad_sender' });
     expect(await ask(worker, top({ tab: { id: 14, url: WORKDAY, incognito: true } }))).toEqual({ ok: false, error: 'bad_sender' });
-    expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(0);
+    // Neither took the tab's one answer.
+    expect(await ask(worker)).toMatchObject({ ok: true });
   });
 
-  it('answers sign-in-unavailable while TailorIT is down, not_found while it has none, and asks again later (only an answer counts)', async () => {
+  it('a saved password whose key is gone is removed, and Sign-in Auto goes back to Manual', async () => {
     const worker = await signInWorker();
-    worker.tailorit.reply('GET /api/autofill/credentials', { status: 503, json: { error: { code: 'unavailable',
-      message: 'Down.' } } }, { once: true });
-    expect(await ask(worker)).toEqual({ ok: false, error: 'unavailable' });
-    worker.tailorit.reply('GET /api/autofill/credentials', { status: 404, json: { error: { code: 'not_found',
-      message: 'None.' } } }, { once: true });
-    // The v4 review (M5): none saved is told apart, so the page says to add one.
+    await worker.signupKey.clear();
     expect(await ask(worker)).toEqual({ ok: false, error: 'not_found' });
-    // TailorIT back, with the sign-in saved meanwhile: answered, once.
-    expect(await ask(worker)).toMatchObject({ ok: true, data: { password: PASSWORD } });
-    expect(await ask(worker)).toEqual({ ok: false, error: 'expired' });
-    expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(3);
-  });
-
-  it('refuses a sign-in TailorIT answered for another host, and one it has none for', async () => {
-    const worker = await signInWorker();
-    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'other.wd5.myworkdayjobs.com',
-      email: 'alex.rivera@example.com', password: PASSWORD } }, { once: true });
-    // The v4 review (M5): none for this host is saved: not_found, as TailorIT's own 404.
-    expect(await ask(worker)).toEqual({ ok: false, error: 'not_found' });
-    worker.tailorit.reply('GET /api/autofill/credentials', { status: 404, json: { error: { code: 'not_found',
-      message: 'None.' } } });
-    expect(await ask(worker, top({ tab: { id: 15, url: WORKDAY } }))).toEqual({ ok: false, error: 'not_found' });
+    expect(await worker.deliver({ v: 1, type: 'signup/status' }, OPTIONS)).toMatchObject({ ok: true,
+      data: { set: false } });
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true,
+      data: { settings: { modes: { signIn: 'manual' } } } });
   });
 
   // ── snapshot build 2026-11-06 (contract6): TailorIT's API 6, the every-site sign-in by the page's path ──
   describe('on the hosts the every-site sign-in covers by their candidate paths (TailorIT’s API 6)', () => {
     /** The owner's snapshots' pages (fixtures/adp guest and personal, fixtures/clearcompany vafb-account), as Chrome
-     *  reports their frames: their queries included, which never reach TailorIT. */
+     *  reports their frames: their queries included. */
     const ADP_GUEST = 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001';
     const ADP_STEPS = 'https://workforcenow.adp.com/mascsr/applicant/mdf/recruitment/postLogin.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&OTP_login=true';
     const CC = 'https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply';
-    const everySite = async () => {
-      const worker = await signInWorker();
-      worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: '*', email: 'alex.rivera@example.com',
-        password: PASSWORD } });
-      return worker;
-    };
-    const queries = (worker: TestWorker) => worker.tailorit.requests
-      .filter((request) => request.path === '/api/autofill/credentials')
-      .map((request) => [...new URL(request.url).searchParams]);
     const at = (url: string, id: number) => top({ url, tab: { id, url }, documentId: `doc-${id}` });
 
-    it('answers the every-site sign-in at a candidate path, the frame’s pathname sent with its host, never its query',
-      async () => {
-        const worker = await everySite();
-        expect(await ask(worker, at(ADP_GUEST, 21), 'email-gate')).toEqual({ ok: true,
-          data: { host: '*', email: 'alex.rivera@example.com' } });
-        expect(await ask(worker, at(ADP_STEPS, 22))).toMatchObject({ ok: true, data: { host: '*', password: PASSWORD } });
-        expect(await ask(worker, at(CC, 23), 'create-account')).toMatchObject({ ok: true, data: { host: '*' } });
-        expect(queries(worker)).toEqual([
-          [['host', 'workforcenow.adp.com'], ['path', '/mascsr/default/mdf/recruitment/recruitment.html']],
-          [['host', 'workforcenow.adp.com'], ['path', '/mascsr/applicant/mdf/recruitment/postLogin.html']],
-          [['host', 'vafb.clearcompany.com'], ['path', '/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply']]]);
-        for (const request of worker.tailorit.requests) {
-          expect(request.url).not.toContain('cid=');
-          expect(request.url).not.toContain('OTP_login');
-        }
-      });
+    it('answers the saved sign-in at a candidate path', async () => {
+      const worker = await signInWorker();
+      expect(await ask(worker, at(ADP_GUEST, 21), 'email-gate')).toEqual({ ok: true,
+        data: { host: '*', email: SIGNUP_EMAIL, press: true } });
+      expect(await ask(worker, at(ADP_STEPS, 22))).toMatchObject({ ok: true, data: { host: '*', password: SIGNUP_PASSWORD } });
+      expect(await ask(worker, at(CC, 23), 'create-account')).toMatchObject({ ok: true, data: { host: '*' } });
+      expect(worker.tailorit.requests).toEqual([]);
+    });
 
-    it('sends no path where it decides nothing, and takes `*` on no page it does not cover', async () => {
-      const worker = await everySite();
-      // A host covered by its name alone (Workday): its own sign-in, or `*`, asked by the host alone.
-      expect(await ask(worker)).toMatchObject({ ok: true, data: { host: '*' } });
+    it('answers no page it does not cover', async () => {
+      const worker = await signInWorker();
       // ClearCompany's own www host serves /careers/ too (the extension's match pattern), but no tenant's candidate page.
-      // The v4 review (M5): the every-site one may not be used here, so none for the page is saved: not_found.
       expect(await ask(worker, at('https://www.clearcompany.com/careers/jobs/1/apply', 24))).toEqual({ ok: false,
-        error: 'not_found' });
-      expect(queries(worker)).toEqual([[['host', 'acme.wd5.myworkdayjobs.com']], [['host', 'www.clearcompany.com']]]);
+        error: 'unavailable' });
     });
 
     it('takes the path from Chrome’s address for the frame, never from the message', async () => {
-      const worker = await everySite();
+      const worker = await signInWorker();
       const answer = await worker.deliver({ v: 1, type: 'signin/credential', wall: 'sign-in',
         path: '/mascsr/default/mdf/recruitment/recruitment.html' }, at('https://www.clearcompany.com/careers/x', 25));
       expect(answer).toMatchObject({ ok: false });
-      expect(queries(worker)).toEqual([]);
     });
   });
   // ── end contract6 ──

@@ -19,8 +19,8 @@ import type {
 } from '../core/types/profile';
 import type { PauseReason, RunStatus } from '../core/types/run';
 import type {
-  AddJobOutcome, AgentBlock, AgentPause, AgentStatus, AskLength, AskOutcome, JobSearchRefusal, LetterOutcome, PressOutcome,
-  ProfileSaveRefusal, SaveAnswerOutcome, SiteRequestOutcome, SubmittedState,
+  AddJobOutcome, AgentBlock, AgentPause, AgentStatus, AskLength, AskOutcome, EntryRefusal, JobSearchRefusal, LetterOutcome,
+  PressOutcome, ProfileSaveRefusal, SaveAnswerOutcome, SiteRequestOutcome, SubmittedState,
 } from '../messaging/schemas';
 import type { TailorFailure, TailorKind } from '../messaging/page-schemas'; // v1.4 F
 import type { QueueBlock, QueueItemStatus, QueuePhase, QueueStop } from '../messaging/page-schemas'; // v1.5 QX
@@ -31,6 +31,12 @@ type NoticeCode = FrameReport['notices'][number]['code'];
 
 /** "1 form", "2 forms". */
 const forms = (count: number) => (count === 1 ? 'the form' : `${count} forms`);
+
+/** jr6 apply F1 fixer (the line P review, C2): where Autofill has no application to fill, and what to do there, said by
+ *  the no-form strips (STRIP.noForm, STRIP.posting) and the "no form" modal (NO_FORM); written once (the sidebar's
+ *  bundle carries every word of this file). */
+const NO_FORM_HERE = 'No application form on this page';
+const OPEN_A_JOB = "Open a job's application, then press Autofill.";
 
 /** What each notice says. The first three are the plan's exact sentences. */
 const NOTICES = {
@@ -76,10 +82,11 @@ const NOTICES = {
   // a posting whose AI rule couldn't be read. Drafts for the owner's review.
   'submit-errors': "Submit was pressed, but the page didn't accept the application: it shows what to fix. Fix it, then submit again.",
   'submit-auto-unchecked': "I couldn't read this posting to check whether it allows AI tools, and Submit is on Auto, so the application was submitted anyway.",
-  // v3 Phase 5 (Sign-in mode Auto): drafts for the owner's review.
-  'sign-in-auto': 'Sign-in is on Auto: signing you in with the job-site sign-in you saved in TailorIT.',
-  'sign-in-unavailable': 'Sign-in is on Auto, but no job-site sign-in you saved in TailorIT can be used on this page. Sign in yourself, then choose Continue.',
-  'sign-in-failed': "Signing in with your saved job-site sign-in didn't work, and it won't be tried again here. Check it in TailorIT's Settings › Autofill, then sign in yourself.",
+  // v3 Phase 5 (Sign-in mode Auto): drafts for the owner's review. The jr6 review (R3): the sign-in is the one saved in
+  // Sign-up Information (this browser), no longer TailorIT's; (R16) kept short, for the sidebar's budget.
+  'sign-in-auto': 'Sign-in is on Auto: signing you in with your Sign-up Information.',
+  'sign-in-unavailable': "Sign-in is on Auto, but your Sign-up Information can't be used on this page. Sign in yourself, then choose Continue.",
+  'sign-in-failed': "Signing in with your Sign-up Information didn't work, and it won't be tried again here. Sign in yourself, or use the site's Forgot password.",
   // The audit of 2026-11-06 (S-2, S-3): a draft for the owner's review.
   'bot-check': "A question checks that a person is filling in this form, so it was left for you. Next and Submit won't be pressed for you until you answer it.",
   // The snapshot build of 2026-11-06 (core-x, item 2): a draft for the owner's review.
@@ -382,8 +389,6 @@ const REPORT = {
   untitledSection: 'Form',
   source: 'Source',
   noSource: 'Nothing written',
-  /** Phase G: a cover-letter upload's source, the person's letters in TailorIT. */
-  coverLetterSource: "Your TailorIT cover letters",
   /** The v3 Phase 4 review: a cover letter longer than its text box takes, in characters. */
   letterLength: (length: number, limit: number) => `Your letter is ${length} characters; this box takes ${limit}.`,
   match: 'Match',
@@ -392,9 +397,6 @@ const REPORT = {
   /** Phase 6: an AI draft waits for the person (wave 2 wires what it does). */
   confirmDraft: 'Confirm draft',
   draftMark: 'AI draft',
-  /** The completion's line on the AI's answers: "3 answers written by AI · 1 is a guess". */
-  aiAnswers: (written: number, guesses: number) => `${written === 1 ? '1 answer' : `${written} answers`} written by AI${
-    guesses === 0 ? '' : guesses === 1 ? ' · 1 is a guess' : ` · ${guesses} are guesses`}`,
   /** Phase 6: offered only after the person fixed a flagged field themselves (Requirement F; wave 2 wires the save). */
   saveAnswer: 'Save my answer',
   showSuggestions: (count: number) => (count === 1 ? 'Show the closest option' : `Show the ${count} closest options`),
@@ -405,7 +407,6 @@ const REPORT = {
   frame: (platform: string, embedded: boolean) => (embedded ? `${platform} form, embedded in this page` : `${platform} form`),
   step: (index: number, of?: number) => (of === undefined ? `Step ${index + 1}` : `Step ${index + 1} of ${of}`),
   dryRun: 'Dry run: nothing was written.',
-  hiddenIgnored: (count: number) => (count === 1 ? '1 hidden field was left alone.' : `${count} hidden fields were left alone.`),
   // The progress (v3 Phase 3, the owner's choice of Jobright's percent; it was counts only): "Scanning the page…" while
   // the form is read, "Autofilling… 78%" while it fills, then "9 of 12 required fields filled · 75%". The percent is of
   // the required fields filled (shared/report.ts progressOf), of every field when none is required. Drafts for the
@@ -439,8 +440,6 @@ const REPORT = {
   /** The row's label is a button that shows the field on the page; its chevron folds the details. */
   goTo: (label: string) => `Show "${label}" on the page`,
   details: (label: string) => `Details of "${label}"`,
-  /** What the run left aside, under the lists (v3 Phase 3 review): the hidden fields left alone. */
-  moreDetails: 'More details',
   /** Skip, offered on the field being filled after 2 s on it. */
   skip: 'Skip',
   skipLabel: (label: string) => `Skip "${label}"`,
@@ -470,10 +469,7 @@ const REPORT = {
   // ── end v5 p1-panel ──
   /** Worded apart from the launcher's "Review: N fields need you", which also counts the Add buttons left. */
   needsYou: (count: number) => (count === 1 ? '1 field is left for you' : `${count} fields are left for you`),
-  needsYouDryRun: (count: number) => (count === 1 ? '1 field would be left for you' : `${count} fields would be left for you`),
   allClear: 'Nothing needs you. Check the form, then submit it yourself.',
-  /** A form among several, under its own name, when the tab holds more than one or one embedded in its page. */
-  frameLine: (name: string, status: string) => `${name} · ${status}`,
   // ── v4 ui: the résumé and cover-letter rows' Preview and Show (the owner, 2026-11-07). Drafts for the owner. ──
   preview: 'Preview',
   previewLabel: (label: string) => `Preview "${label}"`,
@@ -643,7 +639,6 @@ const PANEL = {
   },
   /** The links at the panel's foot, to the person's TailorIT. */
   autofillInfo: 'Your autofill information',
-  openJobs: 'Open TailorIT Jobs',
   // Phase 6: the rows' Confirm draft and Save my answer.
   draftConfirmed: 'Draft confirmed.',
   confirmFailed: 'The draft could not be confirmed. Is the form still open?',
@@ -664,7 +659,10 @@ const PANEL = {
 /** The side panel's strip before any run (v2): what the tab's page holds. */
 const STRIP = {
   form: (platform: string | null) => (platform === null ? 'Application form found' : `${platform} application form found`),
-  noForm: 'No application form on this page. Open its application to use Autofill.',
+  // jr6 apply F1 fixer (the line P review, C2): a page of ours with no form that is no posting (a list of jobs, a page
+  // no frame of ours is on) promises no Apply; a posting (`posting`) says Autofill presses its Apply first.
+  noForm: `${NO_FORM_HERE}. ${OPEN_A_JOB}`,
+  posting: `${NO_FORM_HERE} yet. Autofill presses the site's Apply first.`, // jr6 apply F1
   // DESIGN-NEW-ATS Phase 0: the new ATSs too.
   none: 'Open a job application on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany or ADP Workforce Now to use Autofill.',
 } as const;
@@ -705,11 +703,9 @@ const JOB = {
   via: (platform: string) => `${platform} application`,
   /** The match's band by its percentage (v3 Phase 3, Jobright's wording): MATCH_BANDS. Drafts for the owner's review. */
   bands: { excellent: 'Excellent', good: 'Good', fair: 'Fair', poor: 'Poor' },
-  bandLine: { excellent: 'Excellent match', good: 'Good match', fair: 'Fair match', poor: 'Low match' },
   matchLabel: (percentage: number, band: string) => `${percentage}% match: ${band}`,
   matchTip: (matched: number, total: number) =>
     `${matched} of ${total} keywords in this posting are in your resume. The score is how well your resume covers what the job asks for.`,
-  matchTipLabel: 'About the match score',
   keywords: (matched: number, total: number) => `${matched} of ${total} keywords`,
   /** The badge on a job the tracker holds as Applied or later. */
   applied: 'Applied',
@@ -719,7 +715,6 @@ const JOB = {
   noKeywords: 'This posting names no keywords to match.',
   unreadable: "This resume's text couldn't be read, so it has no match score.",
   attaches: 'Attaches',
-  wouldAttach: 'Would attach',
   change: 'Change',
   noResume: 'No resume to attach. Add one in TailorIT.',
   closed: 'Closed',
@@ -746,15 +741,12 @@ const JOB = {
     checking: 'Checking TailorIT for your letter…',
     yours: 'Your letter for this job',
     written: "Your letter for this job, written by TailorIT's AI just now",
-    whenAsked: 'Written by AI when the form asks for one',
     profileOnly: "This posting doesn't allow AI, so only a letter you wrote is attached.",
     aiOff: 'AI-written answers are off, so only a letter you wrote is attached.',
     failed: "Your letter for this job isn't finished. Finish it in TailorIT's Cover Letters.",
-    notAllowed: "This connection can't attach cover letters. Connect it again from TailorIT's Settings › Autofill.",
     write: 'Write It Now', // v5 p1-panel
     writing: 'Writing…',
     ready: 'Ready',
-    couldNot: "Couldn't write it",
     outcomes: {
       yours: 'Ready',
       written: 'Ready',
@@ -792,8 +784,6 @@ const JOB = {
   },
   /** v3 Phase 3b: Change's "Apply without resume" and the resume's preview. Drafts for the owner's review. */
   withoutResume: 'Apply Without Resume', // v5 p1-panel
-  withoutResumeHelp: 'No resume will be uploaded. Autofill uses your autofill information.',
-  withoutResumeOn: 'No resume will be attached',
   /** The review: Apply without resume could not be kept (no form or posting of ours in the tab now). */
   withoutFailed: "That couldn't be changed: the page changed. Try again.",
   preview: {
@@ -998,7 +988,6 @@ const PROFILE = {
     citizenships: 'Citizenship',
   },
   placeholders: { month: 'YYYY-MM', country: 'US', currency: 'USD', skills: 'TypeScript, PostgreSQL, Leadership' },
-  monthHelp: 'As YYYY-MM.',
   /** An entry's date TailorIT holds as a year alone, which a month picker cannot show. */
   yearOnly: (year: string) => `Saved as ${year}, without a month. Choose one to change it.`,
   /** An empty email is the account's sign-in address (TailorIT's rule), named here. */
@@ -1165,9 +1154,11 @@ const OPTIONS = {
       name: 'Sign-in',
       manual: 'Manual',
       auto: 'Auto',
-      help: "Auto signs in to a job site that asks you to (Workday and others), or creates your account there, with the email and password you saved in TailorIT's Settings › Autofill › Job-site sign-in, then presses Sign in or Create account. A check that you are human and an email code stay yours, and a password the site does not take is not tried again. Manual: you sign in.",
+      // jr6: the password is the one saved in this browser's Sign-up Information (TailorIT's Job-site sign-in before).
+      // The jr6 review (R16): kept short, for the sidebar's budget.
+      help: 'Auto signs in, or creates your account, on job sites that ask (Workday, iCIMS and others) with your Sign-up Information, and presses the button. Manual types it and leaves the button to you. Human checks and email codes stay yours.',
       /** Why Auto cannot be chosen now. */
-      needsScope: "Sign-in Auto needs this browser's permission to read your saved job-site sign-in. Disconnect, then connect again with \"Let this browser sign in to job sites with my saved password\" ticked on TailorIT's page.",
+      needsPassword: 'Sign-in Auto needs a job-site password saved in Sign-up Information.',
       needsDisclosure: 'Sign-in Auto can be chosen once you choose I understand on the updated notice.',
       needsConnection: 'Sign-in Auto can be chosen once this browser is connected to TailorIT.',
     },
@@ -1286,13 +1277,11 @@ const OPTIONS = {
     answers: 'Answer the questions my profile does not',
     answersHelp: 'Questions like "How many years of Go have you used?" or "Are you open to travel?" are answered from your resume and profile. When nothing settles one, the AI gives its best guess.',
     confirmDrafts: 'Wait for me to confirm each draft',
-    confirmDraftsHelp: 'A draft waits in the review until you edit or confirm it, and the form is not ready until you have.',
     whenForbidden: {
       heading: 'When a posting says AI is not allowed',
       'profile-only': 'Fill from my profile only',
       'profile-onlyHelp': 'Nothing is sent to the AI for that posting, and questions only the AI could answer are left for you. The same goes for a form that asks you to confirm you did not use AI.',
       ask: 'Ask me each time',
-      askHelp: 'Filling stops at a notice until you choose Fill anyway or Cancel.',
       'use-ai': 'Use AI anyway',
       'use-aiHelp': 'The notice is shown, and filling goes on with the AI.',
     },
@@ -1583,7 +1572,9 @@ export const PAGE_COPY = {
     challenge: 'Solve the check on this page and Autofill carries on.',
     signIn: 'Sign in or create an account on this page, or use Sign up & Autofill in the TailorIT panel.',
     signInFailed: "Your saved job-site sign-in didn't work here. Sign in or create an account on this page, and Autofill carries on.",
-    noSignIn: 'Add your job-site sign-in in TailorIT › Settings › Autofill',
+    // jr6: the job-site password is saved in this browser's Sign-up Information; the jr6 review (R5): then pressed again.
+    noSignIn: 'Save a job-site password in TailorIT Autofill › Settings › Sign-up Information, then choose Sign Up & Autofill again.',
+    signInTyped: 'Your job-site email and password are filled in. Press the page\'s Sign In or Create Account, and Autofill carries on.',
     open: 'Open',
     submitHeld: {
       required: 'Submit is on Auto, and a required field is still empty, so the application was not submitted.',
@@ -1729,22 +1720,41 @@ const SETUP = {
   notNow: 'Not Now', // v5 p1-panel
 } as const;
 
+/** jr6 apply F1: no application form and no Apply on the page: the entry's refusal 'none' and the "no form" modal.
+ *  jr6 apply merge (F2's door): 'none' is also said, before any press, for an Apply that downloads a file, so the words
+ *  say no Apply that opens a form, never that the page shows no Apply. The F1 fixer (the line P review, C2): nor that
+ *  no Apply opens one (a list of jobs shows several, none Autofill's to choose), nor that Autofill looked (a click that
+ *  reached no frame of ours, on a page no frame of ours is on, opens this modal too). */
+const NO_FORM = `${NO_FORM_HERE}, and no Apply that Autofill could press. ${OPEN_A_JOB}`;
+
 /** The main view's new parts (Panel.tsx, JobCard.tsx). */
 const MAIN_VIEW = {
   settings: 'Settings',
   signUpFill: 'Sign Up & Autofill', // v5 p1-panel
-  signUpHelp: "This site asks you to sign in or create an account first. Sign up & Autofill does it with the job-site sign-in you saved in TailorIT's Settings › Autofill, then fills the application.",
+  // The jr6 review (R3, R5): the email and password saved in Sign-up Information; none saved, the "?" says so.
+  signUpHelp: 'This site asks you to sign in or create an account first. Sign Up & Autofill does it with your Sign-up Information, then fills the application.',
+  signUpNeedsPassword: 'Save a job-site password in Settings › Sign-up Information first.',
   // v5 p1-panel: Title Case buttons.
   ask: 'Ask Custom Question',
   addJob: 'Add This Job In One Click',
-  addHelp: 'Adds this posting to your TailorIT jobs, and to your tracker as Saved, so you can follow it there.',
   notThisJob: 'Not This Job?', // v5 p1-panel
-  // ── v5 p2-fill: Open Application on a posting page (PLAN Phase 2, Jobright's button in our own words). Drafts. ──
-  openApplication: 'Open Application',
-  openApplicationHelp: "This page shows the job, not its application. Open Application presses the site's own Apply, then fills the application it opens.",
-  // v5 p2-fill review (L5): a draft for the owner's review.
-  openApplicationRefused: "Autofill couldn't press this site's Apply. Press Apply on the page yourself, then press Autofill on the application.",
-  // ── end v5 p2-fill ──
+  // ── jr6 apply F1 (the owner, 2026-11-10: "`Autofill` word will be kept"; APPLYPLAN F1 item 5, OQ10's drafts): on a
+  // page whose site offers its own Apply the main button reads Autofill (PANEL.fill); its "?", and why an entry was
+  // refused, in one line each (Panel.tsx; 'none' is also the "no form" modal's, MODALS.errors). Drafts for the owner. ──
+  entryHelp: "This page shows the job. Autofill presses the site's own Apply first, then fills the application it opens.",
+  // The F1 fixer (the line P review, C4): the panel's status for a screen reader while the frame presses or waits.
+  entering: "Autofill is pressing the site's Apply.",
+  entryRefused: {
+    none: NO_FORM,
+    ambiguous: 'This page shows more than one Apply. Press the one you want, then press Autofill on the application.',
+    blocked: "Something on the page needs you first, such as a check that you're human or a code. Finish it, then press Autofill.",
+    'new-tab': 'This site opens its application in a new tab. Press Apply on the page, then press Autofill in that tab.',
+    // jr6 apply merge: said before any press (F2's door: the declared Apply links to another site, nothing pressed) and
+    // after one (F3a: the press took the tab to another site), so the words claim no press and no move.
+    elsewhere: "This job's Apply leads to another site, where Autofill doesn't go on by itself. Open the application there, then press Autofill if TailorIT supports that site.",
+    'nothing-followed': 'Autofill pressed Apply, but no application opened. Press Apply on the page yourself, then press Autofill.',
+  } satisfies Record<EntryRefusal, string>,
+  // ── end jr6 apply F1 ──
   resume: 'Résumé:',
   noResume: 'none',
   withoutResume: 'none, by your choice',
@@ -1781,6 +1791,11 @@ const SETTINGS_VIEW = {
   notConnected: 'Not connected to TailorIT',
   queue: 'Queue Settings',
   autofill: 'Autofill Settings',
+  // jr6: Sign-up Information, after Autofill Information (the sidebar on the page shows its state and a link alone).
+  signUp: 'Sign-up Information',
+  signUpSet: 'A job-site password is saved.',
+  signUpNotSet: 'No job-site password saved yet.',
+  signUpManage: 'Manage on the settings page',
 } as const;
 // ── end v4 ui ──
 
@@ -1795,7 +1810,7 @@ const HISTORY_WORDS = { experience: 'work experience', education: 'education' } 
 const MODALS = {
   /** Why Autofill did not start, by what the worker answered (Jobright's four reasons). */
   errors: {
-    'no-form': 'No application form was found on this page. Open the application itself, then try again.',
+    'no-form': NO_FORM, // jr6 apply F1
     unavailable: "Autofill can't reach this page's form right now. Reload the page, then try again.",
     failed: "Autofill didn't work this time. Try again in a moment.",
     updated: 'TailorIT Autofill was updated. Refresh this page to use it again.',

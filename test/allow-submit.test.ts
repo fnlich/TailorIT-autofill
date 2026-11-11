@@ -12,6 +12,9 @@
  * button), named by src/content/sign-in.ts alone. Each finds its one element itself; neither takes a flag. v3 Phase 7b
  * adds clickAdapterSignInPrelude (Sign-in mode Auto's press of the control that shows a wall's form: Workday's "Sign in
  * with email"), named by src/content/sign-in.ts alone too.
+ * jr6 apply F2 (APPLYPLAN §5 F2 item 6, D7): clickSecondStep (an entry's generic second step, "Apply manually" in a dialog
+ * shown after our press), named by src/content/press.ts alone, and its wrapper press.ts pressSecondStep by
+ * src/content/runtime.ts alone, as pressEntry is.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -72,22 +75,25 @@ describe('the Submit exception', () => {
 
   it('keeps the agent’s entry press in press.ts and Sign-in Auto’s press in sign-in.ts alone (v3 Phase 5)', async () => {
     for (const [name, home] of [['clickAdapterEntry', 'content/press.ts'], ['clickAdapterSignIn', 'content/sign-in.ts'],
-      ['clickAdapterSignInPrelude', 'content/sign-in.ts']] as const) {
+      ['clickAdapterSignInPrelude', 'content/sign-in.ts'],
+      ['clickSecondStep', 'content/press.ts']] as const) { // jr6 apply F2
       const naming = sources(SRC).map(nameOf).filter((each) => !isTest(each))
         .filter((each) => new RegExp(`\\b${name}\\b`).test(readFileSync(join(SRC, each), 'utf8')));
       expect(naming.sort(), name).toEqual([home, 'dom/fillers/not-submit.ts'].sort());
       expect(readFileSync(join(SRC, home), 'utf8').match(new RegExp(`${name}\\(`, 'g')), name).toHaveLength(1);
     }
     const index = readFileSync(join(SRC, 'dom/fillers/index.ts'), 'utf8');
-    expect(index).not.toMatch(/clickAdapterEntry|clickAdapterSignIn|clickAdapterSignInPrelude/);
+    expect(index).not.toMatch(/clickAdapterEntry|clickAdapterSignIn|clickAdapterSignInPrelude|clickSecondStep/); // jr6 apply F2
     // The review: not-submit.ts never calls a door itself: each name is followed by `(` once, in its own definition.
     const notSubmit = readFileSync(join(SRC, 'dom/fillers/not-submit.ts'), 'utf8');
-    for (const door of ['clickAdapterSubmit', 'clickAdapterEntry', 'clickAdapterSignIn', 'clickAdapterSignInPrelude']) {
+    for (const door of ['clickAdapterSubmit', 'clickAdapterEntry', 'clickAdapterSignIn', 'clickAdapterSignInPrelude',
+      'clickSecondStep']) { // jr6 apply F2
       expect(notSubmit.match(new RegExp(`\\b${door}\\(`, 'g')), door).toHaveLength(1);
       expect(notSubmit, door).toMatch(new RegExp(`export function ${door}\\(`));
     }
     // And the wrappers around the agent's doors are imported by runtime.ts alone (a type import aside).
-    for (const [wrapper, from] of [['pressEntry', /(^|\/)press$/], ['signIn', /(^|\/)sign-in$/]] as const) {
+    for (const [wrapper, from] of [['pressEntry', /(^|\/)press$/], ['signIn', /(^|\/)sign-in$/],
+      ['pressSecondStep', /(^|\/)press$/]] as const) { // jr6 apply F2
       const importing = sources(SRC).map(nameOf).filter((each) => !isTest(each)).filter((each) => {
         const text = readFileSync(join(SRC, each), 'utf8');
         return [...text.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g)]
@@ -99,7 +105,8 @@ describe('the Submit exception', () => {
     const eslint = new ESLint({ cwd: ROOT });
     for (const [name, home, other] of [['clickAdapterEntry', 'content/press.ts', 'content/sign-in.ts'],
       ['clickAdapterSignIn', 'content/sign-in.ts', 'content/press.ts'],
-      ['clickAdapterSignInPrelude', 'content/sign-in.ts', 'content/press.ts']] as const) {
+      ['clickAdapterSignInPrelude', 'content/sign-in.ts', 'content/press.ts'],
+      ['clickSecondStep', 'content/press.ts', 'content/sign-in.ts']] as const) { // jr6 apply F2
       const probe = `import { ${name} } from '../dom/fillers/not-submit';\nexport const press = ${name};\n`;
       for (const elsewhere of ['content/orchestrator.ts', 'content/runtime.ts', other, 'background/agent.ts']) {
         const [result] = await eslint.lintText(probe, { filePath: join(SRC, elsewhere) });
@@ -110,7 +117,9 @@ describe('the Submit exception', () => {
     }
     // The wrappers: runtime.ts alone.
     for (const [probe, home] of [["import { pressEntry } from './press';\nexport const enter = pressEntry;\n", 'content/press.ts'],
-      ["import { signIn } from './sign-in';\nexport const enter = signIn;\n", 'content/sign-in.ts']] as const) {
+      ["import { signIn } from './sign-in';\nexport const enter = signIn;\n", 'content/sign-in.ts'],
+      // jr6 apply F2: the second step's wrapper.
+      ["import { pressSecondStep } from './press';\nexport const step = pressSecondStep;\n", 'content/press.ts']] as const) {
       for (const elsewhere of ['content/orchestrator.ts', 'content/loop.ts', 'background/agent.ts']) {
         const [result] = await eslint.lintText(probe, { filePath: join(SRC, elsewhere) });
         expect(result!.messages.map((message) => message.ruleId), `${home} wrapper in ${elsewhere}`)

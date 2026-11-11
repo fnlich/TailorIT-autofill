@@ -267,7 +267,7 @@ describe('the Settings view (v4 ui)', () => {
     const signIn = root.querySelector('[data-setting-group="modes.signIn"]')!;
     expect(signIn.querySelector<HTMLInputElement>('input[data-setting="modes.signIn.auto"]')!.disabled).toBe(true);
     expect(signIn.querySelector('[role="tooltip"]')?.textContent)
-      .toBe(`${COPY.options.modes.signIn.help} ${COPY.options.modes.signIn.needsScope}`);
+      .toBe(`${COPY.options.modes.signIn.help} ${COPY.options.modes.signIn.needsPassword}`);
     expect(root.querySelector('[data-setting^="llm."], [data-setting="offerToSaveAnswers"]')).toBeNull();
     expect(root.textContent).not.toContain(COPY.options.ai.whenForbidden.ask);
     expect(root.textContent).not.toContain(COPY.options.ai.confirmDrafts);

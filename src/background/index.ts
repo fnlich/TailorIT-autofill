@@ -53,6 +53,7 @@ import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT, type Reports } from
 import { createTailoring, editorUrlOf, OPEN_DOCUMENT_LIMIT, TAILOR_LIMIT, type Tailoring } from './tailor'; // v1.4 F
 import { createDocumentDialogs } from './document-dialog'; // v1.5 X
 import { fillsFromProfileOnly, latestReport, saysNoAi } from '../shared/report';
+import { SIGNUP_SECTION } from '../shared/sidebar';
 import { createResumeChooser } from './resume-choice';
 import { createResumeTransfer } from './resume-transfer';
 import { createRouter, type ContentChannel } from './router';
@@ -61,11 +62,13 @@ import { createRunRegistry, type RunRegistry } from './runs';
 import { createRunStateStore } from './runstate-store';
 import { channelOf, isConnectPage, offAtsChannelOf, offAtsSenderOf, SIDEBAR_PORTS, sidebarChannel } from './senders';
 import { createServerClient } from './server-client';
-import { contentSettingsOf, createSettingsStore, pushSettings } from './settings';
+import { contentSettingsOf, createSettingsStore, mergeSettings, pushSettings } from './settings';
 import { createSidebar, createSidebarVet, iconReachesPage, scopedPort, SIDEBAR_LOAD_LIMIT } from './sidebar';
 import { createPagePatches, PAGE_PATCHES_LIMIT } from './page-patches';
 import { createSignIn } from './sign-in';
-import { createSignUps } from './sign-up';
+import { createSignUps, ENTRY_PRESSED_LIMIT } from './sign-up';
+import { createSignup, holdsSignInAuto } from './signup';
+import { createSignupVault } from './signup-vault';
 import { createSites, RECOGNISED_LIMIT } from './sites';
 import { createTelemetry } from './telemetry';
 import { systemTimers, type Timers } from './timers';
@@ -195,7 +198,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   });
   const profileCache = createProfileCache({ server, timers, core, now });
   profiles = profileCache;
-  const auth = createAuth({ platform, origin, server, keeper, storageAccess: () => state.storageAccess });
+  /** jr6: the job-site sign-up information, kept in this browser alone, the password encrypted (signup-vault.ts). */
+  const signupVault = createSignupVault({ local, keys: platform.signupKey, subtle: globalThis.crypto.subtle,
+    randomBytes: (count) => platform.randomBytes(count), now });
+  const auth = createAuth({ platform, origin, server, keeper, storageAccess: () => state.storageAccess,
+    signUp: () => signupVault.has() });
   const settings = createSettingsStore(local);
   const runs = createRunRegistry(platform, session);
   runRegistry = runs;
@@ -219,7 +226,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     check: (tabId) => checkTab(tabId), sideShown: (tabId, open) => void tellTopFrame(tabId, { v: 1, type: 'panel/side', open }),
     submitted: async (tabId) => submissions?.stateOf(tabId),
     // v3 Phase 8 (the review's B10): the career sites act, so a company page no frame of ours is on waits for a reload.
-    sitesActive: () => sites.active() });
+    sitesActive: () => sites.active(),
+    // jr6 apply F3a: the tab's entry grant, armed and waiting, or ended on another origin (sign-up.ts).
+    entryOf: (tabId) => ({ waiting: signUps.waiting(tabId), elsewhere: signUps.elsewhere(tabId) }) });
   // The launcher's place and hiding per site (v3 Phase 3): storage.local, a hash of the host only.
   const launchers = createLauncherStore(local);
   const launcherLimit = createRateLimit(LAUNCHER_LIMIT.count, LAUNCHER_LIMIT.windowMs, now);
@@ -259,7 +268,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     choose: chooseResume, letters });
   /** v4: the tabs' Sign up & Autofill grants, and the forms to start after a wall (sign-up.ts). The v4 review (M1): one
    *  that held Sign-in Auto and ends by time is told to the tab's frames (pushTab), which stop reading it. */
-  const signUps = createSignUps({ now, timers, ended: (tabId) => void pushTab(tabId).catch(() => undefined) });
+  const signUps = createSignUps({ now, timers, ended: (tabId) => void pushTab(tabId).catch(() => undefined),
+    // jr6 apply F3a: the tab's page state follows its entry grant (waiting, elsewhere).
+    changed: (tabId) => void reports.pageChanged(tabId).catch(() => undefined) });
+  /** jr6 apply F3a: entry/pressed's limit, per tab (APPLYPLAN F3a item 3). */
+  const entryLimit = createRateLimit(ENTRY_PRESSED_LIMIT.count, ENTRY_PRESSED_LIMIT.windowMs, now);
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId),
     // v4: Sign up & Autofill grants the tab Sign-in Auto for one run, for its application frame's site (the v4 review,
     // M1); its frames hear the settings as they act then.
@@ -267,6 +280,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       const before = signUps.live(tabId);
       signUps.grant(tabId, grant, place);
       if (before || signUps.live(tabId)) await pushTab(tabId);
+    },
+    // jr6 apply F3a: a plain Autofill during the hand-off keeps the armed grant (apply-c-new-1); Cancel ends it.
+    keepEntry: (tabId, frame) => signUps.keep(tabId, frame),
+    endEntry: async (tabId) => {
+      if (signUps.endEntry(tabId)) await pushTab(tabId);
     } });
   // Save my answer and Confirm draft (Phase 6, wave 2): the answer goes from the frame straight to TailorIT.
   const answers = createAnswerHandlers({ platform, reports, runs, server, settings, vocab: () => core.vocab(),
@@ -421,13 +439,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     }
     return checkLetter(letters, { jobId: tab.jobId, company: tab.company, jobTitle: tab.jobTitle, resumeId }, active);
   }
-  /** Whether Sign-in mode may act as Auto (v3 Phase 5): the connection holds credentials:read and the person
-   *  acknowledged the disclosure as it reads now. */
-  const signInAllowed = async () => ((await keeper.current())?.scopes ?? []).includes('credentials:read')
-    && (await auth.disclosed());
+  /** Whether Sign-in mode may act (v3 Phase 5): jr6, a job-site password is saved in this browser (signup-vault.ts;
+   *  the connection's credentials:read before jr6), and the person acknowledged the disclosure as it reads now. */
+  const signInAllowed = async () => (await signupVault.has()) && (await auth.disclosed());
   /** What holds a mode at Manual now: Submit until the disclosure was acknowledged (the v3 Phase 4 review); Sign-in
-   *  unless it is allowed (v3 Phase 5). */
-  const holds = async () => ({ holdSubmit: !(await auth.disclosed()), holdSignIn: !(await signInAllowed()) });
+   *  unless it is allowed (v3 Phase 5); jr6: where it is allowed, a saved password is typed on Manual too. */
+  const holds = async () => {
+    const allowed = await signInAllowed();
+    return { holdSubmit: !(await auth.disclosed()), holdSignIn: !allowed, typeSignIn: allowed };
+  };
   /** The content settings as they act now for a frame of `tabId` on `origin` showing `applicationKey` in document
    *  `documentId`: in the auto-apply agent's window, for its task's application and while it may run, the agent's (v3
    *  Phase 5: Next and Submit on Auto; Submit on Manual in a document but the one the job's Submit was pressed in, once
@@ -535,14 +555,49 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const placeIcon = async () => {
     await platform.sidePanel.openOnActionClick(!(await onPage())).catch(() => undefined);
   };
-  /** v3 Phase 5: Sign-in mode Auto's credential, for a paused run's top frame. */
-  const signIn = createSignIn({ server, session, now,
-    // v4: or the tab's Sign up & Autofill grant (sign-up.ts), every other rule held.
-    // The v4 review (M1): the grant's for a frame of the origin it was given for alone.
-    signInAuto: async (tabId, origin) => ((await settings.get()).modes.signIn === 'auto' || signUps.live(tabId, origin))
-      && (await signInAllowed()),
+  /** jr6: Settings › Sign-up Information's messages, and Sign-in mode's guard (signup.ts). */
+  const signup = createSignup({ vault: signupVault, settings, server, local,
+    scopes: async () => (await keeper.current())?.scopes ?? [],
+    // The box's first email while none is saved (coordinator decision 3): the TailorIT profile's, read for it when the
+    // worker holds none (the jr6 review, R9: one GET /profile as the person opens the card, the cache's after); else the
+    // account's as read already, which TailorIT answers an empty profile email as (the page adds the account's own).
+    suggestedEmail: async () => {
+      if (!(await auth.connected())) return null;
+      const profile = await profileCache.get().catch(() => null);
+      const own = profile?.ok === true ? profile.value.profile.contact.email : '';
+      return own !== '' ? own : auth.knownAccountEmail();
+    },
+    changed: async ({ settings: modes }) => {
+      // Every frame hears whether a password may be typed (ContentSettings.typeSignIn), and Sign-in as it acts.
+      await pushNow();
+      reports.tellPanels('signup');
+      if (modes) reports.tellPanels('settings');
+    } });
+  /** v3 Phase 5: Sign-in mode Auto's credential, for a paused run's top frame. jr6: from this browser's Sign-up
+   *  Information (signup-vault.ts), never TailorIT's. */
+  const signIn = createSignIn({ vault: signupVault, session, now,
+    // v4: Auto, or the tab's Sign up & Autofill grant (sign-up.ts), every other rule held; the v4 review (M1): the
+    // grant's for a frame of the origin it was given for alone. jr6: Manual types a saved password, pressing nothing;
+    // the jr6 review (sec-3): never in the auto-apply agent's tab, where nobody is there to press it (its settings say
+    // so too: contentSettingsOf), and its Auto ('agent') is never typed for a person after a press (sign-in.ts).
+    signInAct: async (tabId, origin) => {
+      if (!(await auth.disclosed())) return null;
+      const unattended = await agent.ownsTab(tabId);
+      if ((await settings.get()).modes.signIn === 'auto' || signUps.live(tabId, origin)) return unattended ? 'agent' : 'auto';
+      return unattended ? null : 'type';
+    },
     // core-x, item 3: a subframe that claims the tab's application signs in as a top frame does (frames.ts).
-    claimFrame: async (tabId) => claimFrameOf(await framesOfTab(session, tabId)) });
+    claimFrame: async (tabId) => claimFrameOf(await framesOfTab(session, tabId)),
+    // jr6: no password to use (none saved, or one that can no longer be read, which was removed): Sign-in Auto, which
+    // needs one, goes back to Manual (the jr6 review, sec-9: `none` too), and the card says so (R12).
+    missing: async (why) => {
+      const reverted = await signup.passwordMissing(why);
+      if (why === 'gone' || reverted) {
+        await pushNow();
+        reports.tellPanels('signup');
+      }
+      if (reverted) reports.tellPanels('settings');
+    } });
   /** core-x, items 7 and 14: the tabs' chains (chain.ts). */
   const chains = createChains({ session, now });
   /** Every frame with a form hears the settings as they act now for it (settings/changed): the agent's tab's documents
@@ -670,6 +725,47 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     }
   }
 
+  /**
+   * jr6 apply F3a: what a frame/wall of a tab's application frame (wallFrameOf, in its registered document) does to the
+   * tab's grant (sign-up.ts), and to its card:
+   * - its refusal, newly said, ends an entry grant that reached its document (item 2);
+   * - a wall or a choice with no form, after a press of the grant, in a document the grant has not reached: one
+   *   run/start there (takeStep, AF-3), with Sign up & Autofill's signIn where the grant holds it (item 3);
+   * - the line P review (P-B1): a word without `entering`, after a press, from a document the grant reached: the frame's
+   *   entry is over there (a wall or a choice its press drew in place, which it took or left to the person), so the
+   *   tab no longer says it waits for that press (settled; a press whose document went still waits, ENTRY_WAITING_MS);
+   * - a top frame with no form whose document first says its adapter offers the site's own Apply (ADP's job details,
+   *   apply-b-new-2) is the tab's card frame (frames.ts cardFrameOf): the job chosen follows its application, and its
+   *   card is looked up once, as on load (lookupOnLoad, the connection, the disclosure).
+   */
+  async function entryWords(message: Extract<ContentMessage, { type: 'frame/wall' }>, from: ContentChannel,
+    before: FrameEntry | null, entry: FrameEntry): Promise<void> {
+    const frames = await framesOfTab(session, from.tabId);
+    const application = wallFrameOf(frames);
+    if (application !== null && application.frameId === entry.frameId && application.documentId === entry.documentId) {
+      if (entry.entryRefused === true && before?.entryRefused !== true && signUps.refused(from.tabId, entry)) {
+        void pushTab(from.tabId).catch(() => undefined);
+      }
+      if (message.wall !== null || message.choice === true) {
+        const step = signUps.takeStep(from.tabId, entry, message.wall !== null ? 'wall' : 'choice');
+        if (step !== null) {
+          void Promise.resolve().then(() => platform.tabs.sendToFrame(from.tabId, { v: 1, type: 'run/start',
+            dryRun: false, ...(step.signIn ? { signIn: true as const } : {}) }, frameTarget(entry)))
+            .catch(() => log('frame.unreachable'));
+        }
+      }
+      // The line P review (P-B1): the frame says no longer that it is entering (its entry ended in this document).
+      if (message.entering !== true) signUps.settled(from.tabId, entry);
+    }
+    if (entry.frameId === 0 && entry.entrySaid === true && before?.entrySaid !== true && entry.posting !== true
+      && entry.confirmation !== true && cardFrameOf(frames)?.frameId === entry.frameId) {
+      jobs.applicationShown(from.tabId, entry.applicationKey ?? null);
+      if (lookupOnLoad && (await auth.connected()) && (await auth.disclosed())) {
+        void jobs.loadCard(from.tabId, tailoritFrom(from, entry)).catch(() => undefined);
+      }
+    }
+  }
+
   /** The launcher's prefs changed for the tab's top frame's site: every frame of the tab hears them. `shown`: the
    *  person asked for it back, which undoes "Hide until next visit" too. */
   async function tellLauncherPrefs(tabId: number, shown = false): Promise<void> {
@@ -724,8 +820,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
               ...(same && held.wall !== undefined ? { wall: held.wall } : {}),
               ...(same && held.choice === true ? { choice: true } : {}),
               ...(same && held.waits !== undefined ? { waits: held.waits } : {}),
-              // v5 p2-fill: and its posting's own Apply.
-              ...(same && held.entry === true ? { entry: true } : {}) }, now()) };
+              // v5 p2-fill: and its posting's own Apply; jr6 apply F3a: its press under way (until its form shows),
+              // and (at the same address) the entry it said, for its card.
+              ...(same && held.entry === true ? { entry: true } : {}),
+              ...(same && held.entering === true && !message.hasForm ? { entering: true } : {}),
+              ...(same && held.entrySaid === true && navOf(held) === (message.nav ?? 0) ? { entrySaid: true } : {}) },
+            now()) };
           });
           // core-x, items 7 and 14: a top document with an application is the tab's chain from now on; a portal frame
           // whose pages frame chain pages keeps its application's canonical address for them (the security fix of
@@ -953,7 +1053,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // v5 p2-fill: the page patches in the asking frame's page world (page-patches.ts).
         'page/patches': (_message, from) => pagePatches.load(from),
         'sidebar/options': async (message, from) => {
-          if (!sidebarChannel(from)) return refuse('bad_sender');
+          // jr6: the no-sign-in toast's Open in the frame that claims the tab's application (an iCIMS portal's) too, for
+          // Sign-up Information alone.
+          const claim = from.frameId !== 0 && message.section === SIGNUP_SECTION
+            ? claimFrameOf(await framesOfTab(session, from.tabId)) : null;
+          const claimed = claim !== null && claim.frameId === from.frameId
+            && claim.documentId === (from.documentId ?? null) && from.reach !== 'sentinel';
+          if (!sidebarChannel(from) && !claimed) return refuse('bad_sender');
           const retry = launcherLimit.take(`${from.tabId}/`);
           if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
           await platform.tabs.create(platform.runtime.getURL(`/options.html${message.section === undefined ? ''
@@ -991,12 +1097,19 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // ── end v1.5 X ──
         // v4: the account wall a tab's top or claim frame shows now (content/runtime.ts tellWall), for PageState.wall.
         'frame/wall': async (message, from) => {
-          const entry = await lockTab(from.tabId, () => setWall(session, from.tabId, from.frameId,
-            from.documentId ?? null, { wall: message.wall, choice: message.choice === true,
-              ...(message.waits === undefined ? {} : { waits: message.waits }),
-              // v5 p2-fill: a posting's own Apply (Open Application); v5 p2-fill review (L5): its press refused.
-              ...(message.entry === true ? { entry: true } : {}),
-              ...(message.entryRefused === true ? { entryRefused: true } : {}) }));
+          const { before, entry } = await lockTab(from.tabId, async () => {
+            const held = await frameEntry(session, from.tabId, from.frameId);
+            return { before: held, entry: await setWall(session, from.tabId, from.frameId, from.documentId ?? null,
+              { wall: message.wall, choice: message.choice === true,
+                ...(message.waits === undefined ? {} : { waits: message.waits }),
+                // v5 p2-fill: a posting's own Apply, which the panel's Autofill presses; v5 p2-fill review (L5): its
+                // press refused.
+                ...(message.entry === true ? { entry: true } : {}),
+                ...(message.entryRefused === true ? { entryRefused: true } : {}),
+                // jr6 apply F3a (item 4): its press under way, and why it was refused.
+                ...(message.entering === true ? { entering: true } : {}),
+                ...(message.refusal === undefined ? {} : { refusal: message.refusal }) }) };
+          });
           if (entry === null) return refuse('expired');
           log('frame.wall', { shown: message.wall !== null, choice: message.choice === true });
           void reports.pageChanged(from.tabId).catch(() => undefined);
@@ -1010,7 +1123,31 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
               await queueRunner.wall(from.tabId, { applicationKey: entry.applicationKey, wall: message.wall !== null });
             })().catch(() => undefined);
           }
+          // jr6 apply F3a: what the tab's grant and card make of it (entryWords). `entering` and `refusal` never start
+          // the queue's Autofill above (AF-5 corrected: once per job, from a wall, a choice or an entry alone).
+          await entryWords(message, from, before, entry);
           return ok({});
+        },
+        // jr6 apply F3a (item 3): the tab's application frame pressed the site's own Apply for the panel's Autofill
+        // (content/press.ts, at the press): its pending entry grant is armed (sign-up.ts pressed). Counted first, 6 a
+        // minute per tab; only from the tab's application frame (its claim frame, else its top frame: wallFrameOf), in
+        // the document registered for it, on that frame's origin; sign-up.ts takes it only from a document the grant
+        // sent run/start to, on the grant's origin. Logged as flags.
+        'entry/pressed': async (message, from) => {
+          const retry = entryLimit.take(`${from.tabId}/`);
+          if (retry !== null) {
+            log('grant.armed', { armed: false, limited: true });
+            return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+          }
+          const application = wallFrameOf(await framesOfTab(session, from.tabId));
+          if (application === null || application.frameId !== from.frameId || from.documentId === undefined
+            || application.documentId !== from.documentId || application.origin !== originOf(from.url)) {
+            log('grant.armed', { armed: false, frame: false });
+            return refuse('bad_sender');
+          }
+          const armed = signUps.pressed(from.tabId, application, message.nextKey);
+          log('grant.armed', { armed, nextKey: message.nextKey !== undefined });
+          return armed ? ok({}) : refuse('expired');
         },
         'agent/entered': async (_message, from) => {
           // core-x, item 3: the tab's top frame, or the frame that claims its application (agent.ts checks it is the
@@ -1101,8 +1238,21 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         }),
         'settings/get': async () => ok({ settings: await settings.get() }),
         'settings/save': async (message) => {
+          // jr6 (signup.ts, Sign-in mode's guard): Sign-in on Auto needs a job-site password saved in this browser.
+          const wanted = message.base === undefined ? message.settings
+            : mergeSettings(await settings.get(), message.base, message.settings);
+          if (holdsSignInAuto(wanted) && !(await signupVault.has())) {
+            log('signup.refused', { auto: true });
+            return refuse('unavailable');
+          }
           // The audit's M4: what the page changed from the settings it read, applied to the stored ones.
-          const saved = await settings.save(message.settings, message.base);
+          let saved = await settings.save(message.settings, message.base);
+          // The jr6 review (sec-9): a delete that landed between the check above and the save leaves Auto with no
+          // password: set back to Manual at once, and answered as stored then.
+          if (holdsSignInAuto(saved) && (await signup.keepModeHonest('save'))) {
+            saved = await settings.get();
+            reports.tellPanels('signup');
+          }
           // Every frame with a form hears of it, so a run in progress reads auto-advance afresh (Phase 5 review, C-S2).
           await pushNow();
           // And every side panel (v2): the custom question follows the AI drafts switch.
@@ -1112,6 +1262,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           return ok({ settings: saved });
         },
         'auth/status': async () => ok(await auth.status()),
+        // jr6: Settings › Sign-up Information (signup.ts): the extension's own pages alone, never the sidebar's.
+        'signup/status': () => signup.status(),
+        'signup/save': (message) => signup.save(message),
+        'signup/delete': () => signup.remove(),
+        'signup/import': () => signup.importFromTailorIT(),
         'auth/startPairing': () => auth.startPairing(),
         'auth/redeemCode': (message) => auth.redeemCode(message.code),
         'auth/disconnect': () => auth.disconnect(),
@@ -1326,6 +1481,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     reportLimit.forget(`${tabId}/`);
     policyLimit.forget(`${tabId}/`);
     shownLimit.forget(`${tabId}/`);
+    entryLimit.forget(`${tabId}/`); // jr6 apply F3a
     askLimit.forget(`${tabId}/`);
     letterLimit.forget(`${tabId}/`);
     jobs.forgetTab(tabId);
@@ -1357,7 +1513,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     }
   }
   accessReady = restrict();
-  state.ready = accessReady.then(() => runStates.prune().catch(() => undefined));
+  state.ready = accessReady.then(() => runStates.prune().catch(() => undefined))
+    // jr6: Sign-in Auto needs a password saved in this browser; settings that held it before (when the password was
+    // TailorIT's), or with one that went, go back to Manual, which the card then says (the jr6 review, R12).
+    .then(() => signup.keepModeHonest('startup').then((reverted) => {
+      if (reverted) {
+        reports.tellPanels('settings');
+        reports.tellPanels('signup');
+      }
+    }).catch(() => undefined));
   // v3 Phase 5: the agent picks up where it was (its job, a result still to tell, the queue).
   void state.ready.then(() => agent.start()).catch(() => undefined);
   // v1.5 QX: the sequential auto-apply picks up where it was (its timer, its tabs, a result still to tell).

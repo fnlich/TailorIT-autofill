@@ -223,7 +223,7 @@ import {
 } from './report';
 import { postingNamesOf } from './job-relay';
 import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
-import { signInChallenged, signInRefusalWaits, type SignInOutcome } from './sign-in';
+import { signInChallenged, signInHandedOver, signInRefusalWaits, type SignInOutcome } from './sign-in';
 import type { PressSnapshot } from './submitted';
 import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
@@ -357,8 +357,9 @@ export interface RunEnv {
    *  shared by every run of the document, so Auto presses a step at most once whatever starts the run again. */
   autoPressed?: Set<string>;
   /** v3 Phase 5, Sign-in mode Auto: signs in once on the page the run paused at (content/sign-in.ts), until `signal`
-   *  (the run stopped, cancelled at its pause, or gone) aborts. */
-  signIn?(signal: AbortSignal): Promise<SignInOutcome>;
+   *  (the run stopped, cancelled at its pause, or gone) aborts. jr6: `typeOnly`, Sign-in on Manual with a password
+   *  saved: the email and the password are typed, and the press is the person's ('typed'). */
+  signIn?(signal: AbortSignal, typeOnly?: boolean): Promise<SignInOutcome>;
   /** v3 Phase 5: the site took the sign-in in this document: the run goes on (the runtime's Continue). v4: also once the
    *  page no longer shows the pause the run rests at (watchPauseGone), and after the entry choice was answered. */
   afterSignIn?(): void;
@@ -366,11 +367,13 @@ export interface RunEnv {
    *  door (press.ts pressEntryChoice, from the runtime): 'pressed', or 'none' (no entry declared or shown, or a
    *  challenge on the page). */
   enterChoice?(): 'pressed' | 'none';
-  /** v4 (D10): the no-sign-in toast's Open: TailorIT's Settings › Autofill in a new tab, inside the person's click. */
+  /** v4 (D10): the no-sign-in toast's Open, inside the person's click: jr6, the extension's settings at Sign-up
+   *  Information (TailorIT's Settings › Autofill before). */
   openSignInSettings?(): void;
   /** core-x, item 2, Sign-in mode Auto: types the saved job-site sign-in into the form's account section
-   *  (content/sign-in.ts, SignInContext.section), pressing nothing, until `signal` aborts. */
-  signInSection?(signal: AbortSignal): Promise<SignInOutcome>;
+   *  (content/sign-in.ts, SignInContext.section), pressing nothing, until `signal` aborts. jr6: on Manual too
+   *  (`typeOnly`: the jr6 review's sec-3, typed only into a document shown to the person). */
+  signInSection?(signal: AbortSignal, typeOnly?: boolean): Promise<SignInOutcome>;
   /** Core pass Z1, item 24, Sign-in mode Auto: presses the page's declared sign-in container's button (ADP's guest
    *  Continue, UltiPro's Create account) once the run rests on the step it fills (content/sign-in.ts,
    *  SignInContext.container), until `signal` aborts. */
@@ -566,12 +569,18 @@ export class FillRun {
   private skipRules: SubmitSkipRules = { requiredEmpty: true, noAi: true, legalGuess: false };
   /** v3 Phase 5: Sign-in mode as it acts (modes.signIn, held Manual by the worker unless allowed). */
   private signInAuto = false;
+  /** jr6: a job-site password is saved here and may be typed (ContentSettings.typeSignIn): on Manual, a sign-in or
+   *  create-account page gets it typed and its button is left to the person. */
+  private signInTypes = false;
   /** The run paused at a sign-in and signs in once it rests (sign-in-auto). */
   private signInDue = false;
+  /** jr6: the sign-in due is Manual's: typed, never pressed. */
+  private signInTyping = false;
   /** v4 (D10): what came of this run's sign-in, for its toast: the v4 review (M5) tells apart no job-site sign-in saved
    *  ('none-saved': the toast to add one), a challenge on the page ('challenged': the check to solve), the site refusing
-   *  it ('failed'), and anything else ('unavailable': not allowed now, no form read: the sign-in to make on the page). */
-  private signInSaid: 'none-saved' | 'challenged' | 'unavailable' | 'failed' | null = null;
+   *  it ('failed'), and anything else ('unavailable': not allowed now, no form read: the sign-in to make on the page);
+   *  jr6: typed on Manual, the press the person's ('typed'). */
+  private signInSaid: 'none-saved' | 'challenged' | 'unavailable' | 'failed' | 'typed' | null = null;
   /** v4: a statement only text a person cannot see yet holds says the posting forbids AI (the Phase 2 review's S6):
    *  no notice any more, but Submit mode Auto's "posting forbids AI" skip rule still reads it. */
   private hiddenPolicy = false;
@@ -845,6 +854,7 @@ export class FillRun {
     this.autoSubmitOn = settings.modes.submit === 'auto';
     this.skipRules = { ...settings.modes.agentSkip };
     this.signInAuto = settings.modes.signIn === 'auto';
+    this.signInTypes = settings.typeSignIn === true;
     this.llm = settings.llm;
     // AI-written answers turned off (or on) at rest: Edit with AI goes (or comes back) at once.
     this.drawAiEdits();
@@ -1614,6 +1624,9 @@ export class FillRun {
         const open = this.env.openSignInSettings;
         list.push({ kind: 'no-sign-in', text: words.noSignIn,
           ...(open === undefined ? {} : { action: { label: words.open, run: () => open() } }) });
+      } else if (this.signInSaid === 'typed') {
+        // jr6: typed on Manual: the site's own button is the person's.
+        list.push({ kind: 'sign-in', text: words.signInTyped });
       } else if (this.signInSaid === 'challenged') {
         // The v4 review (M5): a challenge kept Sign-in Auto from asking: the check is what is left for the person.
         if (!list.some((toast) => toast.kind === 'challenge')) list.push({ kind: 'challenge', text: words.challenge });
@@ -1690,6 +1703,7 @@ export class FillRun {
         this.autoSubmitOn = answer.data.settings.modes.submit === 'auto';
         this.skipRules = { ...answer.data.settings.modes.agentSkip };
         this.signInAuto = answer.data.settings.modes.signIn === 'auto';
+        this.signInTypes = answer.data.settings.typeSignIn === true;
       }
       return;
     }
@@ -2720,9 +2734,20 @@ export class FillRun {
     // The v4 review (behaviour H2): only while the page shows an account wall now. A run restored at its sign-in pause
     // in the document the sign-in brought (resumeStored) shows none: it carries on (watchPauseGone), never asking for a
     // sign-in it no longer needs.
-    this.signInDue = this.state.status === 'auth-needed' && (this.signInAuto || this.request.signIn === true)
+    const auto = this.signInAuto || this.request.signIn === true;
+    // jr6: on Manual, a saved password is typed into a sign-in or account's creation (never an email gate's Next).
+    const typing = !auto && this.signInTypes && this.typeableWallShown();
+    const due = this.state.status === 'auth-needed' && (auto || typing)
       && !this.request.dryRun && this.env.signIn !== undefined && (this.isTop || this.claimed) && this.wallShown();
-    if (this.signInDue) this.notices.add('sign-in-auto');
+    // An account form whose press is the person's, typed already at this wall of the document (sign-in.ts
+    // signInHandedOver): the run rests at it for them, never typing it again; its toast says what was typed.
+    const kind = this.pauseNow()?.kind;
+    const handedOver = due && signInHandedOver(this.env.doc, kind === 'sign-in' || kind === 'create-account'
+      || kind === 'email-gate' ? kind : null);
+    if (handedOver) this.signInSaid = 'typed';
+    this.signInDue = due && !handedOver;
+    this.signInTyping = this.signInDue && typing;
+    if (this.signInDue && !this.signInTyping) this.notices.add('sign-in-auto');
     if (this.state.pauseReason === 'captcha') {
       const signature = this.signatureNow();
       const before = this.handed !== null && this.handed.signature === signature ? [...this.handed.elements] : [];
@@ -2736,6 +2761,13 @@ export class FillRun {
   private wallShown(): boolean {
     const kind = this.pauseNow()?.kind;
     return kind === 'sign-in' || kind === 'create-account' || kind === 'email-gate';
+  }
+
+  /** jr6: whether the wall the page shows is one Sign-in Manual types a saved password into (a sign-in, an account's
+   *  creation), never an email gate, whose one step is its press. */
+  private typeableWallShown(): boolean {
+    const kind = this.pauseNow()?.kind;
+    return kind === 'sign-in' || kind === 'create-account';
   }
 
   /** The pause kinds the machine's own pause stands for (the v4 review, behaviour H2): an auth-needed run's account
@@ -2847,12 +2879,17 @@ export class FillRun {
   private async signInAccountSection(): Promise<void> {
     const signInSection = this.env.signInSection;
     const step = this.state.stepSignature ?? '';
-    if (!this.signInAuto || this.request.dryRun || signInSection === undefined || (!this.isTop && !this.claimed)
-      || this.accountTyped.has(step)) return;
+    // jr6: on Manual too, with a password saved (the section's press is the person's either way).
+    if ((!this.signInAuto && !this.signInTypes) || this.request.dryRun || signInSection === undefined
+      || (!this.isTop && !this.claimed) || this.accountTyped.has(step)) return;
     if (accountLeft(this.env.page.adapter, this.env.doc, this.rootNow()) === 0) return;
+    // The jr6 review (sec-3): on Manual, typed only into a document shown to the person: a background tab's fill (the
+    // sequential auto-apply's) goes on without it, and a run once it is shown types it.
+    const typeOnly = !this.signInAuto && this.request.signIn !== true;
+    if (typeOnly && this.env.doc.visibilityState !== 'visible') return;
     this.accountTyped.add(step);
     const outcome = await signInSection(AbortSignal.any([this.controller.signal, this.stopping.signal,
-      this.cancelled.signal]));
+      this.cancelled.signal]), typeOnly);
     log('content.account-section', { typed: outcome === 'continue' });
   }
 
@@ -2883,7 +2920,10 @@ export class FillRun {
     this.signInDue = false;
     const signIn = this.env.signIn;
     if (signIn === undefined) return;
-    const outcome = await signIn(AbortSignal.any([this.controller.signal, this.stopping.signal, this.cancelled.signal]));
+    const typing = this.signInTyping;
+    this.signInTyping = false;
+    const outcome = await signIn(AbortSignal.any([this.controller.signal, this.stopping.signal, this.cancelled.signal]),
+      typing);
     if (this.controller.signal.aborted || this.cancelled.signal.aborted || this.ended !== 'paused'
       || outcome === 'left') return;
     this.notices.forget(['sign-in-auto']);

@@ -9,13 +9,14 @@
  *   message;
  * - a CAPTCHA page is left for the person (needs-you, captcha) and never submitted; a posting that forbids AI is
  *   skipped (posting_forbids_ai) and never submitted;
- * - Sign-in Auto signs in on the synthetic sign-in page with the mock's sign-in for that host (the email, the password,
- *   the terms), never fills the page's honeypot password boxes, and the run then fills the page that follows; Sign-in
- *   Manual leaves the page to the person and never asks TailorIT for a password; a sign-in the site does not take is
- *   tried once (sign-in-failed);
+ * - Sign-in Auto signs in on the synthetic sign-in page with the sign-in saved in this browser's Sign-up Information
+ *   (jr6: never TailorIT's, which is asked nothing; the email, the password, the terms), never fills the page's
+ *   honeypot password boxes, and the run then fills the page that follows; Sign-in Manual with a password saved types
+ *   it and leaves the press to the person, and with none leaves the page to the person; a sign-in the site does not take
+ *   is tried once (sign-in-failed);
  * - neither a page's own script nor TailorIT's own pages (the one origin that may message the extension) can start the
- *   agent, press its Submit or obtain the password;
- * - Options shows Auto-apply and Sign-in, whose Auto needs the sign-in permission.
+ *   agent, press its Submit or obtain the password (jr6: nor read or change Sign-up Information);
+ * - Options shows Auto-apply and Sign-in, whose Auto needs a saved job-site password (jr6).
  */
 import type { Page } from '@playwright/test';
 import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
@@ -23,7 +24,8 @@ import { COPY } from '../../src/shared/copy';
 import { expect, test } from '../fixtures.ts';
 import type { Extension } from '../helpers/extension.ts';
 import { mock } from '../helpers/mock.ts';
-import { CONNECT_PAGE, pairThroughConnectPage } from '../helpers/pairing.ts';
+import { CONNECT_PAGE } from '../helpers/pairing.ts';
+import { deletePassword, savePassword, SIGNUP_DUMMY } from '../helpers/signup.ts';
 import { MOCK_ORIGIN } from '../routes.ts';
 
 const GREENHOUSE = 'fixtures/synthetic/submit/greenhouse.html';
@@ -44,8 +46,8 @@ const ashbyAt = (id: string) => `https://jobs.ashbyhq.com/tailorit-fixture/00000
 // 42-workday.spec.ts's).
 const SIGN_IN_HOST = 'tailoritfixture.taleo.net';
 const signInAt = (job: string) => `https://${SIGN_IN_HOST}/careersection/ex/jobapply.ftl?job=${job}&lang=en`;
-/** The sign-in the mock holds for the synthetic host: the fixtures' own dummies. */
-const DUMMY = { host: SIGN_IN_HOST, email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real' };
+/** The sign-in saved in Sign-up Information (jr6): the fixtures' own dummies. */
+const DUMMY = SIGNUP_DUMMY;
 
 /** A queue task, as TailorIT's GET /agent/next answers it. */
 function task(n: number, url: string, title: string) {
@@ -165,16 +167,14 @@ test.describe('the auto-apply agent (v3 Phase 5)', () => {
 });
 
 test.describe('Sign-in mode Auto (v3 Phase 5)', () => {
-  /** Connects again with the sign-in box ticked (credentials:read), the mock holding the dummies' sign-in. */
+  /** jr6: the dummies saved in this browser's Sign-up Information. */
   async function withSignIn(ext: Extension): Promise<void> {
-    const page = await pairThroughConnectPage(ext, { allowSignIn: true });
-    await page.close();
-    await expect.poll(async () => (await ext.authStatus()).scopes).toContain('credentials:read');
-    await mock.credentials([DUMMY]);
+    await savePassword(ext);
   }
 
   test.afterEach(async ({ ext }) => {
-    // The next test connects as usual (its sign-in box unticked).
+    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+    await deletePassword(ext);
     await ext.send({ v: 1, type: 'auth/disconnect' });
   });
 
@@ -192,9 +192,8 @@ test.describe('Sign-in mode Auto (v3 Phase 5)', () => {
     expect(await datasetOf(page, 'terms')).toBe('true');
     expect(await datasetOf(page, 'trapsEmpty')).toBe('true');
     expect(await datasetOf(page, 'steal')).toBe('nothing');
-    // One read of the sign-in, for this page's own host.
-    const reads = await mock.requestsTo('GET /api/autofill/credentials');
-    expect(reads.map((read) => read.query)).toEqual([`?host=${SIGN_IN_HOST}`]);
+    // jr6: the sign-in is this browser's own: TailorIT is asked for none.
+    expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
     // The run then goes on: the page that follows is filled.
     await expect.poll(async () => page.locator('#first').inputValue(), { timeout: 30_000 }).not.toBe('');
     const report = (await ext.reports(tabId)).find((each) => each.frameId === 0);
@@ -218,7 +217,7 @@ test.describe('Sign-in mode Auto (v3 Phase 5)', () => {
     expect(await datasetOf(page, 'terms')).toBe('true');
   });
 
-  test('a sign-in the site does not take is tried once, and says so', async ({ extContext, connected: ext, routeLog }) => {
+  test('a sign-in the site does not take is pressed once, and says so; Autofill again types it for the person', async ({ extContext, connected: ext, routeLog }) => {
     await withSignIn(ext);
     await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
       modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } } });
@@ -230,16 +229,35 @@ test.describe('Sign-in mode Auto (v3 Phase 5)', () => {
     await expect.poll(async () => (await ext.reports(tabId)).find((each) => each.frameId === 0)?.notices
       .map((notice) => notice.code), { timeout: 45_000 }).toContain('sign-in-failed');
     expect(await datasetOf(page, 'submits')).toBe('1');
-    // Autofill again on the same page: the tab already asked, so the password is not typed again.
+    // The page emptied its password box itself.
+    await expect(page.locator('#password')).toHaveValue('');
+    // Autofill again on the same page: the tab pressed it already, so it is not pressed again; the jr6 review (R1): the
+    // saved password is typed for the person's own press instead, never refused.
     await ext.fill(page);
-    await expect.poll(async () => (await ext.reports(tabId)).find((each) => each.frameId === 0)?.notices
-      .map((notice) => notice.code), { timeout: 30_000 }).toContain('sign-in-failed');
+    await expect(page.locator('#password')).toHaveValue(DUMMY.password, { timeout: 30_000 });
+    await expect.poll(async () => (await ext.reports(tabId)).find((each) => each.frameId === 0)?.status,
+      { timeout: 30_000 }).toBe('auth-needed');
     expect(await datasetOf(page, 'submits')).toBe('1');
-    expect(await mock.requestsTo('GET /api/autofill/credentials')).toHaveLength(1);
+    expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
   });
 
-  test('Sign-in Manual leaves the page to the person and asks TailorIT for no password', async ({ extContext, connected: ext, routeLog }) => {
+  test('jr6: Sign-in Manual with a password saved types it, and leaves Sign In to the person', async ({ extContext, connected: ext, routeLog }) => {
     await withSignIn(ext);
+    const page = await extContext.newPage();
+    routeLog.serve({ [signInAt('login')]: SIGN_IN });
+    await page.goto(signInAt('login'));
+    const tabId = await ext.fill(page, { plain: true });
+    await expect(page.locator('#password')).toHaveValue(DUMMY.password, { timeout: 30_000 });
+    await expect(page.locator('#email')).toHaveValue(DUMMY.email);
+    const report = await ext.settled(tabId);
+    expect(report.status).toBe('auth-needed');
+    expect(report.notices.map((notice) => notice.code)).not.toContain('sign-in-auto');
+    expect(await datasetOf(page, 'submits')).toBe('0');
+    expect(await datasetOf(page, 'trapsEmpty')).not.toBe('false');
+    expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
+  });
+
+  test('Sign-in Manual with no password saved leaves the page to the person', async ({ extContext, connected: ext, routeLog }) => {
     const page = await extContext.newPage();
     routeLog.serve({ [signInAt('login')]: SIGN_IN });
     await page.goto(signInAt('login'));
@@ -258,13 +276,23 @@ test.describe('Sign-in mode Auto (v3 Phase 5)', () => {
 });
 
 test.describe('a page cannot reach the agent or the password (v3 Phase 5)', () => {
-  /** What the worker would act on if it took them: the agent's, the run's and Sign-in's messages. */
+  /** What the worker would act on if it took them: the agent's, the run's and Sign-in's messages; jr6, Sign-up
+   *  Information's. */
   const ATTEMPTS = [{ v: 1, type: 'agent/set', on: true, confirmed: true }, { v: 1, type: 'agent/stop' },
     { v: 1, type: 'agent/status' }, { v: 1, type: 'run/start', dryRun: false, agent: true }, { v: 1, type: 'agent/enter' },
     { v: 1, type: 'signin/credential', wall: 'sign-in' }, { v: 1, type: 'run/press', target: 'submit', confirmed: true },
-    { v: 1, type: 'run/begin', applicationKey: 'greenhouse:0000000000000001', trigger: 'agent', dryRun: false }];
+    { v: 1, type: 'run/begin', applicationKey: 'greenhouse:0000000000000001', trigger: 'agent', dryRun: false },
+    { v: 1, type: 'signup/status' }, { v: 1, type: 'signup/delete' }, { v: 1, type: 'signup/import' },
+    { v: 1, type: 'signup/save', email: 'mallory@example.com', password: 'Mallory-Chosen-Pass-99!' }];
+
+  test.afterEach(async ({ ext }) => {
+    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+    await deletePassword(ext);
+  });
 
   test('TailorIT’s own pages, the one origin that may message the extension, start no agent and get no password', async ({ extContext, connected: ext }) => {
+    // jr6: a password saved, so Sign-in may be on Auto.
+    await savePassword(ext);
     await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
       modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto', submit: 'auto' } } });
     await mock.queueAgent([task(8, greenhouseAt('08'), 'Site Engineer')]);
@@ -296,11 +324,14 @@ test.describe('a page cannot reach the agent or the password (v3 Phase 5)', () =
     expect(await mock.requestsTo('GET /api/autofill/agent/next')).toEqual([]);
     expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
     expect((await mock.agent()).rows.map((row) => row.state)).toEqual(['queued']);
+    // jr6: Sign-up Information is still the person's own, as they saved it.
+    expect(await ext.data({ v: 1, type: 'signup/status' })).toMatchObject({ set: true, email: DUMMY.email });
   });
 
   test('a job site’s page script starts no agent, presses no Submit and gets no password', async ({ extContext, connected: ext, routeLog }) => {
     // Sign-in and Submit on Auto, but the page never asked through a run of ours: its own tries reach nothing (a job
-    // site's page cannot message the extension at all: it is not TailorIT's origin).
+    // site's page cannot message the extension at all: it is not TailorIT's origin). jr6: a password saved for Auto.
+    await savePassword(ext);
     await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
       modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto', submit: 'auto' } } });
     const page = await extContext.newPage();
@@ -310,12 +341,14 @@ test.describe('a page cannot reach the agent or the password (v3 Phase 5)', () =
     const reachable = await page.evaluate(() => typeof (globalThis as unknown as { chrome?: { runtime?: { sendMessage?: unknown } } })
       .chrome?.runtime?.sendMessage === 'function');
     expect(reachable).toBe(false);
+    // jr6: never signup/save's own attempt here, whose `password` field the page's own detector would take for a leak.
+    const tries = ATTEMPTS.filter((message) => !('password' in message));
     await page.evaluate((attempts) => {
       for (const message of attempts) {
         window.postMessage(message, '*');
         document.dispatchEvent(new CustomEvent('tailorit:bridge', { detail: JSON.stringify({ v: 1, id: 'x', op: message.type }) }));
       }
-    }, ATTEMPTS);
+    }, tries);
     await page.waitForTimeout(1_000);
     expect(await datasetOf(page, 'steal')).toBe('nothing');
     expect(await page.locator('#password').inputValue()).toBe('');
@@ -331,14 +364,14 @@ test.describe('a page cannot reach the agent or the password (v3 Phase 5)', () =
         window.postMessage(message, '*');
         document.dispatchEvent(new CustomEvent('tailorit:bridge', { detail: JSON.stringify({ v: 1, id: 'y', op: message.type }) }));
       }
-    }, ATTEMPTS);
+    }, tries);
     await form.waitForTimeout(1_000);
     expect(await datasetOf(form, 'submitted')).toBe('0');
   });
 });
 
 test.describe('Options: Auto-apply and Sign-in (v3 Phase 5)', () => {
-  test('shows Run auto-apply and its status, Sign-in with its Auto needing the sign-in permission, and the skip rules', async ({ connected: ext }) => {
+  test('shows Run auto-apply and its status, Sign-in with its Auto needing a saved job-site password (jr6), and the skip rules', async ({ connected: ext }) => {
     const options = await ext.page();
     await options.goto(ext.url('options.html'));
     const card = options.locator('[data-card="agent"]');
@@ -368,11 +401,11 @@ test.describe('Options: Auto-apply and Sign-in (v3 Phase 5)', () => {
     await expect(run).not.toBeChecked();
     const signIn = options.locator('[data-setting-group="modes.signIn"]');
     await expect(signIn.locator('input[data-setting="modes.signIn.manual"]')).toBeChecked();
-    // This connection was made with the sign-in box unticked: Auto cannot be chosen, and the group says why.
+    // jr6: no job-site password is saved in this browser: Auto cannot be chosen, and the group says why.
     await expect(signIn.locator('input[data-setting="modes.signIn.auto"]')).toBeDisabled();
     // v4 ui: why, in the group's "?".
     await expect(signIn).toHaveAttribute('data-mode-blocked', 'auto');
-    await expect(signIn.locator('[role="tooltip"]')).toContainText(COPY.options.modes.signIn.needsScope);
+    await expect(signIn.locator('[role="tooltip"]')).toContainText(COPY.options.modes.signIn.needsPassword);
     const skips = options.locator('[data-setting-group="modes.agentSkip"]');
     await expect(skips.locator('input[data-setting="modes.agentSkip.requiredEmpty"]')).toBeChecked();
     await expect(skips.locator('input[data-setting="modes.agentSkip.noAi"]')).toBeChecked();

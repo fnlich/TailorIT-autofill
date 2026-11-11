@@ -1,16 +1,20 @@
 /*
  * v3 Phase 6 end to end: Sign-in mode Auto on a Workday tenant's account views (fixtures/synthetic/workday/account.html,
- * drawn with the markup of the public capture of 2026-11-04/05), against the mock's saved sign-in for that host and a
- * synthetic credential (nothing real is ever submitted: the page posts nothing, and routes.ts fails a test that reaches
- * /__submitted or any address it does not serve):
+ * drawn with the markup of the public capture of 2026-11-04/05), with a synthetic job-site sign-in saved in this
+ * browser's Sign-up Information (jr6: never TailorIT's, which is asked nothing; nothing real is ever submitted: the page
+ * posts nothing, and routes.ts fails a test that reaches /__submitted or any address it does not serve):
+ * - jr6: the password set on the options page (Sign-up Information), then Sign up & Autofill on Create Account: the email,
+ *   the password twice, the terms, Create Account pressed; no log line and no request holds the password;
  * - from the landing, Sign-in Auto presses "Sign in with email" (its prelude), types the email and the password into
  *   Workday's form, which has no method and no action, presses the visible click_filter (never the aria-hidden button
  *   under it), never types into the beecatcher honeypot, and keeps the browser from sending the form itself as a GET
  *   while it watches; the run then fills the step that follows in the same flow page;
  * - on Create Account it types the password twice and ticks the account's own terms box, which the page marks required
  *   nowhere;
- * - Forgot Password is the person's: the run pauses there, types nothing and asks TailorIT for nothing, Auto or not;
- * - with Sign-in on Manual the landing is the person's, and nothing is asked.
+ * - Forgot Password is the person's: the run pauses there, types nothing and asks for nothing, Auto or not;
+ * - jr6: with Sign-in on Manual and a password saved, "Sign in with email" is pressed and the email and the password
+ *   typed, Sign In left to the person, whose own press then never lets the browser send the form as a GET (the jr6
+ *   review's sec-1); with none saved the landing is the person's, and nothing is asked.
  * The application's steps (the owner's signed-in snapshots of 2026-11-06; fixtures/synthetic/workday/steps.html, drawn
  * with their markup), Next on Auto:
  * - My Information: the Country dropdown chosen through its own list (its button's click, then the option's), the names
@@ -27,29 +31,27 @@ import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import { expect, test } from '../fixtures.ts';
 import type { Extension } from '../helpers/extension.ts';
 import { mock } from '../helpers/mock.ts';
-import { pairThroughConnectPage } from '../helpers/pairing.ts';
+import { deletePassword, savePassword, SIGNUP_DUMMY } from '../helpers/signup.ts';
 import { runAt } from '../helpers/wizard.ts';
 
 const ACCOUNT_PAGE = 'fixtures/synthetic/workday/account.html';
 const HOST = 'tailoritfixture.wd5.myworkdayjobs.com';
 const ACCOUNT = `https://${HOST}/en-US/careers/job/x/Fixture-Engineer_JR-0000001/apply/applyManually`;
-/** The sign-in the mock holds for the tenant's host: the fixture's own dummies. */
-const DUMMY = { host: HOST, email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real' };
+/** The sign-in saved in Sign-up Information: the fixture's own dummies. */
+const DUMMY = SIGNUP_DUMMY;
 
 const datasetOf = (page: Page, key: string) => page.evaluate((name) => document.body.dataset[name] ?? null, key);
 
-/** Connects again with the sign-in box ticked (credentials:read), the mock holding the dummies' sign-in. */
+/** jr6: the dummies saved in this browser's Sign-up Information, and Sign-in on `mode`. */
 async function withSignIn(ext: Extension, mode: 'auto' | 'manual' = 'auto'): Promise<void> {
-  const page = await pairThroughConnectPage(ext, { allowSignIn: true });
-  await page.close();
-  await expect.poll(async () => (await ext.authStatus()).scopes).toContain('credentials:read');
-  await mock.credentials([DUMMY]);
+  await savePassword(ext);
   await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
     modes: { ...DEFAULT_SETTINGS.modes, signIn: mode } } });
 }
 
 test.afterEach(async ({ ext }) => {
   await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+  await deletePassword(ext);
   await ext.send({ v: 1, type: 'auth/disconnect' });
 });
 
@@ -65,9 +67,8 @@ test.describe('Sign-in mode Auto on Workday (v3 Phase 6)', () => {
     expect(await datasetOf(page, 'passwordOk')).toBe('true');
     expect(await datasetOf(page, 'beeEmpty')).toBe('true');
     await expect.poll(() => datasetOf(page, 'nativeGet')).toBe('prevented');
-    // One read of the sign-in, for this page's own host.
-    const reads = await mock.requestsTo('GET /api/autofill/credentials');
-    expect(reads.map((read) => read.query)).toEqual([`?host=${HOST}`]);
+    // jr6: the sign-in is this browser's own: TailorIT is asked for none.
+    expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
     // The run goes on: the step that follows in the same flow page is filled.
     await expect.poll(async () => page.locator('#first').inputValue(), { timeout: 30_000 }).not.toBe('');
     const report = (await ext.reports(tabId)).find((each) => each.frameId === 0);
@@ -79,13 +80,61 @@ test.describe('Sign-in mode Auto on Workday (v3 Phase 6)', () => {
     expect(routeLog.submitted).toEqual([]);
   });
 
-  test('creates the account: the password twice, and the account’s own terms box ticked', async ({ extContext, connected: ext, routeLog }) => {
-    await withSignIn(ext);
+  test('jr6: the password set in Options; Sign up & Autofill on Create Account types it twice, ticks the terms and presses; no log line and no request holds it', async ({ extContext, connected: ext, routeLog, logs }) => {
+    // Options › Sign-up Information, as the person fills it: the email, the password, the rules met, Save.
+    const options = await ext.page();
+    await options.goto(ext.url('options.html#settings-signup'));
+    const card = options.locator('[data-card="signup"]');
+    await expect(card.locator('[data-signup]')).toHaveAttribute('data-signup-state', 'not-set');
+    await card.locator('input[data-signup-email]').fill(DUMMY.email);
+    await card.locator('input[data-signup-password]').fill(DUMMY.password);
+    await expect(card.locator('[data-signup-rules] li[data-met="false"]')).toHaveCount(0);
+    await card.locator('button[data-action="signup-save"]').click();
+    await expect(card.locator('[data-signup]')).toHaveAttribute('data-signup-state', 'set');
+    await expect(card.locator('input[data-signup-password]')).toHaveValue('');
+    // Sign-in stays on Manual: the side panel's Sign up & Autofill is what presses here.
     const page = await extContext.newPage();
     const url = `${ACCOUNT}?view=create`;
     routeLog.serve({ [url]: ACCOUNT_PAGE });
     await page.goto(url);
     await ext.fill(page);
+    await expect.poll(() => datasetOf(page, 'submits'), { timeout: 30_000 }).toBe('1');
+    expect(await datasetOf(page, 'emailOk')).toBe('true');
+    expect(await datasetOf(page, 'passwordOk')).toBe('true');
+    expect(await datasetOf(page, 'confirmOk')).toBe('true');
+    expect(await datasetOf(page, 'terms')).toBe('true');
+    expect(await datasetOf(page, 'beeEmpty')).toBe('true');
+    await expect.poll(() => datasetOf(page, 'nativeGet')).toBe('prevented');
+    expect(routeLog.unexpected).toEqual([]);
+    // Nothing secret in a log line (the pages', the content scripts', the worker's, the extension pages'), in a request
+    // to TailorIT, or stored in the clear.
+    const secretForms = [DUMMY.password, encodeURIComponent(DUMMY.password), Buffer.from(DUMMY.password).toString('base64')];
+    const logged = JSON.stringify(logs());
+    for (const form of secretForms) expect(logged).not.toContain(form);
+    const requests = await mock.requests();
+    expect(requests.length).toBeGreaterThan(0);
+    const decoded = (text: string) => {
+      try {
+        return decodeURIComponent(text);
+      } catch {
+        return text;
+      }
+    };
+    for (const request of requests) {
+      const sent = JSON.stringify([request.path, request.query, decoded(request.query), request.headers, request.body]);
+      for (const form of secretForms) expect(sent, request.path).not.toContain(form);
+    }
+    expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
+    expect(JSON.stringify(await ext.storage())).not.toContain(DUMMY.password);
+  });
+
+  test('creates the account on Auto: the password twice, and the account’s own terms box ticked', async ({ extContext, connected: ext, routeLog }) => {
+    await withSignIn(ext);
+    const page = await extContext.newPage();
+    const url = `${ACCOUNT}?view=create`;
+    routeLog.serve({ [url]: ACCOUNT_PAGE });
+    await page.goto(url);
+    await ext.fill(page, { plain: true });
     await expect.poll(() => datasetOf(page, 'submits'), { timeout: 30_000 }).toBe('1');
     expect(await datasetOf(page, 'emailOk')).toBe('true');
     expect(await datasetOf(page, 'passwordOk')).toBe('true');
@@ -111,13 +160,38 @@ test.describe('Sign-in mode Auto on Workday (v3 Phase 6)', () => {
     expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
   });
 
-  test('with Sign-in on Manual leaves the landing to the person and asks TailorIT for no password', async ({ extContext, connected: ext, routeLog }) => {
+  test('jr6: with Sign-in on Manual and a password saved, types the sign-in and leaves Sign In to the person', async ({ extContext, connected: ext, routeLog }) => {
     await withSignIn(ext, 'manual');
     const page = await extContext.newPage();
     routeLog.serve({ [ACCOUNT]: ACCOUNT_PAGE });
     await page.goto(ACCOUNT);
     // A plain Autofill (the page's own launcher's): at this wall the side panel's button is Sign up & Autofill, which
     // would grant Sign-in Auto for the run (v4).
+    const tabId = await ext.fill(page, { plain: true });
+    // "Sign in with email" (no submission) shows the form, which gets the email and the password; Sign In is the person's.
+    await expect(page.locator('input[data-automation-id="password"]')).toHaveValue(DUMMY.password, { timeout: 30_000 });
+    await expect(page.locator('input[data-automation-id="email"]')).toHaveValue(DUMMY.email);
+    const report = await ext.settled(tabId);
+    expect(report.status).toBe('auth-needed');
+    expect(report.notices.map((notice) => notice.code)).not.toContain('sign-in-auto');
+    expect(await datasetOf(page, 'submits')).toBe('0');
+    expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
+    // The jr6 review (sec-1): the person's own press of Sign In, whose page script then clicks the hidden submit button,
+    // never lets the browser send the form (no method, no action: a GET with the password in the address).
+    await page.locator('[data-automation-id="click_filter"]').click();
+    await expect.poll(() => datasetOf(page, 'submits')).toBe('1');
+    expect(await datasetOf(page, 'passwordOk')).toBe('true');
+    await expect.poll(() => datasetOf(page, 'nativeGet')).toBe('prevented');
+    expect(page.url()).toBe(ACCOUNT);
+    expect(routeLog.unexpected).toEqual([]);
+    expect(routeLog.submitted).toEqual([]);
+  });
+
+  test('with Sign-in on Manual and no password saved leaves the landing to the person and asks for nothing', async ({ extContext, connected: ext, routeLog }) => {
+    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+    const page = await extContext.newPage();
+    routeLog.serve({ [ACCOUNT]: ACCOUNT_PAGE });
+    await page.goto(ACCOUNT);
     const tabId = await ext.fill(page, { plain: true });
     const report = await ext.settled(tabId);
     expect(report.status).toBe('auth-needed');

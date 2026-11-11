@@ -393,19 +393,20 @@ describe('Options › Auto-apply and Sign-in (v3 Phase 5)', () => {
     expect(card.querySelector('[data-agent-blocked]')?.textContent).toBe(TEXT.agent.blocked['no-scope']);
   });
 
-  it('offers Sign-in’s Auto only with credentials:read and the disclosure acknowledged, saying how otherwise', async () => {
+  it('offers Sign-in’s Auto only with a job-site password saved (jr6) and the disclosure acknowledged, saying how otherwise', async () => {
     const worker = createFakeWorker();
-    worker.script.auth = authStatus({ scopes: ['profile:read', 'agent:run'] });
+    // A connection holding credentials:read no longer counts (jr6): the password is this browser's Sign-up Information.
+    worker.script.auth = authStatus({ scopes: ['profile:read', 'agent:run', 'credentials:read'], signUp: 'not-set' });
     const root = await open(worker);
     expect(setting(root, 'modes.signIn.manual').checked).toBe(true);
     expect(setting(root, 'modes.signIn.auto').disabled).toBe(true);
     // v4 ui: why, in the group's "?".
     const group = root.querySelector<HTMLElement>('[data-setting-group="modes.signIn"]')!;
     expect(group.dataset.modeBlocked).toBe('auto');
-    expect(group.querySelector('[role="tooltip"]')?.textContent).toBe(`${TEXT.modes.signIn.help} ${TEXT.modes.signIn.needsScope}`);
+    expect(group.querySelector('[role="tooltip"]')?.textContent).toBe(`${TEXT.modes.signIn.help} ${TEXT.modes.signIn.needsPassword}`);
     unmountAll();
     const allowed = createFakeWorker();
-    allowed.script.auth = authStatus({ scopes: ['profile:read', 'agent:run', 'credentials:read'] });
+    allowed.script.auth = authStatus({ scopes: ['profile:read', 'agent:run'], signUp: 'set' });
     const again = await open(allowed);
     expect(setting(again, 'modes.signIn.auto').disabled).toBe(false);
     const open_ = again.querySelector<HTMLElement>('[data-setting-group="modes.signIn"]')!;

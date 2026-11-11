@@ -1,0 +1,75 @@
+<!doctype html>
+<!-- TailorIT synthetic fixture (jr6 apply F2, APPLYPLAN §5 F2 tests and e2e/specs/68-apply-in-place.spec.ts): a job
+     posting, served at a Lever posting's address, whose own script draws its Apply link late (body data-apply-delay,
+     in ms; 3 s by default) and, when the Apply is pressed, draws the application form in place (data-form-delay, in ms;
+     500 by default) at the same address, in the same document: the shapes the audits measured (Workday's Apply drawn
+     6 to 11 s after load; ADP's guest form drawn in place: apply-flow.md AF-2, AF-4). The Apply is a link to the
+     posting's own /apply, which the page's script keeps from loading. The form is Lever's markup (form#application-form,
+     li.application-question). A search box in the header is a control the generic adapter would take: only the
+     address's own adapter may claim what the press brings. Every name and word here is made up; nothing of a capture. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Synthetic Co - Platform Engineer</title>
+  <style>
+    body { font: 14px/1.4 sans-serif; margin: 0; }
+    .posting-page { padding: 16px 24px; max-width: 760px; }
+    .postings-btn { display: inline-block; padding: 8px 16px; border: 1px solid #333; border-radius: 4px; }
+    .application-question { list-style: none; margin: 10px 0; }
+    .application-label { font-weight: bold; }
+    .application-field input { width: 320px; padding: 4px; }
+  </style>
+</head>
+<body data-apply-delay="3000" data-form-delay="500">
+  <header class="main-header"><label for="search">Search jobs</label> <input id="search" type="search"></header>
+  <div class="posting-page">
+    <h2>Platform Engineer</h2>
+    <div class="posting-categories">Remote · Engineering · Full-time</div>
+    <div class="section page-centered"><p>We build the platform our teams ship on. You will design services, keep them
+      reliable and help others use them well.</p></div>
+    <div id="apply-slot"></div>
+    <div id="form-slot"></div>
+  </div>
+  <template id="form-template">
+    <form id="application-form" action="/__submitted" method="post">
+      <div class="section page-centered application-form">
+        <h4>Submit your application</h4>
+        <ul>
+          <li class="application-question"><label><div class="application-label">Full name</div>
+            <div class="application-field"><input type="text" name="name" autocomplete="name"></div></label></li>
+          <li class="application-question"><label><div class="application-label">Email</div>
+            <div class="application-field"><input type="email" name="email" autocomplete="email"></div></label></li>
+          <li class="application-question"><label><div class="application-label">Phone</div>
+            <div class="application-field"><input type="text" name="phone" autocomplete="tel"></div></label></li>
+        </ul>
+      </div>
+      <button id="btn-submit" type="submit">Submit application</button>
+    </form>
+  </template>
+  <script>
+    (function () {
+      var posting = 'https://jobs.lever.co/tailorit-fixture/0a6e1c52-5b1f-4e2a-9c43-7d1f2a3b4c5d';
+      var body = document.body;
+      window.applyPressed = 0;
+      window.formDrawn = 0;
+      setTimeout(function () {
+        var link = document.createElement('a');
+        link.className = 'postings-btn';
+        link.id = 'apply';
+        link.href = posting + '/apply';
+        link.textContent = 'Apply for this job';
+        link.addEventListener('click', function (event) {
+          event.preventDefault();
+          window.applyPressed += 1;
+          setTimeout(function () {
+            if (document.getElementById('application-form') !== null) return;
+            document.getElementById('form-slot').append(document.getElementById('form-template').content.cloneNode(true));
+            window.formDrawn += 1;
+          }, Number(body.getAttribute('data-form-delay')));
+        });
+        document.getElementById('apply-slot').append(link);
+      }, Number(body.getAttribute('data-apply-delay')));
+    })();
+  </script>
+</body>
+</html>

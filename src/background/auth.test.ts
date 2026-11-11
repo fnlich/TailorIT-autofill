@@ -257,6 +257,8 @@ describe('the connection', () => {
         versionMismatch: true,
         pairingExpiresAt: worker.clock.now + PAIRING_TTL_MS,
         disclosure: 'current',
+        // jr6: whether a job-site password is saved in this browser (a word, never the password).
+        signUp: 'not-set',
       },
     });
   });
