@@ -93,7 +93,7 @@ import { tripwireHits } from '../guard/tripwire';
 import { guardWrite, type GuardContext, type WriteSubject } from '../guard/write';
 import { cacheEntryFor } from '../matcher/cache';
 import { noMatch, matchOne } from '../matcher/cascade';
-import { matchPlace } from '../matcher/place';
+import { matchPlace, matchStreet } from '../matcher/place';
 import { completeTiebreak } from '../matcher/tiebreak';
 import { dialCodeOf } from '../matcher/dialCode';
 import { prepareOptions } from '../matcher/prepare';
@@ -348,6 +348,11 @@ function matchValue(input: MatchInput, ctx: FieldPlanContext): Match | 'waiting'
  *  so a location search's "Austin, Texas, United States" is the person's "Austin, TX". The text stages' answer stands
  *  when the places give none either, unless they found several (ambiguous-options). */
 function orPlace(match: Match, choice: Choice, options: PreparedOptions, ctx: FieldPlanContext): Match {
+  // jr6 RULES R3 (O2): an address line's or a postal code's results, read by what they start with (Choice.street).
+  if (match.stage === 'none' && choice.street !== undefined) {
+    const street = matchStreet(choice.street, options);
+    if (street.stage !== 'none' || street.reason === 'ambiguous-options') return street;
+  }
   if (match.stage !== 'none' || choice.place === undefined) return match;
   const placed = matchPlace(choice.place, options, ctx.input.vocab);
   return placed.stage !== 'none' || placed.reason === 'ambiguous-options' ? placed : match;
@@ -1010,6 +1015,35 @@ function referralDetailAfterSource(classified: ReadonlyArray<{ spec: FieldSpec; 
       rule: 'label.referral-detail', reason: 'ok', matchedOn: 'label' } } } : field));
 }
 
+/** jr6 RULES R3 (U-11): a box labelled with the word "Middle" alone. */
+const MIDDLE_ALONE = /^middle$/;
+/** jr6 RULES R3 (U-11): how far, in the section's order, the first and last names may sit from it. */
+const NAME_REACH = 2;
+
+/**
+ * jr6 RULES R3 (U-11: UltiPro's "First", "Middle", "Last" name boxes, fixtures/ultipro/application and resume-review): a
+ * text box labelled "Middle" alone, that the rules read as nothing certain, with a first name and a last name within
+ * NAME_REACH fields of it in its section (in the page's order), is the middle name (identity.middleName). Every other
+ * classification stands.
+ */
+function middleBesideNames(classified: ReadonlyArray<{ spec: FieldSpec; classification: FieldClassification }>):
+  Array<{ spec: FieldSpec; classification: FieldClassification }> {
+  const ordered = [...classified].sort((a, b) => a.spec.domOrder - b.spec.domOrder);
+  const middle = new Set<FieldSpec>();
+  ordered.forEach(({ spec, classification }, at) => {
+    if (spec.kind !== 'text' || !MIDDLE_ALONE.test(normalize(spec.label, 'label').key)) return;
+    const category = categoryOf(classification);
+    if (classification.by !== 'none' && category !== 'unknown' && category !== 'screening.other') return;
+    const near = ordered.slice(Math.max(0, at - NAME_REACH), at + NAME_REACH + 1)
+      .filter((field) => field.spec !== spec && sectionKey(field.spec.section) === sectionKey(spec.section))
+      .map((field) => categoryOf(field.classification));
+    if (near.includes('identity.firstName') && near.includes('identity.lastName')) middle.add(spec);
+  });
+  return classified.map((field) => (middle.has(field.spec) ? { ...field, classification: { by: 'rules',
+    rules: { category: 'identity.middleName', confidence: LABEL_RULE_CONFIDENCE.normal, classifiedBy: 'label-rule',
+      rule: 'label.middle-beside-names', reason: 'ok', matchedOn: 'label' } } } : field));
+}
+
 /**
  * s2 core-gh review (C7): a whole-address box ("Current address", "Primary Residence Address": label.full-address) is
  * the street's (address.line1) where its section has its own city or postal-code box: the form asks the rest there.
@@ -1196,9 +1230,10 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const sections = repeatables.length > 0 ? { repeatables } : {};
   // Every spec is read across the frame; only the planned ones are resolved, written and rowed.
   const wanted = input.planKeys === undefined ? null : new Set<string>(input.planKeys);
-  // jr6 RULES R3 (ICIMS-19): a "Please specify" list right after a referral source is its detail.
-  const classified = referralDetailAfterSource(streetWhereSplit(input.specs.map((spec) => ({ spec,
-    classification: classifyField(spec, input.vocab) }))));
+  // jr6 RULES R3 (ICIMS-19): a "Please specify" list right after a referral source is its detail; (U-11) a "Middle" box
+  // between the first and last names is the middle name.
+  const classified = middleBesideNames(referralDetailAfterSource(streetWhereSplit(input.specs.map((spec) => ({ spec,
+    classification: classifyField(spec, input.vocab) })))));
   // A phone number is written without its country code when the section has its own control for the code.
   const phoneCountrySections = new Set(classified
     .filter((field) => categoryOf(field.classification) === 'contact.phoneCountry')

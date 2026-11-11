@@ -218,6 +218,26 @@ const STREET_HINT =
 /** The normalized label that is the word Address alone. */
 const ADDRESS_ALONE = /^\s*address\s*$/;
 
+/** jr6 RULES R3 (SR-9: SmartRecruiters' drop zone restriction "Supported files: DOC, DOT, RMR, RSM, RESUME, OXPS, PDF,
+ *  … (10MB size limit)" as the field's help, fixtures/smartrecruiters/xplor-screening, where "RESUME" is a file type): a
+ *  run of three or more comma-separated single words. */
+const WORD_RUN = /(?:\.?[A-Za-z0-9_]{1,16}[ \t]*,[ \t]*){2,}\.?[A-Za-z0-9_]{1,16}/g;
+/** File types as upload widgets list them (public extension names). */
+const FILE_TYPES: ReadonlySet<string> = new Set(['pdf', 'doc', 'docx', 'dot', 'dotx', 'rtf', 'txt', 'text', 'odt',
+  'ods', 'odp', 'pages', 'gdoc', 'gslides', 'xls', 'xlsx', 'xlsm', 'csv', 'ppt', 'pptx', 'ppsx', 'pps', 'jpg', 'jpeg',
+  'jfif', 'png', 'gif', 'bmp', 'tif', 'tiff', 'webp', 'heic', 'svg', 'html', 'htm', 'zip', 'md', 'wpd', 'wps', 'pub',
+  'msg', 'eml', 'mp3', 'mp4', 'mov', 'wav', 'm4a', 'psd', 'ai', 'key', 'numbers', 'json', 'xml', 'ics', 'ical',
+  'icalendar', 'ifb', 'vcf', 'sxw', 'abw', 'oxps', 'xps', 'p7s', 'rmr', 'rsm', 'resume']);
+
+/** jr6 RULES R3 (SR-9): help text without its runs of file types (WORD_RUN, at least half of its words known file
+ *  types), which name no document the field asks for. */
+export function withoutFileTypes(text: string): string {
+  return text.replace(WORD_RUN, (run) => {
+    const words = run.split(',').map((word) => word.trim().replace(/^\./, '').toLowerCase());
+    return words.filter((word) => FILE_TYPES.has(word)).length * 2 >= words.length ? ' ' : run;
+  });
+}
+
 /**
  * The label rules over the normalized label; when nothing matches it and the field has a description, over the
  * normalized label and description together (§8.3's "plus the description for long questions"). A consent label also
@@ -228,7 +248,8 @@ const ADDRESS_ALONE = /^\s*address\s*$/;
  */
 function labelRuleVote(spec: FieldSpec, label: string, context: LabelContext): RuleVote | null {
   const section = sectionKindOf(spec.section.id);
-  const description = ruleText(normalizeLabel(spec.description));
+  // jr6 RULES R3 (SR-9): a list of file types in the help text names no document.
+  const description = ruleText(normalizeLabel(withoutFileTypes(spec.description)));
   const onLabel = matchLabelRules(label, section, spec.kind, context);
   if (onLabel !== null && onLabel.rule === 'label.address1' && ADDRESS_ALONE.test(label)
     && !STREET_HINT.test(spec.label.toLowerCase()) && PLACE_HINT.test(description) && !STREET_HINT.test(description)
@@ -242,6 +263,9 @@ function labelRuleVote(spec: FieldSpec, label: string, context: LabelContext): R
   const { questions: _questions, ...withDescription } = context;
   const onBoth = matchLabelRules(both, section, spec.kind, withDescription);
   if (onBoth === null) return null;
+  // jr6 RULES R3 (smartrecruiters-new-2): help text alone never makes an upload the résumé's ("Additional attachments",
+  // "Portfolio", "Writing sample" over SmartRecruiters' restriction text): only its own label does.
+  if (onBoth.category === 'file.resume') return null;
   const closed = CLOSED_FROM_DESCRIPTION.includes(policyClassOf(onBoth.category));
   return labelVote(closed && onBoth.needsUser === undefined ? { ...onBoth, needsUser: 'description-only' } : onBoth,
     'description');
@@ -283,6 +307,13 @@ function otherPersonNamedBy(spec: FieldSpec, label: string): RuleClassifier | nu
  *  label, its section or its name and id: an AI answer never fills one (plan/answers.ts, the Phase E review, M2). */
 export function namesAnotherPerson(spec: FieldSpec): boolean {
   return otherPersonNamedBy(spec, ruleText(normalize(spec.label, 'label').key)) !== null;
+}
+
+/** jr6 RULES R3 (jazzhr-new-1): whether a field's own words (its label or its section's) name someone other than the
+ *  applicant (a referee, an emergency contact): its name and id alone do not ("hiring-manager-message-input", the
+ *  message box SmartRecruiters addresses to the hiring manager, fixtures/smartrecruiters/xplor-one-click). */
+export function wordsNameAnotherPerson(spec: FieldSpec): boolean {
+  return otherPersonNamedBy(spec, ruleText(normalize(spec.label, 'label').key)) === 'label-rule';
 }
 
 /** Whether a field's own words state "I did not use AI" (labelRules attestsNoAiUse): its normalized label with its

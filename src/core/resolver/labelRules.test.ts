@@ -442,8 +442,9 @@ function deadCharacters(source: string): string[] {
 describe('the patterns over normalized labels', () => {
   /** The patterns that read text before normalization: the raw label ("Why Acme?"), attribute text, section ids, and
    *  where a passage breaks into sentences before each is normalized (classifyRules SENTENCE_BREAK, the core pass of
-   *  2026-11-06). */
-  const RAW_TEXT = /WHY_NAME =|OTHER_PERSON_ID =|SENTENCE_BREAK =|\(\[a-z0-9\]\)\(\[A-Z\]\)/;
+   *  2026-11-06). jr6 RULES R3 (SR-9): a help text's run of file types, read before normalization (classifyRules
+   *  withoutFileTypes). */
+  const RAW_TEXT = /WHY_NAME =|OTHER_PERSON_ID =|SENTENCE_BREAK =|\(\[a-z0-9\]\)\(\[A-Z\]\)|WORD_RUN =|run\.split\(','\)/;
 
   it('need no character normalizeLabel always removes, but the one the design’s AI line still writes', () => {
     const dead = ['./labelRules.ts', './classifyRules.ts'].flatMap((file) => patternsIn(file))

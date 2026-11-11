@@ -62,6 +62,9 @@ export const FIELD_CATEGORIES = [
   // live in one (ICIMS-26, JV-16); N years of experience in something, and experience with something (JV-16).
   'screening.militaryTraining', 'address.type', 'referral.detail', 'preferences.timeZone', 'location.inTimeZone',
   'experience.yearsIn', 'skills.experienceWith',
+  // jr6 RULES R3 (FIXPLAN §6.3 items 49 to 61): whether the person lives or will work in a country a question names
+  // (JZ-11); a former, previous or maiden name, which the profile never holds (U-11).
+  'location.inCountry', 'identity.formerName',
   // jr6 RULES end
   'unknown',
 ] as const;
@@ -113,6 +116,9 @@ export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.
   // entries (JV-16); an employer the question names, compared with the profile's (WD-17: screening.previously-employed
   // as before).
   'legal.military-training', 'address.type-home', 'location.time-zone', 'experience.years-in', 'skills.experience-with',
+  // jr6 RULES R3 (FIXPLAN §6.3 items 49 to 61): yes or no to living or working in the country a question names, from the
+  // profile's address (JZ-11).
+  'location.in-country',
   // jr6 RULES end
 ] as const;
 export type RuleId = (typeof RULE_IDS)[number];

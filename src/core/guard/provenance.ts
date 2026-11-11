@@ -136,6 +136,8 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'location.time-zone': (category) => category === 'preferences.timeZone' || category === 'location.inTimeZone',
   'experience.years-in': (category) => category === 'experience.yearsIn',
   'skills.experience-with': (category) => category === 'skills.experienceWith',
+  // jr6 RULES R3 (JZ-11): living or working in a country, from the address.
+  'location.in-country': (category) => category === 'location.inCountry',
   // jr6 RULES end
 };
 

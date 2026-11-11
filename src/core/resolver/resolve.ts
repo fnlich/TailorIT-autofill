@@ -65,8 +65,8 @@ import { classifyByRules, consentChoice, consentChoiceOption, type RuleClassific
 import { dateIso, dateText, type DateParts } from './format';
 import { asksToAgree, EEO_DECLINE_BOX_RULE, statementPolarity, type NeedsUserCause } from './labelRules';
 import {
-  consentValue, eeoDeclineBoxValue, eeoDeclineDefault, eeoValue, legalValue, policyResidenceValue, residesInValue,
-  sensitiveGate, signatureDateValue,
+  consentValue, eeoDeclineBoxValue, eeoDeclineDefault, eeoValue, inCountryValue, legalValue, policyResidenceValue,
+  residesInValue, sensitiveGate, signatureDateValue,
 } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
 import { findDraftAnswer, findSubmittedAnswer } from './submitted';
@@ -357,7 +357,7 @@ function listSearchFor(spec: FieldSpec, candidate: Candidate, choice: Choice, vo
   const dial = candidate.text?.trim() ?? '';
   const showsDialCodes = DIAL_CODE_TEXT.test(dial) && spec.options.some((option) => dialCodeOf(option.label) !== null);
   return searchCandidates(choice.intended, vocab, choice.place,
-    { ...(showsDialCodes ? { dialCode: dial } : {}), ...searchKind(choice) });
+    { ...(showsDialCodes ? { dialCode: dial } : {}), ...searchKind(choice), ...postalSearch(candidate) });
 }
 
 // s2 core-wd: what else a search types.
@@ -374,7 +374,14 @@ function remoteSearchExtras(spec: FieldSpec, candidate: Candidate, choice: Choic
   const dial = candidate.text?.trim() ?? '';
   const phoneCountry = choice.domain === 'country' && candidate.origin.provenance === 'profile'
     && candidate.origin.path === 'contact.phone' && DIAL_CODE_TEXT.test(dial);
-  return { ...(phoneCountry && spec.kind === 'typeahead-remote' ? { dialCode: dial } : {}), ...searchKind(choice) };
+  return { ...(phoneCountry && spec.kind === 'typeahead-remote' ? { dialCode: dial } : {}), ...searchKind(choice),
+    ...postalSearch(candidate) };
+}
+
+/** jr6 RULES R3 (O2): a search for the profile's postal code types its five digits, then its first three. */
+function postalSearch(candidate: Candidate): SearchExtras {
+  return candidate.origin.provenance === 'profile' && candidate.origin.path === 'address.postalCode'
+    ? { postalCode: true } : {};
 }
 
 // end s2 core-wd
@@ -492,6 +499,8 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
       // jr6 RULES (JV-9, JV-17): a choice read from the list's own words and the profile's address.
       if (category === 'location.policyResidence') return policyResidenceValue(spec, profile, vocab);
       if (category === 'location.residesIn') return residesInValue(spec, profile, vocab);
+      // jr6 RULES R3 (JZ-11): living or working in a country the question names, from the address.
+      if (category === 'location.inCountry') return inCountryValue(spec, profile, vocab);
       // jr6 RULES R3 (ICIMS-21, JV-8, JZ-9): the state the person lives in, asked as a question.
       if (category === 'address.region' && RESIDENCE_STATE_RULES.has(rules.rule)) {
         return residenceStateValue(spec, rules.rule, profileValue(category, { spec, profile, vocab, now,

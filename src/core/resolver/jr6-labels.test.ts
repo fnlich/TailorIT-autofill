@@ -498,3 +498,126 @@ describe('jr6 RULES R3: the widened rules’ near misses', () => {
       rule: 'label.consent-signature' });
   });
 });
+
+// ── jr6 RULES R3 (FIXPLAN §6.3 items 49 to 61) ──────────────────────────────────────────────────────────────────────
+
+/** [item and finding, the field, the category it asks, the rule id]. */
+const LABELS_R3B: Array<[string, Case, FieldCategory, string]> = [
+  // 49. icims-new-3: GitHub's iCIMS "Preferred Last Name"; NinjaOne's Jobvite "Chosen Last Name", "Chosen First Name".
+  ['49 icims-new-3', { label: 'Preferred Last Name', kind: 'text' }, 'identity.lastName', 'label.last-name'],
+  ['49 icims-new-3', { label: 'Preferred Family Name', kind: 'text' }, 'identity.lastName', 'label.last-name'],
+  ['49 icims-new-3', { label: 'Preferred Surname', kind: 'text' }, 'identity.lastName', 'label.last-name'],
+  ['49 icims-new-3', { label: 'Chosen Last Name', kind: 'text' }, 'identity.lastName', 'label.last-name'],
+  ['49 icims-new-3', { label: 'Chosen First Name', kind: 'text' }, 'identity.preferredName', 'label.preferred-name'],
+  // 50. ADP-4: ADP's "State / Territory" (a text box until a country is chosen).
+  ['50 ADP-4', { label: 'State / Territory', kind: 'text' }, 'address.region', 'label.region'],
+  ['50 ADP-4', { label: 'State or Territory', kind: 'select' }, 'address.region', 'label.region'],
+  ['50 ADP-4', { label: 'Province or Territory', kind: 'select' }, 'address.region', 'label.region'],
+  ['50 ADP-4', { label: 'Territory', kind: 'text' }, 'address.region', 'label.region'],
+  // 51. ADP-7: ADP's "Select currency type"; Breezy's "Desired Salary currency".
+  ['51 ADP-7', { label: 'Select currency type', kind: 'combobox' }, 'salary.currency', 'label.currency'],
+  ['51 ADP-7', { label: 'Select currency type', kind: 'select',
+    options: ['United States Dollar ( USD )', 'Euro ( EUR )'] }, 'salary.currency', 'label.currency'],
+  ['51 ADP-7', { label: 'Desired Salary currency', kind: 'select' }, 'salary.currency', 'label.currency'],
+  ['51 ADP-7', { label: 'Currency', kind: 'text' }, 'salary.currency', 'label.currency'],
+  // 52. ADP-8, WD-27: how soon, when could the person start.
+  ['52 ADP-8', { label: 'If an offer is presented, how soon can you start?', kind: 'text' }, 'availability.startDate',
+    'label.availability'],
+  ['52 WD-27', { label: 'When could you start?', kind: 'date' }, 'availability.startDate', 'label.availability'],
+  ['52 WD-27', { label: 'When would you be able to start?', kind: 'text' }, 'availability.startDate',
+    'label.availability'],
+  // 53. JV-13: a current employee of the company named before the noun.
+  ['53 JV-13', { label: 'Are you a current NinjaOne Employee', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.previouslyEmployed', 'label.previously-employed'],
+  ['53 JV-13', { label: 'Are you a current Full-Time GitHub employee?', kind: 'select', options: ['Yes', 'No'] },
+    'screening.previouslyEmployed', 'label.previously-employed'],
+  // 54. JZ-11: living or working inside a country.
+  ['54 JZ-11', { label: 'Will you be working from inside the United States?', kind: 'select', options: ['Yes', 'No'] },
+    'location.inCountry', 'label.in-country'],
+  ['54 JZ-11', { label: 'Are you able to work remotely from a state within the United States?', kind: 'checkbox-group',
+    options: ['Yes', 'No'] }, 'location.inCountry', 'label.in-country'],
+  ['54 JZ-11', { label: 'Do you currently reside in the United States?', kind: 'radio', options: ['Yes', 'No'] },
+    'location.inCountry', 'label.in-country'],
+  ['54 JZ-11', { label: 'Are you currently located in the United States or Canada?', kind: 'combobox',
+    options: ['Yes', 'No'] }, 'location.inCountry', 'label.in-country'],
+  // 55. SR-7: how the person first heard.
+  ['55 SR-7', { label: 'How did you first hear about this opportunity?', kind: 'combobox' }, 'referral.source',
+    'label.referral-source'],
+  ['55 SR-7', { label: 'How did you first learn about Affirm as an employer?', kind: 'combobox' }, 'referral.source',
+    'label.referral-source'],
+  // 56. SR-9: the résumé by its own label, whatever the help text lists.
+  ['56 SR-9', { label: 'Resume', kind: 'file' }, 'file.resume', 'label.resume'],
+  // 58. U-11: UltiPro's "Former Name"; "Where are you currently located?" as a box of prose.
+  ['58 U-11', { label: 'Former Name', kind: 'text' }, 'identity.formerName', 'label.former-name'],
+  ['58 U-11', { label: 'Maiden Name', kind: 'text' }, 'identity.formerName', 'label.former-name'],
+  ['58 U-11', { label: 'Previous Last Name(s)', kind: 'text' }, 'identity.formerName', 'label.former-name'],
+  ['58 U-11', { label: 'Where are you currently located?', kind: 'textarea' }, 'location.current', 'label.location'],
+  // 60. adp-new-2: a civilian employee at a government agency.
+  ['60 adp-new-2', { label: 'Have you ever been employed as a civilian employee at a government agency?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'screening.governmentService', 'label.government-service'],
+  // 61. O2: Oracle's ZIP Code, a search or a list.
+  ['61 O2', { label: 'ZIP Code', kind: 'combobox' }, 'address.postalCode', 'label.postal'],
+  ['61 O2', { label: 'ZIP Code', kind: 'typeahead-remote' }, 'address.postalCode', 'label.postal'],
+];
+
+describe('jr6 RULES R3 (items 49 to 61): the audits’ labels', () => {
+  it.each(LABELS_R3B)('%s: %j', (_item, field, category, rule) => {
+    expect(read(field)).toMatchObject({ category, rule, needsUser: null });
+  });
+});
+
+/** [item and finding, the field, what it must not be read as]: near misses of the items 49 to 61 rules. */
+const NEAR_MISSES_R3B: Array<[string, Case, FieldCategory]> = [
+  // 49: a preferred something else.
+  ['49', { label: 'Preferred Location (In Office)', kind: 'select' }, 'identity.lastName'],
+  ['49', { label: 'Preferred Contact Method', kind: 'select' }, 'identity.lastName'],
+  // 50: a sales territory.
+  ['50', { label: 'Which sales territory have you managed?', kind: 'text' }, 'address.region'],
+  ['50', { label: 'Territory manager experience', kind: 'textarea' }, 'address.region'],
+  // 51: a currency as a field of work, or asked yes or no.
+  ['51', { label: 'Currency trading experience in years', kind: 'text' }, 'salary.currency'],
+  ['51', { label: 'Are you comfortable being paid in local currency?', kind: 'radio', options: ['Yes', 'No'] },
+    'salary.currency'],
+  // 52: how soon something else happens.
+  ['52', { label: 'How soon can you respond to client emails?', kind: 'text' }, 'availability.startDate'],
+  // 53: a student.
+  ['53', { label: 'Are you a current student?', kind: 'radio', options: ['Yes', 'No'] }, 'screening.previouslyEmployed'],
+  // 54: a relocation, a right to work, a county, an area, a field of work, a kind of place.
+  ['54', { label: 'Are you willing to relocate to the United States?', kind: 'radio', options: ['Yes', 'No'] },
+    'location.inCountry'],
+  ['54', { label: 'Are you legally authorized to work in the United States?', kind: 'radio', options: ['Yes', 'No'] },
+    'location.inCountry'],
+  ['54', { label: 'Do you currently reside in Los Angeles County?', kind: 'combobox' }, 'location.inCountry'],
+  ['54', { label: 'Do you currently reside in the Denver Metro area?', kind: 'combobox' }, 'location.inCountry'],
+  ['54', { label: 'Do you currently work in sales?', kind: 'radio', options: ['Yes', 'No'] }, 'location.inCountry'],
+  ['54', { label: 'Do you live in a city with public transit?', kind: 'radio', options: ['Yes', 'No'] },
+    'location.inCountry'],
+  // 55: how the person first heard of something else.
+  ['55', { label: 'How did you first hear of our products?', kind: 'text' }, 'availability.startDate'],
+  // 58: another name, a former employer, a long question about a location.
+  ['58', { label: 'Former employer name', kind: 'text' }, 'identity.formerName'],
+  ['58', { label: 'Have you ever used another name?', kind: 'radio', options: ['Yes', 'No'] }, 'identity.formerName'],
+  ['58', { label: 'Where are you currently located, and would you consider relocating for this role? Explain.',
+    kind: 'textarea' }, 'location.current'],
+  // 60: a government's contractor, an agency of another kind.
+  ['60', { label: 'Have you ever been employed as a contractor for a government agency?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'screening.governmentService'],
+  ['60', { label: 'Have you ever been employed as a civilian employee at a staffing agency?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'screening.governmentService'],
+];
+
+describe('jr6 RULES R3 (items 49 to 61): the widened rules’ near misses', () => {
+  it.each(NEAR_MISSES_R3B)('%s: %j is no %s', (_item, field, category) => {
+    expect(read(field).category).not.toBe(category);
+  });
+
+  it('keeps a current or former employee every employer’s question (53, JV-13)', () => {
+    expect(read({ label: 'Are you a current or former employee of Acme?', kind: 'radio', options: ['Yes', 'No'] }))
+      .toMatchObject({ category: 'screening.previouslyEmployed', rule: 'label.previously-employed' });
+  });
+
+  it('reads no "Middle" box alone as the middle name (58, U-11: only beside the first and last names, in the frame)',
+    () => {
+      expect(read({ label: 'Middle', kind: 'text' }).category).toBeNull();
+    });
+});

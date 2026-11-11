@@ -681,7 +681,10 @@ const EMPLOYED_BEFORE = /\b(?:previously|ever)\s+(?:been\s+)?(?:worked|employed|
 /** Employed by the company now (s2-horacemann-certify-open question_20182378004 "Are you currently a Full-Time/
  *  Part-Time employee or appointee of Horace Mann Inc …?"): the previously-employed rule's value then reads the current
  *  entries only (values.ts previouslyEmployedValue). */
-export const EMPLOYED_NOW = /\bare\s+you\s+(?:currently|presently|now)\s+(?:an?\s+)?(?:\w+\s+){0,4}?(?:employee|appointee|employed|contractor|working)\b(?:\s+or\s+\w+)?\s+(?:of|at|by|for|with)\b/;
+// jr6 RULES R3 (JV-13, NinjaOne's Jobvite "Are you a current NinjaOne Employee", fixtures/jobvite/ninjaone-step3): or a
+// current (or present) employee, contractor or appointee with the company named before the noun; never "a current or
+// former employee", which asks of every employer (§8.3's "former employee").
+export const EMPLOYED_NOW = /\bare\s+you\s+(?:currently|presently|now)\s+(?:an?\s+)?(?:\w+\s+){0,4}?(?:employee|appointee|employed|contractor|working)\b(?:\s+or\s+\w+)?\s+(?:of|at|by|for|with)\b|\bare\s+you\s+(?:an?\s+)?(?:current|present)\s+(?!or\b)(?:\w+\s+){0,3}?(?:employee|contractor|appointee)s?\b/;
 /** Tools or technologies asked as a list the person has used (s2-pie-cicd-open question_20266022004[] "Which of the
  *  following infrastructure-as-code tools have you used in a production environment?"). */
 const SKILLS_USED = /\b(?:which|what)\s+(?:of\s+the\s+following\s+)?(?:\w+\s+){0,4}?(?:tools|technologies|languages|frameworks|platforms|libraries|databases|services)\b(?:\s+\w+){0,6}?\s+(?:have\s+you|do\s+you)\s+(?:used|use|worked\s+with|know)\b/;
@@ -706,8 +709,10 @@ const RESTRICTIVE_FACT = /^(?:(?:are|were)\s+you\s+(?:currently\s+|now\s+|still\
  *  currently or have you within the last five years served in the U.S. armed forces or been employed by any U.S.
  *  federal, state, and local government?"): a federal, state or local government, or the armed forces beside one.
  *  Military service alone is the veteran question, and "a government agency" alone an employment question the AI
- *  answers. */
-export const GOVERNMENT_SERVICE = /\b(?:employed|worked|served|serving|working)\s+(?:by|for|in|at|with)\s+(?:an?\s+|any\s+|the\s+)?(?:\w+\s+){0,5}?(?:federal|state|local|municipal|u\s+s|us)\s+(?:\w+\s+){0,3}?government\b|\b(?:armed\s+forces|military)\b(?:\s+\w+){0,14}?\s+government\b|\bgovernment\b(?:\s+\w+){0,14}?\s+(?:armed\s+forces|military)\b|\b(?:federal|government)\s+(?:employee|official)\b/;
+ *  answers. jr6 RULES R3 (adp-new-2, ADP's "Have you ever been employed as a civilian employee at a government
+ *  agency?", fixtures/adp/questions): except employed or worked as a (civilian or federal) employee at, of, for or with
+ *  a government agency, which is government service (policy.ts governmentServiceValue: the government answer). */
+export const GOVERNMENT_SERVICE = /\b(?:employed|worked)\s+as\s+an?\s+(?:civilian\s+|federal\s+)?employee\s+(?:at|of|for|with)\s+(?:an?\s+|any\s+|the\s+)?(?:(?:federal|state|local|u\s+s|us)\s+)?government\s+agenc(?:y|ies)\b|\b(?:employed|worked|served|serving|working)\s+(?:by|for|in|at|with)\s+(?:an?\s+|any\s+|the\s+)?(?:\w+\s+){0,5}?(?:federal|state|local|municipal|u\s+s|us)\s+(?:\w+\s+){0,3}?government\b|\b(?:armed\s+forces|military)\b(?:\s+\w+){0,14}?\s+government\b|\bgovernment\b(?:\s+\w+){0,14}?\s+(?:armed\s+forces|military)\b|\b(?:federal|government)\s+(?:employee|official)\b/;
 /** s2 core-gh review (C5): a government's contractor, vendor, supplier, subcontractor, contract or client. */
 const GOVERNMENT_TRADE = /\b(?:government|federal|state|public\s+sector)\s+(?:\w+\s+)?(?:contractors?|vendors?|suppliers?|subcontractors?|contracts?|clients?|customers?)\b/;
 /** A relative at the company (s2-onestream-related-open question_8152427009 "Are you related to anyone currently
@@ -781,6 +786,9 @@ interface Refinement {
   /** The rule applies only when this matches too; tested without a leading ask ("What is your") when `ask` is set. */
   only?: RegExp;
   ask?: boolean;
+  /** jr6 RULES R3 (U-11): what the rule takes on a field of this kind, where narrower than its patterns (none: as on any
+   *  kind): "Where are you currently located?" on a box of prose only as the whole question. */
+  onlyFor?: (kind: FieldKind) => RegExp | undefined;
   /** Wordings the rule leaves alone. */
   unless?: RegExp;
   /** s2 core-gh review (C1): `unless` reads only the label's question sentences where the label states more after them
@@ -810,6 +818,24 @@ const SCHOOL_NOUN = new RegExp(String.raw`^(?:name\s+of\s+(?:the\s+|your\s+)?)?(
 const SMS_WIDE = /\b(?:can|may|could|will|would|to|we|us|they)\s+(?:\w+\s+){0,2}?text\s+(?:you|me)\b|\bcontact\s+(?:you|me)\s+(?:by|via|through)\s+text\b|\bsend\s+(?:you|me)\s+(?:a\s+)?texts?\b/;
 /** JV-15, JV-22, ADP-19, U-11: the name of whoever referred the person. */
 const REFERRER_WIDE = /\breferral\s+name\b|\bname\s+of\s+(?:your\s+|the\s+)?(?:referral|referrer|referring\s+(?:employee|person))\b|\bname\s+of\s+the\s+(?:employee|person)\s+who\s+referred\s+you\b|\bprovide\s+(?:their|the|his|her)\s+(?:full\s+)?name\b(?:\s+\w+){0,8}?\s+referred\b/;
+// jr6 RULES R3 (items 49 to 61).
+/** icims-new-3 (GitHub's iCIMS profile "Preferred Last Name", fixtures/icims/githubinc-profile.frame-1): the last name
+ *  the person goes by, a preferred or chosen one (NinjaOne's Jobvite "Chosen Last Name", fixtures/jobvite/ninjaone-step1):
+ *  the profile holds one last name, which it is. */
+const PREFERRED_LAST_NAME = /^(?:preferred|chosen)\s+(?:last|family)\s+name$|^(?:preferred|chosen)\s+surname$/;
+/** icims-new-3's neighbour (NinjaOne's "Chosen First Name"): a chosen first name is the preferred one. */
+const CHOSEN_FIRST_NAME = /^chosen\s+(?:first\s+)?name$/;
+/** ADP-4 (ADP's "State / Territory", fixtures/adp/personal): a territory, a state or a province or territory. */
+const REGION_TERRITORY = /^(?:(?:state|province)\s+(?:or\s+)?)*territory$/;
+/** ADP-8 (ADP's "If an offer is presented, how soon can you start?"), WD-27 (Workday's Parsons "When could you
+ *  start?"): when the person could start, asked so. */
+const START_WHEN = /\bhow\s+soon\s+(?:can|could|would|will)\s+you\s+(?:be\s+(?:able|available)\s+to\s+)?start\b|\bwhen\s+(?:could|can|would|will)\s+you\s+(?:be\s+(?:able|available)\s+to\s+)?start\b/;
+/** SR-7 (Xplor's SmartRecruiters "How did you first hear about this opportunity?", fixtures/smartrecruiters/
+ *  xplor-screening): how the person first, initially or originally heard. */
+const REFERRAL_FIRST = /how\s+did\s+you\s+(?:first|initially|originally)\s+(?:hear|find|learn)/;
+/** U-11 (UltiPro's "Where are you currently located?" as a box of prose, fixtures/ultipro/application): on a textarea,
+ *  only the whole question of where the person is. */
+const LOCATION_WHOLE = /^(?:(?:what\s+is\s+)?your\s+)?(?:current\s+)?location$|^where\s+are\s+you\s+(?:currently\s+|presently\s+)?(?:located|based)(?:\s+(?:now|today|currently))?$|^where\s+do\s+you\s+(?:currently\s+)?(?:live|reside)$/;
 // jr6 RULES end
 
 /** A self-identification topic without a self-identification wording: a question about the job, the person's own. */
@@ -818,7 +844,10 @@ const SENSITIVE_TOPIC = { id: 'label.sensitive-topic', category: 'screening.othe
 
 /** The review's refinements, by the design rule they change. */
 const REFINEMENTS: Readonly<Record<string, Refinement>> = {
-  'label.preferred-name': { also: /name\s+you(?:d|\s+would)?\s+(?:prefer|like)\s+(?:us\s+)?to\s+(?:use|call\s+you)|\bname\s+you\s+prefer\b/ },
+  // jr6 RULES R3 (icims-new-3's neighbour): a chosen first name (CHOSEN_FIRST_NAME).
+  'label.preferred-name': { also: new RegExp(String.raw`name\s+you(?:d|\s+would)?\s+(?:prefer|like)\s+(?:us\s+)?to\s+(?:use|call\s+you)|\bname\s+you\s+prefer\b|${CHOSEN_FIRST_NAME.source}`) },
+  // jr6 RULES R3 (icims-new-3): a preferred or chosen last name (PREFERRED_LAST_NAME).
+  'label.last-name': { also: PREFERRED_LAST_NAME },
   // s2 core-wd: Workday's "Country Phone Code" (formField-countryPhoneCode, fixtures/workday/s2-exelixis-state-open), and
   // a "Phone country" alone.
   'label.phone-country': { also: /\bcountry\s+phone\s+code\b|\bphone\s+country(?:\s+code)?\b/, unless: PHONE_WITH_CODE },
@@ -828,13 +857,16 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // (fixtures/icims/nyu-profile.frame-1's employer and school blocks; Oracle's education editor), never the home
   // address.
   'label.city': { category: (c) => ENTRY_PLACE[c.entry ?? 'home'].city },
-  'label.region': { category: (c) => ENTRY_PLACE[c.entry ?? 'home'].region },
+  // jr6 RULES R3 (ADP-4): a territory too (REGION_TERRITORY).
+  'label.region': { also: REGION_TERRITORY, category: (c) => ENTRY_PLACE[c.entry ?? 'home'].region },
   'label.country': { also: /^(?:what\s+is\s+your\s+)?(?:current\s+)?country(?:\s+of\s+(?:current\s+)?residence)?$|^what\s+country\s+do\s+you\s+(?:currently\s+)?(?:live|reside)\s+in$/,
     category: (c) => ENTRY_PLACE[c.entry ?? 'home'].country },
   // s2 core-gh: a residence asked as a question (RESIDENCE). s2 core-wd: "Location" inside a job's block is that job's
   // place (Workday's formField-location in each Work Experience block, fixtures/workday/s2-exelixis-my-experience),
   // never the person's current location.
+  // jr6 RULES R3 (U-11): on a box of prose, only the whole question (LOCATION_WHOLE).
   'label.location': { also: new RegExp(String.raw`^(?:what\s+is\s+)?your\s+(?:current\s+)?location$|` + RESIDENCE.source),
+    onlyFor: (kind) => (kind === 'textarea' ? LOCATION_WHOLE : undefined),
     category: (c) => (c.section === 'experience' && c.block !== undefined && !/\bcurrent\b/.test(c.label)
       ? 'experience.location' : 'location.current') },
   'label.portfolio': { only: PORTFOLIO_NOUN, ask: true },
@@ -868,8 +900,9 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.salary': { also: PAY_EXPECTATION, unless: PAY_TOPIC,
     category: (c) => (PAST_PAY.test(c.label) ? 'unknown' : 'salary.expected'),
     needsUser: (c) => (PAST_PAY.test(c.label) ? 'current-pay' : null) },
-  'label.availability': { only: START_AVAILABILITY, ask: true,
-    otherwise: { id: 'label.other-availability', category: 'screening.other', strength: 'normal' } },
+  // jr6 RULES R3 (ADP-8, WD-27): "how soon can you start", "when could you start" (START_WHEN).
+  'label.availability': { also: START_WHEN, only: new RegExp(`${START_AVAILABILITY.source}|${START_WHEN.source}`),
+    ask: true, otherwise: { id: 'label.other-availability', category: 'screening.other', strength: 'normal' } },
   // jr6 RULES (JV-4, fixtures jr6-vhl-step1: "Have you been employed by any United States K-12 School District since
   // 2016 in any capacity?"): a school's own label, never a word in a question.
   'label.school': { only: SCHOOL_NOUN, ask: true },
@@ -905,6 +938,8 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // jr6 RULES (JV-15, JV-22, ADP-19, U-11): the name of whoever referred the person ("Referral Name", "If yes, please
   // provide their name or enter N/A if you were not referred.").
   'label.referrer': { also: REFERRER_WIDE },
+  // jr6 RULES R3 (SR-7): how the person first heard (REFERRAL_FIRST).
+  'label.referral-source': { also: REFERRAL_FIRST },
 };
 
 /** "Why Acme?" as the page wrote it: a why-question naming the company with its own capitals, never "Why not?" or
@@ -1062,6 +1097,22 @@ export const EXPERIENCE_WITH = /^(?:do|have)\s+you\s+(?:have\s+)?(?:any\s+)?(?:(
  *  a government's or another client's work (the AI's, as before). */
 const EXPERIENCE_WITH_NOT = /\b(?:disabilit\w*|disabled|veterans?|military|race|races|racial|ethnic\w*|hispanic|latin[oax]|gender|sex|sexual|transgender|lgbt\w*|pronouns?|citizen\w*|nationalit\w*|visas?|sponsor\w*|immigra\w*|criminal|convict\w*|felon\w*|religio\w*|pregnan\w*|salar(?:y|ies)|compensation|pay|payroll|wages?|consent\w*|government|federal|clients?|customers?)\b/;
 const OPT_WORK = /\b(?:(?:stem\s+)?opt|cpt|optional\s+practical\s+training|curricular\s+practical\s+training)\b(?:\s+\w+){0,8}?\s+(?:to|in\s+order\s+to)\s+(?:begin|start|continue|commence|extend)\s+(?:\w+\s+){0,2}?(?:employment|working|work)\b/;
+/** jr6 RULES R3 (ADP-7: ADP's "Select currency type", fixtures/adp/questions): the currency the person is paid in, asked
+ *  for; never a yes or no about one, nor a currency as a field of work ("currency trading"). */
+const CURRENCY = /\bcurrency\b/;
+const CURRENCY_NOT = /\bcurrency\s+(?:trading|exchange|markets?|risk|conversion|hedging|operations|management)\b|\bforeign\s+currency\b/;
+/** jr6 RULES R3 (JZ-11: JazzHR's "Will you be working from inside the United States?" on invaluable-form, "Are you able
+ *  to work remotely from a state within the United States?" on wellhive-submitting; "Do you currently reside in the
+ *  United States?"): whether the person lives or will work inside the place named last (a country: policy.ts
+ *  inCountryValue reads it), asked yes or no; never a county, a city, an area or a state ("Do you currently reside in Los
+ *  Angeles County?", "in the Denver Metro area?": the AI's, as before). */
+export const IN_COUNTRY = /^(?:will|would|do|are|can|could)\s+you\s+(?:\w+\s+){0,4}?(?:(?:live|living|reside|residing|located|based)\b(?:\s+\w+){0,5}?\s+(?:inside|within|in)|(?:work|working)\b(?:\s+\w+){0,4}?\s+(?:inside|within|from\s+(?:\w+\s+){0,3}?(?:inside|within|in)))\s+(?:the\s+)?(?!(?:a|an|any|one|this|that|our|your|which|what)\b)(?!(?:\w+\s+){0,3}?(?:county|counties|area|metro|metropolitan|city|town|region|district|borough|parish|state|province|office|campus)\b)(\w+(?:\s+\w+){0,3})$/;
+/** jr6 RULES R3 (JZ-11): never a preference, a move, a commute or travel ("Are you willing to relocate to the United
+ *  States?"), and never the right to work there (work authorization's own question). */
+const IN_COUNTRY_NOT = /\b(?:willing|open|prepared|happy|want|wish|like|prefer|plan|planning|intend|intending|relocat\w*|move|moving|commut\w*|travel\w*|authori[sz]\w*|eligib\w*|permit\w*|entitled|right|legal\w*|lawful\w*|citizen\w*|visas?|sponsor\w*|resident|residency|remote\s+role)\b/;
+/** jr6 RULES R3 (U-11: UltiPro's "Former Name", fixtures/ultipro/application and resume-review): a former, previous,
+ *  prior, maiden or other name, which the profile never holds: left as the page has it, never asked of an AI. */
+const FORMER_NAME = /^(?:(?:your|any)\s+)?(?:former|previous|prior|maiden|other)\s+(?:(?:last|first|legal|family|full)\s+)?names?(?:\s+(?:used|if\s+any|if\s+applicable))*$|^name\s+at\s+birth$/;
 
 /** A jr6 label rule: its pattern, the category (or none, for a section or kind it does not fit). */
 interface Jr6Rule {
@@ -1096,6 +1147,11 @@ const JR6_RULES: readonly Jr6Rule[] = [
   { id: 'label.years-in', re: YEARS_IN, category: 'experience.yearsIn', strength: 'normal' },
   { id: 'label.experience-with', re: EXPERIENCE_WITH, unless: EXPERIENCE_WITH_NOT, category: 'skills.experienceWith',
     strength: 'normal' },
+  // jr6 RULES R3 (ADP-7, JZ-11, U-11).
+  { id: 'label.currency', re: CURRENCY, unless: new RegExp(`${YES_NO_QUESTION.source}|${CURRENCY_NOT.source}`),
+    category: 'salary.currency', strength: 'normal' },
+  { id: 'label.in-country', re: IN_COUNTRY, unless: IN_COUNTRY_NOT, category: 'location.inCountry', strength: 'normal' },
+  { id: 'label.former-name', re: FORMER_NAME, category: 'identity.formerName', strength: 'strong' },
 ];
 
 /** The first jr6 rule that reads `text` on a field of this kind, or null. */
@@ -1178,6 +1234,9 @@ function refinedMatch(rule: LabelRule, text: string, questions?: string, kind?: 
   if (refinement.unless?.test(unlessText)) return 'turned-away';
   const only = refinement.only;
   if (only !== undefined && !only.test(refinement.ask ? text.replace(ASK, '') : text)) return 'turned-away';
+  // jr6 RULES R3 (U-11): a kind's own narrower reading.
+  const onlyKind = kind === undefined ? undefined : refinement.onlyFor?.(kind);
+  if (onlyKind !== undefined && !onlyKind.test(text)) return 'turned-away';
   return 'match';
 }
 

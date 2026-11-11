@@ -1369,4 +1369,20 @@ function militaryTrainingValue(profile: Profile): ValueResult {
   return yesNo(false, fromProfile('screening.governmentService', 'legal.military-training'), VALUE_TRANSFORM);
 }
 
+/**
+ * jr6 RULES R3 (JZ-11: JazzHR's "Will you be working from inside the United States?", "Are you able to work remotely
+ * from a state within the United States?"; "Do you currently reside in the United States?"): yes when the profile's
+ * address is in a country the question names (labelRules IN_COUNTRY), no when it is in another, flagged as the
+ * inference it is (location.in-country). Nothing where the question names no country, or a place that may or may not be
+ * one ("Georgia"), or the profile holds no country: TailorIT's AI answers it (ANSWERABLE_PROFILE_CATEGORIES). Never a
+ * relocation question (labelRules IN_COUNTRY_NOT).
+ */
+export function inCountryValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
+  const home = profile.address?.country;
+  const places = placesNamed(spec.label, vocab);
+  if (home === undefined || places.ambiguous || places.countries.length === 0) return none('no-profile-value', false);
+  return yesNo(places.countries.includes(home), byRule('location.in-country', 'address.country'), VALUE_TRANSFORM,
+    { flag: 'filled-low-confidence' });
+}
+
 // jr6 RULES end

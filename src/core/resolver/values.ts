@@ -21,10 +21,11 @@ import {
   intendedUnknown,
 } from '../matcher/intended';
 import type { PlaceParts } from '../matcher/place';
+import { cutInjected } from '../guard/injected';
 import { DEGREE_LEVEL_RANK } from '../profile/degreeParse';
 import { placeText } from '../profile/canonicalize';
 import { normalize, normalizeLabel } from '../text/normalize';
-import type { FieldSpec } from '../types/field';
+import type { FieldSpec, Option } from '../types/field';
 import { COVER_LETTER_TEXT_PATH, type FieldCategory, type NoValuePlaceholder, type ProfilePath, type RuleId,
   type ValueOrigin } from '../types/intent';
 import type { EducationEntry, ExperienceEntry, PhoneDeviceType, Profile, YearMonth, Ymd } from '../types/profile';
@@ -353,14 +354,16 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
     case 'identity.hasPreferredName':
       return hasPreferredNameValue(identity);
     // end s2 core-wd
+    // jr6 RULES R3 (O2): a search's results that start with the street or the postal code, and name the city or the
+    // state after it (Choice.street).
     case 'address.line1':
-      return textValue(address?.line1, 'address.line1');
+      return withStreet(textValue(address?.line1, 'address.line1'), address);
     case 'address.line2':
       return textValue(address?.line2, 'address.line2');
     case 'address.city':
       return textValue(address?.city, 'address.city');
     case 'address.postalCode':
-      return textValue(address?.postalCode, 'address.postalCode');
+      return withStreet(textValue(address?.postalCode, 'address.postalCode'), address);
     case 'address.region': {
       const region = address?.region;
       if (region === undefined) return none('no-profile-value', false);
@@ -481,12 +484,6 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
       const { min, currency, period } = salary.value;
       return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT, text: String(min),
         choice: { intended: { kind: 'number', value: min, unit: `currency-${period}`, currency }, domain: 'number' } });
-    }
-    case 'salary.currency': {
-      const salary = profile.preferences.expectedSalary;
-      if (salary === undefined) return none('no-profile-value');
-      if (salary.kind === 'decline') return none('no-profile-value');
-      return textValue(salary.value.currency, 'preferences.expectedSalary');
     }
     case 'availability.startDate': {
       const start = profile.preferences.startDate;
@@ -858,6 +855,9 @@ const ALSO_ANOTHER = /\b(?:or|and)\s+(?:your|their|his|her)\s+(?:spouse|partner|
  *  contractor at Acme Corp"), never an article or a pronoun ("a government agency", "any of our competitors"). */
 const NAMED_EMPLOYER = /\b(?:[Ww]orked|[Ee]mployed|[Cc]ontractor|[Cc]ontracted|[Aa]ppointed|[Ii]nterned)\s+(?:[Bb]y|[Ff]or|[Aa]t|[Ww]ith)\s+(?:[Tt]he\s+)?(\p{Lu}[\p{L}\p{N}&.'\u2019-]*(?:\s+(?:\p{Lu}[\p{L}\p{N}&.'\u2019-]*|&|of|and))*)([^?.;]*)/u;
 const NOT_A_NAME = /^(?:A|An|The|Any|Our|This|That|These|Those|Your|One|Another|Other|Some|Each|Either|Neither|Us|Me)$/;
+/** jr6 RULES R3: a company a question sets aside ("outside of Twitch", "other than GitHub", "excluding …"), to the end
+ *  of its clause. */
+const SET_ASIDE = /\b(?:outside\s+of|other\s+than|excluding|except(?:\s+for)?|besides|not\s+including)\s+[^?.;,()]*/gi;
 /** jr6 RULES (WD-17): companies a name does not settle: its subsidiaries, affiliates, parent or partners. */
 const RELATED_COMPANIES = /\b(?:subsidiar(?:y|ies)|affiliat\w*|parent\s+compan\w*|sister\s+compan\w*|partners?|divisions?|brands?)\b/i;
 
@@ -888,10 +888,15 @@ export function previouslyEmployedValue(profile: Profile, postingCompany: string
   const company = postingCompany === undefined ? '' : companyKey(postingCompany);
   // s2 core-gh (s2-horacemann-certify-open question_20182378004): employed there now asks of the current entries only.
   const now = EMPLOYED_NOW.test(normalize(question, 'label').key);
-  if (company === '' || !namesPostingCompany(question, company)) {
+  // jr6 RULES R3 (JV-13's neighbours: Twitch's "Are you a current employee with Amazon or any Amazon subsidiary (outside
+  // of Twitch)?", fixtures/greenhouse/twitch-job; GitHub's "… at Microsoft or a Microsoft subsidiary other than
+  // GitHub?", fixtures/icims/githubinc-candidate-questions.frame-1): a company the question sets aside is not the one it
+  // asks about.
+  const asked = question.replace(SET_ASIDE, ' ');
+  if (company === '' || !namesPostingCompany(asked, company)) {
     // jr6 RULES (WD-17: "Have you previously worked for KPMG?" on Genworth's form): another employer the question
     // names is answered from the profile's entries too, Yes only for an entry of that employer, flagged for review.
-    const other = namedEmployer(question);
+    const other = namedEmployer(asked);
     const key = other === null ? '' : companyKey(other);
     if (key === '') return none('unknown-field', false);
     const there = profile.experience.some((entry) => (!now || entry.current) && companyKey(entry.company) === key);
@@ -1180,6 +1185,12 @@ function jr6Value(category: FieldCategory, ctx: ValueContext): ValueResult | und
       return yearsInValue(ctx.spec, ctx.profile, ctx.now);
     case 'skills.experienceWith':
       return experienceWithValue(ctx.spec, ctx.profile);
+    // jr6 RULES R3 (U-11): a former name the profile never holds: left as the page has it, never asked of an AI.
+    case 'identity.formerName':
+      return none('no-profile-value', false);
+    // jr6 RULES R3 (ADP-7): the pay's currency, by its ISO code in the list's own words.
+    case 'salary.currency':
+      return currencyValue(ctx.spec, ctx.profile);
     default:
       return undefined;
   }
@@ -1314,5 +1325,34 @@ function experienceWithValue(spec: FieldSpec, profile: Profile): ValueResult {
     check: true });
 }
 
+/** jr6 RULES R3 (O2): an address line's or a postal code's value with the places a search's result names after it
+ *  (Choice.street: the city, the state's code and name). */
+function withStreet(result: ValueResult, address: Profile['address']): ValueResult {
+  if (!result.ok || result.candidate.choice === undefined || result.candidate.text === undefined) return result;
+  const places = [address?.city, address?.region?.code, address?.region?.name]
+    .filter((place): place is string => place !== undefined && place.trim() !== '');
+  if (places.length === 0) return result;
+  return value({ ...result.candidate, choice: { ...result.candidate.choice,
+    street: { text: result.candidate.text, places } } });
+}
+
+/**
+ * jr6 RULES R3 (ADP-7: ADP's required "Select currency type", 158 options written "United States Dollar ( USD )",
+ * fixtures/adp/questions): the pay's currency (preferences.expectedSalary), typed as its ISO code, or chosen as the one
+ * option that is the code or writes it in capitals ("( USD )"), else matched by the code. None without an expected
+ * salary, or for a declined one (a default from the posting's country waits on the owner, question 8).
+ */
+function currencyValue(spec: FieldSpec, profile: Profile): ValueResult {
+  const salary = profile.preferences.expectedSalary;
+  if (salary === undefined || salary.kind === 'decline') return none('no-profile-value');
+  const code = salary.value.currency.trim();
+  if (!/^[A-Z]{3}$/.test(code) || spec.options === 'lazy') return textValue(code, 'preferences.expectedSalary');
+  const writes = new RegExp(String.raw`(?<![\p{L}\p{N}])${code}(?![\p{L}\p{N}])`, 'u');
+  const named = spec.options.map((option) => cutInjected(option.label).clean.trim())
+    .filter((clean, at) => clean !== '' && !(spec.options as Option[])[at]!.disabled && writes.test(clean));
+  const text = named.length === 1 ? named[0]! : code;
+  return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT, text: code,
+    choice: { intended: intendedText(text), domain: 'generic' } });
+}
 
 // jr6 RULES end

@@ -34,6 +34,14 @@ export interface PlaceParts {
   country?: string;
 }
 
+/** jr6 RULES R3 (O2): an address line or a postal code, and the places a result that starts with it names after it
+ *  (Choice.street). */
+export interface StreetParts {
+  text: string;
+  /** The person's city, their state's code and name: a result names one of them after the text. */
+  places: string[];
+}
+
 /** The person's place, read for comparing. */
 interface Person {
   /** The city's key. */
@@ -155,4 +163,56 @@ export function matchPlace(place: PlaceParts, options: PreparedOptions, vocab: V
       score: confidence })));
   }
   return hitOf(found[0]!, confidence, found.length > 1);
+}
+
+// ── jr6 RULES R3 (O2) ───────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The usual street-type and direction words and their abbreviations (USPS publication 28, public facts): each is read
+ *  as its abbreviation, so "4417 Quillfeather Lane" starts "4417 QUILLFEATHER LN, AUSTIN, TX 78701". */
+const STREET_WORDS: Readonly<Record<string, string>> = {
+  street: 'st', avenue: 'ave', av: 'ave', lane: 'ln', road: 'rd', drive: 'dr', boulevard: 'blvd', court: 'ct',
+  place: 'pl', circle: 'cir', parkway: 'pkwy', highway: 'hwy', terrace: 'ter', trail: 'trl', square: 'sq',
+  way: 'way', suite: 'ste', apartment: 'apt', north: 'n', south: 's', east: 'e', west: 'w', northeast: 'ne',
+  northwest: 'nw', southeast: 'se', southwest: 'sw', mount: 'mt', fort: 'ft', saint: 'st',
+};
+
+/** A text's words for a street comparison: lower case, letters and digits, each street word as its abbreviation. */
+function streetWords(text: string): string[] {
+  return text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word !== '')
+    .map((word) => STREET_WORDS[word] ?? word);
+}
+
+/** Whether `words` holds `part`'s words in a row. */
+function holds(words: readonly string[], part: readonly string[]): boolean {
+  return part.length > 0 && words.some((_, at) => part.every((word, offset) => words[at + offset] === word));
+}
+
+/**
+ * jr6 RULES R3 (O2: Oracle's Address Line 1 search, whose eLocation results name the whole address, and its ZIP Code
+ * search; Jobright matches the street's number and name, answer.findOracleSelectOptionIndex: cited): the one result
+ * that starts with the address line (or the postal code), its street words read alike, and names one of the person's
+ * places after it (the city, the state's code or name), at MATCH_PLACE (stage alias, rule place); among several, those
+ * that name the most of them ("Austin" and "TX" over "Austin" alone). Several that read differently are
+ * ambiguous-options; none is no-match. Only chooseable options take part, by their clean labels.
+ */
+export function matchStreet(street: StreetParts, options: PreparedOptions): Match {
+  const own = streetWords(street.text);
+  if (own.length === 0) return noMatch('no-match');
+  const places = street.places.map(streetWords).filter((words) => words.length > 0);
+  const named = options.list.flatMap((option) => {
+    if (!chooseable(option)) return [];
+    const words = streetWords(option.clean);
+    if (!own.every((word, at) => words[at] === word)) return [];
+    const count = places.filter((place) => holds(words.slice(own.length), place)).length;
+    return count > 0 ? [{ option, count }] : [];
+  });
+  const most = Math.max(0, ...named.map((item) => item.count));
+  const found = named.filter((item) => item.count === most).map((item) => item.option);
+  if (found.length === 0) return noMatch('no-match');
+  const same = found.every((option) => option.fullKey === found[0]!.fullKey);
+  if (found.length > 1 && !same) {
+    return noMatch('ambiguous-options', found.slice(0, MAX_SUGGESTIONS).map((option) => ({ index: option.index,
+      score: MATCH_PLACE })));
+  }
+  return hitOf(found[0]!, MATCH_PLACE, found.length > 1);
 }

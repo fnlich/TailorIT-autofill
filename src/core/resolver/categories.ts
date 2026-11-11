@@ -66,6 +66,8 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   'screening.militaryTraining': 'legal', 'address.type': 'profile', 'referral.detail': 'profile',
   'preferences.timeZone': 'profile', 'location.inTimeZone': 'profile', 'experience.yearsIn': 'profile',
   'skills.experienceWith': 'profile',
+  // jr6 RULES R3 (items 49 to 61): the profile's address, and a name the profile never holds.
+  'location.inCountry': 'profile', 'identity.formerName': 'profile',
   unknown: 'unknown',
 };
 
@@ -121,7 +123,12 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'contact.phoneCountry': ['text', 'select', 'combobox', 'typeahead-remote'],
   'contact.phoneType': CHOICE,
   'address.line1': ['text', 'textarea', 'typeahead-remote'], 'address.line2': LINE, 'address.city': LOOKUP,
-  'address.region': LOOKUP, 'address.postalCode': LINE, 'address.country': LOOKUP, 'location.current': LOOKUP,
+  // jr6 RULES R3 (O2: Oracle's ZIP Code, a cx-select search, fixtures/oracle/hjf-apply-section): a postal code is also
+  // searched for, or chosen from a list.
+  'address.region': LOOKUP, 'address.postalCode': ['text', 'combobox', 'typeahead-remote'], 'address.country': LOOKUP,
+  // jr6 RULES R3 (U-11: UltiPro's "Where are you currently located?" drawn as a box of prose, fixtures/ultipro/
+  // application): a box of prose too, where the label is only that question (labelRules LOCATION_WHOLE).
+  'location.current': [...LOOKUP, 'textarea'],
   // s2 core-gh (decision 9; the gh study's 2a: s2-onestream-related-open question_8152421009, "LinkedIn Profile" drawn as
   // a textarea, was read as free text and asked for an AI essay): a link goes into a line or a box of text.
   'links.linkedin': PROSE, 'links.github': PROSE, 'links.portfolio': PROSE, 'links.website': PROSE,
@@ -193,6 +200,8 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'screening.militaryTraining': YES_NO, 'address.type': CHOICE, 'referral.detail': CHOICE,
   'preferences.timeZone': ['text', ...CHOICE], 'location.inTimeZone': YES_NO, 'experience.yearsIn': YES_NO,
   'skills.experienceWith': YES_NO,
+  // jr6 RULES R3: living or working in a country, yes or no; a former name typed.
+  'location.inCountry': YES_NO, 'identity.formerName': LINE,
   unknown: ANY,
 };
 
@@ -317,4 +326,6 @@ export const ANSWERABLE_PROFILE_CATEGORIES: ReadonlySet<FieldCategory> = new Set
   // s2 core-gh review (C4): certifications the profile does not settle, as the AI answered them before this round.
   'skills.certifications',
   // jr6 RULES R3 (JV-16): years in something, experience with something, and a time zone the rules do not settle.
-  'experience.yearsIn', 'skills.experienceWith', 'location.inTimeZone']);
+  'experience.yearsIn', 'skills.experienceWith', 'location.inTimeZone',
+  // jr6 RULES R3 (JZ-11): living or working in a country the address does not settle (a place no country names).
+  'location.inCountry']);
