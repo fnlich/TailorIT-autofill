@@ -57,6 +57,14 @@ const SIGN_IN_WRAPPER_RULE = {
   message: "Only src/content/runtime.ts calls sign-in.ts's signIn (Sign-in mode Auto at a run's pause, or the agent's entry).",
 };
 
+/** jr6 ENGINE E2 (JZ-4): the upload filler's press of an upload's declared reveal link, named nowhere but
+ *  src/dom/fillers/upload.ts. (Applied at the forms merge, BUILD.md 4b.) */
+const UPLOAD_REVEAL_RULE = {
+  selector: "ImportSpecifier[imported.name='clickUploadReveal'], ExportSpecifier[local.name='clickUploadReveal'], "
+    + "MemberExpression[property.name='clickUploadReveal']",
+  message: "Only src/dom/fillers/upload.ts presses an upload's reveal link.",
+};
+
 /** Raw HTML, eval and form submission, banned everywhere in src: nothing may submit, and nothing parses markup. */
 const UNSAFE_SYNTAX = [
   SUBMIT_PRESS_RULE,
@@ -65,6 +73,7 @@ const UNSAFE_SYNTAX = [
   SIGN_IN_PRELUDE_RULE,
   ENTRY_WRAPPER_RULE,
   SIGN_IN_WRAPPER_RULE,
+  UPLOAD_REVEAL_RULE, // jr6 ENGINE E2 (JZ-4)
   { selector: "AssignmentExpression[left.property.name=/^(innerHTML|outerHTML)$/]", message: 'Build DOM nodes; never assign markup.' },
   { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'Build DOM nodes; never insert markup.' },
   { selector: "CallExpression[callee.object.name='document'][callee.property.name=/^write(ln)?$/]", message: 'No document.write.' },
@@ -237,6 +246,9 @@ export default tseslint.config(
   // v3 Phase 5 review: the one module that calls the doors' wrappers (the agent's entry, a run's sign-in).
   { files: ['src/content/runtime.ts'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => rule !== ENTRY_WRAPPER_RULE && rule !== SIGN_IN_WRAPPER_RULE)] } },
+  // jr6 ENGINE E2 (JZ-4): the one module that presses an upload's declared reveal link (dom/fillers/upload.ts's header).
+  { files: ['src/dom/fillers/upload.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_REVEAL_RULE)] } },
   // Tests drive the wrappers directly (never the doors).
   { files: ['src/**/*.test.{ts,tsx}'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => rule !== ENTRY_WRAPPER_RULE && rule !== SIGN_IN_WRAPPER_RULE)] } },
