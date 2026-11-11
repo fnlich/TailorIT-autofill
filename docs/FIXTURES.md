@@ -519,6 +519,121 @@ No snapshot was converted for v1.5 part 2 (the Queue tab, settings version 11, t
 - Reused: `synthetic/submit/greenhouse.html` at `https://job-boards.greenhouse.io/tailoritfixture/jobs/67<nn>`, for e2e `67-queue` (each queued job's own application, opened by the queue in a tab of its own, filled by itself with Submit Manual; its form posts nothing) and for the Queue tab's pictures in `e2e/visual/shots.spec.ts` (opt-in, never part of verify).
 - The contract's new examples (`AutofillAgentQueueQuery/*`, `AutofillAgentOpened/*`, `AutofillAgentQueueList/valid/{whole-list,older-server}.json` and `invalid/unknown-run.json`, and the golden queue list, now a page with `nextCursor`, `applyUrl` and `run`) are TailorIT's, copied by the pull (docs/CONTRACT.md "v1.5 part 2").
 
+## jr6: the owner's snapshots of 2026-11-10 and the eight platforms' captures
+
+For docs/SPEC-AMENDMENTS.md §19 (docs/ARCHITECTURE.md "jr6"). The sources: the owner's snapshots of 2026-11-10 (ADP Workforce Now twice, JazzHR's applytojob, iCIMS's careers-sentinel, careers-ars and uscareers-nyu portals, Jobvite's Vista Higher Learning and Sikich), and the owner's earlier captures kept beside the extension's checkout (Workday's tenants, SmartRecruiters, Oracle, Ashby, Jobvite's NinjaOne), read only and never committed. Every case was converted only by `scripts/mhtml-to-fixture.mjs` with the owner's list of personal strings (343 entries, 344 after SmartRecruiters' addition), each package's run kept in a small driver script beside the build's notes, and leak-checked before its commit: 0 listed strings, 0 emails, 0 phone-like numbers, and the capture file name's words found only where they are the page's own title or address (counts only, never a value). The mailbox capture beside one iCIMS snapshot was never opened. Every case name starts `jr6-`, and none is in the converter test's frozen lists: each goes through its per-file checks (`test/mhtml-to-fixture.test.ts`). Converting a case again gives the same bytes.
+
+**Synthetic text in place of a page's own** (the converter's `--replace-text`, below): where a listed string met a page's public text (an option, a label, a legend, a posting's description or its copy in the page's description metadata), a REDACTED there would tell the value by elimination, so the converter refuses the page; such an element was given made-up text instead, from a file in `fixtures/synthetic/` (each made up, naming no one): `jr6-tooling/posting-description.txt` (four Apply pages' descriptions), `jr6-workday/posting-description.txt` (18 Workday step pages' `og:description`) and `jr6-workday/instructions.txt` (one Voluntary Disclosures page's instructions, which held a link carrying an encoded email), `jr6-adp/posting-description.txt` (ADP's signed-in posting), `jobvite/jr6-posting-description.txt`, `jr6-county-list.txt` (63 made-up county names after the kept placeholder, for the county rule's test) and `jr6-qualification-option.txt` (one row of a qualification checklist), `jazzhr/centroid-posting-description.txt`. A test that reads a posting's words on those pages expects the synthetic text.
+
+### The shared Apply pages (`fixtures/<platform>/jr6-apply-*`, BUILD D-b)
+
+Converted once by TOOLING with the new converter, for both lines, each with its `.routes.json`, no `.expect.json` (no per-file check asks one for these platforms). The elements the Apply tests use are as the captures drew them: Workday's `adventureButton`, brookfield's `legalNoticeAcceptButton`, the choice's `wd-popup-frame` with `autofillWithResume` and `applyManually`; iCIMS's `a.iCIMS_ApplyOnlineButton` and the wrapper's `iframe#icims_content_iframe`; Ashby's two tabs.
+
+| Case | Capture | Holds | Replaced |
+|---|---|---|---|
+| `workday/jr6-apply-resolvetech-posting` | resolvetech (Workday), 2026-11-06 | a posting whose Apply the page draws late | the description and its meta copy |
+| `workday/jr6-apply-resolvetech-choice` | the same posting, a moment later | the choice drawn in place after Apply: Autofill with Resume, Apply Manually | the description and its meta copy |
+| `workday/jr6-apply-aep-posting` | aep (Workday), 2026-11-06 | a posting and its Apply | the description and its meta copy |
+| `workday/jr6-apply-brookfield-posting` | brookfield (Workday), 2026-11-06 | a posting with a legal notice to accept before its Apply | none |
+| `icims/jr6-apply-ars-posting` | careers-ars (iCIMS), 2026-11-10 | the posting and its "Apply for this job online" | the four job-description sections |
+| `icims/jr6-apply-sentinel-posting` (+ `.frame-1`) | careers-sentinel (iCIMS), 2026-11-10 | the company page and its iCIMS frame, the posting inside | none |
+| `ashby/jr6-apply-blueberry-overview` | an Ashby posting, 2026-11-06 | the Overview tab, the Application tab beside it | none |
+
+### Workday (`fixtures/workday/jr6-*`, 26 cases)
+
+Each `.html` with its `.routes.json`, no `.expect.json` (none is required for Workday); `src/adapters/workday/application.ts` `WORKDAY_JR6_SNAPSHOTS` names them, and `jr6-workday.browser.test.ts` pins each page's plan with the golden profile. 18 carry the synthetic `og:description`; `jr6-web-voluntary-disclosures` the synthetic instructions. The steps, by tenant (each the step its name says; the account pages before the flow):
+
+| Tenant | Cases |
+|---|---|
+| aep | `jr6-aep-create-account` (Create Account), `jr6-aep-autofill-resume` (the Autofill with Resume step), `jr6-aep-voluntary-disclosures` |
+| brookfield | `jr6-brookfield-sign-in`, `jr6-brookfield-voluntary-disclosures` |
+| cisive | `jr6-cisive-my-information`, `jr6-cisive-application-questions`, `jr6-cisive-voluntary-disclosures` |
+| danafarber | `jr6-danafarber-my-information`, `jr6-danafarber-my-experience`, `jr6-danafarber-application-questions-1`, `-2` |
+| gnw | `jr6-gnw-application-questions`, `jr6-gnw-voluntary-disclosures` |
+| parsons | `jr6-parsons-my-experience`, `jr6-parsons-application-questions`, `jr6-parsons-voluntary-disclosures` |
+| resolvetech | `jr6-resolvetech-voluntary-disclosures` |
+| travelers | `jr6-travelers-my-experience`, `jr6-travelers-application-questions`, `jr6-travelers-voluntary-disclosures` |
+| verawholehealth | `jr6-verawholehealth-voluntary-disclosures` |
+| verily | `jr6-verily-application-questions`, `jr6-verily-voluntary-disclosures` |
+| web | `jr6-web-my-information`, `jr6-web-voluntary-disclosures` |
+
+- **What none shows:** EEO, language and yes/no lists open (the tests assume Workday's lists), Workday's date script and Skills search running (stood in for in the tests; live behaviour unverified), the reset-password and wrong-password errors after an account form (their words in `accountErrorKind` are synthetic), a myworkday.com application.
+- **Test-only conventions:** `unanswer` sets a filled capture back to before the person's answers; the Workday lists no capture shows open are written in the test; Skills and the date parts are driven against a stand-in for Workday's script.
+
+### iCIMS (`fixtures/icims/jr6-*`, 14 cases)
+
+From the 2026-11-10 snapshots of careers-sentinel, careers-ars and uscareers-nyu, with the converter's iCIMS rules and no `--replace-text` (no elimination refusal fired). A portal's company page is the case's `.html`, its iCIMS frame `.frame-1`, an IForm inside it `.frame-2`; the ars and nyu profile pages and sentinel's Basic Information carry a `.third-party-frame.html`. The 17 `.expect.json` hold each rooted frame's fields and hooks (the three IForm portal frames: hooks only, no root); `jr6-icims.browser.test.ts` drives iCIMS's dropdowns on them against a stand-in for the page's dropdown script, with synthetic public words where a list is redacted.
+
+| Portal | Cases |
+|---|---|
+| careers-sentinel | `jr6-sentinel-basic-info` and `-filled` (Basic Information, the account's Login, Password and Re-enter rows), `jr6-sentinel-profile` and `-filled` (the Candidate Profile), `jr6-sentinel-job-questions`, `jr6-sentinel-iform-selfid` (a self-identification IForm) |
+| careers-ars | `jr6-ars-profile`, `jr6-ars-profile-address` (its address part open), `jr6-ars-profile-filled`, `jr6-ars-eeo` |
+| uscareers-nyu | `jr6-nyu-profile-parsed` (the profile after iCIMS read the résumé), `jr6-nyu-profile-filled`, `jr6-nyu-iform-offer`, `jr6-nyu-iform-signature` (an IForm with a signature and its date) |
+
+- "-filled" pages are the owner's after a fill, every answer redacted. The sentence "iCIMS dropdowns stay the person's" in an older test's header no longer holds (they are widgets now).
+- **Expectations moved** (P2, the old snapshots of 2026-11-06): `ars-gate-phone`, `githubinc-profile.frame-1`, `nyu-profile.frame-1` (dropdowns as declared widgets, account rows).
+
+### ADP Workforce Now (`fixtures/adp/jr6-*`, 23 cases)
+
+From the two 2026-11-10 snapshots (adp1, adp2), each `.html` with its `.routes.json`; the five pages before the wizard carry a hooks-only `.expect.json` (`jr6-posting`, `jr6-consent`, `jr6-guest-blank`, `jr6-guest-send-code`, `jr6-landing`). `jr6-landing` carries the synthetic posting description. The page table in `jr6-adp.browser.test.ts` (`ADP_JR6_SNAPSHOTS`) holds each page's root, state, step, finality, Next, Submit, entry and posting text.
+
+| Pages | What they show |
+|---|---|
+| `jr6-posting` | the job details with the header's Apply (the bottom bar's Apply hidden) |
+| `jr6-consent` | the "Privacy Policy" pane after Apply: Consent & Continue, Decline & Close |
+| `jr6-guest-blank`, `jr6-guest-send-code`, `jr6-code-dialog` | the guest view (names, email, phone, Continue), "Get your verification code", the code dialog |
+| `jr6-landing` | the signed-in posting with "Complete Your Application" (no entry: owner question 422) |
+| `jr6-personal-blank`, `-us-state`, `-us-errors`, `-filled` | Personal Information: blank, the US state list, its errors, filled |
+| `jr6-resume-choice`, `-blank`, `-uploaded` | the Resume step: its choice, blank, a file uploaded |
+| `jr6-questions-filled`, `jr6-questions2-blank`, `-filled` | the Questions steps (currency, pay basis, salary, start date) |
+| `jr6-self-id-blank`, `-filled` | Voluntary Self-ID |
+| `jr6-review` | Review your application |
+| `jr6-self-attest-blank`, `-signed` | Self-Attest & Submit, the last step |
+| `jr6-confirmation`, `-2` | the page after submitting, under its promotion's focus trap |
+
+The converter's leftovers are public: ADP's site verification token, its privacy statement's path, the employer's careers link in the public description.
+
+### Jobvite (`fixtures/jobvite/jr6-*`, 15 cases)
+
+From the two 2026-11-10 snapshots (Vista Higher Learning, Sikich), each `.html` with `.routes.json` (and a `.third-party-frame.html` on the posting and step pages), no `.expect.json`; `jr6-jobvite.browser.test.ts` holds their facts and plans. Synthetic: both postings' descriptions; the County list on Sikich's three step-1 pages; the first qualification row on `jr6-vhl-step3-filled`. The only REDACTED left is the résumé row's file name on three pages.
+
+| Company | Cases |
+|---|---|
+| Vista Higher Learning | `jr6-vhl-posting`, `jr6-vhl-step1` and `-filled`, `jr6-vhl-step2` and `-filled`, `jr6-vhl-step3-filled`, `jr6-vhl-confirmation` |
+| Sikich | `jr6-sikich-posting`, `jr6-sikich-step1`, `-step1-resume`, `-step1-invalid`, `jr6-sikich-step2`, `jr6-sikich-step3` and `-filled`, `jr6-sikich-confirmation` |
+
+- The confirmation pages are the evidence for Jobvite in Run auto-apply (APPLYPLAN F4b, not built).
+- **NinjaOne** (`ninjaone-*`, the 2026-11-06 captures): converted again on 2026-11-11 with the jr6 converter (AngularJS state classes stripped; nothing else changed).
+
+### JazzHR, SmartRecruiters and Oracle
+
+| Fixture | Capture | Holds |
+|---|---|---|
+| `jazzhr/jr6-centroid-form` (+ `.routes.json`, `.third-party-frame.html`, hand-written `.expect.json`) | Centroid's applytojob page, 2026-11-10 | JazzHR's newer layout, the form under the posting (its description synthetic); about 500 KB of it another extension's injected ad-blocking stylesheet, which the converter does not strip |
+| `smartrecruiters/jr6-xplor-one-click-filled` (+ `.third-party-frame`, `.routes.json`, `.expect.json`) | Xplor's one-click application, 2026-11-06 | the first page after SmartRecruiters' own résumé parse (four experience and one education summaries), the manual location mode (Country/Region search and City box), filled |
+| `smartrecruiters/jr6-wiser-one-click` (+ same) | Wiser Solutions' one-click application, 2026-11-06 | the first page, an optional phone, a hidden photo uploader, the City results drawn open (a city and the manual-mode row) |
+| `smartrecruiters/jr6-wiser-screening` (+ `.routes.json`, `.expect.json`) | Wiser's screening step, 2026-11-06 | the sponsorship Yes/No naming two countries, the privacy consent, answered |
+| `oracle/jr6-caesars-posting` (+ `.routes.json`, `.expect.json`) | Caesars Entertainment's Oracle posting, 2026-11-06 | the posting and its Apply Now |
+| `oracle/jr6-caesars-email-gate` (+ same) | the same tenant's email gate, its whole cover image | the gate's three fields (as `elhr-email-gate`'s, its terms label longer), the phone switch in `neverPress` |
+
+- **A new leak, found and closed:** on the Wiser page the open City result's first row kept, in its `value` and `data-sr-id`, an identifier spelling the owner's typed city and state while its words were redacted. The identifier was added to the owner's list without being printed and the page converted again; the converter's second jr6 round now strips a list row's names with its words, so no capture needs the list for it.
+- **Expectations moved:** `smartrecruiters/xplor-one-click` and `xplor-screening` (the declared lists, the published screening lists), `oracle/hjf-apply-section` (the cx-select rows, the phone's control box).
+
+### Synthetic pages (`fixtures/synthetic/`), the expectations line W moved, and other changes
+
+- **`synthetic/apply/`** (F2; **synthetic, no source**, made-up words): `in-place-details.html` (ADP-like job details, the guest container in a template, a search box, a hidden cookie filter's Apply), `late-apply-in-place.html` (at a Lever posting address: Apply drawn after `data-apply-delay`, the form drawn in place, a search box), `dialog-second-step.html` (at a Lever posting address: Apply opens a dialog with Autofill with Resume, Apply manually and Sign in). Read by `src/content/jr6-entry.browser.test.ts` and served by e2e 62 and 68.
+- **`synthetic/jazzhr/classic.html`** (+ `.expect.json`; hand-written, "Example Systems"): JazzHR's classic layout with a résumé toggle script of our own, at `https://tailorit-fixture.applytojob.com/apply/0000000B01/Linux-Systems-Engineer`.
+- **`synthetic/signin/create-account.html`, `sign-in.html` and `synthetic/workday/account.html`:** the dummy password they expect now meets Sign-up Information's rule (16 or more characters, an uppercase letter and a special); a made-up string, no one's.
+- **Expectations moved by line W** (each checked row by row at the forms merge, BUILD D-i): `ultipro/resume-review` (experience blocks, From labels, School and Degree declared, Skills a tags box read as `text`) and `ultipro/application` (one start date, no document rows, the decline boxes' labels); `workday/resolvetech-my-experience`, `s2-exelixis-my-experience`, `s2-pureinsurance-my-experience-errors`, `s2-pureinsurance-degree-open` (Skills a `text` field with no options, WD-18) and `danafarber-self-identify` (three labels: "Language of this form", "Date signed", "Voluntary Self-Identification of Disability"); the iCIMS, SmartRecruiters and Oracle ones above.
+- **To convert again** (the leak scan of 2026-11-11, TOOLING's second round): `ultipro/application.html` and `resume-review.html` (the two field-of-study lists, where one REDACTED option among public neighbours tells the owner's field by elimination: synthetic lists by structure) and `workday/s2-verily-school-results.html` (the School results' Workday ids, which the round-2 converter normalises). They are line W's fixers' (INT-1 folds their notes); their earlier versions stay in history with the others the owner's purge waits for.
+
+### e2e
+
+- **`62-open-application`** (its file name kept): Lever's posting (`fixtures/lever/ahead-posting.html`, the smoke form at its `/apply`), where the panel's Autofill presses the posting's Apply and the application it opens is filled; since jr6 also a posting whose Apply never comes (`late-apply-in-place.html` with its Apply delayed past the wait: the panel's lines one at a time, the press busy and heard, then the "no form" words alone) and a list of jobs (a board page written in the spec: its strip promises no Apply, and Autofill's answer claims no search and no page without an Apply).
+- **`68-apply-in-place`** (new): `late-apply-in-place.html` at a Lever posting address (an Apply drawn 3 s late, its form drawn in place: one press fills it; and Autofill pressed before the Apply is drawn: the frame waits for it, presses it once, and the grant fills the form drawn in place, the panel's lines read while it waits and after the fill), and `dialog-second-step.html` ("Apply manually" pressed, never "Sign in"; the form it draws filled). Nothing submitted; the page never leaves its address.
+- **`36-panel-3b`**: the posting test reads Autofill and `COPY.strip.posting`. **`42-workday`** and **`38-agent`**: the saved job-site password from Sign-up Information. **`44-smartrecruiters`**: the "no button clicked" filter allows the phone country's own button. **`25-conditional-reveal`**: the visa-type question is the work-authorization status.
+- **`69-apply-platforms`** (the Workday, ADP and iCIMS chains and a posting with no Apply) is CHAINS'; INT-1 adds its row.
+
 ## Serving fixtures
 In e2e runs every request goes through `e2e/routes.ts`: a URL in the route map is answered from its fixture, the mock TailorIT and the extension's own files pass through, a form post to `/__submitted` is recorded (any hit fails the test), and everything else is aborted and recorded. Fixtures are served at their real ATS addresses: Phase 0 proved that Chromium injects the content script into such routed pages.
 - A converted case's `<case>.routes.json` is that map for its page and its frames (URL without fragment to repo-relative file), in the shape `installRoutes` takes.
@@ -545,7 +660,7 @@ v5 Phase 2 (2026-11-08) added these; the source of each is named, and none holds
 - `rich-text/index.html` (P2-fill; **synthetic, no source**: each box written afresh to behave as an editor family does, no site's markup): a plain editing host (`#letter`, with an editable span inside its content, which is that box's content and no field), a model-keeping editor whose script cancels every `beforeinput` and draws itself again from its own model (`#why`; `window.__whyModel`, `__whyInputs`), a one-line `plaintext-only` box labelled "First name" (`#preferred`, so a run fills it from the profile), a box that ignores every write (`#ignores`), a box in an open shadow root (`#shadowed`), a hidden box (`#trap`, a honeypot, only counted), `contenteditable="false"` (`#off`), and a native box whose change the page answers with `window.alert` (`#name`; `window.__alerts`). Served at `https://jobs.lever.co/tailorit-fixture/rich-text/apply` by e2e `63-rich-text`; read by `src/dom/rich-text.browser.test.ts`. No chosen marks, no tokens. Since the Phase 2 review its header names the page patches' `dialogs.hold` (`src/page/dialogs.ts`, run in the page's world by the worker once a run begins), not the bridge's.
 - `success/` (P2-detect's follow-up; each **Jobright-sourced**, from one of its per-site submission rules, its id in the page's header and in the rule's `from` in the code; no snapshot of ours shows any of these pages): `workday.html` (the candidate home's task dialog saying the application was submitted, and the sign-in page's congratulations, `src/adapters/workday/index.ts` `WORKDAY_SUCCESS`), `successfactors.html` (a career site's application form and its page after submitting, `SUCCESSFACTORS_SUCCESS`; also the form the runtime test arms on, served at `https://career2.successfactors.eu/career?company=tailoritfixture&career_job_req_id=48659&career_ns=job_application`; it posts nothing), `bamboohr.html` and `jazzhr.html` (their configs' `success`). Each carries decoys a sign must never be read from (the words without their companion, the companion beside other words, the title outside its dialog). Read by `src/content/success-signs.browser.test.ts` and `src/content/submit-network.browser.test.ts`.
 - `workday/steps.html` changed (P2-detect; the finalize request's shape is **Jobright-sourced**, from its Workday submission watcher, re-implemented in `src/dom/submit-net-protocol.ts`): `?review` opens it at Review; `?finalize` makes Review's Submit send the application as Workday's page does, POST `/wday/cxs/tailoritfixture/jobapplication/JA-0000002/finalize` on its own origin (by fetch, or by XMLHttpRequest with `?xhr`), which e2e `61-submit-network` answers; `window.__wd.finalized` keeps each answer's status. Without the flags nothing changed (its DOM tests and `42-workday` pass as before).
-- Reused, not new: `fixtures/lever/ahead-posting.html` (a converted Lever posting) served at its address by e2e `62-open-application`, with the smoke form at its `/apply`; the owner's snapshots `workday/web-review`, `clearcompany/vafb-page3` and `oracle/hjf-apply-section` armed by `src/content/submit-network.browser.test.ts` (Oracle's own invalid entry holds the sign until it is removed).
+- Reused, not new: `fixtures/lever/ahead-posting.html` (a converted Lever posting) served at its address by e2e `62-open-application`, with the smoke form at its `/apply` (since jr6 the panel's Autofill presses its Apply, and the spec gains two cases: "jr6" above, "e2e"); the owner's snapshots `workday/web-review`, `clearcompany/vafb-page3` and `oracle/hjf-apply-section` armed by `src/content/submit-network.browser.test.ts` (Oracle's own invalid entry holds the sign until it is removed).
 - The mock's Phase 2 routes (the task stream, `Prefer: respond-async`, one round, the `ai-paced` and `ai-stream-off` scenarios) are docs/CONTRACT.md's ("The mock in v5 Phase 2").
 - The Phase 2 review added no fixture. Its tests read existing ones: Oracle's own app on an employer's domain is told by markup that **all five Oracle fixtures** hold (`oracle/jpmc-posting`, `elhr-email-gate`, `fortive-email-code`, `hjf-apply-section`, `hjf-after-submit`: the app's dialogs and navigation, with its apply flow or job details; `src/dom/page-signals.ts` `oracleCandidateExperienceShown`, from those fixtures' markup alone), and "the form left, the app still there" from `hjf-apply-section` against `hjf-after-submit` (a refused Submit keeps the form and shows its errors); `src/content/submit-network.browser.test.ts` serves `hjf-apply-section` and `synthetic/sites/apply.html` (a company's own form) at an employer's Oracle address. The hidden-text cases (`src/content/rich-text-hidden.browser.test.ts`) build their boxes in the test itself.
 
