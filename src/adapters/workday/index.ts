@@ -292,7 +292,10 @@ export const workdayAdapter: Adapter = {
   uploadHeldNames,
   repeatables,
   isBusy,
-  quirks: { formLateMs: WORKDAY_FORM_LATE_MS, entryPresses: 2, entryWaitMs: WORKDAY_ENTRY_WAIT_MS },
+  // jr6 B5 (APPLYPLAN D5, BUILD.md §4 E-Workday): verily draws its application's steps at …/apply, which url.ts reads
+  // as the posting (fixtures/workday/s2-verily-my-information.html's address): formAtPosting lets this adapter claim
+  // the page there (APPLYPLAN F2 builds the runtime's side).
+  quirks: { formLateMs: WORKDAY_FORM_LATE_MS, entryPresses: 2, entryWaitMs: WORKDAY_ENTRY_WAIT_MS, formAtPosting: true },
   entryControl,
   // Apply and Apply Manually are never pressed by a run (neverPress): the entry door presses that element alone.
   entryNeverPressed: true,
