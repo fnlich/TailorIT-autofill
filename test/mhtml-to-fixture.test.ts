@@ -2504,18 +2504,15 @@ const CHOSEN_STATE_FIXTURES = [
 
 /**
  * jr6 fixes (PRIV-2, REVC-4): the committed fixtures converted before the converter cleared these marks, which still hold
- * one (a privacy finding, not an exception): Oracle's two apply-flow pages keep each answered pill group's tab stop on
- * the chosen pill, and HiBob's form keeps Angular's state classes on its components. Each is to be converted again with
- * this converter by its package (ORACLE; HiBob's has none this round: SP\jr6\build\TOOLING.md, round 3), and its entry
- * then goes: each lets through only the marks named here, and only while the file still holds exactly them. (ADP's main
- * questions page, which drew its chosen radio's dot, was converted again by the jr6 ADP fixer and holds none;
- * SmartRecruiters' xplor-one-click and xplor-screening were converted again (SMARTRECRUITERS, jr6 fix round): their
- * entries went.)
+ * one (a privacy finding, not an exception): HiBob's form keeps Angular's state classes on its components. It is to be
+ * converted again with this converter (no package this round: SP\jr6\build\TOOLING.md, round 3), and its entry then
+ * goes: it lets through only the marks named here, and only while the file still holds exactly them. (Converted again in
+ * the jr6 fix round, so their entries went: ADP's main questions page, which drew its chosen radio's dot (the jr6 ADP
+ * fixer); SmartRecruiters' xplor-one-click and xplor-screening (SMARTRECRUITERS); Oracle's hjf-after-submit and
+ * hjf-apply-section, which kept each answered pill group's tab stop on the chosen pill (ORACLE).)
  */
 const MARKED_FIXTURES: Record<string, string[]> = {
   'hibob/mplc-form.html': [CHOSEN_MARK_LABELS.angularComponent],
-  'oracle/hjf-after-submit.html': [CHOSEN_MARK_LABELS.roving],
-  'oracle/hjf-apply-section.html': [CHOSEN_MARK_LABELS.roving],
 };
 
 /**
