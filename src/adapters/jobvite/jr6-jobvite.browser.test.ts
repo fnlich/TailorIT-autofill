@@ -937,28 +937,29 @@ describe('jr6 JOBVITE P2 on NinjaOne\'s pages: JV-9, JV-14, JV-7, JV-8, JV-13, J
         needsUserAction: false });
     });
 
-  it('JV-14 and RULES edit 21 (ninjaone-step1): the text consent is Yes on the consent\'s terms; the chosen names are '
-    + 'typed', async () => {
-    const plan = await planOf(ninjaStep1Html, NINJA_COMPANY);
-    const text = plan.one('Can NinjaOne text you about your application?');
-    expect(classifyByRules(text)).toMatchObject({ asks: 'consent.sms', rule: 'label.consent-sms' });
-    expect(plan.row(text)).toMatchObject({ category: 'consent.sms', status: 'verified' });
-    expect(plan.write(text)).toMatchObject({ value: { cleanLabel: 'Yes' },
-      origin: { provenance: 'rule', ruleId: 'consent.preapproved' } });
-    // Consents: Required only: the page requires it, so the required rule says Yes.
-    const cautious = await planOf(ninjaStep1Html, NINJA_COMPANY, { settings: CAUTIOUS_SETTINGS });
-    expect(cautious.write(cautious.one('Can NinjaOne text you'))).toMatchObject({ value: { cleanLabel: 'Yes' },
-      origin: { provenance: 'rule', ruleId: 'consent.required' } });
-    // RULES item 49: "Chosen First Name" is the preferred name (the golden profile has none: its first name), flagged
-    // because the page's autocomplete="given-name" names the first name; "Chosen Last Name" is the last name.
-    const first = plan.one('Chosen First Name');
-    expect(plan.write(first)).toMatchObject({ value: { kind: 'text', text: 'Alex' } });
-    expect(plan.row(first)).toMatchObject({ category: 'identity.preferredName', reason: 'classification-conflict',
-      needsUserAction: false });
-    const last = plan.one('Chosen Last Name');
-    expect(plan.write(last)).toMatchObject({ value: { kind: 'text', text: 'Rivera' } });
-    expect(plan.row(last)).toMatchObject({ category: 'identity.lastName', status: 'verified' });
-  });
+  it.each([['ninjaone-step1', ninjaStep1Html], ['ninjaone-step1-resume', ninjaStep1ResumeHtml]] as const)(
+    'JV-14 and RULES edit 21 (%s): the text consent is Yes on the consent\'s terms; the chosen names are typed',
+    async (_name, html) => {
+      const plan = await planOf(html, NINJA_COMPANY);
+      const text = plan.one('Can NinjaOne text you about your application?');
+      expect(classifyByRules(text)).toMatchObject({ asks: 'consent.sms', rule: 'label.consent-sms' });
+      expect(plan.row(text)).toMatchObject({ category: 'consent.sms', status: 'verified' });
+      expect(plan.write(text)).toMatchObject({ value: { cleanLabel: 'Yes' },
+        origin: { provenance: 'rule', ruleId: 'consent.preapproved' } });
+      // Consents: Required only: the page requires it, so the required rule says Yes.
+      const cautious = await planOf(html, NINJA_COMPANY, { settings: CAUTIOUS_SETTINGS });
+      expect(cautious.write(cautious.one('Can NinjaOne text you'))).toMatchObject({ value: { cleanLabel: 'Yes' },
+        origin: { provenance: 'rule', ruleId: 'consent.required' } });
+      // RULES item 49: "Chosen First Name" is the preferred name (the golden profile has none: its first name), flagged
+      // because the page's autocomplete="given-name" names the first name; "Chosen Last Name" is the last name.
+      const first = plan.one('Chosen First Name');
+      expect(plan.write(first)).toMatchObject({ value: { kind: 'text', text: 'Alex' } });
+      expect(plan.row(first)).toMatchObject({ category: 'identity.preferredName', reason: 'classification-conflict',
+        needsUserAction: false });
+      const last = plan.one('Chosen Last Name');
+      expect(plan.write(last)).toMatchObject({ value: { kind: 'text', text: 'Rivera' } });
+      expect(plan.row(last)).toMatchObject({ category: 'identity.lastName', status: 'verified' });
+    });
 
   it('JV-7 (ninjaone-step3): "What is your US Work Authorization type?" is the status: the AI\'s for the golden '
     + 'profile, the status\'s own option when the profile states it', async () => {
