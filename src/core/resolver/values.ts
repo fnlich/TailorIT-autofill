@@ -77,9 +77,16 @@ function placeValue(place: (PlaceParts & { text?: string }) | undefined, at: str
 /** The kinds that take several answers. */
 const SEVERAL: readonly FieldKind[] = ['checkbox-group', 'multiselect'];
 
+/**
+ * What `manyValues` joins a text box's several values with (jr6 RULES R0). A box that takes its answers one at a time
+ * (a declared `tags` widget: Workday's Skills, UltiPro's review Skills) splits the planned text on it again and adds
+ * each value (ENGINE's tags filler).
+ */
+export const MANY_SEPARATOR = ', ';
+
 /** Several values as a set, joined for a text box, and one answer for a list only when there is exactly one. */
 function manyValues(choices: readonly Choice[], texts: readonly string[], at: string, spec: FieldSpec,
-  separator = ', '): ValueResult {
+  separator = MANY_SEPARATOR): ValueResult {
   if (choices.length === 0) return none('no-profile-value', false);
   const single = choices.length === 1 ? choices[0] : undefined;
   if (!SEVERAL.includes(spec.kind) && spec.kind !== 'text' && spec.kind !== 'textarea' && single === undefined) {

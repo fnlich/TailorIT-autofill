@@ -21,7 +21,6 @@
 import { parseDegree } from '../profile/degreeParse';
 import { classifyField } from '../resolver/resolve';
 import type { CurrentValue, FieldSpec } from '../types/field';
-import type { FieldCategory } from '../types/intent';
 import type { Profile } from '../types/profile';
 import { MAX_REPEATABLE_BLOCKS, REPEATABLE_KINDS, type RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
@@ -29,13 +28,13 @@ import {
   assignEntries, blockPrint, educationPrint, experiencePrint, isBlockEmpty, languagePrint, type BlockField,
   type EntryPrint, type RepeatableBlock,
 } from './repeatable';
+import type { ShownCategory } from './shown-categories';
 
 export { MAX_REPEATABLE_BLOCKS } from '../types/run';
 
-/** The categories a saved entry's summary may name (RepeatableRequest.shown). */
-export const SHOWN_CATEGORIES = ['education.school', 'experience.company', 'experience.title', 'experience.startDate',
-  'languages.language'] as const satisfies readonly FieldCategory[];
-export type ShownCategory = (typeof SHOWN_CATEGORIES)[number];
+// jr6 ENGINE E3 (BUILD.md section 4b): the categories a saved entry's summary may name (RepeatableRequest.shown) live in
+// a module of their own, which messaging/schemas.ts reads without this module's resolver (shown-categories.ts).
+export { SHOWN_CATEGORIES, type ShownCategory } from './shown-categories';
 
 /** A block that shows a saved entry's summary (Adapter.prefill.readEntries): its index, and its words by category. */
 export interface ShownBlock {

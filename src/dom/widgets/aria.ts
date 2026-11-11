@@ -20,10 +20,21 @@
  * list may be the adapter's hook, asked each time (Workday's prompts draw theirs at the end of the body only while
  * open), and a result its adapter names as only opening a list of its own (a category) is one that cannot be chosen
  * (isUnchoosableResult).
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 to 4 and 12):
+ * - a declared list's rows are its selector's matches, or the rows its adapter's hook lists where no selector reaches
+ *   them (WidgetResults.options: a slot's assigned elements); a choice presses the element its adapter names
+ *   (WidgetResults.pressTarget), else the row's label part ('label'), else the row (pressTargetOf);
+ * - a combobox or multiselect its adapter declares with a results list is acted on whatever ARIA its trigger carries
+ *   (ADP's sdf-select-simple: a div[role=button] in a shadow root, no aria-controls; its list a portal at the end of
+ *   the body);
+ * - a combobox no adapter declares is refused before any click (widget-unsupported, never read as a remote search)
+ *   where ARIA says its popup is a grid or a tree (Oracle's cx-select, aria-haspopup="grid"), or where ARIA can find no
+ *   list for it at all and it holds no text box (iCIMS's a.dropdown-select anchors): refusedUndeclared.
  */
+import { holdsComposed } from '../composed';
 import { CONTROL_SELECTOR, isTextLike } from '../kinds';
 import { WIDGET_SEARCH_MIN_OPTIONS } from '../thresholds';
-import type { FieldTarget, WidgetKind, WidgetTarget } from '../types';
+import type { DeclaredRows, FieldTarget, WidgetKind, WidgetTarget } from '../types';
 
 /** The roles a widget's element can carry, and the containers a toggle-button group can be. */
 export const WIDGET_ROOT_SELECTOR = '[role], fieldset';
@@ -86,11 +97,54 @@ export function filtersAsTyped(el: Element, input: Element | null): boolean {
 
 /** The option elements of a listbox: its role="option" descendants that belong to it, not to a list inside it; or,
  *  for a results list its adapter declared (v4: WidgetDecl.results), the elements inside it that the declared selector
- *  names. */
-export function optionElementsOf(listbox: Element, declared?: string): Element[] {
-  if (declared !== undefined) return Array.from(listbox.querySelectorAll(declared));
-  return Array.from(listbox.querySelectorAll('[role~="option" i]'))
-    .filter((option) => option.parentElement?.closest('[role~="listbox" i]') === listbox);
+ *  names. jr6 ENGINE E1 (FIXPLAN §6.2 item 3): or the rows the adapter's hook lists for it (WidgetResults.options: the
+ *  options a slot of the list shows, which no selector run on the list reaches), in place of the selector's matches;
+ *  a hook that fails lists none. */
+export function optionElementsOf(listbox: Element, declared?: string | DeclaredRows): Element[] {
+  if (declared === undefined) {
+    return Array.from(listbox.querySelectorAll('[role~="option" i]'))
+      .filter((option) => option.parentElement?.closest('[role~="listbox" i]') === listbox);
+  }
+  if (typeof declared === 'string') return Array.from(listbox.querySelectorAll(declared));
+  if (declared.options === undefined) return Array.from(listbox.querySelectorAll(declared.option));
+  try {
+    const rows = declared.options(listbox);
+    return [...new Set(Array.from(rows ?? []))].filter((row) => row?.nodeType === 1);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3): the element a choice of `option` presses: the one its adapter names
+ * (WidgetResults.pressTarget: SmartRecruiters' spl-select-option chooses on a click of its inner .c-spl-dropdown-item,
+ * inside its shadow trees, as Jobright's ~contents/sites/smartrecruiters operations fillSelectField presses it), where it
+ * sits inside the row (across shadow roots); else, s2 wd, its label part where its adapter declares a click there
+ * (results.choose 'label': Workday's promptOption inside the row's promptLeafNode, Oracle's
+ * .cx-select__list-item--content, as Jobright's ~contents/sites/oraclecloud operations fillSelectField clicks it); else
+ * the row itself. A hook that fails, or names an element outside the row, presses the row.
+ */
+export function pressTargetOf(widget: Pick<WidgetTarget, 'results' | 'optionLabel'>, option: Element): Element {
+  const declared = widget.results?.pressTarget;
+  if (declared !== undefined) {
+    let target: Element | null = null;
+    try {
+      target = declared(option);
+    } catch {
+      target = null;
+    }
+    return target !== null && target !== undefined && holdsComposed(option, target) ? target : option;
+  }
+  if (widget.results?.choose !== 'label') return option;
+  const part = widget.optionLabel?.(option) ?? null;
+  return part !== null && part !== option && option.contains(part) ? part : option;
+}
+
+/** jr6 ENGINE E1: whether a widget is select-only as a person meets it, so its opener toggles its list: it has no text
+ *  box of its own inside it (none, or the one its adapter declares beside it: iCIMS's search box, in a container drawn
+ *  next to its anchor, WidgetDecl.input). */
+export function selectOnly(widget: Pick<WidgetTarget, 'element' | 'input'>): boolean {
+  return widget.input === null || !holdsComposed(widget.element, widget.input);
 }
 
 /** A widget's list now (v4, drop): the results list its adapter declared (WidgetDecl.results), while it is in the page,
@@ -229,13 +283,56 @@ export function isWidgetPart(control: Element): boolean {
 export function isActionable(widget: WidgetTarget): boolean {
   if (widget.kind === 'checkbox') return false;
   if (widget.kind === 'radio') return widget.members.length > 0;
-  // v4 (drop): a search whose results list its adapter declared from a capture (WidgetDecl.results), with a text box.
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers its adapter declares (WidgetDecl.tags)
+  // is acted on through its text box: by its declared Add, or by its search's results, read as its kind reads a
+  // search's (widgets/tags.ts); one with neither, or with no text box, is not.
+  if (widget.tags !== undefined) {
+    if (widget.input === null || (widget.tags.add === undefined && widget.tags.search !== true)) return false;
+    if (widget.tags.add !== undefined) return true;
+  }
+  // v4 (drop): a search whose results list its adapter declared from a capture (WidgetDecl.results), with a text box
+  // (jr6 ENGINE E1, FIXPLAN §6.2 item 2: its own, or the one its adapter declares beside it, WidgetDecl.input).
   if (widget.declared && widget.kind === 'typeahead-remote' && widget.input !== null && widget.results !== undefined) {
     return true;
   }
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 4: ADP-2, ADP-3): a combobox or multiselect its adapter declares with a results list
+  // is acted on through that list, whatever its trigger says: ADP's sdf-select-simple opens on a div[role=button] in its
+  // shadow root that names no list, and draws its list as a portal at the end of the body (Jobright's
+  // ~contents/sites/adp-workforcenow operations: the newest [role=listbox] a person can see after the press).
+  if (widget.declared && (widget.kind === 'combobox' || widget.kind === 'multiselect') && widget.results !== undefined) {
+    return true;
+  }
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 12): refused before any click.
+  if (!widget.declared && refusedUndeclared(widget)) return false;
   const roles = [roleOf(widget.element), widget.input === null ? '' : roleOf(widget.input)];
   return roles.includes('combobox') || roles.includes('listbox') || referencesList(widget.element, widget.input)
     || opensListbox(widget);
+}
+
+/** ARIA's popup types whose items are no options (WAI-ARIA 1.2 combobox: aria-haspopup grid or tree): a list of rows
+ *  or tree items no reader here reads. A dialog may hold a listbox (listOf finds it), so it is not one of them. */
+const NO_OPTION_POPUPS: ReadonlySet<string> = new Set(['grid', 'tree']);
+
+/**
+ * jr6 ENGINE E1 (FIXPLAN §6.2 item 12: icims-new-2, O10): whether a combobox no adapter declares is one the helpers
+ * refuse before any click, so it is widget-unsupported and never read as a remote search:
+ * - its text box (or it) says its popup is a grid or a tree (Oracle's cx-select, input[role=combobox]
+ *   [aria-haspopup="grid"][aria-controls="<id>-listbox"] whose rows are role=row > gridcell, fixtures/oracle/
+ *   hjf-apply-section.html): the rows are no options, and its filtering box (aria-autocomplete="list") would otherwise
+ *   be typed into, up to six times, with nothing ever read (O10);
+ * - ARIA can find no list for it at all (no aria-controls or aria-owns on it or its text box, no listbox it is or holds,
+ *   no aria-haspopup="listbox" that names one once open as Workday's buttons do) and it holds no text box (iCIMS's
+ *   a.dropdown-select[role=combobox] anchors, whose list is named only by the search box of a container drawn beside
+ *   them, fixtures/icims/githubinc-profile.frame-1.html): a click opens what no reader finds.
+ * A radio group, a listbox of its own and any widget its adapter declares are never refused here.
+ */
+export function refusedUndeclared(widget: Pick<WidgetTarget, 'kind' | 'element' | 'input'>): boolean {
+  if (widget.kind === 'radio' || widget.kind === 'checkbox') return false;
+  const popup = (part: Element | null) => (part?.getAttribute('aria-haspopup') ?? '').trim().toLowerCase();
+  if ([widget.input, widget.element].some((part) => part !== null && NO_OPTION_POPUPS.has(popup(part)))) return true;
+  if (widget.input !== null) return false;
+  if (referencesList(widget.element, null) || popup(widget.element) === 'listbox') return false;
+  return listOf(widget.element, null) === null;
 }
 
 /** Whether a combobox's list is searched rather than chosen from whole (dom/widgets' header): its adapter declared it,

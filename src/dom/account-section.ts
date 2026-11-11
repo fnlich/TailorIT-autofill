@@ -16,19 +16,72 @@
  *
  * jr6 ENGINE E0 (FIXPLAN §3.1 item 11, ICIMS-04): where no single element holds the part alone, the adapter declares
  * its rows (Adapter.accountRows: careers-sentinel's Login, Password and Re-enter rows). accountRowsOf reads either
- * declaration as one list. Until ENGINE E2 (FIXPLAN §6.2 item 6) a list of one is read as the section was, and several
- * rows are no section: the page reads as before.
+ * declaration as one list.
+ * jr6 ENGINE E2 (FIXPLAN §6.2 item 6, ICIMS-04; snapshot6 icims1, careers-sentinel's Basic Information, whose "Create
+ * your profile" pane asks the person's name and email beside the Login, Password and Re-enter rows): several rows are
+ * the account part too (accountRowsIn), read as the section is: every box of the declared create-account form inside
+ * one of the rows, and nothing else of the application in a row (no field control but those boxes; each row holds one
+ * of them; no row the form root, outside it, or inside another row). Their password boxes never make the page an
+ * account's creation (dom/pause-detect.ts reads "inside one of the rows"); accountFormOf and accountLeft read them with
+ * their signatures unchanged; accountSectionOf still answers the one element of a list of one, and null for several
+ * rows (no single element holds them). The scan leaves the rows out through the adapter's own `excluded`, as it does
+ * the section.
  */
 import type { Adapter, SignInForm } from '../adapters/types';
+import { CONTROL_SELECTOR, kindOf } from './kinds';
 import { isUserVisible } from './visibility';
 
-/** The adapter's declared create-account form, when every one of its boxes sits inside `section` and it has a password
- *  box; null otherwise (or when a hook throws). */
-function declaredFormIn(adapter: Adapter, doc: Document, section: Element): SignInForm | null {
+/** The adapter's declared create-account form, when every one of its boxes sits inside one of `rows` (a section: a
+ *  list of one) and it has a password box; null otherwise (or when a hook throws). jr6 ENGINE E2 (FIXPLAN §6.2 item 6):
+ *  several rows hold nothing else of the application (onlyBoxesIn). */
+function declaredFormIn(adapter: Adapter, doc: Document, rows: readonly Element[]): SignInForm | null {
   const form = adapter.signInForm?.(doc, 'create-account') ?? null;
   if (form === null || form.password === null) return null;
   const boxes = boxesOf(form);
-  return boxes.every((box) => section.contains(box)) ? form : null;
+  if (!boxes.every((box) => rows.some((row) => row.contains(box)))) return null;
+  return rows.length === 1 || onlyBoxesIn(rows, boxes) ? form : null;
+}
+
+// jr6 ENGINE E2 (FIXPLAN §6.2 item 6, ICIMS-04)
+/** Whether each of several rows holds one of the declared form's boxes and no other field control (a hidden input, a
+ *  button or words beside them are no field): rows that hold any other question of the application are no account
+ *  part, and the page reads as before (its password boxes an account's creation). */
+function onlyBoxesIn(rows: readonly Element[], boxes: readonly HTMLInputElement[]): boolean {
+  return rows.every((row) => boxes.some((box) => row.contains(box))
+    && Array.from(row.querySelectorAll(CONTROL_SELECTOR)).every((control) => boxes.includes(control as HTMLInputElement)
+      || noField(control)));
+}
+
+/** Whether a native control is no field and no auth field (a hidden input, a button input). */
+function noField(control: Element): boolean {
+  const kind = kindOf(control);
+  return !kind.field && !kind.auth;
+}
+
+/** The declared account part as checked rows (module header): its rows and its create-account form, or null where the
+ *  adapter declares none, the rows are not parts of the form root (the root itself, outside it, the same row twice, a
+ *  row inside another) or its form does not sit in them. A hook that throws: null. */
+function accountPartOf(adapter: Adapter | null, doc: Document, root: Element | null):
+  { rows: readonly Element[]; form: SignInForm } | null {
+  if (adapter === null || (adapter.accountSection === undefined && adapter.accountRows === undefined)) return null;
+  try {
+    const formRoot = root ?? adapter.detect(doc)?.formRoot ?? null;
+    if (formRoot === null) return null;
+    const rows = accountRowsOf(adapter, formRoot);
+    if (rows.length === 0 || new Set(rows).size !== rows.length) return null;
+    if (rows.some((row) => row === formRoot || !formRoot.contains(row)
+      || rows.some((other) => other !== row && other.contains(row)))) return null;
+    const form = declaredFormIn(adapter, doc, rows);
+    return form === null ? null : { rows, form };
+  } catch {
+    return null;
+  }
+}
+
+/** The form root's account part as rows (module header): the section as a list of one, or its several rows; none where
+ *  the form root holds none. Elements only, never what they hold. */
+export function accountRowsIn(adapter: Adapter | null, doc: Document, root: Element | null): readonly Element[] {
+  return accountPartOf(adapter, doc, root)?.rows ?? [];
 }
 
 /** The boxes of a declared create-account form: its email, its email again, its password and the password again. */
@@ -48,34 +101,20 @@ function accountRowsOf(adapter: Adapter, form: Element): readonly Element[] {
 }
 
 /** The form root's account section (module header), or null. `root`: the form root (null: the adapter's own detect()
- *  finds it). jr6 E0: only a declared list of one (accountRowsOf) can be a section. */
+ *  finds it). jr6 ENGINE E2: the one element of a list of one; null for several rows (accountRowsIn reads them). */
 export function accountSectionOf(adapter: Adapter | null, doc: Document, root: Element | null): Element | null {
-  if (adapter === null || (adapter.accountSection === undefined && adapter.accountRows === undefined)) return null;
-  try {
-    const form = root ?? adapter.detect(doc)?.formRoot ?? null;
-    if (form === null) return null;
-    const rows = accountRowsOf(adapter, form);
-    const [section] = rows;
-    if (rows.length !== 1 || section === undefined || section === form || !form.contains(section)) return null;
-    return declaredFormIn(adapter, doc, section) === null ? null : section;
-  } catch {
-    return null;
-  }
+  const part = accountPartOf(adapter, doc, root);
+  return part === null || part.rows.length !== 1 ? null : part.rows[0]!;
 }
 
-/** The account section's declared create-account form (module header), or null where the form root holds no section. */
+/** The account part's declared create-account form (module header), or null where the form root holds no section and
+ *  no rows. */
 export function accountFormOf(adapter: Adapter, doc: Document, root: Element | null): SignInForm | null {
-  const section = accountSectionOf(adapter, doc, root);
-  if (section === null) return null;
-  try {
-    return declaredFormIn(adapter, doc, section);
-  } catch {
-    return null;
-  }
+  return accountPartOf(adapter, doc, root)?.form ?? null;
 }
 
-/** How many of the account section's required boxes a person can see are still empty (module header): Next and Submit
- *  hold while it is more than 0. 0 where the form root holds no section. */
+/** How many of the account part's required boxes a person can see are still empty (module header): Next and Submit
+ *  hold while it is more than 0. 0 where the form root holds no section and no rows. */
 export function accountLeft(adapter: Adapter, doc: Document, root: Element | null): number {
   const form = accountFormOf(adapter, doc, root);
   if (form === null) return 0;

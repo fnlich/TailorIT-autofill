@@ -39,6 +39,11 @@
  *    the next scan sees the options, never-loaded flags options-never-loaded, gone is left to the next scan; Cancel ends
  *    the waits at once, and so does the run's end. A list the page replaces is found again by one shared scan while the
  *    page has not changed since it was made, and a pass makes at most MAX_REFIND_SCANS of them (L-S5).
+ * jr6 ENGINE E3 (FIXPLAN §6.2 item 14: ICIMS-02, O3, ICIMS-19, ADP-2): a field its adapter names as resetting another
+ * (Adapter.dependsOn) is written before it in the pass (pass.ts parentsFirst), and the page's answer awaited after its
+ * write (pass.ts writeField); each scan tells the books which fields depend on which, and which the page now draws as
+ * other elements, so a dependent is decided again after its parent's write (bookkeeping.ts: 'parent-written',
+ * 'reshaped').
  * Fields the plan leaves waiting for the LLM (Phase 4: a tiebreak or a classification the worker asked TailorIT for)
  * are polled with plan/poll before each pass: at once when the pass has other fields to plan, else every AI_POLL_MS
  * until an answer comes, capped at AI_WAIT_CAP_MS with no answer coming in (then llm-unavailable); a field the worker
@@ -105,7 +110,8 @@ import { followUpWrite, type FollowUpSource, type QueuedWrite } from './follow-u
 import { phoneCountryFirst } from './phone-order';
 import { boxBeforeEndDate, filesAfterTheRest } from './repeatables';
 import {
-  RunAborted, writeField, type PassEnv, type PlanAnswer, type WidgetWriteEnv, type WriteResult, type WrittenField,
+  dependenciesOf, parentsFirst, RunAborted, writeField, type PassEnv, type PlanAnswer, type WidgetWriteEnv,
+  type WriteResult, type WrittenField,
 } from './pass';
 import type { ReceivedResume } from './transfer';
 import { TouchLog } from './touches';
@@ -540,11 +546,33 @@ class ReactiveLoop {
     const touched = this.touchedIn(scanned, wrote);
     const cleared = new Set(wrote.filter((field) => isCleared(field.current)).map((field) => field.baseKey));
     const observed = observeScan(this.state, scanned.fields, { valueMacs, attribution: this.attribution.take(),
-      touched, cleared, uploaded: this.uploadsTaken() });
+      touched, cleared, uploaded: this.uploadsTaken(), ...this.reshapes(scanned) });
     this.state = observed.state;
     this.afterScan(observed.events);
     return observed;
   }
+
+  // ── jr6 ENGINE E3 (FIXPLAN §6.2 item 14: ICIMS-02, O3, ICIMS-19's re-plan, ADP-2) ──
+  /** Each field's element at the scan before, by base key: a field the page draws as another element since is told to
+   *  the books (ScanInput.replaced). Elements only, never a value; dropped with the loop. */
+  private drawnAs = new Map<BaseKey, Element>();
+
+  /** What a scan tells the books of the fields a write resets (ScanInput.dependsOn: the adapter's dependsOn, child to
+   *  parent) and of the fields the page now draws as other elements than at the scan before (ScanInput.replaced). */
+  private reshapes(scanned: ScanResult): { dependsOn: Map<BaseKey, BaseKey>; replaced: Set<BaseKey> } {
+    const replaced = new Set<BaseKey>();
+    const drawnAs = new Map<BaseKey, Element>();
+    for (const field of scanned.fields) {
+      const control = scanned.target(field.key)?.control;
+      if (control === undefined) continue;
+      const before = this.drawnAs.get(field.baseKey);
+      if (before !== undefined && before !== control) replaced.add(field.baseKey);
+      drawnAs.set(field.baseKey, control);
+    }
+    this.drawnAs = drawnAs;
+    return { dependsOn: dependenciesOf(scanned, this.env.adapter), replaced };
+  }
+  // ── end jr6 ENGINE E3 ──
 
   /** The core pass of 2026-11-06: the files written whose upload the page shows done and whose input it has taken out
    *  of the page (Greenhouse: fixtures/greenhouse/axle-attached.html), by base key (ScanInput.uploaded). */
@@ -663,7 +691,8 @@ class ReactiveLoop {
     const writtenAt = new Map<BaseKey, number>();
     // v5 p2-fill review (L1): the scan the writes find their fields in, read again after a résumé's parse.
     let scanned = current;
-    const queued = this.queue(order, rows, writes, fields);
+    // jr6 ENGINE E3 (FIXPLAN §6.2 item 14): a field others depend on (Adapter.dependsOn) is written before them.
+    const queued = parentsFirst(this.queue(order, rows, writes, fields), current, env.adapter);
     const left = queued.map((entry) => entry.write.key);
     this.progress(rows, left, null);
     for (const [at, { write, planned, keep }] of queued.entries()) {
