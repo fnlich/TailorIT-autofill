@@ -40,6 +40,7 @@ import signInHtml from '../../fixtures/workday/workday-sign-in.html?raw';
 import { adaptersFor, applicationOf } from '../adapters';
 import { ADP_CONFIG, adpAdapter } from '../adapters/adp';
 import { configuredHooks } from '../adapters/configured';
+import type { PageState } from '../adapters/configured/types';
 import { genericAdapter } from '../adapters/generic';
 import { leverAdapter } from '../adapters/lever';
 import { oracleAdapter } from '../adapters/oracle';
@@ -76,9 +77,11 @@ const ADP = 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruit
 /** Lever's adapter, reading the page as served at `address`, and the generic one after it (adaptersFor's order). */
 const lever = (address: string): Adapter[] => [servedAdapter(leverAdapter, address), genericAdapter];
 
-/** A stand-in for ADP's declarations on line W (E-ADP: posting.text and entry, quirks), built from ADP's own rules. */
-function adpStub(quirks: NonNullable<Adapter['quirks']>, posting = true): Adapter {
+/** A stand-in for ADP's declarations on line W (E-ADP: posting.text and entry, quirks), built from ADP's own rules;
+ *  `states`, more page states before ADP's own (ADP_PANES). */
+function adpStub(quirks: NonNullable<Adapter['quirks']>, posting = true, states: readonly PageState[] = []): Adapter {
   const hooks = configuredHooks({ ...ADP_CONFIG,
+    states: [...states, ...(ADP_CONFIG.states ?? [])],
     ...(posting ? { posting: { text: 'div.job-description-data',
       entry: 'button#recruitment_jobDescription_apply, button#recruitment_jobDescription_candidateApply',
       from: 'jr6 apply F2 stub of E-ADP' } } : {}),
@@ -94,6 +97,44 @@ function drawGuest(doc: Document): void {
   const template = doc.getElementById('guest-template') as HTMLTemplateElement;
   doc.getElementById('guest-slot')!.append(template.content.cloneNode(true));
 }
+
+/** Stand-ins for line W's ADP panes after Apply (BUILD §4, E-ADP), as page states with no root of their own: the
+ *  privacy notice, whose primary button is the entry's step, and the code choice, the person's. */
+const ADP_PANES: PageState[] = [
+  { name: 'consent', when: 'sdf-focus-pane#jdv_privacy_dailog', auth: 'entry-choice',
+    entry: 'sdf-focus-pane#jdv_privacy_dailog sdf-button[slot="custom-buttons"][emphasis="primary"]',
+    from: 'jr6 apply F2 stub of E-ADP' },
+  { name: 'code-choice', when: 'sdf-focus-pane#login_view_identifier_dialog', auth: 'email-code',
+    from: 'jr6 apply F2 stub of E-ADP' },
+];
+
+/** Draws one of ADP_PANES over the details (made-up words), and answers it. */
+function drawPane(doc: Document, pane: 'consent' | 'code-choice'): Element {
+  const host = doc.createElement('sdf-focus-pane');
+  host.id = pane === 'consent' ? 'jdv_privacy_dailog' : 'login_view_identifier_dialog';
+  host.setAttribute('style', 'display:block;position:fixed;top:10%;left:20%;width:60%;padding:16px;background:#fff');
+  const heading = doc.createElement('h2');
+  heading.textContent = pane === 'consent' ? 'Privacy notice' : 'Where should we send your code?';
+  host.append(heading);
+  for (const words of pane === 'consent' ? ['Decline & Close', 'Consent & Continue'] : ['Email', 'Text message']) {
+    const button = doc.createElement('sdf-button');
+    button.setAttribute('style', 'display:inline-block;padding:8px');
+    button.setAttribute('role', 'button');
+    button.setAttribute('aria-label', words);
+    if (pane === 'consent') {
+      button.setAttribute('slot', 'custom-buttons');
+      button.setAttribute('emphasis', words === 'Consent & Continue' ? 'primary' : 'secondary');
+    }
+    button.textContent = words;
+    host.append(button);
+  }
+  doc.body.append(host);
+  return host;
+}
+
+/** The fake worker's answers to the card's lookups and adds (job-cards.ts reads none of them here). */
+const CARD_ANSWERS = { 'job/lookup': Array.from({ length: 16 }, () => ({ ok: true, data: {} })),
+  'job/add': Array.from({ length: 16 }, () => ({ ok: true, data: {} })) };
 
 /** A hello that says the frame has a form now. */
 const helloWithForm = (worker: FakeWorker) => worker.of('frame/hello')
@@ -419,6 +460,68 @@ describe('jr6 apply F2: forms drawn in place, late or at the posting’s address
       await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 5_000 });
       expect(runtime.page?.adapter.id).toBe('adp');
     }, 30_000);
+
+  it('ADP-like details: the card’s job/refresh is relayed before the press, under each pane, and at the guest form; never where no entry was said (P-1)',
+    async () => {
+      const refresh = (worker: FakeWorker, action: 'lookup' | 'add') =>
+        worker.platform.deliver({ v: 1, type: 'job/refresh', action });
+      const relayed = { ok: true, data: {} };
+      for (const pane of ['consent', 'code-choice'] as const) {
+        const { doc } = await openAt(detailsHtml, ADP);
+        const worker = applyWorker(DEFAULT_SETTINGS, { script: CARD_ANSWERS });
+        const { runtime } = await runtimeAt(doc, ADP, [adpStub({ entryPresses: 2, formLateMs: 20_000,
+          formInPlace: true }, true, ADP_PANES), genericAdapter], { worker });
+        runtimes.push(runtime);
+        // Before any press: its Apply offered (the worker's card frame from now on: frames.ts entrySaid).
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entry, pane).toBe(true), { timeout: 5_000 });
+        expect(await refresh(worker, 'lookup'), pane).toEqual(relayed);
+        // The Apply drew its pane over the details: no entry offered while it shows, the same address, no form.
+        const shown = drawPane(doc, pane);
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entry, pane).toBe(false), { timeout: 3_000 });
+        expect(runtime.page, pane).toBeNull();
+        expect(await refresh(worker, 'lookup'), pane).toEqual(relayed);
+        expect(await refresh(worker, 'add'), pane).toEqual(relayed);
+        // The pane gone, the guest form drawn in place: a form of ours.
+        shown.remove();
+        drawGuest(doc);
+        await vi.waitFor(() => expect(runtime.page?.adapter.id, pane).toBe('adp'), { timeout: 5_000 });
+        expect(await refresh(worker, 'lookup'), pane).toEqual(relayed);
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+      // A route of the page's own to its list (no job named): what the details told is not that address's.
+      const LIST = ADP.replace('&jobId=100001', '');
+      expect(applicationOf(new URL(LIST))).toBeNull();
+      let here = ADP;
+      const listed = await openAt(detailsHtml, ADP);
+      const first = await runtimeAt(listed.doc, ADP, [adpStub({ formInPlace: true }, true, ADP_PANES), genericAdapter],
+        { worker: applyWorker(DEFAULT_SETTINGS, { script: CARD_ANSWERS }), more: { href: () => here } });
+      runtimes.push(first.runtime);
+      await vi.waitFor(() => expect(wallsOf(first.worker).at(-1)?.entry).toBe(true), { timeout: 5_000 });
+      expect(await refresh(first.worker, 'lookup')).toEqual(relayed);
+      here = LIST;
+      listed.doc.querySelector('.job-description-main-container')!.remove();
+      listed.fixture.view.dispatchEvent(new PopStateEvent('popstate'));
+      await vi.waitFor(() => expect(wallsOf(first.worker).at(-1)?.entry).toBe(false), { timeout: 3_000 });
+      expect(await refresh(first.worker, 'lookup')).toEqual({ ok: false, error: 'expired' });
+      first.runtime.stop();
+      runtimes.splice(0);
+      removeFixtures(document);
+      // The same page with no posting entry declared never said entry: its card is no frame of ours to relay.
+      const { doc } = await openAt(detailsHtml, ADP);
+      const worker = applyWorker(DEFAULT_SETTINGS, { script: CARD_ANSWERS });
+      const { runtime } = await runtimeAt(doc, ADP, [adpStub({ formInPlace: true }, false, ADP_PANES), genericAdapter],
+        { worker });
+      runtimes.push(runtime);
+      await deadline(800);
+      expect(wallsOf(worker).some((wall) => wall.entry)).toBe(false);
+      expect(await refresh(worker, 'lookup')).toEqual({ ok: false, error: 'expired' });
+      drawPane(doc, 'consent');
+      await deadline(800);
+      expect(await refresh(worker, 'add')).toEqual({ ok: false, error: 'expired' });
+      expect(worker.of('job/lookup').length + worker.of('job/add').length).toBe(0);
+    }, 40_000);
 
   it('ADP-like details: the posting’s own text is read on its application address while no form shows (item 7)',
     async () => {

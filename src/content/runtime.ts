@@ -585,9 +585,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'job/refresh':
         // A form of ours, or (v3 Phase 3b) a recognised posting page with no form, whose card the worker reads; jr6
         // apply F2 item 7 (apply-b-new-2): or a page with no form that told the worker it offers its own Apply (ADP's
-        // job details at its guest page's address), whose card the worker loads (F3a).
+        // job details at its guest page's address), whose card the worker loads (F3a); the line P review (P-1): and
+        // keeps loading while that address shows the panes on the way (entrySaid), as the worker's card frame stays.
         return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null || app?.page === 'posting'
-          || (page === null && wallTold?.entry === true));
+          || (page === null && (entrySaid || wallTold?.entry === true)));
       case 'run/skip':
         return current?.skipField(msg.fieldKey as FieldKey) === true ? ok({}) : refuse('expired');
       case 'plan/ready':
@@ -1638,6 +1639,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** jr6 apply F2 (the line P review, revA-4): the application key the entry under way started at (null: an address
    *  that read none): a route of the page's own to another one ends the entry (onAddress). */
   let entryKey: string | null = null;
+  /** jr6 apply F2 (the line P review, P-1; apply-b-new-2): this document told `entry` at its current address
+   *  (frame/wall). The worker keeps its top frame as the tab's card frame from then on (background/frames.ts entrySaid,
+   *  cardFrameOf), through the panes and the guest view drawn in place at that address (ADP's Consent & Continue and
+   *  code choice, which offer no entry while they show), so the card's job/refresh is relayed there; a route of the
+   *  page's own ends it (onAddress), as a hello at another address ends the worker's. */
+  let entrySaid = false;
   /** The toast a wall with no form shows (atWall), while its cause stands; null: none. */
   let wallToast: 'sign-in' | 'no-sign-in' | 'challenge' | null = null;
   /** s2 profile (P1): what that toast says the page waits for (WALL_WAITS), told the worker with the wall (tellWall) so
@@ -1738,6 +1745,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       return;
     }
     wallTold = { wall: now.wall, choice: now.choice, waits, entry, refused, entering: isEntering };
+    // The line P review (P-1): the worker keeps this frame as the tab's card frame from now on (entrySaid).
+    if (entry) entrySaid = true;
     log('content.wall', { shown: now.wall !== null, choice: now.choice, waits: waits !== null, entry,
       refused: refused !== null, entering: isEntering });
     void channel.request({ v: 1, type: 'frame/wall', wall: now.wall, ...(now.choice ? { choice: true as const } : {}),
@@ -2332,6 +2341,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // another one (the person opened another job in this document, or a page of none) ends it quietly, as run/cancel
     // does: nothing pressed after it, nothing refused (enter).
     if (entryCancel !== null && (app?.applicationKey ?? null) !== entryKey) entryCancel.abort(ENTRY_MOVED);
+    // The line P review (P-1): what this document told at its last address is not this one's.
+    entrySaid = false;
     if ((app?.applicationKey ?? null) !== before) {
       current?.abort();
       current = null;
