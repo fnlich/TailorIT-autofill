@@ -1,0 +1,5 @@
+{
+  "https://uscareers-nyu.icims.com/jobs/16462/continual-service-improvement-manager%2c-global-infrastructure-and-operations/form?form=jsf-1793623031081-16462&step=7&isPacket=1&type=4&hashed=REDACTED": "fixtures/icims/jr6-nyu-iform-offer.html",
+  "https://uscareers-nyu.icims.com/jobs/16462/continual-service-improvement-manager%2c-global-infrastructure-and-operations/form?form=jsf-1793623031081-16462&step=7&isPacket=1&type=4&hashed=REDACTED&in_iframe=1": "fixtures/icims/jr6-nyu-iform-offer.frame-1.html",
+  "https://nyu.icims.com/forms?module=Forms&action=showForm&brandtype=ccc&portalid=85&form=jsf-1793623031081-16462&user=REDACTED&item=REDACTED&token=REDACTED&csrf=REDACTED&isPacket=1&in_iframe=1&step=7&aid=REDACTED": "fixtures/icims/jr6-nyu-iform-offer.frame-2.html"
+}
