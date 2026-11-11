@@ -10,8 +10,14 @@
  * - ninjaone-step2 [jobvite-3]: step 2, Voluntary Self Identification (the equal-opportunity and veteran blocks, each
  *   ending in a "Your Name" / "Today's Date" signature pair);
  * - ninjaone-step3 [jobvite-4]: step 3, the screening questions, Send Application shown and Next hidden.
- * What no snapshot shows is left out: the page after Send Application (no success sign), a rendered field error, a
- * checkbox, textarea or currency question, the cover letter's row once a file is in.
+ * jr6 (FIXPLAN §6.7; the owner's snapshot6 of 2026-11-10, two more companies' career sites, Vista Higher Learning and
+ * Sikich, fixtures/jobvite/jr6-*: JOBVITE_JR6_SNAPSHOTS) adds what those captures show: the page after Send Application
+ * (jr6-vhl-confirmation, jr6-sikich-confirmation: the success sign, JV-24), the resume row's spinner while Jobvite reads
+ * the file it parses (JV-18), and Jobvite's "invalid fields only" view of a step after a refused Next
+ * (jr6-sikich-step1-invalid: the step signed by its anchor alone, JV-23); a checkbox group (jr6-vhl-step3-filled), a
+ * textarea (jr6-vhl-step1) and an EEO step whose fields are all required (jr6-sikich-step2) are read by the scanner's
+ * own rules. Still unseen: a rendered field error's text, a currency question, the cover letter's row once a file is
+ * in, and a Work History or References section (JV-25).
  *
  * Read by the scanner's own rules, so no rule here: every text, select and date control's label[for] with its
  * trailing star (span.jv-required-label) and required attribute; each radio group's legend; the sub-section a field
@@ -31,9 +37,16 @@ import type { AtsConfig, ConfiguredHooks } from '../configured';
 import { configuredHooks } from '../configured';
 import { parseJobviteUrl } from './url';
 
-/** The fixture cases the config was read from. */
+/** The fixture cases the config was read from (each with its hand-written expectation). */
 export const JOBVITE_SNAPSHOTS = ['ninjaone-posting', 'ninjaone-consent-empty', 'ninjaone-consent', 'ninjaone-step1',
   'ninjaone-step1-resume', 'ninjaone-step2', 'ninjaone-step3'] as const;
+
+/** jr6 (FIXPLAN §6.7): the owner's snapshot6 captures of 2026-11-10 the jr6 rules were read from, converted again with
+ *  the jr6 converter (its tests, jr6-jobvite.browser.test.ts, hold what each page shows; no expectation file). */
+export const JOBVITE_JR6_SNAPSHOTS = ['jr6-vhl-posting', 'jr6-vhl-step1', 'jr6-vhl-step1-filled', 'jr6-vhl-step2',
+  'jr6-vhl-step2-filled', 'jr6-vhl-step3-filled', 'jr6-vhl-confirmation', 'jr6-sikich-posting', 'jr6-sikich-step1',
+  'jr6-sikich-step1-resume', 'jr6-sikich-step1-invalid', 'jr6-sikich-step2', 'jr6-sikich-step3',
+  'jr6-sikich-step3-filled', 'jr6-sikich-confirmation'] as const;
 
 /** The resume's file input and the cover letter's: each in one of two body-level popovers that share the id
  *  attachmentDropdown, outside the form (ninjaone-step1). */
@@ -49,7 +62,7 @@ const COVER_LETTER_HEADING = 'div.jv-additional-files > h3.jv-step-header';
 /** The rules, each naming its snapshot. */
 const RULES: AtsConfig = {
   platform: 'jobvite',
-  snapshots: JOBVITE_SNAPSHOTS,
+  snapshots: [...JOBVITE_SNAPSHOTS, ...JOBVITE_JR6_SNAPSHOTS],
   parse: parseJobviteUrl,
   states: [
     // The gate once a residence is chosen: the policy and its "I Accept" (a submit button that posts the gate) show.
@@ -82,11 +95,13 @@ const RULES: AtsConfig = {
     { input: COVER_LETTER_INPUT, area: 'body.jv-page-apply', control: COVER_LETTER_OPENER, from: 'ninjaone-step1' },
   ],
   steps: {
-    // The one rendered step (ng-if="showStep(<n>)"), named by its ng-form; its first header.
+    // The one rendered step (ng-if="showStep(<n>)"), named by its ng-form alone. jr6 JV-23: no heading. After a
+    // refused Next Jobvite hides every valid section of the step (showInvalidField; jr6-sikich-step1-invalid shows
+    // only "Preferred First Name*"), so the step's first shown header moved from "Add Resume*" to "Personal
+    // Information" and the same step read as a new one; its ng-form (scopeData.step1..3) names it whatever shows.
     anchors: [{ css: 'form[name="scopeData.applyForm"] > div.jv-apply-step[ng-form]', attr: 'ng-form' }],
-    heading: 'form[name="scopeData.applyForm"] > div.jv-apply-step h3.jv-step-header',
     next: 'div.jv-apply-form-actions > button[type="button"][aria-label="Next"]',
-    from: 'ninjaone-step1, ninjaone-step2, ninjaone-step3',
+    from: 'ninjaone-step1, ninjaone-step2, ninjaone-step3, jr6-sikich-step1, jr6-sikich-step1-invalid',
   },
   // On every step, ng-hide but on the last (ninjaone-step3, where Next is ng-hide instead).
   submit: { css: 'div.jv-apply-form-actions > button[type="submit"][aria-label="Send Application"]', from: 'ninjaone-step3' },
@@ -106,8 +121,29 @@ const RULES: AtsConfig = {
   // The templates every step holds, ng-hide until a Next or Send Application finds a required field empty.
   errors: { css: 'div.jv-apply-error p[role="alert"]', from: 'ninjaone-step1' },
   // "Sending Application" with its spinner (span[ng-show="submitting"], ng-hide until the application is sent).
-  busy: [{ css: 'button[aria-label="Send Application"] > span[ng-show="submitting"]', from: 'ninjaone-step3' }],
-  posting: { text: 'div.jv-job-detail-description', entry: 'a.jv-button.jv-button-apply', from: 'ninjaone-posting' },
+  busy: [{ css: 'button[aria-label="Send Application"] > span[ng-show="submitting"]', from: 'ninjaone-step3' },
+    // jr6 JV-18: the resume row's spinner (<span class="jv-spinner ng-hide" ng-show="resumeLoading"> in its
+    // div.jv-file), shown while Jobvite takes the file and reads it into the name, email and phone (those stay
+    // ng-pristine in the captures: the page's parse, not a person's typing), so the parse wait (dom/resume-parse.ts)
+    // and the step's settle hold until it hides.
+    { css: '#attachResume ul.jv-file-list span.jv-spinner',
+      from: 'ninjaone-step1-resume, jr6-vhl-step1-filled, jr6-sikich-step1-resume' }],
+  // jr6 JV-24: the page after Send Application (/applyConfirmation, which the address already reads as the
+  // confirmation): its message's header beside the success icon. The selector and the words are Jobright 1.25.2's
+  // facts for Jobvite (its ats-submission-rules, the jobvite rule: the header under .jv-page-message:has(
+  // i.jv-icon-success) in article.jv-page-body[role=main], reading "Application Sent!"); the words are read at their
+  // end, as Sikich's header reads "Well Done, Application Sent!" (jr6-sikich-confirmation) where VHL's reads
+  // "Application Sent!" (jr6-vhl-confirmation).
+  success: { css: 'article.jv-page-body[role="main"] .jv-page-message:has(i.jv-icon-success) > h2.jv-page-message-header',
+    text: /Application Sent!$/, from: 'jr6-vhl-confirmation, jr6-sikich-confirmation' },
+  posting: { text: 'div.jv-job-detail-description', entry: 'a.jv-button.jv-button-apply',
+    from: 'ninjaone-posting, jr6-vhl-posting, jr6-sikich-posting' },
+  // jr6 JV-18 (FIXPLAN §6.7 item 4): Jobvite reads the resume put into #file-input-0 and fills the name, email and
+  // phone from it (jr6-vhl-step1-filled, ninjaone-step1-resume: those hold a value, ng-pristine, once the file row
+  // shows), so a pass writes the resume before every other field and waits for the parse (the resume row's spinner
+  // above) before it writes the rest over it. Jobright uploads it after the fields with no wait (its jobvite filler's
+  // executeSiteSpecificSteps); this order is the safer one.
+  quirks: { resumeParse: true },
 };
 
 const ruled: ConfiguredHooks = configuredHooks(RULES);
