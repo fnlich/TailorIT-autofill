@@ -327,6 +327,15 @@ export const AI_OPENED_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCat
   'screening.militaryTraining']);
 
 /**
+ * jr6 fix (revD-04): the AI-opened categories no résumé or posting can settle (a contract the person may be bound by,
+ * relatives at the company, military training for this role): TailorIT's answer to one is always written as an "AI
+ * guess" (plan/frame.ts planAnswer), whatever basis it gives, so a legal guess is never shown as a fact and the
+ * auto-apply agent's legal-guess rule (settings.agentSkip.legalGuess) sees it.
+ */
+export const GUESS_ONLY_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>([
+  'screening.restrictiveAgreement', 'screening.relatives', 'screening.militaryTraining']);
+
+/**
  * The profile categories an AI answer may fill when the profile holds no value for them (the owner's amendments): job
  * preferences, availability, how the person heard of the job, years of experience and a skill chosen from a list. Never
  * a name, contact detail, address, link, school, employer, date or file: those come from the profile or stay blank.

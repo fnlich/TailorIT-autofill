@@ -5,13 +5,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import { inputOf as matchInputOf, outcomeOf } from '../matcher/matcher.testkit';
+import { policyClassOf } from '../resolver/categories';
 import { openTopicsOfTexts } from '../resolver/classify';
 import { classifyField, datePartChoice, datePartOf, dayOfLabel } from '../resolver/resolve';
 import { countyChoice } from '../resolver/values';
+import { sha256Hex } from '../text/sha256';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import type { FieldSpec } from '../types/field';
+import { ANSWER_BASES } from '../types/intent';
 import type { Profile } from '../types/profile';
 import { CAUTIOUS_SETTINGS, fieldOf, goldenProfile, inOrder, NOW, planOf, settingsWith, specOf, vocab } from './plan.testkit';
+import type { AnswerVerdict } from './answers';
 import type { PlanInput } from './types';
 
 const golden = goldenProfile();
@@ -404,6 +408,23 @@ describe('20 (jobvite-new-1): a restrictive agreement asked as a fact goes to th
     const answered = { ...golden, screening: { ...golden.screening,
       restrictiveAgreement: { kind: 'value' as const, value: false } } };
     expect(written(planned([spec], spec, { profile: answered }).write)).toBe('No');
+  });
+
+  // jr6 fix (revD-04): no résumé settles a contract the person may be bound by: TailorIT's answer is a guess, shown so
+  // and counted by the auto-apply agent's legal-guess rule, whatever basis it came with.
+  it('writes the AI’s answer as an "AI guess" whatever its basis, a legal guess', () => {
+    for (const basis of ANSWER_BASES) {
+      const verdict: AnswerVerdict = { key: spec.key, kind: 'choice', optionSetHash: spec.optionSetHash, index: 1,
+        labelHash: sha256Hex('No'), basis, taskId: 'c3e5a7b9-2d4f-4b6c-8e0a-1f3b5d7e9a20' };
+      const { write, row } = fieldOf(planOf([spec], { ai: { verdicts: new Map(),
+        answers: new Map([[spec.key, verdict]]) } }), spec);
+      expect(write, basis).toMatchObject({ value: { kind: 'option', cleanLabel: 'No' },
+        origin: { provenance: 'llm-pick' } });
+      expect(row, basis).toMatchObject({ category: 'screening.restrictiveAgreement', status: 'verified',
+        reason: 'ai-guess', needsUserAction: false });
+      // The orchestrator's legal-guess fact (content/orchestrator.ts submitFacts) reads the row so.
+      expect(row.reason === 'ai-guess' && policyClassOf(row.category) === 'legal', basis).toBe(true);
+    }
   });
 
   it('never opens an ask to agree to one', () => {

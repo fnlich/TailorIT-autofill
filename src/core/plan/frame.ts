@@ -120,7 +120,7 @@ import type { FieldCategory, PolicyClass, ValueOrigin, VocabDomain, WriteValue }
 import { intendedDecline } from '../matcher/intended';
 import type { Match, MatchFlag, Resolution } from '../types/match';
 import type { UntrustedText, VisibleText } from '../types/text';
-import { CLASS_POLICIES, policyClassOf } from '../resolver/categories';
+import { CLASS_POLICIES, GUESS_ONLY_CATEGORIES, policyClassOf } from '../resolver/categories';
 import { basisPickContradicts, postingCountryOf, type LegalContext } from '../resolver/policy';
 import { RESUME_MIME_TYPES, uploadName, withCoverLetter } from '../profile/canonicalize';
 import { answerItemOf, answerRefusal, answerText, answerWaitsForOptions, type AnswerItem, type AnswerVerdict }
@@ -855,7 +855,9 @@ function planAnswer(spec: FieldSpec, resolution: Resolution, standing: FillResul
     row: {
       key: spec.key, label: spec.label, kind: spec.kind, category, section: sectionKey(spec.section),
       required: spec.required, status: 'verified', provenance: write.origin.provenance, matcherStage: write.match.stage,
-      confidence: LLM_ANSWER, reason: verdict.basis === 'guess' ? 'ai-guess' : 'llm-answer-written', wrote: false,
+      // jr6 fix (revD-04): an answer in a category no résumé can settle is a guess, whatever basis it came with.
+      confidence: LLM_ANSWER, reason: verdict.basis === 'guess' || GUESS_ONLY_CATEGORIES.has(category) ? 'ai-guess'
+        : 'llm-answer-written', wrote: false,
       verification: 'not-checked', needsUserAction: false,
     },
   };
