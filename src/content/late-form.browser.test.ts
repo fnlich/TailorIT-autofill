@@ -14,7 +14,9 @@ import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { quietWait } from '../dom/settle';
 import { createFakeWorker, testVocab } from './content.testkit';
-import { LATE_FORM_CAP_MS, LATE_FORM_LOOK_MS, lateAdapters, lateFormMs, watchForLateForm } from './late-form';
+import { LATE_FORM_CAP_MS, LATE_FORM_LOOK_MS, lateAdapters, lateFormMs, watchForLateForm,
+  // jr6 apply F2 item 5
+  ATTRIBUTE_RECORDS_READ, attributesShow, FORM_PARTS, PROMPT_PARTS, watchForSiteForm } from './late-form';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
 const ASHBY = 'https://jobs.ashbyhq.com/tailorit-fixture/00000000-0000-4000-8000-00000000a5b1/application';
@@ -150,3 +152,80 @@ describe('the content runtime on a page that draws its form late', () => {
     expect(fake.of('frame/hello')).toHaveLength(1);
   });
 });
+
+// ── jr6 apply F2 item 5 (APPLYPLAN D5; C3, apply-c-new-1): a form drawn hidden and shown by an attribute ──
+describe('the late watches hear an attribute that shows a form (jr6 apply F2 item 5)', () => {
+  /** The records a change to `doc` makes, as a MutationObserver of SHOWN_ATTRIBUTES hears them. */
+  async function recordsOf(doc: Document, change: () => void): Promise<MutationRecord[]> {
+    const view = doc.defaultView!;
+    const heard: MutationRecord[] = [];
+    const observer = new view.MutationObserver((records) => heard.push(...records));
+    observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: true,
+      attributeFilter: ['class', 'style', 'hidden', 'open'] });
+    change();
+    await until(view, doc, () => heard.length > 0, 500);
+    observer.disconnect();
+    return heard;
+  }
+
+  it('counts an attribute change on an element that is or holds a control, never one that holds none', async () => {
+    const fixture = await loadFixture(document, `<main><div id="wrap" class="closed"><form><label for="n">Name</label>
+      <input id="n"></form></div><div id="spinner" style="width:10px"><span>..</span></div>
+      <dialog id="d"><button id="b" type="button">Apply manually</button></dialog><p id="lone" hidden>Text</p></main>`);
+    const doc = fixture.doc;
+    expect(attributesShow(await recordsOf(doc, () => doc.getElementById('wrap')!.className = 'open'), FORM_PARTS))
+      .toBe(true);
+    expect(attributesShow(await recordsOf(doc, () => doc.getElementById('spinner')!.style.width = '20px'), PROMPT_PARTS))
+      .toBe(false);
+    expect(attributesShow(await recordsOf(doc, () => doc.getElementById('lone')!.hidden = false), PROMPT_PARTS)).toBe(false);
+    // A dialog opened: a control for the prompt watch (its button), no form's part for the company page's.
+    const opened = await recordsOf(doc, () => (doc.getElementById('d') as HTMLDialogElement).setAttribute('open', ''));
+    expect(attributesShow(opened, PROMPT_PARTS)).toBe(true);
+    expect(attributesShow(opened, FORM_PARTS)).toBe(false);
+    // Nodes added are no attribute change.
+    expect(attributesShow(await recordsOf(doc, () => doc.querySelector('main')!.append(doc.createElement('input'))),
+      FORM_PARTS)).toBe(false);
+  });
+
+  it('counts a batch of more attribute changes than it reads, as addsFormParts does', async () => {
+    const fixture = await loadFixture(document, `<main>${'<span class="a">x</span>'.repeat(ATTRIBUTE_RECORDS_READ + 5)}</main>`);
+    const records = await recordsOf(fixture.doc, () => {
+      for (const span of Array.from(fixture.doc.querySelectorAll('span'))) span.className = 'b';
+    });
+    expect(attributesShow(records, FORM_PARTS)).toBe(true);
+  });
+
+  it('watchForLateForm looks when a dialog holding a form opens by its attribute alone (undo proof: the attribute watch)',
+    async () => {
+      const fixture = await loadFixture(document, `<main><dialog id="d"><form><label for="n">Name</label><input id="n">
+        </form></dialog><div id="spinner" style="width:10px">..</div></main>`);
+      let looks = 0;
+      watchForLateForm(fixture.doc, 2_000, () => {
+        looks += 1;
+        return false;
+      }, new AbortController().signal);
+      // A style that shows no control: no look.
+      fixture.doc.getElementById('spinner')!.style.width = '30px';
+      expect(await until(fixture.view, fixture.doc, () => looks > 0, LATE_FORM_LOOK_MS * 4)).toBe(false);
+      // The dialog opened: a look, with no node added.
+      fixture.doc.getElementById('d')!.setAttribute('open', '');
+      expect(await until(fixture.view, fixture.doc, () => looks === 1, 1_000)).toBe(true);
+    });
+
+  it('watchForSiteForm looks when a class shows a form\u2019s parts, never for a style on a plain element', async () => {
+    const fixture = await loadFixture(document, `<main><section id="apply" class="hidden" style="display:none"><form>
+      <input id="n"></form></section><div id="banner" class="a">News</div></main>`);
+    let looks = 0;
+    watchForSiteForm(fixture.doc, () => {
+      looks += 1;
+      return false;
+    }, new AbortController().signal);
+    fixture.doc.getElementById('banner')!.className = 'b';
+    expect(await until(fixture.view, fixture.doc, () => looks > 0, 400)).toBe(false);
+    const section = fixture.doc.getElementById('apply')!;
+    section.className = 'shown';
+    section.style.display = 'block';
+    expect(await until(fixture.view, fixture.doc, () => looks === 1, 1_500)).toBe(true);
+  });
+});
+// ── end jr6 apply F2 item 5 ──

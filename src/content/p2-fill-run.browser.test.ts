@@ -246,11 +246,13 @@ const POSTING = 'https://jobs.lever.co/acme/1b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00
 const POSTING_PAGE = `<!doctype html><body><main><h1>Platform Engineer</h1><p>We build platforms.</p>
   <a id="apply" href="${POSTING}/apply">Apply for this job</a></main></body>`;
 /** The generic adapter with the posting's Apply declared as its entry (a test stand-in for a platform's entryControl:
- *  in a srcdoc frame the platforms' own read the document's address, which is not the posting's). */
-const withEntry: Adapter = { ...genericAdapter,
+ *  in a srcdoc frame the platforms' own read the document's address, which is not the posting's). jr6 apply F2 item 1:
+ *  it stands for the address's own adapter (Lever's), since only an own adapter offers an entry. */
+const withEntry: Adapter = { ...genericAdapter, id: 'lever',
   entryControl: (doc) => doc.querySelector<HTMLElement>('a#apply') };
 
-describe('Open Application on a posting page (v5 p2-fill)', () => {
+// jr6 apply F2 (the owner, 2026-11-10: the button's word stays "Autofill"): the panel's Autofill on a posting page.
+describe('Autofill on a posting page: the posting\u2019s own Apply (v5 p2-fill, jr6 apply F2)', () => {
   async function posting(adapters: Adapter[]) {
     const fixture = await loadFixture(document, POSTING_PAGE);
     const pressed: string[] = [];
@@ -277,23 +279,30 @@ describe('Open Application on a posting page (v5 p2-fill)', () => {
   }, 30_000);
 
   // v5 p2-fill review (L5): a press that cannot be made is told, so the panel says why; the next press clears it.
-  it('tells the worker when its Apply could not be pressed, and clears it at the next press', async () => {
-    const { fixture, fake, pressed } = await posting([withEntry]);
-    await vi.waitFor(() => expect(fake.of('frame/wall').at(-1)).toMatchObject({ wall: null, entry: true }), { timeout: 5_000 });
-    // The page takes its Apply away before the panel's press comes.
-    const link = fixture.doc.getElementById('apply')!;
-    link.remove();
-    await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
-    await vi.waitFor(() => expect(fake.of('frame/wall').at(-1)).toMatchObject({ wall: null, entryRefused: true }),
-      { timeout: 5_000 });
-    expect(pressed).toEqual([]);
-    // Back, and pressed: the refusal is cleared.
-    fixture.doc.querySelector('main')!.append(link);
-    await vi.waitFor(() => expect(fake.of('frame/wall').at(-1)).toMatchObject({ entry: true }), { timeout: 5_000 });
-    await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
-    await vi.waitFor(() => expect(pressed).toEqual(['apply']));
-    expect(fake.of('frame/wall').at(-1)?.entryRefused).toBeUndefined();
-  }, 30_000);
+  // jr6 apply F2 item 2 (AF-2, AF-12): the frame waits for an Apply drawn late first (ENTRY_WAIT_MS), says it works
+  // meanwhile (entering), and says why when none came ('none').
+  it('tells the worker when its Apply could not be pressed (none came in the wait), and clears it at the next press',
+    async () => {
+      const { fixture, fake, pressed } = await posting([withEntry]);
+      await vi.waitFor(() => expect(fake.of('frame/wall').at(-1)).toMatchObject({ wall: null, entry: true }),
+        { timeout: 5_000 });
+      // The page takes its Apply away before the panel's press comes.
+      const link = fixture.doc.getElementById('apply')!;
+      link.remove();
+      await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(fake.of('frame/wall').at(-1)).toMatchObject({ entering: true }), { timeout: 2_000 });
+      await vi.waitFor(() => expect(fake.of('frame/wall').at(-1)).toMatchObject({ wall: null, entryRefused: true,
+        refusal: 'none' }), { timeout: 12_000 });
+      expect(fake.of('frame/wall').at(-1)?.entering).toBeUndefined();
+      expect(pressed).toEqual([]);
+      // Back, and pressed: the refusal is cleared.
+      fixture.doc.querySelector('main')!.append(link);
+      await vi.waitFor(() => expect(fake.of('frame/wall').at(-1)).toMatchObject({ entry: true }), { timeout: 5_000 });
+      await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(pressed).toEqual(['apply']));
+      expect(fake.of('frame/wall').at(-1)?.entryRefused).toBeUndefined();
+      expect(fake.of('frame/wall').at(-1)?.refusal).toBeUndefined();
+    }, 40_000);
 
   it('a posting whose adapter declares no entry offers none and presses nothing (undo proof)', async () => {
     const { fake, pressed } = await posting([genericAdapter]);
@@ -302,7 +311,8 @@ describe('Open Application on a posting page (v5 p2-fill)', () => {
     await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
     await deadline(500);
     expect(pressed).toEqual([]);
-    // Nor says it refused a press nobody was offered.
-    expect(fake.of('frame/wall').some((message) => message.entryRefused === true)).toBe(false);
+    // jr6 apply F2 item 2 (AF-2, AF-12): Autofill is offered on every page of ours, so its press there says why it
+    // found nothing to press ('none'), at once (no adapter declares an Apply or a form drawn late).
+    expect(fake.of('frame/wall').at(-1)).toMatchObject({ entryRefused: true, refusal: 'none' });
   }, 30_000);
 });

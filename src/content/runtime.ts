@@ -142,6 +142,20 @@
  * every armed Submit press, into the document's memory only (form-capture.ts), and handed to the worker with the arm
  * (submit/form, with the posting's names and visible text from the top frame), which sends them to TailorIT only once
  * the site confirmed that Submit.
+ *
+ * jr6 apply F2 (the owner, 2026-11-10: "extension should also click `apply` to find and run the form ... and `Autofill`
+ * word will be kept"; the session's APPLYPLAN §5 F2): Autofill on a page with no form. Its own Apply is offered on any
+ * address of a posting but its confirmation, by the address's own adapters (entryOffered). The panel's Autofill, the
+ * queue's and the agent's agent/enter are one entry (enter), one at a time (frame/wall `entering`): the page read again
+ * first (a form now is filled); the page's Apply waited for and pressed through the entry door (never a new tab, a
+ * download or another origin: the door says why), with the step the site shows after it (the adapter's choice, or the
+ * generic second step in a dialog our press opened: adapters/second-step.ts), told the worker at each press
+ * (entry/pressed, with the destination's key on this origin); then this document watched for what the press brought
+ * (afterPress): a form claimed in place by the address's own adapters, a posting's address included; a wall, the
+ * sign-in step's; else why not, in one closed word (frame/wall `refusal`). Forms drawn hidden are heard by their
+ * attributes (late-form.ts), at a posting's address where an adapter says so (quirks.formAtPosting), and for the
+ * document's life where it draws them in place (quirks.formInPlace), the generic adapter never claiming there. A
+ * posting's own text is read for policy text on an application's address too, while no form shows there.
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from '../adapters/address';
@@ -169,6 +183,8 @@ import { ok, refuse } from '../messaging/envelope';
 import {
   SIGN_IN_WALLS, WorkerToContentSchema, type EntryAnswer, type LauncherPrefs, type PressAnswer, type SignInWall,
   type StepTarget, type SubmitEvidence, type SubmitPresser, type WallWaits,
+  // jr6 apply F2
+  ENTRY_REFUSALS, type EntryRefusal,
 } from '../messaging/schemas';
 import { probeStorageLocalFromContent } from '../platform/chrome';
 import type { ContentPlatform, Sender } from '../platform/types';
@@ -189,7 +205,9 @@ import { newSuccessSign, shownSignsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type 
   watchNetworkSigns } from './submitted';
 import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter,
   // v5 p2-detect
-  refusalNow } from './press';
+  refusalNow,
+  // jr6 apply F2
+  ENTRY_MAX_PRESSES, pressSecondStep, type EntryResult } from './press';
 import { loadPagePatches } from './page-patches';
 import { dropKeptSignIns, signIn } from './sign-in';
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
@@ -220,6 +238,10 @@ export const WALL_LOOK_MS = 300;
 /** v4: how many times in a document a paused run carries on by itself once its pause went (orchestrator.ts
  *  watchPauseGone): a page that keeps showing and hiding a check never loops. */
 export const MAX_AUTO_CONTINUES = 20;
+/** jr6 apply F2 item 2 (APPLYPLAN D3; AF-4, B4, B9): how long after an entry press of ours this document is watched
+ *  for what the press brings (a form drawn in place, a wall, a choice), at least; an adapter of the address whose
+ *  formLateMs is longer is waited for that long (late-form.ts LATE_FORM_CAP_MS holds it). */
+export const ENTRY_FORM_WAIT_MS = 20_000;
 
 /** How the runtime is set up; every part defaults to the real one. */
 export interface RuntimeOptions extends RunOptions {
@@ -284,6 +306,11 @@ function pickAdapter(doc: Document, url: URL, adapters: (url: URL) => Adapter[])
     }
   }
   return null;
+}
+
+/** jr6 apply F2: an address's own adapters, the generic one left out (it claims any page with a visible control). */
+function ownAdapters(adapters: readonly Adapter[]): Adapter[] {
+  return adapters.filter((adapter) => adapter.id !== 'generic');
 }
 
 /** Whether a pageshow is the browser bringing this document back from the back/forward cache: its own (trusted)
@@ -553,8 +580,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // The side panel's job card (v2, job-relay.ts): relayed with nothing in either answer, and the custom question's
       // job text.
       case 'job/refresh':
-        // A form of ours, or (v3 Phase 3b) a recognised posting page with no form, whose card the worker reads.
-        return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null || app?.page === 'posting');
+        // A form of ours, or (v3 Phase 3b) a recognised posting page with no form, whose card the worker reads; jr6
+        // apply F2 item 7 (apply-b-new-2): or a page with no form that told the worker it offers its own Apply (ADP's
+        // job details at its guest page's address), whose card the worker loads (F3a).
+        return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null || app?.page === 'posting'
+          || (page === null && wallTold?.entry === true));
       case 'run/skip':
         return current?.skipField(msg.fieldKey as FieldKey) === true ? ok({}) : refuse('expired');
       case 'plan/ready':
@@ -1260,35 +1290,19 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** v3 Phase 5: agent/enter, in the top frame with no form: the adapter's declared entry control (press.ts
    *  pressEntry), waited for as long as the address's adapters ask (press.ts entryWaitOf: 8 s, and v3 Phase 7b's
    *  Workday and Oracle, whose postings show their Apply 6 to 11 s after load, quirks.entryWaitMs); a sign-in page
-   *  before any form is signed in to with Sign-in mode Auto (sign-in.ts), else it blocks. */
+   *  before any form is signed in to with Sign-in mode Auto (sign-in.ts), else it blocks. jr6 apply F2 item 2 (AF-16):
+   *  the person's entry and the agent's are one (enter); the agent's answer comes at its press, and the document is
+   *  then watched for the form the press drew in place (B9). */
   async function enterForAgent(): Promise<EntryAnswer> {
-    const at = urlOf(readHref());
     // core-x, item 3: the tab's top frame, or the frame that claims its wrapper's application.
-    if (stopped || page !== null || at === null || (!isTop && !claimed)) return { outcome: 'not-offered' };
-    const own = adapters(at);
-    // The press is told the worker as it is made, with nothing awaited (round 3 of the v3 Phase 6/7b review, X8): one
-    // that takes the page away ends this document before the entry's answer.
-    const entered = await pressEntry(doc, own, lifetime.signal, entryWaitOf(own), undefined,
-      () => void channel.request({ v: 1, type: 'agent/entered' }).catch(() => undefined));
-    if (entered.outcome !== 'blocked' || entered.block !== 'sign-in' || signInMode !== 'auto' || own.length === 0) {
-      return entered;
-    }
-    const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, claimed,
-      signal: lifetime.signal });
-    if (outcome === 'left') return { outcome: 'pressed' };
-    if (outcome === 'continue') {
-      // What the page shows after the sign-in: a challenge its press raised, an email code, another account page is
-      // the person's, and the entry says so (the v3 Phase 6/7b review's round 2, E7); nothing: it went on.
-      const after = detectPause(doc, null, own[0]!);
-      return after === null ? { outcome: 'pressed' } : { outcome: 'blocked', block: blockOf(after.kind) };
-    }
-    // The v4 review (M5): a challenge that held the sign-in back is the agent's CAPTCHA block.
-    return { outcome: 'blocked', block: outcome === 'failed' ? 'sign-in-failed' : outcome === 'challenged' ? 'captcha'
-      : 'sign-in' };
+    if (stopped || page !== null || (!isTop && !claimed)) return { outcome: 'not-offered' };
+    return enter({ by: 'agent' });
   }
 
-  /** run/cancel: stop a run that writes, or stop a paused one for good (C-S6). */
+  /** run/cancel: stop a run that writes, or stop a paused one for good (C-S6). jr6 apply F2 item 2: and end an entry's
+   *  waits (a press already made stays made; none is made after). */
   function cancelRun(): void {
+    entryCancel?.abort();
     if (current === null) return;
     if (current.ended === null || current.watching) {
       current.stop();
@@ -1384,7 +1398,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   // ── The page: which application, adapter and form root ──────────────────────────────────────────────────────────
-  function resolvePage(href: string): void {
+  /** jr6 apply F2 item 2 (APPLYPLAN D5; AF-4, apply-c-new-1): `how.ownOnly`, only the address's own adapters may claim
+   *  the page (never the generic one); `how.atPosting`, a posting's address too (after an entry press of ours, the form
+   *  it drew in place is the posting's application), by those own adapters alone. */
+  function resolvePage(href: string, how: { ownOnly?: boolean; atPosting?: boolean } = {}): void {
     const url = urlOf(href);
     app = url === null ? null : applicationOf(url);
     // core-x, items 7 and 14: a chain page the worker keyed takes its application's key, while its address stays a chain
@@ -1398,8 +1415,19 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     claimed = !isTop && claimsApplication(app, options.wrapper !== undefined ? options.wrapper() : wrapperOf(view),
       adapters);
     // While the page's own adapter waits for a form it draws late, only the adapters that say so may claim the page.
-    const claim = (at: URL) => (lateClosed === href ? adapters(at) : lateAdapters(adapters(at)));
-    const picked = url !== null && app !== null && app.page === 'application' ? pickAdapter(doc, url, claim) : null;
+    // jr6 apply F2 item 2: where asked, the address's own adapters alone; item 5 (D5; B4, C6): where an adapter of the
+    // address draws its form in place (quirks.formInPlace), its own adapters alone for the document's life.
+    const claim = (at: URL) => (how.ownOnly === true || inPlaceAt(at) ? ownAdapters(adapters(at))
+      : lateClosed === href ? adapters(at) : lateAdapters(adapters(at)));
+    // jr6 apply F2 item 2: a posting's address too, when asked, by its own adapters alone; item 5 (D5; B5): and by an
+    // adapter that draws its application at its posting's address (quirks.formAtPosting: Workday's /apply), that one
+    // alone, the address still read as the posting's for its key and its choice.
+    const atPosting = app !== null && app.page === 'posting' && url !== null
+      && (how.atPosting === true || formAtPostingAt(url));
+    const postingClaim = (at: URL) => (how.atPosting === true ? ownAdapters(claim(at))
+      : claim(at).filter((adapter) => adapter.quirks?.formAtPosting === true));
+    const picked = url !== null && app !== null && (app.page === 'application' || atPosting)
+      ? pickAdapter(doc, url, atPosting ? postingClaim : claim) : null;
     page = picked === null || app === null ? null : { app, adapter: picked.adapter, root: picked.root };
     // ── v5 p2-detect, the P2 review (security 1): on an employer's own domain the Oracle adapter claims a page only where
     // the document shows the app's own markup (adapters/index.ts adaptersFor) and its detect found the app's form; only
@@ -1410,10 +1438,29 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     }
   }
 
+  /** jr6 apply F2 item 5 (D5; B5): an adapter of the address draws its application at its posting's address. */
+  function formAtPostingAt(url: URL): boolean {
+    return adapters(url).some((adapter) => adapter.quirks?.formAtPosting === true);
+  }
+
+  /** jr6 apply F2 item 5 (D5; B4, C6): an adapter of the address draws its application in place, at any time. */
+  function inPlaceAt(url: URL): boolean {
+    return adapters(url).some((adapter) => adapter.quirks?.formInPlace === true);
+  }
+
+  /** jr6 apply F2 item 5: an address whose page may still draw its application: an application's, or (formAtPosting)
+   *  a posting's whose adapter draws it there. */
+  function formMayShowAt(href: string): boolean {
+    if (app === null) return false;
+    if (app.page === 'application') return true;
+    const url = urlOf(href);
+    return app.page === 'posting' && url !== null && formAtPostingAt(url);
+  }
+
   /** An application page whose adapters found no form root (core pass Z2 of 2026-11-06: the first scan's entrance
-   *  wait). */
+   *  wait). jr6 apply F2 item 5: or a posting's page whose adapter draws its application there (formAtPosting). */
   function noFormYet(): boolean {
-    return page === null && app !== null && app.page === 'application';
+    return page === null && formMayShowAt(readHref());
   }
 
   /** The watch for a form root, or a posting's text, drawn late (module header, 2), while one runs. */
@@ -1432,16 +1479,22 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   /** Watches for the form root of an application page that shows none yet, when an adapter of its address says its
    *  page draws it late; at the end of that wait every adapter may claim the page. A new address ends the watch
-   *  (onAddress starts the next one). */
+   *  (onAddress starts the next one). jr6 apply F2 item 5 (D5): a posting's page too whose adapter draws its
+   *  application there (formAtPosting, B5); and where an adapter draws its application in place at any time
+   *  (formInPlace, B4, C6), the document is watched for it for its life, cheaply, as a company's page is, its own
+   *  adapters alone claiming it. */
   function watchLateForm(): void {
     lateWatch?.();
     lateWatch = null;
-    if (stopped || page !== null || app?.page !== 'application') return;
     const href = readHref();
+    if (stopped || page !== null || app === null || !formMayShowAt(href)) return;
     // v3 Phase 8 (the review's B5): a company's own page is watched for its form for the document's life, cheaply.
-    if (app.platform === 'site') {
+    // jr6 apply F2 item 5: so is a page whose platform draws its application in place (formInPlace).
+    const url = urlOf(href);
+    if (app.platform === 'site' || (url !== null && inPlaceAt(url))) {
       lateWatch = watchForSiteForm(doc, () => {
-        if (stopped || readHref() !== href) return true;
+        // jr6 apply F2: a form another watch claimed meanwhile (an entry's) ends this one.
+        if (stopped || readHref() !== href || page !== null) return true;
         resolvePage(href);
         if (page === null) return false;
         formFound();
@@ -1449,11 +1502,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       }, lifetime.signal);
       return;
     }
-    const url = urlOf(href);
     const capMs = url === null ? 0 : lateFormMs(adapters(url));
     if (capMs === 0) return;
     lateWatch = watchForLateForm(doc, capMs, () => {
-      if (stopped || readHref() !== href) return true;
+      // jr6 apply F2: a form another watch claimed meanwhile (an entry's) ends this one.
+      if (stopped || readHref() !== href || page !== null) return true;
       resolvePage(href);
       if (page === null) return false;
       formFound();
@@ -1560,12 +1613,19 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   // ── v4: the page's account wall, and Sign up & Autofill at a wall with no form (module header) ──────────────────
 
   /** What this frame last told the worker of its wall (undefined: nothing yet); s2 profile (P1), what it waits for;
-   *  v5 p2-fill, whether its posting's own Apply is offered (Open Application). */
+   *  v5 p2-fill, whether its page's own Apply is offered; jr6 apply F2, why its last entry was refused and whether one
+   *  is under way. */
   let wallTold: { wall: SignInWall | null; choice: boolean; waits: WallWaits | null; entry: boolean;
-    refused?: boolean } | undefined;
-  /** v5 p2-fill review (L5): the person's last Open Application could not press the posting's own Apply (none shows
-   *  now, none was drawn in time, or what shows instead is the person's): the panel says why until the next press. */
-  let entryRefused = false;
+    refused?: EntryRefusal | null; entering?: boolean } | undefined;
+  /** v5 p2-fill review (L5), jr6 apply F2 item 2 (AF-12): why the person's last Autofill on a page with no form could
+   *  not press the page's own Apply or follow it to a form (ENTRY_REFUSALS: none showed or came, what shows is the
+   *  person's, a new tab, another site, nothing followed the press): the panel says it until the next press. */
+  let refusal: EntryRefusal | null = null;
+  /** jr6 apply F2 item 2 (apply-flow-new-4): the entry under way, one at a time (its answer, which the agent's
+   *  agent/enter waits for); null: none. frame/wall says `entering` meanwhile. */
+  let entering: Promise<EntryAnswer> | null = null;
+  /** jr6 apply F2 item 2: ends the entry's waits (run/cancel). */
+  let entryCancel: AbortController | null = null;
   /** The toast a wall with no form shows (atWall), while its cause stands; null: none. */
   let wallToast: 'sign-in' | 'no-sign-in' | 'challenge' | null = null;
   /** s2 profile (P1): what that toast says the page waits for (WALL_WAITS), told the worker with the wall (tellWall) so
@@ -1588,25 +1648,33 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     } catch {
       return none;
     }
-    // v5 p2-fill: no wall: a posting page with no form may offer its own Apply (Open Application).
+    // v5 p2-fill: no wall: a page with no form may offer its own Apply (pressed by the panel's Autofill: atWall).
     if (shown === null) return { ...none, entry: entryOffered() };
     const wall = (SIGN_IN_WALLS as readonly string[]).includes(shown.kind) ? shown.kind as SignInWall : null;
     return { wall, choice: shown.kind === 'entry-choice' && adapter?.entryControl !== undefined,
       challenge: shown.kind === 'captcha' || shown.kind === 'email-code', entry: false };
   }
 
-  // -- v5 p2-fill: Open Application (PLAN Phase 2, Jobright's "Open Application" on a posting page) --
-  /** Whether this frame shows a posting page with no form whose address's adapters offer their own Apply now
+  // -- v5 p2-fill: Autofill on a posting page (PLAN Phase 2: the panel's main button presses the site's own Apply) --
+  /** Whether this frame shows a page with no form whose address's own adapters offer their own Apply now
    *  (Adapter.entryControl, each written from its platform's fixtures: Greenhouse's and Lever's Apply, Ashby's
    *  Application tab, iCIMS's, Oracle's, SmartRecruiters', SuccessFactors', Taleo's, Workable's, Workday's and the
-   *  configured platforms' declared entries), a control a person can see: the panel's main button then reads "Open
-   *  Application", and its press is atWall's. */
+   *  configured platforms' declared entries), a control a person can see: the panel's main button (Autofill) then says
+   *  it presses that Apply first, and its press is atWall's (enter).
+   *  jr6 apply F2 item 1 (APPLYPLAN D6; B2, apply-flow-new-1, C6): any address of a posting the parser reads but its
+   *  page after submitting, an application address included (ADP's job details at its guest page's address, Workable's
+   *  job site before its dialog opens), and only an address's own adapter (never the generic one) offers it. The
+   *  verifier's survey of every committed fixture at an application address with no form, no state and no generic
+   *  control found none that offers one (jr6-broad-gate.browser.test.ts). */
   function entryOffered(): boolean {
-    if (page !== null || app?.page !== 'posting') return false;
+    // jr6 apply F2 item 1: a posting's or an application's address, never its confirmation.
+    if (page !== null || app === null || app.page === 'confirmation') return false;
     const at = urlOf(readHref());
     if (at === null) return false;
     const cache = newScanCache();
     return adapters(at).some((adapter) => {
+      // jr6 apply F2 item 1: the address's own adapters alone.
+      if (adapter.id === 'generic') return false;
       try {
         const control = adapter.entryControl?.(doc) ?? null;
         return control !== null && isUserVisible(control, cache);
@@ -1641,22 +1709,29 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   function sendWall(now: { wall: SignInWall | null; choice: boolean; entry?: boolean }): void {
     if (stopped || told === null || frameId === null || !channel.valid()) return;
     const waits = page === null ? wallWaits : null;
-    // v5 p2-fill: whether the posting's own Apply is offered (Open Application) is told too; v5 p2-fill review (L5):
-    // and whether its last press was refused, while no wall or choice shows (one that does says what is left).
+    // v5 p2-fill: whether the page's own Apply is offered is told too; v5 p2-fill review (L5): and whether its last
+    // press was refused, while no wall or choice shows (one that does says what is left); jr6 apply F2 item 2 (AF-12):
+    // with why (a refusal only ever beside entryRefused: the contract's rule), and (apply-flow-new-4) whether an entry
+    // is under way.
     const entry = now.entry === true;
-    const refused = entryRefused && now.wall === null && !now.choice;
+    const refused = refusal !== null && now.wall === null && !now.choice ? refusal : null;
+    const isEntering = entering !== null;
     if (wallTold !== undefined && wallTold.wall === now.wall && wallTold.choice === now.choice
-      && wallTold.waits === waits && wallTold.entry === entry && (wallTold.refused ?? false) === refused) return;
+      && wallTold.waits === waits && wallTold.entry === entry && (wallTold.refused ?? null) === refused
+      && (wallTold.entering ?? false) === isEntering) return;
     // A first word of "no wall" is the registry's own default: nothing to say.
-    if (wallTold === undefined && now.wall === null && !now.choice && waits === null && !entry && !refused) {
-      wallTold = { wall: now.wall, choice: now.choice, waits, entry, refused };
+    if (wallTold === undefined && now.wall === null && !now.choice && waits === null && !entry && refused === null
+      && !isEntering) {
+      wallTold = { wall: now.wall, choice: now.choice, waits, entry, refused, entering: isEntering };
       return;
     }
-    wallTold = { wall: now.wall, choice: now.choice, waits, entry, refused };
-    log('content.wall', { shown: now.wall !== null, choice: now.choice, waits: waits !== null, entry, refused });
+    wallTold = { wall: now.wall, choice: now.choice, waits, entry, refused, entering: isEntering };
+    log('content.wall', { shown: now.wall !== null, choice: now.choice, waits: waits !== null, entry,
+      refused: refused !== null, entering: isEntering });
     void channel.request({ v: 1, type: 'frame/wall', wall: now.wall, ...(now.choice ? { choice: true as const } : {}),
       ...(waits === null ? {} : { waits }), ...(entry ? { entry: true as const } : {}),
-      ...(refused ? { entryRefused: true as const } : {}) }).catch(() => undefined);
+      ...(refused === null ? {} : { entryRefused: true as const, refusal: refused }),
+      ...(isEntering ? { entering: true as const } : {}) }).catch(() => undefined);
   }
 
   /** A look at the page for its wall, WALL_LOOK_MS from now: the changes of a moment are read once. */
@@ -1701,56 +1776,55 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   /**
    * v4: run/start at a page with no form (module header). Only the tab's top frame, or the frame that claims its
-   * application, and never in a dry run. A choice of how to apply is answered with the adapter's declared entry (its
-   * Apply Manually: press.ts pressEntry, the agent's door, every guard held); a wall is signed in to under Sign up &
-   * Autofill (`signUp`) or Sign-in mode Auto (sign-in.ts: the worker answers the credential for this tab alone), else its
-   * toast says to sign in here or use Sign up & Autofill. With no job-site sign-in to use, the toast says to add one.
-   * A page that shows a form after it fills as usual: this document's (formAfterWall), or the next one's (the worker
-   * starts its run).
+   * application. A choice of how to apply is answered with the adapter's declared entry (its Apply Manually: press.ts
+   * pressEntry, the agent's door, every guard held); a wall is signed in to under Sign up & Autofill (`signUp`) or
+   * Sign-in mode Auto (sign-in.ts: the worker answers the credential for this tab alone), else its toast says to sign in
+   * here or use Sign up & Autofill. With no job-site sign-in to use, the toast says to add one. A page that shows a form
+   * after it fills as usual: this document's (formAfterWall), or the next one's (the worker starts its run).
+   * jr6 apply F2 item 2 (APPLYPLAN D2, D3; AF-2, AF-3, AF-12, apply-c-new-1, apply-flow-new-4): one at a time (a
+   * run/start while an entry presses or waits makes no second press); the page read again first (lookAgain: a form
+   * drawn since the last look, by the person's own Apply or in place, is filled now, the run started here, a dry run's
+   * too); then, a page that shows no wall: its own Apply, or its choice of how to apply, through enter, whatever the
+   * frame told before (Autofill is always offered: the frame waits for a late Apply, presses it, or says why not); a
+   * wall: the sign-in step (wallStep); a check or a code: refused 'blocked' (the person's). Never a press in a dry run.
    */
   async function atWall(signUp: boolean, dryRun: boolean): Promise<void> {
     const at = urlOf(readHref());
-    if (stopped || page !== null || at === null || (!isTop && !claimed) || dryRun) return;
+    if (stopped || at === null || (!isTop && !claimed)) return;
+    if (entering !== null) return;
+    if (lookAgain()) {
+      startRun({ trigger: 'panel', dryRun, ...(signUp ? { signIn: true } : {}) });
+      return;
+    }
+    if (page !== null || dryRun) return;
     const own = adapters(at);
     if (own.length === 0) return;
     const shown = detectPause(doc, null, own[0]!);
-    // v5 p2-fill (PLAN Phase 2): Open Application. A posting page with no form whose adapter offers its own Apply: that
-    // Apply, pressed through the entry door (press.ts pressEntry: the agent's, every guard held; Workday's choice
-    // followed by its Apply Manually where its adapter allows a second press), then the form it brings is filled: this
-    // document's (formAfterWall), or the next one's (the worker starts its run: background/panel.ts's grant).
-    if (shown === null) {
-      // v5 p2-fill review (L5): a press that could not be made (no Apply shows now, none was drawn within the wait,
-      // or what shows instead is the person's) is told the worker, and the panel says why (COPY.mainView
-      // .openApplicationRefused), until the next press.
-      if (entryRefused) {
-        entryRefused = false;
-        sendWall(wallNow());
-      }
-      const offered = entryOffered();
-      // Nothing to say where no Open Application was offered: neither now nor as this frame last told the worker.
-      if (!offered && wallTold?.entry !== true) return;
-      const entered = offered ? await pressEntry(doc, own, lifetime.signal, entryWaitOf(own))
-        : { outcome: 'not-offered' as const };
-      log('content.open-application', { pressed: entered.outcome === 'pressed', offered });
-      if (stopped) return;
-      if (entered.outcome === 'pressed') {
-        formAfterWall();
-        return;
-      }
-      entryRefused = true;
-      sendWall(wallNow());
+    if (shown === null || shown.kind === 'entry-choice') {
+      await enter({ by: 'person', signUp });
       return;
     }
-    if (shown?.kind === 'entry-choice') {
-      const entered = await pressEntry(doc, own, lifetime.signal, entryWaitOf(own));
-      log('content.entry-choice', { pressed: entered.outcome === 'pressed' });
-      if (entered.outcome === 'pressed') formAfterWall();
+    if ((SIGN_IN_WALLS as readonly string[]).includes(shown.kind)) {
+      await wallStep(shown.kind as SignInWall, signUp);
       return;
     }
-    if (shown === null || !(SIGN_IN_WALLS as readonly string[]).includes(shown.kind)) return;
+    // A check or a code before any press: the person's (AF-12).
+    refusal = 'blocked';
+    log('content.entry', { refusal: ENTRY_REFUSALS.indexOf('blocked'), presses: 0 });
+    sendWall(wallNow());
+  }
+
+  /** v4, the wall branch of atWall: a sign-in, an account's creation or an email gate with no form, at the person's
+   *  Autofill (or Sign up & Autofill: `signUp`). jr6: on Manual, a saved password is typed into a sign-in or an
+   *  account's creation, the press the person's. jr6 apply F2 item 2 (AF-3, AF-16): the same step for a wall an entry
+   *  press of ours drew in this document, never a refusal. */
+  async function wallStep(kind: SignInWall, signUp: boolean): Promise<void> {
+    const at = urlOf(readHref());
+    const own = at === null ? [] : adapters(at);
+    if (stopped || own.length === 0) return;
     // jr6: on Manual, a saved password is typed into a sign-in or an account's creation, the press the person's.
     const typeOnly = !signUp && signInMode !== 'auto';
-    if (typeOnly && (!signInTypes || (shown.kind !== 'sign-in' && shown.kind !== 'create-account'))) {
+    if (typeOnly && (!signInTypes || (kind !== 'sign-in' && kind !== 'create-account'))) {
       showWallToast('sign-in');
       return;
     }
@@ -1776,6 +1850,334 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       : outcome === 'failed' ? 'failed' : outcome === 'typed' ? 'typed' : 'sign-in');
   }
 
+  // ── jr6 apply F2 item 2: one entry for the person, the queue and the agent (APPLYPLAN §5 F2 item 2) ──
+  /** Who asked for an entry: the person's Autofill or the queue's (run/start, `signUp`: Sign up & Autofill), or the
+   *  auto-apply agent (agent/enter). */
+  type EntrySource = { by: 'person'; signUp: boolean } | { by: 'agent' };
+
+  /** What an entry did, for its log line (flags and counts only), and (item 6) the dialogs shown before its first
+   *  press. */
+  interface EntryFacts {
+    before: ReadonlySet<Element> | null;
+    /** The last press was made on a choice of how to apply (its Apply Manually). */
+    onChoice: boolean;
+    presses: number;
+    followed: boolean;
+    waited: boolean;
+    found: boolean;
+    wall: boolean;
+    choice: boolean;
+  }
+
+  /** apply-c-new-1, B4: the page read again at an entry: a form drawn since the last look (a dialog the person opened, a
+   *  form the page drew in place, the person's own Apply) is claimed now, the launcher mounted and the worker told. The
+   *  address's own adapter first; the generic one only where no adapter of the address says its form is drawn late, at
+   *  its posting's address or in place (APPLYPLAN D5). Answers whether a form shows now. */
+  function lookAgain(): boolean {
+    if (stopped) return false;
+    if (page !== null) return true;
+    const href = readHref();
+    const url = urlOf(href);
+    const waits = url !== null && adapters(url).some((adapter) => (adapter.quirks?.formLateMs ?? 0) > 0
+      || adapter.quirks?.formAtPosting === true || adapter.quirks?.formInPlace === true);
+    resolvePage(href, { ownOnly: waits });
+    if (page === null) return false;
+    formFound();
+    return true;
+  }
+
+  /** C4, apply-flow-new-2: the application a pressed link leads to, when it is an <a href> on this frame's origin whose
+   *  address an adapter reads as another application or posting than this page's (SmartRecruiters' one-click page):
+   *  its key, a hash (adapters/application-key.ts), never the address; none otherwise. */
+  function nextKeyOf(pressed: HTMLElement): string | undefined {
+    const here = urlOf(readHref());
+    const href = pressed.localName === 'a' ? pressed.getAttribute('href') : null;
+    if (href === null || here === null || app === null) return undefined;
+    let to: URL;
+    try {
+      to = new URL(href, doc.querySelector('base[href]') !== null ? doc.baseURI : here.href);
+    } catch {
+      return undefined;
+    }
+    if (to.origin !== here.origin) return undefined;
+    const there = applicationOf(to);
+    if (there === null || (there.page !== 'application' && there.page !== 'posting')) return undefined;
+    return there.applicationKey === app.applicationKey ? undefined : there.applicationKey;
+  }
+
+  /** How long an entry with no Apply declared waits for a form an adapter of the address draws late (its formLateMs;
+   *  ENTRY_FORM_WAIT_MS where it draws one at its posting's address or in place), 0 for none. */
+  function lateEntryMs(all: readonly Adapter[]): number {
+    const late = lateFormMs(all);
+    if (late > 0) return late;
+    return all.some((adapter) => adapter.quirks?.formAtPosting === true || adapter.quirks?.formInPlace === true)
+      ? ENTRY_FORM_WAIT_MS : 0;
+  }
+
+  /** A form the address's own adapters claim within `ms` (claimed as it shows), or false when none came or `signal`
+   *  aborted first. */
+  function formWithin(ms: number, signal: AbortSignal): Promise<boolean> {
+    if (lookAgain()) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      watchForLateForm(doc, ms, () => {
+        if (stopped || signal.aborted) return true;
+        resolvePage(readHref(), { ownOnly: true });
+        if (page === null) return false;
+        formFound();
+        resolve(true);
+        return true;
+      }, signal, () => resolve(page !== null));
+      signal.addEventListener('abort', () => resolve(false), { once: true });
+    });
+  }
+
+  /**
+   * The entry (APPLYPLAN §5 F2 item 2), shared by the person's Autofill and the queue's (atWall) and the agent's
+   * agent/enter (enterForAgent; AF-16), one at a time (apply-flow-new-4: a second ask while one presses or waits makes
+   * no second press, and waits for this one's answer; frame/wall says `entering` meanwhile). In order:
+   * - the page read again (lookAgain): a form now is filled, the person's run started here (the agent's starts from the
+   *   form's hello);
+   * - no Apply declared by any adapter of the address: a form an adapter says it draws late is waited for that long,
+   *   and filled once it shows; else 'none';
+   * - else the page's own Apply (press.ts pressEntry: waited for entryWaitOf, then pressed through the entry door, with
+   *   the step the adapter shows after it), told the worker as each press is made (the person's entry/pressed, with
+   *   the destination's key: nextKeyOf; the agent's agent/entered, once), then what the press brought watched for
+   *   (afterPress); a wall shown instead (before or after the press) is the sign-in step's (wallStep), never a refusal;
+   *   a door that refused the control by where it goes, nothing pressed: 'new-tab', 'elsewhere' or (a download) 'none';
+   *   a check or a code: 'blocked'.
+   * run/cancel ends its waits (cancelRun: a press already made stays made, none is made after). The person's refusal is
+   * told the worker (frame/wall entryRefused and refusal) until the next press; the agent hears its answer (EntryAnswer:
+   * a door's refusal is 'blocked' 'other', so agent.ts reads it as before). Logged: content.entry (flags, counts, the
+   * refusal's place in ENTRY_REFUSALS), content.entry-step for a step pressed on the way.
+   */
+  function enter(source: EntrySource): Promise<EntryAnswer> {
+    if (entering !== null) return entering;
+    const at = urlOf(readHref());
+    if (stopped || at === null || (!isTop && !claimed)) return Promise.resolve({ outcome: 'not-offered' });
+    const cancel = new AbortController();
+    const signal = AbortSignal.any([cancel.signal, lifetime.signal]);
+    let answer: (said: EntryAnswer) => void = () => undefined;
+    const answered = new Promise<EntryAnswer>((resolve) => {
+      answer = resolve;
+    });
+    entering = answered;
+    entryCancel = cancel;
+    // A refusal is told until the next press: this one.
+    refusal = null;
+    sendWall(wallNow());
+    void runEntry(source, at, signal, answer).catch(() => undefined).finally(() => {
+      answer({ outcome: 'not-offered' });
+      if (entering === answered) entering = null;
+      if (entryCancel === cancel) entryCancel = null;
+      if (!stopped) sendWall(wallNow());
+    });
+    return answered;
+  }
+
+  /** The person's run, started at their entry once a form shows (Sign up & Autofill's sign-in with it). */
+  function startPersonRun(source: EntrySource): void {
+    if (source.by === 'person') startRun({ trigger: 'panel', dryRun: false, ...(source.signUp ? { signIn: true } : {}) });
+  }
+
+  /** enter's steps (its doc): answers the agent at its press's outcome, and ends once what the press brought is known. */
+  async function runEntry(source: EntrySource, at: URL, signal: AbortSignal, answer: (said: EntryAnswer) => void):
+    Promise<void> {
+    const person = source.by === 'person';
+    const facts: EntryFacts = { before: null, onChoice: false, presses: 0, followed: true, waited: false, found: false,
+      wall: false, choice: false };
+    const end = (refused: EntryRefusal | null): void => {
+      const cancelled = signal.aborted && !stopped;
+      log('content.entry', { agent: !person, presses: facts.presses, followed: facts.followed, waited: facts.waited,
+        found: facts.found, wall: facts.wall, choice: facts.choice, cancelled,
+        ...(refused === null || cancelled ? {} : { refusal: ENTRY_REFUSALS.indexOf(refused) }) });
+      // The person's refusal is told (enter's end tells the worker); a cancelled entry says nothing.
+      if (person && refused !== null && !cancelled && !stopped) refusal = refused;
+    };
+    if (lookAgain()) {
+      facts.found = true;
+      startPersonRun(source);
+      answer({ outcome: 'not-offered' });
+      end(null);
+      return;
+    }
+    const all = adapters(at);
+    if (!all.some((adapter) => adapter.entryControl !== undefined)) {
+      // No Apply declared: a form an adapter says it draws late is waited for (the person's), else none.
+      const late = source.by === 'person' ? lateEntryMs(all) : 0;
+      facts.waited = late > 0;
+      if (late > 0 && await formWithin(late, signal)) {
+        facts.found = true;
+        startPersonRun(source);
+        end(null);
+        return;
+      }
+      answer({ outcome: 'not-offered' });
+      end('none');
+      return;
+    }
+    const result: EntryResult = await pressEntry(doc, all, signal, entryWaitOf(all), undefined,
+      (pressed, before, onChoice) => {
+        facts.before ??= before;
+        facts.onChoice = onChoice;
+        entryPressed(source, facts, pressed, false);
+      }, { address: at });
+    if (stopped) return;
+    if (result.outcome === 'pressed') {
+      facts.followed = result.followed !== false;
+      answer({ outcome: 'pressed' });
+      end(await afterPress(source, signal, facts));
+      return;
+    }
+    if (result.outcome === 'not-offered') {
+      if (result.refusal !== undefined) {
+        // A door's refusal by where the control goes: nothing pressed; the agent's is the person's ('other').
+        answer({ outcome: 'blocked', block: 'other' });
+        end(result.refusal === 'download' ? 'none' : result.refusal);
+        return;
+      }
+      // The entry stands down where a form shows: it is filled now.
+      if (lookAgain()) {
+        facts.found = true;
+        startPersonRun(source);
+        answer({ outcome: 'not-offered' });
+        end(null);
+        return;
+      }
+      answer({ outcome: 'not-offered' });
+      end(signal.aborted ? null : 'none');
+      return;
+    }
+    if (result.block === 'sign-in') {
+      facts.wall = true;
+      if (source.by === 'person') {
+        answer({ outcome: 'blocked', block: 'sign-in' });
+        const shown = detectPause(doc, null, all[0]!);
+        if (shown !== null && (SIGN_IN_WALLS as readonly string[]).includes(shown.kind)) {
+          await wallStep(shown.kind as SignInWall, source.signUp);
+          end(null);
+          return;
+        }
+        end('blocked');
+        return;
+      }
+      answer(await agentSignIn(all));
+      end(null);
+      return;
+    }
+    answer({ outcome: 'blocked', ...(result.block === undefined ? {} : { block: result.block }) });
+    end('blocked');
+  }
+
+  /** Each press of an entry, told as it is made with nothing awaited (a press that takes the page away ends this
+   *  document first): the person's entry/pressed, with the destination's key (nextKeyOf); the agent's agent/entered
+   *  (v3 Phase 5; round 3 of the v3 Phase 6/7b review, X8), at its first press alone. A press after the first is a
+   *  step on the way (content.entry-step: the adapter's choice, or `generic`, the second step). */
+  function entryPressed(source: EntrySource, facts: EntryFacts, pressed: HTMLElement, generic: boolean): void {
+    facts.presses += 1;
+    if (facts.presses > 1) log('content.entry-step', { choice: !generic, generic });
+    if (source.by === 'person') {
+      const nextKey = nextKeyOf(pressed);
+      void channel.request({ v: 1, type: 'entry/pressed', ...(nextKey === undefined ? {} : { nextKey }) })
+        .catch(() => undefined);
+    } else if (facts.presses === 1) {
+      void channel.request({ v: 1, type: 'agent/entered' }).catch(() => undefined);
+    }
+  }
+
+  /** v3 Phase 5: the agent's entry blocked by a sign-in page: Sign-in mode Auto signs in there (sign-in.ts), and the
+   *  entry answers what came of it; Manual, or none to use: blocked by the sign-in. */
+  async function agentSignIn(own: readonly Adapter[]): Promise<EntryAnswer> {
+    if (signInMode !== 'auto' || own.length === 0) return { outcome: 'blocked', block: 'sign-in' };
+    const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, claimed,
+      signal: lifetime.signal });
+    if (outcome === 'left') return { outcome: 'pressed' };
+    if (outcome === 'continue') {
+      // What the page shows after the sign-in: a challenge its press raised, an email code, another account page is
+      // the person's, and the entry says so (the v3 Phase 6/7b review's round 2, E7); nothing: it went on.
+      const after = detectPause(doc, null, own[0]!);
+      return after === null ? { outcome: 'pressed' } : { outcome: 'blocked', block: blockOf(after.kind) };
+    }
+    // The v4 review (M5): a challenge that held the sign-in back is the agent's CAPTCHA block.
+    return { outcome: 'blocked', block: outcome === 'failed' ? 'sign-in-failed' : outcome === 'challenged' ? 'captcha'
+      : 'sign-in' };
+  }
+
+  /**
+   * After an entry press of ours (AF-3, AF-4, B4, B9): what it brought in this document, watched on its DOM changes
+   * (late-form.ts watchForLateForm: a look 100 ms after a burst) for ENTRY_FORM_WAIT_MS, or the address's longer
+   * formLateMs: a form, claimed by the address's own adapters alone, a posting's address included (formFound: the
+   * worker's grant starts its run); a wall, the sign-in step's (the person's: wallStep); a choice of how to apply (told
+   * the worker; the next press answers it); a check or a code, the person's ('blocked'). A new document ends it with
+   * this one, quietly. Nothing within the wait: 'nothing-followed'. Answers the person's refusal, or null (the agent's
+   * entry refuses nothing here: its own wait says it).
+   */
+  async function afterPress(source: EntrySource, signal: AbortSignal, facts: EntryFacts): Promise<EntryRefusal | null> {
+    const person = source.by === 'person';
+    type Seen = { form: true } | { pause: NonNullable<ReturnType<typeof detectPause>> } | null;
+    const seen = (): Seen => {
+      if (stopped || signal.aborted) return null;
+      if (page !== null) return { form: true };
+      resolvePage(readHref(), { ownOnly: true, atPosting: true });
+      if (page !== null) {
+        formFound();
+        return { form: true };
+      }
+      const url = urlOf(readHref());
+      const first = url === null ? null : adapters(url)[0] ?? null;
+      let pause: ReturnType<typeof detectPause> = null;
+      try {
+        pause = detectPause(doc, null, first, newScanCache());
+      } catch {
+        pause = null;
+      }
+      // The choice our last press was made on, still shown while the page takes it (Workday's Apply Manually): what it
+      // brings is waited for.
+      if (pause !== null && !(pause.kind === 'entry-choice' && facts.onChoice)) return { pause };
+      // Item 6 (D7, AF-11): no choice of the adapter's shows, but a dialog the press opened offers the generic second
+      // step: pressed (press.ts pressSecondStep, its own door), the entry's last press; then watched on.
+      if (pause === null && url !== null && facts.before !== null && facts.presses < ENTRY_MAX_PRESSES) {
+        const step = pressSecondStep(doc, ownAdapters(adapters(url)), facts.before, url);
+        if (step !== null) {
+          facts.onChoice = false;
+          entryPressed(source, facts, step, true);
+        }
+      }
+      return null;
+    };
+    let outcome = seen();
+    if (outcome === null && !signal.aborted && !stopped) {
+      const url = urlOf(readHref());
+      const capMs = Math.max(ENTRY_FORM_WAIT_MS, url === null ? 0 : lateFormMs(adapters(url)));
+      outcome = await new Promise<Seen>((resolve) => {
+        watchForLateForm(doc, capMs, () => {
+          const got = seen();
+          if (got === null && !signal.aborted && !stopped) return false;
+          resolve(got);
+          return true;
+        }, signal, () => resolve(seen()));
+        signal.addEventListener('abort', () => resolve(null), { once: true });
+      });
+    }
+    if (stopped || signal.aborted) return null;
+    if (outcome === null) return person ? 'nothing-followed' : null;
+    if ('form' in outcome) {
+      facts.found = true;
+      return null;
+    }
+    const kind = outcome.pause.kind;
+    if ((SIGN_IN_WALLS as readonly string[]).includes(kind)) {
+      facts.wall = true;
+      if (source.by === 'person') await wallStep(kind as SignInWall, source.signUp);
+      return null;
+    }
+    if (kind === 'entry-choice') {
+      facts.choice = true;
+      return null;
+    }
+    return person ? 'blocked' : null;
+  }
+  // ── end jr6 apply F2 item 2 ──
+
   /** After a wall or a choice was passed in this document: the form it shows now, else one drawn late. */
   function formAfterWall(): void {
     if (stopped || page !== null) return;
@@ -1784,12 +2186,19 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     else watchLateForm();
   }
 
+  /** A posting page's text, read for policy text (policy/hit, under its application's key). jr6 apply F2 item 7
+   *  (apply-b-new-2; FIXPLAN ADP-10): also on an application's address while no form shows there, where an adapter of
+   *  the address names the posting's own text (Adapter.postingText: ADP's job details at its guest page's address), that
+   *  text alone, once shown. */
   async function readPosting(): Promise<void> {
-    if (app?.page !== 'posting') return;
-    const key = app.applicationKey;
+    if (app === null) return;
     const href = readHref();
     const url = urlOf(href);
     const named = url === null ? undefined : adapters(url).find((adapter) => adapter.postingText !== undefined);
+    // jr6 apply F2 item 7: an application's address, with no form, whose adapter names the posting's text.
+    const atApplication = app.page === 'application' && page === null && named !== undefined;
+    if (app.page !== 'posting' && !atApplication) return;
+    const key = app.applicationKey;
     const read = async (scope?: Element) => {
       try {
         await readPostingPage(channel, doc, key, scope);
@@ -1819,6 +2228,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     postingWatch?.();
     postingWatch = watchForLateForm(doc, lateFormMs([named]) || LATE_FORM_CAP_MS, () => {
       if (stopped || readHref() !== href) return true;
+      // jr6 apply F2 item 7: on an application's address, only while no form shows there.
+      if (atApplication && page !== null) return true;
       const scope = shown();
       if (scope === null) return false;
       void read(scope).catch(() => undefined);
