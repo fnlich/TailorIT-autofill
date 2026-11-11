@@ -3,11 +3,15 @@
  * harness (SP\jr6\audit\smartrecruiters.md §3) turned into asserts. Pages: fixtures/smartrecruiters/xplor-posting,
  * bertelsmann-expired, xplor-one-click, xplor-screening (the snapshot build of 2026-11-06) and the jr6 cases
  * jr6-xplor-one-click-filled, jr6-wiser-one-click and jr6-wiser-screening (SR-8). Each finding's hooks are asserted on
- * them, and read again without the hook (its proof). Fill outcomes that need ENGINE E1 to E3 or RULES' new rules are
- * the package's P2 (SP\jr6\build\SMARTRECRUITERS.md). Profiles: the golden synthetic one only; nothing here reads or
- * prints a value of the owner's.
+ * them, and read again without the hook (its proof). The package's P2 (FIXPLAN §6.9 "P2 asserts", with ENGINE E1 to E3
+ * and RULES R1 to R4 merged; SP\jr6\build\SMARTRECRUITERS.md) adds the fill outcomes at the end: the plan on each page
+ * and each list's write through the pass, SmartRecruiters' components stood in for where a write needs the page to
+ * answer. Profiles: the golden synthetic one, or variants of it built here; nothing here reads or prints a value of the
+ * owner's.
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import profileJson from '../../../fixtures/profiles/alex-rivera.profile.json';
+import sensitiveJson from '../../../fixtures/profiles/alex-rivera.sensitive.json';
 import bertelsmannHtml from '../../../fixtures/smartrecruiters/bertelsmann-expired.html?raw';
 import wiserOneClickHtml from '../../../fixtures/smartrecruiters/jr6-wiser-one-click.html?raw';
 import wiserScreeningHtml from '../../../fixtures/smartrecruiters/jr6-wiser-screening.html?raw';
@@ -15,14 +19,24 @@ import xplorFilledHtml from '../../../fixtures/smartrecruiters/jr6-xplor-one-cli
 import xplorOneClickHtml from '../../../fixtures/smartrecruiters/xplor-one-click.html?raw';
 import xplorPostingHtml from '../../../fixtures/smartrecruiters/xplor-posting.html?raw';
 import xplorScreeningHtml from '../../../fixtures/smartrecruiters/xplor-screening.html?raw';
-import { createFakeWorker, goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import type { AutofillProfile, AutofillSensitive } from '../../contract/tailorit';
+import { createFakeWorker, fakePdf, GOLDEN_RESUME, goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { lateAdapters, lateFormMs } from '../../content/late-form';
+import { writeField, type PassEnv, type PlanAnswer, type WidgetWriteEnv } from '../../content/pass';
 import { startContentRuntime, type ContentRuntime } from '../../content/runtime';
+import { holdsNoAiAttestation } from '../../core/plan/attestation';
 import { planFrame } from '../../core/plan/frame';
+import { attachResume, canonicalizeProfile } from '../../core/profile/canonicalize';
+import { classifyField } from '../../core/resolver/resolve';
+import type { BaseKey } from '../../core/types/field';
+import type { PlannedWrite } from '../../core/types/fill';
+import type { Profile } from '../../core/types/profile';
 import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { scan, toFieldSpec } from '../../dom/scan';
 import { quietWait } from '../../dom/settle';
+import type { WidgetReading } from '../../dom/types';
+import { readWidget } from '../../dom/widgets/index';
 import { platformOfUrl } from '../../shared/hosts';
 import { genericAdapter } from '../generic';
 import { adaptersFor } from '../index';
@@ -223,9 +237,9 @@ describe('SR-11: the résumé a drop zone shows is held, by its row', () => {
 });
 
 // ── SR-1, SR-2, SR-6 (FIXPLAN §6.9 items 1 to 3): SmartRecruiters' lists, declared ────────────────────────────────────
-// ENGINE E1 (jr6-engine-e1) reads and drives these declarations; this branch holds only E0's types, so the tests below
-// pin the declarations themselves (the menu found across shadow roots, the rows, the element a choice clicks, the
-// published list, the shortest query), and the scan's reading of them before E1. The fill outcomes are P2's.
+// ENGINE E1 reads and drives these declarations. The tests below pin the declarations themselves (the menu found across
+// shadow roots, the rows, the element a choice clicks, the published list, the shortest query) and the scan's reading of
+// them (P1); their fill outcomes are the P2 section's, at the end.
 
 /** An spl-autocomplete's own text box: the autocomplete > (shadow) spl-input > (shadow) input[role=combobox]. */
 function autocompleteBox(doc: Document, selector: string): HTMLInputElement {
@@ -530,9 +544,9 @@ describe("SR-6: the phone's country, a combobox on its button", () => {
 
 // ── The auditor's harness (SP\jr6\audit\smartrecruiters.md §3), as asserts ────────────────────────────────────────────
 // Its pass 1 on every page: our real adapter detection, the step hooks, the scan and the planner with the golden
-// synthetic profile and DEFAULT_SETTINGS. The rows that wait on ENGINE E1 to E3 or on RULES' new rules (the
+// synthetic profile and DEFAULT_SETTINGS. The rows that waited on ENGINE E1 to E3 or on RULES' new rules (the
 // screening's dropdowns and Yes/No questions, the phone's country, Country/Region, Facebook, "Additional attachments",
-// the sponsorship question) are the package's P2 asserts (SP\jr6\build\SMARTRECRUITERS.md).
+// the sponsorship question) are asserted in the P2 section below.
 
 const ALL_PAGES = {
   posting: { html: xplorPostingHtml, address: XPLOR_POSTING },
@@ -618,4 +632,560 @@ describe("the auditor's harness, as asserts: every SmartRecruiters page", () => 
       expect(row('Resume')).toMatchObject(page === 'blank' ? { status: 'verified', reason: 'ok', write: 'file' }
         : { status: 'flagged', reason: 'prefill-kept', write: null });
     });
+});
+
+// ── P2 (FIXPLAN §6.9 "P2 asserts"): the fill outcomes, with ENGINE E1 to E3 and RULES R1 to R4 merged ─────────────────
+// Each page is the owner's capture as converted, planned with the golden synthetic profile (or a variant of it built
+// here) and DEFAULT_SETTINGS, as the auditor's harness planned it (SP\jr6\audit\smartrecruiters.md §3). A capture keeps
+// none of SmartRecruiters' scripts, so where a write needs the page to answer (a list opened, its rows drawn, a row
+// chosen, a file listed), the test stands in for the component: DOM variants made here, after the P1 trial
+// (SP\jr6\sr-p1\e1-trial-simulation.ts.txt). They follow the audit's reading of the components; the live checks of
+// FIXPLAN §6.9 are still open (SP\jr6\build\SMARTRECRUITERS.md).
+
+/** The screening step's questions (xplor-screening.html, in its own words). */
+const SCREENING = {
+  heard: 'How did you first hear about this opportunity?',
+  salary: 'What is your expected annual base salary?',
+  rightToWork: 'Which of the following statements best describes your right to work in the United States?',
+  applied: 'Have you applied to or been referred to Xplor for another role in the past 12 months?',
+  employee: 'Are you a current or former employee or contractor of Xplor Technologies, Clubessential Holdings, Ezypay, or '
+    + 'any affiliated brand?',
+  ethnicity: 'What best describes your ethnicity or race?',
+  gender: 'What best describes your gender?',
+  attachments: 'Additional attachments',
+} as const;
+
+/** The golden synthetic profile with a work status for its United States entry (the golden one gives none). */
+function withWorkStatus(status: 'citizen' | 'permanent-resident'): Profile {
+  const sensitive = sensitiveJson as unknown as AutofillSensitive;
+  const entry = { ...sensitive.workAuthorization[0]!, status: { state: 'value', value: status } };
+  return attachResume(canonicalizeProfile(profileJson as unknown as AutofillProfile,
+    { ...sensitive, workAuthorization: [entry] } as unknown as AutofillSensitive, testVocab(), NOW).profile,
+  GOLDEN_RESUME, 48_213);
+}
+
+/** A page's scan (with the run's widget readings, if any) and the planner's pass over it, as the worker plans it; `of`
+ *  gives the field labelled `label` (with `prefix`, whose label starts so), its row and its write. */
+function plannedOn(root: Element, company: string,
+  options: { profile?: Profile; readings?: Map<BaseKey, WidgetReading>; adapter?: Adapter } = {}) {
+  const result = scan(root, options.adapter ?? smartRecruitersAdapter, { platform: 'smartrecruiters',
+    ...(options.readings === undefined ? {} : { widgetReadings: options.readings }) });
+  const specs = result.fields.map(toFieldSpec);
+  const out = planFrame({ specs, canaries: [], profile: options.profile ?? goldenProfile(), sensitiveState: 'loaded',
+    savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+    posting: { company, location: 'Austin, TX, USA' } });
+  const of = (label: string, prefix = false) => {
+    const field = result.fields.find((each) => (prefix ? each.label.startsWith(label) : each.label === label));
+    expect(field, label).toBeDefined();
+    return { field: field!, row: out.results.find((each) => each.key === field!.key)!,
+      write: out.writes.find((each) => each.key === field!.key) ?? null };
+  };
+  /** The label of a planned key. */
+  const labelOf = (key: string) => result.fields.find((field) => field.key === key)?.label ?? '';
+  return { result, specs, out, of, labelOf };
+}
+type Planned = ReturnType<typeof plannedOn>;
+
+/** A row and its write as the asserts read them: the category, the status and why, the value (an option's words, a
+ *  text, a query's words, or the write's kind) and where it came from. */
+function outcome({ row, write }: ReturnType<Planned['of']>) {
+  const value = write === null ? null : write.value.kind === 'option' ? write.value.cleanLabel
+    : write.value.kind === 'text' ? write.value.text : write.value.kind === 'query' ? write.value.queries : write.value.kind;
+  const origin = write === null ? null : write.origin.provenance === 'rule' ? `rule ${write.origin.ruleId}`
+    : write.origin.provenance === 'profile'
+      ? `profile ${write.origin.path}${write.origin.transform === undefined ? '' : ` ${write.origin.transform}`}`
+      : write.origin.provenance;
+  return { category: row.category, status: row.status, reason: row.reason, value, origin };
+}
+
+/** The pass's environment for one write (content/pass.ts writeField), as a run gives it: nothing holds the page;
+ *  `content` serves the résumé (the fake worker's port). */
+function passEnv(root: Element, content?: PassEnv['content'], adapter: Adapter = smartRecruitersAdapter): PassEnv {
+  return { adapter, root, platform: 'smartrecruiters', frameId: 0, dryRun: false, canaries: [],
+    ...(content === undefined ? {} : { content }), signal: new AbortController().signal, valid: () => true,
+    stopped: () => false, runId: () => 'run', heldBy: () => null } as unknown as PassEnv;
+}
+
+/** What the worker's match was asked: each result's words, and whether it could be chosen. */
+type Asked = Array<Array<[string, boolean]>>;
+
+/** A widget's write as a run makes it: the run's readings, and the worker's plan/request for a search's results (the
+ *  planner with the golden profile, which matches them); `asked` records the results each match was given. */
+function widgetsOf(readings: Map<BaseKey, WidgetReading>, company: string, asked: Asked = []): WidgetWriteEnv {
+  return { readings, plan: async (specs, planKeys) => {
+    for (const spec of specs) {
+      asked.push(spec.options === 'lazy' ? [] : spec.options.map((option) => [option.label, option.disabled]));
+    }
+    return planFrame({ specs, planKeys, canaries: [], profile: goldenProfile(), sensitiveState: 'loaded', savedAnswers: [],
+      settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+      posting: { company, location: 'Austin, TX, USA' } }) as unknown as PlanAnswer;
+  } };
+}
+
+/** The planner's write of a field made through the pass (the DOM guard, the widget helpers, the read-back), or
+ *  `write` in its place; `asked` records what a search's match was given. */
+async function writeThrough(root: Element, planned: Planned, label: string, company: string,
+  options: { readings?: Map<BaseKey, WidgetReading>; write?: PlannedWrite; asked?: Asked } = {}) {
+  const { field, row, write: own } = planned.of(label);
+  const write = options.write ?? own;
+  expect(write, label).not.toBeNull();
+  return writeField(passEnv(root), planned.result, field, write!, row, new WeakMap(),
+    { widgets: widgetsOf(options.readings ?? new Map(), company, options.asked) });
+}
+
+/** Every element a click landed on in the page (its composed path's first: inside the shadow roots), in order. */
+function clicksIn(doc: Document): Element[] {
+  const landed: Element[] = [];
+  doc.addEventListener('click', (event) => landed.push(event.composedPath()[0] as Element), true);
+  return landed;
+}
+
+/** The row (spl-select-option) whose inner item `inner` is: two shadow roots up. */
+function rowOfInner(inner: Element): Element | null {
+  const item = (inner.getRootNode() as Partial<ShadowRoot>).host;
+  return (item?.getRootNode() as Partial<ShadowRoot> | undefined)?.host ?? null;
+}
+
+/** The manual location mode's row, in SmartRecruiters' own words (jr6-wiser-one-click.html's open City results). */
+const MANUAL_ROW_WORDS = 'Cannot find your city? Click here to fill in manually';
+
+/** What a stood-in component saw and did: the box's text at each input event, and the words of each row chosen. */
+interface StoodIn {
+  typed: string[];
+  chosen: string[];
+}
+
+/**
+ * SmartRecruiters' spl-autocomplete as the live page drives it (a DOM variant made in the test): a click on its text box
+ * opens its list (the box's aria-expanded "true", its spl-dropdown's .c-spl-dropdown-menu aria-hidden "false", by which
+ * E1 reads the menu as shown: P1's trial) with `rows('')` drawn into its menu; for a search (`search`), each input event
+ * empties and shuts the menu and, once the query is `minQuery` characters long, draws its rows and the manual mode's row
+ * `delayMs` later (rows drawn into the autocomplete's shadow root after the event: E1's watchList). Leaving the box
+ * shuts the list. A click on a row's inner .c-spl-dropdown-item chooses it: the box shows its words, the list shuts,
+ * emptied.
+ */
+function standInAutocomplete(host: Element, rows: (query: string) => readonly string[],
+  search?: { minQuery: number; delayMs: number }): StoodIn {
+  const doc = host.ownerDocument;
+  const view = doc.defaultView!;
+  const box = host.shadowRoot!.querySelector('spl-input')!.shadowRoot!.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+  const menu = host.shadowRoot!.querySelector('[slot="menu"]')!;
+  const panel = host.shadowRoot!.querySelector('spl-dropdown')!.shadowRoot!.querySelector('.c-spl-dropdown-menu')!;
+  const log: StoodIn = { typed: [], chosen: [] };
+  const show = (open: boolean) => {
+    box.setAttribute('aria-expanded', String(open));
+    panel.setAttribute('aria-hidden', String(!open));
+  };
+  const rowOf = (value: string, label: string) => {
+    const row = makeRow(doc, value, label);
+    innerItem(row)!.addEventListener('click', () => {
+      log.chosen.push(label);
+      box.value = label;
+      show(false);
+      menu.replaceChildren();
+    });
+    return row;
+  };
+  const draw = (query: string) => {
+    menu.replaceChildren(...rows(query).map((label, at) => rowOf(`row-${at}`, label)),
+      ...(search === undefined ? [] : [rowOf('goToManualLocationMode', MANUAL_ROW_WORDS)]));
+    show(true);
+  };
+  box.addEventListener('focusout', () => show(false));
+  if (search === undefined) {
+    box.addEventListener('click', () => draw(''));
+    return log;
+  }
+  box.addEventListener('input', () => {
+    const query = box.value;
+    log.typed.push(query);
+    menu.replaceChildren();
+    show(false);
+    if (query.length < search.minQuery) return;
+    view.setTimeout(() => {
+      if (box.value === query) draw(query);
+    }, search.delayMs);
+  });
+  return log;
+}
+
+/** SmartRecruiters' phone country spl-select as the live page drives it (a DOM variant made in the test): its button
+ *  opens and shuts its list (the button's aria-expanded, its spl-dropdown's menu aria-hidden); a click on a row's inner
+ *  item sets the select's value to the row's and shuts it. Its 245 rows are the capture's own. `chosen` holds the
+ *  values (country codes) chosen. */
+function standInPhoneSelect(doc: Document): { select: Element; chosen: string[] } {
+  const { select, button } = phoneSelect(doc);
+  const panel = select.shadowRoot!.querySelector('spl-dropdown')!.shadowRoot!.querySelector('.c-spl-dropdown-menu')!;
+  const chosen: string[] = [];
+  const show = (open: boolean) => {
+    button.setAttribute('aria-expanded', String(open));
+    panel.setAttribute('aria-hidden', String(!open));
+  };
+  button.addEventListener('click', () => show(button.getAttribute('aria-expanded') !== 'true'));
+  for (const row of Array.from(select.querySelectorAll(':scope > spl-select-option'))) {
+    innerItem(row)!.addEventListener('click', () => {
+      chosen.push(row.getAttribute('value') ?? '');
+      select.setAttribute('value', row.getAttribute('value') ?? '');
+      show(false);
+    });
+  }
+  return { select, chosen };
+}
+
+/** Every click landed on `allowed` or on a row's inner item, and the inner items clicked were the rows `inner`, in
+ *  order (by their words). */
+function clickedOnly(landed: readonly Element[], allowed: readonly Element[], inner: readonly string[]): void {
+  expect(landed.filter((el) => !allowed.includes(el) && !el.matches('.c-spl-dropdown-item'))).toEqual([]);
+  expect(landed.filter((el) => el.matches('.c-spl-dropdown-item'))
+    .map((el) => (rowOfInner(el)?.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual([...inner]);
+}
+
+describe('P2 SR-1 (ENGINE E1, RULES): the screening dropdowns, planned on pass 1 and chosen on their inner item', () => {
+  it('xplor-screening: the five read their published lists at scan, all fillable; four planned from the golden profile',
+    async () => {
+      const { root } = await load('screening');
+      const planned = plannedOn(root, 'Xplor');
+      const lists = planned.result.fields.filter((field) => field.kind === 'combobox');
+      expect(lists.map((field) => field.label)).toEqual([SCREENING.heard, SCREENING.rightToWork, SCREENING.employee,
+        SCREENING.ethnicity, SCREENING.gender]);
+      expect(lists.map((field) => (field.options === 'lazy' ? 'lazy' : field.options.length))).toEqual([14, 5, 2, 8, 4]);
+      for (const field of lists) {
+        const widget = planned.result.target(field.key)!.widget!;
+        expect([widget.knownFrom, fillabilityOf(field, widget)], field.label).toEqual(['page', { fillable: true }]);
+      }
+      // The audit's pass 3 (SP\jr6\audit\smartrecruiters.md SR-1), now on pass 1: current or former employee "No",
+      // ethnicity and gender "Prefer not to say" (the golden profile declines both); and RULES' SR-7, the source.
+      expect(outcome(planned.of(SCREENING.employee))).toEqual({ category: 'screening.previouslyEmployed',
+        status: 'verified', reason: 'ok', value: 'No', origin: 'rule screening.previously-employed' });
+      expect(outcome(planned.of(SCREENING.ethnicity))).toEqual({ category: 'eeo.race', status: 'verified', reason: 'ok',
+        value: 'Prefer not to say', origin: 'rule eeo.decline' });
+      expect(outcome(planned.of(SCREENING.gender))).toEqual({ category: 'eeo.gender', status: 'verified', reason: 'ok',
+        value: 'Prefer not to say', origin: 'rule eeo.decline' });
+      expect(outcome(planned.of(SCREENING.heard))).toEqual({ category: 'referral.source', status: 'verified',
+        reason: 'ok', value: 'LinkedIn', origin: 'profile referralSource' });
+      // None of the five waits for its options (the right to work is SR-12's, below).
+      expect(planned.out.results.filter((row) => row.reason === 'waiting-for-options')).toEqual([]);
+    });
+
+  it('read again without the published lists: the five wait for their options, none planned on pass 1', async () => {
+    const { root } = await load('screening');
+    const withoutLists: Adapter = { ...smartRecruitersAdapter, widgetFor: (control) => {
+      const decl = smartRecruitersAdapter.widgetFor!(control);
+      return decl === null ? null : { ...decl, knownOptions: undefined };
+    } };
+    const planned = plannedOn(root, 'Xplor', { adapter: withoutLists });
+    const lists = planned.result.fields.filter((field) => field.kind === 'combobox');
+    expect(lists.map((field) => field.options)).toEqual(['lazy', 'lazy', 'lazy', 'lazy', 'lazy']);
+    expect(lists.map((field) => planned.of(field.label).row.reason)).toEqual(Array(5).fill('waiting-for-options'));
+    expect(lists.map((field) => planned.of(field.label).write)).toEqual(Array(5).fill(null));
+  });
+
+  it("each planned choice is made through the pass, on its row's inner item, and read back", async () => {
+    const { doc, root } = await load('screening');
+    const landed = clicksIn(doc);
+    const planned = plannedOn(root, 'Xplor');
+    const published = definition(doc);
+    for (const [label, id] of [[SCREENING.heard, QUESTIONS.heard], [SCREENING.employee, QUESTIONS.employee],
+      [SCREENING.ethnicity, QUESTIONS.ethnicity], [SCREENING.gender, QUESTIONS.gender]] as const) {
+      const stood = standInAutocomplete(deepOne(doc, `spl-autocomplete#question_${id}`), () => published.get(id)!);
+      const wanted = outcome(planned.of(label)).value as string;
+      landed.length = 0;
+      const result = await writeThrough(root, planned, label, 'Xplor');
+      expect(result.row, label).toMatchObject({ status: 'verified', wrote: true, verification: 'verified',
+        needsUserAction: false });
+      expect(stood.chosen, label).toEqual([wanted]);
+      expect(questionBox(doc, id).value, label).toBe(wanted);
+      // Its box opened the list; the one click of a row landed on the chosen row's inner item.
+      clickedOnly(landed, [questionBox(doc, id)], [wanted]);
+    }
+  });
+});
+
+describe('P2 SR-3, SR-7, SR-9, SR-12, smartrecruiters-new-2 (RULES): what each screening question is', () => {
+  it('SR-3: "In your own words" is an instruction: the step keeps its AI, and the essay is drafted', async () => {
+    const { root } = await load('screening');
+    const planned = plannedOn(root, 'Xplor');
+    expect(holdsNoAiAttestation(planned.specs)).toBe(false);
+    expect(planned.out.aiAttestation).toBeUndefined();
+    expect(planned.out.results.filter((row) => row.reason === 'ai-off-for-posting')).toEqual([]);
+    const essay = planned.of('Think about the industry or part of the business this role serves.', true);
+    expect(essay.field.label).toContain('In your own words');
+    expect(essay.field.kind).toBe('textarea');
+    // An ordinary free-text question (owner Q5 (a), which would leave it for the person, is not built): a draft asked.
+    expect(outcome(essay)).toEqual({ category: 'freeText.other', status: 'flagged', reason: 'free-text-requires-user',
+      value: null, origin: null });
+    expect(planned.out.ask?.drafts?.map((item) => planned.labelOf(item.key))).toEqual([essay.field.label,
+      planned.of('Is there anything else you’d like us to know about you', true).field.label]);
+    // The salary and the right to work are the AI's answers (the `all` scope), as the step's other questions are again.
+    expect(planned.out.ask?.answers?.map((item) => planned.labelOf(item.key))).toEqual([SCREENING.salary,
+      SCREENING.rightToWork]);
+  });
+
+  it("SR-7: \"How did you first hear\" is the referral source; prior applications and conflicts are the AI's to classify",
+    async () => {
+      const { root } = await load('screening');
+      const planned = plannedOn(root, 'Xplor');
+      expect(planned.of(SCREENING.heard).row).toMatchObject({ category: 'referral.source', status: 'verified' });
+      // RULES item 55's second half (a prior application, a conflict of interest) waits on owner question 14: the five
+      // are classified by the AI, as before; "How did you first hear" no longer is.
+      expect(planned.out.ask?.classify.map((item) => planned.labelOf(item.key).replace(/:.*$/s, ''))).toEqual([
+        SCREENING.applied, 'Intellectual Property', 'Outside Employment', 'Board Memberships', 'Personal Relationships']);
+    });
+
+  it('SR-9, smartrecruiters-new-2: "Additional attachments" is no résumé: its list of file types dropped, nothing uploaded',
+    async () => {
+      const { root } = await load('screening');
+      const planned = plannedOn(root, 'Xplor');
+      const attachments = planned.of(SCREENING.attachments);
+      expect(attachments.field.kind).toBe('file');
+      // Its description is the drop zone's restriction text, a list of file types naming RESUME among them.
+      expect(attachments.field.description).toMatch(/^Supported files: DOC, DOT, RMR, RSM, RESUME, /);
+      const spec = planned.specs.find((each) => each.key === attachments.field.key)!;
+      expect(classifyField(spec, testVocab())).toEqual({ by: 'none' });
+      expect(classifyField({ ...spec, description: '' }, testVocab())).toEqual({ by: 'none' });
+      expect(outcome(attachments)).toEqual({ category: 'unknown', status: 'skipped', reason: 'unknown-field', value: null,
+        origin: null });
+      expect(planned.out.awaiting).not.toContain(attachments.field.key);
+      // No file is written on the step: the résumé goes once, on the first page.
+      expect(planned.out.writes.filter((write) => write.value.kind === 'file')).toEqual([]);
+      removeFixtures(document);
+      // The first page's Resume, its own description "10MB size limit", is still the résumé.
+      const first = plannedOn((await load('blank')).root, 'Xplor');
+      expect(first.of('Resume').field.description).toBe('10MB size limit');
+      expect(outcome(first.of('Resume'))).toEqual({ category: 'file.resume', status: 'verified', reason: 'ok',
+        value: 'file', origin: 'profile resume' });
+    });
+
+  it('SR-12: the right-to-work statement is left with its reason for the golden profile, chosen from a status given',
+    async () => {
+      const { root } = await load('screening');
+      // The golden profile is authorized with no sponsorship, but gives no status: citizen and permanent resident both
+      // fit, so the statement is not the rules' (the `all` scope's AI answers it).
+      const golden = plannedOn(root, 'Xplor');
+      expect(outcome(golden.of(SCREENING.rightToWork))).toEqual({ category: 'workAuth.authorized', status: 'flagged',
+        reason: 'legal-not-in-profile', value: null, origin: null });
+      expect(golden.out.awaiting).toContain(golden.of(SCREENING.rightToWork).field.key);
+      const citizen = plannedOn(root, 'Xplor', { profile: withWorkStatus('citizen') });
+      expect(outcome(citizen.of(SCREENING.rightToWork))).toEqual({ category: 'workAuth.authorized', status: 'verified',
+        reason: 'ok', value: 'I am a US citizen', origin: 'profile workAuthorization[0] legal.work-basis' });
+      const resident = plannedOn(root, 'Xplor', { profile: withWorkStatus('permanent-resident') });
+      expect(outcome(resident.of(SCREENING.rightToWork))).toMatchObject({ status: 'verified',
+        value: 'I am a US lawful permanent resident (Green Card holder)' });
+    });
+});
+
+/** The City search's host. */
+const CITY_SEARCH = 'spl-autocomplete[data-sr-id="location-autocomplete-search"]';
+
+/** The rows a stood-in City search draws for a query: those of `cities` that start with it (synthetic: no capture
+ *  shows a result's words; the Wiser capture's one result is redacted). */
+const startingWith = (cities: readonly string[]) => (query: string) =>
+  cities.filter((city) => city.toLowerCase().startsWith(query.toLowerCase()));
+
+/** The City search on a first page, stood in with `cities`, and the planner's query write made through the pass with
+ *  a two-letter query before the planner's own (a variant of its write: the page's minquerylength is 3). */
+async function searchCity(page: 'blank' | 'wiser', company: string, cities: readonly string[]) {
+  const { doc, root } = await load(page);
+  const landed = clicksIn(doc);
+  const stood = standInAutocomplete(deepOne(doc, CITY_SEARCH), startingWith(cities), { minQuery: 3, delayMs: 250 });
+  const planned = plannedOn(root, company);
+  const city = planned.of('City');
+  expect(outcome(city)).toEqual({ category: 'address.city', status: 'verified', reason: 'ok', value: ['Austin'],
+    origin: 'profile address.city typeahead.query' });
+  const asked: Asked = [];
+  const write = { ...city.write!, value: { kind: 'query', queries: ['Au', 'Austin'] } } as PlannedWrite;
+  const result = await writeThrough(root, planned, 'City', company, { write, asked });
+  return { doc, landed, stood, asked, result, box: autocompleteBox(doc, CITY_SEARCH) };
+}
+
+describe('P2 SR-2 (ENGINE E1) and SR-13 (RULES): the first page', () => {
+  it.each([['blank', 'Xplor'], ['wiser', 'Wiser Solutions']] as const)(
+    "%s: the City search through the pass: never shorter than 3; rows drawn later in the autocomplete's shadow root are "
+    + 'read, the manual row unchoosable; the matched result chosen on its inner item and verified', async (page, company) => {
+      // Rows that read as the city alone, which the worker's match takes (see the known gap below for SmartRecruiters'
+      // own wording).
+      const { landed, stood, asked, result, box } = await searchCity(page, company, ['Austin', 'Austintown']);
+      // The two-letter query is never typed (minquerylength="3"); "Austin" is, once.
+      expect(stood.typed).toEqual(['Austin']);
+      // The match was given the rows the search drew 250 ms after the query, in spl-autocomplete's shadow root, the
+      // manual mode's row among them as one that cannot be chosen (results.unchoosable).
+      expect(asked).toEqual([[['Austin', false], ['Austintown', false], [MANUAL_ROW_WORDS, true]]]);
+      expect(result.row).toMatchObject({ category: 'address.city', status: 'verified', wrote: true,
+        verification: 'verified' });
+      expect(stood.chosen).toEqual(['Austin']);
+      expect(box.value).toBe('Austin');
+      clickedOnly(landed, [box], ['Austin']);
+    });
+
+  // Known gap, older than jr6 (reported to RULES in the P2 handoff): SmartRecruiters' City results name the city with
+  // its region and country (the Wiser capture's one result, redacted, keeps an identifier spelling a city and its
+  // state), but the planner reads "City" (address.city) as a text value, matched as text: only a result that is the
+  // city's word alone matches. The place matcher (core/matcher/place.ts: "Austin, Texas, United States" for "Austin,
+  // TX") serves location.current only.
+  it.fails('blank (known gap): a result worded "City, State, Country" is the golden profile\'s city, chosen and verified',
+    async () => {
+      const { stood, result } = await searchCity('blank', 'Xplor', ['Austin, Texas, United States',
+        'Austin, Minnesota, United States']);
+      expect(stood.chosen).toEqual(['Austin, Texas, United States']);
+      expect(result.row).toMatchObject({ status: 'verified', wrote: true, verification: 'verified' });
+    });
+
+  it("blank: today such results are read, then no match: the box put back, the field the person's, no row clicked",
+    async () => {
+      const { landed, stood, asked, result, box } = await searchCity('blank', 'Xplor', ['Austin, Texas, United States',
+        'Austin, Minnesota, United States']);
+      expect(asked).toEqual([[['Austin, Texas, United States', false], ['Austin, Minnesota, United States', false],
+        [MANUAL_ROW_WORDS, true]]]);
+      expect(result.row).toMatchObject({ category: 'address.city', status: 'flagged', reason: 'no-match', wrote: false });
+      expect(stood.chosen).toEqual([]);
+      expect(stood.typed).toEqual(['Austin', '']);
+      expect(box.value).toBe('');
+      clickedOnly(landed, [box], []);
+    });
+
+  it.each([['blank', 'Xplor'], ['wiser', 'Wiser Solutions']] as const)(
+    '%s: SR-13: "Facebook" is skipped with no AI classification', async (page, company) => {
+      const planned = plannedOn((await load(page)).root, company);
+      const facebook = planned.of('Facebook');
+      expect(outcome(facebook)).toEqual({ category: 'links.facebook', status: 'skipped', reason: 'no-profile-value',
+        value: null, origin: null });
+      expect(planned.out.awaiting).not.toContain(facebook.field.key);
+      // No question of the first page is classified by the AI (the audit's pass 1 asked one: Facebook).
+      expect(planned.out.ask?.classify ?? []).toEqual([]);
+    });
+});
+
+describe("P2 SR-6 (ENGINE E1): the phone's country, on xplor-one-click", () => {
+  it("its 245 rows read through results.options; the select's value shown; the planner's choice made on its row's inner "
+    + 'item', async () => {
+    const { doc, root } = await load('blank');
+    const landed = clicksIn(doc);
+    const { select, chosen } = standInPhoneSelect(doc);
+    const { button } = phoneSelect(doc);
+    const label = 'Phone number country code';
+    // The select showing the United States (SmartRecruiters' default: the audit's SR-6): its row's words, as its read
+    // list writes them (the capture's value is cleared by the converter).
+    select.setAttribute('value', 'US');
+    const first = plannedOn(root, 'Xplor');
+    expect(first.of(label).field.current).toEqual({ kind: 'selected', labels: ['United States +1'] });
+    expect(outcome(first.of(label))).toEqual({ category: 'contact.phoneCountry', status: 'flagged',
+      reason: 'waiting-for-options', value: null, origin: null });
+    // The run reads its list (the waiting path's readWidget): the 245 rows its menu's slot holds, nothing chosen.
+    const readings = new Map<BaseKey, WidgetReading>();
+    const read = await readWidget(first.result.target(first.of(label).field.key)!,
+      { adapter: smartRecruitersAdapter, root, readings });
+    expect(read.status).toBe('read');
+    const reading = (read as { reading: WidgetReading }).reading;
+    expect(reading.kind === 'options' ? [reading.options.length, reading.options[0]?.label] : reading.kind)
+      .toEqual([245, 'Afghanistan +93']);
+    expect(chosen).toEqual([]);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    // The golden phone is the United States', which the select shows already: nothing to write (already-correct).
+    const shown = plannedOn(root, 'Xplor', { readings });
+    expect(shown.of(label).field.options === 'lazy' ? 'lazy' : shown.of(label).field.options.length).toBe(245);
+    expect(outcome(shown.of(label))).toEqual({ category: 'contact.phoneCountry', status: 'skipped',
+      reason: 'already-correct', value: null, origin: null });
+    // A variant: the select showing Canada. The planner replaces it with the profile's, flagged as a value the page
+    // held; the choice is made on the United States row's inner item and read back by the select's value.
+    select.setAttribute('value', 'CA');
+    const planned = plannedOn(root, 'Xplor', { readings });
+    expect(planned.of(label).field.current).toEqual({ kind: 'selected', labels: ['Canada +1'] });
+    expect(outcome(planned.of(label))).toMatchObject({ category: 'contact.phoneCountry', status: 'flagged',
+      reason: 'prefill-conflict', value: 'United States +1' });
+    landed.length = 0;
+    const result = await writeThrough(root, planned, label, 'Xplor', { readings });
+    expect(result.row).toMatchObject({ status: 'flagged', reason: 'prefill-conflict', wrote: true,
+      verification: 'verified' });
+    expect(chosen).toEqual(['US']);
+    expect(select.getAttribute('value')).toBe('US');
+    clickedOnly(landed, [button], ['United States +1']);
+  });
+});
+
+/** Countries a stood-in Country/Region list draws when opened (synthetic: no capture shows it open). */
+const COUNTRIES = ['Canada', 'Mexico', 'United Kingdom', 'United States'];
+
+describe('P2 SR-10 (RULES, ENGINE E1): "Country/Region" in the manual location mode', () => {
+  it('jr6-xplor-one-click-filled: read as the country, its list read by opening it, the golden country chosen', async () => {
+    const { doc, root } = await load('xplorFilled');
+    const landed = clicksIn(doc);
+    const selector = 'spl-autocomplete[data-sr-id="location-autocomplete-country"]';
+    const stood = standInAutocomplete(deepOne(doc, selector), () => COUNTRIES);
+    const label = 'Country/Region';
+    const first = plannedOn(root, 'Xplor');
+    expect(outcome(first.of(label))).toEqual({ category: 'address.country', status: 'flagged',
+      reason: 'waiting-for-options', value: null, origin: null });
+    const readings = new Map<BaseKey, WidgetReading>();
+    const read = await readWidget(first.result.target(first.of(label).field.key)!,
+      { adapter: smartRecruitersAdapter, root, readings });
+    expect(read).toMatchObject({ status: 'read', reading: { kind: 'options' } });
+    const planned = plannedOn(root, 'Xplor', { readings });
+    expect(outcome(planned.of(label))).toMatchObject({ category: 'address.country', status: 'verified', reason: 'ok',
+      value: 'United States' });
+    landed.length = 0;
+    const result = await writeThrough(root, planned, label, 'Xplor', { readings });
+    expect(result.row).toMatchObject({ status: 'verified', wrote: true, verification: 'verified' });
+    expect(stood.chosen).toEqual(['United States']);
+    clickedOnly(landed, [autocompleteBox(doc, selector)], ['United States']);
+  });
+});
+
+describe('P2 SR-4 (RULES): the sponsorship question naming two countries, on jr6-wiser-screening', () => {
+  it("is answered from the profile's own country, flagged as a posting-country answer, and pressed through the pass",
+    async () => {
+      const doc = await loadAny('wiserScreening');
+      const root = smartRecruitersAdapter.detect(doc)!.formRoot;
+      const planned = plannedOn(root, 'Wiser Solutions');
+      const sponsorship = planned.of('Do you, now or in the future, require sponsorship', true);
+      expect(sponsorship.field.label)
+        .toContain('in the US (if you are located in the US) or Canada (if you are located in Canada)');
+      expect(outcome(sponsorship)).toEqual({ category: 'workAuth.sponsorship', status: 'flagged',
+        reason: 'filled-low-confidence', value: 'No', origin: 'profile workAuthorization[0] legal.located-country' });
+      expect(sponsorship.row.needsUserAction).toBe(false);
+      expect(planned.out.awaiting).toEqual([]);
+      // The Yes/No group's options are its own spl-radio children: a press marks one checked (stood in).
+      const members = planned.result.target(sponsorship.field.key)!.widget!.members;
+      for (const member of members) {
+        member.addEventListener('click', () => {
+          for (const other of members) other.setAttribute('aria-checked', String(other === member));
+        });
+      }
+      const result = await writeThrough(root, planned, sponsorship.field.label, 'Wiser Solutions');
+      expect(result.row).toMatchObject({ status: 'flagged', reason: 'filled-low-confidence', wrote: true,
+        verification: 'verified' });
+      expect(members.map((member) => member.getAttribute('aria-checked'))).toEqual(['false', 'true']);
+    });
+});
+
+describe('P2 SR-11: a résumé the run puts in is uploaded once the drop zone lists it', () => {
+  it('xplor-one-click: the Resume written through the pass, confirmed by the row that names it (awaitUpload)', async () => {
+    const { fixture, doc, root } = await load('blank');
+    const zone = deepOne(doc, 'spl-dropzone[data-test="resume-upload"]');
+    const input = fileInputOf(zone);
+    // The drop zone as the live page drives it (stood in): a file put in is listed by name 300 ms later.
+    input.addEventListener('change', () => {
+      const name = input.files?.[0]?.name ?? '';
+      fixture.view.setTimeout(() => addFileRow(zone, name), 300);
+    });
+    const worker = createFakeWorker({ resume: { bytes: fakePdf(1200), name: GOLDEN_RESUME.fileName,
+      mime: 'application/pdf' } });
+    const planned = plannedOn(root, 'Xplor');
+    const resume = planned.of('Resume');
+    const result = await writeField(passEnv(root, worker.platform), planned.result, resume.field, resume.write!,
+      resume.row, new WeakMap());
+    result.written?.resume?.release();
+    expect(result.row).toMatchObject({ category: 'file.resume', status: 'verified', wrote: true,
+      verification: 'verified' });
+    expect(result.written?.upload).toBe('confirmed');
+    expect(smartRecruitersAdapter.uploadHeldNames!(input)).toEqual([GOLDEN_RESUME.fileName]);
+    // The page's word is read by the adapter alone: without uploadState nothing is waited for.
+    removeFixtures(document);
+    const again = await load('blank');
+    const plain = without('uploadState');
+    const second = plannedOn(again.root, 'Xplor', { adapter: plain });
+    const unwatched = await writeField(passEnv(again.root, worker.platform, plain), second.result,
+      second.of('Resume').field, second.of('Resume').write!, second.of('Resume').row, new WeakMap());
+    unwatched.written?.resume?.release();
+    expect(unwatched.written?.upload).toBeNull();
+  });
 });
