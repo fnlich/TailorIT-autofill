@@ -392,10 +392,12 @@ function chainStepFacts(doc: Document): ChainStepFacts | null {
     packet: counters.length === 1 && first !== undefined ? { n: Number(first[1]), m: Number(first[2]) } : null };
 }
 
-/** The step's Submit on the last step (module header): the application's Submit, never clicked but by its door. */
-function submitButton(root: Element): HTMLElement | null {
+/** The step's Submit on the last step (module header): the application's Submit, never clicked but by its door. jr6
+ *  ICIMS-17: an IForm's own "Submit" where its portal's facts say the last form of the last step; the contract's
+ *  submitButton takes no facts yet (ENGINE: the ICIMS handoff), so until a caller passes them this answers as before. */
+function submitButton(root: Element, facts?: ChainStepFacts | null): HTMLElement | null {
   const step = stepOf(root.ownerDocument);
-  return step !== null && step.form === root && isFinalStep(root.ownerDocument) === 'final' ? step.button : null;
+  return step !== null && step.form === root && isFinalStep(root.ownerDocument, facts) === 'final' ? step.button : null;
 }
 
 /**

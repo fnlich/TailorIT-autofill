@@ -8,11 +8,14 @@
  * given SYNTHETIC public words (countries) where a test needs them. Nothing here prints or reads a snapshot's value.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { pressEntry } from '../../content/press';
+import { planFrame } from '../../core/plan/frame';
 import { stepSignature as hashSignature } from '../../core/steps/signature';
+import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { assertNotSubmit, submitPressAllowed } from '../../dom/fillers/not-submit';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
-import { scan } from '../../dom/scan';
+import { scan, toFieldSpec } from '../../dom/scan';
 import { signInFormOf } from '../../dom/sign-in-form';
 import { chainPageOf } from '../chain';
 import { genericAdapter } from '../generic';
@@ -288,6 +291,10 @@ describe('ICIMS-17: the portal’s step facts (chainStepFacts) and the IForm lea
       expect(icimsAdapter.nextButton!(root, facts)).toBe(leaf === 'not-final' ? button : null);
       expect(icimsAdapter.stepSubmitNext!.laterStep(fixture.doc, facts)).toBe(leaf === 'not-final' ? root : null);
       expect(icimsAdapter.stepSubmitNext!.buttons.some((selector) => button.matches(selector))).toBe(true);
+      // The final Submit by the facts, once a caller passes them (the contract's submitButton takes none yet).
+      const submitWith = icimsAdapter.submitButton as (root: Element, facts?: ChainStepFacts | null) => HTMLElement | null;
+      expect(submitWith(root)).toBeNull();
+      expect(submitWith(root, facts)).toBe(leaf === 'final' ? button : null);
       // Without the facts (dom/fillers/not-submit.ts passes none), the leaf's Submit is never pressed as Next.
       expect(assertNotSubmit(button, { adapter: icimsAdapter, root, allowNext: true }).ok).toBe(false);
     });
@@ -623,5 +630,34 @@ describe('ICIMS-23: a résumé on record is the résumé’s field, held', () =>
     const input = byId(fixture.doc, 'PortalProfileFields.Resume_File') as HTMLInputElement;
     expect(icimsAdapter.uploadWidgets!(rootOf(fixture.doc))).toEqual([{ control: input.parentElement, input }]);
     expect(icimsAdapter.uploadHeld!(input)).toBe(false);
+  });
+});
+
+describe('ICIMS-22: the parsed blocks are each filled from the entry it holds, never by its place', () => {
+  it('assigns blocks by their fingerprint: the profile’s entries swapped, two it lacks given none', async () => {
+    const fixture = await load('jr6-nyu-profile-parsed.frame-1');
+    const root = rootOf(fixture.doc);
+    const profile = goldenProfile();
+    const [first, second] = profile.experience;
+    const blocks = icimsAdapter.repeatables!(root).find((section) => section.kind === 'experience')!.blocks();
+    expect(blocks.length).toBe(4);
+    // As iCIMS's parse leaves them (the fixture's values are cleared): SYNTHETIC values, the golden profile's two entries
+    // in the other order, then two employers the profile does not hold.
+    const put = (block: Element, field: string, value: string) => {
+      block.querySelector<HTMLInputElement>(`input[id$="_PersonProfileFields.${field}"]`)!.value = value;
+    };
+    for (const [block, company, title] of [[blocks[0]!, second!.company, second!.title],
+      [blocks[1]!, first!.company, first!.title], [blocks[2]!, 'Northwind Traders', 'Clerk'],
+      [blocks[3]!, 'Contoso Pharmacy', 'Cashier']] as const) {
+      put(block, 'rcf3212', company);
+      put(block, 'rcf3213', title);
+    }
+    const scanned = scan(root, icimsAdapter, { platform: 'icims' });
+    const output = planFrame({ specs: scanned.fields.map(toFieldSpec), canaries: [], profile, sensitiveState: 'loaded',
+      savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+      repeatables: [{ kind: 'experience', entries: null }] });
+    const answer = output.repeatables?.find((section) => section.kind === 'experience');
+    expect(answer?.entries).toEqual([1, 0, null, null]);
+    expect(answer?.profile).toBe(2);
   });
 });
