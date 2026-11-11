@@ -43,6 +43,7 @@ import { hasTripwire } from '../guard/tripwire';
 import { searchCandidates, type SearchExtras } from '../matcher/candidates';
 import { dialCodeOf } from '../matcher/dialCode';
 import { intendedText } from '../matcher/intended';
+import { prepareOptions } from '../matcher/prepare';
 import { SEARCH_LIST_MIN_OPTIONS } from '../matcher/searchLimits';
 import { typeaheadQueries } from '../matcher/typeahead';
 import type { PlanSensitiveState } from '../plan/types';
@@ -62,8 +63,11 @@ import { policyClassOf } from './categories';
 import { screenForClassify, type LlmClassification } from './classify';
 import { classifyByRules, consentChoice, consentChoiceOption, type RuleClassification } from './classifyRules';
 import { dateIso, dateText, type DateParts } from './format';
-import { asksToAgree, statementPolarity, type NeedsUserCause } from './labelRules';
-import { consentValue, eeoDeclineDefault, eeoValue, legalValue, sensitiveGate } from './policy';
+import { asksToAgree, EEO_DECLINE_BOX_RULE, statementPolarity, type NeedsUserCause } from './labelRules';
+import {
+  consentValue, eeoDeclineBoxValue, eeoDeclineDefault, eeoValue, inCountryValue, legalValue, policyResidenceValue,
+  residesInValue, sensitiveGate, signatureDateValue,
+} from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
 import { findDraftAnswer, findSubmittedAnswer } from './submitted';
 import { placeholderAsked, previouslyEmployedValue, profileValue, type BlockEntries } from './values';
@@ -138,7 +142,8 @@ export function classifyField(field: FieldSpec, vocab?: Vocab): FieldClassificat
 
 /** The value in the shape the field's kind takes. */
 export type Shaped =
-  | { shape: 'text'; text: string }
+  /** `shorter` (jr6 RULES R4, U-17): a place's shorter forms, for a box whose maxlength the whole text passes. */
+  | { shape: 'text'; text: string; shorter?: string[] }
   /** `search` (v4, drop): the candidate answers a long list's search types when none of its options read is the value
    *  (listSearchFor). */
   | { shape: 'choice'; choice: Choice; search?: string[] }
@@ -265,11 +270,24 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
   'November', 'December'] as const;
 
 /** Which part of a date a field asks for, by its label's last word: "Start Date month" and "Start date year", as
- *  Ashby's Education block (its adapter's suffixes) and Greenhouse's education fields name them; null otherwise. */
-export function datePartOf(label: string): 'month' | 'year' | null {
-  const last = label.trim().toLowerCase().split(/\s+/).at(-1);
-  return last === 'month' || last === 'year' ? last : null;
+ *  Ashby's Education block (its adapter's suffixes) and Greenhouse's education fields name them; null otherwise.
+ *  jr6 RULES: the day too (ICIMS-10: iCIMS's "Start Date (if you do not know the day, enter 1) day", the label
+ *  contract's "<base label> month/day/year"), and the last word outside the label's brackets (U-02: UltiPro's "From
+ *  Year (YYYY)"). */
+export function datePartOf(label: string): 'month' | 'day' | 'year' | null {
+  const last = label.replace(/\([^()]*\)/g, ' ').trim().toLowerCase().split(/\s+/).at(-1);
+  return last === 'month' || last === 'day' || last === 'year' ? last : null;
 }
+
+/** jr6 RULES (ICIMS-10): the day an option's label names ("1", "01", "1st"), or null. */
+export function dayOfLabel(label: string): number | null {
+  const found = /^0?([1-9]|[12]\d|3[01])(?:st|nd|rd|th)?$/i.exec(label.trim());
+  return found === null ? null : Number(found[1]);
+}
+
+/** jr6 RULES (ICIMS-10): a day part's day: the date's own, else the 1st, as iCIMS's label asks ("if you do not know
+ *  the day, enter 1") and Jobright's ./operations fillDateField does (cited). */
+const dayOf = (date: DateParts) => date.d ?? 1;
 
 /** The month an option's label names: its English name or abbreviation ("January", "Jan", "Sept."), its number ("1",
  *  "01"), or both ("01 - January", "1. Jan"); null for any other label, and for a label whose parts name two months. */
@@ -301,6 +319,17 @@ export function monthOfLabel(label: string): number | null {
 export function datePartChoice(label: string, date: DateParts, options: FieldSpec['options'] = 'lazy'): Choice | undefined {
   const part = datePartOf(label);
   if (part === 'year') return { intended: intendedText(String(date.y)), domain: 'generic' };
+  // jr6 RULES (ICIMS-10): the day, as the list itself shows it ("01" or "1") when it names days.
+  if (part === 'day') {
+    const day = dayOf(date);
+    if (options !== 'lazy') {
+      const read = options.map((option) => cutInjected(option.label).clean.trim());
+      const named = read.filter((label) => dayOfLabel(label) === day);
+      if (named.length === 1) return { intended: intendedText(named[0]!), domain: 'generic' };
+      if (named.length > 1 || read.some((label) => dayOfLabel(label) !== null)) return undefined;
+    }
+    return { intended: intendedText(String(day)), domain: 'generic' };
+  }
   if (part !== 'month' || date.m === undefined || date.m < 1 || date.m > 12) return undefined;
   if (options !== 'lazy') {
     const read = options.map((option) => cutInjected(option.label).clean.trim());
@@ -329,7 +358,7 @@ function listSearchFor(spec: FieldSpec, candidate: Candidate, choice: Choice, vo
   const dial = candidate.text?.trim() ?? '';
   const showsDialCodes = DIAL_CODE_TEXT.test(dial) && spec.options.some((option) => dialCodeOf(option.label) !== null);
   return searchCandidates(choice.intended, vocab, choice.place,
-    { ...(showsDialCodes ? { dialCode: dial } : {}), ...searchKind(choice) });
+    { ...(showsDialCodes ? { dialCode: dial } : {}), ...searchKind(choice), ...postalSearch(candidate) });
 }
 
 // s2 core-wd: what else a search types.
@@ -346,7 +375,14 @@ function remoteSearchExtras(spec: FieldSpec, candidate: Candidate, choice: Choic
   const dial = candidate.text?.trim() ?? '';
   const phoneCountry = choice.domain === 'country' && candidate.origin.provenance === 'profile'
     && candidate.origin.path === 'contact.phone' && DIAL_CODE_TEXT.test(dial);
-  return { ...(phoneCountry && spec.kind === 'typeahead-remote' ? { dialCode: dial } : {}), ...searchKind(choice) };
+  return { ...(phoneCountry && spec.kind === 'typeahead-remote' ? { dialCode: dial } : {}), ...searchKind(choice),
+    ...postalSearch(candidate) };
+}
+
+/** jr6 RULES R3 (O2): a search for the profile's postal code types its five digits, then its first three. */
+function postalSearch(candidate: Candidate): SearchExtras {
+  return candidate.origin.provenance === 'profile' && candidate.origin.path === 'address.postalCode'
+    ? { postalCode: true } : {};
 }
 
 // end s2 core-wd
@@ -358,9 +394,16 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
   const plain = (shaped: Shaped) => ({ shaped, guessed: false });
   switch (SHAPE_OF_KIND[spec.kind]) {
     case 'text': {
-      if (candidate.text !== undefined) return plain({ shape: 'text', text: candidate.text });
+      if (candidate.text !== undefined) {
+        const shorter = shorterPlaces(candidate.text, candidate.choice?.place);
+        return plain({ shape: 'text', text: candidate.text, ...(shorter.length > 0 ? { shorter } : {}) });
+      }
       if (candidate.date === undefined) return null;
       if (datePartOf(spec.label) === 'year') return plain({ shape: 'text', text: String(candidate.date.y) });
+      // jr6 RULES (ICIMS-10): a box of two characters at most that asks for the day takes the day alone.
+      if (datePartOf(spec.label) === 'day' && (spec.constraints.maxLength ?? Infinity) <= 2) {
+        return plain({ shape: 'text', text: String(dayOf(candidate.date)) });
+      }
       const laid = dateText(candidate.date, spec.constraints);
       return laid === null ? null : { shaped: { shape: 'text', text: laid.text }, guessed: laid.guessed };
     }
@@ -392,6 +435,17 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
       return queries.length === 0 ? null : plain({ shape: 'search', queries, choice });
     }
   }
+}
+
+/** jr6 RULES R4 (U-17: UltiPro's experience "Location", maxlength 20, fixtures/ultipro/resume-review; Jobright cuts
+ *  it to 20 characters: ours never cuts a value): a place's shorter forms built from its parts, shortest last: its city
+ *  with its region's code ("San Francisco, CA"), then its city alone; none for a value that is no place. */
+function shorterPlaces(text: string, place: Choice['place']): string[] {
+  const city = place?.city?.trim() ?? '';
+  if (city === '') return [];
+  const code = place?.region?.code?.trim() ?? '';
+  return [...new Set([code === '' ? '' : `${city}, ${code}`, city])]
+    .filter((form) => form !== '' && form.length < text.trim().length);
 }
 
 /** The intended value a shaped value stands for, for the Resolution. */
@@ -430,11 +484,17 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
         ...(ctx.postingCountry !== undefined ? { postingCountry: ctx.postingCountry } : {}),
         ...(ctx.postingCompany !== undefined ? { postingCompany: ctx.postingCompany } : {}) });
     case 'eeo':
+      // jr6 RULES (U-09, ADP-17): a lone box that declines the question beside it.
+      if (rules.rule === EEO_DECLINE_BOX_RULE.id) return eeoDeclineBoxValue(category, profile);
       return eeoValue(category, spec, profile, settings, vocab);
     case 'consent':
+      // jr6 RULES (JV-1, JZ-15, workday-new-1): today beside a signature, on the signature's terms.
+      if (category === 'consent.signatureDate') return signatureDateValue(spec, settings, now);
       return consentValue(category, rules.consentKinds, profile, settings,
         { required: spec.required, aiFree: ctx.aiFree === true, choice: consentChoiceOption(spec, vocab),
           list: LIST_KINDS.has(spec.kind),
+          // jr6 RULES R3 (ICIMS-15): a signature asked as a box.
+          ...(spec.kind === 'checkbox' ? { box: true } : {}),
           // Only DECIDED_CONSENT_CAUSES reach here with a needsUser (resolveField hands every other cause over); a
           // consent read from its help text alone is decided by its kinds, as any (the v4 review, security M3).
           ...(rules.needsUser === 'binding-waiver' ? { bindingWaiver: true as const } : {}) });
@@ -451,9 +511,50 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
         ? previouslyEmployedValue(profile, ctx.postingCompany, `${spec.label} ${spec.description}`)
         : none('unknown-field', false);
     default:
+      // jr6 RULES (JV-9, JV-17): a choice read from the list's own words and the profile's address.
+      if (category === 'location.policyResidence') return policyResidenceValue(spec, profile, vocab);
+      if (category === 'location.residesIn') return residesInValue(spec, profile, vocab);
+      // jr6 RULES R3 (JZ-11): living or working in a country the question names, from the address.
+      if (category === 'location.inCountry') return inCountryValue(spec, profile, vocab);
+      // jr6 RULES R3 (ICIMS-21, JV-8, JZ-9): the state the person lives in, asked as a question.
+      if (category === 'address.region' && RESIDENCE_STATE_RULES.has(rules.rule)) {
+        return residenceStateValue(spec, rules.rule, profileValue(category, { spec, profile, vocab, now,
+          separatePhoneCountry: false }), vocab);
+      }
       return profileValue(category, { spec, profile, vocab, now, separatePhoneCountry: ctx.separatePhoneCountry ?? false,
         ...(ctx.blockEntries ? { blockEntries: ctx.blockEntries } : {}) });
   }
+}
+
+/** jr6 RULES R3: the rules that read a question as the state the person lives in (labelRules). */
+const RESIDENCE_STATE_RULES: ReadonlySet<string> = new Set(['label.residence-state', 'label.work-state']);
+/** An option that says none of the list is the answer ("none of these", "None of the above", "Other", "Not listed"). */
+const NONE_OF_THESE = /^(?:none\s+of\s+(?:these|the\s+above|the\s+listed)|other(?:\s+state)?|not\s+listed|my\s+state\s+is\s+not\s+listed|n\/?a)\b/i;
+
+/**
+ * jr6 RULES R3 (ICIMS-21: Sentinel's "What state are you physically located in today?", JV-8: NinjaOne's "In which
+ * state do you currently live?" with 20 state codes and "none of these", JZ-9: WellHive's "From which state will you be
+ * working?"): the state the person lives in, chosen from the list by its name or its code; where the list does not offer
+ * it, its one "none of these" (or Other) instead (Choice.fallback, tried only once no option is the state). The state
+ * one will work from is read as the one lived in: flagged.
+ */
+function residenceStateValue(spec: FieldSpec, rule: string, result: ValueResult, vocab: Vocab): ValueResult {
+  if (!result.ok) return result;
+  const { candidate } = result;
+  const choice = candidate.choice;
+  const options = spec.options === 'lazy' ? [] : prepareOptionsOf(spec, vocab)
+    .filter((option) => NONE_OF_THESE.test(option.clean.trim()));
+  const fallback = options.length === 1 && choice !== undefined
+    ? { fallback: { intended: intendedText(options[0]!.clean), domain: 'generic' as const } } : {};
+  return value({ ...candidate, ...(choice !== undefined ? { choice: { ...choice, ...fallback } } : {}),
+    ...(rule === 'label.work-state' ? { flag: 'filled-low-confidence' as const } : {}) });
+}
+
+/** A field's usable options, prepared in the generic domain. */
+function prepareOptionsOf(spec: FieldSpec, vocab: Vocab) {
+  if (spec.options === 'lazy') return [];
+  return prepareOptions(spec.options, 'generic', vocab).list.filter((option) => !option.unusable && !option.disabled
+    && !option.injected);
 }
 
 /** No value: needs-user for a field only the person answers, leave-blank (flagged) when a candidate existed or the
@@ -639,6 +740,8 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
   if (shaped.shaped.shape === 'check' && candidate.origin.provenance !== 'saved'
     // v1.3 B: so is an earlier submitted answer to the same statement.
     && candidate.origin.provenance !== 'submitted-before' && policy !== 'consent'
+    // jr6 RULES (U-09, ADP-17): a decline box states the decline its tick gives, the person's own explicit one.
+    && rules?.rule !== EEO_DECLINE_BOX_RULE.id
     && statementPolarity(statementText(spec, rules)) !== 'affirmative') {
     return answer(withoutValue(base, spec, 'statement-not-affirmative', true, true));
   }

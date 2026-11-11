@@ -34,7 +34,7 @@
 import {
   POSTING_COUNTRY_FACTOR, VALUE_CONSENT_PREAPPROVED, VALUE_EXPLICIT, VALUE_TRANSFORM, VALUE_TWO_OR_MORE_RACES,
 } from '../confidence';
-import { CONSENT_CATEGORIES, type ConsentCategory, type FieldKind } from '../enums';
+import { CONSENT_CATEGORIES, type ConsentCategory, type FieldKind, type WorkStatus } from '../enums';
 import { intendedCountry, intendedDecline, intendedEntity, intendedText, intendedUnknown } from '../matcher/intended';
 import type { MatchDomain } from '../matcher/types';
 import type { PlanSensitiveState } from '../plan/types';
@@ -47,9 +47,13 @@ import type { Vocab } from '../vocab/types';
 import { none, value, type Candidate, type Choice, type ValueResult } from './candidate';
 import { USER_ONLY_CATEGORIES } from './categories';
 import { prepareOptions } from '../matcher/prepare';
-import { YES_NO_QUESTION } from './labelRules';
+import { residencePlaceOf, YES_NO_QUESTION } from './labelRules';
 import { companyKey, namesPostingCompany } from './values';
-import { basisClassAt, readBasisOptions, type BasisClass } from './workBasis';
+import { basisClassAt, readBasisOptions, type BasisClass, type BasisOption } from './workBasis';
+import {
+  asksYesOrNo, countriesOfStatus, meaningsOfStatus, namesStatusList, readStatusOptions, statusMeaningOf, statusOptionFor,
+  type StatusMeaning, type StatusOption,
+} from './workStatus';
 
 const path = (text: string) => text as ProfilePath;
 const fromProfile = (at: string, transform?: RuleId): ValueOrigin => (transform === undefined
@@ -68,7 +72,11 @@ export const SENSITIVE_PART_CATEGORIES: ReadonlySet<FieldCategory> = new Set<Fie
   'eeo.disability', 'identity.pronouns', 'salary.expected', 'salary.currency',
   // s2 core-gh: the snapshot round's answers from the sensitive part (core/types/profile.ts screening, eeo).
   'workAuth.clearance', 'workAuth.citizenship', 'screening.restrictiveAgreement', 'screening.governmentService',
-  'screening.relatives', 'screening.essentialFunctions', 'eeo.sexualOrientation', 'eeo.transgender']);
+  'screening.relatives', 'screening.essentialFunctions', 'eeo.sexualOrientation', 'eeo.transgender',
+  // jr6 RULES R2 (WD-30): OPT, from the work-authorization entry.
+  'workAuth.opt',
+  // jr6 RULES R3 (WD-29): military training, from the service and veteran answers.
+  'screening.militaryTraining']);
 
 /** What the sensitive part's state means for a field of this category: answer it ('ready'), fetch the part first
  *  ('fetch'), or leave it blank and flagged with the state's reason. */
@@ -210,13 +218,22 @@ export interface LegalContext {
  *  interpretation 1, the posting's country for a question that names none; or why there is none. A question that also
  *  names a place that may or may not be a country ("Georgia") names no one country. */
 function authorizationEntry(spec: FieldSpec, profile: Profile, vocab: Vocab, legal: LegalContext):
-  { index: number; fromPosting: boolean } | { reason: 'work-auth-country-unknown' | 'legal-not-in-profile' } {
+  { index: number; fromPosting: boolean; located?: true }
+  | { reason: 'work-auth-country-unknown' | 'legal-not-in-profile' } {
   let places = placesNamed(spec.label, vocab);
   if (places.countries.length === 0 && !places.ambiguous && spec.description !== '') {
     places = placesNamed(spec.description, vocab);
   }
   if (places.ambiguous) return { reason: 'work-auth-country-unknown' };
   let countries = places.countries;
+  // jr6 RULES (SR-4): countries each qualified by where the person is located.
+  if (countries.length > 1) {
+    const located = locatedCountry(spec.label, countries, profile, vocab, legal.postingCountry);
+    if (located === null) return { reason: 'work-auth-country-unknown' };
+    const index = profile.workAuthorization.findIndex((entry) => entry.country === located.country);
+    if (index < 0) return { reason: 'legal-not-in-profile' };
+    return located.own ? { index, fromPosting: false, located: true } : { index, fromPosting: true };
+  }
   // The posting's country, else the one country the person answered for (interpretation 1).
   const posting = legal.postingCountry
     ?? (profile.workAuthorization.length === 1 ? profile.workAuthorization[0]!.country : undefined);
@@ -226,6 +243,28 @@ function authorizationEntry(spec: FieldSpec, profile: Profile, vocab: Vocab, leg
   if (countries.length !== 1) return { reason: 'work-auth-country-unknown' };
   const index = profile.workAuthorization.findIndex((entry) => entry.country === countries[0]);
   return index < 0 ? { reason: 'legal-not-in-profile' } : { index, fromPosting };
+}
+
+/** jr6 RULES (SR-4): "if you are located (based, residing) in <country>", as a question qualifies each country it names
+ *  (Wiser's "… in the US (if you are located in the US) or Canada (if you are located in Canada)?"). */
+const LOCATED_IN = /\bif\s+(?:you\s+)?(?:are\s+|re\s+)?(?:currently\s+)?(?:located|based|residing|living|reside|live|resident)\s+(?:in|within)\s+([^()?,;.]+)/giu;
+
+/**
+ * jr6 RULES (SR-4, fixtures/smartrecruiters/jr6-wiser-screening): of the countries a question names, each qualified by
+ * where the person is located (LOCATED_IN), the person's own: their address's country among them, else the one they
+ * hold a work-authorization entry for (`own`); else the posting's among them. Null when a country stands unqualified,
+ * or none of these says.
+ */
+function locatedCountry(label: string, countries: readonly string[], profile: Profile, vocab: Vocab,
+  postingCountry: string | undefined): { country: string; own: boolean } | null {
+  const qualified = new Set([...label.matchAll(LOCATED_IN)].flatMap((found) => placesNamed(found[1]!, vocab).countries));
+  if (!countries.every((country) => qualified.has(country))) return null;
+  const home = profile.address?.country;
+  if (home !== undefined && countries.includes(home)) return { country: home, own: true };
+  const held = countries.filter((country) => profile.workAuthorization.some((entry) => entry.country === country));
+  if (held.length === 1) return { country: held[0]!, own: true };
+  return postingCountry !== undefined && countries.includes(postingCountry)
+    ? { country: postingCountry, own: false } : null;
 }
 
 /** A yes/no legal or EEO answer in its shapes: an option chosen by polarity, or a lone box ticked for yes. */
@@ -238,16 +277,17 @@ function yesNo(answer: boolean, origin: ValueOrigin, confidence = VALUE_EXPLICIT
 /** An explicit yes/no legal answer, or its decline (legal.decline), or why there is none. An answer read for the
  *  posting's country (interpretation 1) carries legal.posting-country, scores POSTING_COUNTRY_FACTOR less and is
  *  always flagged. */
-function legalAnswer(answer: Explicit<boolean> | undefined, at: string, transform?: RuleId, fromPosting = false):
-  ValueResult {
+function legalAnswer(answer: Explicit<boolean> | undefined, at: string, transform?: RuleId, fromPosting = false,
+  located = false): ValueResult {
   if (answer === undefined) return none('legal-not-in-profile');
-  const factor = fromPosting ? POSTING_COUNTRY_FACTOR : 1;
-  const extra: Partial<Candidate> = fromPosting ? { flag: 'filled-low-confidence' } : {};
+  // jr6 RULES (SR-4): the located country's entry is flagged as the posting's is (legal.located-country).
+  const factor = fromPosting || located ? POSTING_COUNTRY_FACTOR : 1;
+  const extra: Partial<Candidate> = fromPosting || located ? { flag: 'filled-low-confidence' } : {};
   if (answer.kind === 'decline') {
     return value({ origin: byRule('legal.decline', at), confidence: VALUE_EXPLICIT * factor,
       choice: { intended: intendedDecline('polarity'), domain: 'polarity' }, ...extra });
   }
-  const own = fromPosting ? 'legal.posting-country' : transform;
+  const own = fromPosting ? 'legal.posting-country' : located ? 'legal.located-country' : transform;
   return yesNo(answer.value, fromProfile(at, own), (own === undefined ? VALUE_EXPLICIT : VALUE_TRANSFORM) * factor, extra);
 }
 
@@ -261,20 +301,47 @@ const BASIS_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['wo
  * else, when they are explicitly authorized, a permanent right as a citizen or permanent resident, or a permit or a
  * visa needing no sponsorship (a work-visa, student-visa or other status with both sponsorship answers an explicit
  * no); a decline when the answer that decides it is declined; null when the entry does not settle it (no authorization
- * answer, a no, no status, or a visa status with a sponsorship answer missing). Authorization is never read from a
- * status (types/profile.ts).
+ * answer, no status, or a visa status with a sponsorship answer missing). Authorization is never read from a status
+ * (types/profile.ts). jr6 RULES (SR-12): an entry with no status is a citizen's when the person's citizenships include
+ * its country (`citizen`); an explicit "not authorized" is no right to work.
  */
-function basisOfEntry(entry: WorkAuthorization): BasisClass | 'decline' | null {
+function basisOfEntry(entry: WorkAuthorization, citizen = false): BasisClass | 'decline' | null {
   const sponsorship = combinedSponsorship(entry.sponsorshipNow, entry.sponsorshipFuture);
   if (sponsorship?.kind === 'value' && sponsorship.value) return 'sponsorship';
   if (entry.authorized?.kind === 'decline') return 'decline';
-  if (entry.authorized?.kind !== 'value' || !entry.authorized.value) return null;
+  if (entry.authorized?.kind !== 'value') return null;
+  if (!entry.authorized.value) return 'none';
   const status = entry.status;
   if (status?.kind === 'decline') return 'decline';
-  if (status === undefined) return null;
+  if (status === undefined) return citizen ? 'permanent' : null;
   if (status.value === 'citizen' || status.value === 'permanent-resident') return 'permanent';
   if (sponsorship?.kind === 'decline') return 'decline';
   return sponsorship === undefined ? null : 'permit';
+}
+
+/** jr6 RULES (SR-12): whether the person's citizenships include a country. */
+function citizenOf(profile: Profile, country: string): boolean {
+  const citizenships = profile.screening.citizenships;
+  return citizenships?.kind === 'value' && citizenships.value.includes(country);
+}
+
+/**
+ * jr6 RULES (SR-12, SmartRecruiters' Xplor "Which of the following statements best describes your right to work in the
+ * United States?", fixtures/smartrecruiters/xplor-screening): the one permanent option the person's status names, when
+ * the class holds several ("I am a US citizen", "I am a US lawful permanent resident (Green Card holder)"): a citizen's
+ * (the entry's status, or the person's citizenships) or a permanent resident's (workStatus.ts statusMeaningOf), else
+ * null.
+ */
+function permanentOptionOf(options: readonly BasisOption[], entry: WorkAuthorization, citizen: boolean):
+  BasisOption | null {
+  const status = entry.status?.kind === 'value' ? entry.status.value : citizen ? 'citizen' : null;
+  if (status !== 'citizen' && status !== 'permanent-resident') return null;
+  const meanings = meaningsOfStatus(status);
+  const found = options.filter((option) => {
+    const meaning = statusMeaningOf(option.clean);
+    return meaning !== null && meanings.includes(meaning);
+  });
+  return found.length === 1 ? found[0]! : null;
 }
 
 /**
@@ -283,13 +350,16 @@ function basisOfEntry(entry: WorkAuthorization): BasisClass | 'decline' | null {
  * flagged), the form's decline option for a declined answer (legal.decline). An entry that does not settle it is
  * legal-not-in-profile, which the `all` scope asks TailorIT's AI about with every option the form shows (plan/answers.ts;
  * no profile value, and no list narrowed by one, is ever sent); a basis the form offers no option for is no-match, left
- * as it is. Null when the options are no basis set (or not read yet), so the question is read as before.
+ * as it is. Null when the options are no basis set (or not read yet), so the question is read as before. jr6 RULES
+ * (SR-12): of several options of the basis, the permanent one the person's status names (permanentOptionOf); else, as
+ * of several of another class, ambiguous-options.
  */
-function workBasisValue(spec: FieldSpec, entry: WorkAuthorization, at: string, fromPosting: boolean, vocab: Vocab):
-  ValueResult | null {
+function workBasisValue(spec: FieldSpec, profile: Profile, entry: WorkAuthorization, at: string, fromPosting: boolean,
+  vocab: Vocab): ValueResult | null {
   const options = readBasisOptions(spec, vocab);
   if (options === null) return null;
-  const basis = basisOfEntry(entry);
+  const citizen = citizenOf(profile, entry.country);
+  const basis = basisOfEntry(entry, citizen);
   if (basis === null) return none('legal-not-in-profile');
   const factor = fromPosting ? POSTING_COUNTRY_FACTOR : 1;
   const extra: Partial<Candidate> = fromPosting ? { flag: 'filled-low-confidence' } : {};
@@ -297,19 +367,26 @@ function workBasisValue(spec: FieldSpec, entry: WorkAuthorization, at: string, f
     return value({ origin: byRule('legal.decline', at), confidence: VALUE_EXPLICIT * factor,
       choice: { intended: intendedDecline('generic'), domain: 'generic' }, ...extra });
   }
-  const option = options.get(basis);
-  if (option === undefined) return none('no-match');
-  return value({ origin: fromProfile(at, fromPosting ? 'legal.posting-country' : 'legal.work-basis'),
-    confidence: VALUE_TRANSFORM * factor, choice: { intended: intendedText(option.clean), domain: 'generic' }, ...extra });
+  const offered = options.get(basis) ?? [];
+  // jr6 RULES (SR-12): no right to work where the list offers none is left as before (the `all` scope's).
+  if (offered.length === 0) return none(basis === 'none' ? 'legal-not-in-profile' : 'no-match');
+  const option = offered.length === 1 ? offered[0]!
+    : basis === 'permanent' ? permanentOptionOf(offered, entry, citizen) : null;
+  if (option === null) return none('ambiguous-options');
+  const derived = basis === 'permanent' && entry.status === undefined;
+  return value({ origin: fromProfile(derived ? 'screening.citizenships' : at,
+    fromPosting ? 'legal.posting-country' : 'legal.work-basis'),
+  confidence: VALUE_TRANSFORM * factor, choice: { intended: intendedText(option.clean), domain: 'generic' }, ...extra });
 }
 
 /**
  * Whether TailorIT's AI answer to a basis set (an `all` question the entry did not settle: workBasisValue) states what
  * the person's own answers deny: the sponsorship option when both sponsorship answers are an explicit no, an option
  * needing none when either is a yes, the permanent option when they are not authorized or hold a visa or another
- * status, the permit option when they are a citizen or permanent resident. Such a pick is refused (planFrame
- * planAnswer: llm-pick-rejected) and the field left flagged: a guess never overrules the person's answer. Only the pick
- * is compared here; nothing of the person's answers was sent. False for any other field or option.
+ * status, the permit option when they are a citizen or permanent resident, the no-right option (jr6 RULES, SR-12) when
+ * they are authorized. Such a pick is refused (planFrame planAnswer: llm-pick-rejected) and the field left flagged: a
+ * guess never overrules the person's answer. Only the pick is compared here; nothing of the person's answers was sent.
+ * False for any other field or option.
  */
 export function basisPickContradicts(category: FieldCategory, spec: FieldSpec, index: number, profile: Profile,
   vocab: Vocab, legal: LegalContext): boolean {
@@ -331,6 +408,8 @@ export function basisPickContradicts(category: FieldCategory, spec: FieldSpec, i
         || (entry.authorized?.kind === 'value' && !entry.authorized.value) || (status !== null && !permanentStatus);
     case 'permit':
       return (sponsorship?.kind === 'value' && sponsorship.value) || permanentStatus;
+    case 'none':
+      return entry.authorized?.kind === 'value' && entry.authorized.value;
   }
 }
 
@@ -437,13 +516,15 @@ const CLEARANCE_HELD = /\b(?:hold|holds|have|has|possess|possesses|maintain|main
  * sponsored for, or one held once, a polygraph, or an active one the profile does not say has no profile answer (the AI
  * answers it as any legal question, as settings.modes.ai allows).
  */
-function clearanceValue(spec: FieldSpec, profile: Profile): ValueResult {
+function clearanceValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
   const answer = profile.screening.clearance;
   if (answer === undefined) return none('legal-not-in-profile');
   if (answer.kind === 'decline') return legalAnswer({ kind: 'decline' }, 'screening.clearance');
   const question = questionText(spec);
   if (/\bpolygraph\b/.test(question) || CLEARANCE_NOT_HELD.test(question)) return none('legal-not-in-profile');
   const { level, active } = answer.value;
+  // jr6 RULES (ADP-9): which clearance the person holds, asked as a list of them.
+  if (asksClearanceType(spec, question)) return clearanceTypeValue(spec, level, vocab);
   const asksLevel = spec.kind === 'text' && !YES_NO_QUESTION.test(normalize(spec.label, 'label').key);
   if (asksLevel) {
     return value({ origin: fromProfile('screening.clearance'), confidence: VALUE_EXPLICIT,
@@ -456,6 +537,54 @@ function clearanceValue(spec: FieldSpec, profile: Profile): ValueResult {
       : none('legal-not-in-profile');
   }
   return asTyped(yesNo(held, fromProfile('screening.clearance')), spec);
+}
+
+/** jr6 RULES (ADP-9): a clearance asked by its type or level ("Do you have a security clearance? If yes, please indicate
+ *  which type"). */
+const CLEARANCE_TYPE_ASKED = /\b(?:which|what)\s+(?:type|level|kind)\b|\btype\s+of\s+(?:security\s+)?clearance\b|\bclearance\s+(?:type|level)\b/;
+/** jr6 RULES (ADP-9): the option that says the person holds none ("None", "No Clearance", "N/A", "I do not have a
+ *  clearance"). */
+const NO_CLEARANCE_OPTION = /^(?:none|no\s+(?:active\s+|current\s+|security\s+)?clearance|not\s+applicable|n\s?a|i\s+do\s+not\s+(?:have|hold)\b(?:\s+\w+){0,4}\s+clearance)\b/;
+/** The spellings a list may write a clearance level with, the first its name. */
+const CLEARANCE_SPELLINGS: Readonly<Record<string, readonly [string, ...string[]]>> = {
+  none: ['None', 'No Clearance', 'Not Applicable', 'N/A', 'No Security Clearance'],
+  'public-trust': ['Public Trust'], confidential: ['Confidential'], secret: ['Secret'], 'top-secret': ['Top Secret'],
+  'ts-sci': ['TS/SCI', 'Top Secret/SCI', 'Top Secret SCI'],
+};
+
+/** jr6 RULES (ADP-9): whether a clearance question asks which one the person holds: a list that takes several, or a
+ *  list whose question asks for a type or a level, or whose options are levels rather than a yes and a no. */
+function asksClearanceType(spec: FieldSpec, question: string): boolean {
+  if (spec.kind === 'multiselect' || spec.kind === 'checkbox-group') return true;
+  if (spec.kind === 'checkbox' || spec.kind === 'text') return false;
+  if (spec.options !== 'lazy' && asksYesOrNo(spec)) return false;
+  return CLEARANCE_TYPE_ASKED.test(question);
+}
+
+/**
+ * jr6 RULES (ADP-9, ADP's "Do you have a security clearance? If yes, please indicate which type (Hold CTRL to select
+ * multiple)", fixtures/adp/questions): which clearance the person holds, chosen by its name: for a level of none the
+ * option that says so (NO_CLEARANCE_OPTION), for a level held the option naming it. On a list read, exactly one option
+ * must say it (else no-match or ambiguous-options); on a list not read yet, its spellings, which the matcher finds once
+ * it loads. "Meets the requirement" and "eligible to obtain" are never read from citizenship (CLEARANCE_NOT_HELD).
+ */
+function clearanceTypeValue(spec: FieldSpec, level: string, vocab: Vocab): ValueResult {
+  const spellings = CLEARANCE_SPELLINGS[level] ?? [level];
+  let choice: Choice = { intended: intendedUnknown('generic', spellings[0], spellings.slice(1), vocab), domain: 'generic' };
+  if (spec.options !== 'lazy') {
+    const options = prepareOptions(spec.options, 'generic', vocab).list
+      .filter((option) => !option.unusable && !option.disabled && !option.injected && option.clean.trim() !== '');
+    const named = level === 'none'
+      ? options.filter((option) => NO_CLEARANCE_OPTION.test(normalize(option.clean, 'label').key))
+      : options.filter((option) => spellings.some((spelling) => normalize(spelling, 'label').key
+        === normalize(option.clean, 'label').key));
+    if (named.length === 0) return none('no-match');
+    if (named.length > 1) return none('ambiguous-options');
+    choice = { intended: intendedText(named[0]!.clean), domain: 'generic' };
+  }
+  const several = spec.kind === 'multiselect' || spec.kind === 'checkbox-group';
+  return value({ origin: fromProfile('screening.clearance'), confidence: VALUE_EXPLICIT, choice,
+    ...(several ? { set: [choice] } : {}) });
 }
 
 /** Numbers a "within the last N years" may be written in. */
@@ -568,7 +697,7 @@ export function legalValue(category: FieldCategory, spec: FieldSpec, profile: Pr
     case 'workAuth.citizenship':
       return citizenshipValue(spec, profile, vocab);
     case 'workAuth.clearance':
-      return clearanceValue(spec, profile);
+      return clearanceValue(spec, profile, vocab);
     case 'screening.restrictiveAgreement':
       return asTyped(legalAnswer(profile.screening.restrictiveAgreement, 'screening.restrictiveAgreement'), spec);
     case 'screening.essentialFunctions':
@@ -577,31 +706,45 @@ export function legalValue(category: FieldCategory, spec: FieldSpec, profile: Pr
       return governmentServiceValue(spec, profile, legal.now);
     case 'screening.relatives':
       return relativesValue(spec, profile, legal.postingCompany);
+    // jr6 RULES R3 (WD-29).
+    case 'screening.militaryTraining':
+      return asTyped(militaryTrainingValue(profile), spec);
     default:
       break;
   }
   if (category === 'workAuth.visaType') return none('legal-not-in-profile');
+  // jr6 RULES (JV-7, JV-11, JZ-7, JZ-8): a work status by its meaning, for the country the question or its options name;
+  // a basis set whose options state a sponsorship need is read as before, below (a visa named by its type alone, "H-1B
+  // Visa", is a status there).
+  if (category === 'workAuth.status' && (readBasisOptions(spec, vocab) === null
+    || (spec.options !== 'lazy' && namesStatusList(spec.options.map((option) => option.label))))) {
+    return workStatusValue(spec, profile, vocab, legal);
+  }
   const found = authorizationEntry(spec, profile, vocab, legal);
   if ('reason' in found) return none(found.reason);
   const entry = profile.workAuthorization[found.index]!;
   const at = `workAuthorization[${found.index}]`;
   const { fromPosting } = found;
+  // jr6 RULES (SR-4): the located country's entry, flagged (a basis set or a right-to-work pair as the posting's).
+  const located = found.located === true;
+  const flagged = fromPosting || located;
   // A status is never read for a country the question does not name (below), as a basis set or by name.
   const basis = BASIS_CATEGORIES.has(category) && !(category === 'workAuth.status' && fromPosting)
-    ? workBasisValue(spec, entry, at, fromPosting, vocab) : null;
+    ? workBasisValue(spec, profile, entry, at, flagged, vocab) : null;
   if (basis !== null) return basis;
   switch (category) {
     // s2 core-gh (decision 11): a text box asked yes or no takes the words (asTyped).
     case 'workAuth.authorized':
-      return rightToWorkValue(spec, entry, at, fromPosting, vocab)
-        ?? asTyped(legalAnswer(entry.authorized, `${at}.authorized`, undefined, fromPosting), spec);
+      return rightToWorkValue(spec, entry, at, flagged, vocab)
+        ?? asTyped(legalAnswer(entry.authorized, `${at}.authorized`, undefined, fromPosting, located), spec);
     case 'workAuth.sponsorshipNow':
-      return asTyped(legalAnswer(entry.sponsorshipNow, `${at}.sponsorshipNow`, undefined, fromPosting), spec);
+      return asTyped(legalAnswer(entry.sponsorshipNow, `${at}.sponsorshipNow`, undefined, fromPosting, located), spec);
     case 'workAuth.sponsorshipFuture':
-      return asTyped(legalAnswer(entry.sponsorshipFuture, `${at}.sponsorshipFuture`, undefined, fromPosting), spec);
+      return asTyped(legalAnswer(entry.sponsorshipFuture, `${at}.sponsorshipFuture`, undefined, fromPosting, located),
+        spec);
     case 'workAuth.sponsorship':
       return asTyped(legalAnswer(combinedSponsorship(entry.sponsorshipNow, entry.sponsorshipFuture), at,
-        'legal.sponsorship-combined', fromPosting), spec);
+        'legal.sponsorship-combined', fromPosting, located), spec);
     case 'workAuth.status': {
       const status = entry.status;
       if (status === undefined) return none('legal-not-in-profile');
@@ -616,10 +759,181 @@ export function legalValue(category: FieldCategory, spec: FieldSpec, profile: Pr
       return value({ origin: fromProfile(`${at}.status`), confidence: VALUE_EXPLICIT, text,
         choice: { intended: { kind: 'text', text }, domain: 'generic' } });
     }
+    // jr6 RULES (WD-30): OPT or CPT to begin or continue employment.
+    case 'workAuth.opt':
+      return asTyped(optValue(entry, at, flagged), spec);
     default:
       return none('legal-not-in-profile');
   }
 }
+
+// ── jr6 RULES (FIXPLAN §6.3 R2, items 27 to 34): work authorization read by its meaning ──────────────────────────────
+
+/** The country a work-status question asks about (JV-7, JV-11, JZ-7, JZ-8), or why there is none: the one its label
+ *  (else its description) names, by name, short form or its people's adjective; else the one its options name (each
+ *  names at most one: "U.S. Citizen/Permanent Resident", "Canadian Citizen/Permanent Resident"), and of several the one
+ *  the person holds an entry or a citizenship for, else the posting's among them (JZ-7); else, under interpretation 1,
+ *  the posting's (`fromPosting`), where only a yes or no is ever read (a status is never written for a country the
+ *  question does not name). */
+function statusCountry(spec: FieldSpec, profile: Profile, vocab: Vocab, legal: LegalContext,
+  options: readonly StatusOption[] | null): { country: string; fromPosting: boolean }
+  | { reason: 'work-auth-country-unknown' } {
+  let places = placesNamed(spec.label, vocab);
+  let named = countriesOfStatus(spec.label, vocab);
+  if (named.length === 0 && !places.ambiguous && spec.description !== '') {
+    places = placesNamed(spec.description, vocab);
+    named = countriesOfStatus(spec.description, vocab);
+  }
+  if (places.ambiguous || named.length > 1) return { reason: 'work-auth-country-unknown' };
+  if (named.length === 1) return { country: named[0]!, fromPosting: false };
+  const offered = [...new Set((options ?? []).flatMap((option) => option.countries))];
+  if (offered.length === 1) return { country: offered[0]!, fromPosting: false };
+  if (offered.length > 1) {
+    const citizenships = profile.screening.citizenships?.kind === 'value' ? profile.screening.citizenships.value : [];
+    const held = offered.filter((country) => profile.workAuthorization.some((entry) => entry.country === country)
+      || citizenships.includes(country));
+    if (held.length === 1) return { country: held[0]!, fromPosting: false };
+    return legal.postingCountry !== undefined && offered.includes(legal.postingCountry)
+      ? { country: legal.postingCountry, fromPosting: false } : { reason: 'work-auth-country-unknown' };
+  }
+  const posting = legal.postingCountry
+    ?? (profile.workAuthorization.length === 1 ? profile.workAuthorization[0]!.country : undefined);
+  return legal.settings.interpretations.postingCountryForLegal && posting !== undefined
+    ? { country: posting, fromPosting: true } : { reason: 'work-auth-country-unknown' };
+}
+
+/** The person's work status for a country: the entry's own (or its decline), else a citizen of a country among their
+ *  citizenships (`derived`: item 28, "status from screening.citizenships when none is set"); null when neither says. */
+function personStatus(profile: Profile, country: string):
+  { status: WorkStatus | 'decline'; at: string; derived: boolean; index: number } | null {
+  const index = profile.workAuthorization.findIndex((entry) => entry.country === country);
+  const status = index < 0 ? undefined : profile.workAuthorization[index]!.status;
+  if (status !== undefined) {
+    return { status: status.kind === 'decline' ? 'decline' : status.value, at: `workAuthorization[${index}].status`,
+      derived: false, index };
+  }
+  const citizenships = profile.screening.citizenships;
+  if (citizenships?.kind === 'value' && citizenships.value.includes(country)) {
+    return { status: 'citizen', at: 'screening.citizenships', derived: true, index };
+  }
+  return null;
+}
+
+/** The right a non-citizen's entry states (JV-11, JZ-7: "Non-citizen allowed to work …"), only from its authorization
+ *  and sponsorship answers: authorized with no sponsorship now or later, any employer; authorized and needing it now,
+ *  the current employer; not authorized, seeking authorization. Null when they do not say. */
+function nonCitizenRight(entry: WorkAuthorization | undefined): StatusMeaning | null {
+  if (entry?.authorized?.kind !== 'value') return null;
+  if (!entry.authorized.value) return 'seeking';
+  const sponsorship = combinedSponsorship(entry.sponsorshipNow, entry.sponsorshipFuture);
+  if (sponsorship?.kind === 'value' && !sponsorship.value) return 'any-employer';
+  return entry.sponsorshipNow?.kind === 'value' && entry.sponsorshipNow.value ? 'current-employer' : null;
+}
+
+/** The statuses a yes-or-no question asks about (JZ-8): a citizen, a permanent resident, or either. */
+const ASKED_STATUSES: Readonly<Partial<Record<StatusMeaning, readonly WorkStatus[]>>> = {
+  citizen: ['citizen'], resident: ['permanent-resident'], 'citizen-or-resident': ['citizen', 'permanent-resident'],
+};
+
+/** JZ-8: a question (or a box's statement) of the person's own status: "Are you a US citizen …", "I am a U.S. citizen",
+ *  "Do you hold a green card". Never a requirement the status may meet ("… which requires US citizenship. Do you meet
+ *  this requirement?": ADP-9, never inferred from citizenship). */
+const ASKS_OWN_STATUS = /^(?:(?:are|r)\s+you|i\s+am|im|you\s+are)\s+(?:currently\s+|now\s+|either\s+)?(?:a\s+|an\s+)?(?:\w+\s+){0,3}?(?:citizen|permanent\s+resident|green\s+card)|^(?:do|did)\s+you\s+(?:currently\s+)?(?:have|hold|possess)\s+(?:a\s+|an\s+)?(?:\w+\s+){0,2}?(?:citizenship|green\s+card|permanent\s+residen\w*)/;
+
+/**
+ * JZ-8 (JazzHR's "Are you a US Citizen or Permanent Resident?", Yes/No boxes; "Are you a U.S. citizen?"): a status asked
+ * as yes or no. Yes for a status among those it asks of that country (a citizen among the person's citizenships too),
+ * no for any other explicit status, and for a citizenship-only question no when the person's citizenships, stated, do
+ * not include that country; else nothing (legal-not-in-profile). Only a question of the person's own status
+ * (ASKS_OWN_STATUS).
+ */
+function statusYesNo(spec: FieldSpec, profile: Profile, country: string, fromPosting: boolean): ValueResult {
+  const asked = ASKS_OWN_STATUS.test(normalize(spec.label, 'label').key)
+    ? ASKED_STATUSES[statusMeaningOf(spec.label) ?? 'visa'] : undefined;
+  if (asked === undefined) return none('legal-not-in-profile');
+  const person = personStatus(profile, country);
+  const factor = fromPosting ? POSTING_COUNTRY_FACTOR : 1;
+  const extra: Partial<Candidate> = fromPosting ? { flag: 'filled-low-confidence' } : {};
+  const transform = fromPosting ? 'legal.posting-country' : 'legal.work-status';
+  if (person?.status === 'decline') return legalAnswer({ kind: 'decline' }, person.at, undefined, fromPosting);
+  if (person !== null && (!person.derived || asked.includes('citizen'))) {
+    return yesNo(asked.includes(person.status), fromProfile(person.at, transform),
+      (person.derived ? VALUE_TRANSFORM : VALUE_EXPLICIT) * factor, extra);
+  }
+  const citizenships = profile.screening.citizenships;
+  if (person === null && asked.length === 1 && asked[0] === 'citizen' && citizenships?.kind === 'value'
+    && citizenships.value.length > 0) {
+    return yesNo(false, fromProfile('screening.citizenships', transform), VALUE_TRANSFORM * factor, extra);
+  }
+  return none('legal-not-in-profile');
+}
+
+/**
+ * JV-7, JV-11, JZ-7 (FIXPLAN §6.3 items 27 to 29): a work status chosen among a list's statuses by their meaning
+ * (workStatus.ts), for the country the question names, or its options name (statusCountry): a citizen's (or a citizen
+ * by the person's citizenships) or a permanent resident's own option, of that country or none; a non-citizen's right
+ * (nonCitizenRight), flagged; never a visa by its type (the profile holds none). A status the profile does not settle is
+ * legal-not-in-profile, which the `all` scope asks TailorIT's AI about, never work-auth-country-unknown; a known status
+ * the list does not offer is no-match. A list not read yet (or read in part) takes the status by name, as before; a
+ * status asked as yes or no is statusYesNo's.
+ */
+function workStatusValue(spec: FieldSpec, profile: Profile, vocab: Vocab, legal: LegalContext): ValueResult {
+  const yesOrNo = asksYesOrNo(spec);
+  const options = yesOrNo ? null : readStatusOptions(spec, vocab);
+  const found = statusCountry(spec, profile, vocab, legal, options);
+  if ('reason' in found) return none(found.reason);
+  const { country, fromPosting } = found;
+  if (yesOrNo) return statusYesNo(spec, profile, country, fromPosting);
+  const person = personStatus(profile, country);
+  if (person === null) return none('legal-not-in-profile');
+  // A status is written by name, never read for a country the question does not name.
+  if (fromPosting) return none('work-auth-country-unknown');
+  if (person.status === 'decline') {
+    return value({ origin: byRule('legal.decline', person.at), confidence: VALUE_EXPLICIT,
+      choice: { intended: intendedDecline('generic'), domain: 'generic' } });
+  }
+  if (options === null) {
+    const text = WORK_STATUS_TEXT[person.status];
+    if (text === undefined || person.derived) return none('legal-not-in-profile');
+    return value({ origin: fromProfile(person.at), confidence: VALUE_EXPLICIT, text,
+      choice: { intended: { kind: 'text', text }, domain: 'generic' } });
+  }
+  const entry = person.index < 0 ? undefined : profile.workAuthorization[person.index];
+  const permanent = person.status === 'citizen' || person.status === 'permanent-resident';
+  const right = permanent ? null : nonCitizenRight(entry);
+  if (!permanent && right === null) return none('legal-not-in-profile');
+  const meanings = permanent ? meaningsOfStatus(person.status as 'citizen' | 'permanent-resident') : [right!];
+  const option = statusOptionFor(options, meanings, country);
+  if (option === 'none') return none(permanent ? 'no-match' : 'legal-not-in-profile');
+  if (option === 'several') return none('ambiguous-options');
+  const at = permanent ? person.at : `workAuthorization[${person.index}].authorized`;
+  return value({ origin: fromProfile(at, 'legal.work-status'),
+    confidence: permanent && !person.derived ? VALUE_EXPLICIT : VALUE_TRANSFORM,
+    choice: { intended: intendedText(option.clean), domain: 'generic' },
+    ...(permanent ? {} : { flag: 'filled-low-confidence' as const }) });
+}
+
+/**
+ * WD-30 (AEP's "Will you be using Optional Practical Training (OPT) or STEM OPT to begin employment at AEP?"): OPT or
+ * CPT to begin or continue employment. No only when the person needs no sponsorship now or later (both an explicit
+ * no); yes for a student visa (F-1, on which OPT is worked), flagged; otherwise nothing.
+ */
+function optValue(entry: WorkAuthorization, at: string, fromPosting: boolean): ValueResult {
+  const sponsorship = combinedSponsorship(entry.sponsorshipNow, entry.sponsorshipFuture);
+  const factor = fromPosting ? POSTING_COUNTRY_FACTOR : 1;
+  const transform = fromPosting ? 'legal.posting-country' : 'legal.opt';
+  if (sponsorship?.kind === 'value' && !sponsorship.value) {
+    return yesNo(false, fromProfile(at, transform), VALUE_TRANSFORM * factor,
+      fromPosting ? { flag: 'filled-low-confidence' } : {});
+  }
+  if (entry.status?.kind === 'value' && entry.status.value === 'student-visa') {
+    return yesNo(true, fromProfile(`${at}.status`, transform), VALUE_TRANSFORM * factor,
+      { flag: 'filled-low-confidence' });
+  }
+  return none('legal-not-in-profile');
+}
+
+// jr6 RULES end
 
 // ---------------------------------------------------------------------------------------------------------------
 // EEO
@@ -837,6 +1151,8 @@ export interface ConsentContext {
   /** The field is a list, a combobox or a radio group (absent: a box or a text). With no `choice`, it offers an option
    *  that does not agree (a Yes and a No): a question. */
   list?: boolean;
+  /** jr6 RULES R3 (ICIMS-15): the field is a lone box (a signature ticked, not typed). */
+  box?: boolean;
   /** v4 (D5): a binding waiver the rules once handed to the person, asked as an agreement (Yes/No), decided here: agreed
    *  only when the form requires it, under either mode, and an optional one left unanswered, decided, as an optional
    *  binding box is (the disclosure: "except a binding clause the form does not require"). A consent read from its help
@@ -891,6 +1207,12 @@ export function consentValue(category: FieldCategory, consentKinds: readonly Fie
   // unanswered (decided, never the person's), as an optional binding box is. Both were the person's before (the audit of
   // 2026-11-06, S-5); nothing is the person's now.
 
+  // jr6 RULES R3 (ICIMS-15, iCIMS's IForm Signature box `icims_f_signature`; Jobright's fillSignatureCheckboxes ticks
+  // it: cited): a signature asked as a box is ticked on the signature's terms, as any consent box (written last in the
+  // pass: plan/order.ts signatureLast). Owner Q6 may keep IForm signatures for the person.
+  if (category === 'consent.signature' && consent.box === true) {
+    return ticked(approved ? 'consent.signature-preapproved' : 'consent.required');
+  }
   if (category === 'consent.signature') {
     const name = profile.identity.fullName.trim();
     if (name === '') return none('no-profile-value');
@@ -899,3 +1221,168 @@ export function consentValue(category: FieldCategory, consentKinds: readonly Fie
   }
   return ticked(approved && !USER_ONLY_CATEGORIES.has(category) ? 'consent.preapproved' : 'consent.required', option);
 }
+
+// ── jr6 RULES (FIXPLAN §6.3 R1): a signature's date, an EEO decline box, and the choices read from a list's own words ─
+
+/**
+ * JV-1, JZ-15, workday-new-1: the date that goes with a signature (consent.signatureDate: Jobvite's "Today's Date",
+ * Workday's "Date signed"): today (`now`; YYYY-MM-DD in a date control, the layout the box shows in a text box),
+ * written on the same terms as the signature's name (consentValue): when signatures are approved (Consents: All, or
+ * "signature" pre-approved: consent.signature-date), else when the form requires it (consent.required); an optional
+ * one not approved is left, decided. Never over a value the field holds (Jobright's jobvite `formatAnswer` sets
+ * "Date" to today; cited as a behaviour).
+ */
+export function signatureDateValue(spec: FieldSpec, settings: Settings, now: Ymd): ValueResult {
+  if (spec.current.kind === 'text' && spec.current.text.trim() !== '') return none('prefill-kept', false);
+  const approved = settings.modes.consents === 'all' || settings.preapprovedConsent.includes('signature');
+  if (!approved && !spec.required) return none('consent-optional-unticked', false);
+  return value({ origin: { provenance: 'rule', ruleId: approved ? 'consent.signature-date' : 'consent.required' },
+    confidence: VALUE_CONSENT_PREAPPROVED, date: { y: now.y, m: now.m, d: now.d } });
+}
+
+/** The EEO questions a decline box may belong to, by category. */
+const DECLINE_BOX_QUESTIONS: Readonly<Partial<Record<FieldCategory, 'gender' | 'hispanicLatino' | 'race' | 'veteran'
+  | 'disability'>>> = {
+  'eeo.gender': 'gender', 'eeo.hispanicLatino': 'hispanicLatino', 'eeo.race': 'race', 'eeo.veteran': 'veteran',
+  'eeo.disability': 'disability',
+};
+
+/**
+ * U-09, ADP-17: a lone box that declines a self-identification question (labelRules label.eeo-decline-box: UltiPro's
+ * "<question> I decline to say", ADP's "I decline to identify my race and ethnicity"): ticked (eeo.decline) for the
+ * person's explicit decline, left unticked for an answer, which the list beside it carries; nothing without either (a
+ * decline default is the list's, never the box's). Whether the list beside it already offers its own decline is the
+ * planner's (plan/eeoDeclineBox.ts): the box is ticked only where the list lacks one.
+ */
+export function eeoDeclineBoxValue(category: FieldCategory, profile: Profile): ValueResult {
+  const question = DECLINE_BOX_QUESTIONS[category];
+  const answer: Explicit<unknown> | undefined = question === undefined ? undefined : profile.eeo[question];
+  if (answer === undefined) return none('eeo-not-in-profile', false);
+  const declined = answer.kind === 'decline';
+  return value({ origin: declined ? byRule('eeo.decline', `eeo.${question}`) : fromProfile(`eeo.${question}`),
+    confidence: VALUE_EXPLICIT, check: declined,
+    choice: { intended: { kind: 'boolean', value: declined }, domain: 'polarity' } });
+}
+
+/** The usable options of a list read whole: none a placeholder, disabled, empty or injected. */
+function plainOptions(spec: FieldSpec, vocab: Vocab) {
+  if (spec.options === 'lazy') return null;
+  return prepareOptions(spec.options, 'generic', vocab).list
+    .filter((option) => !option.unusable && !option.disabled && !option.injected && option.clean.trim() !== '');
+}
+
+/** The one option of `options` a test picks, or null for none or several. */
+function onlyOption<T extends { clean: string }>(options: readonly T[], test: (text: string) => boolean): T | null {
+  const found = options.filter((option) => test(option.clean));
+  return found.length === 1 ? found[0]! : null;
+}
+
+/**
+ * JV-9 (Jobvite's consent gate, "Location of Residence and Language", select#jv-country-select: fixtures
+ * ninjaone-consent-empty): the privacy policy's residence, chosen by the option naming the profile's country, else the
+ * single real option, else one naming Global with English (then Global, then English), flagged
+ * (location.policy-residence). Jobright's rules answer `label[for=jv-country-select]` through its server (cited).
+ */
+export function policyResidenceValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
+  const options = plainOptions(spec, vocab);
+  if (options === null) return none('waiting-for-options', true);
+  const country = profile.address?.country;
+  const byCountry = country === undefined ? null
+    : onlyOption(options, (text) => countriesNamed(text, vocab).includes(country));
+  const chosen = byCountry ?? (options.length === 1 ? options[0]! : null)
+    ?? onlyOption(options, (text) => /\bglobal\b/i.test(text) && /\benglish\b/i.test(text))
+    ?? onlyOption(options, (text) => /\bglobal\b/i.test(text)) ?? onlyOption(options, (text) => /\benglish\b/i.test(text));
+  if (chosen === null) return none('no-match', true);
+  return value({ origin: { provenance: 'rule', ruleId: 'location.policy-residence',
+    ...(byCountry !== null ? { path: 'address.country' as ProfilePath } : {}) }, confidence: VALUE_TRANSFORM,
+  choice: { intended: intendedText(chosen.clean), domain: 'generic' }, flag: 'filled-low-confidence' });
+}
+
+/** JV-17: an option that says the person does not live in, or within reach of, the place ("N/A - I do not live in
+ *  Illinois.", "Currently reside outside commutable distance"), as normalizeLabel reads it. */
+const NOT_THERE_OPTION = /\boutside\b|\b(?:do\s+not|dont|does\s+not|doesnt)\s+(?:currently\s+)?(?:live|reside)\b|\bnot\s+(?:live|living|reside|residing|located|based)\b/;
+
+/** The regions a text names (a state's name, or its code in capitals in `raw`), as region entities. */
+function regionsNamed(text: string, raw: string, vocab: Vocab): Array<{ code: string; country: string }> {
+  const tokens = normalize(text, 'country').tokens;
+  const phrases = vocab.phrases('region');
+  const found: Array<{ code: string; country: string }> = [];
+  for (let at = 0; at < tokens.length;) {
+    const hit = phraseAt(phrases, tokens, at, raw);
+    const entity = hit.id === null ? undefined : vocab.entity(hit.id);
+    if (entity?.kind === 'region') found.push({ code: entity.code, country: entity.country });
+    at += Math.max(hit.length, 1);
+  }
+  return found;
+}
+
+/**
+ * JV-17 (VHL's "Question 10: If within commutable distance to Boston, MA, are you willing and able to work the Hybrid
+ * schedule …", NinjaOne's "If you live in Illinois, is your address in the City of Chicago?"): a question asked only of
+ * those living in, or within reach of, a place it names. When the profile's state is not that place's (or, for a place
+ * with no state, its city or country is not that place), the option saying so is chosen (location.not-there, flagged);
+ * when it is, or the profile does not say, nothing is (the person's, or the AI's).
+ */
+export function residesInValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
+  const asked = residencePlaceOf(normalize(spec.label, 'label').key);
+  const address = profile.address;
+  if (asked === null || address === undefined) return none('no-profile-value', false);
+  const regions = regionsNamed(asked.place, spec.label, vocab);
+  let elsewhere: { at: string } | null = null;
+  if (regions.length > 0) {
+    const own = address.region?.code;
+    if (own === undefined) return none('no-profile-value', false);
+    const home = regions.some((region) => region.code === own && region.country === (address.country ?? region.country));
+    if (home) return none('no-profile-value', true);
+    elsewhere = { at: 'address.region' };
+  } else if (!asked.commute) {
+    const countries = countriesNamed(asked.place, vocab);
+    if (countries.length === 1 && address.country !== undefined) {
+      if (countries[0] === address.country) return none('no-profile-value', true);
+      elsewhere = { at: 'address.country' };
+    } else if (address.city !== undefined) {
+      if (normalize(address.city, 'label').key === asked.place) return none('no-profile-value', true);
+      elsewhere = { at: 'address.city' };
+    }
+  }
+  if (elsewhere === null) return none('no-profile-value', false);
+  const options = plainOptions(spec, vocab);
+  if (options === null) return none('waiting-for-options', true);
+  const option = onlyOption(options, (text) => NOT_THERE_OPTION.test(normalize(text, 'label').key));
+  if (option === null) return none('no-match', true);
+  return value({ origin: byRule('location.not-there', elsewhere.at), confidence: VALUE_TRANSFORM,
+    choice: { intended: intendedText(option.clean), domain: 'generic' }, flag: 'filled-low-confidence' });
+}
+
+/**
+ * jr6 RULES R3 (WD-29, Workday's AEP "Do you have military training or a military certification related to this
+ * position?", fixtures aep-application-questions-2): a qualification, never a self-identification. No when the person
+ * served in no military branch (screening.governmentService) and is no veteran (eeo.veteran), both explicit
+ * (legal.military-training); otherwise nothing (the `all` scope's AI).
+ */
+function militaryTrainingValue(profile: Profile): ValueResult {
+  const service = profile.screening.governmentService;
+  const veteran = profile.eeo.veteran;
+  if (service?.kind !== 'value' || service.value.military || veteran?.kind !== 'value' || veteran.value.veteran) {
+    return none('legal-not-in-profile');
+  }
+  return yesNo(false, fromProfile('screening.governmentService', 'legal.military-training'), VALUE_TRANSFORM);
+}
+
+/**
+ * jr6 RULES R3 (JZ-11: JazzHR's "Will you be working from inside the United States?", "Are you able to work remotely
+ * from a state within the United States?"; "Do you currently reside in the United States?"): yes when the profile's
+ * address is in a country the question names (labelRules IN_COUNTRY), no when it is in another, flagged as the
+ * inference it is (location.in-country). Nothing where the question names no country, or a place that may or may not be
+ * one ("Georgia"), or the profile holds no country: TailorIT's AI answers it (ANSWERABLE_PROFILE_CATEGORIES). Never a
+ * relocation question (labelRules IN_COUNTRY_NOT).
+ */
+export function inCountryValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
+  const home = profile.address?.country;
+  const places = placesNamed(spec.label, vocab);
+  if (home === undefined || places.ambiguous || places.countries.length === 0) return none('no-profile-value', false);
+  return yesNo(places.countries.includes(home), byRule('location.in-country', 'address.country'), VALUE_TRANSFORM,
+    { flag: 'filled-low-confidence' });
+}
+
+// jr6 RULES end
