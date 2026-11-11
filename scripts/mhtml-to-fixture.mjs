@@ -121,6 +121,22 @@
 //   --replace-text first (an option whose whole list ends REDACTED or empty, as iCIMS's server-loaded dropdowns are,
 //   tells nothing and passes); and (JV-10) a page where the option rows of one choice group (CHOICE_ROWS) still differ
 //   after clearing, beyond their text, ids, names and values.
+// - jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b: an open SmartRecruiters City list kept each row's value and data-sr-id,
+//   which spelled the city and state typed, while the row's words were redacted), on every platform:
+//   - each open list's rows (LIST_ROWS: an ARIA option, a grid popup's row, a menu's or a tree's item, a native option,
+//     spl-select-option, sdf-select-item, Lever's location result) are read before any redaction (noteListRowsInPage),
+//     with the lists that hold a typed query's results: TYPED_LISTS (Workday's prompt search, SmartRecruiters' City
+//     search), the popups of TYPED_LIST_BOXES (Oracle's searching cx-select, iCIMS's searched dropdown) and the popup of
+//     any text box holding typed text (its aria-controls, aria-owns or ariacontrols, or its aria-activedescendant's
+//     list);
+//   - once every other redaction ran (redactListRowsInPage): a typed query's result (but FIXED_ROWS, the site's own
+//     rows), and any row whose text a redaction made REDACTED, loses its words whole and what names it: its word
+//     attributes (ROW_WORD_ATTRIBUTES: value, data-value, label, aria-label, title, ...) become REDACTED and its id
+//     attributes (ROW_ID_ATTRIBUTES: id, name, href, data-*-id, data-*-key) are normalised, each value, word or opaque
+//     token naming the row REDACTED and the rest kept, a renamed id unique and every reference to it following;
+//   - a listed string respelled in any attribute (respelledSources: joined, camel-cased, its separators changed or
+//     percent-encoded) becomes REDACTED there (transformInPage), a frame's src aside (its route answers it as written);
+//   and it refuses a file where a listed string survives in any attribute, as written or respelled (respelledIn).
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -363,6 +379,57 @@ export const CHOSEN_PLACES = [
  *  id="react-select-candidate-location-option-0">) and Lever's (s2-ahead-0: <div class="... dropdown-location"
  *  id="location-0">). */
 export const SEARCH_RESULT_PLACES = ['[id^="react-select-candidate-location-option-"]', '.dropdown-location'];
+
+// ── jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b, the gap SMARTRECRUITERS P1 found): the names an open list's rows carry ──
+/** The rows of an open list or of a search's results, by markup, on every platform (noteListRowsInPage,
+ *  redactListRowsInPage): an ARIA option (react-select's .select__option, iCIMS's li.dropdown-result, Workday's
+ *  menuItem, Ant's rows), a grid popup's row (Oracle's cx-select: div[role=row] > div[role=gridcell], SP\jr6\audit\
+ *  oracle.md), a menu's or a tree's item, a native <option>, and the rows that carry no role on themselves:
+ *  SmartRecruiters' <spl-select-option value data-sr-id> (its role=option is inside its shadow root; the Wiser one-click
+ *  capture's City results), ADP's <sdf-select-item role=option value aria-label> (snapshot6 adp2's lists) and Lever's
+ *  location result (.dropdown-location). A row inside another row is read with the outer one. */
+export const LIST_ROWS = ['[role="option" i]', '[role="row" i]', '[role="menuitem" i]', '[role="menuitemradio" i]',
+  '[role="menuitemcheckbox" i]', '[role="treeitem" i]', 'option', 'spl-select-option', 'sdf-select-item',
+  '.dropdown-location'];
+/** The lists that hold a typed query's results, by their own markup. Beside these, any list a text box holding typed
+ *  text names (its aria-controls, aria-owns or Lit's ariacontrols, on it or on its role=combobox wrapper, or the list
+ *  of the row its aria-activedescendant names), and the popups of TYPED_LIST_BOXES. */
+export const TYPED_LISTS = [
+  // Workday's prompt search (s2 wd, snapshot4's School search): <div data-uxi-widget-type="multiselectlist"
+  // data-uxi-multiselectlist-issearch="true">, its rows' ids naming each result by Workday's id (menuItem-<id>).
+  '[data-uxi-multiselectlist-issearch="true" i]',
+  // SmartRecruiters' City search (jr6 SMARTRECRUITERS P1, [jobs.smartrecruiters.com] Easy apply - Senior Machine
+  // Learning Engineer - Wiser Solutions.mht): <div slot="menu" role="listbox" data-sr-id="location-autocomplete-search-
+  // menu">, each result an <spl-select-option value="<place id>" data-sr-id="location-autocomplete-search-option-<place
+  // id>"> whose place id spells the city and state typed.
+  '[data-sr-id="location-autocomplete-search-menu"]',
+];
+/** The boxes whose popup always lists a typed query's results: Oracle's cx-select that searches
+ *  (input.cx-select-input--auto-suggest, its role=grid popup named by aria-controls; SP\jr6\audit\oracle.md, read from
+ *  Jobright's reading, no capture yet) and iCIMS's searched dropdown (select[icimsdropdown-search="1"], its results
+ *  ul#<id>_dropdown-results; icimsRedactInPage redacts their words). */
+export const TYPED_LIST_BOXES = ['input.cx-select-input--auto-suggest', 'select[icimsdropdown-search="1"]'];
+/** The rows of a typed query's list that are the site's own, never a result: SmartRecruiters' manual-location row
+ *  (<spl-select-option value="goToManualLocationMode">, the Wiser capture; its adapter declares it unchoosable). */
+export const FIXED_ROWS = ['spl-select-option[value="goToManualLocationMode"]'];
+/** The attributes that say a row's words (or its value): they become REDACTED with the row's words. Beside these, every
+ *  data- attribute ROW_WORD_DATA_SOURCE names (Workday's data-automation-label). */
+export const ROW_WORD_ATTRIBUTES = ['value', 'data-value', 'label', 'aria-label', 'title', 'alt', 'aria-description',
+  'aria-valuetext', 'splarialabel'];
+/** The data- attributes that say a row's words. */
+export const ROW_WORD_DATA_SOURCE = '^data-[\\w-]*(?:label|name|text|title|value|caption|display)$';
+/** The attributes that identify a row (its id, a name, an address, a data- id or key): normalised, so what names the
+ *  row in them becomes REDACTED and the rest stays (redactListRowsInPage). Beside these, every data- attribute
+ *  ROW_ID_DATA_SOURCE names (SmartRecruiters' data-sr-id, Workday's data-automation-id and data-uxi-multiselect-id). */
+export const ROW_ID_ATTRIBUTES = ['id', 'name', 'href', 'data-id', 'data-key'];
+/** The data- attributes that identify a row. */
+export const ROW_ID_DATA_SOURCE = '^data-[\\w-]+-(?:id|key)$';
+/** The attributes that name an element by its id, renamed with it (Lit's unhyphenated spellings too: SmartRecruiters'
+ *  spl-input ariacontrols). */
+export const ID_REFERENCES = ['aria-activedescendant', 'aria-controls', 'aria-owns', 'aria-labelledby',
+  'aria-describedby', 'aria-details', 'aria-errormessage', 'aria-flowto', 'for', 'headers', 'list', 'ariacontrols',
+  'ariaactivedescendant', 'arialabelledby', 'ariadescribedby'];
+// ── end jr6 round 2 ──
 
 /** jr6 (jobvite-new-2): a posting's description, where the redaction list may meet the page's own words (a town, a
  *  school, an employer the posting names): each adapter's posting text (src/adapters/<platform> postingText or its
@@ -1209,6 +1276,62 @@ export function redactSources(strings) {
   });
 }
 
+// ── jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b): a listed string respelled ──
+/** A letter or digit as respelledSources reads one (WORD_CHAR's class, without its brackets). */
+const RESPELL_CHAR = 'A-Za-z0-9\\u00C0-\\u024F';
+
+/**
+ * jr6 round 2: each redact string as it may stand respelled inside an attribute (an id or a value built from it): its
+ * letter-and-digit runs in order, case-insensitive, with up to four separators (any other character, or a
+ * percent-encoded one) between them or none: "Jane Roe" also matches "jane-roe", "JaneRoe", "jane_roe", "jane%20roe"
+ * and "janeroe". A match counts only where it starts and ends at a word's edge (respelledEdge: an end of the text, a
+ * separator, a lower-case letter followed by a capital, a letter beside a digit), so "JaneRoe" in "optionJaneRoe" counts
+ * and "Roe" in "Roebuck" does not. A string that looks like a phone number is left to redactSources' own rule, which
+ * matches its digits with any punctuation. Answers each string's position in the list (from 1) and its pattern source.
+ * @param {string[]} strings @returns {Array<{ index: number; source: string }>}
+ */
+export function respelledSources(strings) {
+  return strings.flatMap((entry, at) => {
+    if (/^[\d\s().+-]+$/.test(entry) && entry.replace(/\D/g, '').length >= 7) return [];
+    const runs = entry.match(new RegExp(`[${RESPELL_CHAR}]+`, 'g')) ?? [];
+    if (runs.join('').length < 3) return [];
+    const separators = `(?:[^${RESPELL_CHAR}]|%[0-9A-Fa-f]{2}){0,4}`;
+    return [{ index: at + 1, source: runs.map(escapeRegExp).join(separators) }];
+  });
+}
+
+/** Whether `at` is a word's edge in `text` (respelledSources): an end of the text, a character that is no letter or
+ *  digit on either side, a lower-case letter followed by a capital, or a letter beside a digit. @param {string} text
+ *  @param {number} at */
+export function respelledEdge(text, at) {
+  if (at <= 0 || at >= text.length) return true;
+  const before = text[at - 1] ?? '';
+  const after = text[at] ?? '';
+  const word = new RegExp(`^[${RESPELL_CHAR}]$`);
+  if (!word.test(before) || !word.test(after)) return true;
+  if (/\d/.test(before) !== /\d/.test(after)) return true;
+  return before !== before.toUpperCase() && after !== after.toLowerCase();
+}
+
+/** The spans of `text` a respelledSources pattern matches at words' edges. @param {string} text @param {string} source
+ *  @returns {Array<[number, number]>} */
+export function respelledSpans(text, source) {
+  /** @type {Array<[number, number]>} */
+  const spans = [];
+  const pattern = new RegExp(source, 'gi');
+  for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
+    const end = match.index + match[0].length;
+    if (match[0] !== '' && respelledEdge(text, match.index) && respelledEdge(text, end)) {
+      spans.push([match.index, end]);
+      pattern.lastIndex = end;
+    } else {
+      pattern.lastIndex = match.index + 1;
+    }
+  }
+  return spans;
+}
+// ── end jr6 round 2 ──
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Code that runs in the page. Each function is serialized by Playwright, so it may use nothing from this module: what
 // it needs comes in through its one argument.
@@ -1883,16 +2006,22 @@ export function redactWorkdayInPage(input) {
  * the emails and phone numbers it found (kept in memory for the final check, never printed or written) and the
  * suspicious tokens left over. jr6 (jobvite-new-2): each place where a listed string met the page's own text (an
  * option, a label, a legend, a posting's description: `postingPlaces`) is kept in the page for listedPlacesInPage.
+ * jr6 round 2 (TOOLING; BUILD.md 4b): a listed string respelled in an attribute (`respelled`, respelledSources: joined,
+ * camel-cased, its separators changed or percent-encoded, as SmartRecruiters' location rows spell a typed city in their
+ * value and data-sr-id) becomes REDACTED there too, at words' edges (respelledEdge's rule, written again here: this
+ * runs in the page); a frame's src is left as it is (its route must still answer it) and the final check refuses it.
  * @param {{ resources: Record<string, Resource>; frameUrls: Record<string, string | null>; frameUrl: string;
  *   redact: string[]; email: string; notEmail: string; phone: string;
  *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; redacted: string;
- *   postingPlaces?: string }} input
+ *   postingPlaces?: string; respelled?: Array<{ index: number; source: string }> }} input
  */
 export function transformInPage(input) {
   const doc = globalThis.document;
   const { resources, frameUrls, frameUrl, redacted } = input;
   const counts = {
     typedValues: 0, checked: 0, selected: 0, hiddenValues: 0, widgetText: 0, emails: 0, phones: 0, listed: 0,
+    // jr6 round 2: the listed strings respelled in attributes.
+    respelled: 0,
     scripts: 0, eventHandlers: 0, javascriptUrls: 0, bases: 0, metaHttpEquiv: 0, metaRefresh: 0, embeds: 0,
     links: 0, srcdoc: 0, stylesheets: 0, images: 0, placeholders: 0, missing: 0, forms: 0, frames: 0,
     framesDropped: 0, shadowRoots: 0,
@@ -2254,6 +2383,43 @@ export function transformInPage(input) {
     const clean = scrub(value, true, node.parentElement);
     if (clean !== value) node.nodeValue = clean;
   }
+  // jr6 round 2 (TOOLING; BUILD.md 4b): a listed string respelled in an attribute (respelledSources' patterns), at
+  // words' edges (respelledEdge's rule: an end, a separator, a lower-case letter then a capital, a letter beside a digit).
+  const respelled = (input.respelled ?? []).map(({ source }) => new RegExp(source, 'gi'));
+  const wordChar = /^[A-Za-z0-9\u00c0-\u024f]$/;
+  /** @param {string} text @param {number} at */
+  const edge = (text, at) => {
+    if (at <= 0 || at >= text.length) return true;
+    const before = text[at - 1] ?? '';
+    const after = text[at] ?? '';
+    if (!wordChar.test(before) || !wordChar.test(after)) return true;
+    if (/\d/.test(before) !== /\d/.test(after)) return true;
+    return before !== before.toUpperCase() && after !== after.toLowerCase();
+  };
+  /** @param {string} text */
+  const respell = (text) => {
+    if (/;base64,/i.test(text)) return text;
+    let out = text;
+    for (const pattern of respelled) {
+      /** @type {Array<[number, number]>} */
+      const spans = [];
+      pattern.lastIndex = 0;
+      for (let match = pattern.exec(out); match !== null; match = pattern.exec(out)) {
+        const end = match.index + match[0].length;
+        if (match[0] !== '' && edge(out, match.index) && edge(out, end)) {
+          spans.push([match.index, end]);
+          pattern.lastIndex = end;
+        } else {
+          pattern.lastIndex = match.index + 1;
+        }
+      }
+      for (const [start, end] of spans.reverse()) {
+        out = `${out.slice(0, start)}${redacted}${out.slice(end)}`;
+        counts.respelled += 1;
+      }
+    }
+    return out;
+  };
   for (const element of doc.querySelectorAll('*')) {
     for (const attribute of [...element.attributes]) {
       if (/^\s*data:/i.test(attribute.value)) continue;
@@ -2261,7 +2427,10 @@ export function transformInPage(input) {
       const lowerValue = attribute.value.trim().toLowerCase();
       const phones = input.phoneAttributes.includes(name) || name.startsWith('data-') ||
         (name === 'href' && (lowerValue.startsWith('tel:') || lowerValue.startsWith('sms:')));
-      const clean = scrub(attribute.value, phones, element);
+      const scrubbed = scrub(attribute.value, phones, element);
+      // A frame's address keeps its spelling (its route answers it as written); the final check refuses it.
+      const framed = name === 'src' && (element.localName === 'iframe' || element.localName === 'frame');
+      const clean = framed ? scrubbed : respell(scrubbed);
       if (clean !== attribute.value) element.setAttribute(attribute.name, clean);
     }
   }
@@ -2582,6 +2751,291 @@ export function listedPlacesInPage(redacted) {
   return counts;
 }
 
+// ── jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b, the gap SMARTRECRUITERS P1 found) ──
+/**
+ * Reads each open list's rows (`rows`: LIST_ROWS, the outermost of nested ones, inside open shadow roots where the
+ * platform keeps them) before anything is redacted, on every platform: each row's own words (its text, its shadow
+ * roots' included, and its own tree's label attributes' words, three letters or more) and the values its own tree's word
+ * attributes give (`words`, `wordData`: ROW_WORD_ATTRIBUTES and ROW_WORD_DATA_SOURCE, and its whole text), kept in the
+ * page for redactListRowsInPage and never answered;
+ * and the lists that hold a typed query's results: those `typedLists` names (TYPED_LISTS), the popup of each box
+ * `typedBoxes` names (TYPED_LIST_BOXES: an input's aria-controls list, an iCIMS select's #<id>_dropdown-results), and
+ * the popup of any text box (a text-like input, or a custom element) that is neither read-only nor disabled and holds
+ * typed text (its value attribute, or its shadow root's input's): the list its aria-controls, aria-owns or Lit's
+ * ariacontrols names, on it or on its role=combobox wrapper, or the list of the row its aria-activedescendant names.
+ * Answers how many rows and typed lists it read.
+ * @param {{ rows: string[]; typedLists: string[]; typedBoxes: string[]; words: string[]; wordData: string }} input
+ * @returns {{ rows: number; typedLists: number }}
+ */
+export function noteListRowsInPage(input) {
+  const doc = globalThis.document;
+  const view = /** @type {any} */ (globalThis);
+  const wordData = new RegExp(input.wordData, 'i');
+  /** An element's parent, across a shadow root to its host. @param {Element} element @returns {Element | null} */
+  const parentOf = (element) => element.parentElement ?? /** @type {any} */ (element.parentNode)?.host ?? null;
+  const lists = '[role="listbox" i], [role="grid" i], [role="menu" i], [role="tree" i], select, datalist, ul, ol';
+  /** The list a row stands in: its nearest ancestor with a list's role or tag, else its parent. @param {Element} row */
+  const listOf = (row) => {
+    for (let at = parentOf(row); at !== null; at = parentOf(at)) if (at.matches(lists)) return at;
+    return parentOf(row);
+  };
+  /** The words of a list's own id, class and data- attributes (its structure, which a row's id may repeat: Greenhouse's
+   *  react-select-candidate-location-option-0 in react-select-candidate-location-listbox), lower-cased, camel case
+   *  split. @param {Element | null} list */
+  const structureOf = (list) => {
+    if (list === null) return [];
+    const text = Array.from(list.attributes).filter((attribute) => ['id', 'class'].includes(attribute.name.toLowerCase())
+      || attribute.name.toLowerCase().startsWith('data-')).map((attribute) => attribute.value).join(' ');
+    return text.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().match(/[a-z\u00e0-\u024f]{2,}/g) ?? [];
+  };
+  const found = new Set(doc.querySelectorAll(input.rows.join(', ')));
+  /** @type {Map<Element, { words: string[]; values: string[]; structure: string[] }>} */
+  const records = new Map();
+  for (const row of found) {
+    let outer = false;
+    for (let at = parentOf(row); at !== null && !outer; at = parentOf(at)) outer = found.has(at);
+    if (outer) continue;
+    /** @type {string[]} */
+    const texts = [];
+    const walker = doc.createTreeWalker(row, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = (node.nodeValue ?? '').trim();
+      if (text !== '' && !node.parentElement?.closest('style, script')) texts.push(text);
+    }
+    /** @type {string[]} */
+    const labels = [];
+    /** @type {string[]} */
+    const values = [];
+    // The word attributes of the row's own tree (its slotted children's among them); a component's own label inside a
+    // shadow root (SmartRecruiters' spl-tooltip, aria-label="Tooltip", in the Wiser capture's City row) is no word of the
+    // row's.
+    const tree = row.getRootNode();
+    for (const element of [row, ...row.querySelectorAll('*')]) {
+      if (element.getRootNode() !== tree) continue;
+      for (const attribute of [...element.attributes]) {
+        const name = attribute.name.toLowerCase();
+        const value = attribute.value.trim();
+        if ((!input.words.includes(name) && !wordData.test(name)) || value === '' || /^data:/i.test(value)) continue;
+        values.push(value);
+        if (!['value', 'data-value'].includes(name)) labels.push(value);
+      }
+    }
+    const whole = texts.join(' ').replace(/\s+/g, ' ').trim();
+    if (whole !== '') values.push(whole);
+    const words = `${texts.join(' ')} ${labels.join(' ')}`.toLowerCase().match(/[a-z\u00c0-\u024f]{3,}/g) ?? [];
+    records.set(row, { words: [...new Set(words)], values: [...new Set(values)], structure: structureOf(listOf(row)) });
+  }
+  /** @type {Set<Element>} */
+  const typed = new Set(input.typedLists.length > 0 ? doc.querySelectorAll(input.typedLists.join(', ')) : []);
+  /** The element an id names, in `from`'s own tree first. @param {Element} from @param {string} id */
+  const byId = (from, id) => {
+    const root = /** @type {any} */ (from.getRootNode());
+    return (typeof root.getElementById === 'function' ? root.getElementById(id) : null) ?? doc.getElementById(id);
+  };
+  /** Adds the popups `holder` names by `names`. @param {Element} holder @param {string[]} names */
+  const named = (holder, names) => {
+    for (const name of names) {
+      for (const id of (holder.getAttribute(name) ?? '').split(/\s+/).filter((each) => each !== '')) {
+        const list = byId(holder, id);
+        if (list !== null) typed.add(list);
+      }
+    }
+  };
+  for (const box of input.typedBoxes.length > 0 ? doc.querySelectorAll(input.typedBoxes.join(', ')) : []) {
+    if (box.localName === 'select') {
+      const list = box.id === '' ? null : doc.getElementById(`${box.id}_dropdown-results`);
+      if (list !== null) typed.add(list);
+    } else {
+      named(box, ['aria-controls', 'aria-owns']);
+    }
+  }
+  const textLike = /^(?:|text|search|email|tel|url)$/;
+  for (const box of doc.querySelectorAll('input, [ariacontrols], [ariaautocomplete], [aria-autocomplete]')) {
+    if (box.hasAttribute('readonly') || box.hasAttribute('disabled')) continue;
+    if (box.localName === 'input' ? !textLike.test((box.getAttribute('type') ?? '').trim().toLowerCase())
+      : !box.localName.includes('-') && !box.matches('[role="combobox" i]')) continue;
+    const inner = box.shadowRoot ? Array.from(box.shadowRoot.querySelectorAll('input'))[0] ?? null : null;
+    if (![box, inner].some((each) => each !== null && (each.getAttribute('value') ?? '').trim() !== '')) continue;
+    const wrapper = box.parentElement?.closest('[role="combobox" i]') ?? null;
+    for (const holder of wrapper === null ? [box] : [box, wrapper]) named(holder, ['aria-controls', 'aria-owns', 'ariacontrols']);
+    for (const name of ['aria-activedescendant', 'ariaactivedescendant']) {
+      const id = (box.getAttribute(name) ?? '').trim();
+      const row = id === '' ? null : byId(box, id);
+      const list = row === null ? null : listOf(row);
+      if (list !== null) typed.add(list);
+    }
+  }
+  view.__fixtureRows = { records, typed };
+  return { rows: records.size, typedLists: typed.size };
+}
+
+/**
+ * Redacts what names an open list's rows (noteListRowsInPage read them), on every platform, once every other redaction
+ * ran (the platform's own included) and before the page is written:
+ * - a row of a typed query's list (a noted typed list holds it, or it is a SEARCH_RESULT_PLACES result: `results`),
+ *   but the site's own rows (`fixed`: FIXED_ROWS), is a result;
+ * - a result, and any row whose text some redaction made REDACTED (a word attribute alone tells nothing: Workday's own
+ *   rule blanks every data-automation-label, a browse list's public rows' too), loses its words whole (each text, in
+ *   its shadow root too, as SEARCH_RESULT_PLACES' do: a word left beside a REDACTED one still tells part of it; each
+ *   text keeps the white space around it) and what names it besides them: each word attribute (`words`, `wordData`:
+ *   its value, data-value, label, aria-label, title, ...) becomes REDACTED (one that is REDACTED already but for
+ *   Workday's "not checked" or "checked" is kept; inside a shadow root of the row's, only one that repeats the row's
+ *   words or held a listed string: a component's own label there stays); each id
+ *   attribute (`ids`, `idData`: id, name, href, data-id, data-key, data-sr-id, data-automation-id, ...) is normalised:
+ *   each value or whole text the row gave, as written or with its separators changed (SmartRecruiters' location id
+ *   spelling the city its words named), each opaque token (five characters or more holding a digit: Workday's
+ *   menuItem-<id>), and each word of the row's own (three letters or more), become REDACTED, the rest (a structural
+ *   prefix, a position) staying; runs of REDACTED become one. A renamed id stays unique (-2, -3, ...) and every
+ *   reference to it follows (`references`: ID_REFERENCES, and an href="#<id>").
+ * Answers counts, never a value.
+ * @param {{ redacted: string; fixed: string[]; results: string[]; words: string[]; wordData: string; ids: string[];
+ *   idData: string; references: string[] }} input
+ * @returns {{ rows: number; words: number; names: number; ids: number }}
+ */
+export function redactListRowsInPage(input) {
+  const doc = globalThis.document;
+  const view = /** @type {any} */ (globalThis);
+  /** @type {{ records: Map<Element, { words: string[]; values: string[]; structure: string[] }>; typed: Set<Element> }} */
+  const { records, typed } = view.__fixtureRows ?? { records: new Map(), typed: new Set() };
+  view.__fixtureRows = undefined;
+  const { redacted } = input;
+  const counts = { rows: 0, words: 0, names: 0, ids: 0 };
+  const wordData = new RegExp(input.wordData, 'i');
+  const idData = new RegExp(input.idData, 'i');
+  const char = 'A-Za-z0-9\\u00C0-\\u024F';
+  const wordChar = new RegExp(`^[${char}]$`);
+  /** respelledEdge's rule (written again: this runs in the page). @param {string} text @param {number} at */
+  const edge = (text, at) => {
+    if (at <= 0 || at >= text.length) return true;
+    const before = text[at - 1] ?? '';
+    const after = text[at] ?? '';
+    if (!wordChar.test(before) || !wordChar.test(after)) return true;
+    if (/\d/.test(before) !== /\d/.test(after)) return true;
+    return before !== before.toUpperCase() && after !== after.toLowerCase();
+  };
+  /** @param {string} text */
+  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  /** An element's parent, across a shadow root to its host. @param {Element} element @returns {Element | null} */
+  const parentOf = (element) => element.parentElement ?? /** @type {any} */ (element.parentNode)?.host ?? null;
+  /** Whether a word attribute still says something besides REDACTED (and the state Workday's rows add to it).
+   *  @param {string} value */
+  const says = (value) => {
+    const rest = value.split(redacted).join(' ');
+    return rest.trim() !== '' && !(value.includes(redacted) && /^(?:\s|not|checked)*$/i.test(rest));
+  };
+  /** An id with what names its row made REDACTED (see above). @param {string} value
+   *  @param {{ words: string[]; values: string[]; structure: string[] }} record */
+  const normalise = (value, record) => {
+    let out = value;
+    for (const given of [...record.values].sort((a, b) => b.length - a.length)) {
+      const runs = given.match(new RegExp(`[${char}]+`, 'g')) ?? [];
+      if (runs.join('').length < 2) continue;
+      const pattern = new RegExp(runs.map(escape).join(`(?:[^${char}]|%[0-9A-Fa-f]{2}){0,4}`), 'gi');
+      /** @type {Array<[number, number]>} */
+      const spans = [];
+      for (let match = pattern.exec(out); match !== null; match = pattern.exec(out)) {
+        const end = match.index + match[0].length;
+        if (match[0] !== '' && edge(out, match.index) && edge(out, end)) {
+          spans.push([match.index, end]);
+          pattern.lastIndex = end;
+        } else {
+          pattern.lastIndex = match.index + 1;
+        }
+      }
+      for (const [start, end] of spans.reverse()) out = `${out.slice(0, start)}${redacted}${out.slice(end)}`;
+    }
+    // The row's own words, but its list's (a structural word the row's id repeats: "location" in Greenhouse's
+    // react-select-candidate-location-option-0 when a result's words hold it too).
+    const structure = new Set(record.structure);
+    const words = new Set(record.words.filter((word) => !structure.has(word)));
+    out = out.replace(new RegExp(`[${char}]+`, 'g'), (run) => {
+      if (run === redacted) return run;
+      if (run.length >= 5 && /\d/.test(run)) return redacted;
+      return run.split(/(?<=[a-z\u00df-\u00ff])(?=[A-Z\u00c0-\u00de])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])/)
+        .map((part) => (words.has(part.toLowerCase()) ? redacted : part)).join('');
+    });
+    return out.replace(new RegExp(`${redacted}(?:[^${char}]{0,3}${redacted})+`, 'g'), redacted);
+  };
+  const fixed = input.fixed.length > 0 ? input.fixed.join(', ') : '';
+  const results = input.results.length > 0 ? input.results.join(', ') : '';
+  /** @type {Set<string>} */
+  const taken = new Set(Array.from(doc.querySelectorAll('[id]'), (element) => element.id));
+  /** @type {Map<string, string>} */
+  const renamed = new Map();
+  for (const [row, record] of records) {
+    if (!row.isConnected) continue;
+    let inTyped = results !== '' && row.matches(results);
+    for (let at = /** @type {Element | null} */ (row); at !== null && !inTyped; at = parentOf(at)) inTyped = typed.has(at);
+    if (inTyped && fixed !== '' && row.matches(fixed)) continue;
+    const elements = [row, ...row.querySelectorAll('*')];
+    // Its words went where its text did (Workday's own rule blanks every data-automation-label, a browse list's public
+    // rows' too, so a word attribute alone tells nothing).
+    let wordsGone = inTyped;
+    const seen = doc.createTreeWalker(row, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = seen.nextNode(); node && !wordsGone; node = seen.nextNode()) {
+      wordsGone = (node.nodeValue ?? '').includes(redacted) && !node.parentElement?.closest('style');
+    }
+    if (!wordsGone) continue;
+    counts.rows += 1;
+    // A result's words go whole, and so do a row's words left beside a REDACTED one ("REDACTED, NJ" still tells part),
+    // each text keeping the white space around it.
+    const walker = doc.createTreeWalker(row, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.nodeValue ?? '';
+      if (text.trim() === '' || text.trim() === redacted || node.parentElement?.closest('style')) continue;
+      node.nodeValue = text.replace(/\S(?:[\s\S]*\S)?/, redacted);
+      counts.words += 1;
+    }
+    const tree = row.getRootNode();
+    const words = new Set(record.words);
+    for (const element of elements) {
+      // A word attribute inside a shadow root of the row's goes where it repeats the row's words or held a listed one;
+      // a component's own label there (spl-tooltip's "Tooltip") stays.
+      const own = element.getRootNode() === tree;
+      for (const attribute of [...element.attributes]) {
+        const name = attribute.name.toLowerCase();
+        const value = attribute.value;
+        if (value.trim() === '' || /^\s*data:/i.test(value)) continue;
+        if (input.words.includes(name) || wordData.test(name)) {
+          if (!says(value)) continue;
+          if (!own && !value.includes(redacted)
+            && !(value.toLowerCase().match(/[a-zÀ-ɏ]{3,}/g) ?? []).some((word) => words.has(word))) continue;
+          element.setAttribute(attribute.name, redacted);
+          counts.names += 1;
+        } else if ((input.ids.includes(name) || idData.test(name)) && !(name === 'href' && value.trim().startsWith('#'))) {
+          let next = normalise(value, record);
+          if (next === value) continue;
+          if (name === 'id') {
+            let unique = next;
+            for (let n = 2; taken.has(unique); n += 1) unique = `${next}-${n}`;
+            next = unique;
+            taken.add(next);
+            renamed.set(value, next);
+          }
+          element.setAttribute(attribute.name, next);
+          counts.ids += 1;
+        }
+      }
+    }
+  }
+  if (renamed.size > 0) {
+    for (const element of doc.querySelectorAll('*')) {
+      for (const name of input.references) {
+        const value = element.getAttribute(name);
+        if (value === null) continue;
+        const next = value.split(/(\s+)/).map((token) => renamed.get(token) ?? token).join('');
+        if (next !== value) element.setAttribute(name, next);
+      }
+      const href = element.getAttribute('href');
+      if (href !== null && href.startsWith('#') && renamed.has(href.slice(1))) {
+        element.setAttribute('href', `#${renamed.get(href.slice(1))}`);
+      }
+    }
+  }
+  return counts;
+}
+// ── end jr6 round 2 ──
+
 /**
  * jr6 (JV-10): the option rows of each choice group CHOICE_ROWS names, compared once every mark is cleared: in one
  * group every row's shape (its tags and attributes, nested, read without text and comments, without the attributes that
@@ -2883,6 +3337,34 @@ export function chosenMarksIn(text) {
 }
 // ── end of the security fix's block ──
 
+/**
+ * jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b): each redaction-list entry that survives in an attribute of a written file,
+ * as written or respelled (respelledSources: joined, camel-cased, its separators changed or percent-encoded, at words'
+ * edges), by the entry's position, the attribute's name and its element's tag, never a value: the conversion refuses
+ * a file that holds one (a frame's src, which the scrub leaves for its route, among them). Read over the markup's start
+ * tags, the declarative shadow roots' included, stylesheets, scripts and comments aside; a data: or base64 value is a
+ * payload, not words.
+ * @param {string} text @param {Array<{ index: number; source: string }>} sources @returns {string[]}
+ */
+export function respelledIn(text, sources) {
+  if (sources.length === 0) return [];
+  const markup = text.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  /** @type {Set<string>} */
+  const found = new Set();
+  for (const [, tag = '', rest = ''] of markup.matchAll(/<([a-zA-Z][\w-]*)((?:\s[^<>]*?)?)\/?>/g)) {
+    for (const [name, raw] of attributesOf(rest)) {
+      if (raw.trim() === '' || /^\s*data:/i.test(raw) || /;base64,/i.test(raw)) continue;
+      const value = decodeEntities(raw);
+      for (const { index, source } of sources) {
+        if (respelledSpans(value, source).length > 0) {
+          found.add(`redact entry ${index} survives in an attribute (${name} on <${tag.toLowerCase()}>)`);
+        }
+      }
+    }
+  }
+  return [...found];
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // The conversion
 // ---------------------------------------------------------------------------------------------------------------------
@@ -3042,6 +3524,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   const resources = resourcesOf(mhtml);
   const patterns = { redact: redactSources(redact), email: EMAIL_SOURCE, notEmail: NOT_EMAIL_SOURCE, phone: PHONE_SOURCE,
     phoneDigits: PHONE_DIGITS, phoneAttributes: PHONE_ATTRIBUTES };
+  // jr6 round 2 (TOOLING; BUILD.md 4b): the listed strings as they may stand respelled in an attribute.
+  const respelled = respelledSources(redact);
   // The snapshot build of 2026-11-06: a platform keeping shadow roots (oracle-sf-sr), and the platform's own redactions.
   const deep = keepsShadowRoots(platform);
   const own = PLATFORM_REDACTIONS[platform];
@@ -3122,6 +3606,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     /** @type {OutputFile[]} */
     const written = [];
     for (const [index, { frame, url, path }] of [...converted.entries()].reverse()) {
+      // jr6 round 2 (TOOLING; BUILD.md 4b): each open list's rows and the lists a typed query filled, read before any
+      // redaction (noteListRowsInPage); what names them goes once every redaction ran (redactListRowsInPage, below).
+      await frame.evaluate(noteListRowsInPage, { rows: LIST_ROWS, typedLists: TYPED_LISTS, typedBoxes: TYPED_LIST_BOXES,
+        words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE });
       // The generic applicant-text pass, then the platform's own redactions around the transformation
       // (PLATFORM_REDACTIONS).
       const applicant = await frame.evaluate(redactApplicantTextInPage, { fileNames: FILE_NAME_PLACES,
@@ -3130,9 +3618,13 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       for (const name of applicant.names) fileNames.add(name);
       const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
-        ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', ') });
+        ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', '), respelled });
       const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const ownCounts = ownBefore ?? ownAfter;
+      // jr6 round 2: a typed query's results lose their words, and every row whose words went loses what names it.
+      const rowNames = await frame.evaluate(redactListRowsInPage, { redacted: REDACTED, fixed: FIXED_ROWS,
+        results: SEARCH_RESULT_PLACES, words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE, ids: ROW_ID_ATTRIBUTES,
+        idData: ROW_ID_DATA_SOURCE, references: ID_REFERENCES });
       if (own?.counts === 'frame' && ownCounts !== null) {
         for (const [key, count] of Object.entries(ownCounts)) {
           outcome.counts[/** @type {keyof typeof outcome.counts} */ (key)] += count;
@@ -3201,6 +3693,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         redacted: { typedValues: counts.typedValues, checked: counts.checked, selected: counts.selected,
           hiddenValues: counts.hiddenValues, widgetText: counts.widgetText, emails: counts.emails, phones: counts.phones,
           listed: counts.listed, ...(applicant.applicantText > 0 ? { applicantText: applicant.applicantText } : {}),
+          // jr6 round 2: the listed strings respelled in attributes, and the rows whose names went (each only when
+          // there was one, so a page neither touches is written as before).
+          ...(counts.respelled > 0 ? { respelled: counts.respelled } : {}),
+          ...(rowNames.rows > 0 ? { listRows: rowNames } : {}),
           ...(signInTokens.length > 0 ? { signInTokens: signInTokens.length } : {}),
           ...(own?.counts === 'header' && ownCounts !== null ? { [platform]: ownCounts } : {}) },
         removed: { scripts: counts.scripts, eventHandlers: counts.eventHandlers, javascriptUrls: counts.javascriptUrls,
@@ -3223,7 +3719,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         // jr6 (jobvite-new-2): the elements each --replace-text gave synthetic text in this frame, by position.
         ...((replaced[index] ?? []).some((count) => count > 0) ? { replacedText: replaced[index] } : {}),
       };
-      result.counts[basename(path)] = { ...counts, ...took, choices, applicantText: applicant.applicantText, jrIds };
+      result.counts[basename(path)] = { ...counts, ...took, choices, applicantText: applicant.applicantText, jrIds,
+        listRows: rowNames.rows, rowWords: rowNames.words, rowNames: rowNames.names, rowIds: rowNames.ids };
       const comment = `<!-- TailorIT fixture, converted by scripts/mhtml-to-fixture.mjs: convert the capture again ` +
         `rather than editing it.\n${commentJson(header)} -->`;
       // LF line ends throughout: HTML parsing treats CR LF as LF anyway, and git stores the fixture with LF.
@@ -3306,6 +3803,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       }
       // The security fix of 2026-11-06 (S2): no chosen mark (an answer drawn on a control or a list) is written.
       for (const label of chosenMarksIn(output.text)) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
+      // jr6 round 2 (TOOLING; BUILD.md 4b): no listed string in any attribute, as written or respelled.
+      for (const label of respelledIn(output.text, respelled)) reasons.push(`${basename(output.path)}: ${label}`);
     }
     if (reasons.length > 0) throw new ConversionError(reasons);
     return result;
