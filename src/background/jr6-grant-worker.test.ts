@@ -626,6 +626,26 @@ describe('the panel\'s Cancel (item 6)', () => {
     expect(await cancel(idle)).toEqual({ ok: true, data: { frames: 0 } });
     expect(await formStarted(idle, LEVER_FORM, 'doc-form', 1)).toBe(false);
   });
+
+  // The line P review (revA-3, P-B3): its press drew a wall or a choice in its own document and the frame is still at it
+  // (the sign-in step, the choice it waits past, the follow-up wait): the panel shows the spinner and Cancel, and that
+  // Cancel reaches the frame there too.
+  it('reaches the application frame while it is entering beside a wall or a choice of its own document', async () => {
+    for (const words of [{ wall: 'sign-in' }, { choice: true }]) {
+      const said = JSON.stringify(words);
+      const worker = await applyWorker();
+      const posting = await postingTab(worker, LEVER_POSTING);
+      await fill(worker);
+      await wall(worker, posting, { entry: true, entering: true });
+      expect(await press(worker, posting), said).toEqual({ ok: true, data: {} });
+      await wall(worker, posting, { ...words, entering: true });
+      expect(await pageOf(worker), said).toMatchObject({ ...words, entering: true });
+      expect(await cancel(worker), said).toEqual({ ok: true, data: { frames: 1 } });
+      expect(cancelsAt(worker), said).toEqual([0]);
+      // The grant ended with it: the form a later document shows is not started.
+      expect(await formStarted(worker, LEVER_FORM, 'doc-form', 1), said).toBe(false);
+    }
+  });
 });
 
 describe('ADP\'s job details: an entry at an application address loads its card (apply-b-new-2)', () => {

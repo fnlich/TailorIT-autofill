@@ -303,9 +303,19 @@ describe('what frame/wall leaves in the registry: entering, refusal and the entr
     expect(await entryOf()).toMatchObject({ entry: true, entering: true, entrySaid: true });
     await helloAt(worker, details('doc-1'));
     expect(await entryOf()).toMatchObject({ entering: true });
-    // A wall or a choice drops it, as it drops entry.
+    // A wall or a choice its press drew keeps it, unlike entry (the line P review, revA-3 and P-B3: the frame's sign-in
+    // step and the choice it waits past are still its entry, which the panel's Cancel must reach); a word without it
+    // drops it.
     await say(worker, details('doc-1'), { wall: 'sign-in', entering: true });
+    expect(await entryOf()).toMatchObject({ wall: 'sign-in', entering: true });
+    expect(await entryOf()).not.toHaveProperty('entry');
+    expect(await pageNow(worker)).toMatchObject({ wall: 'sign-in', entering: true });
+    await say(worker, details('doc-1'), { choice: true, entering: true });
+    expect(await entryOf()).toMatchObject({ choice: true, entering: true });
+    expect(await pageNow(worker)).toMatchObject({ choice: true, entering: true });
+    await say(worker, details('doc-1'), { wall: 'sign-in' });
     expect((await entryOf())?.entering).toBeUndefined();
+    expect((await pageNow(worker)).entering).toBeUndefined();
     // A refusal beside a wall is not kept, nor its reason.
     await say(worker, details('doc-1'), { wall: 'sign-in', entryRefused: true, refusal: 'blocked' });
     expect(await entryOf()).not.toHaveProperty('refusal');
