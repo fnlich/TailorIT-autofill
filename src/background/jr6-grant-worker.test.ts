@@ -154,12 +154,12 @@ describe('entry/pressed: who may say it (item 3)', () => {
   it('only the tab\'s application frame, in the document registered for it, on its origin, one the grant reached', async () => {
     const worker = await applyWorker();
     const posting = await postingTab(worker, LEVER_POSTING);
-    const sub = at(LEVER_POSTING, 'doc-sub', TAB, { frameId: 3, parentFrameId: 0 });
+    const sub = at(LEVER_POSTING, 'doc-sub', TAB, { frameId: 3 });
     await hello(worker, sub, false);
     await fill(worker);
     // Another frame of the tab; and one that names the application frame's document (Chrome never does).
     expect(await press(worker, sub)).toEqual({ ok: false, error: 'bad_sender' });
-    expect(await press(worker, at(LEVER_POSTING, 'doc-posting', TAB, { frameId: 3, parentFrameId: 0 })))
+    expect(await press(worker, at(LEVER_POSTING, 'doc-posting', TAB, { frameId: 3 })))
       .toEqual({ ok: false, error: 'bad_sender' });
     // The top frame, but another document than the one registered.
     expect(await press(worker, at(LEVER_POSTING, 'doc-old'))).toEqual({ ok: false, error: 'bad_sender' });
@@ -614,7 +614,7 @@ describe('ADP\'s job details: an entry at an application address loads its card 
     expect((await pageOf(worker))?.posting).toBe(true);
     const sub = await applyWorker({ lookupOnLoad: true });
     await hello(sub, at(DETAILS, 'doc-top'), false);
-    const frame = at(DETAILS, 'doc-sub', TAB, { frameId: 4, parentFrameId: 0 });
+    const frame = at(DETAILS, 'doc-sub', TAB, { frameId: 4 });
     await hello(sub, frame, false);
     await wall(sub, frame, { entry: true });
     await settle();
@@ -649,7 +649,7 @@ describe('the owner\'s chains still start their next form (ported from the apply
     const FRAME = `${TOP}&in_iframe=1`;
     const GATE_TOP = 'https://careers-acme.icims.com/jobs/1234/x/login';
     const GATE_FRAME = `${GATE_TOP}?in_iframe=1`;
-    const framed = (url: string, documentId: string, frameId = 5) => at(url, documentId, TAB, { frameId, parentFrameId: 0 });
+    const framed = (url: string, documentId: string, frameId = 5) => at(url, documentId, TAB, { frameId });
 
     async function wrapped() {
       const worker = await applyWorker();
