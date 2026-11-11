@@ -20,6 +20,9 @@
  *   absolutely inside a static cell that hides its overflow (iCIMS's div.iCIMS_InfoData, 40 px tall), read clear,
  *   as a person sees them below the cell: the cell is not the container's containing block, so its overflow never
  *   cuts them (dom/camouflage.ts heldUnder); a cell that is the containing block, or one above it, still cuts them;
+ * - jr6 ENGINE E3 (the ULTIPRO package's U-16): a type="tel" box with no pattern from the page takes the pattern its
+ *   adapter declares for that same format (formatFor: UltiPro's ten-digit national phones); the page's own mask,
+ *   another declared format, or no declared pattern leave it as its type reads it;
  * Every value is synthetic (no owner data), but the Oracle fixture's, which is the converted, redacted capture.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -528,5 +531,48 @@ describe('jr6 E2 (ICIMS-01 reading): an overflow cuts only what its containing b
   it('still judges the words’ colours: white results on the white container are camouflaged', async () => {
     expect((await results((doc) => { doc.getElementById('results')!.style.color = '#fff'; })).verdict)
       .toBe('camouflaged');
+  });
+});
+
+// ── jr6 ENGINE E3 (the ULTIPRO package's U-16): a type="tel" box takes its adapter's pattern ──────────────────────────
+
+/** UltiPro's phone boxes as SP\jr6\build\ULTIPRO.md (U-16) describes them: input[type=tel] with no placeholder, which
+ *  its adapter declares a ten-digit national number (formatFor). Beside them, a tel box whose placeholder spells its own
+ *  mask, and an email box. Every value is synthetic. */
+const PHONES = `<!doctype html><html><body><form id="f">
+  <label for="Phone">Phone</label><input id="Phone" type="tel">
+  <label for="Masked">Mobile</label><input id="Masked" type="tel" placeholder="(###) ###-####">
+  <label for="Email">Email</label><input id="Email" type="email">
+</form></body></html>`;
+
+/** An adapter that declares `declared` for every box (formatFor). */
+const formats = (declared: { format: 'tel' | 'number' | 'email'; pattern?: string } | null): Adapter =>
+  ({ formatFor: () => declared } as unknown as Adapter);
+
+/** Each field's label and constraints, as the scan reads them with `adapter`. */
+async function phoneConstraints(adapter: Adapter | null) {
+  const fixture = await loadFixture(document, PHONES);
+  const fields = scan(fixture.doc.getElementById('f')!, adapter, { platform: 'ultipro' }).fields;
+  removeFixtures(document);
+  return Object.fromEntries(fields.map((field) => [field.label, field.constraints]));
+}
+
+describe('jr6 E3 (ULTIPRO U-16): a format its type alone gave takes its adapter\'s pattern for that same format', () => {
+  it('reads a type="tel" box with the ten-digit pattern its adapter declares', async () => {
+    const read = await phoneConstraints(formats({ format: 'tel', pattern: '##########' }));
+    expect(read.Phone).toEqual({ format: 'tel', pattern: '##########' });
+    // The page's own mask stands, and so does another format its type gives.
+    expect(read.Mobile).toEqual({ format: 'tel', pattern: '(###) ###-####' });
+    expect(read.Email).toEqual({ format: 'email' });
+  });
+
+  it('leaves the box as its type reads it with no adapter pattern, another format, or no pattern declared', async () => {
+    const plain = { format: 'tel' };
+    expect((await phoneConstraints(null)).Phone).toEqual(plain);
+    expect((await phoneConstraints(formats(null))).Phone).toEqual(plain);
+    expect((await phoneConstraints(formats({ format: 'number', pattern: '##########' }))).Phone).toEqual(plain);
+    expect((await phoneConstraints(formats({ format: 'tel' }))).Phone).toEqual(plain);
+    expect((await phoneConstraints({ formatFor: () => { throw new Error('broken'); } } as unknown as Adapter)).Phone)
+      .toEqual(plain);
   });
 });

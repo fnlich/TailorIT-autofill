@@ -1031,10 +1031,17 @@ function adapterRequires(el: Element, adapter: Adapter | null): boolean {
 /** A text control's constraints with the layout its adapter reads (formatFor), where neither its type nor a visible
  *  placeholder gave one: a format the control's own type gives, or a placeholder's pattern, stands. A format its
  *  inputmode alone gave is the keyboard a phone shows, not a layout: the adapter's declared format takes its place
- *  (Workable's date masks say inputmode="tel" over "MM/DD/YYYY"), its placeholder's pattern still standing. */
+ *  (Workable's date masks say inputmode="tel" over "MM/DD/YYYY"), its placeholder's pattern still standing. jr6 ENGINE
+ *  E3 (the ULTIPRO package's U-16): a format its type alone gave, with no pattern from the page, takes the pattern its
+ *  adapter declares for that same format (UltiPro's type="tel" phones, a ten-digit national number); a declared other
+ *  format, or one with no pattern, leaves it as it is. */
 function withAdapterFormat(constraints: Constraints, control: Element, adapter: Adapter | null): Constraints {
   const keyboardOnly = typeFormatOf(control) === undefined && inputModeFormatOf(control) !== undefined;
-  if (!keyboardOnly && (constraints.format !== undefined || constraints.pattern !== undefined)) return constraints;
+  // jr6 ENGINE (ULTIPRO U-16): a format its type alone gave takes the adapter's pattern for that same format.
+  const typeOnly = constraints.pattern === undefined && constraints.format !== undefined
+    && typeFormatOf(control) === constraints.format;
+  if (!keyboardOnly && !typeOnly // jr6 ENGINE
+    && (constraints.format !== undefined || constraints.pattern !== undefined)) return constraints;
   let declared: ReturnType<NonNullable<Adapter['formatFor']>> | undefined;
   try {
     declared = adapter?.formatFor?.(control);
@@ -1042,6 +1049,8 @@ function withAdapterFormat(constraints: Constraints, control: Element, adapter: 
     declared = null;
   }
   if (declared === null || declared === undefined) return constraints;
+  // jr6 ENGINE (ULTIPRO U-16): only the same format, and only a pattern.
+  if (typeOnly && (declared.format !== constraints.format || declared.pattern === undefined)) return constraints;
   const pattern = constraints.pattern ?? declared.pattern;
   return { ...constraints, format: declared.format,
     ...(pattern !== undefined ? { pattern: capCodePoints(pattern, TEXT_CAP_PATTERN) } : {}) };
