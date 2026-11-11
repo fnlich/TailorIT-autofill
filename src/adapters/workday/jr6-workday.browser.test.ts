@@ -1027,12 +1027,10 @@ describe('RULES regression (jr6-rules item 56, f1245ff): Workday’s "Resume/CV/
       required, 'Resume/CV/Cover Letter', 'resume-cv-cover-letter', 'empty']);
   });
 
-  // Before jr6-rules' f1245ff (classifyRules.ts RESUME_HEADING, labelRuleVote) this drop zone was the résumé's
-  // (file.resume: the résumé uploaded on a blank step, as on every "Resume/CV" step); since, help text that is more than
-  // a résumé's heading makes no upload the résumé's, so these steps never get the résumé (Dana-Farber's is required).
-  // Expected to fail until RULES' heading takes Workday's "Resume/CV/Cover Letter": then make these it().
+  // jr6-rules' f1245ff made help text that is more than a résumé's heading no résumé's; its fix ec52b36 (RESUME_HEADING:
+  // a list of documents that starts with the résumé) reads Workday's "Resume/CV/Cover Letter" as the résumé's again.
   for (const [name, html, company] of CASES) {
-    it.fails(`${name}: the drop zone is the résumé’s, and a blank step gets the résumé`, async () => {
+    it(`${name}: the drop zone is the résumé’s, and a blank step gets the résumé`, async () => {
       const step = await stepPlan(html, company, { prepare: blank });
       expect(step.row('Upload a file (5MB max)').category).toBe('file.resume');
       expect(step.write('Upload a file (5MB max)')?.value.kind).toBe('file');
