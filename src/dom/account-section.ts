@@ -13,6 +13,11 @@
  * The section counts only where the adapter declares it inside the form root and its declared create-account form
  * (signInForm 'create-account') has a password box and every box inside it: anything else is no section, and the page
  * reads as before. Nothing here reads a box's value but whether it is empty; nothing is kept or logged.
+ *
+ * jr6 ENGINE E0 (FIXPLAN §3.1 item 11, ICIMS-04): where no single element holds the part alone, the adapter declares
+ * its rows (Adapter.accountRows: careers-sentinel's Login, Password and Re-enter rows). accountRowsOf reads either
+ * declaration as one list. Until ENGINE E2 (FIXPLAN §6.2 item 6) a list of one is read as the section was, and several
+ * rows are no section: the page reads as before.
  */
 import type { Adapter, SignInForm } from '../adapters/types';
 import { isUserVisible } from './visibility';
@@ -32,15 +37,26 @@ function boxesOf(form: SignInForm): HTMLInputElement[] {
     .filter((box): box is HTMLInputElement => box !== null);
 }
 
+/** jr6 FIXPLAN §3.1 item 11 (module header): the account part the adapter declares in the form root `form`, as one
+ *  list: its rows (Adapter.accountRows) where it answers some, else its one section (Adapter.accountSection) as a list
+ *  of one; empty where it declares neither. A hook that throws throws here: the callers catch. */
+function accountRowsOf(adapter: Adapter, form: Element): readonly Element[] {
+  const rows = adapter.accountRows?.(form) ?? null;
+  if (rows !== null && rows.length > 0) return rows;
+  const section = adapter.accountSection?.(form) ?? null;
+  return section === null ? [] : [section];
+}
+
 /** The form root's account section (module header), or null. `root`: the form root (null: the adapter's own detect()
- *  finds it). */
+ *  finds it). jr6 E0: only a declared list of one (accountRowsOf) can be a section. */
 export function accountSectionOf(adapter: Adapter | null, doc: Document, root: Element | null): Element | null {
-  if (adapter?.accountSection === undefined) return null;
+  if (adapter === null || (adapter.accountSection === undefined && adapter.accountRows === undefined)) return null;
   try {
     const form = root ?? adapter.detect(doc)?.formRoot ?? null;
     if (form === null) return null;
-    const section = adapter.accountSection(form);
-    if (section === null || section === form || !form.contains(section)) return null;
+    const rows = accountRowsOf(adapter, form);
+    const [section] = rows;
+    if (rows.length !== 1 || section === undefined || section === form || !form.contains(section)) return null;
     return declaredFormIn(adapter, doc, section) === null ? null : section;
   } catch {
     return null;
