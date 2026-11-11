@@ -19,7 +19,8 @@
  * A widget is acted on only when standard ARIA says where its list is (or it is a group whose members carry their own
  * state), or its adapter declares where a search's results are from a capture (v4: WidgetDecl.results, Lever's
  * location search; s2 wd: Workday's prompts, their list found anew by the adapter's hook): a widget an adapter declares
- * without either is widget-unsupported, never typed into.
+ * without either is widget-unsupported, never typed into. jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a combobox or
+ * multiselect its adapter declares with a results list is read by its declared rows.
  * The events are interact.ts's: click() through assertNotSubmit (or the adapter's one declared mousedown, mouseup or
  * focus), the text filler's input, change, focusout and blur, a key the adapter declares for the widget, and a list's
  * own scrollTop set as a property; before any of them, for a widget declared for it, one command to the page-world
@@ -36,7 +37,7 @@ import { awaitList, closeList, openList } from './interact';
 import { readList, type ListRead } from './options';
 
 export {
-  ariaWidgetKind, editableOf, isActionable, isWidgetPart, listOf, membersOf, searchesList, widgetListOf,
+  ariaWidgetKind, editableOf, isActionable, isWidgetPart, listOf, membersOf, pressTargetOf, searchesList, widgetListOf,
   WIDGET_ROOT_SELECTOR,
 } from './aria';
 export { chooseThroughBridge, keepReading, remember, type BridgeAttempt, type WidgetFillContext } from './fill';
@@ -45,8 +46,8 @@ export {
 } from './known';
 export { widgetHolds } from './hold';
 export {
-  afterAction, afterBridge, awaitPageReady, bridgeChoose, closeList, expandedState, newBridgeRun, newReadiness, openList,
-  pressDeclaredKey, type BridgeChoice, type BridgeRun, type WidgetContext, type WidgetReadiness,
+  afterAction, afterBridge, awaitPageReady, bridgeChoose, chooseResult, closeList, expandedState, newBridgeRun,
+  newReadiness, openList, pressDeclaredKey, type BridgeChoice, type BridgeRun, type WidgetContext, type WidgetReadiness,
 } from './interact';
 export { chosenLabels, hashOfRead, memberLabel, readList, readShownList, shownOptions, widgetCurrentValue } from './options';
 export { searchForOption, searchTypeahead, type TypeaheadHooks, type TypeaheadResult } from './typeahead';
@@ -110,8 +111,12 @@ export async function readWidget(target: FieldTarget, ctx: WidgetFillContext): P
   }
   const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
   if (wait.status === 'aborted') return { status: 'aborted' };
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 1, oracle-new-1): a declared list is read by its declared rows, its unchoosable ones
+  // read as rows that cannot be chosen.
+  const results = widget.results;
   const read = wait.status === 'ready' ? await readList(opened.listbox, { signal: ctx.signal, labelOf: widget.optionLabel,
-    drawnWhole: widget.drawnWhole === true }) : null;
+    drawnWhole: widget.drawnWhole === true, ...(results === undefined ? {} : { option: results }),
+    ...(results?.unchoosable === undefined ? {} : { unchoosable: results.unchoosable }) }) : null;
   const multiselectable = isMultiselectable(opened.listbox);
   await closeList(widget, ctx, opened);
   if (ctx.signal?.aborted) return { status: 'aborted' };

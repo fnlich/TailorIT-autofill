@@ -30,6 +30,8 @@
  * signal, never a fixed sleep. While the person may Skip the write (v3 Phase 3: WidgetContext.runSignal), its Skip
  * ends the waits too; what the write had done to its widget is then put back (its typed text, its open list) through
  * skipTidyContext: a fresh, short-capped signal that only the run's own end aborts.
+ * jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a choice presses the element its adapter names (chooseResult: pressTargetOf,
+ * with the declared event).
  */
 import type { Adapter } from '../../adapters/types';
 import type { OptionSetHash } from '../../core/types/field';
@@ -42,7 +44,7 @@ import { WIDGET_CAP_MS, WIDGET_QUIET_MS, WIDGET_READY_CAP_MS, WIDGET_READY_QUIET
 import { monotonicNow, startDeadline } from '../time';
 import type { WidgetTarget } from '../types';
 import { followsItsField, isUserVisible, stopsFollowing } from '../visibility';
-import { widgetListOf } from './aria';
+import { pressTargetOf, widgetListOf } from './aria';
 import { listState, widgetBusy } from './options';
 
 /** What acting on a widget needs. */
@@ -132,8 +134,18 @@ export function expandedState(widget: WidgetTarget): boolean | null {
   return (el.getAttribute('aria-expanded') ?? '').trim().toLowerCase() === 'true';
 }
 
+/**
+ * Watches a widget's list where the form root's observer cannot see it: the list itself when it sits outside the root's
+ * own tree (Node.contains and a MutationObserver both stop at a shadow root, and a portal is outside the root). True
+ * when anything new is watched now, so the wait goes on one more quiet window.
+ */
+function watchList(wait: Pick<QuietWait<unknown>, 'observe'>, _widget: WidgetTarget, listbox: Element | null,
+  root: Element): boolean {
+  return listbox !== null && !root.contains(listbox) && wait.observe(listbox);
+}
+
 /** Waits for the page to answer one action on a widget: a quiet window with no busy sign of the widget's own, at most
- *  `capMs`. Its list is watched too when the page draws it outside the form. */
+ *  `capMs`. Its list is watched too when the page draws it outside the form (watchList). */
 export async function afterAction(widget: WidgetTarget, ctx: WidgetContext, capMs: number = WIDGET_CAP_MS):
   Promise<ActionAnswer> {
   const view = windowOf(ctx.root);
@@ -142,7 +154,7 @@ export async function afterAction(widget: WidgetTarget, ctx: WidgetContext, capM
     view, quietMs: WIDGET_QUIET_MS, capMs, signal: ctx.signal, aborted: false,
     atQuiet: (): boolean | null => {
       const listbox = widgetListOf(widget);
-      if (listbox !== null && !ctx.root.contains(listbox) && wait.observe(listbox)) return null;
+      if (watchList(wait, widget, listbox, ctx.root)) return null;
       return widgetBusy(widget, listbox) ? null : true;
     },
     atCap: () => true,
@@ -151,8 +163,7 @@ export async function afterAction(widget: WidgetTarget, ctx: WidgetContext, capM
     },
   });
   wait.observe(ctx.root);
-  const listbox = widgetListOf(widget);
-  if (listbox !== null && !ctx.root.contains(listbox)) wait.observe(listbox);
+  watchList(wait, widget, widgetListOf(widget), ctx.root);
   const done = await wait.done;
   return { mutated, aborted: !done };
 }
@@ -342,7 +353,7 @@ export async function awaitList(widget: WidgetTarget, ctx: WidgetContext,
     view, quietMs: WIDGET_QUIET_MS, capMs: options.capMs, signal: ctx.signal, aborted: 'aborted',
     atQuiet: (): ListWait['status'] | null => {
       const listbox = widgetListOf(widget);
-      if (listbox !== null && !ctx.root.contains(listbox) && wait.observe(listbox)) return null;
+      if (watchList(wait, widget, listbox, ctx.root)) return null;
       // The widget's own busy sign counts while its list is hidden too: a search often hides it while it runs.
       if (widgetBusy(widget, listbox)) {
         sawBusy = true;
@@ -365,9 +376,32 @@ export async function awaitList(widget: WidgetTarget, ctx: WidgetContext,
     },
   });
   wait.observe(ctx.root);
-  const listbox = widgetListOf(widget);
-  if (listbox !== null && !ctx.root.contains(listbox)) wait.observe(listbox);
+  watchList(wait, widget, widgetListOf(widget), ctx.root);
   return { status: await wait.done, mutated };
+}
+
+/**
+ * Chooses a row of a widget's list (v4, drop; jr6 ENGINE E1 for every declared list): the one event its adapter
+ * declared for its results (WidgetDecl.results.choose 'mousedown': Lever's location search chooses on a mousedown,
+ * bubbling to its document's listener, with the main button), else click(), on the element a choice presses
+ * (pressTargetOf: the adapter's WidgetResults.pressTarget, else s2 wd's label part, else the row). The caller has passed
+ * both the row and that element through assertNotSubmit (pressAllowed).
+ */
+export function chooseResult(widget: WidgetTarget, option: Element): void {
+  const target = pressTargetOf(widget, option);
+  const view = windowOf(target);
+  if (widget.results?.choose === 'mousedown') {
+    target.dispatchEvent(new view.MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true, button: 0 }));
+    return;
+  }
+  // An element with no click() of its own (an SVG part) gets the same untrusted click as an event.
+  if (typeof (target as Partial<HTMLElement>).click === 'function') (target as HTMLElement).click();
+  else target.dispatchEvent(new view.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, button: 0 }));
+}
+
+/** Whether a row may be chosen with chooseResult: assertNotSubmit passes the row and the element its choice presses. */
+export function pressAllowed(widget: WidgetTarget, option: Element, ctx: WidgetContext): boolean {
+  return assertNotSubmit(option, ctx).ok && assertNotSubmit(pressTargetOf(widget, option), ctx).ok;
 }
 
 /** How one choice through the page-world bridge went (see the header), as the bridge said it:

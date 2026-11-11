@@ -86,7 +86,7 @@ import { readSelectOptions, visiblePlaceholder, visibleText, type VisibleOption 
 import { isSubtreeHidden, isUserVisible, visibilityOf, type VisibilityVerdict } from './visibility';
 import {
   ariaWidgetKind, editableOf, isChosen, isMultiselectable, isUnavailable, isWidgetPart, listOf, membersOf, roleOf,
-  WIDGET_ROOT_SELECTOR,
+  WIDGET_ROOT_SELECTOR, widgetListOf,
 } from './widgets/aria';
 import { keepReading } from './widgets/fill';
 import { learnable, learnedListKey } from './widgets/known';
@@ -699,7 +699,8 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
       ...(declared.optionLabel ? { optionLabel: declared.optionLabel } : {}),
       ...(declared.emptyAfterMs !== undefined ? { emptyAfterMs: declared.emptyAfterMs } : {}),
       ...(declared.highlightIsNoChoice === true ? { highlightIsNoChoice: true } : {}),
-      // v4 (drop): a results list no ARIA names, and the key that starts a search.
+      // v4 (drop): a results list no ARIA names, and the key that starts a search. jr6 ENGINE E1: with its declared rows
+      // (WidgetResults.options) and the element a choice presses (WidgetResults.pressTarget).
       ...(declared.results !== undefined ? { results: declared.results } : {}),
       ...(declared.queryKey !== undefined ? { queryKey: declared.queryKey } : {}),
       // s2 lists: a list its adapter stored (a combobox's only), and a list drawn whole.
@@ -772,10 +773,11 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
       isChosen(item.member)));
   } else if (widget.kind !== 'typeahead-remote' && widget.kind !== 'checkbox') {
     // A list shown whole is read as it is, exactly as a whole read takes it (readShownList: the Phase 4 review, R2);
-    // one that scrolls (perhaps drawn a part at a time) waits to be read whole.
-    const list = listOf(el, widget.input);
+    // one that scrolls (perhaps drawn a part at a time) waits to be read whole. jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a
+    // list its adapter declares is read there by its declared rows, as a whole read takes it.
+    const list = widget.results !== undefined ? widgetListOf(widget) : listOf(el, widget.input);
     if (list !== null && isUserVisible(list, cache) && !scrolls(list)) {
-      const shown = readShownList(list, cache, widget.optionLabel);
+      const shown = readShownList(list, cache, widget.optionLabel, widget.results);
       if (shown.options.length > 0) {
         options = shown.options.map((option, index) => optionOf(index, option.label, '', option.disabled, false));
         partial = !shown.complete;

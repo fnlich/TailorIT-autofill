@@ -20,10 +20,15 @@
  * list may be the adapter's hook, asked each time (Workday's prompts draw theirs at the end of the body only while
  * open), and a result its adapter names as only opening a list of its own (a category) is one that cannot be chosen
  * (isUnchoosableResult).
+ * jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a declared list's rows are its selector's matches, or the rows its
+ * adapter's hook lists where no selector reaches them (WidgetResults.options: a slot's assigned elements); a choice
+ * presses the element its adapter names (WidgetResults.pressTarget), else the row's label part ('label'), else the row
+ * (pressTargetOf).
  */
+import { holdsComposed } from '../composed';
 import { CONTROL_SELECTOR, isTextLike } from '../kinds';
 import { WIDGET_SEARCH_MIN_OPTIONS } from '../thresholds';
-import type { FieldTarget, WidgetKind, WidgetTarget } from '../types';
+import type { DeclaredRows, FieldTarget, WidgetKind, WidgetTarget } from '../types';
 
 /** The roles a widget's element can carry, and the containers a toggle-button group can be. */
 export const WIDGET_ROOT_SELECTOR = '[role], fieldset';
@@ -86,11 +91,47 @@ export function filtersAsTyped(el: Element, input: Element | null): boolean {
 
 /** The option elements of a listbox: its role="option" descendants that belong to it, not to a list inside it; or,
  *  for a results list its adapter declared (v4: WidgetDecl.results), the elements inside it that the declared selector
- *  names. */
-export function optionElementsOf(listbox: Element, declared?: string): Element[] {
-  if (declared !== undefined) return Array.from(listbox.querySelectorAll(declared));
-  return Array.from(listbox.querySelectorAll('[role~="option" i]'))
-    .filter((option) => option.parentElement?.closest('[role~="listbox" i]') === listbox);
+ *  names. jr6 ENGINE E1 (FIXPLAN §6.2 item 3): or the rows the adapter's hook lists for it (WidgetResults.options: the
+ *  options a slot of the list shows, which no selector run on the list reaches), in place of the selector's matches;
+ *  a hook that fails lists none. */
+export function optionElementsOf(listbox: Element, declared?: string | DeclaredRows): Element[] {
+  if (declared === undefined) {
+    return Array.from(listbox.querySelectorAll('[role~="option" i]'))
+      .filter((option) => option.parentElement?.closest('[role~="listbox" i]') === listbox);
+  }
+  if (typeof declared === 'string') return Array.from(listbox.querySelectorAll(declared));
+  if (declared.options === undefined) return Array.from(listbox.querySelectorAll(declared.option));
+  try {
+    const rows = declared.options(listbox);
+    return [...new Set(Array.from(rows ?? []))].filter((row) => row?.nodeType === 1);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3): the element a choice of `option` presses: the one its adapter names
+ * (WidgetResults.pressTarget: SmartRecruiters' spl-select-option chooses on a click of its inner .c-spl-dropdown-item,
+ * inside its shadow trees, as Jobright's ~contents/sites/smartrecruiters operations fillSelectField presses it), where it
+ * sits inside the row (across shadow roots); else, s2 wd, its label part where its adapter declares a click there
+ * (results.choose 'label': Workday's promptOption inside the row's promptLeafNode, Oracle's
+ * .cx-select__list-item--content, as Jobright's ~contents/sites/oraclecloud operations fillSelectField clicks it); else
+ * the row itself. A hook that fails, or names an element outside the row, presses the row.
+ */
+export function pressTargetOf(widget: Pick<WidgetTarget, 'results' | 'optionLabel'>, option: Element): Element {
+  const declared = widget.results?.pressTarget;
+  if (declared !== undefined) {
+    let target: Element | null = null;
+    try {
+      target = declared(option);
+    } catch {
+      target = null;
+    }
+    return target !== null && target !== undefined && holdsComposed(option, target) ? target : option;
+  }
+  if (widget.results?.choose !== 'label') return option;
+  const part = widget.optionLabel?.(option) ?? null;
+  return part !== null && part !== option && option.contains(part) ? part : option;
 }
 
 /** A widget's list now (v4, drop): the results list its adapter declared (WidgetDecl.results), while it is in the page,

@@ -58,12 +58,13 @@
  * way, for an option the planner chose already on the list's whole read: one query, the option's own words
  * (optionQuery: "Canada" for "Canada +1"), a guarded write as each of a typeahead's is, and of what the list then shows
  * the one result that is that option as the page shows it (searchedOption) is clicked; no worker matches the results.
+ * jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a declared list's rows are read and pressed as its adapter declares them
+ * (WidgetResults.options, pressTarget).
  */
 import { searchedOption } from '../../core/matcher/listSearch';
 import { MAX_SEARCH_QUERIES } from '../../core/matcher/searchLimits';
 import type { ReasonCode } from '../../core/types/fill';
 import { fireChange, fireInput, fireLeave, setValue, windowOf } from '../fillers/events';
-import { assertNotSubmit } from '../fillers/not-submit';
 import { sameOptionLabel } from '../fillers/verify';
 import { SEARCH_FIELD_BUDGET_MS, TYPEAHEAD_QUERY_CAP_MS } from '../thresholds';
 import { monotonicNow } from '../time';
@@ -71,8 +72,8 @@ import type { FieldTarget, WidgetOptionRead } from '../types';
 import { isChosen } from './aria';
 import { cleanOptionLabel } from '../option-hash';
 import {
-  activateAndAwait, afterAction, afterBridge, awaitList, bridgeChoose, closeList, closingContext, expandedState,
-  openListOf, pressQueryKey, skipTidyContext, type WidgetContext,
+  activateAndAwait, afterAction, afterBridge, awaitList, bridgeChoose, chooseResult, closeList, closingContext,
+  expandedState, openListOf, pressAllowed, pressQueryKey, skipTidyContext, type WidgetContext,
 } from './interact';
 import { chosenLabels, hashOfRead, readList, revealOption, shownOptions } from './options';
 
@@ -111,7 +112,8 @@ function typeQuery(input: HTMLInputElement | HTMLTextAreaElement, query: string)
 /** The option-set hash of what the widget's list shows now, or null when it shows no list. */
 function shownHash(widget: NonNullable<FieldTarget['widget']>): ReturnType<typeof hashOfRead> | null {
   const listbox = openListOf(widget);
-  return listbox === null ? null : hashOfRead(shownOptions(listbox, undefined, widget.optionLabel, widget.results?.option));
+  return listbox === null ? null : hashOfRead(shownOptions(listbox, undefined, widget.optionLabel, widget.results,
+    widget.results?.unchoosable));
 }
 
 /** Types one query (typeQuery) into a widget that declares a key to start its search (WidgetDecl.queryKey), and
@@ -132,27 +134,6 @@ async function typeWatched(box: HTMLInputElement | HTMLTextAreaElement, query: s
   } finally {
     observer.disconnect();
   }
-}
-
-/** The element a result is pressed on (s2 wd): its label part where its adapter declares so (WidgetDecl.results.choose
- *  'label': Workday's promptOption inside the row's promptLeafNode, so the click goes through the page's own row element
- *  to the result), else the result itself. */
-function pressTargetOf(widget: NonNullable<FieldTarget['widget']>, option: Element): Element {
-  if (widget.results?.choose !== 'label') return option;
-  const part = widget.optionLabel?.(option) ?? null;
-  return part !== null && part !== option && option.contains(part) ? part : option;
-}
-
-/** Chooses a result (v4, drop): the one event its adapter declared for the widget's results (WidgetDecl.results.choose:
- *  Lever's location search chooses on a mousedown, bubbling to its document's listener, with the main button), else
- *  click() on it, or (s2 wd, 'label') on its label part (pressTargetOf). assertNotSubmit has passed both. */
-function chooseResult(widget: NonNullable<FieldTarget['widget']>, option: Element): void {
-  if (widget.results?.choose === 'mousedown') {
-    const view = windowOf(option);
-    option.dispatchEvent(new view.MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true, button: 0 }));
-    return;
-  }
-  (pressTargetOf(widget, option) as HTMLElement).click();
 }
 
 /** A box's text as compared: white space collapsed, any case. */
@@ -276,8 +257,9 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     reacted = true;
     const listbox = openListOf(widget);
     if (wait.status !== 'ready' || listbox === null) continue;
+    // jr6 ENGINE E1 (FIXPLAN §6.2 item 1): the declared rows whole (WidgetResults.options too).
     const read = await readList(listbox, { signal: ctx.signal, labelOf: widget.optionLabel,
-      ...(widget.results === undefined ? {} : { option: widget.results.option }),
+      ...(widget.results === undefined ? {} : { option: widget.results }),
       // s2 wd: a result that only opens a list of its own is read as one that cannot be chosen.
       ...(widget.results?.unchoosable === undefined ? {} : { unchoosable: widget.results.unchoosable }) });
     if (ctx.signal?.aborted) return ended();
@@ -326,12 +308,10 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     // After a choice the bridge said it made, nothing ends as "nothing chosen": React may hold it.
     const stop = (why: ReasonCode) => (sent ? Promise.resolve(chosenOf(false)) : giveUp(why));
     const option = await revealOption(listbox, picked, { signal: ctx.signal, labelOf: widget.optionLabel,
-      ...(widget.results === undefined ? {} : { option: widget.results.option }) });
+      ...(widget.results === undefined ? {} : { option: widget.results, unchoosable: widget.results.unchoosable }) });
     if (ctx.signal?.aborted) return sent ? stop('internal-error') : ended();
-    if (option === null) return stop('options-changed');
-    if (!assertNotSubmit(option.el, ctx).ok || !assertNotSubmit(pressTargetOf(widget, option.el), ctx).ok) {
-      return stop('needs-your-click');
-    }
+    if (option === null || option.disabled) return stop('options-changed');
+    if (!pressAllowed(widget, option.el, ctx)) return stop('needs-your-click');
     const markedBefore = marked(widget, option.el);
     chooseResult(widget, option.el);
     await afterAction(widget, ctx);

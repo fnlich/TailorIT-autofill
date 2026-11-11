@@ -81,11 +81,13 @@ function offsetIn(listbox: Element, option: Element): number {
  */
 export async function findKnown(listbox: Element, planned: { label: string; index: number }, widget: WidgetTarget,
   drawn: () => Promise<void>): Promise<ShownOption | null> {
-  const selector = widget.results?.option;
+  // jr6 ENGINE E1: the declared rows whole (the selector, or WidgetResults.options), with the rows that cannot be chosen.
+  const selector = widget.results;
+  const unchoosable = widget.results?.unchoosable;
   const el = optionElementsOf(listbox, selector)[planned.index];
   if (el === undefined) return null;
-  const find = () => shownOptions(listbox, undefined, widget.optionLabel, selector).find((option) => option.el === el)
-    ?? null;
+  const find = () => shownOptions(listbox, undefined, widget.optionLabel, selector, unchoosable)
+    .find((option) => option.el === el) ?? null;
   let shown = find();
   if (shown === null && scrolls(listbox)) {
     scrollListTo(listbox, Math.round(offsetIn(listbox, el)));
