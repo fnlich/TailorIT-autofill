@@ -69,7 +69,14 @@ export interface SearchExtras {
   /** s2 core-wd: a referral source's kind, as a referral-vocabulary id ('ref:job-board': Choice.fallback, from the
    *  profile's referralSource.category or the source's first parent), typed as the reduced style. */
   kind?: string;
+  /** jr6 RULES R3 (O2: Oracle's ZIP Code search, which Jobright searches again by its first three characters when the
+   *  code finds nothing, operations' postal-prefix search: cited): the value is the profile's postal code, so a US code
+   *  is typed as its five digits, then its first three. */
+  postalCode?: true;
 }
+
+/** jr6 RULES R3 (O2): a US postal code, ZIP or ZIP+4 (its five digits captured). */
+const US_POSTAL_CODE = /^(\d{5})(?:[\s-]?\d{4})?$/;
 
 // s2 core-wd: the three styles.
 
@@ -306,6 +313,9 @@ export function searchCandidates(intended: IntendedValue, vocab: Vocab, place?: 
       return finish(degreeCandidates(intended, vocab));
     case 'text': {
       const text = intended.text.trim();
+      // jr6 RULES R3 (O2): a US postal code's five digits, then its first three.
+      const zip = extras.postalCode === true ? US_POSTAL_CODE.exec(text) : null;
+      if (zip !== null) return finish([full(zip[1]!), code(zip[1]!.slice(0, 3), 'reduced')]);
       return finish([full(text), full(withoutThe(text)), ...placeCandidates(place, vocab)]);
     }
     default:

@@ -43,6 +43,7 @@ import { llmMaySeeLabel } from '../guard/honeypot';
 import { hasTripwire } from '../guard/tripwire';
 import { policyClassOf } from '../resolver/categories';
 import { namesSensitiveAnswer, openAnswerTopics, screenForClassify } from '../resolver/classify';
+import { wordsNameAnotherPerson } from '../resolver/classifyRules';
 import type { FieldClassification } from '../resolver/resolve';
 import { capCodePoints, foldLetters } from '../text/fold';
 import { asUntrusted } from '../text/untrusted';
@@ -94,6 +95,22 @@ const NO_DRAFT_CLASSES: ReadonlySet<PolicyClass> = new Set<PolicyClass>(['eeo', 
 /** A box that only asks for more about another question: "Please provide details", "If yes, please explain",
  *  "Details", "Please specify", "Explain your answer" (read in lower case, its marks folded). */
 const FOLLOW_UP_ASK = /\b(?:if\s+(?:yes|no|so|not|applicable|other)|please\s+(?:provide|give|add|share|list|explain|describe|elaborate|specify|detail|clarify)|details?|explain|explanation|elaborate|specify|clarify)\b/;
+
+/** jr6 RULES R3 (U-10): an ask that is a whole question of its own: "please explain (describe, …) how, why, what …" and
+ *  four words or more after it ("Please explain how your experience and background would make you a good candidate",
+ *  ADP's, fixtures/adp/questions). */
+const OWN_QUESTION_ASK = /^please\s+(?:explain|describe|share|tell\s+us|elaborate\s+on)\s+(?:how|why|what|which|when|where|who|in\s+what\s+way)\b(?:\s+\S+){4,}/;
+
+/** jr6 RULES R3 (U-10, UltiPro's required "Do you have experience with SQL, APIs, … troubleshooting? Please briefly
+ *  explain:", fixtures/ultipro/application): whether a label only asks for more about another question (FOLLOW_UP_ASK):
+ *  its phrase starts the label, or no question of its own (a "?") stands before it. A whole question that ends "Please
+ *  briefly explain" stands alone, and so does one that asks how or why at length (OWN_QUESTION_ASK). */
+export function asksOnlyFollowUp(label: string): boolean {
+  const text = foldLetters(label).toLowerCase().trim();
+  const found = FOLLOW_UP_ASK.exec(text);
+  if (found === null || text.slice(0, found.index).includes('?')) return false;
+  return !(found.index === 0 && OWN_QUESTION_ASK.test(text.replace(/[^\p{L}\p{N}\s]+/gu, ' ').replace(/\s+/g, ' ')));
+}
 
 /** One of the frame's fields, with what classified it, as the planner holds them. */
 export interface DraftNeighbour {
@@ -148,7 +165,7 @@ export function questionsOf(spec: FieldSpec, context: DraftContext): DraftNeighb
     const found = context.fields.find((field) => field.spec.baseKey === parent);
     if (found !== undefined) related.push(found);
   }
-  if (FOLLOW_UP_ASK.test(foldLetters(spec.label).toLowerCase())) {
+  if (asksOnlyFollowUp(spec.label)) {
     const before = context.fields.filter((field) => field.spec.key !== spec.key
       && field.spec.section.id === spec.section.id && field.spec.domOrder < spec.domOrder)
       .sort((a, b) => b.spec.domOrder - a.spec.domOrder)[0];
@@ -232,6 +249,10 @@ export function draftItemOf(spec: FieldSpec, classification: FieldClassification
   if (!PROSE_KINDS.has(spec.kind) || !llmMaySeeLabel(spec.labelSource)) return null;
   if (spec.current.kind === 'text' && spec.current.text.trim() !== '') return null;
   if (spec.current.kind !== 'text' && spec.current.kind !== 'empty') return null;
+  // jr6 RULES R3 (jazzhr-new-1, Panoptimization's required "References: Please enter names and contact information",
+  // fixtures/jazzhr/panoptimization-form): a box about another person (a referee, an emergency contact) is never drafted:
+  // an AI must not invent one; it stays flagged for the person (owner question 16).
+  if (wordsNameAnotherPerson(spec)) return null;
   // Never in an EEO, legal or sensitive context: the box's own screen, then the questions it belongs to (E2).
   if (inClosedContext(spec, context)) return null;
   const max = spec.constraints.maxLength;
