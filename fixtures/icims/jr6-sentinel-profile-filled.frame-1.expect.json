@@ -2,8 +2,106 @@
   "fixture": "icims/jr6-sentinel-profile-filled.frame-1",
   "source": "https://careers-sentinel.icims.com/jobs/5157/azure-devops-engineer-%e2%80%93-release-coordinator/candidate?hideBasicProfilePageFields=true&resumeSubmitted=1&hrs=1&in_iframe=1",
   "captured": "2026-11-11T04:07:43.000Z",
-  "note": "Hooks only (jr6 P1): careers-sentinel's Candidate Profile as Jobright filled it (Country, then State). Fields are asserted after ENGINE E1 to E3 and RULES merge (FIXPLAN §6.5 P2 asserts).",
-  "fields": [],
+  "note": "jr6 P2: careers-sentinel's Candidate Profile as Jobright filled it (Country, then State). Its fields as the scan reads them once ENGINE E1 to E3 and RULES R1 to R4 merged (FIXPLAN §6.5 P2); what a run decides on them is held by src/adapters/icims/jr6-icims.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Please upload your resume (max size: 5 MB)",
+      "kind": "file",
+      "required": true,
+      "section": "Resume",
+      "fillable": true,
+      "control": "input[id=\"PortalProfileFields.Resume_File\"]",
+      "note": "jr6 ICIMS-23: a résumé on record: its upload buttons are hidden beside the current file and \"Replace Resume\"; the input stays the résumé's field, its control the Replace Resume button a person sees (uploadWidgets), holding a file (uploadHeld). The button is never pressed and the input never written while the page holds a file."
+    },
+    {
+      "label": "Type",
+      "kind": "select",
+      "required": true,
+      "section": "Phones (1)",
+      "fillable": true,
+      "options": 4,
+      "control": "select[id=\"167544_PersonProfileFields.PhoneType\"]"
+    },
+    {
+      "label": "Number",
+      "kind": "text",
+      "required": true,
+      "section": "Phones (1)",
+      "fillable": true,
+      "control": "input[id=\"167544_PersonProfileFields.PhoneNumber\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "select",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"-1_PersonProfileFields.AddressType\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet1\"]"
+    },
+    {
+      "label": "Address 2",
+      "kind": "text",
+      "required": false,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet2\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressCity\"]"
+    },
+    {
+      "label": "Zip/Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressZip\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressCountry_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "State/Province",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressState_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "Are you willing to relocate?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Enter your information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"rcf3180_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results; a list read whole once opened, the select saying icimsdropdown-search=\"0\"."
+    }
+  ],
   "hooks": {
     "detect": "form#profileForm",
     "authState": null,

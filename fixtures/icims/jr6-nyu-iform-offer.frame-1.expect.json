@@ -2,7 +2,7 @@
   "fixture": "icims/jr6-nyu-iform-offer.frame-1",
   "source": "https://uscareers-nyu.icims.com/jobs/16462/continual-service-improvement-manager%2c-global-infrastructure-and-operations/form?form=jsf-1793623031081-16462&step=7&isPacket=1&type=4&hashed=REDACTED&in_iframe=1",
   "captured": "2026-11-11T04:27:06.000Z",
-  "note": "Hooks only (jr6 P1): uscareers-nyu's Job Specific Forms, the portal page: the bar's last step (chainStepFacts). Fields are asserted after ENGINE E1 to E3 and RULES merge (FIXPLAN §6.5 P2 asserts).",
+  "note": "Hooks only (jr6 P1): uscareers-nyu's Job Specific Forms, the portal page: the bar's last step (chainStepFacts). No root: the portal page frames the IForm, whose own frame holds the fields.",
   "fields": [],
   "hooks": {
     "detect": null,

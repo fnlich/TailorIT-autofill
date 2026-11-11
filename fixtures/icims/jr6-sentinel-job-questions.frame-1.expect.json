@@ -2,8 +2,53 @@
   "fixture": "icims/jr6-sentinel-job-questions.frame-1",
   "source": "https://careers-sentinel.icims.com/jobs/5157/azure-devops-engineer-%e2%80%93-release-coordinator/questions?in_iframe=1",
   "captured": "2026-11-11T04:07:57.000Z",
-  "note": "Hooks only (jr6 P1): careers-sentinel's Job Specific Questions. Fields are asserted after ENGINE E1 to E3 and RULES merge (FIXPLAN §6.5 P2 asserts).",
-  "fields": [],
+  "note": "jr6 P2: careers-sentinel's Job Specific Questions. Its fields as the scan reads them once ENGINE E1 to E3 and RULES R1 to R4 merged (FIXPLAN §6.5 P2); what a run decides on them is held by src/adapters/icims/jr6-icims.browser.test.ts.",
+  "fields": [
+    {
+      "label": "What is your desired hourly rate?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 13,
+      "control": "select[id=\"Q12\"]"
+    },
+    {
+      "label": "Is the location of the position an acceptable commute that will work for you?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"Q14\"]"
+    },
+    {
+      "label": "Are you currently eligible to work in the United States of America?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"Q264\"]"
+    },
+    {
+      "label": "What state are you physically located in today?",
+      "kind": "select",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 55,
+      "control": "select[id=\"Q266\"]"
+    },
+    {
+      "label": "When would you be available to start?",
+      "kind": "textarea",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "textarea[id=\"Q47\"]"
+    }
+  ],
   "hooks": {
     "detect": "form#questions",
     "authState": null,
