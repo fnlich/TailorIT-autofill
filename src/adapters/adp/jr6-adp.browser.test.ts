@@ -804,8 +804,9 @@ describe('jr6 P2 ADP-2: the State list once Country is chosen (ENGINE E1, E3)', 
     expect([box.others, list.others]).toEqual([[], []]);
   });
 
-  it.fails('ADP-2 (known gap, the option matcher): the golden region is chosen from the State’s whole list, whose rows '
-    + 'read "TX - Texas" (today a search the list cannot take: no write lands)', async () => {
+  // jr6-rules b395249 (AD-R1): the option matcher reads "TX - Texas" as the region both halves name.
+  it('ADP-2 (the option matcher): the golden region is chosen from the State’s whole list, whose rows read '
+    + '"TX - Texas"', async () => {
     const ran = await planned('jr6-personal-us-errors');
     expect(optionOf(ran.write('State / Territory'))).toBe('TX - Texas');
   });
@@ -1006,10 +1007,12 @@ describe('jr6 P2 ADP-17: the self-ID decline box beside the lists (self-id, jr6-
     }
   });
 
-  it.each(['self-id', 'jr6-self-id-blank', 'jr6-self-id-filled'])('%s: while the lists are unread, the box waits for '
-    + 'them, nobody’s to answer yet', async (name) => {
+  // jr6-rules fa6bd2b (RULES-R65-R24): a box is no list: while its lists are unread it is left unticked (skipped,
+  // conditional-question), never rowed waiting-for-options, which the loop's books ended options-never-loaded.
+  it.each(['self-id', 'jr6-self-id-blank', 'jr6-self-id-filled'])('%s: while the lists are unread, the box is left '
+    + 'unticked, nobody’s to answer', async (name) => {
     const ran = await planned(name);
-    expect(ran.row(BOX)).toMatchObject({ reason: 'waiting-for-options', needsUserAction: false });
+    expect(ran.row(BOX)).toMatchObject({ status: 'skipped', reason: 'conditional-question', needsUserAction: false });
     expect(ran.write(BOX)).toBeUndefined();
   });
 });
@@ -1091,5 +1094,147 @@ describe('jr6 P2 ADP-6: the page after Submit read under the BrightJump promo’
     const fixture = await open('jr6-self-attest-signed');
     expect(successShown(fixture.doc, 'adp')).toBe(false);
     expect(shownSignsOf(fixture.doc, 'adp').size).toBe(0);
+  });
+});
+
+// ── PRIV-1 (the privacy review of line W): no row of ADP's lists or radio groups tells the owner's choice ────────────
+//
+// The converter cleared a chosen row's own marks (CHOSEN_MARKS: sdf-select-item's `selected` class and aria-selected),
+// but ADP draws a choice in more places, each naming the row by elimination, since the rows' words are public: a
+// widget's roving tab stop (tabindex="0" on the chosen row of an open sdf-select-item list, "-1" on the others), the
+// check the chosen list row draws in its shadow tree (div#checked-icon), the dot a checked sdf-radio-button draws in its
+// own (circle.radio-dot in its svg.toggled), and the chosen value a wfn-radio-button mirrors on each row of its group
+// (radio-group-value). These tests read every jr6 page's markup as committed, the declarative shadow roots included, and
+// name a list or a group (its field's id, its row count), never a row.
+
+/** A list or a group of choice rows in a page's markup. */
+interface ChoiceRows {
+  kind: 'list' | 'radios';
+  /** Where it is drawn: a list's field, the id of the nearest sdf-select-simple or wfn-dropdown-list ("portal" for a list
+   *  drawn in a body-level sdf-floating-pane-portal); a radio group's nearest id. */
+  field: string;
+  rows: Element[];
+}
+
+/** Every list of sdf-select-item rows (by their listbox), every sdf-radio-group's sdf-radio-buttons and every group of
+ *  wfn-radio-buttons (by their parent) in a page's markup. DOMParser keeps each declarative shadow root as its host's
+ *  <template shadowrootmode> child, whose content is walked as the host's. */
+function choiceRowsOf(html: string): ChoiceRows[] {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const groups = new Map<Element, ChoiceRows>();
+  const nearestId = (chain: readonly Element[]): string => [...chain].reverse().find((el) => el.id !== '')?.id ?? '(none)';
+  const listField = (chain: readonly Element[]): string => {
+    for (const el of [...chain].reverse()) {
+      if ((el.localName === 'sdf-select-simple' || el.localName === 'wfn-dropdown-list') && el.id !== '') return el.id;
+      if (el.localName === 'sdf-floating-pane-portal') return 'portal';
+    }
+    return '(none)';
+  };
+  const add = (owner: Element, row: Element, make: () => Omit<ChoiceRows, 'rows'>): void => {
+    const group = groups.get(owner) ?? { ...make(), rows: [] };
+    group.rows.push(row);
+    groups.set(owner, group);
+  };
+  const visit = (parent: ParentNode, chain: readonly Element[]): void => {
+    for (const el of Array.from(parent.children)) {
+      const owner = chain[chain.length - 1];
+      if (owner !== undefined && el.localName === 'sdf-select-item') {
+        add(owner, el, () => ({ kind: 'list', field: listField(chain) }));
+      } else if (el.localName === 'sdf-radio-button') {
+        const radioGroup = [...chain].reverse().find((each) => each.localName === 'sdf-radio-group');
+        if (radioGroup !== undefined) add(radioGroup, el, () => ({ kind: 'radios', field: nearestId(chain) }));
+      } else if (owner !== undefined && el.localName === 'wfn-radio-button') {
+        add(owner, el, () => ({ kind: 'radios', field: nearestId(chain) }));
+      }
+      const next = [...chain, el];
+      visit(el, next);
+      if (el instanceof HTMLTemplateElement) visit(el.content, next);
+    }
+  };
+  visit(doc, []);
+  return [...groups.values()].filter((group) => group.rows.length > 1);
+}
+
+/** A jr6 page's case name, from its glob path. */
+const caseOf = (path: string): string => path.replace(/^.*\/|\.html$/g, '');
+
+/** What a row draws: each element under it, its shadow tree included, as its tag, id (digits read alike) and classes, in
+ *  order; never its words or an attribute's value, nor the row's own attributes (its option's identity). */
+function drawnOf(row: Element): string {
+  const parts: string[] = [];
+  const walk = (parent: ParentNode): void => {
+    for (const el of Array.from(parent.children)) {
+      parts.push(`${el.localName}#${el.id.replace(/\d+/g, 'N')}.${[...el.classList].sort().join('.')}`);
+      walk(el);
+      if (el instanceof HTMLTemplateElement) walk(el.content);
+    }
+  };
+  walk(row);
+  return parts.join(' ');
+}
+
+describe('jr6 PRIV-1 (review: privacy): no row of ADP’s lists or radio groups tells the owner’s choice', () => {
+  // PRIV-1 itself. A widget's roving tab stop stands on its first row or nowhere: the converter moves a stop that stands
+  // on another row to the first (TOOLING's fix, PRIV-2), so where it stands tells nothing, and ADP's radio groups draw it
+  // there whatever is checked. As converted before that fix, jr6-questions2-filled's source list and the State list open
+  // on jr6-personal-filled and -us-state held it on the chosen row: this test failed on exactly those three, and passes
+  // since ADP converted its jr6 cases again with TOOLING's fixed converter (jr6-tooling 708ac5c).
+  it('no list or radio group holds its tab stop on a row but its first (every jr6 page)', () => {
+    const told: string[] = [];
+    const walked = { list: 0, radios: 0 };
+    for (const [path, html] of Object.entries(PAGES)) {
+      for (const group of choiceRowsOf(html)) {
+        walked[group.kind] += 1;
+        const tabs = group.rows.map((row) => row.getAttribute('tabindex') ?? '');
+        const stops = tabs.flatMap((value, at) => (value === '0' ? [at] : []));
+        // One tabindex on every row, or one stop on the first row and "-1" or none on the others.
+        const alike = new Set(tabs).size === 1
+          || (stops.length === 1 && stops[0] === 0 && tabs.slice(1).every((value) => value === '-1' || value === ''));
+        if (!alike) told.push(`${caseOf(path)}: ${group.kind} in ${group.field} (${tabs.length} rows)`);
+      }
+    }
+    // The walk reaches every list and group: the State's (in its field, or in the portal once open), the source's and
+    // the currency's on both employer-2 Questions pages; 34 sdf-radio-groups and 4 pairs of wfn-radio-buttons.
+    expect(walked).toEqual({ list: 7, radios: 38 });
+    expect(told).toEqual([]);
+  });
+
+  // The marks the review did not name. TOOLING's fix (PRIV-2 with REVC-4) takes out the part a widget draws on its
+  // chosen row alone: sdf-select-item's div#checked-icon, sdf-radio-button's circle.radio-dot and its svg's `toggled`.
+  // As converted before it, this failed on jr6-personal-filled and -us-state (the State list), jr6-questions2-filled (its
+  // source and currency lists, its Yes/No groups and its pay basis), jr6-questions-filled, jr6-resume-choice, and
+  // jr6-questions2-blank's pay basis (drawn there too: a site default or not, it cannot be told apart). It passes since
+  // the reconversion.
+  it('no row of a list or radio group draws more than the others in its tree (every jr6 page)', () => {
+    const told: string[] = [];
+    for (const [path, html] of Object.entries(PAGES)) {
+      for (const group of choiceRowsOf(html)) {
+        if (new Set(group.rows.map(drawnOf)).size > 1) {
+          told.push(`${caseOf(path)}: ${group.kind} in ${group.field} (${group.rows.length} rows)`);
+        }
+      }
+    }
+    expect(told).toEqual([]);
+  });
+
+  // The value mirror: a wfn-radio-button group mirrors its chosen option's value on each row (radio-group-value="<that
+  // row's value>"). As converted before TOOLING's VALUE_MIRRORS (jr6-tooling 517aa64), jr6-questions-filled's
+  // employee-referral pair and jr6-guest-send-code's code channel held it: this test failed on exactly those two, and
+  // passes since ADP converted them again.
+  it('no wfn-radio-button names its group’s chosen value (every jr6 page)', () => {
+    const told: string[] = [];
+    let carried = 0;
+    for (const [path, html] of Object.entries(PAGES)) {
+      for (const group of choiceRowsOf(html)) {
+        if (group.rows.every((row) => row.hasAttribute('radio-group-value'))) carried += 1;
+        if (group.rows.some((row) => (row.getAttribute('radio-group-value') ?? '') !== '')) {
+          told.push(`${caseOf(path)}: ${group.kind} in ${group.field} (${group.rows.length} rows)`);
+        }
+      }
+    }
+    // The walk reaches the four wfn-radio-button pairs that carry the attribute (the code channel, and the
+    // employee-referral pair on three Questions pages), so it cannot pass on an empty walk.
+    expect(carried).toBe(4);
+    expect(told).toEqual([]);
   });
 });
