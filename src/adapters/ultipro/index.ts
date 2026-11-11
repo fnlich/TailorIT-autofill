@@ -25,10 +25,10 @@
  *   Behaviors, Motivations, Licenses and Certifications, Links, Documents, Questions).
  * - Required: label.control-label.required (the star is drawn by CSS): select#Country carries no required attribute
  *   (ultipro-0, -1).
- * - The start date (ultipro-0): its month, day and year boxes sit in ukg-date-input-text's open shadow root, labelled
- *   only "Month", " Day" and "Year" there; their question is the light label[data-automation=start-date-label] "When
- *   can you start? (MM/DD/YYYY)" in the same form group, whose for= names nothing (labelFor, with "month", "day" and
- *   "year" after it: labelSuffix).
+ * - The start date (ultipro-0): its month, day and year boxes sit in ukg-date-input-text's open shadow root; jr6 U-07:
+ *   the component is one date field (dateFor), its three boxes its parts (excluded as fields of their own), its
+ *   question the light label[data-automation=start-date-label] "When can you start? (MM/DD/YYYY)" in the same form
+ *   group, whose for= names nothing (labelFor on the component).
  * - Read-only account names (#FirstName, #FamilyName, #FormerName, #PreferredName in the application) are read-only to
  *   the scanner by their own attribute.
  * - Never pressed: Cancel (the application's, to the posting; the review's; a panel editor's), Sign Out, a panel's
@@ -43,7 +43,12 @@
  *   - U-04: School Name and Level of Education / Degree are twitter-typeahead searches, their results the sibling
  *     .tt-dropdown-menu's .tt-suggestion rows; School's typed text stands where no result matches (freeText); Degree
  *     takes the page's own degree list (knownOptions) where the page publishes it in a script;
- *   - U-05: the review's Skills box takes several skills, one at a time, each a chip once its row's Add is pressed.
+ *   - U-05: the review's Skills box takes several skills, one at a time, each a chip once its row's Add is pressed;
+ *   - U-06 (now part, Decision 16): the résumé parser's own upload and its list of saved résumés hold no question;
+ *   - U-09: each "I decline to say" box beside an EEO list is labelled by that list's question first;
+ *   - U-12: each uploaded document's row in Documents holds no question;
+ *   - U-16: the phone boxes take the national number (formatFor);
+ *   - apply-path C3: the application is drawn after its sign-in round trip: quirks.formLateMs 30 s.
  * Turnstile (the account step and the application, ultipro-0 to -2) is drawn in a closed shadow root: the extension
  * cannot read it (dom/pause-detect.ts's known limit), and Submit and Create account are the page's to enable.
  * Nothing here reads, logs or sends a value.
@@ -54,7 +59,7 @@ import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { configuredHooks } from '../configured';
 import type { AtsConfig } from '../configured/types';
-import type { Adapter, SignInForm, WidgetDecl } from '../types';
+import type { Adapter, DatePartsDecl, SignInForm, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, matchesUrl, parseUltiproUrl } from './url';
 
 /** The fixtures the adapter was read from (fixtures/ultipro/<case>.html). */
@@ -127,26 +132,82 @@ export const ULTIPRO_CONFIG: AtsConfig = {
   // id="FirstNameError" data-automation="firstName-error" ...>, hidden while it holds none.
   errors: { css: 'div.validation-summary-errors[data-automation="error-messages"], span.help-block[id$="Error"]',
     from: 'ultipro-0' },
+  // ── jr6 ULTIPRO P1 (FIXPLAN §6.10) ──
+  excluded: [
+    // U-06, now part (Decision 16; owner question Q3 decides whether a run ever uses the parser): the résumé parser's
+    // own parts in the application (ultipro-0, -1: <div id="ResumeParsingUploader" ...> holds <div data-bind="overlay:
+    // ...">, <div data-bind="visible: !isParsingResume() && !hasSavedParsedResume()"> with its <input type="file"
+    // data-automation="upload-file-input"> and <select data-automation="existing-resume-selector">, and <div
+    // data-bind="if: isParsingResume()">, the review). Every child but the review: the review is the review state's
+    // own root, never excluded (a root's ancestor is never one of its parts either).
+    { css: '#ResumeParsingUploader > :not([data-bind="if: isParsingResume()"])', from: 'ultipro-0, ultipro-1' },
+    // The parser's list of résumés already uploaded, wherever a page draws it (ultipro-0: <select
+    // data-automation="existing-resume-selector"> under "Choose a file that you have already uploaded.").
+    { css: 'select[data-automation="existing-resume-selector"]', from: 'ultipro-0' },
+    // U-12: each uploaded document's row in Documents (ultipro-0: <div id="Documents" data-bind="with: { application:
+    // ... }"> ... <div class="file row hidden-print" data-automation="file-row"> with its select-document-checkbox,
+    // file-type select and file-description box, each labelled by the file's name): the person's own files, kept as
+    // they are. The panel's "Upload a file" input stays a field.
+    { css: '#Documents div[data-automation="file-row"]', from: 'ultipro-0' },
+  ],
+  // Apply-path C3 (SP\jr6\audit\apply-c.md; APPLYPLAN D5, BUILD §4 ULTIPRO): #OpportunityApply is drawn after UKG's
+  // sign-in round trip (its account step's returnUrl), later than the content script starts: its root is looked for
+  // again as the page changes, for up to 30 s (late-form.ts LATE_FORM_CAP_MS). Jobright waits up to 15 s for an
+  // editable control under #OpportunityApply (UltiPro entry-preflow, createUltiproEntryAdapter).
+  quirks: { formLateMs: 30_000 },
+  // ── end jr6 ULTIPRO P1 ──
 };
 
-/** The start date's segments (ultipro-0: <input aria-label="Month" aria-required="true"
- *  data-automation="ukg-date-input-text-month" ... placeholder="mm">, -day, -year), each a word after its label. */
-const DATE_PARTS: ReadonlyMap<string, string> = new Map([['ukg-date-input-text-month', 'month'],
-  ['ukg-date-input-text-day', 'day'], ['ukg-date-input-text-year', 'year']]);
+// ── jr6 ULTIPRO P1: the start date as one date (FIXPLAN §6.10 item 6, U-07) ──
+/** The date component (ultipro-0: <ukg-date-input-text role="group" aria-label="Date Input" class="... ukg-required
+ *  ..."><template shadowrootmode="open"> ... <input aria-label="Month" aria-required="true"
+ *  data-automation="ukg-date-input-text-month" maxlength="2" placeholder="mm" ...>, -day (maxlength 2, "dd"), -year
+ *  (maxlength 4, "yyyy")): one date drawn in three boxes. */
+const DATE_HOST = 'ukg-date-input-text[role="group" i]';
+const DATE_PART_NAMES = ['month', 'day', 'year'] as const;
 
-/** A start-date segment's question (see the header), or null for any other control. */
+/** jr6 U-07: the component's boxes as a date drawn in parts (Adapter.dateFor), in the order its shadow root draws them,
+ *  each typed digit by digit where its value setter's write is not taken (Jobright 1.25.2's UltiPro filler,
+ *  doFillForm's date branch, types each part with composed key, input, change and blur events); null for any other
+ *  element, or where the component draws none of its boxes. */
+function datePartsOf(control: Element): DatePartsDecl | null {
+  if (!control.matches(DATE_HOST) || control.shadowRoot === null) return null;
+  const shadow = control.shadowRoot;
+  const parts = DATE_PART_NAMES.flatMap((part) => {
+    const input = shadow.querySelector<HTMLInputElement>(`input[data-automation="ukg-date-input-text-${part}"]`);
+    return input === null ? [] : [{ part, input, display: null }];
+  }).sort((a, b) => (a.input.compareDocumentPosition(b.input) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  return parts.length === 0 ? null : { parts, keys: 'digits', snapshot: 'ultipro-0' };
+}
+
+/** The boxes of every date component under `root` (jr6 U-07): parts of their date, never fields of their own. */
+function datePartBoxes(root: Element): Element[] {
+  return Array.from(root.querySelectorAll(DATE_HOST)).flatMap((host) => datePartsOf(host)?.parts.map((part) => part.input)
+    ?? []);
+}
+
+/** jr6 U-07: the element around the date component that draws its box (Adapter.controlBox; ultipro-0: <ukg-input-container
+ *  data-automation="ukg-datepicker-container" class="sc-ukg-input-container-h ..."> around the component and its "Choose
+ *  Date" button), or null for any other control. The component draws no box of its own; the capture holds none of UKG's
+ *  component styles, so whether the container shows a border or a background live is read there (ENGINE E2 takes it as
+ *  the drawn box only where it does). */
+function dateBoxOf(control: Element): Element | null {
+  return control.matches(DATE_HOST)
+    ? control.closest('ukg-input-container[data-automation="ukg-datepicker-container"]') : null;
+}
+
+/** The start date's question (see the header) for its date component, or null for any other control. */
 function startDateLabel(control: Element): Element | null {
-  if (!DATE_PARTS.has(control.getAttribute('data-automation') ?? '')) return null;
+  if (!control.matches(DATE_HOST)) return null;
   // ultipro-0: <div class="form-group col-md-12"><label for="ApplicationAvailableStartDateInput"
   // data-automation="start-date-label" class="control-label required" ...>When can you start? (MM/DD/YYYY)</label>
   // <react-ko-es6-bridge ...><div data-automation="available-start-date-datepicker"><span id="AvailableStartDate"
   // class="sr-only">When can you start?</span><ukg-input-container aria-labelledby="AvailableStartDate" ...> ...
-  // <ukg-date-input-text ...><template shadowrootmode="open"> ... the three inputs.
-  const root = control.getRootNode();
-  const host = 'host' in root ? (root as ShadowRoot).host : null;
-  const group = host?.closest('ukg-input-container[data-automation="ukg-datepicker-container"]')?.closest('div.form-group');
+  // <ukg-input data-automation="ukg-datepicker-input" type="date" ...><ukg-date-input-text role="group" ...>.
+  const group = control.closest('ukg-input-container[data-automation="ukg-datepicker-container"]')?.closest('div.form-group');
   return group?.querySelector(':scope > label[data-automation="start-date-label"]') ?? null;
 }
+// ── end jr6 ULTIPRO P1 (U-07) ──
 
 /** The words a period box's own label holds when it names the part alone (jr6 U-02: ultipro-1's "Month", "Year
  *  (YYYY)"). */
@@ -182,6 +243,27 @@ function wordsOf(el: Element): string {
   return visibleText(el, { singleLine: true, cap: TEXT_CAP_LABEL, cache: newScanCache() }).trim();
 }
 
+// ── jr6 ULTIPRO P1: EEO decline boxes (FIXPLAN §6.10 item 7, U-09; label contract §3.2) ──
+/** An "I decline to say" box beside an EEO list (ultipro-0: #CountryQuestions' <div class="form-group"><label
+ *  data-automation="gender-question-label" class="control-label required" for="Gender">Gender</label><select
+ *  id="Gender" ...><div class="checkbox"><label><input type="checkbox" data-automation="gender-decline-checkbox" ...>
+ *  <span>I decline to say</span><span class="sr-only">Gender</span></label></div>; Ethnic Origin (#HispanicOrigin),
+ *  Race (#EthnicOrigin) and "Are you a protected veteran?" (#USFederalContractor) the same): its list's question and
+ *  its own words, or null. Labelled "<question> I decline to say" (RULES' label contract), read before its own label,
+ *  so the box pairs with its list; Jobright reads such a list and its box as one question whose options add the box's
+ *  words (UltiPro rules, extractRules; fillMultiSelectField ticks the box for a decline). */
+function declineLabels(control: Element): { question: Element; own: Element } | null {
+  if (!control.matches('#CountryQuestions input[type="checkbox" i][data-automation$="-decline-checkbox"]')) return null;
+  const box = control.closest('div.checkbox');
+  const group = box?.parentElement ?? null;
+  if (box === null || group === null || !group.matches('div.form-group')) return null;
+  const select = group.querySelector(':scope > select');
+  if (select === null || select.id === '') return null;
+  const question = group.querySelector(`:scope > label.control-label[for="${CSS.escape(select.id)}"]`);
+  const own = control.closest('label')?.querySelector(':scope > span:not(.sr-only)') ?? null;
+  return question === null || own === null ? null : { question, own };
+}
+// ── end jr6 ULTIPRO P1 (U-09) ──
 
 /** The Skills panel's typeahead (ultipro-0, -1: <input role="combobox" type="text" required=""
  *  data-automation="item-typeahead" aria-label="Skills" ...>, labelled by nothing a person sees): its panel's h2. */
@@ -341,6 +423,18 @@ function reviewRepeatables(root: Element): ReturnType<NonNullable<Adapter['repea
 }
 // ── end jr6 ULTIPRO P1 (U-01) ──
 
+// ── jr6 ULTIPRO P1: the phone boxes (FIXPLAN §6.10 item 9, U-16, adapter part) ──
+/** The phone boxes (ultipro-0, -1: <input type="tel" id="Phone" data-automation="primary-phone-number-textbox"
+ *  maxlength="25" autocomplete="tel">, <input type="tel" id="SecondaryPhone" ...>; ultipro-2: the account step's
+ *  <ukg-input ... name="phoneNumber" maxlength="15"><input type="tel" name="phoneNumber" maxlength="15" ...>). */
+const PHONE_BOXES = 'input#Phone[type="tel" i], input#SecondaryPhone[type="tel" i], '
+  + 'form#registrationDetailsForm input[name="phoneNumber"][type="tel" i]';
+/** jr6 U-16: the national number's ten digits (core/resolver/format.ts phoneText lays a number's national digits into
+ *  a pattern with as many slots; a number whose national part is not ten digits stays as the person wrote it). Jobright
+ *  writes every UltiPro phone answer as the national number (UltiPro answer, formatAnswer: toNationalPhoneValue). */
+export const ULTIPRO_PHONE_PATTERN = '##########';
+// ── end jr6 ULTIPRO P1 (U-16) ──
+
 const hooks = configuredHooks(ULTIPRO_CONFIG);
 
 // ── snapshot build 2026-11-06 (core pass Z1, item 24) ──
@@ -377,20 +471,26 @@ export const ultiproAdapter: Adapter = {
   // application: not its last step (the configured layer reads its states' own containers the same way). Create account
   // is Sign-in mode's (signInContainer), never Next's: the state names no Next.
   isFinalStep: (doc) => (registerContainer(doc) !== null ? 'not-final' : hooks.isFinalStep?.(doc) ?? 'unknown'),
-  labelFor: (control) => startDateLabel(control) ?? periodLabels(control)?.group ?? skillsTitle(control)
-    ?? hooks.labelFor?.(control) ?? null,
+  labelFor: (control) => startDateLabel(control) ?? periodLabels(control)?.group ?? declineLabels(control)?.question
+    ?? skillsTitle(control) ?? hooks.labelFor?.(control) ?? null,
   labelSuffix(control) {
-    if (startDateLabel(control) !== null) return DATE_PARTS.get(control.getAttribute('data-automation') ?? '') ?? null;
-    const part = periodLabels(control)?.part ?? null;
+    const part = periodLabels(control)?.part ?? declineLabels(control)?.own ?? null;
     if (part === null) return null;
     const words = wordsOf(part);
     return words === '' ? null : words;
   },
-  // jr6 U-02: a period box's own label is only its part's words ("Month"): the adapter's label, its group's with those
-  // words, is read first.
-  labelFirst: (control) => periodLabels(control) !== null,
+  // jr6 U-02, U-09: a period box's or a decline box's own label is only its part's words ("Month", "I decline to say"):
+  // the adapter's label, its group's or its list's question with those words, is read first.
+  labelFirst: (control) => periodLabels(control) !== null || declineLabels(control) !== null,
   // jr6 U-04, U-05.
   widgetFor: (control) => educationSearch(control) ?? skillsBox(control) ?? hooks.widgetFor?.(control) ?? null,
+  // jr6 U-07.
+  dateFor: (control) => datePartsOf(control) ?? hooks.dateFor?.(control) ?? null,
+  controlBox: (control) => dateBoxOf(control) ?? hooks.controlBox?.(control) ?? null,
+  excluded: (root) => [...(hooks.excluded?.(root) ?? []), ...datePartBoxes(root)],
   // jr6 U-01.
   repeatables: (root) => [...(hooks.repeatables?.(root) ?? []), ...reviewRepeatables(root)],
+  // jr6 U-16.
+  formatFor: (control) => (control.matches(PHONE_BOXES) ? { format: 'tel', pattern: ULTIPRO_PHONE_PATTERN }
+    : hooks.formatFor?.(control) ?? null),
 };
