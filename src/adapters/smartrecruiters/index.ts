@@ -43,6 +43,9 @@
  * - Never pressed: the posting's SmartR button, "Refer a friend", its share links and cookie settings; the one-click
  *   page's Apply with Indeed and SEEK (and the LinkedIn widget's frame), the Experience and Education "Add" buttons, the
  *   screening step's Back and every page's "Cookie Settings".
+ * - jr6 C3 (APPLYPLAN, SP\jr6\audit\apply-c.md C3; BUILD.md §4): the one-click form is drawn by SmartRecruiters' Angular
+ *   app from data it fetches, after the content script starts: quirks.formLateMs 30 s (Jobright's entry flow polls 15 s
+ *   for the personal-information box).
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
@@ -281,6 +284,10 @@ function neverPress(root: Element): Element[] {
   return [...new Set(found)];
 }
 
+/** jr6 C3 (module header; BUILD.md §4 sets 30 s, the audit measured 15 s enough with the form drawn 1 s late): how long
+ *  after the page loads, or after an address change, the content runtime still looks for the one-click form. */
+export const SMARTRECRUITERS_FORM_LATE_MS = 30_000;
+
 /** The SmartRecruiters adapter. */
 export const smartRecruitersAdapter: Adapter = {
   id: 'smartrecruiters',
@@ -304,4 +311,6 @@ export const smartRecruitersAdapter: Adapter = {
   stepSignature,
   errors,
   neverPress,
+  // jr6 C3 (module header): the one-click form is drawn late by the page's own app.
+  quirks: { formLateMs: SMARTRECRUITERS_FORM_LATE_MS },
 };
