@@ -840,7 +840,7 @@ describe('jr6 apply F2: the destination’s key, and the owner’s postings (C4,
 });
 
 // ── The line P review's findings (2026-11-11), each with the case its reviewer measured ──
-describe('jr6 apply F2: the entry ends where the person says so (the line P review)', () => {
+describe('jr6 apply F2: the line P review’s cases (revA-2, revA-4, revA-6, P-B2, P-B4, P-3)', () => {
   it('run/cancel during the entry’s sign-in step (Sign-in Auto; Sign up & Autofill): nothing typed or pressed after it (revA-2, P-B2)',
     async () => {
       for (const how of ['auto', 'sign-up', 'auto, no cancel'] as const) {
