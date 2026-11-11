@@ -177,15 +177,20 @@ export interface WidgetTarget {
   readonly highlightIsNoChoice?: boolean;
   /** v4 (drop): its results list that no ARIA names, as its adapter declared it (WidgetDecl.results; s2 wd: the list
    *  found anew on each read where the page draws it only while open, and a result that only opens a sub-list). jr6
-   *  ENGINE E1 (FIXPLAN §6.2 item 1): the rows as the page draws them where `option` cannot reach them (slots, shadow
-   *  trees: WidgetResults.options), and the element a choice presses (WidgetResults.pressTarget). */
+   *  ENGINE E1 (FIXPLAN §6.2 items 1 and 3): the rows as the page draws them where `option` cannot reach them (slots,
+   *  shadow trees: WidgetResults.options), and the element a choice presses (WidgetResults.pressTarget). */
   readonly results?: DeclaredResults;
   /** v4 (drop): the declared key sent after each typed query (WidgetDecl.queryKey). */
   readonly queryKey?: QueryKey;
+  // ── jr6 ENGINE E1 ──
+  /** FIXPLAN §6.2 item 3 (SR-2): a query shorter than this is never typed (WidgetDecl.minQueryLength). */
+  readonly minQueryLength?: number;
+  // ── end jr6 ENGINE E1 ──
   // ── s2 lists ──
-  /** The stored whole list the scan gave the field as its options (WidgetDecl.knownOptions, or a list learned on this
-   *  host before: ScanOptions.learnedLists), set only while the field's options are that list, which no reading of the
-   *  run has replaced. Its choice is made at once (widgets/fill.ts chooseKnown). */
+  /** The stored whole list the scan gave the field as its options (WidgetDecl.storedList's, the list the page publishes
+   *  itself: jr6 ENGINE E1, WidgetDecl.knownOptions, or a list learned on this host before: ScanOptions.learnedLists),
+   *  set only while the field's options are that list, which no reading of the run has replaced. Its choice is made at
+   *  once (widgets/fill.ts chooseKnown). */
   readonly knownOptions?: readonly string[];
   /** The id of the stored list its adapter declared (WidgetDecl.storedList), whether or not the scan was given it:
    *  the content script asks the worker for the lists its scans declare (lists/known). */
@@ -193,8 +198,9 @@ export interface WidgetTarget {
   /** The value of the field its list depends on, as its adapter reads it (WidgetDecl.learnContext): part of the key
    *  its learned list is kept under. */
   readonly learnContext?: string;
-  /** Where that list came from: the adapter's declaration, or a list learned on this host. */
-  readonly knownFrom?: 'adapter' | 'learned';
+  /** Where that list came from: the adapter's stored list, the page's own published list (jr6 ENGINE E1: WidgetDecl
+   *  .knownOptions, whose option is found in the open list by its label), or a list learned on this host. */
+  readonly knownFrom?: 'adapter' | 'page' | 'learned';
   /** The page draws its whole list at once (WidgetDecl.drawnWhole): read and shown again without waiting to draw. */
   readonly drawnWhole?: true;
 }

@@ -44,14 +44,15 @@
  * closed on the tidy context and nothing is chosen; an option already clicked stands, read back as the widget shows
  * it, its list closed the same way: one the widget does not show yet is written, not verified (verify-mismatch: the
  * audit of 2026-11-06, m11). Nothing here logs or reports a value.
- * jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a combobox or multiselect whose list its adapter declares
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3): a combobox or multiselect whose list its adapter declares
  * (WidgetDecl.results: Oracle's cx-select grid of role=row rows, iCIMS's dropdown results, ADP's sdf-select-item portal,
  * SmartRecruiters' spl-select-option menus) is read, shown again and chosen by its declared rows (the selector, or
  * WidgetResults.options where no selector reaches them), a row it names unchoosable never chosen, and each choice
  * presses the element its adapter names (interact.ts chooseResult: WidgetResults.pressTarget, else the row's label part
  * on choose 'label', else the row; a mousedown where it declares one), the row and that element both passed by
  * assertNotSubmit; as Jobright's ~contents/sites/oraclecloud operations fillSelectField reads the grid's
- * span.cx-select__list-item--content and clicks its gridcell.
+ * span.cx-select__list-item--content and clicks its gridcell. A list the page publishes itself (WidgetDecl.knownOptions)
+ * has its planned option found in the open list by its label (known.ts findKnown).
  */
 import { llmPickStillValid } from '../../core/guard/provenance';
 import type { BaseKey, Option } from '../../core/types/field';

@@ -20,7 +20,7 @@
  * list may be the adapter's hook, asked each time (Workday's prompts draw theirs at the end of the body only while
  * open), and a result its adapter names as only opening a list of its own (a category) is one that cannot be chosen
  * (isUnchoosableResult).
- * jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a declared list's rows are its selector's matches, or the rows its
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3): a declared list's rows are its selector's matches, or the rows its
  * adapter's hook lists where no selector reaches them (WidgetResults.options: a slot's assigned elements); a choice
  * presses the element its adapter names (WidgetResults.pressTarget), else the row's label part ('label'), else the row
  * (pressTargetOf).

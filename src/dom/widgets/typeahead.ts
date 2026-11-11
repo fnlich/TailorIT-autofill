@@ -58,8 +58,10 @@
  * way, for an option the planner chose already on the list's whole read: one query, the option's own words
  * (optionQuery: "Canada" for "Canada +1"), a guarded write as each of a typeahead's is, and of what the list then shows
  * the one result that is that option as the page shows it (searchedOption) is clicked; no worker matches the results.
- * jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a declared list's rows are read and pressed as its adapter declares them
- * (WidgetResults.options, pressTarget).
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3):
+ * - a query shorter than the widget's declared minimum (WidgetDecl.minQueryLength: SmartRecruiters' minquerylength) is
+ *   never typed;
+ * - a declared list's rows are read and pressed as its adapter declares them (WidgetResults.options, pressTarget).
  */
 import { searchedOption } from '../../core/matcher/listSearch';
 import { MAX_SEARCH_QUERIES } from '../../core/matcher/searchLimits';
@@ -216,6 +218,10 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     if (ctx.signal?.aborted) return ended();
     // v4 (drop): the field's time budget, checked before each query after the first.
     if (at > 0 && monotonicNow() - started >= budgetMs) break;
+    // jr6 ENGINE E1 (FIXPLAN §6.2 item 3, SR-2): a query shorter than the page's own minimum is never typed
+    // (WidgetDecl.minQueryLength: SmartRecruiters' minquerylength); the next one is tried.
+    const minimum = current.widget?.minQueryLength;
+    if (minimum !== undefined && query.length < minimum) continue;
     // The page hid the rest of the form behind the last query's open list: it is closed before the guard scans.
     if (typed > 0 && current.widget?.hidesFormWhileOpen === true) {
       await closeList(current.widget, ctx, { activated: false });

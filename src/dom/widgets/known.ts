@@ -12,6 +12,11 @@
  * read of one is told to the worker (background/learned-lists.ts), which keeps its option labels (page text, never a
  * value) for the host and the field's label (each kept as a hash: learnedListKey), and offers them as the field's
  * stored list on the host's next run (ScanOptions.learnedLists, by that key); the open-and-check keeps them honest. A list a person types into, a search, or a list read only in part is never learned.
+ * jr6 ENGINE E1 (FIXPLAN §6.2 item 3, SR-1): a list the page publishes itself (WidgetDecl.knownOptions:
+ * SmartRecruiters' screening questions' definition) is the field's reading at scan time as a stored list is, and wins
+ * over a stored list both are declared for; its planned option is found in the open list by its label (as the page
+ * shows it), at its planned place when two carry that label, among the declared rows (WidgetResults.options too). It is
+ * never learned: the page gives it again on every run.
  * Nothing here dispatches an event but the scroll a read sets as a property; nothing is logged.
  */
 import { labelSlug } from '../../core/text/keys';
@@ -55,7 +60,7 @@ export function staleLearned(answer: { results: ReadonlyArray<{ key: string; rea
 export function learnable(widget: Pick<WidgetTarget, 'declared' | 'kind' | 'input' | 'drawnWhole' | 'knownFrom'
   | 'storedList'>): boolean {
   return widget.declared && widget.kind === 'combobox' && widget.input === null && widget.drawnWhole === true
-    && widget.knownFrom !== 'adapter' && widget.storedList === undefined;
+    && widget.knownFrom !== 'adapter' && widget.knownFrom !== 'page' && widget.storedList === undefined;
 }
 
 /** The labels of a whole read worth learning: at least one usable option, none past the caps; null otherwise. */
@@ -84,6 +89,16 @@ export async function findKnown(listbox: Element, planned: { label: string; inde
   // jr6 ENGINE E1: the declared rows whole (the selector, or WidgetResults.options), with the rows that cannot be chosen.
   const selector = widget.results;
   const unchoosable = widget.results?.unchoosable;
+  // jr6 ENGINE E1 (see the header): a list the page publishes, found by its label among the rows shown now.
+  if (widget.knownFrom === 'page') {
+    const shown = shownOptions(listbox, undefined, widget.optionLabel, selector, unchoosable);
+    const same = shown.filter((option) => shownIdentity(option.label) === shownIdentity(planned.label));
+    const all = optionElementsOf(listbox, selector);
+    const atPlace = same.find((option) => all.indexOf(option.el) === planned.index);
+    if (atPlace !== undefined) return atPlace;
+    if (same.length === 1) return same[0]!;
+    if (same.length > 1) return null;
+  }
   const el = optionElementsOf(listbox, selector)[planned.index];
   if (el === undefined) return null;
   const find = () => shownOptions(listbox, undefined, widget.optionLabel, selector, unchoosable)

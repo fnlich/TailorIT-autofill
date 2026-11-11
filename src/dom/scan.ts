@@ -74,8 +74,8 @@ import { proxyOf, type Proxy, unrecognisedUploadControl } from './proxy';
 import { newScanCache, styleOf, type ScanCache } from './scan-cache';
 import { sectionFinder } from './sections';
 import {
-  MAX_AUTOCOMPLETE_TOKENS, MAX_SCAN_FIELDS, MIN_BOX_PX, MIN_OPACITY, TEXT_CAP_ATTRIBUTE, TEXT_CAP_AUTOCOMPLETE_TOKEN,
-  TEXT_CAP_LABEL, TEXT_CAP_PATTERN,
+  MAX_AUTOCOMPLETE_TOKENS, MAX_SCAN_FIELDS, MAX_WIDGET_OPTIONS, MIN_BOX_PX, MIN_OPACITY, TEXT_CAP_ATTRIBUTE,
+  TEXT_CAP_AUTOCOMPLETE_TOKEN, TEXT_CAP_LABEL, TEXT_CAP_PATTERN,
 } from './thresholds';
 import type {
   DatePartsTarget, FieldTarget, ScanCounters, ScannedField, ScanResult, UnrecognisedUpload, WidgetKind, WidgetReading,
@@ -672,10 +672,26 @@ function datePartsOf(el: Element, adapter: Adapter | null): DatePartsTarget | nu
 
 // ── Widgets (Phase 4) ────────────────────────────────────────────────────────────────────────────────────────────
 
+/** jr6 ENGINE E1 (FIXPLAN §6.2 item 3, SR-1): the whole list a page publishes for its widget (WidgetDecl.knownOptions), as
+ *  its field's options: page text, untrusted as every option label is, each cut to TEXT_CAP_LABEL and the list to
+ *  MAX_WIDGET_OPTIONS; empty labels dropped. Undefined when it gives none. */
+function pageList(declared: WidgetDecl | null): readonly string[] | undefined {
+  const given = declared?.knownOptions;
+  if (given === undefined || !Array.isArray(given)) return undefined;
+  const labels = given.filter((label): label is string => typeof label === 'string')
+    .map((label) => capCodePoints(label.replace(/\s+/g, ' ').trim(), TEXT_CAP_LABEL)).filter((label) => label !== '')
+    .slice(0, MAX_WIDGET_OPTIONS);
+  return labels.length > 0 ? labels : undefined;
+}
+
 /** A widget's parts as this scan finds them: by ARIA, or as the adapter declared them. */
 function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
   storedLists?: ReadonlyMap<StoredListId, readonly string[]>): WidgetTarget {
-  const stored = declared?.storedList === undefined || kind !== 'combobox' ? undefined
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 3): the list the page publishes (WidgetDecl.knownOptions) is the field's reading at
+  // scan time, before a stored list (the page's own word, given again on every run; ENGINE E0's handoff suggestion); a
+  // combobox's or a multiselect's. A stored list is a combobox's only, as before.
+  const page = kind === 'combobox' || kind === 'multiselect' ? pageList(declared) : undefined;
+  const stored = page !== undefined || declared?.storedList === undefined || kind !== 'combobox' ? undefined
     : storedLists?.get(declared.storedList);
   // A group: an ARIA radio group or Yes/No group, or a 'radio' its adapter declares with its members, each inside its
   // element and none the extension's own. Inside counts across open shadow roots (core pass Z2 of 2026-11-06: ADP's
@@ -703,11 +719,15 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
       // (WidgetResults.options) and the element a choice presses (WidgetResults.pressTarget).
       ...(declared.results !== undefined ? { results: declared.results } : {}),
       ...(declared.queryKey !== undefined ? { queryKey: declared.queryKey } : {}),
+      // jr6 ENGINE E1 (FIXPLAN §6.2 item 3): the page's shortest query.
+      ...(Number.isInteger(declared.minQueryLength) && declared.minQueryLength! > 0
+        ? { minQueryLength: declared.minQueryLength! } : {}),
       // s2 lists: a list its adapter stored (a combobox's only), and a list drawn whole.
       // s2 lists: the stored list its adapter names (a combobox's only), when the worker served it.
       ...(declared.storedList !== undefined && kind === 'combobox' ? { storedList: declared.storedList } : {}),
       ...(declared.learnContext !== undefined ? { learnContext: declared.learnContext } : {}),
-      ...(stored !== undefined && stored.length > 0 ? { knownOptions: stored, knownFrom: 'adapter' as const } : {}),
+      ...(page !== undefined ? { knownOptions: page, knownFrom: 'page' as const }
+        : stored !== undefined && stored.length > 0 ? { knownOptions: stored, knownFrom: 'adapter' as const } : {}),
       ...(declared.drawnWhole === true ? { drawnWhole: true as const } : {}) }),
   };
 }
@@ -816,7 +836,7 @@ function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetR
   const stored = draft.widget!;
   if (stored.kind === 'radio' || stored.kind === 'checkbox') return draft;
   // The stored list is the field's only while nothing the run read, or the page shows now, replaces it.
-  const { knownOptions: known, knownFrom: _from, ...plain } = stored;
+  const { knownOptions: known, knownFrom: from, ...plain } = stored;
   const widget: WidgetTarget = plain;
   const reading = readings?.get(base);
   if (reading?.kind === 'remote') {
@@ -838,11 +858,13 @@ function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetR
   }
   if (reading === undefined) {
     const list = known ?? learned;
-    if (list === undefined || list.length === 0 || widget.kind !== 'combobox') return { ...draft, widget };
+    // jr6 ENGINE E1: a list the page publishes (WidgetDecl.knownOptions) is a multiselect's reading too.
+    const kinds = known !== undefined && from === 'page' ? ['combobox', 'multiselect'] : ['combobox'];
+    if (list === undefined || list.length === 0 || !kinds.includes(widget.kind)) return { ...draft, widget };
     // s2 lists: the stored list, whole, in its order; a placeholder ("Select One") is no option to choose.
     const { optionsPartial: _, ...whole } = draft;
     return { ...whole, options: list.map((label, index) => optionOf(index, label, '', !isUsableOption(label), false)),
-      widget: { ...widget, knownOptions: list, knownFrom: known !== undefined ? 'adapter' : 'learned' } };
+      widget: { ...widget, knownOptions: list, knownFrom: known !== undefined ? from ?? 'adapter' : 'learned' } };
   }
   return read(reading, widget.kind === 'combobox' && reading.multiselectable ? 'multiselect' : widget.kind);
 }

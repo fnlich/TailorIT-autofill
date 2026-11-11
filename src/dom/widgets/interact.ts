@@ -30,8 +30,11 @@
  * signal, never a fixed sleep. While the person may Skip the write (v3 Phase 3: WidgetContext.runSignal), its Skip
  * ends the waits too; what the write had done to its widget is then put back (its typed text, its open list) through
  * skipTidyContext: a fresh, short-capped signal that only the run's own end aborts.
- * jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a choice presses the element its adapter names (chooseResult: pressTargetOf,
- * with the declared event).
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3):
+ * - a list its adapter declares outside the form root's own tree (another shadow tree: SmartRecruiters' menus; a portal
+ *   at the end of the body: ADP's) is watched directly, with the hosts of rows slotted into it (watchList): the form
+ *   root's observer sees neither;
+ * - a choice presses the element its adapter names (chooseResult: pressTargetOf, with the declared event).
  */
 import type { Adapter } from '../../adapters/types';
 import type { OptionSetHash } from '../../core/types/field';
@@ -44,7 +47,7 @@ import { WIDGET_CAP_MS, WIDGET_QUIET_MS, WIDGET_READY_CAP_MS, WIDGET_READY_QUIET
 import { monotonicNow, startDeadline } from '../time';
 import type { WidgetTarget } from '../types';
 import { followsItsField, isUserVisible, stopsFollowing } from '../visibility';
-import { pressTargetOf, widgetListOf } from './aria';
+import { optionElementsOf, pressTargetOf, widgetListOf } from './aria';
 import { listState, widgetBusy } from './options';
 
 /** What acting on a widget needs. */
@@ -135,13 +138,26 @@ export function expandedState(widget: WidgetTarget): boolean | null {
 }
 
 /**
- * Watches a widget's list where the form root's observer cannot see it: the list itself when it sits outside the root's
- * own tree (Node.contains and a MutationObserver both stop at a shadow root, and a portal is outside the root). True
- * when anything new is watched now, so the wait goes on one more quiet window.
+ * Watches a widget's list where the form root's observer cannot see it (see the header): the list itself when it sits
+ * outside the root's own tree (Node.contains and a MutationObserver both stop at a shadow root, and a portal is outside
+ * the root), and, for a list its adapter declares, the parents of rows that are not inside it (rows slotted into it from
+ * their host's light tree: WidgetResults.options). True when anything new is watched now, so the wait goes on one more
+ * quiet window.
  */
-function watchList(wait: Pick<QuietWait<unknown>, 'observe'>, _widget: WidgetTarget, listbox: Element | null,
+function watchList(wait: Pick<QuietWait<unknown>, 'observe'>, widget: WidgetTarget, listbox: Element | null,
   root: Element): boolean {
-  return listbox !== null && !root.contains(listbox) && wait.observe(listbox);
+  if (listbox === null) return false;
+  let added = false;
+  if (!root.contains(listbox)) added = wait.observe(listbox) || added;
+  if (widget.results?.options !== undefined) {
+    for (const row of optionElementsOf(listbox, widget.results)) {
+      const parent = row.parentNode;
+      if (parent !== null && parent !== listbox && !listbox.contains(parent) && !root.contains(parent)) {
+        added = wait.observe(parent) || added;
+      }
+    }
+  }
+  return added;
 }
 
 /** Waits for the page to answer one action on a widget: a quiet window with no busy sign of the widget's own, at most
