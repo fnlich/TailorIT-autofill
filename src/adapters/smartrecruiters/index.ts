@@ -43,15 +43,19 @@
  * - Never pressed: the posting's SmartR button, "Refer a friend", its share links and cookie settings; the one-click
  *   page's Apply with Indeed and SEEK (and the LinkedIn widget's frame), the Experience and Education "Add" buttons, the
  *   screening step's Back and every page's "Cookie Settings".
+ * - jr6 SR-11: a drop zone that shows a file (spl-dropzone's shadow ul.c-spl-file-list > li.c-spl-file-list-item) holds
+ *   it (uploadHeld), named by its .c-spl-file-list-item-name (uploadHeldNames), and a file the run put in is uploaded
+ *   once a row names it (uploadState); the Easy Apply drop zone (hidefilelist) shows no list and holds nothing here.
  * - jr6 C3 (APPLYPLAN, SP\jr6\audit\apply-c.md C3; BUILD.md §4): the one-click form is drawn by SmartRecruiters' Angular
  *   app from data it fetches, after the content script starts: quirks.formLateMs 30 s (Jobright's entry flow polls 15 s
  *   for the personal-information box).
- * Nothing here reads, logs or sends a value.
+ * Nothing here logs or sends a value. A page's own value is read only in the frame and only to compare it: the names a
+ * drop zone shows (uploadHeldNames, uploadState).
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
-import type { Adapter, WidgetDecl } from '../types';
+import type { Adapter, UploadState, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, matchesUrl, parseSmartRecruitersUrl } from './url';
 
 /** The snapshots the hooks were written from (fixtures/smartrecruiters/). */
@@ -219,6 +223,48 @@ function uploadWidgets(root: Element): Array<{ control: Element; input: HTMLInpu
   });
 }
 
+// ── jr6 SR-11 (FIXPLAN §6.9 item 5): a file a drop zone shows ──
+/** Text with its runs of white space made one space, trimmed. */
+const words = (text: string | null | undefined): string => (text ?? '').replace(/\s+/g, ' ').trim();
+
+/** The drop zone a file input sits in, where it shows its file list (module header): the input's host, an spl-dropzone
+ *  without hidefilelist (the Easy Apply drop zone hides its list); null for any other input. */
+function listingZoneOf(input: HTMLInputElement): Element | null {
+  const zone = hostOf(input);
+  return input.type === 'file' && zone?.localName === 'spl-dropzone' && !zone.hasAttribute('hidefilelist') ? zone : null;
+}
+
+/** The names a drop zone's file list shows (jr6-wiser-one-click.html and jr6-xplor-one-click-filled.html: <spl-dropzone
+ *  data-test="resume-upload" ...> > (shadow) <ul class="c-spl-file-list"><li class="c-spl-file-list-item"> ... <span
+ *  class="c-spl-file-list-item-name">NAME</span> ... a "Delete file NAME" button), each as a person reads it; none on
+ *  a blank page (xplor-one-click.html: an empty ul.c-spl-file-list). */
+function shownFileNames(zone: Element): string[] {
+  return Array.from(zone.shadowRoot?.querySelectorAll('ul.c-spl-file-list > li.c-spl-file-list-item') ?? [])
+    .map((row) => words(row.querySelector('.c-spl-file-list-item-name')?.textContent));
+}
+
+/** The drop zone shows a file in its list (module header), whatever its name: the field holds a file. */
+function uploadHeld(input: HTMLInputElement): boolean {
+  const zone = listingZoneOf(input);
+  return zone !== null && shownFileNames(zone).length > 0;
+}
+
+/** The names of the files the drop zone shows (module header), the ones it shows with a name. */
+function uploadHeldNames(input: HTMLInputElement): string[] {
+  const zone = listingZoneOf(input);
+  return zone === null ? [] : shownFileNames(zone).filter((name) => name !== '');
+}
+
+/** A file the run put into a drop zone's input (module header): uploaded ('confirmed') once a row of its list names it;
+ *  'pending' until then; null for an input of no listing drop zone (its own files decide). */
+function uploadState(input: HTMLInputElement, fileName: string): UploadState | null {
+  const zone = listingZoneOf(input);
+  if (zone === null) return null;
+  const wanted = words(fileName);
+  return wanted !== '' && shownFileNames(zone).includes(wanted) ? 'confirmed' : 'pending';
+}
+// ── end jr6 SR-11 ──
+
 /** An oc-button's own button: <oc-button type="primary" data-test="footer-next"><spl-button ...> > (shadow) <button
  *  class=" c-spl-button-wrapper c-spl-button c-spl-button--primary " type="button" ...>. */
 function buttonOf(doc: Document, test: string): HTMLElement | null {
@@ -305,6 +351,10 @@ export const smartRecruitersAdapter: Adapter = {
   // The core pass of 2026-11-06: a screening Yes/No question's fieldset says it is required.
   requiredFor,
   uploadWidgets,
+  // jr6 SR-11: the file a drop zone shows.
+  uploadHeld,
+  uploadHeldNames,
+  uploadState,
   nextButton,
   submitButton,
   isFinalStep,
