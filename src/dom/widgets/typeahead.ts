@@ -58,21 +58,36 @@
  * way, for an option the planner chose already on the list's whole read: one query, the option's own words
  * (optionQuery: "Canada" for "Canada +1"), a guarded write as each of a typeahead's is, and of what the list then shows
  * the one result that is that option as the page shows it (searchedOption) is clicked; no worker matches the results.
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1, 2, 3 and 5):
+ * - a widget's text box may be one its adapter declares beside it (WidgetDecl.input: iCIMS's dropdown, whose anchor
+ *   opens a container drawn next to it, whose search box takes the query, as Jobright's ~contents/sites/icims
+ *   client-search-widget openIcimsSearchDropdown opens it and types into input.dropdown-search): the widget is opened
+ *   first while that box is not shown, and the query is typed only into a box a person can see, enabled and writable;
+ * - a query shorter than the widget's declared minimum (WidgetDecl.minQueryLength: SmartRecruiters' minquerylength) is
+ *   never typed;
+ * - a declared list's rows are read and pressed as its adapter declares them (WidgetResults.options, pressTarget);
+ * - a search whose typed text stands where no result matches (WidgetDecl.freeText: UltiPro's School Name, a free-text
+ *   box whose suggestions only help, typed as plain text by Jobright's ~contents/sites/ultipro rules) keeps the planner's
+ *   first query when its queries found nothing to choose, instead of the box being put back: typed again where another
+ *   query is in the box (that write guarded too), then change, focusout and blur, its list closed, and read back by the
+ *   box's value (TypeaheadResult.freeText). A guard's refusal, the person's Skip, a gone field or a result the page did
+ *   not take still put the box back as before; searchForOption (an option already planned) never keeps free text.
  */
 import { searchedOption } from '../../core/matcher/listSearch';
 import { MAX_SEARCH_QUERIES } from '../../core/matcher/searchLimits';
 import type { ReasonCode } from '../../core/types/fill';
 import { fireChange, fireInput, fireLeave, setValue, windowOf } from '../fillers/events';
-import { assertNotSubmit } from '../fillers/not-submit';
+import { isDisabled, isReadOnly } from '../kinds';
 import { sameOptionLabel } from '../fillers/verify';
 import { SEARCH_FIELD_BUDGET_MS, TYPEAHEAD_QUERY_CAP_MS } from '../thresholds';
 import { monotonicNow } from '../time';
 import type { FieldTarget, WidgetOptionRead } from '../types';
-import { isChosen } from './aria';
+import { isUserVisible } from '../visibility';
+import { isChosen, selectOnly } from './aria';
 import { cleanOptionLabel } from '../option-hash';
 import {
-  activateAndAwait, afterAction, afterBridge, awaitList, bridgeChoose, closeList, closingContext, expandedState,
-  openListOf, pressQueryKey, skipTidyContext, type WidgetContext,
+  activateAndAwait, afterAction, afterBridge, awaitList, bridgeChoose, chooseResult, closeList, closingContext,
+  expandedState, openListOf, pressAllowed, pressQueryKey, skipTidyContext, type WidgetContext,
 } from './interact';
 import { chosenLabels, hashOfRead, readList, revealOption, shownOptions } from './options';
 
@@ -99,6 +114,16 @@ export interface TypeaheadResult {
   blocked: boolean;
   /** The queries typed. */
   typed: number;
+  /** jr6 ENGINE E1 (FIXPLAN §6.2 item 5): nothing was chosen, and the typed text stands as the answer of a search its
+   *  adapter declares free text (WidgetDecl.freeText): this text, `verified` when the box reads it back. Memory only. */
+  freeText?: string;
+}
+
+/** What else a search may do. */
+export interface SearchOptions {
+  /** jr6 ENGINE E1: whether a widget declared free text keeps the planner's first query when nothing matched (a
+   *  remote typeahead's search does; a long list's search for an option already planned, or for its "Other", never). */
+  freeText?: boolean;
 }
 
 /** Types one query into the text box: the prototype setter, then the input event a replacement of the whole value
@@ -111,7 +136,19 @@ function typeQuery(input: HTMLInputElement | HTMLTextAreaElement, query: string)
 /** The option-set hash of what the widget's list shows now, or null when it shows no list. */
 function shownHash(widget: NonNullable<FieldTarget['widget']>): ReturnType<typeof hashOfRead> | null {
   const listbox = openListOf(widget);
-  return listbox === null ? null : hashOfRead(shownOptions(listbox, undefined, widget.optionLabel, widget.results?.option));
+  return listbox === null ? null : hashOfRead(shownOptions(listbox, undefined, widget.optionLabel, widget.results,
+    widget.results?.unchoosable));
+}
+
+/** jr6 ENGINE E1 (FIXPLAN §6.2 item 2): whether a widget's text box is one its adapter declares beside it, outside its
+ *  element (WidgetDecl.input: iCIMS's search box): typed into only once a person can see it. */
+function boxBeside(widget: NonNullable<FieldTarget['widget']>): boolean {
+  return widget.input !== null && selectOnly(widget);
+}
+
+/** jr6 ENGINE E1: whether a box beside its widget may take a query now: shown, enabled and writable. */
+function boxTakes(box: HTMLInputElement | HTMLTextAreaElement): boolean {
+  return box.isConnected && isUserVisible(box) && !isDisabled(box) && !isReadOnly(box);
 }
 
 /** Types one query (typeQuery) into a widget that declares a key to start its search (WidgetDecl.queryKey), and
@@ -132,27 +169,6 @@ async function typeWatched(box: HTMLInputElement | HTMLTextAreaElement, query: s
   } finally {
     observer.disconnect();
   }
-}
-
-/** The element a result is pressed on (s2 wd): its label part where its adapter declares so (WidgetDecl.results.choose
- *  'label': Workday's promptOption inside the row's promptLeafNode, so the click goes through the page's own row element
- *  to the result), else the result itself. */
-function pressTargetOf(widget: NonNullable<FieldTarget['widget']>, option: Element): Element {
-  if (widget.results?.choose !== 'label') return option;
-  const part = widget.optionLabel?.(option) ?? null;
-  return part !== null && part !== option && option.contains(part) ? part : option;
-}
-
-/** Chooses a result (v4, drop): the one event its adapter declared for the widget's results (WidgetDecl.results.choose:
- *  Lever's location search chooses on a mousedown, bubbling to its document's listener, with the main button), else
- *  click() on it, or (s2 wd, 'label') on its label part (pressTargetOf). assertNotSubmit has passed both. */
-function chooseResult(widget: NonNullable<FieldTarget['widget']>, option: Element): void {
-  if (widget.results?.choose === 'mousedown') {
-    const view = windowOf(option);
-    option.dispatchEvent(new view.MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true, button: 0 }));
-    return;
-  }
-  (pressTargetOf(widget, option) as HTMLElement).click();
 }
 
 /** A box's text as compared: white space collapsed, any case. */
@@ -204,7 +220,8 @@ function keepsListOpen(widget: NonNullable<FieldTarget['widget']>, before: strin
 /** Searches a remote typeahead with the planner's queries (see the header); `budgetMs` is the time after which no
  *  further query is typed (SEARCH_FIELD_BUDGET_MS). */
 export async function searchTypeahead(target: FieldTarget, queries: readonly string[], ctx: WidgetContext,
-  hooks: TypeaheadHooks, budgetMs: number = SEARCH_FIELD_BUDGET_MS): Promise<TypeaheadResult> {
+  hooks: TypeaheadHooks, budgetMs: number = SEARCH_FIELD_BUDGET_MS, options: SearchOptions = {}):
+  Promise<TypeaheadResult> {
   const input = target.widget?.input ?? null;
   const started = monotonicNow();
   let typed = 0;
@@ -215,6 +232,8 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
   let reacted = false;
   let reason: ReasonCode = 'no-match';
   let current = target;
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 5): the first query typed, the free text a freeText search keeps.
+  let firstTyped: string | null = null;
   const giveUp = async (why: ReasonCode, blocked = false): Promise<TypeaheadResult> => {
     const widget = current.widget!;
     const closing = closingContext(ctx);
@@ -230,11 +249,46 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
   // context); by the run's own end, nothing more is done.
   const ended = (): Promise<TypeaheadResult> => (skipTidyContext(ctx) === null ? Promise.resolve(none('internal-error'))
     : giveUp('internal-error'));
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 5, U-04): a search whose queries found nothing to choose, on a widget its adapter
+  // declares free text (WidgetDecl.freeText: UltiPro's School Name, which Jobright's ~contents/sites/ultipro rules type
+  // as plain text), keeps the first query typed instead of the box being put back (see the header); else `why` gives up.
+  const nothingChosen = async (why: ReasonCode): Promise<TypeaheadResult> => {
+    if (options.freeText === false || current.widget?.freeText !== true || firstTyped === null) return giveUp(why);
+    return keepFreeText(firstTyped);
+  };
+  const keepFreeText = async (text: string): Promise<TypeaheadResult> => {
+    let widget = current.widget!;
+    let box = widget.input ?? input;
+    if (tidy(box.value) !== tidy(text)) {
+      // Another query is in the box: the free text is typed again, a guarded write as each query is.
+      const guarded = await hooks.guard(text);
+      if (ctx.signal?.aborted) return ended();
+      if (!guarded.ok) return giveUp(guarded.reason, guarded.blocked);
+      current = guarded.target;
+      const now = current.widget;
+      if (now === undefined || now.input === null) return giveUp('element-not-found');
+      widget = now;
+      box = now.input!;
+      if (boxBeside(widget) && !boxTakes(box)) return giveUp('needs-your-click');
+      typeQuery(box, text);
+    }
+    // The text filler's commit: change, then focusout and blur, so the page's binding takes the text; its list closed.
+    fireChange(box);
+    fireLeave(box);
+    await afterAction(widget, closingContext(ctx));
+    await closeList(widget, closingContext(ctx), { activated: false });
+    const verified = box.isConnected && tidy(box.value) === tidy(text);
+    return { chosen: null, verified, reason: verified ? 'ok' : 'verify-mismatch', blocked: false, typed, freeText: text };
+  };
 
   for (const [at, query] of queries.slice(0, MAX_SEARCH_QUERIES).entries()) {
     if (ctx.signal?.aborted) return ended();
     // v4 (drop): the field's time budget, checked before each query after the first.
     if (at > 0 && monotonicNow() - started >= budgetMs) break;
+    // jr6 ENGINE E1 (FIXPLAN §6.2 item 3, SR-2): a query shorter than the page's own minimum is never typed
+    // (WidgetDecl.minQueryLength: SmartRecruiters' minquerylength); the next one is tried.
+    const minimum = current.widget?.minQueryLength;
+    if (minimum !== undefined && query.length < minimum) continue;
     // The page hid the rest of the form behind the last query's open list: it is closed before the guard scans.
     if (typed > 0 && current.widget?.hidesFormWhileOpen === true) {
       await closeList(current.widget, ctx, { activated: false });
@@ -249,12 +303,18 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     if (widget === undefined || box === null) return giveUp('element-not-found');
     // A query longer than the box takes is never cut: the next one is tried.
     if (box.maxLength >= 0 && query.length > box.maxLength) continue;
-    if (expandedState(widget) === false) {
+    // jr6 ENGINE E1 (FIXPLAN §6.2 item 2): a box its adapter declares beside the widget (WidgetDecl.input: iCIMS's
+    // search box, in the container its anchor opens) is shown by opening the widget first, as a closed one is.
+    const beside = boxBeside(widget);
+    const shut = expandedState(widget) === false;
+    if (shut || (beside && !boxTakes(box) && expandedState(widget) !== true)) {
       const opened = await activateAndAwait(widget, ctx);
       if (opened.status === 'aborted') return ended();
       if (opened.status === 'gone') return giveUp('element-not-found');
       if (opened.status !== 'answered') return giveUp('needs-your-click');
     }
+    // Never typed into a box beside the widget that a person cannot see, or that takes no text.
+    if (beside && !boxTakes(box)) return giveUp('needs-your-click');
     const prevHash = shownHash(widget);
     // v4 (drop): a search that starts on a keydown gets its declared key (WidgetDecl.queryKey: Lever's), once the page
     // has answered typed text itself (this query, at once, or an earlier one): a page that ignores the input event gets
@@ -265,19 +325,22 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
       pressQueryKey(widget, ctx);
     }
     typed += 1;
+    if (firstTyped === null) firstTyped = query;
     // A search its adapter says answers "nothing" sooner than the cap (WidgetDecl.emptyAfterMs: Ashby's "No results")
     // ends there.
     const wait = await awaitList(widget, ctx, { prevHash, capMs: TYPEAHEAD_QUERY_CAP_MS,
       ...(widget.emptyAfterMs === undefined ? {} : { emptyAfterMs: widget.emptyAfterMs }) });
     if (wait.status === 'aborted') return ended();
     // A page that does not react at all to a query ignores untrusted input: it is never tried another way. A list the
-    // page filters at once, inside our input event, has changed before the wait watched it: that is an answer too.
-    if (!wait.mutated && !reacted && shownHash(widget) === prevHash) return giveUp('needs-your-click');
+    // page filters at once, inside our input event, has changed before the wait watched it: that is an answer too. jr6
+    // ENGINE E1: a free-text search keeps what was typed there (nothing matched it).
+    if (!wait.mutated && !reacted && shownHash(widget) === prevHash) return nothingChosen('needs-your-click');
     reacted = true;
     const listbox = openListOf(widget);
     if (wait.status !== 'ready' || listbox === null) continue;
+    // jr6 ENGINE E1 (FIXPLAN §6.2 item 1): the declared rows whole (WidgetResults.options too).
     const read = await readList(listbox, { signal: ctx.signal, labelOf: widget.optionLabel,
-      ...(widget.results === undefined ? {} : { option: widget.results.option }),
+      ...(widget.results === undefined ? {} : { option: widget.results }),
       // s2 wd: a result that only opens a list of its own is read as one that cannot be chosen.
       ...(widget.results?.unchoosable === undefined ? {} : { unchoosable: widget.results.unchoosable }) });
     if (ctx.signal?.aborted) return ended();
@@ -326,12 +389,10 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     // After a choice the bridge said it made, nothing ends as "nothing chosen": React may hold it.
     const stop = (why: ReasonCode) => (sent ? Promise.resolve(chosenOf(false)) : giveUp(why));
     const option = await revealOption(listbox, picked, { signal: ctx.signal, labelOf: widget.optionLabel,
-      ...(widget.results === undefined ? {} : { option: widget.results.option }) });
+      ...(widget.results === undefined ? {} : { option: widget.results, unchoosable: widget.results.unchoosable }) });
     if (ctx.signal?.aborted) return sent ? stop('internal-error') : ended();
-    if (option === null) return stop('options-changed');
-    if (!assertNotSubmit(option.el, ctx).ok || !assertNotSubmit(pressTargetOf(widget, option.el), ctx).ok) {
-      return stop('needs-your-click');
-    }
+    if (option === null || option.disabled) return stop('options-changed');
+    if (!pressAllowed(widget, option.el, ctx)) return stop('needs-your-click');
     const markedBefore = marked(widget, option.el);
     chooseResult(widget, option.el);
     await afterAction(widget, ctx);
@@ -349,7 +410,7 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     return { chosen: { ...choice, results }, verified, reason: verified ? 'ok' : 'verify-mismatch', blocked: false,
       typed };
   }
-  return giveUp(reason);
+  return nothingChosen(reason);
 }
 
 /** Searches a long list for the option planned on it (see the header): `query` typed through `guard`, as a typeahead's
@@ -364,5 +425,5 @@ export async function searchForOption(target: FieldTarget, planned: { label: str
       return index === null ? { choose: null, reason: 'no-match', blocked: false }
         : { choose: { index, cleanLabel: planned.cleanLabel } };
     },
-  });
+  }, SEARCH_FIELD_BUDGET_MS, { freeText: false });
 }

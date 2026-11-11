@@ -13,13 +13,19 @@
  *   declared combobox is never made a search, and a declared search is read as one without being opened); one that
  *   ignores our activation is needs-your-click;
  * - widgetHolds: the read-back after the pass's settle (hold.ts);
+ * - fillTags (jr6 ENGINE E3, FIXPLAN §6.2 item 13): a box of several answers its adapter declares (WidgetDecl.tags),
+ *   each value typed and added, or searched for and its own result chosen, and read back by its chips (tags.ts);
  * - chooseThroughBridge: React first (docs/SPEC-AMENDMENTS.md §12): a combobox its adapter declares for the page-world
  *   bridge has its planned option chosen by its own React code, then read back (fill.ts); fillWidget tries it first,
  *   and content/pass.ts before a long list's search, once per write (WidgetContext.bridgeTried).
  * A widget is acted on only when standard ARIA says where its list is (or it is a group whose members carry their own
  * state), or its adapter declares where a search's results are from a capture (v4: WidgetDecl.results, Lever's
  * location search; s2 wd: Workday's prompts, their list found anew by the adapter's hook): a widget an adapter declares
- * without either is widget-unsupported, never typed into.
+ * without either is widget-unsupported, never typed into. jr6 ENGINE E1 (FIXPLAN §6.2 items 1, 4 and 12): a combobox or
+ * multiselect its adapter declares with a results list is read by its declared rows; one no adapter declares whose
+ * popup ARIA says is a grid or a tree, or for which ARIA finds no list at all while it holds no text box, is refused
+ * before any click (aria.ts refusedUndeclared); and an activation the page answered with no list a reader finds is put
+ * back at once (interact.ts closeUnlisted), never left open nor read as a remote search where it is refused.
  * The events are interact.ts's: click() through assertNotSubmit (or the adapter's one declared mousedown, mouseup or
  * focus), the text filler's input, change, focusout and blur, a key the adapter declares for the widget, and a list's
  * own scrollTop set as a property; before any of them, for a widget declared for it, one command to the page-world
@@ -32,12 +38,12 @@ import { OPTIONS_CAP_MS, WIDGET_EMPTY_AFTER_MS } from '../thresholds';
 import type { FieldTarget, FillOutcome, WidgetReading } from '../types';
 import { filtersAsTyped, isActionable, isMultiselectable } from './aria';
 import { addOptions, chooseOption, keepReading, learnRead, pressMember, type WidgetFillContext } from './fill';
-import { awaitList, closeList, openList } from './interact';
+import { awaitList, closeList, closeUnlisted, openList } from './interact';
 import { readList, type ListRead } from './options';
 
 export {
-  ariaWidgetKind, editableOf, isActionable, isWidgetPart, listOf, membersOf, searchesList, widgetListOf,
-  WIDGET_ROOT_SELECTOR,
+  ariaWidgetKind, editableOf, isActionable, isWidgetPart, listOf, membersOf, pressTargetOf, refusedUndeclared,
+  searchesList, selectOnly, widgetListOf, WIDGET_ROOT_SELECTOR,
 } from './aria';
 export { chooseThroughBridge, keepReading, remember, type BridgeAttempt, type WidgetFillContext } from './fill';
 export {
@@ -45,11 +51,17 @@ export {
 } from './known';
 export { widgetHolds } from './hold';
 export {
-  afterAction, afterBridge, awaitPageReady, bridgeChoose, closeList, expandedState, newBridgeRun, newReadiness, openList,
-  pressDeclaredKey, type BridgeChoice, type BridgeRun, type WidgetContext, type WidgetReadiness,
+  afterAction, afterBridge, awaitPageReady, bridgeChoose, chooseResult, closeList, closeUnlisted, expandedState,
+  newBridgeRun, newReadiness, openList, pressDeclaredKey, type BridgeChoice, type BridgeRun, type WidgetContext,
+  type WidgetReadiness,
 } from './interact';
 export { chosenLabels, hashOfRead, memberLabel, readList, readShownList, shownOptions, widgetCurrentValue } from './options';
-export { searchForOption, searchTypeahead, type TypeaheadHooks, type TypeaheadResult } from './typeahead';
+export {
+  searchForOption, searchTypeahead, type SearchOptions, type TypeaheadHooks, type TypeaheadResult,
+} from './typeahead';
+// jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers (WidgetDecl.tags).
+export { fillTags, type TagsHooks, type TagsResult } from './tags';
+export { holdsTags, tagsShowChip, tagValues } from './tag-chips';
 
 /** Writes one planned value into a widget (fill.ts); a query is searchTypeahead's. `origin` is the write's: an
  *  llm-pick is checked once more on what the widget shows right before its click (the Phase 4 review, R1). */
@@ -105,13 +117,20 @@ export async function readWidget(target: FieldTarget, ctx: WidgetFillContext): P
   if (!opened.open) {
     if (opened.reason === 'aborted') return { status: 'aborted' };
     if (opened.reason === 'gone') return { status: 'gone' };
+    // jr6 ENGINE E1 (FIXPLAN §6.2 item 12): what our activation opened with no list a reader finds is put back.
+    if (opened.reason === 'no-list' && opened.activated) await closeUnlisted(widget, ctx);
+    if (ctx.signal?.aborted) return { status: 'aborted' };
     if (opened.reason !== 'refused' && searches) return keep({ kind: 'remote' });
     return { status: 'unread', reason: opened.reason === 'no-list' ? 'widget-unsupported' : 'needs-your-click' };
   }
   const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
   if (wait.status === 'aborted') return { status: 'aborted' };
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 1, oracle-new-1): a declared list is read by its declared rows, its unchoosable ones
+  // read as rows that cannot be chosen.
+  const results = widget.results;
   const read = wait.status === 'ready' ? await readList(opened.listbox, { signal: ctx.signal, labelOf: widget.optionLabel,
-    drawnWhole: widget.drawnWhole === true }) : null;
+    drawnWhole: widget.drawnWhole === true, ...(results === undefined ? {} : { option: results }),
+    ...(results?.unchoosable === undefined ? {} : { unchoosable: results.unchoosable }) }) : null;
   const multiselectable = isMultiselectable(opened.listbox);
   await closeList(widget, ctx, opened);
   if (ctx.signal?.aborted) return { status: 'aborted' };

@@ -8,6 +8,8 @@
  * of 2026-11-06: core/resolver/yesNoPair.ts, JazzHR's two-box questions) is read back as the Yes/No radio it asks: its
  * planned box ticked and the other not. An ARIA widget is read back by what it shows chosen (widgets/hold.ts).
  * A page that reformats a value equivalently still verifies; one that rejects it (an empty value, aria-invalid) does not.
+ * jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers is read back by its chips (widgets/tag-chips.ts); one
+ * at its cap that misses some of the planned values is max-selections-reached.
  */
 import { isYesNoPair } from '../../core/resolver/yesNoPair';
 import { qualifiedLabel } from '../../core/text/keys';
@@ -18,6 +20,7 @@ import { cleanOptionLabel } from '../option-hash';
 import { readBackTextOf } from '../values';
 import type { FieldTarget, FillOutcome, ReadBackRule, ScannedField, ScanResult } from '../types';
 import { widgetHolds } from '../widgets/hold';
+import { tagsFull } from '../widgets/tag-chips';
 import { dateValueFor } from './date';
 import { holdsDateParts } from './date-parts';
 
@@ -119,12 +122,20 @@ export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule
   }
 }
 
-/** True when the page marked the field invalid: aria-invalid="true" on the control or a group member. */
+/** True when the page marked the field invalid: aria-invalid="true" on the control or a group member (jr6 ENGINE E3: or,
+ *  for a date drawn in parts, the alert its page shows for it). */
 export function markedInvalid(target: FieldTarget): boolean {
   // s2 wd: a date drawn in parts is marked on its parts' controls too.
   const elements: Element[] = [target.control, ...target.members,
     ...(target.dateParts?.parts.map((part) => part.input) ?? [])];
-  return elements.some((el) => (el.getAttribute('aria-invalid') ?? '').trim().toLowerCase() === 'true');
+  if (elements.some((el) => (el.getAttribute('aria-invalid') ?? '').trim().toLowerCase() === 'true')) return true;
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 15, WD-23): or by the alert its page shows for it (DatePartsTarget.alert: Workday's
+  // "Invalid Date" under the date), a hook that throws showing none.
+  try {
+    return (target.dateParts?.alert?.() ?? null) !== null;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -143,7 +154,11 @@ export function verifyAfterSettle(fresh: ScanResult, key: FieldKey, value: Write
     : isDisabled(target.control) || isReadOnly(target.control);
   if (unwritable) return { verification: 'mismatch', reason: 'disabled-or-readonly' };
   const rule = options.rule ?? readBackRuleOf(target.field);
-  if (!holds(target, value, rule, options.file)) return { verification: 'mismatch', reason: 'verify-mismatch' };
+  if (!holds(target, value, rule, options.file)) {
+    // jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers that took its `cap` of chips holds no more of them.
+    const full = target.widget?.tags !== undefined && tagsFull(target.widget.tags);
+    return { verification: 'mismatch', reason: full ? 'max-selections-reached' : 'verify-mismatch' };
+  }
   if (markedInvalid(target)) return { verification: 'mismatch', reason: 'value-rejected-by-site' };
   return { verification: 'verified', reason: 'ok' };
 }
