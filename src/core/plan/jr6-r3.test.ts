@@ -311,4 +311,16 @@ describe('48 (ICIMS-26, JV-16): time zones, years in something, experience with 
     expect(planned([rust], rust).write).toBeUndefined();
     expect(scopes([rust])).toEqual(['standard']);
   });
+  // jr6 fix (RULES-R48-EXPERIENCE-WITH-USING, REVC-8): VHL's own wording (jr6-vhl-step3-filled, Questions 4 and 5) is
+  // "experience with using <tool>"; the tool is what follows "using".
+  it('reads past "using" in "experience with using <tool>" (VHL\'s Questions 4 and 5)', () => {
+    const held = specOf('Question 5: Do you have experience with using Kubernetes?', 'radio', {
+      optionLabels: YES_NO, required: true });
+    expect(planned([held], held).write).toMatchObject({ value: { cleanLabel: 'Yes' },
+      origin: { provenance: 'rule', ruleId: 'skills.experience-with', path: 'skills' } });
+    const aws = specOf('Question 4: Do you have experience with using AWS cloud infrastructure?', 'radio', {
+      optionLabels: YES_NO, required: true });
+    expect(planned([aws], aws).write).toBeUndefined();
+    expect(scopes([aws])).toEqual(['standard']);
+  });
 });

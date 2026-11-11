@@ -1108,8 +1108,10 @@ export const IN_TIME_ZONE = /\b(?:reside|resides|residing|live|lives|living|loca
  *  captured). */
 export const YEARS_IN = /^(?:do|have)\s+you\s+(?:have\s+)?(?:at\s+least\s+|a\s+minimum\s+of\s+)?(\d{1,2})\s+(?:or\s+more\s+)?years?\s+(?:of\s+)?(?:(?:professional|relevant|hands\s+on|work|working|industry)\s+)*experience\s+(?:in|as|with|working\s+(?:in|as|with))\s+(.+)$/;
 /** jr6 RULES R3 (JV-16: VHL's "Question 4: Do you have experience with …?"): experience with or using a tool (it
- *  captured), no number of years; never "experience in" a field ("in marketing": the AI's, as before). */
-export const EXPERIENCE_WITH = /^(?:do|have)\s+you\s+(?:have\s+)?(?:any\s+)?(?:(?:prior|previous|professional|hands\s+on|practical)\s+)*experience\s+(?:with|using|working\s+with)\s+(.+)$/;
+ *  captured), no number of years; never "experience in" a field ("in marketing": the AI's, as before). jr6 fix
+ *  (RULES-R48-EXPERIENCE-WITH-USING, REVC-8): VHL's own wording "experience with using Terraform" captures the tool, not
+ *  "using terraform". */
+export const EXPERIENCE_WITH = /^(?:do|have)\s+you\s+(?:have\s+)?(?:any\s+)?(?:(?:prior|previous|professional|hands\s+on|practical)\s+)*experience\s+(?:with\s+(?:using\s+)?|using\s+|working\s+with\s+)(.+)$/;
 /** jr6 RULES R3: what experience with a tool is never asked about: a self-identification, legal, pay or consent topic
  *  ("experience with sponsorship sales", "racial equity programs": the person's own, as the sensitive screen reads them),
  *  a government's or another client's work (the AI's, as before). */
