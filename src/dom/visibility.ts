@@ -104,6 +104,33 @@ export function stopsFollowing(list: Element): void {
   if (box !== null) FOLLOWING_FIELDS.delete(box);
 }
 
+// ── jr6 ENGINE E2 (FIXPLAN §6.2 item 10, ADP-6): what a modal's focus trap alone hides ──
+/** The caches whose judgments lift a focus trap's aria-hidden (visibleBesideFocusTrap): fresh ones, each for one
+ *  check, so no other judgment ever reads them. */
+const TRAP_LIFTED = new WeakSet<ScanCache>();
+
+/**
+ * Whether a person could see `el` but for the aria-hidden a modal's focus trap set on the page around it: judged as
+ * isUserVisible is, with an aria-hidden="true" lifted only where its element carries data-old-aria-hidden, the value it
+ * had before the trap, and that value was not "true" (ADP's SDF focus trap, around its BrightJump promo pane after a
+ * Submit: <div data-old-aria-hidden="null" aria-hidden="true">, the jr6 ADP audit's ADP-6, snapshot6 adp1 and adp2).
+ * Every other kind of hiding still hides (the hidden and inert attributes, an aria-hidden the page set itself,
+ * display, visibility, opacity, size, place, clipping). Only adapters/success.ts asks it, for a success rule's sign
+ * while that rule's modal (SuccessRule.underModal) is open.
+ */
+export function visibleBesideFocusTrap(el: Element): boolean {
+  const cache = newScanCache();
+  TRAP_LIFTED.add(cache);
+  return visibilityOf(el, cache).visible;
+}
+
+/** An aria-hidden a focus trap set (visibleBesideFocusTrap): the element keeps its value from before, not "true". */
+function trapHidden(el: Element): boolean {
+  const before = el.getAttribute('data-old-aria-hidden');
+  return before !== null && before.trim().toLowerCase() !== 'true';
+}
+// ── end jr6 ENGINE E2 item 10 ──
+
 /** isUserVisible with the rule that decided. */
 export function visibilityOf(el: Element, cache: ScanCache = newScanCache()): VisibilityVerdict {
   return cache.memo('visibility', el, () => judgeElement(el, cache));
@@ -218,7 +245,8 @@ function factsOf(el: Element, cache: ScanCache): Facts {
     const inherited = parent === null ? null : factsOf(parent, cache);
     const style = styleOf(el, cache);
     const opacity = (inherited?.opacity ?? 1) * opacityValue(style?.opacity) * filterOpacity(style?.filter);
-    const own = ownHidingRule(el, style, parent, parent === null ? null : styleOf(parent, cache));
+    const own = ownHidingRule(el, style, parent, parent === null ? null : styleOf(parent, cache),
+      TRAP_LIFTED.has(cache)); // jr6 ENGINE
     const hiddenBy = inherited?.contentHiddenBy ?? own ?? (opacity < MIN_OPACITY ? 'opacity' : null);
     const contentHiddenBy = hiddenBy ?? (style?.contentVisibility === 'hidden' ? 'content-visibility' : null);
     const inModal = (inherited?.inModal ?? false) || isOpenModal(el);
@@ -227,10 +255,13 @@ function factsOf(el: Element, cache: ScanCache): Facts {
 }
 
 function ownHidingRule(el: Element, style: CSSStyleDeclaration | null, parent: Element | null,
-  parentStyle: CSSStyleDeclaration | null): VisibilityRule | null {
+  parentStyle: CSSStyleDeclaration | null, trapLifted = false): VisibilityRule | null {
   if (el.hasAttribute('hidden')) return 'hidden-attribute';
   if (el.hasAttribute('inert')) return 'inert';
-  if ((el.getAttribute('aria-hidden') ?? '').trim().toLowerCase() === 'true') return 'aria-hidden';
+  // jr6 ENGINE E2 (item 10): a focus trap's aria-hidden is lifted for visibleBesideFocusTrap's judgment alone.
+  if ((el.getAttribute('aria-hidden') ?? '').trim().toLowerCase() === 'true' && !(trapLifted && trapHidden(el))) {
+    return 'aria-hidden';
+  }
   if (style === null || style.display === 'none') return 'display-none';
   if (parent !== null && isClosedDetails(parent) && summaryOf(parent) !== el) return 'closed-details';
   if (isMasked(style)) return 'mask';
@@ -630,8 +661,9 @@ function holdsFixed(style: CSSStyleDeclaration): boolean {
     || (style.scale !== undefined && style.scale !== 'none' && style.scale !== '');
 }
 
-/** The containing block of an absolutely positioned element: the nearest positioned (or fixed-holding) ancestor. */
-function absoluteContainingBlock(el: Element, cache: ScanCache): Element | null {
+/** The containing block of an absolutely positioned element: the nearest positioned (or fixed-holding) ancestor.
+ *  jr6 ENGINE E2: exported for dom/camouflage.ts heldUnder, whose overflow cuts follow the same blocks. */
+export function absoluteContainingBlock(el: Element, cache: ScanCache): Element | null {
   return cache.memo('abs-block', el, (): Element | null => {
     const parent = flatParent(el);
     if (parent === null) return null;
@@ -641,8 +673,9 @@ function absoluteContainingBlock(el: Element, cache: ScanCache): Element | null 
   });
 }
 
-/** The containing block of a fixed element: the nearest ancestor that holds fixed descendants, else the viewport. */
-function fixedContainingBlock(el: Element, cache: ScanCache): Element | null {
+/** The containing block of a fixed element: the nearest ancestor that holds fixed descendants, else the viewport.
+ *  jr6 ENGINE E2: exported for dom/camouflage.ts heldUnder, as absoluteContainingBlock is. */
+export function fixedContainingBlock(el: Element, cache: ScanCache): Element | null {
   return cache.memo('fixed-block', el, (): Element | null => {
     const parent = flatParent(el);
     if (parent === null) return null;

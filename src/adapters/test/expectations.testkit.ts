@@ -12,7 +12,8 @@
  *   helpers act on (Greenhouse's react-selects), of the entry's kind (kinds are compared only there: a widget's kind is
  *   otherwise descriptive), shown with a visible label, neither camouflaged, disabled nor read-only. A
  *   'widget-phase-4' entry must be a field the fillers refuse as widget-unsupported (a lazy combobox or a typeahead no
- *   adapter declares, or one it declares that no helper acts on);
+ *   adapter declares, or one it declares that no helper acts on; jr6 ENGINE E1, FIXPLAN §6.2 item 12: any widget the
+ *   helpers refuse before any click, whatever its kind, such as a combobox no adapter declares whose popup is a grid);
  * - its section must be the slug of the entry's heading, and its options the entry's count (or 'lazy');
  * - every field the scan reports must belong to exactly one entry.
  * Differences come back as data, so a test shows them all at once and can name the ones a scanner change is waiting
@@ -117,10 +118,15 @@ const FILLED_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['text', 'textar
 
 /** Whether the scan makes a field the fillers would write, and if not, why: 'widget-phase-4', 'no-visible-label',
  *  'camouflaged' (the DOM guard refuses it as not-user-visible) or 'disabled-or-readonly'. A widget its adapter
- *  declares (`widget`, the scan's) that the widget helpers act on is written by them. */
+ *  declares (`widget`, the scan's) that the widget helpers act on is written by them. jr6 ENGINE E1 (FIXPLAN §6.2 item
+ *  12): a widget the helpers do not act on (isActionable false: fillWidget refuses it before any click) is
+ *  'widget-phase-4' whatever its kind: a multiselect, radio or checkbox widget is written by the widget helpers alone,
+ *  never by the native fillers its kind names. */
 export function fillabilityOf(field: ScannedField, widget?: WidgetTarget): { fillable: true } | { fillable: false;
   reason: string } {
-  const helped = widget !== undefined && widget.declared && widget.kind !== 'checkbox' && isActionable(widget);
+  const actionable = widget !== undefined && widget.kind !== 'checkbox' && isActionable(widget);
+  if (widget !== undefined && !actionable) return { fillable: false, reason: 'widget-phase-4' };
+  const helped = actionable && widget?.declared === true;
   if (!FILLED_KINDS.has(field.kind) && !helped) return { fillable: false, reason: 'widget-phase-4' };
   if (field.labelSource === 'none' || !field.labelVisible) return { fillable: false, reason: 'no-visible-label' };
   if (field.camouflaged) return { fillable: false, reason: 'camouflaged' };
