@@ -6,8 +6,9 @@
  * (fixtures/icims/<case>.expect.json); then each step rule on its own: the step bar's last step, the step's Submit as
  * Next or Submit, the signature, the errors, the repeatable collections, the uploads, the account pages and the success
  * message. The behaviour review of 2026-11-06: an IForm's own form frame is chained (core-x), so its fields are read and
- * held to its expectation, its Signature box left to the person (minor 8); the resume's parse and the file on record
- * (M5); the questions' address word after an error (minor 10).
+ * held to its expectation, its Signature box left to the person (minor 8; since jr6 RULES item 44, ICIMS-15, ticked on
+ * the signature's terms under Consents: All); the resume's parse and the file on record (M5); the questions' address
+ * word after an error (minor 10).
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { planFrame } from '../../core/plan/frame';
@@ -399,8 +400,10 @@ describe('an IForm’s own form, read since its frame is chained', () => {
     })).toEqual(READ[name]);
   });
 
+  // jr6 RULES item 44 (ICIMS-15): a signature on a box is decided like any consent box, so under the default Consents:
+  // All it is ticked, on the signature's terms (owner Q6 may later keep IForm signatures for the person).
   it.each(['edgewater-self-id-veteran.frame-2', 'nyu-self-id-disability.frame-2'])(
-    '%s: its Signature box is the person’s, never ticked', async (name) => {
+    '%s: its Signature box is ticked on the signature’s terms (ICIMS-15)', async (name) => {
       const fixture = await load(name);
       const result = scan(rootOf(fixture.doc), icimsAdapter, { platform: 'icims' });
       const specs = result.fields.map(toFieldSpec);
@@ -410,9 +413,9 @@ describe('an IForm’s own form, read since its frame is chained', () => {
         settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW });
       const write = plan.writes.find((each) => each.key === signature.key);
       const row = plan.results.find((each) => each.key === signature.key);
-      expect(write).toBeUndefined();
-      expect(row).toMatchObject({ category: 'consent.signature', reason: 'consent-requires-user', needsUserAction: true,
-        wrote: false });
+      expect(write).toMatchObject({ value: { kind: 'check' }, origin: { provenance: 'rule',
+        ruleId: 'consent.signature-preapproved' } });
+      expect(row).toMatchObject({ category: 'consent.signature', needsUserAction: false, wrote: false });
     });
 });
 

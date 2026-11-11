@@ -291,10 +291,10 @@ describe('ICIMS-17: the portal’s step facts (chainStepFacts) and the IForm lea
       expect(icimsAdapter.nextButton!(root, facts)).toBe(leaf === 'not-final' ? button : null);
       expect(icimsAdapter.stepSubmitNext!.laterStep(fixture.doc, facts)).toBe(leaf === 'not-final' ? root : null);
       expect(icimsAdapter.stepSubmitNext!.buttons.some((selector) => button.matches(selector))).toBe(true);
-      // The final Submit by the facts, once a caller passes them (the contract's submitButton takes none yet).
-      const submitWith = icimsAdapter.submitButton as (root: Element, facts?: ChainStepFacts | null) => HTMLElement | null;
-      expect(submitWith(root)).toBeNull();
-      expect(submitWith(root, facts)).toBe(leaf === 'final' ? button : null);
+      // The final Submit by the facts (the contract's submitButton takes them since ENGINE E2, ICIMS edit 4; the caller
+      // that passes them, dom/fillers/not-submit.ts, is SHELL's at integration).
+      expect(icimsAdapter.submitButton!(root)).toBeNull();
+      expect(icimsAdapter.submitButton!(root, facts)).toBe(leaf === 'final' ? button : null);
       // Without the facts (dom/fillers/not-submit.ts passes none), the leaf's Submit is never pressed as Next.
       expect(assertNotSubmit(button, { adapter: icimsAdapter, root, allowNext: true }).ok).toBe(false);
     });
@@ -357,10 +357,24 @@ describe('ICIMS-04: Basic Information’s create-login as rows (accountRows)', (
     for (const name of ['githubinc-profile.frame-1', 'jr6-nyu-profile-parsed.frame-1', 'jr6-ars-profile']) {
       const fixture = await load(name);
       const root = rootOf(fixture.doc);
-      expect(icimsAdapter.accountSection!(root), name).not.toBeNull();
+      const group = icimsAdapter.accountSection!(root);
+      expect(group, name).not.toBeNull();
+      expect(icimsAdapter.accountRows!(root), name).toBeNull();
+      // jr6 P2: that group holding anything else is no section, nor rows (no Basic Information pane): the page pauses as
+      // an account's creation, as before (icims-core.browser.test.ts, jr6-password's, holds the pause).
+      group!.append(fixture.doc.createElement('input'));
+      expect(icimsAdapter.accountSection!(root), name).toBeNull();
       expect(icimsAdapter.accountRows!(root), name).toBeNull();
       removeFixtures(document);
     }
+  });
+
+  it('reads the rows only inside Basic Information’s pane', async () => {
+    const fixture = await load('jr6-sentinel-basic-info.frame-1');
+    const root = rootOf(fixture.doc);
+    expect(icimsAdapter.accountRows!(root)).toHaveLength(3);
+    fixture.doc.querySelector('.iCIMS_BasicProfilePane')!.classList.remove('iCIMS_BasicProfilePane');
+    expect(icimsAdapter.accountRows!(root)).toBeNull();
   });
 
   it('waits for the résumé’s parse on Basic Information too (its résumé part is no table row)', async () => {

@@ -653,23 +653,31 @@ function accountSection(root: Element): Element | null {
 }
 
 // ── jr6 ICIMS-04: the account part as rows (Adapter.accountRows) ──
+/** Basic Information's pane (jr6-sentinel-basic-info.frame-1.html's div.iCIMS_BasicProfilePane[role=group]), labelled
+ *  by its own h2#iCIMS_BasicProfilePane_Title "Create your profile". */
+const BASIC_PROFILE_PANE = '.iCIMS_BasicProfilePane[role="group" i]';
+
 /** The create-login's rows where no single element holds them alone (Adapter.accountRows): careers-sentinel's "Basic
  *  Information" (snapshot6 icims1: fixtures/icims/jr6-sentinel-basic-info.frame-1.html's <div
  *  class="iCIMS_BasicProfilePane" role="group" aria-labelledby="iCIMS_BasicProfilePane_Title"> <h2
  *  id="iCIMS_BasicProfilePane_Title"> Create your profile </h2> ..., whose table holds First Name, Middle Name, Last
  *  Name and Email beside the rows <div class="... iCIMS_TableRow ... iCIMS_FieldRow_PersonProfileFields.Login">,
  *  "...Password" and "...Password" (Re-enter)). Each box's own .iCIMS_TableRow, three rows, each holding its box alone,
- *  inside the step's form; null where accountSection's single group stands (githubinc's and uscareers-nyu's "Create a
- *  login") or the step shows no create-login. Jobright reads the same pane (~contents/sites/icims ./create-login
- *  findIcimsCreateLoginFields: the smallest container holding both password boxes, or h2#iCIMS_BasicProfilePane_Title's
- *  pane) and fills the other rows as ordinary fields. */
+ *  inside that pane (BASIC_PROFILE_PANE) in the step's form; null elsewhere: where accountSection's single group stands
+ *  (githubinc's and uscareers-nyu's "Create a login"), where that group holds anything else (jr6 P2: the page then
+ *  pauses as an account's creation, as before; icims-core.browser.test.ts holds it), or where the step shows no
+ *  create-login. Jobright reads the same pane (~contents/sites/icims ./create-login findIcimsCreateLoginFields: the
+ *  smallest container holding both password boxes, or h2#iCIMS_BasicProfilePane_Title's pane) and fills the other rows
+ *  as ordinary fields. */
 function accountRows(root: Element): readonly Element[] | null {
   if (accountSection(root) !== null) return null;
   const form = createLoginOf(root.ownerDocument);
   if (form === null || form.form !== root || form.email === null) return null;
   const boxes: Element[] = [form.email, form.password!, form.confirm!];
+  const pane = form.email.closest(BASIC_PROFILE_PANE);
+  if (pane === null || !root.contains(pane) || !boxes.every((box) => pane.contains(box))) return null;
   const rows = boxes.map((box) => box.closest('.iCIMS_TableRow'));
-  if (rows.some((row) => row === null || !root.contains(row)) || new Set(rows).size !== boxes.length) return null;
+  if (rows.some((row) => row === null || !pane.contains(row)) || new Set(rows).size !== boxes.length) return null;
   const alone = rows.every((row, at) => Array.from(row!.querySelectorAll('input:not([type="hidden" i]), select, textarea'))
     .every((control) => control === boxes[at]));
   return alone ? rows as Element[] : null;
