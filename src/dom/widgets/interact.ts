@@ -30,7 +30,7 @@
  * signal, never a fixed sleep. While the person may Skip the write (v3 Phase 3: WidgetContext.runSignal), its Skip
  * ends the waits too; what the write had done to its widget is then put back (its typed text, its open list) through
  * skipTidyContext: a fresh, short-capped signal that only the run's own end aborts.
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3):
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1, 3 and 4):
  * - a list its adapter declares outside the form root's own tree (another shadow tree: SmartRecruiters' menus; a portal
  *   at the end of the body: ADP's) is watched directly, with the hosts of rows slotted into it (watchList): the form
  *   root's observer sees neither;

@@ -20,10 +20,13 @@
  * list may be the adapter's hook, asked each time (Workday's prompts draw theirs at the end of the body only while
  * open), and a result its adapter names as only opening a list of its own (a category) is one that cannot be chosen
  * (isUnchoosableResult).
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3): a declared list's rows are its selector's matches, or the rows its
- * adapter's hook lists where no selector reaches them (WidgetResults.options: a slot's assigned elements); a choice
- * presses the element its adapter names (WidgetResults.pressTarget), else the row's label part ('label'), else the row
- * (pressTargetOf).
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1, 3 and 4):
+ * - a declared list's rows are its selector's matches, or the rows its adapter's hook lists where no selector reaches
+ *   them (WidgetResults.options: a slot's assigned elements); a choice presses the element its adapter names
+ *   (WidgetResults.pressTarget), else the row's label part ('label'), else the row (pressTargetOf);
+ * - a combobox or multiselect its adapter declares with a results list is acted on whatever ARIA its trigger carries
+ *   (ADP's sdf-select-simple: a div[role=button] in a shadow root, no aria-controls; its list a portal at the end of
+ *   the body).
  */
 import { holdsComposed } from '../composed';
 import { CONTROL_SELECTOR, isTextLike } from '../kinds';
@@ -272,6 +275,13 @@ export function isActionable(widget: WidgetTarget): boolean {
   if (widget.kind === 'radio') return widget.members.length > 0;
   // v4 (drop): a search whose results list its adapter declared from a capture (WidgetDecl.results), with a text box.
   if (widget.declared && widget.kind === 'typeahead-remote' && widget.input !== null && widget.results !== undefined) {
+    return true;
+  }
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 4: ADP-2, ADP-3): a combobox or multiselect its adapter declares with a results list
+  // is acted on through that list, whatever its trigger says: ADP's sdf-select-simple opens on a div[role=button] in its
+  // shadow root that names no list, and draws its list as a portal at the end of the body (Jobright's
+  // ~contents/sites/adp-workforcenow operations: the newest [role=listbox] a person can see after the press).
+  if (widget.declared && (widget.kind === 'combobox' || widget.kind === 'multiselect') && widget.results !== undefined) {
     return true;
   }
   const roles = [roleOf(widget.element), widget.input === null ? '' : roleOf(widget.input)];

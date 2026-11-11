@@ -1,5 +1,5 @@
 /*
- * jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3): the widget helpers on synthetic pages shaped as the jr6 audits
+ * jr6 ENGINE E1 (FIXPLAN §6.2 items 1, 3 and 4): the widget helpers on synthetic pages shaped as the jr6 audits
  * describe each platform's widget (SP\jr6\audit\oracle.md, icims.md, smartrecruiters.md, adp.md, ultipro.md), each
  * declared by a test adapter as its platform package will declare it (FIXPLAN §6.5, §6.6, §6.9 to §6.11), driven only
  * by calling the helpers:
@@ -8,6 +8,8 @@
  * - item 3 (SR-1, SR-2, SR-6 core): nested shadow roots with aria-controls across them and options slotted into the
  *   list (WidgetResults.options, pressTarget), the page's own list as the field's reading (WidgetDecl.knownOptions),
  *   rows that load into the host watched directly, and the page's shortest query (WidgetDecl.minQueryLength);
+ * - item 4 (ADP-2, ADP-3, ADP-15 core): a shadow trigger with no ARIA list, its list a portal at the end of the body,
+ *   its filter box in its shadow tree a part;
  * Every value is synthetic (no owner data); every event the helpers cause is untrusted and on the fillers' list.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -426,5 +428,116 @@ describe('item 3 (SR-2 core): the page\'s shortest query', () => {
     });
     expect(result).toMatchObject({ chosen: { cleanLabel: 'Austin' }, verified: true, typed: 1 });
     expect(page.win<string[]>('__typed')).toEqual(['Austin']);
+  });
+});
+
+// ── Item 4 (ADP-2, ADP-3, ADP-15 core): a shadow trigger, a body portal, a shadow filter box ─────────────────────────
+
+/** ADP's sdf-select-simple as SP\jr6\audit\adp.md reads it (ADP-2, ADP-3; the texts synthetic): a host labelled by a
+ *  label.qLabel[for] in its div.qMainDiv, its trigger a div[role=button] in its shadow root naming no list, its filter
+ *  box (input#select-filter-input[role=combobox], "Enter text to filter your options") in its shadow root too, shown
+ *  while it is open; its list drawn on a click as a portal at the end of the body (div.portal > [role=listbox] of
+ *  x-select-item[role=option]), removed when a row is chosen or the trigger clicked again. With data-variant "role" on
+ *  <html>, the host carries a role (the scanner meets it itself, no widget root needed). window.__chosen: each row. */
+const PORTAL = `<!doctype html><html><head><style>
+  [hidden] { display: none !important; }
+  .portal { position: absolute; top: 300px; left: 20px; border: 1px solid #888; background: #fff; }
+</style></head><body>
+<form id="f">
+  <div class="qMainDiv"><label class="qLabel" for="q7">How did you learn about this position?</label>
+    <x-select-simple id="q7"><template shadowrootmode="open">
+      <div class="trigger-button" role="button" tabindex="0" aria-expanded="false"><span id="selected-label">Select</span></div>
+      <div class="input-frame" hidden><input id="select-filter-input" type="text" role="combobox"
+        aria-label="Enter text to filter your options"></div>
+    </template></x-select-simple></div>
+</form>
+<script>
+  window.__chosen = [];
+  const host = document.getElementById('q7');
+  if (document.documentElement.dataset.variant === 'role') host.setAttribute('role', 'none');
+  const sr = host.shadowRoot;
+  const trigger = sr.querySelector('.trigger-button');
+  const frame = sr.querySelector('.input-frame');
+  let portal = null;
+  const close = () => { portal?.remove(); portal = null; frame.hidden = true; trigger.setAttribute('aria-expanded', 'false'); };
+  const open = () => {
+    portal = document.createElement('div');
+    portal.className = 'portal';
+    const list = document.createElement('div');
+    list.id = 'listbox';
+    list.setAttribute('role', 'listbox');
+    for (const label of ['Employee referral', 'Company website', 'LinkedIn', 'Other']) {
+      const row = document.createElement('x-select-item');
+      row.setAttribute('role', 'option');
+      row.style.display = 'block';
+      row.textContent = label;
+      row.addEventListener('click', () => { window.__chosen.push(label); sr.getElementById('selected-label').textContent = label; close(); });
+      list.append(row);
+    }
+    portal.append(list);
+    document.body.append(portal);
+    frame.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+  };
+  trigger.addEventListener('click', () => (portal === null ? open() : close()));
+</script></body></html>`;
+
+/** ADP's lists as its adapter declares them (FIXPLAN §6.6 item 3): a widget root (unless `rooted` is false: then the
+ *  host's own role brings it to the scanner); opener and expanded the shadow trigger; the list the newest shown
+ *  listbox of a portal at the end of the body; the filter box its part; the shown answer the trigger's label; its label
+ *  the qLabel naming it. */
+function adpAdapter(doc: Document, rooted = true): Adapter {
+  const shadowOf = (host: Element) => host.shadowRoot!;
+  return {
+    ...(rooted ? { widgetRoots: (root: Element) => Array.from(root.querySelectorAll('x-select-simple')) } : {}),
+    widgetFor(control: Element): WidgetDecl | null {
+      if (control.localName !== 'x-select-simple') return null;
+      const trigger = shadowOf(control).querySelector<HTMLElement>('.trigger-button')!;
+      return { kind: 'combobox', opener: trigger, expanded: trigger,
+        parts: [shadowOf(control).getElementById('select-filter-input')!],
+        results: { list: () => Array.from(doc.querySelectorAll('body > .portal [role="listbox"]'))
+          .filter((list) => list.checkVisibility()).at(-1) ?? null, option: 'x-select-item[role="option"]' },
+        shownAnswer: () => {
+          const shown = shadowOf(control).getElementById('selected-label')?.textContent?.trim() ?? '';
+          return shown === '' || shown === 'Select' ? null : shown;
+        },
+        snapshot: 'synthetic ADP select' };
+    },
+    labelFor: (control: Element) => (control.localName === 'x-select-simple'
+      ? doc.querySelector(`label.qLabel[for="${control.id}"]`) : null),
+  } as unknown as Adapter;
+}
+
+describe('item 4 (ADP-2, ADP-3, ADP-15 core): a shadow trigger with a body portal and a shadow filter box', () => {
+  const QUESTION = 'How did you learn about this position?';
+
+  it('acts on a declared combobox whose trigger names no list, reading its portal list and choosing from it', async () => {
+    const page = await open(PORTAL, 'adp', (doc) => adpAdapter(doc));
+    const target = page.target(QUESTION);
+    expect([target.field.kind, target.widget?.declared, isActionable(target.widget!)]).toEqual(['combobox', true, true]);
+    expect(fillabilityOf(target.field, target.widget)).toEqual({ fillable: true });
+    expect(labelsOf(await readWidget(target, page.ctx())))
+      .toEqual(['Employee referral', 'Company website', 'LinkedIn', 'Other']);
+    // The portal our click drew is gone again: the trigger toggled it shut.
+    expect(page.doc.querySelectorAll('.portal')).toHaveLength(0);
+    const value = { kind: 'option' as const, index: 2, cleanLabel: 'LinkedIn' };
+    expect(await fillWidget(page.target(QUESTION), value, page.ctx()))
+      .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    expect(page.win<string[]>('__chosen')).toEqual(['LinkedIn']);
+    expect(page.target(QUESTION).field.current).toEqual({ kind: 'selected', labels: ['LinkedIn'] });
+    expect(widgetHolds(page.target(QUESTION), value)).toBe(true);
+    expectOurEventsOnly(page.events);
+  });
+
+  it('never makes its shadow filter box a field, whether the scanner meets the host as a root or by its role', async () => {
+    for (const rooted of [true, false]) {
+      const html = rooted ? PORTAL : PORTAL.replace('<html>', '<html data-variant="role">');
+      const page = await open(html, 'adp', (doc) => adpAdapter(doc, rooted));
+      // The filter box shown, as it is while the list is open.
+      page.doc.getElementById('q7')!.shadowRoot!.querySelector<HTMLElement>('.input-frame')!.hidden = false;
+      const fields = page.scanned().fields;
+      expect(fields.map((field) => [field.label, field.kind]), `rooted: ${rooted}`).toEqual([[QUESTION, 'combobox']]);
+      removeFixtures(document);
+    }
   });
 });

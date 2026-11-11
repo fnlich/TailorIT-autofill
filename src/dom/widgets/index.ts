@@ -19,7 +19,7 @@
  * A widget is acted on only when standard ARIA says where its list is (or it is a group whose members carry their own
  * state), or its adapter declares where a search's results are from a capture (v4: WidgetDecl.results, Lever's
  * location search; s2 wd: Workday's prompts, their list found anew by the adapter's hook): a widget an adapter declares
- * without either is widget-unsupported, never typed into. jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a combobox or
+ * without either is widget-unsupported, never typed into. jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 4): a combobox or
  * multiselect its adapter declares with a results list is read by its declared rows.
  * The events are interact.ts's: click() through assertNotSubmit (or the adapter's one declared mousedown, mouseup or
  * focus), the text filler's input, change, focusout and blur, a key the adapter declares for the widget, and a list's

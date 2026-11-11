@@ -191,18 +191,24 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
   const excluded = adapterParts(adapter?.excluded, root);
   const outside = (el: Element) => excluded.some((part) => holdsComposed(part, el));
   const extraRoots = adapterParts(adapter?.widgetRoots, root).filter((el) => !outside(el));
-  // The native controls a widget the adapter declares on one of its roots names as its own (WidgetDecl.parts).
-  const absorbed = new Set<Element>();
-  for (const el of extraRoots) {
-    for (const part of adapter?.widgetFor?.(el)?.parts ?? []) {
-      if (part !== el && holdsComposed(el, part) && part.matches(CONTROL_SELECTOR)) absorbed.add(part);
-    }
-  }
   // v5 p2-fill: the résumé controls that open the site's own file picker, as its adapter declares them.
   const pickers = new Set(adapterParts(adapter?.uploadPickers, root).filter((el) => !outside(el)));
   const collected = collectFields(root);
   const all = extraRoots.length === 0 && pickers.size === 0 ? collected
     : inDocumentOrder([...collected, ...extraRoots, ...pickers]);
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 4): every declaration read once, before any control is judged, so what a
+  // declaration names as its widget's own is known wherever it stands in the page (declarationsOf): the native controls
+  // it names as its parts (WidgetDecl.parts: the Yes/No's display:none checkbox; ADP's lists' filter box in its shadow
+  // tree), inside its element across shadow roots, never fields, counted among the hidden controls the scan ignored, as
+  // before for a widget root's.
+  const declarations = declarationsOf(all, adapter, pickers);
+  const absorbed = new Set<Element>();
+  for (const [el, declared] of declarations) {
+    if (declared === null || outside(el)) continue;
+    for (const part of declared.parts ?? []) {
+      if (part !== el && holdsComposed(el, part) && part.matches(CONTROL_SELECTOR)) absorbed.add(part);
+    }
+  }
   const found = excluded.length === 0 && absorbed.size === 0 ? all : all.filter((el) => {
     if (!outside(el) && !absorbed.has(el)) return true;
     // A control the adapter keeps out of the fields is still one the scan ignored.
@@ -238,8 +244,10 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       continue;
     }
     // A widget the adapter declares for this control (Lever's location search on its text input) is reported as that
-    // widget, never as the native control it is built on; else an ARIA widget, by its role (widgets/aria.ts).
-    const declared = adapter?.widgetFor?.(el) ?? null;
+    // widget, never as the native control it is built on; else an ARIA widget, by its role (widgets/aria.ts). jr6
+    // ENGINE E1: as the declarations read before the loop found it (declarationsOf).
+    const cached = declarations.get(el);
+    const declared = cached !== undefined ? cached : adapter?.widgetFor?.(el) ?? null;
     const aria = declared !== null ? null : !native || (kind.field && kind.kind === 'combobox')
       ? ariaWidgetKind(el, lists) : null;
     // s2 wd: a date drawn in parts its adapter declares (Adapter.dateFor: Workday's dateInputWrapper), one field of kind
@@ -671,6 +679,22 @@ function datePartsOf(el: Element, adapter: Adapter | null): DatePartsTarget | nu
 }
 
 // ── Widgets (Phase 4) ────────────────────────────────────────────────────────────────────────────────────────────
+
+/** jr6 ENGINE E1: the adapter's widget declaration of each element the scan's loop asks about (a native control that can
+ *  be a field and is no widget's part nor a CAPTCHA's response field, or any other collected element; never a picker
+ *  control), read once before the loop (scan: what a declaration names as its own must be known wherever it stands).
+ *  Empty when the adapter declares no widgets. */
+function declarationsOf(all: readonly Element[], adapter: Adapter | null, pickers: ReadonlySet<Element>):
+  Map<Element, WidgetDecl | null> {
+  const declarations = new Map<Element, WidgetDecl | null>();
+  if (adapter?.widgetFor === undefined) return declarations;
+  for (const el of all) {
+    if (pickers.has(el)) continue;
+    if (el.matches(CONTROL_SELECTOR) && (isWidgetPart(el) || isCaptchaResponseField(el) || !kindOf(el).field)) continue;
+    declarations.set(el, adapter.widgetFor(el) ?? null);
+  }
+  return declarations;
+}
 
 /** jr6 ENGINE E1 (FIXPLAN §6.2 item 3, SR-1): the whole list a page publishes for its widget (WidgetDecl.knownOptions), as
  *  its field's options: page text, untrusted as every option label is, each cut to TEXT_CAP_LABEL and the list to
