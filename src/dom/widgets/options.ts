@@ -21,11 +21,16 @@
  *   box value, or the text a select-only combobox shows; the chips of a multiselect (visible text in the widget's own
  *   box, outside its list and its text box, that is exactly one of its options' labels) and the options its open list
  *   marks selected; the pressed or checked members of a group. A placeholder ("Select...") is no answer.
+ * jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a list its adapter declares (WidgetDecl.results) is read by its declared rows
+ * everywhere (`rows`: the selector, or the hook that lists rows no selector reaches), a row it names unchoosable read as
+ * one that cannot be chosen, and a declared multiselect's marks read from that list; a select-only widget's own text
+ * leaves out a declared list drawn inside it, shadow trees included.
  * Nothing here dispatches an event; reading never changes what is chosen.
  */
 import { capCodePoints } from '../../core/text/fold';
 import { qualifiedLabel } from '../../core/text/keys';
 import type { CurrentValue, OptionSetHash } from '../../core/types/field';
+import { holdsComposed } from '../composed';
 import { labelOfControl } from '../labels';
 import { cleanOptionLabel, hashOfOptions, isPlaceholderOption, isUsableOption } from '../option-hash';
 import { newScanCache, type ScanCache } from '../scan-cache';
@@ -35,10 +40,15 @@ import {
   WIDGET_SCROLL_CAP_MS, WIDGET_SCROLL_QUIET_MS, WIDGET_SCROLL_SETTLE_MS,
 } from '../thresholds';
 import { monotonicNow } from '../time';
-import type { OptionLabel, WidgetKind, WidgetOptionRead, WidgetTarget } from '../types';
+import type { DeclaredRows, OptionLabel, WidgetKind, WidgetOptionRead, WidgetTarget } from '../types';
 import { readVisibleText, visibleText, visibleTextWithout } from '../visible-text';
 import { isUserVisible } from '../visibility';
 import { isChosen, isUnavailable, isUnchoosableResult, listOf, optionElementsOf, widgetBox, widgetListOf } from './aria';
+import { tagsBoxValue } from './tag-chips';
+
+/** How a list's rows are found: its adapter's declared selector (v4: WidgetDecl.results.option), or (jr6 ENGINE E1) its
+ *  declared rows whole (the selector and the hook that lists rows no selector reaches); undefined for an ARIA list. */
+export type RowsSpec = string | DeclaredRows | undefined;
 
 /** One option a person can see in a widget's list now. Page content: untrusted. */
 export interface ShownOption extends WidgetOptionRead {
@@ -87,9 +97,10 @@ function positionOf(el: Element): number | null {
 }
 
 /** The options of a list a person can see now, in document order, each labelled by its visible text (or its part's
- *  that `labelOf` names); `option` is the selector of a results list its adapter declared (v4: WidgetDecl.results), and
- *  `unchoosable` (s2 wd: WidgetDecl.results.unchoosable) the selector of a result that cannot be chosen. */
-export function shownOptions(listbox: Element, cache: ScanCache = newScanCache(), labelOf?: OptionLabel, option?: string,
+ *  that `labelOf` names); `option` is the selector of a results list its adapter declared (v4: WidgetDecl.results; jr6
+ *  ENGINE E1: or its declared rows whole, RowsSpec), and `unchoosable` (s2 wd: WidgetDecl.results.unchoosable) the
+ *  selector of a result that cannot be chosen. */
+export function shownOptions(listbox: Element, cache: ScanCache = newScanCache(), labelOf?: OptionLabel, option?: RowsSpec,
   unchoosable?: string): ShownOption[] {
   if (!isUserVisible(listbox, cache)) return [];
   const shown: ShownOption[] = [];
@@ -118,7 +129,7 @@ function sameOption(known: Pick<ReadOption, 'label' | 'position' | 'offset'>,
 
 /** Takes the options of the view shown now into `found`, those an earlier view took aside; false once the option cap
  *  stops it. */
-function takeView(listbox: Element, found: ReadOption[], cache?: ScanCache, labelOf?: OptionLabel, selector?: string,
+function takeView(listbox: Element, found: ReadOption[], cache?: ScanCache, labelOf?: OptionLabel, selector?: RowsSpec,
   unchoosable?: string): boolean {
   const at = listbox.scrollTop;
   const earlier = found.length;
@@ -142,10 +153,12 @@ function ordered(found: ReadOption[]): ReadOption[] {
 }
 
 /** A list shown whole read as it is now, exactly as readList takes its first view: what the scanner gives a widget
- *  whose list shows whole, so its options' places are the ones a fill reads again. */
-export function readShownList(listbox: Element, cache: ScanCache = newScanCache(), labelOf?: OptionLabel): ListRead {
+ *  whose list shows whole, so its options' places are the ones a fill reads again. jr6 ENGINE E1: a list its adapter
+ *  declares by its declared rows (`rows`: WidgetDecl.results), its unchoosable rows read as ones that cannot be chosen. */
+export function readShownList(listbox: Element, cache: ScanCache = newScanCache(), labelOf?: OptionLabel,
+  rows?: DeclaredRows & { readonly unchoosable?: string }): ListRead {
   const found: ReadOption[] = [];
-  const complete = takeView(listbox, found, cache, labelOf);
+  const complete = takeView(listbox, found, cache, labelOf, rows, rows?.unchoosable);
   return { options: ordered(found), complete };
 }
 
@@ -184,7 +197,7 @@ export function scrollListTo(listbox: Element, top: number): void {
  * minute and more. A list the page empties or removes while it is read ends the read where it is.
  */
 export async function readList(listbox: Element,
-  options: { signal?: AbortSignal; capMs?: number; labelOf?: OptionLabel; option?: string; unchoosable?: string;
+  options: { signal?: AbortSignal; capMs?: number; labelOf?: OptionLabel; option?: RowsSpec; unchoosable?: string;
     drawnWhole?: boolean } = {}):
   Promise<ListRead> {
   const started = monotonicNow();
@@ -228,9 +241,10 @@ export function hashOfRead(options: readonly WidgetOptionRead[]): OptionSetHash 
  * list back to where the read saw it. Null when it is not there any more.
  */
 export async function revealOption(listbox: Element, wanted: Pick<ReadOption, 'label' | 'position' | 'scrollTop' | 'offset'>,
-  options: { signal?: AbortSignal; labelOf?: OptionLabel; option?: string; drawnWhole?: boolean } = {}):
+  options: { signal?: AbortSignal; labelOf?: OptionLabel; option?: RowsSpec; unchoosable?: string; drawnWhole?: boolean }
+    = {}):
   Promise<ShownOption | null> {
-  const find = () => shownOptions(listbox, undefined, options.labelOf, options.option)
+  const find = () => shownOptions(listbox, undefined, options.labelOf, options.option, options.unchoosable)
     .find((option) => sameOption(wanted, option)) ?? null;
   const now = find();
   if (now !== null || !scrolls(listbox)) return now;
@@ -296,11 +310,31 @@ export function busyScopes(widget: WidgetTarget, listbox: Element | null): Eleme
 
 /** Whether a widget shows a busy sign of its own now: a visible aria-busy or indeterminate progress bar in its list or
  *  its own box, or one of the busy signs its adapter declared (WidgetDecl.busy: react-select's "Loading..." notice and
- *  its loading dots) drawn there. */
+ *  its loading dots) drawn there, or (jr6 ENGINE E2) beside its declared list or text box (declaredBusyBeside). */
 export function widgetBusy(widget: WidgetTarget, listbox: Element | null, cache: ScanCache = newScanCache()): boolean {
   const scopes = busyScopes(widget, listbox);
-  return busyIn(scopes, cache) || declaredBusy(scopes, widget.busy ?? []);
+  return busyIn(scopes, cache)
+    || declaredBusy([...scopes, ...declaredBusyBeside(widget, listbox)], widget.busy ?? []); // jr6 ENGINE
 }
+
+// ── jr6 ENGINE E2 (the ICIMS package's edit 2, ICIMS-01/-02): a declared busy sign beside the declared list ──
+/**
+ * Where else a declared widget's own declared busy signs (WidgetDecl.busy) are read: the parent of its declared
+ * results list (WidgetDecl.results), and the parent of its declared text box where that box sits outside its element
+ * (WidgetDecl.input). iCIMS draws its dropdown's loading bar, .dropdown-loading, beside the results list in the
+ * container's div[aria-live], outside the list and outside the anchor's own box (widgetBox stops at the row's cell,
+ * which also holds the hidden select): the ICIMS package's ICIMS-01 and ICIMS-02. Never the body, the html or a form
+ * (a list drawn at the end of the body, ADP's portal, adds no scope), and only the adapter's own selectors, never the
+ * generic busy signs; a sign only makes a wait longer, never a write.
+ */
+function declaredBusyBeside(widget: WidgetTarget, listbox: Element | null): Element[] {
+  if (!widget.declared || (widget.busy ?? []).length === 0) return [];
+  const box = widget.input !== null && !widget.element.contains(widget.input) ? widget.input.parentElement : null;
+  const around: Array<Element | null> = [widget.results !== undefined && listbox !== null ? listbox.parentElement : null,
+    box];
+  return around.filter((el): el is Element => el !== null && !['body', 'html', 'form'].includes(el.localName));
+}
+// ── end jr6 ENGINE E2 (ICIMS edit 2) ──
 
 /** One of the adapter's busy signs, drawn in any of `scopes`. A sign only makes a wait longer, never a write, so it
  *  counts once it has a box and is not hidden by display or visibility: react-select's loading dots are aria-hidden. */
@@ -325,7 +359,7 @@ export function listState(widget: WidgetTarget, prevHash: OptionSetHash | null, 
   if (listbox === null || !listbox.isConnected) return { ready: false, waiting: 'gone' };
   if (!isUserVisible(listbox, cache)) return { ready: false, waiting: 'hidden' };
   if (widgetBusy(widget, listbox, cache)) return { ready: false, waiting: 'busy' };
-  const labels = shownOptions(listbox, cache, widget.optionLabel, widget.results?.option).map((option) => option.label);
+  const labels = shownOptions(listbox, cache, widget.optionLabel, widget.results).map((option) => option.label);
   if (labels.some(isLoadingOptionLabel)) return { ready: false, waiting: 'loading' };
   if (!labels.some(isUsableOption)) return { ready: false, waiting: 'placeholders' };
   const hash = hashOfOptions(labels);
@@ -346,8 +380,10 @@ function isAnswer(label: string): boolean {
  *  shows it in its box, where chipsOf finds it. */
 export function shownValueOf(widget: WidgetTarget, cache: ScanCache = newScanCache()): string {
   if (widget.input !== null) return capCodePoints(widget.input.value.replace(/\s+/g, ' ').trim(), TEXT_CAP_CURRENT);
-  const listbox = listOf(widget.element, null);
-  const inside = listbox !== null && widget.element.contains(listbox) ? [listbox] : [];
+  // jr6 ENGINE E1: a list its adapter declares, drawn inside the widget (in its shadow tree too: ADP's sdf-select-simple),
+  // is no part of what it shows chosen.
+  const listbox = widget.results !== undefined ? widgetListOf(widget) : listOf(widget.element, null);
+  const inside = listbox !== null && holdsComposed(widget.element, listbox) ? [listbox] : [];
   const text = inside.length === 0
     ? visibleText(widget.element, { singleLine: true, cap: TEXT_CAP_LABEL, cache })
     : visibleTextWithout(widget.element, inside, { singleLine: true, cap: TEXT_CAP_LABEL, cache });
@@ -390,9 +426,10 @@ export function chosenLabels(widget: WidgetTarget, known: readonly string[], cac
       labels = widget.members.filter(isChosen).map((member) => named(memberLabel(member, cache)));
       break;
     case 'multiselect': {
-      const listbox = listOf(widget.element, widget.input);
-      const selected = listbox === null ? [] : shownOptions(listbox, cache, widget.optionLabel).filter((option) => option.selected)
-        .map((option) => named(option.label));
+      // jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a declared list's marks are read from that list, by its declared rows.
+      const listbox = widget.results !== undefined ? widgetListOf(widget) : listOf(widget.element, widget.input);
+      const selected = listbox === null ? [] : shownOptions(listbox, cache, widget.optionLabel, widget.results)
+        .filter((option) => option.selected).map((option) => named(option.label));
       labels = [...new Set([...chipsOf(widget, knownAs, cache), ...selected])];
       break;
     }
@@ -410,6 +447,8 @@ export function chosenLabels(widget: WidgetTarget, known: readonly string[], cac
  *  or empty. Memory only. */
 export function widgetCurrentValue(widget: WidgetTarget, known: readonly string[], cache: ScanCache = newScanCache()):
   CurrentValue {
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers holds what its text box holds, as the scanner reads it.
+  if (widget.tags !== undefined) return tagsBoxValue(widget);
   const labels = chosenLabels(widget, known, cache);
   return labels.length === 0 ? { kind: 'empty' } : { kind: 'selected', labels };
 }

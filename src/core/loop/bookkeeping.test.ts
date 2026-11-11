@@ -890,3 +890,106 @@ describe('the Phase 5 review: a later attempt on a step starts from the earlier 
     expect(mayWrite(again.state, name.key)).toBe(false);
   });
 });
+
+// ── jr6 ENGINE E3 (FIXPLAN §6.2 item 14: ICIMS-02, O3, ICIMS-19's re-plan, ADP-2) ──────────────────────────────────
+
+describe('jr6 ENGINE E3 item 14: a field a write resets (dependsOn), and a field that changes its shape', () => {
+  const country = field('Country', 'select', { options: ['Canada', 'United States'] });
+  const state = field('State', 'select', { options: ['Ontario', 'Quebec'] });
+  const city = field('City', 'text');
+  /** State drawn before its Country, as the page does where nothing orders them; City beside them. */
+  const fields = inOrder(state, country, city);
+  const [st, co, ci] = fields as [LoopField, LoopField, LoopField];
+  const dependsOn = new Map<BaseKey, BaseKey>([[st.baseKey, co.baseKey]]);
+
+  it('plans a dependent again once its parent was written since the scan before, whatever its own row', () => {
+    // State had no answer among its old options; Country was then written.
+    const books = written(settled(fields, { State: unwrittenRow(st, 'no-match') }), co, 'United States');
+    const seen = observeScan(books, fields, { valueMacs: macsOf({ Country: 'United States' }, fields), dependsOn });
+    expect(seen.pending).toEqual([st.key]);
+    expect(seen.state.fields.get(st.baseKey)).toMatchObject({ status: 'pending', cause: 'parent-written', reason: null });
+    expect(mayWrite(seen.state, st.key)).toBe(true);
+    // Without the adapter's word, nothing is planned again.
+    expect(observeScan(books, fields, { valueMacs: macsOf({ Country: 'United States' }, fields) }).pending).toEqual([]);
+  });
+
+  it('plans again a dependent we wrote, and keeps our row where its re-plan finds our value in place', () => {
+    let books = written(settled(fields), st, 'Ontario');
+    books = written(books, co, 'Canada');
+    const values = { State: 'Ontario', Country: 'Canada' };
+    const seen = observeScan(books, fields, { valueMacs: macsOf(values, fields), dependsOn });
+    expect(seen.pending).toEqual([st.key]);
+    const found = rowOf(st, { status: 'skipped', reason: 'already-correct', wrote: false, provenance: null,
+      verification: 'not-applicable' });
+    const kept = recordRows(seen.state, [found]);
+    expect(kept.fields.get(st.baseKey)).toMatchObject({ status: 'resolved', row: { status: 'verified', wrote: true } });
+    // Nothing written since: the next scan plans nothing, and the loop ends.
+    const next = observeScan(kept, fields, { valueMacs: macsOf(values, fields), dependsOn });
+    expect(next.pending).toEqual([]);
+    expect(next.verdict).toMatchObject({ done: true, end: 'nothing-pending' });
+  });
+
+  it('writes again a value of ours the page replaced once its parent was written, never leaves it as "replaced"', () => {
+    let books = written(settled(fields), st, 'Ontario');
+    books = written(books, co, 'United States');
+    // The page's own default in place of ours, after the country changed.
+    const seen = observeScan(books, fields, { valueMacs: macsOf({ State: 'Alabama', Country: 'United States' }, fields),
+      dependsOn });
+    expect(seen.state.fields.get(st.baseKey)).toMatchObject({ status: 'pending', cause: 'parent-written', flips: 1 });
+    expect(mayWrite(seen.state, st.key)).toBe(true);
+    // The same change with no parent written is the page's: planned for its row only.
+    const alone = written(settled(fields), st, 'Ontario');
+    const replaced = observeScan(alone, fields, { valueMacs: macsOf({ State: 'Alabama' }, fields), dependsOn });
+    expect(replaced.state.fields.get(st.baseKey)).toMatchObject({ status: 'pending', cause: 'replaced' });
+    expect(mayWrite(replaced.state, st.key)).toBe(false);
+  });
+
+  it('leaves a dependent alone when its parent was not written since, or when the person skipped it', () => {
+    const books = written(settled(fields), co, 'Canada');
+    const values = macsOf({ Country: 'Canada' }, fields);
+    const once = observeScan(books, fields, { valueMacs: values, dependsOn });
+    const settledAgain = recordRows(once.state, [unwrittenRow(st, 'no-match')]);
+    // The scan after: no write since, so no parent was written.
+    expect(observeScan(settledAgain, fields, { valueMacs: values, dependsOn }).pending).toEqual([]);
+    const skipped = recordRows(observeScan(createLoop(), fields).state, [unwrittenRow(st, 'skipped-by-you'),
+      unwrittenRow(ci, 'no-profile-value')]);
+    const written2 = written(skipped, co, 'Canada');
+    expect(observeScan(written2, fields, { valueMacs: values, dependsOn }).pending).toEqual([]);
+    // A field that waits for its options, or for the AI, waits on.
+    const waiting = recordRows(observeScan(createLoop(), fields).state, [unwrittenRow(st, 'waiting-for-options'),
+      unwrittenRow(ci, 'no-profile-value')]);
+    const after = observeScan(written(waiting, co, 'Canada'), fields, { valueMacs: values, dependsOn });
+    expect(after.state.fields.get(st.baseKey)?.status).toBe('waiting-options');
+  });
+
+  it('plans again an unresolvable dependent (options never loaded) once its parent is written', () => {
+    const first = observeScan(createLoop(), fields).state;
+    const waiting = recordRows(first, [unwrittenRow(st, 'waiting-for-options'), rowOf(co, { wrote: false }),
+      unwrittenRow(ci, 'no-profile-value')]);
+    const never = recordOptionsWait(waiting, st.key, 'never-loaded');
+    expect(never.fields.get(st.baseKey)?.status).toBe('unresolvable');
+    const seen = observeScan(written(never, co, 'United States'), fields, { valueMacs: macsOf({ Country: 'United States' },
+      fields), dependsOn });
+    expect(seen.state.fields.get(st.baseKey)).toMatchObject({ status: 'pending', cause: 'parent-written' });
+  });
+
+  it('plans again a field whose kind changed under its base key (ADP\'s State: a text box that becomes a list)', () => {
+    const box = field('State / Territory', 'text');
+    const list: LoopField = { ...box, kind: 'combobox' };
+    const books = settled([box], { 'State / Territory': unwrittenRow(box, 'unknown-field') });
+    const seen = observeScan(books, [list]);
+    expect(seen.pending).toEqual([list.key]);
+    expect(seen.state.fields.get(box.baseKey)).toMatchObject({ status: 'pending', cause: 'reshaped', kind: 'combobox' });
+  });
+
+  it('plans again a field the page draws as another element after a write, only one we never wrote', () => {
+    const books = written(settled(fields), co, 'Canada');
+    const values = macsOf({ Country: 'Canada' }, fields);
+    const seen = observeScan(books, fields, { valueMacs: values, replaced: new Set([ci.baseKey, co.baseKey]) });
+    expect(seen.pending).toEqual([ci.key]);
+    expect(seen.state.fields.get(ci.baseKey)).toMatchObject({ status: 'pending', cause: 'reshaped' });
+    // With no write since the scan before, a page that draws its fields anew plans nothing again.
+    const quiet = recordRows(seen.state, [unwrittenRow(ci, 'no-profile-value')]);
+    expect(observeScan(quiet, fields, { valueMacs: values, replaced: new Set([ci.baseKey]) }).pending).toEqual([]);
+  });
+});

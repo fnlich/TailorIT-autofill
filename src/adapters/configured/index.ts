@@ -27,7 +27,8 @@
  * - errors: the generic aria-invalid ones and the shown `errors` inside the root; isBusy: a shown `busy` sign.
  * - widgets, checked, proxies, uploads, repeatables, sections, excluded, postingText: the rules of those names; uploadHeld
  *   (the behaviour review of 2026-11-06, M2): an upload rule's `done` sign shown in its area (naming a file, where the
- *   rule reads names), and uploadState confirms only the written file's name where the rule reads names.
+ *   rule reads names), and uploadState confirms only the written file's name where the rule reads names; uploadReveal
+ *   (jr6 ENGINE E2, JZ-4): an upload rule's `reveal` link inside its area.
  * - `code` is spread last: it wins over every rule-built hook.
  * configProblems(config) lists the contradictions a config may hold (every rule's `from`, an entry-choice state with a
  * root, an entry or a signIn its auth does not allow); its tests run it over ATS_CONFIGS.
@@ -433,6 +434,17 @@ export function configuredHooks(config: AtsConfig): ConfiguredHooks {
       return doneSigns(rule, area, cache).some((done) => done.name === null || (wanted !== '' && done.name === wanted))
         ? 'confirmed' : 'pending';
     },
+    // ── jr6 ENGINE E2 (FIXPLAN §6.2 item 9, JZ-4): an upload's reveal (UploadRule.reveal) ──
+    /** The link that shows the rule's hidden input (JazzHR's #resumator-choose-upload), its first match inside the
+     *  input's area, with that area (null where none is); null for a rule that declares no reveal. */
+    uploadReveal(input) {
+      const upload = uploadOf(config, input);
+      if (upload === null || upload.rule.reveal === undefined) return null;
+      const reveal = upload.area === null ? null
+        : all<HTMLElement>(upload.area, upload.rule.reveal).find((el) => el !== input) ?? null;
+      return { reveal, area: upload.area };
+    },
+    // ── end jr6 ENGINE E2 item 9 ──
     // ── behaviour review 2026-11-06 (M2) ──
     /** A file the page already shows in the input's area (a shown `done` sign, naming a file where the rule reads
      *  names), while the input itself holds none: dom/scan.ts reads the field as holding it (the planner keeps it, or

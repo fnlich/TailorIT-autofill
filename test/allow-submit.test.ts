@@ -121,3 +121,31 @@ describe('the Submit exception', () => {
     }
   }, 60_000);
 });
+
+// jr6 ENGINE E2 (FIXPLAN §6.2 item 9, JZ-4): the upload's reveal door. clickUploadReveal presses one link (an upload
+// rule's declared reveal, which stays never-pressed for every other path), so it is held as the other doors are: defined
+// once in not-submit.ts, which never calls it, named by the upload filler alone (dom/fillers/upload.ts, which calls it
+// once), not exported by fillers/index.ts; and the filler's revealUpload is imported by content/pass.ts alone. // jr6 ENGINE
+describe('the upload reveal door (jr6 ENGINE)', () => { // jr6 ENGINE
+  it('is named by the upload filler alone, beside not-submit.ts where it is defined', () => {
+    const naming = sources(SRC).map(nameOf).filter((name) => !isTest(name))
+      .filter((name) => /\bclickUploadReveal\b/.test(readFileSync(join(SRC, name), 'utf8')));
+    expect(naming.sort()).toEqual(['dom/fillers/not-submit.ts', 'dom/fillers/upload.ts']);
+    expect(readFileSync(join(SRC, 'dom/fillers/upload.ts'), 'utf8').match(/clickUploadReveal\(/g)).toHaveLength(1);
+    const notSubmit = readFileSync(join(SRC, 'dom/fillers/not-submit.ts'), 'utf8');
+    expect(notSubmit.match(/\bclickUploadReveal\(/g)).toHaveLength(1);
+    expect(notSubmit).toMatch(/export function clickUploadReveal\(/);
+    expect(readFileSync(join(SRC, 'dom/fillers/index.ts'), 'utf8')).not.toMatch(/clickUploadReveal|revealUpload/);
+  });
+
+  it('has its wrapper, revealUpload, imported by content/pass.ts alone', () => {
+    const importing = sources(SRC).map(nameOf).filter((each) => !isTest(each)).filter((each) => {
+      const text = readFileSync(join(SRC, each), 'utf8');
+      return [...text.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g)]
+        .some(([, isType, names, source]) => isType === undefined && /(^|\/)upload$/.test(source!)
+          && names!.split(',').some((name) => name.trim().split(/\s+as\s+/)[0] === 'revealUpload'));
+    });
+    expect(importing).toEqual(['content/pass.ts']);
+    expect(readFileSync(join(SRC, 'content/pass.ts'), 'utf8').match(/revealUpload\(/g)).toHaveLength(1);
+  });
+}); // jr6 ENGINE
