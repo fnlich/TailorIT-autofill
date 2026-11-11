@@ -43,13 +43,7 @@ const HISTORY: Readonly<Record<string, ReadonlyArray<{ section: string } | { lin
 };
 
 /** The lines integration rewords (module header), in file order, each by a phrase of its own. */
-const PENDING: Readonly<Record<string, readonly string[]>> = {
-  'docs/PRIVACY.md': [
-    '- **Open Application:** on a job posting that shows no form',
-    // The disclosure's quote, reworded with it (version 15).
-    "Open Application in its panel presses the site's own Apply when you choose it",
-  ],
-};
+const PENDING: Readonly<Record<string, readonly string[]>> = {};
 
 function files(dir: string, kinds = /\.(ts|tsx|css|html)$/): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
