@@ -21,6 +21,10 @@ import signInHtml from '../../fixtures/workday/workday-sign-in.html?raw';
 import aepCreateHtml from '../../fixtures/workday/jr6-aep-create-account.html?raw';
 import brookfieldSignInHtml from '../../fixtures/workday/jr6-brookfield-sign-in.html?raw';
 import verilyVerifyHtml from '../../fixtures/workday/verily-sign-in-verify.html?raw';
+import ninjaConsentHtml from '../../fixtures/jobvite/ninjaone-consent.html?raw';
+import ninjaGateHtml from '../../fixtures/jobvite/ninjaone-consent-empty.html?raw';
+import ninjaGateRoutes from '../../fixtures/jobvite/ninjaone-consent-empty.routes.json';
+import { adaptersFor } from '../adapters';
 import { genericAdapter } from '../adapters/generic';
 import { icimsAdapter } from '../adapters/icims';
 import { SNAPSHOT_VIEWPORT } from '../adapters/test/expectations.testkit';
@@ -32,7 +36,8 @@ import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testki
 import { deadline } from '../dom/time';
 import type { SignInCredential } from '../messaging/schemas';
 import { COPY } from '../shared/copy';
-import { createFakeWorker, testVocab } from './content.testkit';
+import { addressOf, openAt, runtimeAt, servedAdapter } from './apply.testkit';
+import { createFakeWorker, testVocab, type FakeWorker } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 import {
   ACCOUNT_ERROR_KINDS, PASSWORD_RULE_KINDS, signIn, signInDetailOf, type SignInContext,
@@ -497,3 +502,55 @@ async function icims(name: string): Promise<Fixture & { address: string }> {
   fixture.doc.addEventListener('submit', (event) => event.preventDefault(), true);
   return { ...fixture, address };
 }
+
+// ── CHAINS regression 1 (CHAINS.md section 4): the run's entry choice pressed once ───────────────────────────────────
+
+/** The registry's adapters for an address, each platform one reading the page as served at `address`. */
+const registry = (doc: Document, address: string) => (url: URL): Adapter[] =>
+  adaptersFor(url, doc).map((adapter) => (adapter.id === 'generic' ? adapter : servedAdapter(adapter, address)));
+
+/** A hello that says the frame has a form now. */
+const helloWithForm = (worker: FakeWorker) => worker.messages
+  .some((message) => message.type === 'frame/hello' && message.hasForm === true);
+
+/** Jobvite's /apply gate (ninjaone-consent-empty) at `address`, its AngularJS stood in for (as jr6-chains' pin does):
+ *  a residence chosen shows ninjaone-consent's policy details with "I Accept" and "I Decline", and hides the gate's
+ *  Cancel. Each press of the consent form's submit buttons is recorded by its words; the form's POST is held, so the
+ *  page stays shown, as it does in a browser until the next page loads. */
+async function jobviteGate(address: string) {
+  const consent = new DOMParser().parseFromString(ninjaConsentHtml, 'text/html');
+  const gate = await openAt(ninjaGateHtml, address);
+  gate.doc.addEventListener('submit', (event) => event.preventDefault(), true);
+  const select = gate.doc.querySelector<HTMLSelectElement>('select#jv-country-select')!;
+  select.addEventListener('change', () => {
+    if (select.value === '') return;
+    const form = gate.doc.querySelector('form[name="consentForm"]')!;
+    for (const back of Array.from(form.querySelectorAll('div[ng-show="showBackButton"]'))) back.classList.add('ng-hide');
+    form.querySelector('div[ng-show="showConsentPolicyDetails"]')!.replaceWith(gate.doc.importNode(
+      consent.querySelector('form[name="consentForm"] div[ng-show="showConsentPolicyDetails"]')!, true));
+  });
+  const pressed: string[] = [];
+  gate.doc.addEventListener('click', (event) => {
+    const button = (event.target as Element).closest('form[name="consentForm"] button');
+    if (button !== null) pressed.push((button.textContent ?? '').replace(/\s+/g, ' ').trim());
+  }, true);
+  return { ...gate, select, pressed };
+}
+
+describe('the run’s entry choice is pressed once, and the run waits for what it brings (CHAINS regression 1)', () => {
+  it('Jobvite’s consent gate: "I Accept" pressed once while its form posts (the page still shown), never again there',
+    async () => {
+      const APPLY = addressOf(ninjaGateRoutes, 'fixtures/jobvite/ninjaone-consent-empty.html');
+      const gate = await jobviteGate(APPLY);
+      const { worker, runtime } = await runtimeAt(gate.doc, APPLY, registry(gate.doc, APPLY));
+      runtimes.push(runtime);
+      await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 8_000 });
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(gate.pressed.length).toBeGreaterThan(0), { timeout: 30_000 });
+      // The residence chosen from the profile (RULES item 16), then the policy's "I Accept" (never "I Decline").
+      expect(gate.select.selectedIndex).toBe(1);
+      // A form's POST and the next page take a moment: 2 s here, the page still shown all along.
+      await deadline(2_000);
+      expect(gate.pressed).toEqual(['I Accept']);
+    }, 60_000);
+});

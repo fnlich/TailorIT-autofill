@@ -2941,15 +2941,19 @@ export class FillRun {
 
   /** v4 (D7): Workday's choice of how to apply ("Autofill with resume / Apply manually / Use my last application"): the
    *  adapter's declared entry is pressed (RunEnv.enterChoice: its "Apply manually", through the entry door) and the run
-   *  carries on; with none declared or shown, it rests silently, and watchPauseGone follows the person's own choice. */
+   *  carries on; with none declared or shown, it rests silently, and watchPauseGone follows the person's own choice.
+   *  jr6 SHELL-A (CHAINS regression 1): it carries on once what the press brings shows (watchPauseGone: the choice gone
+   *  in place, as Workday's dialog and ADP's privacy pane go), never at once: a choice still shown after the press is
+   *  the page at work (Jobvite's consent gate, whose "I Accept" posts its form and leaves the page shown until the next
+   *  one loads), never a reason to press it again. Before, the run carried on at once, met the same choice and pressed
+   *  again: 21 presses in 5 s there (MAX_AUTO_CONTINUES), each starting the form's POST anew. */
   private async enterChoiceNow(): Promise<void> {
     const enter = this.env.enterChoice;
     if (enter === undefined || this.request.dryRun || (!this.isTop && !this.claimed)) return;
     const outcome = enter();
     log('content.entry-choice', { pressed: outcome === 'pressed' });
     if (outcome !== 'pressed' || this.controller.signal.aborted || this.ended !== 'paused') return;
-    this.pauseWatch?.abort();
-    this.env.afterSignIn?.();
+    void this.watchPauseGone().catch(() => undefined);
   }
 
   private notify(notice: StepNotice, count?: number): void {
