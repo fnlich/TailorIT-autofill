@@ -121,6 +121,48 @@
 //   --replace-text first (an option whose whole list ends REDACTED or empty, as iCIMS's server-loaded dropdowns are,
 //   tells nothing and passes); and (JV-10) a page where the option rows of one choice group (CHOICE_ROWS) still differ
 //   after clearing, beyond their text, ids, names and values.
+// - jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b: an open SmartRecruiters City list kept each row's value and data-sr-id,
+//   which spelled the city and state typed, while the row's words were redacted), on every platform:
+//   - each open list's rows (LIST_ROWS: an ARIA option, a grid popup's row, a menu's or a tree's item, a native option,
+//     spl-select-option, sdf-select-item, Lever's location result) are read before any redaction (noteListRowsInPage),
+//     with the lists that hold a typed query's results: TYPED_LISTS (Workday's prompt search, SmartRecruiters' City
+//     search), the popups of TYPED_LIST_BOXES (Oracle's searching cx-select, iCIMS's searched dropdown) and the popup of
+//     any text box holding typed text (its aria-controls, aria-owns or ariacontrols, or its aria-activedescendant's
+//     list);
+//   - once every other redaction ran (redactListRowsInPage): a typed query's result (but FIXED_ROWS, the site's own
+//     rows), and any row whose text a redaction made REDACTED, loses its words whole and what names it: its word
+//     attributes (ROW_WORD_ATTRIBUTES: value, data-value, label, aria-label, title, ...) become REDACTED and its id
+//     attributes (ROW_ID_ATTRIBUTES: id, name, href, data-*-id, data-*-key) are normalised, each value, word or opaque
+//     token naming the row REDACTED and the rest kept, a renamed id unique and every reference to it following;
+//   - a listed string respelled in any attribute (respelledSources: joined, camel-cased, its separators changed or
+//     percent-encoded) becomes REDACTED there (transformInPage), and in the page's and its frames' addresses
+//     (respelledAddress: their path, query and fragment, so a frame's src, the route map and the header agree; an
+//     iCIMS IForm's or a Workday application's address spells its posting's title); a frame's src is otherwise left as
+//     written, its route answering it;
+//   and it refuses a file where a listed string survives in any attribute, as written or respelled (respelledIn: a
+//   frame's host, say).
+// - jr6 fixes (TOOLING; the line W reviews of 2026-11-11), on every platform, before anything is measured
+//   (clearChoicesInPage):
+//   - PRIV-2, REVC-4: a custom control's reflected checked or selected (any element but an input or an option: the
+//     chosen spl-radio's checked="true"), the name SmartRecruiters gives its chosen spl-radio alone, Angular's state
+//     classes on any element but a form (ANGULAR_STATE_ELEMENTS: a reactive form's components and groups), ADP's
+//     toggled radio svg, and the parts a widget draws on its chosen row alone (CHOSEN_DRAWINGS: ADP's radio dot and
+//     list check mark, removed) go; a widget's roving tab stop (tabindex="0") on a row but its first moves to the first
+//     row, as an unanswered widget draws it (ROVING_ROLES and ROVING_TAGS rows in ROVING_GROUP_ROLES or
+//     ROVING_GROUP_TAGS widgets); and CHOICE_ROWS reads SmartRecruiters' spl-radio and spl-select-option and ADP's
+//     sdf-radio-button and sdf-select-item groups too, a row's shadow root and its tab stop included;
+//   and it refuses a file that still holds any of them (chosenMarksIn, CHOSEN_MARK_LABELS).
+//   - PRIV-4: where the person came to the posting from (REFERRAL_PARAMS: iCIMS's iis and iisn, ADP's and Workday's
+//     source, Jobvite's __jvst and __jvsd, Greenhouse's gh_src, Lever's lever-source; every utm_*) is a per-visit value:
+//     REDACTED in every address the converter writes (the header's source, the route map, the frames' src: by
+//     withoutInjectedParams) and in each frame's written links and text (redactReferralParams), plain, after &amp; or
+//     percent-encoded once or twice; the header counts them (redacted.referral) and the final check refuses one left
+//     (referralNeedles).
+//   - PRIV-6: a listed string respelled in the page's text is REDACTED too, as in attributes (header
+//     redacted.respelledText), and the final check refuses one left in a page's text (respelledIn's `text`).
+//   - PRIV-7: the elimination refusal (listedPlacesInPage) reads every list row (LIST_ROWS, the outermost, through
+//     shadow roots' hosts) in its list (LISTED_LISTS), the site's own rows (FIXED_ROWS) and a native placeholder aside;
+//     REVC-4: the committed-fixture sweep reads the written lists alike (eliminatedListsIn).
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -364,6 +406,62 @@ export const CHOSEN_PLACES = [
  *  id="location-0">). */
 export const SEARCH_RESULT_PLACES = ['[id^="react-select-candidate-location-option-"]', '.dropdown-location'];
 
+// ── jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b, the gap SMARTRECRUITERS P1 found): the names an open list's rows carry ──
+/** The rows of an open list or of a search's results, by markup, on every platform (noteListRowsInPage,
+ *  redactListRowsInPage): an ARIA option (react-select's .select__option, iCIMS's li.dropdown-result, Workday's
+ *  menuItem, Ant's rows), a grid popup's row (Oracle's cx-select: div[role=row] > div[role=gridcell], SP\jr6\audit\
+ *  oracle.md), a menu's or a tree's item, a native <option>, and the rows that carry no role on themselves:
+ *  SmartRecruiters' <spl-select-option value data-sr-id> (its role=option is inside its shadow root; the Wiser one-click
+ *  capture's City results), ADP's <sdf-select-item role=option value aria-label> (snapshot6 adp2's lists) and Lever's
+ *  location result (.dropdown-location). A row inside another row is read with the outer one. */
+export const LIST_ROWS = ['[role="option" i]', '[role="row" i]', '[role="menuitem" i]', '[role="menuitemradio" i]',
+  '[role="menuitemcheckbox" i]', '[role="treeitem" i]', 'option', 'spl-select-option', 'sdf-select-item',
+  '.dropdown-location'];
+/** The lists that hold a typed query's results, by their own markup. Beside these, any list a text box holding typed
+ *  text names (its aria-controls, aria-owns or Lit's ariacontrols, on it or on its role=combobox wrapper, or the list
+ *  of the row its aria-activedescendant names), and the popups of TYPED_LIST_BOXES. */
+export const TYPED_LISTS = [
+  // Workday's prompt search (s2 wd, snapshot4's School search): <div data-uxi-widget-type="multiselectlist"
+  // data-uxi-multiselectlist-issearch="true">, its rows' ids naming each result by Workday's id (menuItem-<id>).
+  '[data-uxi-multiselectlist-issearch="true" i]',
+  // SmartRecruiters' City search (jr6 SMARTRECRUITERS P1, [jobs.smartrecruiters.com] Easy apply - Senior Machine
+  // Learning Engineer - Wiser Solutions.mht): <div slot="menu" role="listbox" data-sr-id="location-autocomplete-search-
+  // menu">, each result an <spl-select-option value="<place id>" data-sr-id="location-autocomplete-search-option-<place
+  // id>"> whose place id spells the city and state typed.
+  '[data-sr-id="location-autocomplete-search-menu"]',
+];
+/** The boxes whose popup always lists a typed query's results: Oracle's cx-select that searches
+ *  (input.cx-select-input--auto-suggest, its role=grid popup named by aria-controls; SP\jr6\audit\oracle.md, read from
+ *  Jobright's reading, no capture yet) and iCIMS's searched dropdown (select[icimsdropdown-search="1"], its results
+ *  ul#<id>_dropdown-results; icimsRedactInPage redacts their words). */
+export const TYPED_LIST_BOXES = ['input.cx-select-input--auto-suggest', 'select[icimsdropdown-search="1"]'];
+/** The rows of a typed query's list that are the site's own, never a result: SmartRecruiters' manual-location row
+ *  (<spl-select-option value="goToManualLocationMode">, the Wiser capture; its adapter declares it unchoosable). */
+export const FIXED_ROWS = ['spl-select-option[value="goToManualLocationMode"]'];
+/** jr6 fixes (PRIV-7, REVC-4): the lists whose rows (LIST_ROWS) the elimination refusal reads together (listedPlacesInPage)
+ *  and the committed-fixture sweep reads alike (eliminatedListsIn): a native select or datalist, and an ARIA listbox,
+ *  grid, tree or menu. */
+export const LISTED_LISTS = 'select, datalist, [role="listbox" i], [role="grid" i], [role="treegrid" i], [role="tree" i], '
+  + '[role="menu" i], [role="menubar" i]';
+/** The attributes that say a row's words (or its value): they become REDACTED with the row's words. Beside these, every
+ *  data- attribute ROW_WORD_DATA_SOURCE names (Workday's data-automation-label). */
+export const ROW_WORD_ATTRIBUTES = ['value', 'data-value', 'label', 'aria-label', 'title', 'alt', 'aria-description',
+  'aria-valuetext', 'splarialabel'];
+/** The data- attributes that say a row's words. */
+export const ROW_WORD_DATA_SOURCE = '^data-[\\w-]*(?:label|name|text|title|value|caption|display)$';
+/** The attributes that identify a row (its id, a name, an address, a data- id or key): normalised, so what names the
+ *  row in them becomes REDACTED and the rest stays (redactListRowsInPage). Beside these, every data- attribute
+ *  ROW_ID_DATA_SOURCE names (SmartRecruiters' data-sr-id, Workday's data-automation-id and data-uxi-multiselect-id). */
+export const ROW_ID_ATTRIBUTES = ['id', 'name', 'href', 'data-id', 'data-key'];
+/** The data- attributes that identify a row. */
+export const ROW_ID_DATA_SOURCE = '^data-[\\w-]+-(?:id|key)$';
+/** The attributes that name an element by its id, renamed with it (Lit's unhyphenated spellings too: SmartRecruiters'
+ *  spl-input ariacontrols). */
+export const ID_REFERENCES = ['aria-activedescendant', 'aria-controls', 'aria-owns', 'aria-labelledby',
+  'aria-describedby', 'aria-details', 'aria-errormessage', 'aria-flowto', 'for', 'headers', 'list', 'ariacontrols',
+  'ariaactivedescendant', 'arialabelledby', 'ariadescribedby'];
+// ── end jr6 round 2 ──
+
 /** jr6 (jobvite-new-2): a posting's description, where the redaction list may meet the page's own words (a town, a
  *  school, an employer the posting names): each adapter's posting text (src/adapters/<platform> postingText or its
  *  config's posting.text), and ADP's (BUILD.md section 4, E-ADP). A REDACTED there would tell the listed value by
@@ -413,6 +511,50 @@ export const CHOSEN_OPTION_ROLES = ['option', 'gridcell', 'treeitem'];
 export const CHOSEN_OPTIONS = CHOSEN_OPTION_ROLES.map((role) => `[role="${role}" i]:not([data-value=""])`).join(', ');
 // ── end of the security fix's block ──
 
+// ── jr6 fixes (TOOLING; the line W reviews, PRIV-2 and REVC-4): a chosen row told by its roving tab stop, by a custom
+// control's reflected state or name, by Angular's state classes on its components, and by a part only it draws ──
+/** The rows that can hold a widget's one roving tab stop (WAI-ARIA's roving tabindex: tabindex="0" on the chosen or
+ *  last-focused row, "-1" on the others): an ARIA option, radio, box, switch, menu item, tree item, grid cell or grid row
+ *  (by its role's first word), and the rows that carry no such role: a native option, SmartRecruiters' spl-select-option
+ *  (its role=option is inside its own shadow root). A tab (role=tab) is no answer: the open tab keeps its stop. Snapshot6
+ *  adp1's State list and adp2's Questions lists (ADP's sdf-select-item, role=option: the chosen row tabindex="0", every
+ *  other "-1"; the blank pages' lists hold the stop on their first row) and the Wiser screening capture's Yes/No
+ *  (SmartRecruiters' spl-radio, role=radio: likewise; an unanswered group, xplor-screening.html, on its first radio). */
+export const ROVING_ROLES = ['option', 'radio', 'checkbox', 'switch', 'menuitem', 'menuitemradio', 'menuitemcheckbox',
+  'treeitem', 'gridcell', 'row'];
+/** The rows ROVING_ROLES does not reach by role. */
+export const ROVING_TAGS = ['option', 'spl-select-option', 'sdf-select-item'];
+/** The widget a row's tab stop roves in: its nearest ancestor (a shadow root's host included) with one of these roles or
+ *  tags, else the nearest ancestor that holds another row of the row's kind (its role, else its tag). */
+export const ROVING_GROUP_ROLES = ['listbox', 'grid', 'treegrid', 'tree', 'radiogroup', 'menu', 'menubar'];
+/** The widgets ROVING_GROUP_ROLES does not reach by role. */
+export const ROVING_GROUP_TAGS = ['select', 'datalist'];
+/** The parts a widget draws, inside its shadow root, on its chosen row alone, removed before anything is measured
+ *  (clearChoicesInPage), so the visibility check compares the page without them; refused where they stay
+ *  (chosenMarksIn). Found while building REVC-4's row check on the line W fixtures: ADP's sdf-radio-button draws its dot
+ *  (svg.toggled > circle.radio-dot) on the chosen radio alone, a radio the page chooses by default included (snapshot6
+ *  adp2's Questions and its salary basis, adp's Resume choice), and ADP's sdf-select-item a check mark
+ *  (div#checked-icon > sdf-icon) on the chosen item alone (adp1's State list, adp2's Questions lists). Each names the
+ *  host whose tree draws it and the part by its tag, id or class. @type {Array<{ host: string; tag?: string; id?: string;
+ *  className?: string }>} */
+export const CHOSEN_DRAWINGS = [
+  { host: 'sdf-radio-button', tag: 'circle', className: 'radio-dot' },
+  { host: 'sdf-select-item', id: 'checked-icon' },
+];
+/** A CHOSEN_DRAWINGS part as a selector, in its host's light tree or its shadow root (deepenInPage reaches both).
+ *  @param {{ host: string; tag?: string; id?: string; className?: string }} part */
+const drawingSelector = ({ host, tag = '', id, className }) => {
+  const own = `${tag}${id === undefined ? '' : `#${id}`}${className === undefined ? '' : `.${className}`}`;
+  return `${host} ${own}, :host(${host}) ${own}`;
+};
+/** What clearChoicesInPage reads beside CHOSEN_MARKS on every conversion: the roving rows and their widgets, and the
+ *  CHOSEN_DRAWINGS parts. */
+export const CLEAR_CHOICE_INPUT = {
+  roving: { roles: ROVING_ROLES, tags: ROVING_TAGS, groupRoles: ROVING_GROUP_ROLES, groupTags: ROVING_GROUP_TAGS },
+  drawings: CHOSEN_DRAWINGS.map(drawingSelector),
+};
+// ── end jr6 fixes ──
+
 /** jr6 (jobvite-new-4): AngularJS's (and Angular's) state classes, which a filled capture leaves on its controls: an
  *  answered or clicked control's validity (ng-valid, ng-invalid, ng-pending and each ng-valid-<rule> and
  *  ng-invalid-<rule>: ng-valid-required beside an answer, ng-valid-parse on a clicked radio), its emptiness (ng-empty,
@@ -420,9 +562,13 @@ export const CHOSEN_OPTIONS = CHOSEN_OPTION_ROLES.map((role) => `[role="${role}"
  *  Snapshot6 jobvite1 (6), (7) and jobvite2 (5): the clicked radio alone ng-dirty, a ticked box alone ng-not-empty. */
 export const ANGULAR_STATE_SOURCE =
   '^ng-(?:(?:valid|invalid|pending)(?:-[\\w-]+)?|not-empty|empty|dirty|pristine|touched|untouched)$';
-/** The elements that carry them: every control, and every element bound by ng-model or grouping them by ng-form. */
-export const ANGULAR_STATE_ELEMENTS = 'input, select, textarea, [ng-model], [data-ng-model], [ng-form], [data-ng-form], '
-  + 'ng-form';
+/** The elements that carry them. jobvite-new-4 read every control and every element bound by ng-model or grouping them
+ *  by ng-form; jr6 fixes (PRIV-2): every element but a form, since Angular (2+) puts them on its reactive forms' custom
+ *  controls and their groups too, where no attribute need say so (SmartRecruiters' one-click pages: oc-input,
+ *  spl-input, spl-checkbox, spl-autocomplete, spl-phone-field and the sections around them, the required box's
+ *  ng-valid telling it ticked; HiBob's b-input, b-checkbox, b-single-select). A <form> keeps its own: Breezy's adapter
+ *  test reads its root's validity. */
+export const ANGULAR_STATE_ELEMENTS = '[class*="ng-"]:not(form)';
 
 /** The marks a drawn control or a list shows on the chosen answer, beside the input whose checked or selected state is
  *  dropped (the new ATSs, keyed by markup): every element `selector` names loses `classes` and the classes `patterns`
@@ -478,22 +624,53 @@ export const CHOSEN_MARKS = [
     swap: { 'icon-radio-checked': 'icon-radio-empty', 'icon-checkbox-checked': 'icon-checkbox-blank' },
     attributes: ['aria-checked'] },
   // jr6 (jobvite-new-4): AngularJS's state classes, from every control and every ng-model or ng-form element alike (the
-  // audit's change cleared them on Jobvite's radios and boxes; the verifier found them on every control).
+  // audit's change cleared them on Jobvite's radios and boxes; the verifier found them on every control). jr6 fixes
+  // (PRIV-2): and Angular's, from every element but a form (ANGULAR_STATE_ELEMENTS).
   { selector: ANGULAR_STATE_ELEMENTS, patterns: [ANGULAR_STATE_SOURCE], aria: false },
   // jr6 (adp-new-4; adp.md section 2): ADP's sdf-select-simple list marks its chosen <sdf-select-item role="option"
   // class="... selected" aria-selected="true"> inside its shadow root (snapshot6 adp2's Questions lists).
   { selector: 'sdf-select-item.selected, sdf-select-item[aria-selected="true" i]', classes: ['selected'] },
   // ── end jr6 ──
+  // ── jr6 fixes (the line W reviews: PRIV-2, REVC-4) ──
+  // A custom control's reflected state: SmartRecruiters' chosen spl-radio says checked="true" (the Wiser screening
+  // capture); any element but an input or an option (whose own state transformInPage drops) that says it is checked or
+  // selected says the answer.
+  { selector: '[checked]:not(input, option), [selected]:not(input, option)', attributes: ['checked', 'selected'],
+    aria: false },
+  // SmartRecruiters names the chosen spl-radio alone (name="<the question's>"; the Wiser screening capture): an
+  // unanswered group's radios carry no name (xplor-screening.html).
+  { selector: 'spl-radio[name]', attributes: ['name'], aria: false },
+  // ADP's chosen sdf-radio-button draws its dot's svg toggled (the dot itself is a CHOSEN_DRAWINGS part).
+  { selector: 'sdf-radio-button svg.toggled, :host(sdf-radio-button) svg.toggled', classes: ['toggled'], aria: false },
+  // ── end jr6 fixes ──
 ];
 
 /** jr6 (JV-10): the option rows of a choice group, which hold no answer once cleared, so every row of one group must
  *  read alike but for its text, ids, names, values and labels (unevenChoiceRowsInPage refuses a page where they do
- *  not: a chosen mark CHOSEN_MARKS does not know yet). Each entry names a group and its rows by markup.
- *  @type {Array<{ group: string; row: string; from: string }>} */
+ *  not: a chosen mark CHOSEN_MARKS does not know yet). Each entry names a group and its rows by markup, and (`own`) any
+ *  attribute of the row element itself that names its option there, read by its presence alone.
+ *  @type {Array<{ group: string; row: string; from: string; own?: string[] }>} */
 export const CHOICE_ROWS = [
   { group: 'fieldset.jv-input-group', row: 'label.jv-input-group-row',
     from: 'snapshot6 jobvite1 (6), (7), jobvite2 (5): Jobvite\'s radio and box groups' },
+  // ── jr6 fixes (PRIV-2, REVC-4): the widgets whose chosen row the line W reviews found told by a mark the converter did
+  // not know (a roving tab stop, a reflected checked, a name, a drawn dot or check mark) ──
+  { group: 'spl-radio-group', row: 'spl-radio', from: 'the Wiser screening capture: SmartRecruiters\' Yes/No' },
+  { group: 'sdf-radio-group', row: 'sdf-radio-button', own: ['class'],
+    from: 'snapshot6 adp2\'s Questions: ADP\'s Yes/No and salary basis (each radio\'s own class names its option)' },
+  { group: '[role="listbox" i]', row: 'sdf-select-item', from: 'snapshot6 adp1\'s State list, adp2\'s Questions lists' },
+  { group: '[role="listbox" i]', row: 'spl-select-option',
+    from: 'SmartRecruiters\' lists (the Wiser capture\'s City results; the site\'s own rows, FIXED_ROWS, aside)' },
 ];
+/** What unevenChoiceRowsInPage reads beside CHOICE_ROWS (jr6 fixes): a row's own naming attributes, read by their
+ *  presence alone in every element of the row (its ids, names, values and labels, as redactListRowsInPage reads them),
+ *  and the site's own rows, left out. */
+export const CHOICE_ROW_INPUT = {
+  own: [...new Set(['id', 'for', 'name', 'value', 'aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-label',
+    'title', ...ROW_ID_ATTRIBUTES, ...ROW_WORD_ATTRIBUTES])],
+  ownData: [ROW_ID_DATA_SOURCE, ROW_WORD_DATA_SOURCE],
+  fixed: FIXED_ROWS.join(', '),
+};
 
 /** The account's and the profile's own text (the new ATSs, DESIGN-NEW-ATS §6.4): a welcome line, an account menu, a
  *  signature's date stamp, read-only summaries of what was entered or parsed. Cleared, words and all. */
@@ -569,10 +746,54 @@ export const PER_LOAD_PARAMS = ['validityToken', 'bft', 'hsutk', '__hstc', '__hs
  *  withoutInjectedParams and stripInjectedInPage read it. */
 const PER_LOAD_SOURCE = `([?&](?:${PER_LOAD_PARAMS.join('|')})=)[^&#]*`;
 
+// ── jr6 fixes (TOOLING; the line W privacy review, PRIV-4): where the person came to the posting from ──
+/** Query parameters that say how the person arrived at a posting: a job board's or a campaign's tag, which is the very
+ *  fact FIXPLAN §0 protects as the owner's answer to ADP's "How did you learn about this position?". A per-visit value:
+ *  it becomes REDACTED in every address the converter writes (the header's source, the route map, the frames' src) and
+ *  in every link and text of the page (redactReferralParams), on every platform. iCIMS's iis and iisn (snapshot6 icims1:
+ *  careers-sentinel's posting, its frame, links and route map), ADP's source (snapshot6 adp1 and adp2: every address of
+ *  the application), and for the same reason Workday's source, Jobvite's __jvst and __jvsd, Greenhouse's gh_src and
+ *  Lever's lever-source; every REFERRAL_PREFIXES parameter too. Simplify's utm_source=Simplify stays INJECTED_PARAMS'
+ *  (dropped whole). */
+export const REFERRAL_PARAMS = ['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source'];
+/** The prefixes of referral parameters: every utm_* (utm_source, utm_medium, utm_campaign, utm_term, utm_content...;
+ *  careers-sentinel's address and frame, a company's own links). */
+export const REFERRAL_PREFIXES = ['utm_'];
+/** The pattern source (flags gi) of a referral parameter's value wherever an address holds one: its separator before
+ *  (?, &, &amp;, or percent-encoded once or twice inside another address), its name and = (or %3D, %253D) in group 1,
+ *  kept; its value up to the next separator, plain or percent-encoded (an INJECTED_PARAMS value is left for
+ *  stripInjectedParams, which drops it whole). */
+export const REFERRAL_SOURCE = `((?:\\?|&amp;|&|%3F|%26|%253F|%2526)(?:${[...REFERRAL_PARAMS.map(escapeSource),
+  ...REFERRAL_PREFIXES.map((prefix) => `${escapeSource(prefix)}[A-Za-z0-9_]+`)].join('|')})(?:=|%3D|%253D))`
+  + `(?!(?:${INJECTED_PARAMS.flatMap((entry) => (entry.includes('=') ? [escapeSource(entry.split('=')[1] ?? '')] : []))
+    .join('|')})(?![\\w-]))(?:(?!%26|%23|%2526|%2523)[^&#"'\\s<>])*`;
+
+/**
+ * jr6 fixes (PRIV-4): a text (an address, an attribute, a frame's whole serialized HTML) with each referral parameter's
+ * value REDACTED (REFERRAL_SOURCE); the values replaced go into `values` (kept in memory so the suspicious-token list
+ * leaves them out; never printed or written). Answers the text and how many it replaced.
+ * @param {string} text @param {string[]} [values] @returns {{ text: string; count: number }}
+ */
+export function redactReferralParams(text, values = []) {
+  let count = 0;
+  const out = text.replace(new RegExp(REFERRAL_SOURCE, 'gi'), (whole, key) => {
+    const value = whole.slice(key.length);
+    if (value === REDACTED || value === '') return whole;
+    values.push(value);
+    count += 1;
+    return `${key}${REDACTED}`;
+  });
+  return { text: out, count };
+}
+// ── end jr6 fixes (PRIV-4) ──
+
 /** An address with the INJECTED_PARAMS dropped from its query (stripInjectedParams), the PER_LOAD_PARAMS' values and
- *  its sign-in tokens REDACTED (redactSignInTokens; a relative address too), the rest as written. @param {string} url */
+ *  its sign-in tokens REDACTED (redactSignInTokens; a relative address too), the rest as written. jr6 fixes (PRIV-4):
+ *  and its referral parameters' values (redactReferralParams), so the header, the route map and the frames' src agree.
+ *  @param {string} url */
 export function withoutInjectedParams(url) {
-  return redactSignInTokens(stripInjectedParams(url).text.replace(new RegExp(PER_LOAD_SOURCE, 'g'), `$1${REDACTED}`));
+  return redactReferralParams(redactSignInTokens(stripInjectedParams(url).text
+    .replace(new RegExp(PER_LOAD_SOURCE, 'g'), `$1${REDACTED}`))).text;
 }
 
 /** Sign-in tokens an address carries, which no other check reads, being base64: an OpenID Connect id_token, a JWT whose
@@ -1209,6 +1430,85 @@ export function redactSources(strings) {
   });
 }
 
+// ── jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b): a listed string respelled ──
+/** A letter or digit as respelledSources reads one (WORD_CHAR's class, without its brackets). */
+const RESPELL_CHAR = 'A-Za-z0-9\\u00C0-\\u024F';
+
+/**
+ * jr6 round 2: each redact string as it may stand respelled inside an attribute (an id or a value built from it): its
+ * letter-and-digit runs in order, case-insensitive, with up to four separators (any other character, or a
+ * percent-encoded one) between them or none: "Jane Roe" also matches "jane-roe", "JaneRoe", "jane_roe", "jane%20roe"
+ * and "janeroe". A match counts only where it starts and ends at a word's edge (respelledEdge: an end of the text, a
+ * separator, a lower-case letter followed by a capital, a letter beside a digit), so "JaneRoe" in "optionJaneRoe" counts
+ * and "Roe" in "Roebuck" does not. A string that looks like a phone number is left to redactSources' own rule, which
+ * matches its digits with any punctuation. Answers each string's position in the list (from 1) and its pattern source.
+ * @param {string[]} strings @returns {Array<{ index: number; source: string }>}
+ */
+export function respelledSources(strings) {
+  return strings.flatMap((entry, at) => {
+    if (/^[\d\s().+-]+$/.test(entry) && entry.replace(/\D/g, '').length >= 7) return [];
+    const runs = entry.match(new RegExp(`[${RESPELL_CHAR}]+`, 'g')) ?? [];
+    if (runs.join('').length < 3) return [];
+    const separators = `(?:[^${RESPELL_CHAR}]|%[0-9A-Fa-f]{2}){0,4}`;
+    return [{ index: at + 1, source: runs.map(escapeRegExp).join(separators) }];
+  });
+}
+
+/** Whether `at` is a word's edge in `text` (respelledSources): an end of the text, a character that is no letter or
+ *  digit on either side, a lower-case letter followed by a capital, or a letter beside a digit. @param {string} text
+ *  @param {number} at */
+export function respelledEdge(text, at) {
+  if (at <= 0 || at >= text.length) return true;
+  const before = text[at - 1] ?? '';
+  const after = text[at] ?? '';
+  const word = new RegExp(`^[${RESPELL_CHAR}]$`);
+  if (!word.test(before) || !word.test(after)) return true;
+  if (/\d/.test(before) !== /\d/.test(after)) return true;
+  return before !== before.toUpperCase() && after !== after.toLowerCase();
+}
+
+/**
+ * An address with each listed string respelled in its path, query or fragment made REDACTED (respelledSources; its
+ * scheme and host kept, so it is still served at the same host): the page's and its frames' addresses, which the frames'
+ * src, the route map and the header all take from here, so they still agree (an iCIMS IForm's address spells its
+ * posting's title, which the list may hold). Anything that is no absolute address is answered as given.
+ * @param {string} url @param {Array<{ index: number; source: string }>} sources
+ */
+export function respelledAddress(url, sources) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  const origin = parsed.origin === 'null' ? '' : parsed.origin;
+  if (origin === '' || !url.startsWith(origin)) return url;
+  let rest = url.slice(origin.length);
+  for (const { source } of sources) {
+    for (const [start, end] of respelledSpans(rest, source).reverse()) rest = `${rest.slice(0, start)}${REDACTED}${rest.slice(end)}`;
+  }
+  return `${origin}${rest}`;
+}
+
+/** The spans of `text` a respelledSources pattern matches at words' edges. @param {string} text @param {string} source
+ *  @returns {Array<[number, number]>} */
+export function respelledSpans(text, source) {
+  /** @type {Array<[number, number]>} */
+  const spans = [];
+  const pattern = new RegExp(source, 'gi');
+  for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
+    const end = match.index + match[0].length;
+    if (match[0] !== '' && respelledEdge(text, match.index) && respelledEdge(text, end)) {
+      spans.push([match.index, end]);
+      pattern.lastIndex = end;
+    } else {
+      pattern.lastIndex = match.index + 1;
+    }
+  }
+  return spans;
+}
+// ── end jr6 round 2 ──
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Code that runs in the page. Each function is serialized by Playwright, so it may use nothing from this module: what
 // it needs comes in through its one argument.
@@ -1292,10 +1592,17 @@ export function stripInjectedInPage(input) {
  *   (Workable's phone, the Raydar and Salvo captures): they become REDACTED, the flag's region dropped;
  * - the marks `marks` names (CHOSEN_MARKS: the new ATSs' drawn controls and lists) lose their chosen classes (jr6,
  *   JV-10: or have them swapped for their unchosen twins), and an option's aria-selected="true" becomes "false" (s2 wd:
- *   and an aria-activedescendant naming that option goes).
+ *   and an aria-activedescendant naming that option goes);
+ * - jr6 fixes (PRIV-2, REVC-4): the parts a widget draws on its chosen row alone (`drawings`: CHOSEN_DRAWINGS) go; and a
+ *   widget's roving tab stop (`roving`: ROVING_ROLES and ROVING_TAGS rows, in their ROVING_GROUP_ROLES or
+ *   ROVING_GROUP_TAGS widget, else in the nearest ancestor holding another row of their kind) that stands on a row but
+ *   the widget's first, every other row of its kind "-1" or without a tabindex, moves to the first row, the two rows
+ *   swapping their tabindex: the stop an unanswered widget draws (ADP's blank lists, SmartRecruiters' and Workable's
+ *   unanswered radios), so a page converted again where nothing was chosen stays as it was.
  * Returns how many it cleared.
  * @param {{ redacted: string; marks?: Array<{ selector: string; classes?: string[]; patterns?: string[];
- *   attributes?: string[]; aria?: boolean; swap?: Record<string, string> }> }} input
+ *   attributes?: string[]; aria?: boolean; swap?: Record<string, string> }>; drawings?: string[];
+ *   roving?: { roles: string[]; tags: string[]; groupRoles: string[]; groupTags: string[] } }} input
  * @returns {{ choices: number }}
  */
 export function clearChoicesInPage(input) {
@@ -1344,6 +1651,87 @@ export function clearChoicesInPage(input) {
       if (!unselected.has((element.getAttribute('aria-activedescendant') ?? '').trim())) continue;
       element.removeAttribute('aria-activedescendant');
       choices += 1;
+    }
+  }
+  // jr6 fixes (PRIV-2, REVC-4): the parts a widget draws on its chosen row alone (CHOSEN_DRAWINGS).
+  for (const part of (input.drawings ?? []).length > 0 ? doc.querySelectorAll((input.drawings ?? []).join(', ')) : []) {
+    part.remove();
+    choices += 1;
+  }
+  // jr6 fixes (PRIV-2 a, REVC-4): a widget's roving tab stop on a row but its first moves to its first row (see above).
+  // The rows are read in the order the page is written (a shadow root's before its host's children, as the deep
+  // serializer writes them, and chosenMarksIn reads them back), each standing in its parent or, at a shadow root's top,
+  // in its host.
+  if (input.roving !== undefined) {
+    const { roles, tags, groupRoles, groupTags } = input.roving;
+    /** @type {Element[]} */
+    const order = [];
+    /** @type {Map<Element, Element | null>} */
+    const parents = new Map();
+    /** @param {ParentNode} scope @param {Element | null} parent */
+    const visit = (scope, parent) => {
+      for (const child of Array.from(scope.children)) {
+        order.push(child);
+        parents.set(child, parent);
+        if (child.shadowRoot) visit(child.shadowRoot, child);
+        visit(child, child);
+      }
+    };
+    visit(doc, null);
+    /** @param {Element} element */
+    const roleOf = (element) => (element.getAttribute('role') ?? '').trim().toLowerCase().split(/\s+/)[0] ?? '';
+    /** A row's kind (its role, else its tag), or null for no row. @param {Element} element */
+    const kindOf = (element) => {
+      const role = roleOf(element);
+      return roles.includes(role) ? role : tags.includes(element.localName) ? element.localName : null;
+    };
+    /** @param {Element} element */
+    const isWidget = (element) => groupRoles.includes(roleOf(element)) || groupTags.includes(element.localName);
+    /** @param {Element} element */
+    const stopOf = (element) => element.getAttribute('tabindex')?.trim() ?? null;
+    const rows = order.filter((element) => kindOf(element) !== null);
+    if (rows.some((row) => stopOf(row) === '0')) {
+      /** How many rows of each kind each ancestor holds, up to the rows' widget. @type {Map<Element, Map<string, number>>} */
+      const held = new Map();
+      for (const row of rows) {
+        const kind = kindOf(row) ?? '';
+        for (let at = parents.get(row) ?? null; at !== null; at = parents.get(at) ?? null) {
+          const counts = held.get(at) ?? new Map();
+          counts.set(kind, (counts.get(kind) ?? 0) + 1);
+          held.set(at, counts);
+          if (isWidget(at)) break;
+        }
+      }
+      /** Each widget's rows, by kind, in order. @type {Map<Element, Map<string, Element[]>>} */
+      const widgets = new Map();
+      for (const row of rows) {
+        const kind = kindOf(row) ?? '';
+        let widget = null;
+        for (let at = parents.get(row) ?? null; at !== null && widget === null; at = parents.get(at) ?? null) {
+          if (isWidget(at) || (held.get(at)?.get(kind) ?? 0) >= 2) widget = at;
+        }
+        if (widget === null) continue;
+        const kinds = widgets.get(widget) ?? new Map();
+        const members = kinds.get(kind) ?? [];
+        members.push(row);
+        kinds.set(kind, members);
+        widgets.set(widget, kinds);
+      }
+      for (const kinds of widgets.values()) {
+        for (const members of kinds.values()) {
+          const stops = members.flatMap((row, at) => (stopOf(row) === '0' ? [at] : []));
+          if (members.length < 2 || stops.length !== 1 || stops[0] === 0) continue;
+          if (!members.every((row, at) => at === stops[0] || [null, '-1'].includes(stopOf(row)))) continue;
+          const [first] = members;
+          const stop = members[stops[0] ?? 0];
+          if (first === undefined || stop === undefined) continue;
+          const was = first.getAttribute('tabindex');
+          first.setAttribute('tabindex', '0');
+          if (was === null) stop.removeAttribute('tabindex');
+          else stop.setAttribute('tabindex', was);
+          choices += 1;
+        }
+      }
     }
   }
   const region = /^iti__[a-z]{2}$/;
@@ -1883,16 +2271,23 @@ export function redactWorkdayInPage(input) {
  * the emails and phone numbers it found (kept in memory for the final check, never printed or written) and the
  * suspicious tokens left over. jr6 (jobvite-new-2): each place where a listed string met the page's own text (an
  * option, a label, a legend, a posting's description: `postingPlaces`) is kept in the page for listedPlacesInPage.
+ * jr6 round 2 (TOOLING; BUILD.md 4b): a listed string respelled in an attribute (`respelled`, respelledSources: joined,
+ * camel-cased, its separators changed or percent-encoded, as SmartRecruiters' location rows spell a typed city in their
+ * value and data-sr-id) becomes REDACTED there too, at words' edges (respelledEdge's rule, written again here: this
+ * runs in the page); a frame's src is left as it is (its route must still answer it: its address already lost them,
+ * respelledAddress, but in its host, which the final check refuses).
  * @param {{ resources: Record<string, Resource>; frameUrls: Record<string, string | null>; frameUrl: string;
  *   redact: string[]; email: string; notEmail: string; phone: string;
  *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; redacted: string;
- *   postingPlaces?: string }} input
+ *   postingPlaces?: string; respelled?: Array<{ index: number; source: string }>; listRows?: string }} input
  */
 export function transformInPage(input) {
   const doc = globalThis.document;
   const { resources, frameUrls, frameUrl, redacted } = input;
   const counts = {
     typedValues: 0, checked: 0, selected: 0, hiddenValues: 0, widgetText: 0, emails: 0, phones: 0, listed: 0,
+    // jr6 round 2: the listed strings respelled in attributes; jr6 fixes (PRIV-6): and in text.
+    respelled: 0, respelledText: 0,
     scripts: 0, eventHandlers: 0, javascriptUrls: 0, bases: 0, metaHttpEquiv: 0, metaRefresh: 0, embeds: 0,
     links: 0, srcdoc: 0, stylesheets: 0, images: 0, placeholders: 0, missing: 0, forms: 0, frames: 0,
     framesDropped: 0, shadowRoots: 0,
@@ -2206,21 +2601,40 @@ export function transformInPage(input) {
   };
   // jr6 (jobvite-new-2): the kinds of the page's own text where a listed string tells its value by elimination, and the
   // places a listed string met there (read by listedPlacesInPage once the platform's own redactions ran).
+  // jr6 fixes (PRIV-7): an option is any list row (`listRows`: LIST_ROWS), the outermost one, read through the shadow
+  // roots' hosts (SmartRecruiters' spl-select-option draws its role=option inside its own shadow root).
   /** @type {Array<[string, string]>} */
-  const placeKinds = [['option', 'option, [role="option" i]'], ['label', 'label'], ['legend', 'legend'],
+  const placeKinds = [['option', input.listRows ?? 'option, [role="option" i]'], ['label', 'label'], ['legend', 'legend'],
     ['posting', input.postingPlaces ?? '']];
   /** @type {Array<{ element: Element; kind: string }>} */
   const listedAt = [];
+  /** The outermost element at or above `start` that `selector` names, a shadow root's host included (jr6 fixes, PRIV-7).
+   *  @param {Element} start @param {string} selector @returns {Element | null} */
+  const outermostRow = (start, selector) => {
+    /** @type {Element | null} */
+    let found = null;
+    /** @type {any} */
+    let at = start;
+    while (at) {
+      if (at.matches(selector)) found = at;
+      const parent = at.parentNode;
+      at = at.parentElement ?? (parent?.nodeType === 11 ? parent.host ?? null : null);
+    }
+    return found;
+  };
   /** @param {Element | null | undefined} at */
   const noteListed = (at) => {
     if (!at) return;
     for (const [kind, selector] of placeKinds) {
-      const place = selector === '' ? null : at.closest(selector);
+      const place = selector === '' ? null : kind === 'option' ? outermostRow(at, selector) : at.closest(selector);
       if (place === null) continue;
       listedAt.push({ element: place, kind });
       return;
     }
   };
+  /** A text node's element, or its shadow root's host at a shadow root's top (jr6 fixes, PRIV-7). @param {Node} node */
+  const holderOf = (node) => node.parentElement
+    ?? (node.parentNode?.nodeType === 11 ? /** @type {any} */ (node.parentNode).host ?? null : null);
   /** @param {string} text @param {boolean} phones @param {Element | null} [at] */
   const scrub = (text, phones, at) => {
     let out = text;
@@ -2251,9 +2665,47 @@ export function transformInPage(input) {
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     if (node.nodeType === 3 && node.parentElement?.closest('style')) continue;
     const value = node.nodeValue ?? '';
-    const clean = scrub(value, true, node.parentElement);
+    const clean = scrub(value, true, holderOf(node));
     if (clean !== value) node.nodeValue = clean;
   }
+  // jr6 round 2 (TOOLING; BUILD.md 4b): a listed string respelled in an attribute (respelledSources' patterns), at
+  // words' edges (respelledEdge's rule: an end, a separator, a lower-case letter then a capital, a letter beside a digit).
+  const respelled = (input.respelled ?? []).map(({ source }) => new RegExp(source, 'gi'));
+  const wordChar = /^[A-Za-z0-9\u00c0-\u024f]$/;
+  /** @param {string} text @param {number} at */
+  const edge = (text, at) => {
+    if (at <= 0 || at >= text.length) return true;
+    const before = text[at - 1] ?? '';
+    const after = text[at] ?? '';
+    if (!wordChar.test(before) || !wordChar.test(after)) return true;
+    if (/\d/.test(before) !== /\d/.test(after)) return true;
+    return before !== before.toUpperCase() && after !== after.toLowerCase();
+  };
+  /** @param {string} text @param {'respelled' | 'respelledText'} [counted] what it counts in (jr6 fixes, PRIV-6: text
+   *  runs apart) */
+  const respell = (text, counted = 'respelled') => {
+    if (/;base64,/i.test(text)) return text;
+    let out = text;
+    for (const pattern of respelled) {
+      /** @type {Array<[number, number]>} */
+      const spans = [];
+      pattern.lastIndex = 0;
+      for (let match = pattern.exec(out); match !== null; match = pattern.exec(out)) {
+        const end = match.index + match[0].length;
+        if (match[0] !== '' && edge(out, match.index) && edge(out, end)) {
+          spans.push([match.index, end]);
+          pattern.lastIndex = end;
+        } else {
+          pattern.lastIndex = match.index + 1;
+        }
+      }
+      for (const [start, end] of spans.reverse()) {
+        out = `${out.slice(0, start)}${redacted}${out.slice(end)}`;
+        counts[counted] += 1;
+      }
+    }
+    return out;
+  };
   for (const element of doc.querySelectorAll('*')) {
     for (const attribute of [...element.attributes]) {
       if (/^\s*data:/i.test(attribute.value)) continue;
@@ -2261,9 +2713,25 @@ export function transformInPage(input) {
       const lowerValue = attribute.value.trim().toLowerCase();
       const phones = input.phoneAttributes.includes(name) || name.startsWith('data-') ||
         (name === 'href' && (lowerValue.startsWith('tel:') || lowerValue.startsWith('sms:')));
-      const clean = scrub(attribute.value, phones, element);
+      const scrubbed = scrub(attribute.value, phones, element);
+      // A frame's address keeps its spelling here (its route answers it as written; respelledAddress already took what
+      // its path and query spelled); what stays (its host) the final check refuses.
+      const framed = name === 'src' && (element.localName === 'iframe' || element.localName === 'frame');
+      const clean = framed ? scrubbed : respell(scrubbed);
       if (clean !== attribute.value) element.setAttribute(attribute.name, clean);
     }
+  }
+  // jr6 fixes (PRIV-6): a listed string respelled in the page's text too, as in attributes (a résumé's file name joined
+  // with underscores where FILE_NAME_PLACES does not look, a name written joined in a sentence); where it met an
+  // option, a label, a legend or a posting, the place is noted as the exact rule notes it (listedPlacesInPage).
+  const textWalker = doc.createTreeWalker(doc, 4 | 128 /* NodeFilter.SHOW_TEXT | SHOW_COMMENT */);
+  for (let node = textWalker.nextNode(); node; node = textWalker.nextNode()) {
+    if (node.nodeType === 3 && node.parentElement?.closest('style')) continue;
+    const value = node.nodeValue ?? '';
+    const clean = respell(value, 'respelledText');
+    if (clean === value) continue;
+    node.nodeValue = clean;
+    noteListed(holderOf(node));
   }
   const view = /** @type {any} */ (globalThis);
   view.__fixtureListed = listedAt;
@@ -2556,25 +3024,52 @@ export function redactPlatformInPage(input) {
  * the posting names), so the conversion refuses it until the element is replaced (--replace-text). An option whose
  * whole list ends REDACTED or empty (iCIMS's server-loaded dropdowns, which icimsRedactInPage blanks whole) tells
  * nothing and is left out. Answers how many places of each kind, never a value.
- * @param {string} redacted
+ * jr6 fixes (PRIV-7, REVC-4): an option is any list row (`rows`: LIST_ROWS, as transformInPage noted it: the outermost,
+ * through shadow roots' hosts), in its list (`lists`: LISTED_LISTS, the nearest above it, a shadow root's host
+ * included), whose rows are read deep (open shadow roots too, where deepenInPage reached them), the outermost ones,
+ * the site's own rows (`fixed`: FIXED_ROWS) left out; a row is blank when its words, its shadow roots' included, are
+ * REDACTED or nothing (a typed query's results, whose words went whole, are blank). A string argument is the old form
+ * (`redacted` alone: native options and role=option in a select, datalist or listbox).
+ * @param {string | { redacted: string; rows?: string; fixed?: string; lists?: string }} input
  * @returns {{ option: number; label: number; legend: number; posting: number }}
  */
-export function listedPlacesInPage(redacted) {
+export function listedPlacesInPage(input) {
+  const { redacted, rows = 'option, [role="option" i]', fixed = '', lists = 'select, datalist, [role="listbox" i]' } =
+    typeof input === 'string' ? { redacted: input } : input;
   const view = /** @type {any} */ (globalThis);
   /** @type {Array<{ element: Element; kind: 'option' | 'label' | 'legend' | 'posting' }>} */
   const noted = view.__fixtureListed ?? [];
   view.__fixtureListed = [];
   const counts = { option: 0, label: 0, legend: 0, posting: 0 };
-  /** @param {Element} option */
-  const blank = (option) => ['', redacted].includes((option.textContent ?? '').trim());
+  /** A node's words, its open shadow root's included. @param {Node} node @returns {string} */
+  const wordsOf = (node) => (node.nodeType === 3 ? node.nodeValue ?? ''
+    : [...(/** @type {any} */ (node).shadowRoot?.childNodes ?? []), ...node.childNodes].map(wordsOf).join(' '));
+  /** A native placeholder (value="": "Select...") is no candidate either. @param {Element} option */
+  const blank = (option) => (option.localName === 'option' && option.getAttribute('value') === '')
+    || wordsOf(option).split(redacted).join('').trim() === '';
+  /** The element above, a shadow root's host where a shadow root's top stands. @param {Element} element
+   *  @returns {Element | null} */
+  const up = (element) => element.parentElement
+    ?? (element.parentNode?.nodeType === 11 ? /** @type {any} */ (element.parentNode).host ?? null : null);
+  /** @param {Element} element @returns {Element | null} */
+  const listOf = (element) => {
+    for (let at = up(element); at !== null; at = up(at)) if (at.matches(lists)) return at;
+    return null;
+  };
+  /** Whether another row stands above this one (it is read with the outer row). @param {Element} row */
+  const nested = (row) => {
+    for (let at = up(row); at !== null; at = up(at)) if (at.matches(rows)) return true;
+    return false;
+  };
   /** @type {Set<Element>} */
   const seen = new Set();
   for (const { element, kind } of noted) {
     if (!element.isConnected || seen.has(element)) continue;
     seen.add(element);
     if (kind === 'option') {
-      const list = element.closest('select, datalist, [role="listbox" i]');
-      const options = list === null ? [element] : Array.from(list.querySelectorAll('option, [role="option" i]'));
+      const list = listOf(element);
+      const options = (list === null ? [element] : Array.from(list.querySelectorAll(rows)).filter((row) => !nested(row)))
+        .filter((row) => fixed === '' || !row.matches(fixed));
       if (options.every(blank)) continue;
     }
     counts[kind] += 1;
@@ -2582,33 +3077,358 @@ export function listedPlacesInPage(redacted) {
   return counts;
 }
 
+// ── jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b, the gap SMARTRECRUITERS P1 found) ──
+/**
+ * Reads each open list's rows (`rows`: LIST_ROWS, the outermost of nested ones, inside open shadow roots where the
+ * platform keeps them) before anything is redacted, on every platform: each row's own words (its text, its shadow
+ * roots' included, and its own tree's label attributes' words, three letters or more) and the values its own tree's word
+ * attributes give (`words`, `wordData`: ROW_WORD_ATTRIBUTES and ROW_WORD_DATA_SOURCE, and its whole text), kept in the
+ * page for redactListRowsInPage and never answered;
+ * and the lists that hold a typed query's results: those `typedLists` names (TYPED_LISTS), the popup of each box
+ * `typedBoxes` names (TYPED_LIST_BOXES: an input's aria-controls list, an iCIMS select's #<id>_dropdown-results), and
+ * the popup of any text box (a text-like input, or a custom element) that is neither read-only nor disabled and holds
+ * typed text (its value attribute, or its shadow root's input's): the list its aria-controls, aria-owns or Lit's
+ * ariacontrols names, on it or on its role=combobox wrapper, or the list of the row its aria-activedescendant names.
+ * Answers how many rows and typed lists it read.
+ * @param {{ rows: string[]; typedLists: string[]; typedBoxes: string[]; words: string[]; wordData: string }} input
+ * @returns {{ rows: number; typedLists: number }}
+ */
+export function noteListRowsInPage(input) {
+  const doc = globalThis.document;
+  const view = /** @type {any} */ (globalThis);
+  const wordData = new RegExp(input.wordData, 'i');
+  /** An element's parent, across a shadow root to its host. @param {Element} element @returns {Element | null} */
+  const parentOf = (element) => element.parentElement ?? /** @type {any} */ (element.parentNode)?.host ?? null;
+  const lists = '[role="listbox" i], [role="grid" i], [role="menu" i], [role="tree" i], select, datalist, ul, ol';
+  /** The list a row stands in: its nearest ancestor with a list's role or tag, else its parent. @param {Element} row */
+  const listOf = (row) => {
+    for (let at = parentOf(row); at !== null; at = parentOf(at)) if (at.matches(lists)) return at;
+    return parentOf(row);
+  };
+  /** The words and tokens of a list's own id, class and data- attributes (its structure, which a row's id may repeat:
+   *  Greenhouse's react-select-candidate-location-option-0 in react-select-candidate-location-listbox, iCIMS's field id
+   *  in result-selectable_-1_PersonProfileFields.<field>_<n> and -1_PersonProfileFields.<field>_dropdown-results),
+   *  lower-cased: each letter-and-digit run whole, and its camel-case and letter-digit parts. @param {Element | null} list */
+  const structureOf = (list) => {
+    if (list === null) return [];
+    const text = Array.from(list.attributes).filter((attribute) => ['id', 'class'].includes(attribute.name.toLowerCase())
+      || attribute.name.toLowerCase().startsWith('data-')).map((attribute) => attribute.value).join(' ');
+    const runs = text.match(/[A-Za-z0-9\u00c0-\u024f]+/g) ?? [];
+    const parts = runs.flatMap((run) => run.split(/(?<=[a-z\u00df-\u00ff])(?=[A-Z\u00c0-\u00de])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])/));
+    return [...new Set([...runs, ...parts].map((token) => token.toLowerCase()))];
+  };
+  const found = new Set(doc.querySelectorAll(input.rows.join(', ')));
+  /** @type {Map<Element, { words: string[]; values: string[]; structure: string[] }>} */
+  const records = new Map();
+  for (const row of found) {
+    let outer = false;
+    for (let at = parentOf(row); at !== null && !outer; at = parentOf(at)) outer = found.has(at);
+    if (outer) continue;
+    /** @type {string[]} */
+    const texts = [];
+    const walker = doc.createTreeWalker(row, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = (node.nodeValue ?? '').trim();
+      if (text !== '' && !node.parentElement?.closest('style, script')) texts.push(text);
+    }
+    /** @type {string[]} */
+    const labels = [];
+    /** @type {string[]} */
+    const values = [];
+    // The word attributes of the row's own tree (its slotted children's among them); a component's own label inside a
+    // shadow root (SmartRecruiters' spl-tooltip, aria-label="Tooltip", in the Wiser capture's City row) is no word of the
+    // row's.
+    const tree = row.getRootNode();
+    for (const element of [row, ...row.querySelectorAll('*')]) {
+      if (element.getRootNode() !== tree) continue;
+      for (const attribute of [...element.attributes]) {
+        const name = attribute.name.toLowerCase();
+        const value = attribute.value.trim();
+        if ((!input.words.includes(name) && !wordData.test(name)) || value === '' || /^data:/i.test(value)) continue;
+        values.push(value);
+        if (!['value', 'data-value'].includes(name)) labels.push(value);
+      }
+    }
+    const whole = texts.join(' ').replace(/\s+/g, ' ').trim();
+    if (whole !== '') values.push(whole);
+    const words = `${texts.join(' ')} ${labels.join(' ')}`.toLowerCase().match(/[a-z\u00c0-\u024f]{3,}/g) ?? [];
+    records.set(row, { words: [...new Set(words)], values: [...new Set(values)], structure: structureOf(listOf(row)) });
+  }
+  /** @type {Set<Element>} */
+  const typed = new Set(input.typedLists.length > 0 ? doc.querySelectorAll(input.typedLists.join(', ')) : []);
+  /** The element an id names, in `from`'s own tree first. @param {Element} from @param {string} id */
+  const byId = (from, id) => {
+    const root = /** @type {any} */ (from.getRootNode());
+    return (typeof root.getElementById === 'function' ? root.getElementById(id) : null) ?? doc.getElementById(id);
+  };
+  /** Adds the popups `holder` names by `names`; with `listsOnly`, only an element with a list's role or tag (a text
+   *  box's aria-controls may name a region holding a form's own selects). @param {Element} holder
+   *  @param {string[]} names @param {boolean} [listsOnly] */
+  const named = (holder, names, listsOnly = false) => {
+    for (const name of names) {
+      for (const id of (holder.getAttribute(name) ?? '').split(/\s+/).filter((each) => each !== '')) {
+        const list = byId(holder, id);
+        if (list !== null && (!listsOnly || list.matches(lists))) typed.add(list);
+      }
+    }
+  };
+  for (const box of input.typedBoxes.length > 0 ? doc.querySelectorAll(input.typedBoxes.join(', ')) : []) {
+    if (box.localName === 'select') {
+      const list = box.id === '' ? null : doc.getElementById(`${box.id}_dropdown-results`);
+      if (list !== null) typed.add(list);
+    } else {
+      named(box, ['aria-controls', 'aria-owns']);
+    }
+  }
+  const textLike = /^(?:|text|search|email|tel|url)$/;
+  for (const box of doc.querySelectorAll('input, [ariacontrols], [ariaautocomplete], [aria-autocomplete]')) {
+    if (box.hasAttribute('readonly') || box.hasAttribute('disabled')) continue;
+    if (box.localName === 'input' ? !textLike.test((box.getAttribute('type') ?? '').trim().toLowerCase())
+      : !box.localName.includes('-') && !box.matches('[role="combobox" i]')) continue;
+    const inner = box.shadowRoot ? Array.from(box.shadowRoot.querySelectorAll('input'))[0] ?? null : null;
+    if (![box, inner].some((each) => each !== null && (each.getAttribute('value') ?? '').trim() !== '')) continue;
+    const wrapper = box.parentElement?.closest('[role="combobox" i]') ?? null;
+    for (const holder of wrapper === null ? [box] : [box, wrapper]) {
+      named(holder, ['aria-controls', 'aria-owns', 'ariacontrols'], true);
+    }
+    for (const name of ['aria-activedescendant', 'ariaactivedescendant']) {
+      const id = (box.getAttribute(name) ?? '').trim();
+      const row = id === '' ? null : byId(box, id);
+      const list = row === null ? null : listOf(row);
+      if (list !== null) typed.add(list);
+    }
+  }
+  view.__fixtureRows = { records, typed };
+  return { rows: records.size, typedLists: typed.size };
+}
+
+/**
+ * Redacts what names an open list's rows (noteListRowsInPage read them), on every platform, once every other redaction
+ * ran (the platform's own included) and before the page is written:
+ * - a row of a typed query's list (a noted typed list holds it, or it is a SEARCH_RESULT_PLACES result: `results`),
+ *   but the site's own rows (`fixed`: FIXED_ROWS), is a result;
+ * - a result, and any row whose text some redaction made REDACTED (a word attribute alone tells nothing: Workday's own
+ *   rule blanks every data-automation-label, a browse list's public rows' too), loses its words whole (each text, in
+ *   its shadow root too, as SEARCH_RESULT_PLACES' do: a word left beside a REDACTED one still tells part of it; each
+ *   text keeps the white space around it) and what names it besides them: each word attribute (`words`, `wordData`:
+ *   its value, data-value, label, aria-label, title, ...) becomes REDACTED (one that is REDACTED already but for
+ *   Workday's "not checked" or "checked" is kept; inside a shadow root of the row's, only one that repeats the row's
+ *   words or held a listed string: a component's own label there stays); each id
+ *   attribute (`ids`, `idData`: id, name, href, data-id, data-key, data-sr-id, data-automation-id, ...) is normalised:
+ *   each value or whole text the row gave, as written or with its separators changed (SmartRecruiters' location id
+ *   spelling the city its words named), each opaque token (five characters or more with three digits, or eight or
+ *   more with one: Workday's menuItem-<id>), and each word of the row's own (three letters or more), become REDACTED,
+ *   the rest (a structural prefix, a position, and any token or word its list's own id, class or data- attributes
+ *   hold: iCIMS's field id) staying; runs of REDACTED become one. A renamed id stays unique (-2, -3, ...) and every
+ *   reference to it follows (`references`: ID_REFERENCES, and an href="#<id>").
+ * Answers counts, never a value.
+ * @param {{ redacted: string; fixed: string[]; results: string[]; words: string[]; wordData: string; ids: string[];
+ *   idData: string; references: string[] }} input
+ * @returns {{ rows: number; words: number; names: number; ids: number }}
+ */
+export function redactListRowsInPage(input) {
+  const doc = globalThis.document;
+  const view = /** @type {any} */ (globalThis);
+  /** @type {{ records: Map<Element, { words: string[]; values: string[]; structure: string[] }>; typed: Set<Element> }} */
+  const { records, typed } = view.__fixtureRows ?? { records: new Map(), typed: new Set() };
+  view.__fixtureRows = undefined;
+  const { redacted } = input;
+  const counts = { rows: 0, words: 0, names: 0, ids: 0 };
+  const wordData = new RegExp(input.wordData, 'i');
+  const idData = new RegExp(input.idData, 'i');
+  const char = 'A-Za-z0-9\\u00C0-\\u024F';
+  const wordChar = new RegExp(`^[${char}]$`);
+  /** respelledEdge's rule (written again: this runs in the page). @param {string} text @param {number} at */
+  const edge = (text, at) => {
+    if (at <= 0 || at >= text.length) return true;
+    const before = text[at - 1] ?? '';
+    const after = text[at] ?? '';
+    if (!wordChar.test(before) || !wordChar.test(after)) return true;
+    if (/\d/.test(before) !== /\d/.test(after)) return true;
+    return before !== before.toUpperCase() && after !== after.toLowerCase();
+  };
+  /** @param {string} text */
+  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  /** An element's parent, across a shadow root to its host. @param {Element} element @returns {Element | null} */
+  const parentOf = (element) => element.parentElement ?? /** @type {any} */ (element.parentNode)?.host ?? null;
+  /** Whether a word attribute still says something besides REDACTED (and the state Workday's rows add to it).
+   *  @param {string} value */
+  const says = (value) => {
+    const rest = value.split(redacted).join(' ');
+    return rest.trim() !== '' && !(value.includes(redacted) && /^(?:\s|not|checked)*$/i.test(rest));
+  };
+  /** An id with what names its row made REDACTED (see above). @param {string} value
+   *  @param {{ words: string[]; values: string[]; structure: string[] }} record */
+  const normalise = (value, record) => {
+    let out = value;
+    for (const given of [...record.values].sort((a, b) => b.length - a.length)) {
+      const runs = given.match(new RegExp(`[${char}]+`, 'g')) ?? [];
+      if (runs.join('').length < 2) continue;
+      const pattern = new RegExp(runs.map(escape).join(`(?:[^${char}]|%[0-9A-Fa-f]{2}){0,4}`), 'gi');
+      /** @type {Array<[number, number]>} */
+      const spans = [];
+      for (let match = pattern.exec(out); match !== null; match = pattern.exec(out)) {
+        const end = match.index + match[0].length;
+        if (match[0] !== '' && edge(out, match.index) && edge(out, end)) {
+          spans.push([match.index, end]);
+          pattern.lastIndex = end;
+        } else {
+          pattern.lastIndex = match.index + 1;
+        }
+      }
+      for (const [start, end] of spans.reverse()) out = `${out.slice(0, start)}${redacted}${out.slice(end)}`;
+    }
+    // The row's own words and opaque tokens, but its list's (a structural word or id the row's id repeats: "location"
+    // in Greenhouse's react-select-candidate-location-option-0 when a result's words hold it too, iCIMS's field id).
+    const structure = new Set(record.structure);
+    const words = new Set(record.words.filter((word) => !structure.has(word)));
+    out = out.replace(new RegExp(`[${char}]+`, 'g'), (run) => {
+      if (run === redacted || structure.has(run.toLowerCase())) return run;
+      // An opaque token: five characters or more with three digits, or eight or more with one (a database or Workday
+      // id); a design token such as "body1" is no row's name.
+      const digits = run.replace(/\D/g, '').length;
+      if ((run.length >= 5 && digits >= 3) || (run.length >= 8 && digits >= 1)) return redacted;
+      return run.split(/(?<=[a-z\u00df-\u00ff])(?=[A-Z\u00c0-\u00de])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])/)
+        .map((part) => (words.has(part.toLowerCase()) ? redacted : part)).join('');
+    });
+    return out.replace(new RegExp(`${redacted}(?:[^${char}]{0,3}${redacted})+`, 'g'), redacted);
+  };
+  const fixed = input.fixed.length > 0 ? input.fixed.join(', ') : '';
+  const results = input.results.length > 0 ? input.results.join(', ') : '';
+  /** @type {Set<string>} */
+  const taken = new Set(Array.from(doc.querySelectorAll('[id]'), (element) => element.id));
+  /** @type {Map<string, string>} */
+  const renamed = new Map();
+  for (const [row, record] of records) {
+    if (!row.isConnected) continue;
+    let inTyped = results !== '' && row.matches(results);
+    for (let at = /** @type {Element | null} */ (row); at !== null && !inTyped; at = parentOf(at)) inTyped = typed.has(at);
+    if (inTyped && fixed !== '' && row.matches(fixed)) continue;
+    const elements = [row, ...row.querySelectorAll('*')];
+    // Its words went where its text did (Workday's own rule blanks every data-automation-label, a browse list's public
+    // rows' too, so a word attribute alone tells nothing).
+    let wordsGone = inTyped;
+    const seen = doc.createTreeWalker(row, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = seen.nextNode(); node && !wordsGone; node = seen.nextNode()) {
+      wordsGone = (node.nodeValue ?? '').includes(redacted) && !node.parentElement?.closest('style');
+    }
+    if (!wordsGone) continue;
+    counts.rows += 1;
+    // A result's words go whole, and so do a row's words left beside a REDACTED one ("REDACTED, NJ" still tells part),
+    // each text keeping the white space around it.
+    const walker = doc.createTreeWalker(row, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.nodeValue ?? '';
+      if (text.trim() === '' || text.trim() === redacted || node.parentElement?.closest('style')) continue;
+      node.nodeValue = text.replace(/\S(?:[\s\S]*\S)?/, redacted);
+      counts.words += 1;
+    }
+    const tree = row.getRootNode();
+    const words = new Set(record.words);
+    for (const element of elements) {
+      // A word attribute inside a shadow root of the row's goes where it repeats the row's words or held a listed one;
+      // a component's own label there (spl-tooltip's "Tooltip") stays.
+      const own = element.getRootNode() === tree;
+      for (const attribute of [...element.attributes]) {
+        const name = attribute.name.toLowerCase();
+        const value = attribute.value;
+        if (value.trim() === '' || /^\s*data:/i.test(value)) continue;
+        if (input.words.includes(name) || wordData.test(name)) {
+          if (!says(value)) continue;
+          if (!own && !value.includes(redacted)
+            && !(value.toLowerCase().match(/[a-zÀ-ɏ]{3,}/g) ?? []).some((word) => words.has(word))) continue;
+          element.setAttribute(attribute.name, redacted);
+          counts.names += 1;
+        } else if ((input.ids.includes(name) || idData.test(name)) && !(name === 'href' && value.trim().startsWith('#'))) {
+          let next = normalise(value, record);
+          if (next === value) continue;
+          if (name === 'id') {
+            let unique = next;
+            for (let n = 2; taken.has(unique); n += 1) unique = `${next}-${n}`;
+            next = unique;
+            taken.add(next);
+            renamed.set(value, next);
+          }
+          element.setAttribute(attribute.name, next);
+          counts.ids += 1;
+        }
+      }
+    }
+  }
+  if (renamed.size > 0) {
+    for (const element of doc.querySelectorAll('*')) {
+      for (const name of input.references) {
+        const value = element.getAttribute(name);
+        if (value === null) continue;
+        const next = value.split(/(\s+)/).map((token) => renamed.get(token) ?? token).join('');
+        if (next !== value) element.setAttribute(name, next);
+      }
+      const href = element.getAttribute('href');
+      if (href !== null && href.startsWith('#') && renamed.has(href.slice(1))) {
+        element.setAttribute('href', `#${renamed.get(href.slice(1))}`);
+      }
+    }
+  }
+  return counts;
+}
+// ── end jr6 round 2 ──
+
 /**
  * jr6 (JV-10): the option rows of each choice group CHOICE_ROWS names, compared once every mark is cleared: in one
- * group every row's shape (its tags and attributes, nested, read without text and comments, without the attributes that
- * name the option itself (id, for, name, value, aria-labelledby, aria-describedby, aria-controls, aria-label, title),
- * digits read alike) must be the same; a row that reads apart still tells the chosen option, by a mark CHOSEN_MARKS does
- * not know. Answers, per entry, how many groups it read and how many held rows apart; never a value.
- * @param {{ rows: Array<{ group: string; row: string }> }} input
+ * group every row's shape (its tags and attributes, nested, read without text and comments, digits read alike) must be
+ * the same; a row that reads apart still tells the chosen option, by a mark CHOSEN_MARKS does not know. The attributes
+ * that name the option itself (id, for, name, value, aria-labelledby, aria-describedby, aria-controls, aria-label,
+ * title) are left out. jr6 fixes (PRIV-2, REVC-4): they, the other attributes a row names itself by (`own`, `ownData`:
+ * CHOICE_ROW_INPUT) and an entry's `own` attributes of the row element itself are read by their presence alone (a name
+ * on the chosen row alone tells it: SmartRecruiters' spl-radio); a row's shadow root is read before its children (ADP's
+ * chosen sdf-radio-button and sdf-select-item draw their marks there); a class that only says where a row stands
+ * (…-first, …-last, …-only) reads alike; the first row's roving tab stop (tabindex="0") reads as its siblings' tabindex,
+ * an unanswered group's own, so the tab stop counts in the shape; the site's own rows (`fixed`: FIXED_ROWS) are left out.
+ * Answers, per entry, how many groups it read and how many held rows apart; never a value.
+ * @param {{ rows: Array<{ group: string; row: string; own?: string[] }>; own?: string[]; ownData?: string[];
+ *   fixed?: string }} input
  * @returns {Array<{ groups: number; uneven: number }>}
  */
 export function unevenChoiceRowsInPage(input) {
   const doc = globalThis.document;
   const own = new Set(['id', 'for', 'name', 'value', 'aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-label',
-    'title']);
-  /** @param {Element} element @returns {string} */
-  const shape = (element) => {
-    const attributes = Array.from(element.attributes).filter((attribute) => !own.has(attribute.name.toLowerCase()))
-      .map((attribute) => `${attribute.name.toLowerCase()}=${attribute.value.replace(/\d+/g, '#')}`).sort().join(' ');
-    return `<${element.localName} ${attributes}>${Array.from(element.children, shape).join('')}</>`;
+    'title', ...(input.own ?? [])]);
+  const ownData = (input.ownData ?? []).map((source) => new RegExp(source, 'i'));
+  const position = /(?:^|[-_])(?:first|last|only)(?:-(?:child|of-type))?$/i;
+  /** @param {Element} element @param {string[]} named the row element's own attributes (CHOICE_ROWS' `own`)
+   *  @param {string | null | undefined} stop the first row's tabindex read as its siblings' (null: none)
+   *  @returns {string} */
+  const shape = (element, named = [], stop = undefined) => {
+    const attributes = Array.from(element.attributes).flatMap((attribute) => {
+      const name = attribute.name.toLowerCase();
+      if (own.has(name) || named.includes(name) || ownData.some((pattern) => pattern.test(name))) return [name];
+      if (name === 'tabindex' && stop === null) return [];
+      const value = name === 'tabindex' && stop !== undefined && stop !== null ? stop
+        : name === 'class' ? attribute.value.split(/\s+/).filter((token) => token !== '' && !position.test(token)).sort().join(' ')
+          : attribute.value;
+      return [`${name}=${value.replace(/\d+/g, '#')}`];
+    }).sort().join(' ');
+    const children = [...Array.from(element.shadowRoot?.children ?? []), ...Array.from(element.children)];
+    return `<${element.localName} ${attributes}>${children.map((child) => shape(child)).join('')}</>`;
   };
-  return input.rows.map(({ group, row }) => {
+  return input.rows.map(({ group, row, own: named = [] }) => {
     let groups = 0;
     let uneven = 0;
     for (const holder of doc.querySelectorAll(group)) {
-      const rows = Array.from(holder.querySelectorAll(row));
+      const rows = Array.from(holder.querySelectorAll(row))
+        .filter((each) => input.fixed === undefined || input.fixed === '' || !each.matches(input.fixed));
       if (rows.length < 2) continue;
       groups += 1;
-      if (new Set(rows.map(shape)).size > 1) uneven += 1;
+      // The siblings' most common tabindex (null: none), which an unanswered group's first row would read as.
+      /** @type {Map<string | null, number>} */
+      const tally = new Map();
+      for (const each of rows.slice(1)) {
+        const value = each.getAttribute('tabindex')?.trim() ?? null;
+        tally.set(value, (tally.get(value) ?? 0) + 1);
+      }
+      const common = [...tally].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+      const first = rows[0]?.getAttribute('tabindex')?.trim() === '0' ? common : undefined;
+      if (new Set(rows.map((each, at) => shape(each, named, at === 0 ? first : undefined))).size > 1) uneven += 1;
     }
     return { groups, uneven };
   });
@@ -2811,6 +3631,18 @@ export function tokenNeedles() {
 }
 // ── end core pass Z1, item 38 ──
 
+/**
+ * jr6 fixes (PRIV-4): the final check's needle for a referral parameter (REFERRAL_PARAMS, REFERRAL_PREFIXES) whose value
+ * is not REDACTED, read over checkedForms' forms (so percent-encoded once too). Only a conversion reads it: committed
+ * fixtures converted before it carry public links' utm_* values (a company's footer), which the sweep leaves alone.
+ * @returns {Array<{ label: string; pattern: RegExp }>}
+ */
+export function referralNeedles() {
+  const names = [...REFERRAL_PARAMS.map(escapeSource), ...REFERRAL_PREFIXES.map((prefix) => `${escapeSource(prefix)}[a-z0-9_]+`)];
+  return [{ label: 'a referral-source parameter',
+    pattern: new RegExp(`[?&;](?:${names.join('|')})=(?!${REDACTED}(?:[&#"'\\s<]|$))(?=[^&#"'\\s<])`, 'i') }];
+}
+
 // ── The security fix of 2026-11-06 (S2, S3, S10): the chosen marks a written fixture may not hold ──
 /** The attributes of a start tag's text: name (lower case) to value, entities as written (none of the checks need them
  *  decoded). @param {string} text @returns {Map<string, string>} */
@@ -2822,6 +3654,182 @@ function attributesOf(text) {
   }
   return attributes;
 }
+
+/** Elements that hold nothing a closing tag ends. */
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track',
+  'wbr', 'param', 'keygen']);
+
+/**
+ * jr6 fixes (PRIV-2, REVC-4): a written file's elements in order, read from its markup (stylesheets, scripts and comments
+ * aside), for the checks that need to know what holds what: each element's tag, its attributes (names in lower case,
+ * values as written), the element it stands in (`parent`, -1 for none; a declarative shadow root's top elements stand in
+ * its host, as the page draws them and clearChoicesInPage reads them), the last element inside it (`end`: its
+ * descendants are the elements after it up to there), and the text written directly inside it (`text`, entities
+ * decoded).
+ * @param {string} text
+ * @returns {Array<{ tag: string; attributes: Map<string, string>; parent: number; end: number; text: string }>}
+ */
+export function markupElements(text) {
+  const markup = text.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  /** @type {Array<{ tag: string; attributes: Map<string, string>; parent: number; end: number; text: string }>} */
+  const nodes = [];
+  /** The open elements, outermost first. @type {number[]} */
+  const open = [];
+  /** Closes the open elements from `at` on. @param {number} at */
+  const close = (at) => {
+    for (const index of open.splice(at)) {
+      const node = nodes[index];
+      if (node !== undefined) node.end = nodes.length - 1;
+    }
+  };
+  for (const [whole, slash, name = '', rest = '', run] of markup.matchAll(/<(\/?)([a-zA-Z][\w-]*)((?:\s[^<>]*?)?)\/?>|([^<]+)/g)) {
+    if (run !== undefined) {
+      const holder = nodes[open.at(-1) ?? -1];
+      if (holder !== undefined) holder.text += decodeEntities(run);
+      continue;
+    }
+    const tag = name.toLowerCase();
+    if (slash === '/') {
+      const at = open.findLastIndex((index) => nodes[index]?.tag === tag);
+      if (at >= 0) close(at);
+      continue;
+    }
+    const holderAt = open.at(-1) ?? -1;
+    const holder = nodes[holderAt];
+    const parent = holder !== undefined && holder.tag === 'template' && holder.attributes.has('shadowrootmode')
+      ? holder.parent : holderAt;
+    nodes.push({ tag, attributes: attributesOf(rest), parent, end: nodes.length, text: '' });
+    if (!VOID_TAGS.has(tag) && !whole.endsWith('/>')) open.push(nodes.length - 1);
+  }
+  close(0);
+  return nodes;
+}
+
+/** A simple selector list (LIST_ROWS, LISTED_LISTS, FIXED_ROWS: tags, roles, classes and one [attr="value"]) read as
+ *  tests over markupElements' nodes. @param {string[]} selectors */
+const markupMatcher = (selectors) => {
+  const tests = selectors.map((selector) => {
+    const role = /^\[role="([\w-]+)"(?: i)?\]$/.exec(selector)?.[1];
+    if (role !== undefined) return (/** @type {{ tag: string; attributes: Map<string, string> }} */ node) =>
+      (node.attributes.get('role') ?? '').trim().toLowerCase().split(/\s+/)[0] === role;
+    const className = /^\.([\w-]+)$/.exec(selector)?.[1];
+    if (className !== undefined) return (/** @type {{ tag: string; attributes: Map<string, string> }} */ node) =>
+      (node.attributes.get('class') ?? '').split(/\s+/).includes(className);
+    const [, tag = '', name, value] = /^([\w-]+)(?:\[([\w-]+)="([^"]*)"\])?$/.exec(selector) ?? [];
+    return (/** @type {{ tag: string; attributes: Map<string, string> }} */ node) => node.tag === tag
+      && (name === undefined || decodeEntities(node.attributes.get(name) ?? '') === value);
+  });
+  return (/** @type {{ tag: string; attributes: Map<string, string> }} */ node) => tests.some((test) => test(node));
+};
+
+/**
+ * jr6 fixes (REVC-4 b): the lists of a written file (LISTED_LISTS) that hold a row (LIST_ROWS, the outermost, the site's
+ * own FIXED_ROWS aside) whose words hold REDACTED beside a row whose words are public: the REDACTED row tells the
+ * listed value by elimination (UltiPro's field-of-study select of 270 options, one REDACTED). A list whose rows all read
+ * REDACTED, nothing or a native placeholder (a typed query's results, iCIMS's blanked dropdowns, UltiPro's résumé
+ * picker: its REDACTED file and "Select") tells nothing. Read over markupElements
+ * (declarative shadow roots included); the committed-fixture sweep reads it. Answers how many such lists, never a row.
+ * @param {string} text @returns {number}
+ */
+export function eliminatedListsIn(text) {
+  const nodes = markupElements(text);
+  const isRow = markupMatcher(LIST_ROWS);
+  const isList = markupMatcher(LISTED_LISTS.split(/,\s*/));
+  const isFixed = markupMatcher(FIXED_ROWS);
+  /** @param {number} at */
+  const above = (at) => nodes[at]?.parent ?? -1;
+  /** @type {Map<number, { redacted: number; public: number }>} */
+  const lists = new Map();
+  for (const [at, node] of nodes.entries()) {
+    if (!isRow(node) || isFixed(node)) continue;
+    let list = -1;
+    let nested = false;
+    for (let up = above(at); up >= 0; up = above(up)) {
+      const holder = nodes[up];
+      if (holder === undefined) break;
+      if (isRow(holder)) nested = true;
+      if (isList(holder)) {
+        list = up;
+        break;
+      }
+    }
+    if (nested || list < 0) continue;
+    const words = nodes.slice(at, node.end + 1).map((each) => each.text).join(' ');
+    const tally = lists.get(list) ?? { redacted: 0, public: 0 };
+    // A native placeholder (value="": "Select...") is no candidate.
+    const placeholder = node.tag === 'option' && node.attributes.has('value')
+      && decodeEntities(node.attributes.get('value') ?? '') === '';
+    if (words.includes(REDACTED)) tally.redacted += 1;
+    else if (words.trim() !== '' && !placeholder) tally.public += 1;
+    lists.set(list, tally);
+  }
+  return [...lists.values()].filter((tally) => tally.redacted > 0 && tally.public > 0).length;
+}
+
+/**
+ * jr6 fixes (PRIV-2 a, REVC-4): the widgets of a written file whose roving tab stop stands on a row but their first
+ * (clearChoicesInPage's rule, read back over markupElements): their rows (ROVING_ROLES, ROVING_TAGS), each in its
+ * ROVING_GROUP_ROLES or ROVING_GROUP_TAGS widget, else in its nearest ancestor holding another row of its kind; one row
+ * with tabindex="0", not the first, every other "-1" or none. Answers each such widget's row kind, never which row.
+ * @param {ReturnType<typeof markupElements>} nodes @returns {string[]}
+ */
+function rovingStopsOffFirst(nodes) {
+  /** @param {number} at */
+  const roleOf = (at) => (nodes[at]?.attributes.get('role') ?? '').trim().toLowerCase().split(/\s+/)[0] ?? '';
+  /** A row's kind (its role, else its tag), or null for no row. @param {number} at */
+  const kindOf = (at) => {
+    const role = roleOf(at);
+    const tag = nodes[at]?.tag ?? '';
+    return ROVING_ROLES.includes(role) ? role : ROVING_TAGS.includes(tag) ? tag : null;
+  };
+  /** @param {number} at */
+  const isWidget = (at) => ROVING_GROUP_ROLES.includes(roleOf(at)) || ROVING_GROUP_TAGS.includes(nodes[at]?.tag ?? '');
+  /** @param {number} at */
+  const stopOf = (at) => nodes[at]?.attributes.get('tabindex')?.trim() ?? null;
+  /** @param {number} at */
+  const parentOf = (at) => nodes[at]?.parent ?? -1;
+  const rows = nodes.flatMap((_node, at) => (kindOf(at) === null ? [] : [at]));
+  if (!rows.some((at) => stopOf(at) === '0')) return [];
+  /** How many rows of each kind each ancestor holds, up to the rows' widget. @type {Map<string, number>} */
+  const held = new Map();
+  for (const at of rows) {
+    const kind = kindOf(at);
+    for (let up = parentOf(at); up >= 0; up = parentOf(up)) {
+      held.set(`${up} ${kind}`, (held.get(`${up} ${kind}`) ?? 0) + 1);
+      if (isWidget(up)) break;
+    }
+  }
+  /** Each widget's rows of one kind, in order. @type {Map<string, number[]>} */
+  const widgets = new Map();
+  for (const at of rows) {
+    const kind = kindOf(at);
+    let widget = -1;
+    for (let up = parentOf(at); up >= 0 && widget < 0; up = parentOf(up)) {
+      if (isWidget(up) || (held.get(`${up} ${kind}`) ?? 0) >= 2) widget = up;
+    }
+    if (widget < 0) continue;
+    const members = widgets.get(`${widget} ${kind}`) ?? [];
+    members.push(at);
+    widgets.set(`${widget} ${kind}`, members);
+  }
+  /** @type {Set<string>} */
+  const found = new Set();
+  for (const [key, members] of widgets) {
+    const stops = members.flatMap((at, index) => (stopOf(at) === '0' ? [index] : []));
+    if (members.length < 2 || stops.length !== 1 || stops[0] === 0) continue;
+    if (!members.every((at, index) => index === stops[0] || [null, '-1'].includes(stopOf(at)))) continue;
+    found.add(key.slice(key.indexOf(' ') + 1));
+  }
+  return [...found];
+}
+
+/** What chosenMarksIn names jr6 fixes' marks by (PRIV-2, REVC-4). */
+export const CHOSEN_MARK_LABELS = {
+  angularComponent: 'an Angular state class on a component or a group',
+  reflected: 'a custom control that says it is checked or selected (checked, selected)',
+  roving: "a widget's roving tab stop on a row but its first (tabindex)",
+  drawing: 'a part a widget draws on its chosen row alone (CHOSEN_DRAWINGS)',
+};
 
 /**
  * The kinds of chosen mark a written fixture still holds (the security fix of 2026-11-06, S2, S3, S10), by their
@@ -2837,7 +3845,10 @@ function attributesOf(text) {
  * - a custom list item or option that says it is selected (<spl-dropdown-item selected>; jr6: or by its class,
  *   <sdf-select-item class="selected">), and a radio or box input that says it is checked;
  * - jr6 (JV-10): a chosen class CHOSEN_MARKS swaps for its twin (Jobvite's icon-radio-checked);
- * - jr6 (jobvite-new-4): an AngularJS state class (ANGULAR_STATE_SOURCE) on a control or an ng-model or ng-form element.
+ * - jr6 (jobvite-new-4): an AngularJS state class (ANGULAR_STATE_SOURCE) on a control or an ng-model or ng-form element;
+ * - jr6 fixes (PRIV-2, REVC-4; CHOSEN_MARK_LABELS): an Angular state class on any other element but a form; a checked or
+ *   selected attribute on an element but an input or an option (a custom list item's selected keeps its own label); a
+ *   widget's roving tab stop on a row but its first (rovingStopsOffFirst); a CHOSEN_DRAWINGS part inside its host.
  * @param {string} text @returns {string[]}
  */
 export function chosenMarksIn(text) {
@@ -2869,19 +3880,78 @@ export function chosenMarksIn(text) {
     if (dataChecked !== undefined && ['', 'true'].includes(dataChecked.trim().toLowerCase())) {
       found.add('a ticked control (data-checked)');
     }
-    if (name.includes('-') && /(?:item|option)$/.test(name) && (attributes.has('selected') || classes.includes('selected'))) {
-      found.add('a list item that says it is selected');
-    }
+    const listItem = name.includes('-') && /(?:item|option)$/.test(name)
+      && (attributes.has('selected') || classes.includes('selected'));
+    if (listItem) found.add('a list item that says it is selected');
     if (name === 'input' && attributes.has('checked') && /^(?:radio|checkbox)$/i.test(attributes.get('type') ?? '')) {
       found.add('a radio or box input that says it is checked');
     }
+    // jr6 fixes (PRIV-2 b, REVC-4): a custom control's reflected state (SmartRecruiters' spl-radio checked="true").
+    if (!['input', 'option'].includes(name) && (attributes.has('checked') || (attributes.has('selected') && !listItem))) {
+      found.add(CHOSEN_MARK_LABELS.reflected);
+    }
     const angularElement = ['input', 'select', 'textarea', 'ng-form'].includes(name)
       || ['ng-model', 'data-ng-model', 'ng-form', 'data-ng-form'].some((attribute) => attributes.has(attribute));
-    if (angularElement && classes.some((each) => angular.test(each))) found.add('an AngularJS state class on a control');
+    if (classes.some((each) => angular.test(each))) {
+      if (angularElement) found.add('an AngularJS state class on a control');
+      // jr6 fixes (PRIV-2 c): Angular's, on a reactive form's component or group (a <form> keeps its own).
+      else if (name !== 'form') found.add(CHOSEN_MARK_LABELS.angularComponent);
+    }
   }
+  // jr6 fixes (PRIV-2 a, REVC-4): what holds what: a roving tab stop on a row but its widget's first, and a part only a
+  // chosen row draws.
+  const nodes = markupElements(text);
+  if (rovingStopsOffFirst(nodes).length > 0) found.add(CHOSEN_MARK_LABELS.roving);
+  const drawn = nodes.some((node, at) => CHOSEN_DRAWINGS.some(({ host, tag, id, className }) => {
+    if ((tag !== undefined && node.tag !== tag) || (id !== undefined && node.attributes.get('id') !== id)) return false;
+    if (className !== undefined && !(node.attributes.get('class') ?? '').split(/\s+/).includes(className)) return false;
+    for (let up = nodes[at]?.parent ?? -1; up >= 0; up = nodes[up]?.parent ?? -1) if (nodes[up]?.tag === host) return true;
+    return false;
+  }));
+  if (drawn) found.add(CHOSEN_MARK_LABELS.drawing);
   return [...found];
 }
 // ── end of the security fix's block ──
+
+/**
+ * jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b): each redaction-list entry that survives in an attribute of a written file,
+ * as written or respelled (respelledSources: joined, camel-cased, its separators changed or percent-encoded, at words'
+ * edges), by the entry's position, the attribute's name and its element's tag, never a value: the conversion refuses
+ * a file that holds one (a frame's src, which the scrub leaves for its route, among them). Read over the markup's start
+ * tags, the declarative shadow roots' included, stylesheets, scripts and comments aside; a data: or base64 value is a
+ * payload, not words. jr6 fixes (PRIV-6): with `text`, the page's text too (each run between tags, entities decoded:
+ * "survives in the page's text"), which the conversion reads in every page it writes (a run the page's own redaction
+ * could not reach, a <template>'s, among them).
+ * @param {string} text @param {Array<{ index: number; source: string }>} sources
+ * @param {{ text?: boolean }} [options] @returns {string[]}
+ */
+export function respelledIn(text, sources, options = {}) {
+  if (sources.length === 0) return [];
+  const markup = text.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  /** @type {Set<string>} */
+  const found = new Set();
+  for (const [, tag = '', rest = ''] of markup.matchAll(/<([a-zA-Z][\w-]*)((?:\s[^<>]*?)?)\/?>/g)) {
+    for (const [name, raw] of attributesOf(rest)) {
+      if (raw.trim() === '' || /^\s*data:/i.test(raw) || /;base64,/i.test(raw)) continue;
+      const value = decodeEntities(raw);
+      for (const { index, source } of sources) {
+        if (respelledSpans(value, source).length > 0) {
+          found.add(`redact entry ${index} survives in an attribute (${name} on <${tag.toLowerCase()}>)`);
+        }
+      }
+    }
+  }
+  if (options.text === true) {
+    for (const run of markup.split(/<(?:[^<>"']|"[^"]*"|'[^']*')*>/)) {
+      if (run.trim() === '') continue;
+      const value = decodeEntities(run);
+      for (const { index, source } of sources) {
+        if (respelledSpans(value, source).length > 0) found.add(`redact entry ${index} survives in the page's text`);
+      }
+    }
+  }
+  return [...found];
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The conversion
@@ -3007,7 +4077,11 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   const mhtml = parseMhtml(readFileSync(file));
   const htmlParts = mhtml.parts.filter((part) => part.contentType === 'text/html');
   const main = htmlParts[0];
-  const mainUrl = main?.location ?? mhtml.snapshotUrl;
+  // jr6 round 2 (TOOLING; BUILD.md 4b): the listed strings as they may stand respelled in an attribute or an address;
+  // the page's and its frames' addresses lose them (respelledAddress), the frames' src, route map and header alike.
+  const respelled = respelledSources(redact);
+  const capturedUrl = main?.location ?? mhtml.snapshotUrl;
+  const mainUrl = capturedUrl ? respelledAddress(capturedUrl, respelled) : capturedUrl;
   if (!main || !mainUrl || !/^https?:/i.test(mainUrl)) fail('the capture names no web address for its page');
   const captured = mhtml.date && !Number.isNaN(Date.parse(mhtml.date)) ? new Date(mhtml.date).toISOString() : null;
 
@@ -3035,8 +4109,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   for (const part of htmlParts.slice(1)) {
     // Snapshot build, boards: a frame's address without another extension's parameters (INJECTED_PARAMS).
     if (part.contentId) {
-      frameUrls[part.contentId] = part.location && /^https?:/i.test(part.location) ? withoutInjectedParams(part.location)
-        : null;
+      frameUrls[part.contentId] = part.location && /^https?:/i.test(part.location)
+        ? respelledAddress(withoutInjectedParams(part.location), respelled) : null;
     }
   }
   const resources = resourcesOf(mhtml);
@@ -3096,7 +4170,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       stripped.push({ ...await frame.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: PER_LOAD_SOURCE,
         dropOverlays: !deep, redacted: REDACTED, closedMark: CLOSED_ROOT_MARK }),
         ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
-        marks: CHOSEN_MARKS }) });
+        marks: CHOSEN_MARKS, ...CLEAR_CHOICE_INPUT }) });
       replaced.push(replacements.length === 0 ? [] : await frame.evaluate(replaceTextInPage, { replacements }));
     }
     for (const [index] of replacements.entries()) {
@@ -3122,6 +4196,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     /** @type {OutputFile[]} */
     const written = [];
     for (const [index, { frame, url, path }] of [...converted.entries()].reverse()) {
+      // jr6 round 2 (TOOLING; BUILD.md 4b): each open list's rows and the lists a typed query filled, read before any
+      // redaction (noteListRowsInPage); what names them goes once every redaction ran (redactListRowsInPage, below).
+      await frame.evaluate(noteListRowsInPage, { rows: LIST_ROWS, typedLists: TYPED_LISTS, typedBoxes: TYPED_LIST_BOXES,
+        words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE });
       // The generic applicant-text pass, then the platform's own redactions around the transformation
       // (PLATFORM_REDACTIONS).
       const applicant = await frame.evaluate(redactApplicantTextInPage, { fileNames: FILE_NAME_PLACES,
@@ -3130,9 +4208,13 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       for (const name of applicant.names) fileNames.add(name);
       const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
-        ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', ') });
+        ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', '), respelled, listRows: LIST_ROWS.join(', ') });
       const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const ownCounts = ownBefore ?? ownAfter;
+      // jr6 round 2: a typed query's results lose their words, and every row whose words went loses what names it.
+      const rowNames = await frame.evaluate(redactListRowsInPage, { redacted: REDACTED, fixed: FIXED_ROWS,
+        results: SEARCH_RESULT_PLACES, words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE, ids: ROW_ID_ATTRIBUTES,
+        idData: ROW_ID_DATA_SOURCE, references: ID_REFERENCES });
       if (own?.counts === 'frame' && ownCounts !== null) {
         for (const [key, count] of Object.entries(ownCounts)) {
           outcome.counts[/** @type {keyof typeof outcome.counts} */ (key)] += count;
@@ -3140,14 +4222,15 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       }
       // jr6 (jobvite-new-2): a listed string met in the page's own text where a REDACTED tells it by elimination; (JV-10)
       // choice rows that still read apart once cleared. Counts only, never a value.
-      const listedIn = await frame.evaluate(listedPlacesInPage, REDACTED);
+      const listedIn = await frame.evaluate(listedPlacesInPage, { redacted: REDACTED, rows: LIST_ROWS.join(', '),
+        fixed: FIXED_ROWS.join(', '), lists: LISTED_LISTS });
       for (const [kind, count] of Object.entries(listedIn)) {
         if (count > 0) {
           reasons.push(`${basename(path)}: ${LISTED_PLACE_WORDS[kind]} whose page text the redaction list met: ${count}, `
             + 'where a REDACTED tells the value by elimination; give each synthetic text with --replace-text');
         }
       }
-      const rows = await frame.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS });
+      const rows = await frame.evaluate(unevenChoiceRowsInPage, { rows: CHOICE_ROWS, ...CHOICE_ROW_INPUT });
       for (const [at, { uneven }] of rows.entries()) {
         if (uneven > 0) {
           reasons.push(`${basename(path)}: choice groups (${CHOICE_ROWS[at]?.group}) whose option rows still differ once `
@@ -3171,9 +4254,15 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       // Another extension's parameters leave the frame's text by the one rule, wherever they stand (stripInjectedParams),
       // and so do its sign-in tokens (redactSignInTokens), on every platform.
       const injected = stripInjectedParams(serialized.html);
+      // jr6 fixes (PRIV-4): the referral parameters' values, in every link, frame address and text the frame writes
+      // (redactReferralParams), its shadow roots' included; the header's source and the route map read them from
+      // addressOf, which withoutInjectedParams gives the same rule.
+      /** @type {string[]} */
+      const referralValues = [];
+      const referred = redactReferralParams(injected.text, referralValues);
       /** @type {string[]} */
       const signInTokens = [];
-      const pageText = redactSignInTokens(injected.text, signInTokens);
+      const pageText = redactSignInTokens(referred.text, signInTokens);
       const normalised = platform === 'ashby' ? normaliseAshby(pageText)
         : platform === 'workable' ? { ...normaliseWorkable(pageText), nonces: 0 }
           : ['workday', 'icims', 'taleo', 'successfactors', 'oracle'].includes(platform)
@@ -3185,6 +4274,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       // sign-in token redacted is gone from the files: it is not listed.
       result.tokens.push(...outcome.tokens.filter(({ token }) => !injected.removed.some(({ value }) => value !== ''
         && token.includes(value)) && !signInTokens.some((value) => token.includes(value))
+        && !referralValues.some((value) => token.includes(value))
         && (normalised === null || !normalised.renderIds.some((id) => token.includes(id))
         && !(normalised.nonces > 0 && !html.includes(token))))
         .map((token) => ({ ...token, file: basename(path) })));
@@ -3201,7 +4291,15 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         redacted: { typedValues: counts.typedValues, checked: counts.checked, selected: counts.selected,
           hiddenValues: counts.hiddenValues, widgetText: counts.widgetText, emails: counts.emails, phones: counts.phones,
           listed: counts.listed, ...(applicant.applicantText > 0 ? { applicantText: applicant.applicantText } : {}),
+          // jr6 round 2: the listed strings respelled in attributes, and the rows whose names went (each only when
+          // there was one, so a page neither touches is written as before).
+          ...(counts.respelled > 0 ? { respelled: counts.respelled } : {}),
+          // jr6 fixes (PRIV-6): and in the page's text.
+          ...(counts.respelledText > 0 ? { respelledText: counts.respelledText } : {}),
+          ...(rowNames.rows > 0 ? { listRows: rowNames } : {}),
           ...(signInTokens.length > 0 ? { signInTokens: signInTokens.length } : {}),
+          // jr6 fixes (PRIV-4): the referral parameters' values redacted in the frame's text (only when there was one).
+          ...(referred.count > 0 ? { referral: referred.count } : {}),
           ...(own?.counts === 'header' && ownCounts !== null ? { [platform]: ownCounts } : {}) },
         removed: { scripts: counts.scripts, eventHandlers: counts.eventHandlers, javascriptUrls: counts.javascriptUrls,
           bases: counts.bases, metaRefresh: counts.metaRefresh, metaHttpEquiv: counts.metaHttpEquiv,
@@ -3223,7 +4321,9 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         // jr6 (jobvite-new-2): the elements each --replace-text gave synthetic text in this frame, by position.
         ...((replaced[index] ?? []).some((count) => count > 0) ? { replacedText: replaced[index] } : {}),
       };
-      result.counts[basename(path)] = { ...counts, ...took, choices, applicantText: applicant.applicantText, jrIds };
+      result.counts[basename(path)] = { ...counts, ...took, choices, applicantText: applicant.applicantText, jrIds,
+        referral: referred.count,
+        listRows: rowNames.rows, rowWords: rowNames.words, rowNames: rowNames.names, rowIds: rowNames.ids };
       const comment = `<!-- TailorIT fixture, converted by scripts/mhtml-to-fixture.mjs: convert the capture again ` +
         `rather than editing it.\n${commentJson(header)} -->`;
       // LF line ends throughout: HTML parsing treats CR LF as LF anyway, and git stores the fixture with LF.
@@ -3298,7 +4398,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       ...[...found].filter((value) => value.includes('@')).map((value) => ({ label: 'a redacted email', pattern: new RegExp(escapeRegExp(value), 'i') })),
       // A file name the page showed (redactApplicantTextInPage), and Jobright's jr_id anywhere (DESIGN-NEW-ATS §6.4, §6.5).
       ...[...fileNames].map((value) => ({ label: 'a redacted file name', pattern: new RegExp(escapeRegExp(value), 'i') })),
-      ...tokenNeedles()];
+      ...tokenNeedles(), ...referralNeedles()];
     for (const output of [...result.files, { path: join(folder, `${caseName}.routes.json`), text: JSON.stringify(result.routes) }]) {
       const forms = checkedForms(output.text);
       for (const { label, pattern } of needles) {
@@ -3306,6 +4406,11 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       }
       // The security fix of 2026-11-06 (S2): no chosen mark (an answer drawn on a control or a list) is written.
       for (const label of chosenMarksIn(output.text)) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
+      // jr6 round 2 (TOOLING; BUILD.md 4b): no listed string in any attribute, as written or respelled.
+      // jr6 fixes (PRIV-6): and none in a page's text either.
+      for (const label of respelledIn(output.text, respelled, { text: output.path.endsWith('.html') })) {
+        reasons.push(`${basename(output.path)}: ${label}`);
+      }
     }
     if (reasons.length > 0) throw new ConversionError(reasons);
     return result;
