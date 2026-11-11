@@ -2,9 +2,11 @@
  * v5 p1-panel (PLAN decision 6): the main view's modals, Jobright's in our words and look, centred over the panel (never
  * the page), with a scrim over the rest of the view:
  * - why Autofill did not start (`error`): no application form on the page (the fill reached no frame, and the page
- *   shows none), the page's form not reachable now (it shows one, and no frame took the fill), it failed (the worker's
- *   refusal or no answer), or the extension was updated under an on-page panel (its link gone for good), each with
- *   Cancel and Try Again, or Refresh Page for an update, which only a host that can reload its page offers;
+ *   shows none; jr6 apply F1: or the frame found no Apply and no form within its wait, PageState.refusal 'none', just
+ *   after this panel's own Autofill: COPY.mainView.entryRefused.none's words, which name Autofill's Apply), the page's
+ *   form not reachable now (it shows one, and no frame took the fill), it failed (the worker's refusal or no answer),
+ *   or the extension was updated under an on-page panel (its link gone for good), each with Cancel and Try Again, or
+ *   Refresh Page for an update, which only a host that can reload its page offers;
  * - the autofill information's check (`history`, Jobright's "missing key info" popup): no work experience or no
  *   education in the person's profile when they choose Autofill, with Cancel, Edit Autofill Information (the profile
  *   editor) and Autofill Anyway (the person's word: the fill goes on without it).

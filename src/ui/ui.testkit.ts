@@ -417,6 +417,14 @@ export function unmountAll(): void {
   for (const unmount of mounted.splice(0)) unmount();
 }
 
+/** jr6 apply F1: the worker pushes the tab's page (and its reports, none by default) as panel/update does, and the
+ *  panel's answers land. */
+export async function showPage(worker: FakeWorker, tabId: number, page: PageState,
+  reports: readonly FrameReport[] = []): Promise<void> {
+  await act(async () => worker.push({ v: 1, type: 'panel/update', tabId, reports, page }));
+  await settle();
+}
+
 /** Lets pending answers and React's updates run. */
 export async function settle(): Promise<void> {
   await act(async () => {

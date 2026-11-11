@@ -19,8 +19,8 @@ import type {
 } from '../core/types/profile';
 import type { PauseReason, RunStatus } from '../core/types/run';
 import type {
-  AddJobOutcome, AgentBlock, AgentPause, AgentStatus, AskLength, AskOutcome, JobSearchRefusal, LetterOutcome, PressOutcome,
-  ProfileSaveRefusal, SaveAnswerOutcome, SiteRequestOutcome, SubmittedState,
+  AddJobOutcome, AgentBlock, AgentPause, AgentStatus, AskLength, AskOutcome, EntryRefusal, JobSearchRefusal, LetterOutcome,
+  PressOutcome, ProfileSaveRefusal, SaveAnswerOutcome, SiteRequestOutcome, SubmittedState,
 } from '../messaging/schemas';
 import type { TailorFailure, TailorKind } from '../messaging/page-schemas'; // v1.4 F
 import type { QueueBlock, QueueItemStatus, QueuePhase, QueueStop } from '../messaging/page-schemas'; // v1.5 QX
@@ -654,7 +654,7 @@ const PANEL = {
 /** The side panel's strip before any run (v2): what the tab's page holds. */
 const STRIP = {
   form: (platform: string | null) => (platform === null ? 'Application form found' : `${platform} application form found`),
-  noForm: 'No application form on this page. Open its application to use Autofill.',
+  noForm: "No application form on this page yet. Autofill presses the site's Apply first.", // jr6 apply F1
   // DESIGN-NEW-ATS Phase 0: the new ATSs too.
   none: 'Open a job application on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany or ADP Workforce Now to use Autofill.',
 } as const;
@@ -1716,6 +1716,9 @@ const SETUP = {
   notNow: 'Not Now', // v5 p1-panel
 } as const;
 
+/** jr6 apply F1: no application form and no Apply on the page: the entry's refusal 'none' and the "no form" modal. */
+const NO_FORM = "Autofill found no application form and no Apply button on this page. Open the job's application, then press Autofill.";
+
 /** The main view's new parts (Panel.tsx, JobCard.tsx). */
 const MAIN_VIEW = {
   settings: 'Settings',
@@ -1727,12 +1730,19 @@ const MAIN_VIEW = {
   ask: 'Ask Custom Question',
   addJob: 'Add This Job In One Click',
   notThisJob: 'Not This Job?', // v5 p1-panel
-  // ── v5 p2-fill: Open Application on a posting page (PLAN Phase 2, Jobright's button in our own words). Drafts. ──
-  openApplication: 'Open Application',
-  openApplicationHelp: "This page shows the job, not its application. Open Application presses the site's own Apply, then fills the application it opens.",
-  // v5 p2-fill review (L5): a draft for the owner's review.
-  openApplicationRefused: "Autofill couldn't press this site's Apply. Press Apply on the page yourself, then press Autofill on the application.",
-  // ── end v5 p2-fill ──
+  // ── jr6 apply F1 (the owner, 2026-11-10: "`Autofill` word will be kept"; APPLYPLAN F1 item 5, OQ10's drafts): on a
+  // page whose site offers its own Apply the main button reads Autofill (PANEL.fill); its "?", and why an entry was
+  // refused, in one line each (Panel.tsx; 'none' is also the "no form" modal's, MODALS.errors). Drafts for the owner. ──
+  entryHelp: "This page shows the job. Autofill presses the site's own Apply first, then fills the application it opens.",
+  entryRefused: {
+    none: NO_FORM,
+    ambiguous: 'This page shows more than one Apply. Press the one you want, then press Autofill on the application.',
+    blocked: "Something on the page needs you first, such as a check that you're human or a code. Finish it, then press Autofill.",
+    'new-tab': 'This site opens its application in a new tab. Press Apply on the page, then press Autofill in that tab.',
+    elsewhere: 'Apply took you to another site. Press Autofill there if TailorIT supports it.',
+    'nothing-followed': 'Autofill pressed Apply, but no application opened. Press Apply on the page yourself, then press Autofill.',
+  } satisfies Record<EntryRefusal, string>,
+  // ── end jr6 apply F1 ──
   resume: 'Résumé:',
   noResume: 'none',
   withoutResume: 'none, by your choice',
@@ -1788,7 +1798,7 @@ const HISTORY_WORDS = { experience: 'work experience', education: 'education' } 
 const MODALS = {
   /** Why Autofill did not start, by what the worker answered (Jobright's four reasons). */
   errors: {
-    'no-form': 'No application form was found on this page. Open the application itself, then try again.',
+    'no-form': NO_FORM, // jr6 apply F1
     unavailable: "Autofill can't reach this page's form right now. Reload the page, then try again.",
     failed: "Autofill didn't work this time. Try again in a moment.",
     updated: 'TailorIT Autofill was updated. Refresh this page to use it again.',
