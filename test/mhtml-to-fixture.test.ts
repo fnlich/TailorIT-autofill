@@ -2344,6 +2344,22 @@ describe('the committed SmartRecruiters fixtures (the snapshot build of 2026-11-
     expect(body.match(/<template shadowrootmode="open"/g)?.length ?? 0).toBe(header.shadowRoots);
     // No form element of SmartRecruiters' keeps a value it was given (redactPlatformInPage).
     expect(markup).not.toMatch(/<spl-(?:input|textarea|number-field|phone-field|select|autocomplete|radio-group|checkbox)(?=[\s>])[^>]*\svalue="[^"]/);
+    // jr6 fixes (PRIV-3, REVC-1; SMARTRECRUITERS): no answer of the person's in a control's marks. No spl-radio or
+    // spl-checkbox keeps checked, no spl-radio its name, no Yes/No group a lone tab stop off its first row (the roving
+    // tabindex 0 stood on the chosen row: an unanswered group, xplor-screening's six, has it on its first), and no
+    // element (a form included) an Angular state class (which boxes were typed into, touched or valid). Every page here
+    // was converted with the converter that clears them (the five form pages again in the jr6 fix round). Counts only,
+    // so a failure never shows the row.
+    const count = (pattern: RegExp) => markup.match(pattern)?.length ?? 0;
+    expect(count(/<spl-(?:radio|checkbox)(?=[\s>])[^>]*\schecked(?:\s*=\s*"(?!false")[^"]*")?(?=[\s/>])/g), 'checked')
+      .toBe(0);
+    expect(count(/<spl-radio(?=[\s>])[^>]*\sname=/g), 'a radio named').toBe(0);
+    const groups = [...markup.matchAll(/<spl-radio-group\b[^>]*>([\s\S]*?)<\/spl-radio-group>/g)]
+      .map(([, group]) => [...(group ?? '').matchAll(/<spl-radio(?=[\s>])[^>]*?\stabindex="(-?\d+)"/g)].map(([, tab]) => tab));
+    expect(groups.filter((tabs) => !tabs.every((tab, at) => tab === (at === 0 ? '0' : '-1'))).length,
+      'Yes/No groups whose tab stop is off their first row').toBe(0);
+    expect(count(/<[a-z][\w-]*\s[^>]*\bclass="[^"]*(?<![\w-])ng-(?:(?:valid|invalid|pending)(?:-[\w-]+)?|not-empty|empty|dirty|pristine|touched|untouched)(?![\w-])/g),
+      'elements with an Angular state class').toBe(0);
   });
 });
 
@@ -2489,18 +2505,17 @@ const CHOSEN_STATE_FIXTURES = [
 /**
  * jr6 fixes (PRIV-2, REVC-4): the committed fixtures converted before the converter cleared these marks, which still hold
  * one (a privacy finding, not an exception): Oracle's two apply-flow pages keep each answered pill group's tab stop on
- * the chosen pill, and HiBob's form and SmartRecruiters' two one-click pages keep Angular's state classes on their
- * components. Each is to be converted again with this converter by its package (ORACLE, SMARTRECRUITERS; HiBob's has
- * none this round: SP\jr6\build\TOOLING.md, round 3), and its entry then goes: each lets through only the marks named
- * here, and only while the file still holds exactly them. (ADP's main questions page, which drew its chosen radio's dot,
- * was converted again by the jr6 ADP fixer and holds none.)
+ * the chosen pill, and HiBob's form keeps Angular's state classes on its components. Each is to be converted again with
+ * this converter by its package (ORACLE; HiBob's has none this round: SP\jr6\build\TOOLING.md, round 3), and its entry
+ * then goes: each lets through only the marks named here, and only while the file still holds exactly them. (ADP's main
+ * questions page, which drew its chosen radio's dot, was converted again by the jr6 ADP fixer and holds none;
+ * SmartRecruiters' xplor-one-click and xplor-screening were converted again (SMARTRECRUITERS, jr6 fix round): their
+ * entries went.)
  */
 const MARKED_FIXTURES: Record<string, string[]> = {
   'hibob/mplc-form.html': [CHOSEN_MARK_LABELS.angularComponent],
   'oracle/hjf-after-submit.html': [CHOSEN_MARK_LABELS.roving],
   'oracle/hjf-apply-section.html': [CHOSEN_MARK_LABELS.roving],
-  'smartrecruiters/xplor-one-click.html': [CHOSEN_MARK_LABELS.angularComponent],
-  'smartrecruiters/xplor-screening.html': [CHOSEN_MARK_LABELS.angularComponent],
 };
 
 /**

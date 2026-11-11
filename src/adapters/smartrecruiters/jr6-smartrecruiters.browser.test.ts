@@ -1017,30 +1017,15 @@ describe('P2 SR-2 (ENGINE E1) and SR-13 (RULES): the first page', () => {
       clickedOnly(landed, [box], ['Austin']);
     });
 
-  // Known gap, older than jr6 (reported to RULES in the P2 handoff): SmartRecruiters' City results name the city with
-  // its region and country (the Wiser capture's one result, redacted, keeps an identifier spelling a city and its
-  // state), but the planner reads "City" (address.city) as a text value, matched as text: only a result that is the
-  // city's word alone matches. The place matcher (core/matcher/place.ts: "Austin, Texas, United States" for "Austin,
-  // TX") serves location.current only.
-  it.fails('blank (known gap): a result worded "City, State, Country" is the golden profile\'s city, chosen and verified',
+  // SmartRecruiters' City results name the city with its region and country (the Wiser capture's one result,
+  // redacted, keeps an identifier spelling a city and its state). Since jr6-rules 9e4eec2 the planner's address.city
+  // carries its place parts, so the place matcher (core/matcher/place.ts) reads such results; the query stays the city.
+  it('blank: a result worded "City, State, Country" is the golden profile\'s city, chosen and verified',
     async () => {
       const { stood, result } = await searchCity('blank', 'Xplor', ['Austin, Texas, United States',
         'Austin, Minnesota, United States']);
       expect(stood.chosen).toEqual(['Austin, Texas, United States']);
       expect(result.row).toMatchObject({ status: 'verified', wrote: true, verification: 'verified' });
-    });
-
-  it("blank: today such results are read, then no match: the box put back, the field the person's, no row clicked",
-    async () => {
-      const { landed, stood, asked, result, box } = await searchCity('blank', 'Xplor', ['Austin, Texas, United States',
-        'Austin, Minnesota, United States']);
-      expect(asked).toEqual([[['Austin, Texas, United States', false], ['Austin, Minnesota, United States', false],
-        [MANUAL_ROW_WORDS, true]]]);
-      expect(result.row).toMatchObject({ category: 'address.city', status: 'flagged', reason: 'no-match', wrote: false });
-      expect(stood.chosen).toEqual([]);
-      expect(stood.typed).toEqual(['Austin', '']);
-      expect(box.value).toBe('');
-      clickedOnly(landed, [box], []);
     });
 
   it.each([['blank', 'Xplor'], ['wiser', 'Wiser Solutions']] as const)(
@@ -1188,4 +1173,64 @@ describe('P2 SR-11: a résumé the run puts in is uploaded once the drop zone li
     unwatched.written?.resume?.release();
     expect(unwatched.written?.upload).toBeNull();
   });
+});
+
+// ── jr6 fix round (PRIV-3, REVC-1): no answer of the owner's in a SmartRecruiters page's marks ──────────────────────────
+// The privacy reviews read the owner's answer to jr6-wiser-screening's sponsorship question from its chosen spl-radio's
+// own checked attribute, its name and the group's roving tabindex (0 on the chosen row; aria-checked was already
+// cleared), and which boxes of the filled first pages the owner had typed into or left valid from Angular's state
+// classes (ng-dirty, ng-touched, ng-valid) on SmartRecruiters' own elements. The converter clears both (TOOLING, jr6 fix
+// round: PRIV-2, REVC-4) and the five form pages (the three jr6 ones, and xplor-one-click and xplor-screening, captured
+// blank) are converted again with it; these pins hold every SmartRecruiters page to it. Counts and booleans only: a
+// failure never names a row or a box, so it never tells an answer.
+
+/** Angular's form-state classes (the converter's ANGULAR_STATE_SOURCE), on any element. */
+const ANGULAR_STATE = /^ng-(?:dirty|pristine|touched|untouched|valid|invalid|pending|empty|not-empty|valid-.+|invalid-.+)$/;
+/** A radio row's own attributes, which differ by row in any group (xplor-screening's six, unanswered). */
+const RADIO_ROW_OWN = new Set(['id', 'value', 'label', 'aria-labelledby', 'aria-describedby', 'tabindex']);
+/** A chosen mark inside a row's own shadow tree. */
+const CHOSEN_INSIDE = '[checked]:not([checked="false"]), [aria-checked="true" i], [aria-selected="true" i], '
+  + '[aria-pressed="true" i], [class*="checked" i], [class*="selected" i]';
+
+/** Whether a Yes/No group's rows read as an unanswered group's (xplor-screening's): none checked, every row carrying the
+ *  same attributes with the same values but its own (id, value, label words), no chosen mark inside a row's shadow
+ *  tree, and the roving tabindex 0 on the first row and -1 on every other (or the same on every row). */
+function readsUnanswered(group: Element): boolean {
+  const rows = Array.from(group.children).filter((child) => child.localName === 'spl-radio');
+  const names = new Set(rows.flatMap((row) => row.getAttributeNames()).filter((name) => !RADIO_ROW_OWN.has(name)));
+  const alike = [...names].every((name) => rows.every((row) => row.hasAttribute(name))
+    && new Set(rows.map((row) => row.getAttribute(name))).size === 1);
+  const tabs = rows.map((row) => row.getAttribute('tabindex'));
+  const roving = tabs.every((tab, at) => tab === (at === 0 ? '0' : '-1')) || tabs.every((tab) => tab === tabs[0]);
+  const inside = rows.some((row) => row.shadowRoot !== null && deepAll(row.shadowRoot, CHOSEN_INSIDE).length > 0);
+  return rows.length >= 2 && alike && roving && !inside;
+}
+
+/** The Yes/No groups each page holds. */
+const YES_NO_GROUPS: Partial<Record<keyof typeof ALL_PAGES, number>> = { screening: 6, wiserScreening: 1 };
+
+describe("PRIV-3, REVC-1 (jr6 fix round): no answer of the owner's in a SmartRecruiters page's marks", () => {
+  it.each(Object.keys(ALL_PAGES) as Array<keyof typeof ALL_PAGES>)(
+    '%s: no spl-radio or spl-checkbox keeps a chosen mark; every Yes/No group reads as an unanswered one', async (page) => {
+      const doc = await loadAny(page);
+      const choices = deepAll(doc, 'spl-radio, spl-checkbox');
+      expect(choices.filter((choice) => choice.hasAttribute('checked') && choice.getAttribute('checked') !== 'false')
+        .length, 'checked').toBe(0);
+      expect(choices.filter((choice) => (choice.getAttribute('aria-checked') ?? '').toLowerCase() === 'true').length,
+        'aria-checked').toBe(0);
+      const groups = deepAll(doc, 'spl-radio-group');
+      expect(groups.filter((group) => !readsUnanswered(group)).length, 'groups read as answered').toBe(0);
+      // The screening steps hold their Yes/No groups (xplor-screening six, jr6-wiser-screening the sponsorship one).
+      expect(groups.length).toBe(YES_NO_GROUPS[page] ?? 0);
+    });
+
+  // Every page, the two captured blank on 2026-11-06 (xplor-one-click, xplor-screening) included: they were converted
+  // again with the same converter, and a form's own classes went with them.
+  it.each(Object.keys(ALL_PAGES) as Array<keyof typeof ALL_PAGES>)(
+    "%s: no element keeps an Angular state class (which boxes were typed into, touched or valid)", async (page) => {
+      const doc = await loadAny(page);
+      const stateful = deepAll(doc, '[class*="ng-"]')
+        .filter((element) => Array.from(element.classList).some((token) => ANGULAR_STATE.test(token)));
+      expect(stateful.length, 'elements with an Angular state class').toBe(0);
+    });
 });
