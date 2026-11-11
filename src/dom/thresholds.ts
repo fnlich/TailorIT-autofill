@@ -135,6 +135,12 @@ export const WIDGET_SEARCH_MIN_OPTIONS = SEARCH_LIST_MIN_OPTIONS;
 export const UPLOAD_CONFIRM_CAP_MS = 10_000;
 /** A page that shows a file's upload done counts once it has been quiet this long: its failure message may follow. */
 export const UPLOAD_QUIET_MS = 1_000;
+/** jr6 ENGINE E2 (FIXPLAN §6.2 item 9, JZ-4): after the upload filler pressed the link that shows a hidden file input
+ *  (fillers/upload.ts revealUpload), the input is read again once the page has been quiet this long, never sooner
+ *  (Jobright's JazzHR uploadResume waits 300 ms), and at each quiet window after... */
+export const UPLOAD_REVEAL_SETTLE_MS = 300;
+/** ...until it shows, at most this long after the press: then the row is the person's. */
+export const UPLOAD_REVEAL_CAP_MS = 2_000;
 /** After an auto-advance click, the step transition waits at most this long. */
 export const TRANSITION_CAP_MS = 20_000;
 /** The URL poll, where the Navigation API is missing. */

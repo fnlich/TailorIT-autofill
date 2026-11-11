@@ -381,6 +381,14 @@ export interface Adapter {
    *  or still under way, as the page shows it; null when the adapter reads no upload for this input (the input's own
    *  files decide, as for any page). */
   uploadState?(input: HTMLInputElement, fileName: string): UploadState | null;
+  /** jr6 ENGINE E2 (FIXPLAN §6.2 item 9, JZ-4; JazzHR's classic layout, snapshot6 applytojob, the jr6 case
+   *  jr6-centroid-form, whose #resumator-resume-value sits hidden until "Attach resume" is pressed): for a file input
+   *  its adapter shows only through a link (configured UploadRule.reveal: #resumator-choose-upload), that link inside
+   *  the upload's area and the area (either null where the page shows none: the input is then the person's); null for
+   *  an input whose adapter declares no reveal. Pressed by one door alone, the upload filler's reveal door
+   *  (dom/fillers/not-submit.ts, through dom/fillers/upload.ts revealUpload), at most once per document, while the
+   *  input is hidden; the link stays in neverPress for every other path. */
+  uploadReveal?(input: HTMLInputElement): { reveal: HTMLElement | null; area: Element | null } | null;
   /** The core pass of 2026-11-06: whether the page shows `input`'s field already holding a file it took (its upload
    *  shown done), whatever the file's name, while the input itself may hold none. Read by every scan, so before any
    *  upload is planned: such a field holds a file (CurrentValue 'files'), which the planner keeps (prefill-kept) and

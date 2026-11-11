@@ -54,7 +54,7 @@ import { NO_MATCH_OTHER_QUERY } from '../core/matcher/searchLimits';
 import { accepts, acceptTokens, fill } from '../dom/fillers';
 import { fillDateParts } from '../dom/fillers/date-parts';
 import { mismatch } from '../dom/fillers/outcome';
-import { awaitUpload, uploadStateOf } from '../dom/fillers/upload';
+import { awaitUpload, revealUpload, uploadStateOf } from '../dom/fillers/upload';
 import { selectEditable } from '../dom/fillers/text';
 import { isEditingHost } from '../dom/kinds';
 import type { HeldDialogs } from '../dom/patch-protocol';
@@ -381,6 +381,36 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
     if (!check.ok) {
       resume.release();
       return { row: settleRow(planned, frameGuardRefusal(check.reason)) };
+    }
+    // jr6 ENGINE E2 (FIXPLAN §6.2 item 9, JZ-4): a file input its adapter shows only through a link (JazzHR's "Attach
+    // resume"): the upload filler presses it once and waits for the input to show (dom/fillers/upload.ts revealUpload),
+    // found again by the guard's fresh scan; the field is then checked again as it shows. An input that stays hidden
+    // is the person's (needs-your-click), nothing written.
+    if (verdict.target.picker !== true) {
+      const revealed = await revealUpload(env.adapter, verdict.target.control as HTMLInputElement, () => {
+        const again = domGuardBeforeWrite(last, wanted);
+        return again.ok ? again.target.control as HTMLInputElement : null;
+      }, env.signal);
+      if (revealed.outcome === 'refused' || revealed.outcome === 'revealed') {
+        if (runOver(env) || env.signal.aborted) resume.release();
+        afterWait(env, false);
+      }
+      if (revealed.outcome === 'refused') {
+        resume.release();
+        return { row: settleRow(planned, { kind: 'not-written', reason: 'needs-your-click' }) };
+      }
+      if (revealed.outcome === 'revealed') {
+        verdict = domGuardBeforeWrite(last, wanted);
+        if (!verdict.ok) {
+          resume.release();
+          return { row: settleRow(planned, guardRefusal(field, write, verdict.reason)) };
+        }
+        check = guardWriteInFrame(write, toFieldSpec(verdict.target.field), env.canaries);
+        if (!check.ok) {
+          resume.release();
+          return { row: settleRow(planned, frameGuardRefusal(check.reason)) };
+        }
+      }
     }
   }
 
