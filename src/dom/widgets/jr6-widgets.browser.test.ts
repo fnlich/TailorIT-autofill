@@ -20,6 +20,10 @@
  * jr6 ENGINE E2 (the ICIMS package's edit 2, ICIMS-01/-02): a declared busy sign drawn beside the declared list (iCIMS's
  * .dropdown-loading, the list's sibling in its container's div[aria-live]) holds the widget's wait; one elsewhere, or a
  * generic sign there, does not.
+ * jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers (WidgetDecl.tags), as Workday's Skills
+ * prompt (pills chosen by its search) and UltiPro's review Skills (typed, then its Add pressed): one text field, each
+ * value missing from its chips added, the box read back by its chips, its cap kept, a chip never removed, an Add that
+ * could submit never pressed, and the press's count of required questions left reading a chip as an answer.
  * Every value is synthetic (no owner data); every event the helpers cause is untrusted and on the fillers' list.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -31,9 +35,13 @@ import { ALLOWED_EVENTS, KEY_EVENTS } from '../fillers/events';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations, type EventLog, type Fixture } from '../fixture.testkit';
 import { scan } from '../scan';
 import type { FieldTarget, ScanResult, WidgetReading } from '../types';
-import { closeUnlisted, fillWidget, isActionable, openList, readWidget, searchTypeahead, widgetHolds } from './index';
+import { requiredLeftOf } from '../../content/press';
+import { verifyAfterSettle } from '../fillers/verify';
+import {
+  closeUnlisted, fillTags, fillWidget, isActionable, openList, readWidget, searchTypeahead, widgetHolds,
+} from './index';
 import { widgetBusy } from './options';
-import type { TypeaheadHooks } from './index';
+import type { TagsHooks, TypeaheadHooks } from './index';
 
 interface Page {
   fixture: Fixture;
@@ -1031,4 +1039,249 @@ describe('jr6 E2 (ICIMS edit 2): a declared busy sign beside the declared list h
     // A widget that declares no busy sign.
     expect(await country(() => undefined, icimsAdapter)).toBe(false);
   });
+});
+
+// ── jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers (WidgetDecl.tags) ──────────────────────
+
+/** Workday's "Type to Add Skills" prompt as SP\jr6\audit\workday.md (WD-18) and the WORKDAY package's declaration
+ *  describe it: a search box beside the pills it holds, each pill a chip once a result is chosen, its results drawn while
+ *  it searches (a result whose words only contain the query listed before the one that is it). The page shows one chip
+ *  of its own before the run. Every value is synthetic. */
+const PILLS = `<!doctype html><html><head><style>
+  [hidden] { display: none !important; }
+  .pill { display: inline-block; margin: 2px; padding: 2px 4px; border: 1px solid #888; }
+  .row { display: block; padding: 2px 4px; }
+</style></head><body><form id="f">
+  <label for="skills">Type to Add Skills</label>
+  <div id="skills-box">
+    <ul id="pills"><li class="pill"><span class="pill-label">Docker</span><svg width="8" height="8"></svg></li></ul>
+    <input id="skills" type="text" placeholder="Search" autocomplete="off">
+  </div>
+  <div id="results" role="listbox" hidden></div>
+</form>
+<script>
+  window.__chosen = [];
+  const CATALOG = ['TypeScript Compiler', 'TypeScript', 'PostgreSQL Administration', 'PostgreSQL', 'Kubernetes', 'Docker'];
+  const box = document.getElementById('skills');
+  const results = document.getElementById('results');
+  const pills = document.getElementById('pills');
+  box.addEventListener('input', () => {
+    const query = box.value.trim().toLowerCase();
+    const found = CATALOG.filter((name) => query !== '' && name.toLowerCase().includes(query));
+    results.replaceChildren(...(found.length === 0 ? [Object.assign(document.createElement('div'),
+      { className: 'empty', textContent: 'No Items.' })] : found.map((name) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.setAttribute('role', 'option');
+      row.textContent = name;
+      row.addEventListener('click', () => {
+        window.__chosen.push(name);
+        const pill = document.createElement('li');
+        pill.className = 'pill';
+        const words = document.createElement('span');
+        words.className = 'pill-label';
+        words.textContent = name;
+        pill.append(words);
+        pills.append(pill);
+        box.value = '';
+        results.hidden = true;
+      });
+      return row;
+    })));
+    results.hidden = query === '';
+  });
+  box.addEventListener('focusout', () => { results.hidden = true; });
+</script></body></html>`;
+
+/** The prompt declared as the WORKDAY package declares it (a remote search with its results list, and tags: its pills the
+ *  chips, chosen by its search, `cap` chips at most). */
+function pillsAdapter(doc: Document, cap?: number): Adapter {
+  return {
+    widgetFor: (control: Element) => (control.id === 'skills' ? { kind: 'typeahead-remote', opener: control as HTMLElement,
+      results: { list: doc.getElementById('results')!, option: '.row' }, emptyAfterMs: 300,
+      tags: { chips: () => Array.from(doc.querySelectorAll('#pills .pill')), search: true,
+        ...(cap === undefined ? {} : { cap }) },
+      snapshot: 'synthetic Workday Skills' } as WidgetDecl : null),
+  } as unknown as Adapter;
+}
+
+/** UltiPro's review Skills as SP\jr6\audit\ultipro.md (U-05) describes it: a box whose Add beside it is disabled until
+ *  text is typed, each added skill a chip (strong) in the list above it. `addType` is the Add's type attribute. */
+const ADDS = (addType = 'button') => `<!doctype html><html><head><style>
+  .chip { display: inline-block; margin: 2px; padding: 2px 4px; border: 1px solid #888; }
+</style></head><body><form id="f">
+  <div id="skills-panel">
+    <label for="skill-input">Skills</label>
+    <ul id="chips"></ul>
+    <div class="form-inline"><input id="skill-input" type="text" maxlength="80" autocomplete="off">
+      <button id="add" type="${addType}" disabled>Add</button></div>
+  </div>
+</form>
+<script>
+  window.__adds = 0;
+  const box = document.getElementById('skill-input');
+  const add = document.getElementById('add');
+  const chips = document.getElementById('chips');
+  box.addEventListener('input', () => { add.disabled = box.value.trim() === ''; });
+  add.addEventListener('click', (event) => {
+    event.preventDefault();
+    window.__adds += 1;
+    const chip = document.createElement('li');
+    chip.className = 'chip';
+    const words = document.createElement('strong');
+    words.textContent = box.value.trim();
+    chip.append(words);
+    chips.append(chip);
+    box.value = '';
+    add.disabled = true;
+  });
+</script></body></html>`;
+
+/** UltiPro's box declared as the ULTIPRO package will declare it (tags: its strong chips, its Add). */
+function addsAdapter(doc: Document, declared: 'add' | 'none' = 'add'): Adapter {
+  return {
+    widgetFor: (control: Element) => (control.id === 'skill-input' ? { kind: 'typeahead-remote', opener: control as HTMLElement,
+      tags: { chips: () => Array.from(doc.querySelectorAll('#chips li')),
+        ...(declared === 'add' ? { add: () => doc.getElementById('add') } : {}) },
+      snapshot: 'synthetic UltiPro Skills' } as WidgetDecl : null),
+  } as unknown as Adapter;
+}
+
+/** The golden profile's skills (fixtures/profiles/alex-rivera.profile.json) as the planner joins them (MANY_SEPARATOR). */
+const SKILLS = 'TypeScript, PostgreSQL, Kubernetes';
+
+/** Hooks whose Guard passes every value (recording each) until call `refuse` (1-based), which it blocks. */
+function tagHooks(page: Page, label: string, refuse = Infinity): TagsHooks & { guards: string[] } {
+  const guards: string[] = [];
+  return {
+    guards,
+    guard: async (value) => {
+      guards.push(value);
+      return guards.length >= refuse ? { ok: false, reason: 'canary-in-value', blocked: true }
+        : { ok: true, target: page.target(label) };
+    },
+  };
+}
+
+/** The words of the chips a page shows. */
+const chipLabels = (doc: Document, selector: string) => Array.from(doc.querySelectorAll(selector), (el) => el.textContent);
+
+describe('item 13 (U-05, WD-18): a box of several answers (WidgetDecl.tags)', () => {
+  it('scans the box as one text field holding what its text box holds, with no options, and acts on it', async () => {
+    const page = await open(PILLS, 'workday', (doc) => pillsAdapter(doc));
+    const scanned = page.scanned();
+    expect(scanned.fields.map((field) => [field.label, field.kind, field.options, field.current]))
+      .toEqual([['Type to Add Skills', 'text', [], { kind: 'empty' }]]);
+    const target = page.target('Type to Add Skills');
+    expect(target.field.optionSetHash).toBe('none');
+    expect(isActionable(target.widget!)).toBe(true);
+    expect(fillabilityOf(target.field, target.widget)).toEqual({ fillable: true });
+    // A box declaring neither its Add nor a search is acted on by no one.
+    removeFixtures(document);
+    const bare = await open(ADDS(), 'ultipro', (doc) => addsAdapter(doc, 'none'));
+    const plain = bare.target('Skills');
+    expect([plain.field.kind, isActionable(plain.widget!)]).toEqual(['text', false]);
+    expect(await fillTags(plain, SKILLS, bare.ctx(), tagHooks(bare, 'Skills')))
+      .toEqual({ added: 0, verified: false, reason: 'widget-unsupported', blocked: false });
+    expect((bare.doc.getElementById('skill-input') as HTMLInputElement).value).toBe('');
+  });
+
+  it('searches each value missing from the chips, chooses its own result, and reads the box back by its chips',
+    async () => {
+      const page = await open(PILLS, 'workday', (doc) => pillsAdapter(doc));
+      const used = tagHooks(page, 'Type to Add Skills');
+      // The page's own chip, named again in another case, is skipped: never typed, never removed.
+      const result = await fillTags(page.target('Type to Add Skills'), `${SKILLS}, docker`, page.ctx(), used);
+      expect(result).toEqual({ added: 3, verified: true, reason: 'ok', blocked: false });
+      expect(used.guards).toEqual(['TypeScript', 'PostgreSQL', 'Kubernetes']);
+      // The result that is the value, never the first one that contains it.
+      expect(page.win<string[]>('__chosen')).toEqual(['TypeScript', 'PostgreSQL', 'Kubernetes']);
+      expect(chipLabels(page.doc, '#pills .pill')).toEqual(['Docker', 'TypeScript', 'PostgreSQL', 'Kubernetes']);
+      const after = page.target('Type to Add Skills');
+      expect(after.field.current).toEqual({ kind: 'empty' });
+      expect(widgetHolds(after, { kind: 'text', text: SKILLS })).toBe(true);
+      expect(widgetHolds(after, { kind: 'text', text: `${SKILLS}, Rust` })).toBe(false);
+      expect(verifyAfterSettle(page.scanned(), after.field.key, { kind: 'text', text: SKILLS }))
+        .toEqual({ verification: 'verified', reason: 'ok' });
+      // Written again: every value shows, nothing typed.
+      const again = tagHooks(page, 'Type to Add Skills');
+      expect(await fillTags(after, SKILLS, page.ctx(), again))
+        .toEqual({ added: 0, verified: true, reason: 'already-correct', blocked: false });
+      expect(again.guards).toEqual([]);
+      expectOurEventsOnly(page.events);
+    });
+
+  it('leaves a value no result is, and goes on with the next; the box reads back short of it', async () => {
+    const page = await open(PILLS, 'workday', (doc) => pillsAdapter(doc));
+    const used = tagHooks(page, 'Type to Add Skills');
+    const result = await fillTags(page.target('Type to Add Skills'), 'Rust, Kubernetes', page.ctx(), used);
+    expect(result).toEqual({ added: 1, verified: false, reason: 'no-match', blocked: false });
+    expect(used.guards).toEqual(['Rust', 'Kubernetes']);
+    expect(chipLabels(page.doc, '#pills .pill')).toEqual(['Docker', 'Kubernetes']);
+    expect((page.doc.getElementById('skills') as HTMLInputElement).value).toBe('');
+    expect(verifyAfterSettle(page.scanned(), page.target('Type to Add Skills').field.key,
+      { kind: 'text', text: 'Rust, Kubernetes' })).toEqual({ verification: 'mismatch', reason: 'verify-mismatch' });
+  });
+
+  it('stops at the box\'s cap of chips: the values past it are max-selections-reached', async () => {
+    const page = await open(PILLS, 'workday', (doc) => pillsAdapter(doc, 2));
+    const used = tagHooks(page, 'Type to Add Skills');
+    const result = await fillTags(page.target('Type to Add Skills'), SKILLS, page.ctx(), used);
+    expect(result).toEqual({ added: 1, verified: false, reason: 'max-selections-reached', blocked: false });
+    expect(used.guards).toEqual(['TypeScript']);
+    expect(chipLabels(page.doc, '#pills .pill')).toEqual(['Docker', 'TypeScript']);
+    expect(verifyAfterSettle(page.scanned(), page.target('Type to Add Skills').field.key, { kind: 'text', text: SKILLS }))
+      .toEqual({ verification: 'mismatch', reason: 'max-selections-reached' });
+  });
+
+  it('types each value and presses the box\'s Add, reading its chips back', async () => {
+    const page = await open(ADDS(), 'ultipro', (doc) => addsAdapter(doc));
+    const target = page.target('Skills');
+    expect([target.field.kind, target.field.current, isActionable(target.widget!)]).toEqual(['text', { kind: 'empty' },
+      true]);
+    const used = tagHooks(page, 'Skills');
+    expect(await fillTags(target, SKILLS, page.ctx(), used)).toEqual({ added: 3, verified: true, reason: 'ok',
+      blocked: false });
+    expect(used.guards).toEqual(['TypeScript', 'PostgreSQL', 'Kubernetes']);
+    expect(page.win<number>('__adds')).toBe(3);
+    expect(chipLabels(page.doc, '#chips strong')).toEqual(['TypeScript', 'PostgreSQL', 'Kubernetes']);
+    expect(widgetHolds(page.target('Skills'), { kind: 'text', text: SKILLS })).toBe(true);
+    expectOurEventsOnly(page.events);
+  });
+
+  it('never presses an Add that could submit: the box gets back what it held, nothing added', async () => {
+    const page = await open(ADDS('submit'), 'ultipro', (doc) => addsAdapter(doc));
+    const result = await fillTags(page.target('Skills'), SKILLS, page.ctx(), tagHooks(page, 'Skills'));
+    expect(result).toEqual({ added: 0, verified: false, reason: 'needs-your-click', blocked: false });
+    expect(page.win<number>('__adds')).toBe(0);
+    expect((page.doc.getElementById('skill-input') as HTMLInputElement).value).toBe('');
+    expect(page.events.events.filter((event) => event.type === 'submit')).toEqual([]);
+  });
+
+  it('stops at a Guard\'s refusal, keeping what it added: blocked', async () => {
+    const page = await open(ADDS(), 'ultipro', (doc) => addsAdapter(doc));
+    const used = tagHooks(page, 'Skills', 2);
+    expect(await fillTags(page.target('Skills'), SKILLS, page.ctx(), used))
+      .toEqual({ added: 1, verified: false, reason: 'canary-in-value', blocked: true });
+    expect(used.guards).toEqual(['TypeScript', 'PostgreSQL']);
+    expect(chipLabels(page.doc, '#chips strong')).toEqual(['TypeScript']);
+    expect((page.doc.getElementById('skill-input') as HTMLInputElement).value).toBe('');
+  });
+
+  it('counts a required box answered while it shows a chip, its text box empty (content/press.ts requiredLeftOf)',
+    async () => {
+      const page = await open(ADDS(), 'ultipro', (doc) => addsAdapter(doc));
+      page.doc.getElementById('skill-input')!.setAttribute('aria-required', 'true');
+      const before = page.scanned();
+      expect(before.fields.map((field) => [field.label, field.required, field.current.kind]))
+        .toEqual([['Skills', true, 'empty']]);
+      expect(requiredLeftOf(before)).toBe(1);
+      expect(requiredLeftOf(before, [before.fields[0]!.key])).toBe(1);
+      await fillTags(page.target('Skills'), 'TypeScript', page.ctx(), tagHooks(page, 'Skills'));
+      const after = page.scanned();
+      expect(after.fields[0]!.current).toEqual({ kind: 'empty' });
+      expect(requiredLeftOf(after)).toBe(0);
+      // A row the run left for the person counts no more once the box shows a chip, whoever added it.
+      expect(requiredLeftOf(after, [after.fields[0]!.key])).toBe(0);
+    });
 });

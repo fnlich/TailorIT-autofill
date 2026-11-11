@@ -44,6 +44,7 @@ import type { DeclaredRows, OptionLabel, WidgetKind, WidgetOptionRead, WidgetTar
 import { readVisibleText, visibleText, visibleTextWithout } from '../visible-text';
 import { isUserVisible } from '../visibility';
 import { isChosen, isUnavailable, isUnchoosableResult, listOf, optionElementsOf, widgetBox, widgetListOf } from './aria';
+import { tagsBoxValue } from './tag-chips';
 
 /** How a list's rows are found: its adapter's declared selector (v4: WidgetDecl.results.option), or (jr6 ENGINE E1) its
  *  declared rows whole (the selector and the hook that lists rows no selector reaches); undefined for an ARIA list. */
@@ -446,6 +447,8 @@ export function chosenLabels(widget: WidgetTarget, known: readonly string[], cac
  *  or empty. Memory only. */
 export function widgetCurrentValue(widget: WidgetTarget, known: readonly string[], cache: ScanCache = newScanCache()):
   CurrentValue {
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers holds what its text box holds, as the scanner reads it.
+  if (widget.tags !== undefined) return tagsBoxValue(widget);
   const labels = chosenLabels(widget, known, cache);
   return labels.length === 0 ? { kind: 'empty' } : { kind: 'selected', labels };
 }

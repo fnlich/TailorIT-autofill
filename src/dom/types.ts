@@ -7,6 +7,7 @@
  * counts as busy, and the state and answer of a dependent option list (awaitOptions). Phase 4 added the ARIA widgets
  * the scanner recognises (WidgetTarget) and what opening one read (WidgetReading).
  */
+import type { WidgetTags } from '../adapters/types';
 import type { BaseKey, FieldDescriptor, FieldKey, OptionSetHash, ReasonCode, SectionRef } from '../core/types';
 import type { StoredListId } from '../shared/learned-lists';
 import type { QueryKey, WidgetKey } from './fillers/events';
@@ -188,6 +189,11 @@ export interface WidgetTarget {
   /** FIXPLAN §6.2 item 5 (U-04): a search whose typed text stands when no result matches (WidgetDecl.freeText). */
   readonly freeText?: true;
   // ── end jr6 ENGINE E1 ──
+  // ── jr6 ENGINE E3 ──
+  /** FIXPLAN §6.2 item 13 (U-05, WD-18): a box that takes several answers one at a time, each a chip once added
+   *  (WidgetDecl.tags): its field is one of kind 'text', written by the tags filler (widgets/tags.ts). */
+  readonly tags?: WidgetTags;
+  // ── end jr6 ENGINE E3 ──
   // ── s2 lists ──
   /** The stored whole list the scan gave the field as its options (WidgetDecl.storedList's, the list the page publishes
    *  itself: jr6 ENGINE E1, WidgetDecl.knownOptions, or a list learned on this host before: ScanOptions.learnedLists),

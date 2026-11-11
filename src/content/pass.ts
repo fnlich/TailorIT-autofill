@@ -28,7 +28,10 @@
  *    (docs/SPEC-AMENDMENTS.md §12): a combobox its adapter declares for the page-world bridge has its option chosen
  *    by its own React code before either (dom/widgets' chooseThroughBridge: the write's one command), and the search
  *    and the events follow only when nothing the frame can see changed; after a choice the bridge said it made, the
- *    list is not searched, and the events' path never ends as "nothing written";
+ *    list is not searched, and the events' path never ends as "nothing written". jr6 ENGINE E3 (FIXPLAN §6.2 item 13):
+ *    a box of several answers its adapter declares (WidgetDecl.tags) takes its planned text value by value, each
+ *    missing from its chips a guarded write of its own (writeTags, dom/widgets' fillTags), and is read back by its
+ *    chips;
  * 5. the planner's row is settled from what happened (settleRow).
  * The person's Skip of the write (v3 Phase 3: PassEnv.runSignal) ends its waits. A write that has not touched the page
  * yet throws RunAborted, and the loop flags the field skipped-by-you; once the page was touched (a file put into its
@@ -74,9 +77,9 @@ import type {
 import { readBackTextOf } from '../dom/values';
 import { visiblePlaceholder } from '../dom/visible-text';
 import {
-  awaitPageReady, chooseThroughBridge, fillWidget, isActionable, searchesList, searchForOption, searchTypeahead,
-  widgetHolds,
-  type BridgeRun, type LearnList, type TypeaheadHooks, type TypeaheadResult, type WidgetFillContext,
+  awaitPageReady, chooseThroughBridge, fillTags, fillWidget, isActionable, searchesList, searchForOption,
+  searchTypeahead, widgetHolds,
+  type BridgeRun, type LearnList, type TagsHooks, type TypeaheadHooks, type TypeaheadResult, type WidgetFillContext,
   type WidgetReadiness,
 } from '../dom/widgets';
 import type { ContentPlatform } from '../platform/types';
@@ -219,7 +222,9 @@ function frameGuardRefusal(reason: ReasonCode): FillOutcome {
 }
 /** Mismatch reasons a row keeps instead of settleRow's verify-mismatch. */
 const MISMATCH_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['verify-mismatch', 'unexpected-selection',
-  'value-rejected-by-site', 'disabled-or-readonly', 'upload-failed', 'upload-not-confirmed']);
+  'value-rejected-by-site', 'disabled-or-readonly', 'upload-failed', 'upload-not-confirmed',
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers that took its cap of chips before every value.
+  'max-selections-reached']);
 
 /** `work`'s answer, or null as soon as `signal` aborts (the answer, when it comes, is unused). */
 function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T | null> {
@@ -535,6 +540,10 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
     ...(widgets.bridge === undefined ? {} : { bridge: widgets.bridge }),
     ...(widgets.learn === undefined ? {} : { learn: widgets.learn }) };
   if (write.value.kind === 'query') return searchField(env, last, field, write, planned, target, widgets, ctx);
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers takes its planned text value by value.
+  if (target.widget?.tags !== undefined && write.value.kind === 'text') {
+    return writeTags(env, last, field, write, planned, target, ctx);
+  }
   const settled = (outcome: DomFillOutcome): WriteResult => {
     const row = rowAfterFill(planned, outcome);
     if (!outcome.wrote) return { row };
@@ -608,6 +617,55 @@ function queryGuard(env: PassEnv, last: ScanResult, wanted: PlannedField, write:
     return { ok: true, target: again.target };
   };
 }
+
+// ── jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers ──
+
+/** One value's Guard in a box of several answers (dom/widgets' fillTags): a pause the page shows or the person's Cancel
+ *  refuses it, then the DOM guard finds the field again on a fresh scan, and guardWriteInFrame checks `write` with that
+ *  one value as its text (its origin the write's own). */
+function tagGuard(env: PassEnv, last: ScanResult, wanted: PlannedField, write: PlannedWrite): TagsHooks['guard'] {
+  return async (value) => {
+    if (runOver(env)) throw new RunAborted();
+    if (env.signal.aborted) return { ok: false, reason: 'internal-error', blocked: false };
+    if (env.stopped()) return { ok: false, reason: 'user-stopped', blocked: false };
+    const hold = env.heldBy?.() ?? null;
+    if (hold !== null) return { ok: false, reason: hold, blocked: false };
+    const again = domGuardBeforeWrite(last, wanted);
+    if (!again.ok) return { ok: false, reason: again.reason, blocked: GUARD_BLOCKS.has(again.reason) };
+    const one: PlannedWrite = { ...write, value: { kind: 'text', text: value } };
+    const check = guardWriteInFrame(one, toFieldSpec(again.target.field), env.canaries);
+    if (!check.ok) return { ok: false, reason: check.reason, blocked: !FRAME_GUARD_FLAGS.has(check.reason) };
+    return { ok: true, target: again.target };
+  };
+}
+
+/**
+ * A box of several answers its adapter declares (WidgetDecl.tags: Workday's Skills, UltiPro's review Skills), planned
+ * as the person's values joined with MANY_SEPARATOR: each value missing from its chips added in turn by the tags filler
+ * (dom/widgets' fillTags), each a guarded write of its own (tagGuard), and the field read back by its chips. Nothing
+ * added: the planner's row flagged (blocked where a Guard refused) with why, or already-correct where every value shows
+ * already. Something added: written, verified when every value shows as a chip, else filled with why (at the box's cap,
+ * max-selections-reached). A chip is never removed.
+ */
+async function writeTags(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite, planned: FillResult,
+  target: FieldTarget, ctx: WidgetFillContext): Promise<WriteResult> {
+  if (write.value.kind !== 'text' || !isActionable(target.widget!)) {
+    return { row: settleRow(planned, { kind: 'not-written', reason: 'widget-unsupported' }) };
+  }
+  const wanted = plannedFieldOf(field);
+  const result = await fillTags(target, write.value.text, ctx, { guard: tagGuard(env, last, wanted, write) });
+  afterWait(env, result.added > 0);
+  if (result.added === 0) {
+    if (result.verified) return { row: alreadyCorrectRow(planned) };
+    return { row: settleRow(planned, result.blocked ? { kind: 'blocked', reason: result.reason }
+      : { kind: 'not-written', reason: result.reason }) };
+  }
+  const row = result.verified ? settleRow(planned, { kind: 'verified' }) : mismatchRow(planned, result.reason);
+  const now = last.rescan().target(write.key) ?? target;
+  return { row, written: writtenWidget(wanted, write, planned, target.field, result.verified), readBack: readBack(now) };
+}
+
+// ── end jr6 ENGINE E3 (item 13) ──
 
 // s2 core-wd: the list's own "Other", once three styles found nothing.
 

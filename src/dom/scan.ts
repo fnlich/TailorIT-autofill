@@ -44,6 +44,9 @@
  * - v5 p2-fill: a résumé control its adapter declares to open the site's own file picker (Adapter.uploadPickers: a
  *   button with no file input in the form) is a 'file' field of its own while a person can see it, its target marked
  *   `picker`, holding nothing the scan can read; its file goes in through the page's own picker (fillers/picker.ts).
+ * - jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a widget its adapter declares a box of several answers
+ *   (WidgetDecl.tags: Workday's Skills prompt, UltiPro's review Skills) is one field of kind 'text' with no options,
+ *   holding what its text box holds (widgets/tag-chips.ts); its chips are the tags filler's to read.
  * - Keys come from the core's keys.ts (labelSlug, optionSetHash, assignOrdinals, baseKey, fieldKey), so the worker and
  *   every frame build the same strings.
  * - A field's element is never cached across a write: ScanResult.rescan() scans afresh and target(key) finds the
@@ -90,6 +93,7 @@ import {
 } from './widgets/aria';
 import { keepReading } from './widgets/fill';
 import { learnable, learnedListKey } from './widgets/known';
+import { declaredTags, tagsBoxValue } from './widgets/tag-chips';
 import type { StoredListId } from '../shared/learned-lists';
 import { chosenLabels, memberLabel, readShownList, scrolls } from './widgets/options';
 
@@ -334,7 +338,9 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     const base = baseKey(parts);
     const learned = scanned.widget !== null && options.learnedLists !== undefined && learnable(scanned.widget)
       ? options.learnedLists.get(learnedListKey(slugs[i]!, scanned.widget.learnContext)) : undefined;
-    const draft = scanned.widget === null ? scanned : withReading(scanned, base, options.widgetReadings, learned);
+    // jr6 ENGINE E3: a box of several answers is no list: nothing the run read of a list is its.
+    const draft = scanned.widget === null || scanned.widget.tags !== undefined ? scanned
+      : withReading(scanned, base, options.widgetReadings, learned);
     const optionSetHash = draft.options === null ? OPTION_SET_NONE : draft.options === 'lazy' ? OPTION_SET_LAZY
       : draft.kind === 'typeahead-remote' && draft.options.length === 0 ? OPTION_SET_NONE
         : hashOfOptions(draft.options.map((option) => option.label));
@@ -775,7 +781,10 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
       ...(declared.learnContext !== undefined ? { learnContext: declared.learnContext } : {}),
       ...(page !== undefined ? { knownOptions: page, knownFrom: 'page' as const }
         : stored !== undefined && stored.length > 0 ? { knownOptions: stored, knownFrom: 'adapter' as const } : {}),
-      ...(declared.drawnWhole === true ? { drawnWhole: true as const } : {}) }),
+      ...(declared.drawnWhole === true ? { drawnWhole: true as const } : {}),
+      // jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers (WidgetDecl.tags), a text box's.
+      ...(kind !== 'radio' && kind !== 'checkbox' && declaredTags(declared.tags) !== undefined
+        ? { tags: declaredTags(declared.tags)! } : {}) }),
   };
 }
 
@@ -827,6 +836,10 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
   sections: ReturnType<typeof sectionFinder>): Draft {
   const el = widget.element;
   const groupLike = widget.kind === 'radio' && widget.members.length > 0;
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers its adapter declares (WidgetDecl.tags)
+  // is one field of kind 'text', holding what its text box holds (widgets/tag-chips.ts), with no options: the planner
+  // gives it the person's values joined (core/resolver/values.ts manyValues), and the tags filler adds each.
+  const tagged = widget.tags !== undefined;
   // jr6 ENGINE E1 (FIXPLAN §6.2 item 2): the field's text box, where it is the widget's own (inside its element, an
   // ARIA 1.1 combobox's): a box its adapter declares beside the element (WidgetDecl.input: iCIMS's search box, labelled
   // "— Type to Search —") names, requires, disables and names nothing of the field, which is the element's.
@@ -842,7 +855,7 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
     members = shown.map((item) => item.member);
     options = shown.map((item, index) => optionOf(index, item.text, '', isUnavailable(item.member),
       isChosen(item.member)));
-  } else if (widget.kind !== 'typeahead-remote' && widget.kind !== 'checkbox') {
+  } else if (!tagged && widget.kind !== 'typeahead-remote' && widget.kind !== 'checkbox') {
     // A list shown whole is read as it is, exactly as a whole read takes it (readShownList: the Phase 4 review, R2);
     // one that scrolls (perhaps drawn a part at a time) waits to be read whole. jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a
     // list its adapter declares is read there by its declared rows, as a whole read takes it.
@@ -858,7 +871,8 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
   const required = label.required || isRequired(el) || (own !== null && isRequired(own))
     || adapterRequires(el, ctx.adapter);
   return {
-    kind: widget.kind, control: el, members: [], selectOptions: [], container: null, label, options, selectable: [],
+    kind: tagged ? 'text' : widget.kind, control: el, members: [], selectOptions: [], container: null, label,
+    options: tagged ? null : options, selectable: [],
     section: sections.sectionOf(el, label.element), description: descriptionOf(el, ctx), constraints: {},
     visibility: first.visibility, proxy: null, required,
     disabled: groupLike ? members.every(isUnavailable) : isDisabled(el) || (own !== null && isDisabled(own)),
@@ -922,6 +936,8 @@ function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetR
 
 /** What a widget field holds now (widgets/options.ts), its options marked chosen accordingly. */
 function widgetCurrent(draft: Draft, cache: ScanCache): CurrentValue {
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers holds what its text box holds.
+  if (draft.widget!.tags !== undefined) return tagsBoxValue(draft.widget!);
   const known = Array.isArray(draft.options) ? draft.options.map((option) => option.label) : [];
   const chosen = chosenLabels(draft.widget!, known, cache);
   if (Array.isArray(draft.options)) {

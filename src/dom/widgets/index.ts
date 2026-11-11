@@ -13,6 +13,8 @@
  *   declared combobox is never made a search, and a declared search is read as one without being opened); one that
  *   ignores our activation is needs-your-click;
  * - widgetHolds: the read-back after the pass's settle (hold.ts);
+ * - fillTags (jr6 ENGINE E3, FIXPLAN §6.2 item 13): a box of several answers its adapter declares (WidgetDecl.tags),
+ *   each value typed and added, or searched for and its own result chosen, and read back by its chips (tags.ts);
  * - chooseThroughBridge: React first (docs/SPEC-AMENDMENTS.md §12): a combobox its adapter declares for the page-world
  *   bridge has its planned option chosen by its own React code, then read back (fill.ts); fillWidget tries it first,
  *   and content/pass.ts before a long list's search, once per write (WidgetContext.bridgeTried).
@@ -57,6 +59,9 @@ export { chosenLabels, hashOfRead, memberLabel, readList, readShownList, shownOp
 export {
   searchForOption, searchTypeahead, type SearchOptions, type TypeaheadHooks, type TypeaheadResult,
 } from './typeahead';
+// jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers (WidgetDecl.tags).
+export { fillTags, type TagsHooks, type TagsResult } from './tags';
+export { holdsTags, tagsShowChip, tagValues } from './tag-chips';
 
 /** Writes one planned value into a widget (fill.ts); a query is searchTypeahead's. `origin` is the write's: an
  *  llm-pick is checked once more on what the widget shows right before its click (the Phase 4 review, R1). */

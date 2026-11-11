@@ -141,6 +141,13 @@ export const UPLOAD_QUIET_MS = 1_000;
 export const UPLOAD_REVEAL_SETTLE_MS = 300;
 /** ...until it shows, at most this long after the press: then the row is the person's. */
 export const UPLOAD_REVEAL_CAP_MS = 2_000;
+/** jr6 ENGINE E3 (FIXPLAN §6.2 item 13, U-05 and WD-18): after the tags filler chose a value's result or pressed its
+ *  Add (widgets/tags.ts), the box's chips are awaited this long at most for the value to show as one (Jobright's
+ *  fillSkills reads the chips again 100 to 200 ms after each add). */
+export const TAGS_ADD_CAP_MS = 3_000;
+/** ...and a box's adds, all its values together, add no further value once they have run this long (checked before each
+ *  value after the first added): Workday's Skills takes up to its adapter's cap of them, each one a search. */
+export const TAGS_FIELD_BUDGET_MS = 60_000;
 /** After an auto-advance click, the step transition waits at most this long. */
 export const TRANSITION_CAP_MS = 20_000;
 /** The URL poll, where the Navigation API is missing. */

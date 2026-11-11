@@ -283,6 +283,13 @@ export function isWidgetPart(control: Element): boolean {
 export function isActionable(widget: WidgetTarget): boolean {
   if (widget.kind === 'checkbox') return false;
   if (widget.kind === 'radio') return widget.members.length > 0;
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers its adapter declares (WidgetDecl.tags)
+  // is acted on through its text box: by its declared Add, or by its search's results, read as its kind reads a
+  // search's (widgets/tags.ts); one with neither, or with no text box, is not.
+  if (widget.tags !== undefined) {
+    if (widget.input === null || (widget.tags.add === undefined && widget.tags.search !== true)) return false;
+    if (widget.tags.add !== undefined) return true;
+  }
   // v4 (drop): a search whose results list its adapter declared from a capture (WidgetDecl.results), with a text box
   // (jr6 ENGINE E1, FIXPLAN §6.2 item 2: its own, or the one its adapter declares beside it, WidgetDecl.input).
   if (widget.declared && widget.kind === 'typeahead-remote' && widget.input !== null && widget.results !== undefined) {
