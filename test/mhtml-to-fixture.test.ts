@@ -2663,8 +2663,10 @@ const jobviteRows = (extra = '') => `<!DOCTYPE html><html><head><title>Apply</ti
 <p class="ng-dirty">An ordinary paragraph keeps its classes.</p></form></body></html>`;
 
 /** A Jobvite posting and its form where a listed word (Roeville, made up) is also the page's own word: a county among
- *  the page's list, a question's legend, an option's label and the posting's description. */
-const JOBVITE_LISTED = `<!DOCTYPE html><html><head><title>Apply</title></head><body>
+ *  the page's list, a question's legend, an option's label, the posting's description and its copy in the page's
+ *  description metadata. */
+const JOBVITE_LISTED = `<!DOCTYPE html><html><head><title>Apply</title>
+<meta name="description" content="This role sits in our Roeville office."></head><body>
 <div class="jv-job-detail-description"><p>This role sits in our Roeville office.</p><p>It is a made-up posting.</p></div>
 <form><label for="county">County of Residence</label><select id="county"><option value="">Select...</option>
 <option value="1">Adams</option><option value="2">Roeville</option><option value="3">Zephyr</option></select>
@@ -2677,6 +2679,7 @@ const JOBVITE_REPLACEMENTS = [
   { selector: 'fieldset > legend', text: 'Have you lived in Fixture Town?' },
   { selector: 'fieldset > label:first-of-type', text: 'Yes, in Fixture Town' },
   { selector: 'div.jv-job-detail-description', text: 'A synthetic description.\nIts second line.' },
+  { selector: 'meta[name="description"]', text: 'A synthetic summary.\nOn one line.' },
 ];
 
 describe('jr6: the owner\'s snapshot6 places (FIXPLAN 6.1, TOOLING)', () => {
@@ -2842,7 +2845,8 @@ document.getElementById('photo').attachShadow({ mode: 'open' }).innerHTML = '<la
         `jr6-listed.html: options (an <option> or a role=option) whose page text the redaction list met: 1${tail}`,
         `jr6-listed.html: labels whose page text the redaction list met: 1${tail}`,
         `jr6-listed.html: legends whose page text the redaction list met: 1${tail}`,
-        `jr6-listed.html: posting descriptions (POSTING_TEXT_PLACES) whose page text the redaction list met: 1${tail}`]);
+        // The description and its copy in the page's description metadata.
+        `jr6-listed.html: posting descriptions (POSTING_TEXT_PLACES) whose page text the redaction list met: 2${tail}`]);
       expect((error as ConversionError).reasons.join(' ')).not.toContain('Roeville');
       expect(existsSync(join(work, 'jobvite', 'jr6-listed.html'))).toBe(false);
       expect(POSTING_TEXT_PLACES).toContain('div.jv-job-detail-description');
@@ -2891,7 +2895,9 @@ document.getElementById('photo').attachShadow({ mode: 'open' }).innerHTML = '<la
       expect(text).toContain('<label><input type="radio" name="lived" value="y">Yes, in Fixture Town</label>');
       expect(text).toContain('<div class="jv-job-detail-description">A synthetic description.\nIts second line.</div>');
       expect(text).toContain('<label><input type="radio" name="lived" value="n"> No</label>');
-      expect(headerOf(text).replacedText).toEqual([1, 1, 1, 1]);
+      // A meta element's content takes the text, on one line.
+      expect(text).toContain('<meta name="description" content="A synthetic summary. On one line.">');
+      expect(headerOf(text).replacedText).toEqual([1, 1, 1, 1, 1]);
     }, 60_000);
 
   it('refuses a replacement that names nothing, one the page cannot read and one without text, by its position', async () => {

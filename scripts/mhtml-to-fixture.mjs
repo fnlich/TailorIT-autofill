@@ -110,16 +110,17 @@
 //     values;
 //   - --replace-text <css>=<file> (jobvite-new-2, repeatable): before anything is measured, every element the selector
 //     names in a converted frame gets the file's synthetic text: a select's options become one per non-blank line (a
-//     first option with an empty value kept before them); an element holding no form control keeps only that text; any
-//     other element keeps its controls, its first text run taking the text and the others emptied. Its title,
-//     aria-label and label, and an option's value, where present, take the text's first line. The same capture and file
-//     always give the same fixture; the header counts what each replacement took (replacedText), never its text.
+//     first option with an empty value kept before them); a meta element's content becomes its lines on one line; an
+//     element holding no form control keeps only that text; any other element keeps its controls, its first text run
+//     taking the text and the others emptied. Its title, aria-label and label, and an option's value, where present,
+//     take the text's first line. The same capture and file always give the same fixture; the header counts what each
+//     replacement took (replacedText), never its text.
 //   It refuses a page where (jobvite-new-2) the redaction list matched the page's own text inside an <option> (or a
-//   role=option), a <label>, a <legend> or a posting's description (POSTING_TEXT_PLACES): a REDACTED there tells the
-//   value by elimination, so such an element is replaced with --replace-text first (an option whose whole list ends
-//   REDACTED or empty, as iCIMS's server-loaded dropdowns are, tells nothing and passes); and (JV-10) a page where the
-//   option rows of one choice group (CHOICE_ROWS) still differ after clearing, beyond their text, ids, names and
-//   values.
+//   role=option), a <label>, a <legend>, or a posting's description or its copy in the page's description metadata
+//   (POSTING_TEXT_PLACES): a REDACTED there tells the value by elimination, so such an element is replaced with
+//   --replace-text first (an option whose whole list ends REDACTED or empty, as iCIMS's server-loaded dropdowns are,
+//   tells nothing and passes); and (JV-10) a page where the option rows of one choice group (CHOICE_ROWS) still differ
+//   after clearing, beyond their text, ids, names and values.
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -382,6 +383,10 @@ export const POSTING_TEXT_PLACES = [
   '#external-jobs-show-description', // pinpoint
   'div.ATS_htmlPreview', // rippling
   'div.job-description-data', // adp
+  // The page's description metadata, a copy of the posting's text (the owner's Workday postings of 2026-11-06:
+  // <meta name="description" content="...">; iCIMS's og:description and twitter:description beside it).
+  'meta[name="description" i]', 'meta[property="og:description" i]', 'meta[name="twitter:description" i]',
+  'meta[property="twitter:description" i]',
 ];
 
 /** How a refusal names each kind of place listedPlacesInPage counts. @type {Record<string, string>} */
@@ -2612,9 +2617,10 @@ export function unevenChoiceRowsInPage(input) {
 /**
  * jr6 (jobvite-new-2): --replace-text, run before anything is measured: every element each replacement's selector names
  * gets that replacement's synthetic text (see the header): a select's options become one per non-blank line (a first
- * option whose value is empty, its placeholder, kept before them); an element holding no form control keeps only the
- * text; any other element keeps its controls, its first text run taking the text and its other runs emptied. Its
- * title, aria-label and label, and an option's or an input's value, where present, take the text's first line.
+ * option whose value is empty, its placeholder, kept before them); a meta element's content becomes the text's lines
+ * on one line; an element holding no form control keeps only the text; any other element keeps its controls, its first
+ * text run taking the text and its other runs emptied. Its title, aria-label and label, and an option's or an input's
+ * value, where present, take the text's first line.
  * Answers how many elements each replacement took, in order: -1 for a selector the page cannot read.
  * @param {{ replacements: Array<{ selector: string; text: string }> }} input
  * @returns {number[]}
@@ -2633,6 +2639,11 @@ export function replaceTextInPage(input) {
     const lines = text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
     const first = lines[0] ?? '';
     for (const element of elements) {
+      // A meta element's words are its content (a description copied into the page's metadata), on one line.
+      if (element.localName === 'meta') {
+        element.setAttribute('content', lines.join(' '));
+        continue;
+      }
       if (element.localName === 'select') {
         const placeholder = element.querySelector('option');
         const kept = placeholder !== null && placeholder.getAttribute('value') === '' ? [placeholder] : [];
