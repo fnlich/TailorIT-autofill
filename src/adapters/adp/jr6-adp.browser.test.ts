@@ -10,17 +10,19 @@
  *   pane offers Consent & Continue and never Decline & Close; "Get your verification code" is the person's email-code
  *   pause; the guest view drawn after them is the guest state; OneTrust's filter "Apply" is never offered; the entry
  *   door presses Apply, then Consent & Continue, in one document.
- * - ADP-1 (the Resume step's uploads), ADP-2/3/15 (ADP's own lists).
+ * - ADP-1 (the Resume step's uploads), ADP-2/3/15 (ADP's own lists), adp-new-1 (errors), ADP-6 (the success rule),
+ *   ADP-8 (the date picker's layout), ADP-16 (the pay basis group's label).
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { pressEntry, pressEntryChoice } from '../../content/press';
 import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.testkit';
 import { detectPause } from '../../dom/pause-detect';
-import { scan } from '../../dom/scan';
+import { scan, toFieldSpec } from '../../dom/scan';
 import type { ScanResult, ScannedField } from '../../dom/types';
 import { deadline, startDeadline } from '../../dom/time';
 import { isUserVisible } from '../../dom/visibility';
-import { configuredHooks } from '../configured';
+import { configuredHooks, configuredSuccessSigns } from '../configured';
+import { successSignsOf } from '../success';
 import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { compareHooks, readHooks } from '../test/hooks.testkit';
 import type { Adapter } from '../types';
@@ -472,4 +474,111 @@ describe('jr6 ADP-2, ADP-3, ADP-15: ADP’s own lists (wfn-dropdown-list, sdf-se
       removeFixtures(document);
     }
   }, 120_000);
+});
+
+// ── adp-new-1: errors ─────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('jr6 adp-new-1: ADP’s errors', () => {
+  it.each(['jr6-personal-us-errors', 'jr6-personal-us-state'])('%s: the address message and ADP’s error labels, each '
+    + 'with its field’s control id', async (name) => {
+    const fixture = await open(name);
+    const root = adpAdapter.detect(fixture.doc)!.formRoot;
+    const errors = adpAdapter.errors!(root);
+    expect(errors.some((error) => error.el === q(fixture, 'h4#addressErrorMessage') && error.fieldKeyHint === undefined))
+      .toBe(true);
+    const hints = errors.map((error) => error.fieldKeyHint).filter((hint) => hint !== undefined);
+    expect(hints).toEqual(expect.arrayContaining(['PersonalAddress_address_line1', 'PersonalAddress_city',
+      'PersonalAddress_postalCode']));
+    if (name === 'jr6-personal-us-errors') {
+      expect(hints.filter((hint) => hint === 'PersonalAddress_state').length).toBeGreaterThanOrEqual(1);
+      expect(errors.map((error) => error.el)).toContain(q(fixture, 'wfn-dropdown-list#PersonalAddress_state'));
+    }
+  });
+
+  it.each(['jr6-personal-blank', 'jr6-personal-filled', 'jr6-questions-filled', 'jr6-questions2-blank',
+    'jr6-questions2-filled', 'jr6-resume-blank', 'jr6-self-id-blank', 'jr6-self-attest-blank'])(
+    '%s: no error as loaded (ADP’s on-load aria-invalid is none)', async (name) => {
+      const fixture = await open(name);
+      expect(adpAdapter.errors!(adpAdapter.detect(fixture.doc)!.formRoot)).toEqual([]);
+    });
+
+  it('jr6-questions2-blank: an on-load aria-invalid counts once its question shows a message', async () => {
+    const fixture = await open('jr6-questions2-blank');
+    const root = adpAdapter.detect(fixture.doc)!.formRoot;
+    const box = q(fixture, 'textarea#question_11');
+    expect(box.getAttribute('aria-invalid')).toBe('true');
+    // The generic reading alone keeps it (the rule undone).
+    expect(configuredHooks(ADP_CONFIG).errors!(root).map((error) => error.el)).toContain(box);
+    expect(adpAdapter.errors!(root)).toEqual([]);
+    const message = box.closest('div.qMainDiv')!.querySelector('.vdl-validation-error')!;
+    message.textContent = 'This field is required.';
+    expect(adpAdapter.errors!(root).map((error) => error.el)).toEqual(expect.arrayContaining([box, message]));
+  });
+});
+
+// ── ADP-6: the page after Submit ─────────────────────────────────────────────────────────────────────────────────
+
+describe('jr6 ADP-6: the page after Submit (Jobright’s adp-workforcenow rule)', () => {
+  it('declares the sign, its words, its companion and the promo’s focus trap as underModal', () => {
+    expect(ADP_CONFIG.success).toMatchObject({ css: '#vdlContainerFluid.success-card .success-message-container p.message',
+      underModal: 'sdf-focus-pane[data-sdf-modal]' });
+  });
+
+  it.each(['jr6-confirmation', 'jr6-confirmation-2'])('%s: the sign, once the promo’s focus trap is undone', async (name) => {
+    const fixture = await open(name);
+    const sign = q(fixture, '#vdlContainerFluid.success-card .success-message-container p.message');
+    // The promo open: its focus trap hides the sign (ENGINE E2 builds underModal's reading: a P2 assert).
+    expect(q(fixture, 'sdf-focus-pane[data-sdf-modal]')).not.toBeNull();
+    undoFocusTrap(fixture.doc);
+    expect(configuredSuccessSigns(fixture.doc, ADP_CONFIG)).toEqual([sign]);
+    // Its words and companion are both required.
+    q(fixture, '.success-message-container span.message-header').textContent = 'Welcome';
+    expect(successSignsOf(fixture.doc, [ADP_CONFIG.success!])).toEqual([]);
+  });
+
+  it('no other jr6 page shows it, its focus traps undone or not', async () => {
+    for (const name of Object.keys(TABLE).filter((each) => !each.startsWith('jr6-confirmation'))) {
+      const fixture = await open(name);
+      expect(configuredSuccessSigns(fixture.doc, ADP_CONFIG), name).toEqual([]);
+      undoFocusTrap(fixture.doc);
+      expect(configuredSuccessSigns(fixture.doc, ADP_CONFIG), name).toEqual([]);
+      removeFixtures(document);
+    }
+  }, 120_000);
+});
+
+// ── ADP-8, ADP-16 ────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('jr6 ADP-8 and ADP-16: the start-date picker’s layout and the pay basis group’s label', () => {
+  it('reads the date picker as MM/DD/YYYY, whatever its placeholder says (jr6-questions2-blank)', async () => {
+    const { fixture, result } = await scanned('jr6-questions2-blank');
+    const box = q(fixture, 'input#question_8');
+    expect(box.getAttribute('placeholder')).toBe('MM/DM/YYYY');
+    expect(adpAdapter.formatFor!(box)).toEqual({ format: 'date', pattern: 'MM/DD/YYYY' });
+    const field = fieldOf(result, box)!;
+    expect(field.label).toBe('If an offer is presented, how soon can you start?');
+    expect(toFieldSpec(field).constraints).toMatchObject({ format: 'date', pattern: 'MM/DD/YYYY' });
+    expect(adpAdapter.formatFor!(q(fixture, 'input#desiredSalaryId'))).toBeNull();
+    // The rule undone: no layout.
+    const plain = scan(adpAdapter.detect(fixture.doc)!.formRoot, { ...adpAdapter, formatFor: undefined }, { platform: 'adp' });
+    expect(fieldOf(plain, box)?.constraints.format).toBeUndefined();
+  });
+
+  it('titles the desired salary’s Annually | Hourly group by its block’s title plus "pay basis" (jr6-questions2-blank)',
+    async () => {
+      const { fixture, result } = await scanned('jr6-questions2-blank');
+      const group = q(fixture, '#desiredEmplSalaryBlock #salaryOptions div[role="radiogroup"]');
+      const field = fieldOf(result, group)!;
+      expect([field.kind, field.label, (field.options as Array<{ label: string }>).map((option) => option.label)])
+        .toEqual(['radio', 'What is your desired salary? pay basis', ['Annually', 'Hourly']]);
+      expect(adpAdapter.labelFor!(group)).toBe(q(fixture, 'span#desiredSalaryLabel'));
+      // The other questions keep their label.qLabel, and no suffix.
+      const first = q(fixture, '[aria-labelledby="sdf-radio-group-1-label"]');
+      expect(adpAdapter.labelFor!(first)?.matches('label.qLabel')).toBe(true);
+      expect(adpAdapter.labelSuffix!(first)).toBeNull();
+      // The rule undone (no suffix): the title alone.
+      const plain = scan(adpAdapter.detect(fixture.doc)!.formRoot, { ...adpAdapter, labelSuffix: undefined },
+        { platform: 'adp' });
+      expect(fieldOf(plain, group)?.label).toBe('What is your desired salary?');
+    });
 });

@@ -66,6 +66,11 @@
  *   sdf-select-simple (the Questions step's source list and the salary currency, jr6-questions2-*), declared comboboxes
  *   whose trigger, list and chosen label sit in shadow roots, their filter box a part (Jobright's ADP operations read the
  *   same trigger and sdf-select-item options).
+ * - Errors (adp-new-1): the address block's message, ADP's error labels and the State list's error mark; the
+ *   aria-invalid ADP sets on some questions when the page loads is no error until a message shows.
+ * - The page after Submit (ADP-6, jr6-confirmation, jr6-confirmation-2): Jobright's ats-submission-rules entry
+ *   adp-workforcenow, read while the BrightJump promo's focus trap hides the page (SuccessRule.underModal).
+ * - The start-date picker's layout (ADP-8) and the desired salary's pay basis group's label (ADP-16).
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache } from '../../dom/scan-cache';
@@ -74,6 +79,7 @@ import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { configuredHooks } from '../configured';
 import type { AtsConfig, UploadRule } from '../configured/types';
+import { genericAdapter } from '../generic';
 import type { Adapter, UploadState, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, matchesUrl, parseAdpUrl } from './url';
 
@@ -238,10 +244,29 @@ export const ADP_CONFIG: AtsConfig = {
   // adp-2: <label class="vdl-validation-error error-color" role="alert"> after an aria-invalid box; adp-6: <wfn-text
   // id="firstNameErrLbl" role="alert" class="experience-vdl-error-label hydrated">; adp-2, adp-3: <div
   // id="sdf-radio-group-<n>-errorMessage">. Empty in every snapshot: an error counts only while a person sees it.
+  // jr6 adp-new-1 (jr6-personal-us-errors, jr6-personal-us-state, after a refused Next): <h4 id="addressErrorMessage"
+  // class="label-error" role="alert">Correct the information in highlighted fields.</h4>; the labels ADP rewrites,
+  // <label class="mdf-label-error" for="PersonalAddress_city">City is required</label> (the State's <label
+  // id="mdfstatelabel-<uuid>" class="mdf-label-error">); the State's <wfn-dropdown-list ... class="vdl-validation-error
+  // ...">. The adapter's errors (below) give each its field's control id as the hint.
   errors: { css: 'label.vdl-validation-error, .experience-vdl-error-label[role="alert" i], '
-    + '[id^="sdf-radio-group-"][id$="-errorMessage"], div.self-review-signature-required', from: 'adp-2' },
+    + '[id^="sdf-radio-group-"][id$="-errorMessage"], div.self-review-signature-required, '
+    + 'h4#addressErrorMessage[role="alert" i], label.mdf-label-error, wfn-dropdown-list.vdl-validation-error',
+  from: 'adp-2, jr6-personal-us-errors' },
   // adp-6: <div id="recPageLoadWaitingIndicator" ... style="display: none">, the page's busy overlay.
   busy: [{ css: '#recPageLoadWaitingIndicator', from: 'adp-6' }],
+  // ── jr6 ADP-6 (medium): the page after Submit ──
+  // Jobright's ats-submission-rules entry adp-workforcenow (its sign, its words and its "Thank You!" companion), seen
+  // on jr6-confirmation and jr6-confirmation-2: <div id="vdlContainerFluid" class="vdl-container-fluid success-card">
+  // ... <div class="success-message-container flex-text-center" role="alert"><i class="fa fa-3x fa-thumbs-o-up"></i>
+  // <span class="message-header">Thank You!</span><p class="message">We have received your application.</p>. On both,
+  // the BrightJump promo (<sdf-focus-pane id="brj_opt_in_slidein" heading="ADP BrightJump" data-sdf-modal="">) is open
+  // and its focus trap has set aria-hidden (with data-old-aria-hidden) on the page around the sign: underModal.
+  success: { css: '#vdlContainerFluid.success-card .success-message-container p.message',
+    text: /^(?:Thank You! )?We have received your application\.?$/i,
+    companion: { css: '.success-message-container span.message-header', text: /^Thank You!?$/i },
+    underModal: 'sdf-focus-pane[data-sdf-modal]',
+    from: 'jr6-confirmation, jr6-confirmation-2; Jobright ats-submission-rules adp-workforcenow' },
   // ── jr6 ADP-10 (adapter part) and E-ADP (BUILD.md §4; apply-path B2): the job details ──
   // jr6-posting: <div class="job-description-data"> (the description; Jobright's job-card rule ADP2 reads its
   // div.job-description-data-item) and, in the details' header, <button id="recruitment_jobDescription_apply"
@@ -280,7 +305,16 @@ function groupTitle(group: Element): Element | null {
   // class="direction-row" role="radiogroup" aria-labelledby="sdf-radio-group-1-label" ...>: the labelledby target is
   // the sr-only span, and no element has the id question_0.
   const question = group.closest('div.qMainDiv');
-  if (question !== null) return question.querySelector('.question-label-container > label.qLabel');
+  if (question !== null) {
+    // jr6 ADP-16 (jr6-questions2-blank): the desired salary's block, <div id="desiredEmplSalaryBlock"
+    // class="additional-question qMainDiv"><div id="additionalInfoEmplCard"><div class="additional-info-card"><span
+    // id="desiredSalaryLabel" class="question-label-container qLabel">What is your desired salary?</span></div><div
+    // id="salaryOptions" ...><sdf-radio-group label="What is your desired salary?" ...>: no label.qLabel, the title is
+    // the block's own span.qLabel (one that does not hold the group).
+    const label = question.querySelector('.question-label-container > label.qLabel');
+    if (label !== null) return label;
+    return Array.from(question.querySelectorAll('span.qLabel')).find((span) => !span.contains(group)) ?? null;
+  }
   // adp-3: <h4>Protected Veteran Status</h4> ... <sdf-radio-group label="Protected Veteran Status" ...>; <h4
   // id="vsidDis">Disability Status</h4> ... <sdf-radio-group label="Disability Status" ...>: the heading before the
   // group that reads as its label attribute.
@@ -359,6 +393,12 @@ function labelSuffix(control: Element): string | null {
   // class="self-review-signature-label"><label class="required">Please type your full name.</label><input
   // id="electronicSignature" ...>.
   if (control.matches(SIGNATURE) && control.closest('span.self-review-signature') !== null) return 'electronic signature';
+  // jr6 ADP-16 (FIXPLAN §3.2's label contract with RULES; jr6-questions2-blank): the desired salary's Annually | Hourly
+  // group, <div id="salaryOptions" class="itemPadLeft prop_group additional-salary"><sdf-radio-group ...><div
+  // class="direction-row" role="radiogroup" ...>, read as the block's title plus "pay basis".
+  if (control.matches('div[role="radiogroup" i]') && control.closest('#desiredEmplSalaryBlock #salaryOptions') !== null) {
+    return 'pay basis';
+  }
   return null;
 }
 
@@ -447,7 +487,14 @@ function selectHosts(root: Element): Element[] {
 }
 // ── end jr6 ADP-2, ADP-3, ADP-15 ──
 
-// ── jr6 ADP-2 (dependsOn), ADP-1 (uploadState), E-ADP (neverPress) ──
+// ── jr6 ADP-8, ADP-2 (dependsOn), ADP-1 (uploadState), adp-new-1 (errors), E-ADP (neverPress) ──
+/** jr6 ADP-8 (jr6-questions2-blank): "If an offer is presented, how soon can you start?", <div
+ *  class="vdl-date-time-picker ..."><input id="question_8" class="vdl-date-time-picker__input ..." type="text"
+ *  aria-required="true" placeholder="MM/DM/YYYY">: ADP's date picker reads MM/DD/YYYY (its placeholder misspells it). */
+function formatFor(control: Element): { format: 'date'; pattern: string } | null {
+  return control.matches('input.vdl-date-time-picker__input') ? { format: 'date', pattern: 'MM/DD/YYYY' } : null;
+}
+
 /** jr6 ADP-2 (FIXPLAN §3.1 item 10; jr6-personal-blank, jr6-personal-us-state): the State, a text box until Country is
  *  chosen (<input id="PersonalAddress_state" ...>) and then ADP's own list under the same id (<wfn-dropdown-list
  *  id="PersonalAddress_state" ...>), is reset by the Country's write (<input class="MDFSelectBox__input"
@@ -490,6 +537,49 @@ function uploadWidgets(root: Element): Array<{ control: Element; input: HTMLInpu
   const found = hooks.uploadWidgets?.(root) ?? [];
   for (const { input } of found) noteUpload(input);
   return found;
+}
+
+/** adp-new-1: the aria-invalid ADP sets on some questions as the page loads (questions, jr6-questions-filled,
+ *  jr6-questions2-blank: <textarea id="question_9" class="qTextArea vdl-textarea" aria-required="true"
+ *  aria-invalid="true"> beside an empty <label class="vdl-validation-error error-color" role="alert"></label>), which
+ *  is no error while the question's validation message is empty and its label is not ADP's error label. */
+function loadMark(el: Element): boolean {
+  const question = el.closest('div.qMainDiv, div.mdf-validated-field') ?? el.parentElement;
+  const messages = question === null ? [] : Array.from(question.querySelectorAll('.vdl-validation-error'));
+  if (messages.some((message) => (message.textContent ?? '').trim() !== '')) return false;
+  const doc = el.ownerDocument;
+  const labels = el.id === '' ? [] : Array.from(doc.querySelectorAll('label')).filter((label) => label.htmlFor === el.id);
+  return !labels.some((label) => label.matches('.mdf-label-error'));
+}
+
+/** The field an ADP error stands for, by its control's id (FIXPLAN §6.6 adp-new-1, "with a field hint"): an error
+ *  label's for=, a State list's own id, or the list its id labels (<label id="mdfstatelabel-<uuid>"
+ *  class="mdf-label-error">, which wfn-dropdown-list's aria-labelledby names); none for a message. */
+function errorHint(el: Element): string | null {
+  if (el.matches('label.mdf-label-error')) {
+    const target = el.getAttribute('for');
+    if (target !== null && target !== '') return target;
+    if (el.id !== '') {
+      const host = Array.from(el.ownerDocument.querySelectorAll('wfn-dropdown-list[aria-labelledby]'))
+        .find((list) => (list.getAttribute('aria-labelledby') ?? '').split(/\s+/).includes(el.id));
+      if (host !== undefined && host.id !== '') return host.id;
+    }
+    return null;
+  }
+  return el.matches('wfn-dropdown-list.vdl-validation-error') && el.id !== '' ? el.id : null;
+}
+
+/** The page's errors (see the header and ADP_CONFIG.errors): the generic ones but ADP's on-load marks, and ADP's own
+ *  a person can see, each with its field's hint where it has one. */
+function errors(root: Element): Array<{ el: Element; fieldKeyHint?: string }> {
+  const generic = (genericAdapter.errors?.(root) ?? []).filter((error) => !loadMark(error.el));
+  const cache = newScanCache();
+  const own = Array.from(root.querySelectorAll(ADP_CONFIG.errors!.css))
+    .filter((el) => isUserVisible(el, cache) && !generic.some((error) => error.el === el));
+  return [...generic, ...own.map((el) => {
+    const hint = errorHint(el);
+    return hint === null ? { el } : { el, fieldKeyHint: hint };
+  })];
 }
 
 /** The configured never-pressed controls, and the code-choice pane's Close, which sits in the pane's shadow root
@@ -561,9 +651,11 @@ export const adpAdapter: Adapter = {
   // The referral's options (adp-2); jr6 ADP-2, ADP-3: the outermost ADP lists.
   widgetRoots: (root) => [...Array.from(root.querySelectorAll(REFERRAL_OPTIONS)), ...selectHosts(root)],
   // ── jr6 ADP P1 ──
+  formatFor,
   dependsOn,
   uploadState,
   uploadWidgets,
+  errors,
   neverPress,
   // ── end jr6 ADP P1 ──
 };
