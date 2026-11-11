@@ -156,6 +156,11 @@
  * attributes (late-form.ts), at a posting's address where an adapter says so (quirks.formAtPosting), and for the
  * document's life where it draws them in place (quirks.formInPlace), the generic adapter never claiming there. A
  * posting's own text is read for policy text on an application's address too, while no form shows there.
+ * The line P review (2026-11-11): an entry belongs to the application it started at and ends, as at run/cancel, once a
+ * route of the page's own shows another (revA-4); its sign-in step, the agent's at a wall its press drew included,
+ * ends with it (revA-2, P-B4); an application's page whose form is drawn late is waited for past the Apply wait (P-2);
+ * never on a confirmation address (P-3); and the card's job/refresh is relayed for the document's address that told
+ * `entry`, through the panes drawn there (P-1).
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from '../adapters/address';
