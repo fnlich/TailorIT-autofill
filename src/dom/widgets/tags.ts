@@ -12,7 +12,9 @@
  *   - search (WD-18): searched for as a remote typeahead's query is (typeahead.ts searchTypeahead: its declared results
  *     list, its declared query key, the result clicked through assertNotSubmit), and only a result whose shown words are
  *     the value itself is chosen (Jobright 1.25.2's MyWorkDay fillSkills searches each profile skill and picks its own
- *     result); a value no result is: left, and the next one tried;
+ *     result); a value no result is: left, and the next one tried; a result its list marks chosen already (a pill the
+ *     chips do not read as the value: a glyph in its words) is never chosen, since that choice would take the answer
+ *     away (searchTypeahead's keepChosen; jr6 line W review, ENG-REV-3): the value is left unverified, the next tried;
  *   - add (U-05): typed into the text box with the text filler's setter and its input event, the page given its answer
  *     (one quiet window), then its declared Add (WidgetTags.add) pressed with an untrusted click through assertNotSubmit
  *     while a person can see it enabled (Jobright 1.25.2's UltiPro fillSkills types each skill missing from the chips
@@ -110,8 +112,13 @@ async function searchOne(target: FieldTarget, value: string, ctx: WidgetContext,
       return index < 0 ? { choose: null, reason: 'no-match', blocked: false }
         : { choose: { index, cleanLabel: cleanOptionLabel(results[index]!.label) } };
     },
-  }, budgetMs, { freeText: false });
+  }, budgetMs, { freeText: false, keepChosen: true });
   if (result.chosen === null) {
+    // jr6 line W review (ENG-REV-3): the list marks the value's own result chosen already, though no chip reads it:
+    // never chosen (that would take it away), left unverified (the chips do not show it), and the next one tried.
+    if (result.reason === 'already-correct') {
+      return { ok: false, reason: 'verify-mismatch', blocked: false, stop: false, target: current };
+    }
     // No result is the value: the next one is tried; the page's silence, a Guard's word or the run's end stop the box.
     const stop = result.blocked || result.reason !== 'no-match';
     return { ok: false, reason: result.reason, blocked: result.blocked, stop, target: current };

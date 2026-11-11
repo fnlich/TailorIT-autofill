@@ -1078,7 +1078,9 @@ describe('jr6 E2 (ICIMS edit 2): a declared busy sign beside the declared list h
 /** Workday's "Type to Add Skills" prompt as SP\jr6\audit\workday.md (WD-18) and the WORKDAY package's declaration
  *  describe it: a search box beside the pills it holds, each pill a chip once a result is chosen, its results drawn while
  *  it searches (a result whose words only contain the query listed before the one that is it). The page shows one chip
- *  of its own before the run. Every value is synthetic. */
+ *  of its own before the run. With data-variant "marked" on <html> (the jr6 line W review, ENG-REV-3), a result says
+ *  aria-selected whether a pill holds it, and a click on one that does takes its pill away (window.__removed), as a list
+ *  of several answers does. Every value is synthetic. */
 const PILLS = `<!doctype html><html><head><style>
   [hidden] { display: none !important; }
   .pill { display: inline-block; margin: 2px; padding: 2px 4px; border: 1px solid #888; }
@@ -1093,10 +1095,14 @@ const PILLS = `<!doctype html><html><head><style>
 </form>
 <script>
   window.__chosen = [];
+  window.__removed = [];
   const CATALOG = ['TypeScript Compiler', 'TypeScript', 'PostgreSQL Administration', 'PostgreSQL', 'Kubernetes', 'Docker'];
+  const marked = document.documentElement.dataset.variant === 'marked';
   const box = document.getElementById('skills');
   const results = document.getElementById('results');
   const pills = document.getElementById('pills');
+  const pillOf = (name) => Array.from(pills.querySelectorAll('.pill'))
+    .find((pill) => pill.querySelector('.pill-label')?.textContent === name) ?? null;
   box.addEventListener('input', () => {
     const query = box.value.trim().toLowerCase();
     const found = CATALOG.filter((name) => query !== '' && name.toLowerCase().includes(query));
@@ -1105,8 +1111,16 @@ const PILLS = `<!doctype html><html><head><style>
       const row = document.createElement('div');
       row.className = 'row';
       row.setAttribute('role', 'option');
+      if (marked) row.setAttribute('aria-selected', String(pillOf(name) !== null));
       row.textContent = name;
       row.addEventListener('click', () => {
+        if (marked && pillOf(name) !== null) {
+          window.__removed.push(name);
+          pillOf(name).remove();
+          box.value = '';
+          results.hidden = true;
+          return;
+        }
         window.__chosen.push(name);
         const pill = document.createElement('li');
         pill.className = 'pill';
@@ -1332,6 +1346,25 @@ describe('item 13 (U-05, WD-18): a box of several answers (WidgetDecl.tags)', ()
     expect(page.win<string[]>('__chosen')).toEqual([]);
     expect(chipLabels(page.doc, '#pills .pill')).toEqual(['Docker']);
   });
+
+  // jr6 line W review (ENG-REV-3): never remove a chip the run did not add.
+  it('never chooses a result its list marks chosen: the page’s pill the chips miss stays, the next value is added',
+    async () => {
+      const page = await open(PILLS.replace('<html>', '<html data-variant="marked">'), 'workday',
+        (doc) => pillsAdapter(doc));
+      // The page's own pill draws a glyph as text beside its words ("Docker ×"), so the chips do not read it as Docker.
+      page.doc.querySelector('#pills .pill')!.append(Object.assign(page.doc.createElement('span'), { textContent: '×' }));
+      const used = tagHooks(page, 'Type to Add Skills');
+      const result = await fillTags(page.target('Type to Add Skills'), 'Docker, Kubernetes', page.ctx(), used);
+      expect(result).toEqual({ added: 1, verified: false, reason: 'verify-mismatch', blocked: false });
+      expect(used.guards).toEqual(['Docker', 'Kubernetes']);
+      // Docker's result, marked chosen, was never clicked: its pill stays.
+      expect(page.win<string[]>('__removed')).toEqual([]);
+      expect(page.win<string[]>('__chosen')).toEqual(['Kubernetes']);
+      expect(chipLabels(page.doc, '#pills .pill-label')).toEqual(['Docker', 'Kubernetes']);
+      expect((page.doc.getElementById('skills') as HTMLInputElement).value).toBe('');
+      expectOurEventsOnly(page.events);
+    });
 
   it('counts a required box answered while it shows a chip, its text box empty (content/press.ts requiredLeftOf)',
     async () => {
