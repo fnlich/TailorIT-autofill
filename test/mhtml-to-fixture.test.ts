@@ -67,6 +67,7 @@ import {
   CHOICE_ROW_INPUT,
   CHOSEN_MARK_LABELS,
   CLEAR_CHOICE_INPUT,
+  VALUE_MIRRORS,
   deepenInPage,
   ROVING_ROLES,
   REFERRAL_PARAMS,
@@ -3639,6 +3640,36 @@ describe('jr6 fixes: the chosen marks the line W reviews found (PRIV-2, REVC-4)'
       Object.assign(CLEAR_CHOICE_INPUT, { roving, drawings });
     }
   }, 60_000);
+
+  it("blanks a group's chosen value mirrored on its rows (ADP's radio-group-value), an unanswered group's left as drawn",
+    async () => {
+      // snapshot6 adp2's Questions Yes/No answered (values made up): each row repeats the chosen row's value; the
+      // second group is unanswered and draws it empty.
+      const { text } = await convertPage(ADP_PAGE, 'adp', 'jr6fix-adp-mirror', `<fieldset><legend>Are you 18 or older?</legend>
+<wfn-radio-button id="q1-yes" class="question-yes-option" value="yes" radio-group-value="no">Yes</wfn-radio-button>
+<wfn-radio-button id="q1-no" class="question-no-option" value="no" radio-group-value="no">No</wfn-radio-button></fieldset>
+<fieldset><legend>Can you travel?</legend>
+<wfn-radio-button id="q2-yes" class="question-yes-option" value="yes" radio-group-value="">Yes</wfn-radio-button>
+<wfn-radio-button id="q2-no" class="question-no-option" value="no" radio-group-value="">No</wfn-radio-button></fieldset>`);
+      for (const id of ['q1-yes', 'q1-no', 'q2-yes', 'q2-no']) {
+        expect(text, id).toMatch(new RegExp(`<wfn-radio-button id="${id}" class="question-(?:yes|no)-option" `
+          + 'value="(?:yes|no)" radio-group-value="">'));
+      }
+      expect(headerOf(text).cleared).toEqual({ choices: 2 });
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect(VALUE_MIRRORS).toEqual([{ tag: 'wfn-radio-button', attribute: 'radio-group-value' }]);
+    }, 60_000);
+
+  it('refuses a mirrored chosen value left on a row, by its label (the write check and the sweep)', () => {
+    const kinds = (markup: string) => chosenMarksIn(`<!doctype html><html><body>${markup}</body></html>`);
+    expect(kinds('<wfn-radio-button value="yes" radio-group-value="yes"></wfn-radio-button>'))
+      .toEqual([CHOSEN_MARK_LABELS.mirrored]);
+    expect(kinds('<wfn-radio-button value="no" radio-group-value=\'no\'></wfn-radio-button>'))
+      .toEqual([CHOSEN_MARK_LABELS.mirrored]);
+    // An unanswered group's empty mirror, and the same attribute on another element, say nothing.
+    expect(kinds('<wfn-radio-button value="yes" radio-group-value=""></wfn-radio-button><wfn-radio-button value="no" '
+      + 'radio-group-value></wfn-radio-button><x-radio radio-group-value="yes"></x-radio>')).toEqual([]);
+  });
 
   it('reads choice rows alike but for what names them, where they stand and an unanswered tab stop (REVC-4)', async () => {
     const context = await browser.newContext({ viewport: VIEWPORT });
