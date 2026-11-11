@@ -38,7 +38,8 @@ import type { FieldTarget, ScanResult, WidgetReading } from '../types';
 import { requiredLeftOf } from '../../content/press';
 import { verifyAfterSettle } from '../fillers/verify';
 import {
-  closeUnlisted, fillTags, fillWidget, isActionable, openList, readWidget, searchTypeahead, widgetHolds,
+  closeUnlisted, fillTags, fillWidget, isActionable, openList, readWidget, searchTypeahead, widgetCurrentValue,
+  widgetHolds,
 } from './index';
 import { widgetBusy } from './options';
 import type { TagsHooks, TypeaheadHooks } from './index';
@@ -1093,12 +1094,14 @@ const PILLS = `<!doctype html><html><head><style>
   box.addEventListener('focusout', () => { results.hidden = true; });
 </script></body></html>`;
 
-/** The prompt declared as the WORKDAY package declares it (a remote search with its results list, and tags: its pills the
- *  chips, chosen by its search, `cap` chips at most). */
+/** The prompt declared as the WORKDAY package declares it (a remote search with its results list, its first pill's words
+ *  its shown answer as Workday's promptAnswer reads them, and tags: its pills the chips, chosen by its search, `cap`
+ *  chips at most). */
 function pillsAdapter(doc: Document, cap?: number): Adapter {
   return {
     widgetFor: (control: Element) => (control.id === 'skills' ? { kind: 'typeahead-remote', opener: control as HTMLElement,
       results: { list: doc.getElementById('results')!, option: '.row' }, emptyAfterMs: 300,
+      shownAnswer: () => doc.querySelector('#pills .pill-label')?.textContent ?? '',
       tags: { chips: () => Array.from(doc.querySelectorAll('#pills .pill')), search: true,
         ...(cap === undefined ? {} : { cap }) },
       snapshot: 'synthetic Workday Skills' } as WidgetDecl : null),
@@ -1170,9 +1173,11 @@ describe('item 13 (U-05, WD-18): a box of several answers (WidgetDecl.tags)', ()
   it('scans the box as one text field holding what its text box holds, with no options, and acts on it', async () => {
     const page = await open(PILLS, 'workday', (doc) => pillsAdapter(doc));
     const scanned = page.scanned();
+    // What its text box holds, never the pill its shown answer names (the page's own chip, Docker).
     expect(scanned.fields.map((field) => [field.label, field.kind, field.options, field.current]))
       .toEqual([['Type to Add Skills', 'text', [], { kind: 'empty' }]]);
     const target = page.target('Type to Add Skills');
+    expect(widgetCurrentValue(target.widget!, [])).toEqual({ kind: 'empty' });
     expect(target.field.optionSetHash).toBe('none');
     expect(isActionable(target.widget!)).toBe(true);
     expect(fillabilityOf(target.field, target.widget)).toEqual({ fillable: true });
