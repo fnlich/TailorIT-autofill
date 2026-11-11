@@ -32,6 +32,30 @@ export const NAME_ID_RULES: readonly NameIdRule[] = [
   { id: 'name-id.resume', pattern: 'resume|cv', category: (kind) => (kind === 'file' ? 'file.resume' : null) },
   { id: 'name-id.cover-letter', pattern: 'cover_?letter',
     category: (kind) => (kind === 'file' ? 'file.coverLetter' : 'freeText.coverLetter') },
+  // jr6 RULES (WD-09, fixtures jr6-resolvetech- and jr6-travelers-voluntary-disclosures): Workday's agreement box,
+  // name="acceptTermsAndAgreements" whatever its label says ("Please confirm your consent.", "You must AGREE to
+  // proceed."), as Jobright's remote rules recognise it (AGREEMENT_CHECKBOX_NAMES, cited as a fact). A label that reads
+  // as a consent kind of its own decides (classifyRules GENERIC_TOKEN_CATEGORIES).
+  { id: 'name-id.accept-terms', pattern: 'accepttermsandagreements', category: 'consent.terms' },
+  // jr6 RULES (ICIMS-08, fixtures jr6-ars-profile: name "…PersonProfileFields.AddressStreet1"): iCIMS's address search,
+  // drawn as its dropdown, is a lookup whose "Enter manually" is chosen (values.ts addressLookupValue); the text box that
+  // replaces it is the street.
+  { id: 'name-id.address-street1', pattern: 'addressstreet1',
+    category: (kind) => (kind === 'select' || kind === 'combobox' ? 'address.lookup' : kind === 'text' ? 'address.line1'
+      : null) },
+  // jr6 RULES R3 (ICIMS-12, fixtures jr6-ars-profile: name "-1_PersonProfileFields.PhoneType", labelled only "Type"):
+  // the phone's type (Mobile by default: values.ts phoneTypeValue). PHONE_PART keeps the phone pattern off it.
+  { id: 'name-id.phone-type', pattern: 'phone_?type', category: 'contact.phoneType' },
+  // jr6 RULES R3 (ICIMS-13, fixtures jr6-sentinel-profile: name "-1_PersonProfileFields.AddressType", labelled only
+  // "Type"; Jobright's normalizeIcimsAddressTypeLabel reads it by its id: cited): the address's type.
+  { id: 'name-id.address-type', pattern: 'address_?type', category: 'address.type' },
+  // jr6 RULES R3 (ICIMS-19, fixtures jr6-ars-profile-filled: select#rcf3049 "Please specify", which iCIMS fills once
+  // "How did you hear about us?" is chosen): the source specified further. Its text twin (rcf3049_Text) is no list.
+  { id: 'name-id.referral-detail', pattern: 'rcf3049',
+    category: (kind) => (kind === 'select' || kind === 'combobox' ? 'referral.detail' : null) },
+  // jr6 RULES R4 (O13, fixtures/oracle/hjf-apply-section: Oracle's "Link 1", name="siteLink-1", by the label contract of
+  // FIXPLAN §3.2): a numbered link box, the profile's links in order (values.ts numberedLinkValue).
+  { id: 'name-id.site-link', pattern: 'site_?link_?\\d{1,2}', category: 'links.numbered' },
 ];
 
 /**
