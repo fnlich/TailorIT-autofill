@@ -608,7 +608,31 @@ function checkSidebarApp(build, dir, manifest) {
   if (size > SIDEBAR_APP_BUDGET) fail(build, `the sidebar's bundle is ${size} bytes, over the ${SIDEBAR_APP_BUDGET}-byte budget`);
   const text = readFileSync(file, 'utf8');
   for (const name of WXT_CONTEXT_NAMES) if (text.includes(name)) fail(build, `the sidebar's bundle names "${name}"`);
+  for (const mark of SIGNUP_FIELDS_MARKS) {
+    if (text.includes(mark)) fail(build, `the sidebar's bundle holds Sign-up Information's fields ("${mark}")`);
+  }
 }
+
+// ── jr6 review (R16) ──
+/** What only Sign-up Information's fields (src/ui/page/signup.tsx and its words) hold: their password box's mark and
+ *  their Generate button's words. No bundle a job site's page loads may hold them (the sidebar's, every content
+ *  script): a password box drawn there would be typed into in the page's own process. */
+const SIGNUP_FIELDS_MARKS = ['data-signup-password', 'Generate strong password'];
+
+/** The jr6 review (R16): no content script holds Sign-up Information's fields. */
+function checkNoSignupFields(build, dir, manifest) {
+  for (const script of manifest.content_scripts ?? []) {
+    for (const path of Array.isArray(script.js) ? script.js : []) {
+      const file = join(dir, String(path));
+      if (!existsSync(file)) continue;
+      const text = readFileSync(file, 'utf8');
+      for (const mark of SIGNUP_FIELDS_MARKS) {
+        if (text.includes(mark)) fail(build, `content script ${String(path)} holds Sign-up Information's fields ("${mark}")`);
+      }
+    }
+  }
+}
+// ── end jr6 review ──
 
 // ── v5 p2-fill ──
 /**
@@ -829,6 +853,8 @@ for (const build of BUILDS) {
   for (const page of DEV_ONLY_PAGES) if (existsSync(join(dir, page))) fail(build, `${page} is a development-only page`);
   await checkContentScriptSize(build, dir, manifest);
   checkNoWxtContext(build, dir, manifest);
+  // jr6 review (R16)
+  checkNoSignupFields(build, dir, manifest);
   checkSentinel(build, dir, manifest);
   checkSidebarApp(build, dir, manifest);
   // v5 p2-fill
