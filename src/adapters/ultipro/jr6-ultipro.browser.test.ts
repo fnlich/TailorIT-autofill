@@ -258,9 +258,11 @@ describe('U-02: a From box whose own label is the part word alone', () => {
 
   it('a From box whose own label says more than the part word keeps it', async () => {
     const page = await open('resume-review');
-    const box = page.doc.querySelector(`${REVIEW} [aria-label="Work Experience 1"] [data-automation="from-month-dropdown"]`)!;
+    const box = page.doc.querySelector<HTMLSelectElement>(
+      `${REVIEW} [aria-label="Work Experience 1"] [data-automation="from-month-dropdown"]`)!;
     expect(ultiproAdapter.labelFirst?.(box)).toBe(true);
-    box.labels?.[0]?.replaceChildren('Start month of this job');
+    expect(box.labels).toHaveLength(1);
+    box.labels[0]!.replaceChildren('Start month of this job');
     expect(ultiproAdapter.labelFirst?.(box)).toBe(false);
     expect(ultiproAdapter.labelFor?.(box)).toBeNull();
     expect(fieldOf(rescan(page), box)?.label).toBe('Start month of this job');
