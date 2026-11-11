@@ -19,6 +19,8 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { writeField, type PassEnv, type WidgetWriteEnv } from '../../content/pass';
+import { verifyWritten } from '../../content/verify';
 import { planFrame } from '../../core/plan/frame';
 import type { PlanOutput } from '../../core/plan/types';
 import { MANY_SEPARATOR } from '../../core/resolver/values';
@@ -26,10 +28,15 @@ import type { BaseKey, FieldSpec } from '../../core/types/field';
 import type { FillResult, PlannedWrite } from '../../core/types/fill';
 import type { Profile } from '../../core/types/profile';
 import { DEFAULT_SETTINGS, type Settings } from '../../core/types/settings';
+import { fillDateParts } from '../../dom/fillers/date-parts';
+import { verifyAfterSettle } from '../../dom/fillers/verify';
 import { detectPause } from '../../dom/pause-detect';
-import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.testkit';
+import { loadFixture, logEvents, removeFixtures, untrustedViolations, type Fixture } from '../../dom/fixture.testkit';
 import { scan, toFieldSpec } from '../../dom/scan';
-import type { WidgetReading } from '../../dom/types';
+import { TEXT_CAP_LABEL } from '../../dom/thresholds';
+import type { ScanResult, WidgetReading } from '../../dom/types';
+import { visibleText } from '../../dom/visible-text';
+import { chipWords, tagIdentity } from '../../dom/widgets/tag-chips';
 import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { WORKDAY_JR6_SNAPSHOTS, WORKDAY_SKILLS_CAP } from './application';
 import { workdayAdapter } from './index';
@@ -1011,4 +1018,322 @@ describe('RULES regression (jr6-rules item 56, f1245ff): Workday’s "Resume/CV/
       expect(step.write('Upload a file (5MB max)')?.value.kind).toBe('file');
     });
   }
+});
+
+// ── jr6 WORKDAY P2: the fillers on Workday's own markup (ENGINE E3 items 13 and 15) ────────────────────────────────
+
+/** An element with its attributes and children (the stand-ins' markup). */
+function element(doc: Document, tag: string, attributes: Record<string, string>, ...children: Array<Node | string>):
+  HTMLElement {
+  const el = doc.createElement(tag);
+  for (const [name, value] of Object.entries(attributes)) el.setAttribute(name, value);
+  el.append(...children);
+  return el;
+}
+
+/** A pill as Workday draws one in a prompt's selectedItemList (jr6-danafarber-my-experience.html's Skills: li >
+ *  div[role=option][data-automation-id=selectedItem] > its DELETE_charm icon, then p[data-automation-id=promptOption]
+ *  holding the answer's words). */
+function pill(doc: Document, answer: string): HTMLElement {
+  return element(doc, 'li', { role: 'presentation', 'data-automation-id': 'menuItem' },
+    element(doc, 'div', { role: 'option', 'data-automation-id': 'selectedItem', 'aria-label': answer },
+      element(doc, 'div', { 'data-automation-id': 'DELETE_charm', role: 'presentation', 'aria-hidden': 'true' }),
+      element(doc, 'p', { 'data-automation-id': 'promptOption', 'data-automation-label': answer }, answer)));
+}
+
+/** The Skills prompt's list of pills, drawn where the page has none yet (as the danafarber capture holds it). */
+function pillList(doc: Document): Element {
+  const container = doc.getElementById('skills--skills')!.closest('[data-automation-id="multiSelectContainer"]')!;
+  const found = container.querySelector('[data-automation-id="selectedItemList"]');
+  if (found !== null) return found;
+  const list = element(doc, 'ul', { role: 'listbox', 'data-automation-id': 'selectedItemList' });
+  container.querySelector('[data-automation-id="multiselectInputContainer"]')!.append(list);
+  return list;
+}
+
+/** The skills the stand-in's catalogue offers (made up): each golden skill, after a longer name that contains it, so
+ *  only the choice of the result that is the value itself chooses it. */
+const CATALOGUE = ['TypeScript Compiler', 'TypeScript', 'PostgreSQL Administration', 'PostgreSQL',
+  'Kubernetes Administration', 'Kubernetes', 'Docker'];
+
+/** Workday's Skills prompt as its script draws it, stood in for on a real page (the s2 prompts' stand-in of
+ *  workday-s2.browser.test.ts; s2-verily-field-of-study-open.html's popup markup): the typed text drawn a microtask
+ *  after its input event, as React draws it; an Enter keydown in the box after typed text draws the popup that names
+ *  the prompt's container (data-associated-widget), its rows the catalogue's skills containing the typed words, each a
+ *  radio leaf, or Workday's own "No Items." row (a leaf of type 2, no radio); a click on a row's label chooses it: its
+ *  pill drawn in the container's list, the popup gone, the box emptied. Queries and choices are kept, in order. */
+function standInSkills(doc: Document, catalogue: readonly string[]) {
+  const box = doc.getElementById('skills--skills') as HTMLInputElement;
+  const container = box.closest('[data-automation-id="multiSelectContainer"]')!;
+  const queries: string[] = [];
+  const chosen: string[] = [];
+  let popup: HTMLElement | null = null;
+  const close = () => {
+    popup?.remove();
+    popup = null;
+  };
+  box.addEventListener('input', () => queueMicrotask(() => box.setAttribute('data-typed', box.value)));
+  box.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || box.value.trim() === '') return;
+    const query = box.value.trim();
+    queries.push(query);
+    close();
+    const found = catalogue.filter((name) => name.toLowerCase().includes(query.toLowerCase()));
+    const rows = found.length === 0
+      ? [element(doc, 'div', { role: 'option', 'data-automation-id': 'menuItem', 'aria-label': 'No Items.' },
+        element(doc, 'div', { 'data-automation-id': 'promptLeafNode', 'data-uxi-multiselectlistitem-type': '2' },
+          element(doc, 'div', { 'data-automation-id': 'promptOption' }, 'No Items.')))]
+      : found.map((name, at) => element(doc, 'div', { role: 'option', 'data-automation-id': 'menuItem',
+        id: `menuItem-stand-in-${at}`, 'aria-label': `${name} not checked`, 'aria-selected': 'false' },
+      element(doc, 'div', { 'data-automation-id': 'promptLeafNode', 'data-uxi-multiselectlistitem-type': '1' },
+        element(doc, 'input', { type: 'radio', 'data-automation-id': 'radioBtn', 'aria-checked': 'false' }),
+        element(doc, 'div', { 'data-automation-id': 'promptOption', 'data-automation-label': name }, name))));
+    popup = element(doc, 'div', { 'data-popper-placement': 'bottom' },
+      element(doc, 'div', { 'data-automation-id': 'responsiveMonikerPrompt', 'data-associated-widget': container.id },
+        element(doc, 'div', { 'data-automation-id': 'activeListContainer', role: 'listbox' }, ...rows)));
+    doc.body.append(popup);
+  });
+  doc.addEventListener('click', (event) => {
+    const row = (event.target as Element).closest('[role="option"][data-automation-id="menuItem"]');
+    if (row === null || popup === null || !popup.contains(row)) return;
+    if (row.querySelector('[data-automation-id="radioBtn"]') === null) return;
+    const name = words(row.querySelector('[data-automation-id="promptOption"]'));
+    chosen.push(name);
+    pillList(doc).append(pill(doc, name));
+    close();
+    box.value = '';
+  });
+  /** The words of the pills the prompt shows, in order. */
+  const pills = () => Array.from(container.querySelectorAll('[data-automation-id="selectedItem"]'),
+    (item) => words(item.querySelector('[data-automation-id="promptOption"]')));
+  return { box, queries, chosen, pills };
+}
+
+/** Skills planned with the golden profile and written through the pass, as the run writes a field (content/pass.ts
+ *  writeField: its Guard on a fresh scan, then the tags filler), with Workday's prompt stood in for. */
+async function writeSkills(html: string, company: string,
+  options: { prepare?: (doc: Document) => void; catalogue?: readonly string[] } = {}) {
+  const { doc } = await load(html);
+  options.prepare?.(doc);
+  const prompt = standInSkills(doc, options.catalogue ?? CATALOGUE);
+  const root = workdayAdapter.detect(doc)!.formRoot;
+  const readings = new Map<BaseKey, WidgetReading>();
+  const read = (): ScanResult => scan(root, workdayAdapter, { platform: 'workday', frameId: 0,
+    widgetReadings: readings });
+  const last = read();
+  const field = last.fields.find((each) => each.label === 'Type to Add Skills')!;
+  const kinds = workdayAdapter.repeatables!(root).map((section) => section.kind);
+  const plan = planFrame({ specs: last.fields.map(toFieldSpec), canaries: [], profile: goldenProfile(),
+    sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false,
+    now: NOW, posting: { company, location: 'Austin, TX, USA' },
+    ...(kinds.length > 0 ? { repeatables: kinds.map((kind) => ({ kind, entries: null })) } : {}) });
+  const planned = plan.writes.find((write) => write.key === field.key)!;
+  const row = plan.results.find((each) => each.key === field.key)!;
+  const env = { adapter: workdayAdapter, root, platform: 'workday', frameId: 0, dryRun: false, canaries: [],
+    signal: new AbortController().signal, valid: () => true, stopped: () => false, runId: () => 'run',
+    heldBy: () => null } as unknown as PassEnv;
+  const widgets: WidgetWriteEnv = { readings, plan: async () => ({ results: [], writes: [] }) as never };
+  const result = await writeField(env, last, field, planned, row, new WeakMap(), { widgets });
+  return { doc, prompt, field, planned, result, read };
+}
+
+describe('jr6 WD-18 (ENGINE E3 item 13): Skills filled one skill at a time, read back by its pills', () => {
+  const GOLDEN = ['TypeScript', 'PostgreSQL', 'Kubernetes'];
+
+  it.each([['resolvetech-my-experience', resolveExp, 'Resolve Tech Solutions'],
+    ['s2-exelixis-my-experience', exelixisExp, 'Exelixis']])(
+    '%s: each skill searched, its own result chosen, its pill read back then and after the settle',
+    async (_name, html, company) => {
+      const { prompt, field, planned, result, read } = await writeSkills(html, company);
+      expect([field.kind, field.current]).toEqual(['text', { kind: 'empty' }]);
+      expect(planned.value).toEqual({ kind: 'text', text: GOLDEN.join(MANY_SEPARATOR) });
+      expect(prompt.queries).toEqual(GOLDEN);
+      // The result that is the value itself, never the longer name listed before it.
+      expect(prompt.chosen).toEqual(GOLDEN);
+      expect(prompt.pills()).toEqual(GOLDEN);
+      expect(prompt.box.value).toBe('');
+      expect(result.row).toMatchObject({ wrote: true, verification: 'verified', needsUserAction: false });
+      expect(verifyWritten(read(), result.written!)).toMatchObject({ verification: 'verified' });
+    });
+
+  it.each([['jr6-danafarber-my-experience', danaExp, 'Dana-Farber Cancer Institute'],
+    ['jr6-parsons-my-experience', parsonsExp, 'Parsons']])(
+    '%s: the 15 pills the page shows are kept, and a skill a pill shows is not searched again', async (_name, html,
+      company) => {
+      let shown: Element[] = [];
+      const { prompt, result } = await writeSkills(html, company, { prepare: (doc) => {
+        pillList(doc).append(pill(doc, 'PostgreSQL'));
+        shown = Array.from(pillList(doc).querySelectorAll('[data-automation-id="selectedItem"]'));
+      } });
+      expect(shown).toHaveLength(16);
+      expect(prompt.queries).toEqual(['TypeScript', 'Kubernetes']);
+      expect(shown.every((each) => each.isConnected)).toBe(true);
+      expect(prompt.pills()).toHaveLength(18);
+      expect(prompt.pills().slice(-3)).toEqual(['PostgreSQL', 'TypeScript', 'Kubernetes']);
+      expect(result.row).toMatchObject({ wrote: true, verification: 'verified' });
+    });
+
+  it('never past its cap: on a step showing one pill fewer than the cap, one skill is added, the row says so',
+    async () => {
+      const { prompt, result, read } = await writeSkills(resolveExp, 'Resolve Tech Solutions', { prepare: (doc) => {
+        const list = pillList(doc);
+        for (let at = 1; at < WORKDAY_SKILLS_CAP; at += 1) list.append(pill(doc, `Fixture Skill ${at}`));
+      } });
+      expect(prompt.queries).toEqual(['TypeScript']);
+      expect(prompt.pills()).toHaveLength(WORKDAY_SKILLS_CAP);
+      expect(result.row).toMatchObject({ wrote: true, reason: 'max-selections-reached', needsUserAction: true });
+      expect(verifyWritten(read(), result.written!)).toMatchObject({ reason: 'max-selections-reached' });
+    });
+
+  it('chooses only the result that is the value: a skill Workday lists under a longer name alone is left '
+    + '(ENGINE E3’s exact results), the row filled but not verified', async () => {
+    const { prompt, result } = await writeSkills(resolveExp, 'Resolve Tech Solutions',
+      { catalogue: CATALOGUE.filter((name) => name !== 'Kubernetes') });
+    expect(prompt.queries).toEqual(GOLDEN);
+    expect(prompt.chosen).toEqual(['TypeScript', 'PostgreSQL']);
+    expect(result.row).toMatchObject({ wrote: true, reason: 'verify-mismatch', verification: 'mismatch' });
+  });
+
+  it.each([['jr6-danafarber-my-experience', danaExp], ['jr6-parsons-my-experience', parsonsExp]])(
+    '%s: each of the capture’s 15 pills reads as its answer alone (its DELETE_charm icon draws no text)',
+    async (_name, html) => {
+      const { doc } = await load(html);
+      const tags = workdayAdapter.widgetFor!(doc.getElementById('skills--skills')!)!.tags!;
+      const chips = tags.chips();
+      expect(chips).toHaveLength(15);
+      const answers = chips.map((chip) => tagIdentity(visibleText(
+        chip.querySelector('[data-automation-id="promptOption"]')!, { singleLine: true, cap: TEXT_CAP_LABEL })));
+      expect(answers.every((answer) => answer !== '')).toBe(true);
+      expect(chipWords(tags)).toEqual(answers);
+      expect(chips.map((chip) => visibleText(chip.querySelector('[data-automation-id="DELETE_charm"]')!)))
+        .toEqual(chips.map(() => ''));
+    });
+});
+
+/** Workday's date script stood in for on a real page, as snapshot5 shows it behaves and ENGINE's synthetic date page
+ *  models it (src/dom/fillers/jr6-doors.browser.test.ts): each part draws its digits a microtask after its input
+ *  event; the date's own state takes a part from its typed digits, or from the setter's write while the part has the
+ *  page's focus (a focus or focusin since its last write), as `takes` says; leaving a part (its focusout) validates its
+ *  date: whole and every part taken, its field's alerts go, else the field shows "Error: Invalid Date". Each part's
+ *  events are kept in order (a key as "key:<its key>"). */
+function standInDates(doc: Document, takes: 'focused' | 'keys' | 'never') {
+  const events = new Map<string, string[]>();
+  const taken = new Set<string>();
+  const focused = new Set<string>();
+  for (const input of Array.from(doc.querySelectorAll<HTMLInputElement>(
+    '[data-automation-id="dateInputWrapper"] input[role="spinbutton"]'))) {
+    const display = doc.getElementById(input.id.replace(/-input$/, '-display'));
+    const wrapper = input.closest('[data-automation-id="dateInputWrapper"]')!;
+    const field = wrapper.closest('[data-automation-id^="formField-"]')!;
+    const kept: string[] = [];
+    events.set(input.id, kept);
+    let typed = '';
+    for (const type of ['focus', 'focusin', 'input', 'change', 'keydown', 'focusout', 'blur']) {
+      input.addEventListener(type, (event) => {
+        kept.push(event.type === 'keydown' ? `key:${(event as KeyboardEvent).key}` : event.type);
+      });
+    }
+    input.addEventListener('focusin', () => focused.add(input.id));
+    input.addEventListener('input', () => {
+      const digits = input.value;
+      queueMicrotask(() => {
+        if (!/^\d+$/.test(digits)) return;
+        if (display !== null) display.textContent = digits;
+        input.setAttribute('aria-valuenow', String(Number(digits)));
+      });
+      if (takes === 'focused' && focused.has(input.id) && /^\d+$/.test(digits)) taken.add(input.id);
+      focused.delete(input.id);
+      typed = '';
+    });
+    input.addEventListener('keydown', (event) => {
+      if (!/^\d$/.test(event.key)) return;
+      typed += event.key;
+      const digits = typed;
+      if (takes !== 'never') taken.add(input.id);
+      queueMicrotask(() => {
+        if (display !== null) display.textContent = digits;
+        input.setAttribute('aria-valuenow', String(Number(digits)));
+      });
+    });
+    input.addEventListener('focusout', () => {
+      const whole = Array.from(wrapper.querySelectorAll('input[role="spinbutton"]')).every((part) => taken.has(part.id));
+      const alerts = Array.from(field.querySelectorAll('[data-automation-id="inputAlert"]'));
+      if (whole) {
+        for (const alert of alerts) alert.remove();
+      } else if (alerts.length === 0) {
+        (wrapper.closest('fieldset') ?? field).append(element(doc, 'p', { 'data-automation-id': 'inputAlert' },
+          'Error: Invalid Date'));
+      }
+    });
+  }
+  return { of: (id: string) => events.get(id) ?? [] };
+}
+
+describe('jr6 WD-23 (ENGINE E3 item 15): Workday’s dates, each part focused before its write, its alert read', () => {
+  /** The golden profile's first job's From, as the plan writes it. */
+  const FROM_ISO = '2021-06';
+
+  /** The page, its date script stood in for, and a reader of the date field whose wrapper is `id`. */
+  async function datePage(html: string, id: string, takes: 'focused' | 'keys' | 'never') {
+    const { doc } = await load(html);
+    const root = workdayAdapter.detect(doc)!.formRoot;
+    const dates = standInDates(doc, takes);
+    const read = () => scan(root, workdayAdapter, { platform: 'workday' });
+    const target = () => {
+      const result = read();
+      const wrapper = doc.getElementById(id)!;
+      return result.target(result.fields.find((each) => result.target(each.key)?.control === wrapper)!.key)!;
+    };
+    const part = (name: 'Month' | 'Year') => dates.of(`${id}-dateSection${name}-input`);
+    return { doc, root, read, target, part };
+  }
+
+  it('s2-pureinsurance-my-experience-errors: From written with each part focused first, so Workday takes it and the '
+    + 'capture’s "Invalid Date" alert goes', async () => {
+    const FROM = 'workExperience-5--startDate';
+    const page = await datePage(pureExp, FROM, 'focused');
+    // The capture as the owner saw it after the old filler: the date empty, its alert under it.
+    expect(page.target().field.current).toEqual({ kind: 'empty' });
+    expect(page.target().dateParts?.alert?.()).not.toBeNull();
+    const active = page.doc.activeElement;
+    const log = logEvents(page.doc);
+    expect(await fillDateParts(page.target(), FROM_ISO, { adapter: workdayAdapter, root: page.root }))
+      .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    for (const name of ['Month', 'Year'] as const) {
+      expect(page.part(name), name).toEqual(['focus', 'focusin', 'input', 'change', 'focusout', 'blur']);
+    }
+    // Untrusted, and the page's focus never moved.
+    expect(page.doc.activeElement).toBe(active);
+    expect(untrustedViolations(log.events)).toEqual([]);
+    expect(page.target().dateParts?.alert?.()).toBeNull();
+    expect(page.target().field.current).toEqual({ kind: 'text', text: FROM_ISO });
+    expect(verifyAfterSettle(page.read(), page.target().field.key, { kind: 'date', iso: FROM_ISO }))
+      .toEqual({ verification: 'verified', reason: 'ok' });
+  });
+
+  it('s2-exelixis-my-experience: a setter’s write Workday does not take shows its alert once left, and the date is '
+    + 'written again once with its digits, each part focused first: the alert goes', async () => {
+    const FROM = 'workExperience-346--startDate';
+    const page = await datePage(exelixisExp, FROM, 'keys');
+    expect(await fillDateParts(page.target(), FROM_ISO, { adapter: workdayAdapter, root: page.root }))
+      .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    expect(page.part('Month')).toEqual(['focus', 'focusin', 'input', 'change', 'focusout', 'blur', 'focus', 'focusin',
+      'input', 'change', 'key:0', 'key:6', 'focusout', 'blur']);
+    expect(page.part('Year').filter((event) => event.startsWith('key:'))).toEqual(['key:2', 'key:0', 'key:2',
+      'key:1']);
+    expect(page.target().dateParts?.alert?.()).toBeNull();
+    expect(page.target().field.current).toEqual({ kind: 'text', text: FROM_ISO });
+  });
+
+  it('s2-exelixis-my-experience: written again once only: an alert that stays is value-rejected-by-site, then and '
+    + 'after the settle', async () => {
+    const FROM = 'workExperience-346--startDate';
+    const page = await datePage(exelixisExp, FROM, 'never');
+    expect(await fillDateParts(page.target(), FROM_ISO, { adapter: workdayAdapter, root: page.root }))
+      .toEqual({ wrote: true, verification: 'mismatch', reason: 'value-rejected-by-site', needsUserAction: false });
+    expect(page.part('Month').filter((event) => event.startsWith('key:'))).toEqual(['key:0', 'key:6']);
+    expect(page.target().dateParts?.alert?.()).not.toBeNull();
+    expect(verifyAfterSettle(page.read(), page.target().field.key, { kind: 'date', iso: FROM_ISO }))
+      .toEqual({ verification: 'mismatch', reason: 'value-rejected-by-site' });
+  });
 });
