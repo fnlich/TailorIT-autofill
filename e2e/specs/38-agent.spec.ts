@@ -217,7 +217,7 @@ test.describe('Sign-in mode Auto (v3 Phase 5)', () => {
     expect(await datasetOf(page, 'terms')).toBe('true');
   });
 
-  test('a sign-in the site does not take is tried once, and says so', async ({ extContext, connected: ext, routeLog }) => {
+  test('a sign-in the site does not take is pressed once, and says so; Autofill again types it for the person', async ({ extContext, connected: ext, routeLog }) => {
     await withSignIn(ext);
     await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
       modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } } });
@@ -229,10 +229,14 @@ test.describe('Sign-in mode Auto (v3 Phase 5)', () => {
     await expect.poll(async () => (await ext.reports(tabId)).find((each) => each.frameId === 0)?.notices
       .map((notice) => notice.code), { timeout: 45_000 }).toContain('sign-in-failed');
     expect(await datasetOf(page, 'submits')).toBe('1');
-    // Autofill again on the same page: the tab already asked, so the password is not typed again.
+    // The page emptied its password box itself.
+    await expect(page.locator('#password')).toHaveValue('');
+    // Autofill again on the same page: the tab pressed it already, so it is not pressed again; the jr6 review (R1): the
+    // saved password is typed for the person's own press instead, never refused.
     await ext.fill(page);
-    await expect.poll(async () => (await ext.reports(tabId)).find((each) => each.frameId === 0)?.notices
-      .map((notice) => notice.code), { timeout: 30_000 }).toContain('sign-in-failed');
+    await expect(page.locator('#password')).toHaveValue(DUMMY.password, { timeout: 30_000 });
+    await expect.poll(async () => (await ext.reports(tabId)).find((each) => each.frameId === 0)?.status,
+      { timeout: 30_000 }).toBe('auth-needed');
     expect(await datasetOf(page, 'submits')).toBe('1');
     expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
   });

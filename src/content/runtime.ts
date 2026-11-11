@@ -191,7 +191,7 @@ import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter,
   // v5 p2-detect
   refusalNow } from './press';
 import { loadPagePatches } from './page-patches';
-import { signIn } from './sign-in';
+import { dropKeptSignIns, signIn } from './sign-in';
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { createReportLimiter } from './report';
 // v1.3 B
@@ -522,6 +522,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         placementChanged(msg.settings.panel);
         signInMode = msg.settings.modes.signIn;
         signInTypes = msg.settings.typeSignIn === true;
+        // The jr6 review (sec-8): no saved password may be typed any more (it was deleted): none typed for the person's
+        // press stays in this document.
+        if (!signInTypes) dropKeptSignIns(doc);
         notificationsChanged(msg.settings.modes.notifications);
         return ok({});
       case 'run/policyDecision':
@@ -1164,16 +1167,18 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       autoPressed,
       // v3 Phase 5, Sign-in mode Auto: once, on the page this run paused at, until the run stops or is cancelled; the
       // site taking it continues the run.
+      // The jr6 review (sec-1): `page`, the document's own life, which guards a password left for the person's press.
       signIn: (signal, typeOnly) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
         // jr6: Sign-in on Manual with a password saved: typed, the press the person's.
         ...(typeOnly === true ? { typeOnly: true as const } : {}),
-        signal: AbortSignal.any([signal, lifetime.signal]) }),
-      // core-x, item 2: Sign-in Auto types into the form's account section, pressing nothing.
-      signInSection: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
-        section: true, signal: AbortSignal.any([signal, lifetime.signal]) }),
+        signal: AbortSignal.any([signal, lifetime.signal]), page: lifetime.signal }),
+      // core-x, item 2: Sign-in Auto types into the form's account section, pressing nothing; jr6: on Manual too.
+      signInSection: (signal, typeOnly) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
+        section: true, ...(typeOnly === true ? { typeOnly: true as const } : {}),
+        signal: AbortSignal.any([signal, lifetime.signal]), page: lifetime.signal }),
       // Core pass Z1, item 24: Sign-in Auto presses the step's declared sign-in container once the run rests there.
       signInContainer: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
-        container: true, signal: AbortSignal.any([signal, lifetime.signal]) }),
+        container: true, signal: AbortSignal.any([signal, lifetime.signal]), page: lifetime.signal }),
       afterSignIn: () => {
         if (current !== run) return;
         // v4: a pause that went carries the run on by itself, a bounded number of times in a document.
@@ -1685,8 +1690,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         : { kind: 'sign-in', text: said === 'failed' ? words.signInFailed : said === 'typed' ? words.signInTyped
           : words.signIn };
     wallToast = toast.kind === 'challenge' ? 'challenge' : toast.kind === 'no-sign-in' ? 'no-sign-in' : 'sign-in';
+    // The jr6 review (R11): typed on Manual, the side panel says so too ('sign-in-typed').
     wallWaits = said === 'failed' ? 'sign-in-failed' : said === 'none-saved' ? 'no-sign-in'
-      : said === 'typed' ? 'sign-in' : said;
+      : said === 'typed' ? 'sign-in-typed' : said;
     wallUi()?.setToasts([toast]);
     // s2 profile (P1): the worker hears what the page waits for, for the side panel (the wall as last read; the toast
     // itself is tellWall's to take away, at the page's next change).

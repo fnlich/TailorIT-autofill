@@ -7,9 +7,12 @@
  * 'checkbox-group'.
  *
  * A password field or a one-time-code field is never a field: it means the step is a sign-in, an account creation or
- * an email code, and nothing on such a step is filled, not even the email (pause-detect.ts).
+ * an email code, and nothing on such a step is filled, not even the email (pause-detect.ts). The jr6 review (sec-5):
+ * nor is a box the job-site password was typed into, whatever type the page gives it since (a "Show password" makes it
+ * a text box: dom/secret-boxes.ts).
  */
 import type { FieldFormat } from '../core/enums';
+import { isSecretBox } from './secret-boxes';
 
 /** The controls the scanner considers. */
 export const CONTROL_SELECTOR = 'input, select, textarea';
@@ -35,7 +38,7 @@ const INPUTMODE_FORMATS: Readonly<Record<string, FieldFormat>> = {
 
 /** The kind of a native control. */
 export function kindOf(el: Element): ControlKind {
-  if (isAuthField(el)) return { field: false, auth: true };
+  if (isAuthField(el) || holdsPassword(el)) return { field: false, auth: true };
   const tag = el.localName;
   if (tag === 'textarea') return { field: true, kind: 'textarea' };
   if (tag === 'select') return { field: true, kind: (el as HTMLSelectElement).multiple ? 'multiselect' : 'select' };
@@ -76,6 +79,14 @@ export function isAuthField(el: Element): boolean {
   const input = el as HTMLInputElement;
   if (input.type === 'password') return true;
   return autocompleteTokens(el).includes('one-time-code');
+}
+
+/** The jr6 review (sec-5): a box the job-site password was typed into, whatever its type now (module header,
+ *  dom/secret-boxes.ts). Never a field; pause detection reads boxes by their type, so this one is kindOf's alone. (Not
+ *  a box whose autocomplete names a password: sites put autocomplete="new-password" on ordinary fields to turn the
+ *  browser's own autofill off, and an auth field holds every write of its step.) */
+function holdsPassword(el: Element): boolean {
+  return el.localName === 'input' && isSecretBox(el);
 }
 
 /** The autocomplete attribute's tokens, lower case, with section-*, shipping and billing removed. */

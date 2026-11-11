@@ -223,7 +223,7 @@ import {
 } from './report';
 import { postingNamesOf } from './job-relay';
 import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
-import { signInChallenged, signInRefusalWaits, type SignInOutcome } from './sign-in';
+import { signInChallenged, signInHandedOver, signInRefusalWaits, type SignInOutcome } from './sign-in';
 import type { PressSnapshot } from './submitted';
 import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
@@ -371,8 +371,9 @@ export interface RunEnv {
    *  Information (TailorIT's Settings › Autofill before). */
   openSignInSettings?(): void;
   /** core-x, item 2, Sign-in mode Auto: types the saved job-site sign-in into the form's account section
-   *  (content/sign-in.ts, SignInContext.section), pressing nothing, until `signal` aborts. */
-  signInSection?(signal: AbortSignal): Promise<SignInOutcome>;
+   *  (content/sign-in.ts, SignInContext.section), pressing nothing, until `signal` aborts. jr6: on Manual too
+   *  (`typeOnly`: the jr6 review's sec-3, typed only into a document shown to the person). */
+  signInSection?(signal: AbortSignal, typeOnly?: boolean): Promise<SignInOutcome>;
   /** Core pass Z1, item 24, Sign-in mode Auto: presses the page's declared sign-in container's button (ADP's guest
    *  Continue, UltiPro's Create account) once the run rests on the step it fills (content/sign-in.ts,
    *  SignInContext.container), until `signal` aborts. */
@@ -2736,8 +2737,15 @@ export class FillRun {
     const auto = this.signInAuto || this.request.signIn === true;
     // jr6: on Manual, a saved password is typed into a sign-in or account's creation (never an email gate's Next).
     const typing = !auto && this.signInTypes && this.typeableWallShown();
-    this.signInDue = this.state.status === 'auth-needed' && (auto || typing)
+    const due = this.state.status === 'auth-needed' && (auto || typing)
       && !this.request.dryRun && this.env.signIn !== undefined && (this.isTop || this.claimed) && this.wallShown();
+    // An account form whose press is the person's, typed already at this wall of the document (sign-in.ts
+    // signInHandedOver): the run rests at it for them, never typing it again; its toast says what was typed.
+    const kind = this.pauseNow()?.kind;
+    const handedOver = due && signInHandedOver(this.env.doc, kind === 'sign-in' || kind === 'create-account'
+      || kind === 'email-gate' ? kind : null);
+    if (handedOver) this.signInSaid = 'typed';
+    this.signInDue = due && !handedOver;
     this.signInTyping = this.signInDue && typing;
     if (this.signInDue && !this.signInTyping) this.notices.add('sign-in-auto');
     if (this.state.pauseReason === 'captcha') {
@@ -2875,9 +2883,13 @@ export class FillRun {
     if ((!this.signInAuto && !this.signInTypes) || this.request.dryRun || signInSection === undefined
       || (!this.isTop && !this.claimed) || this.accountTyped.has(step)) return;
     if (accountLeft(this.env.page.adapter, this.env.doc, this.rootNow()) === 0) return;
+    // The jr6 review (sec-3): on Manual, typed only into a document shown to the person: a background tab's fill (the
+    // sequential auto-apply's) goes on without it, and a run once it is shown types it.
+    const typeOnly = !this.signInAuto && this.request.signIn !== true;
+    if (typeOnly && this.env.doc.visibilityState !== 'visible') return;
     this.accountTyped.add(step);
     const outcome = await signInSection(AbortSignal.any([this.controller.signal, this.stopping.signal,
-      this.cancelled.signal]));
+      this.cancelled.signal]), typeOnly);
     log('content.account-section', { typed: outcome === 'continue' });
   }
 

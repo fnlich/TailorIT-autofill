@@ -13,7 +13,8 @@
  *   nowhere;
  * - Forgot Password is the person's: the run pauses there, types nothing and asks for nothing, Auto or not;
  * - jr6: with Sign-in on Manual and a password saved, "Sign in with email" is pressed and the email and the password
- *   typed, Sign In left to the person; with none saved the landing is the person's, and nothing is asked.
+ *   typed, Sign In left to the person, whose own press then never lets the browser send the form as a GET (the jr6
+ *   review's sec-1); with none saved the landing is the person's, and nothing is asked.
  * The application's steps (the owner's signed-in snapshots of 2026-11-06; fixtures/synthetic/workday/steps.html, drawn
  * with their markup), Next on Auto:
  * - My Information: the Country dropdown chosen through its own list (its button's click, then the option's), the names
@@ -175,6 +176,15 @@ test.describe('Sign-in mode Auto on Workday (v3 Phase 6)', () => {
     expect(report.notices.map((notice) => notice.code)).not.toContain('sign-in-auto');
     expect(await datasetOf(page, 'submits')).toBe('0');
     expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
+    // The jr6 review (sec-1): the person's own press of Sign In, whose page script then clicks the hidden submit button,
+    // never lets the browser send the form (no method, no action: a GET with the password in the address).
+    await page.locator('[data-automation-id="click_filter"]').click();
+    await expect.poll(() => datasetOf(page, 'submits')).toBe('1');
+    expect(await datasetOf(page, 'passwordOk')).toBe('true');
+    await expect.poll(() => datasetOf(page, 'nativeGet')).toBe('prevented');
+    expect(page.url()).toBe(ACCOUNT);
+    expect(routeLog.unexpected).toEqual([]);
+    expect(routeLog.submitted).toEqual([]);
   });
 
   test('with Sign-in on Manual and no password saved leaves the landing to the person and asks for nothing', async ({ extContext, connected: ext, routeLog }) => {

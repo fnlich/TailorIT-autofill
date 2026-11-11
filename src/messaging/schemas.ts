@@ -301,8 +301,9 @@ export type SignInWall = (typeof SIGN_IN_WALLS)[number];
 
 /** s2 profile (the review fix P1): what a page with no form waits for while no run holds it, as its wall's toast says
  *  (content/runtime.ts showWallToast): a check to solve, a sign-in to make there (or the saved one failed), or a
- *  job-site sign-in to add in TailorIT. The side panel says it when the page's toasts are not shown until closed. */
-export const WALL_WAITS = ['challenge', 'sign-in', 'sign-in-failed', 'no-sign-in'] as const;
+ *  job-site sign-in to add in TailorIT. The side panel says it when the page's toasts are not shown until closed.
+ *  The jr6 review (R11): or the sign-in typed on Manual, its button the person's ('sign-in-typed'). */
+export const WALL_WAITS = ['challenge', 'sign-in', 'sign-in-failed', 'no-sign-in', 'sign-in-typed'] as const;
 export type WallWaits = (typeof WALL_WAITS)[number];
 
 /** What came of the agent's press on a posting page's entry control (v3 Phase 5; agent/enter): 'pressed' (the

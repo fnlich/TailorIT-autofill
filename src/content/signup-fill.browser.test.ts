@@ -7,13 +7,18 @@
  *   In (Workday's, Snap's): the email and the password;
  * - Auto (the worker's answer `press`): the site's own Create Account or Sign In (its visible click_filter) pressed once;
  * - Manual (`press` false, or this run's own typeOnly while the worker says Auto): the same typed and ticked, nothing
- *   pressed ('typed'), the boxes kept for the person's own press, SIGN_IN_KEPT_MS at most (then the password boxes are
- *   written empty again, the email kept), as a sign-in refused for its check is (the v5 review's S8);
+ *   pressed ('typed'), the boxes kept for the person's own press until the run stops or ends or the document goes (the
+ *   jr6 review's R11: no timer; then the password boxes are written empty again, the email kept);
  * - iCIMS's "Create a login" inside the profile (careers-githubinc's, uscareers-nyu's): the login (the email), the
  *   password and Password (Re-enter) typed, Submit Profile never pressed either way; its email gate (East West Bank's):
  *   the email alone, Next pressed on Auto alone;
  * - a run on Workday's Create Account: on Manual with a password saved (ContentSettings.typeSignIn) it is typed and the
  *   page's toast says the press is the person's; on Manual with none, nothing is asked; on Auto it is typed and pressed.
+ * - the jr6 review: the browser's own submission held while a typed password waits for the person (sec-1); `typing`
+ *   asked for what this frame never presses, and a refused press kept for the person (R1); a box typed into stays an
+ *   auth field when the page shows it as text (sec-5); the keeps ended when the password is deleted (sec-8); a hidden
+ *   tab typed into only once shown (sec-3); a password longer than its box never typed (R2); a form whose press is the
+ *   person's typed once per document; and runs at Manual's walls and account section (R7).
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import createHtml from '../../fixtures/workday/workday-create-account.html?raw';
@@ -21,16 +26,20 @@ import salesforceHtml from '../../fixtures/workday/salesforce-create-account.htm
 import verilyHtml from '../../fixtures/workday/s2-verily-create-account.html?raw';
 import signInHtml from '../../fixtures/workday/workday-sign-in.html?raw';
 import snapHtml from '../../fixtures/workday/snap-sign-in.html?raw';
+import { genericAdapter } from '../adapters/generic';
 import { icimsAdapter } from '../adapters/icims';
 import { SNAPSHOT_VIEWPORT } from '../adapters/test/expectations.testkit';
+import type { Adapter } from '../adapters/types';
 import { workdayAdapter } from '../adapters/workday';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
+import { kindOf } from '../dom/kinds';
+import { deadline } from '../dom/time';
 import type { SignInCredential } from '../messaging/schemas';
 import { COPY } from '../shared/copy';
 import { createFakeWorker, testVocab } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
-import { signIn, type SignInContext } from './sign-in';
+import { dropKeptSignIns, signIn, signInHandedOver, type SignInContext } from './sign-in';
 
 const ACCOUNT = 'https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/x/Senior-Product-Manager--Technical_JR-0110787/apply/applyManually';
 /** A synthetic sign-in, the every-site one, whose password meets the rules (core/signup-password.ts). */
@@ -125,14 +134,19 @@ describe('Workday’s Create Account and Sign In with the saved job-site sign-in
       }
     });
 
-  it('keeps a sign-in typed on Manual for the person’s press for a while only: then the password boxes are emptied',
+  it('keeps a sign-in typed on Manual for the person’s press until the run ends, with no timer (the jr6 review, R11)',
     async () => {
       const fixture = await served(createHtml);
       const seen = actAsWorkday(fixture);
-      expect(await attempt(fixture, channelAnswering({ ok: true, data: MANUAL }), { keptMs: 300 })).toBe('typed');
+      const run = new AbortController();
+      expect(await attempt(fixture, channelAnswering({ ok: true, data: MANUAL }), { keptMs: 300, signal: run.signal }))
+        .toBe('typed');
+      // Past the keep time a refused press has, it is still there for the person.
+      await deadline(800);
       expect(boxesOf(fixture)).toMatchObject({ password: SAVED.password, verify: SAVED.password });
-      await vi.waitFor(() => expect(boxesOf(fixture)).toEqual({ email: SAVED.email, password: '', verify: '',
-        terms: true }), { timeout: 3_000 });
+      // The run stops (or ends, or the document goes): the password boxes are emptied, the email kept.
+      run.abort();
+      expect(boxesOf(fixture)).toEqual({ email: SAVED.email, password: '', verify: '', terms: true });
       expect(seen.presses).toBe(0);
     });
 
@@ -186,7 +200,8 @@ describe('iCIMS’s "Create a login" and its email gate with the saved job-site 
         const channel = channelAnswering({ ok: true, data: credential });
         expect(await signIn({ doc: fixture.doc, adapter: icimsAdapter, channel, href: () => fixture.address, isTop: false,
           claimed: true, section: true, signal: new AbortController().signal })).toBe('continue');
-        expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account' }]);
+        // The jr6 review (R1): a section is never pressed here, which the ask says.
+        expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true }]);
         const box = (id: string) => (fixture.doc.getElementById(id) as HTMLInputElement).value;
         expect([box('PersonProfileFields.Login'), box('PersonProfileFields.Password'),
           box('PersonProfileFields.Password_Confirm')]).toEqual([SAVED.email, SAVED.password, SAVED.password]);
@@ -261,6 +276,214 @@ describe('a run at Workday’s Create Account (jr6)', () => {
     const { seen, worker } = await run('auto', true, AUTO);
     await vi.waitFor(() => expect(seen.presses).toBe(1), { timeout: 5_000 });
     expect(seen.typed).toEqual({ email: SAVED.email, password: SAVED.password, verify: SAVED.password, terms: true });
-    expect(worker.of('signin/credential')).toEqual([expect.objectContaining({ type: 'signin/credential', wall: 'create-account' })]);
+    expect(worker.of('signin/credential')).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account' }]);
+  });
+
+  // The jr6 review (R7): the run's own Manual is what keeps the press the person's while the worker would say press (a
+  // Sign Up & Autofill grant still live for the tab, a plain Autofill now).
+  it('on Manual: typed and never pressed, though the worker’s answer says press (the jr6 review, R7)', async () => {
+    const { fixture, seen, worker, runtime } = await run('manual', true, AUTO);
+    await vi.waitFor(() => expect(boxesOf(fixture)).toEqual({ email: SAVED.email, password: SAVED.password,
+      verify: SAVED.password, terms: true }));
+    await vi.waitFor(() => expect(runtime.ui!.toasts.shown).toEqual(['sign-in']));
+    await deadline(1_000);
+    expect(seen.presses).toBe(0);
+    // The ask said it never presses (the jr6 review, R1).
+    expect(worker.of('signin/credential')).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account',
+      typing: true }]);
+  });
+
+  it('empties what it typed for the person once no password may be typed any more (the jr6 review, sec-8)', async () => {
+    const { fixture, worker } = await run('manual', true, MANUAL);
+    await vi.waitFor(() => expect(boxesOf(fixture)).toMatchObject({ password: SAVED.password, verify: SAVED.password }));
+    // The password deleted: the worker tells every frame its settings, typeSignIn false.
+    const settings = DEFAULT_SETTINGS;
+    await worker.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: settings.panel, view: settings.view,
+      modes: { next: settings.modes.next, afterPageTurn: settings.modes.afterPageTurn, submit: settings.modes.submit,
+        agentSkip: settings.modes.agentSkip, signIn: 'manual', noMatch: settings.modes.noMatch,
+        notifications: settings.modes.notifications }, llm: settings.llm, offerToSaveAnswers: settings.offerToSaveAnswers,
+      typeSignIn: false } });
+    expect(boxesOf(fixture)).toEqual({ email: SAVED.email, password: '', verify: '', terms: true });
+  });
+});
+
+// ── The jr6 review ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('the jr6 review: a password typed for the person', () => {
+  it('sec-1: the browser never sends the form itself while a password typed on Manual waits for the person', async () => {
+    const fixture = await served(createHtml);
+    const { doc } = fixture;
+    // Named boxes, so a submission would carry them (Workday's own carry none).
+    const box = (id: string) => doc.querySelector<HTMLInputElement>(`input[data-automation-id="${id}"]`)!;
+    box('password').name = 'password';
+    box('verifyPassword').name = 'verify';
+    const form = doc.querySelector<HTMLFormElement>('form[data-automation-id="signInFormo"]')!;
+    const hidden = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const run = new AbortController();
+    expect(await attempt(fixture, channelAnswering({ ok: true, data: MANUAL }), { signal: run.signal })).toBe('typed');
+    // What the browser's own submission met, read last (and then always held: nothing navigates here).
+    const prevented: boolean[] = [];
+    fixture.view.addEventListener('submit', (event) => {
+      prevented.push(event.defaultPrevented);
+      event.preventDefault();
+    });
+    // The person's press: the page's script clicks its hidden submit button, as Workday's does. A form with no method
+    // and no action would go as a GET with the password in the address.
+    hidden.click();
+    expect(prevented).toEqual([true]);
+    // A submission by the page's own form.submit() (no submit event) carries no password either.
+    const entries = new FormData(form);
+    expect([entries.get('password'), entries.get('verify')]).toEqual([null, null]);
+    // Once the keep ends (the run stops), so does the guard.
+    run.abort();
+    hidden.click();
+    expect(prevented).toEqual([true, false]);
+  });
+
+  it('sec-1: a password typed into a form whose press is the person’s stays guarded until the document goes', async () => {
+    const fixture = await icims('githubinc-profile.frame-1');
+    const form = (fixture.doc.getElementById('PersonProfileFields.Login') as HTMLInputElement).form!;
+    form.noValidate = true;
+    const run = new AbortController();
+    const page = new AbortController();
+    expect(await signIn({ doc: fixture.doc, adapter: icimsAdapter, channel: channelAnswering({ ok: true, data: MANUAL }),
+      href: () => fixture.address, isTop: false, claimed: true, section: true, typeOnly: true, signal: run.signal,
+      page: page.signal })).toBe('continue');
+    // Read after the guard's own look (the fixture then holds every submission: nothing navigates).
+    const prevented: boolean[] = [];
+    fixture.view.addEventListener('submit', (event) => prevented.push(event.defaultPrevented), true);
+    /** The browser's own submission, as the page's script would make it. */
+    const sendAsThePage = () => {
+      // eslint-disable-next-line no-restricted-syntax -- the test drives the browser's own submission, as a page would
+      form.requestSubmit();
+    };
+    // The application's own Submit, a POST home: it goes.
+    sendAsThePage();
+    // The run ends, and the page turns the form into a GET: held while the document lasts.
+    run.abort();
+    form.method = 'get';
+    sendAsThePage();
+    expect(prevented).toEqual([false, true]);
+    // The document goes: the guard with it.
+    page.abort();
+    sendAsThePage();
+    expect(prevented).toEqual([false, true, false]);
+  });
+
+  it('R1: an ask this frame never presses says so; an Auto run’s does not', async () => {
+    const fixture = await served(createHtml);
+    const channel = channelAnswering({ ok: true, data: AUTO });
+    expect(await attempt(fixture, channel, { typeOnly: true })).toBe('typed');
+    expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true }]);
+  });
+
+  it('R1: a press the site refuses keeps what was typed for the person, SIGN_IN_KEPT_MS at most', async () => {
+    const fixture = await served(signInHtml);
+    const { doc } = fixture;
+    // The site refuses the sign-in: its error shows in the form, which stays as it is.
+    doc.addEventListener('click', (event) => {
+      if ((event.target as Element).getAttribute('data-automation-id') !== 'click_filter') return;
+      const alert = doc.createElement('div');
+      alert.setAttribute('role', 'alert');
+      alert.textContent = 'Wrong email address or password, or your account might be locked.';
+      doc.querySelector('form[data-automation-id="signInFormo"]')!.prepend(alert);
+    });
+    expect(await attempt(fixture, channelAnswering({ ok: true, data: AUTO }), { keptMs: 600 })).toBe('failed');
+    expect(boxesOf(fixture)).toMatchObject({ email: SAVED.email, password: SAVED.password });
+    await vi.waitFor(() => expect(boxesOf(fixture)).toMatchObject({ email: SAVED.email, password: '' }), { timeout: 3_000 });
+  });
+
+  it('sec-5: a box the password was typed into stays an auth field when the page shows it as text', async () => {
+    const fixture = await served(createHtml);
+    expect(await attempt(fixture, channelAnswering({ ok: true, data: MANUAL }))).toBe('typed');
+    const box = (id: string) => fixture.doc.querySelector<HTMLInputElement>(`input[data-automation-id="${id}"]`)!;
+    // The page's "Show password".
+    box('password').type = 'text';
+    expect(kindOf(box('password'))).toEqual({ field: false, auth: true });
+    // A text box the password was never typed into is what it was.
+    expect(kindOf(box('email')).field).toBe(true);
+  });
+
+  it('sec-8: every keep of the document ends at once when the password may be typed no more', async () => {
+    const fixture = await served(createHtml);
+    expect(await attempt(fixture, channelAnswering({ ok: true, data: MANUAL }))).toBe('typed');
+    dropKeptSignIns(fixture.doc);
+    expect(boxesOf(fixture)).toMatchObject({ email: SAVED.email, password: '', verify: '' });
+  });
+
+  it('sec-3: a run on Manual types into a hidden tab only once it is shown', async () => {
+    const fixture = await served(createHtml);
+    let shown: DocumentVisibilityState = 'hidden';
+    Object.defineProperty(fixture.doc, 'visibilityState', { configurable: true, get: () => shown });
+    const channel = channelAnswering({ ok: true, data: MANUAL });
+    const outcome = attempt(fixture, channel, { typeOnly: true });
+    await deadline(400);
+    expect(channel.asked).toEqual([]);
+    expect(boxesOf(fixture)).toMatchObject({ email: '', password: '' });
+    shown = 'visible';
+    fixture.doc.dispatchEvent(new Event('visibilitychange'));
+    expect(await outcome).toBe('typed');
+    expect(boxesOf(fixture)).toMatchObject({ email: SAVED.email, password: SAVED.password });
+  });
+
+  it('R2: a password longer than its box takes is never typed, nor anything else', async () => {
+    const fixture = await served(createHtml);
+    // As Taleo's sign-in draws its box: maxlength 60 (here shorter than the synthetic password).
+    fixture.doc.querySelector<HTMLInputElement>('input[data-automation-id="password"]')!.maxLength = 20;
+    expect(await attempt(fixture, channelAnswering({ ok: true, data: MANUAL }))).toBe('unavailable');
+    expect(boxesOf(fixture)).toEqual({ email: '', password: '', verify: '', terms: false });
+    removeFixtures(document);
+    // One it fits is typed.
+    const fits = await served(createHtml);
+    fits.doc.querySelector<HTMLInputElement>('input[data-automation-id="password"]')!.maxLength = SAVED.password.length;
+    expect(await attempt(fits, channelAnswering({ ok: true, data: MANUAL }))).toBe('typed');
+  });
+});
+
+// ── A form whose press is the person's, typed once in a document ────────────────────────────────────────────────────
+
+/** A wall whose create-account form declares its press the person's (as SuccessFactors' account page does), a POST
+ *  home, with the run's own adapter reading it. */
+const PERSON_PRESSES = `<!doctype html><html><body><main><form id="account" method="post" action="/career">
+  <label for="email">Email</label><input id="email" type="email" autocomplete="email" style="width:300px">
+  <label for="p1">Password</label><input id="p1" type="password" autocomplete="new-password" style="width:300px">
+  <label for="p2">Confirm Password</label><input id="p2" type="password" autocomplete="new-password" style="width:300px">
+  <label for="first">First Name</label><input id="first" style="width:300px">
+  <button id="create" type="submit">Create Account</button>
+</form></main></body></html>`;
+const personPresses: Adapter = { ...genericAdapter, id: 'workday',
+  authState: (doc) => (doc.querySelector('input[type=password]') === null ? null : 'create-account'),
+  signInForm: (doc, wall) => {
+    if (wall !== 'create-account') return null;
+    const box = (id: string) => doc.getElementById(id) as HTMLInputElement | null;
+    const form = doc.getElementById('account') as HTMLFormElement | null;
+    const button = doc.getElementById('create');
+    return form === null || button === null ? null : { email: box('email'), password: box('p1'), confirm: box('p2'),
+      terms: [], button, form, personPresses: true };
+  } };
+
+describe('a form whose press is the person’s, at its wall (the jr6 review)', () => {
+  it('is typed once in a document: the run rests at it after, asking nothing again, its toast saying what was typed', async () => {
+    const fixture = await loadFixture(document, PERSON_PRESSES, { width: 1100, height: 900 });
+    const base = fixture.doc.createElement('base');
+    base.href = ACCOUNT;
+    fixture.doc.head.prepend(base);
+    fixture.doc.addEventListener('submit', (event) => event.preventDefault(), true);
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'manual' as const } };
+    const worker = createFakeWorker({ settings, typeSignIn: true, script: { 'signin/credential': [
+      { ok: true, data: MANUAL }, { ok: true, data: MANUAL }, { ok: true, data: MANUAL }] } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => ACCOUNT, isTop: true,
+      adapters: () => [personPresses], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    expect(await runtime.fill()).toBe('paused');
+    await vi.waitFor(() => expect((fixture.doc.getElementById('p1') as HTMLInputElement).value).toBe(SAVED.password));
+    expect(signInHandedOver(fixture.doc, 'create-account')).toBe(true);
+    expect(signInHandedOver(fixture.doc, 'sign-in')).toBe(false);
+    // The run carries on, finds the same wall, and rests there for the person: nothing asked or typed again.
+    await vi.waitFor(() => expect(worker.of('run/begin').length).toBeGreaterThan(1), { timeout: 5_000 });
+    await deadline(1_000);
+    expect(worker.of('signin/credential')).toHaveLength(1);
+    await vi.waitFor(() => expect(runtime.ui!.shadow.querySelector('.toast[data-kind="sign-in"] .notice')?.textContent)
+      .toBe(COPY.toasts.signInTyped));
   });
 });

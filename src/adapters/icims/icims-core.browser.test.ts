@@ -284,7 +284,8 @@ describe('item 2: the profile’s "Create a login" is a section of the profile',
     const outcome = await signIn({ doc: fixture.doc, adapter: icimsAdapter, channel, href: () => fixture.address,
       isTop: false, claimed: true, section: true, signal: new AbortController().signal });
     expect(outcome).toBe('continue');
-    expect(asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account' }]);
+    // The jr6 review (R1): a section is never pressed here, which the ask says.
+    expect(asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true }]);
     const box = (id: string) => fixture.doc.getElementById(id) as HTMLInputElement;
     expect(box('PersonProfileFields.Login').value).toBe(credential.email);
     expect(box('PersonProfileFields.Password').value).toBe(credential.password);
@@ -346,6 +347,33 @@ describe('item 2: the profile’s "Create a login" is a section of the profile',
     expect(worker.reports.at(-1)!.notices.map((notice) => notice.code)).not.toContain('account-left');
     expect(clicked).not.toHaveBeenCalled();
     // No report carries the password.
+    expect(JSON.stringify(worker.reports)).not.toContain(credential.password);
+  });
+
+  // The jr6 review (R7): what closes ICIMS-06, in a run: Manual with a password saved types the section too.
+  it('a run with Sign-in on Manual and a password saved types the section, presses nothing, and fills the rest (jr6)', async () => {
+    testVocab();
+    const fixture = await load('githubinc-profile.frame-1');
+    const button = fixture.doc.querySelector<HTMLElement>('input#cp_form_submit_i')!;
+    const clicked = vi.fn();
+    button.addEventListener('click', clicked);
+    const credential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real', press: false };
+    const worker = createFakeWorker({ settings: CAUTIOUS_SETTINGS, typeSignIn: true,
+      script: { 'signin/credential': [{ ok: true, data: credential }] } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => fixture.address, isTop: true,
+      adapters: () => [icimsAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    expect(await runtime.fill()).not.toBe('paused');
+    // The ask says the section is never pressed (the jr6 review, R1).
+    expect(worker.of('signin/credential')).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account',
+      typing: true }]);
+    const box = (id: string) => fixture.doc.getElementById(id) as HTMLInputElement;
+    expect(box('PersonProfileFields.Login').value).toBe(credential.email);
+    expect(box('PersonProfileFields.Password').value).toBe(credential.password);
+    expect(box('PersonProfileFields.Password_Confirm').value).toBe(credential.password);
+    expect(worker.reports.at(-1)!.fields.some((row) => row.wrote)).toBe(true);
+    expect(worker.reports.at(-1)!.notices.map((notice) => notice.code)).not.toContain('account-left');
+    expect(clicked).not.toHaveBeenCalled();
     expect(JSON.stringify(worker.reports)).not.toContain(credential.password);
   });
 });

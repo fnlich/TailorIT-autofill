@@ -169,6 +169,7 @@ const PAGE_WAITS: Readonly<Record<WallWaits, string>> = {
   'sign-in': COPY.toasts.signIn,
   'sign-in-failed': COPY.toasts.signInFailed,
   'no-sign-in': COPY.toasts.noSignIn,
+  'sign-in-typed': COPY.toasts.signInTyped,
 };
 
 /** What the main button says and sends: Autofill, Sign up & Autofill, or (labelled Autofill) go on with a paused run;

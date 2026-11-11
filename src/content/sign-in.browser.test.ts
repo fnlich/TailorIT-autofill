@@ -517,6 +517,30 @@ describe('v4: the account wall, its toast, and Sign up & Autofill (docs/SPEC-AME
     await deadline(300);
     expect(dry.worker.of('signin/credential')).toEqual([]);
   });
+
+  // The jr6 review (R7, R11): Manual with a password saved at a wall with no form.
+  it('at a wall with no form on Manual with a password saved: typed, never pressed, and the typed toast and wait', async () => {
+    const fixture = await loadFixture(document, signInPage(), { width: 1100, height: 900 });
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'manual' as const } };
+    // The worker would say press (a Sign up & Autofill grant still live): the run's own Manual keeps it the person's.
+    const worker = createFakeWorker({ settings, typeSignIn: true, script: { 'signin/credential': [{ ok: true,
+      data: CREDENTIAL }] } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
+      adapters: () => [walled], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    await vi.waitFor(() => expect(worker.of('frame/wall').map((message) => message.wall)).toEqual(['sign-in']));
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+    await vi.waitFor(() => expect((fixture.doc.getElementById('password') as HTMLInputElement).value)
+      .toBe(CREDENTIAL.password));
+    expect((fixture.doc.getElementById('email') as HTMLInputElement).value).toBe(CREDENTIAL.email);
+    await vi.waitFor(() => expect(runtime.ui?.toasts.shown).toEqual(['sign-in']));
+    expect(runtime.ui!.shadow.querySelector('.toast[data-kind="sign-in"] .notice')?.textContent)
+      .toBe(COPY.toasts.signInTyped);
+    await vi.waitFor(() => expect(worker.of('frame/wall').at(-1)).toMatchObject({ wall: 'sign-in', waits: 'sign-in-typed' }));
+    expect(worker.of('signin/credential')).toEqual([{ v: 1, type: 'signin/credential', wall: 'sign-in', typing: true }]);
+    await deadline(500);
+    expect(submitsOn(fixture)).toBe(0);
+  });
 });
 
 // ── The v4 review ─────────────────────────────────────────────────────────────────────────────────────────────────
