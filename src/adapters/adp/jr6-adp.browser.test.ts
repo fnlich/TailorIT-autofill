@@ -12,18 +12,34 @@
  *   door presses Apply, then Consent & Continue, in one document.
  * - ADP-1 (the Resume step's uploads), ADP-2/3/15 (ADP's own lists), adp-new-1 (errors), ADP-6 (the success rule),
  *   ADP-8 (the date picker's layout), ADP-16 (the pay basis group's label).
+ * P2 (FIXPLAN §6.6 "P2 asserts", after merging ENGINE E1-E3 and RULES R1-R4; the last part of this file): what the
+ * merged engine and rules make of these pages, planned with the golden synthetic profile (fixtures/profiles/
+ * alex-rivera.*) or variants of it built here, and the lists no capture shows open built here too. No value of the
+ * owner's appears: the currencies named are CAD, EUR and GBP only, and the source is read from the golden profile.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { dependenciesOf } from '../../content/pass';
 import { pressEntry, pressEntryChoice } from '../../content/press';
+import { newSuccessSign, shownSignsOf, successShown } from '../../content/submitted';
+import { planFrame } from '../../core/plan/frame';
+import type { PlanOutput } from '../../core/plan/types';
+import type { BaseKey } from '../../core/types/field';
+import type { FillResult, PlannedWrite } from '../../core/types/fill';
+import type { Profile } from '../../core/types/profile';
+import { DEFAULT_SETTINGS } from '../../core/types/settings';
+import { fillFile } from '../../dom/fillers/file';
+import { awaitUpload } from '../../dom/fillers/upload';
 import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.testkit';
 import { detectPause } from '../../dom/pause-detect';
 import { scan, toFieldSpec } from '../../dom/scan';
-import type { ScanResult, ScannedField } from '../../dom/types';
+import type { ScanResult, ScannedField, WidgetReading } from '../../dom/types';
 import { deadline, startDeadline } from '../../dom/time';
 import { isUserVisible } from '../../dom/visibility';
+import { fillWidget, isActionable, readWidget } from '../../dom/widgets';
 import { configuredHooks, configuredSuccessSigns } from '../configured';
 import { successSignsOf } from '../success';
-import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { compareHooks, readHooks } from '../test/hooks.testkit';
 import type { Adapter } from '../types';
 import { ADP_CONFIG, ADP_JR6_SNAPSHOTS, adpAdapter } from './index';
@@ -32,9 +48,12 @@ const PAGES = import.meta.glob('../../../fixtures/adp/jr6-*.html', { query: '?ra
   Record<string, string>;
 const EXPECTS = import.meta.glob('../../../fixtures/adp/jr6-*.expect.json', { import: 'default', eager: true }) as
   Record<string, unknown>;
-/** A jr6 case's page, by its name. */
+/** P2: the 2026-11-06 captures (adp-1, adp-2, adp-3) the same P2 asserts name beside the jr6 ones. */
+const EARLIER = import.meta.glob(['../../../fixtures/adp/personal.html', '../../../fixtures/adp/questions.html',
+  '../../../fixtures/adp/self-id.html'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+/** A jr6 case's page (or, for P2, a 2026-11-06 one), by its name. */
 const page = (name: string): string => {
-  const html = PAGES[`../../../fixtures/adp/${name}.html`];
+  const html = PAGES[`../../../fixtures/adp/${name}.html`] ?? EARLIER[`../../../fixtures/adp/${name}.html`];
   if (html === undefined) throw new Error(`no fixture ${name}`);
   return html;
 };
@@ -581,4 +600,484 @@ describe('jr6 ADP-8 and ADP-16: the start-date picker’s layout and the pay bas
         { platform: 'adp' });
       expect(fieldOf(plain, group)?.label).toBe('What is your desired salary?');
     });
+});
+
+// ══ P2 (FIXPLAN §6.6 "P2 asserts"; SP\jr6\build\ADP.md): ENGINE E1-E3 and RULES R1-R4 on ADP's pages ════════════════
+
+const golden = goldenProfile();
+
+/** The golden profile with these preferences (expected pay and start built here: CAD, EUR and GBP only). */
+const withPreferences = (preferences: Partial<Profile['preferences']>): Profile => ({ ...golden,
+  preferences: { ...golden.preferences, ...preferences } });
+/** The golden profile paid `min` a year or an hour in `currency`. */
+const paid = (currency: 'CAD' | 'EUR' | 'GBP', period: 'year' | 'hour', min: number): Profile =>
+  withPreferences({ expectedSalary: { kind: 'value', value: { min, currency, period } } });
+/** The golden profile with these screening answers. */
+const withScreening = (screening: Partial<Profile['screening']>): Profile => ({ ...golden,
+  screening: { ...golden.screening, ...screening } });
+
+/** Lists no capture shows open (the audit's assumption, SP\jr6\audit\adp.md §3), as the run would read them once it
+ *  opens them: built here, each test that uses one says so. */
+const DECLINE = 'I do not wish to self-identify';
+const SELF_ID_LISTS = {
+  vsidGender: ['Male', 'Female', DECLINE],
+  vsidEthinicity: ['Hispanic or Latino', 'Not Hispanic or Latino', DECLINE],
+  vsidRace: ['American Indian or Alaska Native', 'Asian', 'Black or African American',
+    'Native Hawaiian or Other Pacific Islander', 'White', 'Two or More Races', DECLINE],
+} as const;
+const CLEARANCE_TYPES = ['No Clearance', 'Public Trust', 'Confidential', 'Secret', 'Top Secret', 'TS/SCI'];
+
+/** The currency list the employer-1 Questions step draws (its react-select menu, open in jr6-questions-filled): page
+ *  text, read as the run reads a list (each option's words). */
+function menuCurrencies(): string[] {
+  const doc = new DOMParser().parseFromString(page('jr6-questions-filled'), 'text/html');
+  return Array.from(doc.querySelectorAll('.MDFSelectBox__menu-list .MDFSelectBox__option'))
+    .map((option) => (option.textContent ?? '').replace(/\s+/g, ' ').trim());
+}
+
+/** A page planned as a run plans it. */
+interface Planned {
+  fixture: Fixture;
+  result: ScanResult;
+  out: PlanOutput;
+  /** The field by its label (page text), else by its control's id. */
+  field(name: string): ScannedField;
+  row(name: string): FillResult;
+  write(name: string): PlannedWrite | undefined;
+  /** What the plan asks the AI for the field: an answer's scope, 'classify' or 'draft'; null for nothing. */
+  asked(name: string): string | null;
+}
+
+/** A case scanned with `lists` read as the run reads them (by the field's control id) and planned with `profile`
+ *  (the golden one by default), DEFAULT_SETTINGS and, where given, the posting's company. */
+async function planned(name: string, options: { profile?: Profile; lists?: Readonly<Record<string, readonly string[]>>;
+  company?: string } = {}): Promise<Planned> {
+  const fixture = await open(name);
+  const root = adpAdapter.detect(fixture.doc)!.formRoot;
+  const first = scan(root, adpAdapter, { platform: 'adp' });
+  const readings = new Map<BaseKey, WidgetReading>();
+  for (const field of first.fields) {
+    const labels = options.lists?.[field.idAttr];
+    if (labels === undefined) continue;
+    readings.set(field.baseKey, { kind: 'options', multiselectable: field.kind === 'multiselect', complete: true,
+      options: labels.map((label) => ({ label, disabled: false })) });
+  }
+  const result = scan(root, adpAdapter, { platform: 'adp', widgetReadings: readings });
+  const out = planFrame({ specs: result.fields.map(toFieldSpec), canaries: [], profile: options.profile ?? golden,
+    sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+    ...(options.company === undefined ? {} : { posting: { company: options.company } }) });
+  const field = (wanted: string) => {
+    const found = result.fields.find((each) => each.label === wanted)
+      ?? result.fields.find((each) => each.idAttr === wanted);
+    if (found === undefined) throw new Error(`no field "${wanted}" on ${name}`);
+    return found;
+  };
+  return { fixture, result, out, field,
+    row: (wanted) => out.results.find((row) => row.key === field(wanted).key)!,
+    write: (wanted) => out.writes.find((write) => write.key === field(wanted).key),
+    asked: (wanted) => {
+      const key = field(wanted).key;
+      const answer = out.ask?.answers?.find((item) => item.key === key);
+      if (answer !== undefined) return answer.scope;
+      if (out.ask?.classify?.some((item) => item.key === key) === true) return 'classify';
+      return out.ask?.drafts?.some((item) => item.key === key) === true ? 'draft' : null;
+    } };
+}
+
+/** The option label a write chooses, the labels it chooses, or the text it types. */
+const optionOf = (write: PlannedWrite | undefined) => (write?.value.kind === 'option' ? write.value.cleanLabel : undefined);
+const optionsOf = (write: PlannedWrite | undefined) => (write?.value.kind === 'options' ? write.value.cleanLabels
+  : undefined);
+const typedOf = (write: PlannedWrite | undefined) => (write?.value.kind === 'text' ? write.value.text : undefined);
+
+/** ADP's sdf-select-simple stood in for (its script is not in a capture), on a wfn-dropdown-list or sdf-select-simple
+ *  host: its trigger opens and closes its list (div.list); a press on one of its sdf-select-items chooses it, as ADP
+ *  draws a choice: the item's words in a span#selected-label in the trigger, in place of the placeholder, and the list
+ *  closed. Every press it takes is recorded by the item's words, or "trigger". The list starts closed. */
+function standInSelect(host: Element): { presses: string[]; open(): boolean } {
+  const simple = host.matches('sdf-select-simple') ? host : host.shadowRoot!.querySelector('sdf-select-simple')!;
+  const shadow = simple.shadowRoot!;
+  const trigger = shadow.querySelector<HTMLElement>('div.trigger-button[role="button"]')!;
+  const list = shadow.querySelector<HTMLElement>('div.list')!;
+  const presses: string[] = [];
+  const show = (open: boolean) => {
+    list.style.display = open ? '' : 'none';
+    trigger.setAttribute('aria-expanded', String(open));
+  };
+  show(false);
+  trigger.addEventListener('click', () => {
+    presses.push('trigger');
+    show(list.style.display === 'none');
+  });
+  shadow.addEventListener('click', (event) => {
+    // The page's nodes are its frame's: compared by name, not by this window's Element.
+    const item = event.composedPath().find((node) => (node as Element).localName === 'sdf-select-item') as
+      Element | undefined;
+    if (item === undefined) return;
+    presses.push(item.getAttribute('aria-label') ?? '');
+    const chosen = simple.ownerDocument.createElement('span');
+    chosen.id = 'selected-label';
+    chosen.setAttribute('part', 'selected-label');
+    chosen.textContent = item.getAttribute('aria-label');
+    (trigger.querySelector('#select-placeholder, #selected-label') as Element).replaceWith(chosen);
+    item.setAttribute('aria-selected', 'true');
+    show(false);
+  });
+  return { presses, open: () => list.style.display !== 'none' };
+}
+
+describe('jr6 P2 ADP-2: the State list once Country is chosen (ENGINE E1, E3)', () => {
+  it.each(['jr6-personal-us-errors', 'jr6-personal-us-state', 'jr6-personal-filled'])(
+    '%s: the State is a required combobox the widget helpers act on, fillable, planned as the region', async (name) => {
+      const ran = await planned(name);
+      const host = q(ran.fixture, 'wfn-dropdown-list#PersonalAddress_state');
+      const state = fieldOf(ran.result, host)!;
+      const widget = ran.result.target(state.key)!.widget!;
+      expect([state.label, state.kind, state.required]).toEqual(['State / Territory', 'combobox', true]);
+      expect([widget.declared, isActionable(widget)]).toEqual([true, true]);
+      expect(fillabilityOf(state, widget)).toEqual({ fillable: true });
+      expect(ran.row('State / Territory').category).toBe('address.region');
+      // The declaration's results undone: the helpers no longer act on it (widget-phase-4, as before E1).
+      const bare = scan(adpAdapter.detect(ran.fixture.doc)!.formRoot, { ...adpAdapter, widgetFor: (control) => {
+        const decl = adpAdapter.widgetFor!(control);
+        return decl !== null && control.matches('wfn-dropdown-list') ? { ...decl, results: undefined } : decl;
+      } }, { platform: 'adp' });
+      const unread = fieldOf(bare, host)!;
+      expect(fillabilityOf(unread, bare.target(unread.key)!.widget)).toEqual({ fillable: false, reason: 'widget-phase-4' });
+    });
+
+  it('jr6-personal-us-errors: reads the whole list through its results, chooses the planned row by a press and reads it '
+    + 'back by its shown answer (ADP’s script stood in for)', async () => {
+    const fixture = await open('jr6-personal-us-errors');
+    const host = q(fixture, 'wfn-dropdown-list#PersonalAddress_state');
+    const select = standInSelect(host);
+    const root = adpAdapter.detect(fixture.doc)!.formRoot;
+    const readings = new Map<BaseKey, WidgetReading>();
+    const target = () => {
+      const result = scan(root, adpAdapter, { platform: 'adp', widgetReadings: readings });
+      return result.target(fieldOf(result, host)!.key)!;
+    };
+    const ctx = { adapter: adpAdapter, root, readings };
+    expect(await readWidget(target(), ctx)).toMatchObject({ status: 'read' });
+    const reading = [...readings.values()][0];
+    const labels = reading?.kind === 'options' ? reading.options.map((option) => option.label) : [];
+    expect(labels.length).toBeGreaterThan(50);
+    expect(labels).toEqual(expect.arrayContaining(['AL - Alabama', 'CA - California', 'TX - Texas']));
+    // Opened by its trigger, read, and shut again by it.
+    expect([select.presses, select.open()]).toEqual([['trigger', 'trigger'], false]);
+    select.presses.length = 0;
+    const outcome = await fillWidget(target(), { kind: 'option', index: labels.indexOf('TX - Texas'),
+      cleanLabel: 'TX - Texas' }, ctx);
+    expect(outcome).toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    // The trigger, then the planned row: never the filter box, the pane's Close or another row.
+    expect(select.presses).toEqual(['trigger', 'TX - Texas']);
+    expect(adpAdapter.widgetFor!(host)!.shownAnswer!([])).toBe('TX - Texas');
+  });
+
+  it('keeps one base key as the text box and as the list, its parent the Country (dependsOn: ENGINE E3 decides it '
+    + 'again after the Country’s write)', async () => {
+    const keysOf = async (name: string) => {
+      const fixture = await open(name);
+      const result = scan(adpAdapter.detect(fixture.doc)!.formRoot, adpAdapter, { platform: 'adp' });
+      const state = result.fields.find((field) => field.idAttr === 'PersonalAddress_state')!;
+      const country = result.fields.find((field) => field.idAttr === 'PersonalAddress_country')!;
+      const parents = dependenciesOf(result, adpAdapter);
+      removeFixtures(document);
+      return { kind: state.kind, state: state.baseKey, country: country.baseKey, parent: parents.get(state.baseKey),
+        others: [...parents.keys()].filter((key) => key !== state.baseKey) };
+    };
+    // As loaded the State is a text box; once a country is chosen, ADP draws its list under the same id.
+    const box = await keysOf('jr6-personal-blank');
+    const list = await keysOf('jr6-personal-filled');
+    expect([box.kind, list.kind]).toEqual(['text', 'combobox']);
+    expect(list.state).toBe(box.state);
+    expect([box.parent, list.parent]).toEqual([box.country, list.country]);
+    expect([box.others, list.others]).toEqual([[], []]);
+  });
+
+  it.fails('ADP-2 (known gap, the option matcher): the golden region is chosen from the State’s whole list, whose rows '
+    + 'read "TX - Texas" (today a search the list cannot take: no write lands)', async () => {
+    const ran = await planned('jr6-personal-us-errors');
+    expect(optionOf(ran.write('State / Territory'))).toBe('TX - Texas');
+  });
+});
+
+describe('jr6 P2 ADP-3, ADP-7, ADP-8, ADP-16, ADP-19, ADP-20: the employer-2 Questions step (jr6-questions2-blank)', () => {
+  it('ADP-3: "How did you learn about this position?" is fillable and takes the profile’s source', async () => {
+    const ran = await planned('jr6-questions2-blank');
+    const source = ran.field('How did you learn about this position?');
+    expect(fillabilityOf(source, ran.result.target(source.key)!.widget)).toEqual({ fillable: true });
+    expect(ran.row('How did you learn about this position?'))
+      .toMatchObject({ category: 'referral.source', status: 'verified', provenance: 'profile' });
+    const chosen = optionOf(ran.write('How did you learn about this position?'));
+    expect(chosen?.toLowerCase()).toBe(golden.referralSource!.id);
+    expect((source.options as Array<{ label: string }>).map((option) => option.label)).toContain(chosen);
+  });
+
+  it('ADP-7, ADP-16, ADP-8: the golden profile (no expected pay, no start date) leaves the pay and asks the AI for the '
+    + 'start', async () => {
+    const ran = await planned('jr6-questions2-blank');
+    // The currency list is the page's 158 rows: more than an AI answer takes (ANSWER_MAX_OPTIONS), so it is left.
+    expect((ran.field('add_info_select_box').options as unknown[]).length).toBe(158);
+    for (const label of ['add_info_select_box', 'What is your desired salary? pay basis', 'desiredSalaryId']) {
+      expect(ran.write(label), label).toBeUndefined();
+      expect(ran.asked(label), label).toBeNull();
+    }
+    expect(ran.row('add_info_select_box')).toMatchObject({ category: 'salary.currency', reason: 'no-profile-value' });
+    expect(ran.row('What is your desired salary? pay basis'))
+      .toMatchObject({ category: 'salary.period', reason: 'no-profile-value' });
+    expect(ran.row('If an offer is presented, how soon can you start?'))
+      .toMatchObject({ category: 'availability.startDate' });
+    expect(ran.write('If an offer is presented, how soon can you start?')).toBeUndefined();
+    expect(ran.asked('If an offer is presented, how soon can you start?')).toBe('standard');
+  });
+
+  it('ADP-7, ADP-16, ADP-8: a yearly pay in EUR and two weeks’ notice give the currency, Annually and the start date '
+    + 'in MM/DD/YYYY', async () => {
+    const euro = paid('EUR', 'year', 150_000);
+    const ran = await planned('jr6-questions2-blank', { profile: { ...euro,
+      preferences: { ...euro.preferences, startDate: { kind: 'notice', weeks: 2 } } } });
+    expect(ran.write('add_info_select_box')).toMatchObject({ value: { cleanLabel: 'Euro Member Countries ( EUR )' },
+      origin: { provenance: 'profile', path: 'preferences.expectedSalary' } });
+    expect(ran.write('What is your desired salary? pay basis')).toMatchObject({ value: { cleanLabel: 'Annually' },
+      origin: { provenance: 'profile', path: 'preferences.expectedSalary' } });
+    expect(typedOf(ran.write('desiredSalaryId'))).toBe('150000');
+    // NOW is 2026-10-30: two weeks on, in the picker's layout (ADP-8's formatFor).
+    expect(ran.write('If an offer is presented, how soon can you start?')).toMatchObject({
+      value: { kind: 'text', text: '11/13/2026' }, origin: { provenance: 'rule', ruleId: 'availability.from-notice' } });
+  });
+
+  it('ADP-7, ADP-16: an hourly pay in CAD gives Hourly and the CAD row', async () => {
+    const ran = await planned('jr6-questions2-blank', { profile: paid('CAD', 'hour', 60) });
+    expect(optionOf(ran.write('What is your desired salary? pay basis'))).toBe('Hourly');
+    expect(optionOf(ran.write('add_info_select_box'))).toBe('Canada Dollar ( CAD )');
+  });
+
+  it('ADP-19, ADP-20: the employee-referral question is No, the GED question Yes', async () => {
+    const ran = await planned('jr6-questions2-blank');
+    expect(ran.row('Did any of our employees inform you about this position?'))
+      .toMatchObject({ category: 'referral.employeeReferred', status: 'verified' });
+    expect(ran.write('Did any of our employees inform you about this position?')).toMatchObject({
+      value: { cleanLabel: 'No' }, origin: { provenance: 'rule', ruleId: 'referral.not-employee' } });
+    expect(ran.write('Are you a high school graduate or passed the GED?')).toMatchObject({ value: { cleanLabel: 'Yes' },
+      origin: { provenance: 'rule', ruleId: 'education.high-school' } });
+    expect(ran.row('Are you a high school graduate or passed the GED?').category).toBe('education.highSchool');
+  });
+});
+
+describe('jr6 P2 ADP-7, ADP-9, adp-new-2, ADP-19: the employer-1 Questions step (questions, jr6-questions-filled)', () => {
+  const REQUIREMENT = 'This position requires you to obtain and maintain a US Government Security Clearance, which '
+    + 'requires US citizenship. Do you meet this requirement?';
+  const CLEARANCE = 'Do you have a security clearance? If yes, please indicate which type (Hold CTRL to select multiple)';
+  const ELIGIBLE = 'If you do not have a government security clearance, are you eligible to obtain and maintain one?';
+  const AGENCY = 'Have you ever been employed as a civilian employee at a government agency?';
+
+  it('ADP-7: "Select currency type" is left for the golden profile (no expected pay, its list never needed); a pay in '
+    + 'GBP waits for the list, then takes GBP’s row', async () => {
+    const currencies = menuCurrencies();
+    expect(currencies).toHaveLength(158);
+    const unread: Readonly<Record<string, readonly string[]>> = {};
+    for (const lists of [unread, { question_currency_type_8: currencies }]) {
+      const left = await planned('questions', { lists });
+      expect(left.row('question_currency_type_8')).toMatchObject({ category: 'salary.currency',
+        reason: 'no-profile-value' });
+      expect([left.write('question_currency_type_8'), left.asked('question_currency_type_8')]).toEqual([undefined, null]);
+      removeFixtures(document);
+    }
+    const gbp = paid('GBP', 'year', 120_000);
+    expect((await planned('questions', { profile: gbp })).row('question_currency_type_8').reason)
+      .toBe('waiting-for-options');
+    removeFixtures(document);
+    const read = await planned('questions', { profile: gbp, lists: { question_currency_type_8: currencies } });
+    expect(optionOf(read.write('question_currency_type_8'))).toMatch(/\( GBP \)$/);
+  });
+
+  it.each(['questions', 'jr6-questions-filled'])('%s, ADP-9: the golden profile leaves the clearance questions to the '
+    + 'person (the `all` scope asks the Yes/No ones)', async (name) => {
+    const ran = await planned(name, { lists: { question_2: CLEARANCE_TYPES } });
+    expect(ran.row(REQUIREMENT)).toMatchObject({ category: 'workAuth.status', reason: 'legal-not-in-profile' });
+    expect(ran.row(CLEARANCE)).toMatchObject({ category: 'workAuth.clearance', reason: 'legal-not-in-profile' });
+    expect(ran.row(ELIGIBLE)).toMatchObject({ category: 'workAuth.clearance', reason: 'legal-not-in-profile' });
+    for (const label of [REQUIREMENT, CLEARANCE, ELIGIBLE]) expect(ran.write(label), label).toBeUndefined();
+    expect([ran.asked(REQUIREMENT), ran.asked(ELIGIBLE)]).toEqual(['all', 'all']);
+  });
+
+  it.each(['questions', 'jr6-questions-filled'])('%s, ADP-9: no clearance held chooses the none type (the list built '
+    + 'here); citizenship alone answers neither the requirement nor the eligibility', async (name) => {
+    const ran = await planned(name, { lists: { question_2: CLEARANCE_TYPES },
+      profile: withScreening({ clearance: { kind: 'value', value: { level: 'none' } },
+        citizenships: { kind: 'value', value: ['US'] } }) });
+    expect(optionsOf(ran.write(CLEARANCE))).toEqual(['No Clearance']);
+    expect(ran.write(REQUIREMENT)).toBeUndefined();
+    expect(ran.write(ELIGIBLE)).toBeUndefined();
+  });
+
+  it('adp-new-2: the government-agency question is government service, asked in the `all` scope, Yes from the '
+    + 'profile’s government answer', async () => {
+    const ran = await planned('questions');
+    expect(ran.row(AGENCY)).toMatchObject({ category: 'screening.governmentService', reason: 'legal-not-in-profile' });
+    expect(ran.asked(AGENCY)).toBe('all');
+    removeFixtures(document);
+    const served = await planned('questions', { profile: withScreening({ governmentService: { kind: 'value',
+      value: { military: false, government: true } } }) });
+    expect(optionOf(served.write(AGENCY))).toBe('Yes');
+  });
+
+  it('ADP-19: the employee-referral question is No; "worked here before" is No for the posting’s company', async () => {
+    const ran = await planned('questions', { company: 'VSolvit' });
+    expect(ran.write('Did any of our employees inform you about this position?')).toMatchObject({
+      value: { cleanLabel: 'No' }, origin: { provenance: 'rule', ruleId: 'referral.not-employee' } });
+    expect(ran.row('Have you ever been employed by VSolvit before?'))
+      .toMatchObject({ category: 'screening.previouslyEmployed', status: 'verified' });
+    expect(optionOf(ran.write('Have you ever been employed by VSolvit before?'))).toBe('No');
+  });
+});
+
+describe('jr6 P2 ADP-4, ADP-5, ADP-14, adp-new-3: the Personal Information step', () => {
+  it.each(['personal', 'jr6-personal-blank'])('%s: "State / Territory" typed as the region; Address Line 3 skipped and '
+    + 'never asked; the preferred-name box left unticked', async (name) => {
+    const ran = await planned(name);
+    expect(ran.field('State / Territory').kind).toBe('text');
+    expect(ran.row('State / Territory')).toMatchObject({ category: 'address.region', status: 'verified' });
+    expect(typedOf(ran.write('State / Territory'))).toBe('TX');
+    expect(ran.row('Address Line 3')).toMatchObject({ category: 'address.line3', status: 'skipped' });
+    expect([ran.write('Address Line 3'), ran.asked('Address Line 3')]).toEqual([undefined, null]);
+    expect(ran.row('I have a preferred or chosen name'))
+      .toMatchObject({ category: 'identity.hasPreferredName', status: 'skipped' });
+    expect(ran.write('I have a preferred or chosen name')).toBeUndefined();
+    removeFixtures(document);
+    // A preferred name that is not the first name ticks it.
+    const chosen = await planned(name, { profile: { ...golden, identity: { ...golden.identity, preferredName: 'Lex' } } });
+    expect(chosen.write('I have a preferred or chosen name')).toMatchObject({ value: { kind: 'check' } });
+  });
+
+  it('jr6-personal-us-errors: ADP’s "City is required" reads as City, the State list’s message is left out too; '
+    + 'County and Address Line 3 skipped, never asked', async () => {
+    const ran = await planned('jr6-personal-us-errors');
+    // The page writes its message into the labels (adp-new-1's error labels).
+    expect(q(ran.fixture, 'label.mdf-label-error[for="PersonalAddress_city"]').textContent).toMatch(/is required/);
+    const city = ran.result.fields.find((field) => field.idAttr === 'PersonalAddress_city')!;
+    expect(city.label).toBe('City');
+    expect(ran.row('City')).toMatchObject({ category: 'address.city', status: 'verified' });
+    expect(typedOf(ran.write('City'))).toBe(golden.address!.city);
+    expect(ran.field('PersonalAddress_state').label).toBe('State / Territory');
+    expect(ran.row('State / Territory').category).toBe('address.region');
+    for (const [label, category] of [['County', 'address.county'], ['Address Line 3', 'address.line3']] as const) {
+      expect(ran.row(label), label).toMatchObject({ category, status: 'skipped' });
+      expect([ran.write(label), ran.asked(label)], label).toEqual([undefined, null]);
+    }
+  });
+});
+
+describe('jr6 P2 ADP-17: the self-ID decline box beside the lists (self-id, jr6-self-id-blank, jr6-self-id-filled)', () => {
+  const BOX = 'I decline to identify my race and ethnicity';
+
+  it.each(['self-id', 'jr6-self-id-blank', 'jr6-self-id-filled'])('%s: lists that offer a decline (built here) are '
+    + 'answered with it, and the box is skipped, never flagged', async (name) => {
+    const ran = await planned(name, { lists: SELF_ID_LISTS });
+    expect(ran.row(BOX)).toMatchObject({ category: 'eeo.race', status: 'skipped', needsUserAction: false });
+    expect(ran.write(BOX)).toBeUndefined();
+    const lists = ran.result.fields.filter((field) => field.idAttr in SELF_ID_LISTS);
+    expect(lists.length).toBeGreaterThanOrEqual(2);
+    for (const list of lists) expect(optionOf(ran.write(list.label)), list.label).toBe(DECLINE);
+  });
+
+  it('self-id: lists that offer no decline (built here) leave the golden profile’s decline to the box, ticked; the '
+    + 'lists are skipped, never flagged', async () => {
+    const ran = await planned('self-id', { lists: { vsidEthinicity: SELF_ID_LISTS.vsidEthinicity.slice(0, 2),
+      vsidRace: SELF_ID_LISTS.vsidRace.slice(0, 6) } });
+    expect(ran.write(BOX)).toMatchObject({ value: { kind: 'check' } });
+    for (const label of ['Ethnicity', 'Race']) {
+      expect(ran.write(label), label).toBeUndefined();
+      expect(ran.row(label), label).toMatchObject({ status: 'skipped', reason: 'decline-option-missing',
+        needsUserAction: false });
+    }
+  });
+
+  it.each(['self-id', 'jr6-self-id-blank', 'jr6-self-id-filled'])('%s: while the lists are unread, the box waits for '
+    + 'them, nobody’s to answer yet', async (name) => {
+    const ran = await planned(name);
+    expect(ran.row(BOX)).toMatchObject({ reason: 'waiting-for-options', needsUserAction: false });
+    expect(ran.write(BOX)).toBeUndefined();
+  });
+});
+
+describe('jr6 P2 ADP-18, ADP-1: the Resume step', () => {
+  const METHOD = 'How would you like to provide the candidate’s resume?';
+
+  it('ADP-18 (jr6-resume-choice): the résumé is provided by upload when the run has one, never otherwise', async () => {
+    const ran = await planned('jr6-resume-choice');
+    expect(ran.row(METHOD).category).toBe('application.resumeMethod');
+    expect(ran.write(METHOD)).toMatchObject({ value: { cleanLabel: 'Upload File' },
+      origin: { provenance: 'rule', ruleId: 'resume.upload-method' } });
+    removeFixtures(document);
+    const { resume: _none, ...without } = golden;
+    expect((await planned('jr6-resume-choice', { profile: without })).write(METHOD)).toBeUndefined();
+  });
+
+  it.each(['jr6-resume-blank', 'jr6-resume-choice'])('ADP-1 (%s): the résumé goes into "Resume"; "Attachments" takes '
+    + 'nothing and is never asked', async (name) => {
+    const ran = await planned(name);
+    expect(ran.row('Resume')).toMatchObject({ category: 'file.resume', status: 'verified', required: true });
+    expect(ran.write('Resume')).toMatchObject({ value: { kind: 'file', ref: 'resume' } });
+    expect([ran.write('Attachments'), ran.asked('Attachments')]).toEqual([undefined, null]);
+    expect(ran.row('Attachments').category).not.toBe('file.resume');
+  });
+
+  it('ADP-1 (jr6-resume-blank): the file filler writes the résumé, and the upload is confirmed by its row once ADP '
+    + 'takes the input out of the page (ADP’s script stood in for)', async () => {
+    const fixture = await open('jr6-resume-blank');
+    const { doc } = fixture;
+    const input = q<HTMLInputElement>(fixture, '#resumeUploadContainer input[type="file"][name="file"]');
+    const area = q(fixture, '#resumeUploadContainer');
+    expect(adpAdapter.uploadWidgets!(doc.body).map((widget) => widget.input)).toContain(input);
+    // ADP's script: once the input holds a file, the input goes and the file's row is drawn (jr6-resume-uploaded).
+    input.addEventListener('change', () => {
+      const name = input.files?.[0]?.name ?? '';
+      startDeadline(200, () => {
+        input.remove();
+        const row = doc.createElement('div');
+        row.className = 'fileDetails';
+        const shown = doc.createElement('span');
+        shown.className = 'fileName';
+        shown.textContent = name;
+        row.append(shown);
+        area.append(row);
+      });
+    });
+    const file = new File([new Uint8Array([37, 80, 68, 70])], 'Alex Rivera Resume.pdf', { type: 'application/pdf' });
+    expect(fillFile(input, file)).toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    expect(await awaitUpload(adpAdapter, input, file.name, undefined, { quietMs: 100, capMs: 3_000 })).toBe('confirmed');
+    expect(input.isConnected).toBe(false);
+    // The configured rule alone reads nothing once the input is gone: the upload would never be confirmed.
+    const configuredOnly: Adapter = { ...adpAdapter, uploadState: configuredHooks(ADP_CONFIG).uploadState };
+    expect(await awaitUpload(configuredOnly, input, file.name, undefined, { quietMs: 100, capMs: 1_000 })).toBeNull();
+  });
+});
+
+describe('jr6 P2 ADP-6: the page after Submit read under the BrightJump promo’s focus trap (ENGINE E2 underModal)', () => {
+  it.each(['jr6-confirmation', 'jr6-confirmation-2'])('%s: the sign counts with the promo open; the run takes it as '
+    + 'this Submit’s', async (name) => {
+    const fixture = await open(name);
+    const { doc } = fixture;
+    const sign = q(fixture, '#vdlContainerFluid.success-card .success-message-container p.message');
+    // The promo's trap hides the sign as the capture shows it.
+    expect(q(fixture, 'sdf-focus-pane[data-sdf-modal]')).not.toBeNull();
+    expect(isUserVisible(sign)).toBe(false);
+    expect(configuredSuccessSigns(doc, ADP_CONFIG)).toEqual([sign]);
+    expect(successShown(doc, 'adp')).toBe(true);
+    expect([...shownSignsOf(doc, 'adp')]).toEqual([sign]);
+    // The wizard's root, which ADP took out of the page with its Submit.
+    const root = doc.createElement('div');
+    expect(newSuccessSign(doc, 'adp', { before: new Set(), root, adapter: adpAdapter })).toBe(sign);
+    // The rule's underModal undone: the trap hides it again.
+    expect(configuredSuccessSigns(doc, { ...ADP_CONFIG, success: { ...ADP_CONFIG.success!, underModal: undefined } }))
+      .toEqual([]);
+  });
+
+  it('the last step before Submit shows none (jr6-self-attest-signed)', async () => {
+    const fixture = await open('jr6-self-attest-signed');
+    expect(successShown(fixture.doc, 'adp')).toBe(false);
+    expect(shownSignsOf(fixture.doc, 'adp').size).toBe(0);
+  });
 });
