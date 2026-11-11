@@ -6,6 +6,15 @@
  * page gets, the hooks' answers, the pauses and Sign-in Auto's form, and the plan of the gate with the golden synthetic
  * profile (fixtures/profiles/alex-rivera.*) and DEFAULT_SETTINGS. Outcomes that need ENGINE's E1 to E3 or RULES' jr6
  * rules (a list read and chosen, a dependent re-planned, a ZIP's category) are P2's (SP\jr6\build\ORACLE.md).
+ * P2 (FIXPLAN §6.11 "P2 asserts", after merging jr6-engine E1-E3 and jr6-rules R1-R4): the shared outcomes on the
+ * section pages, each on its fixture with the golden profile or a variant of it built in code: the phone's number box
+ * drawn by its group (O4, E2); the cx-selects read, planned and chosen by their declared rows (O1, E1), the phone's
+ * code by its dial code and country with the number national (O5); Address Line 1 and ZIP Code searched (O2, RULES 61);
+ * the address block's parents first and its dependents decided again (O3, E3 item 14), in the content runtime too; no
+ * futile search on a cx-select (O10, E1 item 12); the education editor's place, dates and grade as the entry's (O7,
+ * oracle-new-2, RULES 7 and 78); the numbered links (O13, RULES 79). No capture shows an Oracle list open (owner
+ * question 23): the lists are synthetic, drawn by this test's listeners as Jobright 1.25.2's operations.fillSelectField
+ * reads Oracle's (cxDrive).
  * Nothing here prints or keeps a value.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -17,22 +26,30 @@ import hjfSectionHtml from '../../../fixtures/oracle/hjf-apply-section.html?raw'
 import hjfAfterSubmitHtml from '../../../fixtures/oracle/hjf-after-submit.html?raw';
 import jpmcPostingHtml from '../../../fixtures/oracle/jpmc-posting.html?raw';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { dependenciesOf, parentsFirst } from '../../content/pass';
 import { pressEntry, stepButtonsOf } from '../../content/press';
 import { planFrame } from '../../core/plan/frame';
 import type { RepeatableRequest } from '../../core/steps/blocks';
 import { stepSignature } from '../../core/steps/signature';
-import type { FieldSpec } from '../../core/types/field';
+import type { BaseKey, FieldSpec } from '../../core/types/field';
+import type { FillResult, PlannedWrite } from '../../core/types/fill';
+import type { WriteValue } from '../../core/types/intent';
+import type { Profile } from '../../core/types/profile';
 import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { assertNotSubmit } from '../../dom/fillers';
-import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
+import { ALLOWED_EVENTS, KEY_EVENTS } from '../../dom/fillers/events';
+import { loadFixture, logEvents, removeFixtures, untrustedViolations, type EventLog } from '../../dom/fixture.testkit';
+import { hashOfOptions } from '../../dom/option-hash';
 import { detectPause } from '../../dom/pause-detect';
 import { scan, toFieldSpec } from '../../dom/scan';
 import { signInFormOf, signInRefusal } from '../../dom/sign-in-form';
-import { listOf, widgetListOf } from '../../dom/widgets/aria';
+import type { FieldTarget, ScanResult, WidgetReading } from '../../dom/types';
+import { fillWidget, readWidget, searchTypeahead, widgetHolds, type TypeaheadHooks } from '../../dom/widgets';
+import { isActionable, listOf, widgetListOf } from '../../dom/widgets/aria';
 import { platformOfUrl } from '../../shared/hosts';
 import { adaptersFor } from '../index';
 import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
-import type { WidgetDecl } from '../types';
+import type { Adapter, WidgetDecl } from '../types';
 import { ORACLE_EMPTY_AFTER_MS, oracleAdapter } from './index';
 
 const CAESARS = 'https://edmn.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/78569';
@@ -79,17 +96,20 @@ async function load(html: string, address: string, after?: (doc: Document) => vo
   return fixture.doc;
 }
 
-/** The frame's plan with the golden synthetic profile (the harness's plan), its repeatable sections requested. */
-function planned(doc: Document) {
+/** The frame's plan with the golden synthetic profile (the harness's plan), its repeatable sections requested. jr6
+ *  P2: the run's list readings by base key (`readings`, as the loop's waiting path keeps them) and a variant of the
+ *  golden profile built in code (`profile`) may be given. */
+function planned(doc: Document, options: { readings?: Map<BaseKey, WidgetReading>; profile?: Profile } = {}) {
   const root = oracleAdapter.detect(doc)!.formRoot;
-  const result = scan(root, oracleAdapter, { platform: 'oracle' });
+  const result = scan(root, oracleAdapter, { platform: 'oracle',
+    ...(options.readings === undefined ? {} : { widgetReadings: options.readings }) });
   const specs: FieldSpec[] = result.fields.map(toFieldSpec);
   const kinds = (oracleAdapter.repeatables?.(root) ?? []).map((section) => section.kind);
   const shown = (kind: string) => oracleAdapter.prefill?.readEntries?.(kind,
     oracleAdapter.repeatables!(root).find((section) => section.kind === kind)!.blocks()) ?? [];
   const repeatables: RepeatableRequest[] = kinds.map((kind) => ({ kind, entries: null, shown: shown(kind) }));
-  const plan = planFrame({ specs, canaries: [], profile: goldenProfile(), sensitiveState: 'loaded', savedAnswers: [],
-    settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+  const plan = planFrame({ specs, canaries: [], profile: options.profile ?? goldenProfile(), sensitiveState: 'loaded',
+    savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
     posting: { company: 'Acme', location: 'Austin, TX, USA' }, ...(repeatables.length > 0 ? { repeatables } : {}) });
   return { root, result, specs, plan };
 }
@@ -823,3 +843,509 @@ describe('jr6 O12: an upload’s state, read from Oracle’s slot (synthetic sta
     expect(oracleAdapter.uploadState!(loose, NAME)).toBeNull();
   });
 });
+
+// ══ P2 (FIXPLAN §6.11 "P2 asserts"): after jr6-engine E1-E3 and jr6-rules R1-R4 ══════════════════════════════════
+
+const SECTION = `${HJF}/apply/section/1`;
+
+/** The flow drawn on plain white (its cover image taken away), as oracle.browser.test.ts draws it. */
+function plain(doc: Document): void {
+  for (const el of Array.from(doc.querySelectorAll<HTMLElement>('.apply-flow'))) el.style.backgroundImage = 'none';
+}
+
+/** What a simulated cx-select lists: its rows, and, for a search, the rows it suggests for the words typed. */
+interface CxList {
+  rows: readonly string[];
+  search?: (typed: string) => readonly string[];
+}
+
+/** One choice the page heard: the field's id, the row's words, and the class of the element the click landed on. */
+interface CxChoice {
+  id: string;
+  words: string;
+  on: string;
+}
+
+/**
+ * jr6 P2: the page's cx-selects made to answer as Oracle's would by Jobright 1.25.2's reading of them
+ * (operations.fillSelectField: the toggle #<id>-toggle-button, the grid the input's aria-controls names, its rows
+ * div[role=row] > div[role=gridcell] > span.cx-select__list-item--content, Oracle's lone "No results" row when none
+ * matches), since no capture shows one open (owner question 23). The rows' words are made up; this test's listeners on
+ * the fixture's own elements do what Oracle's script would:
+ * - a toggle's click opens its list, or shuts it: the grid drawn under its box at the end of the body, the box and the
+ *   toggle aria-expanded "true"; a list with no rows shows the "No results" row;
+ * - a search (`search`) draws, for the words typed into its box, the rows it suggests (a toggle opens it with every
+ *   row); a click on its box alone draws nothing (Oracle Maps' hint: "Enter your street name and other address
+ *   details to see suggestions");
+ * - a row's click puts its words in the box and shuts the list, as Escape on the box and its focusout shut it;
+ * - each choice is told to `onChoose`.
+ */
+function cxDrive(doc: Document, lists: Readonly<Record<string, CxList>>,
+  onChoose: (choice: CxChoice) => void = () => undefined): void {
+  const view = doc.defaultView!;
+  for (const [id, list] of Object.entries(lists)) {
+    const input = doc.getElementById(id) as HTMLInputElement;
+    const toggle = doc.getElementById(`${id}-toggle-button`);
+    const listId = input.getAttribute('aria-controls')!;
+    const say = (open: boolean) => {
+      for (const el of [input, toggle]) el?.setAttribute('aria-expanded', String(open));
+    };
+    const shut = () => {
+      doc.getElementById(listId)?.remove();
+      say(false);
+    };
+    const show = (rows: readonly string[]) => {
+      doc.getElementById(listId)?.remove();
+      const grid = doc.createElement('div');
+      grid.id = listId;
+      grid.setAttribute('role', 'grid');
+      const box = input.getBoundingClientRect();
+      grid.style.cssText = `position:absolute;z-index:2147483000;left:${box.left + view.scrollX}px;`
+        + `top:${box.bottom + view.scrollY}px;width:${Math.max(box.width, 240)}px;background:#fff;color:#000;`
+        + 'border:1px solid #767676;font:14px/20px sans-serif;';
+      for (const words of rows.length === 0 ? ['No results'] : rows) {
+        const row = doc.createElement('div');
+        row.setAttribute('role', 'row');
+        row.style.cssText = 'display:block;padding:4px 8px;';
+        const cell = doc.createElement('div');
+        cell.setAttribute('role', 'gridcell');
+        const span = doc.createElement('span');
+        span.className = 'cx-select__list-item--content';
+        span.textContent = words;
+        cell.append(span);
+        row.append(cell);
+        grid.append(row);
+      }
+      grid.addEventListener('click', (event) => {
+        const target = event.target as Element;
+        const row = target.closest('[role="row"]');
+        const words = (row?.textContent ?? '').trim();
+        if (row === null || words === 'No results') return;
+        input.value = words;
+        shut();
+        onChoose({ id, words, on: target.className });
+      });
+      doc.body.append(grid);
+      say(true);
+    };
+    toggle?.addEventListener('click', () => (doc.getElementById(listId) === null ? show(list.rows) : shut()));
+    const suggest = list.search;
+    if (suggest !== undefined) {
+      input.addEventListener('input', () => (input.value.trim() === '' ? shut() : show(suggest(input.value.trim()))));
+    }
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') shut();
+    });
+    input.addEventListener('focusout', shut);
+  }
+}
+
+/** Synthetic lists (made-up rows, the golden profile's answers among them). */
+const COUNTRIES = ['Canada', 'Mexico', 'United States'];
+const STATES = ['California', 'Texas', 'Washington'];
+const CITIES = ['Austin', 'Dallas', 'Houston'];
+const COUNTIES = ['Bexar', 'Travis', 'Williamson'];
+/** The phone's codes as "<country> (+<dial code>)": two share +1, so the code is chosen by its country too (O5). */
+const CODES = ['Canada (+1)', 'Mexico (+52)', 'United Kingdom (+44)', 'United States (+1)'];
+const DEGREES = ["Associate's Degree", "Bachelor's Degree", "Master's Degree", 'Doctorate'];
+
+/** Oracle Maps' suggestions for the golden profile's street (synthetic): the street with its USPS abbreviation in
+ *  another city of the state, in the profile's city, in another state, and another number in the profile's city. */
+function streetSuggestions(): { austin: string; all: string[] } {
+  const address = goldenProfile().address!;
+  const [, number, name] = /^(\d+)\s+(\S+)/.exec(address.line1!)!;
+  const austin = `${number} ${name} Ln, Austin, TX ${address.postalCode!}`;
+  return { austin, all: [`${number} ${name} Ln, Dallas, TX 75201`, austin, `${number} ${name} Ln, Portland, OR 97201`,
+    `${Number(number) + 54} ${name} Ln, Austin, TX ${address.postalCode!}`] };
+}
+
+/** The postal codes the ZIP Code's list holds (synthetic, the golden profile's among them). */
+function postalCodes(): string[] {
+  const zip = goldenProfile().address!.postalCode!;
+  return [zip, `${zip.slice(0, 3)}02`, `${zip.slice(0, 3)}03`, '73301'];
+}
+
+/** The address search's suggestions: Oracle Maps answers words that start with a house number. */
+const suggestStreet = (typed: string) => (/^\d+\s/.test(typed) ? streetSuggestions().all : []);
+/** The ZIP Code's search: the codes that start with the words typed. */
+const suggestPostal = (typed: string) => postalCodes().filter((code) => code.startsWith(typed));
+
+/** A scan of the page's form, with the run's list readings and an adapter (Oracle's by default). */
+function scanWith(doc: Document, readings?: Map<BaseKey, WidgetReading>, adapter: Adapter = oracleAdapter): ScanResult {
+  return scan(adapter.detect(doc)!.formRoot, adapter, { platform: 'oracle',
+    ...(readings === undefined ? {} : { widgetReadings: readings }) });
+}
+
+/** The live target of the field whose control has this id. */
+function targetOf(result: ScanResult, id: string): FieldTarget {
+  const field = result.fields.find((one) => result.target(one.key)?.control.id === id);
+  if (field === undefined) throw new Error(`no field of control #${id}`);
+  return result.target(field.key)!;
+}
+
+/** The labels a read found, or the read itself. */
+const labelsRead = (read: Awaited<ReturnType<typeof readWidget>>) => (read.status === 'read'
+  && read.reading.kind === 'options' ? read.reading.options.map((option) => option.label) : read);
+
+/** Untrusted events only, each the fillers' or a declared key's; never a submit. */
+function expectOurEventsOnly(log: EventLog): void {
+  expect(untrustedViolations(log.events)).toEqual([]);
+  const ours = new Set<string>([...ALLOWED_EVENTS, ...KEY_EVENTS]);
+  expect(log.events.filter((event) => !event.trusted && !ours.has(event.type))).toEqual([]);
+  expect(log.events.filter((event) => event.type === 'submit')).toEqual([]);
+}
+
+/** The golden profile's phone number without its calling code (fixtures/profiles/alex-rivera.*). */
+function nationalDigits(): string {
+  const phone = goldenProfile().contact.phone!;
+  const code = phone.countryCallingCode ?? '';
+  return phone.digits.length > 10 && phone.digits.startsWith(code) ? phone.digits.slice(code.length) : phone.digits;
+}
+
+// ── P2 O4 (ENGINE E2): the phone's number box ─────────────────────────────────────────────────────────────────────
+
+describe('jr6 P2 O4: the phone’s number box reads fillable, drawn by its group (ENGINE E2 reads controlBox)', () => {
+  it.each([
+    { name: 'hjf-apply-section as captured', html: hjfSectionHtml, closed: false, white: false },
+    { name: 'hjf-apply-section on plain white', html: hjfSectionHtml, closed: false, white: true },
+    { name: 'hjf-after-submit (checklist closed) as captured', html: hjfAfterSubmitHtml, closed: true, white: false },
+    { name: 'hjf-after-submit (checklist closed) on plain white', html: hjfAfterSubmitHtml, closed: true, white: true },
+  ])('$name: fillable and not camouflaged; the same scan without the hook reads it camouflaged', async ({ html, closed,
+    white }) => {
+    const doc = await load(html, SECTION, (page) => {
+      if (closed) closeChecklist(page);
+      if (white) plain(page);
+    });
+    const number = doc.querySelector('input.phone-row__input')!;
+    const read = (adapter: Adapter) => {
+      const result = scanWith(doc, undefined, adapter);
+      const field = result.fields.find((one) => result.target(one.key)?.control === number)!;
+      return { label: field.label, camouflaged: field.camouflaged,
+        fillability: fillabilityOf(field, result.target(field.key)?.widget) };
+    };
+    expect(read(oracleAdapter)).toEqual({ label: 'Phone Number', camouflaged: false, fillability: { fillable: true } });
+    const { controlBox: _drawn, ...withoutBox } = oracleAdapter;
+    expect(read(withoutBox)).toEqual({ label: 'Phone Number', camouflaged: true,
+      fillability: { fillable: false, reason: 'camouflaged' } });
+  });
+});
+
+// ── P2 O1, O5 (ENGINE E1): the cx-selects read, planned and chosen ────────────────────────────────────────────────
+
+describe('jr6 P2 O1, O5: the cx-selects read whole, planned and chosen by their declared rows (synthetic lists)', () => {
+  it('hjf-apply-section: the Country’s grid is read by its rows’ label parts and shut again; the planned row is chosen '
+    + 'by a click on its label span and read back', async () => {
+    const doc = await load(hjfSectionHtml, SECTION);
+    const chosen: CxChoice[] = [];
+    cxDrive(doc, { 'country-17': { rows: COUNTRIES } }, (choice) => chosen.push(choice));
+    const events = logEvents(doc);
+    const readings = new Map<BaseKey, WidgetReading>();
+    const ctx = { adapter: oracleAdapter, root: oracleAdapter.detect(doc)!.formRoot, readings };
+    expect(labelsRead(await readWidget(targetOf(scanWith(doc, readings), 'country-17'), ctx))).toEqual(COUNTRIES);
+    // Shut again (the box's focusout): no grid, the toggle says closed. The toggle was clicked once; nothing typed.
+    expect(doc.getElementById('country-17-listbox')).toBeNull();
+    expect(doc.getElementById('country-17-toggle-button')!.getAttribute('aria-expanded')).toBe('false');
+    expect(events.on('country-17-toggle-button').filter((event) => event.type === 'click').length).toBe(1);
+    expect(events.on('country-17').filter((event) => event.type === 'input')).toEqual([]);
+    // The scan now gives the field the rows read.
+    const target = targetOf(scanWith(doc, readings), 'country-17');
+    expect(target.field.options === 'lazy' ? 'lazy' : target.field.options.map((option) => option.label))
+      .toEqual(COUNTRIES);
+    const value: WriteValue = { kind: 'option', index: 2, cleanLabel: 'United States' };
+    expect(await fillWidget(target, value, ctx))
+      .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    // The click landed on the row's label span (choose 'label'), which the row's own listener took.
+    expect(chosen).toEqual([{ id: 'country-17', words: 'United States', on: 'cx-select__list-item--content' }]);
+    expect((doc.getElementById('country-17') as HTMLInputElement).value).toBe('United States');
+    expect(doc.getElementById('country-17-listbox')).toBeNull();
+    expect(widgetHolds(targetOf(scanWith(doc, readings), 'country-17'), value)).toBe(true);
+    expectOurEventsOnly(events);
+  });
+
+  it('hjf-apply-section: a list that shows only Oracle’s "No results" row gives no option, and is never made a search',
+    async () => {
+      const doc = await load(hjfSectionHtml, SECTION);
+      cxDrive(doc, { 'region1-45': { rows: [] } });
+      const events = logEvents(doc);
+      const readings = new Map<BaseKey, WidgetReading>();
+      const ctx = { adapter: oracleAdapter, root: oracleAdapter.detect(doc)!.formRoot, readings };
+      expect(await readWidget(targetOf(scanWith(doc, readings), 'region1-45'), ctx))
+        .toEqual({ status: 'unread', reason: 'options-never-loaded' });
+      expect(readings.size).toBe(0);
+      expect(doc.getElementById('region1-45-listbox')).toBeNull();
+      expect(events.on('region1-45').filter((event) => event.type === 'input')).toEqual([]);
+      expectOurEventsOnly(events);
+    });
+
+  it('hjf-apply-section: Country, State and the phone’s code are planned from their lists and chosen: the code by '
+    + 'its dial code and its country (O5), the number planned national beside it', async () => {
+    const doc = await load(hjfSectionHtml, SECTION);
+    const chosen: CxChoice[] = [];
+    cxDrive(doc, { 'country-17': { rows: COUNTRIES }, 'region2-44': { rows: STATES },
+      'country-codes-dropdownphoneNumber': { rows: CODES } }, (choice) => chosen.push(choice));
+    const events = logEvents(doc);
+    const readings = new Map<BaseKey, WidgetReading>();
+    const ctx = { adapter: oracleAdapter, root: oracleAdapter.detect(doc)!.formRoot, readings };
+    const ids = ['country-codes-dropdownphoneNumber', 'country-17', 'region2-44'];
+    for (const id of ids) expect((await readWidget(targetOf(scanWith(doc, readings), id), ctx)).status, id).toBe('read');
+    const { result, plan } = planned(doc, { readings });
+    const keyOf = (id: string) => targetOf(result, id).field.key;
+    const writeOf = (id: string) => plan.writes.find((write) => write.key === keyOf(id));
+    const rowOf = (id: string) => plan.results.find((row) => row.key === keyOf(id));
+    expect(rowOf('country-codes-dropdownphoneNumber')).toMatchObject({ category: 'contact.phoneCountry' });
+    expect(writeOf('country-codes-dropdownphoneNumber')?.value)
+      .toEqual({ kind: 'option', index: 3, cleanLabel: 'United States (+1)' });
+    expect(rowOf('country-17')).toMatchObject({ category: 'address.country' });
+    expect(writeOf('country-17')?.value).toEqual({ kind: 'option', index: 2, cleanLabel: 'United States' });
+    expect(rowOf('region2-44')).toMatchObject({ category: 'address.region' });
+    expect(writeOf('region2-44')?.value).toEqual({ kind: 'option', index: 1, cleanLabel: 'Texas' });
+    const number = result.fields.find((field) => result.target(field.key)?.control.matches('input.phone-row__input'))!;
+    const typed = plan.writes.find((write) => write.key === number.key)?.value;
+    expect(typed?.kind).toBe('text');
+    const text = typed?.kind === 'text' ? typed.text : '';
+    expect(text).not.toMatch(/^\s*\+/);
+    expect(text.replace(/\D/g, '')).toBe(nationalDigits());
+    for (const id of ids) {
+      expect(await fillWidget(targetOf(scanWith(doc, readings), id), writeOf(id)!.value, ctx), id)
+        .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    }
+    expect(chosen.map((choice) => [choice.id, choice.words, choice.on])).toEqual([
+      ['country-codes-dropdownphoneNumber', 'United States (+1)', 'cx-select__list-item--content'],
+      ['country-17', 'United States', 'cx-select__list-item--content'],
+      ['region2-44', 'Texas', 'cx-select__list-item--content']]);
+    expectOurEventsOnly(events);
+  });
+
+  it('hjf-after-submit: the education editor’s Degree is planned from its list and chosen', async () => {
+    const doc = await load(hjfAfterSubmitHtml, SECTION, closeChecklist);
+    const chosen: CxChoice[] = [];
+    cxDrive(doc, { 'contentItemId-46': { rows: DEGREES } }, (choice) => chosen.push(choice));
+    const readings = new Map<BaseKey, WidgetReading>();
+    const ctx = { adapter: oracleAdapter, root: oracleAdapter.detect(doc)!.formRoot, readings };
+    expect(labelsRead(await readWidget(targetOf(scanWith(doc, readings), 'contentItemId-46'), ctx))).toEqual(DEGREES);
+    const { result, plan } = planned(doc, { readings });
+    const key = targetOf(result, 'contentItemId-46').field.key;
+    expect(plan.results.find((row) => row.key === key)).toMatchObject({ category: 'education.degree' });
+    const write = plan.writes.find((one) => one.key === key)!;
+    expect(write.value).toEqual({ kind: 'option', index: 1, cleanLabel: "Bachelor's Degree" });
+    expect(await fillWidget(targetOf(scanWith(doc, readings), 'contentItemId-46'), write.value, ctx))
+      .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    expect(chosen).toEqual([{ id: 'contentItemId-46', words: "Bachelor's Degree", on: 'cx-select__list-item--content' }]);
+  });
+});
+
+// ── P2 O10 (ENGINE E1 item 12): no futile search ──────────────────────────────────────────────────────────────────
+
+describe('jr6 P2 O10: no futile search on a cx-select (declared now; an undeclared grid is refused)', () => {
+  const LISTS = ['country-codes-dropdownphoneNumber', 'country-17', 'city-43', 'region2-44', 'region1-45'];
+  const SEARCHES = ['addressLine1-39', 'postalCode-42'];
+
+  it('hjf-apply-section: each declared list is opened by its toggle and read, never typed into; the two searches are '
+    + 'not opened to be read', async () => {
+    const doc = await load(hjfSectionHtml, SECTION);
+    cxDrive(doc, { 'country-codes-dropdownphoneNumber': { rows: CODES }, 'country-17': { rows: COUNTRIES },
+      'city-43': { rows: CITIES }, 'region2-44': { rows: STATES }, 'region1-45': { rows: COUNTIES },
+      'addressLine1-39': { rows: [], search: suggestStreet },
+      'postalCode-42': { rows: postalCodes(), search: suggestPostal } });
+    const events = logEvents(doc);
+    const readings = new Map<BaseKey, WidgetReading>();
+    const ctx = { adapter: oracleAdapter, root: oracleAdapter.detect(doc)!.formRoot, readings };
+    for (const id of LISTS) {
+      const target = targetOf(scanWith(doc, readings), id);
+      expect(target.widget, id).toMatchObject({ declared: true, kind: 'combobox' });
+      expect((await readWidget(target, ctx)).status, id).toBe('read');
+      expect(events.on(`${id}-toggle-button`).filter((event) => event.type === 'click').length, id).toBe(1);
+    }
+    for (const id of SEARCHES) {
+      const target = targetOf(scanWith(doc, readings), id);
+      expect(target.widget, id).toMatchObject({ declared: true, kind: 'typeahead-remote' });
+      expect(await readWidget(target, ctx), id).toEqual({ status: 'read', reading: { kind: 'remote' } });
+      expect(events.on(id), id).toEqual([]);
+      expect(events.on(`${id}-toggle-button`), id).toEqual([]);
+    }
+    // Nothing was typed into any cx-select's box.
+    for (const id of [...LISTS, ...SEARCHES]) {
+      expect(events.on(id).filter((event) => event.type === 'input'), id).toEqual([]);
+    }
+    expectOurEventsOnly(events);
+  });
+
+  it.each([
+    { name: 'hjf-apply-section', html: hjfSectionHtml, closed: false, ids: ['country-codes-dropdownphoneNumber',
+      'country-17', 'addressLine1-39', 'postalCode-42', 'city-43', 'region2-44', 'region1-45'] },
+    { name: 'hjf-after-submit (checklist closed)', html: hjfAfterSubmitHtml, closed: true, ids: [...EDITOR_SELECTS] },
+  ])('$name: undeclared (the adapter without widgetFor), every cx-select is refused before any click: no event, never '
+    + 'read as a search', async ({ html, closed, ids }) => {
+    const doc = await load(html, SECTION, closed ? closeChecklist : undefined);
+    const events = logEvents(doc);
+    const { widgetFor: _declared, ...undeclared } = oracleAdapter;
+    const readings = new Map<BaseKey, WidgetReading>();
+    const ctx = { adapter: undeclared, root: undeclared.detect(doc)!.formRoot, readings };
+    for (const id of ids) {
+      const target = targetOf(scanWith(doc, readings, undeclared), id);
+      expect(target.widget?.declared, id).toBe(false);
+      expect(isActionable(target.widget!), id).toBe(false);
+      expect(fillabilityOf(target.field, target.widget), id).toEqual({ fillable: false, reason: 'widget-phase-4' });
+      expect(await readWidget(target, ctx), id).toEqual({ status: 'unread', reason: 'widget-unsupported' });
+    }
+    expect(readings.size).toBe(0);
+    expect(events.events).toEqual([]);
+  });
+});
+
+// ── P2 O2 (RULES item 61): Address Line 1 and ZIP Code searched ───────────────────────────────────────────────────
+
+/** A search's results as the worker matches them (content/pass.ts resultsSpec): the field's spec with the results as
+ *  its options, marked a search's, nothing chosen yet. */
+function resultsSpec(target: FieldTarget, labels: readonly string[]): FieldSpec {
+  const options = labels.map((label, index) => ({ index, label, disabled: false, selected: false }));
+  const { optionsPartial: _partial, ...spec } = toFieldSpec(target.field);
+  return { ...spec, options, optionSetHash: hashOfOptions(options.map((option) => option.label)),
+    current: { kind: 'empty' }, searchResults: true };
+}
+
+/** The worker's match of one search's results: the planner over that one spec, with the golden profile. */
+function matchByPlanner(labels: readonly string[], target: FieldTarget): { write: PlannedWrite | undefined;
+  row: FillResult | undefined } {
+  const spec = resultsSpec(target, labels);
+  const plan = planFrame({ specs: [spec], planKeys: [spec.key], canaries: [], profile: goldenProfile(),
+    sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+    posting: { company: 'Acme', location: 'Austin, TX, USA' } });
+  return { write: plan.writes.find((one) => one.key === spec.key), row: plan.results.find((one) => one.key === spec.key) };
+}
+
+/** A search's hooks over the page itself: each query's field found again on a fresh scan, and each results list
+ *  matched by the planner as the worker matches it (matchByPlanner); the lists seen. */
+function plannerHooks(doc: Document, id: string, readings: Map<BaseKey, WidgetReading>): TypeaheadHooks & {
+  seen: string[][] } {
+  const seen: string[][] = [];
+  return {
+    seen,
+    guard: async () => ({ ok: true, target: targetOf(scanWith(doc, readings), id) }),
+    match: async (results, now) => {
+      seen.push(results.map((one) => one.label));
+      const { write: pick, row } = matchByPlanner(results.map((one) => one.label), now);
+      return pick?.value.kind === 'option' ? { choose: { index: pick.value.index, cleanLabel: pick.value.cleanLabel } }
+        : { choose: null, reason: row?.reason ?? 'no-match', blocked: false };
+    },
+  };
+}
+
+describe('jr6 P2 O2: Address Line 1 and ZIP Code are searched (RULES item 61; synthetic suggestions)', () => {
+  it('hjf-apply-section: ZIP Code is the postal code, searched by the profile’s five digits, then their first three',
+    async () => {
+      const doc = await load(hjfSectionHtml, SECTION);
+      const { result, plan } = planned(doc);
+      const key = targetOf(result, 'postalCode-42').field.key;
+      expect(plan.results.find((row) => row.key === key)).toMatchObject({ category: 'address.postalCode' });
+      const zip = goldenProfile().address!.postalCode!;
+      expect(plan.writes.find((write) => write.key === key)?.value)
+        .toEqual({ kind: 'query', queries: [zip, zip.slice(0, 3)] });
+    });
+
+  it('the planner chooses the suggestion that starts with the street and names the city and state; none where no '
+    + 'suggestion starts with it in the profile’s city or state', async () => {
+    const doc = await load(hjfSectionHtml, SECTION);
+    const target = targetOf(scanWith(doc), 'addressLine1-39');
+    const { austin, all } = streetSuggestions();
+    const chosen = matchByPlanner(all, target);
+    expect(chosen.write?.value).toEqual({ kind: 'option', index: all.indexOf(austin), cleanLabel: austin });
+    expect(chosen.row).toMatchObject({ category: 'address.line1' });
+    // Another number in the profile's city, and the street in another state: neither is the street.
+    expect(matchByPlanner([all[3]!, all[2]!], target).write).toBeUndefined();
+  });
+
+  it('hjf-apply-section: the search types the street at once, the worker’s match chooses its Austin suggestion by its '
+    + 'label span, and the box reads it back', async () => {
+    const doc = await load(hjfSectionHtml, SECTION);
+    const chosen: CxChoice[] = [];
+    cxDrive(doc, { 'addressLine1-39': { rows: [], search: suggestStreet } }, (choice) => chosen.push(choice));
+    const events = logEvents(doc);
+    const readings = new Map<BaseKey, WidgetReading>();
+    const ctx = { adapter: oracleAdapter, root: oracleAdapter.detect(doc)!.formRoot, readings };
+    const { result, plan } = planned(doc);
+    const write = plan.writes.find((one) => one.key === targetOf(result, 'addressLine1-39').field.key)!;
+    expect(write.value).toEqual({ kind: 'query', queries: [goldenProfile().address!.line1] });
+    const hooks = plannerHooks(doc, 'addressLine1-39', readings);
+    const queries = write.value.kind === 'query' ? write.value.queries : [];
+    const outcome = await searchTypeahead(targetOf(scanWith(doc, readings), 'addressLine1-39'), queries, ctx, hooks);
+    const { austin, all } = streetSuggestions();
+    expect(outcome).toMatchObject({ chosen: { index: all.indexOf(austin), cleanLabel: austin }, verified: true,
+      reason: 'ok', typed: 1 });
+    expect(hooks.seen).toEqual([all]);
+    expect(chosen).toEqual([{ id: 'addressLine1-39', words: austin, on: 'cx-select__list-item--content' }]);
+    expect((doc.getElementById('addressLine1-39') as HTMLInputElement).value).toBe(austin);
+    // Typed at once: its box was never clicked (it has no toggle), and its suggestions are shut.
+    expect(events.on('addressLine1-39').filter((event) => event.type === 'click')).toEqual([]);
+    expect(doc.getElementById('addressLine1-39-listbox')).toBeNull();
+    expectOurEventsOnly(events);
+  });
+
+  it('hjf-apply-section: ZIP Code’s search opens its list by its toggle, types the five digits and chooses the code',
+    async () => {
+      const doc = await load(hjfSectionHtml, SECTION);
+      const chosen: CxChoice[] = [];
+      cxDrive(doc, { 'postalCode-42': { rows: postalCodes(), search: suggestPostal } }, (choice) => chosen.push(choice));
+      const events = logEvents(doc);
+      const readings = new Map<BaseKey, WidgetReading>();
+      const ctx = { adapter: oracleAdapter, root: oracleAdapter.detect(doc)!.formRoot, readings };
+      const zip = goldenProfile().address!.postalCode!;
+      const hooks = plannerHooks(doc, 'postalCode-42', readings);
+      const outcome = await searchTypeahead(targetOf(scanWith(doc, readings), 'postalCode-42'), [zip, zip.slice(0, 3)],
+        ctx, hooks);
+      expect(outcome).toMatchObject({ chosen: { cleanLabel: zip }, verified: true, reason: 'ok', typed: 1 });
+      expect(hooks.seen).toEqual([[zip]]);
+      expect(chosen).toEqual([{ id: 'postalCode-42', words: zip, on: 'cx-select__list-item--content' }]);
+      expect(events.on('postalCode-42-toggle-button').filter((event) => event.type === 'click').length).toBe(1);
+      expectOurEventsOnly(events);
+    });
+});
+
+// ── P2 O3 (ENGINE E3 item 14): the address block's order ─────────────────────────────────────────────────────────
+
+describe('jr6 P2 O3: the address block’s parents first, its dependents decided again (ENGINE E3 item 14)', () => {
+  it('hjf-apply-section: the scan’s parents are the block’s order, and a pass’s queue puts each parent first', async () => {
+    const doc = await load(hjfSectionHtml, SECTION);
+    const result = scanWith(doc);
+    const labelOf = (base: BaseKey) => result.fields.find((field) => field.baseKey === base)!.label;
+    const parents = [...dependenciesOf(result, oracleAdapter)].map(([child, parent]) => [labelOf(child), labelOf(parent)]);
+    expect(parents).toEqual([['Address Line 1', 'Country'], ['ZIP Code', 'Address Line 1'], ['City', 'Address Line 1'],
+      ['State', 'Address Line 1'], ['County', 'Address Line 1']]);
+    // A queue holding the block from its last row up: each parent is written first, its dependents right after it.
+    const order = ['County', 'State', 'City', 'ZIP Code', 'Address Line 1', 'Country'];
+    const keyOf = (label: string) => result.fields.find((field) => field.label === label)!.key;
+    const queue = order.map((label) => ({ label, write: { key: keyOf(label) } as unknown as PlannedWrite }));
+    expect(parentsFirst(queue, result, oracleAdapter).map((entry) => entry.label))
+      .toEqual(['Country', 'Address Line 1', 'County', 'State', 'City', 'ZIP Code']);
+    // Without the adapter's parents the queue stands as it came.
+    const { dependsOn: _parents, ...unordered } = oracleAdapter;
+    expect(parentsFirst(queue, result, unordered).map((entry) => entry.label)).toEqual(order);
+  });
+
+  it('hjf-after-submit (checklist closed): the education editor’s rows wait on nothing; the address block’s parents '
+    + 'stand', async () => {
+    const doc = await load(hjfAfterSubmitHtml, SECTION, closeChecklist);
+    const result = scanWith(doc);
+    const fieldOf = (base: BaseKey) => result.fields.find((field) => field.baseKey === base)!;
+    const children = [...dependenciesOf(result, oracleAdapter).keys()].map(fieldOf);
+    expect(children.map((field) => field.label)).toEqual(['Address Line 1', 'ZIP Code', 'City', 'State', 'County']);
+    expect(children.every((field) => field.section.id !== 'education')).toBe(true);
+  });
+
+  it('hjf-apply-section: County is the county (address.county), left for the person: required, no profile holds one',
+    async () => {
+      const doc = await load(hjfSectionHtml, SECTION);
+      cxDrive(doc, { 'region1-45': { rows: COUNTIES } });
+      const readings = new Map<BaseKey, WidgetReading>();
+      const ctx = { adapter: oracleAdapter, root: oracleAdapter.detect(doc)!.formRoot, readings };
+      for (const read of [false, true]) {
+        if (read) expect((await readWidget(targetOf(scanWith(doc, readings), 'region1-45'), ctx)).status).toBe('read');
+        const { result, plan } = planned(doc, { readings });
+        const key = targetOf(result, 'region1-45').field.key;
+        expect(plan.results.find((row) => row.key === key), `list read: ${String(read)}`).toMatchObject({
+          category: 'address.county', status: 'flagged', reason: 'no-profile-value', needsUserAction: true });
+        expect(plan.writes.find((write) => write.key === key)).toBeUndefined();
+      }
+    });
+});
+
