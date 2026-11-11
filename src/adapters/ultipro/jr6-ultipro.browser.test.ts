@@ -27,11 +27,15 @@
  *   one AI answer for it;
  * - U-08 (gated Q7, not built), U-09 (RULES item 24), U-10 (RULES 57), U-11 (RULES 58, 18): the application's
  *   questions; U-15: the AI asks left; U-16 (ENGINE U-16, RULES 76): the national number, once; U-17 (RULES 77).
+ * The fixer's (the jr6 review's REVC-2, TOOLING round 2 R2.4 item 1): no list on the three pages holds a REDACTED
+ * option beside public choices (the education editor's Major and Minor did, a field of study told by elimination, until
+ * ultipro-0 and -1 were converted again with the synthetic list fixtures/synthetic/ultipro/jr6-fields-of-study.txt).
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import applicationHtml from '../../../fixtures/ultipro/application.html?raw';
 import registerHtml from '../../../fixtures/ultipro/register.html?raw';
 import resumeReviewHtml from '../../../fixtures/ultipro/resume-review.html?raw';
+import fieldsOfStudy from '../../../fixtures/synthetic/ultipro/jr6-fields-of-study.txt?raw';
 import { lateAdapters, lateFormMs, LATE_FORM_CAP_MS, watchForLateForm } from '../../content/late-form';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { writeField, type PassEnv, type WidgetWriteEnv } from '../../content/pass';
@@ -46,7 +50,7 @@ import type { PlannedWrite } from '../../core/types/fill';
 import type { Profile } from '../../core/types/profile';
 import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { fillDateParts } from '../../dom/fillers/date-parts';
-import { removeFixtures } from '../../dom/fixture.testkit';
+import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { startDeadline } from '../../dom/time';
 import { scan, toFieldSpec } from '../../dom/scan';
 import type { ScanResult, ScannedField, WidgetReading } from '../../dom/types';
@@ -1092,3 +1096,63 @@ describe('jr6 P2, U-17 (RULES item 77): a job\'s place too long for its Location
     })).toEqual(Array(3).fill('location.current Austin, TX'));
   });
 });
+
+// ── jr6 ULTIPRO fixer (the jr6 review's REVC-2; TOOLING round 2, R2.4 item 1): no list tells a REDACTED option ──
+
+describe('jr6 fix, REVC-2 (privacy): no list on the three pages tells a REDACTED option by elimination', () => {
+  /** The elements `selector` names under `root`, open shadow roots included. */
+  function deepAll(root: Document | Element, selector: string): Element[] {
+    const found: Element[] = [];
+    const walk = (scope: Document | Element | ShadowRoot) => {
+      found.push(...Array.from(scope.querySelectorAll(selector)));
+      for (const el of Array.from(scope.querySelectorAll('*'))) if (el.shadowRoot !== null) walk(el.shadowRoot);
+    };
+    walk(root);
+    return found;
+  }
+
+  it('holds no REDACTED option beside a public choice, nor one keeping its own value (the converter now refuses such '
+    + 'a page: TOOLING jobvite-new-2)', async () => {
+    const told: string[] = [];
+    for (const name of Object.keys(PAGES) as PageName[]) {
+      const { doc } = await loadFixture(document, PAGES[name].html);
+      for (const list of deepAll(doc, 'select, datalist, [role="listbox" i]')) {
+        const options = deepAll(list, 'option, [role="option" i]');
+        const redacted = options.filter((option) => /REDACTED/.test(`${option.textContent ?? ''} ${option.getAttribute('label') ?? ''}`));
+        if (redacted.length === 0) continue;
+        // A public choice: words and a value of its own (an <option> with no value attribute is valued by its words);
+        // a placeholder (value "") tells nothing.
+        const valueOf = (option: Element) => option.getAttribute('value')
+          ?? (option.localName === 'option' ? (option.textContent ?? '').trim() : '');
+        const choices = options.filter((option) => !redacted.includes(option) && valueOf(option) !== ''
+          && /[\p{L}\p{N}]/u.test(option.textContent ?? ''));
+        const kept = redacted.filter((option) => !/^(?:|REDACTED)$/.test(option.getAttribute('value') ?? ''));
+        if (choices.length > 0 || kept.length > 0) {
+          told.push(`${name}: ${list.localName}[data-automation="${list.getAttribute('data-automation') ?? ''}"] `
+            + `${redacted.length} REDACTED beside ${choices.length} public, ${kept.length} keeping its value`);
+        }
+      }
+      removeFixtures(document);
+    }
+    expect(told).toEqual([]);
+  });
+
+  it('gives the education editor\'s Major and Minor the synthetic list after their placeholder, as converted '
+    + '(--replace-text, fixtures/synthetic/ultipro/jr6-fields-of-study.txt)', async () => {
+    const lines = fieldsOfStudy.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '');
+    for (const name of ['resume-review', 'application'] as const) {
+      const { doc } = await loadFixture(document, PAGES[name].html);
+      for (const automation of ['major-dropdown', 'minor-dropdown']) {
+        // One each per page: the review's education block (resume-review), the application's education editor.
+        const selects = Array.from(doc.querySelectorAll<HTMLSelectElement>(`select[data-automation="${automation}"]`));
+        expect(selects, `${name} ${automation}`).toHaveLength(1);
+        const [placeholder, ...rest] = Array.from(selects[0]!.options);
+        expect(placeholder?.value, `${name} ${automation}`).toBe('');
+        expect(rest.map((option) => [option.text, option.value]), `${name} ${automation}`)
+          .toEqual(lines.map((line) => [line, line]));
+      }
+      removeFixtures(document);
+    }
+  });
+});
+// ── end jr6 ULTIPRO fixer (REVC-2) ──
