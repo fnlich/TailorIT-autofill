@@ -13,10 +13,10 @@
  *   filled from the golden profile, its Continue (which mails a code) untouched on Sign-in Manual.
  * - Jobvite, across documents (E-Jobvite; JOBVITE.md "Integration"): the posting's Apply; the /apply gate's residence
  *   choice (RULES item 16, JV-9) and its "I Accept" (never "I Decline"); step 1 after it.
- * - Workday (E-Workday B5, B6; WORKDAY.md "Integration"; F2.md 9): verily's steps at /apply claimed by the runtime
- *   (formAtPosting) under the key its /login?redirect= page says hello with; and resolvetech's choice → an in-page route
- *   to /login?redirect= (the same application, B6) → the entry's sign-in step: the saved password typed on Manual,
- *   Sign In untouched.
+ * - Workday (E-Workday B5, B6; WORKDAY.md "Integration"; F2.md 9): verily's /login?redirect= page says hello and tells
+ *   its sign-in wall, and its steps at /apply, under the same key (B6), are claimed by the runtime (formAtPosting) and
+ *   filled; and (F2.md's suggested case) resolvetech's choice → an in-page route to /login?redirect= (the same
+ *   application, B6) → the entry's sign-in step: the saved password typed on Manual, Sign In untouched.
  * - UltiPro (C3; ULTIPRO.md "Integration"): the application drawn late is claimed by UltiPro's own adapter and filled
  *   at the person's Autofill pressed before it showed.
  * Each chain's undo proof reverts the one rule it hinges on in the code (SP\jr6\build\CHAINS.md, section 3). Measured
