@@ -73,10 +73,12 @@ const ROWS = FILES.map((name) => {
 });
 
 describe("Workday's fixtures keep nothing that names what a typed search found (jr6 WORKDAY, WD-R1)", () => {
-  it('reads the typed searches the fixtures hold: snapshot4\'s School search, its 13 results', () => {
+  // Not vacuous: snapshot4's School search is read, its 13 results; a typed search a later capture adds is held by the
+  // two tests below without being named here.
+  it("reads the typed searches the fixtures hold, snapshot4's School search and its 13 results among them", () => {
     expect(FILES.length).toBeGreaterThan(50);
     expect(ROWS.filter((each) => each.rows.length > 0).map((each) => [each.name, each.rows.length]))
-      .toEqual([['s2-verily-school-results.html', 13]]);
+      .toContainEqual(['s2-verily-school-results.html', 13]);
   });
 
   // A failure names rows by position and attributes by name, and counts the rest: never a value it found.
