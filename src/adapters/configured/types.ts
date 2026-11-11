@@ -259,6 +259,11 @@ export interface UploadRule {
    *  holds none (uploadHeld). Absent: any shown `done` sign confirms. */
   readonly name?: Css;
   // ── end behaviour review (M2) ──
+  /** jr6 FIXPLAN §3.1 item 19 (JZ-4; JazzHR's classic layout, snapshot6 applytojob, the jr6 case jr6-centroid-form):
+   *  the link that shows the hidden file input (JazzHR's #resumator-choose-upload). Pressed at most once per document,
+   *  by ENGINE's reveal door alone (dom/fillers/not-submit.ts, FIXPLAN §6.2 item 9), while the input is hidden and the
+   *  link shows inside the rule's area; it stays in neverPress for every other path. Types only until ENGINE E2. */
+  readonly reveal?: Css;
   readonly from: From;
 }
 

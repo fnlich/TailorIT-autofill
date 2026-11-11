@@ -19,6 +19,12 @@ export interface SuccessRule {
   readonly text?: RegExp;
   readonly companion?: { readonly css: string; readonly text: RegExp; readonly scope?: string };
   readonly exclude?: string;
+  /** jr6 (FIXPLAN §3.1, ADP-6; ADP's page after Submit, snapshot6 adp1 and adp2, the jr6 cases jr6-confirmation and
+   *  jr6-confirmation-2): a CSS selector of an open modal whose focus trap hides the rest of the page (ADP's
+   *  sdf-focus-pane[data-sdf-modal]). While a shown element matching it is open, a sign hidden only by that trap (its
+   *  hiding ancestor carries data-old-aria-hidden) counts as shown; every other kind of hiding still hides, and the
+   *  rule's words and companion are still required. Types only until ENGINE E2 (FIXPLAN §6.2 item 10). */
+  readonly underModal?: string;
   /** Where the rule was read: Jobright's rule (its id, in its ats-submission-rules), a snapshot or a fixture. */
   readonly from: string;
 }
