@@ -499,6 +499,113 @@ describe('jr6 apply F2: forms drawn in place, late or at the posting’s address
       expect(runtime.page?.adapter.id).toBe('workable');
     }, 30_000);
 
+  // The line P review (P-2): the late-form wait at an entry, with no Apply declared, and where an Apply declared for
+  // postings is offered nowhere on an application's page.
+  it('no Apply declared, its form drawn 3 s after the person’s Autofill: waited for, and the run starts (P-2)',
+    async () => {
+      // An adapter with no entry hook at all (the site adapter's shape, on company pages: siteAdapter), stood in by
+      // UltiPro's with its hook taken off and a late window of 15 s.
+      const address = addressOf(ultiproRoutes, 'fixtures/ultipro/application.html');
+      const { doc } = await openAt(ultiproHtml, address);
+      const form = doc.querySelector('#OpportunityApply')!;
+      const parent = form.parentNode!;
+      const next = form.nextSibling;
+      form.remove();
+      const own: Adapter = { ...servedAdapter(ultiproAdapter, address), entryControl: undefined,
+        quirks: { ...ultiproAdapter.quirks, formLateMs: 15_000 } };
+      const { worker, runtime } = await runtimeAt(doc, address, [own, genericAdapter]);
+      runtimes.push(runtime);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(true), { timeout: 2_000 });
+      await deadline(3_000);
+      expect(worker.of('run/begin')).toEqual([]);
+      parent.insertBefore(form, next);
+      await vi.waitFor(() => expect(worker.of('run/begin').length).toBeGreaterThan(0), { timeout: 5_000 });
+      expect(runtime.page?.adapter.id).toBe('ultipro');
+      expect(refusals(worker)).toEqual([]);
+    }, 30_000);
+
+  it('a late window that ends with another form only the generic adapter takes: the entry starts no run there, "none" (P-2)',
+    async () => {
+      const address = addressOf(ultiproRoutes, 'fixtures/ultipro/application.html');
+      const { doc } = await openAt(ultiproHtml, address);
+      doc.querySelector('#OpportunityApply')!.remove();
+      // Another form on the page (a made-up newsletter sign-up), which the generic adapter takes once the page's own late
+      // wait is over (late-form.ts): it is no application this entry fills by itself (D5).
+      const news = doc.createElement('form');
+      news.id = 'news';
+      for (const [id, type, label, auto] of [['nn', 'text', 'Full name', 'name'], ['ne', 'email', 'Email', 'email']]) {
+        const name = doc.createElement('label');
+        name.htmlFor = id!;
+        name.textContent = label!;
+        const input = doc.createElement('input');
+        input.id = id!;
+        input.type = type!;
+        input.autocomplete = auto as AutoFill;
+        news.append(name, input);
+      }
+      doc.body.append(news);
+      const own: Adapter = { ...servedAdapter(ultiproAdapter, address), entryControl: undefined,
+        quirks: { ...ultiproAdapter.quirks, formLateMs: 3_000 } };
+      const { worker, runtime } = await runtimeAt(doc, address, [own, genericAdapter]);
+      runtimes.push(runtime);
+      // Autofill 1.5 s after the page loaded: the entry's late window outlasts the page's own by as much.
+      await deadline(1_500);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(runtime.page?.adapter.id).toBe('generic'), { timeout: 6_000 });
+      // The page changes that form while the entry still waits (a box drawn in it): still no form of the entry's.
+      const box = doc.createElement('input');
+      box.type = 'text';
+      box.setAttribute('aria-label', 'Company');
+      doc.getElementById('news')!.append(box);
+      await vi.waitFor(() => expect(refusals(worker)).toEqual(['none']), { timeout: 6_000 });
+      expect(worker.of('run/begin')).toEqual([]);
+    }, 30_000);
+
+  it('an application’s page that offers no Apply, its form drawn after the Apply wait: the rest of the late window is waited for (P-2, Workable, UltiPro)',
+    async () => {
+      const SALVO = Object.keys(salvoRoutes)[0]!;
+      const ULTIPRO = addressOf(ultiproRoutes, 'fixtures/ultipro/application.html');
+      // Each declares an Apply hook (Workable's for its postings alone; UltiPro's, the configured layer's, with no
+      // posting entry yet) that its application's page never answers. The form is back 10 s after Autofill (the Apply
+      // wait is 8 s, the stubs' late window 12 s), or never.
+      const cases = [['workable', 10_000], ['workable', null], ['ultipro', 10_000]] as const;
+      for (const [name, backAt] of cases) {
+        const label = `${name}, ${backAt === null ? 'never' : `at ${backAt} ms`}`;
+        const address = name === 'workable' ? SALVO : ULTIPRO;
+        const { doc } = await openAt(name === 'workable' ? salvoHtml : ultiproHtml, address);
+        const root = doc.querySelector(name === 'workable' ? '[data-role="modal-wrapper"]' : '#OpportunityApply')!;
+        const parent = root.parentNode!;
+        const next = root.nextSibling;
+        root.remove();
+        const adapter = name === 'workable' ? workableAdapter : ultiproAdapter;
+        const own: Adapter = { ...servedAdapter(adapter, address), quirks: { ...adapter.quirks, formLateMs: 12_000 } };
+        const { worker, runtime } = await runtimeAt(doc, address, [own, genericAdapter]);
+        runtimes.push(runtime);
+        expect(own.entryControl, label).toBeDefined();
+        expect(own.entryControl!(doc), label).toBeNull();
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+        await deadline(9_500);
+        // Past the Apply wait: still entering, nothing refused.
+        expect(refusals(worker), label).toEqual([]);
+        expect(wallsOf(worker).at(-1)?.entering, label).toBe(true);
+        if (backAt !== null) {
+          await deadline(backAt - 9_500);
+          root.querySelector('dialog')?.setAttribute('open', '');
+          parent.insertBefore(root, next);
+          await vi.waitFor(() => expect(worker.of('run/begin').length, label).toBeGreaterThan(0), { timeout: 3_000 });
+          expect(runtime.page?.adapter.id, label).toBe(name);
+          expect(refusals(worker), label).toEqual([]);
+        } else {
+          await vi.waitFor(() => expect(refusals(worker), label).toEqual(['none']), { timeout: 6_000 });
+          expect(worker.of('run/begin'), label).toEqual([]);
+        }
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 60_000);
+
   it('SmartRecruiters’ one-click and UltiPro’s application drawn 1 s after start: found with a late wait, not without',
     async () => {
       const cases = [['smartrecruiters', smartRecruitersAdapter, oneClickHtml, addressOf(oneClickRoutes,

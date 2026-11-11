@@ -1934,19 +1934,26 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   /** A form the address's own adapters claim within `ms` (claimed as it shows), or false when none came or the entry
    *  ended first (`gone`: run/cancel, the document's end, or the line P review's revA-4, a route to another
-   *  application, whose form is never this entry's). */
+   *  application, whose form is never this entry's). The line P review (P-2): one the page's own late-form watch
+   *  claimed meanwhile (watchLateForm) is taken as it is, never claimed and told twice; and only a form of the
+   *  address's own adapters (D5): what the generic adapter claims once the page's own late wait is over is no
+   *  application this entry fills by itself. */
   function formWithin(ms: number, signal: AbortSignal, gone: () => boolean): Promise<boolean> {
     if (gone()) return Promise.resolve(false);
     if (lookAgain()) return Promise.resolve(true);
+    const ours = (): boolean => page !== null && page.adapter.id !== 'generic';
     return new Promise((resolve) => {
       watchForLateForm(doc, ms, () => {
         if (stopped || gone()) return true;
-        resolvePage(readHref(), { ownOnly: true });
-        if (page === null) return false;
-        formFound();
+        if (page === null) {
+          resolvePage(readHref(), { ownOnly: true });
+          if (page === null) return false;
+          formFound();
+        }
+        if (!ours()) return false;
         resolve(true);
         return true;
-      }, signal, () => resolve(page !== null && !gone()));
+      }, signal, () => resolve(ours() && !gone()));
       signal.addEventListener('abort', () => resolve(false), { once: true });
     });
   }
@@ -1964,7 +1971,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    *   the destination's key: nextKeyOf; the agent's agent/entered, once), then what the press brought watched for
    *   (afterPress); a wall shown instead (before or after the press) is the sign-in step's (wallStep), never a refusal;
    *   a door that refused the control by where it goes, nothing pressed: 'new-tab', 'elsewhere' or (a download) 'none';
-   *   a check or a code: 'blocked'.
+   *   a check or a code: 'blocked'; none offered within the wait on an application's page whose form is drawn late
+   *   (the line P review, P-2): the rest of that late window waited for, as with no Apply declared, then 'none'.
    * run/cancel ends its waits (cancelRun: a press already made stays made, none is made after). The line P review
    * (revA-4): so does a route of the page's own to another application (the person opened another job in this
    * document, or a page of none): the entry belongs to the one it started at, and nothing is pressed, claimed, signed in
@@ -2016,6 +2024,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   async function runEntry(source: EntrySource, at: URL, signal: AbortSignal, answer: (said: EntryAnswer) => void,
     gone: () => boolean): Promise<void> {
     const person = source.by === 'person';
+    /** The line P review (P-2): when the entry began, for the late window it waits out (lateEntryMs). */
+    const started = monotonicNow();
     const facts: EntryFacts = { before: null, onChoice: false, presses: 0, followed: true, waited: false, found: false,
       wall: false, choice: false };
     const end = (refused: EntryRefusal | null): void => {
@@ -2085,6 +2095,22 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         answer({ outcome: 'not-offered' });
         end(null);
         return;
+      }
+      // The line P review (P-2): an application's page whose adapters declare an Apply for their postings alone (none
+      // offered here: Workable's /apply/, Ashby's, Oracle's and Workday's application pages) and draw its form late
+      // (formLateMs): the rest of that late window, counted from the entry's start, is waited for as with no Apply
+      // declared, and the person's run starts once the form shows; 'none' only after it (A0: no Apply and no form came
+      // within the wait).
+      const rest = person && noFormYet() ? lateEntryMs(all) - (monotonicNow() - started) : 0;
+      if (rest > 0) {
+        facts.waited = true;
+        if (await formWithin(rest, signal, gone)) {
+          facts.found = true;
+          startPersonRun(source);
+          answer({ outcome: 'not-offered' });
+          end(null);
+          return;
+        }
       }
       answer({ outcome: 'not-offered' });
       end(signal.aborted ? null : 'none');
