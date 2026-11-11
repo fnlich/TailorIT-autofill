@@ -371,6 +371,21 @@ describe('takeStep: a wall or a choice of the next document (AF-3)', () => {
     expect(starts(chain)).toHaveLength(3);
   });
 
+  // The line P review (revA-1): the same window for a form that names no application (Workday's account page drawn as
+  // its form); the job's own form keeps the grant's time (v4).
+  it('starts a form that names no application within ENTRY_NEXT_MS of the press alone; the job\'s own form later', async () => {
+    const late = await applyWorker();
+    await pressedPosting(late);
+    advance(late, ENTRY_NEXT_MS);
+    expect(await formStarted(late, WD_LOGIN, 'doc-login', 1)).toBe(false);
+    expect(await formStarted(late, WD_FORM, 'doc-form', 1)).toBe(true);
+
+    const inTime = await applyWorker();
+    await pressedPosting(inTime);
+    advance(inTime, ENTRY_NEXT_MS - 1);
+    expect(await formStarted(inTime, WD_LOGIN, 'doc-login', 1)).toBe(true);
+  });
+
   it('never on another origin or for another application of the same site', async () => {
     const worker = await applyWorker();
     await pressedPosting(worker);
@@ -909,6 +924,27 @@ describe('createSignUps alone: the origin and key checks', () => {
     // A press again (a document it reached) opens the window again.
     expect(signUps.pressed(1, place(A, KEY, 'd5'))).toBe(true);
     expect(signUps.takeStep(1, { ...place(A, undefined, 'd6'), hasForm: false }, 'wall')).toEqual({ signIn: false });
+  });
+
+  // The line P review (revA-1): a frame that names no application fits a pressed grant within the press's chain alone.
+  it('takes a frame that names no application within ENTRY_NEXT_MS of the latest press alone, its own key later', () => {
+    const late = given();
+    late.signUps.pressed(1, place(A, KEY, 'd1'));
+    late.clock.now += ENTRY_NEXT_MS;
+    expect(late.signUps.takeFill(1, place(A, undefined, 'd2'))).toBeNull();
+    expect(late.signUps.takeFill(1, place(A, KEY, 'd3'))).toEqual({ signIn: false });
+
+    const inTime = given();
+    inTime.signUps.pressed(1, place(A, KEY, 'd1'));
+    inTime.clock.now += ENTRY_NEXT_MS - 1;
+    expect(inTime.signUps.takeFill(1, place(A, undefined, 'd2'))).toEqual({ signIn: false });
+
+    // v4's grant given at a wall of the job, never pressed: a frame that names no application, within the grant's time.
+    const clock = { now: 0 };
+    const walled = createSignUps({ now: () => clock.now });
+    walled.grant(1, { signIn: false, fill: true }, place(A, KEY, 'd1'));
+    clock.now += SIGN_UP_GRANT_MS - 1;
+    expect(walled.takeFill(1, place(A, undefined, 'd2'))).toEqual({ signIn: false });
   });
 
   // The line P review (P-B1): the frame's word that its entry is over ends the wait, from a document the grant reached.

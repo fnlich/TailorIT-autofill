@@ -233,12 +233,18 @@ export function createSignUps(deps: SignUpDeps): SignUps {
   /** Whether the grant's latest press is recent enough for its destination keys (ENTRY_NEXT_MS). */
   const fresh = (held: Held): boolean => held.entry?.pressedAt !== undefined
     && now() - held.entry.pressedAt < ENTRY_NEXT_MS;
+  /** The line P review (revA-1): whether the grant's latest press, step or kept re-press is within ENTRY_NEXT_MS (a
+   *  grant never pressed: v4's, given at a wall or a choice, its own time alone). */
+  const chained = (held: Held): boolean => held.entry?.lastAt === undefined
+    || now() - held.entry.lastAt < ENTRY_NEXT_MS;
   /** Whether a frame showing `frameKey` is at the grant's application: the grant's key where both name one (the v4
    *  review, M1), or, for a grant given at a wall or a choice whose frame named no application, any (v4); jr6 apply
-   *  F3a: or a key a recent press of this grant named. `strict` (a step, an entry grant): never the keyless "any". */
+   *  F3a: or a key a recent press of this grant named. `strict` (a step, an entry grant): never the keyless "any". The
+   *  line P review (revA-1): a frame that names no application fits a pressed grant within its chain alone (chained);
+   *  the grant's own key, within the grant's time (v4). */
   const fits = (held: Held, frameKey: string | undefined, strict: boolean): boolean => {
     if (held.applicationKey !== undefined) {
-      if (frameKey === undefined || frameKey === held.applicationKey) return true;
+      if (frameKey === held.applicationKey || (frameKey === undefined && chained(held))) return true;
     } else if (!strict && !held.byEntry) {
       return true;
     }
