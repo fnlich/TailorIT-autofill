@@ -693,7 +693,8 @@ const typedOf = (write: PlannedWrite | undefined) => (write?.value.kind === 'tex
 /** ADP's sdf-select-simple stood in for (its script is not in a capture), on a wfn-dropdown-list or sdf-select-simple
  *  host: its trigger opens and closes its list (div.list); a press on one of its sdf-select-items chooses it, as ADP
  *  draws a choice: the item's words in a span#selected-label in the trigger, in place of the placeholder, and the list
- *  closed. Every press it takes is recorded by the item's words, or "trigger". The list starts closed. */
+ *  closed. Every press inside it is recorded: "trigger", an item by its words, anything else (the filter box, the
+ *  pane's Close) by its name and id. The list starts closed. */
 function standInSelect(host: Element): { presses: string[]; open(): boolean } {
   const simple = host.matches('sdf-select-simple') ? host : host.shadowRoot!.querySelector('sdf-select-simple')!;
   const shadow = simple.shadowRoot!;
@@ -705,15 +706,19 @@ function standInSelect(host: Element): { presses: string[]; open(): boolean } {
     trigger.setAttribute('aria-expanded', String(open));
   };
   show(false);
-  trigger.addEventListener('click', () => {
-    presses.push('trigger');
-    show(list.style.display === 'none');
-  });
   shadow.addEventListener('click', (event) => {
     // The page's nodes are its frame's: compared by name, not by this window's Element.
-    const item = event.composedPath().find((node) => (node as Element).localName === 'sdf-select-item') as
-      Element | undefined;
-    if (item === undefined) return;
+    const path = event.composedPath() as Element[];
+    if (path.includes(trigger)) {
+      presses.push('trigger');
+      show(list.style.display === 'none');
+      return;
+    }
+    const item = path.find((node) => node.localName === 'sdf-select-item');
+    if (item === undefined) {
+      presses.push(`${path[0]?.localName ?? '?'}#${path[0]?.id ?? ''}`);
+      return;
+    }
     presses.push(item.getAttribute('aria-label') ?? '');
     const chosen = simple.ownerDocument.createElement('span');
     chosen.id = 'selected-label';
@@ -751,6 +756,8 @@ describe('jr6 P2 ADP-2: the State list once Country is chosen (ENGINE E1, E3)', 
     const fixture = await open('jr6-personal-us-errors');
     const host = q(fixture, 'wfn-dropdown-list#PersonalAddress_state');
     const select = standInSelect(host);
+    // Every press in the page, as the document sees it (a press inside the list reads as its host's).
+    const anywhere = heldClicks(fixture);
     const root = adpAdapter.detect(fixture.doc)!.formRoot;
     const readings = new Map<BaseKey, WidgetReading>();
     const target = () => {
@@ -769,8 +776,10 @@ describe('jr6 P2 ADP-2: the State list once Country is chosen (ENGINE E1, E3)', 
     const outcome = await fillWidget(target(), { kind: 'option', index: labels.indexOf('TX - Texas'),
       cleanLabel: 'TX - Texas' }, ctx);
     expect(outcome).toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
-    // The trigger, then the planned row: never the filter box, the pane's Close or another row.
+    // The trigger, then the planned row: never the filter box, the pane's Close or another row, and nothing outside.
     expect(select.presses).toEqual(['trigger', 'TX - Texas']);
+    expect(new Set(anywhere)).toEqual(new Set(['PersonalAddress_state']));
+    expect(anywhere).toHaveLength(4);
     expect(adpAdapter.widgetFor!(host)!.shownAnswer!([])).toBe('TX - Texas');
   });
 
@@ -830,6 +839,9 @@ describe('jr6 P2 ADP-3, ADP-7, ADP-8, ADP-16, ADP-19, ADP-20: the employer-2 Que
       .toMatchObject({ category: 'availability.startDate' });
     expect(ran.write('If an offer is presented, how soon can you start?')).toBeUndefined();
     expect(ran.asked('If an offer is presented, how soon can you start?')).toBe('standard');
+    // ADP-8: the AI is asked for a date in the picker's layout (formatFor), never free text such as "two weeks".
+    const start = ran.field('If an offer is presented, how soon can you start?');
+    expect(ran.out.ask?.answers?.find((item) => item.key === start.key)).toMatchObject({ format: 'MM/DD/YYYY' });
   });
 
   it('ADP-7, ADP-16, ADP-8: a yearly pay in EUR and two weeks’ notice give the currency, Annually and the start date '
@@ -842,7 +854,7 @@ describe('jr6 P2 ADP-3, ADP-7, ADP-8, ADP-16, ADP-19, ADP-20: the employer-2 Que
     expect(ran.write('What is your desired salary? pay basis')).toMatchObject({ value: { cleanLabel: 'Annually' },
       origin: { provenance: 'profile', path: 'preferences.expectedSalary' } });
     expect(typedOf(ran.write('desiredSalaryId'))).toBe('150000');
-    // NOW is 2026-10-30: two weeks on, in the picker's layout (ADP-8's formatFor).
+    // NOW is 2026-10-30: two weeks on, typed as the picker reads it (MM/DD/YYYY).
     expect(ran.write('If an offer is presented, how soon can you start?')).toMatchObject({
       value: { kind: 'text', text: '11/13/2026' }, origin: { provenance: 'rule', ruleId: 'availability.from-notice' } });
   });
