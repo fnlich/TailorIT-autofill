@@ -17,8 +17,16 @@
  * - U-12: the uploaded documents' rows, no field;
  * - U-16: the phone boxes' national layout;
  * - apply-path C3: the application drawn late is waited for, 30 s.
- * What needs ENGINE E1 to E3 or RULES' new rules (the free text kept, the tags filled, the period boxes' dates, the
- * decline boxes ticked, the national number in the scan) is P2's: SP\jr6\build\ULTIPRO.md lists it.
+ * P2 (after merging jr6-engine E1-E3 and jr6-rules R1-R4: FIXPLAN §6.10 "P2 asserts", the last describes): the shared
+ * outcomes on the same snapshots, each held against the adapter rule it rests on, undone:
+ * - U-01, U-02 (RULES item 23): each block's From and To planned from its own entry;
+ * - U-04 (ENGINE E1): School's typed text kept where no suggestion matches, Degree chosen from the page's own list,
+ *   both through the pass's own write;
+ * - U-05 (ENGINE E3, RULES R0): the Skills box one text field, each skill no chip shows added by its row's Add;
+ * - U-07 (ENGINE E2, E3): the start date drawn by its datepicker container, written part by part through the pass;
+ *   one AI answer for it;
+ * - U-08 (gated Q7, not built), U-09 (RULES item 24), U-10 (RULES 57), U-11 (RULES 58, 18): the application's
+ *   questions; U-15: the AI asks left; U-16 (ENGINE U-16, RULES 76): the national number, once; U-17 (RULES 77).
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import applicationHtml from '../../../fixtures/ultipro/application.html?raw';
@@ -26,20 +34,26 @@ import registerHtml from '../../../fixtures/ultipro/register.html?raw';
 import resumeReviewHtml from '../../../fixtures/ultipro/resume-review.html?raw';
 import { lateAdapters, lateFormMs, LATE_FORM_CAP_MS, watchForLateForm } from '../../content/late-form';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { writeField, type PassEnv, type WidgetWriteEnv } from '../../content/pass';
+import { requiredLeftOf } from '../../content/press';
 import { planFrame } from '../../core/plan/frame';
 import type { PlanOutput } from '../../core/plan/types';
 import { phoneText } from '../../core/resolver/format';
+import { classifyField } from '../../core/resolver/resolve';
+import { MANY_SEPARATOR } from '../../core/resolver/values';
+import type { BaseKey } from '../../core/types/field';
+import type { PlannedWrite } from '../../core/types/fill';
 import type { Profile } from '../../core/types/profile';
 import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { fillDateParts } from '../../dom/fillers/date-parts';
 import { removeFixtures } from '../../dom/fixture.testkit';
 import { startDeadline } from '../../dom/time';
 import { scan, toFieldSpec } from '../../dom/scan';
-import type { ScanResult, ScannedField } from '../../dom/types';
+import type { ScanResult, ScannedField, WidgetReading } from '../../dom/types';
 import { genericAdapter } from '../generic';
 import { adaptersFor } from '../index';
-import { scanCase, type ScannedCase } from '../test/expectations.testkit';
-import type { Adapter } from '../types';
+import { fillabilityOf, scanCase, type ScannedCase } from '../test/expectations.testkit';
+import type { Adapter, WidgetDecl } from '../types';
 import { pageDegreeOptions, ULTIPRO_CONFIG, ULTIPRO_PHONE_PATTERN, ULTIPRO_TYPEAHEAD_EMPTY_MS, ultiproAdapter } from './index';
 import { parseUltiproUrl } from './url';
 
@@ -95,6 +109,101 @@ function planned(result: ScanResult, profile: Profile = goldenProfile()): PlanOu
     repeatables: [{ kind: 'experience', entries: null }, { kind: 'education', entries: null }] });
 }
 
+/** Synthetic stand-ins for a parse of three jobs (never the owner's): the golden profile's two jobs (their title and
+ *  company read from it), then one the profile does not hold. */
+const JOBS = goldenProfile().experience;
+const PARSED = [[JOBS[0]!.title, JOBS[0]!.company, 'Austin, TX'], [JOBS[1]!.title, JOBS[1]!.company, ''],
+  ['Intern', 'Northwind Traders', 'Dallas, TX']] as const;
+
+/** The review as the parser leaves it with PARSED in its three Work Experience blocks. */
+function parse(doc: Document): void {
+  for (const [index, [title, company, place]] of PARSED.entries()) {
+    const block = doc.querySelector(`${REVIEW} [aria-label="Work Experience ${index + 1}"]`)!;
+    (block.querySelector('[data-automation="job-title-textbox"]') as HTMLInputElement).value = title;
+    (block.querySelector('[data-automation="company-textbox"]') as HTMLInputElement).value = company;
+    (block.querySelector('[data-automation="location-textbox"]') as HTMLInputElement).value = place;
+  }
+}
+
+// ── jr6 ULTIPRO P2 helpers ──
+/** A field's row and planned write in a plan. */
+function outcomeOf(plan: PlanOutput, field: ScannedField | undefined) {
+  return { row: plan.results.find((each) => each.key === field?.key),
+    write: plan.writes.find((each) => each.key === field?.key) };
+}
+
+/** What a planned write puts in its field: an option's words, a text, a date's ISO form, else its kind. */
+function shownOf(write: PlannedWrite | undefined): string | undefined {
+  const value = write?.value;
+  if (value === undefined) return undefined;
+  if (value.kind === 'option') return value.cleanLabel;
+  if (value.kind === 'text') return value.text;
+  if (value.kind === 'date') return value.iso;
+  return value.kind;
+}
+
+/** What a plan asks TailorIT's AI, by the asked fields' labels (a tiebreak carries its own). */
+function asksOf(plan: PlanOutput, result: ScanResult) {
+  const labels = (items: ReadonlyArray<{ key: string }> | undefined) => (items ?? [])
+    .map((item) => result.fields.find((field) => field.key === item.key)?.label ?? item.key);
+  return { tiebreaks: (plan.ask?.tiebreaks ?? []).map((item) => String(item.fieldLabel)),
+    classify: labels(plan.ask?.classify), drafts: labels(plan.ask?.drafts), answers: labels(plan.ask?.answers) };
+}
+
+/** The classifier's rule for a field alone (resolve.ts classifyField), or how it was read when no rule names it. */
+function ruleOf(field: ScannedField | undefined): string | undefined {
+  if (field === undefined) return undefined;
+  const classified = classifyField(toFieldSpec(field), testVocab());
+  return classified.by === 'rules' ? classified.rules.rule : classified.by;
+}
+
+/** The field labelled `label` (the `at`-th of that label). */
+const labelled = (result: ScanResult, label: string, at = 0): ScannedField | undefined =>
+  result.fields.filter((field) => field.label === label)[at];
+
+/** The adapter with one widget declaration's member taken away (a widget rule undone). */
+function withoutDecl(member: 'freeText' | 'tags'): Adapter {
+  return { ...ultiproAdapter, widgetFor: (control) => {
+    const decl = ultiproAdapter.widgetFor!(control);
+    if (decl === null) return null;
+    const { [member]: _gone, ...rest } = decl;
+    return rest as WidgetDecl;
+  } };
+}
+
+/**
+ * One field written the way the run's pass writes it (content/pass.ts writeField: the DOM guard on a fresh scan, the
+ * frame-side Guard, then the fillers or the widget helpers), its planned write and row the plan's with `profile`; a
+ * search's results are matched by planFrame itself, as the worker's plan/request would. `reading` is the widget's
+ * reading the run holds before the write. Null when the plan writes nothing there.
+ */
+async function writeThroughPass(page: ScannedCase, label: string, options: { adapter?: Adapter; profile?: Profile;
+  reading?: WidgetReading } = {}) {
+  const adapter = options.adapter ?? ultiproAdapter;
+  const profile = options.profile ?? goldenProfile();
+  const readings = new Map<BaseKey, WidgetReading>();
+  const read = (): ScanResult => scan(page.root, adapter, { platform: 'ultipro', frameId: 0, widgetReadings: readings });
+  const first = labelled(read(), label)!;
+  if (options.reading !== undefined) readings.set(first.baseKey, options.reading);
+  const last = read();
+  const field = last.fields.find((each) => each.baseKey === first.baseKey)!;
+  const { row, write } = outcomeOf(planned(last, profile), field);
+  const matched: string[][] = [];
+  if (write === undefined || row === undefined) return { field, row, write, result: null, matched, read };
+  const env = { adapter, root: page.root, platform: 'ultipro', frameId: 0, dryRun: false, canaries: [],
+    signal: new AbortController().signal, valid: () => true, stopped: () => false, runId: () => 'run',
+    heldBy: () => null } as unknown as PassEnv;
+  const widgets: WidgetWriteEnv = { readings, plan: async (specs) => {
+    matched.push(specs.flatMap((spec) => (spec.options === 'lazy' ? [] : spec.options.map((option) => option.label))));
+    const answer = planFrame({ specs, canaries: [], profile, sensitiveState: 'loaded', savedAnswers: [],
+      settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW });
+    return { results: answer.results, writes: answer.writes } as never;
+  } };
+  const result = await writeField(env, last, field, write, row, new WeakMap(), { widgets });
+  return { field, row, write, result, matched, read };
+}
+// ── end jr6 ULTIPRO P2 helpers ──
+
 describe('jr6 UltiPro: the pages as the step machine reads them (the audit harness, as asserts)', () => {
   it('the account step: its form, no Next, its Create account the sign-in container\'s button (ultipro-2)', async () => {
     const page = await open('register');
@@ -149,21 +258,6 @@ describe('jr6 UltiPro: the pages as the step machine reads them (the audit harne
 });
 
 describe('U-01: the review\'s parsed entries are blocks, matched by their fingerprint', () => {
-  /** Synthetic stand-ins for a parse of three jobs (never the owner's): the golden profile's two jobs (their title and
-   *  company read from it), then one the profile does not hold. */
-  const JOBS = goldenProfile().experience;
-  const PARSED = [[JOBS[0]!.title, JOBS[0]!.company, 'Austin, TX'], [JOBS[1]!.title, JOBS[1]!.company, ''],
-    ['Intern', 'Northwind Traders', 'Dallas, TX']] as const;
-
-  function parse(doc: Document): void {
-    for (const [index, [title, company, place]] of PARSED.entries()) {
-      const block = doc.querySelector(`${REVIEW} [aria-label="Work Experience ${index + 1}"]`)!;
-      (block.querySelector('[data-automation="job-title-textbox"]') as HTMLInputElement).value = title;
-      (block.querySelector('[data-automation="company-textbox"]') as HTMLInputElement).value = company;
-      (block.querySelector('[data-automation="location-textbox"]') as HTMLInputElement).value = place;
-    }
-  }
-
   it('declares Work Experience and Education, their blocks the panel-list-items; Add never offered (Q1)', async () => {
     const page = await open('resume-review');
     const sections = ultiproAdapter.repeatables!(page.root);
@@ -554,5 +648,447 @@ describe('apply-path C3: the application drawn after the sign-in round trip is w
       });
     });
     expect(found === root).toBe(true);
+  });
+});
+
+// ── jr6 ULTIPRO P2 (FIXPLAN §6.10 "P2 asserts"; SP\jr6\build\ULTIPRO.md): the outcomes ENGINE E1-E3 and RULES R1-R4
+// give these pages, with the golden profile or variants built here, each held against the adapter rule it rests on ──
+
+describe('jr6 P2, U-01 and U-02 (RULES item 23, label.period-part): each block\'s From and To from its own entry', () => {
+  const PARTS = ['from-month-dropdown', 'from-year-textbox', 'to-month-dropdown', 'to-year-textbox'] as const;
+  /** The block's period boxes as planned: each one's planned words (a month's option, a year), else its row's reason. */
+  function periods(page: ScannedCase, result: ScanResult, plan: PlanOutput, block: string): Array<string | undefined> {
+    const scope = page.doc.querySelector(`${REVIEW} [aria-label="${block}"]`)!;
+    return PARTS.map((part) => {
+      const { row, write } = outcomeOf(plan, fieldOf(result, scope.querySelector(`[data-automation="${part}"]`)));
+      return shownOf(write) ?? row?.reason;
+    });
+  }
+
+  it('plans job 1 from Jun 2021 with no To (its current job), job 2 from Jul 2019 to May 2021, the third block '
+    + 'nothing, the school from 2015 to 2019; none asked of the AI', async () => {
+    const page = await open('resume-review');
+    parse(page.doc);
+    const result = rescan(page);
+    const plan = planned(result);
+    expect(periods(page, result, plan, 'Work Experience 1')).toEqual(['Jun', '2021', 'end-date-not-applicable',
+      'end-date-not-applicable']);
+    expect(periods(page, result, plan, 'Work Experience 2')).toEqual(['Jul', '2019', 'May', '2021']);
+    expect(periods(page, result, plan, 'Work Experience 3')).toEqual(Array(4).fill('no-profile-value'));
+    expect(periods(page, result, plan, 'Education 1')).toEqual(['Aug', '2015', 'May', '2019']);
+    // Each box is its entry's start or end by its own label and its block's section; none waits for the AI.
+    const boxes = result.fields.filter((field) => /^(?:From|To) (?:Month|Year \(YYYY\))$/.test(field.label));
+    expect(boxes).toHaveLength(16);
+    for (const field of boxes) {
+      expect(ruleOf(field), field.label).toBe('label.period-part');
+      expect(outcomeOf(plan, field).row?.category, field.label)
+        .toBe(`${field.section.id}.${field.label.startsWith('From') ? 'startDate' : 'endDate'}`);
+      expect(plan.awaiting.includes(field.key), field.label).toBe(false);
+    }
+    // The third job, which the profile does not hold: its required From left for the person, its To skipped.
+    const third = page.doc.querySelector(`${REVIEW} [aria-label="Work Experience 3"]`)!;
+    const row = (part: string) => outcomeOf(plan, fieldOf(result, third.querySelector(`[data-automation="${part}"]`))).row;
+    expect(row('from-month-dropdown')).toMatchObject({ status: 'flagged', needsUserAction: true });
+    expect(row('to-month-dropdown')).toMatchObject({ status: 'skipped', needsUserAction: false });
+  });
+
+  it('undone: without the blocks every job takes job 1\'s From; without the group\'s label the From boxes go to the AI',
+    async () => {
+    const page = await open('resume-review');
+    parse(page.doc);
+    const plain = rescan(page, without('repeatables'));
+    const plainPlan = planned(plain);
+    for (const block of ['Work Experience 1', 'Work Experience 2', 'Work Experience 3']) {
+      expect(periods(page, plain, plainPlan, block), block).toEqual(['Jun', '2021', 'end-date-not-applicable',
+        'end-date-not-applicable']);
+    }
+    const bare = rescan(page, without('labelFirst'));
+    const asked = asksOf(planned(bare), bare).classify;
+    expect(asked.filter((label) => label === 'Month')).toHaveLength(3);
+    expect(asked.filter((label) => label === 'Year (YYYY)')).toHaveLength(3);
+  });
+});
+
+describe('jr6 P2, U-04 (ENGINE E1 freeText, knownOptions): School Name and Degree through the pass', () => {
+  const box = (doc: Document, automation: 'school-textbox' | 'degree-textbox') =>
+    doc.querySelector<HTMLInputElement>(`${REVIEW} [data-automation="${automation}"]`)!;
+
+  /** typeahead.js's part of the box, as a stand-in (the capture runs no script): on each of `on`, the box's own
+   *  suggestions list draws the rows `found` gives for the box's text, a row's click putting its words in the box and
+   *  closing the list; leaving the box closes it. Returns what was typed, query by query. */
+  function standIn(input: HTMLInputElement, found: (text: string) => readonly string[],
+    on: readonly string[] = ['input']): string[] {
+    const typed: string[] = [];
+    const menu = input.parentElement!.querySelector<HTMLElement>(':scope > span.tt-dropdown-menu')!;
+    const dataset = menu.querySelector(':scope > div')!;
+    const draw = (event: Event) => {
+      if (event.type === 'input') typed.push(input.value);
+      dataset.replaceChildren(...found(input.value.trim()).map((words) => {
+        const row = Object.assign(input.ownerDocument.createElement('div'), { className: 'tt-suggestion', textContent: words });
+        row.addEventListener('click', () => {
+          input.value = words;
+          menu.style.display = 'none';
+        });
+        return row;
+      }));
+      menu.style.display = 'block';
+    };
+    for (const type of on) input.addEventListener(type, draw);
+    input.addEventListener('focusout', () => {
+      menu.style.display = 'none';
+    });
+    return typed;
+  }
+
+  /** The golden school's queries (core/resolver typeaheadQueries: its name, an alias, a shorter name). */
+  const QUERIES = ['University of Texas at Austin', 'UT Austin', 'University of Texas'];
+
+  it('School: no suggestion is the school, so the planner\'s first query stands as typed text, verified', async () => {
+    const page = await open('resume-review');
+    const typed = standIn(box(page.doc, 'school-textbox'), () => ['Lakeside University', 'Riverside College']);
+    const { write, result, matched } = await writeThroughPass(page, 'School Name', { reading: { kind: 'remote' } });
+    expect(write?.value).toMatchObject({ kind: 'query', queries: QUERIES });
+    // Each query typed; the results the page drew matched by the planner, none of them the school; the first typed again.
+    expect(typed).toEqual([...QUERIES, QUERIES[0]]);
+    expect(matched.length).toBeGreaterThan(0);
+    for (const labels of matched) expect(labels).toEqual(['Lakeside University', 'Riverside College']);
+    expect(result?.row).toMatchObject({ category: 'education.school', status: 'verified', wrote: true,
+      verification: 'verified', provenance: 'profile', needsUserAction: false });
+    expect(result?.written?.value).toEqual({ kind: 'text', text: QUERIES[0] });
+    expect(box(page.doc, 'school-textbox').value).toBe(QUERIES[0]);
+  });
+
+  it('School on a page that answers no query keeps its first query too; undone (no freeText), the box is put back',
+    async () => {
+    const page = await open('resume-review');
+    const kept = await writeThroughPass(page, 'School Name', { reading: { kind: 'remote' } });
+    expect(kept.result?.row).toMatchObject({ status: 'verified', wrote: true, verification: 'verified' });
+    expect(box(page.doc, 'school-textbox').value).toBe(QUERIES[0]);
+    removeFixtures(document);
+    const again = await open('resume-review');
+    const undone = await writeThroughPass(again, 'School Name', { adapter: withoutDecl('freeText'),
+      reading: { kind: 'remote' } });
+    expect(undone.result?.row).toMatchObject({ status: 'flagged', wrote: false, reason: 'needs-your-click',
+      needsUserAction: true });
+    expect(undone.result?.written).toBeUndefined();
+    expect(box(again.doc, 'school-textbox').value).toBe('');
+  });
+
+  it('Degree: the page\'s own list (a synthetic degreeOptions script) planned as a choice, the bachelor\'s, chosen and '
+    + 'read back', async () => {
+    const page = await open('resume-review');
+    // Undone (no list on the page, as in the capture): a search, its queries the degree's own names.
+    expect(outcomeOf(planned(page.result), labelled(page.result, 'Level of Education / Degree')).write?.value)
+      .toMatchObject({ kind: 'query' });
+    const DEGREES = ['High School Diploma', "Associate's Degree", "Bachelor's Degree", "Master's Degree", 'Doctorate'];
+    const script = page.doc.createElement('script');
+    script.type = 'text/plain';
+    script.textContent = `var degreeOptions = ${JSON.stringify(DEGREES.map((Name, Id) => ({ Id, Name })))};`;
+    page.doc.body.append(script);
+    standIn(box(page.doc, 'degree-textbox'), (text) => DEGREES.filter((name) => name.toLowerCase()
+      .includes(text.toLowerCase())), ['focus', 'click', 'input']);
+    const { field, write, result } = await writeThroughPass(page, 'Level of Education / Degree');
+    expect(field.kind).toBe('combobox');
+    expect(field.options === 'lazy' ? 'lazy' : field.options.map((option) => option.label)).toEqual(DEGREES);
+    expect(write?.value).toEqual({ kind: 'option', index: 2, cleanLabel: "Bachelor's Degree" });
+    expect(result?.row).toMatchObject({ category: 'education.degree', status: 'verified', wrote: true,
+      verification: 'verified' });
+    expect(result?.readBack).toEqual({ kind: 'selected', labels: ["Bachelor's Degree"] });
+    expect(box(page.doc, 'degree-textbox').value).toBe("Bachelor's Degree");
+  });
+});
+
+describe('jr6 P2, U-05 (ENGINE E3 tags filler, RULES R0 MANY_SEPARATOR): the review\'s Skills', () => {
+  /** The golden profile's skills (fixtures/profiles/alex-rivera.profile.json), as the planner joins them. */
+  const SKILLS = ['TypeScript', 'PostgreSQL', 'Kubernetes'];
+
+  /** The Skills row's Add as a stand-in (the capture runs no script): enabled while the box holds text; pressed, a chip
+   *  of the box's words joins the panel's chips and the box is emptied. */
+  function standInAdd(doc: Document) {
+    const input = doc.querySelector<HTMLInputElement>(`${REVIEW} input[data-automation="item-typeahead"]`)!;
+    const add = input.closest('div.form-inline')!.querySelector<HTMLButtonElement>('button[data-automation="item-add-button"]')!;
+    const region = input.closest('div[role="region"][aria-label="Skills"]')!;
+    const list = region.querySelector('[data-automation="selected-item"]')!.parentElement!;
+    const pressed: string[] = [];
+    input.addEventListener('input', () => {
+      add.disabled = input.value.trim() === '';
+    });
+    add.addEventListener('click', () => {
+      pressed.push(input.value);
+      const item = Object.assign(doc.createElement('div'), { className: 'multigroup-item alert alert-info pull-left' });
+      item.setAttribute('data-automation', 'selected-item');
+      const words = Object.assign(doc.createElement('strong'), { textContent: input.value.trim() });
+      words.setAttribute('data-automation', 'skill-label');
+      item.append(words);
+      list.append(item);
+      input.value = '';
+      add.disabled = true;
+    });
+    const chips = () => Array.from(region.querySelectorAll('strong[data-automation="skill-label"]'), (chip) => chip.textContent);
+    return { input, pressed, chips };
+  }
+
+  it('is one text field holding its box\'s text; the skills no chip shows are added one at a time by its Add, the one '
+    + 'a chip shows in other letters skipped, and the field read back by its chips', async () => {
+    const page = await open('resume-review');
+    const skills = standInAdd(page.doc);
+    expect(skills.chips()).toHaveLength(20);
+    page.doc.querySelectorAll(`${REVIEW} strong[data-automation="skill-label"]`)[3]!.textContent = 'typescript';
+    const { field, write, result } = await writeThroughPass(page, 'Skills');
+    expect(field).toMatchObject({ kind: 'text', required: true, current: { kind: 'empty' }, section: { id: 'skills' } });
+    expect(write?.value).toEqual({ kind: 'text', text: SKILLS.join(MANY_SEPARATOR) });
+    expect(skills.pressed).toEqual(['PostgreSQL', 'Kubernetes']);
+    expect(skills.chips().slice(20)).toEqual(['PostgreSQL', 'Kubernetes']);
+    expect(skills.input.value).toBe('');
+    // Written and verified by its chips, nothing left for the person. The planner's own flag on a skills text (its
+    // fill-and-flag band) stays on the row, as on any flagged row read back (core/plan/settle.ts).
+    expect(result?.row).toMatchObject({ category: 'skills.list', wrote: true, verification: 'verified',
+      needsUserAction: false });
+    expect(result?.written?.value).toEqual(write?.value);
+  });
+
+  it('undone (no tags declared): the skills typed into the box as one text, its Add never pressed (the audit\'s U-05)',
+    async () => {
+    const page = await open('resume-review');
+    const skills = standInAdd(page.doc);
+    const { field, result } = await writeThroughPass(page, 'Skills', { adapter: without('widgetFor') });
+    expect(field.kind).toBe('text');
+    expect(result?.row).toMatchObject({ wrote: true });
+    expect(skills.input.value).toBe(SKILLS.join(MANY_SEPARATOR));
+    expect(skills.pressed).toEqual([]);
+    expect(skills.chips()).toHaveLength(20);
+  });
+
+  it('counts the required box answered while a chip shows (content/press.ts requiredLeftOf); undone, never', async () => {
+    const page = await open('resume-review');
+    const shown = requiredLeftOf(rescan(page));
+    const plainShown = requiredLeftOf(rescan(page, without('widgetFor')));
+    for (const chip of Array.from(page.doc.querySelectorAll(`${REVIEW} [data-automation="selected-item"]`))) chip.remove();
+    expect(requiredLeftOf(rescan(page)) - shown).toBe(1);
+    expect(requiredLeftOf(rescan(page, without('widgetFor')))).toBe(plainShown);
+  });
+});
+
+describe('jr6 P2, U-07 (ENGINE E2 controlBox, E3 WD-23): the start date through the pass', () => {
+  const datePart = (doc: Document, name: string) => doc.querySelector('ukg-date-input-text[role="group"]')!.shadowRoot!
+    .querySelector<HTMLInputElement>(`input[data-automation="ukg-date-input-text-${name}"]`)!;
+  const LABEL = 'When can you start? (MM/DD/YYYY)';
+
+  it('is drawn by its datepicker container once that shows a border (staged: the capture holds none of UKG\'s styles), '
+    + 'and a profile date is written part by part, each part focused before its write', async () => {
+    const page = await open('application');
+    const date = (adapter: Adapter = ultiproAdapter) => labelled(rescan(page, adapter), LABEL)!;
+    expect(fillabilityOf(date())).toEqual({ fillable: false, reason: 'camouflaged' });
+    page.doc.querySelector<HTMLElement>('ukg-input-container[data-automation="ukg-datepicker-container"]')!.style.border
+      = '1px solid rgb(120, 120, 120)';
+    expect(fillabilityOf(date())).toEqual({ fillable: true });
+    // Undone (no controlBox): the container's border draws nothing of the component's.
+    expect(fillabilityOf(date(without('controlBox')))).toEqual({ fillable: false, reason: 'camouflaged' });
+    const events: string[] = [];
+    for (const name of ['month', 'day', 'year']) {
+      for (const type of ['focus', 'focusin', 'input', 'change', 'focusout', 'blur']) {
+        datePart(page.doc, name).addEventListener(type, (event) => events.push(`${name} ${type}${event.isTrusted ? '!' : ''}`));
+      }
+    }
+    const golden = goldenProfile();
+    const profile: Profile = { ...golden, preferences: { ...golden.preferences,
+      startDate: { kind: 'date', date: { y: 2026, m: 12, d: 7 } } } };
+    const { write, result } = await writeThroughPass(page, LABEL, { profile });
+    expect(write?.value).toEqual({ kind: 'date', iso: '2026-12-07' });
+    expect(result?.row).toMatchObject({ category: 'availability.startDate', status: 'verified', wrote: true,
+      verification: 'verified', needsUserAction: false });
+    expect(['month', 'day', 'year'].map((name) => datePart(page.doc, name).value)).toEqual(['12', '07', '2026']);
+    // Untrusted focus and focusin right before each part's write (the page's focus never moves), the parts left after.
+    expect(events).toEqual(['month focus', 'month focusin', 'month input', 'month change', 'day focus', 'day focusin',
+      'day input', 'day change', 'year focus', 'year focusin', 'year input', 'year change', 'month focusout', 'month blur',
+      'day focusout', 'day blur', 'year focusout', 'year blur']);
+  });
+
+  it('without a profile date it is one question for the AI, never one per box', async () => {
+    const page = await open('application');
+    const plan = planned(page.result);
+    const date = labelled(page.result, LABEL)!;
+    expect(asksOf(plan, page.result).answers.filter((label) => label.startsWith('When can you start?'))).toEqual([LABEL]);
+    expect(plan.awaiting.filter((key) => key === date.key)).toHaveLength(1);
+    expect(outcomeOf(plan, date).row).toMatchObject({ category: 'availability.startDate', reason: 'no-profile-value' });
+  });
+});
+
+describe('jr6 P2, U-09 (RULES item 24): the golden profile declines Gender, Ethnic Origin and Race', () => {
+  const QUESTIONS = [['Gender', 'eeo.gender', 'label.gender'], ['Ethnic Origin', 'eeo.hispanicLatino', 'label.ethnic-origin'],
+    ['Race', 'eeo.race', 'label.race']] as const;
+
+  it('ticks each one\'s decline box and leaves its list, which is then no question for the person; the veteran list '
+    + 'is answered and its box left; nothing here asked of the AI', async () => {
+    const page = await open('application');
+    const plan = planned(page.result);
+    for (const [question, category, rule] of QUESTIONS) {
+      const list = labelled(page.result, question);
+      const decline = labelled(page.result, `${question} I decline to say`);
+      expect(ruleOf(list), question).toBe(rule);
+      expect(outcomeOf(plan, list), question).toMatchObject({ row: { category, status: 'skipped',
+        reason: 'decline-option-missing', needsUserAction: false }, write: undefined });
+      expect(ruleOf(decline), question).toBe('label.eeo-decline-box');
+      expect(outcomeOf(plan, decline), question).toMatchObject({ row: { category, status: 'verified' },
+        write: { value: { kind: 'check' }, origin: { provenance: 'rule', ruleId: 'eeo.decline' } } });
+    }
+    expect(shownOf(outcomeOf(plan, labelled(page.result, 'Are you a protected veteran?')).write)).toBe('No');
+    expect(outcomeOf(plan, labelled(page.result, 'Are you a protected veteran? I decline to say'))).toMatchObject({
+      row: { status: 'skipped', reason: 'already-correct' }, write: undefined });
+    const eeo = page.result.fields.filter((field) => /^(?:Gender|Ethnic Origin|Race|Are you a protected veteran\?)/
+      .test(field.label));
+    expect(eeo).toHaveLength(8);
+    expect(eeo.filter((field) => plan.awaiting.includes(field.key))).toEqual([]);
+  });
+
+  it('undone (each box its own words alone): the lists are left for the person, the boxes optional consents, unticked',
+    async () => {
+    const page = await open('application');
+    const plain = rescan(page, without('labelFirst'));
+    const plan = planned(plain);
+    for (const [question] of QUESTIONS) {
+      expect(outcomeOf(plan, labelled(plain, question)).row, question).toMatchObject({ status: 'flagged',
+        reason: 'decline-option-missing', needsUserAction: true });
+    }
+    const boxes = plain.fields.filter((field) => field.label === 'I decline to say');
+    expect(boxes).toHaveLength(4);
+    for (const decline of boxes) {
+      expect(outcomeOf(plan, decline)).toMatchObject({ row: { category: 'consent.other',
+        reason: 'consent-optional-unticked' }, write: undefined });
+    }
+  });
+});
+
+describe('jr6 P2, U-10, U-11 (RULES items 57, 58, 18) and U-08 (gated Q7): the application\'s questions', () => {
+  it('drafts the SQL question; skips Middle and Former Name with no AI; types the current place; answers the referral No',
+    async () => {
+    const page = await open('application');
+    const plan = planned(page.result);
+    const sql = page.result.fields.find((field) => field.label.startsWith('Do you have experience with SQL'))!;
+    expect(outcomeOf(plan, sql).row).toMatchObject({ category: 'freeText.other', kind: 'textarea', required: true });
+    expect(asksOf(plan, page.result).drafts).toEqual([sql.label]);
+    // "Middle", between First Name and Last Name: the middle name, which the golden profile has none of.
+    const middle = labelled(page.result, 'Middle');
+    expect(outcomeOf(plan, middle)).toMatchObject({ row: { category: 'identity.middleName', status: 'skipped',
+      reason: 'no-profile-value' }, write: undefined });
+    // "Former Name": the account's here (read-only), a name the profile never holds.
+    const former = labelled(page.result, 'Former Name');
+    expect(ruleOf(former)).toBe('label.former-name');
+    expect(outcomeOf(plan, former)).toMatchObject({ row: { category: 'identity.formerName', status: 'skipped' },
+      write: undefined });
+    expect([middle, former].filter((field) => plan.awaiting.includes(field!.key))).toEqual([]);
+    const located = labelled(page.result, 'Where are you currently located?');
+    expect(ruleOf(located)).toBe('label.location');
+    expect(outcomeOf(plan, located)).toMatchObject({ row: { category: 'location.current', status: 'verified' },
+      write: { value: { kind: 'text', text: 'Austin, TX' } } });
+    const referred = labelled(page.result, 'Were you referred by a current employee?');
+    expect(ruleOf(referred)).toBe('label.employee-referred');
+    expect(outcomeOf(plan, referred)).toMatchObject({ row: { category: 'referral.employeeReferred', status: 'verified' },
+      write: { value: { kind: 'option', cleanLabel: 'No' }, origin: { provenance: 'rule', ruleId: 'referral.not-employee' } } });
+  });
+
+  it('on the review, Middle and Former Name (editable there) are skipped with no AI too', async () => {
+    const page = await open('resume-review');
+    const plan = planned(page.result);
+    expect(outcomeOf(plan, labelled(page.result, 'Middle')).row).toMatchObject({ category: 'identity.middleName',
+      status: 'skipped', reason: 'no-profile-value' });
+    expect(outcomeOf(plan, labelled(page.result, 'Former Name')).row).toMatchObject({ category: 'identity.formerName',
+      status: 'skipped', reason: 'no-profile-value' });
+    const asked = asksOf(plan, page.result);
+    expect([...asked.classify, ...asked.answers].filter((label) => label === 'Middle' || label === 'Former Name')).toEqual([]);
+  });
+
+  it('U-08 (gated Q7, not built): the compound work-authorisation question stays the person\'s, asked of no AI',
+    async () => {
+    const page = await open('application');
+    const plan = planned(page.result);
+    const authorized = labelled(page.result, 'Are you legally authorized to work in the US?')!;
+    expect(outcomeOf(plan, authorized)).toMatchObject({ row: { category: 'workAuth.authorized', status: 'flagged',
+      reason: 'ambiguous-options', needsUserAction: true }, write: undefined });
+    expect(plan.awaiting.includes(authorized.key)).toBe(false);
+  });
+});
+
+describe('jr6 P2, U-15: the AI asks left', () => {
+  it('the review asks one classification, its school\'s Description (no rule reads it), parsed or not (the audit '
+    + 'counted 22)', async () => {
+    const page = await open('resume-review');
+    const only = { tiebreaks: [], classify: ['Description'], drafts: [], answers: [] };
+    const plan = planned(page.result);
+    expect(asksOf(plan, page.result)).toEqual(only);
+    expect(plan.ask?.classify.map((item) => page.result.fields.find((field) => field.key === item.key)?.section))
+      .toEqual([{ id: 'education', block: 0 }]);
+    parse(page.doc);
+    const parsed = rescan(page);
+    expect(asksOf(planned(parsed), parsed)).toEqual(only);
+    // Undone (the From boxes' group label, U-02): the three jobs' six From boxes go to the AI again.
+    const bare = rescan(page, without('labelFirst'));
+    expect(asksOf(planned(bare), bare).classify).toHaveLength(7);
+  });
+
+  it('the application asks one draft and three answers (the audit counted 10): no Documents row, no date part, no name',
+    async () => {
+    const page = await open('application');
+    const sql = page.result.fields.find((field) => field.label.startsWith('Do you have experience with SQL'))!;
+    expect(asksOf(planned(page.result), page.result)).toEqual({ tiebreaks: [], classify: [], drafts: [sql.label],
+      answers: ['When can you start? (MM/DD/YYYY)', 'Are you comfortable working in a fully remote setting?',
+        'What are your annual salary requirements?'] });
+  });
+});
+
+describe('jr6 P2, U-16 (ENGINE withAdapterFormat, RULES item 76): the national number, once', () => {
+  it('plans the ten national digits into Primary Phone and the account step\'s phone; Secondary Phone left empty',
+    async () => {
+    for (const name of ['resume-review', 'application'] as const) {
+      const page = await open(name);
+      const plan = planned(page.result);
+      const primary = labelled(page.result, 'Primary Phone');
+      expect(primary?.constraints, name).toMatchObject({ format: 'tel', pattern: ULTIPRO_PHONE_PATTERN });
+      expect(outcomeOf(plan, primary), name).toMatchObject({ row: { category: 'contact.phone', status: 'verified' },
+        write: { value: { kind: 'text', text: '5125550147' } } });
+      expect(outcomeOf(plan, labelled(page.result, 'Secondary Phone')), name).toMatchObject({ row: {
+        category: 'contact.phone', status: 'skipped', reason: 'no-profile-value' }, write: undefined });
+    }
+    const register = await open('register');
+    expect(outcomeOf(planned(register.result), labelled(register.result, 'Phone number')).write).toMatchObject({
+      value: { kind: 'text', text: '5125550147' }, origin: { provenance: 'profile', path: 'contact.phone',
+        transform: 'phone.format' } });
+    // Undone (no formatFor): the number as the person wrote it.
+    const plain = rescan(register, without('formatFor'));
+    expect(shownOf(outcomeOf(planned(plain), labelled(plain, 'Phone number')).write)).toBe('+1 512 555 0147');
+  });
+
+  it('a national number the parser drew is already correct; undone, it is overwritten with its country code (the '
+    + 'audit\'s prefill-conflict)', async () => {
+    const page = await open('resume-review');
+    page.doc.querySelector<HTMLInputElement>(`${REVIEW} input#Phone`)!.value = '(512) 555-0147';
+    const result = rescan(page);
+    expect(outcomeOf(planned(result), labelled(result, 'Primary Phone'))).toMatchObject({ row: { status: 'skipped',
+      reason: 'already-correct' }, write: undefined });
+    const plain = rescan(page, without('formatFor'));
+    expect(outcomeOf(planned(plain), labelled(plain, 'Primary Phone'))).toMatchObject({ row: { status: 'flagged',
+      reason: 'prefill-conflict' }, write: { value: { kind: 'text', text: '+1 512 555 0147' } } });
+  });
+});
+
+describe('jr6 P2, U-17 (RULES item 77): a job\'s place too long for its Location box', () => {
+  it('writes "San Francisco, CA" into the first job\'s Location (maxlength 20), never cut; undone (no blocks), the '
+    + 'person\'s own place goes into every job\'s', async () => {
+    const page = await open('resume-review');
+    const golden = goldenProfile();
+    const far: Profile = { ...golden, experience: [{ ...golden.experience[0]!, location: { text: 'San Francisco, California',
+      city: 'San Francisco', region: { code: 'CA', name: 'California' }, country: 'US' } }, ...golden.experience.slice(1)] };
+    const location = page.doc.querySelector<HTMLInputElement>(
+      `${REVIEW} [aria-label="Work Experience 1"] [data-automation="location-textbox"]`)!;
+    expect(location.maxLength).toBe(20);
+    expect(outcomeOf(planned(page.result, far), fieldOf(page.result, location))).toMatchObject({
+      row: { category: 'experience.location', status: 'verified' }, write: { value: { kind: 'text', text: 'San Francisco, CA' },
+        origin: { provenance: 'profile', path: 'experience[0].location', transform: 'location.compose' } } });
+    const plain = rescan(page, without('repeatables'));
+    const plainPlan = planned(plain, far);
+    expect(plain.fields.filter((field) => field.label === 'Location').map((field) => {
+      const { row, write } = outcomeOf(plainPlan, field);
+      return `${row?.category} ${shownOf(write)}`;
+    })).toEqual(Array(3).fill('location.current Austin, TX'));
   });
 });
