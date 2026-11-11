@@ -170,4 +170,53 @@ describe('the copy', () => {
       expect(shared.includes(words), words).toBe(false);
     }
   });
+
+  // ── jr6 SHELL-A (FIXPLAN §6.12 items 1, 4 and 5; BUILD D-d; the APPLY merge's open item 10): its new words only ──
+  it('says the page’s own password rule in its toast, each rule its own, the page’s number for its minimum', () => {
+    const kinds = ['length', 'upper', 'lower', 'digit', 'special', 'alpha', 'login'] as const;
+    const said = kinds.map((kind) => COPY.toasts.passwordRule(kind, 20));
+    for (const words of said) {
+      expect(words, words).toMatch(SENTENCE);
+      expect(words, words).toContain('Sign-up Information');
+      expect(words, words).toContain('typed nothing');
+    }
+    expect(new Set(said).size).toBe(kinds.length);
+    expect(COPY.toasts.passwordRule('length', 20)).toContain('at least 20 characters');
+    // Only the length rule carries a number: the page's own.
+    for (const kind of kinds.filter((each) => each !== 'length')) expect(COPY.toasts.passwordRule(kind, 20)).not.toMatch(/\d/);
+  });
+
+  it('says each kind of account error in its own words, and what the person does next', () => {
+    const { account } = COPY.toasts;
+    expect(Object.keys(account).sort()).toEqual(['reset-password', 'verify-email', 'wrong-credentials']);
+    for (const words of Object.values(account)) expect(words, words).toMatch(SENTENCE);
+    expect(new Set(Object.values(account)).size).toBe(3);
+    expect(account['verify-email']).toMatch(/\bemail\b/);
+    expect(account['reset-password']).toMatch(/Forgot password/);
+    expect(account['reset-password']).toContain('Sign-up Information');
+    expect(account['wrong-credentials']).toMatch(/didn't accept/);
+  });
+
+  it('says an email gate’s Next is the person’s, never asks for a password there, and that the run waits for one to be '
+    + 'saved', () => {
+    for (const words of [COPY.toasts.gateTyped, COPY.toasts.gate]) {
+      expect(words, words).toMatch(SENTENCE);
+      expect(words, words).toMatch(/\bNext\b/);
+      expect(words, words).not.toMatch(/password/i);
+      expect(words, words).toMatch(/code/);
+    }
+    expect(COPY.toasts.gate).toContain('Sign Up & Autofill');
+    expect(COPY.toasts.noSignInWaiting).toMatch(SENTENCE);
+    expect(COPY.toasts.noSignInWaiting).toContain('Sign-up Information');
+    expect(COPY.toasts.noSignInWaiting).toContain('5 minutes');
+    expect(COPY.toasts.noSignInWaiting).not.toBe(COPY.toasts.noSignIn);
+  });
+
+  it('says the sign-in step, not the Apply, in the panel’s status while the frame works at a wall', () => {
+    expect(COPY.mainView.signingIn).toMatch(SENTENCE);
+    expect(COPY.mainView.signingIn).toMatch(/sign-in/);
+    expect(COPY.mainView.signingIn).not.toMatch(/Apply/);
+    expect(COPY.mainView.signingIn).not.toBe(COPY.mainView.entering);
+  });
+  // ── end jr6 SHELL-A ──
 });
