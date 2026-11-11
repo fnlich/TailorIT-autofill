@@ -17,6 +17,7 @@ import { createFakeWorker, goldenProfile, NOW, testVocab } from '../../content/c
 import { pressEntry } from '../../content/press';
 import { startContentRuntime, type ContentRuntime } from '../../content/runtime';
 import { planFrame } from '../../core/plan/frame';
+import { CAUTIOUS_SETTINGS } from '../../core/plan/settings.testkit';
 import type { PlanInput } from '../../core/plan/types';
 import { classifyField } from '../../core/resolver/resolve';
 import { stepSignature as hashSignature } from '../../core/steps/signature';
@@ -609,7 +610,7 @@ describe('ICIMS-10: a date’s parts, each its date’s label with its part', ()
     }
   });
 
-  it.each([['jr6-sentinel-iform-selfid.frame-2', "Today's Date"], ['nyu-self-id-disability.frame-2', 'Date'],
+  it.each([['jr6-sentinel-iform-selfid.frame-2', "Today's Date"], ['nyu-self-id-disability.frame-2', 'Date signature'],
     ['edgewater-self-id-veteran.frame-2', "Today's Date"]] as const)('%s: the IForm’s date by the words drawn before it',
     async (name, words) => {
       const fixture = await load(name);
@@ -1330,6 +1331,29 @@ describe('P2: what the rules decide on the snapshots (RULES R1-R4 on the iCIMS a
     }
   });
 
+  // jr6 RULES fix IC-R1 (jr6-rules 9656079, with labelSuffix's "signature" for NYU's bare "Date"): an IForm's signature
+  // date drawn in parts is today, part by part, on the signature's terms; never sent to the AI.
+  it('IC-R1 (edgewater-self-id-veteran.frame-2, nyu-self-id-disability.frame-2): the IForm’s signature date is today, '
+    + 'part by part', async () => {
+    const PARTS = ['icims_f_Date_Month', 'icims_f_Date_Date', 'icims_f_Date_Year'];
+    for (const name of ['edgewater-self-id-veteran.frame-2', 'nyu-self-id-disability.frame-2']) {
+      const fixture = await load(name);
+      const ran = planOn(fixture.doc);
+      for (const id of PARTS) {
+        expect(ran.row(id), `${name} ${id}`).toMatchObject({ category: 'consent.signatureDate', status: 'verified',
+          needsUserAction: false });
+        expect(ran.write(id)?.origin, `${name} ${id}`).toEqual({ provenance: 'rule', ruleId: 'consent.signature-date' });
+        expect(ran.awaits(id), `${name} ${id}`).toBe(false);
+      }
+      expect(textOf(ran.write('icims_f_Date_Year')), name).toBe(String(NOW.y));
+      removeFixtures(document);
+    }
+    // Consents: Required only, the signature not pre-approved: Sentinel's optional parts are left.
+    const sentinel = await load('jr6-sentinel-iform-selfid.frame-2');
+    const cautious = planOn(sentinel.doc, { settings: CAUTIOUS_SETTINGS });
+    for (const id of PARTS) expect(cautious.write(id), id).toBeUndefined();
+  });
+
   it('ICIMS-16 (jr6-nyu-iform-offer.frame-2): the cover letter typed into its box once written; waited for until then', async () => {
     const fixture = await load('jr6-nyu-iform-offer.frame-2');
     expect(planOn(fixture.doc).row('icims_f_OfferText')).toMatchObject({ category: 'freeText.coverLetter',
@@ -1451,20 +1475,17 @@ describe('P2: what the rules decide on the snapshots (RULES R1-R4 on the iCIMS a
       .toEqual([true]);
   });
 
-  // RULES regression (reported): iCIMS declares Time Zone a remote search (its select says icimsdropdown-search="1",
-  // FIXPLAN §6.5 item 1), and RULES' preferences.timeZone (src/core/resolver/categories.ts) takes text, select, radio
-  // and combobox only, so the field stays unknown. Flip to it() once the category takes typeahead-remote.
-  it.fails('ICIMS-26 (jr6-ars-profile): Time Zone is the profile’s time zone (preferences.timeZone)', async () => {
+  // iCIMS declares Time Zone a remote search (its select says icimsdropdown-search="1", FIXPLAN §6.5 item 1);
+  // preferences.timeZone takes typeahead-remote since jr6-rules 4b91326.
+  it('ICIMS-26 (jr6-ars-profile): Time Zone is the profile’s time zone (preferences.timeZone)', async () => {
     const fixture = await load('jr6-ars-profile');
     const ran = planOn(fixture.doc, { lists: { rcf3077: TIME_ZONES } });
     expect([ran.row('rcf3077').category, ran.rule('rcf3077')]).toEqual(['preferences.timeZone', 'label.time-zone']);
   });
 
-  // RULES regression (reported): in a run, the companion box RULES leaves waiting (flagged waiting-for-options while the
-  // School list is a search) is read by the loop's books as a list waiting for its options: OPTION_WAIT_PASSES scans
-  // later it is options-never-loaded and needs the person, though the list took the school (dependsAgain never takes a
-  // waiting field). RULES edit 17 expects it skipped (conditional-question). Flip to it() once fixed.
-  it.fails('ICIMS-24 in a run (jr6-nyu-profile-parsed.frame-1): the companion box’s row says skipped once the list took the school', async () => {
+  // In a run the companion box is left (skipped, conditional-question) while the School list types its search, never
+  // rowed waiting-for-options, which the loop's books ended options-never-loaded (jr6-rules fa6bd2b).
+  it('ICIMS-24 in a run (jr6-nyu-profile-parsed.frame-1): the companion box’s row says skipped once the list took the school', async () => {
     const runtimes: ContentRuntime[] = [];
     try {
       const { doc, rows } = await runOn(runtimes, 'jr6-nyu-profile-parsed.frame-1');

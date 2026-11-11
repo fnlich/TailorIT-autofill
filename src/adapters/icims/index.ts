@@ -1012,9 +1012,27 @@ function labelFor(control: Element): Element | null {
   return radio !== null && groupOf(radio) === control ? selfIdTitleOf(form) : null;
 }
 
-/** A date part's word after its date's label (Adapter.labelSuffix; ICIMS-10): month, day or year. */
+/** jr6 RULES fix (IC-R1): an IForm's bare "Date" in a form that holds the Signature box (nyu-self-id-disability
+ *  .frame-2.html: <td ...>Date<br><span ...><div ... iCIMS_Forms_DateOnlyField ...> beside input[name=icims_f_signature])
+ *  is the signature's date: its parts read "Date signature month/day/year", which RULES' label.signature-date reads (the
+ *  label contract Jobvite's "Today's Date" keeps with its "signature" suffix, FIXPLAN §3.2). A profile date (its
+ *  label_<base id>) and any other caption keep their own words. */
+function bareSignatureDate(control: Element, part: { base: string; date: Element }): boolean {
+  const form = control.closest(IFORM);
+  if (form === null || control.ownerDocument.getElementById(`label_${part.base}`) !== null
+    || form.querySelector('input[name="icims_f_signature"]') === null) return false;
+  const caption = captionBefore(part.date, form, Array.from(part.date.querySelectorAll('select, input')));
+  const own = caption === null ? '' : Array.from(caption.childNodes)
+    .filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent ?? '').join(' ');
+  return /^\s*date\s*:?\s*$/i.test(own);
+}
+
+/** A date part's word after its date's label (Adapter.labelSuffix; ICIMS-10): month, day or year; an IForm's bare
+ *  signature date's "signature month", "signature day" or "signature year" (jr6 RULES fix IC-R1). */
 function labelSuffix(control: Element): string | null {
-  return datePartOf(control)?.part ?? null;
+  const part = datePartOf(control);
+  if (part === null) return null;
+  return bareSignatureDate(control, part) ? `signature ${part.part}` : part.part;
 }
 
 /** A date part's label is its date's, read before the part's own (Adapter.labelFirst; ICIMS-10): its own label[for]

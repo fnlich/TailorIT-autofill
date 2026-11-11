@@ -381,8 +381,9 @@ describe('an IForm’s own form, read since its frame is chained', () => {
       ['icims_f_Date_Date', 'select', "Today's Date day", 'fillable'],
       ['icims_f_Date_Year', 'text', "Today's Date year", 'fillable'], ['icims_f_signature', 'checkbox', 'Signature', 'fillable']],
     'nyu-self-id-disability.frame-2': [['icims_f_Name', 'text', 'Name', 'fillable'],
-      ['icims_f_Date_Month', 'select', 'Date month', 'fillable'], ['icims_f_Date_Date', 'select', 'Date day', 'fillable'],
-      ['icims_f_Date_Year', 'text', 'Date year', 'fillable'],
+      ['icims_f_Date_Month', 'select', 'Date signature month', 'fillable'],
+      ['icims_f_Date_Date', 'select', 'Date signature day', 'fillable'],
+      ['icims_f_Date_Year', 'text', 'Date signature year', 'fillable'],
       ['icims_f_Disability', 'radio', 'Voluntary Self-Identification of Disability', 'fillable'],
       ['icims_f_signature', 'checkbox', 'Signature', 'fillable']],
   } as const;
