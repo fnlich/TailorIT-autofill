@@ -57,6 +57,7 @@ import { clickIfAllowed } from '../dom/fillers';
 import { clickAdapterEntry, clickAdapterSubmit } from '../dom/fillers/not-submit';
 import { detectPause, pageChallenged, type PauseKind, withoutSolvedCaptchaErrors } from '../dom/pause-detect';
 import { newScanCache } from '../dom/scan-cache';
+import { tagsShowChip } from '../dom/widgets/tag-chips'; // jr6 ENGINE
 import { deadline } from '../dom/time';
 import type { ScanResult } from '../dom/types';
 import { isUserVisible } from '../dom/visibility';
@@ -141,22 +142,33 @@ const ANSWERABLE: ReadonlySet<ScanResult['fields'][number]['visibility']> = new 
  * answer (ANSWERABLE, enabled, its label shown where the control itself shows) that reads empty, and each of the run's
  * required rows still left for the person (`leftRequired`, leftForPerson) unless its field reads answered now: a
  * resume the fill attached none to, an upload that failed, a widget the scan cannot read. A radio group or a box
- * group is one question, counted once by its base key.
+ * group is one question, counted once by its base key. jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers
+ * that shows a chip is answered, its text box empty or not.
  */
 export function requiredLeftOf(scanned: ScanResult, leftRequired: readonly string[] = []): number {
   const left = new Set<string>();
   for (const field of scanned.fields) {
     if (!field.required || field.disabled || !ANSWERABLE.has(field.visibility)) continue;
     if (field.visibility === 'visible' && !field.labelVisible) continue;
-    if (emptyNow(field.current)) left.add(field.baseKey);
+    if (emptyNow(field.current) && !answeredByChips(scanned, field)) left.add(field.baseKey); // jr6 ENGINE
   }
   for (const key of leftRequired) {
     const field = scanned.fields.find((candidate) => candidate.key === key);
-    if (field !== undefined && !emptyNow(field.current)) continue;
+    if (field !== undefined && (!emptyNow(field.current) || answeredByChips(scanned, field))) continue; // jr6 ENGINE
     left.add(field?.baseKey ?? key);
   }
   return left.size;
 }
+
+// jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers (WidgetDecl.tags: Workday's Skills,
+// UltiPro's review Skills) reads as what its text box holds, empty once its values are chips: it is answered while it
+// shows a chip (dom/widgets/tag-chips.ts tagsShowChip), whoever added it.
+/** jr6 ENGINE: whether a field is a box of several answers that shows a chip now. */
+function answeredByChips(scanned: ScanResult, field: ScanResult['fields'][number]): boolean {
+  const tags = scanned.target(field.key)?.widget?.tags;
+  return tags !== undefined && tagsShowChip(tags);
+}
+// jr6 ENGINE: end
 
 /** The fields the form's own validation marked during `act` (its `invalid` events, which a refused submit fires
  *  synchronously in the click), inside the step's root. */

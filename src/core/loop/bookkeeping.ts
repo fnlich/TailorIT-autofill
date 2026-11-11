@@ -14,6 +14,10 @@
  *   consent box, required once a demographic answer is chosen), and that we did not write, is planned again ('required'),
  *   so it is decided as the required question it now is: a required consent is ticked. Its new row records that it is
  *   required, so the page's turning it off and on again plans it no more; only another plan's optional row could.
+ *   jr6 ENGINE E3 (FIXPLAN §6.2 item 14): a field whose adapter names another as resetting it (ScanInput.dependsOn,
+ *   Adapter.dependsOn) is planned again once that other was written since the scan before ('parent-written'), and so
+ *   is one whose kind, or whose element where we never wrote it, changed under its base key after a write
+ *   ('reshaped'): dependsAgain.
  * - Our value changed (the Phase 3 review, LC-3 and LC-4). A field the person touched after our write (a trusted
  *   input, keydown, paste or drop: ScanInput.touched) is frozen: never planned or written again, and once its value is
  *   no longer ours its row is the person's (changed-by-you). Otherwise a value is written again only after the page
@@ -92,9 +96,12 @@ export type TrackedStatus = (typeof TRACKED_STATUSES)[number];
 
 /** Why a field is pending. 'value-changed': the page reset our value (it is written again); 'replaced': the page put
  *  another value in place of ours (planned for its row only, never written); 'required': the page made a field we
- *  left unwritten as optional required after our writes (decided again as a required question). */
+ *  left unwritten as optional required after our writes (decided again as a required question). jr6 ENGINE E3
+ *  (FIXPLAN §6.2 item 14): 'parent-written': the field its adapter names as resetting it (Adapter.dependsOn) was
+ *  written since the scan before (decided again, and written where its plan says so); 'reshaped': its kind, or the
+ *  element the page draws it as, changed under the same base key (ADP's State: a text box that becomes a list). */
 export const PENDING_CAUSES = ['new', 'reappeared', 'options-changed', 'value-changed', 'replaced', 'retry',
-  'required'] as const;
+  'required', 'parent-written', 'reshaped'] as const;
 export type PendingCause = (typeof PENDING_CAUSES)[number];
 
 /** How the loop ended: nothing left to do, the passes ran out, the page stopped changing, or the content script cut it
@@ -226,6 +233,14 @@ export interface ScanInput {
    *  of the page (Greenhouse: fixtures/greenhouse/axle-attached.html). Missing from the scan, each is the upload taken,
    *  not a field gone: its row stands (TrackedField.taken). */
   uploaded?: ReadonlySet<BaseKey>;
+  // ── jr6 ENGINE E3 (FIXPLAN §6.2 item 14: ICIMS-02, O3, ICIMS-19, ADP-2) ──
+  /** Each field the adapter names as reset by another's write (Adapter.dependsOn), child to parent, by base key: a
+   *  child whose parent was written since the scan before is decided again ('parent-written'). Keys only. */
+  dependsOn?: ReadonlyMap<BaseKey, BaseKey>;
+  /** The fields the page draws as another element than at the scan before (the content script compares them; never a
+   *  value): with a write since that scan, one we did not write is decided again ('reshaped'). */
+  replaced?: ReadonlySet<BaseKey>;
+  // ── end jr6 ENGINE E3 ──
 }
 
 /** Whether the loop is over, and what it leaves unresolved. */
@@ -412,6 +427,37 @@ function madeRequired(old: TrackedField, spec: LoopField, state: LoopState): boo
     && state.writers.length > 0;
 }
 
+// ── jr6 ENGINE E3 (FIXPLAN §6.2 item 14: ICIMS-02, O3, ICIMS-19's re-plan, ADP-2) ──
+/**
+ * Whether a field present at both scans is decided again because a write reset it, and why (null: it is not):
+ * - 'parent-written': its adapter names a field whose write resets it (ScanInput.dependsOn: iCIMS's State under its
+ *   Country, "Please specify" under "How did you hear about us?"; ADP's State; Oracle's address block), and that field
+ *   was written since the scan before (LoopState.writers). Whatever its own row was, kept or written and for any reason,
+ *   it is planned again: its options, its value or its being enabled may have changed with the parent's (Jobright reads
+ *   its rules again after the country commits: ADP's doFillForm, iCIMS's combo questions re-extracted after a settle);
+ *   a value of ours the page replaced then is written again, not left;
+ * - 'reshaped': its kind changed under the same base key, or (with a write since the scan before) the page draws it as
+ *   another element and we never wrote it (ScanInput.replaced): ADP's State, a text box that becomes a list once
+ *   Country is chosen. A field we wrote is the value hashes' (a reset is written again), so a page that draws its
+ *   fields anew on every change never re-plans what we wrote.
+ * Bounded: only a resolved or unresolvable field (a pending one is planned anyway; one waiting for its options or for
+ * the AI waits on; a stopped one never moves), or one pending as 'replaced' after its parent's write; never a field
+ * the person skipped; and only after a write, so a page that changes nothing ends the loop as before.
+ */
+function dependsAgain(old: TrackedField, field: TrackedField, spec: LoopField, state: LoopState, input: ScanInput):
+  'parent-written' | 'reshaped' | null {
+  if (field.row?.reason === 'skipped-by-you') return null;
+  const parent = input.dependsOn?.get(spec.baseKey);
+  const parentWritten = parent !== undefined && parent !== spec.baseKey && state.writers.includes(parent);
+  const decided = field.status === 'resolved' || field.status === 'unresolvable';
+  if (parentWritten && (decided || (field.status === 'pending' && field.cause === 'replaced'))) return 'parent-written';
+  if (!decided) return null;
+  if (spec.kind !== old.kind) return 'reshaped';
+  const ours = old.wrote || old.ourRow !== null;
+  return state.writers.length > 0 && !ours && input.replaced?.has(spec.baseKey) === true ? 'reshaped' : null;
+}
+// ── end jr6 ENGINE E3 ──
+
 /** Folds one scan in: new, returning, changed and missing fields, flips, reveal edges, cycles and follow-ups. `scanned`
  *  is the scan's fields (FieldSpecs will do); the first scan is pass 0. */
 export function observeScan(state: LoopState, scanned: readonly LoopField[], input: ScanInput = {}): ScanObservation {
@@ -535,6 +581,9 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
     } else if (field.status === 'resolved' && madeRequired(old, spec, state)) {
       field = { ...field, status: 'pending', cause: 'required' };
     }
+    // jr6 ENGINE E3 (FIXPLAN §6.2 item 14): decided again after a write that reset it (dependsAgain).
+    const again = dependsAgain(old, field, spec, state, input);
+    if (again !== null) field = { ...field, status: 'pending', cause: again, reason: null };
     fields.set(spec.baseKey, field);
   }
 
