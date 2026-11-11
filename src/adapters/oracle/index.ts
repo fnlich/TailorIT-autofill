@@ -81,7 +81,8 @@
  * - The phone's number box (O4): drawn by its bordered phone-row group (controlBox).
  * - Widgets (O1, O2): every cx-select (input.cx-select-input[role=combobox]) a combobox opened by its toggle, its
  *   results the rows of the grid its aria-controls names, chosen by their label part; Address Line 1 (Oracle Maps'
- *   search) and ZIP Code are searches (typeahead-remote); the address's dependent lists learn under the Country shown.
+ *   search) and ZIP Code are searches (typeahead-remote), Address Line 1 typed into at once (it has no toggle, and its
+ *   suggestions come from the words typed); the address's dependent lists learn under the Country shown.
  * - The address's order (O3, dependsOn): Address Line 1 after the Country; ZIP Code, City, State and County after
  *   Address Line 1 (after the Country where the block has no street search).
  * - The timeline (oracle-new-2, O7): its open inline editor is a repeatable block of the kind its fields tell (School and
@@ -385,7 +386,13 @@ function countryShown(control: Element): string | null {
  *  itself, whose aria-expanded says whether it is open; closed by Escape only; its results the rows of the list its
  *  aria-controls names (cxRows), chosen by a click on the row's label part (cxRowLabel); busy while the list says
  *  aria-busy; a query that shows no result for ORACLE_EMPTY_AFTER_MS found nothing. Address Line 1 and ZIP Code are
- *  searches (isSearch). Null for any other control. */
+ *  searches (isSearch). Null for any other control.
+ *  jr6 ORACLE P2: a search with no toggle (Address Line 1) names no element that says it is open (no `expanded`), so a
+ *  search types its query at once instead of clicking its box first: Oracle Maps draws suggestions for the words typed
+ *  (its hint, hjf-apply-section.html's <p id="oracle-maps-search-hint">Enter your street name and other address details
+ *  to see suggestions</p>; the box captured aria-expanded="false"), and Jobright 1.25.2's operations.fillSelectField
+ *  types Address Line 1 before it waits for a list. A box that says "false" would be clicked first, and a click alone
+ *  draws no list there, which reads as needs-your-click (dom/widgets/typeahead.ts searchTypeahead). */
 function widgetFor(control: Element): WidgetDecl | null {
   // By name, never instanceof: a frame's elements belong to its own window's classes.
   if (control.localName !== 'input' || !control.matches(CX_SELECT)) return null;
@@ -398,7 +405,7 @@ function widgetFor(control: Element): WidgetDecl | null {
   return {
     kind: isSearch(input) ? 'typeahead-remote' : 'combobox',
     opener,
-    expanded: opener,
+    ...(opener === input && isSearch(input) ? {} : { expanded: opener }),
     keys: ['Escape'],
     results: { list: () => (listId === null || listId === '' ? null : doc.getElementById(listId)), option: '[role="row"]',
       options: cxRows, choose: 'label' },

@@ -398,7 +398,9 @@ describe('jr6 O1, O2: every cx-select is declared, its results the rows of its g
       expect(decl, id).toMatchObject({ kind, keys: ['Escape'], busy: ['[aria-busy="true"]'],
         emptyAfterMs: ORACLE_EMPTY_AFTER_MS, snapshot: 'fixtures/oracle/hjf-apply-section.html' });
       expect(decl.opener, id).toBe(opener);
-      expect(decl.expanded, id).toBe(opener);
+      // jr6 ORACLE P2: Address Line 1, a search with no toggle, names nothing that says it is open: its query is typed
+      // at once (Oracle Maps draws suggestions for the words typed), never after a click on its box.
+      expect(decl.expanded, id).toBe(toggle ? opener : undefined);
       expect(decl.results, id).toMatchObject({ option: '[role="row"]', choose: 'label' });
       // Closed, its grid is not in the page.
       expect(listNow(decl), id).toBeNull();
