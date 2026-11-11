@@ -257,7 +257,9 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     await expect.poll(async () => (await bodies(LOOKUP)).length).toBeGreaterThanOrEqual(1);
     expect((await bodies(LOOKUP))[0]).toMatchObject({ url: posting, includePostingText: false });
     await expect(panel.locator('[data-job-card]')).toHaveAttribute('data-job-state', 'found');
-    await expect(panel.locator('[data-strip="no-form"]')).toHaveText(COPY.strip.noForm);
+    // The F1 fixer (the line P review, C2; applied at the APPLY merge, round 2): a posting's strip promises the site's
+    // Apply (COPY.strip.posting); COPY.strip.noForm is the neutral strip of a page that is no posting.
+    await expect(panel.locator('[data-strip="no-form"]')).toHaveText(COPY.strip.posting);
     // jr6 apply F1 (D2): Autofill is offered here too. The posting links to another posting's form, so Lever's entry
     // (adapters/entry.ts applicationLinkOf: this posting's own /apply) tells no Apply and the button means 'fill'.
     await expect(panel.locator('button.tia-cta[data-main-action="fill"]')).toHaveText(COPY.panel.fill);
