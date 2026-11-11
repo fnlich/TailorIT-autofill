@@ -278,6 +278,31 @@ describe('the rules that hold at an email gate', () => {
     expect(fixture.presses()).toBe(0);
   }, 60_000);
 
+  // runtime.ts wallStep: a declared gate the page shows with no form root of its own (as the v4 tests draw a wall) is the
+  // wall's own sign-in step, which types the gate's email on Manual too and leaves its Next to the person.
+  it('a declared gate met as a wall with no form, on Manual: its email typed, Next untouched', async () => {
+    for (const gate of [GATES[0]!, GATES[4]!]) {
+      const fixture = await served(gate);
+      const walled: Adapter = { ...gate.adapter, detect: () => null };
+      const credential: SignInCredential = { host: '*', email: SIGNUP_EMAIL, press: false };
+      const worker = createFakeWorker({ settings: DEFAULT_SETTINGS,
+        script: { 'signin/credential': [{ ok: true, data: credential }] } as never });
+      const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => fixture.address, isTop: true,
+        adapters: () => [walled], settle: { quietMs: 40 } });
+      runtimes.push(runtime);
+      expect(runtime.page, gate.name).toBeNull();
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(valueOf(fixture.doc, gate.email), gate.name).toBe(SIGNUP_EMAIL), { timeout: 15_000 });
+      expect(worker.of('signin/credential'), gate.name).toEqual([{ v: 1, type: 'signin/credential', wall: 'email-gate',
+        typing: true }]);
+      await vi.waitFor(() => expect(toastOf(runtime), gate.name).toBe(COPY.toasts.gateTyped), { timeout: 10_000 });
+      await deadline(600);
+      expect(fixture.presses(), gate.name).toBe(0);
+      runtimes.splice(0).forEach((each) => each.stop());
+      removeFixtures(document);
+    }
+  }, 60_000);
+
   it('Oracle’s code page (fortive-email-code) is never touched: nothing asked, typed or pressed', async () => {
     const page = { name: 'fortive-email-code', platform: 'oracle' as const, next: 'button' };
     const fixture = await served(page);
