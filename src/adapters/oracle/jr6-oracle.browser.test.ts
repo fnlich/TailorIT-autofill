@@ -643,12 +643,16 @@ describe('jr6 oracle-new-2, O7: the timeline’s open editor is a repeatable blo
       const { result, plan } = planned(doc);
       expect(plan.repeatables).toEqual([{ kind: 'education', profile: 1, entries: [null], current: [false] }]);
       const editor = doc.querySelector(EDITOR)!;
-      // City and Country still read as the person's home address until RULES' jr6 item 7 (an entry's place is the
-      // entry's): ORACLE P2 asserts them.
+      // jr6 P2 (RULES item 7): the editor's City and Country are the entry's place, so an entry no profile entry
+      // matches has them left too: never the person's home city or country.
+      const inEditor = result.fields.filter((field) => editor.contains(result.target(field.key)!.control));
       const written = plan.writes.map((write) => result.fields.find((field) => field.key === write.key)!)
-        .filter((field) => field.section.id === 'education' && editor.contains(result.target(field.key)!.control))
-        .filter((field) => !['City', 'Country'].includes(field.label));
+        .filter((field) => inEditor.includes(field));
       expect(written.map((field) => field.label)).toEqual([]);
+      const rowOf = (label: string) => plan.results.find((row) => row.key === inEditor
+        .find((field) => field.label === label)!.key);
+      expect(rowOf('City')).toMatchObject({ category: 'education.city', wrote: false });
+      expect(rowOf('Country')).toMatchObject({ category: 'education.country', wrote: false });
     });
 });
 
@@ -1347,5 +1351,107 @@ describe('jr6 P2 O3: the address block’s parents first, its dependents decided
         expect(plan.writes.find((write) => write.key === key)).toBeUndefined();
       }
     });
+});
+
+// ── P2 O7, oracle-new-2 (RULES items 7, 78): the education editor's fields are the entry's ───────────────────────
+
+describe('jr6 P2 O7, oracle-new-2: the education editor’s place, dates and grade are the entry’s (RULES items 7, 78)',
+  () => {
+    /** The golden profile with its one school moved to another city and country (a variant built in code; the golden
+     *  profile itself unchanged). */
+    function schoolAbroad(): Profile {
+      const profile = structuredClone(goldenProfile());
+      const entry = profile.education[0]!;
+      entry.institution = { ...entry.institution, canonicalName: 'Lakeshore Polytechnic', aliases: [], ids: {},
+        city: 'Toronto', region: 'ON', country: 'CA', source: 'user', userText: 'Lakeshore Polytechnic' };
+      return profile;
+    }
+
+    it('hjf-after-submit: the editor’s City and Country are the school’s, the home block’s the person’s; Average Grade '
+      + 'is the GPA', async () => {
+      const doc = await load(hjfAfterSubmitHtml, SECTION, closeChecklist);
+      cxDrive(doc, { 'countryCode-51': { rows: COUNTRIES }, 'country-17': { rows: COUNTRIES },
+        'city-43': { rows: CITIES } });
+      const readings = new Map<BaseKey, WidgetReading>();
+      const ctx = { adapter: oracleAdapter, root: oracleAdapter.detect(doc)!.formRoot, readings };
+      for (const id of ['countryCode-51', 'country-17', 'city-43']) {
+        expect((await readWidget(targetOf(scanWith(doc, readings), id), ctx)).status, id).toBe('read');
+      }
+      const { result, plan } = planned(doc, { readings, profile: schoolAbroad() });
+      const of = (id: string) => {
+        const key = targetOf(result, id).field.key;
+        return { category: plan.results.find((row) => row.key === key)?.category,
+          value: plan.writes.find((write) => write.key === key)?.value };
+      };
+      expect(of('countryCode-51')).toEqual({ category: 'education.country',
+        value: { kind: 'option', index: 0, cleanLabel: 'Canada' } });
+      expect(of('city-52')).toEqual({ category: 'education.city', value: { kind: 'text', text: 'Toronto' } });
+      expect(of('country-17')).toEqual({ category: 'address.country',
+        value: { kind: 'option', index: 2, cleanLabel: 'United States' } });
+      expect(of('city-43')).toEqual({ category: 'address.city',
+        value: { kind: 'option', index: 0, cleanLabel: 'Austin' } });
+      const gpa = goldenProfile().education[0]!.gpa!;
+      expect(of('averageGrade-53')).toEqual({ category: 'education.gpa',
+        value: { kind: 'text', text: String(gpa.value) } });
+    });
+
+    it('hjf-after-submit: the editor’s dates are the entry’s, chosen from their lists, never the person’s start date',
+      async () => {
+        const doc = await load(hjfAfterSubmitHtml, SECTION, closeChecklist);
+        const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
+          'November', 'December'];
+        const entry = goldenProfile().education[0]!;
+        const years = (at: number) => [String(at - 1), String(at), String(at + 1)];
+        cxDrive(doc, { 'month-startDate-49': { rows: MONTHS }, 'year-startDate-49': { rows: years(entry.startDate!.y) },
+          'month-endDate-50': { rows: MONTHS }, 'year-endDate-50': { rows: years(entry.endDate!.y) } });
+        const readings = new Map<BaseKey, WidgetReading>();
+        const ctx = { adapter: oracleAdapter, root: oracleAdapter.detect(doc)!.formRoot, readings };
+        const ids = ['month-startDate-49', 'year-startDate-49', 'month-endDate-50', 'year-endDate-50'];
+        for (const id of ids) {
+          expect((await readWidget(targetOf(scanWith(doc, readings), id), ctx)).status, id).toBe('read');
+        }
+        const { result, plan } = planned(doc, { readings });
+        const of = (id: string) => {
+          const key = targetOf(result, id).field.key;
+          const value = plan.writes.find((write) => write.key === key)?.value;
+          return [plan.results.find((row) => row.key === key)?.category,
+            value?.kind === 'option' ? value.cleanLabel : null];
+        };
+        expect(ids.map(of)).toEqual([
+          ['education.startDate', MONTHS[entry.startDate!.m! - 1]], ['education.startDate', String(entry.startDate!.y)],
+          ['education.endDate', MONTHS[entry.endDate!.m! - 1]], ['education.endDate', String(entry.endDate!.y)]]);
+      });
+  });
+
+// ── P2 O13 (RULES item 79): the numbered links ───────────────────────────────────────────────────────────────────
+
+describe('jr6 P2 O13: "Link N" takes the profile’s links in order (RULES item 79)', () => {
+  it('hjf-apply-section: Link 1 is the LinkedIn profile; a second row (a variant) the GitHub one', async () => {
+    const doc = await load(hjfSectionHtml, SECTION);
+    const links = goldenProfile().links;
+    const linkOf = (run: ReturnType<typeof planned>, id: string) => {
+      const key = targetOf(run.result, id).field.key;
+      return { category: run.plan.results.find((row) => row.key === key)?.category,
+        value: run.plan.writes.find((write) => write.key === key)?.value };
+    };
+    expect(linkOf(planned(doc), 'siteLink-1-38'))
+      .toEqual({ category: 'links.numbered', value: { kind: 'text', text: links.linkedin } });
+    // A page showing two link rows: the second made in place from the first, as "Add Another Link" draws one.
+    const box = doc.getElementById('siteLink-1-38') as HTMLInputElement;
+    const row = box.closest('.input-row')!;
+    const copy = row.cloneNode(true) as Element;
+    const second = copy.querySelector<HTMLInputElement>('input#siteLink-1-38')!;
+    second.id = 'siteLink-2-99';
+    second.name = 'siteLink-2';
+    copy.querySelector('label[for="siteLink-1-38"]')?.setAttribute('for', 'siteLink-2-99');
+    for (const text of Array.from(copy.querySelectorAll('label, span'))) {
+      if (text.childElementCount === 0 && /Link 1/.test(text.textContent ?? '')) text.textContent = 'Link 2';
+    }
+    row.after(copy);
+    const two = planned(doc);
+    expect(targetOf(two.result, 'siteLink-2-99').field.label).toBe('Link 2');
+    expect(linkOf(two, 'siteLink-1-38')).toEqual({ category: 'links.numbered', value: { kind: 'text', text: links.linkedin } });
+    expect(linkOf(two, 'siteLink-2-99')).toEqual({ category: 'links.numbered', value: { kind: 'text', text: links.github } });
+  });
 });
 
