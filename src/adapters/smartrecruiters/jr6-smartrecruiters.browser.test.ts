@@ -1017,30 +1017,15 @@ describe('P2 SR-2 (ENGINE E1) and SR-13 (RULES): the first page', () => {
       clickedOnly(landed, [box], ['Austin']);
     });
 
-  // Known gap, older than jr6 (reported to RULES in the P2 handoff): SmartRecruiters' City results name the city with
-  // its region and country (the Wiser capture's one result, redacted, keeps an identifier spelling a city and its
-  // state), but the planner reads "City" (address.city) as a text value, matched as text: only a result that is the
-  // city's word alone matches. The place matcher (core/matcher/place.ts: "Austin, Texas, United States" for "Austin,
-  // TX") serves location.current only.
-  it.fails('blank (known gap): a result worded "City, State, Country" is the golden profile\'s city, chosen and verified',
+  // SmartRecruiters' City results name the city with its region and country (the Wiser capture's one result,
+  // redacted, keeps an identifier spelling a city and its state). Since jr6-rules 9e4eec2 the planner's address.city
+  // carries its place parts, so the place matcher (core/matcher/place.ts) reads such results; the query stays the city.
+  it('blank: a result worded "City, State, Country" is the golden profile\'s city, chosen and verified',
     async () => {
       const { stood, result } = await searchCity('blank', 'Xplor', ['Austin, Texas, United States',
         'Austin, Minnesota, United States']);
       expect(stood.chosen).toEqual(['Austin, Texas, United States']);
       expect(result.row).toMatchObject({ status: 'verified', wrote: true, verification: 'verified' });
-    });
-
-  it("blank: today such results are read, then no match: the box put back, the field the person's, no row clicked",
-    async () => {
-      const { landed, stood, asked, result, box } = await searchCity('blank', 'Xplor', ['Austin, Texas, United States',
-        'Austin, Minnesota, United States']);
-      expect(asked).toEqual([[['Austin, Texas, United States', false], ['Austin, Minnesota, United States', false],
-        [MANUAL_ROW_WORDS, true]]]);
-      expect(result.row).toMatchObject({ category: 'address.city', status: 'flagged', reason: 'no-match', wrote: false });
-      expect(stood.chosen).toEqual([]);
-      expect(stood.typed).toEqual(['Austin', '']);
-      expect(box.value).toBe('');
-      clickedOnly(landed, [box], []);
     });
 
   it.each([['blank', 'Xplor'], ['wiser', 'Wiser Solutions']] as const)(
