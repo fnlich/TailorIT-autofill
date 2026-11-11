@@ -281,3 +281,76 @@ describe('the page state a side panel shows (v2)', () => {
     expect(await registered()).toEqual([]);
   });
 });
+
+// ── jr6 apply F3a (APPLYPLAN §5 F3a item 4) ──────────────────────────────────────────────────────────────────────────
+describe('what frame/wall leaves in the registry: entering, refusal and the entry said (jr6 apply F3a)', () => {
+  /** ADP's job details: an application address with no form (its parser reads no posting). */
+  const DETAILS = 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001';
+  const details = (documentId: string) => contentSender({ frameId: 0, documentId, url: DETAILS });
+  const entryOf = async (frameId = 0) => (await fakeBrowser.storage.session.get(`frames:7:${frameId}`))[`frames:7:${frameId}`] as
+    Record<string, unknown> | undefined;
+  const say = (worker: TestWorker, sender: RawSender, words: Record<string, unknown>) =>
+    worker.deliver({ v: 1, type: 'frame/wall', wall: null, ...words }, sender);
+  const helloAt = (worker: TestWorker, sender: RawSender, extra: Record<string, unknown> = {}) =>
+    worker.deliver({ v: 1, type: 'frame/hello', isTop: sender.frameId === 0, hasForm: false, ...extra }, sender);
+  const pageNow = async (worker: TestWorker) => ((await worker.deliver({ v: 1, type: 'panel/reports', tabId: 7 },
+    pageSender())) as { data: { page: Record<string, unknown> } }).data.page;
+
+  it('keeps entering across the same document\'s hello, and the refusal\'s reason beside the refusal alone', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await helloAt(worker, details('doc-1'));
+    await say(worker, details('doc-1'), { entry: true, entering: true });
+    expect(await entryOf()).toMatchObject({ entry: true, entering: true, entrySaid: true });
+    await helloAt(worker, details('doc-1'));
+    expect(await entryOf()).toMatchObject({ entering: true });
+    // A wall or a choice drops it, as it drops entry.
+    await say(worker, details('doc-1'), { wall: 'sign-in', entering: true });
+    expect((await entryOf())?.entering).toBeUndefined();
+    await say(worker, details('doc-1'), { entryRefused: true, refusal: 'blocked' });
+    expect(await entryOf()).toMatchObject({ entryRefused: true, refusal: 'blocked' });
+    expect(await pageNow(worker)).toMatchObject({ entryRefused: true, refusal: 'blocked' });
+    // A hello keeps neither the refusal nor its reason.
+    await helloAt(worker, details('doc-1'));
+    expect((await entryOf())?.entryRefused).toBeUndefined();
+    expect((await entryOf())?.refusal).toBeUndefined();
+    // Another document starts with no press under way.
+    await say(worker, details('doc-1'), { entering: true });
+    await helloAt(worker, details('doc-2'));
+    expect((await entryOf())?.entering).toBeUndefined();
+  });
+
+  it('keeps the entry said for the document at its address: the card frame through the consent drawn in place', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await helloAt(worker, details('doc-1'));
+    expect((await pageNow(worker)).posting).toBeUndefined();
+    await say(worker, details('doc-1'), { entry: true });
+    expect(await pageNow(worker)).toMatchObject({ support: 'no-form', platform: 'adp', posting: true, entry: true });
+    // Later words without the entry (a choice, nothing) and a hello at the same address keep the card.
+    await say(worker, details('doc-1'), { choice: true });
+    await say(worker, details('doc-1'), {});
+    await helloAt(worker, details('doc-1'));
+    expect(await entryOf()).toMatchObject({ entrySaid: true });
+    expect((await pageNow(worker)).posting).toBe(true);
+    // The document moved to another address (a route of its own): no longer.
+    await helloAt(worker, details('doc-1'), { nav: 1 });
+    expect((await entryOf())?.entrySaid).toBeUndefined();
+    // Another document: none either.
+    await say(worker, details('doc-1'), { entry: true });
+    await helloAt(worker, details('doc-2'));
+    expect((await entryOf())?.entrySaid).toBeUndefined();
+    expect((await pageNow(worker)).posting).toBeUndefined();
+  });
+
+  it('a form frame is the card frame before an entry said; a subframe\'s entry is never the card', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await helloAt(worker, details('doc-1'));
+    const sub = contentSender({ frameId: 3, documentId: 'doc-3', url: DETAILS });
+    await helloAt(worker, sub);
+    await say(worker, sub, { entry: true });
+    expect((await pageNow(worker)).posting).toBeUndefined();
+    await say(worker, details('doc-1'), { entry: true });
+    expect((await pageNow(worker)).posting).toBe(true);
+    await helloAt(worker, embed(4, 'doc-4'), { hasForm: true });
+    expect(await pageNow(worker)).toMatchObject({ support: 'form', platform: 'greenhouse' });
+  });
+});
