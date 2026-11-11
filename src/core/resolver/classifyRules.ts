@@ -34,6 +34,7 @@ import {
   type NeedsUserCause,
 } from './labelRules';
 import { nameIdRule, nameIdText } from './nameId';
+import { namesStatusList } from './workStatus';
 
 /** The classifiers a rule can be. */
 export type RuleClassifier = Extract<Classifier, 'autocomplete' | 'name-id' | 'label-rule'>;
@@ -339,6 +340,7 @@ const ETHNIC_ORIGIN = /^ethnic\s+origin$/;
 const HISPANIC_OPTION = /\bhispanic\b|\blatin[aoxe]\b/;
 const VETERAN_OPTIONS_RULE = 'options.veteran-statements';
 const ETHNIC_ORIGIN_RULE = 'label.ethnic-origin';
+const WORK_STATUS_OPTIONS_RULE = 'options.work-status';
 
 /** Whether the rules' own reading of a field settles nothing certain: none, an unknown or open screening question, or
  *  one handed to the person for a sensitive topic its wording only touches. */
@@ -358,10 +360,17 @@ function uncertain(rules: RuleClassification | null): boolean {
  * Null for any other field.
  */
 function optionsRule(spec: FieldSpec, label: string, rules: RuleClassification | null): RuleClassification | null {
-  if (!OPTION_RULE_KINDS.has(spec.kind) || spec.options === 'lazy' || !uncertain(rules)) return null;
-  const options = spec.options.map((option) => normalizeLabel(option.label)).filter((text) => text !== '');
+  if (!OPTION_RULE_KINDS.has(spec.kind) || spec.options === 'lazy') return null;
   const base = { confidence: LABEL_RULE_CONFIDENCE.normal, classifiedBy: 'label-rule' as const, reason: 'ok' as const,
     matchedOn: 'label' as const };
+  // jr6 RULES (JV-7, JV-11): an authorization question (label.work-auth) or one read as nothing certain whose options
+  // are work statuses ("US Citizen", "Permanent Resident", "H1B"; workStatus.ts namesStatusList) asks which status.
+  if ((uncertain(rules) || (rules?.rule === 'label.work-auth' && rules.needsUser === undefined))
+    && spec.optionsPartial !== true && namesStatusList(spec.options.map((option) => option.label))) {
+    return classification('workAuth.status', { ...base, rule: WORK_STATUS_OPTIONS_RULE });
+  }
+  if (!uncertain(rules)) return null;
+  const options = spec.options.map((option) => normalizeLabel(option.label)).filter((text) => text !== '');
   if (options.filter((text) => VETERAN_STATEMENT.test(text)).length >= 2) {
     return classification('eeo.veteran', { ...base, rule: VETERAN_OPTIONS_RULE });
   }

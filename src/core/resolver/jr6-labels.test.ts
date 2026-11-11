@@ -264,3 +264,97 @@ describe('jr6 RULES R1: the widened rules’ near misses', () => {
     expect(read({ label: 'Please confirm your consent.', kind: 'checkbox' }).category).not.toBe('consent.terms');
   });
 });
+
+// ── jr6 RULES R2 (FIXPLAN §6.3 items 27 to 34): work authorization read by its meaning ───────────────────────────────
+
+const NINJAONE_TYPES = ['Select an option...', 'US Citizen', 'Permanent Resident', 'H1B', 'H4', 'TN Visa', 'F1Visa',
+  'OPT', 'EAD', 'Other'];
+const VHL_STATUSES = ['Select an option...', 'U.S. Citizen/Permanent Resident',
+  'Non-citizen allowed to work for any employer', 'Non-citizen allowed to work for current employer',
+  'Non-citizen seeking work authorization', 'Canadian Citizen/Permanent Resident'];
+const XPLOR_RIGHTS = ['I am a US citizen', 'I am a US lawful permanent resident (Green Card holder)',
+  'I am on a temporary work or student visa (e.g. H-1B, L-1, OPT, CPT) requiring sponsorship',
+  'I have an EAD that does not require sponsorship (e.g. asylee, refugee, TPS, H-4)',
+  'I do not currently have any US work rights'];
+
+/** [item and finding, the field, the category it asks, the rule id]. */
+const LABELS_R2: Array<[string, Case, FieldCategory, string]> = [
+  // 27. JV-7: NinjaOne's type of work authorization, and the wordings beside it; an authorization question whose
+  // options are statuses.
+  ['27 JV-7', { label: 'What is your US Work Authorization type?', kind: 'select', options: NINJAONE_TYPES },
+    'workAuth.status', 'label.work-auth-status'],
+  ['27 JV-7', { label: 'Type of work authorization', kind: 'select' }, 'workAuth.status', 'label.work-auth-status'],
+  ['27 JV-7', { label: 'Visa type', kind: 'select' }, 'workAuth.status', 'label.work-auth-status'],
+  ['27 JV-7', { label: 'US Employment Status', kind: 'select' }, 'workAuth.status', 'label.work-auth-status'],
+  ['27 JV-7', { label: 'Work Authorization', kind: 'select', options: ['Select...', 'US Citizen', 'Green Card Holder',
+    'H-1B Visa', 'Other'] }, 'workAuth.status', 'options.work-status'],
+  ['27 JV-7', { label: 'Employment Status', kind: 'select', options: ['US Citizen', 'Permanent Resident', 'H1B'] },
+    'workAuth.status', 'options.work-status'],
+  // 28. JV-11: VHL's status sentences.
+  ['28 JV-11', { label: 'Citizen/Employment Status', kind: 'select', options: VHL_STATUSES }, 'workAuth.status',
+    'label.citizenship'],
+  // 29. JZ-7: JazzHR's standard eligibility question, and the harness's relabelled form.
+  ['29 JZ-7', { label: 'What’s your citizenship / employment eligibility?', kind: 'select' }, 'workAuth.status',
+    'label.citizenship'],
+  ['29 JZ-7', { label: 'What is your U.S. citizenship / employment eligibility?', kind: 'select' }, 'workAuth.status',
+    'label.citizenship'],
+  // 30. JZ-8: a status asked as yes or no (a Yes/No pair of boxes is read as its radio), and on a lone box.
+  ['30 JZ-8', { label: 'Are you a US Citizen or Permanent Resident? (Note - EAD does not qualify for this position)',
+    kind: 'checkbox-group', options: ['Yes', 'No'] }, 'workAuth.status', 'label.citizenship'],
+  ['30 JZ-8', { label: 'Are you a U.S. citizen?', kind: 'select', options: ['Yes', 'No'] }, 'workAuth.status',
+    'label.citizenship'],
+  ['30 JZ-8', { label: 'I am a U.S. citizen', kind: 'checkbox' }, 'workAuth.status', 'label.citizenship'],
+  // 31. SR-4: Wiser's sponsorship question naming two countries, each where the person is located.
+  ['31 SR-4', { label: 'Do you, now or in the future, require sponsorship to maintain employment in the US (if you are '
+    + 'located in the US) or Canada (if you are located in Canada)?', kind: 'radio', options: ['Yes', 'No'] },
+  'workAuth.sponsorship', 'label.sponsorship'],
+  // 32. SR-12: Xplor's right-to-work statements (a basis set).
+  ['32 SR-12', { label: 'Which of the following statements best describes your right to work in the United States?',
+    kind: 'select', options: XPLOR_RIGHTS }, 'workAuth.authorized', 'label.work-auth'],
+  // 33. WD-30: AEP's OPT question.
+  ['33 WD-30', { label: 'Will you be using Optional Practical Training (OPT) or STEM OPT to begin employment at AEP?',
+    kind: 'combobox', options: ['Yes', 'No'] }, 'workAuth.opt', 'label.opt'],
+  ['33 WD-30', { label: 'Do you plan to use CPT in order to continue working for us?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'workAuth.opt', 'label.opt'],
+  // 34. ADP-9: ADP's clearance questions.
+  ['34 ADP-9', { label: 'Do you have a security clearance? If yes, please indicate which type (Hold CTRL to select '
+    + 'multiple)', kind: 'multiselect', options: ['None', 'Secret', 'Top Secret'] }, 'workAuth.clearance',
+  'label.clearance'],
+  ['34 ADP-9', { label: 'If you do not have a government security clearance, are you eligible to obtain and maintain '
+    + 'one?', kind: 'radio', options: ['Yes', 'No'] }, 'workAuth.clearance', 'label.clearance'],
+  ['34 ADP-9', { label: 'This position requires you to obtain and maintain a US Government Security Clearance, which '
+    + 'requires US citizenship. Do you meet this requirement?', kind: 'radio', options: ['Yes', 'No'] },
+  'workAuth.status', 'label.citizenship'],
+];
+
+describe('jr6 RULES R2: the audits’ labels', () => {
+  it.each(LABELS_R2)('%s: %j', (_item, field, category, rule) => {
+    expect(read(field)).toMatchObject({ category, rule, needsUser: null });
+  });
+});
+
+/** [item and finding, the field, what it must not be read as]: near misses of the R2 rules. */
+const NEAR_MISSES_R2: Array<[string, Case, FieldCategory]> = [
+  // 27: a person's own employment, a sponsorship for a visa, an authorization asked yes or no.
+  ['27', { label: 'What is your current employment status?', kind: 'select',
+    options: ['Employed full-time', 'Employed part-time', 'Unemployed', 'Student'] }, 'workAuth.status'],
+  ['27', { label: 'Employment type', kind: 'select', options: ['Full-time', 'Part-time', 'Contract'] },
+    'workAuth.status'],
+  ['27', { label: 'Will you require sponsorship for any visa type?', kind: 'radio', options: ['Yes', 'No'] },
+    'workAuth.status'],
+  ['27', { label: 'Work Authorization', kind: 'select', options: ['Yes', 'No'] }, 'workAuth.status'],
+  ['27', { label: 'Work Authorization', kind: 'select', options: ['Yes, I am a US citizen', 'Yes, I hold a green card',
+    'No'] }, 'workAuth.status'],
+  // 32: a basis set stays the authorization question (its options state a sponsorship need).
+  ['32', { label: 'Which of the following statements best describes your right to work in the United States?',
+    kind: 'select', options: XPLOR_RIGHTS }, 'workAuth.status'],
+  // 33: OPT named without beginning or continuing employment.
+  ['33', { label: 'Are you currently on OPT?', kind: 'radio', options: ['Yes', 'No'] }, 'workAuth.opt'],
+  ['33', { label: 'Describe your experience with OPT reporting tools', kind: 'textarea' }, 'workAuth.opt'],
+];
+
+describe('jr6 RULES R2: the widened rules’ near misses', () => {
+  it.each(NEAR_MISSES_R2)('%s: %j is no %s', (_item, field, category) => {
+    expect(read(field).category).not.toBe(category);
+  });
+});

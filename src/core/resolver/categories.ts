@@ -59,6 +59,8 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   'education.city': 'profile', 'education.region': 'profile', 'education.country': 'profile',
   'address.lookup': 'profile', 'address.county': 'profile', 'location.policyResidence': 'profile',
   'referral.employeeReferred': 'profile', 'location.residesIn': 'profile',
+  // jr6 RULES R2: OPT or CPT, a legal answer from the work-authorization entry (WD-30).
+  'workAuth.opt': 'legal',
   unknown: 'unknown',
 };
 
@@ -123,8 +125,11 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   // future require AHEAD to sponsor you…?"): a Yes/No legal question asked in a text box takes "Yes" or "No" from the
   // profile's explicit answer (policy.ts legal.yes-no-text).
   'workAuth.authorized': YES_NO_TEXT, 'workAuth.sponsorship': YES_NO_TEXT, 'workAuth.sponsorshipNow': YES_NO_TEXT,
-  'workAuth.sponsorshipFuture': YES_NO_TEXT, 'workAuth.status': CHOICE, 'workAuth.visaType': ['text', ...CHOICE],
-  'workAuth.clearance': ['text', ...YES_NO], 'screening.over18': YES_NO,
+  'workAuth.sponsorshipFuture': YES_NO_TEXT,
+  // jr6 RULES (JZ-8): a status asked as yes or no on a lone box too ("I am a U.S. citizen").
+  'workAuth.status': YES_NO, 'workAuth.visaType': ['text', ...CHOICE],
+  // jr6 RULES (ADP-9): which clearances are held, on a list that takes several too.
+  'workAuth.clearance': ['text', ...YES_NO, 'checkbox-group', 'multiselect'], 'screening.over18': YES_NO,
   // Never filled: recognised on any answer widget, so it is never taken for something else.
   'screening.criminalHistory': ['text', 'textarea', ...YES_NO],
   'eeo.gender': EEO, 'eeo.hispanicLatino': EEO, 'eeo.race': EEO, 'eeo.veteran': EEO, 'eeo.disability': EEO,
@@ -175,6 +180,8 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'education.region': LOOKUP, 'education.country': LOOKUP, 'address.lookup': ['select', 'combobox'],
   'address.county': ['text', 'select', 'combobox'], 'location.policyResidence': CHOICE,
   'referral.employeeReferred': YES_NO, 'location.residesIn': CHOICE,
+  // jr6 RULES R2: OPT or CPT, yes or no (WD-30).
+  'workAuth.opt': YES_NO_TEXT,
   unknown: ANY,
 };
 
@@ -282,7 +289,9 @@ export const AI_OPENED_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCat
   // jr6 RULES (jobvite-new-1, the owner's "absolutely all"): the other yes/no screening questions of snapshot round 2
   // (Sikich's "Are you currently subject to a non-compete, non-solicitation or any other restrictive employment
   // agreement?"), where the profile holds no answer; marked "AI guess" unless a fact settles it.
-  'screening.restrictiveAgreement', 'screening.relatives', 'screening.essentialFunctions']);
+  'screening.restrictiveAgreement', 'screening.relatives', 'screening.essentialFunctions',
+  // jr6 RULES R2 (WD-30): OPT or CPT, where the entry does not settle it.
+  'workAuth.opt']);
 
 /**
  * The profile categories an AI answer may fill when the profile holds no value for them (the owner's amendments): job

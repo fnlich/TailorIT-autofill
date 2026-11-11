@@ -55,6 +55,8 @@ export const FIELD_CATEGORIES = [
   'consent.signatureDate', 'languages.formLanguage', 'identity.employeeId', 'experience.city', 'experience.region',
   'experience.country', 'education.city', 'education.region', 'education.country', 'address.lookup', 'address.county',
   'location.policyResidence', 'referral.employeeReferred', 'location.residesIn',
+  // jr6 RULES R2 (FIXPLAN §6.3 items 27 to 34): OPT or CPT to begin or continue employment (WD-30).
+  'workAuth.opt',
   // jr6 RULES end
   'unknown',
 ] as const;
@@ -95,6 +97,11 @@ export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.
   // person's skills and degrees (JV-5).
   'consent.signature-date', 'form.language', 'address.enter-manually', 'conditional.not-applicable',
   'location.policy-residence', 'referral.not-employee', 'location.not-there', 'skills.qualifications',
+  // jr6 RULES R2 (FIXPLAN §6.3 items 27 to 34): a work status chosen by its meaning, or answered yes or no, from the
+  // entry's status, the person's citizenships or a non-citizen's authorization and sponsorship answers (JV-7, JV-11,
+  // JZ-7, JZ-8); the entry of the country the person is located in, among those a question qualifies so (SR-4); OPT or
+  // CPT from the sponsorship answers and a student visa (WD-30).
+  'legal.work-status', 'legal.located-country', 'legal.opt',
   // jr6 RULES end
 ] as const;
 export type RuleId = (typeof RULE_IDS)[number];

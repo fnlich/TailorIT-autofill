@@ -389,6 +389,10 @@ const WORK_AUTH_WIDE = /\bentitled\s+to\s+work\b|\b(?:eligible|authori[sz]ed|per
 /** A question about which work authorization status the applicant holds (Workable's "Work Authorization Status",
  *  "Which best describes your work authorization status?"): which status, never yes or no. */
 const WORK_AUTH_STATUS = /\bauthori[sz]ation\s+status\b|\bwork\s+(?:authori[sz]ation\s+)?status\b/;
+/** jr6 RULES (JV-7, Jobvite's NinjaOne "What is your US Work Authorization type?", fixtures/jobvite/ninjaone-step3): the
+ *  type of an authorization or a visa, and a country's or an immigration employment status, asked as which one; never
+ *  beside a sponsorship ("sponsorship for any visa type"), nor a person's employment ("current employment status"). */
+const WORK_AUTH_TYPE = /\bauthori[sz]ation\s+type\b|\btype\s+of\s+(?:work\s+|employment\s+)?authori[sz]ation\b|\bvisa\s+type\b|\btype\s+of\s+visa\b|\b(?:us|u\s+s|united\s+states|immigration|citizenship|legal)\s+(?:\w+\s+)?employment\s+status\b/;
 /** An experience block's own summary of the role, labelled with that one word (the Phase 7a review: Workable's
  *  Experience "Summary"). s2 core-wd: or the role's, the job's or the position's ("Role Description", Workday's
  *  formField-roleDescription in fixtures/workday/s2-exelixis-my-experience; the wd study §4). Any longer wording is left
@@ -1006,6 +1010,9 @@ const RESIDES_IN = /^(?:question\s+\d+\s+)?if\s+(?:(?:you\s+(?:currently\s+)?(?:
 /** U-02 (UltiPro's period boxes, "From Month", "From Year (YYYY)", "To Month", "To Year (YYYY)" by the label contract):
  *  a part of a job's or a school's start (from) or end (to). */
 const PERIOD_PART = /^(from|to)\s+(?:month|year)\b/;
+/** jr6 RULES R2 (WD-30, Workday's AEP "Will you be using Optional Practical Training (OPT) or STEM OPT to begin
+ *  employment at AEP?", fixtures/workday/aep-application-questions-2): OPT or CPT to begin or continue employment. */
+const OPT_WORK = /\b(?:(?:stem\s+)?opt|cpt|optional\s+practical\s+training|curricular\s+practical\s+training)\b(?:\s+\w+){0,8}?\s+(?:to|in\s+order\s+to)\s+(?:begin|start|continue|commence|extend)\s+(?:\w+\s+){0,2}?(?:employment|working|work)\b/;
 
 /** A jr6 label rule: its pattern, the category (or none, for a section or kind it does not fit). */
 interface Jr6Rule {
@@ -1029,6 +1036,8 @@ const JR6_RULES: readonly Jr6Rule[] = [
   // U-02: by the section's kind (sectionKindOf); in any other section the part names no date the profile holds.
   { id: 'label.period-part', re: PERIOD_PART, strength: 'normal', category: (c, found) => (c.section === 'other' ? null
     : found[1] === 'from' ? `${c.section}.startDate` : `${c.section}.endDate`) },
+  // jr6 RULES R2 (WD-30).
+  { id: 'label.opt', re: OPT_WORK, category: 'workAuth.opt', strength: 'strong' },
 ];
 
 /** The first jr6 rule that reads `text` on a field of this kind, or null. */
@@ -1324,6 +1333,10 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   // Which work authorization status (the Phase 7a review), before the design's authorization rule reads it as yes or
   // no.
   if (WORK_AUTH_STATUS.test(text) && kindAllowed('workAuth.status', kind)) {
+    return hitOf(WORK_AUTH_STATUS_RULE, 'workAuth.status');
+  }
+  // jr6 RULES (JV-7): the type of an authorization or a visa, never beside a sponsorship.
+  if (WORK_AUTH_TYPE.test(text) && !/\bsponsor\w*/.test(text) && kindAllowed('workAuth.status', kind)) {
     return hitOf(WORK_AUTH_STATUS_RULE, 'workAuth.status');
   }
   // s2 core-gh: the snapshot round's own rules (S2_RULES), and a consent to an identity check asked as a question

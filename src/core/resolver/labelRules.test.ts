@@ -72,7 +72,8 @@ const RULE_EXAMPLES: Array<[string, string, FieldKind, SectionKind, FieldCategor
   ['label.work-auth', 'Do you have the right to work in the UK?', 'radio', 'other', 'workAuth.authorized'],
   ['label.sponsorship', 'Will you require H-1B sponsorship in the future?', 'radio', 'other',
     'workAuth.sponsorshipFuture'],
-  ['label.visa-type', 'Visa type', 'select', 'other', 'workAuth.visaType'],
+  // jr6 RULES (JV-7): "Visa type" asks which status (WORK_AUTH_TYPE); an immigration status is still the visa type's.
+  ['label.visa-type', 'Immigration status', 'select', 'other', 'workAuth.visaType'],
   ['label.citizenship', 'Citizenship', 'select', 'other', 'workAuth.status'],
   ['label.clearance', 'Security clearance level', 'select', 'other', 'workAuth.clearance'],
   ['label.over18', 'Are you 18 years or older?', 'radio', 'other', 'screening.over18'],
@@ -294,7 +295,9 @@ describe('a rule whose category the kind cannot hold is no match', () => {
       'workAuth.authorized'],
     ['Are you a protected veteran?', 'text', 'label.veteran', 'eeo.veteran'],
     ['Are you a U.S. citizen?', 'text', 'label.citizenship', 'workAuth.status'],
-    ['I am a U.S. citizen or permanent resident', 'checkbox', 'label.citizenship', 'workAuth.status'],
+    // jr6 RULES (JZ-8): a status is asked as yes or no on a lone box too ("I am a U.S. citizen"), so a text box stands
+    // for the kind that cannot hold it.
+    ['I am a U.S. citizen or permanent resident', 'text', 'label.citizenship', 'workAuth.status'],
     ['If you require sponsorship, please explain', 'textarea', 'label.sponsorship', 'workAuth.sponsorship'],
     ['I agree to the privacy policy', 'select', 'label.consent-privacy', 'consent.privacy'],
   ])('%j (%s) is the person’s: %s on a kind that cannot hold %s', (label, kind, rule, category) => {

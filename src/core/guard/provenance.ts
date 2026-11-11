@@ -125,13 +125,20 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'referral.not-employee': (category) => category === 'referral.employeeReferred',
   'location.not-there': (category) => category === 'location.residesIn',
   'skills.qualifications': (category) => category === 'skills.list',
+  // jr6 RULES R2: a work status by its meaning, the located country's entry, and OPT, each a work-authorization
+  // answer.
+  'legal.work-status': (category) => category.startsWith('workAuth.'),
+  'legal.located-country': (category) => category.startsWith('workAuth.'),
+  'legal.opt': (category) => category === 'workAuth.opt',
   // jr6 RULES end
 };
 
 /** s2 core-gh: the yes/no legal questions a text box may ask (legal.yes-no-text), and the texts composed from the
  *  profile's parts (compose.text). */
 const YES_NO_LEGAL: readonly FieldCategory[] = ['workAuth.authorized', 'workAuth.sponsorship', 'workAuth.sponsorshipNow',
-  'workAuth.sponsorshipFuture'];
+  'workAuth.sponsorshipFuture',
+  // jr6 RULES R2 (WD-30).
+  'workAuth.opt'];
 const COMPOSED: readonly FieldCategory[] = ['address.full', 'preferences.relocationPlaces', 'skills.certifications',
   'education.summary'];
 
