@@ -4,8 +4,10 @@
  * - `auth`: the bearer token (background/auth.ts reads what comes out);
  * - jr6 (the owner's words of 2026-11-10: the job-site password kept in the browser "like jobright.ai"), `signup-key`:
  *   the AES-GCM key the job-site password is encrypted with (background/signup-vault.ts). It is a CryptoKey made with
- *   extractable false, which IndexedDB stores as it is (a structured clone): its bytes can be read by nothing, not even
- *   the extension, which can only ask the browser to encrypt and decrypt with it.
+ *   extractable false, which IndexedDB stores as it is (a structured clone): no script can export its bytes, not even
+ *   the extension's, which can only ask the browser to encrypt and decrypt with it. The jr6 review (sec-7): Chrome
+ *   writes that clone, raw key bytes included, to the profile folder's LevelDB unencrypted, so someone who can read
+ *   that folder on this computer can read the key (background/signup-vault.ts header).
  * Apart from platform/chrome.ts, so the dom tests can open the real database (no `browser` import here).
  */
 import type { SecretStore } from './types';

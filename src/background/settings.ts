@@ -81,8 +81,10 @@ export function contentSettingsOf(settings: Settings, options: ContentHolds = {}
     noMatch: settings.modes.noMatch, notifications: settings.modes.notifications },
     llm: { ...settings.llm },
     offerToSaveAnswers: settings.offerToSaveAnswers,
-    // jr6: never where Sign-in is held (no password saved, or the disclosure not acknowledged).
-    typeSignIn: options.typeSignIn === true && options.holdSignIn !== true };
+    // jr6: never where Sign-in is held (no password saved, or the disclosure not acknowledged); the jr6 review (sec-3):
+    // never in the auto-apply agent's window, where nobody is there to press what Manual types (its Sign-in on Auto
+    // still signs in).
+    typeSignIn: options.typeSignIn === true && options.holdSignIn !== true && !agent };
 }
 
 /** A plain object (not an array): its keys are merged one by one. */

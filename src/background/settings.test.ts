@@ -358,6 +358,14 @@ describe('settings', () => {
     expect(contentSettingsOf(DEFAULT_SETTINGS).modes.signIn).toBe('manual');
   });
 
+  it('never types a saved password on Manual in the auto-apply agent’s window (the jr6 review, sec-3)', () => {
+    expect(contentSettingsOf(DEFAULT_SETTINGS, { typeSignIn: true }).typeSignIn).toBe(true);
+    expect(contentSettingsOf(DEFAULT_SETTINGS, { typeSignIn: true, agent: true }).typeSignIn).toBe(false);
+    // Its Sign-in on Auto still acts there.
+    const auto = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const } };
+    expect(contentSettingsOf(auto, { typeSignIn: true, agent: true }).modes.signIn).toBe('auto');
+  });
+
   it('saves "Upload mine again", and refuses a version 5 value without "Résumé already on the page" or with a choice it does not know', async () => {
     const worker = await startTestWorker();
     const upload = { ...CHOSEN, modes: { ...CHOSEN.modes, resumeOnPage: 'upload' as const } };

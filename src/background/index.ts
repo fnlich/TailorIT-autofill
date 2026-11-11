@@ -545,13 +545,14 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     await platform.sidePanel.openOnActionClick(!(await onPage())).catch(() => undefined);
   };
   /** jr6: Settings › Sign-up Information's messages, and Sign-in mode's guard (signup.ts). */
-  const signup = createSignup({ vault: signupVault, settings, server,
+  const signup = createSignup({ vault: signupVault, settings, server, local,
     scopes: async () => (await keeper.current())?.scopes ?? [],
-    // The box's first email: the profile's while the worker holds it, else the account's as read already, which TailorIT
-    // answers an empty profile email as; nothing is fetched for it (the page adds the account's own as it reads it).
+    // The box's first email while none is saved (coordinator decision 3): the TailorIT profile's, read for it when the
+    // worker holds none (the jr6 review, R9: one GET /profile as the person opens the card, the cache's after); else the
+    // account's as read already, which TailorIT answers an empty profile email as (the page adds the account's own).
     suggestedEmail: async () => {
       if (!(await auth.connected())) return null;
-      const profile = profileCache.holding ? await profileCache.get() : null;
+      const profile = await profileCache.get().catch(() => null);
       const own = profile?.ok === true ? profile.value.profile.contact.email : '';
       return own !== '' ? own : auth.knownAccountEmail();
     },
@@ -565,18 +566,25 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
    *  Information (signup-vault.ts), never TailorIT's. */
   const signIn = createSignIn({ vault: signupVault, session, now,
     // v4: Auto, or the tab's Sign up & Autofill grant (sign-up.ts), every other rule held; the v4 review (M1): the
-    // grant's for a frame of the origin it was given for alone. jr6: Manual types a saved password, pressing nothing.
+    // grant's for a frame of the origin it was given for alone. jr6: Manual types a saved password, pressing nothing;
+    // the jr6 review (sec-3): never in the auto-apply agent's tab, where nobody is there to press it (its settings say
+    // so too: contentSettingsOf), and its Auto ('agent') is never typed for a person after a press (sign-in.ts).
     signInAct: async (tabId, origin) => {
       if (!(await auth.disclosed())) return null;
-      return (await settings.get()).modes.signIn === 'auto' || signUps.live(tabId, origin) ? 'auto' : 'type';
+      const unattended = await agent.ownsTab(tabId);
+      if ((await settings.get()).modes.signIn === 'auto' || signUps.live(tabId, origin)) return unattended ? 'agent' : 'auto';
+      return unattended ? null : 'type';
     },
     // core-x, item 3: a subframe that claims the tab's application signs in as a top frame does (frames.ts).
     claimFrame: async (tabId) => claimFrameOf(await framesOfTab(session, tabId)),
-    // jr6: a password that can no longer be read was removed: Sign-in Auto, which needs one, goes back to Manual.
-    gone: async () => {
-      const reverted = await signup.keepModeHonest();
-      await pushNow();
-      reports.tellPanels('signup');
+    // jr6: no password to use (none saved, or one that can no longer be read, which was removed): Sign-in Auto, which
+    // needs one, goes back to Manual (the jr6 review, sec-9: `none` too), and the card says so (R12).
+    missing: async (why) => {
+      const reverted = await signup.passwordMissing(why);
+      if (why === 'gone' || reverted) {
+        await pushNow();
+        reports.tellPanels('signup');
+      }
       if (reverted) reports.tellPanels('settings');
     } });
   /** core-x, items 7 and 14: the tabs' chains (chain.ts). */
@@ -1151,7 +1159,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             return refuse('unavailable');
           }
           // The audit's M4: what the page changed from the settings it read, applied to the stored ones.
-          const saved = await settings.save(message.settings, message.base);
+          let saved = await settings.save(message.settings, message.base);
+          // The jr6 review (sec-9): a delete that landed between the check above and the save leaves Auto with no
+          // password: set back to Manual at once, and answered as stored then.
+          if (holdsSignInAuto(saved) && (await signup.keepModeHonest('save'))) {
+            saved = await settings.get();
+            reports.tellPanels('signup');
+          }
           // Every frame with a form hears of it, so a run in progress reads auto-advance afresh (Phase 5 review, C-S2).
           await pushNow();
           // And every side panel (v2): the custom question follows the AI drafts switch.
@@ -1413,9 +1427,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   accessReady = restrict();
   state.ready = accessReady.then(() => runStates.prune().catch(() => undefined))
     // jr6: Sign-in Auto needs a password saved in this browser; settings that held it before (when the password was
-    // TailorIT's), or with one that went, go back to Manual.
-    .then(() => signup.keepModeHonest().then((reverted) => {
-      if (reverted) reports.tellPanels('settings');
+    // TailorIT's), or with one that went, go back to Manual, which the card then says (the jr6 review, R12).
+    .then(() => signup.keepModeHonest('startup').then((reverted) => {
+      if (reverted) {
+        reports.tellPanels('settings');
+        reports.tellPanels('signup');
+      }
     }).catch(() => undefined));
   // v3 Phase 5: the agent picks up where it was (its job, a result still to tell, the queue).
   void state.ready.then(() => agent.start()).catch(() => undefined);

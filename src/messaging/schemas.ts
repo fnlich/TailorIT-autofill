@@ -462,8 +462,12 @@ const contentMessages = [
    *  message that ever carries the password. At an email gate (`email-gate`, v3 Phase 7b) the answer carries the email
    *  alone. jr6: the sign-in is the one saved in this browser (background/signup-vault.ts), decrypted for this answer
    *  alone, on a page the every-site sign-in covers, once the disclosure was acknowledged; with Sign-in on Auto (or Sign
-   *  up & Autofill) its button is pressed, on Manual it is typed for the person to press. TailorIT is asked nothing. */
-  z.strictObject({ v, type: z.literal('signin/credential'), wall: z.enum(SIGN_IN_WALLS) }),
+   *  up & Autofill) its button is pressed, on Manual it is typed for the person to press. TailorIT is asked nothing.
+   *  The jr6 review (R1): `typing`, an ask whose form this frame never presses (a form's account section, or a run on
+   *  Sign-in Manual): answered `press` false, and it neither meets nor sets the once-per-tab press limit. It can only
+   *  lessen what is done, never add a press. */
+  z.strictObject({ v, type: z.literal('signin/credential'), wall: z.enum(SIGN_IN_WALLS),
+    typing: z.literal(true).optional() }),
   /** Round 3 of the v3 Phase 6/7b review (X8): the auto-apply agent's entry press was made in this frame (press.ts
    *  pressEntry, for agent/enter), told at once, before the entry waits on what the press brings: a press that takes
    *  the document away ends it before agent/enter is answered. The worker takes it from the agent's tab's top frame,
@@ -970,5 +974,5 @@ export type {
   // v1.5 QX
   QueueItemStatus, QueueListAnswer, QueueListItem, QueueStatus,
   // jr6
-  SignupStatus,
+  SignupNotice, SignupStatus,
 } from './page-schemas';

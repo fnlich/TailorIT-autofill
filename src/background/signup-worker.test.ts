@@ -12,13 +12,20 @@
  *   rules;
  * - never logged, never sent: across a whole round (save, read for a sign-in, import refused, delete), no log line and no
  *   request to TailorIT holds the password, in any form, and no log line its length.
+ * - the jr6 review: the email box starts with the TailorIT profile's email, read for it (R9); a save of Auto that met a
+ *   delete, and a sign-in that found none under Auto, set Sign-in back (sec-9); the card says what the worker did by
+ *   itself (R12); setting Sign-in back keeps a change saved meanwhile (R13); a claiming subframe of another origin is
+ *   never answered, through the real claim-frame rule (sec-10).
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import profileGolden from '../contract/tailorit/v1/fixtures/AutofillProfileEnvelope/valid/golden.json';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
+import type { StorageArea } from '../platform/types';
 import { SIDEBAR_PAGE_MESSAGES } from './senders';
-import { SIGNUP_IMPORT_HOST } from './signup';
-import { SIGNUP_RECORD_KEY } from './signup-vault';
+import { createSettingsStore } from './settings';
+import { createSignup, SIGNUP_IMPORT_HOST } from './signup';
+import { SIGNUP_RECORD_KEY, type SignupVault } from './signup-vault';
 import {
   contentSender, pageSender, saveSignup, sentToFrames, SIGNUP_EMAIL, SIGNUP_PASSWORD, startTestWorker, tokenRecord,
   typeOfSent, type TestWorker,
@@ -45,13 +52,18 @@ const ask = (worker: TestWorker, wall: 'sign-in' | 'create-account' = 'create-ac
 const lastToFrames = (worker: TestWorker) => (sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'settings/changed')
   .at(-1)?.message as { settings: { modes: { signIn: string }; typeSignIn: boolean } } | undefined)?.settings;
 
+/** The golden profile with its contact email changed (an applicant whose profile email is not the account's). */
+const profileWithEmail = (email: string) => ({ ...profileGolden, profile: { ...profileGolden.profile,
+  contact: { ...profileGolden.profile.contact, email } } });
+
 describe('Sign-up Information’s messages (jr6)', () => {
-  it('says none is saved, with the account’s email for the box once read (nothing fetched for it), and saves one that meets the rules', async () => {
+  it('says none is saved, with the profile’s email for the box (the account’s where the profile has none), and saves one that meets the rules', async () => {
     const worker = await startTestWorker({ token: tokenRecord() });
+    // The jr6 review (R9): the TailorIT profile's email, read for it; here the profile holds none: the account's, once
+    // the page's own auth/status read it.
+    worker.tailorit.reply('GET /api/autofill/profile', { json: profileWithEmail('') });
     expect(await status(worker)).toEqual({ ok: true, data: { set: false, email: null, updatedAt: null,
       suggestedEmail: null, importable: true } });
-    expect(worker.tailorit.requests).toEqual([]);
-    // The page's own auth/status reads the account: the box then starts with its email.
     await worker.deliver({ v: 1, type: 'auth/status' }, OPTIONS);
     expect(await status(worker)).toEqual({ ok: true, data: { set: false, email: null, updatedAt: null,
       suggestedEmail: 'elena.ruiz@example.com', importable: true } });
@@ -254,5 +266,141 @@ describe('the password is never logged and never sent (jr6)', () => {
     for (const form of forms) expect(told).not.toContain(form);
     const stored = JSON.stringify([await fakeBrowser.storage.local.get(null), await fakeBrowser.storage.session.get(null)]);
     for (const form of forms) expect(stored).not.toContain(form);
+  });
+});
+
+// ── The jr6 review ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A storage area in memory (createSignup's and the settings store's, on their own). */
+function memoryArea(): StorageArea {
+  const data = new Map<string, unknown>();
+  return {
+    get: async (key) => data.get(key),
+    getMany: async (prefix) => Object.fromEntries([...data].filter(([key]) => key.startsWith(prefix))),
+    async set(entries) {
+      for (const [key, value] of Object.entries(entries)) data.set(key, structuredClone(value));
+    },
+    async remove(keys) {
+      for (const key of keys) data.delete(key);
+    },
+    async restrictToTrustedContexts() {},
+  };
+}
+
+/** Sign-up Information's status, its `notice` among it when there is one. */
+const statusData = async (worker: TestWorker) => ((await status(worker)) as { data: Record<string, unknown> }).data;
+
+describe('the jr6 review: Sign-up Information', () => {
+  it('R9: the email box starts with the TailorIT profile’s email, read for it once, not the account’s', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    worker.tailorit.reply('GET /api/autofill/profile', { json: profileWithEmail('elena.applies@example.org') });
+    await worker.deliver({ v: 1, type: 'auth/status' }, OPTIONS);
+    expect(await status(worker)).toMatchObject({ ok: true, data: { set: false, suggestedEmail: 'elena.applies@example.org' } });
+    expect(await status(worker)).toMatchObject({ ok: true, data: { suggestedEmail: 'elena.applies@example.org' } });
+    // One read of the profile: the worker's cache's after.
+    expect(worker.tailorit.count('GET /api/autofill/profile')).toBe(1);
+    // With one saved, its own email, and nothing read for it.
+    await saveSignup(worker);
+    expect(await status(worker)).toMatchObject({ ok: true, data: { set: true, email: SIGNUP_EMAIL, suggestedEmail: null } });
+    expect(worker.tailorit.count('GET /api/autofill/profile')).toBe(1);
+  });
+
+  it('sec-9: a save of Auto that meets a delete on its way is set back to Manual at once', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await saveSignup(worker);
+    // The delete lands between settings/save's check and its write: the record goes as the settings are written.
+    const local = fakeBrowser.storage.local;
+    const write = local.set.bind(local);
+    const writes = vi.spyOn(local, 'set').mockImplementation(async (items) => {
+      const modes = (items as Record<string, { modes?: { signIn?: string } } | undefined>)['settings:v1']?.modes;
+      if (modes?.signIn === 'auto') await local.remove(SIGNUP_RECORD_KEY);
+      return write(items);
+    });
+    const saved = await worker.deliver({ v: 1, type: 'settings/save', settings: settingsWith('auto') }, OPTIONS);
+    writes.mockRestore();
+    expect(saved).toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'manual' } } } });
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true,
+      data: { settings: { modes: { signIn: 'manual' } } } });
+    expect(await statusData(worker)).toMatchObject({ set: false, notice: 'reverted' });
+  });
+
+  it('sec-9: a sign-in that finds none saved under Auto sets Sign-in back to Manual, and the card says so', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await saveSignup(worker);
+    await worker.deliver({ v: 1, type: 'settings/save', settings: settingsWith('auto') }, OPTIONS);
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top());
+    // Auto left with no password (a delete that met a save in another page).
+    await fakeBrowser.storage.local.remove(SIGNUP_RECORD_KEY);
+    expect(await ask(worker)).toEqual({ ok: false, error: 'not_found' });
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true,
+      data: { settings: { modes: { signIn: 'manual' } } } });
+    expect(await statusData(worker)).toMatchObject({ notice: 'reverted' });
+    expect(lastToFrames(worker)).toMatchObject({ modes: { signIn: 'manual' }, typeSignIn: false });
+  });
+
+  it('R12: Auto set back at start-up is said on the card until a password is saved', async () => {
+    const worker = await startTestWorker({ token: tokenRecord(), before: async () => {
+      await fakeBrowser.storage.local.set({ 'settings:v1': settingsWith('auto') });
+    } });
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true,
+      data: { settings: { modes: { signIn: 'manual' } } } });
+    expect(await statusData(worker)).toMatchObject({ set: false, notice: 'reverted' });
+    await saveSignup(worker);
+    expect(await statusData(worker)).not.toHaveProperty('notice');
+  });
+
+  it('R12: a password that could no longer be read is said on the card, until another is saved', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await saveSignup(worker);
+    await worker.signupKey.clear();
+    expect(await ask(worker)).toEqual({ ok: false, error: 'unavailable' });
+    expect(await statusData(worker)).toMatchObject({ set: false, notice: 'gone' });
+    await saveSignup(worker);
+    expect(await statusData(worker)).not.toHaveProperty('notice');
+    // The card's own Delete says it itself: no notice after it.
+    await worker.deliver({ v: 1, type: 'signup/delete' }, OPTIONS);
+    expect(await statusData(worker)).not.toHaveProperty('notice');
+  });
+
+  it('R13: setting Sign-in back to Manual keeps what another page saved meanwhile', async () => {
+    const local = memoryArea();
+    const store = createSettingsStore(local);
+    await store.save(settingsWith('auto'));
+    // Another page's save of the Next mode lands between keepModeHonest's read and its write.
+    const settings = {
+      get: async () => {
+        const read = await store.get();
+        await store.save({ ...read, modes: { ...read.modes, next: 'auto' } });
+        return read;
+      },
+      save: (next: Parameters<typeof store.save>[0], base?: Parameters<typeof store.save>[1]) => store.save(next, base),
+    };
+    const signup = createSignup({ vault: { has: async () => false } as unknown as SignupVault, settings, local,
+      server: { credential: async () => ({ ok: false, failure: 'unavailable' }) } as never,
+      scopes: async () => [], suggestedEmail: async () => null, changed: async () => undefined });
+    expect(await signup.keepModeHonest('startup')).toBe(true);
+    expect((await store.get()).modes).toMatchObject({ signIn: 'manual', next: 'auto' });
+  });
+
+  it('sec-10: a subframe of another origin that says it claims the application is never answered', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await saveSignup(worker);
+    const WRAPPER = 'https://careers-edgewaterit.icims.com/jobs/4828/full-stack-platform-engineer/form?form=F&step=1&hashed=1';
+    const at = (url: string, frameId: number, documentId: string) => contentSender({ url, tab: { id: 21, url: WRAPPER },
+      frameId, documentId });
+    const hello = (sender: ReturnType<typeof at>, extra: Record<string, unknown>) =>
+      worker.deliver({ v: 1, type: 'frame/hello', isTop: sender.frameId === 0, hasForm: true, ...extra }, sender);
+    await hello(at(WRAPPER, 0, 'doc-wrapper'), { hasForm: false, wraps: true });
+    // A tenant's frame on another iCIMS origin claims the wrapper's application: never the claim frame.
+    const stranger = at(`https://careers-mallory.icims.com/jobs/4828/full-stack-platform-engineer/form?form=F&step=1&hashed=1&in_iframe=1`,
+      3, 'doc-stranger');
+    await hello(stranger, { isTop: false, claimed: true });
+    expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'create-account' }, stranger))
+      .toEqual({ ok: false, error: 'bad_sender' });
+    // The wrapper's own origin's frame, alone in claiming it, is answered (Sign-in on Manual: to type, never pressed).
+    const portal = at(`${WRAPPER}&in_iframe=1`, 4, 'doc-portal');
+    await hello(portal, { isTop: false, claimed: true });
+    expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'create-account', typing: true }, portal))
+      .toMatchObject({ ok: true, data: { password: SIGNUP_PASSWORD, press: false } });
   });
 });

@@ -70,8 +70,8 @@ describe('Sign up & Autofill: Sign-in Auto for one run, in one tab (v4)', () => 
     expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top()))
       .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'auto' } } } });
     expect(await ask(worker)).toMatchObject({ ok: true, data: { password: PASSWORD, press: true } });
-    // Once per tab, wall and host still.
-    expect(await ask(worker)).toEqual({ ok: false, error: 'expired' });
+    // Pressed once per tab, wall and host still: after it, typed for the person (the jr6 review, R1).
+    expect(await ask(worker)).toMatchObject({ ok: true, data: { password: PASSWORD, press: false } });
     // Another tab holds no grant: Sign-in Manual there (typed, never pressed).
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top(13));
     expect(await ask(worker, top(13))).toMatchObject(TYPED);

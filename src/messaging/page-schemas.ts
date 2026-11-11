@@ -85,6 +85,9 @@ export const QUEUE_LIST_PAGE = 50;
 const SIGNUP_EMAIL_LIMIT = 254;
 /** The longest password a page may send (the rules hold it to 64: core/signup-password.ts). */
 const SIGNUP_PASSWORD_LIMIT = 256;
+/** The jr6 review (R12): what Sign-up Information says the worker did by itself (SignupStatus.notice). */
+export const SIGNUP_NOTICES = ['gone', 'reverted'] as const;
+export type SignupNotice = (typeof SIGNUP_NOTICES)[number];
 // ── end jr6 ──
 
 export const PageMessageSchema = z.discriminatedUnion('type', [
@@ -681,6 +684,10 @@ export const SignupStatusSchema = z.strictObject({
   updatedAt: Count.nullable(),
   suggestedEmail: Text(SIGNUP_EMAIL_LIMIT).nullable(),
   importable: z.boolean(),
+  /** The jr6 review (R12): what the worker did by itself since the person last saved or deleted one, which the card
+   *  says: 'gone', a saved password that could no longer be read in this browser was removed; 'reverted', Sign-in went
+   *  back from Auto to Manual for want of one (an install that chose Auto before jr6). Absent: nothing to say. */
+  notice: z.enum(SIGNUP_NOTICES).optional(),
 });
 export type SignupStatus = z.infer<typeof SignupStatusSchema>;
 

@@ -20,17 +20,23 @@
  *   ClearCompany's by their candidate paths alone, the frame's path being the pathname of Chrome's address for it, never
  *   anything the message says), and never a company's own page the worker injected (v3 Phase 8, reach 'site': the
  *   Phase 8 review's P6);
- * - the tab was not answered a sign-in for this host and wall within SIGN_IN_ONCE_MS: a password the site did not take
- *   is never typed again by itself (no retry loop, whatever page the site shows next). Only a sign-in answered for a
- *   press counts: one typed on Manual presses nothing, so the site refused nothing yet;
  * - a password is saved and reads (the vault decrypts it for this answer alone). None saved: under Auto 'not_found' (the
  *   v4 review's M5: the page's toast then says to set one in Sign-up Information), on Manual 'unavailable' (the person
- *   signs in).
+ *   signs in); either way Sign-in Auto, which needs one, is set back to Manual if it is on (`missing`: the jr6 review's
+ *   sec-9, a save of Auto that met a delete).
+ * The jr6 review (R1): `press` is limited, the typing is not. The tab is pressed for one host's wall at most once within
+ * SIGN_IN_ONCE_MS: a password the site did not take is never pressed again by itself (no retry loop, whatever page the
+ * site shows next); an Auto ask in that time is answered for the person to press (`press` false), never refused, so
+ * the saved password can still be typed there (the owner's "if needed, you should fetch this, and autofill it"), but in
+ * the auto-apply agent's tab (SignInAct 'agent', the review's sec-3), where nobody is there to press it: refused
+ * (`expired`) as before. An ask the frame says it never presses (`typing`: a form's account section, a run on Manual)
+ * is answered `press` false and neither meets nor sets the limit.
  * The answer to that frame's message is the one place the password goes: it is held in this function's memory only
  * until the answer is sent, never stored, logged, cached, put in a report or sent anywhere else, and the frame types it
  * into the page's password field only (src/content/sign-in.ts). At an email gate (v3 Phase 7b: wall 'email-gate', the
- * email-first identity step of Oracle Recruiting Cloud) the answer carries the email alone, never the password. Logs
- * say whether one was found, never a host, an email or a password.
+ * email-first identity step of Oracle Recruiting Cloud) the answer carries the email alone, never the password, and
+ * (the jr6 review, R8) nothing is decrypted for it: the email is read from the record, where it is kept in the clear.
+ * Logs say whether one was found, never a host, an email or a password.
  */
 import { AUTOFILL_ANY_HOST, HostNameSchema, signInHostCovered } from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
@@ -42,22 +48,26 @@ import type { FrameEntry } from './frames';
 import type { ContentChannel } from './router';
 import type { SignupVault } from './signup-vault';
 
-/** A tab is answered one host's sign-in for one wall at most once this long (no retry loop). */
+/** A tab is answered one host's sign-in for one wall to press at most once this long (no retry loop; the jr6 review's
+ *  R1: typed for the person to press after it). */
 export const SIGN_IN_ONCE_MS = 10 * 60_000;
-/** storage.session `signin-tried:<tabId>|<wall>|<host hash>`: when the tab was last answered (a time; the host as the
- *  first 16 hex digits of its SHA-256, never the host). */
+/** storage.session `signin-tried:<tabId>|<wall>|<host hash>`: when the tab was last answered for a press (a time; the
+ *  host as the first 16 hex digits of its SHA-256, never the host). */
 export const SIGN_IN_TRIED_PREFIX = 'signin-tried:';
 
 type CredentialMessage = Extract<ContentMessage, { type: 'signin/credential' }>;
 
 /** How Sign-in acts now for a frame (module header): 'auto' (typed and pressed), 'type' (Manual: typed, the press the
- *  person's), or null (not at all: the disclosure as it reads now not acknowledged). */
-export type SignInAct = 'auto' | 'type' | null;
+ *  person's), or null (not at all: the disclosure as it reads now not acknowledged). The jr6 review (sec-3): 'agent',
+ *  Auto in the auto-apply agent's tab, where nobody is there to press what would be typed for them: a wall it pressed
+ *  already is refused as before (`expired`), never typed for a person (R1's typing is the person's tabs' alone). */
+export type SignInAct = 'auto' | 'agent' | 'type' | null;
 
 /** What the sign-in needs. */
 export interface SignInDeps {
-  /** jr6: the sign-up information saved in this browser (signup-vault.ts). */
-  vault: Pick<SignupVault, 'reveal'>;
+  /** jr6: the sign-up information saved in this browser (signup-vault.ts): decrypted (reveal) for a sign-in or an
+   *  account's creation alone; an email gate reads its email from the record (status), never decrypted. */
+  vault: Pick<SignupVault, 'reveal' | 'status'>;
   session: StorageArea;
   now(): number;
   /** How Sign-in acts now for a frame of the tab on `origin` (SignInAct): the person's Auto, or v4's Sign up & Autofill
@@ -65,9 +75,9 @@ export interface SignInDeps {
   signInAct(tabId: number, origin: string): Promise<SignInAct>;
   /** core-x, item 3: the tab's claim frame (frames.ts claimFrameOf), or null; absent: only a top frame is answered. */
   claimFrame?(tabId: number): Promise<Pick<FrameEntry, 'frameId' | 'documentId'> | null>;
-  /** jr6: the saved password can never be read again (its key gone): the vault removed it, and Sign-in Auto, which
-   *  needs one, goes back to Manual (index.ts). */
-  gone?(): Promise<void>;
+  /** jr6: no saved password to use: none is saved (`none`), or the saved one can never be read again (`gone`: its key
+   *  went, and the vault removed it). Sign-in Auto, which needs one, goes back to Manual (index.ts). */
+  missing?(why: 'none' | 'gone'): Promise<void>;
 }
 
 /** The frame's host name and (TailorIT's API 6, contract6) its path, the pathname alone (no query, no fragment), when
@@ -89,12 +99,19 @@ export function createSignIn(deps: SignInDeps) {
     return claim !== null && claim.frameId === from.frameId && claim.frameId !== 0
       && claim.documentId === (from.documentId ?? null);
   }
+  /** The answer when no saved password can be used (module header): Sign-in Auto set back to Manual if it is on, and
+   *  under Auto the page says to set one (the v4 review, M5); on Manual the sign-in is the person's. */
+  async function none(why: 'none' | 'gone' | 'unreadable', act: SignInAct): Promise<Answer<SignInCredential>> {
+    log('signin.credential', { found: false, gone: why === 'gone' });
+    if (why !== 'unreadable') await deps.missing?.(why).catch(() => undefined);
+    return refuse((act === 'auto' || act === 'agent') && why !== 'unreadable' ? 'not_found' : 'unavailable');
+  }
   return {
     /** signin/credential (module header). Refusals: `unavailable` (Sign-in does not act now, the page is not one the
      *  every-site sign-in covers, or (on Manual) none is saved), `not_found` (Sign-in acts as Auto and no password is
-     *  saved, or the saved one can no longer be read: the page says to set one), `expired` (the tab was answered this
-     *  host's sign-in for this wall already: the site did not take it), `bad_sender` (not a top frame, not https, a
-     *  private tab). */
+     *  saved, or the saved one can no longer be read: the page says to set one), `bad_sender` (not a top frame, not
+     *  https, a private tab). Since the jr6 review (R1) a tab pressed for this host's wall already is answered `press`
+     *  false, never refused. */
     async credential(message: CredentialMessage, from: ContentChannel): Promise<Answer<SignInCredential>> {
       if (from.incognito === true || (from.frameId !== 0 && !(await claims(from)))) {
         log('signin.refused', { top: from.frameId === 0, incognito: from.incognito === true });
@@ -118,27 +135,38 @@ export function createSignIn(deps: SignInDeps) {
         log('signin.refused', { host: false });
         return refuse('unavailable');
       }
+      // The jr6 review (R1): an ask this frame never presses is typed alone and never meets the press limit; a press
+      // within SIGN_IN_ONCE_MS of the tab's last one for this wall and host is typed for the person instead (no loop:
+      // nothing is pressed by itself again).
       const key = `${SIGN_IN_TRIED_PREFIX}${from.tabId}|${message.wall}|${sha256Hex(host).slice(0, 16)}`;
-      const tried = await deps.session.get(key);
-      if (typeof tried === 'number' && deps.now() - tried >= 0 && deps.now() - tried < SIGN_IN_ONCE_MS) {
-        log('signin.refused', { again: true });
-        return refuse('expired');
+      let press = (act === 'auto' || act === 'agent') && message.typing !== true;
+      let again = false;
+      if (press) {
+        const tried = await deps.session.get(key);
+        again = typeof tried === 'number' && deps.now() - tried >= 0 && deps.now() - tried < SIGN_IN_ONCE_MS;
+        // The auto-apply agent's tab (sec-3): nobody is there to press what would be typed: refused, as before R1.
+        if (again && act === 'agent') {
+          log('signin.refused', { again: true });
+          return refuse('expired');
+        }
+        if (again) press = false;
+      }
+      // An email gate (v3 Phase 7b) types the email alone: the password never leaves the worker for one, and (the jr6
+      // review, R8) is not decrypted for it: the record's email is kept in the clear.
+      if (message.wall === 'email-gate') {
+        const held = await deps.vault.status();
+        if (!held.set || held.email === null) return none('none', act);
+        if (press) await deps.session.set({ [key]: deps.now() });
+        log('signin.credential', { found: true, press, again, gate: true });
+        return ok({ host: AUTOFILL_ANY_HOST, email: held.email, press });
       }
       const saved = await deps.vault.reveal();
-      if (!saved.ok) {
-        log('signin.credential', { found: false, gone: saved.why === 'gone' });
-        if (saved.why === 'gone') await deps.gone?.().catch(() => undefined);
-        // None to use: under Auto the page says to set one (the v4 review, M5); on Manual the sign-in is the person's.
-        return refuse(act === 'auto' && saved.why !== 'unreadable' ? 'not_found' : 'unavailable');
-      }
-      const press = act === 'auto';
-      // Answered for a press: this tab, wall and host are not answered again within SIGN_IN_ONCE_MS. jr6: one typed on
+      if (!saved.ok) return none(saved.why, act);
+      // Answered for a press: this tab, wall and host are not pressed again within SIGN_IN_ONCE_MS. jr6: one typed on
       // Manual is no try (nothing is pressed, the site refused nothing), so Sign up & Autofill may still press it.
       if (press) await deps.session.set({ [key]: deps.now() });
-      log('signin.credential', { found: true, press });
-      // An email gate (v3 Phase 7b) types the email alone: the password never leaves the worker for one.
-      return ok(message.wall === 'email-gate' ? { host: AUTOFILL_ANY_HOST, email: saved.email, press }
-        : { host: AUTOFILL_ANY_HOST, email: saved.email, password: saved.password, press });
+      log('signin.credential', { found: true, press, again });
+      return ok({ host: AUTOFILL_ANY_HOST, email: saved.email, password: saved.password, press });
     },
 
     /** A closed tab's asks go with it. */

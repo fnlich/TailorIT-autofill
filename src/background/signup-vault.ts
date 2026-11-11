@@ -4,15 +4,22 @@
  * it. user can set and manage the password on extension settings"). One email and one password for the job sites' own
  * accounts, kept in this browser alone, encrypted:
  * - the key: AES-GCM, 256 bits, made once by the worker with extractable false (crypto.subtle.generateKey) and kept in
- *   the extension origin's IndexedDB (platform/indexed-db.ts, key `signup-key`), where no content script reaches and
- *   from which no code, the extension's included, can read its bytes: the browser encrypts and decrypts with it, nothing
- *   more;
+ *   the extension origin's IndexedDB (platform/indexed-db.ts, key `signup-key`), where no content script reaches; being
+ *   not extractable, no script (the extension's included) can export its bytes: the browser encrypts and decrypts with
+ *   it, nothing more;
  * - the record: storage.local `signup:v1` {v, iv, data, email, updatedAt}: a fresh 96-bit nonce per save, the
- *   ciphertext with its tag (its additional data names the record's purpose and version), and the email and the time in
- *   the clear. storage.local is kept to the extension's trusted contexts (the worker restricts it at start-up), is never
- *   synced, and is never exported (the options page's export holds the counters alone). It is never inside the settings
- *   (`settings:v1`), never sent to TailorIT, never in a report, a RunState, a log line or any message but the one that
- *   types it (background/sign-in.ts).
+ *   ciphertext with its tag (its additional data names the record's purpose and version alone: the email is not bound
+ *   to it, so an email changed alone needs no decryption), and the email and the time in the clear. storage.local is
+ *   kept to the extension's trusted contexts (the worker restricts it at start-up; Chrome before 140 refuses that, and
+ *   then a content script could write it), is never synced, and is never exported (the options page's export holds the
+ *   counters alone). It is never inside the settings (`settings:v1`), never sent to TailorIT, never in a report, a
+ *   RunState, a log line or any message but the one that types it (background/sign-in.ts).
+ * - What this keeps the password from (the jr6 review, sec-7): other extensions, the job sites' pages and content
+ *   scripts, sync, exports and a casual dump of the extension's storage. Not from someone who can read this browser's
+ *   profile folder on this computer (local malware, a copy or backup of the profile, another account with access to its
+ *   files): Chrome keeps the IndexedDB key's structured clone, raw bytes included, in that folder's LevelDB unencrypted
+ *   beside storage.local's ciphertext, and LevelDB keeps old values until it compacts, so Delete is no wipe either. The
+ *   settings card says so and suggests a password kept for job sites alone (ui/page/signup-copy.ts).
  * - Jobright 1.25.2 (read for behaviour only: its ~store/workday-signup-info) keeps the password as plain text in
  *   chrome.storage.local (`WORKDAY_SIGNUP_INFORMATION`: {password, updatedAt}) and the email on its own server. Here both
  *   stay in this browser and the password is never stored in the clear.

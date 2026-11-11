@@ -320,12 +320,14 @@ describe('Sign-in’s credential in the worker (v3 Phase 5; jr6: this browser’
     return worker;
   }
 
-  it('answers the saved sign-in to the sender’s top frame, once per tab, wall and host, asking TailorIT nothing', async () => {
+  it('answers the saved sign-in to the sender’s top frame, pressed once per tab, wall and host, asking TailorIT nothing', async () => {
     const worker = await signInWorker();
     expect(await ask(worker)).toEqual({ ok: true, data: { host: '*', email: SIGNUP_EMAIL, password: SIGNUP_PASSWORD,
       press: true } });
-    // The same tab and wall again (the site did not take it): never answered again.
-    expect(await ask(worker)).toEqual({ ok: false, error: 'expired' });
+    // The same tab and wall again (the site did not take it): never pressed again, typed for the person (the jr6
+    // review, R1).
+    expect(await ask(worker)).toEqual({ ok: true, data: { host: '*', email: SIGNUP_EMAIL, password: SIGNUP_PASSWORD,
+      press: false } });
     // The other wall once, then another tab once.
     expect(await ask(worker, top(), 'create-account')).toMatchObject({ ok: true });
     expect(await ask(worker, top({ tab: { id: 13, url: WORKDAY } }))).toMatchObject({ ok: true });
@@ -343,13 +345,42 @@ describe('Sign-in’s credential in the worker (v3 Phase 5; jr6: this browser’
     expect(Object.keys(local).filter((key) => JSON.stringify(local[key]).includes(SIGNUP_EMAIL))).toEqual(['signup:v1']);
   });
 
-  it('answers an email gate the email alone, never the password, once per tab and host (v3 Phase 7b)', async () => {
+  it('answers an email gate the email alone, never the password, pressed once per tab and host (v3 Phase 7b)', async () => {
     const worker = await signInWorker();
     expect(await ask(worker, top(), 'email-gate')).toEqual({ ok: true, data: { host: '*', email: SIGNUP_EMAIL,
       press: true } });
-    expect(await ask(worker, top(), 'email-gate')).toEqual({ ok: false, error: 'expired' });
-    // The gate's answer is its own wall: the tab's sign-in is still answered once.
-    expect(await ask(worker)).toMatchObject({ ok: true, data: { password: SIGNUP_PASSWORD } });
+    expect(await ask(worker, top(), 'email-gate')).toEqual({ ok: true, data: { host: '*', email: SIGNUP_EMAIL,
+      press: false } });
+    // The gate's answer is its own wall: the tab's sign-in is still pressed once.
+    expect(await ask(worker)).toMatchObject({ ok: true, data: { password: SIGNUP_PASSWORD, press: true } });
+  });
+
+  it('never answers Manual’s typing in the auto-apply agent’s tab, nor tells its frames to type (the jr6 review, sec-3)', async () => {
+    const { worker, win } = await withAgent();
+    worker.fakes.frameAnswers = () => ({ ok: true, data: {} });
+    await saveSignup(worker);
+    await worker.deliver({ v: 1, type: 'agent/set', on: true, confirmed: true }, OPTIONS);
+    worker.timers.advance(1);
+    await vi.waitFor(() => expect(win.opened).toEqual([GREENHOUSE]));
+    await vi.waitFor(async () => expect(await fakeBrowser.storage.local.get(AGENT_RUN_KEY))
+      .toMatchObject({ [AGENT_RUN_KEY]: { tabId: AGENT_TAB } }));
+    // The agent's tab reaches a Workday account wall, Sign-in on Manual with a password saved.
+    const walled = contentSender({ url: WORKDAY, tab: { id: AGENT_TAB, url: WORKDAY }, documentId: 'doc-wall' });
+    expect(await ask(worker, walled)).toEqual({ ok: false, error: 'unavailable' });
+    // Another tab of the person's is answered to type it.
+    expect(await ask(worker, top())).toMatchObject({ ok: true, data: { press: false } });
+    // The agent's frames hear no typing (a Greenhouse page of its task, its own settings).
+    const agentFrame = contentSender({ url: GREENHOUSE, tab: { id: AGENT_TAB, url: GREENHOUSE }, documentId: 'doc-a' });
+    expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, agentFrame))
+      .toMatchObject({ ok: true, data: { settings: { modes: { submit: 'auto' }, typeSignIn: false } } });
+    expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top({ documentId: 'doc-w2' })))
+      .toMatchObject({ ok: true, data: { settings: { typeSignIn: true } } });
+    // On Auto, the agent's tab is pressed once per wall, and never typed for a person after it (R1's typing is the
+    // person's tabs' alone).
+    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+      modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } } }, OPTIONS);
+    expect(await ask(worker, walled)).toMatchObject({ ok: true, data: { press: true } });
+    expect(await ask(worker, walled)).toEqual({ ok: false, error: 'expired' });
   });
 
   it('on Manual answers it to be typed, never pressed; with none saved or before the disclosure, nothing', async () => {
