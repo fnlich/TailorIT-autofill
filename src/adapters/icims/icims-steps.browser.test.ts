@@ -73,8 +73,9 @@ afterEach(() => removeFixtures(document));
 
 describe('the iCIMS adapter on the owner’s snapshots of 2026-11-06', () => {
   it('names each snapshot it was written from, and every case has its expectations', () => {
+    // jr6: the snapshot6 cases are jr6-icims.browser.test.ts's.
     expect(OWNER_CASES.map((name) => `fixtures/icims/${name}.html`).sort())
-      .toEqual([...ICIMS_SNAPSHOTS].filter((path) => !/\/(?:eastwestbank|gdms)-/.test(path)).sort());
+      .toEqual([...ICIMS_SNAPSHOTS].filter((path) => !/\/(?:eastwestbank|gdms|jr6)-/.test(path)).sort());
     expect(CASES.length).toBe(15);
     for (const each of CASES) expect(each.html.length > 0 && each.address !== '', each.name).toBe(true);
   });
@@ -233,14 +234,18 @@ describe('the profile: its collections and its uploads', () => {
     expect(icimsAdapter.repeatables!(rootOf(github.doc))).toEqual([]);
   });
 
-  it('takes the resume by its "My Computer" button while it shows, and no upload once a resume was read', async () => {
+  it('takes the resume by its "My Computer" button while it shows; once a resume was read, by its Replace Resume', async () => {
     const fixture = await load('nyu-profile.frame-1');
     const input = fixture.doc.getElementById('PortalProfileFields.Resume_File');
     expect(icimsAdapter.uploadWidgets!(rootOf(fixture.doc))).toEqual([{ control: input!.parentElement, input }]);
     expect(input!.parentElement!.matches('div.iCIMS_FileFieldButton.iCIMS_resumeUpload')).toBe(true);
     removeFixtures(document);
+    // jr6 ICIMS-23: the held resume's input stays its field, the button a person sees for it "Replace Resume" (never
+    // pressed: neverPress), the hidden "My Computer" button no control of it.
     const github = await load('githubinc-profile.frame-1');
-    expect(icimsAdapter.uploadWidgets!(rootOf(github.doc))).toEqual([]);
+    const held = github.doc.getElementById('PortalProfileFields.Resume_File');
+    expect(icimsAdapter.uploadWidgets!(rootOf(github.doc)))
+      .toEqual([{ control: github.doc.getElementById('PortalProfileFields.Resume_Button'), input: held }]);
   });
 });
 
@@ -297,11 +302,18 @@ describe('the profile: the resume’s parse and the file on record', () => {
     const fixture = await load('githubinc-profile.frame-1');
     const input = fixture.doc.getElementById('PortalProfileFields.Resume_File') as HTMLInputElement;
     expect(icimsAdapter.uploadHeld!(input)).toBe(true);
-    // The page hides its input with its buttons then: no file field is offered ("Replace Resume" is never pressed).
-    expect(icimsAdapter.uploadWidgets!(rootOf(fixture.doc))).toEqual([]);
-    expect(icimsAdapter.neverPress!(rootOf(fixture.doc))).toContain(fixture.doc.getElementById('PortalProfileFields.Resume_Button'));
+    // The page hides its input with its buttons then; jr6 ICIMS-23: the input stays the resume's field, held, "Replace
+    // Resume" the control a person sees for it, never pressed.
+    const replace = fixture.doc.getElementById('PortalProfileFields.Resume_Button');
+    expect(icimsAdapter.uploadWidgets!(rootOf(fixture.doc))).toEqual([{ control: replace, input }]);
+    expect(icimsAdapter.neverPress!(rootOf(fixture.doc))).toContain(replace);
+    const scanned = scan(rootOf(fixture.doc), icimsAdapter, { platform: 'icims' });
+    const field = scanned.fields.find((each) => scanned.target(each.key)?.control === input)!;
+    expect(field.current).toEqual({ kind: 'files', count: 1, held: true });
     fixture.doc.getElementById('PortalProfileFields.Resume_FileNameLabel')!.classList.add('iCIMS_NoDisplay');
     expect(icimsAdapter.uploadHeld!(input)).toBe(false);
+    // No file on record shown: no held resume, and the hidden upload buttons offer no control.
+    expect(icimsAdapter.uploadWidgets!(rootOf(fixture.doc))).toEqual([]);
     removeFixtures(document);
 
     const nyu = await load('nyu-profile.frame-1');
@@ -358,15 +370,19 @@ describe('the questions’ two steps by their address word (?global=1 the Candid
 // ── behaviour review 2026-11-06 (minor 8): an IForm's own form, chained ──
 describe('an IForm’s own form, read since its frame is chained', () => {
   /** What the scan reads on each IForm's frame: each field's control name, kind, label and whether a fill would write it
-   *  (no-visible-label: no words a person sees name it). */
+   *  (no-visible-label: no words a person sees name it). jr6: the radios' question is the self-identification form's
+   *  title (ICIMS-14: groupOf, labelFor), the date's parts its caption with the part (ICIMS-10); edgewater's name box
+   *  stays unlabelled (its aria-label "Name" is not the "Your Name" a person sees above it). */
   const READ = {
-    'edgewater-self-id-veteran.frame-2': [['icims_f_Veteran', 'radio', '', 'no-visible-label'],
-      ['icims_f_Name', 'text', 'Name', 'no-visible-label'], ['icims_f_Date_Month', 'select', '', 'no-visible-label'],
-      ['icims_f_Date_Date', 'select', '', 'no-visible-label'], ['icims_f_Date_Year', 'text', '', 'no-visible-label'],
-      ['icims_f_signature', 'checkbox', 'Signature', 'fillable']],
+    'edgewater-self-id-veteran.frame-2': [
+      ['icims_f_Veteran', 'radio', 'VOLUNTARY SELF-IDENTIFICATION OF VETERAN STATUS', 'fillable'],
+      ['icims_f_Name', 'text', 'Name', 'no-visible-label'], ['icims_f_Date_Month', 'select', "Today's Date month", 'fillable'],
+      ['icims_f_Date_Date', 'select', "Today's Date day", 'fillable'],
+      ['icims_f_Date_Year', 'text', "Today's Date year", 'fillable'], ['icims_f_signature', 'checkbox', 'Signature', 'fillable']],
     'nyu-self-id-disability.frame-2': [['icims_f_Name', 'text', 'Name', 'fillable'],
-      ['icims_f_Date_Month', 'select', '', 'no-visible-label'], ['icims_f_Date_Date', 'select', '', 'no-visible-label'],
-      ['icims_f_Date_Year', 'text', '', 'no-visible-label'], ['icims_f_Disability', 'radio', '', 'no-visible-label'],
+      ['icims_f_Date_Month', 'select', 'Date month', 'fillable'], ['icims_f_Date_Date', 'select', 'Date day', 'fillable'],
+      ['icims_f_Date_Year', 'text', 'Date year', 'fillable'],
+      ['icims_f_Disability', 'radio', 'Voluntary Self-Identification of Disability', 'fillable'],
       ['icims_f_signature', 'checkbox', 'Signature', 'fillable']],
   } as const;
 

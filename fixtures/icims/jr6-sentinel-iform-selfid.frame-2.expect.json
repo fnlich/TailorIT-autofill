@@ -1,0 +1,21 @@
+{
+  "fixture": "icims/jr6-sentinel-iform-selfid.frame-2",
+  "source": "https://sentinel.icims.com/forms?module=Forms&action=showForm&brandtype=ccc&portalid=109&form=SelfID&user=REDACTED&item=REDACTED&token=REDACTED&csrf=REDACTED&isPacket=1&in_iframe=1&step=6&aid=REDACTED",
+  "captured": "2026-11-11T04:08:43.000Z",
+  "note": "Hooks only (jr6 P1): careers-sentinel's veteran self-ID form, on sentinel.icims.com/forms (chained), the application's last step. Fields are asserted after ENGINE E1 to E3 and RULES merge (FIXPLAN §6.5 P2 asserts).",
+  "fields": [],
+  "hooks": {
+    "detect": "form[name=\"icims_form\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input[name=\"icims_save\"]"
+    ],
+    "pressable": [
+      "input[name=\"icims_submit\"]"
+    ]
+  }
+}

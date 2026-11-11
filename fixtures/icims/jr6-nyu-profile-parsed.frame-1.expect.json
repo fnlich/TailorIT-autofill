@@ -1,0 +1,39 @@
+{
+  "fixture": "icims/jr6-nyu-profile-parsed.frame-1",
+  "source": "https://uscareers-nyu.icims.com/jobs/16462/continual-service-improvement-manager%2c-global-infrastructure-and-operations/candidate?from=login&csrf=REDACTED&in_iframe=1&hashed=REDACTED&uploadResume=1&uploadResume=1",
+  "captured": "2026-11-11T04:21:46.000Z",
+  "note": "Hooks only (jr6 P1): uscareers-nyu's Candidate Profile after iCIMS read the résumé: four employment blocks, date parts, education dropdowns. Fields are asserted after ENGINE E1 to E3 and RULES merge (FIXPLAN §6.5 P2 asserts).",
+  "fields": [],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input[id=\"PersonProfileFields.Login\"]",
+      "password": "input[id=\"PersonProfileFields.Password\"]",
+      "confirm": "input[id=\"PersonProfileFields.Password_Confirm\"]",
+      "terms": [],
+      "button": "input#cp_form_submit_i",
+      "form": "form#profileForm",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "button.icims-social-login",
+      "button.iCIMS_googleDriveButton",
+      "button.iCIMS_dropboxButton",
+      "button.iCIMS_oneDriveButton",
+      "button.iCIMS_DeleteButton",
+      "a.iCIMS_Faq_Link",
+      ".iCIMS_userMenuLink a",
+      "a[href*=\"loginOnly=1\"]",
+      "a.iCIMS_Anchor_Nav",
+      "a.iCIMS_Anchor[id*=\"Button2_\"]"
+    ],
+    "pressable": [
+      "input#cp_form_submit_i"
+    ]
+  }
+}

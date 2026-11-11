@@ -1,0 +1,38 @@
+{
+  "fixture": "icims/jr6-ars-profile",
+  "source": "https://careers-ars.icims.com/jobs/69503/azure-infrastructure-engineer/candidate?from=login&eem=REDACTED&pnumber=REDACTED&ccode=REDACTED&code=REDACTED",
+  "captured": "2026-11-11T04:11:41.000Z",
+  "note": "Hooks only (jr6 P1): careers-ars's Candidate Profile (a top page), blank: the address lookup, Time Zone, the SMS consent. Fields are asserted after ENGINE E1 to E3 and RULES merge (FIXPLAN §6.5 P2 asserts).",
+  "fields": [],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input[id=\"PersonProfileFields.Login\"]",
+      "password": "input[id=\"PersonProfileFields.Password\"]",
+      "confirm": "input[id=\"PersonProfileFields.Password_Confirm\"]",
+      "terms": [],
+      "button": "input#cp_form_submit_i",
+      "form": "form#profileForm",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "button.icims-social-login",
+      "button.iCIMS_googleDriveButton",
+      "button.iCIMS_dropboxButton",
+      "button.iCIMS_oneDriveButton",
+      "button.iCIMS_DeleteButton",
+      "a.iCIMS_Faq_Link",
+      ".iCIMS_userMenuLink a",
+      "a[href*=\"loginOnly=1\"]",
+      "a.iCIMS_Anchor_Nav"
+    ],
+    "pressable": [
+      "input#cp_form_submit_i"
+    ]
+  }
+}
