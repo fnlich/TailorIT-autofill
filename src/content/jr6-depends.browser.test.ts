@@ -13,6 +13,10 @@
  *   the books' 'parent-written' (loop.ts reshapes, bookkeeping.ts dependsAgain);
  * - decide again a field the page drew anew after a write (Postal Code, disabled, then replaced by an enabled box of the
  *   same name once a country is chosen), through the books' 'reshaped'.
+ * jr6 line W review (REVC-7): a second page whose Country is a lazy list (a select-only combobox whose rows are drawn
+ * only once it opens, as Oracle's cx-select on a first visit: SP\jr6\oracle-p2\timeline.log), so the first pass cannot
+ * write it, and whose new country empties Address Line 1: the street is held back until the Country is written, then
+ * typed once, after it (loop.ts heldDependents), never typed before it and again.
  * Every value is the golden profile's (fixtures/profiles/alex-rivera.profile.json); the page is synthetic.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -74,6 +78,61 @@ function dependsAdapter(doc: Document): Adapter {
     : null) };
 }
 
+/** jr6 line W review (REVC-7): Country a select-only combobox whose rows are drawn only while it is open (read lazily),
+ *  then Address Line 1 and ZIP Code, which a chosen country empties (window.__resets: each box that lost what it held).
+ *  window.__order: each country chosen, and each change of a box. */
+function lazyPage(): string {
+  return `<!doctype html><html><head><title>Apply</title></head><body>
+<form id="app" action="about:blank">
+  <div><span id="country-label">Country</span>
+    <div id="country" role="combobox" tabindex="0" aria-labelledby="country-label" aria-haspopup="listbox"
+      aria-expanded="false" aria-controls="country-list">Select a country</div>
+    <ul id="country-list" role="listbox" aria-labelledby="country-label" hidden></ul></div>
+  <p><label for="address">Address Line 1</label><input id="address" name="address" type="text"></p>
+  <p><label for="zip">ZIP Code</label><input id="zip" name="zip" type="text"></p>
+</form>
+<script>
+  window.__order = [];
+  window.__resets = 0;
+  const country = document.getElementById('country');
+  const list = document.getElementById('country-list');
+  const boxes = ['address', 'zip'].map((id) => document.getElementById(id));
+  const show = (open) => {
+    list.replaceChildren(...(open ? ['Canada', 'United States'] : []).map((name, at) => {
+      const row = document.createElement('li');
+      row.id = 'country-option-' + at;
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', String(country.textContent === name));
+      row.textContent = name;
+      row.addEventListener('click', () => {
+        country.textContent = name;
+        window.__order.push('country:' + name);
+        // A new country draws the address block again: its boxes are emptied.
+        for (const box of boxes) {
+          if (box.value !== '') window.__resets += 1;
+          box.value = '';
+        }
+        show(false);
+      });
+      return row;
+    }));
+    list.hidden = !open;
+    country.setAttribute('aria-expanded', String(open));
+  };
+  country.addEventListener('click', () => show(list.hidden));
+  country.addEventListener('focusout', () => show(false));
+  for (const box of boxes) box.addEventListener('change', () => { window.__order.push(box.id); });
+</script></body></html>`;
+}
+
+/** The generic adapter with Oracle's chain of rules for the lazy page (ORACLE's dependsOn): Address Line 1 is reset by
+ *  Country's write, ZIP Code by Address Line 1's. */
+function lazyAdapter(doc: Document): Adapter {
+  const parentOf: Record<string, string> = { address: 'country', zip: 'address' };
+  return { ...genericAdapter, dependsOn: (control: Element) => (control.id in parentOf
+    ? doc.getElementById(parentOf[control.id]!) : null) };
+}
+
 beforeAll(() => testVocab());
 const runtimes: ContentRuntime[] = [];
 afterEach(() => {
@@ -83,7 +142,12 @@ afterEach(() => {
 
 /** A run on the page, to its end: the page's record of the writes and resets, and the run's rows by label. */
 async function run(options: { stateWaits: boolean; postalWaits: boolean }, adapterOf = dependsAdapter) {
-  const fixture = await loadFixture(document, page(options), { width: 1100, height: 900 });
+  return runOn(page(options), adapterOf);
+}
+
+/** A run on `html`, to its end (see run). */
+async function runOn(html: string, adapterOf: (doc: Document) => Adapter) {
+  const fixture = await loadFixture(document, html, { width: 1100, height: 900 });
   const doc = fixture.doc;
   const worker = createFakeWorker({ settings: DEFAULT_SETTINGS });
   const runtime = await startContentRuntime(worker.platform, doc, { href: () => HREF, isTop: true,
@@ -119,5 +183,25 @@ describe('jr6 ENGINE E3 item 14: a Country-then-State page whose State a Country
     expect(postal.disabled).toBe(false);
     expect(postal.value).not.toBe('');
     expect(rows.get('Postal Code')).toMatchObject({ status: 'verified', wrote: true });
+  }, 40_000);
+
+  // jr6 line W review (REVC-7).
+  it('holds dependents back while their parent waits for its options, a chain too: each typed once, after it',
+    async () => {
+      const { doc, order, resets, rows } = await runOn(lazyPage(), lazyAdapter);
+      expect(order).toEqual(['country:United States', 'address', 'zip']);
+      expect(resets).toBe(0);
+      expect(doc.getElementById('country')!.textContent).toBe('United States');
+      for (const id of ['address', 'zip']) expect((doc.getElementById(id) as HTMLInputElement).value, id).not.toBe('');
+      for (const label of ['Country', 'Address Line 1', 'ZIP Code']) {
+        expect(rows.get(label), label).toMatchObject({ status: 'verified', wrote: true });
+      }
+    }, 40_000);
+
+  it('the control: with no parent named, the boxes are typed before the lazy Country and again after it', async () => {
+    const { order, resets, rows } = await runOn(lazyPage(), () => genericAdapter);
+    expect(order).toEqual(['address', 'zip', 'country:United States', 'address', 'zip']);
+    expect(resets).toBe(2);
+    expect(rows.get('Address Line 1')).toMatchObject({ status: 'verified', wrote: true });
   }, 40_000);
 });

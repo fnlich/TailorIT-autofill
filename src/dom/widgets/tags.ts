@@ -12,17 +12,21 @@
  *   - search (WD-18): searched for as a remote typeahead's query is (typeahead.ts searchTypeahead: its declared results
  *     list, its declared query key, the result clicked through assertNotSubmit), and only a result whose shown words are
  *     the value itself is chosen (Jobright 1.25.2's MyWorkDay fillSkills searches each profile skill and picks its own
- *     result); a value no result is: left, and the next one tried;
+ *     result); a value no result is: left, and the next one tried; a result its list marks chosen already (a pill the
+ *     chips do not read as the value: a glyph in its words) is never chosen, since that choice would take the answer
+ *     away (searchTypeahead's keepChosen; jr6 line W review, ENG-REV-3): the value is left unverified, the next tried;
  *   - add (U-05): typed into the text box with the text filler's setter and its input event, the page given its answer
  *     (one quiet window), then its declared Add (WidgetTags.add) pressed with an untrusted click through assertNotSubmit
  *     while a person can see it enabled (Jobright 1.25.2's UltiPro fillSkills types each skill missing from the chips
  *     and presses its row's Add); an Add that does not show, or that is refused, gets the box back as it was, and the
  *     field is the person's (needs-your-click);
  *   then the chips are awaited until they show the value (TAGS_ADD_CAP_MS: quiet windows on the form root, never a
- *   fixed sleep);
- * - it stops once the box holds its `cap` of chips (the values past it: max-selections-reached), once the field's adds
- *   have run TAGS_FIELD_BUDGET_MS, at a Guard's refusal or a page that does not answer, and at the person's Skip or the
- *   run's end;
+ *   fixed sleep); an Add the page took nothing of (no chip, and the box still holds the value: a page that wants a
+ *   trusted click) is a page that does not answer: the box gets back what it held and the field is the person's
+ *   (needs-your-click), no further value typed (jr6 line W review, ENG-REV-1);
+ * - it stops once the box holds its `cap` of chips (the values past it: max-selections-reached), once the field's
+ *   values have run TAGS_FIELD_BUDGET_MS (checked before each value after the first tried, added or not: ENG-REV-1), at
+ *   a Guard's refusal or a page that does not answer, and at the person's Skip or the run's end;
  * - it is verified by the chips: every planned value shows as one (tag-chips.ts holdsTags).
  * Values stay in memory: nothing here logs or sends one.
  */
@@ -108,8 +112,13 @@ async function searchOne(target: FieldTarget, value: string, ctx: WidgetContext,
       return index < 0 ? { choose: null, reason: 'no-match', blocked: false }
         : { choose: { index, cleanLabel: cleanOptionLabel(results[index]!.label) } };
     },
-  }, budgetMs, { freeText: false });
+  }, budgetMs, { freeText: false, keepChosen: true });
   if (result.chosen === null) {
+    // jr6 line W review (ENG-REV-3): the list marks the value's own result chosen already, though no chip reads it:
+    // never chosen (that would take it away), left unverified (the chips do not show it), and the next one tried.
+    if (result.reason === 'already-correct') {
+      return { ok: false, reason: 'verify-mismatch', blocked: false, stop: false, target: current };
+    }
     // No result is the value: the next one is tried; the page's silence, a Guard's word or the run's end stop the box.
     const stop = result.blocked || result.reason !== 'no-match';
     return { ok: false, reason: result.reason, blocked: result.blocked, stop, target: current };
@@ -157,14 +166,19 @@ async function addOne(target: FieldTarget, value: string, ctx: WidgetContext, ho
     return { ok: false, reason: 'needs-your-click', blocked: false, stop: true, target: current };
   }
   const shown = await chipShown(tags, value, ctx);
-  // A value the page took nothing of is put back where the box still holds it.
-  if (!shown && box.value === value) putBack();
+  // jr6 line W review (ENG-REV-1): an Add the page took nothing of (no chip, the box still holding the value: a page
+  // that wants a trusted click) is a page that does not answer: the box is put back, and no further value is typed.
+  if (!shown && box.value === value) {
+    putBack();
+    return { ok: false, reason: 'needs-your-click', blocked: false, stop: true, target: current };
+  }
   return { ok: shown, reason: shown ? 'ok' : 'verify-mismatch', blocked: false, stop: false, target: current };
 }
 
-/** Writes a planned text into a box of several answers and reads it back by its chips (see the header). */
-export async function fillTags(target: FieldTarget, text: string, ctx: WidgetContext, hooks: TagsHooks):
-  Promise<TagsResult> {
+/** Writes a planned text into a box of several answers and reads it back by its chips (see the header). `budgetMs` is
+ *  the time after which no further value is tried (TAGS_FIELD_BUDGET_MS). */
+export async function fillTags(target: FieldTarget, text: string, ctx: WidgetContext, hooks: TagsHooks,
+  budgetMs: number = TAGS_FIELD_BUDGET_MS): Promise<TagsResult> {
   const none = (reason: ReasonCode, blocked = false): TagsResult => ({ added: 0, verified: false, reason, blocked });
   const widget = target.widget;
   const tags = declaredTags(widget?.tags);
@@ -186,9 +200,12 @@ export async function fillTags(target: FieldTarget, text: string, ctx: WidgetCon
   let reason: ReasonCode = 'ok';
   let blocked = false;
   let capped = false;
+  let tried = 0;
   for (const value of missing()) {
     if (ctx.signal?.aborted) break;
-    if (added > 0 && monotonicNow() - started >= TAGS_FIELD_BUDGET_MS) break;
+    // jr6 line W review (ENG-REV-1): the field's budget, checked before each value after the first tried, added or
+    // not: values none of which the page takes would otherwise each cost a search or an Add's wait.
+    if (tried > 0 && monotonicNow() - started >= budgetMs) break;
     const now = current.widget?.tags ?? tags;
     const chips = chipWords(now);
     // The page may have added it meanwhile; a box at its cap takes no more.
@@ -197,6 +214,7 @@ export async function fillTags(target: FieldTarget, text: string, ctx: WidgetCon
       capped = true;
       break;
     }
+    tried += 1;
     // A box that declares its Add is added by it; one that declares only a search, by its result.
     const step = now.add === undefined
       ? await searchOne(current, value, ctx, hooks, SEARCH_FIELD_BUDGET_MS)

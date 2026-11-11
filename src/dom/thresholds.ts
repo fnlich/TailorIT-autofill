@@ -145,8 +145,9 @@ export const UPLOAD_REVEAL_CAP_MS = 2_000;
  *  Add (widgets/tags.ts), the box's chips are awaited this long at most for the value to show as one (Jobright's
  *  fillSkills reads the chips again 100 to 200 ms after each add). */
 export const TAGS_ADD_CAP_MS = 3_000;
-/** ...and a box's adds, all its values together, add no further value once they have run this long (checked before each
- *  value after the first added): Workday's Skills takes up to its adapter's cap of them, each one a search. */
+/** ...and a box's adds, all its values together, try no further value once they have run this long (checked before
+ *  each value after the first tried, added or not: the jr6 line W review, ENG-REV-1): Workday's Skills takes up to its
+ *  adapter's cap of them, each one a search. */
 export const TAGS_FIELD_BUDGET_MS = 60_000;
 /** jr6 ENGINE E3 (FIXPLAN §6.2 item 14: ICIMS-02, O3, ADP-2): after the write of a field others depend on
  *  (Adapter.dependsOn), the page counts as having answered once it has been quiet this long with no dependent showing a

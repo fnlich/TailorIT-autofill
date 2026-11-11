@@ -17,7 +17,9 @@
  *   jr6 ENGINE E3 (FIXPLAN §6.2 item 14): a field whose adapter names another as resetting it (ScanInput.dependsOn,
  *   Adapter.dependsOn) is planned again once that other was written since the scan before ('parent-written'), and so
  *   is one whose kind, or whose element where we never wrote it, changed under its base key after a write
- *   ('reshaped'): dependsAgain.
+ *   ('reshaped'): dependsAgain. jr6 line W review (REVC-7): a pass may hold such a field back, unwritten and with no
+ *   row, while its parent waits for its options (content/loop.ts heldDependents): it stays pending, and the scan after
+ *   that pass is no stall (holdBack).
  * - Our value changed (the Phase 3 review, LC-3 and LC-4). A field the person touched after our write (a trusted
  *   input, keydown, paste or drop: ScanInput.touched) is frozen: never planned or written again, and once its value is
  *   no longer ours its row is the person's (changed-by-you). Otherwise a value is written again only after the page
@@ -199,6 +201,10 @@ export interface LoopState {
   /** v5 p2-stream: the passes that only wrote answers that came in from the AI (noteArrivalPass): not counted against
    *  MAX_PASSES or MAX_AI_PASSES. Absent: none. */
   arrivalPasses?: number;
+  /** jr6 line W review (REVC-7): how many pending fields the pass since the latest scan held back, unwritten and with no
+   *  row, while the field whose write resets them waited for its options (holdBack): the next scan is then no stall,
+   *  since they are planned again. Absent: none. */
+  heldBack?: number;
 }
 
 /** What happened at a scan. Value-free: keys and counts only. */
@@ -645,12 +651,14 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
     if (field.followUp) fields.set(baseKey, { ...fields.get(baseKey)!, followUp: false });
   }
 
-  // Stalled: the page shows what it showed, nothing was written since, and this scan gave nothing new to plan.
+  // Stalled: the page shows what it showed, nothing was written since, and this scan gave nothing new to plan. jr6 line
+  // W review (REVC-7): nor is a scan after a pass that held fields back for their parent (holdBack) a stall.
   const signature = signatureOf(seen);
   const newlyPending = [...fields].some(([baseKey, field]) => field.status === 'pending'
     && state.fields.get(baseKey)?.status !== 'pending');
   const next: LoopState = { pass, fields, edges, priorEdges: state.priorEdges, writers: [], signature,
-    stalled: pass > 0 && state.writers.length === 0 && signature === state.signature && !newlyPending,
+    stalled: pass > 0 && state.writers.length === 0 && signature === state.signature && !newlyPending
+      && (state.heldBack ?? 0) === 0,
     ...(state.arrivalPasses === undefined ? {} : { arrivalPasses: state.arrivalPasses }) };
   return { state: next, pending: presentWith(fields, 'pending').map((field) => field.key),
     waiting: presentWith(fields, 'waiting-options').map((field) => field.key), events, verdict: loopVerdict(next) };
@@ -710,6 +718,21 @@ export function recordRows(state: LoopState, rows: Iterable<FillResult>, options
     }
   }
   return { ...state, fields };
+}
+
+/**
+ * jr6 line W review (REVC-7): records that the pass now ending held these fields back, unwritten and with no row (each a
+ * dependent whose parent waits for its options: content/loop.ts heldDependents), so they stay pending, and the next scan
+ * is no stall: they are planned again in a later pass, after their parent's write or once it is decided. A key whose
+ * field is not pending under it is left out. Keys only. Bounded: a parent waits for its options OPTION_WAIT_PASSES
+ * scans at most.
+ */
+export function holdBack(state: LoopState, keys: Iterable<FieldKey>): LoopState {
+  const held = [...new Set(keys)].filter((key) => {
+    const field = state.fields.get(baseKeyOf(key));
+    return field !== undefined && field.key === key && field.present && field.status === 'pending';
+  });
+  return held.length === 0 ? state : { ...state, heldBack: (state.heldBack ?? 0) + held.length };
 }
 
 /** Records the DOM's awaitOptions answer for a waiting list: 'never-loaded' makes it options-never-loaded (it still
