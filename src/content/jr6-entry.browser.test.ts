@@ -48,10 +48,13 @@ import type { Adapter } from '../adapters/types';
 import { ultiproAdapter } from '../adapters/ultipro';
 import { workableAdapter } from '../adapters/workable';
 import { workdayAdapter } from '../adapters/workday';
+import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { ENTRY_REFUSALS } from '../messaging/schemas';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { deadline } from '../dom/time';
-import { addressOf, keyOf, openAt, pressedKeys, runtimeAt, servedAdapter, wallsOf } from './apply.testkit';
+import {
+  addressOf, applyWorker, keyOf, openAt, pressedKeys, runtimeAt, servedAdapter, wallsOf,
+} from './apply.testkit';
 import { testVocab, type FakeWorker } from './content.testkit';
 import { ENTRY_FORM_WAIT_MS, type ContentRuntime } from './runtime';
 
@@ -99,6 +102,53 @@ const helloWithForm = (worker: FakeWorker) => worker.of('frame/hello')
 /** The place of a refusal in ENTRY_REFUSALS, as content.entry logs it. */
 const refusals = (worker: FakeWorker) => wallsOf(worker).filter((wall) => wall.refused)
   .map((wall) => wall.refusal);
+
+/** Sign-in mode Auto (the person's setting). */
+const AUTO = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const } };
+/** A job-site sign-in as the worker answers it (synthetic: the golden profile's address, a made-up password), for the
+ *  page's own host; `press` as the worker says Sign-in acts. */
+const CREDENTIAL = { host: 'jobs.lever.co', email: 'alex.rivera@example.com', password: 'dummy-password-not-real',
+  press: true };
+
+/** Draws a sign-in form (email, password, its Sign in button, recorded as "sign-in-button") in the page's slot: no form
+ *  of Lever's, so the entry's own sign-in step takes it. Made-up words. */
+function drawSignIn(doc: Document): void {
+  const form = doc.createElement('form');
+  form.method = 'post';
+  form.action = '/session';
+  for (const [id, type, label, auto] of [['email', 'email', 'Email', 'username'],
+    ['password', 'password', 'Password', 'current-password']] as const) {
+    const name = doc.createElement('label');
+    name.htmlFor = id;
+    name.textContent = label;
+    const input = doc.createElement('input');
+    input.id = id;
+    input.type = type;
+    input.autocomplete = auto;
+    form.append(name, input);
+  }
+  const button = doc.createElement('button');
+  button.type = 'submit';
+  button.id = 'sign-in-button';
+  button.textContent = 'Sign in';
+  form.append(button);
+  doc.getElementById('slot')!.append(form);
+}
+
+/** A posting at Lever's address whose Apply draws a sign-in form in place 400 ms after its click (AF-3). */
+async function signInAfterApply(): Promise<{ doc: Document; clicks: string[] }> {
+  const opened = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1><a id="apply"
+    href="${LATE}/apply">Apply for this job</a><div id="slot"></div></main></body>`, LATE);
+  const { doc } = opened;
+  doc.getElementById('apply')!.addEventListener('click', () => void deadline(400).then(() => drawSignIn(doc)));
+  return opened;
+}
+
+/** Whether the sign-in's boxes hold anything now (flags only). */
+const typedIn = (doc: Document) => {
+  const value = (id: string) => (doc.getElementById(id) as HTMLInputElement | null)?.value ?? '';
+  return { email: value('email') !== '', password: value('password') !== '' };
+};
 
 describe('jr6 apply F2: an Apply drawn late, one at a time (AF-2, apply-flow-new-4)', () => {
   it('presses an Apply drawn 3 s after run/start, tells the worker at the press, and claims the form drawn in place',
@@ -207,29 +257,7 @@ describe('jr6 apply F2: the step after Apply (AF-3, AF-11, AF-16, apply-b-new-1)
 
   it('a sign-in drawn in place after the press, no form of the adapter\u2019s: the sign-in step, never a refusal (AF-3)',
     async () => {
-      const { doc, clicks } = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1><a id="apply"
-        href="${LATE}/apply">Apply for this job</a><div id="slot"></div></main></body>`, LATE);
-      doc.getElementById('apply')!.addEventListener('click', () => void deadline(400).then(() => {
-        const form = doc.createElement('form');
-        form.method = 'post';
-        form.action = '/session';
-        for (const [id, type, label, auto] of [['email', 'email', 'Email', 'username'],
-          ['password', 'password', 'Password', 'current-password']] as const) {
-          const name = doc.createElement('label');
-          name.htmlFor = id;
-          name.textContent = label;
-          const input = doc.createElement('input');
-          input.id = id;
-          input.type = type;
-          input.autocomplete = auto;
-          form.append(name, input);
-        }
-        const button = doc.createElement('button');
-        button.type = 'submit';
-        button.textContent = 'Sign in';
-        form.append(button);
-        doc.getElementById('slot')!.append(form);
-      }));
+      const { doc, clicks } = await signInAfterApply();
       const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
       runtimes.push(runtime);
       await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
@@ -570,5 +598,68 @@ describe('jr6 apply F2: the destination’s key, and the owner’s postings (C4,
       await deadline(500);
       expect(pressed.length).toBe(1);
       expect(pressed[0]!.className).toMatch(/iCIMS_ApplyOnlineButton/);
+    }, 30_000);
+});
+
+// ── The line P review's findings (2026-11-11), each with the case its reviewer measured ──
+describe('jr6 apply F2: the entry ends where the person says so (the line P review)', () => {
+  it('run/cancel during the entry’s sign-in step (Sign-in Auto; Sign up & Autofill): nothing typed or pressed after it (revA-2, P-B2)',
+    async () => {
+      for (const how of ['auto', 'sign-up', 'auto, no cancel'] as const) {
+        const { doc, clicks } = await signInAfterApply();
+        let release!: (answer: unknown) => void;
+        const held = new Promise((resolve) => {
+          release = resolve;
+        });
+        const worker = applyWorker(how === 'sign-up' ? DEFAULT_SETTINGS : AUTO,
+          { script: { 'signin/credential': [held] } });
+        const { runtime } = await runtimeAt(doc, LATE, lever(LATE), { worker });
+        runtimes.push(runtime);
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false,
+          ...(how === 'sign-up' ? { signIn: true as const } : {}) });
+        await vi.waitFor(() => expect(clicks, how).toEqual(['apply']), { timeout: 4_000 });
+        // The sign-in step waits for the worker's credential, the frame still saying it is entering.
+        await vi.waitFor(() => expect(worker.of('signin/credential'), how).toHaveLength(1), { timeout: 8_000 });
+        expect(wallsOf(worker).at(-1)?.entering, how).toBe(true);
+        if (how !== 'auto, no cancel') await worker.platform.deliver({ v: 1, type: 'run/cancel' });
+        release({ ok: true, data: CREDENTIAL });
+        if (how === 'auto, no cancel') {
+          // The control: with no Cancel, the step types the sign-in and presses the page's own Sign in.
+          await vi.waitFor(() => expect(clicks, how).toEqual(['apply', 'sign-in-button']), { timeout: 5_000 });
+        } else {
+          await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering, how).toBe(false), { timeout: 3_000 });
+          await deadline(1_500);
+          expect(clicks, how).toEqual(['apply']);
+          expect(typedIn(doc), how).toEqual({ email: false, password: false });
+          expect(refusals(worker), how).toEqual([]);
+        }
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 60_000);
+
+  it('run/cancel during the agent’s sign-in at its entry (Sign-in Auto): nothing typed or pressed after it (revA-2)',
+    async () => {
+      // The page shows its sign-in before any Apply is pressed: the agent's entry is blocked by it, and Sign-in Auto signs
+      // in there (agentSignIn), the same entry run/cancel ends.
+      const { doc, clicks } = await signInAfterApply();
+      drawSignIn(doc);
+      let release!: (answer: unknown) => void;
+      const held = new Promise((resolve) => {
+        release = resolve;
+      });
+      const worker = applyWorker(AUTO, { script: { 'signin/credential': [held] } });
+      const { runtime } = await runtimeAt(doc, LATE, lever(LATE), { worker });
+      runtimes.push(runtime);
+      const entered = worker.platform.deliver({ v: 1, type: 'agent/enter' });
+      await vi.waitFor(() => expect(worker.of('signin/credential')).toHaveLength(1), { timeout: 5_000 });
+      await worker.platform.deliver({ v: 1, type: 'run/cancel' });
+      release({ ok: true, data: CREDENTIAL });
+      // Signed in nowhere: the sign-in is the person's.
+      expect(await entered).toEqual({ ok: true, data: { outcome: 'blocked', block: 'sign-in' } });
+      await deadline(1_000);
+      expect(clicks).toEqual([]);
+      expect(typedIn(doc)).toEqual({ email: false, password: false });
     }, 30_000);
 });

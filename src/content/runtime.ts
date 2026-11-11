@@ -1817,11 +1817,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** v4, the wall branch of atWall: a sign-in, an account's creation or an email gate with no form, at the person's
    *  Autofill (or Sign up & Autofill: `signUp`). jr6: on Manual, a saved password is typed into a sign-in or an
    *  account's creation, the press the person's. jr6 apply F2 item 2 (AF-3, AF-16): the same step for a wall an entry
-   *  press of ours drew in this document, never a refusal. */
-  async function wallStep(kind: SignInWall, signUp: boolean): Promise<void> {
+   *  press of ours drew in this document, never a refusal. The line P review (revA-2, P-B2): that entry's step ends
+   *  with the entry (`signal`, its own: run/cancel, the document's end), as a run's sign-in ends with the run: nothing
+   *  is typed or pressed after the person's Cancel, and what it typed is written empty again (sign-in.ts 'left'); a
+   *  password kept for the person's press stays guarded until the document goes (`page`). */
+  async function wallStep(kind: SignInWall, signUp: boolean, signal: AbortSignal = lifetime.signal): Promise<void> {
     const at = urlOf(readHref());
     const own = at === null ? [] : adapters(at);
-    if (stopped || own.length === 0) return;
+    if (stopped || signal.aborted || own.length === 0) return;
     // jr6: on Manual, a saved password is typed into a sign-in or an account's creation, the press the person's.
     const typeOnly = !signUp && signInMode !== 'auto';
     if (typeOnly && (!signInTypes || (kind !== 'sign-in' && kind !== 'create-account'))) {
@@ -1829,9 +1832,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       return;
     }
     const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, claimed,
-      ...(typeOnly ? { typeOnly: true as const } : {}), signal: lifetime.signal });
-    log('content.sign-up', { taken: outcome === 'continue' || outcome === 'left' });
-    if (stopped || outcome === 'left') return;
+      ...(typeOnly ? { typeOnly: true as const } : {}), signal, page: lifetime.signal });
+    // The line P review (revA-2): a step its entry's end stopped took nothing, and says nothing more.
+    const cancelled = signal.aborted && !stopped;
+    log('content.sign-up', { taken: !cancelled && (outcome === 'continue' || outcome === 'left'),
+      ...(cancelled ? { cancelled: true } : {}) });
+    if (stopped || cancelled || outcome === 'left') return;
     if (outcome === 'continue') {
       // A check the press brought (an email code, a CAPTCHA) is the person's: its toast, until it goes.
       if (wallNow().challenge) showWallToast('challenge');
@@ -2053,14 +2059,15 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         answer({ outcome: 'blocked', block: 'sign-in' });
         const shown = detectPause(doc, null, all[0]!);
         if (shown !== null && (SIGN_IN_WALLS as readonly string[]).includes(shown.kind)) {
-          await wallStep(shown.kind as SignInWall, source.signUp);
+          // The line P review (revA-2, P-B2): the step ends with this entry (run/cancel).
+          await wallStep(shown.kind as SignInWall, source.signUp, signal);
           end(null);
           return;
         }
         end('blocked');
         return;
       }
-      answer(await agentSignIn(all));
+      answer(await agentSignIn(all, signal));
       end(null);
       return;
     }
@@ -2085,12 +2092,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   /** v3 Phase 5: the agent's entry blocked by a sign-in page: Sign-in mode Auto signs in there (sign-in.ts), and the
-   *  entry answers what came of it; Manual, or none to use: blocked by the sign-in. */
-  async function agentSignIn(own: readonly Adapter[]): Promise<EntryAnswer> {
-    if (signInMode !== 'auto' || own.length === 0) return { outcome: 'blocked', block: 'sign-in' };
+   *  entry answers what came of it; Manual, or none to use: blocked by the sign-in. The line P review (revA-2): it ends
+   *  with its entry (`signal`: run/cancel, the document's end), nothing pressed after it. */
+  async function agentSignIn(own: readonly Adapter[], signal: AbortSignal): Promise<EntryAnswer> {
+    if (signInMode !== 'auto' || own.length === 0 || signal.aborted) return { outcome: 'blocked', block: 'sign-in' };
     const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, claimed,
-      signal: lifetime.signal });
-    if (outcome === 'left') return { outcome: 'pressed' };
+      signal, page: lifetime.signal });
+    // 'left': the page went on (the next document's run takes over); the line P review (revA-2): or the entry ended
+    // first, which signed in nowhere.
+    if (outcome === 'left') return signal.aborted && !stopped ? { outcome: 'blocked', block: 'sign-in' }
+      : { outcome: 'pressed' };
     if (outcome === 'continue') {
       // What the page shows after the sign-in: a challenge its press raised, an email code, another account page is
       // the person's, and the entry says so (the v3 Phase 6/7b review's round 2, E7); nothing: it went on.
@@ -2167,7 +2178,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const kind = outcome.pause.kind;
     if ((SIGN_IN_WALLS as readonly string[]).includes(kind)) {
       facts.wall = true;
-      if (source.by === 'person') await wallStep(kind as SignInWall, source.signUp);
+      // The line P review (revA-2, P-B2): the step ends with this entry (run/cancel): nothing pressed after it.
+      if (source.by === 'person') await wallStep(kind as SignInWall, source.signUp, signal);
       return null;
     }
     if (kind === 'entry-choice') {
