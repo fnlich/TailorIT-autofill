@@ -13,7 +13,9 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { SITES_MATCH } from '../shared/hosts';
 import type { RawSender } from '../platform/fake';
 import { FRAME_PROBE_GRACE_MS } from './frames';
-import { ENTRY_ARM_MS, ENTRY_ELSEWHERE_MS, ENTRY_NEXT_MS, ENTRY_PRESSED_LIMIT, ENTRY_WAITING_MS, SIGN_UP_GRANT_MS } from './sign-up';
+import {
+  createSignUps, ENTRY_ARM_MS, ENTRY_ELSEWHERE_MS, ENTRY_NEXT_MS, ENTRY_PRESSED_LIMIT, ENTRY_WAITING_MS, SIGN_UP_GRANT_MS,
+} from './sign-up';
 import { SITES_KEY } from './sites';
 import {
   advance, applyWorker, at, cancel, cancelsAt, fill, GREENHOUSE_FORM, hello, keyOf, LEVER_FORM, LEVER_OTHER,
@@ -98,6 +100,20 @@ describe('the pending entry grant (items 1 and 2)', () => {
     expect(await formStarted(inTime, LEVER_FORM, 'doc-form', 1)).toBe(true);
   });
 
+  it('ends unarmed by its own timer, or at a read past ENTRY_ARM_MS, whichever comes first', async () => {
+    const timer = await applyWorker();
+    const posting = await postingTab(timer, LEVER_POSTING);
+    await fill(timer);
+    timer.timers.advance(ENTRY_ARM_MS);
+    expect(await press(timer, posting)).toEqual({ ok: false, error: 'expired' });
+
+    const read = await applyWorker();
+    const sender = await postingTab(read, LEVER_POSTING);
+    await fill(read);
+    read.clock.now += ENTRY_ARM_MS;
+    expect(await press(read, sender)).toEqual({ ok: false, error: 'expired' });
+  });
+
   it('is never a fill grant with no key: a frame that names no application, and a press that names none, end it', async () => {
     const keyless = await applyWorker();
     const login = at(WD_LOGIN, 'doc-login');
@@ -139,8 +155,10 @@ describe('entry/pressed: who may say it (item 3)', () => {
     const sub = at(LEVER_POSTING, 'doc-sub', TAB, { frameId: 3, parentFrameId: 0 });
     await hello(worker, sub, false);
     await fill(worker);
-    // Another frame of the tab.
+    // Another frame of the tab; and one that names the application frame's document (Chrome never does).
     expect(await press(worker, sub)).toEqual({ ok: false, error: 'bad_sender' });
+    expect(await press(worker, at(LEVER_POSTING, 'doc-posting', TAB, { frameId: 3, parentFrameId: 0 })))
+      .toEqual({ ok: false, error: 'bad_sender' });
     // The top frame, but another document than the one registered.
     expect(await press(worker, at(LEVER_POSTING, 'doc-old'))).toEqual({ ok: false, error: 'bad_sender' });
     // The registered document, said from another origin's address.
@@ -681,5 +699,80 @@ describe('the owner\'s chains still start their next form (ported from the apply
     await hello(tabbed, at(LEVER_FORM, 'doc-new-tab', 13), true);
     await settle();
     expect(starts(tabbed)).toHaveLength(1);
+  });
+});
+
+// The worker ends a grant whose tab moved to another origin before any of these is asked (moved), so the checks inside
+// sign-up.ts are proved here, on the grants alone.
+describe('createSignUps alone: the origin and key checks', () => {
+  const A = 'https://jobs.lever.co';
+  const B = 'https://job-boards.greenhouse.io';
+  const KEY = 'lever:0123456789abcdef';
+  const NEXT = 'lever:fedcba9876543210';
+  const ELSE = 'lever:1111111111111111';
+  const place = (origin: string, applicationKey: string | undefined, documentId: string) =>
+    ({ origin, applicationKey, documentId });
+  function given() {
+    const clock = { now: 0 };
+    const signUps = createSignUps({ now: () => clock.now });
+    signUps.grant(1, { signIn: false, fill: true, entry: true }, place(A, KEY, 'd1'));
+    return { signUps, clock };
+  }
+
+  it('arms only for a frame of the grant\'s origin, in a document it reached', () => {
+    const { signUps } = given();
+    expect(signUps.pressed(1, place(B, KEY, 'd1'))).toBe(false);
+    expect(signUps.pressed(1, place(A, KEY, 'd2'))).toBe(false);
+    expect(signUps.pressed(2, place(A, KEY, 'd1'))).toBe(false);
+    expect(signUps.waiting(1)).toBe(false);
+    expect(signUps.pressed(1, place(A, KEY, 'd1'), NEXT)).toBe(true);
+    expect(signUps.waiting(1)).toBe(true);
+  });
+
+  it('starts a form and gives a step on the grant\'s origin alone, at its key or a key its press named', () => {
+    const { signUps } = given();
+    expect(signUps.takeFill(1, place(A, KEY, 'd4'))).toBeNull();
+    signUps.pressed(1, place(A, KEY, 'd1'), NEXT);
+    expect(signUps.takeStep(1, { ...place(B, KEY, 'd3'), hasForm: false }, 'wall')).toBeNull();
+    expect(signUps.takeStep(1, { ...place(A, ELSE, 'd3'), hasForm: false }, 'wall')).toBeNull();
+    expect(signUps.takeFill(1, place(B, KEY, 'd4'))).toBeNull();
+    expect(signUps.takeFill(1, place(A, ELSE, 'd4'))).toBeNull();
+    expect(signUps.takeStep(1, { ...place(A, NEXT, 'd3'), hasForm: false }, 'choice')).toEqual({ signIn: false });
+    expect(signUps.waiting(1)).toBe(false);
+    expect(signUps.takeFill(1, place(A, NEXT, 'd4'))).toEqual({ signIn: false });
+    // Taken: the grant is gone.
+    expect(signUps.takeFill(1, place(A, KEY, 'd5'))).toBeNull();
+  });
+
+  it('keeps an armed grant at a plain re-press of its origin and application alone', () => {
+    const { signUps } = given();
+    expect(signUps.keep(1, place(A, KEY, 'd2'))).toBe(false);
+    signUps.pressed(1, place(A, KEY, 'd1'), NEXT);
+    expect(signUps.keep(1, place(B, NEXT, 'd2'))).toBe(false);
+    expect(signUps.keep(1, place(A, ELSE, 'd2'))).toBe(false);
+    expect(signUps.keep(1, place(A, NEXT, 'd2'))).toBe(true);
+    // The kept document may say it pressed.
+    expect(signUps.pressed(1, place(A, NEXT, 'd2'))).toBe(true);
+  });
+
+  it('ends at a refusal from a document it reached on its origin, and at the panel\'s Cancel', () => {
+    const { signUps } = given();
+    signUps.refused(1, place(B, KEY, 'd1'));
+    signUps.refused(1, place(A, KEY, 'd9'));
+    expect(signUps.pressed(1, place(A, KEY, 'd1'))).toBe(true);
+    signUps.refused(1, place(A, KEY, 'd1'));
+    expect(signUps.pressed(1, place(A, KEY, 'd1'))).toBe(false);
+    const cancelled = given().signUps;
+    cancelled.endEntry(1);
+    expect(cancelled.pressed(1, place(A, KEY, 'd1'))).toBe(false);
+  });
+
+  it('a wall\'s grant given at once keeps v4\'s rule (no key: any form of its origin); a step still needs a key', () => {
+    const signUps = createSignUps({ now: () => 0 });
+    signUps.grant(1, { signIn: false, fill: true }, place(A, undefined, 'd1'));
+    // A press naming no key arms nothing there (no step without a key); its form is started as in v4.
+    expect(signUps.pressed(1, place(A, undefined, 'd1'))).toBe(false);
+    expect(signUps.takeStep(1, { ...place(A, ELSE, 'd2'), hasForm: false }, 'wall')).toBeNull();
+    expect(signUps.takeFill(1, place(A, ELSE, 'd3'))).toEqual({ signIn: false });
   });
 });

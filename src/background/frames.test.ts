@@ -306,6 +306,10 @@ describe('what frame/wall leaves in the registry: entering, refusal and the entr
     // A wall or a choice drops it, as it drops entry.
     await say(worker, details('doc-1'), { wall: 'sign-in', entering: true });
     expect((await entryOf())?.entering).toBeUndefined();
+    // A refusal beside a wall is not kept, nor its reason.
+    await say(worker, details('doc-1'), { wall: 'sign-in', entryRefused: true, refusal: 'blocked' });
+    expect(await entryOf()).not.toHaveProperty('refusal');
+    expect(await entryOf()).not.toHaveProperty('entryRefused');
     await say(worker, details('doc-1'), { entryRefused: true, refusal: 'blocked' });
     expect(await entryOf()).toMatchObject({ entryRefused: true, refusal: 'blocked' });
     expect(await pageNow(worker)).toMatchObject({ entryRefused: true, refusal: 'blocked' });
