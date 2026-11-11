@@ -1,28 +1,44 @@
 /*
  * The iCIMS adapter on the owner's snapshot6 of 2026-11-10 (F:\Develop\Refer\snapshot6\icims1..3: careers-sentinel,
  * careers-ars and uscareers-nyu, converted as fixtures/icims/jr6-*.html; the Gmail capture of icims3 never opened), the
- * jr6 build's ICIMS package, P1 (FIXPLAN §6.5): from the auditor's harness (SP\jr6\audit\icims.md section 3), what the
- * adapter reads on every page and frame, held as asserts, and each hook the package added, tested on the snapshots and on
- * DOM variants of them. Outcomes that need ENGINE E1 to E3 or RULES' rules (a widget driven, a label's category, a block
- * left unwritten) are P2's, after those merge; none is asserted here. Lists a fixture redacts (iCIMS's dropdowns) are
- * given SYNTHETIC public words (countries) where a test needs them. Nothing here prints or reads a snapshot's value.
+ * jr6 build's ICIMS package (FIXPLAN §6.5):
+ * - P1: from the auditor's harness (SP\jr6\audit\icims.md section 3), what the adapter reads on every page and frame,
+ *   held as asserts, and each hook the package added, tested on the snapshots and on DOM variants of them;
+ * - P2 (after jr6-engine-e3 and jr6-rules-r4 merged, the section "P2" at the end): the shared outcomes. Whole runs drive
+ *   iCIMS's dropdowns on the snapshots with the page's dropdown script stood in for (standIn), and the real planner decides
+ *   each question RULES reads, with the golden synthetic profile or variants built in the test; each page's scan is its
+ *   expectation (fixtures/icims/jr6-*.expect.json). Two outcomes RULES' code does not give yet are held as expected
+ *   failures (it.fails), each naming the regression reported in the ICIMS handoff.
+ * Lists a fixture redacts (iCIMS's dropdowns) are given SYNTHETIC public words (countries, states, schools) where a test
+ * needs them. Nothing here prints or reads a snapshot's value.
  */
-import { afterEach, describe, expect, it } from 'vitest';
-import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createFakeWorker, goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { pressEntry } from '../../content/press';
+import { startContentRuntime, type ContentRuntime } from '../../content/runtime';
 import { planFrame } from '../../core/plan/frame';
+import type { PlanInput } from '../../core/plan/types';
+import { classifyField } from '../../core/resolver/resolve';
 import { stepSignature as hashSignature } from '../../core/steps/signature';
-import { DEFAULT_SETTINGS } from '../../core/types/settings';
+import type { BaseKey, FieldSpec } from '../../core/types/field';
+import type { FillResult, PlannedWrite } from '../../core/types/fill';
+import { DEFAULT_SETTINGS, type Settings } from '../../core/types/settings';
+import { accountLeft } from '../../dom/account-section';
 import { assertNotSubmit, submitPressAllowed } from '../../dom/fillers/not-submit';
-import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
+import { loadFixture, logEvents, removeFixtures } from '../../dom/fixture.testkit';
+import { detectPause } from '../../dom/pause-detect';
 import { scan, toFieldSpec } from '../../dom/scan';
+import { newScanCache } from '../../dom/scan-cache';
 import { signInFormOf } from '../../dom/sign-in-form';
+import type { ScanResult, WidgetReading } from '../../dom/types';
+import { fillWidget, readWidget, searchTypeahead, shownOptions, widgetListOf } from '../../dom/widgets';
 import { chainPageOf } from '../chain';
 import { genericAdapter } from '../generic';
 import { adaptersFor } from '../index';
-import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { compareWithExpectation, fillabilityOf, readExpectation, scanCase, SNAPSHOT_VIEWPORT }
+  from '../test/expectations.testkit';
 import { compareHooks, readHooks } from '../test/hooks.testkit';
-import type { ChainStepFacts } from '../types';
+import type { Adapter, ChainStepFacts } from '../types';
 import { ICIMS_SNAPSHOTS, icimsAdapter } from './index';
 
 const PAGES = import.meta.glob('../../../fixtures/icims/jr6-*.html', { query: '?raw', import: 'default', eager: true }) as
@@ -33,7 +49,8 @@ const ROUTES = import.meta.glob('../../../fixtures/icims/*.routes.json', { impor
   Record<string, Record<string, string>>;
 const OLD = import.meta.glob(['../../../fixtures/icims/githubinc-profile.frame-1.html',
   '../../../fixtures/icims/ars-gate-phone.html', '../../../fixtures/icims/edgewater-self-id-veteran.frame-2.html',
-  '../../../fixtures/icims/nyu-self-id-disability.frame-2.html'],
+  '../../../fixtures/icims/nyu-self-id-disability.frame-2.html', '../../../fixtures/icims/nyu-profile.frame-1.html',
+  '../../../fixtures/icims/aaalife-eeo-final.html'],
   { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
 /** The snapshot6 cases (src/adapters/icims ICIMS_SNAPSHOTS' jr6 part). */
@@ -90,9 +107,12 @@ describe('the snapshot6 cases', () => {
       'jr6-sentinel-basic-info-filled.frame-1', 'jr6-sentinel-basic-info.frame-1', 'jr6-sentinel-iform-selfid.frame-1',
       'jr6-sentinel-iform-selfid.frame-2', 'jr6-sentinel-job-questions.frame-1', 'jr6-sentinel-profile-filled.frame-1',
       'jr6-sentinel-profile.frame-1']);
+    // P2: each page or frame with a root holds its fields too; the IForms' portal frames (no root) their hooks alone.
     for (const name of EXPECTED) {
       expect(fileOf(name).html.length > 0 && fileOf(name).address !== '', name).toBe(true);
-      expect((byFile(EXPECTS, `${name}.expect.json`) as { note?: string }).note, name).toMatch(/^Hooks only \(jr6 P1\): /);
+      const portal = /iform-.*\.frame-1$/.test(name);
+      expect((byFile(EXPECTS, `${name}.expect.json`) as { note?: string }).note, name)
+        .toMatch(portal ? /^Hooks only \(jr6 P1\): / : /^jr6 P2: /);
     }
   });
 
@@ -673,5 +693,721 @@ describe('ICIMS-22: the parsed blocks are each filled from the entry it holds, n
     const answer = output.repeatables?.find((section) => section.kind === 'experience');
     expect(answer?.entries).toEqual([1, 0, null, null]);
     expect(answer?.profile).toBe(2);
+  });
+});
+
+// =====================================================================================================================
+// P2 (FIXPLAN §6.5 "P2 asserts", after jr6-engine-e3 and jr6-rules-r4 merged): what a run reads, decides and writes on
+// the snapshots, with the golden synthetic profile (fixtures/profiles/alex-rivera.*) or variants of it built here
+// =====================================================================================================================
+
+/** SYNTHETIC public words for the lists every capture redacts (iCIMS's dropdowns load theirs from the server). */
+const COUNTRIES = ['Canada', 'Mexico', 'United Kingdom', 'United States'];
+const STATES: Readonly<Record<string, readonly string[]>> = {
+  'United States': ['Alabama', 'California', 'New York', 'Texas', 'Washington'], Canada: ['Alberta', 'Ontario', 'Quebec'] };
+const statesOf = (country: string): readonly string[] => STATES[country] ?? [];
+const SCHOOLS = ['Texas A&M University', 'The University of Texas at Austin', 'University of Texas at Dallas', 'Other'];
+const DEGREES = ["Associate's Degree", "Bachelor's Degree", "Master's Degree", 'Doctorate', 'Other'];
+/** The golden profile's own field of study (its first education entry's), among other SYNTHETIC ones. */
+const GOLDEN_FIELD = goldenProfile().education[0]!.degree.field!.name;
+const MAJORS = [GOLDEN_FIELD, 'Economics', 'Mathematics', 'Other'];
+const YES_NO = ['Yes', 'No'];
+const TIME_ZONES = ['Eastern Time', 'Central Time', 'Mountain Time', 'Pacific Time'];
+/** "Please specify" once a source is chosen (SYNTHETIC: a job board's names). */
+const SPECIFY = ['Indeed', 'LinkedIn', 'Monster', 'Other'];
+
+/** A dropdown's rows: a list, or a dependent's by its parent's answer. */
+type Rows = readonly string[] | ((parent: string) => readonly string[]);
+
+/** Each profile's dropdowns, by its select's id after its block's prefix ("-1_", "-330156_"). */
+const LISTS: Readonly<Record<string, Rows>> = {
+  'PersonProfileFields.AddressCountry': COUNTRIES, 'PersonProfileFields.AddressState': statesOf,
+  'PersonProfileFields.AddressStreet1': ['Enter manually'], rcf2018: ['Jr.', 'Sr.', 'II', 'III'], rcf3553: YES_NO,
+  rcf3339: YES_NO, rcf3180: YES_NO, rcf3077: TIME_ZONES, 'CandProfileFields.School': SCHOOLS,
+  'CandProfileFields.Degree': DEGREES, 'CandProfileFields.Major': MAJORS, 'CandProfileFields.EducationCountry': COUNTRIES,
+  'CandProfileFields.EducationState': statesOf, 'PersonProfileFields.rcf3218': COUNTRIES,
+  'PersonProfileFields.rcf3217': statesOf,
+};
+
+/** What the stood-in page saw a run do. */
+interface Stand {
+  /** Each choice, "<select id>=<words>", and each native list's change, in order. */
+  chosen: string[];
+  /** The dropdowns opened (by their select's id), in order. */
+  opened: string[];
+  /** The dependents whose answer a run had chosen and the page then cleared (its parent's change). */
+  lost: string[];
+}
+
+/** A select's id after its block's prefix. */
+const tailOf = (id: string): string => id.replace(/^-?\d+_/, '');
+
+/**
+ * iCIMS's dropdown script, which no capture keeps, stood in for on a loaded snapshot (SP\jr6\audit\icims.md ICIMS-01,
+ * -02, -08, -19; Jobright's ~contents/sites/icims ./client-search-widget for the same page), with SYNTHETIC lists:
+ * - a click on a trigger toggles its container (dropdown-invisible) and its aria-expanded; once open, its list shows its
+ *   rows after `loadMs`, its loading bar (.dropdown-loading) shown meanwhile; a search dropdown's box
+ *   (icimsdropdown-search="1") draws the rows holding what is typed, after `slow` (per select id tail) or the same load,
+ *   the rows shown before staying until then;
+ * - a result's click shows its words in the trigger, keeps them in the hidden select, shuts the container and changes
+ *   the select; the address lookup's "Enter manually" (dropdown-index -2) is replaced by the text box careers-ars draws
+ *   in its place (jr6-ars-profile-filled.html: input#-1_PersonProfileFields.AddressStreet1, the same id and name,
+ *   autocomplete street-address);
+ * - a parent's change (data-ddd-child-link) clears its dependent in the same block `resetMs` later, as the owner's
+ *   saves show ("Country chosen, State reset"), the dependent's rows then its parent's answer's;
+ * - "How did you hear about us?" (select#rcf3048) changed: "Please specify" (select#rcf3049) is enabled 200 ms later with
+ *   SPECIFY.
+ */
+function standIn(doc: Document, lists: Readonly<Record<string, Rows>>,
+  timing: { loadMs?: number; resetMs?: number; slow?: Readonly<Record<string, number>> } = {}): Stand {
+  const stand: Stand = { chosen: [], opened: [], lost: [] };
+  const view = doc.defaultView!;
+  const parentAnswer = new Map<string, string>();
+  const ours = new Set<string>();
+  const parts = (id: string) => ({
+    anchor: doc.getElementById(`${id}_icimsDropdown`), ctnr: doc.getElementById(`${id}_icimsDropdown_ctnr`),
+    list: doc.getElementById(`${id}_dropdown-results`), shown: doc.getElementById(`${id}_fakeSelected_icimsDropdown`),
+    select: doc.getElementById(id) as HTMLSelectElement | null,
+  });
+  const prompt = () => Object.assign(doc.createElement('span'), { className: 'dropdown-placeholder',
+    textContent: '— Make a Selection —' });
+  const rowsOf = (id: string): readonly string[] => {
+    const source = lists[tailOf(id)];
+    if (source === undefined) return [];
+    return typeof source === 'function' ? source(parentAnswer.get(id) ?? '') : source;
+  };
+  const draw = (id: string, query: string) => {
+    const { ctnr, list, select } = parts(id);
+    const loading = ctnr?.querySelector('.dropdown-loading') ?? null;
+    loading?.classList.remove('hide');
+    view.setTimeout(() => {
+      const search = select?.getAttribute('icimsdropdown-search') === '1';
+      const rows = rowsOf(id).filter((row) => !search || row.toLowerCase().includes(query.trim().toLowerCase()));
+      const item = (at: number) => {
+        const li = doc.createElement('li');
+        li.id = `result-selectable_${id}_${at}`;
+        li.className = 'dropdown-result result-selectable';
+        li.setAttribute('role', 'option');
+        li.setAttribute('dropdown-index', String(at));
+        return li;
+      };
+      const first = item(-1);
+      first.append(prompt());
+      list?.replaceChildren(first, ...rows.map((text, at) => {
+        const li = item(text === 'Enter manually' ? -2 : at);
+        li.textContent = text;
+        return li;
+      }));
+      loading?.classList.add('hide');
+    }, (query === '' ? undefined : timing.slow?.[tailOf(id)]) ?? timing.loadMs ?? 120);
+  };
+  const open = (id: string, yes: boolean) => {
+    const { anchor, ctnr } = parts(id);
+    ctnr?.classList.toggle('dropdown-invisible', !yes);
+    anchor?.setAttribute('aria-expanded', String(yes));
+    if (yes) {
+      stand.opened.push(id);
+      draw(id, '');
+    }
+  };
+  for (const anchor of Array.from(doc.querySelectorAll<HTMLElement>('a.dropdown-select[id$="_icimsDropdown"]'))) {
+    const id = anchor.id.slice(0, -'_icimsDropdown'.length);
+    const { ctnr, list, shown, select } = parts(id);
+    if (ctnr === null || list === null || shown === null || select === null) continue;
+    anchor.addEventListener('click', () => open(id, ctnr.classList.contains('dropdown-invisible')));
+    const box = ctnr.querySelector<HTMLInputElement>('input.dropdown-search');
+    box?.addEventListener('input', () => draw(id, box.value));
+    list.addEventListener('click', (event) => {
+      const row = (event.target as Element).closest('li.result-selectable');
+      if (row === null || row.getAttribute('dropdown-index') === '-1') return;
+      const words = (row.textContent ?? '').trim();
+      shown.replaceChildren(words);
+      select.replaceChildren(new Option(words, words, true, true));
+      stand.chosen.push(`${id}=${words}`);
+      ours.add(id);
+      open(id, false);
+      if (row.getAttribute('dropdown-index') === '-2') {
+        const street = doc.createElement('input');
+        Object.assign(street, { id, name: id, className: 'iCIMS_Forms_Global customFieldContainer iCIMS_Forms_TextField',
+          autocomplete: 'street-address' });
+        street.setAttribute('aria-required', 'true');
+        select.parentElement!.replaceChildren(street);
+        return;
+      }
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      const link = select.getAttribute('data-ddd-child-link') ?? '';
+      const prefix = /^-?\d+_/.exec(id)?.[0] ?? '';
+      const child = link === '' ? undefined : Array.from(doc.querySelectorAll('select[data-ddd-parent-link]'))
+        .find((each) => each.id.startsWith(prefix) && (each.id === `${prefix}${link}` || each.id.endsWith(`.${link}`)));
+      if (child === undefined) return;
+      parentAnswer.set(child.id, words);
+      view.setTimeout(() => {
+        const childParts = parts(child.id);
+        if (ours.delete(child.id)) stand.lost.push(child.id);
+        childParts.shown?.replaceChildren(prompt());
+        childParts.select?.replaceChildren(new Option('', ''));
+      }, timing.resetMs ?? 200);
+    });
+  }
+  const source = doc.getElementById('rcf3048') as HTMLSelectElement | null;
+  const specify = doc.getElementById('rcf3049') as HTMLSelectElement | null;
+  source?.addEventListener('change', () => {
+    stand.chosen.push(`rcf3048=${source.selectedOptions[0]?.text.trim() ?? ''}`);
+    view.setTimeout(() => {
+      if (specify === null) return;
+      specify.replaceChildren(...['— Make a Selection —', ...SPECIFY].map((text, at) => new Option(text, at === 0 ? '' : text)));
+      specify.disabled = false;
+    }, 200);
+  });
+  specify?.addEventListener('change', () => stand.chosen.push(`rcf3049=${specify.selectedOptions[0]?.text.trim() ?? ''}`));
+  return stand;
+}
+
+/** The words a dropdown's trigger shows: '' while it shows its prompt. */
+function shownOf(doc: Document, id: string): string {
+  const shown = doc.getElementById(`${id}_fakeSelected_icimsDropdown`);
+  return shown === null || shown.querySelector('.dropdown-placeholder') !== null ? '' : (shown.textContent ?? '').trim();
+}
+
+/** Where a choice comes in a stand's record (-1: never). */
+const chosenAt = (stand: Stand, entry: string): number => stand.chosen.indexOf(entry);
+
+/** A whole run (Fill, the default settings) on a snapshot with its dropdown script stood in for, to its end. */
+async function runOn(runtimes: ContentRuntime[], name: string, options: { adapter?: Adapter;
+  vary?: (doc: Document) => void; timing?: Parameters<typeof standIn>[2] } = {}) {
+  const fixture = await load(name);
+  const doc = fixture.doc;
+  // A step's Submit pressed in a test posts nothing (a run presses none on these steps: Next is Manual).
+  doc.addEventListener('submit', (event) => event.preventDefault(), true);
+  options.vary?.(doc);
+  const stand = standIn(doc, LISTS, options.timing);
+  const worker = createFakeWorker({ settings: DEFAULT_SETTINGS });
+  const runtime = await startContentRuntime(worker.platform, doc, { href: () => fileOf(name).address, isTop: true,
+    adapters: () => [options.adapter ?? icimsAdapter], settle: { quietMs: 40 } });
+  runtimes.push(runtime);
+  await runtime.fill();
+  await vi.waitFor(() => expect(runtime.run?.ended).toBeDefined(), { timeout: 90_000 });
+  const report = worker.reports.at(-1)!;
+  return { doc, stand, report, rows: (label: string) => report.fields.filter((row) => row.label === label) };
+}
+
+describe('P2: a run drives iCIMS’s dropdowns on the snapshots (ICIMS-01, -02, -03, -08, -19, icims-new-1, -new-2)', () => {
+  const runtimes: ContentRuntime[] = [];
+  afterEach(() => {
+    for (const runtime of runtimes.splice(0)) runtime.stop();
+  });
+
+  it('jr6-ars-profile: opens, reads and chooses each list; "Enter manually", then the street; the source, then its detail',
+    async () => {
+      const { doc, stand, rows } = await runOn(runtimes, 'jr6-ars-profile');
+      // ICIMS-01/-03: each dropdown the plan answers is opened by its trigger, read and chosen, by its row's label.
+      expect([shownOf(doc, '-1_PersonProfileFields.AddressCountry'), shownOf(doc, '-1_PersonProfileFields.AddressState'),
+        shownOf(doc, 'rcf3553')]).toEqual(['United States', 'Texas', 'Yes']);
+      expect(chosenAt(stand, '-1_PersonProfileFields.AddressCountry=United States'))
+        .toBeLessThan(chosenAt(stand, '-1_PersonProfileFields.AddressState=Texas'));
+      expect(rows('Country')).toMatchObject([{ category: 'address.country', status: 'verified', wrote: true }]);
+      expect(rows('State/Province')).toMatchObject([{ category: 'address.region', status: 'verified', wrote: true }]);
+      // Nothing to write in Suffix (the golden profile holds none): never opened.
+      expect(stand.opened).not.toContain('rcf2018');
+      expect(rows('Suffix')).toMatchObject([{ category: 'identity.suffix', status: 'skipped', wrote: false }]);
+      // ICIMS-08: the address lookup is a list: its "Enter manually" chosen (address.enter-manually), never a typed
+      // street; the box drawn in its place is then the street (address.line1), typed on the next pass.
+      expect(stand.chosen).toContain('-1_PersonProfileFields.AddressStreet1=Enter manually');
+      const street = doc.getElementById('-1_PersonProfileFields.AddressStreet1') as HTMLInputElement;
+      expect([street.localName, street.value]).toEqual(['input', goldenProfile().address!.line1]);
+      expect(rows('Address')).toMatchObject([{ kind: 'text', category: 'address.line1', status: 'verified', wrote: true }]);
+      // ICIMS-19 (ENGINE E3's re-plan, RULES' referral detail): "Please specify", disabled until a source is chosen, is
+      // decided again once "How did you hear about us?" is written, and takes the profile's source by its name.
+      expect(chosenAt(stand, 'rcf3048=Job Board')).toBeGreaterThanOrEqual(0);
+      expect(chosenAt(stand, 'rcf3049=LinkedIn')).toBeGreaterThan(chosenAt(stand, 'rcf3048=Job Board'));
+      expect(rows('Please specify')).toMatchObject([{ category: 'referral.detail', status: 'verified', wrote: true }]);
+      expect(stand.lost).toEqual([]);
+    }, 120_000);
+
+  it.each([
+    { name: 'jr6-sentinel-profile.frame-1', chosen: { '-1_PersonProfileFields.AddressCountry': 'United States',
+      '-1_PersonProfileFields.AddressState': 'Texas' } },
+    { name: 'githubinc-profile.frame-1', chosen: { '-1_PersonProfileFields.AddressCountry': 'United States',
+      '-1_PersonProfileFields.AddressState': 'Texas', rcf3553: 'Yes' } },
+  ])('$name: opens, reads and chooses each list the plan answers, each by its row’s label', async ({ name, chosen }) => {
+    const { doc, stand } = await runOn(runtimes, name);
+    for (const [id, words] of Object.entries(chosen)) expect(shownOf(doc, id), id).toBe(words);
+    expect(chosenAt(stand, '-1_PersonProfileFields.AddressCountry=United States'))
+      .toBeLessThan(chosenAt(stand, '-1_PersonProfileFields.AddressState=Texas'));
+    expect(stand.lost).toEqual([]);
+  }, 120_000);
+
+  it('jr6-nyu-profile-parsed.frame-1: the parsed profile’s lists, each block’s Country before its State; no block without a place touched',
+    async () => {
+      const { doc, stand, rows } = await runOn(runtimes, 'jr6-nyu-profile-parsed.frame-1');
+      const expected: Record<string, string> = { '-1_PersonProfileFields.AddressCountry': 'United States',
+        '-1_PersonProfileFields.AddressState': 'Texas', '-1_CandProfileFields.School': 'The University of Texas at Austin',
+        '-1_CandProfileFields.Degree': "Bachelor's Degree", '-1_CandProfileFields.Major': GOLDEN_FIELD,
+        '-1_CandProfileFields.EducationCountry': 'United States', '-1_CandProfileFields.EducationState': 'Texas',
+        // The first employment block holds the golden profile's current job (Austin, TX, US).
+        '-330156_PersonProfileFields.rcf3218': 'United States', '-330156_PersonProfileFields.rcf3217': 'Texas' };
+      for (const [id, words] of Object.entries(expected)) expect(shownOf(doc, id), id).toBe(words);
+      for (const [parent, child] of [['-1_PersonProfileFields.AddressCountry', '-1_PersonProfileFields.AddressState'],
+        ['-1_CandProfileFields.EducationCountry', '-1_CandProfileFields.EducationState'],
+        ['-330156_PersonProfileFields.rcf3218', '-330156_PersonProfileFields.rcf3217']] as const) {
+        expect(chosenAt(stand, `${parent}=United States`), parent).toBeLessThan(chosenAt(stand, `${child}=Texas`));
+      }
+      // The second job has no place in the profile, the last two blocks no entry at all (iCIMS's parse of employers the
+      // profile lacks): their lists are never opened (ICIMS-09: never the home address there).
+      for (const block of ['-330157_', '-330154_', '-330155_']) {
+        for (const tail of ['PersonProfileFields.rcf3218', 'PersonProfileFields.rcf3217']) {
+          expect(stand.opened, `${block}${tail}`).not.toContain(`${block}${tail}`);
+        }
+      }
+      // ICIMS-20: the source the profile names is in no option: "Other".
+      expect(stand.chosen).toContain('rcf3048=Other');
+      // ICIMS-24: the School list took the school; its companion box is never written.
+      expect((doc.getElementById('-1_CandProfileFields.Minor') as HTMLInputElement).value).toBe('');
+      expect(rows('Enter school name if not in the list above')).toMatchObject([{ wrote: false }]);
+      expect(stand.lost).toEqual([]);
+    }, 150_000);
+
+  it('ICIMS-02: Country is written before State wherever the page draws them, and State once its list is back', async () => {
+    // A DOM variant: the State row drawn before the Country row; the State's results for a typed query 2 s in coming
+    // (longer than the 1.5 s a list may stay unchanged: its loading bar holds the wait); Country's change clearing State
+    // 200 ms later.
+    const stateFirst = (doc: Document) => {
+      const row = (id: string) => doc.getElementById(id)!.closest('.iCIMS_TableRow')!;
+      row('-1_PersonProfileFields.AddressCountry').before(row('-1_PersonProfileFields.AddressState'));
+    };
+    const timing = { slow: { 'PersonProfileFields.AddressState': 2_000 } };
+    const ran = await runOn(runtimes, 'jr6-ars-profile', { vary: stateFirst, timing });
+    expect(chosenAt(ran.stand, '-1_PersonProfileFields.AddressCountry=United States'))
+      .toBeLessThan(chosenAt(ran.stand, '-1_PersonProfileFields.AddressState=Texas'));
+    expect(shownOf(ran.doc, '-1_PersonProfileFields.AddressState')).toBe('Texas');
+    expect(ran.stand.chosen.filter((entry) => entry.startsWith('-1_PersonProfileFields.AddressState='))).toHaveLength(1);
+    expect(ran.stand.lost).toEqual([]);
+    for (const runtime of runtimes.splice(0)) runtime.stop();
+    removeFixtures(document);
+    // Without the adapter's dependsOn the page's order stands: State is searched first, its list empty until a country
+    // is chosen, and it is left (the books never decide it again).
+    const { dependsOn: _parent, ...noParent } = icimsAdapter;
+    const bare = await runOn(runtimes, 'jr6-ars-profile', { adapter: noParent, vary: stateFirst, timing });
+    expect(bare.stand.chosen).toContain('-1_PersonProfileFields.AddressCountry=United States');
+    expect(shownOf(bare.doc, '-1_PersonProfileFields.AddressState')).toBe('');
+  }, 240_000);
+
+  it('ICIMS-01, -02 (ENGINE edit 2): a search waits while its list’s loading bar shows, past the time a list may stay empty', async () => {
+    /** Country searched on a fresh page whose server takes 2.5 s to answer a typed query (the rows shown on opening
+     *  stay until then), by `adapter`. */
+    const search = async (adapter: Adapter) => {
+      removeFixtures(document);
+      const fixture = await load('jr6-ars-profile');
+      const doc = fixture.doc;
+      standIn(doc, LISTS, { slow: { 'PersonProfileFields.AddressCountry': 2_500 } });
+      const root = rootOf(doc);
+      const target = () => {
+        const fresh = scan(root, adapter, { platform: 'icims' });
+        return fresh.target(fresh.fields.find((each) => fresh.target(each.key)?.control.id
+          === '-1_PersonProfileFields.AddressCountry_icimsDropdown')!.key)!;
+      };
+      const result = await searchTypeahead(target(), ['United States'], { adapter, root }, {
+        guard: async () => ({ ok: true, target: target() }),
+        match: async (results) => {
+          const index = results.findIndex((each) => each.label === 'United States');
+          return index < 0 ? { choose: null, reason: 'no-match', blocked: false }
+            : { choose: { index, cleanLabel: 'United States' } };
+        },
+      });
+      return { result, shown: shownOf(doc, '-1_PersonProfileFields.AddressCountry') };
+    };
+    expect(await search(icimsAdapter)).toMatchObject({ result: { chosen: { cleanLabel: 'United States' }, verified: true },
+      shown: 'United States' });
+    // The same search with no busy sign declared gives up while the bar still shows.
+    const blind: Adapter = { ...icimsAdapter, widgetFor: (control) => {
+      const decl = icimsAdapter.widgetFor!(control);
+      return decl === null ? null : { ...decl, busy: [] };
+    } };
+    expect(await search(blind)).toMatchObject({ result: { chosen: null }, shown: '' });
+  }, 60_000);
+
+  it('icims-new-1: an open container’s search box is the dropdown’s part, never a field of its own (jr6-ars-profile-address)', async () => {
+    const fixture = await load('jr6-ars-profile-address');
+    const doc = fixture.doc;
+    const ctnr = doc.getElementById('-1_PersonProfileFields.AddressCountry_icimsDropdown_ctnr')!;
+    // As captured: Country's container open, its search box shown.
+    expect(ctnr.classList.contains('dropdown-invisible')).toBe(false);
+    const box = ctnr.querySelector<HTMLInputElement>('input.dropdown-search')!;
+    expect(box.getBoundingClientRect().height).toBeGreaterThan(0);
+    const result = scan(rootOf(doc), icimsAdapter, { platform: 'icims' });
+    expect(result.fields.filter((field) => /type to search/i.test(field.label))).toEqual([]);
+    const country = result.fields.find((field) => result.target(field.key)!.control.id
+      === '-1_PersonProfileFields.AddressCountry_icimsDropdown')!;
+    const widget = result.target(country.key)!.widget!;
+    expect(widget.input).toBe(box);
+    // ICIMS-01 (ENGINE edit 1): its open list reads as a person sees it (the rows' words SYNTHETIC: the capture's are
+    // redacted), its prompt aside.
+    const list = widgetListOf(widget)!;
+    Array.from(list.querySelectorAll('li[dropdown-index]:not([dropdown-index="-1"])')).forEach((row, at) => {
+      row.textContent = COUNTRIES[at % COUNTRIES.length]!;
+    });
+    const read = shownOptions(list, newScanCache(), undefined, widget.results!.option);
+    expect(read.length).toBeGreaterThan(0);
+    expect(read.every((option) => COUNTRIES.includes(option.label))).toBe(true);
+    // Without the declaration the open box is a field ("— Type to Search —"), as the audit read it.
+    const bare = scan(rootOf(doc), { ...icimsAdapter, widgetFor: () => null }, { platform: 'icims' });
+    expect(bare.fields.filter((field) => /type to search/i.test(field.label)).length).toBeGreaterThan(0);
+  });
+
+  it('icims-new-2: a dropdown the adapter does not declare is refused before any click', async () => {
+    const fixture = await load('jr6-ars-profile');
+    const doc = fixture.doc;
+    // A DOM variant: Time Zone's select no longer says it is iCIMS's dropdown, so widgetFor declares nothing for it.
+    doc.getElementById('rcf3077')!.removeAttribute('icimsdropdown-enabled');
+    const anchor = doc.getElementById('rcf3077_icimsDropdown')!;
+    expect(icimsAdapter.widgetFor!(anchor)).toBeNull();
+    const events = logEvents(doc);
+    const root = rootOf(doc);
+    const result = scan(root, icimsAdapter, { platform: 'icims' });
+    const field = result.fields.find((each) => result.target(each.key)!.control === anchor)!;
+    const target = result.target(field.key)!;
+    expect(fillabilityOf(field, target.widget)).toEqual({ fillable: false, reason: 'widget-phase-4' });
+    expect(await readWidget(target, { adapter: icimsAdapter, root })).toEqual({ status: 'unread',
+      reason: 'widget-unsupported' });
+    expect(await fillWidget(target, { kind: 'option', index: 1, cleanLabel: 'Central Time' }, { adapter: icimsAdapter,
+      root })).toMatchObject({ wrote: false, reason: 'widget-unsupported' });
+    expect(events.on('rcf3077_icimsDropdown').filter((event) => event.type === 'click')).toEqual([]);
+    expect(doc.getElementById('rcf3077_icimsDropdown_ctnr')!.classList.contains('dropdown-invisible')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// P2: what RULES decides on the snapshots (planned with the real planFrame; lists read as a run reads them)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** A planned snapshot: its scan, its specs, and each field's row, write and rule by its control's id or name. */
+interface Planned {
+  result: ScanResult;
+  specs: FieldSpec[];
+  row(id: string): FillResult;
+  write(id: string): PlannedWrite | undefined;
+  rule(id: string): string;
+}
+
+/** Plans a loaded snapshot as a run's first pass does, the lists in `lists` read (SYNTHETIC words), by their select's id
+ *  tail. */
+function planOn(doc: Document, extra: Partial<PlanInput> & { lists?: Readonly<Record<string, readonly string[]>> } = {}):
+  Planned {
+  const root = rootOf(doc);
+  const first = scan(root, icimsAdapter, { platform: 'icims' });
+  const readings = new Map<BaseKey, WidgetReading>();
+  for (const field of first.fields) {
+    const listed = extra.lists?.[tailOf(first.target(field.key)!.control.id.replace(/_icimsDropdown$/, ''))];
+    if (listed === undefined) continue;
+    readings.set(field.baseKey, { kind: 'options', multiselectable: false, complete: true,
+      options: listed.map((label) => ({ label, disabled: false })) });
+  }
+  const result = scan(root, icimsAdapter, { platform: 'icims', widgetReadings: readings });
+  const specs = result.fields.map(toFieldSpec);
+  const { lists: _lists, ...rest } = extra;
+  const plan = planFrame({ specs, canaries: [], profile: goldenProfile(), sensitiveState: 'loaded', savedAnswers: [],
+    settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW, posting: { company: 'Acme' },
+    repeatables: icimsAdapter.repeatables!(root).map((section) => ({ kind: section.kind, entries: null })), ...rest });
+  const keyOf = (id: string) => {
+    const field = result.fields.find((each) => {
+      const control = result.target(each.key)!.control;
+      return control.id === id || control.id === `${id}_icimsDropdown` || control.getAttribute('name') === id;
+    });
+    if (field === undefined) throw new Error(`no field ${id}`);
+    return field.key;
+  };
+  return {
+    result, specs,
+    row: (id) => plan.results.find((each) => each.key === keyOf(id))!,
+    write: (id) => plan.writes.find((each) => each.key === keyOf(id)),
+    rule: (id) => {
+      const classified = classifyField(specs.find((spec) => spec.key === keyOf(id))!, testVocab());
+      return classified.by === 'rules' ? classified.rules.rule : classified.by;
+    },
+  };
+}
+
+const optionOf = (write: PlannedWrite | undefined) => (write?.value.kind === 'option' ? write.value.cleanLabel : undefined);
+const textOf = (write: PlannedWrite | undefined) => (write?.value.kind === 'text' ? write.value.text : undefined);
+const withModes = (modes: Partial<Settings['modes']>): Settings =>
+  ({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, ...modes } });
+
+describe('P2: what the rules decide on the snapshots (RULES R1-R4 on the iCIMS adapter’s readings)', () => {
+  it('ICIMS-04 (jr6-sentinel-basic-info.frame-1): no pause; the names, the email and the résumé planned; the account rows left', async () => {
+    const fixture = await load('jr6-sentinel-basic-info.frame-1');
+    const root = rootOf(fixture.doc);
+    expect(detectPause(fixture.doc, root, icimsAdapter)).toBeNull();
+    // Login, Password and Re-enter, required and empty: Next holds for them (they follow Sign-in mode, never the profile).
+    expect(accountLeft(icimsAdapter, fixture.doc, root)).toBe(3);
+    const ran = planOn(fixture.doc);
+    expect(textOf(ran.write('PersonProfileFields.FirstName'))).toBe('Alex');
+    expect(textOf(ran.write('PersonProfileFields.LastName'))).toBe('Rivera');
+    expect(textOf(ran.write('PersonProfileFields.Email'))).toBe(goldenProfile().contact.email);
+    expect(ran.write('PortalProfileFields.Resume_File')?.value.kind).toBe('file');
+    expect(ran.result.fields.some((field) => /login|password/i.test(field.label))).toBe(false);
+    // Once the person typed them, none is left.
+    for (const id of ['PersonProfileFields.Login', 'PersonProfileFields.Password', 'PersonProfileFields.Password_Confirm']) {
+      (fixture.doc.getElementById(id) as HTMLInputElement).value = 'x';
+    }
+    expect(accountLeft(icimsAdapter, fixture.doc, root)).toBe(0);
+  });
+
+  it('ICIMS-08 (jr6-ars-profile, -address, -filled): the lookup chooses "Enter manually", never a street; its box is the street', async () => {
+    for (const name of ['jr6-ars-profile', 'jr6-ars-profile-address']) {
+      const fixture = await load(name);
+      const ran = planOn(fixture.doc, { lists: { 'PersonProfileFields.AddressStreet1': ['Enter manually'] } });
+      expect(ran.row('-1_PersonProfileFields.AddressStreet1'), name).toMatchObject({ kind: 'combobox',
+        category: 'address.lookup', status: 'verified' });
+      expect(ran.rule('-1_PersonProfileFields.AddressStreet1'), name).toBe('name-id.address-street1');
+      expect(ran.write('-1_PersonProfileFields.AddressStreet1'), name).toMatchObject({ value: { kind: 'option',
+        cleanLabel: 'Enter manually' }, origin: { provenance: 'rule', ruleId: 'address.enter-manually' } });
+      removeFixtures(document);
+    }
+    const filled = await load('jr6-ars-profile-filled');
+    const ran = planOn(filled.doc);
+    expect(ran.row('-1_PersonProfileFields.AddressStreet1')).toMatchObject({ kind: 'text', category: 'address.line1',
+      status: 'verified' });
+    expect(textOf(ran.write('-1_PersonProfileFields.AddressStreet1'))).toBe(goldenProfile().address!.line1);
+  });
+
+  it('ICIMS-09 (jr6-nyu-profile-parsed.frame-1): a block’s City is its entry’s, never the home address; none in a block with no place', async () => {
+    const fixture = await load('jr6-nyu-profile-parsed.frame-1');
+    const golden = goldenProfile();
+    // A variant of the golden profile living elsewhere than its jobs and school (SYNTHETIC).
+    const ran = planOn(fixture.doc, { profile: { ...golden, address: { ...golden.address, city: 'Round Rock' } } });
+    expect(textOf(ran.write('-1_PersonProfileFields.AddressCity'))).toBe('Round Rock');
+    expect(ran.row('-1_CandProfileFields.EducationCity')).toMatchObject({ category: 'education.city' });
+    expect(textOf(ran.write('-1_CandProfileFields.EducationCity'))).toBe('Austin');
+    expect(ran.row('-330156_PersonProfileFields.rcf3216')).toMatchObject({ category: 'experience.city' });
+    expect(textOf(ran.write('-330156_PersonProfileFields.rcf3216'))).toBe('Austin');
+    for (const block of ['-330157_', '-330154_', '-330155_']) {
+      for (const id of ['PersonProfileFields.rcf3216', 'PersonProfileFields.rcf3218', 'PersonProfileFields.rcf3217']) {
+        expect(ran.write(`${block}${id}`), `${block}${id}`).toBeUndefined();
+        expect(ran.row(`${block}${id}`), `${block}${id}`).toMatchObject({ status: 'skipped', reason: 'no-profile-value' });
+      }
+    }
+  });
+
+  it('ICIMS-10 (nyu-profile.frame-1): a date’s month, its day (1, as the label asks, the profile holding none) and its 4-digit year', async () => {
+    const fixture = await load('nyu-profile.frame-1');
+    const ran = planOn(fixture.doc);
+    expect(optionOf(ran.write('-1_PersonProfileFields.rcf3214_Month'))).toBe('Jun');
+    expect(optionOf(ran.write('-1_PersonProfileFields.rcf3214_Date'))).toBe('1');
+    expect(textOf(ran.write('-1_PersonProfileFields.rcf3214_Year'))).toBe('2021');
+    for (const part of ['_Month', '_Date', '_Year']) {
+      expect(ran.row(`-1_PersonProfileFields.rcf3214${part}`)).toMatchObject({ category: 'experience.startDate',
+        status: 'verified' });
+      // The golden profile's first job is its current one: no end date.
+      expect(ran.row(`-1_PersonProfileFields.rcf3215${part}`)).toMatchObject({ category: 'experience.endDate',
+        status: 'skipped', reason: 'end-date-not-applicable' });
+    }
+  });
+
+  it.each([['jr6-ars-eeo', ['CandProfileFields.Gender', 'CandProfileFields.Race']],
+    ['aaalife-eeo-final', ['CandProfileFields.Gender', 'CandProfileFields.Race', 'CandProfileFields.Disability']]] as const)(
+    'ICIMS-11 (%s): "Opt Out" is the decline the golden profile gives', async (name, ids) => {
+      const fixture = await load(name);
+      const ran = planOn(fixture.doc);
+      for (const id of ids) {
+        expect(ran.write(id), id).toMatchObject({ value: { kind: 'option', cleanLabel: 'Opt Out' },
+          origin: { provenance: 'rule', ruleId: 'eeo.decline' } });
+        expect(ran.row(id).status, id).toBe('verified');
+      }
+    });
+
+  it.each([
+    { name: 'jr6-ars-profile', phone: '-1_PersonProfileFields.PhoneType', address: '-1_PersonProfileFields.AddressType' },
+    { name: 'jr6-sentinel-profile.frame-1', phone: '167544_PersonProfileFields.PhoneType',
+      address: '-1_PersonProfileFields.AddressType' },
+    { name: 'jr6-nyu-profile-parsed.frame-1', phone: '-1_PersonProfileFields.PhoneType', address: null },
+    { name: 'githubinc-profile.frame-1', phone: '-1_PersonProfileFields.PhoneType',
+      address: '-1_PersonProfileFields.AddressType' },
+  ])('ICIMS-12, -13 ($name): the phone’s "Type" Mobile, the address’s "Type" Home, by their names', async ({ name, phone,
+    address }) => {
+    const fixture = await load(name);
+    const ran = planOn(fixture.doc);
+    expect([ran.row(phone).label, ran.row(phone).category, ran.rule(phone)])
+      .toEqual(['Type', 'contact.phoneType', 'name-id.phone-type']);
+    expect(optionOf(ran.write(phone))).toBe('Mobile');
+    if (address === null) return;
+    expect([ran.row(address).label, ran.row(address).category, ran.rule(address)])
+      .toEqual(['Type', 'address.type', 'name-id.address-type']);
+    expect(ran.write(address)).toMatchObject({ value: { kind: 'option', cleanLabel: 'Home' },
+      origin: { provenance: 'rule', ruleId: 'address.type-home' } });
+  });
+
+  it.each([
+    { name: 'jr6-sentinel-iform-selfid.frame-2', radio: 'icims_f_Veteran', category: 'eeo.veteran',
+      answer: 'I AM NOT A PROTECTED VETERAN' },
+    { name: 'edgewater-self-id-veteran.frame-2', radio: 'icims_f_Veteran', category: 'eeo.veteran',
+      answer: 'I AM NOT A PROTECTED VETERAN' },
+    { name: 'nyu-self-id-disability.frame-2', radio: 'icims_f_Disability', category: 'eeo.disability',
+      answer: 'I do not want to answer' },
+  ])('ICIMS-14 ($name): the radios’ words read through optionTextFor, then the EEO rules', async ({ name, radio, category,
+    answer }) => {
+    const fixture = await load(name);
+    const radios = Array.from(fixture.doc.querySelectorAll<HTMLInputElement>(`input[type="radio"][name="${radio}"]`));
+    const ran = planOn(fixture.doc);
+    const field = ran.result.fields.find((each) => each.kind === 'radio')!;
+    expect(field.options === 'lazy' ? [] : field.options.map((option) => option.label))
+      .toEqual(radios.map((each) => icimsAdapter.optionTextFor!(each)));
+    expect(ran.row(radio)).toMatchObject({ category, status: 'verified', needsUserAction: false });
+    expect(optionOf(ran.write(radio))).toBe(answer);
+  });
+
+  it('ICIMS-15 (jr6-nyu-iform-signature.frame-2): the page’s one box, its Signature, ticked on the signature’s terms', async () => {
+    const fixture = await load('jr6-nyu-iform-signature.frame-2');
+    for (const consents of ['all', 'required'] as const) {
+      const ran = planOn(fixture.doc, { settings: withModes({ consents }) });
+      expect(ran.result.fields.map((field) => field.label), consents).toEqual(['Signature']);
+      expect(ran.rule('icims_f_signature'), consents).toBe('label.consent-signature');
+      expect(ran.write('icims_f_signature'), consents).toMatchObject({ value: { kind: 'check' },
+        origin: { provenance: 'rule', ruleId: 'consent.signature-preapproved' } });
+      expect(ran.row('icims_f_signature'), consents).toMatchObject({ category: 'consent.signature', needsUserAction: false });
+    }
+  });
+
+  it('ICIMS-16 (jr6-nyu-iform-offer.frame-2): the cover letter typed into its box once written; waited for until then', async () => {
+    const fixture = await load('jr6-nyu-iform-offer.frame-2');
+    expect(planOn(fixture.doc).row('icims_f_OfferText')).toMatchObject({ category: 'freeText.coverLetter',
+      reason: 'cover-letter-waiting' });
+    const letter = 'SYNTHETIC letter: I would bring ledger-platform work to this role.';
+    const ran = planOn(fixture.doc, { coverLetter: { state: 'ready', aiWritten: true, text: letter } });
+    expect(ran.rule('icims_f_OfferText')).toBe('label.cover-letter');
+    expect(textOf(ran.write('icims_f_OfferText'))).toBe(letter);
+    expect(ran.row('icims_f_OfferText')).toMatchObject({ status: 'verified', needsUserAction: false });
+  });
+
+  it('ICIMS-19 (jr6-ars-profile-filled): "Please specify" takes the profile’s source by its name among the list the source shows', async () => {
+    const fixture = await load('jr6-ars-profile-filled');
+    // A DOM variant: the list "Please specify" shows for a job board (SYNTHETIC; the capture's list is the one the
+    // person's own source shows).
+    const specify = fixture.doc.getElementById('rcf3049') as HTMLSelectElement;
+    const draw = (labels: readonly string[]) => specify.replaceChildren(...['— Make a Selection —', ...labels]
+      .map((text, at) => new Option(text, at === 0 ? '' : text)));
+    draw(SPECIFY);
+    const ran = planOn(fixture.doc);
+    expect(optionOf(ran.write('rcf3048'))).toBe('Job Board');
+    expect([ran.row('rcf3049').category, ran.rule('rcf3049')]).toEqual(['referral.detail', 'name-id.referral-detail']);
+    expect(optionOf(ran.write('rcf3049'))).toBe('LinkedIn');
+    // A list without the source's name: its own "Other" (RULES' REFERRAL_LISTS).
+    draw(['Indeed', 'Monster', 'Other']);
+    expect(optionOf(planOn(fixture.doc).write('rcf3049'))).toBe('Other');
+  });
+
+  it('ICIMS-20 (jr6-nyu-profile-parsed.frame-1): "How did you hear about us?" names no option of the source: "Other"', async () => {
+    const fixture = await load('jr6-nyu-profile-parsed.frame-1');
+    const ran = planOn(fixture.doc);
+    expect([ran.row('rcf3048').category, ran.rule('rcf3048')]).toEqual(['referral.source', 'label.referral-source']);
+    expect(optionOf(ran.write('rcf3048'))).toBe('Other');
+  });
+
+  it('ICIMS-21 (jr6-sentinel-job-questions.frame-1): "What state are you physically located in today?" is the home state', async () => {
+    const fixture = await load('jr6-sentinel-job-questions.frame-1');
+    const ran = planOn(fixture.doc);
+    expect([ran.row('Q266').label, ran.row('Q266').category, ran.rule('Q266')])
+      .toEqual(['What state are you physically located in today?', 'address.region', 'label.residence-state']);
+    expect(optionOf(ran.write('Q266'))).toBe('Texas');
+  });
+
+  it('ICIMS-24, -25 (jr6-nyu-profile-parsed.frame-1): the school chosen in its list, its companion box left; "Did You Graduate?" Yes', async () => {
+    const fixture = await load('jr6-nyu-profile-parsed.frame-1');
+    const listed = planOn(fixture.doc, { lists: { 'CandProfileFields.School': SCHOOLS } });
+    expect(optionOf(listed.write('-1_CandProfileFields.School'))).toBe('The University of Texas at Austin');
+    // RULES item 65: the companion pairs with the list of its own section and block.
+    expect(listed.row('-1_CandProfileFields.Minor')).toMatchObject({ label: 'Enter school name if not in the list above',
+      category: 'education.school', status: 'skipped', reason: 'conditional-question', needsUserAction: false });
+    expect(listed.write('-1_CandProfileFields.Minor')).toBeUndefined();
+    // Unlisted: the school typed into the box.
+    const unlisted = planOn(fixture.doc, { lists: { 'CandProfileFields.School': ['Texas A&M University', 'Other'] } });
+    expect(textOf(unlisted.write('-1_CandProfileFields.Minor'))).toBe('The University of Texas at Austin');
+    // ICIMS-25: graduated, the entry holding a degree and an end date past.
+    expect([listed.row('-1_CandProfileFields.IsGraduated').category, listed.rule('-1_CandProfileFields.IsGraduated')])
+      .toEqual(['education.graduated', 'label.graduated']);
+    expect(listed.write('-1_CandProfileFields.IsGraduated')).toMatchObject({ value: { kind: 'option', cleanLabel: 'Yes' },
+      origin: { provenance: 'rule', ruleId: 'education.graduated' } });
+  });
+
+  it.each(['githubinc-profile.frame-1', 'jr6-sentinel-profile.frame-1', 'jr6-nyu-profile-parsed.frame-1',
+    'jr6-ars-profile-filled'])('ICIMS-23 (%s): a résumé on record is never written; under "Upload mine again" it is flagged', async (name) => {
+    const fixture = await load(name);
+    const id = 'PortalProfileFields.Resume_File';
+    const upload = planOn(fixture.doc, { settings: withModes({ resumeOnPage: 'upload' }) });
+    expect(upload.write(id)).toBeUndefined();
+    expect(upload.row(id)).toMatchObject({ category: 'file.resume', status: 'flagged', reason: 'resume-held-no-input',
+      needsUserAction: true });
+    const keep = planOn(fixture.doc);
+    expect(keep.write(id)).toBeUndefined();
+    expect(keep.row(id)).toMatchObject({ category: 'file.resume', reason: 'prefill-kept' });
+  });
+
+  it('icims-new-3 (githubinc-profile.frame-1): "Preferred Last Name" is the last name', async () => {
+    const fixture = await load('githubinc-profile.frame-1');
+    const ran = planOn(fixture.doc);
+    expect([ran.row('rcf2034').label, ran.row('rcf2034').category, ran.rule('rcf2034')])
+      .toEqual(['Preferred Last Name', 'identity.lastName', 'label.last-name']);
+    expect(textOf(ran.write('rcf2034'))).toBe('Rivera');
+  });
+
+  it('keeps RULES’ label contracts (RULES.md edit 11): the Types’ names, "Please specify" right after its source, "Time Zone"', async () => {
+    for (const name of ['jr6-ars-profile', 'jr6-ars-profile-filled', 'githubinc-profile.frame-1', 'jr6-nyu-profile-parsed.frame-1']) {
+      const fixture = await load(name);
+      const ran = planOn(fixture.doc);
+      expect(ran.specs.some((spec) => /PersonProfileFields\.PhoneType$/.test(spec.nameAttr)), name).toBe(true);
+      const source = ran.specs.findIndex((spec) => spec.idAttr === 'rcf3048');
+      expect([ran.specs[source]?.label, ran.specs[source + 1]?.idAttr], name)
+        .toEqual(['How did you hear about us?', 'rcf3049']);
+      removeFixtures(document);
+    }
+    const ars = await load('jr6-ars-profile');
+    expect(planOn(ars.doc).result.fields.filter((field) => field.label === 'Time Zone').map((field) => field.required))
+      .toEqual([true]);
+  });
+
+  // RULES regression (reported): iCIMS declares Time Zone a remote search (its select says icimsdropdown-search="1",
+  // FIXPLAN §6.5 item 1), and RULES' preferences.timeZone (src/core/resolver/categories.ts) takes text, select, radio
+  // and combobox only, so the field stays unknown. Flip to it() once the category takes typeahead-remote.
+  it.fails('ICIMS-26 (jr6-ars-profile): Time Zone is the profile’s time zone (preferences.timeZone)', async () => {
+    const fixture = await load('jr6-ars-profile');
+    const ran = planOn(fixture.doc, { lists: { rcf3077: TIME_ZONES } });
+    expect([ran.row('rcf3077').category, ran.rule('rcf3077')]).toEqual(['preferences.timeZone', 'label.time-zone']);
+  });
+
+  // RULES regression (reported): in a run, the companion box RULES leaves waiting (flagged waiting-for-options while the
+  // School list is a search) is read by the loop's books as a list waiting for its options: OPTION_WAIT_PASSES scans
+  // later it is options-never-loaded and needs the person, though the list took the school (dependsAgain never takes a
+  // waiting field). RULES edit 17 expects it skipped (conditional-question). Flip to it() once fixed.
+  it.fails('ICIMS-24 in a run (jr6-nyu-profile-parsed.frame-1): the companion box’s row says skipped once the list took the school', async () => {
+    const runtimes: ContentRuntime[] = [];
+    try {
+      const { doc, rows } = await runOn(runtimes, 'jr6-nyu-profile-parsed.frame-1');
+      expect(shownOf(doc, '-1_CandProfileFields.School')).toBe('The University of Texas at Austin');
+      expect(rows('Enter school name if not in the list above')).toMatchObject([{ status: 'skipped',
+        reason: 'conditional-question', needsUserAction: false }]);
+    } finally {
+      for (const runtime of runtimes) runtime.stop();
+    }
+  }, 150_000);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// P2: the snapshot6 pages' expectations (fixtures/icims/jr6-*.expect.json): each scan of a root is its expectation
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe('P2: the snapshot6 pages’ scans are their expectations', () => {
+  const ROOTED = EXPECTED.filter((name) => readExpectation(byFile(EXPECTS, `${name}.expect.json`)).fields.length > 0);
+
+  it('lists every page or frame with a root; the IForms’ portal frames hold their hooks alone', () => {
+    expect(EXPECTED.filter((name) => !ROOTED.includes(name))).toEqual(['jr6-nyu-iform-offer.frame-1',
+      'jr6-nyu-iform-signature.frame-1', 'jr6-sentinel-iform-selfid.frame-1']);
+    expect(ROOTED).toHaveLength(14);
+  });
+
+  it.each(ROOTED)('%s: the scan of its root is the expectation', async (name) => {
+    const { html, address } = fileOf(name);
+    const scanned = await scanCase(document, html, address);
+    expect(scanned.adapter).toBe(icimsAdapter);
+    expect(compareWithExpectation(scanned.doc, scanned.result, readExpectation(byFile(EXPECTS, `${name}.expect.json`))))
+      .toEqual([]);
   });
 });

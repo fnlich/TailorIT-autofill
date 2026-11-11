@@ -12,8 +12,8 @@
  * loading bar is its busy sign and its trigger's text its answer. A remote search where its select says
  * icimsdropdown-search="1", a list read whole otherwise; careers-ars's address lookup (ICIMS-08) always the latter; the
  * gate's Country Code a list drawn whole (ICIMS-18). The fixtures' lists are redacted, so the lists read here are
- * SYNTHETIC public words (countries) drawn into a fixture's list. A driven dropdown's outcome (a run choosing an answer)
- * is P2's, after ENGINE E1 reads WidgetDecl.input.
+ * SYNTHETIC public words (countries) drawn into a fixture's list. A driven dropdown's outcome (a run opening, reading and
+ * choosing, after ENGINE E1 to E3) is held by jr6-icims.browser.test.ts' P2 section.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
@@ -34,9 +34,8 @@ function selectsOf(html: string): HTMLSelectElement[] {
 }
 
 /** The words of each result a declared list's option selector names. (The widget helpers' own reading of an open
- *  profile dropdown, shownOptions, finds none in a fixture today: dom/camouflage.ts reads the container, drawn
- *  absolutely, as cut by its static overflow-hidden cell, so its text's colours are 'unknown'. ENGINE's, recorded in
- *  the ICIMS handoff; asserted in P2.) */
+ *  profile dropdown, shownOptions, reads them too since ENGINE E2 (the ICIMS package's edit 1: a container drawn
+ *  absolutely is not cut by its static overflow-hidden cell): asserted below and in jr6-icims.browser.test.ts.) */
 function resultsOf(list: Element, option: string): string[] {
   return Array.from(list.querySelectorAll(option)).map((el) => (el.textContent ?? '').trim());
 }
@@ -135,6 +134,9 @@ describe('jr6 ICIMS-01: each dropdown declared a widget (widgetFor)', () => {
     expect([field.kind, field.label, field.required, widget.declared]).toEqual(['typeahead-remote', 'Country', true, true]);
     expect(widgetListOf(widget)).toBe(list);
     expect(resultsOf(list, widget.results!.option)).toEqual(COUNTRIES);
+    // jr6 P2 (ENGINE E2, the ICIMS package's edit 1): the widget helpers read the open list as a person sees it.
+    expect(shownOptions(list, newScanCache(), undefined, widget.results!.option).map((option) => option.label))
+      .toEqual(COUNTRIES);
     // The page shows the chosen country in the trigger once a result is clicked.
     doc.getElementById(`${id}_fakeSelected_icimsDropdown`)!.replaceChildren('Canada');
     expect(widget.shownAnswer!(COUNTRIES)).toBe('Canada');
