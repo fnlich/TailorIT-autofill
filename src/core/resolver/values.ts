@@ -361,8 +361,14 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
       return withStreet(textValue(address?.line1, 'address.line1'), address);
     case 'address.line2':
       return textValue(address?.line2, 'address.line2');
+    // jr6 fix (REVC-3, RULES-SR2-CITY-RESULTS-UNASSIGNED): SmartRecruiters' City search (xplor-one-click,
+    // jr6-wiser-one-click) words its results "City, State, Country": the city carries its place parts, so a list of
+    // places is read by them (plan/frame.ts orPlace, matcher/place.ts matchPlace) where no option is the city alone.
+    // The typed text stays the city (a search types it alone: resolve.ts searchPlace).
     case 'address.city':
-      return textValue(address?.city, 'address.city');
+      return placeValue(address?.city === undefined ? undefined : { city: address.city,
+        ...(address.region ? { region: address.region } : {}), ...(address.country ? { country: address.country } : {}),
+        text: address.city }, 'address.city');
     case 'address.postalCode':
       return withStreet(textValue(address?.postalCode, 'address.postalCode'), address);
     case 'address.region': {

@@ -306,3 +306,30 @@ describe('51 (RULES-R51): a salary box that also asks for its currency', () => {
     }
   });
 });
+
+// jr6 fix (REVC-3, RULES-SR2-CITY-RESULTS-UNASSIGNED): SmartRecruiters' City search (xplor-one-click,
+// jr6-wiser-one-click) words its results "City, State, Country"; the golden profile lives in Austin, TX, US.
+describe('SR-2 (REVC-3): a city search’s results read by their place parts', () => {
+  it('types the city alone, as before', () => {
+    const city = specOf('City', 'typeahead-remote', { required: true });
+    expect(planned([city], city).write).toMatchObject({ value: { kind: 'query', queries: ['Austin'] },
+      origin: { provenance: 'profile', path: 'address.city', transform: 'typeahead.query' } });
+  });
+  it('chooses the result naming the person’s city and region, never another region’s', () => {
+    const results = specOf('City', 'typeahead-remote', { required: true, searchResults: true,
+      optionLabels: ['Austin, Minnesota, United States', 'Austin, Texas, United States'] });
+    const { write, row } = planned([results], results);
+    expect(write).toMatchObject({ value: { cleanLabel: 'Austin, Texas, United States' },
+      match: { stage: 'alias', rule: 'place' } });
+    expect(row).toMatchObject({ category: 'address.city', status: 'verified' });
+    const elsewhere = specOf('City', 'typeahead-remote', { required: true, searchResults: true,
+      optionLabels: ['Austin, Minnesota, United States', 'Austin, Arkansas, United States'] });
+    expect(planned([elsewhere], elsewhere).write).toBeUndefined();
+  });
+  it('still chooses a list’s option that is the city alone, and types the city into a box', () => {
+    const list = specOf('City', 'select', { optionLabels: ['Select...', 'Austin', 'Austin, MN', 'Dallas'] });
+    expect(written(planned([list], list).write)).toBe('Austin');
+    const box = specOf('City', 'text', { required: true });
+    expect(written(planned([box], box).write)).toBe('Austin');
+  });
+});
