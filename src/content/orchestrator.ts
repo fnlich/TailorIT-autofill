@@ -222,8 +222,8 @@ import {
   type NoticeCode, type ReportHeader, type ReportLimiter,
 } from './report';
 import { postingNamesOf } from './job-relay';
-import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
 import { chainFactsOf } from './chain-frame'; // jr6 SHELL-B (ICIMS-17)
+import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
 import { signInChallenged, signInHandedOver, signInRefusalWaits, type SignInOutcome } from './sign-in';
 import type { PressSnapshot } from './submitted';
 import type { Heard, HeardType, TouchLog } from './touches';
