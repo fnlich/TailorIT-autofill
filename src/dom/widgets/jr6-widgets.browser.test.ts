@@ -343,6 +343,18 @@ function icimsAdapter(doc: Document): Adapter {
   } as unknown as Adapter;
 }
 
+/** jr6 line W review (ENG-REV-2): iCIMS's dropdowns as the ICIMS package declares them (src/adapters/icims/index.ts
+ *  widgetFor), the anchor `expanded` for a search too. */
+function icimsDeclared(doc: Document): Adapter {
+  const base = icimsAdapter(doc);
+  return {
+    widgetFor(control: Element): WidgetDecl | null {
+      const declared = base.widgetFor!(control);
+      return declared === null ? null : { ...declared, expanded: control };
+    },
+  } as unknown as Adapter;
+}
+
 describe('item 2 (ICIMS-01 core, icims-new-1): a widget\'s own text box beside it (WidgetDecl.input)', () => {
   it('never makes the box a field, nor counts it, whether its container is shut or open', async () => {
     const page = await open(ICIMS, 'icims', icimsAdapter);
@@ -417,6 +429,25 @@ describe('item 2 (ICIMS-01 core, icims-new-1): a widget\'s own text box beside i
     // The anchor answered our one click, and its box stayed hidden: never typed into.
     expect(page.doc.getElementById('school_icimsDropdown')!.dataset.clicked).toBe('1');
     expect(page.events.events.filter((event) => event.type === 'input')).toEqual([]);
+  });
+
+  // jr6 line W review (ENG-REV-2): never leave open a popup the search opened.
+  it('shuts the container its own click opened when a search chooses nothing: the anchor toggled again', async () => {
+    const page = await open(ICIMS, 'icims', icimsDeclared);
+    const box = page.doc.querySelector<HTMLInputElement>('#school_icimsDropdown_ctnr input')!;
+    const result = await searchTypeahead(page.target('School'), ['Lakeside'], page.ctx(), {
+      guard: async () => ({ ok: true, target: page.target('School') }),
+      match: async () => ({ choose: null, reason: 'no-match', blocked: false }),
+    });
+    expect(result).toMatchObject({ chosen: null, reason: 'no-match', typed: 1 });
+    expect(box.value).toBe('');
+    expect(page.doc.getElementById('school_icimsDropdown_ctnr')!.hidden).toBe(true);
+    expect(page.doc.getElementById('school_icimsDropdown')!.getAttribute('aria-expanded')).toBe('false');
+    // Our click opened it, and our second click shut it: no other.
+    expect(page.events.on('school_icimsDropdown').filter((event) => event.type === 'click' && !event.trusted))
+      .toHaveLength(2);
+    expect(page.win<string[]>('__chosen')).toEqual([]);
+    expectOurEventsOnly(page.events);
   });
 });
 
