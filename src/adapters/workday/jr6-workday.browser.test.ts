@@ -989,7 +989,7 @@ describe('jr6 WD-20 (WORKDAY P1, RULES): Parsons’ "Education (Completed Degree
       path: 'education[0].institution' });
     expect(optionOf(step.write('Degree'))).toBe('Bachelor of Science (B.S)');
     expect(step.write('Field of Study')?.value).toMatchObject({ kind: 'query',
-      queries: expect.arrayContaining(['Computer Science']) });
+      queries: expect.arrayContaining([goldenProfile().education[0]!.degree.field!.name]) });
     expect(step.write('Field of Study')?.origin).toMatchObject({ path: 'education[0].degree.field' });
   });
 });
