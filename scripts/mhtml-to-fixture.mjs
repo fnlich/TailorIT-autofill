@@ -2779,14 +2779,17 @@ export function noteListRowsInPage(input) {
     for (let at = parentOf(row); at !== null; at = parentOf(at)) if (at.matches(lists)) return at;
     return parentOf(row);
   };
-  /** The words of a list's own id, class and data- attributes (its structure, which a row's id may repeat: Greenhouse's
-   *  react-select-candidate-location-option-0 in react-select-candidate-location-listbox), lower-cased, camel case
-   *  split. @param {Element | null} list */
+  /** The words and tokens of a list's own id, class and data- attributes (its structure, which a row's id may repeat:
+   *  Greenhouse's react-select-candidate-location-option-0 in react-select-candidate-location-listbox, iCIMS's field id
+   *  in result-selectable_-1_PersonProfileFields.<field>_<n> and -1_PersonProfileFields.<field>_dropdown-results),
+   *  lower-cased: each letter-and-digit run whole, and its camel-case and letter-digit parts. @param {Element | null} list */
   const structureOf = (list) => {
     if (list === null) return [];
     const text = Array.from(list.attributes).filter((attribute) => ['id', 'class'].includes(attribute.name.toLowerCase())
       || attribute.name.toLowerCase().startsWith('data-')).map((attribute) => attribute.value).join(' ');
-    return text.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().match(/[a-z\u00e0-\u024f]{2,}/g) ?? [];
+    const runs = text.match(/[A-Za-z0-9\u00c0-\u024f]+/g) ?? [];
+    const parts = runs.flatMap((run) => run.split(/(?<=[a-z\u00df-\u00ff])(?=[A-Z\u00c0-\u00de])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])/));
+    return [...new Set([...runs, ...parts].map((token) => token.toLowerCase()))];
   };
   const found = new Set(doc.querySelectorAll(input.rows.join(', ')));
   /** @type {Map<Element, { words: string[]; values: string[]; structure: string[] }>} */
@@ -2883,9 +2886,10 @@ export function noteListRowsInPage(input) {
  *   words or held a listed string: a component's own label there stays); each id
  *   attribute (`ids`, `idData`: id, name, href, data-id, data-key, data-sr-id, data-automation-id, ...) is normalised:
  *   each value or whole text the row gave, as written or with its separators changed (SmartRecruiters' location id
- *   spelling the city its words named), each opaque token (five characters or more holding a digit: Workday's
- *   menuItem-<id>), and each word of the row's own (three letters or more), become REDACTED, the rest (a structural
- *   prefix, a position) staying; runs of REDACTED become one. A renamed id stays unique (-2, -3, ...) and every
+ *   spelling the city its words named), each opaque token (five characters or more with three digits, or eight or
+ *   more with one: Workday's menuItem-<id>), and each word of the row's own (three letters or more), become REDACTED,
+ *   the rest (a structural prefix, a position, and any token or word its list's own id, class or data- attributes
+ *   hold: iCIMS's field id) staying; runs of REDACTED become one. A renamed id stays unique (-2, -3, ...) and every
  *   reference to it follows (`references`: ID_REFERENCES, and an href="#<id>").
  * Answers counts, never a value.
  * @param {{ redacted: string; fixed: string[]; results: string[]; words: string[]; wordData: string; ids: string[];
@@ -2944,13 +2948,16 @@ export function redactListRowsInPage(input) {
       }
       for (const [start, end] of spans.reverse()) out = `${out.slice(0, start)}${redacted}${out.slice(end)}`;
     }
-    // The row's own words, but its list's (a structural word the row's id repeats: "location" in Greenhouse's
-    // react-select-candidate-location-option-0 when a result's words hold it too).
+    // The row's own words and opaque tokens, but its list's (a structural word or id the row's id repeats: "location"
+    // in Greenhouse's react-select-candidate-location-option-0 when a result's words hold it too, iCIMS's field id).
     const structure = new Set(record.structure);
     const words = new Set(record.words.filter((word) => !structure.has(word)));
     out = out.replace(new RegExp(`[${char}]+`, 'g'), (run) => {
-      if (run === redacted) return run;
-      if (run.length >= 5 && /\d/.test(run)) return redacted;
+      if (run === redacted || structure.has(run.toLowerCase())) return run;
+      // An opaque token: five characters or more with three digits, or eight or more with one (a database or Workday
+      // id); a design token such as "body1" is no row's name.
+      const digits = run.replace(/\D/g, '').length;
+      if ((run.length >= 5 && digits >= 3) || (run.length >= 8 && digits >= 1)) return redacted;
       return run.split(/(?<=[a-z\u00df-\u00ff])(?=[A-Z\u00c0-\u00de])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])/)
         .map((part) => (words.has(part.toLowerCase()) ? redacted : part)).join('');
     });

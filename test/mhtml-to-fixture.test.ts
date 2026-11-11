@@ -3065,7 +3065,7 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
 <ul id="cities" role="listbox" aria-activedescendant="city-roeville-4417">
   <li id="city-roeville-4417" role="option" data-value="4417" value="1" aria-label="Roeville"><span>Roeville</span>
     <a href="https://maps.tailorit-fixture.example/?q=Roeville">map</a></li>
-  <li id="city-roeville-4418" role="option" data-value="4418" aria-label="Roeville North"><span>Roeville North</span></li>
+  <li id="city-roeville-4418" role="option" data-value="4418" aria-label="Roeville North"><span data-uniform-id="typography-body1">Roeville North</span></li>
   <li id="city-alder-77" role="option" data-value="77" aria-label="Alder"><span>Alder</span></li>
   <li id="city-east" role="option" aria-label="Roeville East"><span id="w3">  Roeville East, NJ  </span></li></ul>
 <label for="city-roeville-4418">A label naming the second city</label>
@@ -3115,6 +3115,8 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
       expect(html).toContain('<li id="city-REDACTED" role="option" data-value="REDACTED" value="REDACTED" aria-label="REDACTED">'
         + '<span>REDACTED</span> <a href="https://maps.tailorit-fixture.example/?q=REDACTED">REDACTED</a></li>');
       expect(html).toContain('<li id="city-REDACTED-2" role="option" data-value="REDACTED" aria-label="REDACTED">');
+      // A design token in a data- id ("body1": one digit) is no opaque id: it stays.
+      expect(html).toContain('<span data-uniform-id="typography-body1">REDACTED</span>');
       expect(html).toContain('<label for="city-REDACTED-2">A label naming the second city</label>');
       expect(html).toContain('<li id="city-alder-77" role="option" data-value="77" aria-label="Alder"><span>Alder</span></li>');
       // Workday's "REDACTED not checked" stays as its own rule wrote it; its structural data-automation-id stays.
@@ -3207,13 +3209,13 @@ root.innerHTML = '<spl-input id="spl-form-element_4" type="text" value="" ariaco
   it("iCIMS's searched dropdown: its results' data-value goes with their words; an unsearched list's results stay",
     async () => {
       const { text } = await convertPage(ICIMS_APPLY, 'icims', 'jr6r2-icims-results', `<form>
-<label for="rcf1">City</label>
-<select id="rcf1" class="dropdown-hide" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1"><option value="501">Roeville</option></select>
-<a id="rcf1_icimsDropdown" class="dropdown-select" role="combobox"><span class="dropdown-text">Roeville</span></a>
-<div id="rcf1_icimsDropdown_ctnr" class="dropdown-container"><input class="dropdown-search" type="text" value="Roe">
-<ul id="rcf1_dropdown-results" class="dropdown-results" role="listbox">
-  <li id="result-selectable_rcf1_0" class="dropdown-result result-selectable" role="option" dropdown-index="0" title="Roeville" aria-label="Roeville" data-value="501">Roeville</li>
-  <li id="result-selectable_rcf1_1" class="dropdown-result result-selectable" role="option" dropdown-index="1" title="Roeville Heights" aria-label="Roeville Heights" data-value="502">Roeville Heights</li></ul></div>
+<label for="rcf3048">City</label>
+<select id="rcf3048" class="dropdown-hide" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1"><option value="501">Roeville</option></select>
+<a id="rcf3048_icimsDropdown" class="dropdown-select" role="combobox"><span class="dropdown-text">Roeville</span></a>
+<div id="rcf3048_icimsDropdown_ctnr" class="dropdown-container"><input class="dropdown-search" type="text" value="Roe">
+<ul id="rcf3048_dropdown-results" class="dropdown-results" role="listbox">
+  <li id="result-selectable_rcf3048_0" class="dropdown-result result-selectable" role="option" dropdown-index="0" title="Roeville" aria-label="Roeville" data-value="501">Roeville</li>
+  <li id="result-selectable_rcf3048_1" class="dropdown-result result-selectable" role="option" dropdown-index="1" title="Roeville Heights" aria-label="Roeville Heights" data-value="502">Roeville Heights</li></ul></div>
 <label for="rcf2">Shift</label>
 <select id="rcf2" class="dropdown-hide" icimsdropdown-enabled="0" icimsdropdown-search="0"><option value="">Make a Selection</option><option value="D">Day</option><option value="N">Night</option></select>
 <ul id="rcf2_dropdown-results" class="dropdown-results" role="listbox">
@@ -3221,7 +3223,7 @@ root.innerHTML = '<spl-input id="spl-form-element_4" type="text" value="" ariaco
   <li id="result-selectable_rcf2_1" class="dropdown-result result-selectable" role="option" dropdown-index="1" title="Night" data-value="N">Night</li></ul>
 </form>`);
       expect(text).not.toMatch(/roeville|"50[12]"/i);
-      expect(text).toContain('<li id="result-selectable_rcf1_0" class="dropdown-result result-selectable" role="option" '
+      expect(text).toContain('<li id="result-selectable_rcf3048_0" class="dropdown-result result-selectable" role="option" '
         + 'dropdown-index="0" title="REDACTED" aria-label="REDACTED" data-value="REDACTED">REDACTED</li>');
       expect(text).toContain('<li id="result-selectable_rcf2_0" class="dropdown-result result-selectable" role="option" '
         + 'dropdown-index="0" title="Day" data-value="D">Day</li>');
