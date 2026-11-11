@@ -317,6 +317,11 @@ describe('what frame/wall leaves in the registry: entering, refusal and the entr
     await helloAt(worker, details('doc-1'));
     expect((await entryOf())?.entryRefused).toBeUndefined();
     expect((await entryOf())?.refusal).toBeUndefined();
+    // Its form drawn in place (a hello with a form): no longer under way.
+    await say(worker, details('doc-1'), { entering: true });
+    await helloAt(worker, details('doc-1'), { hasForm: true });
+    expect((await entryOf())?.entering).toBeUndefined();
+    await helloAt(worker, details('doc-1'));
     // Another document starts with no press under way.
     await say(worker, details('doc-1'), { entering: true });
     await helloAt(worker, details('doc-2'));

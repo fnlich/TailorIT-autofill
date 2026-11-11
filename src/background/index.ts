@@ -815,10 +815,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
               ...(same && held.wall !== undefined ? { wall: held.wall } : {}),
               ...(same && held.choice === true ? { choice: true } : {}),
               ...(same && held.waits !== undefined ? { waits: held.waits } : {}),
-              // v5 p2-fill: and its posting's own Apply; jr6 apply F3a: its press under way, and (at the same
-              // address) the entry it said, for its card.
+              // v5 p2-fill: and its posting's own Apply; jr6 apply F3a: its press under way (until its form shows),
+              // and (at the same address) the entry it said, for its card.
               ...(same && held.entry === true ? { entry: true } : {}),
-              ...(same && held.entering === true ? { entering: true } : {}),
+              ...(same && held.entering === true && !message.hasForm ? { entering: true } : {}),
               ...(same && held.entrySaid === true && navOf(held) === (message.nav ?? 0) ? { entrySaid: true } : {}) },
             now()) };
           });
