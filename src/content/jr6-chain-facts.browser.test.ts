@@ -143,6 +143,19 @@ describe('not-submit.ts on an IForm leaf, with its portal’s step facts (jr6 SH
     expect(check(lying(() => holder))).toEqual({ ok: false, refusal: 'submit-word' });
     // The adapter's own answer: the button's form, which is the root.
     expect(check(icimsAdapter)).toEqual({ ok: true });
+    // Without facts, never: an adapter that says the step is not the last and answers the root form as its later step,
+    // with no facts given, gets the rule for a later step apart from the button (the form holds it: refused).
+    const unsure: Adapter = { ...icimsAdapter, isFinalStep: () => 'not-final', nextButton: () => button,
+      stepSubmitNext: { buttons: declared.buttons, laterStep: () => root } };
+    expect(assertNotSubmit(button, { adapter: unsure, root, allowNext: true })).toEqual({ ok: false, refusal: 'submit-word' });
+    expect(assertNotSubmit(button, { adapter: unsure, root, allowNext: true, facts: null }))
+      .toEqual({ ok: false, refusal: 'submit-word' });
+    // A button inside the leaf's form whose form owner is another form (a form= attribute): not the leaf form's own.
+    other.id = 'jr6-other-form';
+    button.setAttribute('form', other.id);
+    expect(check(icimsAdapter)).toEqual({ ok: false, refusal: 'submit-word' });
+    button.removeAttribute('form');
+    expect(check(icimsAdapter)).toEqual({ ok: true });
   });
 });
 
@@ -235,6 +248,10 @@ describe('the claim frame says its step facts (jr6 SHELL-B, chain/facts)', () =>
     const types = worker.messages.map((message) => message.type);
     expect(types.indexOf('frame/hello')).toBeLessThan(types.indexOf('chain/facts'));
     expect(worker.of('chain/facts')[0]).toEqual({ v: 1, type: 'chain/facts', facts: SIGNATURE });
+    // A change that leaves them as they were says nothing.
+    portal.doc.body.append(portal.doc.createElement('p'));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(worker.of('chain/facts')).toHaveLength(1);
     // The page draws another counter: said again; then a later step hidden (no facts): said as none.
     const badge = portal.doc.querySelector('.iCIMS_PageStepText .iCIMS_Badge')!;
     badge.textContent = '3/4';
@@ -243,10 +260,6 @@ describe('the claim frame says its step facts (jr6 SHELL-B, chain/facts)', () =>
     (portal.doc.querySelector('li#Step_perJobSubmittalFormsStep') as HTMLElement).style.display = 'none';
     await expect.poll(() => worker.of('chain/facts').length).toBe(3);
     expect(worker.of('chain/facts')[2]).toMatchObject({ facts: null });
-    // A change that leaves them as they were says nothing.
-    portal.doc.body.append(portal.doc.createElement('p'));
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    expect(worker.of('chain/facts')).toHaveLength(3);
     // Ids, a boolean and counts alone.
     expect(JSON.stringify(worker.of('chain/facts'))).not.toMatch(/https?:|icims\.com|Portal Specific/);
   });
