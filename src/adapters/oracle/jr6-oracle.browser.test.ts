@@ -526,3 +526,105 @@ describe('jr6 O3: the address block’s parents (dependsOn)', () => {
       for (const id of EDITOR_SELECTS) expect(parentOf(doc, id), id).toBeNull();
     });
 });
+
+// ── oracle-new-2, O7: the timeline's open editor ──────────────────────────────────────────────────────────────────
+
+describe('jr6 oracle-new-2, O7: the timeline’s open editor is a repeatable block of its kind', () => {
+  const EDITOR = 'timeline-form-inline timeline-form-builder.timeline-form-dialog__content';
+  const after = () => load(hjfAfterSubmitHtml, `${HJF}/apply/section/1`, closeChecklist);
+  const SCHOOL = 'input[name="educationalEstablishment"]';
+
+  it('hjf-after-submit: the open education editor is the one education block; no Add, no Save declared', async () => {
+    const doc = await after();
+    const root = oracleAdapter.detect(doc)!.formRoot;
+    const sections = oracleAdapter.repeatables!(root);
+    expect(sections.map((section) => section.kind)).toEqual(['education']);
+    const [education] = sections;
+    expect(education!.blocks()).toEqual([doc.querySelector(EDITOR)]);
+    expect(education!.addButton()).toBeNull();
+    expect(education!.save).toBeUndefined();
+    // Its Add buttons and its own Save stay never pressed.
+    const never = oracleAdapter.neverPress!(root);
+    for (const id of ['timeline-add-education-button', 'timeline-add-experience-button']) {
+      expect(never).toContain(doc.getElementById(id));
+    }
+    expect(never).toContain(doc.querySelector('timeline-form-inline button.save-btn'));
+  });
+
+  it('no editor shown, no section: hjf-apply-section’s tiles, and the editor hidden', async () => {
+    const section = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+    expect(section.querySelectorAll('.beautiful-timeline-item__title').length).toBeGreaterThan(0);
+    expect(oracleAdapter.repeatables!(oracleAdapter.detect(section)!.formRoot)).toEqual([]);
+    removeFixtures(document);
+    const doc = await after();
+    doc.querySelector<HTMLElement>('timeline-form-inline')!.style.display = 'none';
+    expect(oracleAdapter.repeatables!(oracleAdapter.detect(doc)!.formRoot)).toEqual([]);
+  });
+
+  it('its kind is told by its fields: Employer Name and Job Title make an experience’s; other rows none', async () => {
+    const doc = await after();
+    const root = oracleAdapter.detect(doc)!.formRoot;
+    const relabel = (id: string, words: string, name: string) => {
+      doc.querySelector(`label[for="${id}"] .input-row__linebreak`)!.textContent = words;
+      doc.getElementById(id)!.setAttribute('name', name);
+    };
+    // A synthetic experience editor, its rows relabelled in place.
+    relabel('contentItemId-46', 'Job Title', 'jobTitle');
+    relabel('educationalEstablishment-48', 'Employer Name', 'employerName');
+    expect(oracleAdapter.repeatables!(root).map((section) => section.kind)).toEqual(['experience']);
+    const company = doc.getElementById('educationalEstablishment-48') as HTMLInputElement;
+    const title = doc.getElementById('contentItemId-46') as HTMLInputElement;
+    company.value = 'Northwind Labs';
+    title.value = 'Platform Engineer';
+    const blocks = oracleAdapter.repeatables!(root)[0]!.blocks();
+    expect(oracleAdapter.prefill!.readEntries!('experience', blocks)).toEqual([{ block: 0, values: [
+      { category: 'experience.company', text: 'Northwind Labs' }, { category: 'experience.title', text: 'Platform Engineer' }] }]);
+    expect(oracleAdapter.prefill!.readEntries!('education', blocks)).toEqual([]);
+    relabel('contentItemId-46', 'Notes', 'notes');
+    expect(oracleAdapter.repeatables!(root)).toEqual([]);
+  });
+
+  it('its fields are the entry’s: section education, block 0; its dates read as the education’s, never the person’s '
+    + 'start date (the auditor’s O7 reading)', async () => {
+    const doc = await after();
+    const { result, plan } = planned(doc);
+    const editor = doc.querySelector(EDITOR)!;
+    const inEditor = result.fields.filter((field) => editor.contains(result.target(field.key)!.control));
+    expect(inEditor.map((field) => field.label)).toEqual(['Degree', 'Major', 'School', 'Start Date Month',
+      'Start Date Year', 'End Date Month', 'End Date Year', 'Country', 'City', 'Average Grade']);
+    for (const field of inEditor) expect(field.section, field.label).toEqual({ id: 'education', block: 0 });
+    const category = (label: string) => plan.results.find((row) => row.key === inEditor
+      .find((field) => field.label === label)!.key)?.category;
+    expect(['Start Date Month', 'Start Date Year'].map(category)).toEqual(['education.startDate', 'education.startDate']);
+    expect(['End Date Month', 'End Date Year'].map(category)).toEqual(['education.endDate', 'education.endDate']);
+    expect(['Degree', 'Major', 'School'].map(category)).toEqual(['education.degree', 'education.field',
+      'education.school']);
+  });
+
+  it('the entry it holds is read by its School: matched to the profile’s by fingerprint, else kept as it is',
+    async () => {
+      const doc = await after();
+      const root = oracleAdapter.detect(doc)!.formRoot;
+      const blocks = () => oracleAdapter.repeatables!(root)[0]!.blocks();
+      const school = doc.querySelector<HTMLInputElement>(SCHOOL)!;
+      // Nothing shown in its School: no entry read; the planner gives the block the profile's entry by its place.
+      expect(oracleAdapter.prefill!.readEntries!('education', blocks())).toEqual([]);
+      expect(planned(doc).plan.repeatables).toEqual([{ kind: 'education', profile: 1, entries: [0], current: [false] }]);
+      // The profile's own school (an entry Oracle imported from it): matched by fingerprint.
+      school.value = goldenProfile().education[0]!.institution.canonicalName;
+      expect(oracleAdapter.prefill!.readEntries!('education', blocks())).toEqual([{ block: 0,
+        values: [{ category: 'education.school', text: school.value }] }]);
+      expect(planned(doc).plan.repeatables).toEqual([{ kind: 'education', profile: 1, entries: [0], current: [false] }]);
+      // Another school (made up): no profile entry, so nothing of the entry is written over.
+      school.value = 'Northfield Technical Institute';
+      const { result, plan } = planned(doc);
+      expect(plan.repeatables).toEqual([{ kind: 'education', profile: 1, entries: [null], current: [false] }]);
+      const editor = doc.querySelector(EDITOR)!;
+      // City and Country still read as the person's home address until RULES' jr6 item 7 (an entry's place is the
+      // entry's): ORACLE P2 asserts them.
+      const written = plan.writes.map((write) => result.fields.find((field) => field.key === write.key)!)
+        .filter((field) => field.section.id === 'education' && editor.contains(result.target(field.key)!.control))
+        .filter((field) => !['City', 'Country'].includes(field.label));
+      expect(written.map((field) => field.label)).toEqual([]);
+    });
+});

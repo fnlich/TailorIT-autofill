@@ -84,6 +84,10 @@
  *   search) and ZIP Code are searches (typeahead-remote); the address's dependent lists learn under the Country shown.
  * - The address's order (O3, dependsOn): Address Line 1 after the Country; ZIP Code, City, State and County after
  *   Address Line 1 (after the Country where the block has no street search).
+ * - The timeline (oracle-new-2, O7): its open inline editor is a repeatable block of the kind its fields tell (School and
+ *   Degree, or Employer Name and Job Title), only while it shows; no Add is declared (question 1), and the entry it
+ *   holds is read by its School, or its Employer Name and Job Title (prefill.readEntries), so the planner matches it by
+ *   fingerprint and keeps one no profile entry matches.
  * Nothing here reads, logs or sends a value (the Country a block shows is hashed into a learned list's key only).
  */
 // The P2 review (security 1)
@@ -92,7 +96,7 @@ import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { oracleOwnDomain } from '../../shared/hosts';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
-import type { Adapter, SignInForm, SignInWall, WidgetDecl } from '../types';
+import type { Adapter, PrefillEntryView, SignInForm, SignInWall, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl } from './url';
 
 /** The snapshots the hooks were written from (fixtures/oracle/). */
@@ -377,6 +381,87 @@ function dependsOn(control: Element): Element | null {
   return addressPart(block, 'addressLine1') ?? country;
 }
 
+// ── jr6 oracle-new-2, O7: the Work and Education timeline's open editor ────────────────────────────────────────────
+
+/** jr6 oracle-new-2: the timeline's inline editor, hjf-after-submit.html's <timeline-form-inline><div
+ *  class="standard-apply-flow-timeline-form"><div class="timeline-form-content"><timeline-form-builder
+ *  class="timeline-form-dialog__content"> holding one entry's rows (Degree, Major, School, Start Date and End Date as
+ *  Month and Year parts, Country, City, Average Grade), its footer's Cancel and Save beside it (button.cancel-btn,
+ *  button.save-btn): drawn in place of the timeline's tiles while an entry is opened (the invalid one, after Oracle
+ *  refused the Submit) or added. The tiles themselves hold no field (hjf-apply-section.html). */
+const TIMELINE_EDITOR = 'timeline-form-inline timeline-form-builder.timeline-form-dialog__content';
+
+/** The words of an editor's row labels (label.input-row__label in form-element-label), in lower case. */
+function rowLabelsOf(editor: Element): Set<string> {
+  return new Set(Array.from(editor.querySelectorAll('form-element-label > label.input-row__label')).map(wordsOf));
+}
+
+/** The control of the editor's row whose label reads one of `words` (lower case), or null. */
+function rowControl(editor: Element, words: readonly string[]): HTMLInputElement | null {
+  const label = Array.from(editor.querySelectorAll<HTMLLabelElement>('form-element-label > label.input-row__label'))
+    .find((each) => words.includes(wordsOf(each)));
+  const row = label?.closest('.input-row') ?? null;
+  return row?.querySelector<HTMLInputElement>('input.cx-select-input, input.input-row__control') ?? null;
+}
+
+/** An editor's entry kind, told apart by its fields as Jobright 1.25.2's rules.addAndGetEduRules and addAndGetWorkRules
+ *  read them: School and Degree (hjf-after-submit.html, whose boxes are named educationalEstablishment and
+ *  contentItemId) make an education's; Employer Name and Job Title an experience's (no snapshot shows that editor);
+ *  anything else none. */
+function editorKind(editor: Element): 'education' | 'experience' | null {
+  const labels = rowLabelsOf(editor);
+  const named = (name: string) => editor.querySelector(`input.cx-select-input[name="${name}"]`) !== null;
+  if ((labels.has('school') && labels.has('degree')) || (named('educationalEstablishment') && named('contentItemId'))) {
+    return 'education';
+  }
+  if ((labels.has('employer name') || labels.has('employer')) && (labels.has('job title') || labels.has('title'))) {
+    return 'experience';
+  }
+  return null;
+}
+
+/** jr6 oracle-new-2, O7: the editors of `kind` a person sees in the root, in page order. */
+function openEditors(root: Element, kind: 'education' | 'experience'): Element[] {
+  const cache = newScanCache();
+  return Array.from(root.querySelectorAll(TIMELINE_EDITOR))
+    .filter((editor) => isUserVisible(editor, cache) && editorKind(editor) === kind);
+}
+
+/** jr6 oracle-new-2, O7: the timeline's open editor as a repeatable block of its kind (so its Start Date, End Date,
+ *  City and Country are the entry's, never the person's own, and the planner gives it an entry by fingerprint), only
+ *  while one shows: a section with no editor open declares nothing, so no entry is ever counted missing beside the
+ *  tiles. Its Add buttons (#timeline-add-education-button, #timeline-add-experience-button) stay never pressed until
+ *  the owner answers question 1 (addButton null), and so does its Save (a door of its own, O6: deferred). */
+function repeatables(root: Element): ReturnType<NonNullable<Adapter['repeatables']>> {
+  return (['education', 'experience'] as const).flatMap((kind) => (openEditors(root, kind).length === 0 ? []
+    : [{ kind, blocks: () => openEditors(root, kind), addButton: () => null }]));
+}
+
+/** The words a box shows, white space collapsed (a cx-select shows its chosen option's label in its box). */
+const shownIn = (box: HTMLInputElement | null) => (box?.value ?? '').replace(/\s+/g, ' ').trim();
+
+/** jr6 oracle-new-2, O7: the entry an open editor holds, by the words the planner fingerprints it by (core/steps/blocks.ts
+ *  SHOWN_CATEGORIES): an education's School; an experience's Employer Name and Job Title. So an entry Oracle imported
+ *  is matched to the profile's entry by its words, never by its place, and one no profile entry matches is kept as
+ *  it is. Degree is no category the plan request carries (the planner reads it from the editor's own field). */
+function readEntries(kind: string, blocks: Element[]): PrefillEntryView[] {
+  return blocks.flatMap((block, index): PrefillEntryView[] => {
+    if (editorKind(block) !== kind) return [];
+    const values: PrefillEntryView['values'][number][] = [];
+    if (kind === 'education') {
+      const school = shownIn(block.querySelector<HTMLInputElement>('input.cx-select-input[name="educationalEstablishment"]')
+        ?? rowControl(block, ['school']));
+      if (school !== '') values.push({ category: 'education.school', text: school });
+    } else if (kind === 'experience') {
+      const company = shownIn(rowControl(block, ['employer name', 'employer']));
+      const title = shownIn(rowControl(block, ['job title', 'title']));
+      if (company !== '') values.push({ category: 'experience.company', text: company });
+      if (title !== '') values.push({ category: 'experience.title', text: title });
+    }
+    return values.length === 0 ? [] : [{ block: index, values }];
+  });
+}
+
 /** Whether the page marks a row-labelled control required: its row's label has input-row__label--required (drawn with
  *  its star, <span class="input-row__label--required-star" aria-hidden="true">). */
 function requiredFor(control: Element): boolean {
@@ -488,4 +573,6 @@ export const oracleAdapter: Adapter = {
   controlBox,
   widgetFor,
   dependsOn,
+  repeatables,
+  prefill: { readEntries },
 };
