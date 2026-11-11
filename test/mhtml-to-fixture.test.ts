@@ -52,6 +52,7 @@ import {
   LIST_ROWS,
   noteListRowsInPage,
   redactListRowsInPage,
+  respelledAddress,
   respelledEdge,
   respelledIn,
   respelledSources,
@@ -3071,12 +3072,15 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
 <label for="city-roeville-4418">A label naming the second city</label>
 <div role="listbox"><div id="prompt" role="option" aria-label="Roeville not checked" data-automation-id="menuItem">
   <div data-automation-id="promptOption" data-automation-label="Roeville">Roeville</div></div></div>
+<input id="jobsearch" type="search" value="engineer" aria-controls="results-region">
+<div id="results-region"><select id="pick"><option value="a">Alpha</option><option value="b">Beta</option></select></div>
 </body></html>`);
       const noted = await page.evaluate(noteListRowsInPage, { rows: LIST_ROWS, typedLists: TYPED_LISTS,
         typedBoxes: TYPED_LIST_BOXES, words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE });
       // Two typed lists: the school search (its box's typed text and aria-controls), and a custom element's (Lit's
-      // unhyphenated ariacontrols, as SmartRecruiters' spl-input writes it).
-      expect(noted).toEqual({ rows: 10, typedLists: 2 });
+      // unhyphenated ariacontrols, as SmartRecruiters' spl-input writes it). A search box's aria-controls naming a region
+      // that is no list (holding a form's own select) makes nothing a typed list.
+      expect(noted).toEqual({ rows: 12, typedLists: 2 });
       // Another redaction (a listed string, as transformInPage's) takes two cities' words and the prompt row's, and part
       // of a third city's.
       await page.evaluate(() => {
@@ -3119,6 +3123,7 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
       expect(html).toContain('<span data-uniform-id="typography-body1">REDACTED</span>');
       expect(html).toContain('<label for="city-REDACTED-2">A label naming the second city</label>');
       expect(html).toContain('<li id="city-alder-77" role="option" data-value="77" aria-label="Alder"><span>Alder</span></li>');
+      expect(html).toContain('<select id="pick"><option value="a">Alpha</option><option value="b">Beta</option></select>');
       // Workday's "REDACTED not checked" stays as its own rule wrote it; its structural data-automation-id stays.
       expect(html).toContain('<div id="prompt" role="option" aria-label="REDACTED not checked" data-automation-id="menuItem">');
       expect(html).toContain('<div data-automation-id="promptOption" data-automation-label="REDACTED">REDACTED</div>');
@@ -3298,7 +3303,7 @@ ${select('country', '', ['Portugal', 'Spain'])}</form>`);
         + 'Portugal</div><div id="react-select-country-option-1" class="select__option" role="option" aria-selected="false">Spain</div>');
     }, 60_000);
 
-  it('redacts a listed string respelled in any attribute but a frame\'s address, and counts it in the header', async () => {
+  it('redacts a listed string respelled in any attribute, and counts it in the header', async () => {
     const { conversion, text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6r2-respelled', `
 <a id="profile" href="/people/jane-roe?ref=JaneRoe">Profile</a>
 <div data-person="JANE_ROE" data-owner-id="u-janeroe-1">Card</div>
@@ -3313,10 +3318,37 @@ ${select('country', '', ['Portugal', 'Spain'])}</form>`);
     expect(conversion.counts['jr6r2-respelled.html']).toMatchObject({ respelled: 5 });
   }, 60_000);
 
-  it('refuses a page where a listed string survives in an attribute, respelled (a frame\'s address), naming no value',
+  it("redacts a listed string respelled in the page's and its frames' addresses: src, route map and header agree",
+    async () => {
+      // An iCIMS IForm's address spells its posting's title, which the list may hold: here the page's query and a
+      // third-party frame's path and query.
+      const page = `${GREENHOUSE_JOB}?ref=jane-roe`;
+      const card = 'https://cards.tailorit-fixture.example/card/JaneRoe?user=jane%20roe';
+      const file = join(work, 'jr6r2-addresses.mhtml');
+      writeFileSync(file, mhtml(page, [
+        { type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: page, body: '<!DOCTYPE html><html><head>'
+          + '<title>Apply</title></head><body><p>Apply</p><iframe src="cid:frame-CARD@mhtml.blink" width="300" height="80">'
+          + '</iframe></body></html>' },
+        { type: 'text/html', id: 'frame-CARD@mhtml.blink', location: card, body: '<html><body>A card</body></html>' }]));
+      const conversion = await convertMhtml({ file, platform: 'greenhouse', caseName: 'jr6r2-addresses', redact: LISTED,
+        outDir: work });
+      const text = conversion.files[0]?.text ?? '';
+      expect(headerOf(text).source).toBe(`${GREENHOUSE_JOB}?ref=REDACTED`);
+      expect(text).toContain('<iframe src="https://cards.tailorit-fixture.example/card/REDACTED?user=REDACTED" width="300" '
+        + 'height="80"></iframe>');
+      expect(Object.keys(conversion.routes)).toEqual([`${GREENHOUSE_JOB}?ref=REDACTED`,
+        'https://cards.tailorit-fixture.example/card/REDACTED?user=REDACTED']);
+      for (const output of conversion.files) expect(output.text, output.path).not.toMatch(/jane/i);
+      // Its scheme and host stay, so it is served where it was; anything else is answered as given.
+      expect(respelledAddress('https://jane-roe.example/jane-roe', respelledSources(LISTED)))
+        .toBe('https://jane-roe.example/REDACTED');
+      expect(respelledAddress('not an address jane-roe', respelledSources(LISTED))).toBe('not an address jane-roe');
+    }, 60_000);
+
+  it('refuses a page where a listed string survives in an attribute, respelled (a frame\'s host), naming no value',
     async () => {
       const file = join(work, 'jr6r2-refused.mhtml');
-      const card = 'https://cards.tailorit-fixture.example/card?user=jane-roe';
+      const card = 'https://jane-roe.cards.tailorit-fixture.example/card';
       writeFileSync(file, mhtml(GREENHOUSE_JOB, [
         { type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: GREENHOUSE_JOB, body: '<!DOCTYPE html><html><head>'
           + '<title>Apply</title></head><body><p>Apply</p><iframe src="cid:frame-CARD@mhtml.blink" width="300" height="80">'
