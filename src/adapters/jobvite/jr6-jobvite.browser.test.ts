@@ -646,11 +646,9 @@ describe('jr6 JOBVITE P2 JV-1, JV-2: the EEO step\'s two dates and its veteran g
       .toMatch(/^I IDENTIFY AS ONE OR MORE OF THE CLASSIFICATIONS OF PROTECTED VETERAN/);
   });
 
-  // jr6 regression of RULES (reported in SP\jr6\build\JOBVITE.md, P2): the page's decline reads "DECLINE
-  // SELF-IDENTIFICATION", a noun form vocab/curated/decline.json does not hold ("Decline to self-identify" and "Opt out
-  // of self-identification" are there), so a person who declines gets decline-option-missing and the group is left.
-  // JV-2's fix names that option for a decline. Remove `.fails` once the decline vocabulary reads it.
-  it.fails('JV-2 (RULES regression): a person who declines the veteran question chooses "DECLINE SELF-IDENTIFICATION"',
+  // The page's decline reads "DECLINE SELF-IDENTIFICATION", a noun form vocab/curated/decline.json holds since
+  // jr6-rules c9a7f2e.
+  it('JV-2 (RULES regression): a person who declines the veteran question chooses "DECLINE SELF-IDENTIFICATION"',
     async () => {
       expect(await veteranOnSikich({ kind: 'decline' })).toBe('DECLINE SELF-IDENTIFICATION');
     });
@@ -767,15 +765,16 @@ describe('jr6 JOBVITE P2 on VHL\'s step 1 (jr6-vhl-step1): JV-4, JV-11, JV-12, J
 describe('jr6 JOBVITE P2 on VHL\'s step 3 (jr6-vhl-step3-filled): JV-16\'s ten questions and JV-5\'s checklist', () => {
   const question = (plan: Plan, n: number) => plan.one(`Question ${n}: `);
 
-  it('JV-16: answers questions 1, 2, 9 and 10 by rule, flagged where they rest on an inference, and asks the AI the '
-    + 'rest in the standard scope', async () => {
+  it('JV-16: answers questions 2, 9 and 10 by rule, flagged where they rest on an inference, and asks the AI the '
+    + 'rest', async () => {
     const plan = await planOf(vhlStep3FilledHtml, VHL_COMPANY);
     // RULES edit 12: the labels keep their "Question N:" prefix; the rules read past it (ruleText).
-    expect(classifyByRules(question(plan, 1))).toMatchObject({ category: 'education.highSchool',
-      rule: 'label.high-school' });
-    expect(plan.write(question(plan, 1))).toMatchObject({ value: { cleanLabel: 'Yes' },
-      origin: { provenance: 'rule', ruleId: 'education.high-school' } });
-    expect(plan.row(question(plan, 1))).toMatchObject({ status: 'verified' });
+    // jr6-rules 77cce0f (RULES-R70): Question 1 asks the diploma "along with relevant/required work experience", more
+    // than the diploma alone, so no rule answers it: the AI classifies it, as before item 70.
+    expect(classifyByRules(question(plan, 1))).toBeNull();
+    expect(plan.row(question(plan, 1))).toMatchObject({ category: 'unknown', reason: 'unknown-field' });
+    expect(plan.write(question(plan, 1))).toBeUndefined();
+    expect(plan.asked(question(plan, 1))).toEqual(['classify']);
     // 10+ years in engineering: the golden profile's seven years as an engineer fall short.
     expect(classifyByRules(question(plan, 2))).toMatchObject({ category: 'experience.yearsIn', rule: 'label.years-in' });
     expect(plan.write(question(plan, 2))).toMatchObject({ value: { cleanLabel: 'No' },
@@ -821,10 +820,9 @@ describe('jr6 JOBVITE P2 on VHL\'s step 3 (jr6-vhl-step3-filled): JV-16\'s ten q
       origin: { provenance: 'rule', ruleId: 'skills.experience-with', path: 'skills' } });
   });
 
-  // jr6 regression of RULES (reported in SP\jr6\build\JOBVITE.md, P2): VHL's own wording is "experience with using
-  // <tool>", and labelRules.ts EXPERIENCE_WITH takes "using terraform" as the tool, so values.ts experienceWithValue
-  // never finds it among the skills. Remove `.fails` once RULES reads past "using".
-  it.fails('JV-16 (RULES regression): "Do you have experience with using Terraform?" is Yes for a profile whose skills '
+  // VHL's own wording is "experience with using <tool>": labelRules.ts EXPERIENCE_WITH reads past "using" since
+  // jr6-rules 1e9e886.
+  it('JV-16 (RULES regression): "Do you have experience with using Terraform?" is Yes for a profile whose skills '
     + 'name Terraform', async () => {
     const plan = await planOf(vhlStep3FilledHtml, VHL_COMPANY, { profile: { ...golden,
       skills: [...golden.skills, 'Terraform'] } });
@@ -950,11 +948,11 @@ describe('jr6 JOBVITE P2 on NinjaOne\'s pages: JV-9, JV-14, JV-7, JV-8, JV-13, J
       const cautious = await planOf(html, NINJA_COMPANY, { settings: CAUTIOUS_SETTINGS });
       expect(cautious.write(cautious.one('Can NinjaOne text you'))).toMatchObject({ value: { cleanLabel: 'Yes' },
         origin: { provenance: 'rule', ruleId: 'consent.required' } });
-      // RULES item 49: "Chosen First Name" is the preferred name (the golden profile has none: its first name), flagged
-      // because the page's autocomplete="given-name" names the first name; "Chosen Last Name" is the last name.
+      // RULES item 49: "Chosen First Name" is the preferred name (the golden profile has none: its first name); the
+      // page's autocomplete="given-name" agrees with it (jr6-rules abcc97e, RULES-R49); "Chosen Last Name" is the last name.
       const first = plan.one('Chosen First Name');
       expect(plan.write(first)).toMatchObject({ value: { kind: 'text', text: 'Alex' } });
-      expect(plan.row(first)).toMatchObject({ category: 'identity.preferredName', reason: 'classification-conflict',
+      expect(plan.row(first)).toMatchObject({ category: 'identity.preferredName', status: 'verified', reason: 'ok',
         needsUserAction: false });
       const last = plan.one('Chosen Last Name');
       expect(plan.write(last)).toMatchObject({ value: { kind: 'text', text: 'Rivera' } });
@@ -1037,8 +1035,8 @@ describe('jr6 JOBVITE P2 on NinjaOne\'s pages: JV-9, JV-14, JV-7, JV-8, JV-13, J
   // in Illinois.", "No - I am in Illinois and outside of Chicago, IL." and "Yes - My address is in Chicago, IL.";
   // policy.ts NOT_THERE_OPTION's `\boutside\b` also reads the second, so residesInValue finds two options and chooses
   // none (no-match). RULES' own test used "Yes" and "No" in their place. Remove `.fails` once RULES reads only the
-  // option that says the person lives elsewhere.
-  it.fails('JV-17 (RULES regression): NinjaOne\'s Illinois question takes "N/A - I do not live in Illinois." for the '
+  // option that says the person lives elsewhere (jr6-rules 4f8707d: policy.ts notThereOption).
+  it('JV-17 (RULES regression): NinjaOne\'s Illinois question takes "N/A - I do not live in Illinois." for the '
     + 'golden profile (Austin, TX)', async () => {
     const plan = await planOf(ninjaStep3Html, NINJA_COMPANY);
     const chicago = plan.one('If you live in Illinois, is your address in the City of Chicago?');
