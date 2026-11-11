@@ -158,6 +158,11 @@
 //     withoutInjectedParams) and in each frame's written links and text (redactReferralParams), plain, after &amp; or
 //     percent-encoded once or twice; the header counts them (redacted.referral) and the final check refuses one left
 //     (referralNeedles).
+//   - PRIV-6: a listed string respelled in the page's text is REDACTED too, as in attributes (header
+//     redacted.respelledText), and the final check refuses one left in a page's text (respelledIn's `text`).
+//   - PRIV-7: the elimination refusal (listedPlacesInPage) reads every list row (LIST_ROWS, the outermost, through
+//     shadow roots' hosts) in its list (LISTED_LISTS), the site's own rows (FIXED_ROWS) and a native placeholder aside;
+//     REVC-4: the committed-fixture sweep reads the written lists alike (eliminatedListsIn).
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -433,6 +438,11 @@ export const TYPED_LIST_BOXES = ['input.cx-select-input--auto-suggest', 'select[
 /** The rows of a typed query's list that are the site's own, never a result: SmartRecruiters' manual-location row
  *  (<spl-select-option value="goToManualLocationMode">, the Wiser capture; its adapter declares it unchoosable). */
 export const FIXED_ROWS = ['spl-select-option[value="goToManualLocationMode"]'];
+/** jr6 fixes (PRIV-7, REVC-4): the lists whose rows (LIST_ROWS) the elimination refusal reads together (listedPlacesInPage)
+ *  and the committed-fixture sweep reads alike (eliminatedListsIn): a native select or datalist, and an ARIA listbox,
+ *  grid, tree or menu. */
+export const LISTED_LISTS = 'select, datalist, [role="listbox" i], [role="grid" i], [role="treegrid" i], [role="tree" i], '
+  + '[role="menu" i], [role="menubar" i]';
 /** The attributes that say a row's words (or its value): they become REDACTED with the row's words. Beside these, every
  *  data- attribute ROW_WORD_DATA_SOURCE names (Workday's data-automation-label). */
 export const ROW_WORD_ATTRIBUTES = ['value', 'data-value', 'label', 'aria-label', 'title', 'alt', 'aria-description',
@@ -2269,15 +2279,15 @@ export function redactWorkdayInPage(input) {
  * @param {{ resources: Record<string, Resource>; frameUrls: Record<string, string | null>; frameUrl: string;
  *   redact: string[]; email: string; notEmail: string; phone: string;
  *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; redacted: string;
- *   postingPlaces?: string; respelled?: Array<{ index: number; source: string }> }} input
+ *   postingPlaces?: string; respelled?: Array<{ index: number; source: string }>; listRows?: string }} input
  */
 export function transformInPage(input) {
   const doc = globalThis.document;
   const { resources, frameUrls, frameUrl, redacted } = input;
   const counts = {
     typedValues: 0, checked: 0, selected: 0, hiddenValues: 0, widgetText: 0, emails: 0, phones: 0, listed: 0,
-    // jr6 round 2: the listed strings respelled in attributes.
-    respelled: 0,
+    // jr6 round 2: the listed strings respelled in attributes; jr6 fixes (PRIV-6): and in text.
+    respelled: 0, respelledText: 0,
     scripts: 0, eventHandlers: 0, javascriptUrls: 0, bases: 0, metaHttpEquiv: 0, metaRefresh: 0, embeds: 0,
     links: 0, srcdoc: 0, stylesheets: 0, images: 0, placeholders: 0, missing: 0, forms: 0, frames: 0,
     framesDropped: 0, shadowRoots: 0,
@@ -2591,21 +2601,40 @@ export function transformInPage(input) {
   };
   // jr6 (jobvite-new-2): the kinds of the page's own text where a listed string tells its value by elimination, and the
   // places a listed string met there (read by listedPlacesInPage once the platform's own redactions ran).
+  // jr6 fixes (PRIV-7): an option is any list row (`listRows`: LIST_ROWS), the outermost one, read through the shadow
+  // roots' hosts (SmartRecruiters' spl-select-option draws its role=option inside its own shadow root).
   /** @type {Array<[string, string]>} */
-  const placeKinds = [['option', 'option, [role="option" i]'], ['label', 'label'], ['legend', 'legend'],
+  const placeKinds = [['option', input.listRows ?? 'option, [role="option" i]'], ['label', 'label'], ['legend', 'legend'],
     ['posting', input.postingPlaces ?? '']];
   /** @type {Array<{ element: Element; kind: string }>} */
   const listedAt = [];
+  /** The outermost element at or above `start` that `selector` names, a shadow root's host included (jr6 fixes, PRIV-7).
+   *  @param {Element} start @param {string} selector @returns {Element | null} */
+  const outermostRow = (start, selector) => {
+    /** @type {Element | null} */
+    let found = null;
+    /** @type {any} */
+    let at = start;
+    while (at) {
+      if (at.matches(selector)) found = at;
+      const parent = at.parentNode;
+      at = at.parentElement ?? (parent?.nodeType === 11 ? parent.host ?? null : null);
+    }
+    return found;
+  };
   /** @param {Element | null | undefined} at */
   const noteListed = (at) => {
     if (!at) return;
     for (const [kind, selector] of placeKinds) {
-      const place = selector === '' ? null : at.closest(selector);
+      const place = selector === '' ? null : kind === 'option' ? outermostRow(at, selector) : at.closest(selector);
       if (place === null) continue;
       listedAt.push({ element: place, kind });
       return;
     }
   };
+  /** A text node's element, or its shadow root's host at a shadow root's top (jr6 fixes, PRIV-7). @param {Node} node */
+  const holderOf = (node) => node.parentElement
+    ?? (node.parentNode?.nodeType === 11 ? /** @type {any} */ (node.parentNode).host ?? null : null);
   /** @param {string} text @param {boolean} phones @param {Element | null} [at] */
   const scrub = (text, phones, at) => {
     let out = text;
@@ -2636,7 +2665,7 @@ export function transformInPage(input) {
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     if (node.nodeType === 3 && node.parentElement?.closest('style')) continue;
     const value = node.nodeValue ?? '';
-    const clean = scrub(value, true, node.parentElement);
+    const clean = scrub(value, true, holderOf(node));
     if (clean !== value) node.nodeValue = clean;
   }
   // jr6 round 2 (TOOLING; BUILD.md 4b): a listed string respelled in an attribute (respelledSources' patterns), at
@@ -2652,8 +2681,9 @@ export function transformInPage(input) {
     if (/\d/.test(before) !== /\d/.test(after)) return true;
     return before !== before.toUpperCase() && after !== after.toLowerCase();
   };
-  /** @param {string} text */
-  const respell = (text) => {
+  /** @param {string} text @param {'respelled' | 'respelledText'} [counted] what it counts in (jr6 fixes, PRIV-6: text
+   *  runs apart) */
+  const respell = (text, counted = 'respelled') => {
     if (/;base64,/i.test(text)) return text;
     let out = text;
     for (const pattern of respelled) {
@@ -2671,7 +2701,7 @@ export function transformInPage(input) {
       }
       for (const [start, end] of spans.reverse()) {
         out = `${out.slice(0, start)}${redacted}${out.slice(end)}`;
-        counts.respelled += 1;
+        counts[counted] += 1;
       }
     }
     return out;
@@ -2690,6 +2720,18 @@ export function transformInPage(input) {
       const clean = framed ? scrubbed : respell(scrubbed);
       if (clean !== attribute.value) element.setAttribute(attribute.name, clean);
     }
+  }
+  // jr6 fixes (PRIV-6): a listed string respelled in the page's text too, as in attributes (a résumé's file name joined
+  // with underscores where FILE_NAME_PLACES does not look, a name written joined in a sentence); where it met an
+  // option, a label, a legend or a posting, the place is noted as the exact rule notes it (listedPlacesInPage).
+  const textWalker = doc.createTreeWalker(doc, 4 | 128 /* NodeFilter.SHOW_TEXT | SHOW_COMMENT */);
+  for (let node = textWalker.nextNode(); node; node = textWalker.nextNode()) {
+    if (node.nodeType === 3 && node.parentElement?.closest('style')) continue;
+    const value = node.nodeValue ?? '';
+    const clean = respell(value, 'respelledText');
+    if (clean === value) continue;
+    node.nodeValue = clean;
+    noteListed(holderOf(node));
   }
   const view = /** @type {any} */ (globalThis);
   view.__fixtureListed = listedAt;
@@ -2982,25 +3024,52 @@ export function redactPlatformInPage(input) {
  * the posting names), so the conversion refuses it until the element is replaced (--replace-text). An option whose
  * whole list ends REDACTED or empty (iCIMS's server-loaded dropdowns, which icimsRedactInPage blanks whole) tells
  * nothing and is left out. Answers how many places of each kind, never a value.
- * @param {string} redacted
+ * jr6 fixes (PRIV-7, REVC-4): an option is any list row (`rows`: LIST_ROWS, as transformInPage noted it: the outermost,
+ * through shadow roots' hosts), in its list (`lists`: LISTED_LISTS, the nearest above it, a shadow root's host
+ * included), whose rows are read deep (open shadow roots too, where deepenInPage reached them), the outermost ones,
+ * the site's own rows (`fixed`: FIXED_ROWS) left out; a row is blank when its words, its shadow roots' included, are
+ * REDACTED or nothing (a typed query's results, whose words went whole, are blank). A string argument is the old form
+ * (`redacted` alone: native options and role=option in a select, datalist or listbox).
+ * @param {string | { redacted: string; rows?: string; fixed?: string; lists?: string }} input
  * @returns {{ option: number; label: number; legend: number; posting: number }}
  */
-export function listedPlacesInPage(redacted) {
+export function listedPlacesInPage(input) {
+  const { redacted, rows = 'option, [role="option" i]', fixed = '', lists = 'select, datalist, [role="listbox" i]' } =
+    typeof input === 'string' ? { redacted: input } : input;
   const view = /** @type {any} */ (globalThis);
   /** @type {Array<{ element: Element; kind: 'option' | 'label' | 'legend' | 'posting' }>} */
   const noted = view.__fixtureListed ?? [];
   view.__fixtureListed = [];
   const counts = { option: 0, label: 0, legend: 0, posting: 0 };
-  /** @param {Element} option */
-  const blank = (option) => ['', redacted].includes((option.textContent ?? '').trim());
+  /** A node's words, its open shadow root's included. @param {Node} node @returns {string} */
+  const wordsOf = (node) => (node.nodeType === 3 ? node.nodeValue ?? ''
+    : [...(/** @type {any} */ (node).shadowRoot?.childNodes ?? []), ...node.childNodes].map(wordsOf).join(' '));
+  /** A native placeholder (value="": "Select...") is no candidate either. @param {Element} option */
+  const blank = (option) => (option.localName === 'option' && option.getAttribute('value') === '')
+    || wordsOf(option).split(redacted).join('').trim() === '';
+  /** The element above, a shadow root's host where a shadow root's top stands. @param {Element} element
+   *  @returns {Element | null} */
+  const up = (element) => element.parentElement
+    ?? (element.parentNode?.nodeType === 11 ? /** @type {any} */ (element.parentNode).host ?? null : null);
+  /** @param {Element} element @returns {Element | null} */
+  const listOf = (element) => {
+    for (let at = up(element); at !== null; at = up(at)) if (at.matches(lists)) return at;
+    return null;
+  };
+  /** Whether another row stands above this one (it is read with the outer row). @param {Element} row */
+  const nested = (row) => {
+    for (let at = up(row); at !== null; at = up(at)) if (at.matches(rows)) return true;
+    return false;
+  };
   /** @type {Set<Element>} */
   const seen = new Set();
   for (const { element, kind } of noted) {
     if (!element.isConnected || seen.has(element)) continue;
     seen.add(element);
     if (kind === 'option') {
-      const list = element.closest('select, datalist, [role="listbox" i]');
-      const options = list === null ? [element] : Array.from(list.querySelectorAll('option, [role="option" i]'));
+      const list = listOf(element);
+      const options = (list === null ? [element] : Array.from(list.querySelectorAll(rows)).filter((row) => !nested(row)))
+        .filter((row) => fixed === '' || !row.matches(fixed));
       if (options.every(blank)) continue;
     }
     counts[kind] += 1;
@@ -3636,6 +3705,67 @@ export function markupElements(text) {
   return nodes;
 }
 
+/** A simple selector list (LIST_ROWS, LISTED_LISTS, FIXED_ROWS: tags, roles, classes and one [attr="value"]) read as
+ *  tests over markupElements' nodes. @param {string[]} selectors */
+const markupMatcher = (selectors) => {
+  const tests = selectors.map((selector) => {
+    const role = /^\[role="([\w-]+)"(?: i)?\]$/.exec(selector)?.[1];
+    if (role !== undefined) return (/** @type {{ tag: string; attributes: Map<string, string> }} */ node) =>
+      (node.attributes.get('role') ?? '').trim().toLowerCase().split(/\s+/)[0] === role;
+    const className = /^\.([\w-]+)$/.exec(selector)?.[1];
+    if (className !== undefined) return (/** @type {{ tag: string; attributes: Map<string, string> }} */ node) =>
+      (node.attributes.get('class') ?? '').split(/\s+/).includes(className);
+    const [, tag = '', name, value] = /^([\w-]+)(?:\[([\w-]+)="([^"]*)"\])?$/.exec(selector) ?? [];
+    return (/** @type {{ tag: string; attributes: Map<string, string> }} */ node) => node.tag === tag
+      && (name === undefined || decodeEntities(node.attributes.get(name) ?? '') === value);
+  });
+  return (/** @type {{ tag: string; attributes: Map<string, string> }} */ node) => tests.some((test) => test(node));
+};
+
+/**
+ * jr6 fixes (REVC-4 b): the lists of a written file (LISTED_LISTS) that hold a row (LIST_ROWS, the outermost, the site's
+ * own FIXED_ROWS aside) whose words hold REDACTED beside a row whose words are public: the REDACTED row tells the
+ * listed value by elimination (UltiPro's field-of-study select of 270 options, one REDACTED). A list whose rows all read
+ * REDACTED, nothing or a native placeholder (a typed query's results, iCIMS's blanked dropdowns, UltiPro's résumé
+ * picker: its REDACTED file and "Select") tells nothing. Read over markupElements
+ * (declarative shadow roots included); the committed-fixture sweep reads it. Answers how many such lists, never a row.
+ * @param {string} text @returns {number}
+ */
+export function eliminatedListsIn(text) {
+  const nodes = markupElements(text);
+  const isRow = markupMatcher(LIST_ROWS);
+  const isList = markupMatcher(LISTED_LISTS.split(/,\s*/));
+  const isFixed = markupMatcher(FIXED_ROWS);
+  /** @param {number} at */
+  const above = (at) => nodes[at]?.parent ?? -1;
+  /** @type {Map<number, { redacted: number; public: number }>} */
+  const lists = new Map();
+  for (const [at, node] of nodes.entries()) {
+    if (!isRow(node) || isFixed(node)) continue;
+    let list = -1;
+    let nested = false;
+    for (let up = above(at); up >= 0; up = above(up)) {
+      const holder = nodes[up];
+      if (holder === undefined) break;
+      if (isRow(holder)) nested = true;
+      if (isList(holder)) {
+        list = up;
+        break;
+      }
+    }
+    if (nested || list < 0) continue;
+    const words = nodes.slice(at, node.end + 1).map((each) => each.text).join(' ');
+    const tally = lists.get(list) ?? { redacted: 0, public: 0 };
+    // A native placeholder (value="": "Select...") is no candidate.
+    const placeholder = node.tag === 'option' && node.attributes.has('value')
+      && decodeEntities(node.attributes.get('value') ?? '') === '';
+    if (words.includes(REDACTED)) tally.redacted += 1;
+    else if (words.trim() !== '' && !placeholder) tally.public += 1;
+    lists.set(list, tally);
+  }
+  return [...lists.values()].filter((tally) => tally.redacted > 0 && tally.public > 0).length;
+}
+
 /**
  * jr6 fixes (PRIV-2 a, REVC-4): the widgets of a written file whose roving tab stop stands on a row but their first
  * (clearChoicesInPage's rule, read back over markupElements): their rows (ROVING_ROLES, ROVING_TAGS), each in its
@@ -3789,10 +3919,13 @@ export function chosenMarksIn(text) {
  * edges), by the entry's position, the attribute's name and its element's tag, never a value: the conversion refuses
  * a file that holds one (a frame's src, which the scrub leaves for its route, among them). Read over the markup's start
  * tags, the declarative shadow roots' included, stylesheets, scripts and comments aside; a data: or base64 value is a
- * payload, not words.
- * @param {string} text @param {Array<{ index: number; source: string }>} sources @returns {string[]}
+ * payload, not words. jr6 fixes (PRIV-6): with `text`, the page's text too (each run between tags, entities decoded:
+ * "survives in the page's text"), which the conversion reads in every page it writes (a run the page's own redaction
+ * could not reach, a <template>'s, among them).
+ * @param {string} text @param {Array<{ index: number; source: string }>} sources
+ * @param {{ text?: boolean }} [options] @returns {string[]}
  */
-export function respelledIn(text, sources) {
+export function respelledIn(text, sources, options = {}) {
   if (sources.length === 0) return [];
   const markup = text.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
   /** @type {Set<string>} */
@@ -3805,6 +3938,15 @@ export function respelledIn(text, sources) {
         if (respelledSpans(value, source).length > 0) {
           found.add(`redact entry ${index} survives in an attribute (${name} on <${tag.toLowerCase()}>)`);
         }
+      }
+    }
+  }
+  if (options.text === true) {
+    for (const run of markup.split(/<(?:[^<>"']|"[^"]*"|'[^']*')*>/)) {
+      if (run.trim() === '') continue;
+      const value = decodeEntities(run);
+      for (const { index, source } of sources) {
+        if (respelledSpans(value, source).length > 0) found.add(`redact entry ${index} survives in the page's text`);
       }
     }
   }
@@ -4066,7 +4208,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       for (const name of applicant.names) fileNames.add(name);
       const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
-        ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', '), respelled });
+        ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', '), respelled, listRows: LIST_ROWS.join(', ') });
       const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const ownCounts = ownBefore ?? ownAfter;
       // jr6 round 2: a typed query's results lose their words, and every row whose words went loses what names it.
@@ -4080,7 +4222,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       }
       // jr6 (jobvite-new-2): a listed string met in the page's own text where a REDACTED tells it by elimination; (JV-10)
       // choice rows that still read apart once cleared. Counts only, never a value.
-      const listedIn = await frame.evaluate(listedPlacesInPage, REDACTED);
+      const listedIn = await frame.evaluate(listedPlacesInPage, { redacted: REDACTED, rows: LIST_ROWS.join(', '),
+        fixed: FIXED_ROWS.join(', '), lists: LISTED_LISTS });
       for (const [kind, count] of Object.entries(listedIn)) {
         if (count > 0) {
           reasons.push(`${basename(path)}: ${LISTED_PLACE_WORDS[kind]} whose page text the redaction list met: ${count}, `
@@ -4151,6 +4294,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
           // jr6 round 2: the listed strings respelled in attributes, and the rows whose names went (each only when
           // there was one, so a page neither touches is written as before).
           ...(counts.respelled > 0 ? { respelled: counts.respelled } : {}),
+          // jr6 fixes (PRIV-6): and in the page's text.
+          ...(counts.respelledText > 0 ? { respelledText: counts.respelledText } : {}),
           ...(rowNames.rows > 0 ? { listRows: rowNames } : {}),
           ...(signInTokens.length > 0 ? { signInTokens: signInTokens.length } : {}),
           // jr6 fixes (PRIV-4): the referral parameters' values redacted in the frame's text (only when there was one).
@@ -4262,7 +4407,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       // The security fix of 2026-11-06 (S2): no chosen mark (an answer drawn on a control or a list) is written.
       for (const label of chosenMarksIn(output.text)) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
       // jr6 round 2 (TOOLING; BUILD.md 4b): no listed string in any attribute, as written or respelled.
-      for (const label of respelledIn(output.text, respelled)) reasons.push(`${basename(output.path)}: ${label}`);
+      // jr6 fixes (PRIV-6): and none in a page's text either.
+      for (const label of respelledIn(output.text, respelled, { text: output.path.endsWith('.html') })) {
+        reasons.push(`${basename(output.path)}: ${label}`);
+      }
     }
     if (reasons.length > 0) throw new ConversionError(reasons);
     return result;

@@ -73,6 +73,8 @@ import {
   REFERRAL_PREFIXES,
   redactReferralParams,
   referralNeedles,
+  eliminatedListsIn,
+  LISTED_LISTS,
   // ── snapshot build 2026-11-06 (core pass Z1, item 36) ──
   CHOSEN_MARKS,
   PROFILE_PLACES,
@@ -206,8 +208,10 @@ function mhtml(snapshot: string, parts: Part[]): Buffer {
 
 /** The synthetic company page: every kind of thing the converter inlines, removes or redacts, and probe elements.
  *  With `encoded`, a link also carries the owner's name percent-encoded (jr6 round 2: an attribute's respelling, which
- *  the converter now redacts), and so does a text run, which the DOM redaction cannot see and the final check refuses. */
-const mainHtml = (encoded: boolean) => `<!DOCTYPE html><html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+ *  the converter now redacts), and so does a text run, which the DOM redaction cannot see and the final check refuses
+ *  (jr6 fixes, PRIV-6: the page's text is respelled too now, so for a refusal that run stands in a <template>
+ *  (`'template'`), whose content no in-page pass reaches). */
+const mainHtml = (encoded: boolean | 'template') => `<!DOCTYPE html><html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <link rel="stylesheet" type="text/css" href="cid:css-cssom@mhtml.blink" />
 <link rel="stylesheet" href="${ORIGIN}/site.css">
 <link rel="preload" href="${ORIGIN}/font.woff2" as="font"><link rel="icon" href="${ORIGIN}/icon.png">
@@ -233,7 +237,7 @@ const mainHtml = (encoded: boolean) => `<!DOCTYPE html><html lang="en"><head><me
 <p>Welcome back, Jane Roe. <!-- prepared for Jane Roe --> Questions: jobs@tailorit-fixture.example or
 +1 (555) 010-0199, or our office line 555-010-0142.</p>
 <p><a href="mailto:jobs@tailorit-fixture.example">Write to us</a> <a href="tel:+15550100199">Call us</a>
-<a href="javascript:alert(1)">Run</a> <a href="java&#9;script:alert(2)">Run too</a>${encoded ? ` <a href="${ORIGIN}/search?q=Jane%20Roe">Jobs like yours</a> <span>Saved search: q=Jane%20Roe</span>` : ''}</p>
+<a href="javascript:alert(1)">Run</a> <a href="java&#9;script:alert(2)">Run too</a>${encoded ? ` <a href="${ORIGIN}/search?q=Jane%20Roe">Jobs like yours</a> ${encoded === 'template' ? '<template>' : ''}<span>Saved search: q=Jane%20Roe</span>${encoded === 'template' ? '</template>' : ''}` : ''}</p>
 <form action="${ORIGIN}/apply" method="get">
 <label for="first" data-probe="label" data-expect="shown">First name</label>
 <input id="first" name="first" data-probe="first" data-expect="shown" value="Jane typed" title="Jane Roe" data-owner="jane roe">
@@ -274,7 +278,7 @@ const SITE_CSS = `@charset "utf-8";
 .badge { background: url("badge.png"); }`;
 
 /** The synthetic capture: the page, a cid: sheet, the stylesheets, three images and three frames. */
-function syntheticCapture(encoded = false): Buffer {
+function syntheticCapture(encoded: boolean | 'template' = false): Buffer {
   return mhtml(PAGE, [
     { type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: PAGE, body: mainHtml(encoded) },
     { type: 'text/css', location: 'cid:css-cssom@mhtml.blink', body: '@charset "utf-8";\n.cssom-hidden { display: none; }\n.order-a { display: none; }' },
@@ -487,13 +491,15 @@ describe('mhtml-to-fixture on a synthetic capture', () => {
 describe('mhtml-to-fixture refusals', () => {
   it('refuses a listed string that survives percent-encoded, and names the entry, not the value', async () => {
     const file = join(work, 'refuse.mhtml');
-    writeFileSync(file, syntheticCapture(true));
+    writeFileSync(file, syntheticCapture('template'));
     const error = await convertMhtml({ file, platform: 'greenhouse', caseName: 'refuse', redact: ['Jane Roe'], outDir: work })
       .then(() => null, (caught: unknown) => caught);
     expect(error).toBeInstanceOf(ConversionError);
     const reasons = (error as ConversionError).reasons;
-    // The text run's (jr6 round 2: the link's, an attribute, is respelled away, so it is no reason of its own).
-    expect(reasons).toEqual(['refuse.html: redact entry 1 is still in the file']);
+    // The text run's (jr6 round 2: the link's, an attribute, is respelled away, so it is no reason of its own; jr6 fixes,
+    // PRIV-6: a run in the page is respelled away too, so this one stands in a <template>, read by the final check alone).
+    expect(reasons).toEqual(['refuse.html: redact entry 1 is still in the file',
+      "refuse.html: redact entry 1 survives in the page's text"]);
     expect(reasons.join(' ')).not.toContain('Jane');
     expect(existsSync(join(work, 'greenhouse', 'refuse.html'))).toBe(false);
   }, 60_000);
@@ -1045,7 +1051,7 @@ describe('mhtml-to-fixture command line', () => {
 
   it('exits 1 and writes nothing when the conversion is refused', () => {
     const file = join(work, 'cli-refused.mhtml');
-    writeFileSync(file, syntheticCapture(true));
+    writeFileSync(file, syntheticCapture('template'));
     const redact = join(work, 'redact-refused.txt');
     writeFileSync(redact, 'Jane Roe\n');
     const out = join(work, 'cli-refused-out');
@@ -3203,13 +3209,19 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
       // No typed text and no typed-list mark: only the listed string ("Roeville Heights", made up) takes the row's
       // words; its value and data-sr-id spell the place in a form no list holds ("roeville-hts-nj"), as the Wiser
       // capture's did before SMARTRECRUITERS P1 listed that form.
+      // (jr6 fixes, PRIV-7: a list holding that row beside a public one is refused now, a REDACTED among public rows
+      // telling it by elimination; so the public row stands in a list of its own here.)
       const file = await liveCapture(SR_ONE_CLICK, `<spl-autocomplete id="city" data-sr-id="location-autocomplete-other"></spl-autocomplete>
+<spl-autocomplete id="city2" data-sr-id="location-autocomplete-other"></spl-autocomplete>
 <script>
 const root = document.getElementById('city').attachShadow({ mode: 'open' });
 root.innerHTML = '<spl-input id="spl-form-element_4" type="text" value="" ariacontrols="menu-spl-form-element_4"></spl-input>'
   + '<div slot="menu" id="menu-spl-form-element_4" data-sr-id="location-autocomplete-other-menu" role="listbox">'
   + '<spl-select-option value="roeville-hts-nj" data-sr-id="location-autocomplete-other-option-roeville-hts-nj">'
-  + '<spl-truncate title="Roeville Heights, NJ, United States">Roeville Heights, NJ, United States</spl-truncate></spl-select-option>'
+  + '<spl-truncate title="Roeville Heights, NJ, United States">Roeville Heights, NJ, United States</spl-truncate></spl-select-option></div>';
+const other = document.getElementById('city2').attachShadow({ mode: 'open' });
+other.innerHTML = '<spl-input id="spl-form-element_5" type="text" value="" ariacontrols="menu-spl-form-element_5"></spl-input>'
+  + '<div slot="menu" id="menu-spl-form-element_5" data-sr-id="location-autocomplete-other-menu" role="listbox">'
   + '<spl-select-option value="alder-pa" data-sr-id="location-autocomplete-other-option-alder-pa">'
   + '<spl-truncate title="Alder, PA, United States">Alder, PA, United States</spl-truncate></spl-select-option></div>';
 </script>`, 'jr6r2-sr-gap');
@@ -3787,6 +3799,154 @@ describe('jr6 fixes: where the person came from (PRIV-4)', () => {
       + 'in the file']);
   }, 60_000);
 });
+
+/** SmartRecruiters' list drawn open in shadow roots, untyped (a county, a school), values made up: each row an
+ *  spl-select-option whose role=option is inside its own shadow root, its words slotted; one row's words are a listed
+ *  string. With `typed`, the menu is the City search's (TYPED_LISTS), the manual row last (FIXED_ROWS). */
+const srList = (rows: string[], typed = false) => `<label for="county">County</label><spl-select id="county"></spl-select>
+<script>
+const root = document.getElementById('county').attachShadow({ mode: 'open' });
+root.innerHTML = '<div role="listbox" id="menu"${typed ? ' data-sr-id="location-autocomplete-search-menu"' : ''}>'
+  + ${JSON.stringify(rows)}.map((words) => '<spl-select-option value="' + words.toLowerCase().replace(/ /g, '-') + '">'
+    + words + '</spl-select-option>').join('')
+  + '${typed ? '<spl-select-option value="goToManualLocationMode">Enter it yourself</spl-select-option>' : ''}</div>';
+for (const option of root.querySelectorAll('spl-select-option')) {
+  option.attachShadow({ mode: 'open' }).innerHTML = '<div role="option" class="c-spl-select-option"><slot></slot></div>';
+}
+</script>`;
+
+describe('jr6 fixes: a listed string respelled in text (PRIV-6), in a list drawn in shadow roots (PRIV-7, REVC-4)', () => {
+  it("redacts a listed name respelled in the page's text, as attributes are, and counts it in the header (T4)", async () => {
+    const { text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-respelled-text', '<p>Your resume '
+      + '<b class="attached">Jane_Roe_Resume.pdf</b> is attached.</p><p>Signed by JaneRoe on the day.</p>'
+      + '<p>jane-roe and JANE.ROE and Jane%20Roe stay out; Roebuck and Janet Roe are other names.</p>');
+    expect(text).toContain('<b class="attached">REDACTED_Resume.pdf</b>');
+    expect(text).toContain('<p>Signed by REDACTED on the day.</p>');
+    expect(text).toContain('<p>REDACTED and REDACTED and REDACTED stay out; Roebuck and Janet Roe are other names.</p>');
+    expect(text).not.toMatch(/jane[\s_.%-]*(?:20)?roe/i);
+    expect(headerOf(text).redacted.respelledText).toBe(5);
+  }, 60_000);
+
+  it("refuses a listed name respelled in a text run no in-page pass reaches (the final check reads the page's text)",
+    async () => {
+      const error = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-respelled-refused',
+        '<p>Apply</p><template><p>Signed by JaneRoe</p></template>').then(() => null, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConversionError);
+      expect((error as ConversionError).reasons).toEqual(["jr6fix-respelled-refused.html: redact entry 1 survives in the "
+        + "page's text"]);
+      // Read by the conversion only: respelledIn's text reading is asked for (attributes alone by default).
+      const sources = respelledSources(LISTED);
+      expect(respelledIn('<p>JaneRoe</p><style>.jane-roe{}</style><!-- JaneRoe -->', sources)).toEqual([]);
+      expect(respelledIn('<p>JaneRoe</p><style>.jane-roe{}</style><!-- JaneRoe -->', sources, { text: true }))
+        .toEqual(["redact entry 1 survives in the page's text"]);
+      expect(respelledIn('<p title="a>b">Jane &amp; Roe? no: jane&#95;roe</p>', sources, { text: true }))
+        .toEqual(["redact entry 1 survives in the page's text"]);
+    }, 60_000);
+
+  it('refuses a fixed list in shadow roots with one listed row among public ones; a typed list and the site\'s row pass (T7)',
+    async () => {
+      const tail = ', where a REDACTED tells the value by elimination; give each synthetic text with --replace-text';
+      const fixed = await liveCapture(SR_ONE_CLICK, srList(['Adams', 'Jane Roe', 'Zephyr']), 'jr6fix-sr-fixed-list');
+      const error = await convertMhtml({ file: fixed, platform: 'smartrecruiters', caseName: 'jr6fix-sr-fixed-list',
+        redact: LISTED, outDir: work }).then(() => null, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConversionError);
+      expect((error as ConversionError).reasons).toEqual([
+        `jr6fix-sr-fixed-list.html: options (an <option> or a role=option) whose page text the redaction list met: 1${tail}`]);
+      // Respelled alone (its value, "jane-roe", and a joined spelling in its words) it is refused the same way.
+      const respelledRow = await liveCapture(SR_ONE_CLICK, srList(['Adams', 'JaneRoe', 'Zephyr']), 'jr6fix-sr-respelled-row');
+      await expect(convertMhtml({ file: respelledRow, platform: 'smartrecruiters', caseName: 'jr6fix-sr-respelled-row',
+        redact: LISTED, outDir: work })).rejects.toThrow('options (an <option> or a role=option) whose page text the '
+        + 'redaction list met: 1');
+      // A typed query's results lose their words whole, so they tell nothing; the site's own row is no candidate.
+      const typed = await liveCapture(SR_ONE_CLICK, srList(['Adams', 'Jane Roe', 'Zephyr'], true), 'jr6fix-sr-typed-list');
+      const conversion = await convertMhtml({ file: typed, platform: 'smartrecruiters', caseName: 'jr6fix-sr-typed-list',
+        redact: LISTED, outDir: work });
+      const text = conversion.files[0]?.text ?? '';
+      expect(text).toContain('Enter it yourself');
+      expect(text).not.toMatch(/Adams|Zephyr|jane/i);
+      // And a list whose one listed row the replacement gives synthetic words passes.
+      const replaced = await convertMhtml({ file: fixed, platform: 'smartrecruiters', caseName: 'jr6fix-sr-fixed-list',
+        redact: LISTED, outDir: work, replaceText: [{ selector: '#menu', text: 'Alder\nBirch\nCedar' }] });
+      expect(replaced.files[0]?.text).toContain('Alder');
+      expect(eliminatedListsIn(replaced.files[0]?.text ?? '')).toBe(0);
+      // Rows a level of shadow roots below their list, each drawing its words in its own shadow root: one place, the
+      // outermost row, read in its list across the shadow roots, its neighbours' words read from their shadow roots.
+      const deep = await liveCapture(SR_ONE_CLICK, `<div role="listbox" id="menu"><x-rows id="rows"></x-rows></div>
+<script>
+const root = document.getElementById('rows').attachShadow({ mode: 'open' });
+root.innerHTML = ['Adams', 'Jane Roe', 'Zephyr'].map((words) => '<spl-select-option value="' + words + '"></spl-select-option>').join('');
+for (const option of root.querySelectorAll('spl-select-option')) {
+  option.attachShadow({ mode: 'open' }).innerHTML = '<div role="option">' + option.getAttribute('value') + '</div>';
+}
+</script>`, 'jr6fix-sr-deep-list');
+      const deepError = await convertMhtml({ file: deep, platform: 'smartrecruiters', caseName: 'jr6fix-sr-deep-list',
+        redact: LISTED, outDir: work }).then(() => null, (caught: unknown) => caught);
+      expect((deepError as ConversionError).reasons).toEqual([
+        `jr6fix-sr-deep-list.html: options (an <option> or a role=option) whose page text the redaction list met: 1${tail}`]);
+    }, 90_000);
+
+  it('passes a native list whose REDACTED row stands beside a placeholder alone (a résumé picker), refuses one beside '
+    + 'public rows', async () => {
+    const picker = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-picker', '<label for="r">Resume</label>'
+      + '<select id="r"><option value="">Select a resume</option><option value="">Jane Roe CV.pdf</option></select>');
+    // (The row's words go whole once a listed string touched them: jr6 round 2.)
+    expect(picker.text).toContain('<option value="">Select a resume</option><option value="">REDACTED</option>');
+    await expect(convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-public-list', '<label for="m">Major</label>'
+      + '<select id="m"><option value="">Select</option><option value="1">Art</option><option value="2">Jane Roe</option>'
+      + '<option value="3">Zoology</option></select>')).rejects.toThrow('options (an <option> or a role=option) whose '
+      + 'page text the redaction list met: 1');
+  }, 60_000);
+
+  it('reads a written list that holds a REDACTED row beside public ones (eliminatedListsIn, the sweep)', () => {
+    const html = (body: string) => `<!doctype html><html><body>${body}</body></html>`;
+    // One REDACTED option among public ones tells it: a native select, an ARIA listbox, rows in declarative shadow roots.
+    expect(eliminatedListsIn(html('<select><option value="">Select</option><option value="1">Art</option>'
+      + '<option value="2">REDACTED</option></select>'))).toBe(1);
+    expect(eliminatedListsIn(html('<div role="listbox"><div role="option">Adams</div><div role="option">REDACTED, NJ</div>'
+      + '</div><ul role="menu"><li role="menuitem">Home</li><li role="menuitem">REDACTED</li></ul>'))).toBe(2);
+    expect(eliminatedListsIn(html('<spl-select><template shadowrootmode="open"><div role="listbox"><spl-select-option '
+      + 'value="a"><template shadowrootmode="open"><div role="option"><slot></slot></div></template>Adams'
+      + '</spl-select-option><spl-select-option value="REDACTED">REDACTED</spl-select-option></div></template></spl-select>')))
+      .toBe(1);
+    // Nothing told: every row REDACTED or blank (a typed query's results), a placeholder beside it, the site's own row
+    // beside it, a row nested in a row (read with it), a row in no list, or a list with no REDACTED row.
+    for (const body of ['<select><option>REDACTED</option><option>REDACTED</option><option></option></select>',
+      '<select><option value="">Select a resume</option><option value="">REDACTED</option></select>',
+      '<div role="listbox"><spl-select-option value="REDACTED">REDACTED</spl-select-option><spl-select-option '
+        + 'value="goToManualLocationMode">Enter it yourself</spl-select-option></div>',
+      '<div role="listbox"><div role="option">REDACTED <span role="option">Adams</span></div></div>',
+      '<div><div role="option">Adams</div><div role="option">REDACTED</div></div>',
+      '<select><option>Art</option><option>Zoology</option></select>']) {
+      expect(eliminatedListsIn(html(body)), body).toBe(0);
+    }
+    expect(LISTED_LISTS).toContain('[role="listbox" i]');
+  });
+
+  it('every committed fixture: no list tells a listed value by elimination, but the files handed back (REVC-4)', () => {
+    const pages = committedFixtureFiles().filter((file) => file.endsWith('.html'));
+    expect(pages.length).toBeGreaterThan(300);
+    const told = Object.fromEntries(pages.flatMap((file) => {
+      const lists = eliminatedListsIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'));
+      return lists > 0 ? [[file, lists]] : [];
+    }));
+    // Each file let through holds no more such lists than it did; converted again, it holds none and its entry goes.
+    for (const [file, lists] of Object.entries(told)) {
+      expect(lists, file).toBeLessThanOrEqual(ELIMINATED_FIXTURES[file] ?? 0);
+    }
+  });
+});
+
+/**
+ * jr6 fixes (REVC-4 b): the committed fixtures converted before the converter refused it, which still hold lists where
+ * one REDACTED row stands beside public ones (each file's count): UltiPro's two education pages (the field-of-study
+ * selects, REVC-2: ULTIPRO converts them again; SP\jr6\leakscan\VERDICTS.md 4.2) and SeatGeek's site menus (a company
+ * page, no package this round). A file converted again holds none, and its entry then goes.
+ */
+const ELIMINATED_FIXTURES: Record<string, number> = {
+  'ultipro/application.html': 2,
+  'ultipro/resume-review.html': 2,
+  'sites/seatgeek-greenhouse-embed.html': 5,
+};
 
 /** jr6 (item 8): every jr6 case's page and frame in a platform's folder (or sites/), outside the frozen lists above. */
 const JR6_FILES = readdirSync(join(ROOT, 'fixtures'), { withFileTypes: true })
