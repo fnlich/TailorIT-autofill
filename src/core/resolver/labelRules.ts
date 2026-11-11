@@ -1063,8 +1063,11 @@ const FORM_LANGUAGE = /^(?:the\s+)?language\s+of\s+(?:this|the)\s+(?:form|docume
  *  which the profile never holds. */
 const EMPLOYEE_ID = /^(?:your\s+)?(?:current\s+)?employee\s+(?:id|identification|number|no|num)(?:\s+(?:number|no))?$/;
 /** JV-3 (Jobvite's "County of Residence"), WD-26 (Workday's Address "County"), ADP-14 (ADP's "County"), O3 (Oracle's
- *  "County"): the word county, never "country", asked for, not as a yes or no. */
-const COUNTY = /\bcount(?:y|ies)\b/;
+ *  "County"): the word county, never "country", asked for, not as a yes or no. jr6 fix (RULES-R13): a county's own
+ *  label only ("County", "County of Residence", "County Name", "County or Parish", "Home County"); never a region's
+ *  label that names a county among a state, province or country ("County/State/Province", "State or County"), nor a
+ *  county of employment or a preference ("Which counties are you willing to work in?"): those go to the AI as before. */
+const COUNTY = /^(?:(?:your|current|home|residence|residential|resident)\s+)*county(?:\s+(?:or|and)\s+(?:parish|borough))?(?:\s+(?:name|of\s+(?:your\s+)?(?:current\s+)?(?:residence|home|address)))?$/;
 /** JV-9 (Jobvite's consent gate, "Location of Residence and Language", the label contract): the residence a privacy
  *  policy is chosen by. */
 const POLICY_RESIDENCE = /^(?:your\s+)?(?:location|country|region)\s+of\s+residence\s+and\s+language$/;

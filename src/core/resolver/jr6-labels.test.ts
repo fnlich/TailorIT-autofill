@@ -778,7 +778,31 @@ const LABELS_FIX: Array<[string, Case, FieldCategory | null, string | null]> = [
     + 'experience?', kind: 'radio', options: ['Yes', 'No'] }, null, null],
   ['R70', { label: 'Do you have a high school diploma or GED and are you able to lift 50 pounds?', kind: 'radio',
     options: ['Yes', 'No'] }, null, null],
+  // RULES-R13: a county's own label.
+  ['R13', { label: 'County', kind: 'text' }, 'address.county', 'label.county'],
+  ['R13', { label: 'County Name', kind: 'text' }, 'address.county', 'label.county'],
+  ['R13', { label: 'County or Parish', kind: 'select' }, 'address.county', 'label.county'],
+  ['R13', { label: 'Home County', kind: 'combobox' }, 'address.county', 'label.county'],
 ];
+
+/** [issue id, the field, what it must not be read as]: the fixes' near misses. */
+const NEAR_MISSES_FIX: Array<[string, Case, FieldCategory]> = [
+  // RULES-R13: a region's label that names a county among other places, a county of employment, a preference.
+  ['R13', { label: 'County/State/Province', kind: 'text' }, 'address.county'],
+  ['R13', { label: 'State/Province/County', kind: 'text' }, 'address.county'],
+  ['R13', { label: 'State / County', kind: 'select' }, 'address.county'],
+  ['R13', { label: 'County / State / Province', kind: 'text' }, 'address.county'],
+  ['R13', { label: 'State or County', kind: 'text' }, 'address.county'],
+  ['R13', { label: 'Which counties are you willing to work in?', kind: 'select' }, 'address.county'],
+  ['R13', { label: 'Country/County', kind: 'select' }, 'address.county'],
+  ['R13', { label: 'County of employment', kind: 'text' }, 'address.county'],
+];
+
+describe('jr6 fix round 1: the fixed rules’ near misses', () => {
+  it.each(NEAR_MISSES_FIX)('%s: %j is no %s', (_issue, field, category) => {
+    expect(read(field).category).not.toBe(category);
+  });
+});
 
 describe('jr6 fix round 1: what the fixed rules read', () => {
   it.each(LABELS_FIX)('%s: %j', (_issue, field, category, rule) => {
