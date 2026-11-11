@@ -5,13 +5,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import { inputOf as matchInputOf, outcomeOf } from '../matcher/matcher.testkit';
+import { policyClassOf } from '../resolver/categories';
 import { openTopicsOfTexts } from '../resolver/classify';
 import { classifyField, datePartChoice, datePartOf, dayOfLabel } from '../resolver/resolve';
 import { countyChoice } from '../resolver/values';
+import { sha256Hex } from '../text/sha256';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import type { FieldSpec } from '../types/field';
+import { ANSWER_BASES } from '../types/intent';
 import type { Profile } from '../types/profile';
 import { CAUTIOUS_SETTINGS, fieldOf, goldenProfile, inOrder, NOW, planOf, settingsWith, specOf, vocab } from './plan.testkit';
+import type { AnswerVerdict } from './answers';
 import type { PlanInput } from './types';
 
 const golden = goldenProfile();
@@ -239,6 +243,33 @@ describe('11 (JV-1, JZ-15): the date beside a signature is today', () => {
     const held = specOf('Date signed', 'date', { required: true, current: { kind: 'text', text: '2026-10-01' } });
     expect(planned([held], held)).toMatchObject({ write: undefined, row: { reason: 'prefill-kept' } });
   });
+
+  // jr6 fix (RULES-R11, IC-R1): iCIMS's IForm signature date drawn in parts (Edgewater's and Sentinel's "Today's Date
+  // month/day/year"; NYU's bare "Date" with the adapter's "signature" before the part) is today, part by part, on the
+  // signature's terms, never asked of an AI.
+  it('sets today’s month, day and year in a date drawn in parts, on the signature’s terms', () => {
+    const MONTHS = ['Month', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
+      'October', 'November', 'December'];
+    const DAYS = ['Day', ...Array.from({ length: 31 }, (_, at) => String(at + 1))];
+    for (const base of ['Today\'s Date', 'Date signature']) {
+      const month = specOf(`${base} month`, 'select', { optionLabels: MONTHS, required: true });
+      const day = specOf(`${base} day`, 'select', { optionLabels: DAYS, required: true });
+      const year = specOf(`${base} year`, 'text', { required: true, constraints: { maxLength: 4 } });
+      const out = planOf(inOrder([month, day, year]));
+      expect(written(fieldOf(out, month).write), base).toBe(MONTHS[NOW.m]);
+      expect(written(fieldOf(out, day).write), base).toBe(String(NOW.d));
+      expect(written(fieldOf(out, year).write), base).toBe(String(NOW.y));
+      for (const spec of [month, day, year]) {
+        expect(fieldOf(out, spec).row.category, base).toBe('consent.signatureDate');
+        expect(fieldOf(out, spec).write?.origin, base).toEqual({ provenance: 'rule', ruleId: 'consent.signature-date' });
+      }
+      expect([...out.ask?.answers ?? [], ...out.ask?.classify ?? []], base).toEqual([]);
+      // Required only, with the signature not pre-approved: an optional date is left.
+      const optional = specOf(`${base} month`, 'select', { optionLabels: MONTHS });
+      expect(planned([optional], optional, { settings: CAUTIOUS_SETTINGS }), base).toMatchObject({ write: undefined,
+        row: { reason: 'consent-optional-unticked' } });
+    }
+  });
 });
 
 describe('12 (JV-2): a veteran group labelled "Choose One" takes the profile’s veteran answer', () => {
@@ -246,6 +277,18 @@ describe('12 (JV-2): a veteran group labelled "Choose One" takes the profile’s
     const spec = specOf('Choose One', 'radio', { optionLabels: ['I IDENTIFY AS ONE OR MORE OF THE CLASSIFICATIONS OF '
       + 'PROTECTED VETERANS LISTED ABOVE', 'I AM NOT A PROTECTED VETERAN', 'DECLINE SELF-IDENTIFICATION'] });
     expect(written(planned([spec], spec).write)).toBe('I AM NOT A PROTECTED VETERAN');
+  });
+
+  // jr6 fix (RULES-DECLINE-SELF-IDENTIFICATION, REVC-9): Jobvite's lists (jr6-sikich-step2, jr6-vhl-step2,
+  // ninjaone-step2) word their decline as a noun, "DECLINE SELF-IDENTIFICATION" (vocab/curated/decline.json).
+  it('chooses "DECLINE SELF-IDENTIFICATION" for a person who declines the veteran question', () => {
+    const spec = specOf('Choose One', 'radio', { required: true, optionLabels: ['I IDENTIFY AS ONE OR MORE OF THE '
+      + 'CLASSIFICATIONS OF PROTECTED VETERANS LISTED ABOVE', 'I AM NOT A PROTECTED VETERAN',
+    'DECLINE SELF-IDENTIFICATION'] });
+    const declining = withEeo({ veteran: { kind: 'decline' } });
+    expect(planned([spec], spec, { profile: declining })).toMatchObject({
+      write: { value: { cleanLabel: 'DECLINE SELF-IDENTIFICATION' } }, row: { category: 'eeo.veteran' } });
+    expect(planned([spec], spec, { profile: declining }).row.reason).not.toBe('decline-option-missing');
   });
 });
 
@@ -392,6 +435,26 @@ describe('19 (JV-17): a question asked only of a place’s residents', () => {
       region: { code: 'IL', name: 'Illinois' } } } as Profile;
     expect(planned([illinois], illinois, { profile: local }).write).toBeUndefined();
   });
+
+  // jr6 fix (RULES-R19, REVC-6): NinjaOne's own three options (fixtures/jobvite/ninjaone-step3), one of which is
+  // "outside" another place while in Illinois: the denial of living in Illinois is chosen.
+  it('chooses NinjaOne’s "N/A - I do not live in Illinois." beside its "… in Illinois and outside of Chicago" option',
+    () => {
+      const page = specOf('If you live in Illinois, is your address in the City of Chicago?', 'select', {
+        optionLabels: ['Select an option...', 'N/A - I do not live in Illinois.',
+          'No - I am in Illinois and outside of Chicago, IL.', 'Yes - My address is in Chicago, IL.'], required: true });
+      expect(planned([page], page)).toMatchObject({ write: { value: { cleanLabel: 'N/A - I do not live in Illinois.' },
+        origin: { provenance: 'rule', ruleId: 'location.not-there' } }, row: { status: 'flagged' } });
+      // An option outside of another place, or denying another place, is never the one.
+      const other = specOf('If you live in Illinois, is your address in the City of Chicago?', 'select', {
+        optionLabels: ['Select an option...', 'No - I am in Illinois and outside of Chicago, IL.',
+          'I do not live in Chicago', 'Yes - My address is in Chicago, IL.'], required: true });
+      expect(planned([other], other)).toMatchObject({ write: undefined, row: { reason: 'no-match' } });
+      // "Outside" the asked place itself is.
+      const outside = specOf('If you live in Illinois, is your address in the City of Chicago?', 'select', {
+        optionLabels: ['Select an option...', 'I live outside Illinois', 'Yes', 'No'], required: true });
+      expect(planned([outside], outside).write).toMatchObject({ value: { cleanLabel: 'I live outside Illinois' } });
+    });
 });
 
 describe('20 (jobvite-new-1): a restrictive agreement asked as a fact goes to the `all` scope’s AI', () => {
@@ -406,9 +469,55 @@ describe('20 (jobvite-new-1): a restrictive agreement asked as a fact goes to th
     expect(written(planned([spec], spec, { profile: answered }).write)).toBe('No');
   });
 
+  // jr6 fix (revD-04): no résumé settles a contract the person may be bound by: TailorIT's answer is a guess, shown so
+  // and counted by the auto-apply agent's legal-guess rule, whatever basis it came with.
+  it('writes the AI’s answer as an "AI guess" whatever its basis, a legal guess', () => {
+    for (const basis of ANSWER_BASES) {
+      const verdict: AnswerVerdict = { key: spec.key, kind: 'choice', optionSetHash: spec.optionSetHash, index: 1,
+        labelHash: sha256Hex('No'), basis, taskId: 'c3e5a7b9-2d4f-4b6c-8e0a-1f3b5d7e9a20' };
+      const { write, row } = fieldOf(planOf([spec], { ai: { verdicts: new Map(), classifications: new Map(),
+        answers: new Map([[spec.key, verdict]]) } }), spec);
+      expect(write, basis).toMatchObject({ value: { kind: 'option', cleanLabel: 'No' },
+        origin: { provenance: 'llm-pick' } });
+      expect(row, basis).toMatchObject({ category: 'screening.restrictiveAgreement', status: 'verified',
+        reason: 'ai-guess', needsUserAction: false });
+      // The orchestrator's legal-guess fact (content/orchestrator.ts submitFacts) reads the row so.
+      expect(row.reason === 'ai-guess' && policyClassOf(row.category) === 'legal', basis).toBe(true);
+    }
+  });
+
   it('never opens an ask to agree to one', () => {
     const ask = specOf('Do you agree to sign a non-compete agreement?', 'radio', { optionLabels: ['Yes', 'No'] });
     expect(planOf([ask]).ask?.answers ?? []).toEqual([]);
+  });
+
+  // jr6 fix (revD-01): the essential functions ask about a disability or the accommodation it needs, a
+  // self-identification's topic: the profile's explicit answer, else the person's, never an AI's (in any scope).
+  it('never asks the AI an essential-functions, accommodation or health question', () => {
+    const wordings = ['Can you perform the essential functions of this job without reasonable accommodation?',
+      'Can you perform the essential functions of this job with or without reasonable accommodation?',
+      'Do you require a reasonable accommodation to perform the essential functions of this job?',
+      'Do you need an accommodation to perform the essential functions of this position?',
+      'Do you have any physical or mental condition that would prevent you from performing the essential functions '
+        + 'of this job?',
+      // No health word at all: closed by its category alone.
+      'Are you able to perform the essential functions of this position?'];
+    for (const label of wordings) {
+      const question = specOf(label, 'radio', { optionLabels: ['Yes', 'No'], required: true });
+      expect(fieldOf(planOf([question]), question).row.category, label).toBe('screening.essentialFunctions');
+      expect(planOf([question]).ask?.answers ?? [], label).toEqual([]);
+    }
+    // A health question no rule classifies, once the classifier knows no category for it: no answer is asked either.
+    const health = specOf('Do you have any physical or mental condition that may affect your work here?', 'radio',
+      { optionLabels: ['Yes', 'No'], required: true });
+    const ai = { verdicts: new Map(), classifications: new Map([[health.key as string, { key: health.key,
+      category: null, why: 'unknown-field' as const }]]) };
+    expect(planOf([health], { ai }).ask?.answers ?? []).toEqual([]);
+    // The profile's own answer is still written by rule.
+    const able = { ...golden, screening: { ...golden.screening,
+      essentialFunctions: { kind: 'value' as const, value: true } } };
+    const first = specOf(wordings[0]!, 'radio', { optionLabels: ['Yes', 'No'], required: true });
+    expect(written(planned([first], first, { profile: able }).write)).toBe('Yes');
   });
 
   it('reads "agreement" as a contract only in a restrictive agreement, never in a consent', () => {
@@ -460,6 +569,24 @@ describe('22 (SR-3): "In your own words" turns off no AI', () => {
     const box = specOf('I confirm this application is my own work', 'checkbox');
     expect(planOf([box]).aiAttestation).toBe(true);
     expect(classifyField(essay, vocab)).toMatchObject({ by: 'rules', rules: { category: 'freeText.other' } });
+  });
+
+  // jr6 fix (RULES-R22): affirmed on a box or a choice, "in my own words" is the attestation: never ticked once AI was
+  // used (the owner's rule of 2026-11-01), and it makes the frame profile-only.
+  it('never ticks "… in my own words" once the run used AI, and reads the radio as the attestation', () => {
+    for (const label of ['I certify that all answers are in my own words',
+      'I confirm that I wrote all of my answers in my own words']) {
+      const box = specOf(label, 'checkbox', { required: true });
+      const out = planOf([box], { aiUsed: true });
+      expect(fieldOf(out, box).write, label).toBeUndefined();
+      expect(fieldOf(out, box).row.category, label).toBe('consent.aiAttestation');
+      expect(out.aiAttestation, label).toBe(true);
+    }
+    const radio = specOf('Are your answers written in your own words?', 'radio', { optionLabels: ['Yes', 'No'],
+      required: true });
+    const out = planOf([radio], { aiUsed: true });
+    expect(fieldOf(out, radio).write).toBeUndefined();
+    expect(out.aiAttestation).toBe(true);
   });
 });
 
@@ -516,9 +643,21 @@ describe('24 (U-09, ADP-17): an EEO decline box beside its list', () => {
     const adp = planOf(inOrder([race, adpBox]));
     expect(fieldOf(adp, adpBox)).toMatchObject({ write: undefined, row: { status: 'skipped' } });
   });
+
+  // jr6 fix (RULES-R65-R24): ADP's self-ID lists are lazy (fixtures/adp/self-id, jr6-self-id-blank, -filled). A
+  // waiting-for-options row on the box was read by the loop's books as a list waiting for its own options, which a box
+  // never gets: it ended options-never-loaded, for the person, while the lists took their own decline.
+  it('is left unticked, nobody’s to answer, while its lists are unread', () => {
+    const lazyRace = specOf('Race', 'select', { options: 'lazy', section: { id: 'self-id' } });
+    const adpBox = specOf('I decline to identify my race and ethnicity', 'checkbox', { section: { id: 'self-id' } });
+    const out = planOf(inOrder([lazyRace, adpBox]));
+    expect(fieldOf(out, adpBox)).toMatchObject({ write: undefined, row: { status: 'skipped',
+      reason: 'conditional-question', needsUserAction: false } });
+  });
 });
 
 describe('25 (JV-5): a checklist of qualifications', () => {
+  const QUALIFICATIONS = 'Please select the education, skills and/or experience that you currently possess';
   const checklist = specOf('Please select the education, skills and/or experience that you currently possess',
     'checkbox-group', { required: true, optionLabels: [
       '1. Associate or bachelor’s degree in Computer Science or a related field',
@@ -531,6 +670,37 @@ describe('25 (JV-5): a checklist of qualifications', () => {
       '3. Experience with relational databases (such as PostgreSQL and MySQL)']);
     expect(write?.origin).toEqual({ provenance: 'rule', ruleId: 'skills.qualifications', path: 'skills' });
     expect(row.status).toBe('flagged');
+  });
+
+  // jr6 fix (revD-02): a ticked box says "I currently possess this": an option naming a skill or a degree the person
+  // holds is ticked only when nothing else it states is unmet (the golden profile: TypeScript, PostgreSQL and
+  // Kubernetes, a BS in Computer Science, jobs since 2019-07, no certification).
+  it('ticks no option whose years, degree field, credential or joined tool the profile does not hold', () => {
+    const relational = 'Experience with relational databases such as PostgreSQL and MySQL';
+    const claims = specOf(QUALIFICATIONS, 'checkbox-group', { required: true, optionLabels: ['10+ years of experience running Kubernetes in production',
+        'Bachelor’s degree in Accounting, Finance or a related field',
+        'Active Certified Kubernetes Administrator (CKA) certification', relational,
+        'Experience with Kubernetes and Terraform'] });
+    const { write, row } = planned([claims], claims);
+    expect(written(write)).toEqual([relational]);
+    expect(row).toMatchObject({ status: 'flagged', reason: 'filled-low-confidence' });
+  });
+
+  it('ticks an option whose years, field, credential and tools the profile holds', () => {
+    const held = specOf(QUALIFICATIONS, 'checkbox-group', { optionLabels: [
+      'Bachelor’s degree and 5+ years of experience', 'Bachelor’s degree in Computer Science or a related field',
+      'Experience with Kubernetes, Terraform or Pulumi', 'Experience with TypeScript and PostgreSQL',
+      'Bachelor’s degree and 3+ years of software engineering experience', 'Experience with Go and Rust'] });
+    expect(written(planned([held], held).write)).toEqual(['Bachelor’s degree and 5+ years of experience',
+      'Bachelor’s degree in Computer Science or a related field', 'Experience with Kubernetes, Terraform or Pulumi',
+      'Experience with TypeScript and PostgreSQL', 'Bachelor’s degree and 3+ years of software engineering experience']);
+    // A certification the profile lists, by its name.
+    const certified = { ...golden, certifications: [{ name: 'Certified Kubernetes Administrator' }] };
+    const cka = specOf(QUALIFICATIONS, 'checkbox-group', { optionLabels: [
+      'Active Certified Kubernetes Administrator (CKA) certification', 'Experience with Go and Rust',
+      'Experience with Java'] });
+    expect(written(planned([cka], cka, { profile: certified }).write)).toEqual([
+      'Active Certified Kubernetes Administrator (CKA) certification']);
   });
 
   it('leaves a plain skills list to the skills, and ticks nothing when no option names one', () => {

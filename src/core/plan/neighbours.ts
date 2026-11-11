@@ -3,7 +3,11 @@
  * - ICIMS-24 (NYU's iCIMS School list and its "Enter school name if not in the list above" box, fixtures
  *   jr6-nyu-profile-parsed): the school is chosen in the list when it is listed, and the box beside it is then left
  *   empty; only when the list holds no option of it (its "Other" chosen, or nothing chosen) is the school typed into the
- *   box. While the list waits for its options or its search, the box waits too.
+ *   box. While the list waits for its options or its search, the box is left empty too (skipped,
+ *   conditional-question): jr6 fix (RULES-R65-R24, ICIMS:stage1-3) a box is no list, and the loop's books read a
+ *   waiting-for-options row as a list waiting for its own options, which a box never gets (it ended
+ *   options-never-loaded, for the person, though the list took the school). A box planned in a pass that does not plan
+ *   its list is decided by what the list shows.
  * - U-16 (UltiPro's "Secondary Phone" beside its primary, fixtures/ultipro/application and resume-review): a secondary,
  *   alternate or other phone is left empty where the frame has a phone of its own: it would only repeat the number.
  * Labels and attribute names are page text: nothing here reads a profile value.
@@ -66,11 +70,23 @@ function listVerdict(list: PlannedField, vocab: Vocab): ListVerdict {
   return 'other';
 }
 
+/** jr6 fix (RULES-R65-R24): the verdict of a school list this pass does not plan, by what it shows: its school (or any
+ *  answer but its "Other"), its "Other", or nothing (no option of the school was found: the box takes it). */
+function shownVerdict(list: FieldSpec, vocab: Vocab): ListVerdict {
+  const shown = list.current.kind === 'selected' ? list.current.labels
+    : list.current.kind === 'text' ? [list.current.text] : [];
+  const keys = shown.map((label) => prepareOptions([{ index: 0, label, disabled: false, selected: true }], 'generic',
+    vocab).list[0]!.answerKey).filter((key) => key !== '');
+  if (keys.length === 0) return 'other';
+  return keys.every((key) => vocab.answers.other.has(key)) ? 'other' : 'school';
+}
+
 /**
  * ICIMS-24 (module header): each companion box planFrame planned the school into is settled against the school list of
- * its section's block, in place: left empty (skipped, conditional-question) where the list takes the school; waiting
- * (flagged, waiting-for-options) while the list waits; written where the list holds no option of it. A box with no list
- * beside it stands.
+ * its section's block, in place: left empty (skipped, conditional-question) where the list takes the school, and while
+ * the list waits for its options or its search (jr6 fix RULES-R65-R24: never a waiting-for-options row on a box); written
+ * where the list holds no option of it. The list's plan decides, else (the list not planned this pass) what it shows. A
+ * box with no list beside it stands.
  */
 export function settleSchoolCompanions(planned: PlannedField[],
   fields: ReadonlyArray<{ spec: FieldSpec; classification: FieldClassification }>, vocab: Vocab): void {
@@ -78,14 +94,15 @@ export function settleSchoolCompanions(planned: PlannedField[],
   for (const [at, field] of planned.entries()) {
     const { spec } = field;
     if ((spec.kind !== 'text' && spec.kind !== 'textarea') || field.row.category !== 'education.school'
-      || !SCHOOL_COMPANION.test(normalizeLabel(spec.label))) continue;
-    const list = planned.find((other) => other.spec.key !== spec.key && SCHOOL_LIST_KINDS.has(other.spec.kind)
-      && sectionKey(other.spec.section) === sectionKey(spec.section) && other.spec.section.block === spec.section.block
-      && categories.get(other.spec.key) === 'education.school');
-    if (list === undefined || field.write === undefined) continue;
-    const verdict = listVerdict(list, vocab);
-    if (verdict === 'school') planned[at] = leftEmpty(field, 'skipped', 'conditional-question');
-    else if (verdict === 'waiting') planned[at] = leftEmpty(field, 'flagged', 'waiting-for-options');
+      || !SCHOOL_COMPANION.test(normalizeLabel(spec.label)) || field.write === undefined) continue;
+    const beside = (other: FieldSpec) => other.key !== spec.key && SCHOOL_LIST_KINDS.has(other.kind)
+      && sectionKey(other.section) === sectionKey(spec.section) && other.section.block === spec.section.block
+      && categories.get(other.key) === 'education.school';
+    const list = planned.find((other) => beside(other.spec));
+    const unplanned = list === undefined ? fields.find((other) => beside(other.spec))?.spec : undefined;
+    if (list === undefined && unplanned === undefined) continue;
+    const verdict = list !== undefined ? listVerdict(list, vocab) : shownVerdict(unplanned!, vocab);
+    if (verdict !== 'other') planned[at] = leftEmpty(field, 'skipped', 'conditional-question');
   }
 }
 
