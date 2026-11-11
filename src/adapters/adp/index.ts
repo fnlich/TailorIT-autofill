@@ -45,6 +45,20 @@
  *   empty one (the preferred-name box) by the same label (proxies).
  * - Never pressed (neverPress): Verify, Resend Code, Sign In, the social sign-ins, Join Our Talent Community,
  *   Finish later, Exit, the header items, the cookie banner's buttons, "...More" and the help buttons.
+ * jr6 (FIXPLAN §6.6, BUILD.md §4 E-ADP; the owner's captures of 2026-11-10, snapshot6 adp1 and adp2, converted as
+ * fixtures/adp/jr6-*.html, ADP_JR6_SNAPSHOTS) adds what those captures show and the 2026-11-06 ones did not:
+ * - The job details (jr6-posting): the posting's text (div.job-description-data, also on the signed-in landing,
+ *   jr6-landing) and its entry, the header's Apply (button#recruitment_jobDescription_apply; the bottom bar's
+ *   #recruitment_jobDescription_candidateApply where a page draws it), never by the word "Apply" (OneTrust's filter
+ *   dialog has its own hidden "Apply", button#filter-apply-handler, never pressed). Back is never pressed.
+ * - The "Privacy Policy" pane after Apply (jr6-consent, sdf-focus-pane#jdv_privacy_dailog): an 'entry-choice' state
+ *   whose entry is the pane's primary custom button, "Consent & Continue" (APPLYPLAN OQ2, default yes); its secondary
+ *   button, "Decline & Close", is never pressed. Both buttons carry id="undefined": they are named by slot, emphasis
+ *   and words.
+ * - "Get your verification code" over the guest page (jr6-guest-send-code, sdf-focus-pane#login_view_identifier_dialog):
+ *   the person's 'email-code' pause (ADP-11's minimum, apply-path B7); its Send and its Close are never pressed.
+ * - The guest view, the pane and the code are drawn in place at the details' one address (apply-path B4): quirks
+ *   entryPresses 2 (Apply, then Consent & Continue), formLateMs 20 s and formInPlace.
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache } from '../../dom/scan-cache';
@@ -59,6 +73,22 @@ import { canonicalApplicationUrl, matchesUrl, parseAdpUrl } from './url';
 export const ADP_SNAPSHOTS = ['fixtures/adp/guest.html', 'fixtures/adp/code-dialog.html', 'fixtures/adp/personal.html',
   'fixtures/adp/questions.html', 'fixtures/adp/self-id.html', 'fixtures/adp/self-attest.html'] as const;
 
+/** jr6: the owner's captures of 2026-11-10 (snapshot6 adp1 and adp2), as fixtures/adp/<case>.html, each a page the jr6
+ *  rules were read from (the module header). */
+export const ADP_JR6_SNAPSHOTS = ['jr6-posting', 'jr6-consent', 'jr6-guest-blank', 'jr6-guest-send-code',
+  'jr6-code-dialog', 'jr6-landing', 'jr6-personal-blank', 'jr6-personal-us-errors', 'jr6-personal-us-state',
+  'jr6-personal-filled', 'jr6-resume-choice', 'jr6-resume-blank', 'jr6-resume-uploaded', 'jr6-questions-filled',
+  'jr6-questions2-blank', 'jr6-questions2-filled', 'jr6-self-id-blank', 'jr6-self-id-filled', 'jr6-review',
+  'jr6-self-attest-blank', 'jr6-self-attest-signed', 'jr6-confirmation', 'jr6-confirmation-2']
+  .map((name) => `fixtures/adp/${name}.html`);
+
+// ── jr6 ADP P1 (FIXPLAN §6.6, BUILD.md §4 E-ADP) ──
+/** jr6-consent: the "Privacy Policy" pane after Apply. */
+const PRIVACY_PANE = 'sdf-focus-pane#jdv_privacy_dailog';
+/** jr6-guest-send-code: the "Get your verification code" pane over the guest page. */
+const CODE_CHOICE_PANE = 'sdf-focus-pane#login_view_identifier_dialog';
+// ── end jr6 ADP P1 ──
+
 /** A react-select's text box (adp-1, adp-2, adp-3). */
 const SELECT_INPUT = 'input.MDFSelectBox__input[role="combobox" i]';
 /** The referral question's options (adp-2). */
@@ -69,7 +99,8 @@ const SIGNATURE = 'input#electronicSignature';
 /** The rules the configured layer builds hooks from, each naming its snapshot. */
 export const ADP_CONFIG: AtsConfig = {
   platform: 'adp',
-  snapshots: ['guest', 'code-dialog', 'personal', 'questions', 'self-id', 'self-attest'],
+  snapshots: ['guest', 'code-dialog', 'personal', 'questions', 'self-id', 'self-attest',
+    ...ADP_JR6_SNAPSHOTS.map((path) => path.replace(/^fixtures\/adp\/|\.html$/g, ''))],
   parse: parseAdpUrl,
   matchesUrl,
   states: [
@@ -79,6 +110,23 @@ export const ADP_CONFIG: AtsConfig = {
     // state's root, so this adapter (not the generic one) holds the page, and its pause is the person's.
     { name: 'code', when: 'sdf-focus-pane#login_view_show_opt_dialog input#oneTimePassWord', auth: 'email-code',
       root: 'sdf-focus-pane#login_view_show_opt_dialog div.otpDialogContent', from: 'adp-0' },
+    // jr6 ADP-11 (minimum) and apply-path B7, jr6-guest-send-code: <sdf-focus-pane id="login_view_identifier_dialog"
+    // heading="Get your verification code" data-sdf-modal=""> ... <label class="otpInstructionText ...">Where would you
+    // like to receive a verification code?</label> ... <wfn-radio-button id="phoneIdentifierId" value="CELL_PHONE">,
+    // <wfn-radio-button id="emailIdentifierId" value="EMAIL"> ... <sdf-button id="recruitment_login_guestLogin" ...
+    // aria-label="Send">: where the code goes and its Send are the person's (a code is sent), so the page is the
+    // person's 'email-code' pause: nothing is filled or pressed. While it shows, the guest page behind it is hidden by
+    // the pane's focus trap, so the guest state below never reads under it.
+    { name: 'code-choice', when: CODE_CHOICE_PANE, auth: 'email-code', from: 'jr6-guest-send-code' },
+    // jr6 apply-path B3 (APPLYPLAN OQ2, default yes; BUILD.md §4), jr6-consent: <sdf-focus-pane id="jdv_privacy_dailog"
+    // heading="Privacy Policy" data-sdf-modal=""> ... <div slot="custom-buttons"><sdf-button id="undefined" ...
+    // slot="custom-buttons" emphasis="primary" aria-label="Consent & Continue">, <sdf-button id="undefined" ...
+    // emphasis="secondary" aria-label="Decline & Close">: drawn over the job details after Apply. Its entry, for the
+    // agent's entry door alone (after Apply, quirks.entryPresses), is the pane's primary custom button, cross-checked by
+    // its words, since both buttons share one id; "Decline & Close" is never pressed (neverPress).
+    { name: 'consent', when: PRIVACY_PANE, auth: 'entry-choice',
+      entry: `${PRIVACY_PANE} sdf-button[slot="custom-buttons"][emphasis="primary"][aria-label="Consent & Continue" i]`,
+      from: 'jr6-consent' },
     // adp-6: <div class="guest-login-container"><div class="banner">Tell us about yourself.</div> ... <div
     // class="login-form-container" data-isguestapply="true" ...> (behind the dialog's aria-hidden in adp-0).
     { name: 'guest', when: 'div.guest-login-container', root: 'div.guest-login-container',
@@ -139,6 +187,19 @@ export const ADP_CONFIG: AtsConfig = {
     { css: '#selfReviewView .more-label button', from: 'adp-4' },
     { css: 'sdf-button#vsidWhy, sdf-button#vsidWhyAreWe, sdf-button#vsidVet, sdf-icon-button[label="Help Information"], '
       + '.raceHelp-icon [role="button"]', from: 'adp-3' },
+    // ── jr6 ADP P1 (BUILD.md §4 E-ADP neverPress) ──
+    // jr6-guest-blank: OneTrust's vendor filter, <section id="ot-fltr-modal"> ... <button id="filter-apply-handler">Apply
+    // </button> (hidden): its "Apply" is never the posting's entry, and never pressed.
+    { css: 'button#filter-apply-handler, section#ot-fltr-modal', from: 'jr6-guest-blank' },
+    // jr6-consent: the Privacy Policy pane's "Decline & Close" (see the consent state).
+    { css: `${PRIVACY_PANE} sdf-button[slot="custom-buttons"][emphasis="secondary"]`, from: 'jr6-consent' },
+    // jr6-guest-send-code: the code-choice pane's Send (see the code-choice state); its Close sits in the pane's shadow
+    // root, out of a selector's reach, and is added by the adapter's neverPress below.
+    { css: 'sdf-button#recruitment_login_guestLogin', from: 'jr6-guest-send-code' },
+    // jr6-posting: <button id="recruitment_jobDescription_back" type="button" class="job-description-apply vdl-button
+    // vdl-button--secondary">, Back beside the details' entry.
+    { css: 'button#recruitment_jobDescription_back', from: 'jr6-posting' },
+    // ── end jr6 ADP P1 ──
   ],
   // adp-2: <label class="vdl-validation-error error-color" role="alert"> after an aria-invalid box; adp-6: <wfn-text
   // id="firstNameErrLbl" role="alert" class="experience-vdl-error-label hydrated">; adp-2, adp-3: <div
@@ -147,6 +208,18 @@ export const ADP_CONFIG: AtsConfig = {
     + '[id^="sdf-radio-group-"][id$="-errorMessage"], div.self-review-signature-required', from: 'adp-2' },
   // adp-6: <div id="recPageLoadWaitingIndicator" ... style="display: none">, the page's busy overlay.
   busy: [{ css: '#recPageLoadWaitingIndicator', from: 'adp-6' }],
+  // ── jr6 ADP-10 (adapter part) and E-ADP (BUILD.md §4; apply-path B2): the job details ──
+  // jr6-posting: <div class="job-description-data"> (the description; Jobright's job-card rule ADP2 reads its
+  // div.job-description-data-item) and, in the details' header, <button id="recruitment_jobDescription_apply"
+  // type="button" class="job-description-apply-item vdl-button vdl-button--primary">Apply</button> (the bottom bar's
+  // button#recruitment_jobDescription_candidateApply where a page draws it). Named by id, never by the word "Apply".
+  posting: { text: 'div.job-description-data',
+    entry: 'button#recruitment_jobDescription_apply, button#recruitment_jobDescription_candidateApply',
+    from: 'jr6-posting, jr6-landing' },
+  // jr6 E-ADP (BUILD.md §4; apply-path B2, B3, B4): Apply draws the Privacy Policy pane in place, whose Consent &
+  // Continue is the second entry press; the guest view is then drawn in place at the same address, up to 20 s later,
+  // at any time the person presses them too (formInPlace).
+  quirks: { entryPresses: 2, formLateMs: 20_000, formInPlace: true },
 };
 
 /** The visible text of an element on one line. */
@@ -236,6 +309,20 @@ function requiredFor(control: Element): boolean {
   return labelFor(control)?.matches('label.required-indicator, label.required') === true;
 }
 
+// ── jr6 E-ADP (neverPress) ──
+/** The configured never-pressed controls, and the code-choice pane's Close, which sits in the pane's shadow root
+ *  (jr6-guest-send-code: <sdf-focus-pane id="login_view_identifier_dialog" ...><template shadowrootmode="open"> ...
+ *  <div class="close-container"><sdf-close-button id="close-button" ...> with its own <button aria-label="Close dialog">
+ *  in its shadow root). */
+function neverPress(root: Element): Element[] {
+  const closes = Array.from(root.ownerDocument.querySelectorAll(CODE_CHOICE_PANE)).flatMap((pane) => {
+    const close = pane.shadowRoot?.querySelector('sdf-close-button') ?? null;
+    return close === null ? [] : [close, ...Array.from(close.shadowRoot?.querySelectorAll('button') ?? [])];
+  });
+  return [...(hooks.neverPress?.(root) ?? []), ...closes];
+}
+// ── end jr6 E-ADP ──
+
 /** The react-selects and the referral's options, declared as their widgets (see the header); null for any other
  *  control. */
 function widgetFor(control: Element): WidgetDecl | null {
@@ -288,4 +375,7 @@ export const adpAdapter: Adapter = {
   requiredFor,
   widgetFor,
   widgetRoots: (root) => Array.from(root.querySelectorAll(REFERRAL_OPTIONS)),
+  // ── jr6 ADP P1 ──
+  neverPress,
+  // ── end jr6 ADP P1 ──
 };
