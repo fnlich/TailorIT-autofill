@@ -21,6 +21,7 @@ import { icimsAdapter } from '../adapters/icims';
 import type { Adapter, ChainStepFacts } from '../adapters/types';
 import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import { assertNotSubmit, submitPressAllowed } from '../dom/fillers/not-submit';
+import { deadline } from '../dom/time';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { SNAPSHOT_VIEWPORT } from '../adapters/test/expectations.testkit';
 import { claimFrameFacts, holdChainFacts, chainFactsOf, loadedByPortal, CHAIN_FACTS_RETRY_MS } from './chain-frame';
@@ -250,7 +251,7 @@ describe('the claim frame says its step facts (jr6 SHELL-B, chain/facts)', () =>
     expect(worker.of('chain/facts')[0]).toEqual({ v: 1, type: 'chain/facts', facts: SIGNATURE });
     // A change that leaves them as they were says nothing.
     portal.doc.body.append(portal.doc.createElement('p'));
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await deadline(600);
     expect(worker.of('chain/facts')).toHaveLength(1);
     // The page draws another counter: said again; then a later step hidden (no facts): said as none.
     const badge = portal.doc.querySelector('.iCIMS_PageStepText .iCIMS_Badge')!;
@@ -282,7 +283,7 @@ describe('the claim frame says its step facts (jr6 SHELL-B, chain/facts)', () =>
     const silent = createFakeWorker({ script: { 'chain/facts': [done] } as never });
     runtimes.push(await startContentRuntime(silent.platform, alone.doc, { href: () => alone.address, isTop: false,
       ancestors: () => [], adapters: () => [icimsAdapter], settle: { quietMs: 40 } }));
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await deadline(600);
     expect(silent.of('frame/hello').length).toBeGreaterThan(0);
     expect(silent.of('chain/facts')).toEqual([]);
   });
@@ -296,7 +297,7 @@ describe('the claim frame says its step facts (jr6 SHELL-B, chain/facts)', () =>
     await expect.poll(() => worker.of('chain/facts').length).toBe(1);
     await expect.poll(() => worker.of('chain/facts').length, { timeout: CHAIN_FACTS_RETRY_MS + 3_000 }).toBe(2);
     expect(worker.of('chain/facts')[1]).toMatchObject({ facts: SIGNATURE });
-    await new Promise((resolve) => setTimeout(resolve, CHAIN_FACTS_RETRY_MS + 500));
+    await deadline(CHAIN_FACTS_RETRY_MS + 500);
     expect(worker.of('chain/facts')).toHaveLength(2);
   });
 
@@ -306,7 +307,7 @@ describe('the claim frame says its step facts (jr6 SHELL-B, chain/facts)', () =>
       const worker = createFakeWorker({ script: { 'chain/facts': [done] } as never });
       runtimes.push(await startContentRuntime(worker.platform, page.doc, { href: () => page.address, isTop: true,
         adapters: () => [icimsAdapter], settle: { quietMs: 40 } }));
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await deadline(500);
       expect(worker.of('chain/facts'), name).toEqual([]);
       removeFixtures(document);
     }
@@ -378,6 +379,37 @@ describe('the IForm leaf’s run judges its Submit by the facts the worker hands
       await runtime.fill();
       expect(clicked).not.toHaveBeenCalled();
       expect(worker.reports.at(-1)?.status).toBe('review');
+    });
+
+  // The Submit gates' half (press.ts, F2's and ENGINE's file: SHELL-B's handoff to INT-1, SP\jr6\shellb\press-facts.patch):
+  // the panel's buttons and its press read the step through press.ts, which asks the adapter without the leaf's facts
+  // until that patch is in, so the leaf's final Submit is neither offered nor pressed (unknown: no press). With it, the
+  // final Submit is offered and pressed through clickAdapterSubmit alone, Next never. INT-1: apply the patch and turn
+  // `it.fails.each` into `it.each`. (NYU's offer form is left to the doors' test above: its cover letter is asked of the
+  // AI, whose plan the fake worker never finishes, so its run never comes to rest here.)
+  it.fails.each([['jr6-sentinel-iform-selfid', SELFID]] as const)(
+    '%s (the last step): the panel offers the final Submit and presses it through the Submit gates, with the facts alone',
+    async (name, facts) => {
+      // Without facts: neither offered nor pressed.
+      const bare = await leafRun(name);
+      expect(await bare.runtime.fill()).toBe('review');
+      expect(bare.worker.reports.at(-1)?.buttons).toMatchObject({ final: 'unknown', next: false, submit: false });
+      expect(await bare.worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
+        .toEqual({ ok: true, data: { outcome: 'not-offered' } });
+      expect(bare.clicked).not.toHaveBeenCalled();
+      for (const running of runtimes.splice(0)) running.stop();
+      removeFixtures(document);
+      // With the facts held: the final Submit offered, never Next; Next refused; Submit pressed once, by the gates' door.
+      const { worker, runtime, clicked } = await leafRun(name);
+      expect(await worker.platform.deliver({ v: 1, type: 'chain/leafFacts', facts })).toEqual(done);
+      expect(await runtime.fill()).toBe('review');
+      expect(worker.reports.at(-1)?.buttons).toMatchObject({ final: 'final', next: false, submit: true });
+      expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'next', confirmed: true }))
+        .toEqual({ ok: true, data: { outcome: 'not-offered' } });
+      expect(clicked).not.toHaveBeenCalled();
+      expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
+        .toEqual({ ok: true, data: { outcome: 'pressed' } });
+      expect(clicked).toHaveBeenCalledTimes(1);
     });
 
   it('takes the facts the worker clears or replaces: none held, nothing pressed', async () => {
