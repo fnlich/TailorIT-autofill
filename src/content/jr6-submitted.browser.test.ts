@@ -11,10 +11,17 @@
  * naming no modal. The page here is synthetic, built from the audit's rule (its selectors and words are ADP's,
  * Jobright's ats-submission-rules adp-workforcenow); ADP's own config declares the rule on its branch, so the
  * submitted.ts tests set it on ATS_CONFIGS.adp for their run and put it back.
+ * And (the JOBVITE package's JV-24, its cases jr6-vhl-confirmation and jr6-sikich-confirmation on its branch):
+ * newSuccessSign reads the form's place as left once the adapter finds no form root any more, where the root is a page
+ * element that stays shown (Jobvite's body.jv-page-apply, its form gone when the page turns to /applyConfirmation in
+ * the same document); a form root it still finds, or a hook that throws, is not left. The page is synthetic, built
+ * from Jobvite's own root rule (adapters/jobvite/config.ts) and a success rule of the JOBVITE package's shape.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { genericAdapter } from '../adapters/generic';
+import { configuredAdapter } from '../adapters/configured';
 import { ATS_CONFIGS } from '../adapters/configured/registry';
+import { JOBVITE_CONFIG } from '../adapters/jobvite/config';
 import { successSignsOf, type SuccessRule } from '../adapters/success';
 import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
@@ -198,4 +205,70 @@ describe('jr6 E2 item 10 (ADP-6): content/submitted.ts reads the sign under the 
       expect(successShown(own.doc, 'adp')).toBe(false);
       expect(newSuccessSign(own.doc, 'adp', { before: own.signs, root: own.root, adapter })).toBeNull();
     });
+});
+
+describe('jr6 E2 (JV-24): a form root that stays shown is left once the adapter finds no form', () => {
+  const before = ATS_CONFIGS.jobvite;
+  /** A success rule of the JOBVITE package's shape: the message header beside its success icon. */
+  const SENT: SuccessRule = { css: 'article.jv-page-body .jv-page-message:has(i.jv-icon-success) > h2.jv-page-message-header',
+    text: /^Application Sent!?$/i, from: 'jr6 JV-24, synthetic' };
+  const config = { ...JOBVITE_CONFIG!, success: SENT };
+
+  beforeEach(() => {
+    ATS_CONFIGS.jobvite = config;
+  });
+  afterEach(() => {
+    ATS_CONFIGS.jobvite = before;
+  });
+
+  /** Jobvite's apply page: its root the body (body.jv-page-apply holding the apply form). */
+  const APPLY = `<!doctype html><html><head><style>body { font: 14px sans-serif; margin: 16px; }
+    input { display: block; width: 300px; }</style></head><body class="jv-page-apply">
+    <article class="jv-page-body" role="main" id="main">
+      <form name="scopeData.applyForm" id="apply"><label for="first">First Name</label><input id="first"></form>
+    </article></body></html>`;
+
+  /** What Jobvite draws in the same document after Send Application: the form gone, its message shown. */
+  function sent(doc: Document, keepForm = false): Element {
+    if (!keepForm) doc.getElementById('apply')!.remove();
+    const message = doc.createElement('div');
+    message.className = 'jv-page-message';
+    const icon = doc.createElement('i');
+    icon.className = 'jv-icon-success';
+    const header = doc.createElement('h2');
+    header.className = 'jv-page-message-header';
+    header.textContent = 'Application Sent!';
+    message.append(icon, header);
+    doc.getElementById('main')!.append(message);
+    return header;
+  }
+
+  async function armed() {
+    const { doc } = await loadFixture(document, APPLY, { width: 1280, height: 900 });
+    const adapter = configuredAdapter(config);
+    const root = adapter.detect(doc)!.formRoot;
+    return { doc, adapter, root, signs: shownSignsOf(doc, 'jobvite') };
+  }
+
+  it('records the Submit once the form is gone, though the body root stays shown', async () => {
+    const { doc, adapter, root, signs } = await armed();
+    expect(root).toBe(doc.body);
+    const header = sent(doc);
+    expect(newSuccessSign(doc, 'jobvite', { before: signs, root, adapter })).toBe(header);
+  });
+
+  it('records nothing while the adapter still finds the form, or when its hook throws', async () => {
+    const still = await armed();
+    sent(still.doc, true);
+    expect(newSuccessSign(still.doc, 'jobvite', { before: still.signs, root: still.root, adapter: still.adapter }))
+      .toBeNull();
+    removeFixtures(document);
+    const broken = await armed();
+    sent(broken.doc);
+    const throwing: Adapter = { ...broken.adapter, detect: () => {
+      throw new Error('hook');
+    } };
+    expect(newSuccessSign(broken.doc, 'jobvite', { before: broken.signs, root: broken.root, adapter: throwing }))
+      .toBeNull();
+  });
 });
