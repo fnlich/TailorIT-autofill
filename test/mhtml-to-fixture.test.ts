@@ -3072,12 +3072,15 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
 <label for="city-roeville-4418">A label naming the second city</label>
 <div role="listbox"><div id="prompt" role="option" aria-label="Roeville not checked" data-automation-id="menuItem">
   <div data-automation-id="promptOption" data-automation-label="Roeville">Roeville</div></div></div>
+<input id="jobsearch" type="search" value="engineer" aria-controls="results-region">
+<div id="results-region"><select id="pick"><option value="a">Alpha</option><option value="b">Beta</option></select></div>
 </body></html>`);
       const noted = await page.evaluate(noteListRowsInPage, { rows: LIST_ROWS, typedLists: TYPED_LISTS,
         typedBoxes: TYPED_LIST_BOXES, words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE });
       // Two typed lists: the school search (its box's typed text and aria-controls), and a custom element's (Lit's
-      // unhyphenated ariacontrols, as SmartRecruiters' spl-input writes it).
-      expect(noted).toEqual({ rows: 10, typedLists: 2 });
+      // unhyphenated ariacontrols, as SmartRecruiters' spl-input writes it). A search box's aria-controls naming a region
+      // that is no list (holding a form's own select) makes nothing a typed list.
+      expect(noted).toEqual({ rows: 12, typedLists: 2 });
       // Another redaction (a listed string, as transformInPage's) takes two cities' words and the prompt row's, and part
       // of a third city's.
       await page.evaluate(() => {
@@ -3120,6 +3123,7 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
       expect(html).toContain('<span data-uniform-id="typography-body1">REDACTED</span>');
       expect(html).toContain('<label for="city-REDACTED-2">A label naming the second city</label>');
       expect(html).toContain('<li id="city-alder-77" role="option" data-value="77" aria-label="Alder"><span>Alder</span></li>');
+      expect(html).toContain('<select id="pick"><option value="a">Alpha</option><option value="b">Beta</option></select>');
       // Workday's "REDACTED not checked" stays as its own rule wrote it; its structural data-automation-id stays.
       expect(html).toContain('<div id="prompt" role="option" aria-label="REDACTED not checked" data-automation-id="menuItem">');
       expect(html).toContain('<div data-automation-id="promptOption" data-automation-label="REDACTED">REDACTED</div>');

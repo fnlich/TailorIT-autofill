@@ -2864,12 +2864,14 @@ export function noteListRowsInPage(input) {
     const root = /** @type {any} */ (from.getRootNode());
     return (typeof root.getElementById === 'function' ? root.getElementById(id) : null) ?? doc.getElementById(id);
   };
-  /** Adds the popups `holder` names by `names`. @param {Element} holder @param {string[]} names */
-  const named = (holder, names) => {
+  /** Adds the popups `holder` names by `names`; with `listsOnly`, only an element with a list's role or tag (a text
+   *  box's aria-controls may name a region holding a form's own selects). @param {Element} holder
+   *  @param {string[]} names @param {boolean} [listsOnly] */
+  const named = (holder, names, listsOnly = false) => {
     for (const name of names) {
       for (const id of (holder.getAttribute(name) ?? '').split(/\s+/).filter((each) => each !== '')) {
         const list = byId(holder, id);
-        if (list !== null) typed.add(list);
+        if (list !== null && (!listsOnly || list.matches(lists))) typed.add(list);
       }
     }
   };
@@ -2889,7 +2891,9 @@ export function noteListRowsInPage(input) {
     const inner = box.shadowRoot ? Array.from(box.shadowRoot.querySelectorAll('input'))[0] ?? null : null;
     if (![box, inner].some((each) => each !== null && (each.getAttribute('value') ?? '').trim() !== '')) continue;
     const wrapper = box.parentElement?.closest('[role="combobox" i]') ?? null;
-    for (const holder of wrapper === null ? [box] : [box, wrapper]) named(holder, ['aria-controls', 'aria-owns', 'ariacontrols']);
+    for (const holder of wrapper === null ? [box] : [box, wrapper]) {
+      named(holder, ['aria-controls', 'aria-owns', 'ariacontrols'], true);
+    }
     for (const name of ['aria-activedescendant', 'ariaactivedescendant']) {
       const id = (box.getAttribute(name) ?? '').trim();
       const row = id === '' ? null : byId(box, id);
