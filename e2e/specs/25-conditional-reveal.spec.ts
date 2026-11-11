@@ -181,8 +181,10 @@ test.describe('conditional fields', () => {
       await expect(page.locator(control), label).toHaveValue('no');
     }
     // The visa type, which only No reveals: neither part of the profile states one, so it is asked of the AI (all
-    // scope), which by the mock's default has no answer: blank and flagged.
-    expect(row(report, VISA)).toMatchObject({ category: 'workAuth.visaType', status: 'flagged', reason: 'llm-no-answer',
+    // scope), which by the mock's default has no answer: blank and flagged. jr6 RULES item 27 (JV-7, moved at the forms
+    // merge): a visa-type question is read as the person's work-authorization status (label.work-auth-status, never a
+    // visa by its type), no longer workAuth.visaType; the outcome is the same (no status in either part).
+    expect(row(report, VISA)).toMatchObject({ category: 'workAuth.status', status: 'flagged', reason: 'llm-no-answer',
       wrote: false, provenance: null });
     expect(row(report, VISA).detail?.revealedBy).toBe(baseKeyOfRow(authorized));
     await expect(page.locator('#visa-type')).toHaveValue('');
