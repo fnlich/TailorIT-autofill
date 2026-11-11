@@ -753,3 +753,26 @@ describe('jr6 RULES R4 (items 62 to 79): the widened rules’ near misses', () =
     expect(read({ label: 'Phone (if different from above)', kind: 'text' }).category).toBe('contact.phone');
   });
 });
+
+// ── jr6 fix round 1: the reviews' findings in these rules (SP\jr6\build\RULES.md "Fix round 1") ─────────────────────
+
+/** [issue id, the field, the category it asks (null: none), the rule id (null: any)]: what each fix reads. */
+const LABELS_FIX: Array<[string, Case, FieldCategory | null, string | null]> = [
+  // RULES-R51: a pay question that asks for its currency too is the pay; the currency's own label is the currency.
+  ['R51', { label: 'What is your expected salary? Please specify the currency.', kind: 'text' }, 'salary.expected',
+    'label.salary'],
+  ['R51', { label: 'What are your salary expectations? Please include currency and pay period.', kind: 'text' },
+    'salary.expected', 'label.salary'],
+  ['R51', { label: 'Currency', kind: 'text' }, 'salary.currency', 'label.currency'],
+  ['R51', { label: 'Desired Salary currency', kind: 'text' }, 'salary.currency', 'label.currency'],
+  ['R51', { label: 'What currency would you like to be paid in?', kind: 'select' }, 'salary.currency',
+    'label.currency'],
+];
+
+describe('jr6 fix round 1: what the fixed rules read', () => {
+  it.each(LABELS_FIX)('%s: %j', (_issue, field, category, rule) => {
+    const got = read(field);
+    expect(got.category).toBe(category);
+    if (rule !== null) expect(got.rule).toBe(rule);
+  });
+});

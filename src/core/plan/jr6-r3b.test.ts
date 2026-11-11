@@ -292,3 +292,17 @@ describe('61 (O2): Oracle’s ZIP Code and Address Line 1 searches', () => {
     expect(planned([results], results).write).toBeUndefined();
   });
 });
+
+// jr6 fix (RULES-R51): a pay question in a text box that asks for its currency too gets the pay, never the code alone.
+describe('51 (RULES-R51): a salary box that also asks for its currency', () => {
+  it('types the expected pay, not the currency’s code', () => {
+    for (const label of ['What is your expected salary? Please specify the currency.',
+      'What are your salary expectations? Please include currency and pay period.']) {
+      const box = specOf(label, 'text', { required: true });
+      const { write, row } = planned([box], box, { profile: paid('CAD') });
+      expect(row.category, label).toBe('salary.expected');
+      expect(written(write), label).toMatch(/\d/);
+      expect(written(write), label).not.toBe('CAD');
+    }
+  });
+});

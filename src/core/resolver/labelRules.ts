@@ -1113,6 +1113,9 @@ const OPT_WORK = /\b(?:(?:stem\s+)?opt|cpt|optional\s+practical\s+training|curri
  *  for; never a yes or no about one, nor a currency as a field of work ("currency trading"). */
 const CURRENCY = /\bcurrency\b/;
 const CURRENCY_NOT = /\bcurrency\s+(?:trading|exchange|markets?|risk|conversion|hedging|operations|management)\b|\bforeign\s+currency\b/;
+/** jr6 fix (RULES-R51): on a text box, only a label that is the currency itself ("Currency", "Desired Salary currency",
+ *  "Currency code"): "What is your expected salary? Please specify the currency." asks for the pay, in a currency. */
+const CURRENCY_ALONE = /^(?:(?:select|choose|enter|your|the|preferred|desired|expected|salary|pay|compensation|wage|rate)\s+)*currency(?:\s+(?:type|code))?$/;
 /** jr6 RULES R3 (JZ-11: JazzHR's "Will you be working from inside the United States?" on invaluable-form, "Are you able
  *  to work remotely from a state within the United States?" on wellhive-submitting; "Do you currently reside in the
  *  United States?"): whether the person lives or will work inside the place named last (a country: policy.ts
@@ -1185,8 +1188,11 @@ const JR6_RULES: readonly Jr6Rule[] = [
   { id: 'label.experience-with', re: EXPERIENCE_WITH, unless: EXPERIENCE_WITH_NOT, category: 'skills.experienceWith',
     strength: 'normal' },
   // jr6 RULES R3 (ADP-7, JZ-11, U-11).
+  // jr6 fix (RULES-R51): the word anywhere on a list (FIXPLAN item 51: select, combobox); on a text box only the
+  // currency's own label (CURRENCY_ALONE), never a pay question that asks for its currency too.
   { id: 'label.currency', re: CURRENCY, unless: new RegExp(`${YES_NO_QUESTION.source}|${CURRENCY_NOT.source}`),
-    category: 'salary.currency', strength: 'normal' },
+    category: (c) => (c.kind === 'text' && !CURRENCY_ALONE.test(c.label) ? null : 'salary.currency'),
+    strength: 'normal' },
   { id: 'label.in-country', re: IN_COUNTRY, unless: IN_COUNTRY_NOT, category: 'location.inCountry', strength: 'normal' },
   { id: 'label.former-name', re: FORMER_NAME, category: 'identity.formerName', strength: 'strong' },
   // jr6 RULES R4 (WD-25, ICIMS-25, ADP-14, ADP-16, ADP-18, ADP-20, JV-19, SR-13).
