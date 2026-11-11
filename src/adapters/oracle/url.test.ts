@@ -4,7 +4,7 @@
  * (docs/FIXTURES.md), and the canonical application URL. src/adapters/url.test.ts holds the shared table.
  */
 import { describe, expect, it } from 'vitest';
-import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl, parseOracleUrl } from './url';
+import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl, oracleApplySection, parseOracleUrl } from './url';
 
 const at = (address: string) => new URL(address);
 const ELHR = 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience';
@@ -55,6 +55,23 @@ describe('parseOracleUrl', () => {
     for (const address of [POSTING, `${POSTING}/apply`, `${POSTING}/apply/section/1`, `${POSTING}/easy-apply`,
       `${POSTING}/apply/email/x`, `${ELHR}/en/sites/CX_1001/my-profile/sign-in`, 'https://example.com/apply/email']) {
       expect(isOracleEmailGate(at(address)), address).toBe(false);
+    }
+  });
+
+  // jr6 O8: the section of a multi-section flow, by its address (the step signature's urlPart, the Next's rule).
+  it('reads the section an apply flow’s address shows, and none elsewhere (jr6 O8)', () => {
+    for (const [address, section] of [[`${POSTING}/apply/section/1`, 1], [`${POSTING}/apply/section/2/`, 2],
+      [`${GOV}/apply/section/12`, 12], [`${ELHR}/en/sites/CX_1001/requisitions/preview/12946/apply/section/3`, 3],
+      // An employer's own domain reads as its tenant's does (v5 p2-detect); the adapter's markup proof holds its presses.
+      ['https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX/job/1/apply/section/4', 4]] as const) {
+      expect(oracleApplySection(at(address)), address).toBe(section);
+    }
+    for (const address of [POSTING, `${POSTING}/apply`, `${POSTING}/apply/email`, `${POSTING}/apply/section`,
+      `${POSTING}/apply/section/0`, `${POSTING}/apply/section/01`, `${POSTING}/apply/section/x`,
+      `${POSTING}/apply/section/1/x`, `${POSTING}/easy-apply/section/1`, `${POSTING}/apply/section/1234`,
+      'https://www.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/1/apply/section/1',
+      `${ELHR}/en/sites/CX_1001/my-profile/section/1`]) {
+      expect(oracleApplySection(at(address)), address).toBeNull();
     }
   });
 
