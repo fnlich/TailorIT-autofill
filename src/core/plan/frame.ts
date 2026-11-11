@@ -82,7 +82,9 @@
  *   edited since).
  */
 import { accepts, COVER_LETTER_FILE } from '../accept';
-import { FLAG_AT, LLM_ANSWER, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
+import {
+  FLAG_AT, LABEL_RULE_CONFIDENCE, LLM_ANSWER, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX, VALUE_DERIVED,
+} from '../confidence';
 import type { MatcherStage } from '../enums';
 import { extractCanaries, persistableCanaries, profileIndex } from '../guard/canary';
 import { checkHoneypot, llmMaySeeLabel } from '../guard/honeypot';
@@ -91,11 +93,12 @@ import { tripwireHits } from '../guard/tripwire';
 import { guardWrite, type GuardContext, type WriteSubject } from '../guard/write';
 import { cacheEntryFor } from '../matcher/cache';
 import { noMatch, matchOne } from '../matcher/cascade';
-import { matchPlace } from '../matcher/place';
+import { matchPlace, matchStreet } from '../matcher/place';
+import { settleSchoolCompanions, settleSecondaryPhones } from './neighbours';
 import { completeTiebreak } from '../matcher/tiebreak';
 import { dialCodeOf } from '../matcher/dialCode';
 import { prepareOptions } from '../matcher/prepare';
-import { noMatchOtherMatch } from '../matcher/other';
+import { noMatchOtherMatch, otherMatch } from '../matcher/other';
 import type { MatchInput, PreparedOptions, TiebreakItem } from '../matcher/types';
 import { parseSelectionHints, selectionLimits } from '../multiselect/hints';
 import { planMultiSelect, type MultiSelectValue } from '../multiselect/plan';
@@ -108,7 +111,7 @@ import { actionFor, classifyField, resolveField, type FieldClassification, type 
   '../resolver/resolve';
 import { planRepeatables } from '../steps/blocks';
 import { sectionKey } from '../text/keys';
-import { normalizeLabel } from '../text/normalize';
+import { normalize, normalizeLabel } from '../text/normalize';
 import { sha256Hex } from '../text/sha256';
 import { asUntrusted } from '../text/untrusted';
 import type { FieldKey, FieldSpec } from '../types/field';
@@ -123,8 +126,11 @@ import { RESUME_MIME_TYPES, uploadName, withCoverLetter } from '../profile/canon
 import { answerItemOf, answerRefusal, answerText, answerWaitsForOptions, type AnswerItem, type AnswerVerdict }
   from './answers';
 import { holdsNoAiAttestation } from './attestation';
-import { noMatchMode, noMatchOtherAllowed } from './noMatch';
-import { answerWords, antecedentOf, conditionHolds, conditionOf } from './conditional';
+import { noMatchMode, noMatchOtherAllowed, REFERRAL_LISTS } from './noMatch';
+import {
+  answerWords, antecedentOf, conditionHolds, conditionOf, conditionOpposed, notApplicableOption,
+} from './conditional';
+import { settleDeclineBoxes } from './eeoDeclineBox';
 import {
   aiEditableField, draftItemOf, draftRefusal, rewriteItemOf, type DraftContext, type DraftItem, type DraftVerdict,
 } from './drafts';
@@ -197,6 +203,23 @@ function showsResume(names: readonly string[] | undefined, resume: PlanInput['pr
 }
 // ── end behaviour review (M2) ──
 
+/** jr6 RULES R4 (ICIMS-23): the platforms whose held résumé's input a person reaches only through a replace control the
+ *  extension never presses (iCIMS's "Replace Resume", button#PortalProfileFields.Resume_Button, the hidden input's
+ *  visible control: the iCIMS package's uploadWidgets; pressing it waits on owner question 2). Workday's drop zone takes
+ *  a file beside the one it holds, so its held résumé is uploaded again under "Upload mine again", as before. */
+const REPLACED_ONLY_BY_CONTROL: ReadonlySet<FieldSpec['platform']> = new Set<FieldSpec['platform']>(['icims']);
+
+/** jr6 RULES R4 (ICIMS-23, FIXPLAN §6.3 item 64): whether a held résumé's input is not visible itself, only its
+ *  replace control (REPLACED_ONLY_BY_CONTROL): it is never written. */
+function behindReplaceControl(spec: FieldSpec): boolean {
+  return spec.visibility === 'hidden-file-with-visible-control' && REPLACED_ONLY_BY_CONTROL.has(spec.platform);
+}
+
+/** jr6 RULES R4 (U-17): the origin of a place written in its shorter form: the profile's place, composed. */
+function shortPlaceOrigin(origin: ValueOrigin | null): ValueOrigin | undefined {
+  return origin?.provenance === 'profile' ? { ...origin, transform: 'location.compose' } : undefined;
+}
+
 /** The status of a field the Guard keeps from being written: a honeypot is blocked; a field with no label at all is
  *  skipped, since it may be no question at all; one named only by a label nobody sees is flagged, since it names a
  *  question the person may want to answer. */
@@ -260,6 +283,20 @@ interface FieldPlanContext {
   legal: LegalContext;
   /** The dial codes the frame's country controls show now ("Canada +1": "1"), by section (phoneCodesShown). */
   phoneCodes: ReadonlyMap<string, ReadonlySet<string>>;
+  /** jr6 RULES (WD-07): the profile entry each block of an assigned repeatable section is filled from. */
+  blockEntries: Readonly<Partial<Record<string, readonly (number | null)[]>>>;
+}
+
+/** jr6 RULES (WD-07, fixtures s2-exelixis-my-experience after Workday's résumé parse): whether a field sits in a block
+ *  the run assigned an entry and its value is that entry's own (the profile's path under `experience[n]` or
+ *  `education[n]`): a box of prose there (Role Description) holds the parse's text of perhaps another job, which the
+ *  profile's replaces. */
+function fromAssignedBlock(spec: FieldSpec, resolution: Resolution, ctx: FieldPlanContext): boolean {
+  const { block, id } = spec.section;
+  const entry = block === undefined ? undefined : ctx.blockEntries[id]?.[block];
+  const origin = resolution.origin;
+  return entry !== undefined && entry !== null && origin?.provenance === 'profile'
+    && (origin.path === `${id}[${entry}]` || origin.path.startsWith(`${id}[${entry}].`));
 }
 
 /** A field's write before the Guard: its value, its match, a reason it must be flagged for, if any, and the origin
@@ -329,6 +366,11 @@ function matchValue(input: MatchInput, ctx: FieldPlanContext): Match | 'waiting'
  *  so a location search's "Austin, Texas, United States" is the person's "Austin, TX". The text stages' answer stands
  *  when the places give none either, unless they found several (ambiguous-options). */
 function orPlace(match: Match, choice: Choice, options: PreparedOptions, ctx: FieldPlanContext): Match {
+  // jr6 RULES R3 (O2): an address line's or a postal code's results, read by what they start with (Choice.street).
+  if (match.stage === 'none' && choice.street !== undefined) {
+    const street = matchStreet(choice.street, options);
+    if (street.stage !== 'none' || street.reason === 'ambiguous-options') return street;
+  }
   if (match.stage !== 'none' || choice.place === undefined) return match;
   const placed = matchPlace(choice.place, options, ctx.input.vocab);
   return placed.stage !== 'none' || placed.reason === 'ambiguous-options' ? placed : match;
@@ -365,13 +407,23 @@ const NOT_OFFERED_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['no-ma
 const NOT_OFFERED: ValueOrigin = { provenance: 'rule', ruleId: 'eeo.not-offered' };
 
 /** The list's own decline option for a self-identification answer it does not offer (the person's explicit answer, a
- *  list read whole), as eeo.not-offered; null where there is none, or for any other field. */
-function declineInstead(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx: FieldPlanContext):
-  { index: number; clean: string; match: Match } | null {
+ *  list read whole), as eeo.not-offered; null where there is none, or for any other field. jr6 RULES (JZ-6, JazzHR's
+ *  ", not Hispanic or Latino" races): only a list whose every answer the vocabulary understood, none of them the
+ *  person's own answers (`choices`), does not offer it; a list with an option the matcher could not read, or one that
+ *  names the person's answer under a qualifier the profile cannot settle (a race with no Hispanic answer), is no-match,
+ *  flagged for the person, never declined. */
+function declineInstead(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx: FieldPlanContext,
+  choices: readonly Choice[] = [choice]): { index: number; clean: string; match: Match } | null {
   if (resolution.policy !== 'eeo' || resolution.origin?.provenance !== 'profile' || spec.options === 'lazy'
     || spec.optionsPartial === true) return null;
   const decline: Choice = { intended: intendedDecline(choice.domain as VocabDomain), domain: choice.domain };
   const prepared = prepareOptions(spec.options, decline.domain, ctx.input.vocab);
+  const answers = prepared.list.filter((option) => !option.unusable && !option.disabled && !option.decline
+    && !option.other && !option.exclusive);
+  const own = choices.flatMap((each) => (each.intended.kind === 'entity' && each.intended.id !== null
+    ? [each.intended.id] : []));
+  if (answers.some((option) => option.entityIds.length === 0)
+    || answers.some((option) => option.entityIds.some((id) => own.includes(id)))) return null;
   const found = matchValue(matchInputOf(spec, resolution, decline, prepared), ctx);
   if (found === 'waiting' || found.stage === 'none' || found.optionIndex === null) return null;
   const option = prepared.list.find((candidate) => candidate.index === found.optionIndex);
@@ -478,12 +530,24 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
   // s2 core-wd: the list's own "Other" query's results are read for that "Other" alone.
   if (searched && spec.searchOther === true) return planNoMatchOther(spec, resolution, choice, prepared, ctx, blank);
   let matched: Matched;
+  // jr6 RULES R3 (ICIMS-19, ICIMS-20: NYU's "How did you hear about us?", uscareers | Job Fair | NYU Alumni | Other |
+  // USA Job Portal, fixtures nyu-profile.frame-1): a referral list whose own "Other" may be chosen takes the source by an
+  // exact or alias match only, else that "Other": never an LLM tiebreak among weak or parent-level matches. A list with
+  // no "Other" of its own asks the tiebreak as before.
+  const referralOther = REFERRAL_LISTS.has(resolution.category) && noMatchOtherAllowed(resolution, ctx.input.settings)
+    && prepared.list.filter((option) => option.other && !option.unusable && !option.disabled).length === 1;
   // A list read only in part never goes to the LLM, nor does a search's results.
-  if (llm && !partial && !searched) {
+  if (llm && !partial && !searched && !referralOther) {
     matched = matchChoice(input, ctx);
   } else {
     const plain = matchValue(input, ctx);
     matched = plain === 'waiting' ? { kind: 'waiting' } : { kind: 'match', match: plain };
+  }
+  if (referralOther && matched.kind === 'match' && matched.match.stage === 'fuzzy') {
+    const display = choice.intended.kind === 'entity' ? choice.intended.display
+      : choice.intended.kind === 'text' ? choice.intended.text : '';
+    const other = otherMatch(prepared, choice.freeText ?? display);
+    if (other !== null) matched = { ...matched, match: other };
   }
   if (matched.kind === 'waiting') return blank('flagged', 'waiting-for-options');
   if (matched.kind === 'match') matched = { ...matched, match: orPlace(matched.match, choice, prepared, ctx) };
@@ -545,9 +609,13 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
   const current = spec.current;
   switch (shaped.shape) {
     case 'text': {
-      const { text } = shaped;
       const maxLength = spec.constraints.maxLength;
-      if (maxLength !== undefined && codePoints(text) > maxLength) return blank('flagged', 'maxlength-exceeded');
+      // jr6 RULES R4 (U-17): a place too long for the box is written in its shorter form ("City, ST"), never cut.
+      const over = maxLength !== undefined && codePoints(shaped.text) > maxLength;
+      const fitting = over ? shaped.shorter?.find((form) => codePoints(form) <= maxLength!) : undefined;
+      if (over && fitting === undefined) return blank('flagged', 'maxlength-exceeded');
+      const text = fitting ?? shaped.text;
+      const origin = fitting === undefined ? undefined : shortPlaceOrigin(resolution.origin);
       if (current.kind === 'text' && current.text.trim() !== '') {
         if (sameText(category, current.text, text)) return blank('skipped', 'already-correct');
         // The page drew the number nationally beside a country control that shows its dial code: it holds the number.
@@ -556,10 +624,12 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
           return blank('skipped', 'already-correct');
         }
         // A page's own text in a box of prose is the person's to judge; in a structured field the profile wins.
-        if (spec.kind === 'textarea') return blank('flagged', 'prefill-kept');
-        return { value: { kind: 'text', text }, match: NOT_APPLICABLE, flag: 'prefill-conflict' };
+        // jr6 RULES (WD-07): and so does it in a box of prose of a block the run assigned, from that block's entry.
+        if (spec.kind === 'textarea' && !fromAssignedBlock(spec, resolution, ctx)) return blank('flagged', 'prefill-kept');
+        return { value: { kind: 'text', text }, match: NOT_APPLICABLE, flag: 'prefill-conflict',
+          ...(origin !== undefined ? { origin } : {}) };
       }
-      return { value: { kind: 'text', text }, match: NOT_APPLICABLE };
+      return { value: { kind: 'text', text }, match: NOT_APPLICABLE, ...(origin !== undefined ? { origin } : {}) };
     }
     case 'date':
       if (current.kind === 'text' && current.text.trim() === shaped.iso) return blank('skipped', 'already-correct');
@@ -570,6 +640,10 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       // and the person chose "Résumé already on the page: Upload mine again" (uploadsHeldResume).
       if (current.kind === 'files' && current.count > 0 && !uploadsHeldResume(spec, category, ctx.input)) {
         return blank('flagged', 'prefill-kept');
+      }
+      // jr6 RULES R4 (ICIMS-23): one whose input sits behind a replace control is never written: the person's.
+      if (uploadsHeldResume(spec, category, ctx.input) && behindReplaceControl(spec)) {
+        return blank('flagged', 'resume-held-no-input');
       }
       return { value: { kind: 'file', ref: shaped.ref }, match: NOT_APPLICABLE };
     case 'check': {
@@ -644,7 +718,7 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       const eeoPart = resolution.policy === 'eeo' && multi.reason === 'partial-multi-select'
         && multi.extraneous.length === 0 && multi.conflicts.length === 0 && multi.skippedByMax.length === 0;
       if (eeoPart && multi.add.length === 0 && multi.keep.length === 0) {
-        const declined = declineInstead(spec, resolution, shaped.set[0]!, ctx);
+        const declined = declineInstead(spec, resolution, shaped.set[0]!, ctx, shaped.set);
         if (declined !== null) return { value: { kind: 'options', indices: [declined.index], cleanLabels: [declined.clean] },
           match: declined.match, origin: NOT_OFFERED,
           multi: { profileSetSize: 1, kept: 0, exclusive: new Set(prepare(shaped.set[0]!).list
@@ -891,6 +965,112 @@ function withoutOwnDetail(spec: FieldSpec, judged: LlmClassification): LlmClassi
 }
 // s2 core-gh end
 
+// jr6 RULES (JV-6) ──────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The classes a follow-up's "Not Applicable" may fill (guard/provenance.ts RULE_SCOPES conditional.not-applicable),
+ *  and the kinds it is chosen in. */
+const NOT_APPLICABLE_CLASSES: ReadonlySet<PolicyClass> = new Set<PolicyClass>(['profile', 'free-text', 'unknown']);
+const NOT_APPLICABLE_KINDS: ReadonlySet<FieldSpec['kind']> = new Set<FieldSpec['kind']>(['select', 'radio',
+  'combobox']);
+
+/**
+ * jr6 RULES (JV-6, fixtures jr6-sikich-step3: "If yes, do the terms of the agreement restrict you from working at
+ * Sikich?" with Yes / No / Not Applicable, after a non-compete question answered No): a follow-up whose answer above is
+ * the opposite of what it follows (conditional.ts conditionOpposed) takes its list's one "Not Applicable" ("N/A", "Does
+ * not apply", "None"), flagged (rule conditional.not-applicable), through guardWrite. Null where the list offers no such
+ * option or several, is not read whole, or the field is no open question (a legal, EEO or consent one, a tripwire, an
+ * attention check, how the application was made, a binding waiver).
+ */
+function planNotApplicable(spec: FieldSpec, resolution: Resolution, classification: FieldClassification,
+  ctx: FieldPlanContext): FieldPlan | null {
+  if (classification.by === 'tripwire' || classification.by === 'attention') return null;
+  const handed = classification.by === 'rules' ? classification.rules.needsUser : undefined;
+  if (handed === 'how-made' || handed === 'binding-waiver') return null;
+  if (!NOT_APPLICABLE_CLASSES.has(policyClassOf(resolution.category)) || !NOT_APPLICABLE_KINDS.has(spec.kind)
+    || spec.options === 'lazy' || spec.optionsPartial === true || spec.disabled || spec.readOnly
+    || !checkHoneypot(spec).ok) return null;
+  const prepared = prepareOptions(spec.options, 'generic', ctx.input.vocab);
+  const usable = prepared.list.filter((option) => !option.unusable && !option.disabled && !option.injected);
+  const at = notApplicableOption(usable.map((option) => option.clean));
+  if (at === null) return null;
+  const option = usable[at]!;
+  const confidence = round(VALUE_DERIVED);
+  if (selectedIndices(spec, prepared).has(option.index)) {
+    return { row: rowWithout(spec, resolution.category, 'skipped', 'already-correct', confidence) };
+  }
+  const write: PlannedWrite = { key: spec.key, value: { kind: 'option', index: option.index, cleanLabel: option.clean },
+    origin: { provenance: 'rule', ruleId: 'conditional.not-applicable' },
+    match: { ...NOT_APPLICABLE, stage: 'exact', optionIndex: option.index, rule: 'raw' } };
+  const verdict = guardWrite(write, { spec, category: resolution.category }, ctx.guard);
+  if (!verdict.ok) {
+    return { row: rowWithout(spec, resolution.category, refusedStatus(spec, verdict.reason), verdict.reason, confidence) };
+  }
+  return { write, row: { key: spec.key, label: spec.label, kind: spec.kind, category: resolution.category,
+    section: sectionKey(spec.section), required: spec.required, status: 'flagged', provenance: 'rule',
+    matcherStage: 'exact', confidence, reason: 'filled-low-confidence', wrote: false, verification: 'not-checked',
+    needsUserAction: false } };
+}
+
+// jr6 RULES end
+
+/** jr6 RULES R3 (ICIMS-19): "Please specify" or "Please specify further", a list's own label for its detail. */
+const SPECIFY_FURTHER = /^please\s+specify(?:\s+further)?$|^(?:if\s+other\s+)?please\s+specify\s+(?:the\s+)?(?:source|details?)$/;
+
+/**
+ * jr6 RULES R3 (ICIMS-19: iCIMS's dependent "Please specify" / "Please specify further" list right after "How did you
+ * hear about us?", fixtures jr6-ars-profile-filled; Jobright re-reads iCIMS's combo questions once settled,
+ * getIcimsComboQuestionRules: cited): a list labelled only so, that the rules read as nothing certain, right after a
+ * referral source in its section (in the page's order), is the source specified further (referral.detail). Every other
+ * classification stands.
+ */
+function referralDetailAfterSource(classified: ReadonlyArray<{ spec: FieldSpec; classification: FieldClassification }>):
+  Array<{ spec: FieldSpec; classification: FieldClassification }> {
+  const ordered = [...classified].sort((a, b) => a.spec.domOrder - b.spec.domOrder);
+  const detail = new Set<FieldSpec>();
+  ordered.forEach((field, at) => {
+    const before = ordered[at - 1];
+    const { spec, classification } = field;
+    if (before === undefined || categoryOf(before.classification) !== 'referral.source'
+      || sectionKey(before.spec.section) !== sectionKey(spec.section)) return;
+    if (spec.kind !== 'select' && spec.kind !== 'combobox') return;
+    if (!SPECIFY_FURTHER.test(normalize(spec.label, 'label').key)) return;
+    const category = categoryOf(classification);
+    if (classification.by === 'none' || category === 'unknown' || category === 'screening.other') detail.add(spec);
+  });
+  return classified.map((field) => (detail.has(field.spec) ? { ...field, classification: { by: 'rules',
+    rules: { category: 'referral.detail', confidence: LABEL_RULE_CONFIDENCE.normal, classifiedBy: 'label-rule',
+      rule: 'label.referral-detail', reason: 'ok', matchedOn: 'label' } } } : field));
+}
+
+/** jr6 RULES R3 (U-11): a box labelled with the word "Middle" alone. */
+const MIDDLE_ALONE = /^middle$/;
+/** jr6 RULES R3 (U-11): how far, in the section's order, the first and last names may sit from it. */
+const NAME_REACH = 2;
+
+/**
+ * jr6 RULES R3 (U-11: UltiPro's "First", "Middle", "Last" name boxes, fixtures/ultipro/application and resume-review): a
+ * text box labelled "Middle" alone, that the rules read as nothing certain, with a first name and a last name within
+ * NAME_REACH fields of it in its section (in the page's order), is the middle name (identity.middleName). Every other
+ * classification stands.
+ */
+function middleBesideNames(classified: ReadonlyArray<{ spec: FieldSpec; classification: FieldClassification }>):
+  Array<{ spec: FieldSpec; classification: FieldClassification }> {
+  const ordered = [...classified].sort((a, b) => a.spec.domOrder - b.spec.domOrder);
+  const middle = new Set<FieldSpec>();
+  ordered.forEach(({ spec, classification }, at) => {
+    if (spec.kind !== 'text' || !MIDDLE_ALONE.test(normalize(spec.label, 'label').key)) return;
+    const category = categoryOf(classification);
+    if (classification.by !== 'none' && category !== 'unknown' && category !== 'screening.other') return;
+    const near = ordered.slice(Math.max(0, at - NAME_REACH), at + NAME_REACH + 1)
+      .filter((field) => field.spec !== spec && sectionKey(field.spec.section) === sectionKey(spec.section))
+      .map((field) => categoryOf(field.classification));
+    if (near.includes('identity.firstName') && near.includes('identity.lastName')) middle.add(spec);
+  });
+  return classified.map((field) => (middle.has(field.spec) ? { ...field, classification: { by: 'rules',
+    rules: { category: 'identity.middleName', confidence: LABEL_RULE_CONFIDENCE.normal, classifiedBy: 'label-rule',
+      rule: 'label.middle-beside-names', reason: 'ok', matchedOn: 'label' } } } : field));
+}
+
 /**
  * s2 core-gh review (C7): a whole-address box ("Current address", "Primary Residence Address": label.full-address) is
  * the street's (address.line1) where its section has its own city or postal-code box: the form asks the rest there.
@@ -1077,8 +1257,10 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const sections = repeatables.length > 0 ? { repeatables } : {};
   // Every spec is read across the frame; only the planned ones are resolved, written and rowed.
   const wanted = input.planKeys === undefined ? null : new Set<string>(input.planKeys);
-  const classified = streetWhereSplit(input.specs.map((spec) => ({ spec,
-    classification: classifyField(spec, input.vocab) })));
+  // jr6 RULES R3 (ICIMS-19): a "Please specify" list right after a referral source is its detail; (U-11) a "Middle" box
+  // between the first and last names is the middle name.
+  const classified = middleBesideNames(referralDetailAfterSource(streetWhereSplit(input.specs.map((spec) => ({ spec,
+    classification: classifyField(spec, input.vocab) })))));
   // A phone number is written without its country code when the section has its own control for the code.
   const phoneCountrySections = new Set(classified
     .filter((field) => categoryOf(field.classification) === 'contact.phoneCountry')
@@ -1155,7 +1337,7 @@ export function planFrame(asked: PlanInput): PlanOutput {
     answerAll: input.settings.llm.answers && input.settings.modes.ai === 'all' };
   const ctx: FieldPlanContext = { input, guard, drops: new Set(),
     legal: { settings: input.settings, ...(postingCountry !== undefined ? { postingCountry } : {}) },
-    phoneCodes: phoneCodesShown(classified) };
+    phoneCodes: phoneCodesShown(classified), blockEntries };
   // Drafts (Phase 6): a free-text question no saved answer fills, with the setting on and never in a dry run, takes
   // the run's draft when there is one, and is asked for otherwise. Then answers (the owner's amendments): a question
   // nothing else settled, and no tiebreak or classification waits on, takes the run's answer, or is asked. A
@@ -1228,6 +1410,11 @@ export function planFrame(asked: PlanInput): PlanOutput {
       if (standing.write !== undefined || standing.asked !== undefined || standing.row.status === 'blocked') {
         return { spec, ...standing };
       }
+      // jr6 RULES (JV-6): the answer above is the opposite of what it follows, and the list offers one "Not
+      // Applicable".
+      const notApplicable = conditionOpposed(condition, answerAbove(spec))
+        ? planNotApplicable(spec, field.resolution, classification, ctx) : null;
+      if (notApplicable !== null) return { spec, ...notApplicable };
       return { spec, ...standing, row: rowWithout(spec, field.resolution.category,
         spec.required ? 'flagged' : 'skipped', 'conditional-question', standing.row.confidence) };
     }
@@ -1301,6 +1488,22 @@ export function planFrame(asked: PlanInput): PlanOutput {
     if (one.write !== undefined) writing.set(specs[at]!.key, one.write.value);
     planned[at] = one;
   }
+  // jr6 RULES (U-09, ADP-17): an EEO decline box ticked only where the list beside it lacks a decline of its own.
+  settleDeclineBoxes(planned, new Map(resolved.map((field) => [field.resolution.key, field.resolution])), classified,
+    input.vocab);
+  // jr6 RULES R4 (ICIMS-24): a school's companion box only where its list lacks the school; (U-16) a secondary phone
+  // left empty beside the primary.
+  settleSchoolCompanions(planned, classified, input.vocab);
+  settleSecondaryPhones(planned, classified);
+  // jr6 RULES R4 (jobvite-new-5, Sikich's optional "If yes, …" after a question answered No, fixtures jr6-sikich-step3):
+  // an optional follow-up whose answer above is the opposite of what it follows is never classified (one AI round
+  // less); it stays skipped, conditional-question.
+  const opposed = new Set<string>(specs.filter((spec) => {
+    const condition = spec.required ? null : conditionOf(spec.label);
+    return condition !== null && conditionOpposed(condition, answerAbove(spec));
+  }).map((spec) => spec.key));
+  for (let at = classify.length - 1; at >= 0; at -= 1) if (opposed.has(classify[at]!.key)) classify.splice(at, 1);
+  for (const key of opposed) unclassified.delete(key);
   // v5 p2-stream (one round): a field nothing classified whose answer was not asked with it (a draft took it, or the
   // answer step would not ask it) is classified first, as before.
   for (const [key, item] of unclassified) if (!askedOnce.has(key)) classify.push(item);

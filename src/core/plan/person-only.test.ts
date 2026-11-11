@@ -196,15 +196,18 @@ describe('S-5, v4 (D5): a consent asked as Yes/No and a binding waiver follow th
 
   it('never answers whether a commitment binds the person now but from their own answer: its Yes states a fact', () => {
     // Amazon's Greenhouse form (fixtures/greenhouse/twitch-job). s2 core-gh: a restrictive agreement asked as a fact is
-    // the person's own answer from the sensitive part (screening.restrictiveAgreement), never a consent and never an
-    // AI's; without one it stays unanswered.
+    // the person's own answer from the sensitive part (screening.restrictiveAgreement), never a consent. jr6 RULES
+    // (jobvite-new-1, the owner's "absolutely all"): without one, the `all` scope's AI answers it (an AI guess unless a
+    // fact settles it); the profile's own answer is never asked about.
     const label = 'Are you subject to a non-competition agreement or other agreement that would preclude or restrict your employment at Amazon?';
     const answered = { ...profile, screening: { ...profile.screening,
       restrictiveAgreement: { kind: 'value' as const, value: false } } };
     for (const required of [true, false]) {
       const list = specOf(label, 'select', { optionLabels: ['Yes', 'No'], required });
       for (const out of [planOf([list], { profile }), planOf([list], { profile, ai: unclassified(list) })]) {
-        askedNothing(out);
+        expect(out.ask?.classify ?? []).toEqual([]);
+        expect(out.ask?.drafts ?? []).toEqual([]);
+        expect(out.ask?.answers?.map((item) => [item.key, item.scope])).toEqual([[list.key, 'all']]);
         expect(fieldOf(out, list)).toMatchObject({ write: undefined,
           row: { category: 'screening.restrictiveAgreement', reason: 'legal-not-in-profile', wrote: false } });
       }

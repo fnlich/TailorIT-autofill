@@ -19,7 +19,14 @@ import type { Settings } from '../types/settings';
 /** The entity searches whose list's own "Other" may be chosen when nothing else is (see the header). */
 export const NO_MATCH_OTHER_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['education.school',
   'education.field', 'experience.company', 'experience.currentCompany', 'location.current', 'experience.location',
-  'referral.source', 'contact.phoneCountry']);
+  'referral.source', 'contact.phoneCountry',
+  // jr6 RULES R3 (ICIMS-19): how the person heard, specified further.
+  'referral.detail']);
+
+/** jr6 RULES R3 (ICIMS-19, ICIMS-20): the referral lists whose answer is the profile's source by an exact or alias match
+ *  alone; where none is, the list's own "Other" (noMatchOtherAllowed), never an LLM tiebreak or a weak match. */
+export const REFERRAL_LISTS: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['referral.source',
+  'referral.detail']);
 
 /** The person's setting (stored since settings version 7; 'other' by default). A settings object that names none (one
  *  built before version 7, or a test's) reads as the default too. */

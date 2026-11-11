@@ -54,8 +54,15 @@ export function substantive(option: PreparedOption): boolean {
   return chooseable(option) && !option.other && !option.exclusive && !option.decline;
 }
 
-/** The text of a clean label that is matched: in the country domain, without a dial code. */
+/** jr6 RULES (JZ-6, JazzHR's EEO list: fixtures invaluable-form, nucleussecurity-form): a race option's trailing
+ *  ", not Hispanic or Latino" (", Hispanic or Latino"), which is the same answer to the Hispanic question as a bracket
+ *  ("White (Not Hispanic or Latino)"). */
+const HISPANIC_CLAUSE = /^(.*\S)\s*,\s*((?:(?:not|non)[\s-]*)?(?:hispanic|latin[aoxe])(?:\s*(?:or|and|\/)\s*latin[aoxe])?)\s*\.?$/i;
+
+/** The text of a clean label that is matched: in the country domain, without a dial code; in the race domain, a
+ *  trailing Hispanic clause read as its bracket. */
 function matchedText(clean: string, domain: MatchDomain): string {
+  if (domain === 'eeo.race') return clean.replace(HISPANIC_CLAUSE, '$1 ($2)');
   return domain === 'country' ? withoutDialCode(clean) : clean;
 }
 
