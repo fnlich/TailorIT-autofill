@@ -278,6 +278,18 @@ describe('12 (JV-2): a veteran group labelled "Choose One" takes the profile’s
       + 'PROTECTED VETERANS LISTED ABOVE', 'I AM NOT A PROTECTED VETERAN', 'DECLINE SELF-IDENTIFICATION'] });
     expect(written(planned([spec], spec).write)).toBe('I AM NOT A PROTECTED VETERAN');
   });
+
+  // jr6 fix (RULES-DECLINE-SELF-IDENTIFICATION, REVC-9): Jobvite's lists (jr6-sikich-step2, jr6-vhl-step2,
+  // ninjaone-step2) word their decline as a noun, "DECLINE SELF-IDENTIFICATION" (vocab/curated/decline.json).
+  it('chooses "DECLINE SELF-IDENTIFICATION" for a person who declines the veteran question', () => {
+    const spec = specOf('Choose One', 'radio', { required: true, optionLabels: ['I IDENTIFY AS ONE OR MORE OF THE '
+      + 'CLASSIFICATIONS OF PROTECTED VETERANS LISTED ABOVE', 'I AM NOT A PROTECTED VETERAN',
+    'DECLINE SELF-IDENTIFICATION'] });
+    const declining = withEeo({ veteran: { kind: 'decline' } });
+    expect(planned([spec], spec, { profile: declining })).toMatchObject({
+      write: { value: { cleanLabel: 'DECLINE SELF-IDENTIFICATION' } }, row: { category: 'eeo.veteran' } });
+    expect(planned([spec], spec, { profile: declining }).row.reason).not.toBe('decline-option-missing');
+  });
 });
 
 describe('13 (JV-3, WD-26, ADP-14, O3): the county', () => {
