@@ -131,6 +131,19 @@ export const WORKDAY_STEP_SNAPSHOTS = ['fixtures/workday/cisive-autofill-resume.
   // the "Errors Found" summary, and its Degree list open.
   'fixtures/workday/s2-pureinsurance-my-experience-errors.html', 'fixtures/workday/s2-pureinsurance-degree-open.html'] as const;
 
+/** jr6 (FIXPLAN §6.4): the owner's captures of 2026-11-06 the jr6 hooks were written from and are held against
+ *  (jr6-workday.browser.test.ts), converted with the jr6 converter: Application Questions, Voluntary Disclosures, My
+ *  Information, My Experience, Create Account, Sign In and Autofill with Resume of eleven tenants. */
+export const WORKDAY_JR6_SNAPSHOTS = ['gnw-application-questions', 'parsons-application-questions',
+  'travelers-application-questions', 'verily-application-questions', 'cisive-application-questions',
+  'danafarber-application-questions-1', 'danafarber-application-questions-2', 'resolvetech-voluntary-disclosures',
+  'cisive-voluntary-disclosures', 'web-voluntary-disclosures', 'gnw-voluntary-disclosures',
+  'travelers-voluntary-disclosures', 'aep-voluntary-disclosures', 'verawholehealth-voluntary-disclosures',
+  'brookfield-voluntary-disclosures', 'verily-voluntary-disclosures', 'parsons-voluntary-disclosures',
+  'danafarber-my-information', 'cisive-my-information', 'web-my-information', 'danafarber-my-experience',
+  'parsons-my-experience', 'travelers-my-experience', 'aep-create-account', 'brookfield-sign-in', 'aep-autofill-resume']
+  .map((name) => `fixtures/workday/jr6-${name}.html`);
+
 /**
  * The step pages before Review, by their data-automation-id, each from the snapshots of a whole flow (the progress
  * bar's names in brackets): applyFlowAutoFillPage ("Autofill with Resume", cisive's "Careers"), applyFlowMyInfoPage

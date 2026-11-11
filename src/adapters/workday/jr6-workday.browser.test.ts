@@ -21,7 +21,7 @@ import { detectPause } from '../../dom/pause-detect';
 import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.testkit';
 import { scan, toFieldSpec } from '../../dom/scan';
 import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
-import { WORKDAY_SKILLS_CAP } from './application';
+import { WORKDAY_JR6_SNAPSHOTS, WORKDAY_SKILLS_CAP } from './application';
 import { workdayAdapter } from './index';
 // The owner's jr6 pages.
 import gnwAq from '../../../fixtures/workday/jr6-gnw-application-questions.html?raw';
@@ -125,8 +125,9 @@ const STEPS: Step[] = [
 ];
 
 describe('jr6 WORKDAY: every jr6 page’s step, as the adapter reads it', () => {
-  it('holds the 26 jr6 cases', () => {
+  it('holds the 26 jr6 cases, every page the jr6 hooks were written from', () => {
     expect(new Set(STEPS.map((step) => step.name)).size).toBe(26);
+    expect(STEPS.map((step) => `fixtures/workday/${step.name}.html`).sort()).toEqual([...WORKDAY_JR6_SNAPSHOTS].sort());
   });
 
   it.each(STEPS)('$name', async (step) => {
