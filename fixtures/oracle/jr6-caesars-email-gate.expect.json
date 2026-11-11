@@ -58,7 +58,8 @@
     "neverPress": [
       "[data-qa=\"emailVerificationCancelButton\"]",
       "button.app-dialog__close",
-      ".app-dialog__footer-button"
+      ".app-dialog__footer-button",
+      "button.quick-apply-flow-verify-method__button"
     ],
     "pressable": [
       "button[type=\"submit\"][title=\"Next\"]"

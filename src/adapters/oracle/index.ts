@@ -71,6 +71,12 @@
  *   Experience" and "Add Education", the licences' "Add License" and the links' "Add Another Link".
  * What the scanner reads there, and why most of it is not fillable (the flow's form is a 75% translucent panel over the
  * tenant's cover image, so the trap rules cannot work out its colours), is oracle.browser.test.ts's KNOWN list.
+ * jr6 (FIXPLAN §6.11, APPLYPLAN E-Oracle; the owner's snapshots of a us2 tenant's posting and gate,
+ * fixtures/oracle/jr6-caesars-posting.html and jr6-caesars-email-gate.html; Jobright 1.25.2 as a behaviour reference,
+ * each rule citing its function; jr6-oracle.browser.test.ts):
+ * - Entry (C8): APPLY NOW only in its "apply now" state, by its modifier apply-now-button--apply-now or its words "Apply
+ *   Now" in any case; the same button in another state is never the entry (it stays never pressed).
+ * - Never pressed (O16): the gate's "Do you want to communicate by phone instead?".
  * Nothing here reads, logs or sends a value.
  */
 // The P2 review (security 1)
@@ -154,11 +160,26 @@ function unprovenOwnDomain(doc: Document): boolean {
     && !oracleCandidateExperienceShown(doc);
 }
 
-/** APPLY NOW: <div class="job-details__section-apply-button"><button class="... apply-now-button ...">. */
+/** jr6 C8 (APPLYPLAN E-Oracle): the state the posting's button is in when it opens the application. Both postings
+ *  (jpmc-posting.html and jr6-caesars-posting.html) draw it <button data-bind="click: click, enable: isEnable, class:
+ *  buttonStatusC" class="button apply-now-button theme-color-1 apply-now-button--apply-now">Apply Now</button>: its
+ *  binding swaps that modifier for the button's other states, which no snapshot shows. */
+const APPLY_NOW_STATE = 'apply-now-button--apply-now';
+
+/** Whether the button is in its "apply now" state: its modifier, or its own words "Apply Now" in any case (Jobright
+ *  1.25.2's proceedOracleJobDetailToApply takes only a button whose words are exactly "APPLY NOW" or "Apply Now"). Another
+ *  state of the same button ("already applied", a closed posting) is never the entry. */
+function appliesNow(button: HTMLElement): boolean {
+  return button.classList.contains(APPLY_NOW_STATE)
+    || (button.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase() === 'apply now';
+}
+
+/** APPLY NOW: <div class="job-details__section-apply-button"><button class="... apply-now-button ...">, in its "apply
+ *  now" state (appliesNow). */
 function entryControl(doc: Document): HTMLElement | null {
   if (unprovenOwnDomain(doc)) return null;
   return shown(Array.from(doc.querySelectorAll<HTMLElement>(
-    '.job-details__section-apply-button button.apply-now-button')));
+    '.job-details__section-apply-button button.apply-now-button')).filter(appliesNow));
 }
 
 function authState(doc: Document): ReturnType<NonNullable<Adapter['authState']>> {
@@ -280,7 +301,11 @@ const NEVER_PRESSED = ['.job-details__section-apply-button button.apply-now-butt
   'button.apply-flow-profile-import-again-button', 'button.attachment-upload-button__download',
   'button.attachment-upload-button__bottom-button', 'button.icon-clear', 'button.communication-channel__value-edit',
   'button.app-header__close', '#timeline-add-experience-button', '#timeline-add-education-button',
-  'button.apply-flow-profile-item-tile__new-tile', 'button.candidate-links__add-link'];
+  'button.apply-flow-profile-item-tile__new-tile', 'button.candidate-links__add-link',
+  // ── jr6 O16 ── jr6-caesars-email-gate.html: <button type="button" class="quick-apply-flow-verify-method__button" ...>Do
+  // you want to communicate by phone instead?</button>, inside the gate's form: it switches the gate to a code sent by
+  // text message (Jobright 1.25.2's gate handler never presses it either).
+  'button.quick-apply-flow-verify-method__button'];
 
 function neverPress(root: Element): Element[] {
   return Array.from(root.ownerDocument.querySelectorAll(NEVER_PRESSED.join(', ')));
