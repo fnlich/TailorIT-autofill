@@ -517,7 +517,7 @@ const LABELS_R3B: Array<[string, Case, FieldCategory, string]> = [
   // 51. ADP-7: ADP's "Select currency type"; Breezy's "Desired Salary currency".
   ['51 ADP-7', { label: 'Select currency type', kind: 'combobox' }, 'salary.currency', 'label.currency'],
   ['51 ADP-7', { label: 'Select currency type', kind: 'select',
-    options: ['United States Dollar ( USD )', 'Euro ( EUR )'] }, 'salary.currency', 'label.currency'],
+    options: ['Canadian Dollar ( CAD )', 'Euro ( EUR )'] }, 'salary.currency', 'label.currency'],
   ['51 ADP-7', { label: 'Desired Salary currency', kind: 'select' }, 'salary.currency', 'label.currency'],
   ['51 ADP-7', { label: 'Currency', kind: 'text' }, 'salary.currency', 'label.currency'],
   // 52. ADP-8, WD-27: how soon, when could the person start.

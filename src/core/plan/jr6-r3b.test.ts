@@ -64,14 +64,14 @@ describe('50 (ADP-4): a state or territory is the region', () => {
 
 describe('51 (ADP-7): the currency by its code in the list’s words', () => {
   const list = specOf('Select currency type', 'select', { optionLabels: ['Select...', 'Canadian Dollar ( CAD )',
-    'United States Dollar ( USD )', 'Euro ( EUR )'], required: true });
+    'Pound Sterling ( GBP )', 'Euro ( EUR )'], required: true });
   it('chooses the option that writes the person’s code, and types the code in a box', () => {
-    expect(planned([list], list, { profile: paid('USD') }).write).toMatchObject({
-      value: { cleanLabel: 'United States Dollar ( USD )' },
+    expect(planned([list], list, { profile: paid('CAD') }).write).toMatchObject({
+      value: { cleanLabel: 'Canadian Dollar ( CAD )' },
       origin: { provenance: 'profile', path: 'preferences.expectedSalary' } });
     expect(written(planned([list], list, { profile: paid('EUR') }).write)).toBe('Euro ( EUR )');
     const box = specOf('Currency', 'text');
-    expect(written(planned([box], box, { profile: paid('USD') }).write)).toBe('USD');
+    expect(written(planned([box], box, { profile: paid('GBP') }).write)).toBe('GBP');
   });
   it('leaves it to the `all` scope where the profile holds no expected pay (no default from the posting: owner Q8)',
     () => {

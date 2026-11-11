@@ -36,7 +36,7 @@ const asked = (specs: FieldSpec[], extra: Partial<PlanInput> = {}) => {
 const nothingAsked = { classify: [], drafts: [], answers: [] };
 /** The golden profile with an expected salary paid by this period. */
 const paidBy = (period: 'year' | 'month' | 'hour'): Profile => ({ ...golden, preferences: { ...golden.preferences,
-  expectedSalary: { kind: 'value', value: { min: 150_000, currency: 'USD', period } } } });
+  expectedSalary: { kind: 'value', value: { min: 150_000, currency: 'CAD', period } } } });
 const upload = settingsWith({ modes: { ...DEFAULT_SETTINGS.modes, resumeOnPage: 'upload' } });
 
 describe('62 (WD-25): a prefix the profile never holds', () => {
