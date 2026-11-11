@@ -1,6 +1,6 @@
 {
   "fixture": "icims/jr6-sentinel-profile-filled.frame-1",
-  "source": "https://careers-sentinel.icims.com/jobs/5157/azure-devops-engineer-%e2%80%93-release-coordinator/candidate?hideBasicProfilePageFields=true&resumeSubmitted=1&hrs=1&in_iframe=1",
+  "source": "https://careers-sentinel.icims.com/jobs/5157/azure-REDACTED-%e2%80%93-release-coordinator/candidate?hideBasicProfilePageFields=true&resumeSubmitted=1&hrs=1&in_iframe=1",
   "captured": "2026-11-11T04:07:43.000Z",
   "note": "jr6 P2: careers-sentinel's Candidate Profile as Jobright filled it (Country, then State). Its fields as the scan reads them once ENGINE E1 to E3 and RULES R1 to R4 merged (FIXPLAN §6.5 P2); what a run decides on them is held by src/adapters/icims/jr6-icims.browser.test.ts.",
   "fields": [

@@ -149,6 +149,59 @@ describe('the snapshot6 cases', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
+// FX-R1 (the jr6 fixers' review, platforms-a): careers-sentinel's posting title holds a string the owner's redaction
+// list gained after its six cases were converted. They were converted again with the current converter (jr6-tooling's
+// round 2) and list, the posting's own title, which nothing reads, given synthetic text (--replace-text "head >
+// title=…" and "h1.iCIMS_Header=…", the files in fixtures/synthetic/jr6-icims/): a REDACTED inside a posting's title
+// would tell the listed value by elimination (the converter refuses that in a posting's description, not in its title).
+// ---------------------------------------------------------------------------------------------------------------------
+
+const SYNTHETIC = import.meta.glob('../../../fixtures/synthetic/jr6-icims/*.txt',
+  { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
+/** A page's or frame's own document, parsed (nothing loaded), and its fixture header. */
+function parsedOf(name: string): { doc: Document; header: { replacedText?: readonly number[] } } {
+  const { html } = fileOf(name);
+  const header = JSON.parse(/<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(html)?.[1] ?? '{}') as
+    { replacedText?: readonly number[] };
+  return { doc: new DOMParser().parseFromString(html, 'text/html'), header };
+}
+
+describe('careers-sentinel’s posting title (FX-R1)', () => {
+  /** Each case, and the synthetic page title of its step (the step's own words, then the synthetic posting title). */
+  const STEP_TITLES = [['jr6-sentinel-basic-info', 'title-basic-information'],
+    ['jr6-sentinel-basic-info-filled', 'title-basic-information'], ['jr6-sentinel-profile', 'title-candidate-profile'],
+    ['jr6-sentinel-profile-filled', 'title-candidate-profile'],
+    ['jr6-sentinel-job-questions', 'title-job-specific-questions'], ['jr6-sentinel-iform-selfid', 'title-iform']] as const;
+
+  it.each(STEP_TITLES)('%s: the page’s and its frame’s title and the frame’s posting heading are synthetic text',
+    (name, titleFile) => {
+      const title = byFile(SYNTHETIC, `${titleFile}.txt`)!.trim();
+      const heading = byFile(SYNTHETIC, 'posting-title.txt')!.trim();
+      expect(title).toBe(`${title.split(' - ')[0]} - ${heading}`);
+      const wrapper = parsedOf(name);
+      const frame = parsedOf(`${name}.frame-1`);
+      expect(wrapper.doc.title).toBe(title);
+      expect(frame.doc.title).toBe(title);
+      expect([...frame.doc.querySelectorAll('h1.iCIMS_Header')].map((h1) => h1.textContent!.trim())).toEqual([heading]);
+      // The converter's own record, by position (head > title, then h1.iCIMS_Header): the wrapper has no posting heading.
+      expect(wrapper.header.replacedText).toEqual([1, 0]);
+      expect(frame.header.replacedText).toEqual([1, 1]);
+    });
+
+  it('no jr6 page or frame, TOOLING’s postings too, shows REDACTED in its title or its posting heading', () => {
+    const names = Object.keys(PAGES).map((path) => path.split('/').pop()!.replace(/\.html$/, ''))
+      .filter((name) => !name.endsWith('.third-party-frame'));
+    expect(names.length).toBe(30);
+    for (const name of names) {
+      const { doc } = parsedOf(name);
+      const shown = [doc.title, ...[...doc.querySelectorAll('h1.iCIMS_Header')].map((h1) => h1.textContent ?? '')];
+      expect(shown.filter((text) => text.includes('REDACTED')), name).toEqual([]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
 // The posting's Apply (BUILD.md section 4: ICIMS keeps it unchanged)
 // ---------------------------------------------------------------------------------------------------------------------
 
