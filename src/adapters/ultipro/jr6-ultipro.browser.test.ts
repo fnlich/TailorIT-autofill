@@ -148,9 +148,10 @@ describe('jr6 UltiPro: the pages as the step machine reads them (the audit harne
 });
 
 describe('U-01: the review\'s parsed entries are blocks, matched by their fingerprint', () => {
-  /** Synthetic stand-ins for a parse of three jobs (never the owner's): the golden profile's two jobs, then one the
-   *  profile does not hold. */
-  const PARSED = [['Senior Software Engineer', 'Quillfeather Labs', 'Austin, TX'], ['Software Engineer', 'Marrowgate Systems', ''],
+  /** Synthetic stand-ins for a parse of three jobs (never the owner's): the golden profile's two jobs (their title and
+   *  company read from it), then one the profile does not hold. */
+  const JOBS = goldenProfile().experience;
+  const PARSED = [[JOBS[0]!.title, JOBS[0]!.company, 'Austin, TX'], [JOBS[1]!.title, JOBS[1]!.company, ''],
     ['Intern', 'Northwind Traders', 'Dallas, TX']] as const;
 
   function parse(doc: Document): void {
@@ -230,8 +231,7 @@ describe('U-01: the review\'s parsed entries are blocks, matched by their finger
     const plainPlan = planned(plain);
     const plainTitles = plain.fields.filter((field) => field.label === 'Job Title')
       .map((field) => plainPlan.writes.find((each) => each.key === field.key)?.value);
-    expect(plainTitles).toEqual([undefined, { kind: 'text', text: 'Senior Software Engineer' },
-      { kind: 'text', text: 'Senior Software Engineer' }]);
+    expect(plainTitles).toEqual([undefined, { kind: 'text', text: JOBS[0]!.title }, { kind: 'text', text: JOBS[0]!.title }]);
   });
 });
 
