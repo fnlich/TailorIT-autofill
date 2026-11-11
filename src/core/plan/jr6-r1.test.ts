@@ -396,6 +396,26 @@ describe('19 (JV-17): a question asked only of a place’s residents', () => {
       region: { code: 'IL', name: 'Illinois' } } } as Profile;
     expect(planned([illinois], illinois, { profile: local }).write).toBeUndefined();
   });
+
+  // jr6 fix (RULES-R19, REVC-6): NinjaOne's own three options (fixtures/jobvite/ninjaone-step3), one of which is
+  // "outside" another place while in Illinois: the denial of living in Illinois is chosen.
+  it('chooses NinjaOne’s "N/A - I do not live in Illinois." beside its "… in Illinois and outside of Chicago" option',
+    () => {
+      const page = specOf('If you live in Illinois, is your address in the City of Chicago?', 'select', {
+        optionLabels: ['Select an option...', 'N/A - I do not live in Illinois.',
+          'No - I am in Illinois and outside of Chicago, IL.', 'Yes - My address is in Chicago, IL.'], required: true });
+      expect(planned([page], page)).toMatchObject({ write: { value: { cleanLabel: 'N/A - I do not live in Illinois.' },
+        origin: { provenance: 'rule', ruleId: 'location.not-there' } }, row: { status: 'flagged' } });
+      // An option outside of another place, or denying another place, is never the one.
+      const other = specOf('If you live in Illinois, is your address in the City of Chicago?', 'select', {
+        optionLabels: ['Select an option...', 'No - I am in Illinois and outside of Chicago, IL.',
+          'I do not live in Chicago', 'Yes - My address is in Chicago, IL.'], required: true });
+      expect(planned([other], other)).toMatchObject({ write: undefined, row: { reason: 'no-match' } });
+      // "Outside" the asked place itself is.
+      const outside = specOf('If you live in Illinois, is your address in the City of Chicago?', 'select', {
+        optionLabels: ['Select an option...', 'I live outside Illinois', 'Yes', 'No'], required: true });
+      expect(planned([outside], outside).write).toMatchObject({ value: { cleanLabel: 'I live outside Illinois' } });
+    });
 });
 
 describe('20 (jobvite-new-1): a restrictive agreement asked as a fact goes to the `all` scope’s AI', () => {
