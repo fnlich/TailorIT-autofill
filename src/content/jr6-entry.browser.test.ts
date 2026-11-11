@@ -40,6 +40,7 @@ import signInHtml from '../../fixtures/workday/workday-sign-in.html?raw';
 import { adaptersFor, applicationOf } from '../adapters';
 import { ADP_CONFIG, adpAdapter } from '../adapters/adp';
 import { configuredHooks } from '../adapters/configured';
+import type { PageState } from '../adapters/configured/types';
 import { genericAdapter } from '../adapters/generic';
 import { leverAdapter } from '../adapters/lever';
 import { oracleAdapter } from '../adapters/oracle';
@@ -48,10 +49,13 @@ import type { Adapter } from '../adapters/types';
 import { ultiproAdapter } from '../adapters/ultipro';
 import { workableAdapter } from '../adapters/workable';
 import { workdayAdapter } from '../adapters/workday';
+import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { ENTRY_REFUSALS } from '../messaging/schemas';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { deadline } from '../dom/time';
-import { addressOf, keyOf, openAt, pressedKeys, runtimeAt, servedAdapter, wallsOf } from './apply.testkit';
+import {
+  addressOf, applyWorker, keyOf, openAt, pressedKeys, runtimeAt, servedAdapter, wallsOf,
+} from './apply.testkit';
 import { testVocab, type FakeWorker } from './content.testkit';
 import { ENTRY_FORM_WAIT_MS, type ContentRuntime } from './runtime';
 
@@ -73,9 +77,11 @@ const ADP = 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruit
 /** Lever's adapter, reading the page as served at `address`, and the generic one after it (adaptersFor's order). */
 const lever = (address: string): Adapter[] => [servedAdapter(leverAdapter, address), genericAdapter];
 
-/** A stand-in for ADP's declarations on line W (E-ADP: posting.text and entry, quirks), built from ADP's own rules. */
-function adpStub(quirks: NonNullable<Adapter['quirks']>, posting = true): Adapter {
+/** A stand-in for ADP's declarations on line W (E-ADP: posting.text and entry, quirks), built from ADP's own rules;
+ *  `states`, more page states before ADP's own (ADP_PANES). */
+function adpStub(quirks: NonNullable<Adapter['quirks']>, posting = true, states: readonly PageState[] = []): Adapter {
   const hooks = configuredHooks({ ...ADP_CONFIG,
+    states: [...states, ...(ADP_CONFIG.states ?? [])],
     ...(posting ? { posting: { text: 'div.job-description-data',
       entry: 'button#recruitment_jobDescription_apply, button#recruitment_jobDescription_candidateApply',
       from: 'jr6 apply F2 stub of E-ADP' } } : {}),
@@ -92,6 +98,44 @@ function drawGuest(doc: Document): void {
   doc.getElementById('guest-slot')!.append(template.content.cloneNode(true));
 }
 
+/** Stand-ins for line W's ADP panes after Apply (BUILD §4, E-ADP), as page states with no root of their own: the
+ *  privacy notice, whose primary button is the entry's step, and the code choice, the person's. */
+const ADP_PANES: PageState[] = [
+  { name: 'consent', when: 'sdf-focus-pane#jdv_privacy_dailog', auth: 'entry-choice',
+    entry: 'sdf-focus-pane#jdv_privacy_dailog sdf-button[slot="custom-buttons"][emphasis="primary"]',
+    from: 'jr6 apply F2 stub of E-ADP' },
+  { name: 'code-choice', when: 'sdf-focus-pane#login_view_identifier_dialog', auth: 'email-code',
+    from: 'jr6 apply F2 stub of E-ADP' },
+];
+
+/** Draws one of ADP_PANES over the details (made-up words), and answers it. */
+function drawPane(doc: Document, pane: 'consent' | 'code-choice'): Element {
+  const host = doc.createElement('sdf-focus-pane');
+  host.id = pane === 'consent' ? 'jdv_privacy_dailog' : 'login_view_identifier_dialog';
+  host.setAttribute('style', 'display:block;position:fixed;top:10%;left:20%;width:60%;padding:16px;background:#fff');
+  const heading = doc.createElement('h2');
+  heading.textContent = pane === 'consent' ? 'Privacy notice' : 'Where should we send your code?';
+  host.append(heading);
+  for (const words of pane === 'consent' ? ['Decline & Close', 'Consent & Continue'] : ['Email', 'Text message']) {
+    const button = doc.createElement('sdf-button');
+    button.setAttribute('style', 'display:inline-block;padding:8px');
+    button.setAttribute('role', 'button');
+    button.setAttribute('aria-label', words);
+    if (pane === 'consent') {
+      button.setAttribute('slot', 'custom-buttons');
+      button.setAttribute('emphasis', words === 'Consent & Continue' ? 'primary' : 'secondary');
+    }
+    button.textContent = words;
+    host.append(button);
+  }
+  doc.body.append(host);
+  return host;
+}
+
+/** The fake worker's answers to the card's lookups and adds (job-cards.ts reads none of them here). */
+const CARD_ANSWERS = { 'job/lookup': Array.from({ length: 16 }, () => ({ ok: true, data: {} })),
+  'job/add': Array.from({ length: 16 }, () => ({ ok: true, data: {} })) };
+
 /** A hello that says the frame has a form now. */
 const helloWithForm = (worker: FakeWorker) => worker.of('frame/hello')
   .some((message) => message.hasForm === true);
@@ -99,6 +143,53 @@ const helloWithForm = (worker: FakeWorker) => worker.of('frame/hello')
 /** The place of a refusal in ENTRY_REFUSALS, as content.entry logs it. */
 const refusals = (worker: FakeWorker) => wallsOf(worker).filter((wall) => wall.refused)
   .map((wall) => wall.refusal);
+
+/** Sign-in mode Auto (the person's setting). */
+const AUTO = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const } };
+/** A job-site sign-in as the worker answers it (synthetic: the golden profile's address, a made-up password), for the
+ *  page's own host; `press` as the worker says Sign-in acts. */
+const CREDENTIAL = { host: 'jobs.lever.co', email: 'alex.rivera@example.com', password: 'dummy-password-not-real',
+  press: true };
+
+/** Draws a sign-in form (email, password, its Sign in button, recorded as "sign-in-button") in the page's slot: no form
+ *  of Lever's, so the entry's own sign-in step takes it. Made-up words. */
+function drawSignIn(doc: Document): void {
+  const form = doc.createElement('form');
+  form.method = 'post';
+  form.action = '/session';
+  for (const [id, type, label, auto] of [['email', 'email', 'Email', 'username'],
+    ['password', 'password', 'Password', 'current-password']] as const) {
+    const name = doc.createElement('label');
+    name.htmlFor = id;
+    name.textContent = label;
+    const input = doc.createElement('input');
+    input.id = id;
+    input.type = type;
+    input.autocomplete = auto;
+    form.append(name, input);
+  }
+  const button = doc.createElement('button');
+  button.type = 'submit';
+  button.id = 'sign-in-button';
+  button.textContent = 'Sign in';
+  form.append(button);
+  doc.getElementById('slot')!.append(form);
+}
+
+/** A posting at Lever's address whose Apply draws a sign-in form in place 400 ms after its click (AF-3). */
+async function signInAfterApply(): Promise<{ doc: Document; clicks: string[] }> {
+  const opened = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1><a id="apply"
+    href="${LATE}/apply">Apply for this job</a><div id="slot"></div></main></body>`, LATE);
+  const { doc } = opened;
+  doc.getElementById('apply')!.addEventListener('click', () => void deadline(400).then(() => drawSignIn(doc)));
+  return opened;
+}
+
+/** Whether the sign-in's boxes hold anything now (flags only). */
+const typedIn = (doc: Document) => {
+  const value = (id: string) => (doc.getElementById(id) as HTMLInputElement | null)?.value ?? '';
+  return { email: value('email') !== '', password: value('password') !== '' };
+};
 
 describe('jr6 apply F2: an Apply drawn late, one at a time (AF-2, apply-flow-new-4)', () => {
   it('presses an Apply drawn 3 s after run/start, tells the worker at the press, and claims the form drawn in place',
@@ -207,29 +298,7 @@ describe('jr6 apply F2: the step after Apply (AF-3, AF-11, AF-16, apply-b-new-1)
 
   it('a sign-in drawn in place after the press, no form of the adapter\u2019s: the sign-in step, never a refusal (AF-3)',
     async () => {
-      const { doc, clicks } = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1><a id="apply"
-        href="${LATE}/apply">Apply for this job</a><div id="slot"></div></main></body>`, LATE);
-      doc.getElementById('apply')!.addEventListener('click', () => void deadline(400).then(() => {
-        const form = doc.createElement('form');
-        form.method = 'post';
-        form.action = '/session';
-        for (const [id, type, label, auto] of [['email', 'email', 'Email', 'username'],
-          ['password', 'password', 'Password', 'current-password']] as const) {
-          const name = doc.createElement('label');
-          name.htmlFor = id;
-          name.textContent = label;
-          const input = doc.createElement('input');
-          input.id = id;
-          input.type = type;
-          input.autocomplete = auto;
-          form.append(name, input);
-        }
-        const button = doc.createElement('button');
-        button.type = 'submit';
-        button.textContent = 'Sign in';
-        form.append(button);
-        doc.getElementById('slot')!.append(form);
-      }));
+      const { doc, clicks } = await signInAfterApply();
       const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
       runtimes.push(runtime);
       await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
@@ -276,6 +345,34 @@ describe('jr6 apply F2: the door’s refusals and each reason told (AP-7, C7, AF
         await vi.waitFor(() => expect(refusals(worker), attribute).toEqual([reason]), { timeout: 3_000 });
         expect(clicks, attribute).toEqual([]);
         expect(worker.of('entry/pressed'), attribute).toEqual([]);
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 40_000);
+
+  it('the agent hears a door’s refusal (a new tab, a download, another site) as "blocked" "other", nothing pressed (P-4)',
+    async () => {
+      // agent.ts ends a job at once only on 'blocked' (ENTRY_RESULTS): a plain 'not-offered' would wait out its form wait.
+      for (const how of ['target', 'download', 'origin'] as const) {
+        const { doc, clicks } = await openAt(leverHtml, AHEAD);
+        const links = Array.from(doc.querySelectorAll('a.postings-btn'));
+        let own = servedAdapter(leverAdapter, AHEAD);
+        if (how === 'origin') {
+          // Lever's own rule offers no link to another site: a looser entry stands for one that would.
+          for (const link of links) link.setAttribute('href', 'https://apply.example-ats.com/job/1/apply');
+          own = { ...own, entryControl: (d) => d.querySelector<HTMLElement>('a.postings-btn') };
+        } else {
+          for (const link of links) link.setAttribute(how, how === 'target' ? '_blank' : '');
+        }
+        const { worker, runtime } = await runtimeAt(doc, AHEAD, [own, genericAdapter]);
+        runtimes.push(runtime);
+        expect(await worker.platform.deliver({ v: 1, type: 'agent/enter' }), how)
+          .toEqual({ ok: true, data: { outcome: 'blocked', block: 'other' } });
+        await deadline(300);
+        expect(clicks, how).toEqual([]);
+        expect(worker.of('agent/entered'), how).toEqual([]);
+        expect(worker.of('entry/pressed'), how).toEqual([]);
         runtime.stop();
         runtimes.splice(0);
         removeFixtures(document);
@@ -392,6 +489,68 @@ describe('jr6 apply F2: forms drawn in place, late or at the posting’s address
       expect(runtime.page?.adapter.id).toBe('adp');
     }, 30_000);
 
+  it('ADP-like details: the card’s job/refresh is relayed before the press, under each pane, and at the guest form; never where no entry was said (P-1)',
+    async () => {
+      const refresh = (worker: FakeWorker, action: 'lookup' | 'add') =>
+        worker.platform.deliver({ v: 1, type: 'job/refresh', action });
+      const relayed = { ok: true, data: {} };
+      for (const pane of ['consent', 'code-choice'] as const) {
+        const { doc } = await openAt(detailsHtml, ADP);
+        const worker = applyWorker(DEFAULT_SETTINGS, { script: CARD_ANSWERS });
+        const { runtime } = await runtimeAt(doc, ADP, [adpStub({ entryPresses: 2, formLateMs: 20_000,
+          formInPlace: true }, true, ADP_PANES), genericAdapter], { worker });
+        runtimes.push(runtime);
+        // Before any press: its Apply offered (the worker's card frame from now on: frames.ts entrySaid).
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entry, pane).toBe(true), { timeout: 5_000 });
+        expect(await refresh(worker, 'lookup'), pane).toEqual(relayed);
+        // The Apply drew its pane over the details: no entry offered while it shows, the same address, no form.
+        const shown = drawPane(doc, pane);
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entry, pane).toBe(false), { timeout: 3_000 });
+        expect(runtime.page, pane).toBeNull();
+        expect(await refresh(worker, 'lookup'), pane).toEqual(relayed);
+        expect(await refresh(worker, 'add'), pane).toEqual(relayed);
+        // The pane gone, the guest form drawn in place: a form of ours.
+        shown.remove();
+        drawGuest(doc);
+        await vi.waitFor(() => expect(runtime.page?.adapter.id, pane).toBe('adp'), { timeout: 5_000 });
+        expect(await refresh(worker, 'lookup'), pane).toEqual(relayed);
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+      // A route of the page's own to its list (no job named): what the details told is not that address's.
+      const LIST = ADP.replace('&jobId=100001', '');
+      expect(applicationOf(new URL(LIST))).toBeNull();
+      let here = ADP;
+      const listed = await openAt(detailsHtml, ADP);
+      const first = await runtimeAt(listed.doc, ADP, [adpStub({ formInPlace: true }, true, ADP_PANES), genericAdapter],
+        { worker: applyWorker(DEFAULT_SETTINGS, { script: CARD_ANSWERS }), more: { href: () => here } });
+      runtimes.push(first.runtime);
+      await vi.waitFor(() => expect(wallsOf(first.worker).at(-1)?.entry).toBe(true), { timeout: 5_000 });
+      expect(await refresh(first.worker, 'lookup')).toEqual(relayed);
+      here = LIST;
+      listed.doc.querySelector('.job-description-main-container')!.remove();
+      listed.fixture.view.dispatchEvent(new PopStateEvent('popstate'));
+      await vi.waitFor(() => expect(wallsOf(first.worker).at(-1)?.entry).toBe(false), { timeout: 3_000 });
+      expect(await refresh(first.worker, 'lookup')).toEqual({ ok: false, error: 'expired' });
+      first.runtime.stop();
+      runtimes.splice(0);
+      removeFixtures(document);
+      // The same page with no posting entry declared never said entry: its card is no frame of ours to relay.
+      const { doc } = await openAt(detailsHtml, ADP);
+      const worker = applyWorker(DEFAULT_SETTINGS, { script: CARD_ANSWERS });
+      const { runtime } = await runtimeAt(doc, ADP, [adpStub({ formInPlace: true }, false, ADP_PANES), genericAdapter],
+        { worker });
+      runtimes.push(runtime);
+      await deadline(800);
+      expect(wallsOf(worker).some((wall) => wall.entry)).toBe(false);
+      expect(await refresh(worker, 'lookup')).toEqual({ ok: false, error: 'expired' });
+      drawPane(doc, 'consent');
+      await deadline(800);
+      expect(await refresh(worker, 'add')).toEqual({ ok: false, error: 'expired' });
+      expect(worker.of('job/lookup').length + worker.of('job/add').length).toBe(0);
+    }, 40_000);
+
   it('ADP-like details: the posting’s own text is read on its application address while no form shows (item 7)',
     async () => {
       for (const posting of [true, false]) {
@@ -470,6 +629,113 @@ describe('jr6 apply F2: forms drawn in place, late or at the posting’s address
       await vi.waitFor(() => expect(worker.of('run/begin').length).toBeGreaterThan(0), { timeout: 5_000 });
       expect(runtime.page?.adapter.id).toBe('workable');
     }, 30_000);
+
+  // The line P review (P-2): the late-form wait at an entry, with no Apply declared, and where an Apply declared for
+  // postings is offered nowhere on an application's page.
+  it('no Apply declared, its form drawn 3 s after the person’s Autofill: waited for, and the run starts (P-2)',
+    async () => {
+      // An adapter with no entry hook at all (the site adapter's shape, on company pages: siteAdapter), stood in by
+      // UltiPro's with its hook taken off and a late window of 15 s.
+      const address = addressOf(ultiproRoutes, 'fixtures/ultipro/application.html');
+      const { doc } = await openAt(ultiproHtml, address);
+      const form = doc.querySelector('#OpportunityApply')!;
+      const parent = form.parentNode!;
+      const next = form.nextSibling;
+      form.remove();
+      const own: Adapter = { ...servedAdapter(ultiproAdapter, address), entryControl: undefined,
+        quirks: { ...ultiproAdapter.quirks, formLateMs: 15_000 } };
+      const { worker, runtime } = await runtimeAt(doc, address, [own, genericAdapter]);
+      runtimes.push(runtime);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(true), { timeout: 2_000 });
+      await deadline(3_000);
+      expect(worker.of('run/begin')).toEqual([]);
+      parent.insertBefore(form, next);
+      await vi.waitFor(() => expect(worker.of('run/begin').length).toBeGreaterThan(0), { timeout: 5_000 });
+      expect(runtime.page?.adapter.id).toBe('ultipro');
+      expect(refusals(worker)).toEqual([]);
+    }, 30_000);
+
+  it('a late window that ends with another form only the generic adapter takes: the entry starts no run there, "none" (P-2)',
+    async () => {
+      const address = addressOf(ultiproRoutes, 'fixtures/ultipro/application.html');
+      const { doc } = await openAt(ultiproHtml, address);
+      doc.querySelector('#OpportunityApply')!.remove();
+      // Another form on the page (a made-up newsletter sign-up), which the generic adapter takes once the page's own late
+      // wait is over (late-form.ts): it is no application this entry fills by itself (D5).
+      const news = doc.createElement('form');
+      news.id = 'news';
+      for (const [id, type, label, auto] of [['nn', 'text', 'Full name', 'name'], ['ne', 'email', 'Email', 'email']]) {
+        const name = doc.createElement('label');
+        name.htmlFor = id!;
+        name.textContent = label!;
+        const input = doc.createElement('input');
+        input.id = id!;
+        input.type = type!;
+        input.autocomplete = auto as AutoFill;
+        news.append(name, input);
+      }
+      doc.body.append(news);
+      const own: Adapter = { ...servedAdapter(ultiproAdapter, address), entryControl: undefined,
+        quirks: { ...ultiproAdapter.quirks, formLateMs: 3_000 } };
+      const { worker, runtime } = await runtimeAt(doc, address, [own, genericAdapter]);
+      runtimes.push(runtime);
+      // Autofill 1.5 s after the page loaded: the entry's late window outlasts the page's own by as much.
+      await deadline(1_500);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(runtime.page?.adapter.id).toBe('generic'), { timeout: 6_000 });
+      // The page changes that form while the entry still waits (a box drawn in it): still no form of the entry's.
+      const box = doc.createElement('input');
+      box.type = 'text';
+      box.setAttribute('aria-label', 'Company');
+      doc.getElementById('news')!.append(box);
+      await vi.waitFor(() => expect(refusals(worker)).toEqual(['none']), { timeout: 6_000 });
+      expect(worker.of('run/begin')).toEqual([]);
+    }, 30_000);
+
+  it('an application’s page that offers no Apply, its form drawn after the Apply wait: the rest of the late window is waited for (P-2, Workable, UltiPro)',
+    async () => {
+      const SALVO = Object.keys(salvoRoutes)[0]!;
+      const ULTIPRO = addressOf(ultiproRoutes, 'fixtures/ultipro/application.html');
+      // Each declares an Apply hook (Workable's for its postings alone; UltiPro's, the configured layer's, with no
+      // posting entry yet) that its application's page never answers. The form is back 10 s after Autofill (the Apply
+      // wait is 8 s, the stubs' late window 12 s), or never.
+      const cases = [['workable', 10_000], ['workable', null], ['ultipro', 10_000]] as const;
+      for (const [name, backAt] of cases) {
+        const label = `${name}, ${backAt === null ? 'never' : `at ${backAt} ms`}`;
+        const address = name === 'workable' ? SALVO : ULTIPRO;
+        const { doc } = await openAt(name === 'workable' ? salvoHtml : ultiproHtml, address);
+        const root = doc.querySelector(name === 'workable' ? '[data-role="modal-wrapper"]' : '#OpportunityApply')!;
+        const parent = root.parentNode!;
+        const next = root.nextSibling;
+        root.remove();
+        const adapter = name === 'workable' ? workableAdapter : ultiproAdapter;
+        const own: Adapter = { ...servedAdapter(adapter, address), quirks: { ...adapter.quirks, formLateMs: 12_000 } };
+        const { worker, runtime } = await runtimeAt(doc, address, [own, genericAdapter]);
+        runtimes.push(runtime);
+        expect(own.entryControl, label).toBeDefined();
+        expect(own.entryControl!(doc), label).toBeNull();
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+        await deadline(9_500);
+        // Past the Apply wait: still entering, nothing refused.
+        expect(refusals(worker), label).toEqual([]);
+        expect(wallsOf(worker).at(-1)?.entering, label).toBe(true);
+        if (backAt !== null) {
+          await deadline(backAt - 9_500);
+          root.querySelector('dialog')?.setAttribute('open', '');
+          parent.insertBefore(root, next);
+          await vi.waitFor(() => expect(worker.of('run/begin').length, label).toBeGreaterThan(0), { timeout: 3_000 });
+          expect(runtime.page?.adapter.id, label).toBe(name);
+          expect(refusals(worker), label).toEqual([]);
+        } else {
+          await vi.waitFor(() => expect(refusals(worker), label).toEqual(['none']), { timeout: 6_000 });
+          expect(worker.of('run/begin'), label).toEqual([]);
+        }
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 60_000);
 
   it('SmartRecruiters’ one-click and UltiPro’s application drawn 1 s after start: found with a late wait, not without',
     async () => {
@@ -571,4 +837,275 @@ describe('jr6 apply F2: the destination’s key, and the owner’s postings (C4,
       expect(pressed.length).toBe(1);
       expect(pressed[0]!.className).toMatch(/iCIMS_ApplyOnlineButton/);
     }, 30_000);
+});
+
+// ── The line P review's findings (2026-11-11), each with the case its reviewer measured ──
+describe('jr6 apply F2: the line P review’s cases (revA-2, revA-4, revA-6, P-B2, P-B4, P-3)', () => {
+  it('run/cancel during the entry’s sign-in step (Sign-in Auto; Sign up & Autofill): nothing typed or pressed after it (revA-2, P-B2)',
+    async () => {
+      for (const how of ['auto', 'sign-up', 'auto, no cancel'] as const) {
+        const { doc, clicks } = await signInAfterApply();
+        let release!: (answer: unknown) => void;
+        const held = new Promise((resolve) => {
+          release = resolve;
+        });
+        const worker = applyWorker(how === 'sign-up' ? DEFAULT_SETTINGS : AUTO,
+          { script: { 'signin/credential': [held] } });
+        const { runtime } = await runtimeAt(doc, LATE, lever(LATE), { worker });
+        runtimes.push(runtime);
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false,
+          ...(how === 'sign-up' ? { signIn: true as const } : {}) });
+        await vi.waitFor(() => expect(clicks, how).toEqual(['apply']), { timeout: 4_000 });
+        // The sign-in step waits for the worker's credential, the frame still saying it is entering.
+        await vi.waitFor(() => expect(worker.of('signin/credential'), how).toHaveLength(1), { timeout: 8_000 });
+        expect(wallsOf(worker).at(-1)?.entering, how).toBe(true);
+        if (how !== 'auto, no cancel') await worker.platform.deliver({ v: 1, type: 'run/cancel' });
+        release({ ok: true, data: CREDENTIAL });
+        if (how === 'auto, no cancel') {
+          // The control: with no Cancel, the step types the sign-in and presses the page's own Sign in.
+          await vi.waitFor(() => expect(clicks, how).toEqual(['apply', 'sign-in-button']), { timeout: 5_000 });
+        } else {
+          await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering, how).toBe(false), { timeout: 3_000 });
+          await deadline(1_500);
+          expect(clicks, how).toEqual(['apply']);
+          expect(typedIn(doc), how).toEqual({ email: false, password: false });
+          expect(refusals(worker), how).toEqual([]);
+        }
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 60_000);
+
+  it('run/cancel during the agent’s sign-in at its entry (Sign-in Auto): nothing typed or pressed after it (revA-2)',
+    async () => {
+      // The page shows its sign-in before any Apply is pressed: the agent's entry is blocked by it, and Sign-in Auto signs
+      // in there (agentSignIn), the same entry run/cancel ends.
+      const { doc, clicks } = await signInAfterApply();
+      drawSignIn(doc);
+      let release!: (answer: unknown) => void;
+      const held = new Promise((resolve) => {
+        release = resolve;
+      });
+      const worker = applyWorker(AUTO, { script: { 'signin/credential': [held] } });
+      const { runtime } = await runtimeAt(doc, LATE, lever(LATE), { worker });
+      runtimes.push(runtime);
+      const entered = worker.platform.deliver({ v: 1, type: 'agent/enter' });
+      await vi.waitFor(() => expect(worker.of('signin/credential')).toHaveLength(1), { timeout: 5_000 });
+      await worker.platform.deliver({ v: 1, type: 'run/cancel' });
+      release({ ok: true, data: CREDENTIAL });
+      // Signed in nowhere: the sign-in is the person's.
+      expect(await entered).toEqual({ ok: true, data: { outcome: 'blocked', block: 'sign-in' } });
+      await deadline(1_000);
+      expect(clicks).toEqual([]);
+      expect(typedIn(doc)).toEqual({ email: false, password: false });
+    }, 30_000);
+
+  it('the agent’s own press draws a sign-in in place: Sign-in Auto signs in there, Manual types nothing (P-B4, AF-16)',
+    async () => {
+      for (const mode of ['auto', 'manual'] as const) {
+        const { doc, clicks } = await signInAfterApply();
+        const worker = applyWorker(mode === 'auto' ? AUTO : DEFAULT_SETTINGS, { typeSignIn: true,
+          script: { 'signin/credential': [{ ok: true, data: CREDENTIAL }] } });
+        const { runtime } = await runtimeAt(doc, LATE, lever(LATE), { worker });
+        runtimes.push(runtime);
+        // The agent hears its answer at its press, as before; the sign-in drawn 400 ms later is its entry's still.
+        expect(await worker.platform.deliver({ v: 1, type: 'agent/enter' }), mode)
+          .toEqual({ ok: true, data: { outcome: 'pressed' } });
+        if (mode === 'auto') {
+          await vi.waitFor(() => expect(clicks, mode).toEqual(['apply', 'sign-in-button']), { timeout: 5_000 });
+          expect(worker.of('signin/credential'), mode).toHaveLength(1);
+        } else {
+          await deadline(2_500);
+          expect(clicks, mode).toEqual(['apply']);
+          expect(worker.of('signin/credential'), mode).toHaveLength(0);
+          expect(typedIn(doc), mode).toEqual({ email: false, password: false });
+        }
+        // Its entry never told the person's entry/pressed, nor any refusal.
+        expect(worker.of('entry/pressed'), mode).toEqual([]);
+        expect(refusals(worker), mode).toEqual([]);
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 40_000);
+
+  it('the platform’s page after submitting never offers an entry, nor presses one, whatever an adapter answers there (P-3, D6)',
+    async () => {
+      const THANKS = `${LATE}/thanks`;
+      expect(applicationOf(new URL(THANKS))?.page).toBe('confirmation');
+      const { doc, clicks } = await openAt(`<!doctype html><body><main><h1>Thank you for applying</h1>
+        <a id="more" href="${DIALOG}">Apply to more jobs</a></main></body>`, THANKS);
+      // An adapter whose entry answers a visible link there (a later change, or a parser that misreads the page).
+      const loose: Adapter = { ...genericAdapter, id: 'lever', entryControl: (d) => d.getElementById('more') };
+      const { worker, runtime } = await runtimeAt(doc, THANKS, [loose, genericAdapter]);
+      runtimes.push(runtime);
+      await deadline(1_000);
+      // frame/wall never says entry, so the queue's trigger (background/index.ts: entry, wall or choice) cannot fire.
+      expect(worker.of('frame/hello').length).toBeGreaterThan(0);
+      expect(wallsOf(worker).some((wall) => wall.entry)).toBe(false);
+      // Nor does a run/start or the agent's agent/enter that reached it press anything.
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      expect(await worker.platform.deliver({ v: 1, type: 'agent/enter' }))
+        .toEqual({ ok: true, data: { outcome: 'not-offered' } });
+      await deadline(1_500);
+      expect(clicks).toEqual([]);
+      expect(worker.of('entry/pressed')).toEqual([]);
+      expect(worker.of('agent/entered')).toEqual([]);
+      expect(refusals(worker)).toEqual([]);
+    }, 30_000);
+
+  // revA-6: two safety rules of the entry, each with the case that fails without it.
+  it('a dialog chain after Apply ("Apply manually", "Continue to application", "Start application"): two presses at most (revA-6, D7)',
+    async () => {
+      const { doc, clicks } = await openAt(`<!doctype html><body><main><h1>Site Reliability Engineer</h1>
+        <a id="apply" href="${LATE}/apply">Apply for this job</a></main>
+        <dialog id="one"><button type="button" id="manually">Apply manually</button></dialog>
+        <dialog id="two"><button type="button" id="continue">Continue to application</button></dialog>
+        <dialog id="three"><button type="button" id="start">Start application</button></dialog></body>`, LATE);
+      const open = (id: string) => void deadline(300).then(() => doc.getElementById(id)!.setAttribute('open', ''));
+      doc.getElementById('apply')!.addEventListener('click', () => open('one'));
+      doc.getElementById('manually')!.addEventListener('click', () => {
+        doc.getElementById('one')!.removeAttribute('open');
+        open('two');
+      });
+      doc.getElementById('continue')!.addEventListener('click', () => {
+        doc.getElementById('two')!.removeAttribute('open');
+        open('three');
+      });
+      const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
+      runtimes.push(runtime);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(clicks).toContain('manually'), { timeout: 6_000 });
+      // The next dialog shows, in a second step's words too: never pressed (ENTRY_MAX_PRESSES stays 2).
+      await vi.waitFor(() => expect(doc.getElementById('two')!.hasAttribute('open')).toBe(true), { timeout: 3_000 });
+      await deadline(1_500);
+      expect(clicks).toEqual(['apply', 'manually']);
+      expect(worker.of('entry/pressed')).toHaveLength(2);
+      expect(refusals(worker)).toEqual([]);
+    }, 30_000);
+
+  it('a pressed link the page’s own click listener sends to another origin names no key (revA-6, D4)', async () => {
+    // An address of another origin that a parser reads as an application, with a key of its own.
+    const OTHER = 'https://job-boards.greenhouse.io/northwind/jobs/4012345';
+    expect(keyOf(OTHER)).not.toBeNull();
+    expect(new URL(OTHER).origin).not.toBe(new URL(LATE).origin);
+    const { doc, clicks } = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1><a id="apply"
+      href="${LATE}/apply">Apply for this job</a></main></body>`, LATE);
+    // The page's own script rewrites its Apply's address as it is clicked, after the door read it.
+    doc.getElementById('apply')!.addEventListener('click', (event) => {
+      (event.currentTarget as HTMLAnchorElement).setAttribute('href', OTHER);
+    });
+    const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
+    runtimes.push(runtime);
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+    await vi.waitFor(() => expect(clicks).toEqual(['apply']), { timeout: 3_000 });
+    expect(pressedKeys(worker)).toEqual([undefined]);
+  }, 30_000);
+
+  // revA-4: the person opens another job in the same document (Workday's two-pane search, an Ashby or Workable board)
+  // while the entry waits. `heard`: the route is heard as it happens (onAddress); else not yet (a look or press asks).
+  it('an in-page route to another job during the late-Apply wait: nothing pressed, no refusal (revA-4)', async () => {
+    for (const heard of [true, false]) {
+      const label = heard ? 'heard' : 'not heard yet';
+      let here = LATE;
+      const { fixture, doc, clicks } = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1>
+        <div id="slot"></div></main></body>`, LATE);
+      const { worker, runtime } = await runtimeAt(doc, LATE, [servedAdapter(leverAdapter, () => here), genericAdapter],
+        { more: { href: () => here } });
+      runtimes.push(runtime);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering, label).toBe(true), { timeout: 3_000 });
+      await deadline(1_000);
+      expect(keyOf(DIALOG)).not.toBe(keyOf(LATE));
+      here = DIALOG;
+      if (heard) {
+        fixture.view.dispatchEvent(new PopStateEvent('popstate'));
+        // The route alone ends the entry, with nothing drawn yet (its Apply wait would run 7 s more).
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering, label).toBe(false), { timeout: 1_000 });
+      }
+      // The other job's posting draws its own Apply.
+      doc.querySelector('h1')!.textContent = 'Site Reliability Engineer';
+      const link = doc.createElement('a');
+      link.id = 'apply-b';
+      link.href = `${DIALOG}/apply`;
+      link.textContent = 'Apply for this job';
+      doc.getElementById('slot')!.append(link);
+      await deadline(2_500);
+      expect(clicks, label).toEqual([]);
+      expect(worker.of('entry/pressed'), label).toEqual([]);
+      expect(refusals(worker), label).toEqual([]);
+      expect(wallsOf(worker).at(-1)?.entering, label).toBe(false);
+      runtime.stop();
+      runtimes.splice(0);
+      removeFixtures(document);
+    }
+  }, 40_000);
+
+  it('an in-page route to another job’s application form during the wait: no run started for it (revA-4)',
+    async () => {
+      // `declared`: the entry waits for an Apply drawn late (pressEntry), or (no Apply declared) for a form an adapter
+      // draws late (formWithin).
+      for (const declared of ['an Apply', 'a late form'] as const) for (const heard of [true, false]) {
+        const label = `${declared}, ${heard ? 'heard' : 'not heard yet'}`;
+        let here = LATE;
+        // The late Apply is never drawn within this test.
+        const { fixture, doc } = await openAt(lateHtml.replace('data-apply-delay="3000"', 'data-apply-delay="600000"'),
+          LATE);
+        const own = servedAdapter(leverAdapter, () => here);
+        const { worker, runtime } = await runtimeAt(doc, LATE, [declared === 'an Apply' ? own
+          : { ...own, entryControl: undefined, quirks: { ...own.quirks, formLateMs: 10_000 } }, genericAdapter],
+        { more: { href: () => here } });
+        runtimes.push(runtime);
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering, label).toBe(true), { timeout: 3_000 });
+        await deadline(1_000);
+        // The person opens another job's application in the page's own route: its form is drawn there.
+        here = `${DIALOG}/apply`;
+        const template = doc.getElementById('form-template') as HTMLTemplateElement;
+        doc.getElementById('form-slot')!.append(template.content.cloneNode(true));
+        if (heard) fixture.view.dispatchEvent(new PopStateEvent('popstate'));
+        await deadline(2_000);
+        // Autofill was pressed for the first job: no run starts on the other one's form.
+        expect(worker.of('run/begin'), label).toEqual([]);
+        expect(refusals(worker), label).toEqual([]);
+        expect(wallsOf(worker).at(-1)?.entering, label).toBe(false);
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 40_000);
+
+  it('an in-page route to another job after our press: no step pressed for it there, no refusal (revA-4)',
+    async () => {
+      // `presses`: the adapter's own (1: the runtime's watch after the press would take a second step; 2: pressEntry's
+      // follow-up would).
+      for (const presses of [1, 2]) for (const heard of [true, false]) {
+        const label = `${presses} press(es), ${heard ? 'heard' : 'not heard yet'}`;
+        let here = LATE;
+        const { fixture, doc, clicks } = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1>
+          <a id="apply" href="${LATE}/apply">Apply for this job</a></main>
+          <dialog id="other"><button type="button" id="other-manually">Apply manually</button></dialog></body>`, LATE);
+        const own = servedAdapter(leverAdapter, () => here);
+        const { worker, runtime } = await runtimeAt(doc, LATE, [presses === 1 ? own
+          : { ...own, quirks: { ...own.quirks, entryPresses: 2 } }, genericAdapter], { more: { href: () => here } });
+        runtimes.push(runtime);
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+        await vi.waitFor(() => expect(clicks, label).toEqual(['apply']), { timeout: 3_000 });
+        // While the entry watches what its press brings, the person opens another job, whose page opens a dialog in a
+        // second step's words.
+        await deadline(500);
+        here = DIALOG;
+        if (heard) fixture.view.dispatchEvent(new PopStateEvent('popstate'));
+        doc.getElementById('other')!.setAttribute('open', '');
+        await deadline(2_000);
+        expect(clicks, label).toEqual(['apply']);
+        expect(worker.of('entry/pressed'), label).toHaveLength(1);
+        expect(refusals(worker), label).toEqual([]);
+        expect(wallsOf(worker).at(-1)?.entering, label).toBe(false);
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 40_000);
 });

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Adapter } from '../../adapters/types';
 import { loadFixture, logEvents, removeFixtures } from '../fixture.testkit';
+import { deadline } from '../time';
 import { assertKeyTarget, assertNotSubmit, clickIfAllowed, entryWhereRefusal, type ClickRefusal } from './not-submit';
 
 const PAGE = `<!doctype html><body>
@@ -260,6 +261,64 @@ describe('entryWhereRefusal: an entry that would leave this tab or this site (jr
       <form id="f" target="_blank" action="/consent"><input name="getAttribute" value="x">
         <button id="accept" type="submit">I Accept</button></form></body>`);
     expect(entryWhereRefusal(fixture.doc.getElementById('accept')!)).toBe('new-tab');
+  });
+
+  // The line P review (revA-5): a target is compared as written, never trimmed, as HTML and Chrome compare it.
+  it('reads a target as written: a keyword with white space around it names another context (revA-5)', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body>
+      <a id="go" href="#moved">Apply</a>
+      <form id="g" action="/consent"><button id="submitter" type="submit">I Accept</button></form></body>`);
+    const link = fixture.doc.getElementById('go')!;
+    const submitter = fixture.doc.getElementById('submitter')!;
+    const read = (target: string, el: HTMLElement, attribute: string) => {
+      el.setAttribute(attribute, target);
+      return entryWhereRefusal(el);
+    };
+    for (const target of [' _self', '_self ', '_top\t', '\n_parent', ' ']) {
+      expect(read(target, link, 'target'), JSON.stringify(target)).toBe('new-tab');
+      expect(read(target, submitter, 'formtarget'), JSON.stringify(target)).toBe('new-tab');
+    }
+    for (const target of ['_SELF', '_Top', '_PARENT', '']) {
+      expect(read(target, link, 'target'), JSON.stringify(target)).toBeNull();
+      expect(read(target, submitter, 'formtarget'), JSON.stringify(target)).toBeNull();
+    }
+    // A form's own target and the document's base target are read as written too.
+    submitter.removeAttribute('formtarget');
+    fixture.doc.getElementById('g')!.setAttribute('target', '_self ');
+    expect(entryWhereRefusal(submitter)).toBe('new-tab');
+    link.removeAttribute('target');
+    const base = fixture.doc.createElement('base');
+    base.setAttribute('target', ' _top');
+    fixture.doc.head.append(base);
+    expect(entryWhereRefusal(link)).toBe('new-tab');
+  });
+
+  it('agrees with Chrome on which targets keep a press in this frame (an untrusted click, as the door\u2019s)', async () => {
+    // The security reviewer's frame proof (revA-5): Chrome follows the link in this frame only for a same-tab target.
+    // Frame-local targets alone (never _top or _parent, which would navigate the test page itself), in a frame
+    // sandboxed without allow-popups: a target Chrome reads as another context's name opens no window, and this frame
+    // stays where it is.
+    for (const target of ['', '_self', '_SELF', ' _self', '_self ']) {
+      const frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-same-origin');
+      frame.srcdoc = '<!doctype html><body><a id="go" href="#moved">Apply</a></body>';
+      const loaded = new Promise((resolve) => frame.addEventListener('load', resolve, { once: true }));
+      document.body.append(frame);
+      await loaded;
+      try {
+        const link = frame.contentDocument!.getElementById('go')!;
+        link.setAttribute('target', target);
+        const door = entryWhereRefusal(link, new URL(frame.contentWindow!.location.href));
+        link.click();
+        await deadline(300);
+        const navigatedHere = frame.contentWindow!.location.hash === '#moved';
+        expect(door === null, JSON.stringify(target)).toBe(navigatedHere);
+        // Both readings are seen, so the proof holds either way round.
+        expect(navigatedHere, JSON.stringify(target)).toBe(['', '_self', '_SELF'].includes(target));
+      } finally {
+        frame.remove();
+      }
+    }
   });
 });
 // ── end jr6 apply F2 item 4 ──

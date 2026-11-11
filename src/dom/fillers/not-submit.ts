@@ -216,8 +216,10 @@ function ownAttribute(el: Element, name: string): string | null {
   return read === undefined ? null : read.call(el, name);
 }
 
-/** The browsing context a press of `control` would navigate, lowercased and trimmed ('' for this one): a link's own
- *  target, a submitter's formtarget or its form's target, else the document's base target (HTML's rule). */
+/** The browsing context a press of `control` would navigate, its ASCII letters lowercased ('' for this one): a link's
+ *  own target, a submitter's formtarget or its form's target, else the document's base target (HTML's rule). jr6 apply
+ *  F2 (the line P review, revA-5): never trimmed: HTML and Chrome compare the value as it is (ASCII case-insensitive),
+ *  so " _self" or "_self " names another browsing context, a new window, and is no same-tab keyword. */
 function navigationTargetOf(control: HTMLElement): string {
   const doc = control.ownerDocument;
   const base = doc.querySelector('base[target]')?.getAttribute('target') ?? '';
@@ -231,14 +233,16 @@ function navigationTargetOf(control: HTMLElement): string {
   } else {
     return '';
   }
-  return (named ?? base).trim().toLowerCase();
+  // ASCII letters alone are folded (HTML's ASCII case-insensitive match): no other letter reads as a keyword's.
+  return (named ?? base).replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
 }
 
 /**
  * Why an entry's press would go where Autofill never follows (ENTRY_DOOR_REFUSALS), or null (it stays in this tab):
  * - a link with `download` (Jobright's entry flows refuse it too, the audit apply-a.md AP-7);
  * - a link whose target, or a form's submitter whose formtarget or form's target, names a context that is not this
- *   tab's (anything but empty, _self, _top or _parent, case-insensitive; the document's <base target> where the
+ *   tab's (anything but empty, _self, _top or _parent, case-insensitive and as written: " _self" is another context's
+ *   name, as Chrome reads it, revA-5; the document's <base target> where the
  *   control names none): Chrome would open a new tab or window, which Autofill does not follow (APPLYPLAN D4, OQ3);
  * - given the frame's own `address`, a link whose http(s) address (resolved against the document's <base> where it has
  *   one, else against `address`) is on another origin (D4, OQ4: a grant never crosses an origin, so the press would

@@ -344,10 +344,15 @@ function pressesOf(adapter: Adapter): number {
  * no control the adapter offers), the press was still made: 'pressed' with `followed: false` (the runtime then watches
  * the document for what the press brings), never 'blocked' 'other'. Item 4 (AP-7, C7): a control the door refuses by
  * where its press would go answers 'not-offered' with that `refusal` at once; `options.address`, the frame's own
- * address, lets the door refuse a link to another origin. A press is never retried another way.
+ * address, lets the door refuse a link to another origin. A press is never retried another way. The line P review
+ * (revA-4): `options.here`, whether the page the entry was asked on still shows (the runtime: the frame's address still
+ * reads the application it started at): no press is made once it does not, and the entry answers as at an abort
+ * ('not-offered' before any press, 'pressed' after one), so another job a route of the page's own shows meanwhile is
+ * never pressed for this one.
  */
 export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: AbortSignal, waitMs = ENTRY_WAIT_MS,
-  followMs = ENTRY_FOLLOW_MS, onPress?: OnEntryPress, options: { address?: URL } = {}): Promise<EntryResult> {
+  followMs = ENTRY_FOLLOW_MS, onPress?: OnEntryPress, options: { address?: URL; here?: () => boolean } = {}): // jr6 apply F2
+  Promise<EntryResult> {
   const own = adapters.filter((adapter) => adapter.entryControl !== undefined);
   if (own.length === 0 || signal.aborted) return Promise.resolve({ outcome: 'not-offered' });
   const pressed = new Set<Element>();
@@ -391,8 +396,10 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
     }
     return null;
   };
+  /** jr6 apply F2 (the line P review, revA-4): the entry's page no longer shows (the runtime's word): nothing more. */
+  const away = (): boolean => options.here?.() === false;
   const attempt = (): EntryResult | null => {
-    if (formShown()) return { outcome: 'not-offered' };
+    if (away() || formShown()) return { outcome: 'not-offered' }; // jr6 apply F2 (revA-4)
     // The audit of 2026-11-06 (S-7): a challenge anywhere on the page, or a frame that reads like one, first.
     if (pageChallenged(doc)) return { outcome: 'blocked', block: 'captcha' };
     const pause = detectPause(doc, null, own[0]!);
@@ -424,7 +431,7 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
     /** The answer once a form or another page shows or the document goes; 'pressed': the choice's control; 'wait':
      *  nothing yet. */
     const next = (): EntryResult | 'pressed' | 'wait' => {
-      if (signal.aborted || formShown()) return done;
+      if (signal.aborted || away() || formShown()) return done; // jr6 apply F2 (revA-4)
       if (pageChallenged(doc)) return { outcome: 'blocked', block: 'captcha' };
       const pause = detectPause(doc, null, own[0]!);
       // jr6 apply F2 item 6 (D7, AF-11): no choice the adapter declares shows, but a dialog our press opened offers
