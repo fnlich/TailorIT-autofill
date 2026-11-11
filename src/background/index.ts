@@ -66,7 +66,7 @@ import { contentSettingsOf, createSettingsStore, mergeSettings, pushSettings } f
 import { createSidebar, createSidebarVet, iconReachesPage, scopedPort, SIDEBAR_LOAD_LIMIT } from './sidebar';
 import { createPagePatches, PAGE_PATCHES_LIMIT } from './page-patches';
 import { createSignIn } from './sign-in';
-import { createSignUps } from './sign-up';
+import { createSignUps, ENTRY_PRESSED_LIMIT } from './sign-up';
 import { createSignup, holdsSignInAuto } from './signup';
 import { createSignupVault } from './signup-vault';
 import { createSites, RECOGNISED_LIMIT } from './sites';
@@ -226,7 +226,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     check: (tabId) => checkTab(tabId), sideShown: (tabId, open) => void tellTopFrame(tabId, { v: 1, type: 'panel/side', open }),
     submitted: async (tabId) => submissions?.stateOf(tabId),
     // v3 Phase 8 (the review's B10): the career sites act, so a company page no frame of ours is on waits for a reload.
-    sitesActive: () => sites.active() });
+    sitesActive: () => sites.active(),
+    // jr6 apply F3a: the tab's entry grant, armed and waiting, or ended on another origin (sign-up.ts).
+    entryOf: (tabId) => ({ waiting: signUps.waiting(tabId), elsewhere: signUps.elsewhere(tabId) }) });
   // The launcher's place and hiding per site (v3 Phase 3): storage.local, a hash of the host only.
   const launchers = createLauncherStore(local);
   const launcherLimit = createRateLimit(LAUNCHER_LIMIT.count, LAUNCHER_LIMIT.windowMs, now);
@@ -266,7 +268,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     choose: chooseResume, letters });
   /** v4: the tabs' Sign up & Autofill grants, and the forms to start after a wall (sign-up.ts). The v4 review (M1): one
    *  that held Sign-in Auto and ends by time is told to the tab's frames (pushTab), which stop reading it. */
-  const signUps = createSignUps({ now, timers, ended: (tabId) => void pushTab(tabId).catch(() => undefined) });
+  const signUps = createSignUps({ now, timers, ended: (tabId) => void pushTab(tabId).catch(() => undefined),
+    // jr6 apply F3a: the tab's page state follows its entry grant (waiting, elsewhere).
+    changed: (tabId) => void reports.pageChanged(tabId).catch(() => undefined) });
+  /** jr6 apply F3a: entry/pressed's limit, per tab (APPLYPLAN F3a item 3). */
+  const entryLimit = createRateLimit(ENTRY_PRESSED_LIMIT.count, ENTRY_PRESSED_LIMIT.windowMs, now);
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId),
     // v4: Sign up & Autofill grants the tab Sign-in Auto for one run, for its application frame's site (the v4 review,
     // M1); its frames hear the settings as they act then.
@@ -274,6 +280,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       const before = signUps.live(tabId);
       signUps.grant(tabId, grant, place);
       if (before || signUps.live(tabId)) await pushTab(tabId);
+    },
+    // jr6 apply F3a: a plain Autofill during the hand-off keeps the armed grant (apply-c-new-1); Cancel ends it.
+    keepEntry: (tabId, frame) => signUps.keep(tabId, frame),
+    endEntry: async (tabId) => {
+      if (signUps.endEntry(tabId)) await pushTab(tabId);
     } });
   // Save my answer and Confirm draft (Phase 6, wave 2): the answer goes from the frame straight to TailorIT.
   const answers = createAnswerHandlers({ platform, reports, runs, server, settings, vocab: () => core.vocab(),
@@ -714,6 +725,42 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     }
   }
 
+  /**
+   * jr6 apply F3a: what a frame/wall of a tab's application frame (wallFrameOf, in its registered document) does to the
+   * tab's grant (sign-up.ts), and to its card:
+   * - its refusal, newly said, ends an entry grant that reached its document (item 2);
+   * - a wall or a choice with no form, after a press of the grant, in a document the grant has not reached: one
+   *   run/start there (takeStep, AF-3), with Sign up & Autofill's signIn where the grant holds it (item 3);
+   * - a top frame with no form whose document first says its adapter offers the site's own Apply (ADP's job details,
+   *   apply-b-new-2) is the tab's card frame (frames.ts cardFrameOf): the job chosen follows its application, and its
+   *   card is looked up once, as on load (lookupOnLoad, the connection, the disclosure).
+   */
+  async function entryWords(message: Extract<ContentMessage, { type: 'frame/wall' }>, from: ContentChannel,
+    before: FrameEntry | null, entry: FrameEntry): Promise<void> {
+    const frames = await framesOfTab(session, from.tabId);
+    const application = wallFrameOf(frames);
+    if (application !== null && application.frameId === entry.frameId && application.documentId === entry.documentId) {
+      if (entry.entryRefused === true && before?.entryRefused !== true && signUps.refused(from.tabId, entry)) {
+        void pushTab(from.tabId).catch(() => undefined);
+      }
+      if (message.wall !== null || message.choice === true) {
+        const step = signUps.takeStep(from.tabId, entry, message.wall !== null ? 'wall' : 'choice');
+        if (step !== null) {
+          void Promise.resolve().then(() => platform.tabs.sendToFrame(from.tabId, { v: 1, type: 'run/start',
+            dryRun: false, ...(step.signIn ? { signIn: true as const } : {}) }, frameTarget(entry)))
+            .catch(() => log('frame.unreachable'));
+        }
+      }
+    }
+    if (entry.frameId === 0 && entry.entrySaid === true && before?.entrySaid !== true && entry.posting !== true
+      && entry.confirmation !== true && cardFrameOf(frames)?.frameId === entry.frameId) {
+      jobs.applicationShown(from.tabId, entry.applicationKey ?? null);
+      if (lookupOnLoad && (await auth.connected()) && (await auth.disclosed())) {
+        void jobs.loadCard(from.tabId, tailoritFrom(from, entry)).catch(() => undefined);
+      }
+    }
+  }
+
   /** The launcher's prefs changed for the tab's top frame's site: every frame of the tab hears them. `shown`: the
    *  person asked for it back, which undoes "Hide until next visit" too. */
   async function tellLauncherPrefs(tabId: number, shown = false): Promise<void> {
@@ -768,8 +815,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
               ...(same && held.wall !== undefined ? { wall: held.wall } : {}),
               ...(same && held.choice === true ? { choice: true } : {}),
               ...(same && held.waits !== undefined ? { waits: held.waits } : {}),
-              // v5 p2-fill: and its posting's own Apply.
-              ...(same && held.entry === true ? { entry: true } : {}) }, now()) };
+              // v5 p2-fill: and its posting's own Apply; jr6 apply F3a: its press under way, and (at the same
+              // address) the entry it said, for its card.
+              ...(same && held.entry === true ? { entry: true } : {}),
+              ...(same && held.entering === true ? { entering: true } : {}),
+              ...(same && held.entrySaid === true && navOf(held) === (message.nav ?? 0) ? { entrySaid: true } : {}) },
+            now()) };
           });
           // core-x, items 7 and 14: a top document with an application is the tab's chain from now on; a portal frame
           // whose pages frame chain pages keeps its application's canonical address for them (the security fix of
@@ -1041,12 +1092,19 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // ── end v1.5 X ──
         // v4: the account wall a tab's top or claim frame shows now (content/runtime.ts tellWall), for PageState.wall.
         'frame/wall': async (message, from) => {
-          const entry = await lockTab(from.tabId, () => setWall(session, from.tabId, from.frameId,
-            from.documentId ?? null, { wall: message.wall, choice: message.choice === true,
-              ...(message.waits === undefined ? {} : { waits: message.waits }),
-              // v5 p2-fill: a posting's own Apply (Open Application); v5 p2-fill review (L5): its press refused.
-              ...(message.entry === true ? { entry: true } : {}),
-              ...(message.entryRefused === true ? { entryRefused: true } : {}) }));
+          const { before, entry } = await lockTab(from.tabId, async () => {
+            const held = await frameEntry(session, from.tabId, from.frameId);
+            return { before: held, entry: await setWall(session, from.tabId, from.frameId, from.documentId ?? null,
+              { wall: message.wall, choice: message.choice === true,
+                ...(message.waits === undefined ? {} : { waits: message.waits }),
+                // v5 p2-fill: a posting's own Apply, which the panel's Autofill presses; v5 p2-fill review (L5): its
+                // press refused.
+                ...(message.entry === true ? { entry: true } : {}),
+                ...(message.entryRefused === true ? { entryRefused: true } : {}),
+                // jr6 apply F3a (item 4): its press under way, and why it was refused.
+                ...(message.entering === true ? { entering: true } : {}),
+                ...(message.refusal === undefined ? {} : { refusal: message.refusal }) }) };
+          });
           if (entry === null) return refuse('expired');
           log('frame.wall', { shown: message.wall !== null, choice: message.choice === true });
           void reports.pageChanged(from.tabId).catch(() => undefined);
@@ -1060,7 +1118,31 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
               await queueRunner.wall(from.tabId, { applicationKey: entry.applicationKey, wall: message.wall !== null });
             })().catch(() => undefined);
           }
+          // jr6 apply F3a: what the tab's grant and card make of it (entryWords). `entering` and `refusal` never start
+          // the queue's Autofill above (AF-5 corrected: once per job, from a wall, a choice or an entry alone).
+          await entryWords(message, from, before, entry);
           return ok({});
+        },
+        // jr6 apply F3a (item 3): the tab's application frame pressed the site's own Apply for the panel's Autofill
+        // (content/press.ts, at the press): its pending entry grant is armed (sign-up.ts pressed). Counted first, 6 a
+        // minute per tab; only from the tab's application frame (its claim frame, else its top frame: wallFrameOf), in
+        // the document registered for it, on that frame's origin; sign-up.ts takes it only from a document the grant
+        // sent run/start to, on the grant's origin. Logged as flags.
+        'entry/pressed': async (message, from) => {
+          const retry = entryLimit.take(`${from.tabId}/`);
+          if (retry !== null) {
+            log('grant.armed', { armed: false, limited: true });
+            return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+          }
+          const application = wallFrameOf(await framesOfTab(session, from.tabId));
+          if (application === null || application.frameId !== from.frameId || from.documentId === undefined
+            || application.documentId !== from.documentId || application.origin !== originOf(from.url)) {
+            log('grant.armed', { armed: false, frame: false });
+            return refuse('bad_sender');
+          }
+          const armed = signUps.pressed(from.tabId, application, message.nextKey);
+          log('grant.armed', { armed, nextKey: message.nextKey !== undefined });
+          return armed ? ok({}) : refuse('expired');
         },
         'agent/entered': async (_message, from) => {
           // core-x, item 3: the tab's top frame, or the frame that claims its application (agent.ts checks it is the
@@ -1394,6 +1476,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     reportLimit.forget(`${tabId}/`);
     policyLimit.forget(`${tabId}/`);
     shownLimit.forget(`${tabId}/`);
+    entryLimit.forget(`${tabId}/`); // jr6 apply F3a
     askLimit.forget(`${tabId}/`);
     letterLimit.forget(`${tabId}/`);
     jobs.forgetTab(tabId);

@@ -11,7 +11,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
-import { SIGN_UP_GRANT_MS } from './sign-up';
+import { settle } from './apply-worker.testkit';
+import { ENTRY_ARM_MS, SIGN_UP_GRANT_MS } from './sign-up';
 import {
   beginRun, contentSender, frameReport, pageSender, saveSignup, sentToFrames, SIGNUP_PASSWORD, startTestWorker,
   tokenRecord, typeOfSent, type TestWorker,
@@ -213,10 +214,24 @@ describe('a wall with no form (v4)', () => {
     expect(await ask(worker, top(12, { documentId: 'doc-form' }))).toMatchObject(TYPED);
   });
 
-  it('sends nothing to a page with no form, wall or choice', async () => {
+  // jr6 apply F3a (APPLYPLAN D2): a page with no form, wall or choice: its application frame hears run/start (it looks
+  // again, presses a late Apply or says why not), and the grant is pending: nothing is started before that frame's
+  // press (entry/pressed), and it ends unarmed after ENTRY_ARM_MS, its Sign-in Auto told gone.
+  it('reaches a page with no form, wall or choice, and starts nothing after it before that frame presses its Apply', async () => {
     const worker = await signUpWorker();
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false }, top());
-    expect(await fill(worker, 12, { signIn: true })).toEqual({ ok: true, data: { frames: 0 } });
+    expect(await fill(worker, 12, { signIn: true })).toEqual({ ok: true, data: { frames: 1 } });
+    const starts = () => sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'run/start');
+    expect(starts().map((sent) => sent.message)).toEqual([{ v: 1, type: 'run/start', dryRun: false, signIn: true }]);
+    // The form that loads hears Sign-in Auto (the grant's), and is not started by it.
+    expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top(12, { documentId: 'doc-form' })))
+      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'auto' } } } });
+    await settle();
+    expect(starts()).toHaveLength(1);
+    // Unarmed, it ends by time: the tab's frames hear Sign-in Manual again.
+    worker.clock.now += ENTRY_ARM_MS;
+    worker.timers.advance(ENTRY_ARM_MS);
+    await vi.waitFor(() => expect(lastSettingsTo(worker, 12)).toBe('manual'));
   });
 });
 
