@@ -1994,6 +1994,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (entering !== null) return entering;
     const at = urlOf(readHref());
     if (stopped || at === null || (!isTop && !claimed)) return Promise.resolve({ outcome: 'not-offered' });
+    // The line P review (P-3; D6): never on the platform's page after submitting, as entryOffered never offers one
+    // there: that application was sent, and an Apply its page shows ("Apply to more jobs") is no step of it.
+    if (applicationAt(at)?.page === 'confirmation') return Promise.resolve({ outcome: 'not-offered' });
     const cancel = new AbortController();
     const signal = AbortSignal.any([cancel.signal, lifetime.signal]);
     // The line P review (revA-4): the application this entry belongs to; an address that reads another ends it.

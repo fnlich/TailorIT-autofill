@@ -902,6 +902,31 @@ describe('jr6 apply F2: the entry ends where the person says so (the line P revi
       }
     }, 40_000);
 
+  it('the platform’s page after submitting never offers an entry, nor presses one, whatever an adapter answers there (P-3, D6)',
+    async () => {
+      const THANKS = `${LATE}/thanks`;
+      expect(applicationOf(new URL(THANKS))?.page).toBe('confirmation');
+      const { doc, clicks } = await openAt(`<!doctype html><body><main><h1>Thank you for applying</h1>
+        <a id="more" href="${DIALOG}">Apply to more jobs</a></main></body>`, THANKS);
+      // An adapter whose entry answers a visible link there (a later change, or a parser that misreads the page).
+      const loose: Adapter = { ...genericAdapter, id: 'lever', entryControl: (d) => d.getElementById('more') };
+      const { worker, runtime } = await runtimeAt(doc, THANKS, [loose, genericAdapter]);
+      runtimes.push(runtime);
+      await deadline(1_000);
+      // frame/wall never says entry, so the queue's trigger (background/index.ts: entry, wall or choice) cannot fire.
+      expect(worker.of('frame/hello').length).toBeGreaterThan(0);
+      expect(wallsOf(worker).some((wall) => wall.entry)).toBe(false);
+      // Nor does a run/start or the agent's agent/enter that reached it press anything.
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      expect(await worker.platform.deliver({ v: 1, type: 'agent/enter' }))
+        .toEqual({ ok: true, data: { outcome: 'not-offered' } });
+      await deadline(1_500);
+      expect(clicks).toEqual([]);
+      expect(worker.of('entry/pressed')).toEqual([]);
+      expect(worker.of('agent/entered')).toEqual([]);
+      expect(refusals(worker)).toEqual([]);
+    }, 30_000);
+
   // revA-6: two safety rules of the entry, each with the case that fails without it.
   it('a dialog chain after Apply ("Apply manually", "Continue to application", "Start application"): two presses at most (revA-6, D7)',
     async () => {
