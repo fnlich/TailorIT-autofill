@@ -1,0 +1,67 @@
+{
+  "fixture": "oracle/jr6-caesars-email-gate",
+  "source": "https://edmn.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/78569/apply/email",
+  "captured": "2026-11-06T16:08:41.000Z",
+  "note": "The owner's snapshot of the same tenant's email gate after APPLY NOW (jr6): elhr-email-gate's markup, its terms label longer, and \"Do you want to communicate by phone instead?\" (button.quick-apply-flow-verify-method__button), which switches the gate to a text-message code.",
+  "fields": [
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "You don't need to have an account",
+      "fillable": true,
+      "control": "input#primary-email-0",
+      "note": "Its section is the gate's own header, drawn on the flow's translucent panel over its background image (as elhr-email-gate's)."
+    },
+    {
+      "label": "honeypot",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "input#honey-pot-0",
+      "note": "A honeypot: aria-hidden, out of the tab order, drawn invisible. Never filled."
+    },
+    {
+      "label": "I agree with the terms and conditions, have read the privacy policy at https://www.caesars.com/corporate/employee-privacy-notice and agree to receive messages from Caesars.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "You don't need to have an account",
+      "fillable": true,
+      "control": "input#legal-disclaimer-checkbox",
+      "note": "Drawn at 0 by 0 behind its visible label."
+    }
+  ],
+  "hooks": {
+    "detect": "main[aria-labelledby=\"apply-flow-main-heading\"] section.apply-flow__content",
+    "authState": "email-gate",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "email-gate",
+      "email": "input#primary-email-0",
+      "password": null,
+      "confirm": null,
+      "terms": [
+        "input#legal-disclaimer-checkbox"
+      ],
+      "button": "button[type=\"submit\"][title=\"Next\"]",
+      "form": "form:has(input[name=\"primary-email\"])",
+      "colourUnknown": [
+        "input#primary-email-0"
+      ],
+      "enablesWhenFilled": true,
+      "scriptSubmits": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-qa=\"emailVerificationCancelButton\"]",
+      "button.app-dialog__close",
+      ".app-dialog__footer-button"
+    ],
+    "pressable": [
+      "button[type=\"submit\"][title=\"Next\"]"
+    ]
+  }
+}

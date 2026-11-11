@@ -87,7 +87,9 @@ export const ORACLE_SNAPSHOTS = ['fixtures/oracle/jpmc-posting.html', 'fixtures/
   // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
   'fixtures/oracle/fortive-email-code.html', 'fixtures/oracle/hjf-apply-section.html',
   // ── behaviour review 2026-11-06 (M4): the same flow 12 s after its Submit ──
-  'fixtures/oracle/hjf-after-submit.html'] as const;
+  'fixtures/oracle/hjf-after-submit.html',
+  // ── jr6 ORACLE (FIXPLAN §6.11): the owner's snapshots of a us2 tenant's posting and its email gate ──
+  'fixtures/oracle/jr6-caesars-posting.html', 'fixtures/oracle/jr6-caesars-email-gate.html'] as const;
 
 /** The longest an Oracle page takes to draw its posting or its gate: the runtime's cap. */
 export const ORACLE_FORM_LATE_MS = 30_000;
