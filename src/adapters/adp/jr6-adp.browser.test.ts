@@ -1217,19 +1217,24 @@ describe('jr6 PRIV-1 (review: privacy): no row of ADP’s lists or radio groups 
     expect(told).toEqual([]);
   });
 
-  // Known leak, handed to TOOLING (SP\jr6\build\ADP.md, "PRIV-1 fixer", edit 1): a wfn-radio-button group mirrors its
-  // chosen option's value on each row (radio-group-value="<that row's value>"), which no converter rule clears yet:
-  // jr6-questions-filled's employee-referral pair and jr6-guest-send-code's code channel. It turns `it` when the
-  // converter blanks it and ADP converts its pages again.
-  it.fails('known leak: no wfn-radio-button names its group’s chosen value (every jr6 page)', () => {
+  // The value mirror: a wfn-radio-button group mirrors its chosen option's value on each row (radio-group-value="<that
+  // row's value>"). As converted before TOOLING's VALUE_MIRRORS (jr6-tooling 517aa64), jr6-questions-filled's
+  // employee-referral pair and jr6-guest-send-code's code channel held it: this test failed on exactly those two, and
+  // passes since ADP converted them again.
+  it('no wfn-radio-button names its group’s chosen value (every jr6 page)', () => {
     const told: string[] = [];
+    let carried = 0;
     for (const [path, html] of Object.entries(PAGES)) {
       for (const group of choiceRowsOf(html)) {
+        if (group.rows.every((row) => row.hasAttribute('radio-group-value'))) carried += 1;
         if (group.rows.some((row) => (row.getAttribute('radio-group-value') ?? '') !== '')) {
           told.push(`${caseOf(path)}: ${group.kind} in ${group.field} (${group.rows.length} rows)`);
         }
       }
     }
+    // The walk reaches the four wfn-radio-button pairs that carry the attribute (the code channel, and the
+    // employee-referral pair on three Questions pages), so it cannot pass on an empty walk.
+    expect(carried).toBe(4);
     expect(told).toEqual([]);
   });
 });
