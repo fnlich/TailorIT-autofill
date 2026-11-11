@@ -413,13 +413,12 @@
     },
     {
       "label": "Skills",
-      "kind": "typeahead-remote",
+      "kind": "text",
       "required": true,
       "section": "Skills",
-      "fillable": false,
+      "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] input[data-automation=\"item-typeahead\"]",
-      "reason": "widget-phase-4",
-      "note": "jr6 U-05: declared a box of several answers (WidgetDecl.tags: its chips, its row's Add). ENGINE E3 reads it as one text field and adds each skill; until E3, no widget helper acts on it (was: one comma-joined text)."
+      "note": "jr6 U-05: declared a box of several answers (WidgetDecl.tags: its chips, its row's Add); ENGINE E3 scans it as one text field holding its box's text, and the tags filler adds each skill no chip shows through that Add. Was: one comma-joined text in the box, its Add never pressed."
     },
     {
       "label": "REDACTED",
