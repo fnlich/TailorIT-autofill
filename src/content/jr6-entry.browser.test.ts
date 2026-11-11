@@ -351,6 +351,34 @@ describe('jr6 apply F2: the door’s refusals and each reason told (AP-7, C7, AF
       }
     }, 40_000);
 
+  it('the agent hears a door’s refusal (a new tab, a download, another site) as "blocked" "other", nothing pressed (P-4)',
+    async () => {
+      // agent.ts ends a job at once only on 'blocked' (ENTRY_RESULTS): a plain 'not-offered' would wait out its form wait.
+      for (const how of ['target', 'download', 'origin'] as const) {
+        const { doc, clicks } = await openAt(leverHtml, AHEAD);
+        const links = Array.from(doc.querySelectorAll('a.postings-btn'));
+        let own = servedAdapter(leverAdapter, AHEAD);
+        if (how === 'origin') {
+          // Lever's own rule offers no link to another site: a looser entry stands for one that would.
+          for (const link of links) link.setAttribute('href', 'https://apply.example-ats.com/job/1/apply');
+          own = { ...own, entryControl: (d) => d.querySelector<HTMLElement>('a.postings-btn') };
+        } else {
+          for (const link of links) link.setAttribute(how, how === 'target' ? '_blank' : '');
+        }
+        const { worker, runtime } = await runtimeAt(doc, AHEAD, [own, genericAdapter]);
+        runtimes.push(runtime);
+        expect(await worker.platform.deliver({ v: 1, type: 'agent/enter' }), how)
+          .toEqual({ ok: true, data: { outcome: 'blocked', block: 'other' } });
+        await deadline(300);
+        expect(clicks, how).toEqual([]);
+        expect(worker.of('agent/entered'), how).toEqual([]);
+        expect(worker.of('entry/pressed'), how).toEqual([]);
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 40_000);
+
   it('says "none" where no adapter declares an Apply, "blocked" for a check before any press, "elsewhere" for another site',
     async () => {
       // None: the generic adapter alone, at a posting's address.
