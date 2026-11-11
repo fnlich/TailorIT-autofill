@@ -106,7 +106,9 @@ describe('parseWorkdayUrl', () => {
 
     it('reads a redirect to the posting, its choice or any way of applying, with or without a locale or a query', () => {
       for (const redirect of [`/en-US/verily_careers/job/Dallas/${VERILY_SLUG}`, `/verily_careers/job/x/${VERILY_SLUG}/apply`,
-        `/en-US/verily_careers/job/x/${VERILY_SLUG}/apply/applyManually`, `/en-us/Verily_Careers/job/x/${VERILY_SLUG}/apply/useMyLastApplication?source=x`]) {
+        `/en-US/verily_careers/job/x/${VERILY_SLUG}/apply/applyManually`, `/en-us/Verily_Careers/job/x/${VERILY_SLUG}/apply/useMyLastApplication?source=x`,
+        // jr6 WORKDAY fix (WD-R2): dots inside a segment are no dot segment; a fragment is set aside like a query.
+        `/en-US/verily_careers/job/St.-Louis%2C-MO/${VERILY_SLUG}/apply`, `/en-US/verily_careers/job/..x/${VERILY_SLUG}/apply#top`]) {
         expect(parseWorkdayUrl(login(redirect)), redirect).toEqual(verily);
         expect(parseWorkdayUrl(login(redirect, `${VERILY}/verily_careers/login`)), redirect).toEqual(verily);
       }
@@ -131,13 +133,24 @@ describe('parseWorkdayUrl', () => {
         // A dot segment, a space or a control character in the path.
         login(`/en-US/verily_careers/./job/x/${VERILY_SLUG}/apply`), login(`/en-US/x/%2E%2E/verily_careers/job/x/${VERILY_SLUG}`),
         login(`/en-US/verily_careers/job/x/${VERILY_SLUG}/apply `), login(`/en-US/verily_careers/job/x\u0001/${VERILY_SLUG}/apply`),
+        // jr6 WORKDAY fix (WD-R2, B6 in one expression): each would read as the application but for its own rule (the
+        // location is free text): no leading '/'; a '.' or '..' segment, plain or percent-encoded; a space, a tab, a line
+        // break, a no-break space; a backslash; DEL and a C1 control.
+        login(`a/en-US/verily_careers/job/x/${VERILY_SLUG}/apply`), login(`/en-US/verily_careers/job/../${VERILY_SLUG}/apply`),
+        login(`/en-US/verily_careers/job/%2E/${VERILY_SLUG}/apply`), login(`/en-US/verily_careers/job/.%2e/${VERILY_SLUG}/apply`),
+        login(`/en-US/verily_careers/job/x y/${VERILY_SLUG}/apply`), login(`/en-US/verily_careers/job/x\ty/${VERILY_SLUG}/apply`),
+        login(`/en-US/verily_careers/job/x\ny/${VERILY_SLUG}/apply`), login(`/en-US/verily_careers/job/x\u00a0y/${VERILY_SLUG}/apply`),
+        login(`/en-US/verily_careers/job/x\\y/${VERILY_SLUG}/apply`), login(`/en-US/verily_careers/job/x\u007fy/${VERILY_SLUG}/apply`),
+        login(`/en-US/verily_careers/job/x\u0085y/${VERILY_SLUG}/apply`),
         // No application: the candidate home, the board, a search, a sign-in page.
         login('/en-US/verily_careers/userHome'), login('/en-US/verily_careers'), login(`/en-US/verily_careers/details/${VERILY_SLUG}`),
         login(`/en-US/verily_careers/login?redirect=${encodeURIComponent(posting)}`),
         // No redirect, two, an empty one; a path after /login.
         at(`${VERILY}/en-US/verily_careers/login`), at(`${VERILY}/en-US/verily_careers/login?redirect=`),
         at(`${VERILY}/en-US/verily_careers/login?redirect=${encodeURIComponent(posting)}&redirect=${encodeURIComponent(posting)}`),
-        at(`${VERILY}/en-US/verily_careers/login/x?redirect=${encodeURIComponent(posting)}`)]) {
+        at(`${VERILY}/en-US/verily_careers/login/x?redirect=${encodeURIComponent(posting)}`),
+        // jr6 WORKDAY fix (WD-R2): and with no locale, where the site and /login are read before what follows.
+        at(`${VERILY}/verily_careers/login/x?redirect=${encodeURIComponent(posting)}`)]) {
         expect(parseWorkdayUrl(address), address.href).toBeNull();
         expect(canonicalApplicationUrl(address), address.href).toBeNull();
       }
