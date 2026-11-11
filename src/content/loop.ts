@@ -43,7 +43,9 @@
  * (Adapter.dependsOn) is written before it in the pass (pass.ts parentsFirst), and the page's answer awaited after its
  * write (pass.ts writeField); each scan tells the books which fields depend on which, and which the page now draws as
  * other elements, so a dependent is decided again after its parent's write (bookkeeping.ts: 'parent-written',
- * 'reshaped').
+ * 'reshaped'). jr6 line W review (REVC-7): a dependent whose parent waits for its options this pass (a lazy list read
+ * at the pass's end: Oracle's Country on a first visit), or is held back itself, is held back too (heldDependents):
+ * not written, given no row, still pending, so a later pass writes it after its parent instead of before it and again.
  * Fields the plan leaves waiting for the LLM (Phase 4: a tiebreak or a classification the worker asked TailorIT for)
  * are polled with plan/poll before each pass: at once when the pass has other fields to plan, else every AI_POLL_MS
  * until an answer comes, capped at AI_WAIT_CAP_MS with no answer coming in (then llm-unavailable); a field the worker
@@ -82,9 +84,9 @@
  * (bookkeeping.ts noteArrivalPass; MAX_LOOP_PASSES still ends any loop), since answers now arrive a few at a time.
  */
 import {
-  awaitingKeys, baseKeyOf, carriedFields, childrenOf, createLoop, isStopped, loopVerdict, mayWrite, noteArrivalPass,
-  orderPending, recordOptionsWait, recordRows, recordWrite, requeueAwaiting, revealEdgesOf, observeScan, type LoopEnd,
-  type LoopEvent, type LoopState, type LoopVerdict, type ScanObservation, type TrackedField,
+  awaitingKeys, baseKeyOf, carriedFields, childrenOf, createLoop, holdBack, isStopped, loopVerdict, mayWrite,
+  noteArrivalPass, orderPending, recordOptionsWait, recordRows, recordWrite, requeueAwaiting, revealEdgesOf,
+  observeScan, type LoopEnd, type LoopEvent, type LoopState, type LoopVerdict, type ScanObservation, type TrackedField,
 } from '../core/loop/bookkeeping';
 import { loopRows, unplannedRow, unresolvedRow } from '../core/loop/rows';
 import type { Provenance } from '../core/enums';
@@ -572,6 +574,45 @@ class ReactiveLoop {
     this.drawnAs = drawnAs;
     return { dependsOn: dependenciesOf(scanned, this.env.adapter), replaced };
   }
+
+  /**
+   * jr6 line W review (REVC-7): the writes a pass holds back because the field whose write resets them
+   * (Adapter.dependsOn) is written in a later pass, not this one: it waits for its list's options (its row this pass
+   * says waiting-for-options: a lazy list, read at this pass's end, as Oracle's Country is on a first visit; or its books
+   * say it still waits), or it is held back itself (a chain: Oracle's ZIP under Address Line 1 under Country). Jobright
+   * writes Oracle's country first (prefillCountryBeforeRules). A held write is neither written nor given a row: its
+   * field stays pending and a later pass plans it again and writes it after its parent (parentsFirst). Never held: an
+   * answer that came in from the AI; a dependent whose parent awaits the AI (pending fields keep the AI's poll from
+   * blocking, so a hold there would spend passes while the AI thinks), or whose list shows a busy sign while it holds
+   * options (no bound but the passes'). Keys only.
+   */
+  private heldDependents(scanned: ScanResult, rows: ReadonlyMap<FieldKey, FillResult>, writes: readonly PlannedWrite[],
+    arrived: ReadonlyMap<FieldKey, unknown>): Set<FieldKey> {
+    const held = new Set<FieldKey>();
+    const parents = dependenciesOf(scanned, this.env.adapter);
+    if (parents.size === 0) return held;
+    const keyOf = new Map(scanned.fields.map((field) => [field.baseKey, field.key] as const));
+    const waits = (parent: BaseKey): boolean => {
+      const key = keyOf.get(parent);
+      if (key === undefined) return false;
+      if (held.has(key)) return true;
+      const row = rows.get(key);
+      if (row !== undefined) return row.reason === 'waiting-for-options';
+      const tracked = this.state.fields.get(parent);
+      return tracked !== undefined && tracked.key === key && tracked.status === 'waiting-options';
+    };
+    const candidates = writes.filter((write) => !arrived.has(write.key));
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const write of candidates) {
+        const parent = parents.get(baseKeyOf(write.key));
+        if (held.has(write.key) || parent === undefined || !waits(parent)) continue;
+        held.add(write.key);
+        grew = true;
+      }
+    }
+    return held;
+  }
   // ── end jr6 ENGINE E3 ──
 
   /** The core pass of 2026-11-06: the files written whose upload the page shows done and whose input it has taken out
@@ -685,6 +726,14 @@ class ReactiveLoop {
       this.state = recordRows(this.state, rows.values(), { awaiting: env.poll === undefined ? awaiting
         : awaitingKeys(this.state) });
       return { kind: 'dry-run', rows: [...rows.values()] };
+    }
+    // jr6 line W review (REVC-7): a dependent whose parent is written in a later pass waits for it (heldDependents):
+    // no row, no write, still pending; the books hear of it, so the next scan is no stall.
+    const heldBack = this.heldDependents(current, rows, writes, arrived);
+    if (heldBack.size > 0) {
+      for (const key of heldBack) rows.delete(key);
+      this.state = holdBack(this.state, heldBack);
+      this.waitingNow = [...this.waitingNow, ...heldBack];
     }
 
     const done: WrittenField[] = [];
