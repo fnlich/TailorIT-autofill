@@ -31,7 +31,12 @@
  * - never pressed: the narrow layout's Apply (#resumator-mobile-apply-button), the share links, "View All Jobs", the
  *   resume's paste and attach switches and the "two stage" re-upload link, the cookie banner's buttons and "Powered by"
  *   (jazzhr-0 to -4);
- * - the posting's text: div#job-description (jazzhr-0 to -4).
+ * - jr6 JZ-13: the classic layout's Cancel (input#resumator-cancel-resume, beside Submit) and its "Apply with Indeed"
+ *   widget (#resumator-apply-with-indeed-wrapper: Indeed's own sign-in; the Bootstrap pages only hide it in their
+ *   stylesheet) are never pressed either (jr6-centroid-form; Jobright 1.25.2 presses only what its Submit lookup
+ *   returns);
+ * - the posting's text: div#job-description (jazzhr-0 to -4), div#resumator-job-description on the classic layout
+ *   (jr6 JZ-12, jr6-centroid-form).
  * Left to the standard rules, as no snapshot shows them: the résumé's state once a file is chosen (its input keeps its
  * own files), the datepicker's written layout (jazzhr-2's "Earliest start date?" stays free text) and the page after
  * submitting. The reCAPTCHA "Human Check" is always the person's (pause detection).
@@ -98,10 +103,14 @@ const RULES: AtsConfig = {
     { css: '#resumator-choose-upload, #resumator-choose-paste, #resumator-two-stage-change-resume', from: 'jazzhr-0 to -4' },
     { css: '#tracking-consent-banner button', from: 'jazzhr-0 to -4' },
     { css: '#resumator-logo', from: 'jazzhr-0 to -4' },
+    // jr6 JZ-13 (header).
+    { css: '#resumator-cancel-resume', from: 'jr6-centroid-form' },
+    { css: '#resumator-apply-with-indeed-wrapper', from: 'jr6-centroid-form' },
   ],
   // jr6 JZ-5: "Paste resume"'s box, hidden until chosen (both layouts), is no question of the form.
   excluded: [{ css: '#resumator-resume-paste-wrapper', from: 'jazzhr-0 to -4, jr6-centroid-form' }],
-  posting: { text: '#job-description', from: 'jazzhr-0 to -4' },
+  // jr6 JZ-12: the classic layout's description is div#resumator-job-description (jr6-centroid-form).
+  posting: { text: '#job-description, #resumator-job-description', from: 'jazzhr-0 to -4, jr6-centroid-form' },
 };
 
 /** The hooks the rules build, for the code below to extend. */

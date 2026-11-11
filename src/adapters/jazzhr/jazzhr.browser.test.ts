@@ -392,6 +392,50 @@ describe('jr6 (FIXPLAN 6.8): JazzHR’s classic layout, each rule and the page r
     });
 });
 
+describe('jr6 (FIXPLAN 6.8) JZ-12, JZ-13: the classic layout’s posting text and its never-pressed controls', () => {
+  it('JZ-12: reads the classic posting text from #resumator-job-description; none with the Bootstrap selector alone',
+    async () => {
+      const page = await open(centroidHtml);
+      const description = q(page.doc, 'div#resumator-job-description');
+      expect(jazzhrAdapter.postingText?.(page.doc)).toBe(description);
+      // The converted page holds synthetic text there (fixtures/synthetic/jazzhr/centroid-posting-description.txt).
+      expect(description.textContent).toContain('synthetic text standing in for the posting');
+      const bootstrapOnly = configuredAdapter({ ...JAZZHR_CONFIG, posting: { text: '#job-description', from: 'before jr6' } });
+      expect(bootstrapOnly.postingText?.(page.doc)).toBeNull();
+      expect(jazzhrAdapter.entryControl?.(page.doc)).toBeNull();
+    });
+
+  it('JZ-13: never presses Cancel or anything of “Apply with Indeed”; both pressable without the rule, Submit still is',
+    async () => {
+      for (const [html, cancelShown] of [[centroidHtml, false], [classicHtml, true]] as const) {
+        const page = await open(html);
+        const cancel = q<HTMLInputElement>(page.doc, 'input#resumator-cancel-resume');
+        const indeed = q(page.doc, '#resumator-apply-with-indeed-wrapper');
+        // The widget Indeed's script draws inside its wrapper (the capture keeps the empty span): a link of its own.
+        const widget = page.doc.createElement('a');
+        widget.href = '#indeed-apply';
+        widget.textContent = 'Apply with Indeed';
+        indeed.querySelector('span.indeed-apply-widget')!.replaceChildren(widget);
+        expect(isUserVisible(cancel)).toBe(cancelShown);
+        const never = jazzhrAdapter.neverPress?.(page.root) ?? [];
+        expect(never).toContain(cancel);
+        expect(never).toContain(indeed);
+        const ctx = { adapter: jazzhrAdapter, root: page.root };
+        expect(assertNotSubmit(cancel, ctx)).toEqual({ ok: false, refusal: 'adapter-never-press' });
+        expect(assertNotSubmit(widget, ctx)).toMatchObject({ ok: false });
+        // Without the two entries Cancel is a plain button to the guard.
+        const before = configuredAdapter({ ...JAZZHR_CONFIG, neverPress: JAZZHR_CONFIG.neverPress!
+          .filter((rule) => !['#resumator-cancel-resume', '#resumator-apply-with-indeed-wrapper'].includes(rule.css)) });
+        expect(before.neverPress?.(page.root)).not.toContain(cancel);
+        expect(assertNotSubmit(cancel, { adapter: before, root: page.root })).toEqual({ ok: true });
+        const submit = jazzhrAdapter.submitButton?.(page.root);
+        expect(submit?.id).toBe('resumator-submit-resume');
+        expect(never).not.toContain(submit);
+        removeFixtures(document);
+      }
+    });
+});
+
 describe('jr6 (FIXPLAN 6.8) JZ-10: JazzHR’s field errors, on both layouts', () => {
   it.each([['the classic layout', centroidHtml], ['the Bootstrap layout', invaluableHtml],
     ['the synthetic classic page', classicHtml]] as const)(
