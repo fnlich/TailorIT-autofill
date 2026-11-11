@@ -404,6 +404,28 @@ describe('item 4: none saved under Sign up & Autofill, the run waits for one, th
     expect(seen.presses).toBe(0);
   });
 
+  // The agent's window is never told a password may be typed (background/settings.ts: typeSignIn false there): its run
+  // never waits for one, and its toast never says it goes on by itself.
+  it('the auto-apply agent’s run waits for none: the toast says to save one, nothing asked again', async () => {
+    const fixture = await workday(createHtml, WORKDAY);
+    const seen = actAsWorkday(fixture);
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const } };
+    const worker = createFakeWorker({ settings, script: { 'signin/credential': [{ ok: false, error: 'not_found' },
+      { ok: true, data: AUTO }] } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => WORKDAY, isTop: true,
+      adapters: () => [workdayAdapter], settle: { quietMs: 40 }, signIn: { passwordWaitMs: 60_000 } });
+    runtimes.push(runtime);
+    expect(await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, agent: true }))
+      .toEqual({ ok: true, data: {} });
+    await vi.waitFor(() => expect(runtime.ui?.toasts.shown).toEqual(['no-sign-in']), { timeout: 10_000 });
+    expect(worker.of('run/begin')).toEqual([expect.objectContaining({ trigger: 'agent' })]);
+    expect(toastText(runtime)).toBe(COPY.toasts.noSignIn);
+    await worker.platform.deliver(typeSignInPushed(true));
+    await deadline(800);
+    expect(worker.of('signin/credential')).toHaveLength(1);
+    expect(seen.presses).toBe(0);
+  });
+
   it('a wall with no form (Sign up & Autofill there): the same wait, then the wall asked again', async () => {
     const fixture = await workday(createHtml, WORKDAY);
     const seen = actAsWorkday(fixture);

@@ -3032,8 +3032,10 @@ export class FillRun {
     this.signInDetail = signInDetailOf(this.env.doc);
     if (outcome === 'failed') this.notices.add('sign-in-failed');
     // jr6 SHELL-A (FIXPLAN §6.12 item 5; WD-04): none saved, under Auto or Sign up & Autofill: the run waits for one to
-    // be saved (waitForPassword), once, and its toast says it goes on by itself meanwhile.
-    const waits = outcome === 'none-saved' && !typing && !this.passwordWaited;
+    // be saved (waitForPassword), once, and its toast says it goes on by itself meanwhile. Never the auto-apply agent's
+    // run: its window is never told a password may be typed (background/settings.ts contentSettingsOf: typeSignIn is
+    // false there), so no wait could end in a second try, and nobody is there to save one.
+    const waits = outcome === 'none-saved' && !typing && !this.passwordWaited && this.request.trigger !== 'agent';
     if (waits) this.passwordWaited = true;
     const waited = waits ? this.waitForPassword() : null;
     this.drawToasts();
