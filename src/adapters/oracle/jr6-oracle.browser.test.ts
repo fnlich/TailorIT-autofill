@@ -17,7 +17,7 @@
  * reads Oracle's (cxDrive).
  * Nothing here prints or keeps a value.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import caesarsPostingHtml from '../../../fixtures/oracle/jr6-caesars-posting.html?raw';
 import caesarsGateHtml from '../../../fixtures/oracle/jr6-caesars-email-gate.html?raw';
 import elhrGateHtml from '../../../fixtures/oracle/elhr-email-gate.html?raw';
@@ -25,9 +25,10 @@ import fortiveCodeHtml from '../../../fixtures/oracle/fortive-email-code.html?ra
 import hjfSectionHtml from '../../../fixtures/oracle/hjf-apply-section.html?raw';
 import hjfAfterSubmitHtml from '../../../fixtures/oracle/hjf-after-submit.html?raw';
 import jpmcPostingHtml from '../../../fixtures/oracle/jpmc-posting.html?raw';
-import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { createFakeWorker, goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { dependenciesOf, parentsFirst } from '../../content/pass';
 import { pressEntry, stepButtonsOf } from '../../content/press';
+import { startContentRuntime, type ContentRuntime } from '../../content/runtime';
 import { planFrame } from '../../core/plan/frame';
 import type { RepeatableRequest } from '../../core/steps/blocks';
 import { stepSignature } from '../../core/steps/signature';
@@ -1455,3 +1456,92 @@ describe('jr6 P2 O13: "Link N" takes the profile’s links in order (RULES item 
   });
 });
 
+// ── P2 O1, O2, O3, O5 in the content runtime ───────────────────────────────────────────────────────────────────
+
+describe('jr6 P2 O1, O2, O3, O5 in the content runtime: the contact and address blocks filled (synthetic lists)', () => {
+  beforeAll(() => testVocab());
+  const runtimes: ContentRuntime[] = [];
+  afterEach(() => {
+    for (const runtime of runtimes.splice(0)) runtime.stop();
+  });
+
+  /** hjf-apply-section with its contact and address blocks only: its other blocks (the questions, the timeline, the
+   *  uploads, whose cover letter would wait for a letter, the agreements, the signature) taken out in the test. */
+  function contactAndAddress(doc: Document): void {
+    for (const block of Array.from(doc.querySelectorAll('.apply-flow-block'))) {
+      if (!/\bapply-flow-block--personal-information-(?:basic|address)/.test(block.className)) block.remove();
+    }
+  }
+
+  /** The address block's boxes a new Country empties (the block drawn again for it). */
+  const BLOCK = ['addressLine1-39', 'postalCode-42', 'city-43', 'region2-44', 'region1-45'];
+
+  it('chooses every list, types the street again after the Country emptied it and the ZIP after the street, decides '
+    + 'the dependents again after each parent’s write, and ends with the number national beside its code',
+  async () => {
+    const doc = await load(hjfSectionHtml, SECTION, contactAndAddress);
+    const timeline: Array<{ kind: 'choose'; id: string } | { kind: 'plan'; labels: string[] }> = [];
+    cxDrive(doc, { 'country-codes-dropdownphoneNumber': { rows: CODES }, 'country-17': { rows: COUNTRIES },
+      'addressLine1-39': { rows: [], search: suggestStreet },
+      'postalCode-42': { rows: postalCodes(), search: suggestPostal },
+      'city-43': { rows: CITIES }, 'region2-44': { rows: STATES }, 'region1-45': { rows: COUNTIES } }, (choice) => {
+      timeline.push({ kind: 'choose', id: choice.id });
+      // A new Country draws the block again (Jobright 1.25.2's prefillCountryBeforeRules waits for its dependents): its
+      // other boxes are emptied, ours included (synthetic: no capture shows it).
+      if (choice.id === 'country-17') for (const id of BLOCK) (doc.getElementById(id) as HTMLInputElement).value = '';
+    });
+    const events = logEvents(doc);
+    const worker = createFakeWorker({ settings: DEFAULT_SETTINGS, onMessage: (message) => {
+      if (message.type !== 'plan/request') return;
+      const { specs, planKeys } = message as unknown as { specs: FieldSpec[]; planKeys?: string[] };
+      // A pass's plan sends the whole scan as its context; a search's match, its one field's results.
+      if (specs.length < 2) return;
+      timeline.push({ kind: 'plan', labels: specs.filter((spec) => planKeys === undefined
+        || planKeys.includes(spec.key)).map((spec) => spec.label) });
+    } });
+    const runtime = await startContentRuntime(worker.platform, doc, { href: () => SECTION, isTop: true,
+      adapters: () => [oracleAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    await runtime.fill();
+    await vi.waitFor(() => expect(runtime.run?.ended).toBeDefined(), { timeout: 80_000 });
+
+    // Every list chosen, the street and the ZIP searched, County left: what the page shows at the end.
+    const value = (id: string) => (doc.getElementById(id) as HTMLInputElement).value;
+    expect(value('country-codes-dropdownphoneNumber')).toBe('United States (+1)');
+    expect(value('country-17')).toBe('United States');
+    expect(value('addressLine1-39')).toBe(streetSuggestions().austin);
+    expect(value('postalCode-42')).toBe(goldenProfile().address!.postalCode);
+    expect(value('city-43')).toBe('Austin');
+    expect(value('region2-44')).toBe('Texas');
+    expect(value('region1-45')).toBe('');
+    const number = doc.querySelector<HTMLInputElement>('input.phone-row__input')!.value;
+    expect(number).not.toMatch(/^\s*\+/);
+    expect(number.replace(/\D/g, '')).toBe(nationalDigits());
+    // The run's rows.
+    const rows = new Map(worker.reports.at(-1)!.fields.map((row) => [row.label, row] as const));
+    for (const label of ['Country code', 'Phone Number', 'Country', 'Address Line 1', 'ZIP Code', 'City', 'State']) {
+      expect(rows.get(label), label).toMatchObject({ status: 'verified' });
+    }
+    expect(rows.get('County')).toMatchObject({ category: 'address.county', status: 'flagged',
+      reason: 'no-profile-value' });
+
+    // The order: the Country chosen once; the street typed again after it (the new Country emptied it) and the ZIP
+    // after the street's last choice.
+    const at = (id: string) => timeline.flatMap((entry, index) => (entry.kind === 'choose' && entry.id === id ? [index]
+      : []));
+    const [country, street, zip] = [at('country-17'), at('addressLine1-39'), at('postalCode-42')];
+    expect(country.length).toBe(1);
+    expect(street.at(-1)!).toBeGreaterThan(country[0]!);
+    expect(zip.at(-1)!).toBeGreaterThan(street.at(-1)!);
+    // Decided again after a parent's write (bookkeeping's 'parent-written'): Address Line 1 after the Country's; City
+    // and State, whose answers the street's write left in place, after the street's last.
+    const plannedAfter = (index: number) => timeline.slice(index + 1)
+      .flatMap((entry) => (entry.kind === 'plan' ? entry.labels : []));
+    expect(plannedAfter(country[0]!)).toContain('Address Line 1');
+    expect(plannedAfter(street.at(-1)!)).toEqual(expect.arrayContaining(['City', 'State']));
+    // City and State were chosen once each: decided again, they were not chosen again.
+    expect(at('city-43').length).toBe(1);
+    expect(at('region2-44').length).toBe(1);
+    expectOurEventsOnly(events);
+  }, 120_000);
+});
