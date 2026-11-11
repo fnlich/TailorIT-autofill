@@ -994,15 +994,15 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
       expect(h.tabs).toHaveLength(2);
     });
 
-    it('a run that reports again within the wait leads, the wait gone; a later page turn waits afresh', async () => {
+    it('a report a look sees ends the quiet wait: the run leads, and a later page turn waits afresh', async () => {
       seed(h, 1);
       await h.runner.start();
       const { tab } = await started(h, 1);
       await says(h, tab, 'fill-step');
-      // A slow page turn: no report for 60 s, then the next step's run reports.
+      // A slow page turn: no report for 60 s, then the next step's run reports (its message missed: a look sees it).
       h.reports.delete(tab);
       await h.advance(60_000, 1_000);
-      await says(h, tab, 'scan-step');
+      h.reports.set(tab, [report({ status: 'scan-step' })]);
       // It works on, reporting, past any wait.
       await h.advance(2 * QUEUE_ENTRY_WAIT_MS, 1_000);
       expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
@@ -1012,6 +1012,24 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
       expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
       await says(h, tab, 'review');
       expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      expect(timeouts()).toEqual([]);
+    });
+
+    it('a report heard as its message ends the quiet wait, though no look saw it', async () => {
+      seed(h, 1);
+      await h.runner.start();
+      const { tab } = await started(h, 1);
+      await says(h, tab, 'fill-step');
+      h.reports.delete(tab);
+      await h.advance(1_000);
+      const quietFrom = h.clock.now;
+      await h.advance(80_000, 1_000);
+      // The next step's run reports, and its page turns at once, before any look at the tabs.
+      await says(h, tab, 'fill-step');
+      h.reports.delete(tab);
+      await h.advance(15_000, 1_000);
+      expect(h.clock.now - quietFrom).toBeGreaterThan(QUEUE_ENTRY_WAIT_MS);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
       expect(timeouts()).toEqual([]);
     });
 
