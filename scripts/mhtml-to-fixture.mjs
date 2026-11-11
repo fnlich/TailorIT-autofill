@@ -547,11 +547,20 @@ const drawingSelector = ({ host, tag = '', id, className }) => {
   const own = `${tag}${id === undefined ? '' : `#${id}`}${className === undefined ? '' : `.${className}`}`;
   return `${host} ${own}, :host(${host}) ${own}`;
 };
-/** What clearChoicesInPage reads beside CHOSEN_MARKS on every conversion: the roving rows and their widgets, and the
- *  CHOSEN_DRAWINGS parts. */
+/** jr6 fixes (PRIV-1's value mirror, found by the ADP fixer): an attribute in which a widget repeats its group's chosen
+ *  value on each row, blanked on every conversion (clearChoicesInPage; an unanswered group draws it empty) and refused
+ *  where it stays (chosenMarksIn): ADP's <wfn-radio-button value="..." radio-group-value="<the chosen row's value>">
+ *  (snapshot6 adp2's Questions Yes/No and the guest sign-in's code choice; adp/jr6-questions2-blank draws it ""). A
+ *  scan of every committed fixture (jr6-forms and jr6-adp, custom elements' attributes equal to a row's value, and
+ *  value-like attributes on custom lists and groups) found no other such mirror.
+ *  @type {Array<{ tag: string; attribute: string }>} */
+export const VALUE_MIRRORS = [{ tag: 'wfn-radio-button', attribute: 'radio-group-value' }];
+/** What clearChoicesInPage reads beside CHOSEN_MARKS on every conversion: the roving rows and their widgets, the
+ *  CHOSEN_DRAWINGS parts and the VALUE_MIRRORS. */
 export const CLEAR_CHOICE_INPUT = {
   roving: { roles: ROVING_ROLES, tags: ROVING_TAGS, groupRoles: ROVING_GROUP_ROLES, groupTags: ROVING_GROUP_TAGS },
   drawings: CHOSEN_DRAWINGS.map(drawingSelector),
+  mirrors: VALUE_MIRRORS,
 };
 // ── end jr6 fixes ──
 
@@ -1602,7 +1611,8 @@ export function stripInjectedInPage(input) {
  * Returns how many it cleared.
  * @param {{ redacted: string; marks?: Array<{ selector: string; classes?: string[]; patterns?: string[];
  *   attributes?: string[]; aria?: boolean; swap?: Record<string, string> }>; drawings?: string[];
- *   roving?: { roles: string[]; tags: string[]; groupRoles: string[]; groupTags: string[] } }} input
+ *   roving?: { roles: string[]; tags: string[]; groupRoles: string[]; groupTags: string[] };
+ *   mirrors?: Array<{ tag: string; attribute: string }> }} input
  * @returns {{ choices: number }}
  */
 export function clearChoicesInPage(input) {
@@ -1657,6 +1667,15 @@ export function clearChoicesInPage(input) {
   for (const part of (input.drawings ?? []).length > 0 ? doc.querySelectorAll((input.drawings ?? []).join(', ')) : []) {
     part.remove();
     choices += 1;
+  }
+  // jr6 fixes (PRIV-1's value mirror, from the ADP fixer): a group's chosen value repeated on each of its rows
+  // (`mirrors`: VALUE_MIRRORS, ADP's wfn-radio-button radio-group-value) is blanked, as an unanswered group draws it.
+  for (const { tag, attribute } of input.mirrors ?? []) {
+    for (const element of doc.querySelectorAll(`${tag}[${attribute}]`)) {
+      if ((element.getAttribute(attribute) ?? '') === '') continue;
+      element.setAttribute(attribute, '');
+      choices += 1;
+    }
   }
   // jr6 fixes (PRIV-2 a, REVC-4): a widget's roving tab stop on a row but its first moves to its first row (see above).
   // The rows are read in the order the page is written (a shadow root's before its host's children, as the deep
@@ -2718,6 +2737,13 @@ export function transformInPage(input) {
       // its path and query spelled); what stays (its host) the final check refuses.
       const framed = name === 'src' && (element.localName === 'iframe' || element.localName === 'frame');
       const clean = framed ? scrubbed : respell(scrubbed);
+      // jr6 fixes (G.3, the coordinator's decision): a listed string respelled in an attribute that holds words (a
+      // description meta's content, an option's value) is noted where the elimination refusal reads, as the exact rule
+      // notes it, so a REDACTED gap in a public description or list asks for synthetic text (--replace-text). An address
+      // is no such place (a posting's own Apply link inside its description's container spells its title in its slug).
+      const address = urlAttributes.includes(name) || name === 'srcset'
+        || /^\s*(?:https?:|mailto:|tel:|\/\/|\/(?!\s))/i.test(attribute.value);
+      if (clean !== scrubbed && !address) noteListed(element);
       if (clean !== attribute.value) element.setAttribute(attribute.name, clean);
     }
   }
@@ -3829,6 +3855,7 @@ export const CHOSEN_MARK_LABELS = {
   reflected: 'a custom control that says it is checked or selected (checked, selected)',
   roving: "a widget's roving tab stop on a row but its first (tabindex)",
   drawing: 'a part a widget draws on its chosen row alone (CHOSEN_DRAWINGS)',
+  mirrored: "a radio group's chosen value mirrored on its rows (VALUE_MIRRORS: radio-group-value)",
 };
 
 /**
@@ -3848,7 +3875,8 @@ export const CHOSEN_MARK_LABELS = {
  * - jr6 (jobvite-new-4): an AngularJS state class (ANGULAR_STATE_SOURCE) on a control or an ng-model or ng-form element;
  * - jr6 fixes (PRIV-2, REVC-4; CHOSEN_MARK_LABELS): an Angular state class on any other element but a form; a checked or
  *   selected attribute on an element but an input or an option (a custom list item's selected keeps its own label); a
- *   widget's roving tab stop on a row but its first (rovingStopsOffFirst); a CHOSEN_DRAWINGS part inside its host.
+ *   widget's roving tab stop on a row but its first (rovingStopsOffFirst); a CHOSEN_DRAWINGS part inside its host;
+ * - jr6 fixes (PRIV-1's value mirror): a VALUE_MIRRORS attribute that is not empty (ADP's radio-group-value).
  * @param {string} text @returns {string[]}
  */
 export function chosenMarksIn(text) {
@@ -3889,6 +3917,11 @@ export function chosenMarksIn(text) {
     // jr6 fixes (PRIV-2 b, REVC-4): a custom control's reflected state (SmartRecruiters' spl-radio checked="true").
     if (!['input', 'option'].includes(name) && (attributes.has('checked') || (attributes.has('selected') && !listItem))) {
       found.add(CHOSEN_MARK_LABELS.reflected);
+    }
+    // jr6 fixes (PRIV-1's value mirror): a group's chosen value repeated on a row (ADP's radio-group-value).
+    if (VALUE_MIRRORS.some(({ tag: mirror, attribute }) => name === mirror
+      && decodeEntities(attributes.get(attribute) ?? '').trim() !== '')) {
+      found.add(CHOSEN_MARK_LABELS.mirrored);
     }
     const angularElement = ['input', 'select', 'textarea', 'ng-form'].includes(name)
       || ['ng-model', 'data-ng-model', 'ng-form', 'data-ng-form'].some((attribute) => attributes.has(attribute));
