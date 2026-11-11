@@ -166,7 +166,7 @@
       "section": "Questions",
       "fillable": true,
       "control": "ukg-date-input-text[role=\"group\"]",
-      "note": "jr6 U-07: one date drawn in three boxes (dateFor), its boxes its parts, never fields. In this capture the component reads camouflaged: UKG's component styles were not captured, so nothing draws a box around it (ultipro.browser.test.ts KNOWN, as the account step's boxes); a live page's computed style decides."
+      "note": "jr6 U-07: one date drawn in three boxes (dateFor), its boxes its parts, never fields. Its box is the wrapper whose style draws one (controlBox, the jr6 review's REVC-5): in this capture UKG's own scoped style draws it on ukg-item, an inset 1px shadow, so it reads fillable."
     },
     {
       "label": "Are you legally authorized to work in the US?",
