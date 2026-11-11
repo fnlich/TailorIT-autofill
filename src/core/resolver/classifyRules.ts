@@ -295,6 +295,9 @@ const GENERIC_TOKEN_CATEGORIES: Readonly<Record<string, readonly FieldCategory[]
   'name-id.accept-terms': FIELD_CATEGORIES.filter((category) => category.startsWith('consent.')),
 };
 
+/** jr6 fix (RULES-R49): a label naming a chosen or preferred first name ("Chosen First Name", "Preferred First Name"). */
+const CHOSEN_FIRST_NAME_LABEL = /\b(?:chosen|preferred)\s+first\s+name\b/;
+
 /** A field about someone other than the applicant, named in the label: a referee, an emergency contact, a manager. A
  *  job's own reference ("Job reference", "Reference number") is not a person. s2 core-gh (decision 13, the gh study's
  *  3d: s2-onestream-related-open question_8152432009 "If yes, please enter the referring employee's full name", which
@@ -468,6 +471,13 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   if (generic !== undefined && votes.some((vote) => vote.category !== generic.category
     && GENERIC_TOKEN_CATEGORIES[generic.rule]!.includes(vote.category))) {
     votes = votes.filter((vote) => vote !== generic);
+  }
+  // jr6 fix (RULES-R49-CHOSEN-NAME-CONFLICT): a chosen or preferred first name is a given name, more precisely named
+  // (NinjaOne's "Chosen First Name" with autocomplete="given-name", jobvite/ninjaone-step1): the label decides with no
+  // conflict flagged (the value is the first name either way when the profile holds no preferred one). A "Nickname"
+  // names no first name and still conflicts (§8.1's example).
+  if (CHOSEN_FIRST_NAME_LABEL.test(label) && votes.some((vote) => vote.category === 'identity.preferredName')) {
+    votes = votes.filter((vote) => vote.rule !== 'autocomplete.given-name');
   }
   const otherPerson = otherPersonNamedBy(spec, label);
   if (otherPerson !== null && votes.some(isOwnDetail)) {

@@ -810,12 +810,17 @@ interface Refinement {
 
 // jr6 RULES: the refinements' own wordings (see REFINEMENTS).
 /** workday-new-2: an outside business, one doing business with the company, or its vendor, supplier, customer,
- *  subcontractor or competitor. */
-const OUTSIDE_BUSINESS = /\boutside\s+(?:\w+\s+)?(?:company|companies|organi[sz]ations?|business(?:es)?|firms?|entit(?:y|ies))\b|\bdoing\s+business\s+with\b|\b(?:vendors?|suppliers?|customers?|subcontractors?|competitors?)\b/;
+ *  subcontractor or competitor that the person works for or owns ("worked for one of our vendors", "employed by a
+ *  competitor", "employee of a supplier"). jr6 fix (RULES-R4-OUTSIDE-BUSINESS-CAPACITY-LIST): never a capacity in which
+ *  the person worked for the company itself ("… for any other Alphabet company as an employee, temp, vendor, contingent
+ *  worker, or intern?", workday/jr6-verily-application-questions; "as a vendor"). */
+const OUTSIDE_BUSINESS = /\boutside\s+(?:\w+\s+)?(?:company|companies|organi[sz]ations?|business(?:es)?|firms?|entit(?:y|ies))\b|\bdoing\s+business\s+with\b|\b(?:for|by|of|with)\s+(?:(?!as\b)\w+\s+){0,6}?(?:vendors?|suppliers?|customers?|subcontractors?|competitors?)\b/;
 const SCHOOL_WORD = String.raw`(?:school|schools|university|universities|college|colleges|institution|institutions|academy)`;
 /** JV-4: a school's own label ("School", "School name", "College / University", "University attended", "Name of
- *  institution", "Enter school name if not in the list above"), or which one the person attended. */
-const SCHOOL_NOUN = new RegExp(String.raw`^(?:name\s+of\s+(?:the\s+|your\s+)?)?(?:(?:current|most\s+recent|recent|last|previous|prior|high|graduate|undergraduate|secondary|post\s+secondary|educational|academic|your|the)\s+)*${SCHOOL_WORD}(?:\s+(?:(?:or|and)\s+)?${SCHOOL_WORD})*(?:\s+(?:name|attended|of\s+study))*(?:\s+if\s+not\s+in\s+the\s+list(?:\s+above)?)?$|^(?:which|what)\s+${SCHOOL_WORD}\s+(?:did|do)\s+you\s+(?:attend|graduate\s+from|study\s+at)\b`);
+ *  institution", "Enter school name if not in the list above"), or which one the person attended. jr6 fix
+ *  (RULES-R14-SCHOOL-ONLY-TOO-NARROW): also "Select your school", "Search for your school", "Name of the school you
+ *  attended" and "Highest Level School Attended", which main read as the school. */
+const SCHOOL_NOUN = new RegExp(String.raw`^(?:name\s+of\s+(?:the\s+|your\s+)?)?(?:(?:current|most\s+recent|recent|last|previous|prior|high|graduate|undergraduate|secondary|post\s+secondary|educational|academic|your|the)\s+)*${SCHOOL_WORD}(?:\s+(?:(?:or|and)\s+)?${SCHOOL_WORD})*(?:\s+(?:name|attended|of\s+study))*(?:\s+if\s+not\s+in\s+the\s+list(?:\s+above)?)?$|^(?:which|what)\s+${SCHOOL_WORD}\s+(?:did|do)\s+you\s+(?:attend|graduate\s+from|study\s+at)\b|^(?:select|choose|search\s+for|find|enter)\s+(?:your|the|a)\s+${SCHOOL_WORD}(?:\s+name)?$|^name\s+of\s+(?:the\s+)?${SCHOOL_WORD}\s+(?:you\s+)?(?:attended|graduated\s+from)$|^highest\s+(?:level\s+(?:of\s+)?)?${SCHOOL_WORD}\s+attended$`);
 /** JV-14: a company asking to text the person ("Can NinjaOne text you about your application?"), to contact them by
  *  text, or to send them texts; never "the text you entered". */
 const SMS_WIDE = /\b(?:can|may|could|will|would|to|we|us|they)\s+(?:\w+\s+){0,2}?text\s+(?:you|me)\b|\bcontact\s+(?:you|me)\s+(?:by|via|through)\s+text\b|\bsend\s+(?:you|me)\s+(?:a\s+)?texts?\b/;
@@ -1147,8 +1152,10 @@ const GRADUATED = /^(?:did|have)\s+you\s+graduated?(?:\s+from\s+(?:this|the)\s+(
  *  line, which the profile never holds. */
 const ADDRESS_LINE3 = /^(?:street\s+)?address\s+(?:line\s*)?3$/;
 /** jr6 RULES R4 (ADP-16: ADP's desired-salary Annually | Hourly radios, "<block title> pay basis" by the label contract
- *  of FIXPLAN §3.2): the period the pay is asked in. */
-const PAY_BASIS = /\b(?:pay|salary|compensation|wage|rate)\s+(?:basis|period|frequency)\b/;
+ *  of FIXPLAN §3.2): the period the pay is asked in. jr6 fix (RULES-R68-PAY-BASIS-NEAR-MISS): only a label that ends
+ *  with it ("… pay basis", "Desired Salary period"); a pay frequency asked for ("Please indicate your preferred pay
+ *  frequency", how often payroll pays) is no period of the expected pay. */
+const PAY_BASIS = /\b(?:pay|salary|compensation|wage|rate)\s+(?:basis|period)$/;
 /** jr6 RULES R4 (ADP-18: ADP's "How would you like to provide the candidate's resume?", Upload File | Enter Professional
  *  Details, fixtures jr6-resume-choice): how the résumé is given, chosen; never a consent. */
 const RESUME_METHOD = /\bhow\s+(?:would|do|will|can)\s+you\s+(?:like\s+to\s+|want\s+to\s+|prefer\s+to\s+)?(?:provide|submit|share|send|add|give|attach|upload)\s+(?:the\s+candidates?\s+|your\s+|a\s+|the\s+)?(?:resume|cv)\b/;

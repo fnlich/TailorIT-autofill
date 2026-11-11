@@ -797,6 +797,23 @@ const LABELS_FIX: Array<[string, Case, FieldCategory | null, string | null]> = [
   ['R48', { label: 'Time Zone', kind: 'typeahead-remote' }, 'preferences.timeZone', 'label.time-zone'],
   // A whole date on a list stays no signature date (item 11's near miss).
   ['R11', { label: 'Today\'s Date', kind: 'select' }, null, null],
+  // After the stop: RULES-R14: the school's own labels main read as the school.
+  ['R14', { label: 'Select your school', kind: 'combobox' }, 'education.school', 'label.school'],
+  ['R14', { label: 'Search for your school', kind: 'typeahead-remote' }, 'education.school', 'label.school'],
+  ['R14', { label: 'Name of the school you attended', kind: 'text' }, 'education.school', 'label.school'],
+  ['R14', { label: 'Highest Level School Attended', kind: 'text' }, 'education.school', 'label.school'],
+  // RULES-R4: a capacity in which the person worked for the company itself; employment by its vendor stays outside.
+  ['R4', { label: 'Do you currently or have you previously worked for any other Alphabet company as an employee, temp, '
+    + 'vendor, contingent worker, or intern?', kind: 'radio', options: ['Yes', 'No'] }, 'screening.previouslyEmployed',
+  'label.previously-employed'],
+  ['R4', { label: 'Have you ever worked for Acme as an employee, contractor or vendor?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'screening.previouslyEmployed', 'label.previously-employed'],
+  ['R4', { label: 'Have you ever worked for Acme as a vendor?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.previouslyEmployed', 'label.previously-employed'],
+  // RULES-R68: the pay's period, by the label contract or its own label.
+  ['R68', { label: 'What is your desired salary? pay basis', kind: 'radio', options: ['Annually', 'Hourly'] },
+    'salary.period', 'label.pay-basis'],
+  ['R68', { label: 'Pay period', kind: 'select' }, 'salary.period', 'label.pay-basis'],
 ];
 
 /** [issue id, the field, what it must not be read as]: the fixes' near misses. */
@@ -810,7 +827,32 @@ const NEAR_MISSES_FIX: Array<[string, Case, FieldCategory]> = [
   ['R13', { label: 'Which counties are you willing to work in?', kind: 'select' }, 'address.county'],
   ['R13', { label: 'Country/County', kind: 'select' }, 'address.county'],
   ['R13', { label: 'County of employment', kind: 'text' }, 'address.county'],
+  // After the stop: RULES-R4: employment by a vendor, a supplier, a customer, a competitor stays no employment here.
+  ['R4', { label: 'Are you an employee of a vendor or supplier of Acme?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.previouslyEmployed'],
+  ['R4', { label: 'Have you ever worked for one of our customers?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.previouslyEmployed'],
+  // RULES-R68: how often payroll pays is no period of the expected pay.
+  ['R68', { label: 'Please indicate your preferred pay frequency', kind: 'select', options: ['Weekly', 'Bi-weekly',
+    'Monthly'] }, 'salary.period'],
+  ['R68', { label: 'What pay frequency do you prefer?', kind: 'select' }, 'salary.period'],
 ];
+
+// After the stop: RULES-R49: NinjaOne's "Chosen First Name" carries autocomplete="given-name" (jobvite/ninjaone-step1).
+describe('jr6 fix (RULES-R49): a chosen or preferred first name beside the page’s given-name token', () => {
+  it('is the preferred name, read by its label with no conflict flagged', () => {
+    for (const label of ['Chosen First Name', 'Preferred First Name']) {
+      const spec = specOf(label, 'text', { autocomplete: ['given-name'] });
+      expect(classifyByRules(spec), label).toMatchObject({ category: 'identity.preferredName',
+        rule: 'label.preferred-name', reason: 'ok' });
+    }
+    // The given name itself is still the first name, and a label naming something else still conflicts.
+    expect(classifyByRules(specOf('First Name', 'text', { autocomplete: ['given-name'] })))
+      .toMatchObject({ category: 'identity.firstName', reason: 'ok' });
+    expect(classifyByRules(specOf('Last Name', 'text', { autocomplete: ['given-name'] })))
+      .toMatchObject({ reason: 'classification-conflict' });
+  });
+});
 
 describe('jr6 fix round 1: the fixed rules’ near misses', () => {
   it.each(NEAR_MISSES_FIX)('%s: %j is no %s', (_issue, field, category) => {
