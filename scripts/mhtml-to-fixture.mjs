@@ -2737,6 +2737,13 @@ export function transformInPage(input) {
       // its path and query spelled); what stays (its host) the final check refuses.
       const framed = name === 'src' && (element.localName === 'iframe' || element.localName === 'frame');
       const clean = framed ? scrubbed : respell(scrubbed);
+      // jr6 fixes (G.3, the coordinator's decision): a listed string respelled in an attribute that holds words (a
+      // description meta's content, an option's value) is noted where the elimination refusal reads, as the exact rule
+      // notes it, so a REDACTED gap in a public description or list asks for synthetic text (--replace-text). An address
+      // is no such place (a posting's own Apply link inside its description's container spells its title in its slug).
+      const address = urlAttributes.includes(name) || name === 'srcset'
+        || /^\s*(?:https?:|mailto:|tel:|\/\/|\/(?!\s))/i.test(attribute.value);
+      if (clean !== scrubbed && !address) noteListed(element);
       if (clean !== attribute.value) element.setAttribute(attribute.name, clean);
     }
   }

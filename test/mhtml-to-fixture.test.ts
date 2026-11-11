@@ -3916,6 +3916,31 @@ for (const option of root.querySelectorAll('spl-select-option')) {
         `jr6fix-sr-deep-list.html: options (an <option> or a role=option) whose page text the redaction list met: 1${tail}`]);
     }, 90_000);
 
+  it("refuses a listed string respelled in a place's attribute (a description meta, an option's value), as in its text (G.3)",
+    async () => {
+      const tail = ', where a REDACTED tells the value by elimination; give each synthetic text with --replace-text';
+      // A posting's description copy and an option's value spell the listed name otherwise; the option's words are public.
+      const error = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-respelled-places', '<meta property="og:description" '
+        + 'content="Our team, led by jane-roe, is hiring."><label for="m">Major</label><select id="m"><option value="1">Art'
+        + '</option><option value="jane_roe">Other</option><option value="3">Zoology</option></select>')
+        .then(() => null, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConversionError);
+      expect((error as ConversionError).reasons).toEqual([
+        `jr6fix-respelled-places.html: options (an <option> or a role=option) whose page text the redaction list met: 1${tail}`,
+        `jr6fix-respelled-places.html: posting descriptions (POSTING_TEXT_PLACES) whose page text the redaction list met: 1${tail}`]);
+      // An attribute of no such place is redacted and passes (a link's address, an element's id); so is an address
+      // inside a place (a posting's Apply link in its description's container, its slug spelling the title).
+      const { text } = await convertPage(ICIMS_APPLY, 'icims', 'jr6fix-respelled-elsewhere',
+        '<p><a href="/people/jane-roe" id="card-JaneRoe">A colleague</a></p><div class="iCIMS_JobContent"><p>A made-up '
+        + 'posting.</p><a href="https://careers-acme.icims.com/jobs/1/jane-roe/job?mode=apply">Apply</a>'
+        + '<a href="/jobs/1/jane_roe/job">Share</a><meta property="og:url" content="https://careers-acme.icims.com/jobs/1/janeroe">'
+        + '</div>');
+      expect(text).toContain('<a href="/people/REDACTED" id="card-REDACTED">A colleague</a>');
+      expect(text).toContain('<a href="https://careers-acme.icims.com/jobs/1/REDACTED/job?mode=apply">Apply</a>'
+        + '<a href="/jobs/1/REDACTED/job">Share</a><meta property="og:url" content="https://careers-acme.icims.com/jobs/1/REDACTED">');
+      expect(POSTING_TEXT_PLACES).toContain('.iCIMS_JobContent');
+    }, 60_000);
+
   it('passes a native list whose REDACTED row stands beside a placeholder alone (a résumé picker), refuses one beside '
     + 'public rows', async () => {
     const picker = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6fix-picker', '<label for="r">Resume</label>'
