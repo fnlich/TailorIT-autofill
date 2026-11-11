@@ -662,4 +662,33 @@ describe('jr6 apply F2: the entry ends where the person says so (the line P revi
       expect(clicks).toEqual([]);
       expect(typedIn(doc)).toEqual({ email: false, password: false });
     }, 30_000);
+
+  it('the agent’s own press draws a sign-in in place: Sign-in Auto signs in there, Manual types nothing (P-B4, AF-16)',
+    async () => {
+      for (const mode of ['auto', 'manual'] as const) {
+        const { doc, clicks } = await signInAfterApply();
+        const worker = applyWorker(mode === 'auto' ? AUTO : DEFAULT_SETTINGS, { typeSignIn: true,
+          script: { 'signin/credential': [{ ok: true, data: CREDENTIAL }] } });
+        const { runtime } = await runtimeAt(doc, LATE, lever(LATE), { worker });
+        runtimes.push(runtime);
+        // The agent hears its answer at its press, as before; the sign-in drawn 400 ms later is its entry's still.
+        expect(await worker.platform.deliver({ v: 1, type: 'agent/enter' }), mode)
+          .toEqual({ ok: true, data: { outcome: 'pressed' } });
+        if (mode === 'auto') {
+          await vi.waitFor(() => expect(clicks, mode).toEqual(['apply', 'sign-in-button']), { timeout: 5_000 });
+          expect(worker.of('signin/credential'), mode).toHaveLength(1);
+        } else {
+          await deadline(2_500);
+          expect(clicks, mode).toEqual(['apply']);
+          expect(worker.of('signin/credential'), mode).toHaveLength(0);
+          expect(typedIn(doc), mode).toEqual({ email: false, password: false });
+        }
+        // Its entry never told the person's entry/pressed, nor any refusal.
+        expect(worker.of('entry/pressed'), mode).toEqual([]);
+        expect(refusals(worker), mode).toEqual([]);
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 40_000);
 });

@@ -2117,7 +2117,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    * After an entry press of ours (AF-3, AF-4, B4, B9): what it brought in this document, watched on its DOM changes
    * (late-form.ts watchForLateForm: a look 100 ms after a burst) for ENTRY_FORM_WAIT_MS, or the address's longer
    * formLateMs: a form, claimed by the address's own adapters alone, a posting's address included (formFound: the
-   * worker's grant starts its run); a wall, the sign-in step's (the person's: wallStep); a choice of how to apply (told
+   * worker's grant starts its run); a wall, the sign-in step's (the person's: wallStep; the line P review, P-B4: the
+   * agent's, agentSignIn, as at a wall its entry met before its press); a choice of how to apply (told
    * the worker; the next press answers it); a check or a code, the person's ('blocked'). A new document ends it with
    * this one, quietly. Nothing within the wait: 'nothing-followed'. Answers the person's refusal, or null (the agent's
    * entry refuses nothing here: its own wait says it).
@@ -2180,6 +2181,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       facts.wall = true;
       // The line P review (revA-2, P-B2): the step ends with this entry (run/cancel): nothing pressed after it.
       if (source.by === 'person') await wallStep(kind as SignInWall, source.signUp, signal);
+      else {
+        // The line P review (P-B4; AF-16): a sign-in or an account's creation the agent's own press drew in this
+        // document is the agent's as one its entry met before its press is (agentSignIn): Sign-in Auto signs in there;
+        // Manual leaves it. The agent heard its answer at its press; agent.ts's wait reads what follows.
+        const url = urlOf(readHref());
+        const said = await agentSignIn(url === null ? [] : adapters(url), signal);
+        log('content.agent-entry', { wall: true, pressed: said.outcome === 'pressed' });
+      }
       return null;
     }
     if (kind === 'entry-choice') {
