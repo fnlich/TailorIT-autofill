@@ -202,17 +202,18 @@ describe('the Data Consent gate (ninjaone-consent-empty, ninjaone-consent)', () 
 });
 
 describe('the three steps (ninjaone-step1 to -step3)', () => {
-  it('reads each step by its ng-form and header, presses Next on the first two and never on the last', async () => {
+  // jr6 JV-23: each step by its ng-form alone (no header: Jobvite's "invalid fields only" view hides the step's first
+  // header, jr6-jobvite.browser.test.ts).
+  it('reads each step by its ng-form, presses Next on the first two and never on the last', async () => {
     const expected = [
-      { html: step1Html, step: 'scopeData.step1', heading: 'Add Resume*', final: 'not-final' },
-      { html: step2Html, step: 'scopeData.step2', heading: 'Voluntary Self Identification', final: 'not-final' },
-      { html: step3Html, step: 'scopeData.step3', heading: 'Engineering North America - Application Questions',
-        final: 'final' },
+      { html: step1Html, step: 'scopeData.step1', final: 'not-final' },
+      { html: step2Html, step: 'scopeData.step2', final: 'not-final' },
+      { html: step3Html, step: 'scopeData.step3', final: 'final' },
     ] as const;
-    for (const { html, step, heading, final } of expected) {
+    for (const { html, step, final } of expected) {
       const fixture = await open(html);
       const root = jobviteAdapter.detect(fixture.doc)!.formRoot;
-      expect(jobviteAdapter.stepSignature?.(fixture.doc)).toEqual({ anchors: [step], heading });
+      expect(jobviteAdapter.stepSignature?.(fixture.doc)).toEqual({ anchors: [step] });
       expect(jobviteAdapter.isFinalStep?.(fixture.doc)).toBe(final);
       expect(jobviteAdapter.nextButton?.(root) ?? null)
         .toBe(final === 'final' ? null : q(fixture, 'button[aria-label="Next"]'));
@@ -245,9 +246,11 @@ describe('the three steps (ninjaone-step1 to -step3)', () => {
     expect(pairs.map((field) => [field.label, field.labelSource, field.required])).toEqual([
       ['Your Name signature', 'adapter', true], ["Today's Date signature", 'adapter', true],
       ['Your Name signature', 'adapter', true], ["Today's Date signature", 'adapter', true]]);
-    // The name is the signature consent, never the profile's full name; the date asks a signature too (the person's).
+    // The name is the signature consent, never the profile's full name; the date is today's, on the signature's terms
+    // (consent.signature-date; jr6 RULES item 11, JV-1).
     expect(classifyByRules(toFieldSpec(pairs[0]!))?.category).toBe('consent.signature');
-    expect(classifyByRules(toFieldSpec(pairs[1]!))).toMatchObject({ asks: 'consent.signature', needsUser: 'kind-mismatch' });
+    expect(classifyByRules(toFieldSpec(pairs[1]!))).toMatchObject({ category: 'consent.signatureDate',
+      rule: 'label.signature-date' });
     // Step 1's names (JVA_NAME, but no self-identification form's) keep their own label[for].
     removeFixtures(document);
     const step1 = scanned(await open(step1Html)).fields;
