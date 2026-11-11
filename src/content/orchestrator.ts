@@ -179,7 +179,7 @@ import type { ValueMac } from '../core/types/loop';
 import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, type RepeatableKind, type RunState, type RunStatus }
   from '../core/types/run';
 import { accountLeft } from '../dom/account-section';
-import { signInContainerOf } from '../dom/sign-in-form';
+import { signInContainerOf, signInFormOf } from '../dom/sign-in-form';
 import { clickIfAllowed } from '../dom/fillers';
 import { policyClassOf } from '../core/resolver/categories';
 import {
@@ -190,7 +190,7 @@ import { rawScan, type RawPassage } from '../dom/raw-scan';
 import { isUsableOption } from '../dom/option-hash';
 import { newScanCache } from '../dom/scan-cache';
 import { scan, toFieldSpec } from '../dom/scan';
-import { deadline, monotonicNow } from '../dom/time';
+import { deadline, monotonicNow, startDeadline } from '../dom/time';
 import type { FieldTarget, ScannedField, ScanResult, WidgetReading } from '../dom/types';
 import { visibleTextWithout } from '../dom/visible-text';
 import { isEditingHost } from '../dom/kinds';
@@ -223,7 +223,9 @@ import {
 } from './report';
 import { postingNamesOf } from './job-relay';
 import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
-import { signInChallenged, signInHandedOver, signInRefusalWaits, type SignInOutcome } from './sign-in';
+import {
+  signInChallenged, signInDetailOf, signInHandedOver, signInRefusalWaits, type SignInDetail, type SignInOutcome,
+} from './sign-in';
 import type { PressSnapshot } from './submitted';
 import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
@@ -304,7 +306,16 @@ export interface RunOptions {
   ai?: { pollMs?: number; capMs?: number; letterCapMs?: number };
   /** The cap on the next step after our own click on Next (TRANSITION_CAP_MS, or the adapter's quirk). */
   transition?: { capMs?: number };
+  /** jr6 SHELL-A (WD-04): how long a sign-in that found no job-site password saved waits for one (PASSWORD_WAIT_MS). */
+  signIn?: { passwordWaitMs?: number };
 }
+
+/** jr6 SHELL-A (FIXPLAN §6.12 item 5; WD-04, jr6-password's R5 remainder): how long a sign-in at a wall that found no
+ *  job-site password saved, under Sign-in Auto or Sign up & Autofill, waits for one to be saved
+ *  (ContentSettings.typeSignIn, which the worker pushes to the frame after signup/save) before it tries the wall once
+ *  more: five minutes, as Jobright 1.25.2's account flow waits for its credential (~contents/pre-autofill-flow
+ *  ./account-flow waitForCredential, 300 s: a behaviour reference only). Ended at once by the run's Stop or Cancel. */
+export const PASSWORD_WAIT_MS = 5 * 60_000;
 
 /** What a run needs from the runtime. */
 export interface RunEnv {
@@ -581,6 +592,23 @@ export class FillRun {
    *  it ('failed'), and anything else ('unavailable': not allowed now, no form read: the sign-in to make on the page);
    *  jr6: typed on Manual, the press the person's ('typed'). */
   private signInSaid: 'none-saved' | 'challenged' | 'unavailable' | 'failed' | 'typed' | null = null;
+  // ── jr6 SHELL-A ──
+  /** What this run's last sign-in said beyond its outcome (sign-in.ts signInDetailOf): a password rule of the page's
+   *  own the saved one breaks, or the kind of account error the page shows; each its own toast (FIXPLAN §6.12 items 1
+   *  and 4). And what the form's account section's typing said (its toast at rest). */
+  private signInDetail: SignInDetail | null = null;
+  private sectionDetail: SignInDetail | null = null;
+  /** The wall the run paused at (paused): an email gate's toasts are its own (D-d); null at none. */
+  private restWall: 'sign-in' | 'create-account' | 'email-gate' | null = null;
+  /** D-d (FIXPLAN §6.12 item 6, APPLYPLAN G): the step is an email gate the run fills as a step (gateFillable): the
+   *  gate is no pause while its fields are scanned and written; its pause is taken at the validation, where the gate's
+   *  sign-in step types its email and presses its Next on Auto alone. */
+  private gateFilling = false;
+  /** WD-04 (FIXPLAN §6.12 item 5): ends the wait for a job-site password to be saved (waitForPassword) when the worker
+   *  says one may be typed (settingsChanged); null while none waits. A run waits once. */
+  private passwordArrived: (() => void) | null = null;
+  private passwordWaited = false;
+  // ── end jr6 SHELL-A ──
   /** v4: a statement only text a person cannot see yet holds says the posting forbids AI (the Phase 2 review's S6):
    *  no notice any more, but Submit mode Auto's "posting forbids AI" skip rule still reads it. */
   private hiddenPolicy = false;
@@ -855,6 +883,8 @@ export class FillRun {
     this.skipRules = { ...settings.modes.agentSkip };
     this.signInAuto = settings.modes.signIn === 'auto';
     this.signInTypes = settings.typeSignIn === true;
+    // jr6 SHELL-A (WD-04): a job-site password may be typed now (one was saved): the run that waits for one goes on.
+    if (this.signInTypes) this.passwordArrived?.();
     this.llm = settings.llm;
     // AI-written answers turned off (or on) at rest: Edit with AI goes (or comes back) at once.
     this.drawAiEdits();
@@ -1620,19 +1650,36 @@ export class FillRun {
       list.push({ kind: 'challenge', text: words.challenge });
     }
     if (status === 'auth-needed' && this.ended === 'paused' && !this.signInDue) {
+      // jr6 SHELL-A: what the sign-in said beyond its outcome (a password rule, an account error's kind), and an email
+      // gate's own words (D-d).
+      const detail = this.signInSaid === null ? null : this.signInDetail;
+      const gate = this.restWall === 'email-gate';
       if (this.signInSaid === 'none-saved' && (this.signInAuto || this.request.signIn === true)) {
         const open = this.env.openSignInSettings;
-        list.push({ kind: 'no-sign-in', text: words.noSignIn,
+        // jr6 SHELL-A (WD-04): while the run waits for a password to be saved, the toast says it goes on by itself.
+        list.push({ kind: 'no-sign-in', text: this.passwordArrived !== null ? words.noSignInWaiting : words.noSignIn,
           ...(open === undefined ? {} : { action: { label: words.open, run: () => open() } }) });
+      } else if (detail?.rule !== undefined) {
+        list.push({ kind: 'sign-in', text: words.passwordRule(detail.rule.kind,
+          detail.rule.kind === 'length' ? detail.rule.minLength : 0) });
+      } else if (detail?.account !== undefined) {
+        list.push({ kind: 'sign-in', text: words.account[detail.account] });
       } else if (this.signInSaid === 'typed') {
-        // jr6: typed on Manual: the site's own button is the person's.
-        list.push({ kind: 'sign-in', text: words.signInTyped });
+        // jr6: typed on Manual: the site's own button is the person's. jr6 SHELL-A: at an email gate, its Next.
+        list.push({ kind: 'sign-in', text: gate ? words.gateTyped : words.signInTyped });
       } else if (this.signInSaid === 'challenged') {
         // The v4 review (M5): a challenge kept Sign-in Auto from asking: the check is what is left for the person.
         if (!list.some((toast) => toast.kind === 'challenge')) list.push({ kind: 'challenge', text: words.challenge });
       } else {
-        list.push({ kind: 'sign-in', text: this.signInSaid === 'failed' ? words.signInFailed : words.signIn });
+        list.push({ kind: 'sign-in', text: gate ? words.gate : this.signInSaid === 'failed' ? words.signInFailed
+          : words.signIn });
       }
+    }
+    // jr6 SHELL-A (FIXPLAN §6.12 item 1): the form's account section left empty for a password rule of the page's own.
+    const sectionRule = this.sectionDetail?.rule;
+    if (atRest && sectionRule !== undefined && !list.some((toast) => toast.kind === 'sign-in')) {
+      list.push({ kind: 'sign-in', text: words.passwordRule(sectionRule.kind,
+        sectionRule.kind === 'length' ? sectionRule.minLength : 0) });
     }
     if (atRest) {
       const held = this.notices.has('submit-held-required') ? words.submitHeld.required
@@ -2004,9 +2051,36 @@ export class FillRun {
   private pauseNow(): PauseSignal | null {
     const handed = this.handed !== null && this.handed.signature === this.signatureNow() ? this.handed.elements
       : undefined;
-    return detectPause(this.env.doc, this.root, this.env.page.adapter, newScanCache(),
+    const shown = detectPause(this.env.doc, this.root, this.env.page.adapter, newScanCache(),
       handed === undefined ? {} : { handed });
+    // jr6 SHELL-A (D-d): while the run fills an email gate as a step, the gate itself is no pause (gateFilling): a check
+    // or a code the page shows still is.
+    return this.gateFilling && shown?.kind === 'email-gate' ? null : shown;
   }
+
+  // ── jr6 SHELL-A (D-d; FIXPLAN §6.12 item 6, APPLYPLAN G: ICIMS-18, O9, AP-3, C5) ──
+  /** Whether the page shows an email gate whose form its adapter declares (Adapter.signInForm 'email-gate': iCIMS's
+   *  form#enterEmailForm, Oracle's gate), in a frame that may sign in (the tab's top frame, or the one that claims its
+   *  application). */
+  private gateDeclared(): boolean {
+    if (!this.isTop && !this.claimed) return false;
+    try {
+      return signInFormOf(this.env.page.adapter, this.env.doc, 'email-gate') !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Whether `signal` is an email gate the run fills as a step (gateFilling) before its sign-in step, in every Sign-in
+   *  mode: its own fields from the profile like any step's (iCIMS's phone and its country code: the owner question OQ8's
+   *  default yes, as Jobright fills them: ~contents/sites/icims getIcimsEmailPhoneCountryWidget; Oracle's email), its
+   *  consent boxes decided by the plan per the Consents mode, a consent's scope the person's (no rule answers it), and
+   *  never a press: its Next is the sign-in step's, on Auto alone. ICIMS-18's and O9's fix ("fill the gate's fields in an
+   *  ordinary run"). */
+  private gateFillable(signal: PauseSignal | null): boolean {
+    return signal?.kind === 'email-gate' && this.gateDeclared();
+  }
+  // ── end jr6 SHELL-A ──
 
   /** The step's signature now, when it is no longer the step being worked on (an adapter that tells steps apart);
    *  null otherwise. */
@@ -2215,6 +2289,8 @@ export class FillRun {
   }
 
   private end(how: RunEnd): RunEnd {
+    // jr6 SHELL-A (D-d): a run at rest fills no gate: the gate is its pause again (a fill cut before its validation).
+    this.gateFilling = false;
     this.ended = how;
     this.liveGate += 1;
     const resolve = this.restedOnce;
@@ -2317,8 +2393,15 @@ export class FillRun {
     // Policy text only text a person cannot see yet holds (behind "Show more") stops nothing (S6); Submit mode Auto's
     // "posting forbids AI" skip rule still reads it.
     if (policyHits === 0 && hiddenPolicyHits(first ? raw.passages : fresh).length > 0) this.hiddenPolicy = true;
+    this.gateFilling = false;
     const paused = this.pauseNow();
-    if (paused !== null) return pauseEventOf(paused);
+    if (paused !== null) {
+      // jr6 SHELL-A (D-d): an email gate whose form the adapter declares is filled as a step first; its pause comes at
+      // the validation (gateFillable).
+      if (!this.gateFillable(paused)) return pauseEventOf(paused);
+      this.gateFilling = true;
+      log('content.sign-in', { gate: true, filled: true });
+    }
     const hits = Math.max(0, this.tripwireHits - this.hitsCounted);
     this.hitsCounted = this.tripwireHits;
     const signature = this.signatureNow();
@@ -2549,6 +2632,8 @@ export class FillRun {
     // Another step shows already (the person's Next during the fill): its facts are not this step's to judge.
     const moved = this.movedOn();
     if (moved !== null) return { type: 'TRANSITIONED', signature: moved };
+    // jr6 SHELL-A (D-d): an email gate filled as a step is its pause again from here: its sign-in step comes now.
+    this.gateFilling = false;
     // What the step's last write revealed may be a pause: it is the person's, never a reason to press on (C-S1).
     const paused = this.pauseNow();
     if (paused !== null) return pauseEventOf(paused);
@@ -2736,12 +2821,17 @@ export class FillRun {
     // sign-in it no longer needs.
     const auto = this.signInAuto || this.request.signIn === true;
     // jr6: on Manual, a saved password is typed into a sign-in or account's creation (never an email gate's Next).
-    const typing = !auto && this.signInTypes && this.typeableWallShown();
+    // jr6 SHELL-A (D-d): and an email gate whose form the adapter declares gets its email in every Sign-in mode, no
+    // password needed (the worker answers the Sign-up Information email, else the profile's); its Next stays Auto's.
+    const gate = this.pauseNow()?.kind === 'email-gate' && this.gateDeclared();
+    const typing = !auto && ((this.signInTypes && this.typeableWallShown()) || gate);
     const due = this.state.status === 'auth-needed' && (auto || typing)
       && !this.request.dryRun && this.env.signIn !== undefined && (this.isTop || this.claimed) && this.wallShown();
     // An account form whose press is the person's, typed already at this wall of the document (sign-in.ts
     // signInHandedOver): the run rests at it for them, never typing it again; its toast says what was typed.
     const kind = this.pauseNow()?.kind;
+    // jr6 SHELL-A: the wall the run rests at, for its toasts.
+    this.restWall = kind === 'sign-in' || kind === 'create-account' || kind === 'email-gate' ? kind : null;
     const handedOver = due && signInHandedOver(this.env.doc, kind === 'sign-in' || kind === 'create-account'
       || kind === 'email-gate' ? kind : null);
     if (handedOver) this.signInSaid = 'typed';
@@ -2764,7 +2854,8 @@ export class FillRun {
   }
 
   /** jr6: whether the wall the page shows is one Sign-in Manual types a saved password into (a sign-in, an account's
-   *  creation), never an email gate, whose one step is its press. */
+   *  creation), never an email gate, which asks no password (jr6 SHELL-A: its email is typed on Manual by paused's own
+   *  rule, gateDeclared, saved password or not). */
   private typeableWallShown(): boolean {
     const kind = this.pauseNow()?.kind;
     return kind === 'sign-in' || kind === 'create-account';
@@ -2890,6 +2981,8 @@ export class FillRun {
     this.accountTyped.add(step);
     const outcome = await signInSection(AbortSignal.any([this.controller.signal, this.stopping.signal,
       this.cancelled.signal]), typeOnly);
+    // jr6 SHELL-A (FIXPLAN §6.12 item 1; ICIMS-07): a password the page's own rules refuse was not typed: its toast.
+    this.sectionDetail = outcome === 'unavailable' ? signInDetailOf(this.env.doc) : null;
     log('content.account-section', { typed: outcome === 'continue' });
   }
 
@@ -2934,11 +3027,74 @@ export class FillRun {
     // v4 (D10): the toast says what is left: the job-site sign-in to add in TailorIT, the check to solve, or the
     // sign-in to make here (the v4 review, M5: each told apart).
     this.signInSaid = outcome;
+    // jr6 SHELL-A (FIXPLAN §6.12 items 1 and 4): a password rule of the page's own, or the kind of account error the
+    // page shows, said on the toast.
+    this.signInDetail = signInDetailOf(this.env.doc);
     if (outcome === 'failed') this.notices.add('sign-in-failed');
+    // jr6 SHELL-A (FIXPLAN §6.12 item 5; WD-04): none saved, under Auto or Sign up & Autofill: the run waits for one to
+    // be saved (waitForPassword), once, and its toast says it goes on by itself meanwhile.
+    const waits = outcome === 'none-saved' && !typing && !this.passwordWaited;
+    if (waits) this.passwordWaited = true;
+    const waited = waits ? this.waitForPassword() : null;
     this.drawToasts();
     await this.report();
     // The person signs in on the page, and the run carries on by itself once the wall goes.
     void this.watchPauseGone().catch(() => undefined);
+    if (waited !== null) await waited;
+  }
+
+  /**
+   * jr6 SHELL-A (FIXPLAN §6.12 item 5; WD-04, jr6-password's R5 remainder): a sign-in at the run's wall found no
+   * job-site password saved, under Sign-in Auto or Sign up & Autofill. The run waits, PASSWORD_WAIT_MS at most, for one
+   * to be saved in Sign-up Information (the worker then pushes ContentSettings.typeSignIn true: settingsChanged), and
+   * then tries the wall once more (signInNow), if it still rests at that wall. The wait ends at once with the run (its
+   * Stop, its Cancel at the pause, the document's end, a run that took over); the page's toast says meanwhile that the
+   * run goes on by itself. Nothing is asked of the worker while it waits.
+   */
+  private waitForPassword(): Promise<void> {
+    const signal = AbortSignal.any([this.controller.signal, this.stopping.signal, this.cancelled.signal]);
+    const arrived = new Promise<boolean>((resolve) => {
+      let stopTimer: () => void = () => undefined;
+      const done = (saved: boolean) => {
+        stopTimer();
+        signal.removeEventListener('abort', gone);
+        if (this.passwordArrived === saw) this.passwordArrived = null;
+        resolve(saved);
+      };
+      const gone = () => done(false);
+      const saw = () => done(true);
+      if (signal.aborted) {
+        resolve(false);
+        return;
+      }
+      this.passwordArrived = saw;
+      stopTimer = startDeadline(this.env.options.signIn?.passwordWaitMs ?? PASSWORD_WAIT_MS, () => done(false));
+      signal.addEventListener('abort', gone, { once: true });
+    });
+    return arrived.then(async (saved) => {
+      log('content.sign-in', { waited: true, saved });
+      const still = saved && !signal.aborted && this.ended === 'paused' && this.machine?.status === 'auth-needed'
+        && this.wallShown();
+      if (!still) {
+        // The wait is over: the toast says again to choose Sign Up & Autofill once a password is saved.
+        this.drawToasts();
+        return;
+      }
+      // Once more, as the run's pause would decide it now (the person's Auto may have gone back to Manual: typed then).
+      this.pauseWatch?.abort();
+      const auto = this.signInAuto || this.request.signIn === true;
+      this.signInTyping = !auto;
+      this.signInDue = auto || (this.signInTypes && this.typeableWallShown());
+      this.signInSaid = null;
+      this.signInDetail = null;
+      if (!this.signInDue) {
+        this.drawToasts();
+        void this.watchPauseGone().catch(() => undefined);
+        return;
+      }
+      this.drawToasts();
+      await this.signInNow();
+    });
   }
 
   /** The report's `buttons` now (v3 Phase 4): at rest (review, or waiting for the person's Next), not in a dry run;

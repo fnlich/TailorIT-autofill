@@ -121,9 +121,24 @@
  * - R2: a password longer than its box's own maxlength (Taleo's 60) is never typed: nothing is ('unavailable').
  * - A form whose press is the person's, typed once in a document, is not typed again there (signInHandedOver): the run
  *   rests at it for the person.
+ * jr6 SHELL-A (FIXPLAN §6.12 items 1, 4 and 6; APPLYPLAN G, folded per BUILD D-d):
+ * - The page's own password rules (Adapter.passwordRules, read on an account's creation alone, fail open): a saved
+ *   password shorter than the page's minimum, missing a class it lists, or the same as the login is never typed, nor
+ *   anything else ('unavailable'); the rule it breaks is said (signInDetailOf), in our own words on the toast. Only
+ *   whether each rule holds is read; the log names the rule's kind, never the password or its length.
+ * - The page's account errors (Adapter.accountErrorKind over its errors a person can see): one that says the account
+ *   waits for its email to be verified, shown as the page is read, means nothing is asked or typed ('unavailable'); after
+ *   a press the site refused ('failed'), the kind it shows (verify the email, reset the password, the email or the
+ *   password wrong) is said too (signInDetailOf), each its own toast.
+ * - An email gate: the gate's email alone (the worker's answer at a gate carries no password, and no password box is
+ *   ever read there); its declared terms boxes ticked only where the page marks them required (a required consent is
+ *   ticked in either Consents mode; any other is the run's plan's, per the Consents mode: orchestrator.ts fills the
+ *   gate as a step before this step); its Next pressed only when the worker says Auto (or Sign up & Autofill) and this
+ *   run is not on Manual, never where the gate asks more of the person (personPresses), whose typing is 'typed': the
+ *   person checks the rest and presses Next. Codes and CAPTCHAs are never touched.
  */
 import { signInHostCovered } from '../contract/tailorit/credentials';
-import type { Adapter, SignInForm } from '../adapters/types';
+import type { AccountErrorKind, Adapter, PagePasswordClass, PagePasswordRules, SignInForm } from '../adapters/types';
 import { clickIfAllowed } from '../dom/fillers';
 import { fireChange, fireInput, fireLeave, setValue } from '../dom/fillers/events';
 import { accountFormOf } from '../dom/account-section';
@@ -289,6 +304,103 @@ function keepForPerson(ctx: SignInContext, secret: readonly HTMLInputElement[], 
 }
 // ── end v5 p1-rules ──
 
+// ── jr6 SHELL-A: the page's own password rules and account errors (module header) ──
+/** jr6 SHELL-A (FIXPLAN §6.12 item 1; WD-02, ICIMS-07): a rule of the page's own the saved password breaks: the fewest
+ *  characters the page takes (its own number), a character class it requires, or "not the same as the login". */
+export type BrokenPasswordRule = { kind: 'length'; minLength: number } | { kind: PagePasswordClass } | { kind: 'login' };
+
+/** The rules' kinds, in the order they are checked: the log names a broken one by its place here (a number). */
+export const PASSWORD_RULE_KINDS = ['length', 'upper', 'lower', 'digit', 'special', 'alpha', 'login'] as const;
+/** The account errors' kinds (AccountErrorKind): the log names one by its place here (a number). */
+export const ACCOUNT_ERROR_KINDS = ['verify-email', 'reset-password', 'wrong-credentials'] as const satisfies
+  readonly AccountErrorKind[];
+
+/** jr6 SHELL-A: what a document's last sign-in says beyond its outcome, for its toast (module header): the page's own
+ *  password rule the saved one breaks (nothing typed), or the kind of account error the page shows (nothing typed for
+ *  'verify-email' shown on arrival; after a press, the site's refusal). The page's rules and kinds only, never a value. */
+export interface SignInDetail {
+  rule?: BrokenPasswordRule;
+  account?: AccountErrorKind;
+}
+
+/** Each document's last sign-in's detail (signInDetailOf). */
+const details = new WeakMap<Document, SignInDetail>();
+
+/** jr6 SHELL-A: the detail of this document's last sign-in (SignInDetail), or null: read by the toasts (orchestrator.ts
+ *  toastsNow, runtime.ts showWallToast). */
+export function signInDetailOf(doc: Document): SignInDetail | null {
+  return details.get(doc) ?? null;
+}
+
+/** What each character class asks of a password: an ASCII letter of its case, a digit, a letter of either case, or
+ *  anything but an ASCII letter or digit (a special character, as the pages' lists word it). */
+const CLASS_TESTS: Readonly<Record<PagePasswordClass, RegExp>> = {
+  upper: /[A-Z]/, lower: /[a-z]/, digit: /[0-9]/, special: /[^A-Za-z0-9]/, alpha: /[A-Za-z]/,
+};
+
+/** jr6 SHELL-A (FIXPLAN §6.12 item 1; WD-02, ICIMS-07): the first of the page's own password rules (Adapter.passwordRules
+ *  on `form`, a create-account form) the saved password breaks, or null. Fail open: no hook, a hook that throws or
+ *  reads none, or a rule it gives in a shape this does not know, is no rule. Only whether each rule holds is read, never
+ *  a character of the password; its length is compared with the page's number and goes nowhere. Jobright 1.25.2 reads
+ *  the same minimum before it types on Workday (~contents/sites/myworkday/account-preflow ./password-requirements
+ *  satisfiesWorkdayCreateAccountPasswordMinimum: a behaviour reference only). */
+function brokenRule(adapter: Adapter, form: SignInForm, password: string, login: string): BrokenPasswordRule | null {
+  let rules: PagePasswordRules | null = null;
+  try {
+    rules = adapter.passwordRules?.(form) ?? null;
+  } catch {
+    rules = null;
+  }
+  if (rules === null || typeof rules !== 'object') return null;
+  const min = rules.minLength;
+  if (typeof min === 'number' && Number.isSafeInteger(min) && min > 0 && password.length < min) {
+    return { kind: 'length', minLength: min };
+  }
+  const requires: readonly unknown[] = Array.isArray(rules.requires) ? rules.requires : [];
+  for (const each of requires) {
+    if (typeof each !== 'string' || !Object.hasOwn(CLASS_TESTS, each)) continue;
+    const kind = each as PagePasswordClass;
+    if (!CLASS_TESTS[kind].test(password)) return { kind };
+  }
+  const same = login.trim().toLowerCase();
+  if (rules.notLogin === true && same !== '' && password.toLowerCase() === same) return { kind: 'login' };
+  return null;
+}
+
+/** jr6 SHELL-A (FIXPLAN §6.12 item 4; WD-05): the kind of the account error the page shows about `form` now (the
+ *  adapter's errors on the form's own <form>, each a person can see, read by Adapter.accountErrorKind), the first that
+ *  names one; null otherwise (no hook, none shown, a hook that throws). Nothing of the error's words is kept or logged. */
+function accountErrorShown(ctx: SignInContext, form: SignInForm): AccountErrorKind | null {
+  const kindOf = ctx.adapter.accountErrorKind;
+  const owner = anchorOf(form)?.form ?? form.form ?? null;
+  if (kindOf === undefined || owner === null) return null;
+  const cache = newScanCache();
+  let errors: Element[];
+  try {
+    errors = (ctx.adapter.errors?.(owner) ?? []).map((error) => error.el);
+  } catch {
+    return null;
+  }
+  for (const el of errors) {
+    if (!el.isConnected || !isUserVisible(el, cache)) continue;
+    let kind: AccountErrorKind | null = null;
+    try {
+      kind = kindOf.call(ctx.adapter, el);
+    } catch {
+      kind = null;
+    }
+    if (kind !== null) return kind;
+  }
+  return null;
+}
+
+/** jr6 SHELL-A (D-d): whether a box the page marks required (its required attribute, or aria-required): a required
+ *  consent is ticked in either Consents mode (core/resolver/policy.ts consentValue's consent.required). */
+function markedRequired(box: HTMLInputElement): boolean {
+  return box.required || (box.getAttribute('aria-required') ?? '').trim().toLowerCase() === 'true';
+}
+// ── end jr6 SHELL-A ──
+
 /** The walls of each document whose account form, whose press is the person's (SignInForm.personPresses: SuccessFactors'
  *  account page), was typed: the run rests at that wall for the person and never types it again (module header). */
 const handedOver = new WeakMap<Document, Set<SignInWall>>();
@@ -384,6 +496,16 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
     log('content.sign-in-refused', { fits: false });
     return 'unavailable';
   }
+  // jr6 SHELL-A (FIXPLAN §6.12 item 1; WD-02, ICIMS-07): on an account's creation, a saved password the page's own rules
+  // refuse is never typed, nor anything else; the rule is said on the toast (module header). Read fail open.
+  if (wall === 'create-account' && password !== undefined) {
+    const rule = brokenRule(ctx.adapter, form, password, credential.email);
+    if (rule !== null) {
+      details.set(ctx.doc, { rule });
+      log('content.sign-in-refused', { rules: PASSWORD_RULE_KINDS.indexOf(rule.kind) });
+      return 'unavailable';
+    }
+  }
   const owner = anchorOf(form)?.form ?? null;
   let typed = true;
   if (form.email !== null) typed = typeInto(form.email, credential.email) && typed;
@@ -406,7 +528,12 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
     log('content.sign-in', { typed: false });
     return 'failed';
   }
-  for (const box of form.terms) clickIfAllowed(box, { adapter: ctx.adapter, root: null });
+  // jr6 SHELL-A (D-d): at an email gate, only the terms the page marks required (ticked in either Consents mode); any
+  // other is the run's plan's, which decided it per the Consents mode as it filled the gate (module header).
+  for (const box of form.terms) {
+    if (wall === 'email-gate' && !markedRequired(box)) continue;
+    clickIfAllowed(box, { adapter: ctx.adapter, root: null });
+  }
   return 'typed';
 }
 
@@ -548,6 +675,8 @@ async function formAfterPrelude(ctx: SignInContext, wall: SignInWall, asked: URL
 /** Signs in once on the page the run paused at (module header). */
 export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
   if ((!ctx.isTop && ctx.claimed !== true) || ctx.signal.aborted) return 'unavailable';
+  // jr6 SHELL-A: each sign-in says its own detail (signInDetailOf), never an earlier one's.
+  details.delete(ctx.doc);
   const asked = urlOf(ctx.href());
   let wall: SignInWall | null = null;
   let form: SignInForm | null = null;
@@ -582,6 +711,13 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
   if (challenged(ctx)) {
     log('content.sign-in-refused', { captcha: true });
     return 'challenged';
+  }
+  // jr6 SHELL-A (FIXPLAN §6.12 item 4; WD-05): the page says on arrival that the account waits for its email to be
+  // verified: nothing is asked or typed, and the toast says to verify it first (module header).
+  if (accountErrorShown(ctx, form) === 'verify-email') {
+    details.set(ctx.doc, { account: 'verify-email' });
+    log('content.sign-in-refused', { verify: true });
+    return 'unavailable';
   }
   // The jr6 review (sec-3): a run on Manual types only into a document shown to the person (a background tab waits).
   if (ctx.typeOnly === true && !(await shownToPerson(ctx.doc, ctx.signal))) return 'left';
@@ -621,7 +757,10 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
     // A form whose press is the person's (SignInForm.personPresses): typed, and handed over (module header).
     if (typed === 'typed' && form.personPresses === true) {
       log('content.sign-in', { pressed: false, person: true });
-      outcome = 'continue';
+      // jr6 SHELL-A (D-d): an email gate that asks more of the person (a phone, a consent's scope) was filled as a step
+      // before this one: what is left is theirs to check, and its Next is theirs ('typed'); an account page whose
+      // press is the person's is filled further by the run ('continue').
+      outcome = wall === 'email-gate' ? 'typed' : 'continue';
       // At its wall the run rests for the person from now on (an account section is part of the form's own fill).
       if (ctx.section !== true) handedOver.set(ctx.doc, new Set([...(handedOver.get(ctx.doc) ?? []), wall]));
       // The jr6 review (sec-1): what was typed stays for the person's press, guarded until the document goes.
@@ -640,6 +779,14 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
     const pressed = typed === 'typed' ? await press(ctx, wall, asked, form) : typed;
     log('content.sign-in', { pressed: pressed === 'pressed' });
     outcome = pressed === 'pressed' ? await outcomeAfter(ctx, form) : pressed;
+    // jr6 SHELL-A (FIXPLAN §6.12 item 4; WD-05): a press the site refused says why where the page names a kind.
+    if (pressed === 'pressed' && outcome === 'failed') {
+      const kind = accountErrorShown(ctx, form);
+      if (kind !== null) {
+        details.set(ctx.doc, { account: kind });
+        log('content.sign-in', { account: ACCOUNT_ERROR_KINDS.indexOf(kind) });
+      }
+    }
     // v5 (PLAN decision 9): refused for the page's unticked check: the next press is the person's (module header).
     if (pressed === 'pressed' && outcome === 'challenged' && !ctx.signal.aborted) {
       refusedFor.add(ctx.doc);

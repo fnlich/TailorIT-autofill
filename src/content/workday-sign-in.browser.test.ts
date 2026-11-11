@@ -47,8 +47,10 @@ const WORKDAY_HOST = 'workday.wd5.myworkdayjobs.com';
 const ACCOUNT = `https://${WORKDAY_HOST}/en-US/Workday/job/x/Senior-Product-Manager--Technical_JR-0110787/apply/applyManually`;
 const ORACLE_HOST = 'elhr.fa.us2.oraclecloud.com';
 const GATE = `https://${ORACLE_HOST}/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/email`;
-/** A synthetic sign-in: the every-site one, a dummy address and a dummy password. */
-const CREDENTIAL: SignInCredential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real',
+/** A synthetic sign-in: the every-site one, a dummy address and a dummy password. jr6 SHELL-A: one the jr6 rule takes
+ *  (core/signup-password.ts) and so every captured Create Account's own rules (an uppercase among them), which are read
+ *  before typing now (FIXPLAN §6.12 item 1). */
+const CREDENTIAL: SignInCredential = { host: '*', email: 'alex.rivera@example.com', password: 'E2e-Dummy-Password-Not-Real',
   press: true };
 
 let logs: MockInstance;

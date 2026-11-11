@@ -408,12 +408,14 @@ describe('a run paused at a sign-in (v3 Phase 5)', () => {
 
 describe('v4: the account wall, its toast, and Sign up & Autofill (docs/SPEC-AMENDMENTS.md §13)', () => {
   async function start(page: string, signInMode: 'auto' | 'manual', script: Record<string, unknown[]> = {},
-    adapters: Adapter[] = [genericAdapter]) {
+    adapters: Adapter[] = [genericAdapter], passwordWaitMs?: number) {
     const fixture = await loadFixture(document, page, { width: 1100, height: 900 });
     const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: signInMode } };
     const worker = createFakeWorker({ settings, script: script as never });
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
-      adapters: () => adapters, settle: { quietMs: 40 } });
+      adapters: () => adapters, settle: { quietMs: 40 },
+      // jr6 SHELL-A (WD-04): the wait for a password to be saved, shortened.
+      ...(passwordWaitMs === undefined ? {} : { signIn: { passwordWaitMs } }) });
     runtimes.push(runtime);
     return { fixture, worker, runtime };
   }
@@ -464,13 +466,17 @@ describe('v4: the account wall, its toast, and Sign up & Autofill (docs/SPEC-AME
     expect(plain.worker.of('signin/credential')).toEqual([]);
   });
 
+  // jr6 SHELL-A (WD-04): while the run waits for one to be saved, the toast says it carries on by itself; once the wait
+  // is over, to choose Sign Up & Autofill again.
   it('Sign up & Autofill with no job-site sign-in saved: the toast to add one, with its Open', async () => {
     const { worker, runtime } = await start(signInPage(), 'manual', { 'signin/credential': [{ ok: false,
-      error: 'not_found' }] });
+      error: 'not_found' }] }, [genericAdapter], 1_500);
     await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
     await vi.waitFor(() => expect(runtime.ui!.toasts.shown).toEqual(['no-sign-in']), { timeout: 5_000 });
-    expect(runtime.ui!.shadow.querySelector('.toast[data-kind="no-sign-in"] .notice')?.textContent)
-      .toBe(COPY.toasts.noSignIn);
+    const words = () => runtime.ui!.shadow.querySelector('.toast[data-kind="no-sign-in"] .notice')?.textContent;
+    expect(words()).toBe(COPY.toasts.noSignInWaiting);
+    await vi.waitFor(() => expect(words()).toBe(COPY.toasts.noSignIn), { timeout: 5_000 });
+    expect(worker.of('signin/credential')).toHaveLength(1);
   });
 
   it('tells the worker the page’s wall before any run (frame/wall), and that it went', async () => {

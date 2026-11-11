@@ -202,7 +202,7 @@ import { LATE_FORM_CAP_MS, lateAdapters, lateFormMs, watchForLateForm, watchForS
 import { watchLocation } from './location';
 import { postingNamesOf, postingTextOf, relayJob } from './job-relay';
 import {
-  FillRun, RunFailure, type HeldAnswer, type RunEnd, type RunOptions, type RunPage, type RunRequest,
+  FillRun, PASSWORD_WAIT_MS, RunFailure, type HeldAnswer, type RunEnd, type RunOptions, type RunPage, type RunRequest,
 } from './orchestrator';
 import { readPostingPage } from './policy';
 import { newSuccessSign, shownSignsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot,
@@ -214,7 +214,8 @@ import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter,
   // jr6 apply F2
   ENTRY_MAX_PRESSES, pressSecondStep, type EntryResult } from './press';
 import { loadPagePatches } from './page-patches';
-import { dropKeptSignIns, signIn } from './sign-in';
+import { dropKeptSignIns, signIn, signInDetailOf, type SignInDetail } from './sign-in';
+import { signInFormOf } from '../dom/sign-in-form'; // jr6 SHELL-A
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { createReportLimiter } from './report';
 // v1.3 B
@@ -408,6 +409,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** jr6: a job-site password is saved and may be typed (ContentSettings.typeSignIn): frame/hello's, then each
    *  settings/changed. */
   let signInTypes = false;
+  /** jr6 SHELL-A (WD-04): the wall steps that wait for a job-site password to be saved (wallStep), each ended when a
+   *  settings/changed says one may be typed. */
+  const passwordWaiters = new Set<() => void>();
   /** s2 profile (settings version 7): how long the page's toasts stay: frame/hello's settings, then each
    *  settings/changed; until closed until the worker says. */
   let notificationTime: NotificationTime = 'until-closed';
@@ -560,6 +564,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         // The jr6 review (sec-8): no saved password may be typed any more (it was deleted): none typed for the person's
         // press stays in this document.
         if (!signInTypes) dropKeptSignIns(doc);
+        // jr6 SHELL-A (WD-04): one was saved: a wall step that waits for it tries its wall once more.
+        else for (const waiter of [...passwordWaiters]) waiter();
         notificationsChanged(msg.settings.modes.notifications);
         return ok({});
       case 'run/policyDecision':
@@ -1780,16 +1786,34 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     lookForWall();
   }
 
+  /** jr6 SHELL-A: what a wall's toast says beyond its outcome (showWallToast): the wall is an email gate (its own
+   *  words, D-d), what its sign-in said (sign-in.ts SignInDetail: a password rule, an account error's kind), and
+   *  whether the step waits for a job-site password to be saved (WD-04). */
+  interface WallToastFacts {
+    gate?: boolean;
+    detail?: SignInDetail | null;
+    waiting?: boolean;
+  }
+
   /** A toast of the wall's (no run holds it): what is left for the person there (D10), until its cause goes
    *  (tellWall). The v4 review (M5): the one to add a job-site sign-in in TailorIT for 'none-saved' alone (the worker
    *  holds none for the page); the sign-in to make on the page for any other sign-in the run could not make. */
-  function showWallToast(said: 'sign-in' | 'failed' | 'none-saved' | 'challenge' | 'typed'): void {
+  function showWallToast(said: 'sign-in' | 'failed' | 'none-saved' | 'challenge' | 'typed', shown: WallToastFacts = {}):
+    void {
     const words = PAGE_COPY.toasts;
+    // jr6 SHELL-A: a password rule of the page's own the saved one breaks, or the kind of account error the page shows
+    // (sign-in.ts signInDetailOf), each in its own words; an email gate's own words (D-d); WD-04's wait for a password.
+    const { gate = false, detail = null, waiting = false } = shown;
+    const signInWords = detail?.rule !== undefined
+      ? words.passwordRule(detail.rule.kind, detail.rule.kind === 'length' ? detail.rule.minLength : 0)
+      : detail?.account !== undefined ? words.account[detail.account]
+        : said === 'typed' ? (gate ? words.gateTyped : words.signInTyped)
+          : gate ? words.gate : said === 'failed' ? words.signInFailed : words.signIn;
     const toast: ToastSpec = said === 'challenge' ? { kind: 'challenge', text: words.challenge }
       : said === 'none-saved'
-        ? { kind: 'no-sign-in', text: words.noSignIn, action: { label: words.open, run: () => openSignInSettings() } }
-        : { kind: 'sign-in', text: said === 'failed' ? words.signInFailed : said === 'typed' ? words.signInTyped
-          : words.signIn };
+        ? { kind: 'no-sign-in', text: waiting ? words.noSignInWaiting : words.noSignIn,
+          action: { label: words.open, run: () => openSignInSettings() } }
+        : { kind: 'sign-in', text: signInWords };
     wallToast = toast.kind === 'challenge' ? 'challenge' : toast.kind === 'no-sign-in' ? 'no-sign-in' : 'sign-in';
     // The jr6 review (R11): typed on Manual, the side panel says so too ('sign-in-typed').
     wallWaits = said === 'failed' ? 'sign-in-failed' : said === 'none-saved' ? 'no-sign-in'
@@ -1831,13 +1855,44 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       return;
     }
     if ((SIGN_IN_WALLS as readonly string[]).includes(shown.kind)) {
-      await wallStep(shown.kind as SignInWall, signUp);
+      // jr6 SHELL-A: under the entry's one-at-a-time state, so the panel's Cancel reaches it (ownWallStep).
+      await ownWallStep(shown.kind as SignInWall, signUp, at);
       return;
     }
     // A check or a code before any press: the person's (AF-12).
     refusal = 'blocked';
     log('content.entry', { refusal: ENTRY_REFUSALS.indexOf('blocked'), presses: 0 });
     sendWall(wallNow());
+  }
+
+  /** jr6 SHELL-A (APPLY-MERGE round 2 §8 item 9: F3a's note 10.4 beside F2's revA-2): a wall's own sign-in step (the
+   *  person's Sign Up & Autofill or Autofill at a wall with no form, or a worker's step at a new document's wall) runs
+   *  under the same one-at-a-time state as an entry (enter): frame/wall says `entering` while it types, presses or waits
+   *  (the panel's button spins, with Cancel: the registry keeps `entering` beside a wall since F3a's revA-3), and
+   *  run/cancel (cancelRun: entryCancel) ends it at once: nothing typed or pressed after, what it typed written empty
+   *  again (sign-in.ts 'left'), a password kept for the person's press guarded until the document goes. A route of the
+   *  page's own to another application ends it too (onAddress: entryKey), as it ends an entry. An agent/enter that comes
+   *  meanwhile waits for it and hears nothing pressed for it. */
+  async function ownWallStep(kind: SignInWall, signUp: boolean, at: URL): Promise<void> {
+    if (entering !== null) return;
+    const cancel = new AbortController();
+    const signal = AbortSignal.any([cancel.signal, lifetime.signal]);
+    let answer: (said: EntryAnswer) => void = () => undefined;
+    const answered = new Promise<EntryAnswer>((resolve) => {
+      answer = resolve;
+    });
+    entering = answered;
+    entryCancel = cancel;
+    entryKey = applicationAt(at)?.applicationKey ?? null;
+    sendWall(wallNow());
+    try {
+      await wallStep(kind, signUp, signal);
+    } finally {
+      answer({ outcome: 'not-offered' });
+      if (entering === answered) entering = null;
+      if (entryCancel === cancel) entryCancel = null;
+      if (!stopped) sendWall(wallNow());
+    }
   }
 
   /** v4, the wall branch of atWall: a sign-in, an account's creation or an email gate with no form, at the person's
@@ -1847,14 +1902,24 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    *  with the entry (`signal`, its own: run/cancel, the document's end), as a run's sign-in ends with the run: nothing
    *  is typed or pressed after the person's Cancel, and what it typed is written empty again (sign-in.ts 'left'); a
    *  password kept for the person's press stays guarded until the document goes (`page`). */
-  async function wallStep(kind: SignInWall, signUp: boolean, signal: AbortSignal = lifetime.signal): Promise<void> {
+  async function wallStep(kind: SignInWall, signUp: boolean, signal: AbortSignal = lifetime.signal, retried = false):
+    Promise<void> {
     const at = urlOf(readHref());
     const own = at === null ? [] : adapters(at);
     if (stopped || signal.aborted || own.length === 0) return;
     // jr6: on Manual, a saved password is typed into a sign-in or an account's creation, the press the person's.
     const typeOnly = !signUp && signInMode !== 'auto';
-    if (typeOnly && (!signInTypes || (kind !== 'sign-in' && kind !== 'create-account'))) {
-      showWallToast('sign-in');
+    // jr6 SHELL-A (D-d): and an email gate whose form the adapter declares gets its email, no password needed, its Next
+    // the person's.
+    const gate = kind === 'email-gate';
+    let gateForm = false;
+    try {
+      gateForm = gate && signInFormOf(own[0]!, doc, 'email-gate') !== null;
+    } catch {
+      gateForm = false;
+    }
+    if (typeOnly && !gateForm && (!signInTypes || (kind !== 'sign-in' && kind !== 'create-account'))) {
+      showWallToast('sign-in', { gate });
       return;
     }
     const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, claimed,
@@ -1876,10 +1941,48 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       formAfterWall();
       return;
     }
+    // jr6 SHELL-A (FIXPLAN §6.12 item 5; WD-04): none saved, under Auto or Sign up & Autofill: the step waits for one to
+    // be saved (passwordSaved), once, then tries the wall once more, while it still shows.
+    const waits = outcome === 'none-saved' && !typeOnly && !retried;
     // The v4 review (M5): none saved, a challenge, the site refusing it, or anything else (not allowed now, no form
-    // read): each its own toast. jr6: typed on Manual, the site's button the person's.
+    // read): each its own toast. jr6: typed on Manual, the site's button the person's. jr6 SHELL-A: what the sign-in
+    // said beyond its outcome, and a gate's own words.
     showWallToast(outcome === 'none-saved' ? 'none-saved' : outcome === 'challenged' ? 'challenge'
-      : outcome === 'failed' ? 'failed' : outcome === 'typed' ? 'typed' : 'sign-in');
+      : outcome === 'failed' ? 'failed' : outcome === 'typed' ? 'typed' : 'sign-in',
+    { gate, detail: signInDetailOf(doc), waiting: waits });
+    if (!waits) return;
+    const saved = await passwordSaved(signal);
+    log('content.sign-up', { waited: true, saved });
+    if (stopped || signal.aborted) return;
+    if (!saved || wallNow().wall !== kind) {
+      // The wait is over: the toast says again to choose Sign Up & Autofill once a password is saved.
+      if (wallToast === 'no-sign-in') showWallToast('none-saved', { gate });
+      return;
+    }
+    await wallStep(kind, signUp, signal, true);
+  }
+
+  /** jr6 SHELL-A (FIXPLAN §6.12 item 5; WD-04): whether a job-site password is saved within PASSWORD_WAIT_MS (a
+   *  settings/changed saying one may be typed: passwordWaiters), false once the wait is over or `signal` ends it (the
+   *  entry's Cancel, the document's end). Nothing is asked of the worker meanwhile. Jobright 1.25.2's account flow waits
+   *  for its credential the same way (~contents/pre-autofill-flow ./account-flow, a step's waitForCredential, 300 s: a
+   *  behaviour reference only). */
+  function passwordSaved(signal: AbortSignal): Promise<boolean> {
+    if (stopped || signal.aborted) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      let stopTimer: Cancel = () => undefined;
+      const done = (saved: boolean) => {
+        stopTimer();
+        signal.removeEventListener('abort', gone);
+        passwordWaiters.delete(saw);
+        resolve(saved);
+      };
+      const gone = () => done(false);
+      const saw = () => done(true);
+      passwordWaiters.add(saw);
+      stopTimer = startDeadline(options.signIn?.passwordWaitMs ?? PASSWORD_WAIT_MS, () => done(false));
+      signal.addEventListener('abort', gone, { once: true });
+    });
   }
 
   // ── jr6 apply F2 item 2: one entry for the person, the queue and the agent (APPLYPLAN §5 F2 item 2) ──
