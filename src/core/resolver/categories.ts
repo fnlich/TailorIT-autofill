@@ -202,9 +202,11 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   // jr6 RULES R2: OPT or CPT, yes or no (WD-30).
   'workAuth.opt': YES_NO_TEXT,
   // jr6 RULES R3: yes or no questions; an address's type, a source's detail chosen from a list; a time zone typed or
-  // chosen.
+  // chosen, jr6 fix (RULES-R48-TZ, IC-R2: ARS's iCIMS "Time Zone", a dropdown with icimsdropdown-search, fixtures
+  // jr6-ars-profile) or searched for.
   'screening.militaryTraining': YES_NO, 'address.type': CHOICE, 'referral.detail': CHOICE,
-  'preferences.timeZone': ['text', ...CHOICE], 'location.inTimeZone': YES_NO, 'experience.yearsIn': YES_NO,
+  'preferences.timeZone': ['text', ...CHOICE, 'typeahead-remote'], 'location.inTimeZone': YES_NO,
+  'experience.yearsIn': YES_NO,
   'skills.experienceWith': YES_NO,
   // jr6 RULES R3: living or working in a country, yes or no; a former name typed.
   'location.inCountry': YES_NO, 'identity.formerName': LINE,

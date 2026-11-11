@@ -793,6 +793,8 @@ const LABELS_FIX: Array<[string, Case, FieldCategory | null, string | null]> = [
   ['R11', { label: 'Today\'s Date year', kind: 'text' }, 'consent.signatureDate', 'label.signature-date'],
   ['R11', { label: 'Date signature month', kind: 'select', options: ['Month', 'January', 'February'] },
     'consent.signatureDate', 'label.signature-date'],
+  // RULES-R48-TZ, IC-R2: ARS's "Time Zone" searched for (typeahead-remote).
+  ['R48', { label: 'Time Zone', kind: 'typeahead-remote' }, 'preferences.timeZone', 'label.time-zone'],
   // A whole date on a list stays no signature date (item 11's near miss).
   ['R11', { label: 'Today\'s Date', kind: 'select' }, null, null],
 ];

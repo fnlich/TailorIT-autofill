@@ -1209,7 +1209,9 @@ const JR6_RULES: readonly Jr6Rule[] = [
   { id: 'label.military-training', re: MILITARY_TRAINING, category: 'screening.militaryTraining', strength: 'normal' },
   { id: 'label.residence-state', re: RESIDENCE_STATE, category: 'address.region', strength: 'normal' },
   { id: 'label.work-state', re: WORK_STATE, category: 'address.region', strength: 'normal' },
-  { id: 'label.time-zone', re: TIME_ZONE, category: 'preferences.timeZone', strength: 'normal' },
+  // jr6 fix (RULES-R48-TZ): the label is the time zone's own and nothing else (anchored), as strong as the form's
+  // language's, so a search may choose a single zone's result (frame.ts: a remote typeahead chooses in the fill band).
+  { id: 'label.time-zone', re: TIME_ZONE, category: 'preferences.timeZone', strength: 'strong' },
   { id: 'label.in-time-zone', re: IN_TIME_ZONE, category: 'location.inTimeZone', strength: 'normal' },
   { id: 'label.years-in', re: YEARS_IN, category: 'experience.yearsIn', strength: 'normal' },
   { id: 'label.experience-with', re: EXPERIENCE_WITH, unless: EXPERIENCE_WITH_NOT, category: 'skills.experienceWith',

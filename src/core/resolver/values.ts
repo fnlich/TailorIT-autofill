@@ -1364,13 +1364,16 @@ function personZones(profile: Profile): readonly UsTimeZone[] | null {
 /**
  * ICIMS-26 (ARS's required "Time Zone"): the person's time zone from their state (usTimeZones.ts, public facts):
  * location.time-zone, typed by its name or chosen by its spellings ("Central Time (US & Canada)", "CST", "US/Central");
- * flagged for a state that spans two zones. None without a US state.
+ * flagged for a state that spans two zones. None without a US state. jr6 fix (RULES-R48-TZ): a state in one zone gives
+ * it as a deterministic lookup (VALUE_TRANSFORM, as inTimeZoneValue's), so a search chooses its result; a state in two
+ * stays a flagged derivation, which a search never chooses (blank beats wrong).
  */
 function timeZoneValue(profile: Profile, vocab: Vocab): ValueResult {
   const zones = personZones(profile);
   if (zones === null || zones.length === 0) return none('no-profile-value', false);
   const [first, ...rest] = ZONE_SPELLINGS[zones[0]!];
-  return value({ origin: byRule('location.time-zone', 'address.region'), confidence: VALUE_DERIVED, text: first,
+  return value({ origin: byRule('location.time-zone', 'address.region'),
+    confidence: zones.length > 1 ? VALUE_DERIVED : VALUE_TRANSFORM, text: first,
     choice: { intended: intendedUnknown('generic', first, rest, vocab), domain: 'generic' },
     ...(zones.length > 1 ? { flag: 'filled-low-confidence' as const } : {}) });
 }
