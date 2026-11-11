@@ -44,15 +44,6 @@ const HISTORY: Readonly<Record<string, ReadonlyArray<{ section: string } | { lin
 
 /** The lines integration rewords (module header), in file order, each by a phrase of its own. */
 const PENDING: Readonly<Record<string, readonly string[]>> = {
-  'docs/ARCHITECTURE.md': [
-    'the résumé first and Open Application (P2-fill)',
-    '- **Open Application** (`content/runtime.ts`',
-    "the panel's Submit and Open Application never press there",
-    'and `PageState` the same two (Open Application)',
-    '`content.open-application {pressed}`',
-    '`COPY.mainView.openApplication` ("Open Application")',
-    "Lever's posting: Open Application presses its Apply",
-  ],
   'docs/PRIVACY.md': [
     '- **Open Application:** on a job posting that shows no form',
     // The disclosure's quote, reworded with it (version 15).
