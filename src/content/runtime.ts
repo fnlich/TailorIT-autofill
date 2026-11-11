@@ -1595,18 +1595,26 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       challenge: shown.kind === 'captcha' || shown.kind === 'email-code', entry: false };
   }
 
-  // -- v5 p2-fill: Open Application (PLAN Phase 2, Jobright's "Open Application" on a posting page) --
-  /** Whether this frame shows a posting page with no form whose address's adapters offer their own Apply now
+  // -- v5 p2-fill: Autofill on a posting page (PLAN Phase 2: the panel's main button presses the site's own Apply) --
+  /** Whether this frame shows a page with no form whose address's own adapters offer their own Apply now
    *  (Adapter.entryControl, each written from its platform's fixtures: Greenhouse's and Lever's Apply, Ashby's
    *  Application tab, iCIMS's, Oracle's, SmartRecruiters', SuccessFactors', Taleo's, Workable's, Workday's and the
-   *  configured platforms' declared entries), a control a person can see: the panel's main button then reads "Open
-   *  Application", and its press is atWall's. */
+   *  configured platforms' declared entries), a control a person can see: the panel's main button (Autofill) then says
+   *  it presses that Apply first, and its press is atWall's (enter).
+   *  jr6 apply F2 item 1 (APPLYPLAN D6; B2, apply-flow-new-1, C6): any address of a posting the parser reads but its
+   *  page after submitting, an application address included (ADP's job details at its guest page's address, Workable's
+   *  job site before its dialog opens), and only an address's own adapter (never the generic one) offers it. The
+   *  verifier's survey of every committed fixture at an application address with no form, no state and no generic
+   *  control found none that offers one (jr6-broad-gate.browser.test.ts). */
   function entryOffered(): boolean {
-    if (page !== null || app?.page !== 'posting') return false;
+    // jr6 apply F2 item 1: a posting's or an application's address, never its confirmation.
+    if (page !== null || app === null || app.page === 'confirmation') return false;
     const at = urlOf(readHref());
     if (at === null) return false;
     const cache = newScanCache();
     return adapters(at).some((adapter) => {
+      // jr6 apply F2 item 1: the address's own adapters alone.
+      if (adapter.id === 'generic') return false;
       try {
         const control = adapter.entryControl?.(doc) ?? null;
         return control !== null && isUserVisible(control, cache);

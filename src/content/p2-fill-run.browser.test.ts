@@ -246,8 +246,9 @@ const POSTING = 'https://jobs.lever.co/acme/1b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00
 const POSTING_PAGE = `<!doctype html><body><main><h1>Platform Engineer</h1><p>We build platforms.</p>
   <a id="apply" href="${POSTING}/apply">Apply for this job</a></main></body>`;
 /** The generic adapter with the posting's Apply declared as its entry (a test stand-in for a platform's entryControl:
- *  in a srcdoc frame the platforms' own read the document's address, which is not the posting's). */
-const withEntry: Adapter = { ...genericAdapter,
+ *  in a srcdoc frame the platforms' own read the document's address, which is not the posting's). jr6 apply F2 item 1:
+ *  it stands for the address's own adapter (Lever's), since only an own adapter offers an entry. */
+const withEntry: Adapter = { ...genericAdapter, id: 'lever',
   entryControl: (doc) => doc.querySelector<HTMLElement>('a#apply') };
 
 describe('Open Application on a posting page (v5 p2-fill)', () => {
