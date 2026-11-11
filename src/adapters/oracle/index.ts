@@ -94,7 +94,10 @@
  *   marked aria-current, its first block title and its blocks' kinds.
  * - Uploads (O12, uploadState): a document's slot says whether the file Oracle took is done (its filled part naming
  *   the file) or failed (its errors' list), found by the input or, once Oracle took the input away, by that list.
- * Nothing here reads, logs or sends a value (the Country a block shows is hashed into a learned list's key only).
+ * Nothing here logs or sends a value. The jr6 hooks read three things a box shows, in the frame: the Country an address
+ * block shows (hashed into a learned list's key only), the School, Employer Name and Job Title an open timeline editor
+ * shows (prefill.readEntries: to the worker's plan only, as a field's current value goes), and whether an upload slot
+ * shows the file's name (compared, never kept).
  */
 // The P2 review (security 1)
 import { oracleCandidateExperienceShown } from '../../dom/page-signals';
@@ -367,9 +370,9 @@ function isSearch(control: HTMLInputElement): boolean {
     || (control.name === 'postalCode' && addressBlockOf(control) !== null);
 }
 
-/** jr6 O1: the Country an address block shows now, for its dependent lists (State, City, County, ZIP Code): page text,
- *  hashed into a learned list's key (dom/widgets/known.ts learnedListKey), so another country's lists are never offered
- *  for them; null where it shows none. */
+/** jr6 O1: the Country an address block shows now, for its dependent lists (City, State and County; ZIP Code is a
+ *  search, whose results are never learned): page text, hashed into a learned list's key (dom/widgets/known.ts
+ *  learnedListKey), so another country's lists are never offered for them; null where it shows none. */
 function countryShown(control: Element): string | null {
   const block = addressBlockOf(control);
   const country = block === null ? null : addressPart(block, 'country');
