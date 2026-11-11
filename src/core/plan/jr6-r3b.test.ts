@@ -167,6 +167,22 @@ describe('56 (SR-9, smartrecruiters-new-2): a restriction’s file types name no
       + 'letter' });
     expect(planned([sentence], sentence).write).toBeUndefined();
   });
+  // jr6 fix (RULES-R56, WD-R3: Workday's Dana-Farber and Travelers My Experience draw "Upload a file (5MB max)" under
+  // "Resume/CV/Cover Letter"): a heading that lists documents starting with the résumé is the résumé's.
+  it('reads a drop zone under a list of documents that starts with the résumé as the résumé', () => {
+    for (const description of ['Resume/CV/Cover Letter', 'Resume or Cover Letter', 'Resume and Cover Letter',
+      'Upload your resume and cover letter', 'CV / Cover Letter', 'Resume and supporting documents']) {
+      const spec = specOf('Upload a file (5MB max)', 'file', { description, section: { id: 'resume-cv-cover-letter' } });
+      expect(planned([spec], spec).row.category, description).toBe('file.resume');
+      expect(planned([spec], spec).write, description).toMatchObject({ value: { kind: 'file', ref: 'resume' } });
+    }
+    for (const description of ['Cover Letter', 'Cover Letter/Resume', 'Additional attachments', 'Portfolio',
+      'Writing sample', 'Transcript']) {
+      const spec = specOf('Upload a file (5MB max)', 'file', { description });
+      expect(planned([spec], spec).row.category, description).not.toBe('file.resume');
+    }
+  });
+
   it('drops a run of file types and keeps a list of documents', () => {
     expect(withoutFileTypes('Supported files: DOC, DOCX, PDF (5MB)').replace(/\s+/g, ' ')).toBe('Supported files: (5MB)');
     expect(withoutFileTypes('Upload your Resume, CV, Bio')).toBe('Upload your Resume, CV, Bio');

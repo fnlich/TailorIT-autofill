@@ -219,8 +219,13 @@ const STREET_HINT =
 const ADDRESS_ALONE = /^\s*address\s*$/;
 
 /** jr6 RULES R3 (smartrecruiters-new-2): help text that is a résumé's heading and nothing more ("Resume/CV", "Resume",
- *  "Your CV", "Upload your resume"), as normalized. */
-const RESUME_HEADING = /^(?:(?:upload|attach)\s+)?(?:your\s+|a\s+)?(?:resume|cv|curriculum\s+vitae)(?:\s+(?:or\s+|and\s+)?(?:resume|cv|curriculum\s+vitae))*(?:\s+(?:upload|file|document))?$/;
+ *  "Your CV", "Upload your resume"), as normalized. jr6 fix (RULES-R56, WD-R3: Workday's "Upload a file (5MB max)" under
+ *  "Resume/CV/Cover Letter" on Dana-Farber's and Travelers' My Experience, fixtures jr6-danafarber-my-experience,
+ *  jr6-travelers-my-experience): or a list of documents that starts with the résumé ("Resume or Cover Letter", "Upload
+ *  your resume and cover letter", "CV / Cover Letter", "Resume and supporting documents"); never one that names no
+ *  résumé, or names it later ("Additional attachments", "Cover Letter/Resume"). */
+const RESUME_DOC = String.raw`(?:resume|cv|curriculum\s+vitae)`;
+const RESUME_HEADING = new RegExp(String.raw`^(?:(?:upload|attach)\s+)?(?:your\s+|a\s+)?${RESUME_DOC}(?:\s+(?:(?:and\s+)?or\s+|and\s+)?(?:a\s+|your\s+)?(?:${RESUME_DOC}|cover\s+letters?|(?:other\s+|supporting\s+|additional\s+)?(?:documents?|attachments?)))*(?:\s+(?:upload|uploads|file|files|document|documents))?$`);
 
 /** jr6 RULES R3 (SR-9: SmartRecruiters' drop zone restriction "Supported files: DOC, DOT, RMR, RSM, RESUME, OXPS, PDF,
  *  … (10MB size limit)" as the field's help, fixtures/smartrecruiters/xplor-screening, where "RESUME" is a file type): a
