@@ -2456,9 +2456,9 @@ const CHOSEN_STATE_FIXTURES = [
  * Breezy's form (no package this round). Only that one mark is let through, and only while the file still holds it, so
  * this list shrinks as each is converted again (SP\jr6\build\TOOLING.md, open issues).
  */
-const ANGULAR_STATE_FIXTURES = ['breezy/concurrent-form.html', 'jobvite/ninjaone-consent-empty.html',
-  'jobvite/ninjaone-consent.html', 'jobvite/ninjaone-step1-resume.html', 'jobvite/ninjaone-step1.html',
-  'jobvite/ninjaone-step2.html', 'jobvite/ninjaone-step3.html'];
+// jr6 JOBVITE (TOOLING's handoff §6): the six NinjaOne pages were converted again with the jr6 converter, so they left
+// this list; Breezy's waits for its form's next conversion.
+const ANGULAR_STATE_FIXTURES = ['breezy/concurrent-form.html'];
 const ANGULAR_STATE_MARK = 'an AngularJS state class on a control';
 
 describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
