@@ -59,14 +59,22 @@
  *   the person's 'email-code' pause (ADP-11's minimum, apply-path B7); its Send and its Close are never pressed.
  * - The guest view, the pane and the code are drawn in place at the details' one address (apply-path B4): quirks
  *   entryPresses 2 (Apply, then Consent & Continue), formLateMs 20 s and formInPlace.
+ * - The Resume step (jr6-resume-*, ADP-1): the résumé and the attachments as uploads (Jobright's ADP operations
+ *   getResumeUploadDom read for the controls and the done row); ADP takes the résumé's file input out of the page once
+ *   it holds the file, so its upload is confirmed by the row that names the file (uploadState).
+ * - ADP's own lists (ADP-2, ADP-3, ADP-15): wfn-dropdown-list (the State once Country is chosen, jr6-personal-us-*) and
+ *   sdf-select-simple (the Questions step's source list and the salary currency, jr6-questions2-*), declared comboboxes
+ *   whose trigger, list and chosen label sit in shadow roots, their filter box a part (Jobright's ADP operations read the
+ *   same trigger and sdf-select-item options).
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache } from '../../dom/scan-cache';
 import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
+import { isUserVisible } from '../../dom/visibility';
 import { configuredHooks } from '../configured';
-import type { AtsConfig } from '../configured/types';
-import type { Adapter, WidgetDecl } from '../types';
+import type { AtsConfig, UploadRule } from '../configured/types';
+import type { Adapter, UploadState, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, matchesUrl, parseAdpUrl } from './url';
 
 /** The fixtures the adapter was read from (fixtures/adp/<case>.html), by snapshot. */
@@ -87,6 +95,9 @@ export const ADP_JR6_SNAPSHOTS = ['jr6-posting', 'jr6-consent', 'jr6-guest-blank
 const PRIVACY_PANE = 'sdf-focus-pane#jdv_privacy_dailog';
 /** jr6-guest-send-code: the "Get your verification code" pane over the guest page. */
 const CODE_CHOICE_PANE = 'sdf-focus-pane#login_view_identifier_dialog';
+/** ADP's own lists (ADP-2, ADP-3): the State's wfn-dropdown-list (an sdf-select-simple in its shadow root) and the
+ *  Questions step's sdf-select-simple. */
+const SELECT_HOSTS = 'wfn-dropdown-list, sdf-select-simple';
 // ── end jr6 ADP P1 ──
 
 /** A react-select's text box (adp-1, adp-2, adp-3). */
@@ -201,6 +212,29 @@ export const ADP_CONFIG: AtsConfig = {
     { css: 'button#recruitment_jobDescription_back', from: 'jr6-posting' },
     // ── end jr6 ADP P1 ──
   ],
+  // ── jr6 ADP-1 (high): the Resume step (jr6-resume-blank, jr6-resume-choice, jr6-resume-uploaded) ──
+  // Jobright's ADP operations (getResumeUploadDom, getCoverLetterUploadDom) read the same controls: the résumé's
+  // #resumeUploadContainer with its input[type=file][name=file] and its sdf-button "Upload resume" (id^="fileUpload-"),
+  // done once a .fileDetails .fileName or its recruitment_afterResumeUpload_remove_ button shows.
+  uploads: [
+    // jr6-resume-blank: <div id="resumeUploadContainer" class="resume-upload-container"> ... <span
+    // class="resume-required-indicator">Required</span> ... <sdf-button id="fileUpload-<uuid>" ... aria-label="Drag and
+    // drop file or Upload resume. ...">Upload resume</sdf-button> ... <input type="file" name="file" style="display:
+    // none;">; jr6-resume-uploaded: the input gone, <div class="fileDetails"><i class="fa fa-file-text ..."></i><span
+    // class="fileName">NAME</span><button id="recruitment_afterResumeUpload_remove_0" ... aria-label="Remove,NAME,Resume">
+    // (the converter redacts NAME).
+    { input: '#resumeUploadContainer input[type="file" i][name="file"]',
+      control: '#resumeUploadContainer sdf-button[id^="fileUpload-"]', area: '#resumeUploadContainer',
+      done: '.fileDetails .fileName, button[id^="recruitment_afterResumeUpload_remove_"]', name: '.fileDetails .fileName',
+      from: 'jr6-resume-blank, jr6-resume-uploaded' },
+    // jr6-resume-blank: <div class="additional-documents-container mt-2"><h3>Attachments</h3> ... <sdf-button
+    // id="fileUpload-<uuid>" ...>Upload attachments</sdf-button> ... <input type="file" name="file" style="display:
+    // none;">; its done row (Jobright's getCoverLetterUploadDom) once a document is added.
+    { input: '.additional-documents-container input[type="file" i][name="file"]',
+      control: '.additional-documents-container sdf-button[id^="fileUpload-"]', area: '.additional-documents-container',
+      done: '.additional-document-result .fileName, button[id^="recruitment_afterAdditionalDocumentsUpload_remove_"]',
+      from: 'jr6-resume-blank' },
+  ],
   // adp-2: <label class="vdl-validation-error error-color" role="alert"> after an aria-invalid box; adp-6: <wfn-text
   // id="firstNameErrLbl" role="alert" class="experience-vdl-error-label hydrated">; adp-2, adp-3: <div
   // id="sdf-radio-group-<n>-errorMessage">. Empty in every snapshot: an error counts only while a person sees it.
@@ -289,27 +323,175 @@ function labelFor(control: Element): Element | null {
   }
   // adp-6: the guest page's labels, none with a for=.
   if (control.closest('div.login-form-container') !== null) return labelBefore(control);
+  // jr6 ADP-3 (jr6-questions2-blank): <div class="qMainDiv"><div class="question-label-container"><label class="qLabel"
+  // for="question_7"><wfn-text ...>How did you learn about this position?<span class="mdf-required-indicator">*</span>
+  // </wfn-text></label></div> ... <sdf-select-simple id="question_7" ...>: a custom element no label[for] reaches.
+  if (control.matches('sdf-select-simple[id]')) {
+    const question = control.closest('div.qMainDiv');
+    return question === null ? null
+      : Array.from(question.querySelectorAll('label.qLabel')).find((label) => label.getAttribute('for') === control.id) ?? null;
+  }
+  // jr6 ADP-1: a file input of the Resume step, titled by its block's h3 (uploadTitle).
+  if (control.matches('input[type="file" i]')) return uploadTitle(control);
   return null;
 }
 
-/** The words after the e-signature's label (see the header). */
+/** jr6 ADP-1: the h3 that titles an upload of the Resume step (jr6-resume-blank): the Attachments' own, <div
+ *  class="upload-resume-container"><div class="additional-documents-container mt-2"><h3>Attachments</h3>...; the
+ *  résumé's sits in the block before its #resumeUploadContainer, <div class="upload-resume-wrapper"><div
+ *  class="upload-resume-container"><h3>Resume</h3><div class="upload-resume-type-question">..., the nearest such title
+ *  before it in the step's div.upload-resume-view. */
+function uploadTitle(input: Element): Element | null {
+  const container = input.closest('div.upload-resume-container');
+  const view = input.closest('div.upload-resume-view');
+  if (container === null || view === null) return null;
+  const own = container.querySelector('h3');
+  if (own !== null) return own;
+  const before = Array.from(view.querySelectorAll('div.upload-resume-container > h3'))
+    .filter((title) => (title.compareDocumentPosition(container) & FOLLOWING) !== 0);
+  return before[before.length - 1] ?? null;
+}
+
+/** The words after a label the adapter gives (see the header). */
 function labelSuffix(control: Element): string | null {
   // adp-4: <span class="self-review-signature"><div class="self-review-signature-checkbox vdl-checkbox"
   // id="self_att_agree_chk"> ... <label for="...">Yes, I agree to sign electronically.</label></div><div
   // class="self-review-signature-label"><label class="required">Please type your full name.</label><input
   // id="electronicSignature" ...>.
-  return control.matches(SIGNATURE) && control.closest('span.self-review-signature') !== null
-    ? 'electronic signature' : null;
+  if (control.matches(SIGNATURE) && control.closest('span.self-review-signature') !== null) return 'electronic signature';
+  return null;
 }
 
-/** Whether a control's label says required by its class alone (see the header). */
+/** Whether a control's label, or the page's own mark, says required where no attribute does (see the header). */
 function requiredFor(control: Element): boolean {
+  // jr6 ADP-2 (jr6-personal-us-errors): <wfn-dropdown-list ... id="PersonalAddress_state" ... required="true">; jr6
+  // ADP-7's currency, <sdf-select-simple id="add_info_select_box" ... required="true">: the host says it.
+  if (control.matches(SELECT_HOSTS) && (control.getAttribute('required') ?? '').trim().toLowerCase() === 'true') return true;
+  // jr6 ADP-1 (jr6-resume-blank): <div id="resumeUploadContainer" ...> ... <span class="resume-required-indicator">Required
+  // </span>: the résumé's upload is required while the container shows the mark.
+  if (control.matches('input[type="file" i]')) {
+    const area = control.closest('#resumeUploadContainer');
+    const cache = newScanCache();
+    return area !== null && Array.from(area.querySelectorAll('span.resume-required-indicator'))
+      .some((mark) => isUserVisible(mark, cache));
+  }
   // adp-6: <label class="personal-step-phoneHeader required-indicator" ...>Mobile Number</label> (its input has no
   // aria-required); adp-4: <label class="required">Please type your full name.</label>.
   return labelFor(control)?.matches('label.required-indicator, label.required') === true;
 }
 
-// ── jr6 E-ADP (neverPress) ──
+// ── jr6 ADP-2, ADP-3, ADP-15: ADP's own lists ──
+/** The sdf-select-simple behind a list's host (a wfn-dropdown-list draws one in its shadow root). */
+function simpleOf(host: Element): Element | null {
+  return host.matches('sdf-select-simple') ? host : host.shadowRoot?.querySelector('sdf-select-simple') ?? null;
+}
+
+/** The open list of an sdf-select-simple (jr6-personal-us-errors, jr6-questions2-blank: <sdf-floating-pane ...> ...
+ *  <div class="list floating-pane-content"><div id="listbox" role="listbox" ...><sdf-select-item role="option"
+ *  aria-label="AL - Alabama" value="AL" ...>, inside its shadow root) while a person can see it; else, for a list the
+ *  page portals out of the field (the State's wfn-dropdown-list says portal-enabled="true"), the newest listbox a person
+ *  can see in a body-level sdf-floating-pane-portal (Jobright's ADP operations look for the newest visible listbox the
+ *  same way); null while none shows. */
+function openListOf(simple: Element): Element | null {
+  const cache = newScanCache();
+  const own = simple.shadowRoot?.querySelector('div#listbox[role="listbox" i]') ?? null;
+  if (own !== null && isUserVisible(own, cache)) return own;
+  const body = simple.ownerDocument.body;
+  if (body === null) return null;
+  const portals = Array.from(body.children).filter((child) => child.localName === 'sdf-floating-pane-portal');
+  const lists = portals.flatMap((portal) => [...Array.from(portal.querySelectorAll('[role="listbox" i]')),
+    ...Array.from(portal.shadowRoot?.querySelectorAll('[role="listbox" i]') ?? [])]);
+  return lists.reverse().find((list) => isUserVisible(list, cache)) ?? null;
+}
+
+/** The Country a person sees chosen on the Personal Information step (its react-select's single value), the State
+ *  list's context; null where none shows. */
+function shownCountry(doc: Document): string | null {
+  const box = doc.getElementById('PersonalAddress_country')?.closest('.MDFSelectBox__control') ?? null;
+  const shown = box?.querySelector('.MDFSelectBox__single-value') ?? null;
+  const text = shown === null ? '' : textOf(shown);
+  return text === '' ? null : text;
+}
+
+/** An ADP list declared as a combobox (see the header), or null where its shadow parts are not there. */
+function selectDecl(host: Element): WidgetDecl | null {
+  const simple = simpleOf(host);
+  const shadow = simple?.shadowRoot ?? null;
+  // jr6-questions2-blank: <div class="combo"><div class="trigger-button" role="button" aria-labelledby="label
+  // selected-label select-placeholder" aria-expanded="false"><span id="select-placeholder" ...>Choose an option</span>
+  // ...; the filter box <input id="select-filter-input" class="filter" role="combobox" type="text" aria-label="Enter
+  // text to filter your options" ...> in the list's pane (ADP-15: the widget's part, never a field).
+  const trigger = shadow?.querySelector<HTMLElement>('div.trigger-button[role="button" i]') ?? null;
+  if (simple === null || shadow === null || trigger === null) return null;
+  const filter = shadow.querySelector('input#select-filter-input');
+  const context = host.id === 'PersonalAddress_state' ? shownCountry(host.ownerDocument) : null;
+  return { kind: 'combobox', opener: trigger, expanded: trigger,
+    results: { list: () => openListOf(simple), option: 'sdf-select-item[role="option" i]' },
+    // The chosen option's words in the trigger, <span id="selected-label" part="selected-label">, where one is chosen.
+    shownAnswer: () => {
+      const label = shadow.querySelector('#selected-label');
+      const text = label === null ? '' : textOf(label);
+      return text === '' ? null : text;
+    },
+    drawnWhole: true,
+    ...(context === null ? {} : { learnContext: context }),
+    ...(filter === null ? {} : { parts: [filter] }),
+    snapshot: host.matches('wfn-dropdown-list') ? 'fixtures/adp/jr6-personal-us-errors.html'
+      : 'fixtures/adp/jr6-questions2-blank.html' };
+}
+
+/** The outermost ADP lists in a root (a wfn-dropdown-list's own sdf-select-simple sits in its shadow root). */
+function selectHosts(root: Element): Element[] {
+  return Array.from(root.querySelectorAll(SELECT_HOSTS))
+    .filter((host) => host.parentElement === null || host.parentElement.closest(SELECT_HOSTS) === null);
+}
+// ── end jr6 ADP-2, ADP-3, ADP-15 ──
+
+// ── jr6 ADP-2 (dependsOn), ADP-1 (uploadState), E-ADP (neverPress) ──
+/** jr6 ADP-2 (FIXPLAN §3.1 item 10; jr6-personal-blank, jr6-personal-us-state): the State, a text box until Country is
+ *  chosen (<input id="PersonalAddress_state" ...>) and then ADP's own list under the same id (<wfn-dropdown-list
+ *  id="PersonalAddress_state" ...>), is reset by the Country's write (<input class="MDFSelectBox__input"
+ *  id="PersonalAddress_country" ...>). */
+function dependsOn(control: Element): Element | null {
+  return control.id === 'PersonalAddress_state' ? control.ownerDocument.getElementById('PersonalAddress_country') : null;
+}
+
+/** The upload rule each file input was found under, kept for the input ADP takes out of the page (uploadState). */
+const uploadRuleOf = new WeakMap<Element, UploadRule>();
+
+/** The rule an input matches, noted for later. */
+function noteUpload(input: Element): UploadRule | null {
+  const rule = (ADP_CONFIG.uploads ?? []).find((each) => input.isConnected && input.matches(each.input))
+    ?? uploadRuleOf.get(input) ?? null;
+  if (rule !== null) uploadRuleOf.set(input, rule);
+  return rule;
+}
+
+/** jr6 ADP-1: ADP takes the résumé's file input out of the page once it holds the file (jr6-resume-uploaded: no input
+ *  left in #resumeUploadContainer, the file's row in its place). For such an input the rule's area is found again in
+ *  its document: the upload is confirmed while a row there names the file, pending while the area shows none (the row
+ *  may still be drawn), failed where the area itself is gone. A connected input is read by the configured rule. */
+function uploadState(input: HTMLInputElement, fileName: string): UploadState | null {
+  const rule = noteUpload(input);
+  if (input.isConnected || rule === null) return hooks.uploadState?.(input, fileName) ?? null;
+  if (rule.area === undefined || rule.done === undefined) return null;
+  const cache = newScanCache();
+  const areas = Array.from(input.ownerDocument.querySelectorAll(rule.area)).filter((area) => isUserVisible(area, cache));
+  if (areas.length === 0) return 'failed';
+  const wanted = fileName.replace(/\s+/g, ' ').trim();
+  const nameCss = rule.name ?? rule.done;
+  const named = areas.some((area) => Array.from(area.querySelectorAll(nameCss))
+    .some((row) => isUserVisible(row, cache) && wanted !== '' && (row.textContent ?? '').replace(/\s+/g, ' ').trim() === wanted));
+  return named ? 'confirmed' : 'pending';
+}
+
+/** The configured uploads, each input's rule noted (uploadState). */
+function uploadWidgets(root: Element): Array<{ control: Element; input: HTMLInputElement }> {
+  const found = hooks.uploadWidgets?.(root) ?? [];
+  for (const { input } of found) noteUpload(input);
+  return found;
+}
+
 /** The configured never-pressed controls, and the code-choice pane's Close, which sits in the pane's shadow root
  *  (jr6-guest-send-code: <sdf-focus-pane id="login_view_identifier_dialog" ...><template shadowrootmode="open"> ...
  *  <div class="close-container"><sdf-close-button id="close-button" ...> with its own <button aria-label="Close dialog">
@@ -321,7 +503,7 @@ function neverPress(root: Element): Element[] {
   });
   return [...(hooks.neverPress?.(root) ?? []), ...closes];
 }
-// ── end jr6 E-ADP ──
+// ── end jr6 ADP P1 hooks ──
 
 /** The react-selects and the referral's options, declared as their widgets (see the header); null for any other
  *  control. */
@@ -359,6 +541,8 @@ function widgetFor(control: Element): WidgetDecl | null {
     return members.length < 2 ? null
       : { kind: 'radio', opener: control as HTMLElement, members, snapshot: 'fixtures/adp/questions.html' };
   }
+  // jr6 ADP-2, ADP-3, ADP-15: ADP's own lists (selectDecl).
+  if (control.matches(SELECT_HOSTS)) return selectDecl(control);
   return null;
 }
 
@@ -374,8 +558,12 @@ export const adpAdapter: Adapter = {
   labelSuffix,
   requiredFor,
   widgetFor,
-  widgetRoots: (root) => Array.from(root.querySelectorAll(REFERRAL_OPTIONS)),
+  // The referral's options (adp-2); jr6 ADP-2, ADP-3: the outermost ADP lists.
+  widgetRoots: (root) => [...Array.from(root.querySelectorAll(REFERRAL_OPTIONS)), ...selectHosts(root)],
   // ── jr6 ADP P1 ──
+  dependsOn,
+  uploadState,
+  uploadWidgets,
   neverPress,
   // ── end jr6 ADP P1 ──
 };

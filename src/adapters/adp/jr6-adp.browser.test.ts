@@ -10,12 +10,14 @@
  *   pane offers Consent & Continue and never Decline & Close; "Get your verification code" is the person's email-code
  *   pause; the guest view drawn after them is the guest state; OneTrust's filter "Apply" is never offered; the entry
  *   door presses Apply, then Consent & Continue, in one document.
+ * - ADP-1 (the Resume step's uploads), ADP-2/3/15 (ADP's own lists).
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { pressEntry, pressEntryChoice } from '../../content/press';
 import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.testkit';
 import { detectPause } from '../../dom/pause-detect';
 import { scan } from '../../dom/scan';
+import type { ScanResult, ScannedField } from '../../dom/types';
 import { deadline, startDeadline } from '../../dom/time';
 import { isUserVisible } from '../../dom/visibility';
 import { configuredHooks } from '../configured';
@@ -39,6 +41,20 @@ afterEach(() => removeFixtures(document));
 
 const open = (name: string): Promise<Fixture> => loadFixture(document, page(name), SNAPSHOT_VIEWPORT);
 const q = <T extends Element = HTMLElement>(fixture: Fixture, selector: string) => fixture.doc.querySelector<T>(selector)!;
+
+/** The scan of a case's root. */
+async function scanned(name: string, adapter: Adapter = adpAdapter): Promise<{ fixture: Fixture; result: ScanResult }> {
+  const fixture = await open(name);
+  const root = adpAdapter.detect(fixture.doc)!.formRoot;
+  return { fixture, result: scan(root, adapter, { platform: 'adp' }) };
+}
+
+/** The field whose control or widget element is `el`. */
+const fieldOf = (result: ScanResult, el: Element | null): ScannedField | undefined =>
+  result.fields.find((field) => {
+    const target = result.target(field.key);
+    return target !== null && (target.control === el || target.widget?.element === el);
+  });
 
 /** Every click a fixture's document receives, held (nothing navigates), named by its aria-label, else its id. */
 function heldClicks(fixture: Fixture): string[] {
@@ -304,6 +320,155 @@ describe('jr6 ADP-10 (adapter part): the posting’s text', () => {
       const fixture = await open(name);
       const text = adpAdapter.postingText!(fixture.doc);
       expect(text === null ? null : text.className, name).toBe(TABLE[name]!.posting ? 'job-description-data' : null);
+      removeFixtures(document);
+    }
+  }, 120_000);
+});
+
+// ── ADP-1: the Resume step's uploads ─────────────────────────────────────────────────────────────────────────────
+
+describe('jr6 ADP-1: the Resume step’s résumé and attachments', () => {
+  it.each(['jr6-resume-blank', 'jr6-resume-choice'])('%s: two upload fields, the résumé required, none unrecognised',
+    async (name) => {
+      const { fixture, result } = await scanned(name);
+      expect(result.unrecognisedUploads).toEqual([]);
+      const files = result.fields.filter((field) => field.kind === 'file');
+      expect(files.map((field) => [field.label, field.required])).toEqual([['Resume', true], ['Attachments', false]]);
+      const resume = result.target(files[0]!.key)!;
+      expect(resume.control).toBe(q(fixture, '#resumeUploadContainer input[type="file"][name="file"]'));
+      expect(resume.proxy).toBe(q(fixture, '#resumeUploadContainer sdf-button[id^="fileUpload-"]'));
+      expect(result.target(files[1]!.key)!.proxy).toBe(q(fixture, '.additional-documents-container sdf-button[id^="fileUpload-"]'));
+      // The rules undone: both slots are unrecognised again.
+      const undone = configuredHooks({ ...ADP_CONFIG, uploads: undefined });
+      const plain = scan(adpAdapter.detect(fixture.doc)!.formRoot, { ...adpAdapter, uploadWidgets: undone.uploadWidgets },
+        { platform: 'adp' });
+      expect(plain.unrecognisedUploads).toHaveLength(2);
+    });
+
+  it('jr6-resume-uploaded: the résumé taken (its input gone, its row shown), only the attachments left', async () => {
+    const { fixture, result } = await scanned('jr6-resume-uploaded');
+    expect(fixture.doc.querySelector('#resumeUploadContainer input[type="file"]')).toBeNull();
+    expect(result.fields.filter((field) => field.kind === 'file').map((field) => field.label)).toEqual(['Attachments']);
+    expect(result.unrecognisedUploads).toEqual([]);
+  });
+
+  it('confirms the résumé ADP took out of the page by the row that names it; pending while none does', async () => {
+    const fixture = await open('jr6-resume-blank');
+    const { doc } = fixture;
+    const input = q<HTMLInputElement>(fixture, '#resumeUploadContainer input[type="file"][name="file"]');
+    expect(adpAdapter.uploadWidgets!(doc.body).map((widget) => widget.input)).toContain(input);
+    // Connected, no row yet: the configured rule's answer (no done sign shown).
+    expect(adpAdapter.uploadState!(input, 'alex-rivera-resume.pdf')).toBe('pending');
+    // ADP's script stood in for (jr6-resume-uploaded's markup): the input taken out, the file's row drawn.
+    const area = q(fixture, '#resumeUploadContainer');
+    input.remove();
+    expect(adpAdapter.uploadState!(input, 'alex-rivera-resume.pdf')).toBe('pending');
+    const row = doc.createElement('div');
+    row.className = 'fileDetails';
+    const name = doc.createElement('span');
+    name.className = 'fileName';
+    name.textContent = 'another.pdf';
+    const remove = doc.createElement('button');
+    remove.id = 'recruitment_afterResumeUpload_remove_0';
+    remove.type = 'button';
+    remove.setAttribute('aria-label', 'Remove');
+    remove.textContent = 'Remove';
+    row.append(name, remove);
+    area.append(row);
+    expect(adpAdapter.uploadState!(input, 'alex-rivera-resume.pdf')).toBe('pending');
+    row.querySelector('.fileName')!.textContent = ' alex-rivera-resume.pdf ';
+    expect(adpAdapter.uploadState!(input, 'alex-rivera-resume.pdf')).toBe('confirmed');
+    // The configured rule alone knows no rule for an input out of the page: it reads nothing there.
+    expect(configuredHooks(ADP_CONFIG).uploadState!(input, 'alex-rivera-resume.pdf')).toBeNull();
+    // The area itself gone: failed.
+    area.remove();
+    expect(adpAdapter.uploadState!(input, 'alex-rivera-resume.pdf')).toBe('failed');
+  });
+});
+
+// ── ADP-2, ADP-3, ADP-15: ADP's own lists ────────────────────────────────────────────────────────────────────────
+
+describe('jr6 ADP-2, ADP-3, ADP-15: ADP’s own lists (wfn-dropdown-list, sdf-select-simple)', () => {
+  it.each(['jr6-personal-us-errors', 'jr6-personal-us-state', 'jr6-personal-filled'])(
+    '%s: the State after Country is a declared, required combobox, its filter box no field', async (name) => {
+      const { fixture, result } = await scanned(name);
+      const host = q(fixture, 'wfn-dropdown-list#PersonalAddress_state');
+      const state = fieldOf(result, host)!;
+      expect(state).toBeDefined();
+      expect([state.kind, state.required, state.label.startsWith('State / Territory')]).toEqual(['combobox', true, true]);
+      const widget = result.target(state.key)!.widget!;
+      expect(widget.declared).toBe(true);
+      const simple = host.shadowRoot!.querySelector('sdf-select-simple')!;
+      expect(widget.opener).toBe(simple.shadowRoot!.querySelector('div.trigger-button[role="button"]'));
+      expect(widget.drawnWhole).toBe(true);
+      // No field is the list's filter box (ADP-15), and none other than the State is its list.
+      expect(result.fields.some((field) => /filter your options/i.test(field.label))).toBe(false);
+      expect(result.fields.filter((field) => result.target(field.key)?.widget?.element === host)).toHaveLength(1);
+      // The State is reset by the Country's write (FIXPLAN §3.1 item 10).
+      expect(adpAdapter.dependsOn!(host)).toBe(q(fixture, 'input#PersonalAddress_country'));
+      // The rules undone: no State field; where the capture shows the list open, its filter box is a field again.
+      const plain = scan(adpAdapter.detect(fixture.doc)!.formRoot,
+        { ...adpAdapter, widgetRoots: (root) => Array.from(root.querySelectorAll('#refferalOptions')) }, { platform: 'adp' });
+      expect(fieldOf(plain, host)).toBeUndefined();
+      expect(plain.fields.some((field) => /filter your options/i.test(field.label))).toBe(name === 'jr6-personal-us-errors');
+    });
+
+  it('jr6-personal-us-errors: the open list is the shadow listbox, its options the page’s sdf-select-items', async () => {
+    const fixture = await open('jr6-personal-us-errors');
+    const host = q(fixture, 'wfn-dropdown-list#PersonalAddress_state');
+    const decl = adpAdapter.widgetFor!(host)!;
+    const list = typeof decl.results!.list === 'function' ? decl.results!.list() : decl.results!.list;
+    const simple = host.shadowRoot!.querySelector('sdf-select-simple')!;
+    expect(list).toBe(simple.shadowRoot!.querySelector('div#listbox[role="listbox"]'));
+    const options = Array.from(list!.querySelectorAll(decl.results!.option));
+    expect(options.length).toBeGreaterThan(50);
+    expect(options.some((option) => option.getAttribute('aria-label') === 'CA - California')).toBe(true);
+    expect(decl.parts).toEqual([simple.shadowRoot!.querySelector('input#select-filter-input')]);
+    // Nothing chosen: the trigger shows its placeholder, no answer.
+    expect(decl.shownAnswer!([])).toBeNull();
+    // The list closed (hidden): none open, and no portal list either.
+    (list!.closest('div.list') as HTMLElement).style.display = 'none';
+    expect(typeof decl.results!.list === 'function' ? decl.results!.list() : null).toBeNull();
+  });
+
+  it('the State as a text box (jr6-personal-blank) depends on the Country too; other fields on nothing', async () => {
+    const fixture = await open('jr6-personal-blank');
+    const country = q(fixture, 'input#PersonalAddress_country');
+    expect(adpAdapter.dependsOn!(q(fixture, 'input#PersonalAddress_state'))).toBe(country);
+    expect(adpAdapter.dependsOn!(q(fixture, 'input#PersonalAddress_city'))).toBeNull();
+    expect(adpAdapter.dependsOn!(country)).toBeNull();
+  });
+
+  it.each(['jr6-questions2-blank', 'jr6-questions2-filled'])(
+    '%s: the source list and the currency are declared comboboxes with their own labels', async (name) => {
+      const { fixture, result } = await scanned(name);
+      const source = fieldOf(result, q(fixture, 'sdf-select-simple#question_7'))!;
+      expect([source.label, source.kind, source.required]).toEqual(['How did you learn about this position?', 'combobox',
+        true]);
+      const currency = fieldOf(result, q(fixture, 'sdf-select-simple#add_info_select_box'))!;
+      expect([currency.label, currency.kind, currency.required]).toEqual(['Select currency type', 'combobox', true]);
+      expect(result.fields.some((field) => /filter your options/i.test(field.label))).toBe(false);
+      // The source list's options, as the page draws them in its shadow listbox.
+      const decl = adpAdapter.widgetFor!(q(fixture, 'sdf-select-simple#question_7'))!;
+      const list = typeof decl.results!.list === 'function' ? decl.results!.list() : decl.results!.list;
+      expect(Array.from(list?.querySelectorAll(decl.results!.option) ?? []).map((option) => option.getAttribute('aria-label')))
+        .toEqual(['Employee referral', 'Contacted by company Recruiter', 'Indeed', 'LinkedIn', 'ZipRecruiter', 'Glassdoor',
+          'Dice', 'Other']);
+      // The rule undone (no labelFor for sdf-select-simple): the source list has no label.
+      const plain = scan(adpAdapter.detect(fixture.doc)!.formRoot, { ...adpAdapter,
+        labelFor: (control) => (control.matches('sdf-select-simple') ? null : adpAdapter.labelFor!(control)) },
+      { platform: 'adp' });
+      expect(fieldOf(plain, q(fixture, 'sdf-select-simple#question_7'))?.label).toBe('');
+    });
+
+  it('no case shows a list’s filter box as a field', async () => {
+    for (const name of Object.keys(TABLE)) {
+      const fixture = await open(name);
+      const root = adpAdapter.detect(fixture.doc)?.formRoot ?? null;
+      if (root !== null) {
+        const result = scan(root, adpAdapter, { platform: 'adp' });
+        expect(result.fields.some((field) => /filter your options/i.test(field.label)), name).toBe(false);
+      }
       removeFixtures(document);
     }
   }, 120_000);
