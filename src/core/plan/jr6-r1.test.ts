@@ -416,7 +416,7 @@ describe('20 (jobvite-new-1): a restrictive agreement asked as a fact goes to th
     for (const basis of ANSWER_BASES) {
       const verdict: AnswerVerdict = { key: spec.key, kind: 'choice', optionSetHash: spec.optionSetHash, index: 1,
         labelHash: sha256Hex('No'), basis, taskId: 'c3e5a7b9-2d4f-4b6c-8e0a-1f3b5d7e9a20' };
-      const { write, row } = fieldOf(planOf([spec], { ai: { verdicts: new Map(),
+      const { write, row } = fieldOf(planOf([spec], { ai: { verdicts: new Map(), classifications: new Map(),
         answers: new Map([[spec.key, verdict]]) } }), spec);
       expect(write, basis).toMatchObject({ value: { kind: 'option', cleanLabel: 'No' },
         origin: { provenance: 'llm-pick' } });
