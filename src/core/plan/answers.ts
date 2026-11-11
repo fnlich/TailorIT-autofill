@@ -70,7 +70,8 @@ import {
 import { classifiable, openAnswerTopics, sectionWordsOfKey, type ScreenTopic } from '../resolver/classify';
 import { namesAnotherPerson } from '../resolver/classifyRules';
 import {
-  asksHowApplicationMade, attestsNoAiUse, namesBindingWaiver, namesConsentTopic, type NeedsUserCause,
+  asksHowApplicationMade, attestsNoAiUse, namesBindingWaiver, namesConsentTopic, restrictiveAgreementFact,
+  type NeedsUserCause,
 } from '../resolver/labelRules';
 import type { FieldClassification } from '../resolver/resolve';
 import { capCodePoints } from '../text/fold';
@@ -233,8 +234,10 @@ export function namesUnanswerableTopic(text: string, allow: AnswerAllowance = {}
   if (UNANSWERABLE_ACRONYMS.some((acronym) => acronym.test(text))) return true;
   if (namesBotCheck(text) || attentionHits(text, '').some((id) => PERSON_ONLY_ATTENTION.has(id))) return true;
   const normalized = normalizeLabel(text);
+  // jr6 RULES (jobvite-new-1): a restrictive agreement asked as a fact names a contract the person may hold, no
+  // waiver an answer would give.
   if (namesConsentTopic(normalized) || attestsNoAiUse(normalized) || asksHowApplicationMade(normalized)
-    || namesBindingWaiver(normalized)) return true;
+    || (namesBindingWaiver(normalized) && !restrictiveAgreementFact(normalized))) return true;
   return detectionViews(text).some((view) => {
     const lower = view.toLowerCase();
     return UNANSWERABLE.some((pattern) => pattern.test(lower)) || (allow.number !== true && BARE_NUMBER.test(lower))

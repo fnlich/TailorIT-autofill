@@ -46,6 +46,32 @@ export const FIELD_CATEGORIES = [
   // s2 core-wd: Workday's My Information (the wd study §5): a name's suffix, the phone's extension, and whether the
   // person goes by a preferred name ("I have a preferred name").
   'identity.suffix', 'contact.phoneExtension', 'identity.hasPreferredName',
+  // jr6 RULES (FIXPLAN §6.3 R1): the date beside a signature (JV-1, JZ-15, workday-new-1); the language a form is
+  // written in, never the person's (workday-new-1); an employer's own employee number (workday-new-1); a job's or a
+  // school's city, region and country, never the home address (ICIMS-09, O7); an address search's "Enter manually"
+  // (ICIMS-08); the county (JV-3, WD-26, ADP-14, O3); the residence a privacy policy is chosen by (JV-9); whether a
+  // current employee referred the person (JV-15, ADP-19, U-11); a question that asks only of those living in a place
+  // (JV-17).
+  'consent.signatureDate', 'languages.formLanguage', 'identity.employeeId', 'experience.city', 'experience.region',
+  'experience.country', 'education.city', 'education.region', 'education.country', 'address.lookup', 'address.county',
+  'location.policyResidence', 'referral.employeeReferred', 'location.residesIn',
+  // jr6 RULES R2 (FIXPLAN §6.3 items 27 to 34): OPT or CPT to begin or continue employment (WD-30).
+  'workAuth.opt',
+  // jr6 RULES R3 (FIXPLAN §6.3 items 35 to 48): military training or a certification for the role (WD-29); an address's
+  // own type (ICIMS-13); how the person heard, specified further (ICIMS-19); the person's time zone, and whether they
+  // live in one (ICIMS-26, JV-16); N years of experience in something, and experience with something (JV-16).
+  'screening.militaryTraining', 'address.type', 'referral.detail', 'preferences.timeZone', 'location.inTimeZone',
+  'experience.yearsIn', 'skills.experienceWith',
+  // jr6 RULES R3 (FIXPLAN §6.3 items 49 to 61): whether the person lives or will work in a country a question names
+  // (JZ-11); a former, previous or maiden name, which the profile never holds (U-11).
+  'location.inCountry', 'identity.formerName',
+  // jr6 RULES R4 (FIXPLAN §6.3 items 62 to 79): a name's prefix or salutation, which the profile never holds (WD-25); a
+  // school entry's graduation (ICIMS-25); an address's third line (ADP-14); the pay's period (ADP-16); how the résumé is
+  // provided (ADP-18); a high-school diploma or GED (ADP-20); a mailing address only if it differs (JV-19); a Facebook
+  // link (SR-13); a numbered link box, the profile's links in order (O13).
+  'identity.prefix', 'education.graduated', 'address.line3', 'salary.period', 'application.resumeMethod',
+  'education.highSchool', 'address.mailing', 'links.facebook', 'links.numbered',
+  // jr6 RULES end
   'unknown',
 ] as const;
 export type FieldCategory = (typeof FIELD_CATEGORIES)[number];
@@ -77,6 +103,32 @@ export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.
   'placeholder.no-profile', 'link.handle', 'links.website-from-portfolio', 'legal.yes-no-text', 'eeo.hispanic-race',
   'eeo.not-offered', 'compose.text',
   // s2 core-gh end
+  // jr6 RULES (FIXPLAN §6.3 R1): today's date beside an approved or required signature (JV-1, JZ-15); English for a
+  // form's own language (workday-new-1); an address search's "Enter manually" (ICIMS-08); a follow-up's one "Not
+  // Applicable" once the answer above is the opposite of its trigger (JV-6); a privacy policy's residence option (JV-9);
+  // No to "referred by a current employee" for a source that is no person (JV-15, ADP-19, U-11); the "I do not live
+  // there" option of a question asked only of those who do (JV-17); the qualifications a checklist names among the
+  // person's skills and degrees (JV-5).
+  'consent.signature-date', 'form.language', 'address.enter-manually', 'conditional.not-applicable',
+  'location.policy-residence', 'referral.not-employee', 'location.not-there', 'skills.qualifications',
+  // jr6 RULES R2 (FIXPLAN §6.3 items 27 to 34): a work status chosen by its meaning, or answered yes or no, from the
+  // entry's status, the person's citizenships or a non-citizen's authorization and sponsorship answers (JV-7, JV-11,
+  // JZ-7, JZ-8); the entry of the country the person is located in, among those a question qualifies so (SR-4); OPT or
+  // CPT from the sponsorship answers and a student visa (WD-30).
+  'legal.work-status', 'legal.located-country', 'legal.opt',
+  // jr6 RULES R3 (FIXPLAN §6.3 items 35 to 48): No to military training from no military service and no veteran status
+  // (WD-29); a home address's type (ICIMS-13); a time zone from the profile's state (ICIMS-26, JV-16); years in
+  // something from the experience entries' titles and durations, and experience with something from the skills and the
+  // entries (JV-16); an employer the question names, compared with the profile's (WD-17: screening.previously-employed
+  // as before).
+  'legal.military-training', 'address.type-home', 'location.time-zone', 'experience.years-in', 'skills.experience-with',
+  // jr6 RULES R3 (FIXPLAN §6.3 items 49 to 61): yes or no to living or working in the country a question names, from the
+  // profile's address (JZ-11).
+  'location.in-country',
+  // jr6 RULES R4 (FIXPLAN §6.3 items 62 to 79): a school entry graduated from its degree and end date (ICIMS-25); a high
+  // school diploma from the education entries (ADP-20); "Upload File" for a run that has a résumé (ADP-18).
+  'education.graduated', 'education.high-school', 'resume.upload-method',
+  // jr6 RULES end
 ] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
