@@ -23,8 +23,9 @@
  * - U-04 (ENGINE E1): School's typed text kept where no suggestion matches, Degree chosen from the page's own list,
  *   both through the pass's own write;
  * - U-05 (ENGINE E3, RULES R0): the Skills box one text field, each skill no chip shows added by its row's Add;
- * - U-07 (ENGINE E2, E3): the start date drawn by its datepicker container, written part by part through the pass;
- *   one AI answer for it;
+ * - U-07 (ENGINE E2, E3): the start date drawn by the wrapper whose style draws its box (ukg-item's inset shadow in the
+ *   capture; any wrapper up to its datepicker container: the jr6 review's REVC-5), written part by part through the
+ *   pass; one AI answer for it;
  * - U-08 (gated Q7, not built), U-09 (RULES item 24), U-10 (RULES 57), U-11 (RULES 58, 18): the application's
  *   questions; U-15: the AI asks left; U-16 (ENGINE U-16, RULES 76): the national number, once; U-17 (RULES 77).
  * The fixer's (the jr6 review's REVC-2, TOOLING round 2 R2.4 item 1): no list on the three pages holds a REDACTED
@@ -511,10 +512,11 @@ describe('U-07: the start date is one date drawn in three parts', () => {
     expect(ultiproAdapter.dateFor!(part(page.doc, 'month'))).toBeNull();
     const excluded = ultiproAdapter.excluded!(page.root);
     for (const name of ['month', 'day', 'year']) expect(excluded.includes(part(page.doc, name)), name).toBe(true);
-    // The box around it: its datepicker container (ENGINE E2 reads it as the drawn box only where it shows one; this
-    // capture holds none of UKG's component styles, so the component reads camouflaged here: P2 stages a border).
-    expect(ultiproAdapter.controlBox!(host(page.doc))).toBe(page.doc.querySelector(
-      'ukg-input-container[data-automation="ukg-datepicker-container"]'));
+    // The box around it (the jr6 review's REVC-5): the first wrapper, from the component's parent up to its datepicker
+    // container, whose style draws an edge; in this capture UKG's own scoped style draws it on ukg-item (an inset 1px
+    // shadow), which ENGINE E2 then reads as the drawn box. The P2 U-07 block holds the other wrappers.
+    expect(ultiproAdapter.controlBox!(host(page.doc)) === page.doc.querySelector(
+      'ukg-input-container[data-automation="ukg-datepicker-container"] ukg-item')).toBe(true);
     expect(ultiproAdapter.controlBox!(part(page.doc, 'month'))).toBeNull();
     expect(ultiproAdapter.controlBox!(page.doc.querySelector('select#Gender')!)).toBeNull();
   });
@@ -877,16 +879,23 @@ describe('jr6 P2, U-07 (ENGINE E2 controlBox, E3 WD-23): the start date through 
   const datePart = (doc: Document, name: string) => doc.querySelector('ukg-date-input-text[role="group"]')!.shadowRoot!
     .querySelector<HTMLInputElement>(`input[data-automation="ukg-date-input-text-${name}"]`)!;
   const LABEL = 'When can you start? (MM/DD/YYYY)';
+  const CONTAINER = 'ukg-input-container[data-automation="ukg-datepicker-container"]';
+  /** P1's rule, undone by the jr6 review's REVC-5: the datepicker container alone as the date's box. */
+  const containerOnly: Adapter = { ...ultiproAdapter, controlBox: (control) => (control.matches(
+    'ukg-date-input-text[role="group"]') ? control.closest(CONTAINER) : null) };
+  /** The golden profile starting on 2026-12-07. */
+  const startingOn = (): Profile => {
+    const golden = goldenProfile();
+    return { ...golden, preferences: { ...golden.preferences, startDate: { kind: 'date', date: { y: 2026, m: 12, d: 7 } } } };
+  };
 
-  it('is drawn by its datepicker container once that shows a border (staged: the capture holds none of UKG\'s styles), '
+  it('is drawn by the box UKG\'s own style draws on its ukg-item (the capture\'s inset shadow, the jr6 review\'s REVC-5), '
     + 'and a profile date is written part by part, each part focused before its write', async () => {
     const page = await open('application');
     const date = (adapter: Adapter = ultiproAdapter) => labelled(rescan(page, adapter), LABEL)!;
-    expect(fillabilityOf(date())).toEqual({ fillable: false, reason: 'camouflaged' });
-    page.doc.querySelector<HTMLElement>('ukg-input-container[data-automation="ukg-datepicker-container"]')!.style.border
-      = '1px solid rgb(120, 120, 120)';
     expect(fillabilityOf(date())).toEqual({ fillable: true });
-    // Undone (no controlBox): the container's border draws nothing of the component's.
+    // Undone: P1's box, the datepicker container, draws nothing in this capture; nor does any box with no controlBox.
+    expect(fillabilityOf(date(containerOnly))).toEqual({ fillable: false, reason: 'camouflaged' });
     expect(fillabilityOf(date(without('controlBox')))).toEqual({ fillable: false, reason: 'camouflaged' });
     const events: string[] = [];
     for (const name of ['month', 'day', 'year']) {
@@ -894,10 +903,7 @@ describe('jr6 P2, U-07 (ENGINE E2 controlBox, E3 WD-23): the start date through 
         datePart(page.doc, name).addEventListener(type, (event) => events.push(`${name} ${type}${event.isTrusted ? '!' : ''}`));
       }
     }
-    const golden = goldenProfile();
-    const profile: Profile = { ...golden, preferences: { ...golden.preferences,
-      startDate: { kind: 'date', date: { y: 2026, m: 12, d: 7 } } } };
-    const { write, result } = await writeThroughPass(page, LABEL, { profile });
+    const { write, result } = await writeThroughPass(page, LABEL, { profile: startingOn() });
     expect(write?.value).toEqual({ kind: 'date', iso: '2026-12-07' });
     expect(result?.row).toMatchObject({ category: 'availability.startDate', status: 'verified', wrote: true,
       verification: 'verified', needsUserAction: false });
@@ -906,6 +912,56 @@ describe('jr6 P2, U-07 (ENGINE E2 controlBox, E3 WD-23): the start date through 
     expect(events).toEqual(['month focus', 'month focusin', 'month input', 'month change', 'day focus', 'day focusin',
       'day input', 'day change', 'year focus', 'year focusin', 'year input', 'year change', 'month focusout', 'month blur',
       'day focusout', 'day blur', 'year focusout', 'year blur']);
+  });
+
+  // The jr6 review's REVC-5: another UKG build or theme may draw the box on any wrapper between the component and its
+  // datepicker container; div.item-native (also holding the "Choose Date" button), ukg-item and div.ukg-input-container
+  // hold the button too, so neither the wrapper rule nor P1's container-only box reads a box drawn there.
+  const EDGES = { 'a border': 'border: 1px solid rgb(120, 120, 120)',
+    'an outline': 'outline: 1px solid rgb(120, 120, 120)',
+    'an inset shadow': 'box-shadow: rgb(120, 120, 120) 0px 0px 0px 1px inset' } as const;
+  it.each([
+    ['ukg-input-container[data-automation="ukg-datepicker-container"]', 'a border'], ['div.ukg-input-container', 'a border'],
+    ['ukg-item', 'a border'], ['div.item-native', 'a border'], ['div.item-inner', 'a border'],
+    ['div.input-wrapper', 'a border'], ['div.item-native', 'an inset shadow'], ['div.ukg-input-container', 'an outline'],
+  ] as const)('a box drawn on %s instead (ukg-item\'s shadow taken off, %s staged there) draws the date, written '
+    + 'through the pass', async (wrapper, edge) => {
+    const page = await open('application');
+    const container = page.doc.querySelector<HTMLElement>(CONTAINER)!;
+    container.querySelector<HTMLElement>('ukg-item')!.style.boxShadow = 'none';
+    const date = () => labelled(rescan(page), LABEL)!;
+    // Nothing draws a box: the date reads camouflaged (fails closed).
+    expect(fillabilityOf(date())).toEqual({ fillable: false, reason: 'camouflaged' });
+    const box = container.matches(wrapper) ? container : container.querySelector<HTMLElement>(wrapper)!;
+    box.style.cssText += `;${EDGES[edge]}`;
+    expect(ultiproAdapter.controlBox!(page.doc.querySelector('ukg-date-input-text[role="group"]')!) === box).toBe(true);
+    expect(fillabilityOf(date())).toEqual({ fillable: true });
+    const { write, result } = await writeThroughPass(page, LABEL, { profile: startingOn() });
+    expect(write?.value).toEqual({ kind: 'date', iso: '2026-12-07' });
+    expect(result?.row).toMatchObject({ category: 'availability.startDate', status: 'verified', wrote: true,
+      verification: 'verified', needsUserAction: false });
+    expect(['month', 'day', 'year'].map((name) => datePart(page.doc, name).value)).toEqual(['12', '07', '2026']);
+  });
+
+  it('an edge in a transparent colour draws nothing: the next wrapper out that draws one is the date\'s box', async () => {
+    const page = await open('application');
+    const container = page.doc.querySelector<HTMLElement>(CONTAINER)!;
+    container.querySelector<HTMLElement>('ukg-item')!.style.boxShadow = 'none';
+    container.querySelector<HTMLElement>('div.item-inner')!.style.border = '1px solid rgba(0, 0, 0, 0)';
+    const native = container.querySelector<HTMLElement>('div.item-native')!;
+    native.style.border = '1px solid rgb(120, 120, 120)';
+    expect(ultiproAdapter.controlBox!(page.doc.querySelector('ukg-date-input-text[role="group"]')!) === native).toBe(true);
+    expect(fillabilityOf(labelled(rescan(page), LABEL)!)).toEqual({ fillable: true });
+  });
+
+  it('a box drawn outside its datepicker container (its form group) is not the date\'s', async () => {
+    const page = await open('application');
+    const container = page.doc.querySelector<HTMLElement>(CONTAINER)!;
+    container.querySelector<HTMLElement>('ukg-item')!.style.boxShadow = 'none';
+    container.closest<HTMLElement>('div.form-group')!.style.border = '1px solid rgb(120, 120, 120)';
+    expect(ultiproAdapter.controlBox!(page.doc.querySelector('ukg-date-input-text[role="group"]')!)
+      === container.querySelector('ukg-item')).toBe(true);
+    expect(fillabilityOf(labelled(rescan(page), LABEL)!)).toEqual({ fillable: false, reason: 'camouflaged' });
   });
 
   it('without a profile date it is one question for the AI, never one per box', async () => {

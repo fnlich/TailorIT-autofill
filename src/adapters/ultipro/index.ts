@@ -28,7 +28,8 @@
  * - The start date (ultipro-0): its month, day and year boxes sit in ukg-date-input-text's open shadow root; jr6 U-07:
  *   the component is one date field (dateFor), its three boxes its parts (excluded as fields of their own), its
  *   question the light label[data-automation=start-date-label] "When can you start? (MM/DD/YYYY)" in the same form
- *   group, whose for= names nothing (labelFor on the component).
+ *   group, whose for= names nothing (labelFor on the component); its box the wrapper whose style draws one, ukg-item in
+ *   this capture (controlBox; the jr6 review's REVC-5).
  * - Read-only account names (#FirstName, #FamilyName, #FormerName, #PreferredName in the application) are read-only to
  *   the scanner by their own attribute.
  * - Never pressed: Cancel (the application's, to the posting; the review's; a panel editor's), Sign Out, a panel's
@@ -53,7 +54,8 @@
  * cannot read it (dom/pause-detect.ts's known limit), and Submit and Create account are the page's to enable.
  * Nothing here reads, logs or sends a value.
  */
-import { newScanCache } from '../../dom/scan-cache';
+import { parseColor } from '../../dom/color';
+import { newScanCache, styleOf } from '../../dom/scan-cache';
 import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
@@ -186,14 +188,52 @@ function datePartBoxes(root: Element): Element[] {
     ?? []);
 }
 
-/** jr6 U-07: the element around the date component that draws its box (Adapter.controlBox; ultipro-0: <ukg-input-container
- *  data-automation="ukg-datepicker-container" class="sc-ukg-input-container-h ..."> around the component and its "Choose
- *  Date" button), or null for any other control. The component draws no box of its own; the capture holds none of UKG's
- *  component styles, so whether the container shows a border or a background live is read there (ENGINE E2 takes it as
- *  the drawn box only where it does). */
+/** The date component's datepicker container (ultipro-0: <ukg-input-container data-automation="ukg-datepicker-container"
+ *  class="sc-ukg-input-container-h ...">, around the component and its "Choose Date" button). */
+const DATE_CONTAINER = 'ukg-input-container[data-automation="ukg-datepicker-container"]';
+
+/** jr6 U-07, the jr6 review's REVC-5: the element around the date component that draws its box (Adapter.controlBox), or
+ *  null for any other control. The component draws no box of its own; one of its wrappers does, from its parent up to
+ *  its datepicker container (ultipro-0: the container > div.ukg-input-container > ukg-item > div.item-native, which
+ *  also holds the "Choose Date" button > div.item-inner > div.input-wrapper > ukg-input > div.input-inner-container >
+ *  the component): the first of them, inside out, whose computed style draws an edge (drawsEdge). ultipro-0's own
+ *  scoped style draws it on ukg-item (.item-input.sc-ukg-item-h:not(.ukg-hide-border): an inset 1px shadow, rgba(0, 0,
+ *  0, 0.42), on a white surface); another UKG build or theme may draw it on another of these wrappers, so it is read
+ *  there, not named. None draws an edge: the ukg-item (UKG's field surface, its background), else the container.
+ *  ENGINE E2 (dom/camouflage.ts drawnByDeclaredBox) judges whether what this names shows against what is behind it. */
 function dateBoxOf(control: Element): Element | null {
-  return control.matches(DATE_HOST)
-    ? control.closest('ukg-input-container[data-automation="ukg-datepicker-container"]') : null;
+  if (!control.matches(DATE_HOST)) return null;
+  const container = control.closest(DATE_CONTAINER);
+  if (container === null) return null;
+  const cache = newScanCache();
+  for (let at = control.parentElement; at !== null; at = at.parentElement) {
+    const style = styleOf(at, cache);
+    if (style !== null && drawsEdge(style, control.ownerDocument)) return at;
+    if (at === container) break;
+  }
+  const item = control.closest('ukg-item');
+  return item !== null && container.contains(item) ? item : container;
+}
+
+/** Whether a computed style draws an edge around its element: a border side or an outline (a line style other than
+ *  none or hidden, 1px wide or more, in a colour with some alpha), or a box shadow, inset or not, whose offset, blur and
+ *  spread reach a pixel, in a colour with some alpha. Whether that edge shows against what is behind it is ENGINE's
+ *  judgement (drawnByDeclaredBox), not this. */
+function drawsEdge(style: CSSStyleDeclaration, doc: Document): boolean {
+  const seen = (colour: string) => (parseColor(colour, doc)?.a ?? 0) > 0;
+  const line = (lineStyle: string, width: string, colour: string) => lineStyle !== 'none' && lineStyle !== 'hidden'
+    && parseFloat(width) >= 1 && seen(colour);
+  if ((['top', 'right', 'bottom', 'left'] as const).some((side) => line(style.getPropertyValue(`border-${side}-style`),
+    style.getPropertyValue(`border-${side}-width`), style.getPropertyValue(`border-${side}-color`)))) return true;
+  if (line(style.outlineStyle, style.outlineWidth, style.outlineColor)) return true;
+  if (style.boxShadow === '' || style.boxShadow === 'none') return false;
+  // A computed shadow list: "<colour> <x> <y> <blur> <spread> [inset]", comma-separated outside the colour's brackets.
+  return style.boxShadow.split(/,(?![^(]*\))/).some((shadow) => {
+    const colour = /rgba?\([^)]*\)|transparent/i.exec(shadow)?.[0] ?? '';
+    const [x = 0, y = 0, blur = 0, spread = 0] = shadow.replace(colour, '').replace(/\binset\b/i, '').trim().split(/\s+/)
+      .map((part) => parseFloat(part)).map((length) => (Number.isFinite(length) ? length : 0));
+    return seen(colour) && Math.max(Math.abs(x), Math.abs(y)) + Math.max(0, blur) + spread >= 1;
+  });
 }
 
 /** The start date's question (see the header) for its date component, or null for any other control. */
@@ -204,7 +244,7 @@ function startDateLabel(control: Element): Element | null {
   // <react-ko-es6-bridge ...><div data-automation="available-start-date-datepicker"><span id="AvailableStartDate"
   // class="sr-only">When can you start?</span><ukg-input-container aria-labelledby="AvailableStartDate" ...> ...
   // <ukg-input data-automation="ukg-datepicker-input" type="date" ...><ukg-date-input-text role="group" ...>.
-  const group = control.closest('ukg-input-container[data-automation="ukg-datepicker-container"]')?.closest('div.form-group');
+  const group = control.closest(DATE_CONTAINER)?.closest('div.form-group');
   return group?.querySelector(':scope > label[data-automation="start-date-label"]') ?? null;
 }
 // ── end jr6 ULTIPRO P1 (U-07) ──
