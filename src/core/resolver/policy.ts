@@ -47,7 +47,7 @@ import type { Vocab } from '../vocab/types';
 import { none, value, type Candidate, type Choice, type ValueResult } from './candidate';
 import { USER_ONLY_CATEGORIES } from './categories';
 import { prepareOptions } from '../matcher/prepare';
-import { YES_NO_QUESTION } from './labelRules';
+import { residencePlaceOf, YES_NO_QUESTION } from './labelRules';
 import { companyKey, namesPostingCompany } from './values';
 import { basisClassAt, readBasisOptions, type BasisClass } from './workBasis';
 
@@ -899,3 +899,137 @@ export function consentValue(category: FieldCategory, consentKinds: readonly Fie
   }
   return ticked(approved && !USER_ONLY_CATEGORIES.has(category) ? 'consent.preapproved' : 'consent.required', option);
 }
+
+// ── jr6 RULES (FIXPLAN §6.3 R1): a signature's date, an EEO decline box, and the choices read from a list's own words ─
+
+/**
+ * JV-1, JZ-15, workday-new-1: the date that goes with a signature (consent.signatureDate: Jobvite's "Today's Date",
+ * Workday's "Date signed"): today (`now`; YYYY-MM-DD in a date control, the layout the box shows in a text box),
+ * written on the same terms as the signature's name (consentValue): when signatures are approved (Consents: All, or
+ * "signature" pre-approved: consent.signature-date), else when the form requires it (consent.required); an optional
+ * one not approved is left, decided. Never over a value the field holds (Jobright's jobvite `formatAnswer` sets
+ * "Date" to today; cited as a behaviour).
+ */
+export function signatureDateValue(spec: FieldSpec, settings: Settings, now: Ymd): ValueResult {
+  if (spec.current.kind === 'text' && spec.current.text.trim() !== '') return none('prefill-kept', false);
+  const approved = settings.modes.consents === 'all' || settings.preapprovedConsent.includes('signature');
+  if (!approved && !spec.required) return none('consent-optional-unticked', false);
+  return value({ origin: { provenance: 'rule', ruleId: approved ? 'consent.signature-date' : 'consent.required' },
+    confidence: VALUE_CONSENT_PREAPPROVED, date: { y: now.y, m: now.m, d: now.d } });
+}
+
+/** The EEO questions a decline box may belong to, by category. */
+const DECLINE_BOX_QUESTIONS: Readonly<Partial<Record<FieldCategory, 'gender' | 'hispanicLatino' | 'race' | 'veteran'
+  | 'disability'>>> = {
+  'eeo.gender': 'gender', 'eeo.hispanicLatino': 'hispanicLatino', 'eeo.race': 'race', 'eeo.veteran': 'veteran',
+  'eeo.disability': 'disability',
+};
+
+/**
+ * U-09, ADP-17: a lone box that declines a self-identification question (labelRules label.eeo-decline-box: UltiPro's
+ * "<question> I decline to say", ADP's "I decline to identify my race and ethnicity"): ticked (eeo.decline) for the
+ * person's explicit decline, left unticked for an answer, which the list beside it carries; nothing without either (a
+ * decline default is the list's, never the box's). Whether the list beside it already offers its own decline is the
+ * planner's (plan/eeoDeclineBox.ts): the box is ticked only where the list lacks one.
+ */
+export function eeoDeclineBoxValue(category: FieldCategory, profile: Profile): ValueResult {
+  const question = DECLINE_BOX_QUESTIONS[category];
+  const answer: Explicit<unknown> | undefined = question === undefined ? undefined : profile.eeo[question];
+  if (answer === undefined) return none('eeo-not-in-profile', false);
+  const declined = answer.kind === 'decline';
+  return value({ origin: declined ? byRule('eeo.decline', `eeo.${question}`) : fromProfile(`eeo.${question}`),
+    confidence: VALUE_EXPLICIT, check: declined,
+    choice: { intended: { kind: 'boolean', value: declined }, domain: 'polarity' } });
+}
+
+/** The usable options of a list read whole: none a placeholder, disabled, empty or injected. */
+function plainOptions(spec: FieldSpec, vocab: Vocab) {
+  if (spec.options === 'lazy') return null;
+  return prepareOptions(spec.options, 'generic', vocab).list
+    .filter((option) => !option.unusable && !option.disabled && !option.injected && option.clean.trim() !== '');
+}
+
+/** The one option of `options` a test picks, or null for none or several. */
+function onlyOption<T extends { clean: string }>(options: readonly T[], test: (text: string) => boolean): T | null {
+  const found = options.filter((option) => test(option.clean));
+  return found.length === 1 ? found[0]! : null;
+}
+
+/**
+ * JV-9 (Jobvite's consent gate, "Location of Residence and Language", select#jv-country-select: fixtures
+ * ninjaone-consent-empty): the privacy policy's residence, chosen by the option naming the profile's country, else the
+ * single real option, else one naming Global with English (then Global, then English), flagged
+ * (location.policy-residence). Jobright's rules answer `label[for=jv-country-select]` through its server (cited).
+ */
+export function policyResidenceValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
+  const options = plainOptions(spec, vocab);
+  if (options === null) return none('waiting-for-options', true);
+  const country = profile.address?.country;
+  const byCountry = country === undefined ? null
+    : onlyOption(options, (text) => countriesNamed(text, vocab).includes(country));
+  const chosen = byCountry ?? (options.length === 1 ? options[0]! : null)
+    ?? onlyOption(options, (text) => /\bglobal\b/i.test(text) && /\benglish\b/i.test(text))
+    ?? onlyOption(options, (text) => /\bglobal\b/i.test(text)) ?? onlyOption(options, (text) => /\benglish\b/i.test(text));
+  if (chosen === null) return none('no-match', true);
+  return value({ origin: { provenance: 'rule', ruleId: 'location.policy-residence',
+    ...(byCountry !== null ? { path: 'address.country' as ProfilePath } : {}) }, confidence: VALUE_TRANSFORM,
+  choice: { intended: intendedText(chosen.clean), domain: 'generic' }, flag: 'filled-low-confidence' });
+}
+
+/** JV-17: an option that says the person does not live in, or within reach of, the place ("N/A - I do not live in
+ *  Illinois.", "Currently reside outside commutable distance"), as normalizeLabel reads it. */
+const NOT_THERE_OPTION = /\boutside\b|\b(?:do\s+not|dont|does\s+not|doesnt)\s+(?:currently\s+)?(?:live|reside)\b|\bnot\s+(?:live|living|reside|residing|located|based)\b/;
+
+/** The regions a text names (a state's name, or its code in capitals in `raw`), as region entities. */
+function regionsNamed(text: string, raw: string, vocab: Vocab): Array<{ code: string; country: string }> {
+  const tokens = normalize(text, 'country').tokens;
+  const phrases = vocab.phrases('region');
+  const found: Array<{ code: string; country: string }> = [];
+  for (let at = 0; at < tokens.length;) {
+    const hit = phraseAt(phrases, tokens, at, raw);
+    const entity = hit.id === null ? undefined : vocab.entity(hit.id);
+    if (entity?.kind === 'region') found.push({ code: entity.code, country: entity.country });
+    at += Math.max(hit.length, 1);
+  }
+  return found;
+}
+
+/**
+ * JV-17 (VHL's "Question 10: If within commutable distance to Boston, MA, are you willing and able to work the Hybrid
+ * schedule …", NinjaOne's "If you live in Illinois, is your address in the City of Chicago?"): a question asked only of
+ * those living in, or within reach of, a place it names. When the profile's state is not that place's (or, for a place
+ * with no state, its city or country is not that place), the option saying so is chosen (location.not-there, flagged);
+ * when it is, or the profile does not say, nothing is (the person's, or the AI's).
+ */
+export function residesInValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
+  const asked = residencePlaceOf(normalize(spec.label, 'label').key);
+  const address = profile.address;
+  if (asked === null || address === undefined) return none('no-profile-value', false);
+  const regions = regionsNamed(asked.place, spec.label, vocab);
+  let elsewhere: { at: string } | null = null;
+  if (regions.length > 0) {
+    const own = address.region?.code;
+    if (own === undefined) return none('no-profile-value', false);
+    const home = regions.some((region) => region.code === own && region.country === (address.country ?? region.country));
+    if (home) return none('no-profile-value', true);
+    elsewhere = { at: 'address.region' };
+  } else if (!asked.commute) {
+    const countries = countriesNamed(asked.place, vocab);
+    if (countries.length === 1 && address.country !== undefined) {
+      if (countries[0] === address.country) return none('no-profile-value', true);
+      elsewhere = { at: 'address.country' };
+    } else if (address.city !== undefined) {
+      if (normalize(address.city, 'label').key === asked.place) return none('no-profile-value', true);
+      elsewhere = { at: 'address.city' };
+    }
+  }
+  if (elsewhere === null) return none('no-profile-value', false);
+  const options = plainOptions(spec, vocab);
+  if (options === null) return none('waiting-for-options', true);
+  const option = onlyOption(options, (text) => NOT_THERE_OPTION.test(normalize(text, 'label').key));
+  if (option === null) return none('no-match', true);
+  return value({ origin: byRule('location.not-there', elsewhere.at), confidence: VALUE_TRANSFORM,
+    choice: { intended: intendedText(option.clean), domain: 'generic' }, flag: 'filled-low-confidence' });
+}
+
+// jr6 RULES end

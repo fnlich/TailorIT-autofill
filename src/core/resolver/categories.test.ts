@@ -72,9 +72,12 @@ describe('CATEGORY_KINDS (§8.2)', () => {
   });
 
   it('allows a consent only on a box or a radio, a signature only as text', () => {
-    for (const category of FIELD_CATEGORIES.filter((c) => c.startsWith('consent.') && c !== 'consent.signature')) {
+    for (const category of FIELD_CATEGORIES.filter((c) => c.startsWith('consent.') && c !== 'consent.signature'
+      && c !== 'consent.signatureDate')) {
       expect(CATEGORY_KINDS[category], category).toEqual(['checkbox', 'radio']);
     }
+    // jr6 RULES (JV-1, JZ-15, workday-new-1): a signature's date is typed or set in a date control.
+    expect(CATEGORY_KINDS['consent.signatureDate']).toEqual(['text', 'date']);
   });
 
   it('never allows typed text for a self-identification or a yes/no legal question', () => {

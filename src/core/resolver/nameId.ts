@@ -32,6 +32,17 @@ export const NAME_ID_RULES: readonly NameIdRule[] = [
   { id: 'name-id.resume', pattern: 'resume|cv', category: (kind) => (kind === 'file' ? 'file.resume' : null) },
   { id: 'name-id.cover-letter', pattern: 'cover_?letter',
     category: (kind) => (kind === 'file' ? 'file.coverLetter' : 'freeText.coverLetter') },
+  // jr6 RULES (WD-09, fixtures jr6-resolvetech- and jr6-travelers-voluntary-disclosures): Workday's agreement box,
+  // name="acceptTermsAndAgreements" whatever its label says ("Please confirm your consent.", "You must AGREE to
+  // proceed."), as Jobright's remote rules recognise it (AGREEMENT_CHECKBOX_NAMES, cited as a fact). A label that reads
+  // as a consent kind of its own decides (classifyRules GENERIC_TOKEN_CATEGORIES).
+  { id: 'name-id.accept-terms', pattern: 'accepttermsandagreements', category: 'consent.terms' },
+  // jr6 RULES (ICIMS-08, fixtures jr6-ars-profile: name "…PersonProfileFields.AddressStreet1"): iCIMS's address search,
+  // drawn as its dropdown, is a lookup whose "Enter manually" is chosen (values.ts addressLookupValue); the text box that
+  // replaces it is the street.
+  { id: 'name-id.address-street1', pattern: 'addressstreet1',
+    category: (kind) => (kind === 'select' || kind === 'combobox' ? 'address.lookup' : kind === 'text' ? 'address.line1'
+      : null) },
 ];
 
 /**

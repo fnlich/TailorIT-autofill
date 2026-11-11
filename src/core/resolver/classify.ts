@@ -37,7 +37,7 @@ import { CONFUSABLES, detectionViews } from '../guard/fold';
 import { llmMaySeeLabel } from '../guard/honeypot';
 import { cutInjected } from '../guard/injected';
 import { cutAtWord, foldLetters, removeInvisibles } from '../text/fold';
-import { normalize } from '../text/normalize';
+import { normalize, normalizeLabel } from '../text/normalize';
 import { asUntrusted } from '../text/untrusted';
 import type { FieldKey, FieldSpec, SectionRef } from '../types/field';
 import type { ReasonCode } from '../types/fill';
@@ -45,7 +45,7 @@ import type { FieldCategory } from '../types/intent';
 import type { UntrustedText, VisibleText } from '../types/text';
 import { EEO_QUESTIONS, type Vocab } from '../vocab/types';
 import { CLASS_POLICIES, kindAllowed, policyClassOf, USER_ONLY_CATEGORIES } from './categories';
-import { sectionKindOf, type SectionKind } from './labelRules';
+import { namesRestrictiveAgreement, sectionKindOf, type SectionKind } from './labelRules';
 
 /** One of TailorIT's classification categories (AUTOFILL_FIELD_CATEGORIES). */
 export type ServerCategory = AutofillFieldCategory;
@@ -574,13 +574,22 @@ export function openAnswerTopics(spec: Pick<FieldSpec, 'label' | 'description' |
     attention);
 }
 
+/** jr6 RULES (jobvite-new-1, fixtures jr6-sikich-step3: "Are you currently subject to a non-compete, non-solicitation
+ *  or any other restrictive employment agreement?"): in a text about a restrictive agreement asked as a fact, or one
+ *  naming a non-compete, non-solicitation, employment or confidentiality agreement (labelRules
+ *  namesRestrictiveAgreement), "agreement" names a contract, never a consent: the word is read as such. The screens
+ *  that keep text from an AI (namesSensitiveTopic, screenForClassify) read it as before. */
+function withoutContractAgreement(text: string): string {
+  return namesRestrictiveAgreement(normalizeLabel(text)) ? text.replace(/\bagreements?\b/gi, 'contract') : text;
+}
+
 /** openAnswerTopics over a question's texts (its label, hint and section's words) and its clean option labels, as the
  *  worker screens an answer item again (ai-tasks.ts answerItemOfCore). */
 export function openTopicsOfTexts(asked: readonly string[], options: readonly string[], vocab: Vocab,
   attention: boolean): Set<ScreenTopic> | null {
   const topics = new Set<ScreenTopic>();
   for (const text of [...asked, ...options]) {
-    for (const topic of sensitiveTopicsOf(text)) topics.add(topic);
+    for (const topic of sensitiveTopicsOf(withoutContractAgreement(text))) topics.add(topic);
   }
   if ([...topics].some((topic) => !OPEN_SCREEN_TOPICS.has(topic) && !(attention && topic === 'consent'))) return null;
   if (options.some((label) => isEeoAnswer(label, vocab))) return null;

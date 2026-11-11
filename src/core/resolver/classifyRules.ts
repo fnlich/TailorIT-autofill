@@ -21,7 +21,7 @@ import type { FieldKind } from '../enums';
 import { prepareOptions } from '../matcher/prepare';
 import type { FieldSpec } from '../types/field';
 import type { ReasonCode } from '../types/fill';
-import type { FieldCategory, PolicyClass } from '../types/intent';
+import { FIELD_CATEGORIES, type FieldCategory, type PolicyClass } from '../types/intent';
 import type { Classifier } from '../types/match';
 import { normalize, normalizeLabel } from '../text/normalize';
 import type { Vocab } from '../vocab/types';
@@ -29,7 +29,7 @@ import { autocompleteRule } from './autocomplete';
 import { kindAllowed, policyClassOf } from './categories';
 import { FOLD_MAX_CODE_POINTS } from '../text/fold';
 import {
-  affirmativeOption, attestsNoAiUse, consentChoiceHit, matchLabelRules, noAiStatementHit, sectionKindOf,
+  affirmativeOption, attestsNoAiUse, consentChoiceHit, entryOf, matchLabelRules, noAiStatementHit, sectionKindOf,
   unlabelledTextarea, unrecognisedField, withDescriptionConsent, type LabelContext, type LabelRuleHit,
   type NeedsUserCause,
 } from './labelRules';
@@ -250,6 +250,9 @@ const GENERIC_TOKEN_CATEGORIES: Readonly<Record<string, readonly FieldCategory[]
     'links.other'],
   'autocomplete.organization': ['experience.company', 'experience.currentCompany'],
   'autocomplete.organization-title': ['experience.title', 'experience.currentTitle'],
+  // jr6 RULES (WD-09): Workday's agreement box by its name only where its label reads as no consent kind of its own; a
+  // label that does ("I agree to the privacy policy") decides.
+  'name-id.accept-terms': FIELD_CATEGORIES.filter((category) => category.startsWith('consent.')),
 };
 
 /** A field about someone other than the applicant, named in the label: a referee, an emergency contact, a manager. A
@@ -280,14 +283,17 @@ export function namesAnotherPerson(spec: FieldSpec): boolean {
  *  parentheticals, or its description (the Phase E review, M5). The core pass of 2026-11-06: the whole of each, sentence
  *  by sentence past what normalization reads at once (FOLD_MAX_CODE_POINTS), and the frame's reading of the label past
  *  its 300 characters (FieldSpec.statesNoAi: Dropzone's policy attests in its last sentences). The same rules read each. */
-export function statesNoAiUse(spec: Pick<FieldSpec, 'label' | 'description' | 'statesNoAi'>): boolean {
+export function statesNoAiUse(spec: Pick<FieldSpec, 'label' | 'description' | 'statesNoAi'>
+  & Partial<Pick<FieldSpec, 'kind'>>): boolean {
   if (spec.statesNoAi === true) return true;
+  // jr6 RULES (SR-3): with its kind, a field states that the work is its author's own only on a box or a choice
+  // (labelRules attestsNoAiUse); "In your own words, …" over a text box is an instruction.
   const description = ruleText(normalizeLabel(spec.description));
-  if ([labelText(spec.label), description].some((text) => text !== '' && attestsNoAiUse(text))) return true;
+  if ([labelText(spec.label), description].some((text) => text !== '' && attestsNoAiUse(text, spec.kind))) return true;
   return [spec.label, spec.description].some((whole) => [...whole].length > FOLD_MAX_CODE_POINTS
     && sentencesOf(whole).some((sentence) => {
       const text = labelText(sentence);
-      return text !== '' && attestsNoAiUse(text);
+      return text !== '' && attestsNoAiUse(text, spec.kind);
     }));
 }
 
@@ -321,6 +327,52 @@ const NOT_OWN_PHONE = /\bfax\b|\bext(?:ension)?\b|\b(?:country|area|dial(?:ing)?
  */
 export const SENSITIVE_TOPIC = /\b(?:disabilit\w*|disabled|handicap\w*|veterans?|military|armed\s+forces|race|races|racial|ethnic\w*|hispanic|latin[oax]|gender|sex|sexual|transgender|cisgender|lgbt\w*|queer|pronouns?|citizen\w*|nationalit\w*|visas?|sponsor\w*|immigra\w*|work\s+permits?|authori[sz]\w*|eligib\w*|criminal|convict\w*|felon\w*|arrest\w*|offen[cs]es?|offenders?|age|birth\w*|salary|salaries|compensation|wages?|religio\w*|pregnan\w*|marital|medical\s+conditions?|consent\w*|agree\w*|share\s+(?:my|your)\s+(?:data|information))\b/;
 
+// ── jr6 RULES: lists their options classify (FIXPLAN §6.3 R1 items 12 and 24) ────────────────────────────────────────
+
+/** The single-choice kinds whose options the options rules read. */
+const OPTION_RULE_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['radio', 'select', 'combobox']);
+/** An option that is a veteran self-identification statement ("I AM NOT A PROTECTED VETERAN", "I identify as one or
+ *  more of the classifications of protected veterans listed above"). */
+const VETERAN_STATEMENT = /\bveterans?\b/;
+/** U-09 (UltiPro's "Ethnic Origin", select#HispanicOrigin: Hispanic/Latino, Not Hispanic/Latino). */
+const ETHNIC_ORIGIN = /^ethnic\s+origin$/;
+const HISPANIC_OPTION = /\bhispanic\b|\blatin[aoxe]\b/;
+const VETERAN_OPTIONS_RULE = 'options.veteran-statements';
+const ETHNIC_ORIGIN_RULE = 'label.ethnic-origin';
+
+/** Whether the rules' own reading of a field settles nothing certain: none, an unknown or open screening question, or
+ *  one handed to the person for a sensitive topic its wording only touches. */
+function uncertain(rules: RuleClassification | null): boolean {
+  if (rules === null) return true;
+  const asks = rules.category ?? rules.asks;
+  return asks === 'unknown' || asks === 'screening.other' || rules.needsUser === 'sensitive-topic';
+}
+
+/**
+ * jr6 RULES: what a list's own options say it asks, where the rules read nothing certain (uncertain):
+ * - JV-2 (Jobvite's veteran block labelled only "Choose One", fixtures jr6-vhl-step2, jr6-sikich-step2,
+ *   ninjaone-step2): a radio, a select or a combobox with at least two veteran self-identification statements among its
+ *   options is the veteran question, whatever its label;
+ * - U-09 (UltiPro's application): "Ethnic Origin" whose options name Hispanic or Latino is the Hispanic or Latino
+ *   question.
+ * Null for any other field.
+ */
+function optionsRule(spec: FieldSpec, label: string, rules: RuleClassification | null): RuleClassification | null {
+  if (!OPTION_RULE_KINDS.has(spec.kind) || spec.options === 'lazy' || !uncertain(rules)) return null;
+  const options = spec.options.map((option) => normalizeLabel(option.label)).filter((text) => text !== '');
+  const base = { confidence: LABEL_RULE_CONFIDENCE.normal, classifiedBy: 'label-rule' as const, reason: 'ok' as const,
+    matchedOn: 'label' as const };
+  if (options.filter((text) => VETERAN_STATEMENT.test(text)).length >= 2) {
+    return classification('eeo.veteran', { ...base, rule: VETERAN_OPTIONS_RULE });
+  }
+  if (ETHNIC_ORIGIN.test(label) && options.some((text) => HISPANIC_OPTION.test(text))) {
+    return classification('eeo.hispanicLatino', { ...base, rule: ETHNIC_ORIGIN_RULE });
+  }
+  return null;
+}
+
+// jr6 RULES end
+
 /**
  * What the deterministic rules say `spec` is: the autocomplete, name/id and label votes combined (§8.1), each checked
  * against the field's kind (CATEGORY_KINDS), so a mismatch is no vote. A field about another person keeps none of the
@@ -336,6 +388,9 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   const context: LabelContext = { qualifiers: normalized.qualifiers.map((q) => q.tokens.join(' ')).join(' '),
     rawLabel: spec.label };
   if (spec.section.block !== undefined) context.block = spec.section.block;
+  // jr6 RULES (ICIMS-09, O7): a job's or a school's own block.
+  const entry = entryOf(spec.section);
+  if (entry !== null) context.entry = entry;
   const questions = questionsOf(spec.label);
   if (questions !== undefined) context.questions = questions;
   const autocomplete = autocompleteRule(spec.autocomplete, spec.kind);
@@ -362,6 +417,9 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
     }
   }
   const combined = combine(votes);
+  // jr6 RULES (JV-2, U-09): a list whose own options say what it asks, where the rules read nothing certain.
+  const byOptions = optionsRule(spec, label, combined);
+  if (byOptions !== null) return byOptions;
   if (combined !== null) return combined;
   // The core pass of 2026-11-06: an "I did not use AI" statement past the label's 300 characters, which the frame read
   // (FieldSpec.statesNoAi): an AI attestation, as label.consent-ai reads one in a label.

@@ -82,7 +82,7 @@
  *   edited since).
  */
 import { accepts, COVER_LETTER_FILE } from '../accept';
-import { FLAG_AT, LLM_ANSWER, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
+import { FLAG_AT, LLM_ANSWER, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX, VALUE_DERIVED } from '../confidence';
 import type { MatcherStage } from '../enums';
 import { extractCanaries, persistableCanaries, profileIndex } from '../guard/canary';
 import { checkHoneypot, llmMaySeeLabel } from '../guard/honeypot';
@@ -124,7 +124,10 @@ import { answerItemOf, answerRefusal, answerText, answerWaitsForOptions, type An
   from './answers';
 import { holdsNoAiAttestation } from './attestation';
 import { noMatchMode, noMatchOtherAllowed } from './noMatch';
-import { answerWords, antecedentOf, conditionHolds, conditionOf } from './conditional';
+import {
+  answerWords, antecedentOf, conditionHolds, conditionOf, conditionOpposed, notApplicableOption,
+} from './conditional';
+import { settleDeclineBoxes } from './eeoDeclineBox';
 import {
   aiEditableField, draftItemOf, draftRefusal, rewriteItemOf, type DraftContext, type DraftItem, type DraftVerdict,
 } from './drafts';
@@ -260,6 +263,20 @@ interface FieldPlanContext {
   legal: LegalContext;
   /** The dial codes the frame's country controls show now ("Canada +1": "1"), by section (phoneCodesShown). */
   phoneCodes: ReadonlyMap<string, ReadonlySet<string>>;
+  /** jr6 RULES (WD-07): the profile entry each block of an assigned repeatable section is filled from. */
+  blockEntries: Readonly<Partial<Record<string, readonly (number | null)[]>>>;
+}
+
+/** jr6 RULES (WD-07, fixtures s2-exelixis-my-experience after Workday's résumé parse): whether a field sits in a block
+ *  the run assigned an entry and its value is that entry's own (the profile's path under `experience[n]` or
+ *  `education[n]`): a box of prose there (Role Description) holds the parse's text of perhaps another job, which the
+ *  profile's replaces. */
+function fromAssignedBlock(spec: FieldSpec, resolution: Resolution, ctx: FieldPlanContext): boolean {
+  const { block, id } = spec.section;
+  const entry = block === undefined ? undefined : ctx.blockEntries[id]?.[block];
+  const origin = resolution.origin;
+  return entry !== undefined && entry !== null && origin?.provenance === 'profile'
+    && (origin.path === `${id}[${entry}]` || origin.path.startsWith(`${id}[${entry}].`));
 }
 
 /** A field's write before the Guard: its value, its match, a reason it must be flagged for, if any, and the origin
@@ -365,13 +382,23 @@ const NOT_OFFERED_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['no-ma
 const NOT_OFFERED: ValueOrigin = { provenance: 'rule', ruleId: 'eeo.not-offered' };
 
 /** The list's own decline option for a self-identification answer it does not offer (the person's explicit answer, a
- *  list read whole), as eeo.not-offered; null where there is none, or for any other field. */
-function declineInstead(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx: FieldPlanContext):
-  { index: number; clean: string; match: Match } | null {
+ *  list read whole), as eeo.not-offered; null where there is none, or for any other field. jr6 RULES (JZ-6, JazzHR's
+ *  ", not Hispanic or Latino" races): only a list whose every answer the vocabulary understood, none of them the
+ *  person's own answers (`choices`), does not offer it; a list with an option the matcher could not read, or one that
+ *  names the person's answer under a qualifier the profile cannot settle (a race with no Hispanic answer), is no-match,
+ *  flagged for the person, never declined. */
+function declineInstead(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx: FieldPlanContext,
+  choices: readonly Choice[] = [choice]): { index: number; clean: string; match: Match } | null {
   if (resolution.policy !== 'eeo' || resolution.origin?.provenance !== 'profile' || spec.options === 'lazy'
     || spec.optionsPartial === true) return null;
   const decline: Choice = { intended: intendedDecline(choice.domain as VocabDomain), domain: choice.domain };
   const prepared = prepareOptions(spec.options, decline.domain, ctx.input.vocab);
+  const answers = prepared.list.filter((option) => !option.unusable && !option.disabled && !option.decline
+    && !option.other && !option.exclusive);
+  const own = choices.flatMap((each) => (each.intended.kind === 'entity' && each.intended.id !== null
+    ? [each.intended.id] : []));
+  if (answers.some((option) => option.entityIds.length === 0)
+    || answers.some((option) => option.entityIds.some((id) => own.includes(id)))) return null;
   const found = matchValue(matchInputOf(spec, resolution, decline, prepared), ctx);
   if (found === 'waiting' || found.stage === 'none' || found.optionIndex === null) return null;
   const option = prepared.list.find((candidate) => candidate.index === found.optionIndex);
@@ -556,7 +583,8 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
           return blank('skipped', 'already-correct');
         }
         // A page's own text in a box of prose is the person's to judge; in a structured field the profile wins.
-        if (spec.kind === 'textarea') return blank('flagged', 'prefill-kept');
+        // jr6 RULES (WD-07): and so does it in a box of prose of a block the run assigned, from that block's entry.
+        if (spec.kind === 'textarea' && !fromAssignedBlock(spec, resolution, ctx)) return blank('flagged', 'prefill-kept');
         return { value: { kind: 'text', text }, match: NOT_APPLICABLE, flag: 'prefill-conflict' };
       }
       return { value: { kind: 'text', text }, match: NOT_APPLICABLE };
@@ -644,7 +672,7 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       const eeoPart = resolution.policy === 'eeo' && multi.reason === 'partial-multi-select'
         && multi.extraneous.length === 0 && multi.conflicts.length === 0 && multi.skippedByMax.length === 0;
       if (eeoPart && multi.add.length === 0 && multi.keep.length === 0) {
-        const declined = declineInstead(spec, resolution, shaped.set[0]!, ctx);
+        const declined = declineInstead(spec, resolution, shaped.set[0]!, ctx, shaped.set);
         if (declined !== null) return { value: { kind: 'options', indices: [declined.index], cleanLabels: [declined.clean] },
           match: declined.match, origin: NOT_OFFERED,
           multi: { profileSetSize: 1, kept: 0, exclusive: new Set(prepare(shaped.set[0]!).list
@@ -890,6 +918,54 @@ function withoutOwnDetail(spec: FieldSpec, judged: LlmClassification): LlmClassi
     : judged;
 }
 // s2 core-gh end
+
+// jr6 RULES (JV-6) ──────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The classes a follow-up's "Not Applicable" may fill (guard/provenance.ts RULE_SCOPES conditional.not-applicable),
+ *  and the kinds it is chosen in. */
+const NOT_APPLICABLE_CLASSES: ReadonlySet<PolicyClass> = new Set<PolicyClass>(['profile', 'free-text', 'unknown']);
+const NOT_APPLICABLE_KINDS: ReadonlySet<FieldSpec['kind']> = new Set<FieldSpec['kind']>(['select', 'radio',
+  'combobox']);
+
+/**
+ * jr6 RULES (JV-6, fixtures jr6-sikich-step3: "If yes, do the terms of the agreement restrict you from working at
+ * Sikich?" with Yes / No / Not Applicable, after a non-compete question answered No): a follow-up whose answer above is
+ * the opposite of what it follows (conditional.ts conditionOpposed) takes its list's one "Not Applicable" ("N/A", "Does
+ * not apply", "None"), flagged (rule conditional.not-applicable), through guardWrite. Null where the list offers no such
+ * option or several, is not read whole, or the field is no open question (a legal, EEO or consent one, a tripwire, an
+ * attention check, how the application was made, a binding waiver).
+ */
+function planNotApplicable(spec: FieldSpec, resolution: Resolution, classification: FieldClassification,
+  ctx: FieldPlanContext): FieldPlan | null {
+  if (classification.by === 'tripwire' || classification.by === 'attention') return null;
+  const handed = classification.by === 'rules' ? classification.rules.needsUser : undefined;
+  if (handed === 'how-made' || handed === 'binding-waiver') return null;
+  if (!NOT_APPLICABLE_CLASSES.has(policyClassOf(resolution.category)) || !NOT_APPLICABLE_KINDS.has(spec.kind)
+    || spec.options === 'lazy' || spec.optionsPartial === true || spec.disabled || spec.readOnly
+    || !checkHoneypot(spec).ok) return null;
+  const prepared = prepareOptions(spec.options, 'generic', ctx.input.vocab);
+  const usable = prepared.list.filter((option) => !option.unusable && !option.disabled && !option.injected);
+  const at = notApplicableOption(usable.map((option) => option.clean));
+  if (at === null) return null;
+  const option = usable[at]!;
+  const confidence = round(VALUE_DERIVED);
+  if (selectedIndices(spec, prepared).has(option.index)) {
+    return { row: rowWithout(spec, resolution.category, 'skipped', 'already-correct', confidence) };
+  }
+  const write: PlannedWrite = { key: spec.key, value: { kind: 'option', index: option.index, cleanLabel: option.clean },
+    origin: { provenance: 'rule', ruleId: 'conditional.not-applicable' },
+    match: { ...NOT_APPLICABLE, stage: 'exact', optionIndex: option.index, rule: 'raw' } };
+  const verdict = guardWrite(write, { spec, category: resolution.category }, ctx.guard);
+  if (!verdict.ok) {
+    return { row: rowWithout(spec, resolution.category, refusedStatus(spec, verdict.reason), verdict.reason, confidence) };
+  }
+  return { write, row: { key: spec.key, label: spec.label, kind: spec.kind, category: resolution.category,
+    section: sectionKey(spec.section), required: spec.required, status: 'flagged', provenance: 'rule',
+    matcherStage: 'exact', confidence, reason: 'filled-low-confidence', wrote: false, verification: 'not-checked',
+    needsUserAction: false } };
+}
+
+// jr6 RULES end
 
 /**
  * s2 core-gh review (C7): a whole-address box ("Current address", "Primary Residence Address": label.full-address) is
@@ -1155,7 +1231,7 @@ export function planFrame(asked: PlanInput): PlanOutput {
     answerAll: input.settings.llm.answers && input.settings.modes.ai === 'all' };
   const ctx: FieldPlanContext = { input, guard, drops: new Set(),
     legal: { settings: input.settings, ...(postingCountry !== undefined ? { postingCountry } : {}) },
-    phoneCodes: phoneCodesShown(classified) };
+    phoneCodes: phoneCodesShown(classified), blockEntries };
   // Drafts (Phase 6): a free-text question no saved answer fills, with the setting on and never in a dry run, takes
   // the run's draft when there is one, and is asked for otherwise. Then answers (the owner's amendments): a question
   // nothing else settled, and no tiebreak or classification waits on, takes the run's answer, or is asked. A
@@ -1228,6 +1304,11 @@ export function planFrame(asked: PlanInput): PlanOutput {
       if (standing.write !== undefined || standing.asked !== undefined || standing.row.status === 'blocked') {
         return { spec, ...standing };
       }
+      // jr6 RULES (JV-6): the answer above is the opposite of what it follows, and the list offers one "Not
+      // Applicable".
+      const notApplicable = conditionOpposed(condition, answerAbove(spec))
+        ? planNotApplicable(spec, field.resolution, classification, ctx) : null;
+      if (notApplicable !== null) return { spec, ...notApplicable };
       return { spec, ...standing, row: rowWithout(spec, field.resolution.category,
         spec.required ? 'flagged' : 'skipped', 'conditional-question', standing.row.confidence) };
     }
@@ -1301,6 +1382,9 @@ export function planFrame(asked: PlanInput): PlanOutput {
     if (one.write !== undefined) writing.set(specs[at]!.key, one.write.value);
     planned[at] = one;
   }
+  // jr6 RULES (U-09, ADP-17): an EEO decline box ticked only where the list beside it lacks a decline of its own.
+  settleDeclineBoxes(planned, new Map(resolved.map((field) => [field.resolution.key, field.resolution])), classified,
+    input.vocab);
   // v5 p2-stream (one round): a field nothing classified whose answer was not asked with it (a draft took it, or the
   // answer step would not ask it) is classified first, as before.
   for (const [key, item] of unclassified) if (!askedOnce.has(key)) classify.push(item);

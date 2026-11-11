@@ -52,6 +52,13 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   // s2 core-gh end
   // s2 core-wd
   'identity.suffix': 'profile', 'contact.phoneExtension': 'profile', 'identity.hasPreferredName': 'profile',
+  // jr6 RULES (types/intent.ts): a signature's date is decided as its signature is (consent); the rest are the
+  // profile's, or a rule over the form's own options.
+  'consent.signatureDate': 'consent', 'languages.formLanguage': 'profile', 'identity.employeeId': 'profile',
+  'experience.city': 'profile', 'experience.region': 'profile', 'experience.country': 'profile',
+  'education.city': 'profile', 'education.region': 'profile', 'education.country': 'profile',
+  'address.lookup': 'profile', 'address.county': 'profile', 'location.policyResidence': 'profile',
+  'referral.employeeReferred': 'profile', 'location.residesIn': 'profile',
   unknown: 'unknown',
 };
 
@@ -158,6 +165,16 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   // s2 core-wd: a suffix typed or chosen from a list (Workday's Suffix); an extension typed; "I have a preferred name"
   // ticked, or answered yes or no.
   'identity.suffix': ['text', ...CHOICE], 'contact.phoneExtension': LINE, 'identity.hasPreferredName': YES_NO,
+  // jr6 RULES: a signature's date in a date control or typed (JV-1's Jobvite date, Workday's "Date signed"); a form's
+  // language chosen; an employee number typed; a job's or a school's place as its address parts are; an address
+  // search's "Enter manually", on iCIMS's dropdown (never a remote search: the label contract of FIXPLAN §3.2); a
+  // county typed or chosen; a privacy policy's residence, a place a question asks only of its residents, chosen; a
+  // referral by an employee, yes or no.
+  'consent.signatureDate': ['text', 'date'], 'languages.formLanguage': CHOICE, 'identity.employeeId': LINE,
+  'experience.city': LOOKUP, 'experience.region': LOOKUP, 'experience.country': LOOKUP, 'education.city': LOOKUP,
+  'education.region': LOOKUP, 'education.country': LOOKUP, 'address.lookup': ['select', 'combobox'],
+  'address.county': ['text', 'select', 'combobox'], 'location.policyResidence': CHOICE,
+  'referral.employeeReferred': YES_NO, 'location.residesIn': CHOICE,
   unknown: ANY,
 };
 
@@ -261,7 +278,11 @@ export const AI_OPENED_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCat
   'salary.currency', 'attentionCheck',
   // s2 core-gh: U.S. government or military service, which the AI answered before it had a category of its own ("Have
   // you ever worked for the US government?"), where the profile holds no answer.
-  'screening.governmentService']);
+  'screening.governmentService',
+  // jr6 RULES (jobvite-new-1, the owner's "absolutely all"): the other yes/no screening questions of snapshot round 2
+  // (Sikich's "Are you currently subject to a non-compete, non-solicitation or any other restrictive employment
+  // agreement?"), where the profile holds no answer; marked "AI guess" unless a fact settles it.
+  'screening.restrictiveAgreement', 'screening.relatives', 'screening.essentialFunctions']);
 
 /**
  * The profile categories an AI answer may fill when the profile holds no value for them (the owner's amendments): job

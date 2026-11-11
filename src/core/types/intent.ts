@@ -46,6 +46,16 @@ export const FIELD_CATEGORIES = [
   // s2 core-wd: Workday's My Information (the wd study §5): a name's suffix, the phone's extension, and whether the
   // person goes by a preferred name ("I have a preferred name").
   'identity.suffix', 'contact.phoneExtension', 'identity.hasPreferredName',
+  // jr6 RULES (FIXPLAN §6.3 R1): the date beside a signature (JV-1, JZ-15, workday-new-1); the language a form is
+  // written in, never the person's (workday-new-1); an employer's own employee number (workday-new-1); a job's or a
+  // school's city, region and country, never the home address (ICIMS-09, O7); an address search's "Enter manually"
+  // (ICIMS-08); the county (JV-3, WD-26, ADP-14, O3); the residence a privacy policy is chosen by (JV-9); whether a
+  // current employee referred the person (JV-15, ADP-19, U-11); a question that asks only of those living in a place
+  // (JV-17).
+  'consent.signatureDate', 'languages.formLanguage', 'identity.employeeId', 'experience.city', 'experience.region',
+  'experience.country', 'education.city', 'education.region', 'education.country', 'address.lookup', 'address.county',
+  'location.policyResidence', 'referral.employeeReferred', 'location.residesIn',
+  // jr6 RULES end
   'unknown',
 ] as const;
 export type FieldCategory = (typeof FIELD_CATEGORIES)[number];
@@ -77,6 +87,15 @@ export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.
   'placeholder.no-profile', 'link.handle', 'links.website-from-portfolio', 'legal.yes-no-text', 'eeo.hispanic-race',
   'eeo.not-offered', 'compose.text',
   // s2 core-gh end
+  // jr6 RULES (FIXPLAN §6.3 R1): today's date beside an approved or required signature (JV-1, JZ-15); English for a
+  // form's own language (workday-new-1); an address search's "Enter manually" (ICIMS-08); a follow-up's one "Not
+  // Applicable" once the answer above is the opposite of its trigger (JV-6); a privacy policy's residence option (JV-9);
+  // No to "referred by a current employee" for a source that is no person (JV-15, ADP-19, U-11); the "I do not live
+  // there" option of a question asked only of those who do (JV-17); the qualifications a checklist names among the
+  // person's skills and degrees (JV-5).
+  'consent.signature-date', 'form.language', 'address.enter-manually', 'conditional.not-applicable',
+  'location.policy-residence', 'referral.not-employee', 'location.not-there', 'skills.qualifications',
+  // jr6 RULES end
 ] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 

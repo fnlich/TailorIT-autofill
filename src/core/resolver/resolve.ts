@@ -62,8 +62,11 @@ import { policyClassOf } from './categories';
 import { screenForClassify, type LlmClassification } from './classify';
 import { classifyByRules, consentChoice, consentChoiceOption, type RuleClassification } from './classifyRules';
 import { dateIso, dateText, type DateParts } from './format';
-import { asksToAgree, statementPolarity, type NeedsUserCause } from './labelRules';
-import { consentValue, eeoDeclineDefault, eeoValue, legalValue, sensitiveGate } from './policy';
+import { asksToAgree, EEO_DECLINE_BOX_RULE, statementPolarity, type NeedsUserCause } from './labelRules';
+import {
+  consentValue, eeoDeclineBoxValue, eeoDeclineDefault, eeoValue, legalValue, policyResidenceValue, residesInValue,
+  sensitiveGate, signatureDateValue,
+} from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
 import { findDraftAnswer, findSubmittedAnswer } from './submitted';
 import { placeholderAsked, previouslyEmployedValue, profileValue, type BlockEntries } from './values';
@@ -265,11 +268,24 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
   'November', 'December'] as const;
 
 /** Which part of a date a field asks for, by its label's last word: "Start Date month" and "Start date year", as
- *  Ashby's Education block (its adapter's suffixes) and Greenhouse's education fields name them; null otherwise. */
-export function datePartOf(label: string): 'month' | 'year' | null {
-  const last = label.trim().toLowerCase().split(/\s+/).at(-1);
-  return last === 'month' || last === 'year' ? last : null;
+ *  Ashby's Education block (its adapter's suffixes) and Greenhouse's education fields name them; null otherwise.
+ *  jr6 RULES: the day too (ICIMS-10: iCIMS's "Start Date (if you do not know the day, enter 1) day", the label
+ *  contract's "<base label> month/day/year"), and the last word outside the label's brackets (U-02: UltiPro's "From
+ *  Year (YYYY)"). */
+export function datePartOf(label: string): 'month' | 'day' | 'year' | null {
+  const last = label.replace(/\([^()]*\)/g, ' ').trim().toLowerCase().split(/\s+/).at(-1);
+  return last === 'month' || last === 'day' || last === 'year' ? last : null;
 }
+
+/** jr6 RULES (ICIMS-10): the day an option's label names ("1", "01", "1st"), or null. */
+export function dayOfLabel(label: string): number | null {
+  const found = /^0?([1-9]|[12]\d|3[01])(?:st|nd|rd|th)?$/i.exec(label.trim());
+  return found === null ? null : Number(found[1]);
+}
+
+/** jr6 RULES (ICIMS-10): a day part's day: the date's own, else the 1st, as iCIMS's label asks ("if you do not know
+ *  the day, enter 1") and Jobright's ./operations fillDateField does (cited). */
+const dayOf = (date: DateParts) => date.d ?? 1;
 
 /** The month an option's label names: its English name or abbreviation ("January", "Jan", "Sept."), its number ("1",
  *  "01"), or both ("01 - January", "1. Jan"); null for any other label, and for a label whose parts name two months. */
@@ -301,6 +317,17 @@ export function monthOfLabel(label: string): number | null {
 export function datePartChoice(label: string, date: DateParts, options: FieldSpec['options'] = 'lazy'): Choice | undefined {
   const part = datePartOf(label);
   if (part === 'year') return { intended: intendedText(String(date.y)), domain: 'generic' };
+  // jr6 RULES (ICIMS-10): the day, as the list itself shows it ("01" or "1") when it names days.
+  if (part === 'day') {
+    const day = dayOf(date);
+    if (options !== 'lazy') {
+      const read = options.map((option) => cutInjected(option.label).clean.trim());
+      const named = read.filter((label) => dayOfLabel(label) === day);
+      if (named.length === 1) return { intended: intendedText(named[0]!), domain: 'generic' };
+      if (named.length > 1 || read.some((label) => dayOfLabel(label) !== null)) return undefined;
+    }
+    return { intended: intendedText(String(day)), domain: 'generic' };
+  }
   if (part !== 'month' || date.m === undefined || date.m < 1 || date.m > 12) return undefined;
   if (options !== 'lazy') {
     const read = options.map((option) => cutInjected(option.label).clean.trim());
@@ -361,6 +388,10 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
       if (candidate.text !== undefined) return plain({ shape: 'text', text: candidate.text });
       if (candidate.date === undefined) return null;
       if (datePartOf(spec.label) === 'year') return plain({ shape: 'text', text: String(candidate.date.y) });
+      // jr6 RULES (ICIMS-10): a box of two characters at most that asks for the day takes the day alone.
+      if (datePartOf(spec.label) === 'day' && (spec.constraints.maxLength ?? Infinity) <= 2) {
+        return plain({ shape: 'text', text: String(dayOf(candidate.date)) });
+      }
       const laid = dateText(candidate.date, spec.constraints);
       return laid === null ? null : { shaped: { shape: 'text', text: laid.text }, guessed: laid.guessed };
     }
@@ -430,8 +461,12 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
         ...(ctx.postingCountry !== undefined ? { postingCountry: ctx.postingCountry } : {}),
         ...(ctx.postingCompany !== undefined ? { postingCompany: ctx.postingCompany } : {}) });
     case 'eeo':
+      // jr6 RULES (U-09, ADP-17): a lone box that declines the question beside it.
+      if (rules.rule === EEO_DECLINE_BOX_RULE.id) return eeoDeclineBoxValue(category, profile);
       return eeoValue(category, spec, profile, settings, vocab);
     case 'consent':
+      // jr6 RULES (JV-1, JZ-15, workday-new-1): today beside a signature, on the signature's terms.
+      if (category === 'consent.signatureDate') return signatureDateValue(spec, settings, now);
       return consentValue(category, rules.consentKinds, profile, settings,
         { required: spec.required, aiFree: ctx.aiFree === true, choice: consentChoiceOption(spec, vocab),
           list: LIST_KINDS.has(spec.kind),
@@ -451,6 +486,9 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
         ? previouslyEmployedValue(profile, ctx.postingCompany, `${spec.label} ${spec.description}`)
         : none('unknown-field', false);
     default:
+      // jr6 RULES (JV-9, JV-17): a choice read from the list's own words and the profile's address.
+      if (category === 'location.policyResidence') return policyResidenceValue(spec, profile, vocab);
+      if (category === 'location.residesIn') return residesInValue(spec, profile, vocab);
       return profileValue(category, { spec, profile, vocab, now, separatePhoneCountry: ctx.separatePhoneCountry ?? false,
         ...(ctx.blockEntries ? { blockEntries: ctx.blockEntries } : {}) });
   }
@@ -639,6 +677,8 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
   if (shaped.shaped.shape === 'check' && candidate.origin.provenance !== 'saved'
     // v1.3 B: so is an earlier submitted answer to the same statement.
     && candidate.origin.provenance !== 'submitted-before' && policy !== 'consent'
+    // jr6 RULES (U-09, ADP-17): a decline box states the decline its tick gives, the person's own explicit one.
+    && rules?.rule !== EEO_DECLINE_BOX_RULE.id
     && statementPolarity(statementText(spec, rules)) !== 'affirmative') {
     return answer(withoutValue(base, spec, 'statement-not-affirmative', true, true));
   }

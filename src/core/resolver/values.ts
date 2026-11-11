@@ -23,7 +23,7 @@ import {
 import type { PlaceParts } from '../matcher/place';
 import { DEGREE_LEVEL_RANK } from '../profile/degreeParse';
 import { placeText } from '../profile/canonicalize';
-import { normalize } from '../text/normalize';
+import { normalize, normalizeLabel } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
 import { COVER_LETTER_TEXT_PATH, type FieldCategory, type NoValuePlaceholder, type ProfilePath, type RuleId,
   type ValueOrigin } from '../types/intent';
@@ -32,7 +32,7 @@ import type { RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
 import { none, value, type Choice, type ValueResult } from './candidate';
 import { phoneText } from './format';
-import { EMPLOYED_NOW, X_LINK } from './labelRules';
+import { EMPLOYED_NOW, entryOf, X_LINK } from './labelRules';
 
 /** The profile entry each block of a repeatable section is filled from, by block index (null: no entry), for the
  *  sections the plan assigned (steps/blocks.ts). */
@@ -298,6 +298,10 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
   const { spec, profile, vocab, now } = ctx;
   const { identity, contact, links } = profile;
   const address = profile.address;
+  // jr6 RULES (ICIMS-09, O7): a job's or a school's own block never takes the home address.
+  if (HOME_PLACE_CATEGORIES.has(category) && entryOf(spec.section) !== null) return none('no-profile-value', false);
+  const jr6 = jr6Value(category, ctx);
+  if (jr6 !== undefined) return jr6;
   switch (category) {
     case 'identity.fullName':
       return textValue(identity.fullName, 'identity.fullName');
@@ -716,6 +720,9 @@ const PLACEHOLDER_INSTRUCTIONS: readonly RegExp[] = [
   new RegExp(String.raw`\bif\s+(?:none|not\s+applicable|n\/a)\s*,?\s*(?:then\s+)?(?:please\s+)?${TYPE_VERB}\s+${TOKEN}`),
   new RegExp(String.raw`\b${TYPE_VERB}\s+${TOKEN}\s+if\s+(?:none|not\s+applicable|you\s+${DONT_HAVE}\s+(?:one|any|an?\s+\w+))\b`),
   new RegExp(String.raw`\(\s*${TOKEN}\s+if\s+(?:none|not\s+applicable|you\s+${DONT_HAVE}\s+(?:one|any|an?\s+\w+))\s*\)`),
+  // jr6 RULES (JV-15, fixtures ninjaone-step3: "If yes, please provide their name or enter N/A if you were not
+  // referred."): "enter N/A if you were (or are, have, did) not …".
+  new RegExp(String.raw`\b${TYPE_VERB}\s+${TOKEN}\s+if\s+you\s+(?:were|are|have|had|did|do)\s+(?:not|never)\b`),
 ];
 const TOKEN_PLACEHOLDER: Readonly<Record<string, NoValuePlaceholder>> = { 'n/a': 'N/A', na: 'NA', none: 'None' };
 
@@ -920,3 +927,195 @@ function experienceValue(category: FieldCategory, ctx: ValueContext): ValueResul
       return none('no-profile-value', false);
   }
 }
+
+// ── jr6 RULES (FIXPLAN §6.3 R1): the values of the eight platform audits' categories ─────────────────────────────
+
+/** ICIMS-09, O7: the home address's categories, which a job's or a school's own block never takes (labelRules
+ *  entryOf): ClearCompany's and iCIMS's employer blocks hold an Address and a City of the employer's. */
+const HOME_PLACE_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['address.line1', 'address.line2',
+  'address.city', 'address.region', 'address.postalCode', 'address.country', 'address.full', 'address.county',
+  'address.lookup', 'location.current']);
+
+/** A region as a place part: typed by its code (else its name), chosen in its country's list. */
+function regionValue(region: { code?: string; name: string } | undefined, country: string | undefined, at: string,
+  vocab: Vocab): ValueResult {
+  if (region === undefined) return none('no-profile-value', false);
+  const text = region.code ?? region.name;
+  return value({ origin: fromProfile(at), confidence: VALUE_EXPLICIT, text,
+    choice: { intended: intendedRegion(region, country, text, vocab), domain: 'region' } });
+}
+
+/** A country as a place part: typed by its name, chosen as a country. */
+function countryValue(country: string | undefined, at: string, vocab: Vocab): ValueResult {
+  if (country === undefined) return none('no-profile-value', false);
+  return value({ origin: fromProfile(at), confidence: VALUE_EXPLICIT, text: vocab.countries.byAlpha2(country)?.name
+    ?? country, choice: { intended: intendedCountry(country, country, vocab), domain: 'country' } });
+}
+
+/**
+ * ICIMS-09, O7: a job's or a school's City, State/Region or Country, from that entry's own place (a job's location, a
+ * school's institution), never the home address. A block the plan assigned no entry, or past the profile's entries,
+ * gets nothing.
+ */
+function entryPlaceValue(category: FieldCategory, ctx: ValueContext): ValueResult {
+  const { spec, profile, vocab } = ctx;
+  const part = category.slice(category.indexOf('.') + 1);
+  if (category.startsWith('experience.')) {
+    const index = entryIndex(spec, profile.experience, 'experience', ctx.blockEntries);
+    const place = index === null ? undefined : profile.experience[index]!.location;
+    if (index === null || place === undefined) return none('no-profile-value', false);
+    const at = `experience[${index}].location`;
+    if (part === 'city') return textValue(place.city, `${at}.city`);
+    if (part === 'region') return regionValue(place.region, place.country, `${at}.region`, vocab);
+    return countryValue(place.country, `${at}.country`, vocab);
+  }
+  const index = entryIndex(spec, profile.education, 'education', ctx.blockEntries);
+  if (index === null) return none('no-profile-value', false);
+  const { institution } = profile.education[index]!;
+  const at = `education[${index}].institution`;
+  if (part === 'city') return textValue(institution.city, `${at}.city`);
+  if (part === 'region') {
+    const region = institution.region?.trim() ?? '';
+    return region === '' ? none('no-profile-value', false) : regionValue({ ...(/^[A-Z]{2}$/.test(region)
+      ? { code: region } : {}), name: region }, institution.country, `${at}.region`, vocab);
+  }
+  return countryValue(institution.country, `${at}.country`, vocab);
+}
+
+/** workday-new-1: a form's own language (Workday's disability form "Language", "Language of this form"): English, the
+ *  language the rule read the label in, where the list offers it (form.language); never the person's languages. */
+function formLanguageValue(spec: FieldSpec, vocab: Vocab): ValueResult {
+  if (spec.options !== 'lazy' && !spec.options.some((option) => /^english\b/.test(normalizeLabel(option.label)))) {
+    return none('no-match', false);
+  }
+  const english = vocab.languages.byCode('en');
+  return value({ origin: { provenance: 'rule', ruleId: 'form.language' }, confidence: VALUE_TRANSFORM, text: 'English',
+    choice: { intended: english ? intendedEntity(vocab, 'language', english, 'English')
+      : intendedText('English'), domain: english ? 'language' : 'generic' } });
+}
+
+/** ICIMS-08: the other spellings of an address search's "Enter manually" option (Jobright's ./operations picks the
+ *  result `#result-selectable_<id>_-2` "enter manually", cited as a fact). */
+const ENTER_MANUALLY = ['Enter address manually', 'Enter it manually', 'Enter manually instead', 'Manual entry',
+  'Enter manual address', 'Manually enter address'];
+
+/** ICIMS-08: iCIMS's address search (its dropdown, name …PersonProfileFields.AddressStreet1): its "Enter manually" is
+ *  chosen when the profile holds a street, which the box it reveals then takes as the street (address.line1); a street
+ *  is never typed into the search itself. */
+function addressLookupValue(profile: Profile, vocab: Vocab): ValueResult {
+  if ((profile.address?.line1?.trim() ?? '') === '') return none('no-profile-value', false);
+  return value({ origin: byRule('address.enter-manually', 'address.line1'), confidence: VALUE_TRANSFORM,
+    choice: { intended: intendedUnknown('generic', 'Enter manually', ENTER_MANUALLY, vocab), domain: 'generic' } });
+}
+
+/** The words a county's name is written with or without ("Travis County", "Orleans Parish", "Nome Census Area"). */
+const COUNTY_SUFFIX = /\s+(?:county|parish|borough|census\s+area|municipality|city\s+and\s+borough)$/i;
+
+/**
+ * JV-3, WD-26, ADP-14, O3: a county as a list chooses it, matched with or without its County, Parish, Borough or
+ * Census Area ("Travis" and "Travis County" alike). The profile holds no county yet (owner question 13: a county
+ * worked out once from the ZIP code, or a table here), so profileValue gives none: the question is skipped, and never
+ * sent to an AI (address.county is no category an AI answers).
+ */
+export function countyChoice(county: string, vocab: Vocab): Choice {
+  const base = county.trim().replace(COUNTY_SUFFIX, '');
+  const spellings = [base, `${base} County`, `${base} Parish`, `${base} Borough`, `${base} Census Area`];
+  return { intended: intendedUnknown('generic', county.trim(), spellings, vocab), domain: 'generic' };
+}
+
+/** JV-15, ADP-19, U-11: the referral sources that may name a person at the company (an employee's referral, a friend,
+ *  a recruiter), and the person's own text, which no rule reads. */
+const PERSON_SOURCES: ReadonlySet<string> = new Set(['employee-referral', 'friend', 'recruiter', 'other']);
+
+/** JV-15, ADP-19, U-11: whether a current employee referred the person ("Were you referred to this role by a current
+ *  NinjaOne employee?", "Did any of our employees inform you about this position?"): No when the profile's referral
+ *  source is none that could name someone at the company (a job board, a site, an advertisement, …); otherwise, or
+ *  with no source, nothing. */
+function employeeReferredValue(profile: Profile): ValueResult {
+  const source = profile.referralSource;
+  if (source === undefined || PERSON_SOURCES.has(source.id)
+    || (source.category !== undefined && PERSON_SOURCES.has(source.category))) return none('no-profile-value', false);
+  return value({ origin: byRule('referral.not-employee', 'referralSource'), confidence: VALUE_TRANSFORM,
+    choice: { intended: { kind: 'boolean', value: false }, domain: 'polarity' }, check: false });
+}
+
+/** JV-5: an option that states a qualification ("3. Experience with relational databases (such as PostgreSQL and
+ *  MySQL)", "1. Associate or bachelor's degree …"): a sentence of three words or more about experience, a degree,
+ *  years, knowledge or a skill. */
+const QUALIFICATION = /\b(?:experience[ds]?|degrees?|years?|knowledge|familiar\w*|proficien\w*|certif\w*|background|skills?|understanding|ability|working)\b/;
+/** The words each degree level is named by in a qualification. */
+const DEGREE_WORDS: Readonly<Partial<Record<EducationEntry['degree']['level'], RegExp>>> = {
+  highSchool: /\bhigh\s+school\b|\bged\b/,
+  associate: /\bassociates?\s+(?:degree|of)\b|\bassociates?\b(?=.*\bdegree\b)/,
+  bachelor: /\bbachelors?\b|\bbaccalaureate\b|\bundergraduate\s+degree\b/,
+  master: /\bmasters?\b|\bgraduate\s+degree\b/,
+  doctorate: /\bdoctorates?\b|\bdoctoral\b|\bph\s?d\b/,
+  professional: /\b(?:mba|jd|md|professional\s+degree)\b/,
+};
+
+/** A whole word or phrase of the person's own in a text, whatever its case and its marks ("PostgreSQL", "C++"). */
+function namesWhole(text: string, word: string): boolean {
+  const escaped = word.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return escaped !== '' && new RegExp(String.raw`(?<![\p{L}\p{N}])${escaped}(?![\p{L}\p{N}+#])`, 'iu').test(text);
+}
+
+/**
+ * JV-5 (VHL's "Please select the education, skills and/or experience that you currently possess", fixtures
+ * jr6-vhl-step3-filled): a checkbox group (or a list that takes several) whose options are qualification sentences
+ * ticks, flagged, only the options naming one of the person's skills, or a degree they hold, as a whole word; the rest
+ * stays for the person (owner question 12: a multi-choice AI answer). Undefined for any other field (the skills are
+ * then chosen as before); none when no option names one.
+ */
+function qualificationsValue(spec: FieldSpec, profile: Profile): ValueResult | undefined {
+  if (!SEVERAL.includes(spec.kind) || spec.options === 'lazy') return undefined;
+  const options = spec.options.filter((option) => !option.disabled && option.label.trim() !== '');
+  const sentences = options.filter((option) => {
+    const words = normalizeLabel(option.label);
+    return words.split(' ').length >= 3 && QUALIFICATION.test(words);
+  });
+  if (options.length < 2 || sentences.length * 3 < options.length * 2) return undefined;
+  const levels = profile.education.filter((entry) => !entry.inProgress).map((entry) => DEGREE_WORDS[entry.degree.level])
+    .filter((re): re is RegExp => re !== undefined);
+  let skilled = false;
+  const named = sentences.filter((option) => {
+    const bySkill = profile.skills.some((skill) => namesWhole(option.label, skill));
+    skilled ||= bySkill;
+    return bySkill || levels.some((re) => re.test(normalizeLabel(option.label)));
+  });
+  if (named.length === 0) return none('no-profile-value', false);
+  const set = named.map((option): Choice => ({ intended: intendedText(option.label.trim()), domain: 'generic' }));
+  return value({ origin: byRule('skills.qualifications', skilled ? 'skills' : 'education'), confidence: VALUE_DERIVED,
+    set, flag: 'filled-low-confidence', ...(set.length === 1 ? { choice: set[0]! } : {}) });
+}
+
+/** The value of a jr6 category, or undefined for a category the table above answers. */
+function jr6Value(category: FieldCategory, ctx: ValueContext): ValueResult | undefined {
+  switch (category) {
+    // workday-new-1: an employer's own number for the person, which the profile never holds: skipped, never sent to
+    // an AI (identity.employeeId is no category an AI answers).
+    case 'identity.employeeId':
+      return none('no-profile-value', false);
+    case 'languages.formLanguage':
+      return formLanguageValue(ctx.spec, ctx.vocab);
+    case 'experience.city':
+    case 'experience.region':
+    case 'experience.country':
+    case 'education.city':
+    case 'education.region':
+    case 'education.country':
+      return entryPlaceValue(category, ctx);
+    case 'address.lookup':
+      return addressLookupValue(ctx.profile, ctx.vocab);
+    // The profile holds no county yet (owner question 13; countyChoice).
+    case 'address.county':
+      return none('no-profile-value', false);
+    case 'referral.employeeReferred':
+      return employeeReferredValue(ctx.profile);
+    case 'skills.list':
+      return qualificationsValue(ctx.spec, ctx.profile);
+    default:
+      return undefined;
+  }
+}
+
+// jr6 RULES end

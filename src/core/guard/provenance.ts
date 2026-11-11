@@ -115,6 +115,17 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'eeo.not-offered': (category) => policyClassOf(category) === 'eeo',
   'compose.text': (category) => COMPOSED.includes(category),
   // s2 core-gh end
+  // jr6 RULES (types/intent.ts): each rule fills its own category; a follow-up's "Not Applicable" any question of the
+  // open classes (a legal, EEO or consent one never takes it).
+  'consent.signature-date': (category) => category === 'consent.signatureDate',
+  'form.language': (category) => category === 'languages.formLanguage',
+  'address.enter-manually': (category) => category === 'address.lookup',
+  'conditional.not-applicable': (category) => OPEN_FOR_FOLLOW_UP.includes(policyClassOf(category)),
+  'location.policy-residence': (category) => category === 'location.policyResidence',
+  'referral.not-employee': (category) => category === 'referral.employeeReferred',
+  'location.not-there': (category) => category === 'location.residesIn',
+  'skills.qualifications': (category) => category === 'skills.list',
+  // jr6 RULES end
 };
 
 /** s2 core-gh: the yes/no legal questions a text box may ask (legal.yes-no-text), and the texts composed from the
@@ -277,11 +288,13 @@ const CLASS_RULES: Readonly<Record<PolicyClass, readonly RuleId[] | 'any'>> = {
   legal: ['legal.decline', 'guard.revert'],
   eeo: ['eeo.decline', 'eeo.decline-default', 'eeo.not-offered', 'guard.revert'],
   consent: ['consent.preapproved', 'consent.signature-preapproved', 'consent.required', 'consent.no-ai-attestation',
-    'guard.revert'],
+    // jr6 RULES (JV-1): today's date beside a signature, approved as the signature is.
+    'consent.signature-date', 'guard.revert'],
   attention: [],
-  'free-text': ['other.free-text', 'guard.revert'],
+  'free-text': ['other.free-text', 'conditional.not-applicable', 'guard.revert'],
   file: [],
-  unknown: ['other.free-text', 'screening.previously-employed', 'guard.revert'],
+  // jr6 RULES (JV-6): a follow-up's one "Not Applicable".
+  unknown: ['other.free-text', 'screening.previously-employed', 'conditional.not-applicable', 'guard.revert'],
 };
 
 /** The provenances each class's values may have (§7.6, §8.2): `rule` is narrowed further by CLASS_RULES. */

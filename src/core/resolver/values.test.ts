@@ -117,7 +117,7 @@ describe('sets', () => {
   it('joins a text box values with MANY_SEPARATOR, so a tags box can split them again', () => {
     expect(MANY_SEPARATOR).toBe(', ');
     const text = candidate(valueOf('skills.list', field('Skills', 'text'))).text;
-    expect(text.split(MANY_SEPARATOR)).toEqual(profile.skills);
+    expect(text?.split(MANY_SEPARATOR)).toEqual(profile.skills);
   });
 
   it('reads the language a proficiency question names', () => {

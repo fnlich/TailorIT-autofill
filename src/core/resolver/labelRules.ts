@@ -51,6 +51,24 @@ export interface RuleCtx {
   rawLabel: string;
   /** The field's block, when it sits in a repeatable section. */
   block?: number;
+  /** jr6 RULES (ICIMS-09, O7): the entry the field belongs to, when it sits in a job's or a school's own block
+   *  (entryOf): its place parts are that entry's, never the home address. */
+  entry?: EntryKind;
+}
+
+/** jr6 RULES: the kinds of profile entry a section may hold. */
+export type EntryKind = 'experience' | 'education';
+
+/**
+ * jr6 RULES (ICIMS-09, O7): the entry a field's section is, or null: a section about work or school (sectionKindOf)
+ * that is a repeatable block (it has a block index) or that the adapter names by the entry's own word ("experience",
+ * "education": iCIMS's employer and school blocks, Oracle's education editor). A heading that only mentions employment
+ * ("Employment Application") is no entry, so the person's own address there stays theirs.
+ */
+export function entryOf(section: { id: string; block?: number }): EntryKind | null {
+  const kind = sectionKindOf(section.id);
+  if (kind === 'other') return null;
+  return section.block !== undefined || section.id === kind ? kind : null;
 }
 
 /** What matchLabelRules reads besides the text, when the caller has it (classifyByRules always passes all three). */
@@ -62,6 +80,8 @@ export interface LabelContext {
    *  states something after its last question ("…? You must be work authorized … without the need for employer
    *  sponsorship."): a pre-rule that joins two answers reads only what is asked. Absent otherwise. */
   questions?: string;
+  /** jr6 RULES: the entry the field's section is (entryOf), when it is one. */
+  entry?: EntryKind;
 }
 
 /** One label rule. `^…$` in a pattern means the whole label must match. */
@@ -387,7 +407,11 @@ const VISA_SPONSORSHIP = /\bvisas?\b|\bimmigra\w*|\bh\s?1\s?b\b|\bgreen\s+card\b
  *  itself (ClassPass on Greenhouse, the owner's snapshot "[job-boards.greenhouse.io] ... Sr Software Engineer - Backend
  *  at ClassPass": "Do you now, or will you in the future, require employer-sponsored work authorization to legally work
  *  in the country where this role is located?"). §8.3's authorization rule, read first, took it for authorization. */
-const SPONSORED_NEED = /\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,3}?\s+sponsored\s+(?:work|employment|visas?|immigration)\b/;
+// jr6 RULES (WD-13, fixtures jr6-travelers-application-questions: "Will you now or in the future require support from an
+// employer to obtain/extend a work visa/permit in order to be employed (for example, H-1B, …)?"): a need for an
+// employer's support or assistance to obtain, extend or maintain a visa, a work permit or a work authorization is
+// sponsorship too; VISA_SPONSORSHIP still refines it, and label.work-auth's `unless` keeps the authorization rule off it.
+const SPONSORED_NEED = /\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,3}?\s+sponsored\s+(?:work|employment|visas?|immigration)\b|\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,3}?\s+(?:support|assistance)\s+from\s+(?:an|the|your)\s+(?:\w+\s+){0,2}?employer\s+to\s+(?:obtain|extend|maintain)\b(?:\s+\w+){0,6}?\s+(?:visas?|work\s+permits?|work\s+authori[sz]ation)\b/;
 // s2 core-gh (decision 13, the gh study's 3b: fixtures/greenhouse/s2-onestream-related-open question_8152423009, "Will
 // you now or in the future require OneStream to sponsor your employment visa status/work authorization in the
 // country/province you are applying for?"): a need for the employer to sponsor, a few words on, is sponsorship, whatever
@@ -400,8 +424,15 @@ const NEED_TO_SPONSOR = /\b(?:require|requires|required|requiring|need|needs|nee
 // question about the job, which the person answers; it never takes their self-identification answer.
 const HISPANIC_WORD = String.raw`(?:hispanic|latin[oax]|latine|spanish)`;
 const HISPANIC_SELF = new RegExp(String.raw`^(?:(?:are|r)\s+you\s+|ethnicity\s+|i\s+am\s+|you\s+are\s+)?(?:of\s+)?(?:not\s+)?${HISPANIC_WORD}(?:\s+(?:or\s+|and\s+)?${HISPANIC_WORD})*(?:\s+(?:origin|descent|heritage|ethnicity|status|background|self\s+identification))*$|\b(?:are\s+you|i\s+am|you\s+are)\s+(?:not\s+)?(?:of\s+)?(?:hispanic|latin)|\bidentify\s+(?:yourself\s+)?as\s+(?:a\s+)?(?:hispanic|latin)|\bconsider\s+yourself\s+(?:to\s+be\s+)?(?:a\s+)?(?:hispanic|latin)`);
-const RACE_WIDE = /\b(?:your|my)\s+(?:race|races|racial|ethnicity|ethnicities|ethnic)\b|\b(?:race|races|ethnicity|ethnicities)\s+(?:do\s+you|you)\s+(?:most\s+)?identify\b|\b(?:which|what)\s+(?:race|races)\b/;
-const RACE_SELF = /^(?:race|races|ethnicity|ethnicities|racial|ethnic)\b|\b(?:your|my)\s+(?:race|races|racial|ethnicity|ethnicities|ethnic)\b|\b(?:race|races|ethnicity|ethnicities)\s+(?:do\s+you|you)\s+(?:most\s+)?identify\b|\b(?:which|what)\s+(?:race|races|ethnicity|ethnicities)\b|\bidentify\b(?:\s+\w+){0,4}\s+(?:race|ethnicity|racial|ethnic)\b|\b(?:race|ethnicity|racial|ethnic)\b(?:\s+\w+){0,4}\s+(?:identify|identification)\b|\b(?:race|ethnicity)\s+(?:and|or)\s+(?:race|ethnicity)\b/;
+// jr6 RULES (WD-08, Workday's Voluntary Disclosures: fixtures jr6-gnw-, jr6-resolvetech-, jr6-travelers-,
+// jr6-cisive- and jr6-verawholehealth-voluntary-disclosures, danafarber-voluntary-disclosures): "If you identify with
+// one or more ethnic groups please choose from the list below" names ethnic groups, not "ethnicity".
+const RACE_WIDE = /\b(?:your|my)\s+(?:race|races|racial|ethnicity|ethnicities|ethnic)\b|\b(?:race|races|ethnicity|ethnicities)\s+(?:do\s+you|you)\s+(?:most\s+)?identify\b|\b(?:which|what)\s+(?:race|races)\b|\bethnic\s+groups?\b/;
+// jr6 RULES (WD-08): a race or an ethnicity within eight words of identify or identification ("Please select the
+// ethnicity which most accurately describes how you identify yourself."), of "describe(s) you/yourself" or "applies to
+// you" ("Please select the race/ethnicity that best applies to you:"), and "race/ethnicity" itself (normalized "race
+// ethnicity").
+const RACE_SELF = /^(?:race|races|ethnicity|ethnicities|racial|ethnic)\b|\b(?:your|my)\s+(?:race|races|racial|ethnicity|ethnicities|ethnic)\b|\b(?:race|races|ethnicity|ethnicities)\s+(?:do\s+you|you)\s+(?:most\s+)?identify\b|\b(?:which|what)\s+(?:race|races|ethnicity|ethnicities)\b|\bidentify\b(?:\s+\w+){0,8}?\s+(?:race|races|ethnicity|ethnicities|racial|ethnic)\b|\b(?:race|races|ethnicity|ethnicities|racial|ethnic)\b(?:\s+\w+){0,8}?\s+(?:identify|identification|describes?\s+(?:you|yourself)|applies\s+to\s+you)\b|\b(?:race|ethnicity)\s+(?:and|or)\s+(?:race|ethnicity)\b|\brace\s+ethnicity\b/;
 /** Gender wordings §8.3's anchored rule misses ("What best describes your gender?", "Which gender do you identify
  *  as?"). A question that sets gender identity against the sex assigned at birth is the transgender question. */
 const GENDER_WIDE = /^(?!.*\b(?:transgender|cisgender|assigned\s+at\s+birth|sexual\s+orientation)\b)(?:.*\b(?:your|my)\s+(?:gender|sex)\b|.*\b(?:which|what)\s+gender\b|.*\bgender\s+(?:do\s+you|you)\s+(?:\w+\s+)?identify\b|^(?:gender|sex)\s+(?:identity|identification|self\s+identification)$)/;
@@ -439,8 +470,11 @@ const NEGATION = String.raw`(?:did\s+not|didnt|have\s+not|havent|has\s+not|hasnt
 /** A statement that the application is the applicant's own work (the Phase 7a review: Workable's "Can you confirm that
  *  everything in this application is true and your own?"), which a fill that used AI cannot make: an AI attestation.
  *  The audit of 2026-11-06 (S-4) adds a claim of sole authorship ("I wrote every answer in this application myself",
- *  "I completed this application myself"), ticked, like the attestation, only when the run used no AI at all. */
-const OWN_WORK = String.raw`\btrue\s+and\s+(?:\w+\s+)?(?:my|your|their)\s+own\b|\b(?:entirely\s+|completely\s+|all\s+)?(?:my|your)\s+own\s+(?:work|words|writing)\b|\b(?:i|myself)\b(?:\s+\w+){0,3}?\s+(?:wrote|written|write|authored|composed|drafted|prepared|completed|filled\s+(?:in|out))\b(?:\s+\w+){0,8}?\s+(?:myself|by\s+myself|on\s+my\s+own|personally|alone|without\s+(?:any\s+)?(?:help|assistance))\b|\b(?:written|authored|composed|prepared|completed)\s+(?:entirely\s+|solely\s+|only\s+|wholly\s+)?by\s+me\b|\bsole\s+author\b`;
+ *  "I completed this application myself"), ticked, like the attestation, only when the run used no AI at all.
+ *  jr6 RULES (SR-3, fixtures/smartrecruiters/xplor-screening: "Think about the industry … In your own words, what's one
+ *  real challenge …"): "in (or using, with) your own words" is an instruction, never a statement that the work is one's
+ *  own; and the whole of OWN_WORK counts only on a box or a choice the person affirms it on (OWN_WORK_KINDS). */
+const OWN_WORK = String.raw`\btrue\s+and\s+(?:\w+\s+)?(?:my|your|their)\s+own\b|(?<!\b(?:in|using|with)\s)\b(?:entirely\s+|completely\s+|all\s+)?(?:my|your)\s+own\s+(?:work|words|writing)\b|\b(?:i|myself)\b(?:\s+\w+){0,3}?\s+(?:wrote|written|write|authored|composed|drafted|prepared|completed|filled\s+(?:in|out))\b(?:\s+\w+){0,8}?\s+(?:myself|by\s+myself|on\s+my\s+own|personally|alone|without\s+(?:any\s+)?(?:help|assistance))\b|\b(?:written|authored|composed|prepared|completed)\s+(?:entirely\s+|solely\s+|only\s+|wholly\s+)?by\s+me\b|\bsole\s+author\b`;
 
 /** What fills or writes an application other than the person: automation, autofill, a bot, a script, software, a tool,
  *  an extension or plug-in, an app, or someone's help (the audit of 2026-11-06, S-4). The extension itself is such
@@ -545,16 +579,27 @@ export function asksToAgree(text: string): boolean {
  *  six words past its negation, one more than AI_ATTESTATION's own reach. */
 const NOT_MADE_BY_AI = String.raw`\b(?:not|never)\s+(?:been\s+)?(?:written|generated|assisted)\s+(?:or|nor)\s+(?:\w+\s+)?(?:written|generated|assisted)\s+(?:by|with|using)\s+(?:any\s+|an\s+)?${AI_TERM}\b`;
 /** An "I did not use AI" attestation as normalizeLabel writes it (no apostrophes: "didnt", "havent"), with a few words
- *  between the negation and the AI term, either way round; or a statement that it is the applicant's own (OWN_WORK). */
-const AI_ATTESTATION = new RegExp(String.raw`\b${NEGATION}\b(?:\s+\w+){0,5}?\s+${AI_TERM}\b|\b${AI_TERM}\b(?:\s+\w+){0,4}?\s+(?:was|were|has\s+been|have\s+been|is|are)\s+(?:not|never)\s+(?:used|involved)\b|${OWN_WORK}|${NOT_MADE_BY_AI}`);
+ *  between the negation and the AI term, either way round. jr6 RULES (SR-3): these explicit denials hold on any kind of
+ *  field. */
+const AI_DENIAL = String.raw`\b${NEGATION}\b(?:\s+\w+){0,5}?\s+${AI_TERM}\b|\b${AI_TERM}\b(?:\s+\w+){0,4}?\s+(?:was|were|has\s+been|have\s+been|is|are)\s+(?:not|never)\s+(?:used|involved)\b|${NOT_MADE_BY_AI}`;
+const AI_DENIAL_RE = new RegExp(AI_DENIAL);
+/** The denials, or a statement that it is the applicant's own (OWN_WORK). */
+const AI_ATTESTATION = new RegExp(String.raw`${AI_DENIAL}|${OWN_WORK}`);
+/** jr6 RULES (SR-3): the kinds a statement that the work is one's own is affirmed on (a box ticked, an option chosen);
+ *  on a text box or a textarea it is a question or an instruction, never the person's attestation. */
+const OWN_WORK_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['checkbox', 'radio', 'select', 'combobox']);
+/** The attestation patterns a field of this kind is read with (undefined: any kind, the strictest reading). */
+const attestationFor = (kind: FieldKind | undefined) => (kind === undefined || OWN_WORK_KINDS.has(kind)
+  ? AI_ATTESTATION : AI_DENIAL_RE);
 /** AI named anywhere in consent wording: that box is an AI attestation, which is never pre-approved (§8.7). */
 const AI_NAMED = new RegExp(String.raw`\b${AI_TERM}\b`);
 /** Unrecognised-consent wordings beyond §8.3's "I agree, consent, acknowledge, accept, understand". */
 const CONSENT_WIDE = /\bi\s+(?:(?:hereby|also|further|expressly|fully)\s+)*(?:confirm|declare|have\s+read|give\s+(?:my\s+)?(?:permission|consent)|authori[sz]e|grant|allow)\b|\byou\s+(?:also\s+)?(?:agree|consent|acknowledge|accept|confirm|authori[sz]e)\b|\bby\s+(?:checking|ticking|clicking|selecting|submitting)\b|\bi\s+would\s+like\s+to\s+(?:receive|be\s+(?:contacted|considered|notified|added|kept))\b/;
 /** A radio that asks for consent: a first-person consent verb, or "Do you consent", "Would you like to receive", or
  *  "Check Yes or No to indicate your agreement to receive text message updates" (Ashby's SMS consent). On a radio
- *  without one, a consent topic word ("experience in marketing") is not consent. */
-const CONSENT_ASK = /\bindicate\s+your\s+(?:agreement|consent)\b|\bi\s+(?:(?:hereby|also|further|expressly|fully|do)\s+)*(?:agree|consent|acknowledge|accept|understand|certify|attest|confirm|declare|authori[sz]e|give|grant|allow|have\s+read)\b|\b(?:do|would|will|can|may)\s+(?:you|we)\s+(?:\w+\s+){0,2}?(?:consent|agree|accept|acknowledge|authori[sz]e|allow|permit|opt|subscribe|receive|join|store|keep|retain|contact|share|use|send|text|email)\b|\b(?:would|do)\s+you\s+(?:like|want|wish)\s+to\b|\bopt\s+(?:in|out)\b|\bsign\s+up\b|\bsubscribe\b|\bby\s+(?:checking|ticking|clicking|selecting|submitting)\b/;
+ *  without one, a consent topic word ("experience in marketing") is not consent. jr6 RULES (JV-14): or a company asking
+ *  to text the person by its name ("Can NinjaOne text you about your application?"). */
+const CONSENT_ASK = /\bindicate\s+your\s+(?:agreement|consent)\b|\bi\s+(?:(?:hereby|also|further|expressly|fully|do)\s+)*(?:agree|consent|acknowledge|accept|understand|certify|attest|confirm|declare|authori[sz]e|give|grant|allow|have\s+read)\b|\b(?:do|would|will|can|may)\s+(?:you|we)\s+(?:\w+\s+){0,2}?(?:consent|agree|accept|acknowledge|authori[sz]e|allow|permit|opt|subscribe|receive|join|store|keep|retain|contact|share|use|send|text|email)\b|\b(?:would|do)\s+you\s+(?:like|want|wish)\s+to\b|\bopt\s+(?:in|out)\b|\bsign\s+up\b|\bsubscribe\b|\bby\s+(?:checking|ticking|clicking|selecting|submitting)\b|\b(?:can|may|could)\s+(?:\w+\s+){1,3}?(?:text|sms|message)\s+(?:you|me)\b/;
 /** Where a consent clause starts: a consent verb, with its "I". */
 const CONSENT_VERB = /(?:\bi\s+(?:(?:hereby|also|further|expressly|fully|do)\s+)*)?\b(?:agree|consent|acknowledge|accept|understand|certify|attest|confirm|declare|authori[sz]e|give|grant|allow)\b/g;
 /** Words that carry no object of their own, so a clause of only these after its verb ("I acknowledge that I have read
@@ -711,6 +756,9 @@ const CHECK_CONSENT_RULE = { id: 'label.consent-check', strength: 'strong' } as 
 interface Refinement {
   /** More wordings the rule covers. */
   also?: RegExp;
+  /** jr6 RULES (SR-3): the wordings `also` covers on a field of this kind, where the kind is known (`also` stands for
+   *  any kind). */
+  alsoFor?: (kind: FieldKind) => RegExp;
   /** The rule applies only when this matches too; tested without a leading ask ("What is your") when `ask` is set. */
   only?: RegExp;
   ask?: boolean;
@@ -730,6 +778,21 @@ interface Refinement {
   needsUser?: (ctx: RuleCtx) => NeedsUserCause | null;
 }
 
+// jr6 RULES: the refinements' own wordings (see REFINEMENTS).
+/** workday-new-2: an outside business, one doing business with the company, or its vendor, supplier, customer,
+ *  subcontractor or competitor. */
+const OUTSIDE_BUSINESS = /\boutside\s+(?:\w+\s+)?(?:company|companies|organi[sz]ations?|business(?:es)?|firms?|entit(?:y|ies))\b|\bdoing\s+business\s+with\b|\b(?:vendors?|suppliers?|customers?|subcontractors?|competitors?)\b/;
+const SCHOOL_WORD = String.raw`(?:school|schools|university|universities|college|colleges|institution|institutions|academy)`;
+/** JV-4: a school's own label ("School", "School name", "College / University", "University attended", "Name of
+ *  institution", "Enter school name if not in the list above"), or which one the person attended. */
+const SCHOOL_NOUN = new RegExp(String.raw`^(?:name\s+of\s+(?:the\s+|your\s+)?)?(?:(?:current|most\s+recent|recent|last|previous|prior|high|graduate|undergraduate|secondary|post\s+secondary|educational|academic|your|the)\s+)*${SCHOOL_WORD}(?:\s+(?:(?:or|and)\s+)?${SCHOOL_WORD})*(?:\s+(?:name|attended|of\s+study))*(?:\s+if\s+not\s+in\s+the\s+list(?:\s+above)?)?$|^(?:which|what)\s+${SCHOOL_WORD}\s+(?:did|do)\s+you\s+(?:attend|graduate\s+from|study\s+at)\b`);
+/** JV-14: a company asking to text the person ("Can NinjaOne text you about your application?"), to contact them by
+ *  text, or to send them texts; never "the text you entered". */
+const SMS_WIDE = /\b(?:can|may|could|will|would|to|we|us|they)\s+(?:\w+\s+){0,2}?text\s+(?:you|me)\b|\bcontact\s+(?:you|me)\s+(?:by|via|through)\s+text\b|\bsend\s+(?:you|me)\s+(?:a\s+)?texts?\b/;
+/** JV-15, JV-22, ADP-19, U-11: the name of whoever referred the person. */
+const REFERRER_WIDE = /\breferral\s+name\b|\bname\s+of\s+(?:your\s+|the\s+)?(?:referral|referrer|referring\s+(?:employee|person))\b|\bname\s+of\s+the\s+(?:employee|person)\s+who\s+referred\s+you\b|\bprovide\s+(?:their|the|his|her)\s+(?:full\s+)?name\b(?:\s+\w+){0,8}?\s+referred\b/;
+// jr6 RULES end
+
 /** A self-identification topic without a self-identification wording: a question about the job, the person's own. */
 const SENSITIVE_TOPIC = { id: 'label.sensitive-topic', category: 'screening.other', strength: 'normal',
   needsUser: 'sensitive-topic' } as const;
@@ -742,7 +805,13 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.phone-country': { also: /\bcountry\s+phone\s+code\b|\bphone\s+country(?:\s+code)?\b/, unless: PHONE_WITH_CODE },
   'label.phone': { only: PHONE_NOUN, ask: true },
   'label.address2': { only: ADDRESS2_NOUN },
-  'label.country': { also: /^(?:what\s+is\s+your\s+)?(?:current\s+)?country(?:\s+of\s+(?:current\s+)?residence)?$|^what\s+country\s+do\s+you\s+(?:currently\s+)?(?:live|reside)\s+in$/ },
+  // jr6 RULES (ICIMS-09, O7): a City, a State/Region or a Country in a job's or a school's block is that entry's
+  // (fixtures/icims/nyu-profile.frame-1's employer and school blocks; Oracle's education editor), never the home
+  // address.
+  'label.city': { category: (c) => ENTRY_PLACE[c.entry ?? 'home'].city },
+  'label.region': { category: (c) => ENTRY_PLACE[c.entry ?? 'home'].region },
+  'label.country': { also: /^(?:what\s+is\s+your\s+)?(?:current\s+)?country(?:\s+of\s+(?:current\s+)?residence)?$|^what\s+country\s+do\s+you\s+(?:currently\s+)?(?:live|reside)\s+in$/,
+    category: (c) => ENTRY_PLACE[c.entry ?? 'home'].country },
   // s2 core-gh: a residence asked as a question (RESIDENCE). s2 core-wd: "Location" inside a job's block is that job's
   // place (Workday's formField-location in each Work Experience block, fixtures/workday/s2-exelixis-my-experience),
   // never the person's current location.
@@ -782,12 +851,19 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
     needsUser: (c) => (PAST_PAY.test(c.label) ? 'current-pay' : null) },
   'label.availability': { only: START_AVAILABILITY, ask: true,
     otherwise: { id: 'label.other-availability', category: 'screening.other', strength: 'normal' } },
+  // jr6 RULES (JV-4, fixtures jr6-vhl-step1: "Have you been employed by any United States K-12 School District since
+  // 2016 in any capacity?"): a school's own label, never a word in a question.
+  'label.school': { only: SCHOOL_NOUN, ask: true },
   'label.relocation': { unless: /\brelocat\w*\s+(?:assistance|package|support|benefits?|reimbursement|bonus|expenses?|costs?|stipend|allowance|help|budget|polic(?:y|ies)|services?)\b/ },
   // "Have you worked here before?" (docs/SPEC-AMENDMENTS.md §8), which §8.3's rule misses. The rule's value is taken
   // only for a question that names the posting's company or points at it (values.ts, the Phase E review, M3).
   // s2 core-gh: employed or appointed before, and employed now (EMPLOYED_BEFORE, EMPLOYED_NOW).
   'label.previously-employed': { also: new RegExp(String.raw`\bworked\s+(?:here|for\s+us|with\s+us)\b|\bemployed\s+(?:here|by\s+us)\b|\bworked\s+(?:at|for)\s+(?:\w+\s+){1,4}?before\b|\bex\s+employees?\b|\bformer\s+employees?\b|`
-    + `${EMPLOYED_BEFORE.source}|${EMPLOYED_NOW.source}`) },
+    + `${EMPLOYED_BEFORE.source}|${EMPLOYED_NOW.source}`),
+    // jr6 RULES (workday-new-2, fixtures jr6-parsons-application-questions: "Are you currently the owner or employee
+    // of any outside company that is currently …"): working for an outside business, for one doing business with the
+    // company, or for its vendor, supplier, customer, subcontractor or competitor is no employment by the company.
+    unless: OUTSIDE_BUSINESS },
   'label.travel': { unless: /\btravel\s+(?:restrictions?|limitations?|constraints?|bans?|reimbursements?|expenses?|polic(?:y|ies)|documents?|history)\b|\brestrictions?\s+on\s+(?:your\s+)?travel\b/ },
   // "Which languages do you speak?" (Phase 2): §8.3's rule takes "languages you speak" with nothing between. Only
   // "speak": "What programming languages do you know?" asks about skills.
@@ -797,10 +873,16 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
     : c.kind === 'checkbox' || c.kind === 'radio' ? 'consent.other' : 'unknown') },
   'label.why-company': { also: /why\s+do\s+you\s+want\s+to\s+(?:work|join)|why\s+(?:are\s+you\s+)?interested\s+in\s+(?:joining|working\s+(?:at|for|with))|what\s+(?:excites|interests|attracts|draws)\s+you\s+(?:to|about)\s+(?:joining|working\s+(?:at|for|with)|our\s+company|the\s+company|us)\b|^why\s+us$/ },
   'label.why-role': { also: /why\s+(?:are\s+you\s+)?interested\s+in\s+(?:this|the|our)\s+(?:role|position|job|opportunity)|why\s+do\s+you\s+want\s+(?:this|the)\s+(?:role|position|job)|why\s+(?:are\s+you\s+)?applying\s+(?:for|to)\s+(?:this|the)\s+(?:role|position|job)|what\s+(?:excites|interests|attracts|draws|appeals\s+to)\s+you\s+(?:about|in|to)\s+(?:this|the)\s+(?:role|position|job|opportunity)/ },
-  'label.consent-ai': { also: AI_ATTESTATION },
+  // jr6 RULES (SR-3): a statement that the work is one's own counts only where it is affirmed (attestationFor).
+  'label.consent-ai': { also: AI_ATTESTATION, alsoFor: attestationFor },
   'label.consent-retention': { also: RETENTION_WIDE, only: RETENTION_ONLY },
   'label.consent-marketing': { also: MARKETING_WIDE },
+  // jr6 RULES (JV-14, fixtures ninjaone-step1: "Can NinjaOne text you about your application?").
+  'label.consent-sms': { also: SMS_WIDE },
   'label.consent-generic': { also: CONSENT_WIDE },
+  // jr6 RULES (JV-15, JV-22, ADP-19, U-11): the name of whoever referred the person ("Referral Name", "If yes, please
+  // provide their name or enter N/A if you were not referred.").
+  'label.referrer': { also: REFERRER_WIDE },
 };
 
 /** "Why Acme?" as the page wrote it: a why-question naming the company with its own capitals, never "Why not?" or
@@ -887,6 +969,126 @@ function workdayInfoHit(text: string, kind: FieldKind, qualifiers: string): Labe
 
 // end s2 core-wd
 
+// ── jr6 RULES (FIXPLAN §6.3 R1): the eight platform audits' wordings, each from an owner's snapshot ─────────────────
+
+/** ICIMS-09, O7: the place categories of the home address, a job's and a school's. */
+const ENTRY_PLACE: Readonly<Record<EntryKind | 'home', { city: FieldCategory; region: FieldCategory;
+  country: FieldCategory }>> = {
+  home: { city: 'address.city', region: 'address.region', country: 'address.country' },
+  experience: { city: 'experience.city', region: 'experience.region', country: 'experience.country' },
+  education: { city: 'education.city', region: 'education.region', country: 'education.country' },
+};
+
+/** JV-1 (Jobvite's "Today's Date", read with the adapter's "signature" after it), workday-new-1 (Workday's Self
+ *  Identify date, "Date signed" by the label contract of FIXPLAN §3.2), JZ-15 (JazzHR's disability signature date, no
+ *  capture): the date that goes with a signature. */
+const SIGNATURE_DATE = /^(?:todays?\s+date|current\s+date|date\s+signed|signature\s+date|date\s+of\s+signature|signed\s+on|date)\s+signature$|^(?:todays?\s+date|date\s+signed|signature\s+date|date\s+of\s+signature|date\s+signed\s+on)$/;
+/** workday-new-1 (Workday's disability form "Language", "Language of this form" by the label contract): the language
+ *  the form itself is in, never the person's languages. */
+const FORM_LANGUAGE = /^(?:the\s+)?language\s+of\s+(?:this|the)\s+(?:form|document|survey|questionnaire)$|^(?:form|document)\s+language$/;
+/** workday-new-1 (Workday's Self Identify "Employee ID (if applicable)"): an employer's own number for the person,
+ *  which the profile never holds. */
+const EMPLOYEE_ID = /^(?:your\s+)?(?:current\s+)?employee\s+(?:id|identification|number|no|num)(?:\s+(?:number|no))?$/;
+/** JV-3 (Jobvite's "County of Residence"), WD-26 (Workday's Address "County"), ADP-14 (ADP's "County"), O3 (Oracle's
+ *  "County"): the word county, never "country", asked for, not as a yes or no. */
+const COUNTY = /\bcount(?:y|ies)\b/;
+/** JV-9 (Jobvite's consent gate, "Location of Residence and Language", the label contract): the residence a privacy
+ *  policy is chosen by. */
+const POLICY_RESIDENCE = /^(?:your\s+)?(?:location|country|region)\s+of\s+residence\s+and\s+language$/;
+/** JV-15 (NinjaOne's "Were you referred to this role by a current NinjaOne employee?"), ADP-19 ("Did any of our
+ *  employees inform you about this position?"), U-11 (UltiPro's "Were you referred by a current employee?"): whether
+ *  an employee of the company referred the person, asked yes or no. */
+const REFERRED_BY_EMPLOYEE = /\b(?:were|was)\s+you\s+referred\b(?:\s+\w+){0,5}?\s+by\s+(?:an?\s+|any\s+|one\s+of\s+our\s+|our\s+)?(?:current\s+)?(?:\w+\s+){0,2}?employees?\b|\b(?:did|has|have)\s+(?:any(?:one)?\s+(?:of\s+)?)?(?:our|the|its|a|an)\s+(?:current\s+)?employees?\s+(?:\w+\s+){0,2}?(?:inform\w*|tell|told|refer\w*|recommend\w*|notif\w*)\s+you\b/;
+/** JV-17 (VHL's "Question 10: If within commutable distance to Boston, MA, are you willing and able to work the Hybrid
+ *  schedule …", NinjaOne's "If you live in Illinois, is your address in the City of Chicago?"): a question asked only
+ *  of those who live in, or within reach of, a place it names (captured: the place). */
+const RESIDES_IN = /^(?:question\s+\d+\s+)?if\s+(?:(?:you\s+(?:currently\s+)?(?:live|reside)\s+in)|(?:you\s+are\s+)?(?:with)?in\s+(?:a\s+)?commut\w*\s+distance\s+(?:to|of|from))\s+(.+?)\s+(?:is|are|do|does|will|would|can|could|have|has|please|what|which|how)\b/;
+/** U-02 (UltiPro's period boxes, "From Month", "From Year (YYYY)", "To Month", "To Year (YYYY)" by the label contract):
+ *  a part of a job's or a school's start (from) or end (to). */
+const PERIOD_PART = /^(from|to)\s+(?:month|year)\b/;
+
+/** A jr6 label rule: its pattern, the category (or none, for a section or kind it does not fit). */
+interface Jr6Rule {
+  id: string;
+  re: RegExp;
+  unless?: RegExp;
+  category: FieldCategory | ((ctx: RuleCtx, found: RegExpExecArray) => FieldCategory | null);
+  strength: RuleStrength;
+}
+
+/** The jr6 rules, tried in order before §8.3's list, each on a kind its category holds. */
+const JR6_RULES: readonly Jr6Rule[] = [
+  { id: 'label.signature-date', re: SIGNATURE_DATE, category: 'consent.signatureDate', strength: 'strong' },
+  { id: 'label.form-language', re: FORM_LANGUAGE, category: 'languages.formLanguage', strength: 'strong' },
+  { id: 'label.employee-id', re: EMPLOYEE_ID, category: 'identity.employeeId', strength: 'strong' },
+  { id: 'label.county', re: COUNTY, unless: YES_NO_QUESTION, category: 'address.county', strength: 'normal' },
+  { id: 'label.policy-residence', re: POLICY_RESIDENCE, category: 'location.policyResidence', strength: 'strong' },
+  { id: 'label.employee-referred', re: REFERRED_BY_EMPLOYEE, category: 'referral.employeeReferred',
+    strength: 'normal' },
+  { id: 'label.resides-in', re: RESIDES_IN, category: 'location.residesIn', strength: 'normal' },
+  // U-02: by the section's kind (sectionKindOf); in any other section the part names no date the profile holds.
+  { id: 'label.period-part', re: PERIOD_PART, strength: 'normal', category: (c, found) => (c.section === 'other' ? null
+    : found[1] === 'from' ? `${c.section}.startDate` : `${c.section}.endDate`) },
+];
+
+/** The first jr6 rule that reads `text` on a field of this kind, or null. */
+function jr6Hit(text: string, ctx: RuleCtx): LabelRuleHit | null {
+  for (const rule of JR6_RULES) {
+    const found = rule.re.exec(text);
+    if (found === null || (rule.unless?.test(text) ?? false)) continue;
+    const category = typeof rule.category === 'function' ? rule.category(ctx, found) : rule.category;
+    if (category !== null && kindAllowed(category, ctx.kind)) return hitOf(rule, category);
+  }
+  return null;
+}
+
+/** JV-17: the place a question asks only its residents about ("illinois", "boston ma"), as normalized words, and
+ *  whether it asks of those within commuting distance (rather than living there); null for any other label. */
+export function residencePlaceOf(text: string): { place: string; commute: boolean } | null {
+  const found = RESIDES_IN.exec(text);
+  return found === null ? null : { place: found[1]!, commute: /\bcommut/.test(found[0]) };
+}
+
+/** U-09 (UltiPro's "I decline to say" boxes beside its EEO lists, "<question> I decline to say" by the label contract)
+ *  and ADP-17 (ADP's "I decline to identify my race and ethnicity"): a lone box that declines a self-identification
+ *  question, by its own topic. */
+const DECLINE_BOX = /\b(?:i\s+)?(?:decline|refuse|prefer\s+not|do\s+not\s+wish|dont\s+wish|choose\s+not|would\s+rather\s+not)\s+to\s+(?:say|answer|identify|self\s+identify|disclose|state|specify|provide|respond)\b/;
+/** The self-identification topics a decline box names, in the order a box naming two is read by. */
+const DECLINE_BOX_TOPICS: ReadonlyArray<readonly [RegExp, FieldCategory]> = [
+  [/\b(?:race|races|racial)\b/, 'eeo.race'],
+  [/\bethnic\s+origin\b|\bhispanic\b|\blatin[oax]\b/, 'eeo.hispanicLatino'],
+  [/\bethnic\w*\b/, 'eeo.race'],
+  [/\bgender\b|\bsex\b/, 'eeo.gender'],
+  [/\bveterans?\b|\bmilitary\b/, 'eeo.veteran'],
+  [/\bdisabilit(?:y|ies)\b/, 'eeo.disability'],
+];
+export const EEO_DECLINE_BOX_RULE = { id: 'label.eeo-decline-box', strength: 'strong' } as const;
+
+/** U-09, ADP-17: the self-identification topics a lone box declines (DECLINE_BOX), the first its category; [] for a box
+ *  that declines nothing of the kind. */
+export function declineBoxTopics(text: string): FieldCategory[] {
+  if (!DECLINE_BOX.test(text)) return [];
+  return [...new Set(DECLINE_BOX_TOPICS.filter(([re]) => re.test(text)).map(([, category]) => category))];
+}
+
+/** jobvite-new-1 (Sikich's "Are you currently subject to a non-compete, non-solicitation or any other restrictive
+ *  employment agreement?"): a restrictive agreement asked as a fact, or one that names a non-compete, a
+ *  non-solicitation, an employment or a confidentiality agreement: there "agreement" names a contract the person may
+ *  hold, never a consent the run gives (classify.ts openTopicsOfTexts, plan/answers.ts). */
+export function namesRestrictiveAgreement(text: string): boolean {
+  return restrictiveAgreementFact(text) || NAMED_AGREEMENT.test(text);
+}
+
+/** jobvite-new-1: a restrictive agreement asked as a fact ("Are you currently subject to a non-compete …?"): a
+ *  question about a contract the person may hold, never an ask to take one on (namesBindingWaiver), so an AI may answer
+ *  it in the `all` scope (plan/answers.ts namesUnanswerableTopic). An ask to agree to one stays the binding waiver. */
+export function restrictiveAgreementFact(text: string): boolean {
+  return RESTRICTIVE_TOPIC.test(text) && RESTRICTIVE_FACT.test(text);
+}
+const NAMED_AGREEMENT = /\b(?:non\s?compet\w*|noncompet\w*|non\s?solicit\w*|nonsolicit\w*|restrictive|employment|confidentiality|non\s?disclosure)\s+(?:\w+\s+){0,2}?agreements?\b/;
+
+// jr6 RULES end
+
 /** The design's own rules for dates, which in a repeatable section the design does not name belong to the block. */
 const DATE_RULES = new Set(['label.start-date', 'label.end-date']);
 /** The classes whose question stops at a needs-user hit on a kind that cannot hold it, so no later rule claims it. */
@@ -899,9 +1101,11 @@ const CRIMINAL_RULE = ruleById('label.criminal');
 
 /** Whether `rule`, with its refinement, reads `text` as its own: 'match', 'turned-away' (`only` or `unless` refused a
  *  text the rule's patterns matched), or null. */
-function refinedMatch(rule: LabelRule, text: string, questions?: string): 'match' | 'turned-away' | null {
+function refinedMatch(rule: LabelRule, text: string, questions?: string, kind?: FieldKind): 'match' | 'turned-away'
+  | null {
   const refinement = REFINEMENTS[rule.id];
-  if (!rule.re.test(text) && !(refinement?.also?.test(text) ?? false)) return null;
+  const also = kind !== undefined && refinement?.alsoFor !== undefined ? refinement.alsoFor(kind) : refinement?.also;
+  if (!rule.re.test(text) && !(also?.test(text) ?? false)) return null;
   if (refinement === undefined) return 'match';
   const unlessText = refinement.unlessQuestionsOnly === true && questions !== undefined ? questions : text;
   if (refinement.unless?.test(unlessText)) return 'turned-away';
@@ -979,13 +1183,13 @@ interface ConsentEntry {
  * an opt-out or a refusal. A text with no consent verb is read as one clause when it names a kind. An AI attestation is
  * added when consent wording names AI; its own negation ("I did not use AI") is no opt-out.
  */
-function consentEntries(text: string): ConsentEntry[] {
+function consentEntries(text: string, kind?: FieldKind): ConsentEntry[] {
   const entries: ConsentEntry[] = [];
   const add = (rule: LabelRule, category: FieldCategory) => {
     if (!entries.some((entry) => entry.category === category)) entries.push({ rule, category });
   };
   for (const rule of SPECIFIC_CONSENT_RULES) {
-    if (refinedMatch(rule, text) === 'match') add(rule, rule.category as FieldCategory);
+    if (refinedMatch(rule, text, undefined, kind) === 'match') add(rule, rule.category as FieldCategory);
   }
   // Wording that names AI is an AI attestation (below), the strictest kind, which nothing ticks: its own negation is
   // no opt-out, and nothing it joins can make it stricter.
@@ -1066,6 +1270,7 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   const ctx: RuleCtx = { label: text, section, kind, qualifiers: context.qualifiers ?? '',
     rawLabel: context.rawLabel ?? '' };
   if (context.block !== undefined) ctx.block = context.block;
+  if (context.entry !== undefined) ctx.entry = context.entry;
   // An experience block's own "Summary" or "Description" is the role's description (the Phase 7a review).
   if (section === 'experience' && context.block !== undefined && EXPERIENCE_DESCRIPTION.test(text)
     && kindAllowed('experience.description', kind)) {
@@ -1102,12 +1307,18 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
     return { ...hitOf(BINDING_WAIVER_RULE, 'consent.other'), consentKinds: ['consent.other'],
       needsUser: 'binding-waiver' };
   }
+  // jr6 RULES (U-09, ADP-17): a lone box that declines a self-identification question is that question's, never a
+  // consent: its tick is the person's explicit decline (policy.ts eeoDeclineBoxValue, plan/eeoDeclineBox.ts).
+  if (kind === 'checkbox') {
+    const declined = declineBoxTopics(text)[0];
+    if (declined !== undefined) return hitOf(EEO_DECLINE_BOX_RULE, declined);
+  }
   // Consent first only for wording that consents: a box that names a consent topic and nothing more ("Willing to
   // travel for marketing events") keeps §8.3's order, where the consent rules come last.
   const asksConsent = CONSENT_ASK.test(text);
-  if ((kind === 'checkbox' || kind === 'radio') && (asksConsent || AI_ATTESTATION.test(text))) {
+  if ((kind === 'checkbox' || kind === 'radio') && (asksConsent || attestationFor(kind).test(text))) {
     if (criminalClaim(text)) return hitOf(CRIMINAL_RULE, 'screening.criminalHistory');
-    const entries = consentEntries(text);
+    const entries = consentEntries(text, kind);
     if (entries.length > 0) return consentVerdict(entries, kind);
   }
   // Which work authorization status (the Phase 7a review), before the design's authorization rule reads it as yes or
@@ -1131,9 +1342,12 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   // s2 core-wd: Workday's My Information (WORKDAY_INFO_RULES).
   const info = workdayInfoHit(text, kind, ctx.qualifiers);
   if (info !== null) return info;
+  // jr6 RULES: the eight platform audits' wordings (JR6_RULES).
+  const jr6 = jr6Hit(text, ctx);
+  if (jr6 !== null) return jr6;
   for (const rule of LABEL_RULES) {
     if (DATE_RULES.has(rule.id) && section === 'other' && context.block !== undefined) continue;
-    const verdict = refinedMatch(rule, text, context.questions);
+    const verdict = refinedMatch(rule, text, context.questions, kind);
     if (verdict === null) continue;
     const refinement = REFINEMENTS[rule.id];
     if (verdict === 'turned-away') {
@@ -1153,7 +1367,7 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
     const policy = policyClassOf(category);
     if (policy === 'consent') {
       if (kind === 'radio' && !asksConsent && category !== 'consent.aiAttestation') continue;
-      const entries = consentEntries(text);
+      const entries = consentEntries(text, kind);
       if (entries.length > 0) return consentVerdict(entries, kind);
       return consentVerdict([{ rule, category }], kind);
     }
@@ -1180,7 +1394,7 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
  */
 export function withDescriptionConsent(hit: LabelRuleHit, description: string, kind: FieldKind): LabelRuleHit {
   if (hit.consentKinds === undefined || hit.needsUser !== undefined || description === '') return hit;
-  const extra = consentEntries(description);
+  const extra = consentEntries(description, kind);
   if (extra.length === 0) return hit;
   const own = hit.consentKinds.map((category) => ({ category,
     rule: (category === hit.category ? LABEL_RULES.find((rule) => rule.id === hit.rule) : undefined)
@@ -1194,10 +1408,11 @@ export function withDescriptionConsent(hit: LabelRuleHit, description: string, k
  * Whether normalized text is a real "I did not use AI" attestation (the Phase E review, M5): label.consent-ai's own
  * wording or its negation pattern (AI_ATTESTATION). Consent wording that only names AI ("AI tools may be used to review
  * my application") is an AI attestation to the consent policy, never ticked, but no such statement: it does not switch
- * a run to the profile only.
+ * a run to the profile only. jr6 RULES (SR-3): with the field's `kind`, a statement that the work is one's own counts
+ * only on a box or a choice (OWN_WORK_KINDS); without it, it counts wherever it stands (the strictest reading).
  */
-export function attestsNoAiUse(text: string): boolean {
-  return AI_CONSENT_RULE.re.test(text) || AI_ATTESTATION.test(text);
+export function attestsNoAiUse(text: string, kind?: FieldKind): boolean {
+  return AI_CONSENT_RULE.re.test(text) || attestationFor(kind).test(text);
 }
 
 /** The rule a consent asked as a choice is read by (consentChoiceHit). */
