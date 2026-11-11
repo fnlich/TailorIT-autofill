@@ -2987,15 +2987,15 @@ async function convertPage(url: string, platform: string, caseName: string, body
 }
 
 /** SmartRecruiters' City search as the Wiser one-click capture draws it open (SP\jr6\build\SMARTRECRUITERS.md SR-8):
- *  spl-autocomplete's shadow root holds its spl-input (the typed text, Lit's ariacontrols) and the menu, each result an
- *  spl-select-option whose value and data-sr-id spell the place, its role=option inside its own shadow root; the
- *  manual-location row last. */
+ *  spl-autocomplete's shadow root holds its spl-input (Lit's ariacontrols; no typed text kept here, so the menu's own
+ *  mark, TYPED_LISTS, says it lists a query's results) and the menu, each result an spl-select-option whose value and
+ *  data-sr-id spell the place, its role=option inside its own shadow root; the manual-location row last. */
 const SR_CITY = `<label for="city">City</label>
 <spl-autocomplete id="city" data-sr-id="location-autocomplete-search" minquerylength="3" label="City"></spl-autocomplete>
 <script>
 const root = document.getElementById('city').attachShadow({ mode: 'open' });
 root.innerHTML = '<div data-sr-id="location-autocomplete-search-root"><spl-input id="spl-form-element_3" type="text" '
-  + 'value="Roeville" ariacontrols="menu-spl-form-element_3" ariaautocomplete="list" '
+  + 'value="" ariacontrols="menu-spl-form-element_3" ariaautocomplete="list" '
   + 'data-sr-id="location-autocomplete-search-search"></spl-input>'
   + '<div slot="menu" id="menu-spl-form-element_3" data-sr-id="location-autocomplete-search-menu" role="listbox">'
   + '<spl-select-option value="roeville-nj-us" data-sr-id="location-autocomplete-search-option-roeville-nj-us">'
@@ -3060,6 +3060,8 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
   <div id="react-select-school-option-2" role="option" class="select__option" data-fixed="1">Not listed? Type it</div></div>
 <div id="react-select-country-listbox" class="select__menu-list" role="listbox">
   <div id="react-select-country-option-0" role="option" class="select__option">Portugal +351</div></div>
+<x-search id="lit" value="Roe" ariacontrols="lit-menu"></x-search>
+<div id="lit-menu" role="listbox"><div id="lit-0" role="option">Roeville Lit Result</div></div>
 <ul id="cities" role="listbox" aria-activedescendant="city-roeville-4417">
   <li id="city-roeville-4417" role="option" data-value="4417" value="1" aria-label="Roeville"><span>Roeville</span>
     <a href="https://maps.tailorit-fixture.example/?q=Roeville">map</a></li>
@@ -3072,7 +3074,9 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
 </body></html>`);
       const noted = await page.evaluate(noteListRowsInPage, { rows: LIST_ROWS, typedLists: TYPED_LISTS,
         typedBoxes: TYPED_LIST_BOXES, words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE });
-      expect(noted).toEqual({ rows: 9, typedLists: 1 });
+      // Two typed lists: the school search (its box's typed text and aria-controls), and a custom element's (Lit's
+      // unhyphenated ariacontrols, as SmartRecruiters' spl-input writes it).
+      expect(noted).toEqual({ rows: 10, typedLists: 2 });
       // Another redaction (a listed string, as transformInPage's) takes two cities' words and the prompt row's, and part
       // of a third city's.
       await page.evaluate(() => {
@@ -3090,7 +3094,9 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
       const counts = await page.evaluate(redactListRowsInPage, { redacted: 'REDACTED', fixed: ['[data-fixed]'],
         results: SEARCH_RESULT_PLACES, words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE, ids: ROW_ID_ATTRIBUTES,
         idData: ROW_ID_DATA_SOURCE, references: ID_REFERENCES });
-      expect(counts).toEqual({ rows: 6, words: 4, names: 4, ids: 4 });
+      expect(counts).toEqual({ rows: 7, words: 5, names: 4, ids: 4 });
+      expect(await page.evaluate(() => document.getElementById('lit-menu')!.outerHTML))
+        .toBe('<div id="lit-menu" role="listbox"><div id="lit-0" role="option">REDACTED</div></div>');
       // A word left beside a REDACTED one goes too, the white space around it kept.
       expect(await page.evaluate(() => document.getElementById('w3')!.firstChild!.nodeValue)).toBe('  REDACTED  ');
       expect(await page.evaluate(() => document.getElementById('w3')!.parentElement!.outerHTML))
@@ -3138,8 +3144,7 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
         + 'data-sr-id="location-autocomplete-search-option-goToManualLocationMode"><template shadowrootmode="open">');
       expect(text).toContain('<span class="sr-only" aria-label="Enter your location manually"></span></template><spl-truncate '
         + 'title="Enter your location manually">Enter your location manually</spl-truncate></spl-select-option>');
-      // The typed text is gone from the box too (a custom element's value: redactApplicantTextInPage).
-      expect(text).toContain('<spl-input id="spl-form-element_3" type="text" value="" ariacontrols="menu-spl-form-element_3"');
+      expect(TYPED_LISTS).toContain('[data-sr-id="location-autocomplete-search-menu"]');
       expect(FIXED_ROWS).toEqual(['spl-select-option[value="goToManualLocationMode"]']);
       expect(headerOf(text).redacted.listRows).toEqual({ rows: 1, words: 2, names: 3, ids: 2 });
       // Deterministic: the same capture gives the same bytes.
@@ -3176,10 +3181,11 @@ root.innerHTML = '<spl-input id="spl-form-element_4" type="text" value="" ariaco
 
   it("Oracle's searching cx-select (role=grid rows): its results lose their words and the ids that number them",
     async () => {
+      // The box holds no typed text in this capture: its searching class alone says its grid lists a query's results.
       const { text } = await convertPage(ORACLE_APPLY, 'oracle', 'jr6r2-oracle-grid', `<form>
 <label for="loc">Location</label>
 <input id="loc" type="text" class="cx-select-input cx-select-input--auto-suggest" role="combobox" aria-haspopup="grid"
-  aria-expanded="true" aria-controls="loc-listbox" aria-activedescendant="loc-row-300512" value="Roe">
+  aria-expanded="true" aria-controls="loc-listbox" aria-activedescendant="loc-row-300512" value="">
 <div id="loc-listbox" role="grid" class="cx-select__list">
   <div role="row" id="loc-row-300512" class="cx-select__list-item"><div role="gridcell"><span class="cx-select__list-item--content">Roeville, NJ</span></div></div>
   <div role="row" id="loc-row-300513" class="cx-select__list-item"><div role="gridcell"><span class="cx-select__list-item--content">Roeville Heights, NJ</span></div></div></div>
@@ -3278,10 +3284,11 @@ document.getElementById('q2').attachShadow({ mode: 'open' }).innerHTML = '<div r
 <div id="react-select-${id}-listbox" class="select__menu-list" role="listbox">${rows.map((row, at) =>
   `<div id="react-select-${id}-option-${at}" class="select__option" role="option" aria-selected="false">${row}</div>`).join('')}</div>`;
       const { text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6r2-react-select', `<form>
-${select('candidate-location', 'Roe', ['Roeville, New Jersey, United States'])}
+${select('candidate-location', 'Roe', ['Roeville (Location 4), New Jersey, United States'])}
 ${select('school', 'Roe', ['Roeville State University', 'Roe College'])}
 ${select('country', '', ['Portugal', 'Spain'])}</form>`);
       expect(text).not.toMatch(/roeville|Roe College/i);
+      // A result's word that is also its list's own ("location") stays in its id: the list's structure, not the answer.
       for (const id of ['react-select-candidate-location-option-0', 'react-select-school-option-0', 'react-select-school-option-1']) {
         expect(text).toContain(`<div id="${id}" class="select__option" role="option" aria-selected="false">REDACTED</div>`);
       }
