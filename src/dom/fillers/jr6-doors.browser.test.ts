@@ -10,6 +10,11 @@
  * without one. The link stays never-pressed for every other path. The page is synthetic, shaped as the audit
  * describes jr6-centroid-form; the adapter is the configured layer over JazzHR's own config with the upload rule the
  * JAZZHR package declares (FIXPLAN §6.8, JZ-4 (a) and (b)); the file is a fake PDF named as the golden resume.
+ * jr6 ENGINE E3 (FIXPLAN §6.2 item 15, WD-23): a date drawn in parts (Workday's, dom/fillers/date-parts.ts) gets focus
+ * and focusin on each part before its write, untrusted (the page's focus never moved); once left, its alert is read,
+ * and where it shows the date is written again once with its declared digits; an alert that stays is
+ * value-rejected-by-site, at the write and after the settle. The page is synthetic (fixtures/workday/
+ * s2-exelixis-my-experience.html's markup), its date script stood in for.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { configuredAdapter } from '../../adapters/configured';
@@ -19,11 +24,13 @@ import type { Adapter } from '../../adapters/types';
 import type { FillResult, PlannedWrite } from '../../core/types/fill';
 import { createFakeWorker, fakePdf, GOLDEN_RESUME } from '../../content/content.testkit';
 import { writeField, type PassEnv } from '../../content/pass';
-import { loadFixture, removeFixtures } from '../fixture.testkit';
+import { loadFixture, logEvents, removeFixtures, untrustedViolations } from '../fixture.testkit';
 import { scan } from '../scan';
 import { deadline } from '../time';
+import { fillDateParts } from './date-parts';
 import { assertNotSubmit, clickIfAllowed } from './not-submit';
 import { revealUpload } from './upload';
+import { verifyAfterSettle } from './verify';
 
 afterEach(() => removeFixtures(document));
 
@@ -245,4 +252,194 @@ describe('jr6 E2 item 9 (JZ-4): the pass writes the résumé once the reveal sho
     expect(page.presses()).toBe(1);
     expect(await page.navigated()).toBe(false);
   });
+});
+
+// ── jr6 ENGINE E3 (FIXPLAN §6.2 item 15, WD-23): a date drawn in parts, focused part by part, its alert read ──────────
+
+/** Workday's date input as fixtures/workday/s2-exelixis-my-experience.html draws it (a wrapper holding, per part, an
+ *  aria-hidden display over a 1 px spin button), its alert under it, and Workday's date script stood in for:
+ *  - a part draws its digits a microtask after its input event (React), into its display and aria-valuenow;
+ *  - the date's own state takes a part only from typed digits (its keydown), or from its setter's write while the part
+ *    has the page's focus (a focus or focusin it got since its last write: window.__focused), as `takes` says;
+ *  - leaving the date (a part's focusout) validates it: whole and every part taken, its alert goes; else it shows
+ *    "Error: Invalid Date" (`alerts` false: never shown).
+ *  Each part's events are kept in window.__events, in order. Every value is synthetic. */
+const DATE = `<!doctype html><html><head><style>
+  .part { position: relative; display: inline-block; width: 40px; }
+  .part input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; transform: scale(0.01); }
+  .alert { color: #b00; }
+</style></head><body><form id="f">
+  <div id="field-from"><label id="from-label">From</label>
+    <div id="from" role="group" aria-labelledby="from-label" data-automation-id="dateInputWrapper">
+      <div class="part"><div id="month-display" aria-hidden="true">MM</div>
+        <input id="month" role="spinbutton" aria-label="Month" value=""></div>/
+      <div class="part"><div id="year-display" aria-hidden="true">YYYY</div>
+        <input id="year" role="spinbutton" aria-label="Year" value=""></div>
+    </div>
+  </div>
+</form>
+<script>
+  window.__events = { month: [], year: [] };
+  window.__taken = { month: null, year: null };
+  window.__focused = { month: false, year: false };
+  window.__mode = { takes: 'focused', alerts: true };
+  const field = document.getElementById('field-from');
+  for (const id of ['month', 'year']) {
+    const input = document.getElementById(id);
+    const display = document.getElementById(id + '-display');
+    let typed = '';
+    for (const type of ['focus', 'focusin', 'input', 'change', 'keydown', 'focusout', 'blur']) {
+      input.addEventListener(type, (event) => {
+        window.__events[id].push(event.type === 'keydown' ? 'key:' + event.key : event.type);
+      });
+    }
+    input.addEventListener('focusin', () => { window.__focused[id] = true; });
+    input.addEventListener('input', () => {
+      const digits = input.value;
+      queueMicrotask(() => {
+        display.textContent = /^\\d+$/.test(digits) ? digits : (id === 'month' ? 'MM' : 'YYYY');
+        if (/^\\d+$/.test(digits)) input.setAttribute('aria-valuenow', String(Number(digits)));
+        else input.removeAttribute('aria-valuenow');
+      });
+      const mode = window.__mode.takes;
+      if (mode === 'setter' || (mode === 'focused' && window.__focused[id])) window.__taken[id] = digits || null;
+      window.__focused[id] = false;
+      typed = '';
+    });
+    input.addEventListener('keydown', (event) => {
+      if (!/^\\d$/.test(event.key)) return;
+      typed += event.key;
+      const digits = typed;
+      if (window.__mode.takes !== 'never') window.__taken[id] = digits;
+      queueMicrotask(() => {
+        display.textContent = digits;
+        input.setAttribute('aria-valuenow', String(Number(digits)));
+      });
+    });
+    input.addEventListener('focusout', () => {
+      const whole = window.__taken.month !== null && window.__taken.year !== null;
+      const shown = field.querySelector('[data-automation-id="inputAlert"]');
+      if (whole || !window.__mode.alerts) { if (shown !== null) shown.remove(); return; }
+      if (shown === null) {
+        const alert = document.createElement('p');
+        alert.className = 'alert';
+        alert.setAttribute('data-automation-id', 'inputAlert');
+        alert.textContent = 'Error: Invalid Date';
+        field.append(alert);
+      }
+    });
+  }
+</script></body></html>`;
+
+/** The date declared as Workday's adapter declares it (Adapter.dateFor: its parts, its digits unless `digits` is false,
+ *  its alert under it). */
+function dateAdapter(digits = true): Adapter {
+  return {
+    dateFor: (control: Element) => {
+      if (control.id !== 'from') return null;
+      const doc = control.ownerDocument;
+      const part = (name: 'month' | 'year') => ({ part: name, input: doc.getElementById(name) as HTMLInputElement,
+        display: doc.getElementById(`${name}-display`) });
+      return { parts: [part('month'), part('year')], ...(digits ? { keys: 'digits' as const } : {}),
+        alert: () => doc.querySelector('#field-from [data-automation-id="inputAlert"]'), snapshot: 'synthetic Workday date' };
+    },
+  } as unknown as Adapter;
+}
+
+/** The page with its date script's mode, and the date field's target. */
+async function datePage(mode: { takes: 'focused' | 'setter' | 'keys' | 'never'; alerts?: boolean }, digits = true) {
+  const fixture = await loadFixture(document, DATE, { width: 800, height: 400 });
+  const doc = fixture.doc;
+  const view = fixture.view as unknown as { __events: { month: string[]; year: string[] };
+    __mode: { takes: string; alerts: boolean }; __taken: { month: string | null; year: string | null } };
+  view.__mode.takes = mode.takes;
+  view.__mode.alerts = mode.alerts ?? true;
+  const root = doc.getElementById('f')!;
+  const adapter = dateAdapter(digits);
+  const read = () => scan(root, adapter, { platform: 'workday' });
+  const target = () => {
+    const scanned = read();
+    return scanned.target(scanned.fields.find((field) => field.label === 'From')!.key)!;
+  };
+  return { doc, root, adapter, view, read, target };
+}
+
+describe('jr6 E3 item 15 (WD-23): a date drawn in parts, each part focused before its write, its alert read', () => {
+  it('sends each part focus and focusin before its write, untrusted, the page’s focus never moved', async () => {
+    const page = await datePage({ takes: 'focused' });
+    const active = page.doc.activeElement;
+    const log = logEvents(page.doc);
+    expect(await fillDateParts(page.target(), '2025-04', { adapter: page.adapter, root: page.root }))
+      .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    expect(page.view.__events.month).toEqual(['focus', 'focusin', 'input', 'change', 'focusout', 'blur']);
+    expect(page.view.__events.year).toEqual(['focus', 'focusin', 'input', 'change', 'focusout', 'blur']);
+    expect(page.view.__taken).toEqual({ month: '04', year: '2025' });
+    expect(page.doc.activeElement).toBe(active);
+    expect(untrustedViolations(log.events)).toEqual([]);
+    expect(page.doc.querySelector('[data-automation-id="inputAlert"]')).toBeNull();
+    expect(verifyAfterSettle(page.read(), page.target().field.key, { kind: 'date', iso: '2025-04' }))
+      .toEqual({ verification: 'verified', reason: 'ok' });
+  });
+
+  it('reads the date’s alert once it is left, and writes it again once with its digits: the alert goes', async () => {
+    const page = await datePage({ takes: 'keys' });
+    expect(await fillDateParts(page.target(), '2025-04', { adapter: page.adapter, root: page.root }))
+      .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+    // The setter's write, the date left, its alert read, then the digits into every part, each focused first.
+    expect(page.view.__events.month).toEqual(['focus', 'focusin', 'input', 'change', 'focusout', 'blur', 'focus',
+      'focusin', 'input', 'change', 'key:0', 'key:4', 'focusout', 'blur']);
+    expect(page.view.__events.year.filter((event) => event.startsWith('key:'))).toEqual(['key:2', 'key:0', 'key:2',
+      'key:5']);
+    expect(page.view.__taken).toEqual({ month: '04', year: '2025' });
+    expect(page.doc.querySelector('[data-automation-id="inputAlert"]')).toBeNull();
+  });
+
+  it('writes it again once only: an alert that stays is value-rejected-by-site, then and after the settle', async () => {
+    const page = await datePage({ takes: 'never' });
+    expect(await fillDateParts(page.target(), '2025-04', { adapter: page.adapter, root: page.root }))
+      .toEqual({ wrote: true, verification: 'mismatch', reason: 'value-rejected-by-site', needsUserAction: false });
+    expect(page.view.__events.month.filter((event) => event === 'key:0')).toHaveLength(1);
+    expect(page.view.__events.year.filter((event) => event.startsWith('key:'))).toHaveLength(4);
+    expect(page.doc.querySelector('[data-automation-id="inputAlert"]')).not.toBeNull();
+    expect(verifyAfterSettle(page.read(), page.target().field.key, { kind: 'date', iso: '2025-04' }))
+      .toEqual({ verification: 'mismatch', reason: 'value-rejected-by-site' });
+  });
+
+  it('types no digit its adapter does not declare: the alert stays, value-rejected-by-site', async () => {
+    const page = await datePage({ takes: 'keys' }, false);
+    expect(await fillDateParts(page.target(), '2025-04', { adapter: page.adapter, root: page.root }))
+      .toMatchObject({ wrote: true, verification: 'mismatch', reason: 'value-rejected-by-site' });
+    expect([...page.view.__events.month, ...page.view.__events.year].some((event) => event.startsWith('key:')))
+      .toBe(false);
+  });
+
+  it('types nothing where the page shows no alert once the date is left', async () => {
+    const page = await datePage({ takes: 'setter' });
+    expect(await fillDateParts(page.target(), '2025-04', { adapter: page.adapter, root: page.root }))
+      .toMatchObject({ wrote: true, verification: 'verified', reason: 'ok' });
+    expect([...page.view.__events.month, ...page.view.__events.year].some((event) => event.startsWith('key:')))
+      .toBe(false);
+  });
+
+  it('writes again with its digits a date that holds the planned value whose alert stays once it is left again',
+    async () => {
+      const page = await datePage({ takes: 'keys' });
+      // The date as the page shows it: whole (its displays and values), its state never taken, its alert under it.
+      for (const [id, digits] of [['month', '04'], ['year', '2025']] as const) {
+        const input = page.doc.getElementById(id) as HTMLInputElement;
+        input.value = digits;
+        input.setAttribute('aria-valuenow', String(Number(digits)));
+        page.doc.getElementById(`${id}-display`)!.textContent = digits;
+      }
+      const alert = page.doc.createElement('p');
+      alert.setAttribute('data-automation-id', 'inputAlert');
+      alert.textContent = 'Error: Invalid Date';
+      page.doc.getElementById('field-from')!.append(alert);
+      expect(await fillDateParts(page.target(), '2025-04', { adapter: page.adapter, root: page.root }))
+        .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
+      // The part holds its own value already: nothing given back, the digits typed after its focus.
+      expect(page.view.__events.month).toEqual(['focusout', 'blur', 'focus', 'focusin', 'key:0', 'key:4', 'focusout',
+        'blur']);
+      expect(page.doc.querySelector('[data-automation-id="inputAlert"]')).toBeNull();
+    });
 });

@@ -122,12 +122,20 @@ export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule
   }
 }
 
-/** True when the page marked the field invalid: aria-invalid="true" on the control or a group member. */
+/** True when the page marked the field invalid: aria-invalid="true" on the control or a group member (jr6 ENGINE E3: or,
+ *  for a date drawn in parts, the alert its page shows for it). */
 export function markedInvalid(target: FieldTarget): boolean {
   // s2 wd: a date drawn in parts is marked on its parts' controls too.
   const elements: Element[] = [target.control, ...target.members,
     ...(target.dateParts?.parts.map((part) => part.input) ?? [])];
-  return elements.some((el) => (el.getAttribute('aria-invalid') ?? '').trim().toLowerCase() === 'true');
+  if (elements.some((el) => (el.getAttribute('aria-invalid') ?? '').trim().toLowerCase() === 'true')) return true;
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 15, WD-23): or by the alert its page shows for it (DatePartsTarget.alert: Workday's
+  // "Invalid Date" under the date), a hook that throws showing none.
+  try {
+    return (target.dateParts?.alert?.() ?? null) !== null;
+  } catch {
+    return false;
+  }
 }
 
 /**

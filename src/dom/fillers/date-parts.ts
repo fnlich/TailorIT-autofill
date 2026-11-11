@@ -24,13 +24,21 @@
  *   was whole, by this filler before the fix) is left once more, so the page validates it whole again.
  *   The calendar is never used. Read back as planned: verified; some part shows another value: written, not verified;
  *   nothing taken: each part gets its own value back, and the person writes it (needs-your-click).
+ * jr6 ENGINE E3 (FIXPLAN §6.2 item 15, WD-23; Jobright 1.25.2's MyWorkDay date fill: per part focus, value, input and
+ * change, then the parts left, then Workday's field alert read): each part gets focus and focusin (untrusted, the page's
+ * focus never moved: events.ts fireFocus) right before each write of it, its setter's and its digits' alike. Once the
+ * date was left, its page's alert (DatePartsTarget.alert) is read: where it shows though every part shows its digits,
+ * the date is written again once with the declared digits, into every part (each given its own value back first, as a
+ * part the setter did not reach is), and left again; a date whose alert still shows then is written, not verified
+ * (value-rejected-by-site), and so is one whose adapter declares no digits. A date that held the planned value and was
+ * left once more for its alert is retried the same way where the alert stays.
  * Values stay in memory: nothing here logs or sends one.
  */
 import type { CurrentValue } from '../../core/types/field';
 import { quietWait } from '../settle';
 import { WIDGET_CAP_MS, WIDGET_QUIET_MS } from '../thresholds';
 import type { DatePart, DatePartsTarget, FieldTarget, FillOutcome } from '../types';
-import { fireChange, fireInput, fireKey, fireLeave, setValue, windowOf, type DigitKey } from './events';
+import { fireChange, fireFocus, fireInput, fireKey, fireLeave, setValue, windowOf, type DigitKey } from './events';
 import { assertKeyTarget, type NotSubmitContext } from './not-submit';
 import { done, mismatch, refused } from './outcome';
 
@@ -153,23 +161,35 @@ export async function fillDateParts(target: FieldTarget, iso: string, ctx: DateP
   const wanted = partValuesFor(parts, iso);
   if (wanted === null) return refused('format-unsupported');
   const shownBefore = parts.map(partShown);
+  const valuesBefore = parts.map((part) => part.input.value);
+  const texts = wanted.map((value, index) => pad(value, WIDTH[parts[index]!.part]));
   if (parts.every((_, index) => shownBefore[index] === wanted[index])) {
     // The fix of 2026-11-08: a date that holds the planned value but shows its page's alert (left before it was whole,
     // as this filler did before: snapshot5) is left once more, so the page validates it whole.
-    if (alertOf(dated) !== null) await leaveDate(parts, ctx);
-    return done(false, 'already-correct');
+    if (alertOf(dated) === null) return done(false, 'already-correct');
+    await leaveDate(parts, ctx);
+    // jr6 ENGINE E3 (FIXPLAN §6.2 item 15, WD-23): an alert that stays has the date written again once with its digits
+    // (where its adapter declares them), and left again.
+    if (alertOf(dated) === null || !dated.digits) return done(false, 'already-correct');
+    if (await typeDigits(parts, parts.map((_, index) => index), texts, valuesBefore, ctx)) await leaveDate(parts, ctx);
+    const whole = parts.every((part, index) => partShown(part) === wanted[index]);
+    if (whole && alertOf(dated) === null) return done(true, 'ok');
+    return mismatch(whole ? 'value-rejected-by-site' : 'verify-mismatch');
   }
-  const valuesBefore = parts.map((part) => part.input.value);
-  const texts = wanted.map((value, index) => pad(value, WIDTH[parts[index]!.part]));
   const pending = () => parts.flatMap((part, index) => (partShown(part) === wanted[index] ? [] : [index]));
 
   // Whether the page took something since the write began: a part shows another value than before it.
   const taken = () => parts.some((part, index) => partShown(part) !== shownBefore[index]);
-  // The value setter first, each part the date does not show yet, every part before the date is left.
-  for (const index of pending()) writePart(parts[index]!.input, texts[index]!);
+  // The value setter first, each part the date does not show yet, every part before the date is left. jr6 ENGINE E3
+  // (FIXPLAN §6.2 item 15, WD-23): each part focused before its write (focus and focusin, untrusted).
+  for (const index of pending()) {
+    fireFocus(parts[index]!.input);
+    writePart(parts[index]!.input, texts[index]!);
+  }
   const outcome = (): FillOutcome => {
     const left = pending();
-    if (left.length === 0) return done(true, 'ok');
+    // jr6 ENGINE E3 (WD-23): every part shows its digits, but the page shows the date's alert: it did not take it.
+    if (left.length === 0) return alertOf(dated) === null ? done(true, 'ok') : mismatch('value-rejected-by-site');
     // A part the page did not take gets its own value back: what it shows and what it holds agree again. v5 review
     // (T1): only while it still holds what this filler wrote; a value typed meanwhile (the person's) is never erased.
     for (const index of left) {
@@ -186,19 +206,30 @@ export async function fillDateParts(target: FieldTarget, iso: string, ctx: DateP
   // The parts are drawn: the date is left once, now, where the page took something (a date it took nothing in is not
   // validated by us).
   if (taken() && !await leaveDate(parts, ctx)) return outcome();
-  if (pending().length === 0 || !dated.digits) return outcome();
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 15, WD-23): left whole, the date's alert read: where it shows, every part is
+  // written again once with its digits.
+  const rejected = pending().length === 0 && taken() && alertOf(dated) !== null;
+  if ((pending().length === 0 && !rejected) || !dated.digits) return outcome();
+  const again = rejected ? parts.map((_, index) => index) : pending();
+  if (await typeDigits(parts, again, texts, valuesBefore, ctx) && taken()) await leaveDate(parts, ctx);
+  return outcome();
+}
 
-  // The digits its adapter declares, typed into each part the setter's write did not reach, that part's own value
-  // given back first, so the page's state and the part agree before the keys.
-  for (const index of pending()) {
+/** The digits its adapter declares, typed into each part of `indices` (the parts the setter's write did not reach, or,
+ *  jr6 ENGINE E3, every part of a date its page showed its alert for), each focused first (jr6 ENGINE E3, WD-23) and
+ *  given its own value back, so the page's state and the part agree before the keys; then the page's answer awaited.
+ *  False when the run's signal ended that wait. */
+async function typeDigits(parts: readonly DatePart[], indices: readonly number[], texts: readonly string[],
+  valuesBefore: readonly string[], ctx: DatePartsContext): Promise<boolean> {
+  for (const index of indices) {
     const input = parts[index]!.input;
     if (!assertKeyTarget(input, ctx).ok) continue;
     // v5 review (T1): a part holding neither its own value nor what this filler wrote was typed into meanwhile: the
     // person's, never given back nor typed over.
     if (input.value !== valuesBefore[index] && input.value !== texts[index]) continue;
+    fireFocus(input);
     if (input.value !== valuesBefore[index]) writePart(input, valuesBefore[index]!);
     for (const digit of texts[index]!) fireKey(input, digit as DigitKey);
   }
-  if (await answered(ctx) && taken()) await leaveDate(parts, ctx);
-  return outcome();
+  return answered(ctx);
 }
