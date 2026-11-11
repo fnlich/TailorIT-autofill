@@ -164,6 +164,18 @@ describe('the review panel', () => {
     expect(button(root, COPY.panel.fill)).not.toBeNull();
   });
 
+  it('says on Sign up & Autofill’s "?" to save a job-site password first while none is saved (the jr6 review, R5)', async () => {
+    for (const [signUp, said] of [['not-set', COPY.mainView.signUpNeedsPassword], ['set', COPY.mainView.signUpHelp]] as const) {
+      const worker = createFakeWorker();
+      worker.script.auth = authStatus({ signUp });
+      worker.script.pages.set(5, formPage({ wall: 'sign-in' }));
+      const root = await open(worker, 5);
+      expect(button(root, COPY.mainView.signUpFill)?.dataset.mainAction, signUp).toBe('sign-up');
+      expect(root.querySelector('.tia-toolbar [data-helptip] [role="tooltip"]')?.textContent, signUp).toBe(said);
+      unmountAll();
+    }
+  });
+
   it('takes no click on the main button until what it says has been shown CONTROL_SEEN_MS, then sends what it shows (the v4 review, L4)', async () => {
     const worker = createFakeWorker();
     worker.script.pages.set(5, formPage());

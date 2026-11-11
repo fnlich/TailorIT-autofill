@@ -167,6 +167,63 @@ describe('Sign-up Information’s fields (jr6)', () => {
     expect(root.querySelector<HTMLInputElement>('input[data-setting="modes.signIn.auto"]')!.disabled).toBe(false);
   });
 
+  it('reads the status again when the worker says it changed, and once more when a first read fails (the jr6 review, R15)', async () => {
+    const worker = createFakeWorker();
+    const statusNow = () => {
+      const { importAs: _importAs, reverted: _reverted, ...status } = worker.script.signup;
+      return status;
+    };
+    let failures = 1;
+    worker.on('signup/status', () => (failures-- > 0 ? { ok: false, error: 'unavailable' } : { ok: true, data: statusNow() }));
+    const { root } = await fields(worker);
+    // The first read failed: tried once more, and drawn.
+    expect(worker.sentOfType('signup/status')).toHaveLength(2);
+    expect(root.querySelector<HTMLElement>('[data-signup]')?.dataset.signupState).toBe('not-set');
+    // A password saved on another page (the options page, while this side panel stays open): the worker says so.
+    worker.script.signup = { ...worker.script.signup, set: true, email: 'morgan@example.test',
+      updatedAt: Date.UTC(2026, 10, 11), suggestedEmail: null };
+    await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'signup' }));
+    await settle();
+    expect(root.querySelector<HTMLElement>('[data-signup]')?.dataset.signupState).toBe('set');
+    // Another change (the connection) is not this card's.
+    await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'connection' }));
+    await settle();
+    expect(worker.sentOfType('signup/status')).toHaveLength(3);
+  });
+
+  it('masks what Show reveals again after a while, and at once when the page loses the focus (the jr6 review, sec-8)', async () => {
+    adoptPageStyles(document);
+    const worker = createFakeWorker();
+    const root = await mount(<SignUpFields platform={worker.platform} remaskMs={300} />);
+    await settle();
+    await click(root.querySelector('button[data-action="signup-generate"]'));
+    expect(passwordBox(root).type).toBe('text');
+    await vi.waitFor(() => expect(passwordBox(root).type).toBe('password'), { timeout: 3_000 });
+    // Shown again, then the person turns to another window (or the job site's page beside the side panel).
+    await click(root.querySelector('button[data-action="signup-show"]'));
+    expect(passwordBox(root).type).toBe('text');
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+    });
+    expect(passwordBox(root).type).toBe('password');
+  });
+
+  it('says beside Save that a saved password is not shown again, and what the worker did by itself (the jr6 review, R6, R12)', async () => {
+    const worker = createFakeWorker();
+    const { root } = await fields(worker);
+    expect(root.querySelector('[data-signup-once]')?.textContent).toBe(WORDS.notShownAgain);
+    expect(root.querySelector('[data-signup-notice]')).toBeNull();
+    unmountAll();
+    for (const notice of ['reverted', 'gone'] as const) {
+      const told = createFakeWorker();
+      told.script.signup = { ...told.script.signup, notice };
+      const { root: card } = await fields(told);
+      expect(card.querySelector<HTMLElement>('[data-signup-notice]')?.dataset.signupNotice).toBe(notice);
+      expect(card.querySelector('[data-signup-notice]')?.textContent).toBe(WORDS.notices[notice]);
+      unmountAll();
+    }
+  });
+
   it('is drawn in Chrome’s side panel’s Settings view, right after Autofill Information, where the page gives it', async () => {
     adoptPageStyles(document);
     const worker = createFakeWorker();

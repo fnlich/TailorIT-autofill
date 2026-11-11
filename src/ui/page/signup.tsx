@@ -5,12 +5,13 @@
  * Autofill types into the job sites' own sign-in and create-account forms. Drawn on the extension's own pages alone: the
  * options page's card and Chrome's side panel's Settings view (given through ui/page/signup-slot.ts). Never in the
  * sidebar on the page, whose page process hears what is typed: the sidebar shows whether one is saved and links here.
- * - The email box starts with the one saved, else the profile's (signup/status's suggestedEmail: the profile's as the
- *   worker holds it, else the account's), else the account's as this page read it (AuthStatus), and can be changed.
+ * - The email box starts with the one saved, else the profile's (signup/status's suggestedEmail: the TailorIT profile's,
+ *   read for it by the worker, else the account's), else the account's as this page read it (AuthStatus), and can be
+ *   changed.
  * - The password box is empty and masked: a saved password is never sent to any page, this one included (it is
  *   decrypted in the worker alone, for the moment a job site's form is filled), so "Saved" shows in its place. Show and
  *   Hide reveal what is typed here, or the one "Generate strong password" made (20 characters, crypto.getRandomValues:
- *   core/signup-password.ts), which shows at once so the person can note it.
+ *   core/signup-password.ts), which shows at once so the person can note it, and is masked again (the jr6 review below).
  * - The checklist follows the rules as the password is typed (core/signup-password.ts); Save is offered once every one
  *   is met (or, with a password saved, for a changed email alone, the password kept). The worker checks them again.
  * - Delete asks first (accounts made with the password then need the site's "Forgot password"); Sign-in on Auto goes
@@ -18,15 +19,24 @@
  * - "Import from TailorIT", while none is saved here and the connection may read job-site sign-ins: once.
  * Nothing here logs, keeps or copies the password: it lives in this component's state until Save sends it to the worker
  * (signup/save) and the box is emptied.
+ * The jr6 review:
+ * - R15: the status is read again whenever the worker says it changed (panel/changed {what: 'signup'}, on a port of the
+ *   card's own: a save, a delete or an import on another page, a password that could no longer be read), and a first
+ *   read that fails is tried once more.
+ * - sec-8: what Show reveals (a generated password included) is masked again REMASK_MS later, and at once when the page
+ *   is hidden or loses the focus (a side panel stays open across tabs and screen shares).
+ * - R6: that a saved password is not shown again is said beside Save; R12: what the worker did by itself (`notice`).
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import {
   generateSignupPassword, SIGNUP_PASSWORD_MAX, SIGNUP_PASSWORD_RULES, signupPasswordChecks, signupPasswordValid,
   type RandomBytes,
 } from '../../core/signup-password';
+import { PanelPortMessageSchema } from '../../messaging/page-schemas';
 import type { SignupStatus } from '../../messaging/schemas';
 import { Icon } from '../brand/Icon';
 import { adoptStyles } from '../report/styles';
+import { afterFrames, animationFrames } from './frames';
 import { request } from './request';
 import { SIGNUP_COPY as WORDS } from './signup-copy';
 import type { SignUpFieldsProps } from './signup-slot';
@@ -48,6 +58,9 @@ export const SIGNUP_CSS = `
 /** The browser's own randomness (an extension page's crypto.getRandomValues). */
 const browserRandom: RandomBytes = (count) => globalThis.crypto.getRandomValues(new Uint8Array(count));
 
+/** The jr6 review (sec-8): how long what Show reveals stays shown. */
+export const REMASK_MS = 30_000;
+
 /** An email the box may save; the worker checks it again. */
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -59,14 +72,19 @@ const whenOf = (time: number) => new Date(time).toLocaleString(undefined, { date
 /** The fields as the side panel's page gives them to the Settings view (ui/page/signup-slot.ts). */
 export const renderSignUpFields = (props: SignUpFieldsProps) => <SignUpFields {...props} />;
 
-export function SignUpFields({ platform, onChanged, accountEmail = null, random = browserRandom }: SignUpFieldsProps & {
-  /** Tests pass their own bytes; the pages use the browser's. */
-  random?: RandomBytes;
-}) {
+export function SignUpFields({ platform, onChanged, accountEmail = null, random = browserRandom, remaskMs = REMASK_MS }:
+  SignUpFieldsProps & {
+    /** Tests pass their own bytes; the pages use the browser's. */
+    random?: RandomBytes;
+    /** Tests pass a shorter one (REMASK_MS). */
+    remaskMs?: number;
+  }) {
   const id = useId();
   const box = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<SignupStatus | null>(null);
   const [failed, setFailed] = useState(false);
+  /** The jr6 review (R15): bumped each time the worker says Sign-up Information changed: the status is read again. */
+  const [changes, setChanges] = useState(0);
   /** What the person typed in the email box (null: untouched, the saved or suggested one shows). */
   const [typedEmail, setTypedEmail] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -80,17 +98,68 @@ export function SignUpFields({ platform, onChanged, accountEmail = null, random 
     if (root !== undefined) adoptStyles(root, SIGNUP_CSS);
   }, []);
 
+  // The status, read at first and again on each change the worker tells of (R15): a read that fails is tried once more.
   useEffect(() => {
     let live = true;
-    void request(platform, { v: 1, type: 'signup/status' }).then((answer) => {
-      if (!live) return;
-      if (answer.ok) setStatus(answer.data);
-      else setFailed(true);
-    });
+    const read = (again: boolean) => {
+      void request(platform, { v: 1, type: 'signup/status' }).then((answer) => {
+        if (!live) return;
+        if (answer.ok) {
+          setStatus(answer.data);
+          setFailed(false);
+        } else if (again) read(false);
+        else setFailed(true);
+      });
+    };
+    read(true);
     return () => {
       live = false;
     };
+  }, [platform, changes]);
+
+  // The jr6 review (R15): the worker's word that Sign-up Information changed (panel/changed {what: 'signup'}).
+  useEffect(() => {
+    let port: ReturnType<typeof platform.runtime.connect>;
+    try {
+      port = platform.runtime.connect('panel');
+    } catch {
+      return undefined;
+    }
+    const stop = port.onMessage((raw) => {
+      const parsed = PanelPortMessageSchema.safeParse(raw);
+      if (parsed.success && parsed.data.type === 'panel/changed' && parsed.data.what === 'signup') {
+        setChanges((count) => count + 1);
+      }
+    });
+    return () => {
+      stop();
+      try {
+        port.disconnect();
+      } catch {
+        // Gone already.
+      }
+    };
   }, [platform]);
+
+  // The jr6 review (sec-8): what Show reveals is masked again after remaskMs, or once the page is hidden or blurred.
+  useEffect(() => {
+    if (!shown) return undefined;
+    const doc = box.current?.ownerDocument ?? null;
+    const view = doc?.defaultView ?? null;
+    const mask = () => setShown(false);
+    const onVisibility = () => {
+      if (doc?.visibilityState !== 'visible') mask();
+    };
+    // The pages' one way to wait (ui/page/frames.ts): frames run only while the page shows, and a hidden one is masked.
+    const stop = afterFrames(remaskMs, mask, () => Date.now(), animationFrames);
+    view?.addEventListener('blur', mask);
+    doc?.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      view?.removeEventListener('blur', mask);
+      doc?.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [shown, remaskMs]);
 
   const email = typedEmail ?? status?.email ?? status?.suggestedEmail ?? (status === null ? null : accountEmail) ?? '';
   const checks = signupPasswordChecks(password);
@@ -160,6 +229,10 @@ export function SignUpFields({ platform, onChanged, accountEmail = null, random 
         {status === null ? '' : status.set && status.updatedAt !== null ? WORDS.setOn(whenOf(status.updatedAt))
           : WORDS.notSet}
       </p>
+      {/* The jr6 review (R12): what the worker did by itself since the person last saved or deleted one. */}
+      {status?.notice !== undefined && (
+        <p className="tia-note" role="status" data-signup-notice={status.notice}>{WORDS.notices[status.notice]}</p>
+      )}
       <div className="tia-docfield">
         <label className="tia-docfield__label" htmlFor={`${id}-email`}>{WORDS.email}</label>
         <input id={`${id}-email`} className="tia-input" type="email" autoComplete="off" spellCheck={false}
@@ -222,17 +295,21 @@ export function SignUpFields({ platform, onChanged, accountEmail = null, random 
           </div>
         </div>
       ) : (
-        <div className="tia-signup__row">
-          <button type="button" className="tia-button tia-button--primary" data-action="signup-save" disabled={!canSave}
-            onClick={() => void save()}>
-            {busy && <Icon name="spinner" size={16} className="tia-icon tia-spin" />}
-            {busy ? WORDS.saving : WORDS.save}
-          </button>
-          {status?.set === true && (
-            <button type="button" className="tia-button" data-action="signup-delete" disabled={busy}
-              onClick={() => setConfirming(true)}>{WORDS.remove}</button>
-          )}
-        </div>
+        <>
+          {/* The jr6 review (R6): said beside Save, not only in the card's "?". */}
+          <p className="tia-note" data-signup-once="">{WORDS.notShownAgain}</p>
+          <div className="tia-signup__row">
+            <button type="button" className="tia-button tia-button--primary" data-action="signup-save" disabled={!canSave}
+              onClick={() => void save()}>
+              {busy && <Icon name="spinner" size={16} className="tia-icon tia-spin" />}
+              {busy ? WORDS.saving : WORDS.save}
+            </button>
+            {status?.set === true && (
+              <button type="button" className="tia-button" data-action="signup-delete" disabled={busy}
+                onClick={() => setConfirming(true)}>{WORDS.remove}</button>
+            )}
+          </div>
+        </>
       )}
       {note !== null && (
         <p className={note.error ? 'tia-error' : 'tia-note'} role="status" data-signup-note="">{note.text}</p>

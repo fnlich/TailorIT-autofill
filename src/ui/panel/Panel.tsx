@@ -698,7 +698,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             </p>
           )}
           {offersFill && tabId !== null && (
-            <MainButton tabId={tabId} meaning={meaning} working={busy || working} clock={seenClock} onRun={start} />
+            <MainButton tabId={tabId} meaning={meaning} working={busy || working} clock={seenClock} onRun={start}
+              saved={auth.status.signUp !== 'not-set'} />
           )}
           {/* v5 p2-fill review (L5): the posting's own Apply could not be pressed: why, in one line. */}
           {tabId !== null && page?.support === 'no-form' && page.entryRefused === true && (
@@ -815,9 +816,10 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
 
 /** The main button (v4 ui): big and teal, "Autofill" or "Sign up & Autofill" (its "?" beside it), spinning while a run
  *  works. The v4 review (L4): it takes no click until what it means (what it sends, to which tab) has been shown
- *  CONTROL_SEEN_MS (seen.ts), disabled meanwhile; a click then sends the message of the meaning it shows. */
-function MainButton({ tabId, meaning, working, clock, onRun }: { tabId: number; meaning: MainMeaning; working: boolean;
-  clock: SeenClock; onRun(message: RunMessage): void }) {
+ *  CONTROL_SEEN_MS (seen.ts), disabled meanwhile; a click then sends the message of the meaning it shows. The jr6 review
+ *  (R5): with no job-site password saved (`saved` false), Sign up & Autofill's "?" says to save one first. */
+function MainButton({ tabId, meaning, working, clock, onRun, saved }: { tabId: number; meaning: MainMeaning;
+  working: boolean; clock: SeenClock; onRun(message: RunMessage): void; saved: boolean }) {
   const seen = useShownFor(`${tabId}|${meaning}`, clock);
   // v5 p2-fill: Open Application on a posting whose site offers its own Apply.
   const label = meaning === 'sign-up' ? COPY.mainView.signUpFill : meaning === 'open' ? COPY.mainView.openApplication
@@ -833,7 +835,8 @@ function MainButton({ tabId, meaning, working, clock, onRun }: { tabId: number; 
         {label}
       </button>
       {meaning === 'sign-up' && (
-        <HelpTip text={COPY.mainView.signUpHelp} topic={COPY.mainView.signUpFill} className="tia-toolbar__tip" />
+        <HelpTip text={saved ? COPY.mainView.signUpHelp : COPY.mainView.signUpNeedsPassword}
+          topic={COPY.mainView.signUpFill} className="tia-toolbar__tip" />
       )}
       {meaning === 'open' && (
         <HelpTip text={COPY.mainView.openApplicationHelp} topic={COPY.mainView.openApplication}
