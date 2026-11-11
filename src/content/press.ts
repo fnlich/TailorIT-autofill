@@ -262,9 +262,10 @@ export const ENTRY_FOLLOW_MS = 8_000; // jr6 apply F2
  *  The runtime turns it into the agent's EntryAnswer (runtime.ts agentAnswerOf) and into the panel's reason. */
 export type EntryResult = EntryAnswer & { followed?: false; refusal?: EntryDoorRefusal };
 /** How the runtime hears of each press pressEntry makes, as it is made (the first one's X8 rule held for each): the
- *  element pressed, and (item 6) the dialogs a person could see just before the entry's first press (a second step is
- *  only ever one shown after it: adapters/second-step.ts). */
-export type OnEntryPress = (pressed: HTMLElement, before: ReadonlySet<Element>) => void;
+ *  element pressed, (item 6) the dialogs a person could see just before the entry's first press (a second step is
+ *  only ever one shown after it: adapters/second-step.ts), and whether it was made on a choice of how to apply the
+ *  adapter reads (its Apply Manually: what follows it may take a moment, the choice still shown meanwhile). */
+export type OnEntryPress = (pressed: HTMLElement, before: ReadonlySet<Element>, onChoice: boolean) => void;
 // ── end jr6 apply F2 items 3 and 4 ──
 
 /** What blocked an entry, by the pause the page shows. */
@@ -363,7 +364,7 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
     }
   });
   /** One press of an entry control none pressed before, through the door: the adapter that pressed, or null. */
-  const pressOne = (): Adapter | null => {
+  const pressOne = (onChoice: boolean): Adapter | null => {
     for (const adapter of own) {
       let offered: Element | null = null;
       try {
@@ -384,7 +385,7 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
         pressed.add(clicked);
         // Told at once, before the entry waits on what the press brings (round 3 of the v3 Phase 6/7b review, X8);
         // jr6 apply F2: each press, with the element pressed (the runtime reads where a link goes).
-        onPress?.(clicked, before);
+        onPress?.(clicked, before, onChoice);
         return adapter;
       }
     }
@@ -396,7 +397,7 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
     if (pageChallenged(doc)) return { outcome: 'blocked', block: 'captcha' };
     const pause = detectPause(doc, null, own[0]!);
     if (pause !== null && pause.kind !== 'entry-choice') return { outcome: 'blocked', block: blockOf(pause.kind) };
-    const by = pressOne();
+    const by = pressOne(pause?.kind === 'entry-choice');
     if (by !== null) {
       // A press on the choice itself is the entry's last: only one made before the choice shows is followed.
       allowed = pause?.kind === 'entry-choice' ? pressed.size : pressesOf(by);
@@ -413,7 +414,7 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
     if (clicked === null) return false;
     pressed.add(clicked);
     allowed = pressed.size;
-    onPress?.(clicked, before);
+    onPress?.(clicked, before, false);
     return true;
   };
   /** After a press: the control the adapter offers on its choice, while it allows one more (pressEntry's doc). */
@@ -430,7 +431,7 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
       // the generic second step: pressed through its own door, the last press of the entry.
       if (pause === null) return secondStep() ? 'pressed' : 'wait';
       if (pause.kind !== 'entry-choice') return { outcome: 'blocked', block: blockOf(pause.kind) };
-      if (pressOne() !== null) return 'pressed';
+      if (pressOne(true) !== null) return 'pressed';
       // jr6 apply F2 items 3 and 4: the choice's control refused by where it goes: the first press stands, unfollowed.
       return refused !== null ? { outcome: 'pressed', followed: false } : 'wait';
     };

@@ -1859,6 +1859,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    *  press. */
   interface EntryFacts {
     before: ReadonlySet<Element> | null;
+    /** The last press was made on a choice of how to apply (its Apply Manually). */
+    onChoice: boolean;
     presses: number;
     followed: boolean;
     waited: boolean;
@@ -1981,8 +1983,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   async function runEntry(source: EntrySource, at: URL, signal: AbortSignal, answer: (said: EntryAnswer) => void):
     Promise<void> {
     const person = source.by === 'person';
-    const facts: EntryFacts = { before: null, presses: 0, followed: true, waited: false, found: false, wall: false,
-      choice: false };
+    const facts: EntryFacts = { before: null, onChoice: false, presses: 0, followed: true, waited: false, found: false,
+      wall: false, choice: false };
     const end = (refused: EntryRefusal | null): void => {
       const cancelled = signal.aborted && !stopped;
       log('content.entry', { agent: !person, presses: facts.presses, followed: facts.followed, waited: facts.waited,
@@ -2013,10 +2015,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       end('none');
       return;
     }
-    const result: EntryResult = await pressEntry(doc, all, signal, entryWaitOf(all), undefined, (pressed, before) => {
-      facts.before ??= before;
-      entryPressed(source, facts, pressed, false);
-    }, { address: at });
+    const result: EntryResult = await pressEntry(doc, all, signal, entryWaitOf(all), undefined,
+      (pressed, before, onChoice) => {
+        facts.before ??= before;
+        facts.onChoice = onChoice;
+        entryPressed(source, facts, pressed, false);
+      }, { address: at });
     if (stopped) return;
     if (result.outcome === 'pressed') {
       facts.followed = result.followed !== false;
@@ -2126,12 +2130,17 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       } catch {
         pause = null;
       }
-      if (pause !== null) return { pause };
+      // The choice our last press was made on, still shown while the page takes it (Workday's Apply Manually): what it
+      // brings is waited for.
+      if (pause !== null && !(pause.kind === 'entry-choice' && facts.onChoice)) return { pause };
       // Item 6 (D7, AF-11): no choice of the adapter's shows, but a dialog the press opened offers the generic second
       // step: pressed (press.ts pressSecondStep, its own door), the entry's last press; then watched on.
-      if (url !== null && facts.before !== null && facts.presses < ENTRY_MAX_PRESSES) {
-        const step = pressSecondStep(doc, adapters(url), facts.before, url);
-        if (step !== null) entryPressed(source, facts, step, true);
+      if (pause === null && url !== null && facts.before !== null && facts.presses < ENTRY_MAX_PRESSES) {
+        const step = pressSecondStep(doc, ownAdapters(adapters(url)), facts.before, url);
+        if (step !== null) {
+          facts.onChoice = false;
+          entryPressed(source, facts, step, true);
+        }
       }
       return null;
     };

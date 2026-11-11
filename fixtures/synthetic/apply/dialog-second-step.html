@@ -1,0 +1,74 @@
+<!doctype html>
+<!-- TailorIT synthetic fixture (jr6 apply F2, APPLYPLAN §5 F2 item 6 and e2e/specs/68-apply-in-place.spec.ts): a job
+     posting, served at a Lever posting's address, whose Apply opens a dialog asking how to apply (the shape Jobright
+     answers on Dayforce, Paycom and YC: apply-flow.md AF-11), with "Apply manually" (the generic second step), and
+     beside it "Sign in" and "Autofill with Resume", which are never pressed. "Apply manually" draws the application
+     form in place, at the same address. The Apply is a link to the posting's own /apply, which the page's script keeps
+     from loading. The form is Lever's markup. Every name and word here is made up; nothing of a capture. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Synthetic Co - Site Reliability Engineer</title>
+  <style>
+    body { font: 14px/1.4 sans-serif; margin: 0; }
+    .posting-page { padding: 16px 24px; max-width: 760px; }
+    .postings-btn { display: inline-block; padding: 8px 16px; border: 1px solid #333; border-radius: 4px; }
+    dialog { padding: 16px; border: 1px solid #333; }
+    dialog button { display: block; margin: 8px 0; padding: 6px 12px; }
+    .application-question { list-style: none; margin: 10px 0; }
+    .application-label { font-weight: bold; }
+    .application-field input { width: 320px; padding: 4px; }
+  </style>
+</head>
+<body>
+  <div class="posting-page">
+    <h2>Site Reliability Engineer</h2>
+    <div class="section page-centered"><p>Keep our services up, measure what matters and make the next outage
+      shorter than the last.</p></div>
+    <a class="postings-btn" id="apply"
+      href="https://jobs.lever.co/tailorit-fixture/5d4c3b2a-1f2e-4a3b-9c8d-7e6f5a4b3c2d/apply">Apply for this job</a>
+    <div id="form-slot"></div>
+  </div>
+  <dialog id="how-to-apply" aria-labelledby="how-title">
+    <h3 id="how-title">How would you like to apply?</h3>
+    <button type="button" id="autofill-resume">Autofill with Resume</button>
+    <button type="button" id="apply-manually">Apply manually</button>
+    <button type="button" id="sign-in">Sign in</button>
+  </dialog>
+  <template id="form-template">
+    <form id="application-form" action="/__submitted" method="post">
+      <div class="section page-centered application-form">
+        <h4>Submit your application</h4>
+        <ul>
+          <li class="application-question"><div class="application-label">Full name</div>
+            <div class="application-field"><input type="text" name="name" autocomplete="name"></div></li>
+          <li class="application-question"><div class="application-label">Email</div>
+            <div class="application-field"><input type="email" name="email" autocomplete="email"></div></li>
+        </ul>
+      </div>
+      <button id="btn-submit" type="submit">Submit application</button>
+    </form>
+  </template>
+  <script>
+    (function () {
+      var dialog = document.getElementById('how-to-apply');
+      window.pressed = { apply: 0, manually: 0, signIn: 0, autofill: 0 };
+      document.getElementById('apply').addEventListener('click', function (event) {
+        event.preventDefault();
+        window.pressed.apply += 1;
+        setTimeout(function () { dialog.setAttribute('open', ''); }, 300);
+      });
+      document.getElementById('apply-manually').addEventListener('click', function () {
+        window.pressed.manually += 1;
+        dialog.removeAttribute('open');
+        setTimeout(function () {
+          if (document.getElementById('application-form') !== null) return;
+          document.getElementById('form-slot').append(document.getElementById('form-template').content.cloneNode(true));
+        }, 300);
+      });
+      document.getElementById('sign-in').addEventListener('click', function () { window.pressed.signIn += 1; });
+      document.getElementById('autofill-resume').addEventListener('click', function () { window.pressed.autofill += 1; });
+    })();
+  </script>
+</body>
+</html>
