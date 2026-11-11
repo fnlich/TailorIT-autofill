@@ -83,8 +83,9 @@ describe('CATEGORY_KINDS (§8.2)', () => {
       && c !== 'consent.signatureDate')) {
       expect(CATEGORY_KINDS[category], category).toEqual(['checkbox', 'radio']);
     }
-    // jr6 RULES (JV-1, JZ-15, workday-new-1): a signature's date is typed or set in a date control.
-    expect(CATEGORY_KINDS['consent.signatureDate']).toEqual(['text', 'date']);
+    // jr6 RULES (JV-1, JZ-15, workday-new-1): a signature's date is typed or set in a date control; jr6 fix (RULES-R11):
+    // or chosen part by part (iCIMS's IForm dates).
+    expect(CATEGORY_KINDS['consent.signatureDate']).toEqual(['text', 'date', 'select', 'combobox']);
   });
 
   it('never allows typed text for a self-identification or a yes/no legal question', () => {

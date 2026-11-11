@@ -191,8 +191,10 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   // language chosen; an employee number typed; a job's or a school's place as its address parts are; an address
   // search's "Enter manually", on iCIMS's dropdown (never a remote search: the label contract of FIXPLAN §3.2); a
   // county typed or chosen; a privacy policy's residence, a place a question asks only of its residents, chosen; a
-  // referral by an employee, yes or no.
-  'consent.signatureDate': ['text', 'date'], 'languages.formLanguage': CHOICE, 'identity.employeeId': LINE,
+  // referral by an employee, yes or no. jr6 fix (RULES-R11): a signature's date drawn in parts takes its month and day
+  // from lists (iCIMS's IForm dates; labelRules reads a list only as one part of the date).
+  'consent.signatureDate': ['text', 'date', 'select', 'combobox'], 'languages.formLanguage': CHOICE,
+  'identity.employeeId': LINE,
   'experience.city': LOOKUP, 'experience.region': LOOKUP, 'experience.country': LOOKUP, 'education.city': LOOKUP,
   'education.region': LOOKUP, 'education.country': LOOKUP, 'address.lookup': ['select', 'combobox'],
   'address.county': ['text', 'select', 'combobox'], 'location.policyResidence': CHOICE,

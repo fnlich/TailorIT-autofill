@@ -1054,8 +1054,11 @@ const ENTRY_PLACE: Readonly<Record<EntryKind | 'home', { city: FieldCategory; re
 
 /** JV-1 (Jobvite's "Today's Date", read with the adapter's "signature" after it), workday-new-1 (Workday's Self
  *  Identify date, "Date signed" by the label contract of FIXPLAN §3.2), JZ-15 (JazzHR's disability signature date, no
- *  capture): the date that goes with a signature. */
-const SIGNATURE_DATE = /^(?:todays?\s+date|current\s+date|date\s+signed|signature\s+date|date\s+of\s+signature|signed\s+on|date)\s+signature$|^(?:todays?\s+date|date\s+signed|signature\s+date|date\s+of\s+signature|date\s+signed\s+on)$/;
+ *  capture): the date that goes with a signature. jr6 fix (RULES-R11, IC-R1: iCIMS's IForm dates drawn in parts, "<base
+ *  label> month/day/year" by the label contract of FIXPLAN §3.2: Edgewater's and Sentinel's "Today's Date month",
+ *  fixtures edgewater-self-id-veteran.frame-2, jr6-sentinel-iform-selfid.frame-2; NYU's "Date" with the adapter's
+ *  "signature" before the part, nyu-self-id-disability.frame-2): or one part of it (captured). */
+const SIGNATURE_DATE = /^(?:todays?\s+date|current\s+date|date\s+signed|signature\s+date|date\s+of\s+signature|signed\s+on|date)\s+signature(?:\s+(month|day|year))?$|^(?:todays?\s+date|date\s+signed|signature\s+date|date\s+of\s+signature|date\s+signed\s+on)(?:\s+(month|day|year))?$/;
 /** workday-new-1 (Workday's disability form "Language", "Language of this form" by the label contract): the language
  *  the form itself is in, never the person's languages. */
 const FORM_LANGUAGE = /^(?:the\s+)?language\s+of\s+(?:this|the)\s+(?:form|document|survey|questionnaire)$|^(?:form|document)\s+language$/;
@@ -1187,7 +1190,9 @@ interface Jr6Rule {
 
 /** The jr6 rules, tried in order before §8.3's list, each on a kind its category holds. */
 const JR6_RULES: readonly Jr6Rule[] = [
-  { id: 'label.signature-date', re: SIGNATURE_DATE, category: 'consent.signatureDate', strength: 'strong' },
+  // jr6 fix (RULES-R11): a list takes one part of the date (its month or its day), never the whole date.
+  { id: 'label.signature-date', re: SIGNATURE_DATE, strength: 'strong', category: (c, found) => ((c.kind === 'select'
+    || c.kind === 'combobox') && (found[1] ?? found[2]) === undefined ? null : 'consent.signatureDate') },
   { id: 'label.form-language', re: FORM_LANGUAGE, category: 'languages.formLanguage', strength: 'strong' },
   { id: 'label.employee-id', re: EMPLOYEE_ID, category: 'identity.employeeId', strength: 'strong' },
   { id: 'label.county', re: COUNTY, unless: YES_NO_QUESTION, category: 'address.county', strength: 'normal' },

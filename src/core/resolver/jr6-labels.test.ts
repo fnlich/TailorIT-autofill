@@ -783,6 +783,18 @@ const LABELS_FIX: Array<[string, Case, FieldCategory | null, string | null]> = [
   ['R13', { label: 'County Name', kind: 'text' }, 'address.county', 'label.county'],
   ['R13', { label: 'County or Parish', kind: 'select' }, 'address.county', 'label.county'],
   ['R13', { label: 'Home County', kind: 'combobox' }, 'address.county', 'label.county'],
+  // RULES-R11, IC-R1: iCIMS's IForm signature date in parts ("<base label> month/day/year"; NYU's bare "Date" with the
+  // adapter's "signature" before the part).
+  ['R11', { label: 'Today\'s Date month', kind: 'select', options: ['Month', 'January', 'February', 'March', 'April', 'May',
+    'June', 'July', 'August', 'September', 'October', 'November', 'December'] }, 'consent.signatureDate',
+    'label.signature-date'],
+  ['R11', { label: 'Today\'s Date day', kind: 'select', options: ['Day', '1', '2', '3'] }, 'consent.signatureDate',
+    'label.signature-date'],
+  ['R11', { label: 'Today\'s Date year', kind: 'text' }, 'consent.signatureDate', 'label.signature-date'],
+  ['R11', { label: 'Date signature month', kind: 'select', options: ['Month', 'January', 'February'] },
+    'consent.signatureDate', 'label.signature-date'],
+  // A whole date on a list stays no signature date (item 11's near miss).
+  ['R11', { label: 'Today\'s Date', kind: 'select' }, null, null],
 ];
 
 /** [issue id, the field, what it must not be read as]: the fixes' near misses. */

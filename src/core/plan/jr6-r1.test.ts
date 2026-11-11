@@ -243,6 +243,33 @@ describe('11 (JV-1, JZ-15): the date beside a signature is today', () => {
     const held = specOf('Date signed', 'date', { required: true, current: { kind: 'text', text: '2026-10-01' } });
     expect(planned([held], held)).toMatchObject({ write: undefined, row: { reason: 'prefill-kept' } });
   });
+
+  // jr6 fix (RULES-R11, IC-R1): iCIMS's IForm signature date drawn in parts (Edgewater's and Sentinel's "Today's Date
+  // month/day/year"; NYU's bare "Date" with the adapter's "signature" before the part) is today, part by part, on the
+  // signature's terms, never asked of an AI.
+  it('sets today’s month, day and year in a date drawn in parts, on the signature’s terms', () => {
+    const MONTHS = ['Month', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
+      'October', 'November', 'December'];
+    const DAYS = ['Day', ...Array.from({ length: 31 }, (_, at) => String(at + 1))];
+    for (const base of ['Today\'s Date', 'Date signature']) {
+      const month = specOf(`${base} month`, 'select', { optionLabels: MONTHS, required: true });
+      const day = specOf(`${base} day`, 'select', { optionLabels: DAYS, required: true });
+      const year = specOf(`${base} year`, 'text', { required: true, constraints: { maxLength: 4 } });
+      const out = planOf(inOrder([month, day, year]));
+      expect(written(fieldOf(out, month).write), base).toBe(MONTHS[NOW.m]);
+      expect(written(fieldOf(out, day).write), base).toBe(String(NOW.d));
+      expect(written(fieldOf(out, year).write), base).toBe(String(NOW.y));
+      for (const spec of [month, day, year]) {
+        expect(fieldOf(out, spec).row.category, base).toBe('consent.signatureDate');
+        expect(fieldOf(out, spec).write?.origin, base).toEqual({ provenance: 'rule', ruleId: 'consent.signature-date' });
+      }
+      expect([...out.ask?.answers ?? [], ...out.ask?.classify ?? []], base).toEqual([]);
+      // Required only, with the signature not pre-approved: an optional date is left.
+      const optional = specOf(`${base} month`, 'select', { optionLabels: MONTHS });
+      expect(planned([optional], optional, { settings: CAUTIOUS_SETTINGS }), base).toMatchObject({ write: undefined,
+        row: { reason: 'consent-optional-unticked' } });
+    }
+  });
 });
 
 describe('12 (JV-2): a veteran group labelled "Choose One" takes the profile’s veteran answer', () => {
