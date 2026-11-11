@@ -20,6 +20,7 @@ import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { pressEntry, stepButtonsOf } from '../../content/press';
 import { planFrame } from '../../core/plan/frame';
 import type { RepeatableRequest } from '../../core/steps/blocks';
+import { stepSignature } from '../../core/steps/signature';
 import type { FieldSpec } from '../../core/types/field';
 import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { assertNotSubmit } from '../../dom/fillers';
@@ -627,4 +628,143 @@ describe('jr6 oracle-new-2, O7: the timeline’s open editor is a repeatable blo
         .filter((field) => !['City', 'Country'].includes(field.label));
       expect(written.map((field) => field.label)).toEqual([]);
     });
+});
+
+// ── O8: a flow of several sections ────────────────────────────────────────────────────────────────────────────────
+
+/** hjf-apply-section made a middle section of a flow of several (synthetic: no snapshot shows one, owner question 23):
+ *  its Submit becomes a Next drawn as the gate draws its own (title, aria-label and words "Next"; the Submit's modifier
+ *  gone), and, given `current`, the flow's navigation train (its a.apply-flow-navigation-train__block-link items) marks
+ *  that item aria-current="step", as Jobright 1.25.2's getOracleCloudStepState reads a flow's progress. */
+function asMiddleSection(doc: Document, current?: number): HTMLElement {
+  const next = doc.querySelector<HTMLElement>('button.apply-flow-pagination__submit-button')!;
+  next.classList.remove('apply-flow-pagination__submit-button');
+  next.setAttribute('title', 'Next');
+  next.setAttribute('aria-label', 'Next');
+  next.textContent = 'Next';
+  if (current !== undefined) mark(doc, current);
+  return next;
+}
+
+/** The navigation train's item `at` marked as the current step (and no other); its words. */
+function mark(doc: Document, at: number): string {
+  const items = Array.from(doc.querySelectorAll('a.apply-flow-navigation-train__block-link'));
+  for (const item of items) item.removeAttribute('aria-current');
+  items[at]!.setAttribute('aria-current', 'step');
+  return items[at]!.textContent!.replace(/\s+/g, ' ').trim();
+}
+
+const signatureOf = (doc: Document) => stepSignature(oracleAdapter.stepSignature!(doc));
+
+describe('jr6 O8: a section’s Next, its finality and its step signature (a synthetic section page)', () => {
+  it.each([1, 2])('section %i of several: its Next is the step’s, the step is not the last', async (n) => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/${n}`);
+    const next = asMiddleSection(doc);
+    const root = oracleAdapter.detect(doc)!.formRoot;
+    expect(oracleAdapter.nextButton!(root)).toBe(next);
+    expect(oracleAdapter.submitButton!(root)).toBeNull();
+    expect(oracleAdapter.isFinalStep!(doc)).toBe('not-final');
+    expect(stepButtonsOf({ doc, adapter: oracleAdapter, root })).toEqual({ final: 'not-final', next: true, submit: false });
+    expect(assertNotSubmit(next, { adapter: oracleAdapter, root, allowNext: true }).ok).toBe(true);
+  });
+
+  it('not-final only at a section’s address, and only while no Submit shows', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply`);
+    asMiddleSection(doc);
+    expect(oracleAdapter.isFinalStep!(doc)).toBe('unknown');
+    removeFixtures(document);
+    const both = await load(hjfSectionHtml, `${HJF}/apply/section/2`);
+    const submit = both.querySelector<HTMLElement>('button.apply-flow-pagination__submit-button')!;
+    const copy = submit.cloneNode(true) as HTMLElement;
+    submit.after(copy);
+    asMiddleSection(both);
+    expect(oracleAdapter.nextButton!(both.documentElement)).toBe(submit);
+    expect(oracleAdapter.submitButton!(both.documentElement)).toBe(copy);
+    expect(oracleAdapter.isFinalStep!(both)).toBe('final');
+  });
+
+  it('reads no Next where the pagination’s buttons say otherwise, show several, or hide it', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/2`);
+    const next = asMiddleSection(doc);
+    const root = oracleAdapter.detect(doc)!.formRoot;
+    // A Submit's modifier is never a Next, whatever it reads.
+    next.classList.add('apply-flow-pagination__submit-button');
+    expect(oracleAdapter.nextButton!(root)).toBeNull();
+    next.classList.remove('apply-flow-pagination__submit-button');
+    // Other words.
+    for (const words of ['Back', 'Previous', 'Submit']) {
+      for (const name of ['title', 'aria-label']) next.setAttribute(name, words);
+      next.textContent = words;
+      expect(oracleAdapter.nextButton!(root), words).toBeNull();
+      expect(oracleAdapter.isFinalStep!(doc), words).toBe('unknown');
+    }
+    // Two Nexts: none.
+    for (const name of ['title', 'aria-label']) next.setAttribute(name, 'Next');
+    next.textContent = 'Next';
+    next.after(next.cloneNode(true));
+    expect(oracleAdapter.nextButton!(root)).toBeNull();
+    next.nextElementSibling!.remove();
+    // Hidden: none.
+    next.style.display = 'none';
+    expect(oracleAdapter.nextButton!(root)).toBeNull();
+    next.style.display = '';
+    expect(oracleAdapter.nextButton!(root)).toBe(next);
+  });
+
+  it('never on the gate or the code page, whose Next is Sign-in Auto’s', async () => {
+    const gate = await load(caesarsGateHtml, `${CAESARS}/apply/email`);
+    const root = oracleAdapter.detect(gate)!.formRoot;
+    const footer = gate.querySelector('footer.apply-flow-pagination__buttons')!;
+    expect(oracleAdapter.nextButton!(root)).toBeNull();
+    // Even inside a pagination block such as a section's, the gate's Next is not the step's.
+    const wrapper = gate.createElement('div');
+    wrapper.className = 'apply-flow-pagination';
+    footer.before(wrapper);
+    wrapper.append(footer);
+    expect(gate.querySelector('.apply-flow-pagination button[title="Next"]')).not.toBeNull();
+    expect(oracleAdapter.nextButton!(root)).toBeNull();
+    expect(oracleAdapter.isFinalStep!(gate)).toBe('unknown');
+    removeFixtures(document);
+    const code = await load(fortiveCodeHtml, FORTIVE_CODE);
+    expect(oracleAdapter.nextButton!(oracleAdapter.detect(code)!.formRoot)).toBeNull();
+  });
+
+  it('the step signature: the section’s number, the progress step marked current, the first block title, the blocks',
+    async () => {
+      const doc = await load(hjfSectionHtml, `${HJF}/apply/section/2`);
+      asMiddleSection(doc);
+      const words = mark(doc, 1);
+      expect(words).toBe('Contact Information');
+      const parts = oracleAdapter.stepSignature!(doc);
+      expect(parts).toMatchObject({ urlPart: 'section/2', progress: words, heading: 'Import your profile' });
+      expect(parts.anchors).toEqual(expect.arrayContaining(['apply-flow-block--profile-import',
+        'apply-flow-block--personal-information-basic', 'apply-flow-block--disqualification-questions',
+        'apply-flow-block--work-and-education-timeline']));
+      expect(parts.anchors.every((anchor) => anchor.startsWith('apply-flow-block--'))).toBe(true);
+      const second = signatureOf(doc);
+      // Another progress step, another step; the same parts, the same step.
+      mark(doc, 2);
+      expect(signatureOf(doc)).not.toBe(second);
+      mark(doc, 1);
+      expect(signatureOf(doc)).toBe(second);
+      removeFixtures(document);
+      // Another section's address: another step.
+      const first = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+      asMiddleSection(first, 1);
+      expect(oracleAdapter.stepSignature!(first).urlPart).toBe('section/1');
+      expect(signatureOf(first)).not.toBe(second);
+    });
+
+  it('the gate and the code page, which share their address, are two steps; the posting none', async () => {
+    const gate = await load(caesarsGateHtml, `${CAESARS}/apply/email`);
+    expect(oracleAdapter.stepSignature!(gate)).toMatchObject({ urlPart: 'email', anchors: ['email-gate'] });
+    const gateSignature = signatureOf(gate);
+    removeFixtures(document);
+    const code = await load(fortiveCodeHtml, FORTIVE_CODE);
+    expect(oracleAdapter.stepSignature!(code)).toMatchObject({ urlPart: 'email', anchors: ['email-code'] });
+    expect(signatureOf(code)).not.toBe(gateSignature);
+    removeFixtures(document);
+    const posting = await load(caesarsPostingHtml, CAESARS);
+    expect(oracleAdapter.stepSignature!(posting)).toEqual({ anchors: [] });
+  });
 });

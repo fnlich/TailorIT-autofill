@@ -88,16 +88,21 @@
  *   Degree, or Employer Name and Job Title), only while it shows; no Add is declared (question 1), and the entry it
  *   holds is read by its School, or its Employer Name and Job Title (prefill.readEntries), so the planner matches it by
  *   fingerprint and keeps one no profile entry matches.
+ * - Steps (O8; no snapshot of a flow of several sections yet, owner question 23): a section's Next is the pagination's
+ *   button reading "Next" (never its Submit, never on the gate or the code page); a section page (.../apply/section/<n>)
+ *   showing it and no Submit is not the last; each page's step signature is its section number, the progress step
+ *   marked aria-current, its first block title and its blocks' kinds.
  * Nothing here reads, logs or sends a value (the Country a block shows is hashed into a learned list's key only).
  */
 // The P2 review (security 1)
 import { oracleCandidateExperienceShown } from '../../dom/page-signals';
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { oracleOwnDomain } from '../../shared/hosts';
+import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
 import type { Adapter, PrefillEntryView, SignInForm, SignInWall, WidgetDecl } from '../types';
-import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl } from './url';
+import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl, oracleApplySection } from './url';
 
 /** The snapshots the hooks were written from (fixtures/oracle/). */
 export const ORACLE_SNAPSHOTS = ['fixtures/oracle/jpmc-posting.html', 'fixtures/oracle/elhr-email-gate.html',
@@ -476,9 +481,60 @@ function submitButton(root: Element): HTMLElement | null {
     '.apply-flow-pagination button.apply-flow-pagination__submit-button')));
 }
 
-/** A flow that shows its Submit is on its final step; the gate, the code page and the posting say nothing. */
+/** jr6 O8: a section's Next in a flow of several sections (.../apply/section/<n>), which no snapshot shows: the
+ *  pagination's own button, as the one-page flow draws its Submit (<div class="apply-flow-pagination"> <div
+ *  class="apply-flow-pagination__buttons"> <button type="button" class="button apply-flow-pagination__button ...">)
+ *  and the gate draws its Next (jr6-caesars-email-gate.html and elhr-email-gate.html: <button type="submit" class="button
+ *  apply-flow-pagination__button theme-color-1 focused-tooltip" title="Next" aria-label="Next">Next</button>), whose
+ *  title, aria-label or words read "Next" (Jobright 1.25.2's NextPageButton presses the pagination button that reads
+ *  so); never the Submit (apply-flow-pagination__submit-button). Null on the gate and the code page (theirs is Sign-in
+ *  Auto's, under every Sign-in rule), on an unproven employer domain, and where none or several show. */
+function nextButton(root: Element): HTMLElement | null {
+  const doc = root.ownerDocument;
+  if (unprovenOwnDomain(doc) || authState(doc) !== null) return null;
+  const cache = newScanCache();
+  const next = Array.from(doc.querySelectorAll<HTMLElement>('.apply-flow-pagination button.apply-flow-pagination__button'))
+    .filter((button) => !button.classList.contains('apply-flow-pagination__submit-button')
+      && namesOf(button).includes('next') && isUserVisible(button, cache));
+  return next.length === 1 ? next[0]! : null;
+}
+
+/** A flow that shows its Submit is on its final step; the gate, the code page and the posting say nothing. jr6 O8: a
+ *  section of a flow of several (.../apply/section/<n>) that shows its Next and no Submit is not the last. */
 function isFinalStep(doc: Document): 'final' | 'not-final' | 'unknown' {
-  return flowOf(doc) !== null && submitButton(doc.documentElement) !== null ? 'final' : 'unknown';
+  if (flowOf(doc) === null) return 'unknown';
+  if (submitButton(doc.documentElement) !== null) return 'final';
+  const address = addressOf(doc);
+  return address !== null && oracleApplySection(address) !== null && nextButton(doc.documentElement) !== null
+    ? 'not-final' : 'unknown';
+}
+
+/** jr6 O8: the step a page of the flow shows (Jobright 1.25.2's getOracleCloudStepState reads the section's number from
+ *  the address and its title from the progress step marked aria-current): its address's section/<n> (or the gate's
+ *  email); its progress, the words of the step the flow marks aria-current="step" or "page"; its heading, the first
+ *  block title a person sees (hjf-apply-section.html's <h2 class="apply-flow-block__title">Import your profile</h2>);
+ *  its anchors, the kinds of the blocks it shows (apply-flow-block--<kind>: personal-information-basic,
+ *  disqualification-questions, ...) and the account page it is (the gate and the code page share their address). Page
+ *  text and markup only, never a value. */
+function stepSignature(doc: Document): { heading?: string; progress?: string; urlPart?: string; anchors: string[] } {
+  const flow = flowOf(doc);
+  if (flow === null) return { anchors: [] };
+  const cache = newScanCache();
+  const address = addressOf(doc);
+  const section = address === null ? null : oracleApplySection(address);
+  const urlPart = section !== null ? `section/${section}` : address !== null && isOracleEmailGate(address) ? 'email' : '';
+  // The words a person reads, else (a part the colour rules cannot read over the cover image, as the navigation train's
+  // items are on hjf-apply-section.html) the shown element's own words: a step's identity, hashed, never a label.
+  const read = (el: Element | null) => (el === null ? ''
+    : visibleText(el, { singleLine: true, cache }) || (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 200));
+  const progress = shown(Array.from(doc.querySelectorAll('.apply-flow [aria-current="step"], .apply-flow [aria-current="page"]')),
+    cache);
+  const heading = shown(Array.from(flow.querySelectorAll('.apply-flow-block__title')), cache);
+  const kinds = Array.from(flow.querySelectorAll('.apply-flow-block')).filter((block) => isUserVisible(block, cache))
+    .flatMap((block) => Array.from(block.classList).filter((name) => name.startsWith('apply-flow-block--')));
+  const state = authState(doc);
+  return { heading: read(heading), progress: read(progress), urlPart,
+    anchors: [...new Set(kinds)].concat(state === null ? [] : [state]) };
 }
 
 /** The page's error notification after a Submit it refused (module header, M4): hjf-after-submit.html's <notifications>
@@ -575,4 +631,6 @@ export const oracleAdapter: Adapter = {
   dependsOn,
   repeatables,
   prefill: { readEntries },
+  nextButton,
+  stepSignature,
 };

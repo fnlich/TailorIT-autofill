@@ -185,7 +185,8 @@ describe("a section page on Oracle's government cloud (the owner's snapshot of 2
     expect(oracleAdapter.isFinalStep!(fixture.doc)).toBe('final');
     expect(oracleAdapter.submitButton!(fixture.doc.documentElement)).toBe(
       fixture.doc.querySelector('button.apply-flow-pagination__submit-button'));
-    expect(oracleAdapter.nextButton).toBeUndefined();
+    // jr6 O8: a Next is read where a section shows one (jr6-oracle.browser.test.ts); this one-page flow shows none.
+    expect(oracleAdapter.nextButton!(fixture.doc.documentElement)).toBeNull();
     // The behaviour review of 2026-11-06 (O08): a Submit the page hides is no Submit a person sees, so the step is not
     // read as final by it.
     const submit = fixture.doc.querySelector<HTMLElement>('button.apply-flow-pagination__submit-button')!;

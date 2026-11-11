@@ -98,6 +98,16 @@ export function isOracleEmailGate(url: URL): boolean {
   return read !== null && read.tail.length === 2 && read.tail[0] === 'apply' && read.tail[1] === 'email';
 }
 
+/** jr6 O8: the section an address of a posting's apply flow shows, .../job/<id>/apply/section/<n> (hjf-apply-section's
+ *  section/1; Jobright 1.25.2's getOracleCloudStepState reads the number there too), as its number; null for any other
+ *  address (the gate, the posting, the quick apply's, which no snapshot shows). */
+export function oracleApplySection(url: URL): number | null {
+  const read = postingPath(url);
+  if (read === null || read.tail.length !== 3 || read.tail[0] !== 'apply' || read.tail[1] !== 'section') return null;
+  const section = read.tail[2]!;
+  return /^[1-9]\d{0,2}$/.test(section) ? Number(section) : null;
+}
+
 /** The posting an address shows and which page of it, or null when it shows none (the site's search, the profile). */
 export function parseOracleUrl(url: URL): ApplicationUrl | null {
   const read = postingPath(url);
