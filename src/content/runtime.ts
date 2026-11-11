@@ -193,7 +193,7 @@ import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter,
   // v5 p2-detect
   refusalNow,
   // jr6 apply F2
-  type EntryResult } from './press';
+  ENTRY_MAX_PRESSES, pressSecondStep, type EntryResult } from './press';
 import { loadPagePatches } from './page-patches';
 import { dropKeptSignIns, signIn } from './sign-in';
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
@@ -1838,8 +1838,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    *  auto-apply agent (agent/enter). */
   type EntrySource = { by: 'person'; signUp: boolean } | { by: 'agent' };
 
-  /** What an entry did, for its log line (flags and counts only). */
+  /** What an entry did, for its log line (flags and counts only), and (item 6) the dialogs shown before its first
+   *  press. */
   interface EntryFacts {
+    before: ReadonlySet<Element> | null;
     presses: number;
     followed: boolean;
     waited: boolean;
@@ -1962,7 +1964,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   async function runEntry(source: EntrySource, at: URL, signal: AbortSignal, answer: (said: EntryAnswer) => void):
     Promise<void> {
     const person = source.by === 'person';
-    const facts: EntryFacts = { presses: 0, followed: true, waited: false, found: false, wall: false, choice: false };
+    const facts: EntryFacts = { before: null, presses: 0, followed: true, waited: false, found: false, wall: false,
+      choice: false };
     const end = (refused: EntryRefusal | null): void => {
       const cancelled = signal.aborted && !stopped;
       log('content.entry', { agent: !person, presses: facts.presses, followed: facts.followed, waited: facts.waited,
@@ -1993,20 +1996,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       end('none');
       return;
     }
-    let agentTold = false;
-    const result: EntryResult = await pressEntry(doc, all, signal, entryWaitOf(all), undefined, (pressed) => {
-      facts.presses += 1;
-      if (facts.presses > 1) log('content.entry-step', { choice: true });
-      if (person) {
-        // Told at the press, with nothing awaited (a press that takes the page away ends this document first).
-        const nextKey = nextKeyOf(pressed);
-        void channel.request({ v: 1, type: 'entry/pressed', ...(nextKey === undefined ? {} : { nextKey }) })
-          .catch(() => undefined);
-      } else if (!agentTold) {
-        // v3 Phase 5 (round 3 of the v3 Phase 6/7b review, X8): the agent's press, told as it is made, once.
-        agentTold = true;
-        void channel.request({ v: 1, type: 'agent/entered' }).catch(() => undefined);
-      }
+    const result: EntryResult = await pressEntry(doc, all, signal, entryWaitOf(all), undefined, (pressed, before) => {
+      facts.before ??= before;
+      entryPressed(source, facts, pressed, false);
     }, { address: at });
     if (stopped) return;
     if (result.outcome === 'pressed') {
@@ -2055,6 +2047,22 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     end('blocked');
   }
 
+  /** Each press of an entry, told as it is made with nothing awaited (a press that takes the page away ends this
+   *  document first): the person's entry/pressed, with the destination's key (nextKeyOf); the agent's agent/entered
+   *  (v3 Phase 5; round 3 of the v3 Phase 6/7b review, X8), at its first press alone. A press after the first is a
+   *  step on the way (content.entry-step: the adapter's choice, or `generic`, the second step). */
+  function entryPressed(source: EntrySource, facts: EntryFacts, pressed: HTMLElement, generic: boolean): void {
+    facts.presses += 1;
+    if (facts.presses > 1) log('content.entry-step', { choice: !generic, generic });
+    if (source.by === 'person') {
+      const nextKey = nextKeyOf(pressed);
+      void channel.request({ v: 1, type: 'entry/pressed', ...(nextKey === undefined ? {} : { nextKey }) })
+        .catch(() => undefined);
+    } else if (facts.presses === 1) {
+      void channel.request({ v: 1, type: 'agent/entered' }).catch(() => undefined);
+    }
+  }
+
   /** v3 Phase 5: the agent's entry blocked by a sign-in page: Sign-in mode Auto signs in there (sign-in.ts), and the
    *  entry answers what came of it; Manual, or none to use: blocked by the sign-in. */
   async function agentSignIn(own: readonly Adapter[]): Promise<EntryAnswer> {
@@ -2101,7 +2109,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       } catch {
         pause = null;
       }
-      return pause === null ? null : { pause };
+      if (pause !== null) return { pause };
+      // Item 6 (D7, AF-11): no choice of the adapter's shows, but a dialog the press opened offers the generic second
+      // step: pressed (press.ts pressSecondStep, its own door), the entry's last press; then watched on.
+      if (url !== null && facts.before !== null && facts.presses < ENTRY_MAX_PRESSES) {
+        const step = pressSecondStep(doc, adapters(url), facts.before, url);
+        if (step !== null) entryPressed(source, facts, step, true);
+      }
+      return null;
     };
     let outcome = seen();
     if (outcome === null && !signal.aborted && !stopped) {

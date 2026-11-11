@@ -36,6 +36,10 @@
  * fourth of the same kind, clickAdapterSignInPrelude, Sign-in mode Auto's press of the one control that shows a wall's
  * form (Workday's "Sign in with email"), named by src/content/sign-in.ts alone; and Sign-in's door now refuses a button
  * the adapter names never to press anywhere on the page (Workday's Reset Password face, the social sign-ins).
+ * jr6 apply F2 (APPLYPLAN §5 F2 items 4 and 6): the entry door also refuses a control whose press would open another
+ * tab or window, download a file or (given the frame's address) leave the origin, answering why (entryWhereRefusal);
+ * and a fifth door of the same kind, clickSecondStep, presses an entry's generic second step (adapters/second-step.ts:
+ * "Apply manually" and its like, in a dialog shown after our press), named by src/content/press.ts alone.
  * A choice made through the page-world bridge (docs/SPEC-AMENDMENTS.md §12) clicks nothing, and the option it names
  * may not be drawn yet (a closed list): its text box goes through assertNotSubmit, and the option's label, as the
  * frame read it, through optionWordsRefusal, the word rule an option of an open list gets here ("confirm" chooses a
@@ -44,6 +48,7 @@
  * input). A refused option is not sent: its click, on the events' path, goes through assertNotSubmit as before.
  */
 import type { Adapter, SignInWall } from '../../adapters/types';
+import { secondStepControl } from '../../adapters/second-step'; // jr6 apply F2
 import { pageChallenged, vendorFramesShown } from '../pause-detect';
 import { flatContains } from '../scan-cache';
 import { signInContainerOf, signInFormOf, signInRefusal } from '../sign-in-form';
@@ -258,6 +263,36 @@ export function entryWhereRefusal(control: HTMLElement, address?: URL): EntryDoo
   return to.origin === address.origin ? null : 'elsewhere';
 }
 // ── end jr6 apply F2 item 4 ──
+
+// ── jr6 apply F2 item 6 (APPLYPLAN D7; AF-11): the generic second step's door ──
+/**
+ * After an entry press of ours, presses the generic second step once (adapters/second-step.ts secondStepControl: the
+ * one control a dialog shown since the press, `before`, offers in D7's words, "Apply manually" and its like), with an
+ * untrusted click(). It finds the control itself (a caller names no element); never one that submits a form, never one
+ * a person cannot see or press, never while any of the address's `adapters` finds an application form on the page,
+ * never one of their never-pressed controls (read over the whole page), or one holding or inside one, with no
+ * exemption (entryNeverPressed never applies: Taleo's "Apply as Guest" stays never pressed), never one whose press
+ * would go where the entry door refuses (entryWhereRefusal, `address` the frame's own). Answers the element clicked, or
+ * null. Only src/content/press.ts may call it (eslint.config.mjs), for an entry's second step alone.
+ */
+export function clickSecondStep(adapters: readonly Adapter[], doc: Document, before: ReadonlySet<Element>,
+  address?: URL): HTMLElement | null {
+  const control = secondStepControl(doc, before);
+  if (control === null || control.ownerDocument !== doc || !pressableNow(control) || submitsForm(control)) return null;
+  if (entryWhereRefusal(control, address) !== null) return null;
+  for (const adapter of adapters) {
+    let formShown: Element | null = null;
+    try {
+      formShown = adapter.detect(doc)?.formRoot ?? null;
+    } catch {
+      return null;
+    }
+    if (formShown !== null || nearNeverPressed(control, adapter, doc, true)) return null;
+  }
+  control.click();
+  return control;
+}
+// ── end jr6 apply F2 item 6 ──
 
 // ── snapshot build 2026-11-06 (core pass Z1, item 27): an entry that submits a consent form ──
 /** A property read through the getter of the element's window's `ctor` prototype, which a form's named controls (an

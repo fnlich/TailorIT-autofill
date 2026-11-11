@@ -58,7 +58,8 @@ import type { EntryAnswer, EntryBlock, StepTarget, PressAnswer } from '../messag
 import type { FrameReport } from '../shared/report';
 import { accountLeft } from '../dom/account-section';
 import { clickIfAllowed } from '../dom/fillers';
-import { clickAdapterEntry, clickAdapterSubmit, type EntryDoorRefusal } from '../dom/fillers/not-submit'; // jr6 apply F2
+import { clickAdapterEntry, clickAdapterSubmit, clickSecondStep, type EntryDoorRefusal } from '../dom/fillers/not-submit'; // jr6 apply F2
+import { dialogsShown } from '../adapters/second-step'; // jr6 apply F2
 import { detectPause, pageChallenged, type PauseKind, withoutSolvedCaptchaErrors } from '../dom/pause-detect';
 import { newScanCache } from '../dom/scan-cache';
 import { deadline } from '../dom/time';
@@ -260,8 +261,10 @@ export const ENTRY_FOLLOW_MS = 8_000; // jr6 apply F2
  *    window, a download, another origin: AP-7, C7), so nothing was pressed and the wait ended at once.
  *  The runtime turns it into the agent's EntryAnswer (runtime.ts agentAnswerOf) and into the panel's reason. */
 export type EntryResult = EntryAnswer & { followed?: false; refusal?: EntryDoorRefusal };
-/** How the runtime hears of each press pressEntry makes, as it is made (the first one's X8 rule held for each). */
-export type OnEntryPress = (pressed: HTMLElement) => void;
+/** How the runtime hears of each press pressEntry makes, as it is made (the first one's X8 rule held for each): the
+ *  element pressed, and (item 6) the dialogs a person could see just before the entry's first press (a second step is
+ *  only ever one shown after it: adapters/second-step.ts). */
+export type OnEntryPress = (pressed: HTMLElement, before: ReadonlySet<Element>) => void;
 // ── end jr6 apply F2 items 3 and 4 ──
 
 /** What blocked an entry, by the pause the page shows. */
@@ -350,6 +353,8 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
   let allowed = 1;
   /** jr6 apply F2 item 4: why the door refused a control by where it goes, once it did. */
   let refused: EntryDoorRefusal | null = null;
+  /** jr6 apply F2 item 6: the dialogs shown just before the entry's first press. */
+  let before: ReadonlySet<Element> | null = null;
   const formShown = (): boolean => own.some((adapter) => {
     try {
       return adapter.detect(doc)?.formRoot != null;
@@ -367,6 +372,8 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
         offered = null;
       }
       if (offered === null || pressed.has(offered)) continue;
+      // jr6 apply F2 item 6: what a person could see before our first press.
+      before ??= dialogsShown(doc);
       const clicked = pressDoor(adapter, doc, options.address);
       // jr6 apply F2 item 4: refused by where it goes: nothing pressed, and the entry says why at once.
       if (typeof clicked === 'string') {
@@ -377,7 +384,7 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
         pressed.add(clicked);
         // Told at once, before the entry waits on what the press brings (round 3 of the v3 Phase 6/7b review, X8);
         // jr6 apply F2: each press, with the element pressed (the runtime reads where a link goes).
-        onPress?.(clicked);
+        onPress?.(clicked, before);
         return adapter;
       }
     }
@@ -399,6 +406,16 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
     if (refused !== null) return { outcome: 'not-offered', refusal: refused };
     return pause === null ? null : { outcome: 'blocked', block: blockOf(pause.kind) };
   };
+  /** jr6 apply F2 item 6: the generic second step pressed (pressSecondStep), while the entry may press once more. */
+  const secondStep = (): boolean => {
+    if (before === null || pressed.size >= ENTRY_MAX_PRESSES) return false;
+    const clicked = pressSecondStep(doc, own, before, options.address);
+    if (clicked === null) return false;
+    pressed.add(clicked);
+    allowed = pressed.size;
+    onPress?.(clicked, before);
+    return true;
+  };
   /** After a press: the control the adapter offers on its choice, while it allows one more (pressEntry's doc). */
   const follow = (): Promise<EntryResult> => {
     const done: EntryResult = { outcome: 'pressed' };
@@ -409,7 +426,9 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
       if (signal.aborted || formShown()) return done;
       if (pageChallenged(doc)) return { outcome: 'blocked', block: 'captcha' };
       const pause = detectPause(doc, null, own[0]!);
-      if (pause === null) return 'wait';
+      // jr6 apply F2 item 6 (D7, AF-11): no choice the adapter declares shows, but a dialog our press opened offers
+      // the generic second step: pressed through its own door, the last press of the entry.
+      if (pause === null) return secondStep() ? 'pressed' : 'wait';
       if (pause.kind !== 'entry-choice') return { outcome: 'blocked', block: blockOf(pause.kind) };
       if (pressOne() !== null) return 'pressed';
       // jr6 apply F2 items 3 and 4: the choice's control refused by where it goes: the first press stands, unfollowed.
@@ -444,3 +463,17 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
     signal.addEventListener('abort', () => resolve({ outcome: 'not-offered' }), { once: true });
   });
 }
+
+// ── jr6 apply F2 item 6 (APPLYPLAN D7; AF-11): the generic second step ──
+/** An entry's generic second step (adapters/second-step.ts: "Apply manually" and its like, the one control a dialog
+ *  shown since the entry's first press offers, `before` the dialogs shown then), pressed through its own door
+ *  (not-submit.ts clickSecondStep: no form shown, never a form's submit, never a control any of `adapters` never
+ *  presses, never one whose press would leave this tab or origin), never while a challenge shows. Only where the
+ *  address's adapter declares no choice for what showed: pressEntry's follow-up and the runtime's watch after an entry
+ *  press (runtime.ts afterPress) call it then. Answers the element pressed, or null. */
+export function pressSecondStep(doc: Document, adapters: readonly Adapter[], before: ReadonlySet<Element>, address?: URL):
+  HTMLElement | null {
+  if (pageChallenged(doc)) return null;
+  return clickSecondStep(adapters, doc, before, address);
+}
+// ── end jr6 apply F2 item 6 ──
