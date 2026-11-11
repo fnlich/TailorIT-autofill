@@ -269,6 +269,21 @@ describe('48 (ICIMS-26, JV-16): time zones, years in something, experience with 
     row: { reason: 'filled-low-confidence' } });
     expect(written(planned([spec], spec, { profile: livingIn('NY') }).write)).toBe('Eastern');
   });
+  // jr6 fix (RULES-R48-TZ, IC-R2): ARS's required Time Zone is an iCIMS dropdown with a search (typeahead-remote).
+  it('types the state’s time zone into a search, and chooses its result', () => {
+    const search = specOf('Time Zone', 'typeahead-remote', { required: true });
+    const typed = planned([search], search);
+    expect(typed.row.category).toBe('preferences.timeZone');
+    expect(typed.write).toMatchObject({ value: { kind: 'query' },
+      origin: { provenance: 'rule', ruleId: 'location.time-zone' } });
+    const queries = typed.write?.value.kind === 'query' ? typed.write.value.queries : [];
+    expect(queries).toContain('Central Time');
+    // A search chooses only a value it may fill unflagged: a state in one zone (Texas's two zones leave the result).
+    const results = specOf('Time Zone', 'typeahead-remote', { required: true, searchResults: true,
+      optionLabels: ['Eastern Time (US & Canada)', 'Central Time (US & Canada)', 'Mountain Time (US & Canada)'] });
+    expect(written(planned([results], results, { profile: livingIn('NY') }).write)).toBe('Eastern Time (US & Canada)');
+    expect(planned([results], results).write).toBeUndefined();
+  });
   it('answers whether the person lives in a zone', () => {
     const spec = specOf('Question 9: Do you currently reside in a state located within the Eastern US Time Zone?',
       'radio', { optionLabels: YES_NO, required: true });
@@ -295,5 +310,17 @@ describe('48 (ICIMS-26, JV-16): time zones, years in something, experience with 
     const rust = specOf('Do you have experience with Rust?', 'radio', { optionLabels: YES_NO, required: true });
     expect(planned([rust], rust).write).toBeUndefined();
     expect(scopes([rust])).toEqual(['standard']);
+  });
+  // jr6 fix (RULES-R48-EXPERIENCE-WITH-USING, REVC-8): VHL's own wording (jr6-vhl-step3-filled, Questions 4 and 5) is
+  // "experience with using <tool>"; the tool is what follows "using".
+  it('reads past "using" in "experience with using <tool>" (VHL\'s Questions 4 and 5)', () => {
+    const held = specOf('Question 5: Do you have experience with using Kubernetes?', 'radio', {
+      optionLabels: YES_NO, required: true });
+    expect(planned([held], held).write).toMatchObject({ value: { cleanLabel: 'Yes' },
+      origin: { provenance: 'rule', ruleId: 'skills.experience-with', path: 'skills' } });
+    const aws = specOf('Question 4: Do you have experience with using AWS cloud infrastructure?', 'radio', {
+      optionLabels: YES_NO, required: true });
+    expect(planned([aws], aws).write).toBeUndefined();
+    expect(scopes([aws])).toEqual(['standard']);
   });
 });
