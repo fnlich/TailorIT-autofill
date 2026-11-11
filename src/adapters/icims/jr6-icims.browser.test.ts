@@ -50,7 +50,8 @@ const ROUTES = import.meta.glob('../../../fixtures/icims/*.routes.json', { impor
 const OLD = import.meta.glob(['../../../fixtures/icims/githubinc-profile.frame-1.html',
   '../../../fixtures/icims/ars-gate-phone.html', '../../../fixtures/icims/edgewater-self-id-veteran.frame-2.html',
   '../../../fixtures/icims/nyu-self-id-disability.frame-2.html', '../../../fixtures/icims/nyu-profile.frame-1.html',
-  '../../../fixtures/icims/aaalife-eeo-final.html'],
+  '../../../fixtures/icims/aaalife-eeo-final.html', '../../../fixtures/icims/githubinc-candidate-questions.frame-1.html',
+  '../../../fixtures/icims/githubinc-job-questions-error.frame-1.html'],
   { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
 /** The snapshot6 cases (src/adapters/icims ICIMS_SNAPSHOTS' jr6 part). */
@@ -1086,6 +1087,8 @@ interface Planned {
   specs: FieldSpec[];
   row(id: string): FillResult;
   write(id: string): PlannedWrite | undefined;
+  /** Whether the plan asks the AI about it (PlanOutput.awaiting). */
+  awaits(id: string): boolean;
   rule(id: string): string;
 }
 
@@ -1120,6 +1123,7 @@ function planOn(doc: Document, extra: Partial<PlanInput> & { lists?: Readonly<Re
     result, specs,
     row: (id) => plan.results.find((each) => each.key === keyOf(id))!,
     write: (id) => plan.writes.find((each) => each.key === keyOf(id)),
+    awaits: (id) => plan.awaiting.includes(keyOf(id)),
     rule: (id) => {
       const classified = classifyField(specs.find((spec) => spec.key === keyOf(id))!, testVocab());
       return classified.by === 'rules' ? classified.rules.rule : classified.by;
@@ -1333,12 +1337,36 @@ describe('P2: what the rules decide on the snapshots (RULES R1-R4 on the iCIMS a
     const fixture = await load(name);
     const id = 'PortalProfileFields.Resume_File';
     const upload = planOn(fixture.doc, { settings: withModes({ resumeOnPage: 'upload' }) });
+    // RULES edit 16 (item 64's label contract): the hidden input, "Replace Resume" the control a person sees, on iCIMS.
+    expect(upload.specs.find((spec) => spec.idAttr === id)).toMatchObject({ platform: 'icims', kind: 'file',
+      visibility: 'hidden-file-with-visible-control', current: { kind: 'files', held: true } });
     expect(upload.write(id)).toBeUndefined();
     expect(upload.row(id)).toMatchObject({ category: 'file.resume', status: 'flagged', reason: 'resume-held-no-input',
       needsUserAction: true });
     const keep = planOn(fixture.doc);
     expect(keep.write(id)).toBeUndefined();
     expect(keep.row(id)).toMatchObject({ category: 'file.resume', reason: 'prefill-kept' });
+  });
+
+  it('keeps RULES’ moved rows on the older pages (RULES.md, "Expectations that moved"): githubinc’s questions', async () => {
+    // Item 53 (JV-13): "Are you a current Full-Time GitHub employee?" No, the posting's company being GitHub.
+    const candidate = await load('githubinc-candidate-questions.frame-1');
+    const asked = planOn(candidate.doc, { posting: { company: 'GitHub' } });
+    expect([asked.row('Q54').label, asked.row('Q54').category, asked.rule('Q54')])
+      .toEqual(['Are you a current Full-Time GitHub employee?', 'screening.previouslyEmployed', 'label.previously-employed']);
+    expect(optionOf(asked.write('Q54'))).toBe('No');
+    // Its neighbour sets GitHub aside and names Microsoft with its subsidiaries: no rule's answer.
+    expect(asked.row('Q2957').category).toBe('screening.previouslyEmployed');
+    expect(asked.write('Q2957')).toBeUndefined();
+    removeFixtures(document);
+    // Item 48 (ICIMS-26, JV-16): "Do you have N+ years experience …": years in, which the titles do not settle: the AI's.
+    const questions = await load('githubinc-job-questions-error.frame-1');
+    const years = planOn(questions.doc, { posting: { company: 'GitHub' } });
+    for (const id of ['Q6595', 'Q6596']) {
+      expect([years.row(id).category, years.rule(id)], id).toEqual(['experience.yearsIn', 'label.years-in']);
+      expect(years.write(id), id).toBeUndefined();
+      expect(years.awaits(id), id).toBe(true);
+    }
   });
 
   it('icims-new-3 (githubinc-profile.frame-1): "Preferred Last Name" is the last name', async () => {
