@@ -127,11 +127,12 @@ describe('the copy', () => {
     }
   });
 
-  // The jr6 review (C3): where a site asks for the email first (Oracle's email gate, ADP's guest Continue), Autofill types
-  // and presses on Sign-in Auto or Sign up & Autofill alone (content/orchestrator.ts typeableWallShown and
-  // signInContainerNow, runtime.ts wallStep), so the disclosure says so in the sentence that names Sign-in on Auto, as
-  // version 14 does. Once SHELL types a gate's email on Manual too (BUILD D-d), the clause may stand in a sentence of its
-  // own, naming its Next as Auto's alone and never saying it goes on: Manual never presses it.
+  // The jr6 review (C3): where a site asks for the email first, Autofill goes on only on Sign-in Auto or with Sign up &
+  // Autofill. Oracle's email gate is typed and its Next pressed only then (content/orchestrator.ts typeableWallShown,
+  // runtime.ts wallStep). ADP's guest page is filled like any step in every mode, and its Continue is pressed on Auto
+  // alone (signInContainerNow). So the disclosure says it in the sentence that names Sign-in on Auto, as version 14 does.
+  // Once SHELL types a gate's email on Manual too (BUILD D-d), the clause may stand in a sentence of its own, naming its
+  // Next as Auto's alone and never saying it goes on: Manual never presses it.
   it('says what it does where a site asks for your email first for Sign-in on Auto alone, or names Next as Auto’s alone', () => {
     const clause = 'asks for your email first';
     const sentences = COPY.options.connection.disclosure.flatMap((paragraph) => paragraph.split(/(?<=\.)\s+(?=["A-Z])/));
