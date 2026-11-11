@@ -257,3 +257,84 @@ describe('jr6 O16: the gate’s "Do you want to communicate by phone instead?" i
     expect(form.form!.contains(phone)).toBe(true);
   });
 });
+
+// ── O5: the phone's country code ──────────────────────────────────────────────────────────────────────────────────
+
+describe('jr6 O5: the phone’s country-code picker reads "Country code", so the number is planned without its code', () => {
+  const PICKER = 'input#country-codes-dropdownphoneNumber';
+
+  it('hjf-apply-section: the picker is labelled by its own sub-label, read first; the number box keeps its row’s',
+    async () => {
+      const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+      const picker = doc.querySelector(PICKER)!;
+      expect(oracleAdapter.labelFirst!(picker)).toBe(true);
+      expect(oracleAdapter.labelFor!(picker)?.textContent?.trim()).toBe('Country code');
+      const { result } = planned(doc);
+      const field = (control: Element) => result.fields.find((one) => result.target(one.key)?.control === control);
+      expect(field(picker)).toMatchObject({ label: 'Country code', labelSource: 'adapter', labelVisible: true });
+      expect(field(doc.querySelector('input.phone-row__input')!)).toMatchObject({ label: 'Phone Number' });
+      // Only the picker reads first.
+      expect(oracleAdapter.labelFirst!(doc.querySelector('input.phone-row__input')!)).toBe(false);
+      expect(oracleAdapter.labelFirst!(doc.querySelector('input#country-17')!)).toBe(false);
+    });
+
+  it('the plan reads the picker as the phone’s country and writes the number without its calling code; without the '
+    + 'sub-label it reads as before', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+    const number = doc.querySelector('input.phone-row__input')!;
+    const read = () => {
+      const { result, plan } = planned(doc);
+      const key = (control: Element) => result.fields.find((one) => result.target(one.key)?.control === control)!.key;
+      const write = plan.writes.find((one) => one.key === key(number))?.value;
+      return { code: plan.results.find((row) => row.key === key(doc.querySelector(PICKER)!))?.category,
+        number: write?.kind === 'text' ? write.text : null };
+    };
+    const now = read();
+    expect(now.code).toBe('contact.phoneCountry');
+    expect(now.number).not.toBeNull();
+    expect(now.number).not.toMatch(/^\+/);
+    // The sub-label emptied (as a page that draws none): the row's label stands, and the number keeps its code.
+    doc.querySelector(`${PICKER}`)!.closest('.cx-select-container')!.querySelector('span.input-field__label')!
+      .textContent = '';
+    const before = read();
+    expect(before.code).not.toBe('contact.phoneCountry');
+    expect(before.number).toMatch(/^\+1\b/);
+  });
+});
+
+// ── O4: the phone's number box is drawn by its group ──────────────────────────────────────────────────────────────
+
+describe('jr6 O4: the phone’s number box is drawn by its bordered phone-row group (controlBox)', () => {
+  /** Whether `box` shows a border or a background of its own. */
+  function draws(box: Element): boolean {
+    const style = getComputedStyle(box);
+    const border = ['Top', 'Right', 'Bottom', 'Left'].some((side) =>
+      parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0
+      && style.getPropertyValue(`border-${side.toLowerCase()}-style`) !== 'none');
+    return border || !/^(?:transparent|rgba\(0, 0, 0, 0\))$/.test(style.backgroundColor);
+  }
+
+  it.each([
+    { name: 'hjf-apply-section', html: hjfSectionHtml, closed: false },
+    { name: 'hjf-after-submit (checklist closed)', html: hjfAfterSubmitHtml, closed: true },
+  ])('$name: the box answers the group, which a person sees around it and which draws it', async ({ html, closed }) => {
+    const doc = await load(html, `${HJF}/apply/section/1`, closed ? closeChecklist : undefined);
+    const number = doc.querySelector<HTMLElement>('input.phone-row__input')!;
+    const group = oracleAdapter.controlBox!(number)!;
+    expect(group.matches('.input-row-composite__inputs.phone-row[role="group"]')).toBe(true);
+    expect(group.contains(number)).toBe(true);
+    expect(group.contains(doc.querySelector('input#country-codes-dropdownphoneNumber'))).toBe(true);
+    expect(draws(group)).toBe(true);
+    expect(draws(number)).toBe(false);
+    const outer = group.getBoundingClientRect();
+    const inner = number.getBoundingClientRect();
+    expect(inner.width).toBeGreaterThan(0);
+    expect(outer.left <= inner.left && outer.top <= inner.top && outer.right >= inner.right
+      && outer.bottom >= inner.bottom).toBe(true);
+    // No other control is given a box.
+    for (const other of ['input#country-codes-dropdownphoneNumber', 'input#lastName-18', 'input#country-17']) {
+      const control = doc.querySelector(other);
+      if (control !== null) expect(oracleAdapter.controlBox!(control), other).toBeNull();
+    }
+  });
+});

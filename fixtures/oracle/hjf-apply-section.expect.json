@@ -49,7 +49,7 @@
       "note": "readonly=\"readonly\": the email the gate took, changed only through \"Edit email address\" (never pressed)."
     },
     {
-      "label": "Phone Number",
+      "label": "Country code",
       "kind": "combobox",
       "required": false,
       "section": "Contact Information",
@@ -57,7 +57,7 @@
       "reason": "widget-phase-4",
       "options": "lazy",
       "control": "input#country-codes-dropdownphoneNumber",
-      "note": "The phone's \"Country code\" (cx-select: input[role=combobox] aria-haspopup=grid aria-controls=<id>-listbox), named by the row's label[for]; its list is drawn only when opened, and no snapshot shows it."
+      "note": "The phone's country code (cx-select: input[role=combobox] aria-haspopup=grid aria-controls=<id>-listbox): jr6 O5 reads its own sub-label, span.input-field__label \"Country code\", before the row's label[for] (\"Phone Number\", the number box's question). Its list is drawn only when opened, and no snapshot shows it."
     },
     {
       "label": "Phone Number",

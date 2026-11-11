@@ -77,6 +77,8 @@
  * - Entry (C8): APPLY NOW only in its "apply now" state, by its modifier apply-now-button--apply-now or its words "Apply
  *   Now" in any case; the same button in another state is never the entry (it stays never pressed).
  * - Never pressed (O16): the gate's "Do you want to communicate by phone instead?".
+ * - Labels (O5): the phone's country-code picker by its own sub-label, "Country code", read first (labelFirst).
+ * - The phone's number box (O4): drawn by its bordered phone-row group (controlBox).
  * Nothing here reads, logs or sends a value.
  */
 // The P2 review (security 1)
@@ -215,15 +217,42 @@ function uploadWidgets(root: Element): Array<{ control: Element; input: HTMLInpu
   });
 }
 
+/** jr6 O5: the phone's country-code picker, hjf-apply-section.html's <input name="phoneNumber"
+ *  id="country-codes-dropdownphoneNumber" type="text" role="combobox" aria-haspopup="grid" ... class="cx-select-input">,
+ *  whose row's label[for] names it "Phone Number" (the number box's question) while its own <div
+ *  class="cx-select-container"> draws its words beside it: <span id="inputFieldLabel-country-codes-dropdownphoneNumber"
+ *  class="input-field__label">Country code</span>. Jobright 1.25.2's rules.getRules names it the phone's country code by
+ *  that id or that sub-label. */
+const PHONE_CODE = 'input.cx-select-input[id^="country-codes-dropdown"]';
+
 /** A row-labelled control's question (module header): its row's (<div class="input-row ...">) <form-element-label><label
- *  class="input-row__label ...">; an upload input's, its drop zone's words (UPLOAD_INPUT). */
+ *  class="input-row__label ...">; an upload input's, its drop zone's words (UPLOAD_INPUT); jr6 O5: the phone's
+ *  country-code picker's, its own sub-label (PHONE_CODE). */
 function labelFor(control: Element): Element | null {
   if (control.matches(UPLOAD_INPUT)) {
     return control.closest('.attachment-upload-button')?.querySelector('.attachment-upload-button__drag-and-drop-label')
       ?? null;
   }
+  if (control.matches(PHONE_CODE)) {
+    return control.closest('.cx-select-container')?.querySelector('span.input-field__label') ?? null;
+  }
   if (!control.matches(ROW_LABELLED)) return null;
   return control.closest('.input-row')?.querySelector(':scope > form-element-label > label.input-row__label') ?? null;
+}
+
+/** jr6 O5: the country-code picker's own sub-label is read before the row's label[for] (labelFor), so it reads
+ *  "Country code", the phone's country code, and the planner writes the number beside it without its calling code. */
+function labelFirst(control: Element): boolean {
+  return control.matches(PHONE_CODE);
+}
+
+/** jr6 O4: the phone's number box, hjf-apply-section.html's <input type="tel" class="input-row__control
+ *  phone-row__input" ...>, draws no border or background of its own: its <div class="input-row-composite__inputs
+ *  phone-row" role="group"> draws the bordered box around it and the country-code picker (ENGINE E2's camouflage
+ *  check reads this box as the control's own). Null for every other control. */
+function controlBox(control: Element): Element | null {
+  return control.matches('input.phone-row__input')
+    ? control.closest('.input-row-composite__inputs.phone-row[role="group"]') : null;
 }
 
 /** Whether the page marks a row-labelled control required: its row's label has input-row__label--required (drawn with
@@ -332,4 +361,7 @@ export const oracleAdapter: Adapter = {
   entryControl,
   // APPLY NOW is never pressed by a run (neverPress): the entry door presses that element alone.
   entryNeverPressed: true,
+  // ── jr6 ORACLE (FIXPLAN §6.11; module header) ──
+  labelFirst,
+  controlBox,
 };

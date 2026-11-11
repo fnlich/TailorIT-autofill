@@ -104,7 +104,9 @@ function faded(doc: Document): void {
 }
 
 /** What the scanner reads differently from hjf-apply-section.expect.json once the image is taken away, and why: the
- *  read-only email box and the phone's number box (borderless inside its composite row) read as camouflaged. */
+ *  read-only email box and the phone's number box (borderless inside its composite row) read as camouflaged. jr6 O4:
+ *  the adapter declares the row's bordered group as the number box's (controlBox), which the camouflage check reads
+ *  from ENGINE E2 (jr6-engine-e2) on: the phone's entry goes once this branch holds that tag (ORACLE P2). */
 const KNOWN_PLAIN: ReadonlyArray<{ control: string; property: string }> = [
   { control: 'input#email-22', property: 'fillable' }, { control: 'input.phone-row__input', property: 'fillable' }];
 
