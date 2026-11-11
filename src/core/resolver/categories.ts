@@ -191,8 +191,10 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   // language chosen; an employee number typed; a job's or a school's place as its address parts are; an address
   // search's "Enter manually", on iCIMS's dropdown (never a remote search: the label contract of FIXPLAN §3.2); a
   // county typed or chosen; a privacy policy's residence, a place a question asks only of its residents, chosen; a
-  // referral by an employee, yes or no.
-  'consent.signatureDate': ['text', 'date'], 'languages.formLanguage': CHOICE, 'identity.employeeId': LINE,
+  // referral by an employee, yes or no. jr6 fix (RULES-R11): a signature's date drawn in parts takes its month and day
+  // from lists (iCIMS's IForm dates; labelRules reads a list only as one part of the date).
+  'consent.signatureDate': ['text', 'date', 'select', 'combobox'], 'languages.formLanguage': CHOICE,
+  'identity.employeeId': LINE,
   'experience.city': LOOKUP, 'experience.region': LOOKUP, 'experience.country': LOOKUP, 'education.city': LOOKUP,
   'education.region': LOOKUP, 'education.country': LOOKUP, 'address.lookup': ['select', 'combobox'],
   'address.county': ['text', 'select', 'combobox'], 'location.policyResidence': CHOICE,
@@ -200,9 +202,11 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   // jr6 RULES R2: OPT or CPT, yes or no (WD-30).
   'workAuth.opt': YES_NO_TEXT,
   // jr6 RULES R3: yes or no questions; an address's type, a source's detail chosen from a list; a time zone typed or
-  // chosen.
+  // chosen, jr6 fix (RULES-R48-TZ, IC-R2: ARS's iCIMS "Time Zone", a dropdown with icimsdropdown-search, fixtures
+  // jr6-ars-profile) or searched for.
   'screening.militaryTraining': YES_NO, 'address.type': CHOICE, 'referral.detail': CHOICE,
-  'preferences.timeZone': ['text', ...CHOICE], 'location.inTimeZone': YES_NO, 'experience.yearsIn': YES_NO,
+  'preferences.timeZone': ['text', ...CHOICE, 'typeahead-remote'], 'location.inTimeZone': YES_NO,
+  'experience.yearsIn': YES_NO,
   'skills.experienceWith': YES_NO,
   // jr6 RULES R3: living or working in a country, yes or no; a former name typed.
   'location.inCountry': YES_NO, 'identity.formerName': LINE,
@@ -317,12 +321,23 @@ export const AI_OPENED_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCat
   'screening.governmentService',
   // jr6 RULES (jobvite-new-1, the owner's "absolutely all"): the other yes/no screening questions of snapshot round 2
   // (Sikich's "Are you currently subject to a non-compete, non-solicitation or any other restrictive employment
-  // agreement?"), where the profile holds no answer; marked "AI guess" unless a fact settles it.
-  'screening.restrictiveAgreement', 'screening.relatives', 'screening.essentialFunctions',
+  // agreement?"), where the profile holds no answer; marked "AI guess" unless a fact settles it. jr6 fix (revD-01):
+  // never the essential functions, which ask about a disability or the accommodation it needs (a self-identification's
+  // topic: the profile's explicit answer only, else the person's).
+  'screening.restrictiveAgreement', 'screening.relatives',
   // jr6 RULES R2 (WD-30): OPT or CPT, where the entry does not settle it.
   'workAuth.opt',
   // jr6 RULES R3 (WD-29): military training, where the service and veteran answers do not settle it.
   'screening.militaryTraining']);
+
+/**
+ * jr6 fix (revD-04): the AI-opened categories no résumé or posting can settle (a contract the person may be bound by,
+ * relatives at the company, military training for this role): TailorIT's answer to one is always written as an "AI
+ * guess" (plan/frame.ts planAnswer), whatever basis it gives, so a legal guess is never shown as a fact and the
+ * auto-apply agent's legal-guess rule (settings.agentSkip.legalGuess) sees it.
+ */
+export const GUESS_ONLY_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>([
+  'screening.restrictiveAgreement', 'screening.relatives', 'screening.militaryTraining']);
 
 /**
  * The profile categories an AI answer may fill when the profile holds no value for them (the owner's amendments): job
