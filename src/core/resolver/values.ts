@@ -1119,14 +1119,124 @@ function namesWhole(text: string, word: string): boolean {
   return escaped !== '' && new RegExp(String.raw`(?<![\p{L}\p{N}])${escaped}(?![\p{L}\p{N}+#])`, 'iu').test(text);
 }
 
+// jr6 fix (revD-02): what else a qualification states, each of which must hold before it is ticked.
+
+/** A count of years ("10+ years of experience …", "at least 3 years", "3-5 years"), as normalizeLabel writes it (the
+ *  least captured). */
+const YEARS_STATED = /\b(\d{1,2})(?:\s+(?:to\s+)?\d{1,2})?\s+(?:or\s+more\s+|plus\s+)?years?\b/g;
+/** A certification, a licence or a clearance an option names ("Active Certified Kubernetes Administrator (CKA)
+ *  certification"). */
+const CREDENTIAL = /\bcertif(?:ied|icates?|ications?)\b|\blicen[cs](?:e|ed|es|ure)\b|\bclearances?\b/;
+/** An example clause ("(such as PostgreSQL and MySQL)", "e.g. Chef or Puppet", "including Go"): its items illustrate
+ *  what stands before it, any one of which the person may hold. */
+const EXAMPLES = /\(\s*(?:such\s+as|e\.?\s?g\.?|eg|including|includes|like|for\s+example|ex\.?)\b[^)]*\)|\b(?:such\s+as|e\.\s?g\.|including|for\s+example)\s+[^;.()]*/gi;
+/** Where a list of tools stops and the claim around it goes on: the words that introduce what is held. */
+const LIST_BREAK = /[;:.()]|\s(?:with|in|using|of|on|for|at|to|from|across|via|by|through)\s/;
+/** The words an item of a list is written around, which name nothing held. */
+const ITEM_FILLER = /\b(?:experience[ds]?|knowledge|familiarity|proficiency|expertise|skills?|background|understanding|working|hands|strong|solid|deep|good|excellent|basic|advanced|demonstrated|proven|professional|practical|technical|the|a|an|any|other|related|similar|tools?|technologies|technology|frameworks?|platforms?|languages?)\b/g;
+/** A degree's field as an option names it ("degree in Computer Science or a related field", "BS in Accounting,
+ *  Finance"), on the option's lower-cased text with its commas: the fields up to the clause's end. */
+const DEGREE_FIELD = /\b(?:degree|diploma|bachelor(?:'|’)?s?|master(?:'|’)?s?|associate(?:'|’)?s?|doctorate|ph\.?\s?d\.?|b\.?\s?sc?\.?|b\.?\s?a\.?|m\.?\s?sc?\.?|m\.?\s?a\.?|mba)\s+(?:\([^)]*\)\s+)?(?:of\s+(?:science|arts)\s+)?in\s+([^;.()]+)/;
+/** A field the option names that no profile value settles ("a related field", "a technical discipline", "STEM"). */
+const GENERIC_FIELD = /\b(?:related|similar|relevant|equivalent|comparable|technical|quantitative|stem|other|any|applicable|appropriate)\b/;
+
+/** The fields of study an option asks a degree in ("computer science" of "… degree in Computer Science or a related
+ *  field"), as normalized words; [] when it names none, or only fields no profile value settles. */
+function degreeFieldsAsked(label: string): string[] {
+  const asked = DEGREE_FIELD.exec(label.toLowerCase())?.[1] ?? '';
+  const parts: string[] = [];
+  for (const part of asked.split(/\s*,\s*|\s+(?:or|and|&)\s+|\s*\/\s*/)) {
+    // The fields end where the claim goes on ("… and 3 years of experience").
+    if (/\d|\byears?\b|\bexperience\b/.test(part)) break;
+    const key = normalizeLabel(part.replace(/^(?:a|an|the)\s+/, ''));
+    if (key !== '' && !GENERIC_FIELD.test(key) && !/^(?:field|discipline|area|subject|major)s?$/.test(key)) parts.push(key);
+  }
+  return parts;
+}
+
+/** Whether one of the person's completed education entries is of a level the option names and in a field it names
+ *  ("Bachelor's degree in Accounting, Finance or a related field" is no Computer Science graduate's); true when the
+ *  option names neither. */
+function degreeHolds(label: string, entries: readonly EducationEntry[]): boolean {
+  const words = normalizeLabel(label);
+  const levels = Object.entries(DEGREE_WORDS).filter(([, re]) => re.test(words)).map(([level]) => level);
+  const parts = degreeFieldsAsked(label);
+  if (levels.length === 0 && parts.length === 0) return true;
+  const held = levels.length === 0 ? entries : entries.filter((entry) => levels.includes(entry.degree.level));
+  if (held.length === 0) return false;
+  if (parts.length === 0) return true;
+  return held.some((entry) => {
+    const field = entry.degree.field;
+    const names = field === undefined ? [] : [field.name, field.userText, ...field.aliases].map((name) => normalizeLabel(name))
+      .filter((name) => name !== '');
+    return names.some((name) => parts.some((part) => namesWhole(name, part) || namesWhole(part, name)));
+  });
+}
+
+/** Whether a count of years an option states holds: the person's experience reaches it in what it names, the skills
+ *  it names (entries whose title or description names one) or the work it names after the count (entries whose titles
+ *  name it, as the years-in rule reads them: titleNames); a count with nothing named after it needs the whole of the
+ *  person's experience to reach it. */
+function yearsHold(label: string, profile: Profile, skills: readonly string[], now: Ymd): boolean {
+  const words = normalizeLabel(label);
+  const counts = [...words.matchAll(YEARS_STATED)];
+  if (counts.length === 0) return true;
+  const total = yearsOfExperience(profile.experience, now);
+  if (total === null) return false;
+  return counts.every((count) => {
+    const asked = Number(count[1]);
+    if (total < asked) return false;
+    const naming = profile.experience.filter((entry) => skills.some((skill) => namesWhole(entry.title, skill)
+      || namesWhole(entry.description ?? '', skill)));
+    if (skills.length > 0 && (yearsOfExperience(naming, now) ?? 0) >= asked) return true;
+    const after = words.slice((count.index ?? 0) + count[0].length).split(/\s+(?:and|or|plus|with)\s+/)[0] ?? '';
+    const subject = after.replace(ITEM_FILLER, ' ').split(' ')
+      .filter((word) => word !== '' && !ROLE_FILLER.has(word) && !/^(?:of|in|as|on|at|for|running|building|developing|managing|using|leading|production|work|years?)$/.test(word));
+    if (subject.length === 0) return skills.length === 0;
+    return (yearsOfExperience(profile.experience.filter((entry) => titleNames(entry.title, subject)), now) ?? 0)
+      >= asked;
+  });
+}
+
+/** Whether a certification, licence or clearance an option names is one the person lists (never a clearance: the
+ *  sensitive part is never read for a checklist). */
+function credentialHolds(label: string, profile: Profile): boolean {
+  const lower = label.toLowerCase();
+  if (!CREDENTIAL.test(lower)) return true;
+  if (/\bclearances?\b/.test(lower)) return false;
+  return (profile.certifications ?? []).some((certification) => namesWhole(label, certification.name));
+}
+
+/** Whether every tool an option joins with "and" to one of the person's skills is held too ("Experience with
+ *  Kubernetes and Terraform" is no Kubernetes user's alone); a list joined with "or" asks only one, and an example
+ *  clause ("such as PostgreSQL and MySQL") illustrates, so its items are left out first. */
+function listHolds(label: string, profile: Profile): boolean {
+  const own = normalizeLabel([...profile.skills, ...profile.experience.flatMap((entry) => [entry.title,
+    entry.description ?? ''])].join(' | '));
+  const core = label.toLowerCase().replace(EXAMPLES, ' ');
+  for (const segment of core.split(new RegExp(LIST_BREAK.source, 'g'))) {
+    if (!profile.skills.some((skill) => namesWhole(segment, skill))) continue;
+    if (/\bor\b|\band\s*\/\s*or\b/.test(segment) || !/\band\b|&/.test(segment)) continue;
+    for (const item of segment.split(/\s*,\s*|\s+(?:and|&)\s+|\s*&\s*/)) {
+      const words = normalizeLabel(item).replace(ITEM_FILLER, ' ').replace(/\s+/g, ' ').trim();
+      if (words === '' || Object.values(DEGREE_WORDS).some((re) => re.test(words))) continue;
+      if (!profile.skills.some((skill) => namesWhole(item, skill)) && !namesWhole(own, words)) return false;
+    }
+  }
+  return true;
+}
+
 /**
  * JV-5 (VHL's "Please select the education, skills and/or experience that you currently possess", fixtures
  * jr6-vhl-step3-filled): a checkbox group (or a list that takes several) whose options are qualification sentences
  * ticks, flagged, only the options naming one of the person's skills, or a degree they hold, as a whole word; the rest
  * stays for the person (owner question 12: a multi-choice AI answer). Undefined for any other field (the skills are
- * then chosen as before); none when no option names one.
+ * then chosen as before); none when no option names one. jr6 fix (revD-02): a ticked box says "I currently possess
+ * this", so an option is ticked only when nothing else it states is unmet: a count of years (yearsHold), a degree's
+ * level and field (degreeHolds), a certification, licence or clearance (credentialHolds), and every tool joined with
+ * "and" (listHolds).
  */
-function qualificationsValue(spec: FieldSpec, profile: Profile): ValueResult | undefined {
+function qualificationsValue(spec: FieldSpec, profile: Profile, now: Ymd): ValueResult | undefined {
   if (!SEVERAL.includes(spec.kind) || spec.options === 'lazy') return undefined;
   const options = spec.options.filter((option) => !option.disabled && option.label.trim() !== '');
   const sentences = options.filter((option) => {
@@ -1134,13 +1244,17 @@ function qualificationsValue(spec: FieldSpec, profile: Profile): ValueResult | u
     return words.split(' ').length >= 3 && QUALIFICATION.test(words);
   });
   if (options.length < 2 || sentences.length * 3 < options.length * 2) return undefined;
-  const levels = profile.education.filter((entry) => !entry.inProgress).map((entry) => DEGREE_WORDS[entry.degree.level])
-    .filter((re): re is RegExp => re !== undefined);
+  const completed = profile.education.filter((entry) => !entry.inProgress);
+  const levels = completed.map((entry) => DEGREE_WORDS[entry.degree.level]).filter((re): re is RegExp => re !== undefined);
   let skilled = false;
   const named = sentences.filter((option) => {
-    const bySkill = profile.skills.some((skill) => namesWhole(option.label, skill));
-    skilled ||= bySkill;
-    return bySkill || levels.some((re) => re.test(normalizeLabel(option.label)));
+    const skills = profile.skills.filter((skill) => namesWhole(option.label, skill));
+    const byLevel = levels.some((re) => re.test(normalizeLabel(option.label)));
+    if (skills.length === 0 && !byLevel) return false;
+    const holds = degreeHolds(option.label, completed) && yearsHold(option.label, profile, skills, now)
+      && credentialHolds(option.label, profile) && listHolds(option.label, profile);
+    skilled ||= holds && skills.length > 0;
+    return holds;
   });
   if (named.length === 0) return none('no-profile-value', false);
   const set = named.map((option): Choice => ({ intended: intendedText(option.label.trim()), domain: 'generic' }));
@@ -1172,7 +1286,7 @@ function jr6Value(category: FieldCategory, ctx: ValueContext): ValueResult | und
     case 'referral.employeeReferred':
       return employeeReferredValue(ctx.profile);
     case 'skills.list':
-      return qualificationsValue(ctx.spec, ctx.profile);
+      return qualificationsValue(ctx.spec, ctx.profile, ctx.now);
     // jr6 RULES R3 (ICIMS-13, ICIMS-19, ICIMS-26, JV-16).
     case 'address.type':
       return addressTypeValue(ctx.spec, ctx.profile, ctx.vocab);

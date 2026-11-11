@@ -569,6 +569,7 @@ describe('24 (U-09, ADP-17): an EEO decline box beside its list', () => {
 });
 
 describe('25 (JV-5): a checklist of qualifications', () => {
+  const QUALIFICATIONS = 'Please select the education, skills and/or experience that you currently possess';
   const checklist = specOf('Please select the education, skills and/or experience that you currently possess',
     'checkbox-group', { required: true, optionLabels: [
       '1. Associate or bachelor’s degree in Computer Science or a related field',
@@ -581,6 +582,37 @@ describe('25 (JV-5): a checklist of qualifications', () => {
       '3. Experience with relational databases (such as PostgreSQL and MySQL)']);
     expect(write?.origin).toEqual({ provenance: 'rule', ruleId: 'skills.qualifications', path: 'skills' });
     expect(row.status).toBe('flagged');
+  });
+
+  // jr6 fix (revD-02): a ticked box says "I currently possess this": an option naming a skill or a degree the person
+  // holds is ticked only when nothing else it states is unmet (the golden profile: TypeScript, PostgreSQL and
+  // Kubernetes, a BS in Computer Science, jobs since 2019-07, no certification).
+  it('ticks no option whose years, degree field, credential or joined tool the profile does not hold', () => {
+    const relational = 'Experience with relational databases such as PostgreSQL and MySQL';
+    const claims = specOf(QUALIFICATIONS, 'checkbox-group', { required: true, optionLabels: ['10+ years of experience running Kubernetes in production',
+        'Bachelor’s degree in Accounting, Finance or a related field',
+        'Active Certified Kubernetes Administrator (CKA) certification', relational,
+        'Experience with Kubernetes and Terraform'] });
+    const { write, row } = planned([claims], claims);
+    expect(written(write)).toEqual([relational]);
+    expect(row).toMatchObject({ status: 'flagged', reason: 'filled-low-confidence' });
+  });
+
+  it('ticks an option whose years, field, credential and tools the profile holds', () => {
+    const held = specOf(QUALIFICATIONS, 'checkbox-group', { optionLabels: [
+      'Bachelor’s degree and 5+ years of experience', 'Bachelor’s degree in Computer Science or a related field',
+      'Experience with Kubernetes, Terraform or Pulumi', 'Experience with TypeScript and PostgreSQL',
+      'Bachelor’s degree and 3+ years of software engineering experience', 'Experience with Go and Rust'] });
+    expect(written(planned([held], held).write)).toEqual(['Bachelor’s degree and 5+ years of experience',
+      'Bachelor’s degree in Computer Science or a related field', 'Experience with Kubernetes, Terraform or Pulumi',
+      'Experience with TypeScript and PostgreSQL', 'Bachelor’s degree and 3+ years of software engineering experience']);
+    // A certification the profile lists, by its name.
+    const certified = { ...golden, certifications: [{ name: 'Certified Kubernetes Administrator' }] };
+    const cka = specOf(QUALIFICATIONS, 'checkbox-group', { optionLabels: [
+      'Active Certified Kubernetes Administrator (CKA) certification', 'Experience with Go and Rust',
+      'Experience with Java'] });
+    expect(written(planned([cka], cka, { profile: certified }).write)).toEqual([
+      'Active Certified Kubernetes Administrator (CKA) certification']);
   });
 
   it('leaves a plain skills list to the skills, and ticks nothing when no option names one', () => {
