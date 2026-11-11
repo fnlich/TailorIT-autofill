@@ -1,0 +1,77 @@
+{
+  "fixture": "icims/jr6-sentinel-iform-selfid.frame-2",
+  "source": "https://sentinel.icims.com/forms?module=Forms&action=showForm&brandtype=ccc&portalid=109&form=SelfID&user=REDACTED&item=REDACTED&token=REDACTED&csrf=REDACTED&isPacket=1&in_iframe=1&step=6&aid=REDACTED",
+  "captured": "2026-11-11T04:08:43.000Z",
+  "note": "jr6 P2: careers-sentinel's veteran self-ID form, on sentinel.icims.com/forms (chained), the application's last step. Its fields as the scan reads them once ENGINE E1 to E3 and RULES R1 to R4 merged (FIXPLAN §6.5 P2); what a run decides on them is held by src/adapters/icims/jr6-icims.browser.test.ts.",
+  "fields": [
+    {
+      "label": "VOLUNTARY SELF-IDENTIFICATION OF VETERAN STATUS",
+      "kind": "radio",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"icims_f_Veteran\"]",
+      "note": "jr6 ICIMS-14: the IForm's radios, one group (groupOf) named by the self-identification form's title (labelFor), each option by the words drawn after it (optionTextFor)."
+    },
+    {
+      "label": "Name",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"icims_f_Name\"]"
+    },
+    {
+      "label": "Today's Date month",
+      "kind": "select",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"icims_f_Date_Month\"]",
+      "note": "jr6 ICIMS-10: an IForm's date part, labelled by the words its form draws before the date with its part (labelFor, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Today's Date day",
+      "kind": "select",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"icims_f_Date_Date\"]",
+      "note": "jr6 ICIMS-10: an IForm's date part, labelled by the words its form draws before the date with its part (labelFor, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Today's Date year",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"icims_f_Date_Year\"]",
+      "note": "jr6 ICIMS-10: an IForm's date part, labelled by the words its form draws before the date with its part (labelFor, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Signature",
+      "kind": "checkbox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"icims_f_signature\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form[name=\"icims_form\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input[name=\"icims_save\"]"
+    ],
+    "pressable": [
+      "input[name=\"icims_submit\"]"
+    ]
+  }
+}

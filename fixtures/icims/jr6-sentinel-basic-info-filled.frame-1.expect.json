@@ -1,0 +1,80 @@
+{
+  "fixture": "icims/jr6-sentinel-basic-info-filled.frame-1",
+  "source": "https://careers-sentinel.icims.com/jobs/5157/azure-devops-engineer-%e2%80%93-release-coordinator/candidate?from=profilebuilder&resumeSubmitted=1&hrs=1&eem=REDACTED&in_iframe=1",
+  "captured": "2026-11-11T04:05:31.000Z",
+  "note": "jr6 P2: careers-sentinel's Basic Information after the résumé's parse (from=profilebuild), as Jobright filled it. Its fields as the scan reads them once ENGINE E1 to E3 and RULES R1 to R4 merged (FIXPLAN §6.5 P2); what a run decides on them is held by src/adapters/icims/jr6-icims.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Or please select your resume from one of the following",
+      "kind": "file",
+      "required": true,
+      "section": "Build your profile",
+      "fillable": true,
+      "control": "input[id=\"PortalProfileFields.Resume_File\"]",
+      "note": "jr6 ICIMS-23: a résumé on record: its upload buttons are hidden beside the current file and \"Replace Resume\"; the input stays the résumé's field, its control the Replace Resume button a person sees (uploadWidgets), holding a file (uploadHeld). The button is never pressed and the input never written while the page holds a file."
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Create your profile",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.FirstName\"]"
+    },
+    {
+      "label": "Middle Name",
+      "kind": "text",
+      "required": false,
+      "section": "Create your profile",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.MiddleName\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Create your profile",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.LastName\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Create your profile",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.Email\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input[id=\"PersonProfileFields.Login\"]",
+      "password": "input[id=\"PersonProfileFields.Password\"]",
+      "confirm": "input[id=\"PersonProfileFields.Password_Confirm\"]",
+      "terms": [],
+      "button": "input#cp_form_submit_i",
+      "form": "form#profileForm",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "button.icims-social-login",
+      "button.iCIMS_googleDriveButton",
+      "button.iCIMS_dropboxButton",
+      "button.iCIMS_oneDriveButton",
+      "button.iCIMS_DeleteButton",
+      "a.iCIMS_Faq_Link",
+      ".iCIMS_userMenuLink a",
+      "a[href*=\"loginOnly=1\"]",
+      "a.iCIMS_Anchor_Nav"
+    ],
+    "pressable": [
+      "input#cp_form_submit_i"
+    ]
+  }
+}

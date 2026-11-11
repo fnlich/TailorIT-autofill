@@ -86,25 +86,23 @@
     },
     {
       "label": "Country",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": true,
       "section": "Addresses (1)",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_PersonProfileFields.AddressCountry_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "State/Province",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": true,
       "section": "Addresses (1)",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_PersonProfileFields.AddressState_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "Zip/Postal Code",
@@ -134,14 +132,13 @@
     },
     {
       "label": "School",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": false,
       "section": "Education",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_CandProfileFields.School_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "Enter school name if not in the list above",
@@ -153,25 +150,23 @@
     },
     {
       "label": "Degree",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": false,
       "section": "Education",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_CandProfileFields.Degree_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "Major",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": false,
       "section": "Education",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_CandProfileFields.Major_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "Did You Graduate?",
@@ -200,25 +195,23 @@
     },
     {
       "label": "Country",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": false,
       "section": "Education",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_CandProfileFields.EducationCountry_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "State",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": false,
       "section": "Education",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_CandProfileFields.EducationState_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "Employer",
@@ -238,25 +231,23 @@
     },
     {
       "label": "Country",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": false,
       "section": "Experience",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_PersonProfileFields.rcf3218_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "State/Province",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": false,
       "section": "Experience",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_PersonProfileFields.rcf3217_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "Title",
@@ -267,56 +258,62 @@
       "control": "input[id=\"-1_PersonProfileFields.rcf3213\"]"
     },
     {
-      "label": "Start Date (if you do not know the day, enter 1)",
+      "label": "Start Date (if you do not know the day, enter 1) month",
       "kind": "select",
       "required": false,
       "section": "Experience",
       "fillable": true,
       "options": 12,
-      "control": "select[id=\"-1_PersonProfileFields.rcf3214_Month\"]"
+      "control": "select[id=\"-1_PersonProfileFields.rcf3214_Month\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
     },
     {
-      "label": "Start Date (if you do not know the day, enter 1)",
+      "label": "Start Date (if you do not know the day, enter 1) day",
       "kind": "select",
       "required": false,
       "section": "Experience",
       "fillable": true,
       "options": 31,
-      "control": "select[id=\"-1_PersonProfileFields.rcf3214_Date\"]"
+      "control": "select[id=\"-1_PersonProfileFields.rcf3214_Date\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
     },
     {
-      "label": "Start Date (if you do not know the day, enter 1)",
+      "label": "Start Date (if you do not know the day, enter 1) year",
       "kind": "text",
       "required": false,
       "section": "Experience",
       "fillable": true,
-      "control": "input[id=\"-1_PersonProfileFields.rcf3214_Year\"]"
+      "control": "input[id=\"-1_PersonProfileFields.rcf3214_Year\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
     },
     {
-      "label": "End Date (if you do not know the day, enter 1)",
+      "label": "End Date (if you do not know the day, enter 1) month",
       "kind": "select",
       "required": false,
       "section": "Experience",
       "fillable": true,
       "options": 12,
-      "control": "select[id=\"-1_PersonProfileFields.rcf3215_Month\"]"
+      "control": "select[id=\"-1_PersonProfileFields.rcf3215_Month\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
     },
     {
-      "label": "End Date (if you do not know the day, enter 1)",
+      "label": "End Date (if you do not know the day, enter 1) day",
       "kind": "select",
       "required": false,
       "section": "Experience",
       "fillable": true,
       "options": 31,
-      "control": "select[id=\"-1_PersonProfileFields.rcf3215_Date\"]"
+      "control": "select[id=\"-1_PersonProfileFields.rcf3215_Date\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
     },
     {
-      "label": "End Date (if you do not know the day, enter 1)",
+      "label": "End Date (if you do not know the day, enter 1) year",
       "kind": "text",
       "required": false,
       "section": "Experience",
       "fillable": true,
-      "control": "input[id=\"-1_PersonProfileFields.rcf3215_Year\"]"
+      "control": "input[id=\"-1_PersonProfileFields.rcf3215_Year\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
     },
     {
       "label": "Reason for Leaving",

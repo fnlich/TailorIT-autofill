@@ -12,14 +12,14 @@
       "control": "input#email"
     },
     {
-      "label": "Country Code — Make a Selection —",
+      "label": "Phone Country Code",
       "kind": "combobox",
       "required": true,
       "section": "main",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "a#dropdown"
+      "control": "a#dropdown",
+      "note": "jr6 ICIMS-01, -03, -18: the gate's Country Code, an iCIMS dropdown declared by the adapter (widgetFor: its list drawn whole in div#dropdownOptions), labelled by the label of the search box its container holds (labelFor)."
     },
     {
       "label": "Number",
