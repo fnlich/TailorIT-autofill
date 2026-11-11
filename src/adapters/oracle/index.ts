@@ -92,6 +92,8 @@
  *   button reading "Next" (never its Submit, never on the gate or the code page); a section page (.../apply/section/<n>)
  *   showing it and no Submit is not the last; each page's step signature is its section number, the progress step
  *   marked aria-current, its first block title and its blocks' kinds.
+ * - Uploads (O12, uploadState): a document's slot says whether the file Oracle took is done (its filled part naming
+ *   the file) or failed (its errors' list), found by the input or, once Oracle took the input away, by that list.
  * Nothing here reads, logs or sends a value (the Country a block shows is hashed into a learned list's key only).
  */
 // The P2 review (security 1)
@@ -101,7 +103,7 @@ import { oracleOwnDomain } from '../../shared/hosts';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
-import type { Adapter, PrefillEntryView, SignInForm, SignInWall, WidgetDecl } from '../types';
+import type { Adapter, PrefillEntryView, SignInForm, SignInWall, UploadState, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl, oracleApplySection } from './url';
 
 /** The snapshots the hooks were written from (fixtures/oracle/). */
@@ -233,6 +235,42 @@ function uploadWidgets(root: Element): Array<{ control: Element; input: HTMLInpu
     const control = input.id === '' ? undefined : labels.find((label) => label.htmlFor === input.id);
     return control === undefined ? [] : [{ control, input }];
   });
+}
+
+/** jr6 O12: a document's upload slot, hjf-apply-section.html's <cover-letter-upload-button><div> <div
+ *  class="attachment-upload-button attachment-upload-button--waiting"> ... the input ... </div> <div
+ *  id="file-upload-errors-1"> (its errors' list) </div></div>, whose input names that list by its aria-describedby
+ *  ("file-upload-errors-1"). Oracle sends the file to its server once it is put in, and draws the slot again: its
+ *  waiting part, input and all, goes, and the filled part shows the file's name (the resume's slot as captured: <div
+ *  class="attachment-upload-button attachment-upload-button--filled"> ... <div class="attachment-upload-button__filled">
+ *  <button type="button" class="attachment-upload-button__download">(the name)</button><button ...
+ *  class="attachment-upload-button__bottom-button">), while the errors' list stays. So the slot is found by the input
+ *  where it is still in the page, else by that list; null where neither is. */
+function uploadSlotOf(input: HTMLInputElement): { slot: Element; errors: Element | null } | null {
+  if (!input.matches(UPLOAD_INPUT)) return null;
+  const listed = (input.getAttribute('aria-describedby') ?? '').split(/\s+/).find((id) => /^file-upload-errors-\d+$/.test(id));
+  const errors = listed === undefined ? null : input.ownerDocument.getElementById(listed);
+  const slot = (input.isConnected ? input.closest('.attachment-upload-button')?.parentElement : null)
+    ?? errors?.parentElement ?? null;
+  return slot === null ? null : { slot, errors };
+}
+
+/** jr6 O12: what Oracle's slot shows of the upload of `fileName` into `input` (Jobright 1.25.2's operations.uploadResume
+ *  waits up to 10 s for .attachment-upload-button__filled): failed once its errors' list shows words; confirmed once its
+ *  filled part shows, naming the file; pending otherwise; null for an input that is no Oracle upload (the input's own
+ *  files decide). What an upload in progress or a refused file draws is in no snapshot (owner question 23). */
+function uploadState(input: HTMLInputElement, fileName: string): UploadState | null {
+  const found = uploadSlotOf(input);
+  if (found === null) return null;
+  const cache = newScanCache();
+  const { slot, errors } = found;
+  if (errors !== null && wordsOf(errors) !== '' && isUserVisible(errors, cache)) return 'failed';
+  const name = fileName.replace(/\s+/g, ' ').trim().toLowerCase();
+  const filled = Array.from(slot.querySelectorAll('.attachment-upload-button__filled'))
+    .filter((part) => isUserVisible(part, cache));
+  const named = filled.some((part) => Array.from(part.querySelectorAll('button.attachment-upload-button__download'))
+    .some((button) => name !== '' && wordsOf(button).includes(name)));
+  return named ? 'confirmed' : 'pending';
 }
 
 /** jr6 O5: the phone's country-code picker, hjf-apply-section.html's <input name="phoneNumber"
@@ -633,4 +671,5 @@ export const oracleAdapter: Adapter = {
   prefill: { readEntries },
   nextButton,
   stepSignature,
+  uploadState,
 };

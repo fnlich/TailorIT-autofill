@@ -768,3 +768,56 @@ describe('jr6 O8: a section’s Next, its finality and its step signature (a syn
     expect(oracleAdapter.stepSignature!(posting)).toEqual({ anchors: [] });
   });
 });
+
+// ── O12: an upload as Oracle's slot shows it ──────────────────────────────────────────────────────────────────────
+
+describe('jr6 O12: an upload’s state, read from Oracle’s slot (synthetic states of hjf-apply-section’s cover letter)', () => {
+  const NAME = 'Alex Rivera Cover Letter.pdf';
+
+  /** The cover letter's slot drawn filled with `name` as the resume's slot is captured (its filled .attachment-upload-
+   *  button copied in place of the waiting one, the input with it gone), the name made up. */
+  function filled(doc: Document, name: string): void {
+    const resume = doc.querySelector('resume-upload-button .attachment-upload-button--filled')!;
+    const copy = resume.cloneNode(true) as Element;
+    copy.querySelector('button.attachment-upload-button__download')!.textContent = name;
+    doc.querySelector('cover-letter-upload-button .attachment-upload-button')!.replaceWith(copy);
+    // Its fade-in run, as a person sees it once drawn.
+    faded(doc);
+  }
+
+  it('pending while the slot waits; confirmed once it shows the file by name, found again by its errors’ list once '
+    + 'the input is gone', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+    const input = doc.querySelector<HTMLInputElement>('input#attachment-upload-3')!;
+    expect(input.getAttribute('aria-describedby')).toBe('file-upload-errors-1');
+    expect(oracleAdapter.uploadState!(input, NAME)).toBe('pending');
+    filled(doc, NAME);
+    expect(input.isConnected).toBe(false);
+    expect(oracleAdapter.uploadState!(input, NAME)).toBe('confirmed');
+    // Another file's name shown: not this upload's.
+    expect(oracleAdapter.uploadState!(input, 'Other File.docx')).toBe('pending');
+  });
+
+  it('failed once its errors’ list shows words', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+    const input = doc.querySelector<HTMLInputElement>('input#attachment-upload-3')!;
+    const errors = doc.getElementById('file-upload-errors-1')!;
+    expect(oracleAdapter.uploadState!(input, NAME)).toBe('pending');
+    const message = doc.createElement('div');
+    message.textContent = 'The file could not be uploaded.';
+    errors.append(message);
+    expect(oracleAdapter.uploadState!(input, NAME)).toBe('failed');
+    // Hidden, it says nothing.
+    errors.style.display = 'none';
+    expect(oracleAdapter.uploadState!(input, NAME)).toBe('pending');
+  });
+
+  it('reads no other input: a text box, an upload with no slot of Oracle’s', async () => {
+    const doc = await load(hjfSectionHtml, `${HJF}/apply/section/1`);
+    expect(oracleAdapter.uploadState!(doc.querySelector<HTMLInputElement>('input#lastName-18')!, NAME)).toBeNull();
+    const loose = doc.createElement('input');
+    loose.type = 'file';
+    loose.className = 'file-form-element__input';
+    expect(oracleAdapter.uploadState!(loose, NAME)).toBeNull();
+  });
+});
