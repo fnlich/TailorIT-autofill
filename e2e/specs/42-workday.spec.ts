@@ -15,6 +15,15 @@
  * - jr6: with Sign-in on Manual and a password saved, "Sign in with email" is pressed and the email and the password
  *   typed, Sign In left to the person, whose own press then never lets the browser send the form as a GET (the jr6
  *   review's sec-1); with none saved the landing is the person's, and nothing is asked.
+ * jr6 SHELL-A (FIXPLAN §6.12 items 1 and 4; WD-02, WD-05), Sign-in on Auto with the dummies saved, on the same page's
+ * jr6 states (its header):
+ * - Create Account whose "Password Requirements" ask more characters than the saved password has: nothing typed (not even
+ *   the email) and nothing pressed, the page's toast naming the rule in our words, the log naming the rule's kind alone
+ *   (never the password or its length); the same list with its minimum met: typed and pressed as before;
+ * - Sign In showing on arrival that the account waits for its email to be verified: nothing typed or pressed, the toast
+ *   saying to confirm the email first;
+ * - Sign In the site refuses (a wrong email or password): pressed once, never again, the toast saying the site did not
+ *   accept the saved sign-in.
  * The application's steps (the owner's signed-in snapshots of 2026-11-06; fixtures/synthetic/workday/steps.html, drawn
  * with their markup), Next on Auto:
  * - My Information: the Country dropdown chosen through its own list (its button's click, then the option's), the names
@@ -27,10 +36,12 @@
 import type { Page } from '@playwright/test';
 import { applicationKey } from '../../src/adapters/application-key';
 import { parseWorkdayUrl } from '../../src/adapters/workday/url';
+import { COPY } from '../../src/shared/copy';
 import { DEFAULT_SETTINGS } from '../helpers/settings.ts';
 import { expect, test } from '../fixtures.ts';
 import type { Extension } from '../helpers/extension.ts';
 import { mock } from '../helpers/mock.ts';
+import { PageUi } from '../helpers/page-ui.ts';
 import { deletePassword, savePassword, SIGNUP_DUMMY } from '../helpers/signup.ts';
 import { runAt } from '../helpers/wizard.ts';
 
@@ -201,6 +212,99 @@ test.describe('Sign-in mode Auto on Workday (v3 Phase 6)', () => {
     expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
   });
 });
+
+// ── jr6 SHELL-A (FIXPLAN §6.12 items 1 and 4; WD-02, WD-05) ──
+test.describe('the page’s own password rules and its account errors (jr6 SHELL-A)', () => {
+  /** The page's account boxes, as they read now. */
+  const boxes = async (page: Page) => Promise.all(['email', 'password', 'verifyPassword'].map((id) =>
+    page.locator(`input[data-automation-id="${id}"]`).count().then((count) => count === 0 ? null
+      : page.locator(`input[data-automation-id="${id}"]`).inputValue())));
+  /** Waits for the page's toast to say `words`. */
+  async function toastSays(page: Page, words: string): Promise<void> {
+    const ui = await PageUi.of(page);
+    try {
+      await expect.poll(() => ui.noticeTexts(), { timeout: 30_000 }).toContain(words);
+    } finally {
+      await ui.close();
+    }
+  }
+
+  test('item 1: Create Account asking more characters than the saved password has: nothing typed or pressed, the rule said, never the password or its length', async ({ extContext, connected: ext, routeLog, logs }) => {
+    await withSignIn(ext);
+    const page = await extContext.newPage();
+    const url = `${ACCOUNT}?view=create&rules=40`;
+    routeLog.serve({ [url]: ACCOUNT_PAGE });
+    await page.goto(url);
+    await expect(page.locator('[data-automation-id="passwordRulesList"]')).toBeVisible();
+    await ext.fill(page, { plain: true });
+    await toastSays(page, COPY.toasts.passwordRule('length', 40));
+    // Nothing typed, not even the email; Create Account untouched; the terms box left as it was.
+    expect(await boxes(page)).toEqual(['', '', '']);
+    expect(await datasetOf(page, 'submits')).toBe('0');
+    expect(await page.locator('input[data-automation-id="createAccountCheckbox"]').isChecked()).toBe(false);
+    // The log names the rule by its kind's place alone (length: 0), never the password or its length.
+    const lines = logs().map((entry) => entry.text);
+    expect(lines).toContain('[tailorit-autofill] content.sign-in-refused {rules: 0}');
+    const length = String(DUMMY.password.length);
+    for (const line of lines.filter((text) => text.includes('sign-in'))) {
+      expect(line).not.toContain(DUMMY.password);
+      expect(line.match(/\d+/g) ?? [], line).not.toContain(length);
+    }
+    expect(routeLog.unexpected).toEqual([]);
+    expect(routeLog.submitted).toEqual([]);
+  });
+
+  test('item 1: the same list with its minimum met: typed twice, the terms ticked and Create Account pressed', async ({ extContext, connected: ext, routeLog }) => {
+    await withSignIn(ext);
+    const page = await extContext.newPage();
+    const url = `${ACCOUNT}?view=create&rules=8`;
+    routeLog.serve({ [url]: ACCOUNT_PAGE });
+    await page.goto(url);
+    await ext.fill(page, { plain: true });
+    await expect.poll(() => datasetOf(page, 'submits'), { timeout: 30_000 }).toBe('1');
+    expect(await datasetOf(page, 'emailOk')).toBe('true');
+    expect(await datasetOf(page, 'passwordOk')).toBe('true');
+    expect(await datasetOf(page, 'confirmOk')).toBe('true');
+    expect(await datasetOf(page, 'terms')).toBe('true');
+    await expect.poll(() => datasetOf(page, 'nativeGet')).toBe('prevented');
+    expect(routeLog.unexpected).toEqual([]);
+  });
+
+  test('item 4: an account waiting for its email to be verified, shown on arrival: nothing typed or pressed, the toast says to confirm it first', async ({ extContext, connected: ext, routeLog }) => {
+    await withSignIn(ext);
+    const page = await extContext.newPage();
+    const url = `${ACCOUNT}?view=signin&alert=verify`;
+    routeLog.serve({ [url]: ACCOUNT_PAGE });
+    await page.goto(url);
+    await ext.fill(page, { plain: true });
+    await toastSays(page, COPY.toasts.account['verify-email']);
+    expect((await boxes(page)).slice(0, 2)).toEqual(['', '']);
+    expect(await datasetOf(page, 'submits')).toBe('0');
+    expect(routeLog.unexpected).toEqual([]);
+    expect(routeLog.submitted).toEqual([]);
+  });
+
+  test('item 4: Sign In the site refuses (a wrong email or password): pressed once and never again, the toast says the site did not accept it', async ({ extContext, connected: ext, routeLog }) => {
+    await withSignIn(ext);
+    const page = await extContext.newPage();
+    const url = `${ACCOUNT}?view=signin&refuse=wrong`;
+    routeLog.serve({ [url]: ACCOUNT_PAGE });
+    await page.goto(url);
+    await ext.fill(page, { plain: true });
+    await expect.poll(() => datasetOf(page, 'submits'), { timeout: 30_000 }).toBe('1');
+    expect(await datasetOf(page, 'emailOk')).toBe('true');
+    expect(await datasetOf(page, 'passwordOk')).toBe('true');
+    await expect.poll(() => datasetOf(page, 'nativeGet')).toBe('prevented');
+    await toastSays(page, COPY.toasts.account['wrong-credentials']);
+    // No retry: the site's refusal is the person's to answer.
+    await page.waitForTimeout(2_000);
+    expect(await datasetOf(page, 'submits')).toBe('1');
+    expect(page.url()).toBe(url);
+    expect(routeLog.unexpected).toEqual([]);
+    expect(routeLog.submitted).toEqual([]);
+  });
+});
+// ── end jr6 SHELL-A ──
 
 const STEPS_PAGE = 'fixtures/synthetic/workday/steps.html';
 const STEPS = `https://${HOST}/en-US/careers/job/x/Fixture-Steps_JR-0000002/apply/applyManually`;

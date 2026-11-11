@@ -21,6 +21,17 @@
   address (the boxes carry names here, unlike Workday's, so it would hold them). Whether it went is data-native-get:
   "prevented" while Sign-in Auto watches its press (guardNativeGet), "sent" otherwise. Then the account view leaves and
   the next step shows in the same flow page: "My Information", First Name and Last Name. Nothing is ever posted.
+  jr6 SHELL-A (FIXPLAN §6.12 items 1 and 4; WD-02, WD-05), each with its own parameter only, so the views above are
+  unchanged without it:
+  - ?rules=N on Create Account: its "Password Requirements" list above the form, as fixtures/workday/
+    workday-create-account.html draws it (div[data-automation-id=passwordRulesList] > richText > ul): "A minimum of N
+    characters" and the four character classes;
+  - ?alert=verify on Sign In: an account error above the form on arrival (div[data-automation-id=errorMessage]
+    [role=alert], where fixtures/workday/verily-sign-in-verify.html shows its own), saying the account waits for its
+    email to be verified;
+  - ?refuse=wrong on Sign In: a press of Sign In is counted and checked as above and the hidden submit button clicked,
+    but the page keeps the Sign In view and shows the same kind of alert saying the email or the password is wrong (the
+    site refusing the sign-in), never the next step.
 -->
 <html lang="en">
 <head>
@@ -85,6 +96,15 @@
         make('div', { class: 'face-holder' },
           make('div', { 'aria-label': label, role: 'button', tabindex: '0', 'data-automation-id': 'click_filter' }),
           make('button', { type: 'submit', 'data-automation-id': hiddenId, tabindex: '-2', 'aria-hidden': 'true' }, words)));
+      // jr6 SHELL-A: the parameters of the header's last list.
+      const params = new URLSearchParams(location.search);
+      const minimum = /^\d{1,3}$/.test(params.get('rules') ?? '') ? Number(params.get('rules')) : null;
+      const alertOf = (words) => make('div', { 'data-automation-id': 'errorMessage', role: 'alert' }, words);
+      const rulesList = () => make('div', { 'data-automation-id': 'passwordRulesList' },
+        make('div', { 'data-automation-id': 'richText' }, make('p', {}, 'Password Requirements:'),
+          make('ul', {}, make('li', {}, 'An uppercase character'), make('li', {}, 'A lowercase character'),
+            make('li', {}, 'A numeric character'), make('li', {}, 'A special character'),
+            make('li', {}, `A minimum of ${minimum} characters`))));
       const views = {
         landing: () => [make('h2', { id: 'authViewTitle' }, 'Sign In'),
           make('button', { 'data-automation-id': 'AppleSignInButton', class: 'social' }, 'Sign in with Apple'),
@@ -92,12 +112,16 @@
           make('p', {}, 'OR'),
           make('button', { 'data-automation-id': 'SignInWithEmailButton', class: 'social' }, 'Sign in with email')],
         signin: () => [make('h3', { id: 'authViewTitle' }, 'Sign In'),
+          ...(params.get('alert') === 'verify'
+            ? [alertOf('Please verify your account before you sign in. Check your inbox for the verification email.')]
+            : []),
           make('form', { 'data-automation-id': 'signInFormo' }, field('input-1', 'Email Address', 'text', 'email', 'email'),
             field('input-2', 'Password', 'password', 'password', 'current-password'),
             face('Submit', 'signInSubmitButton', 'Sign In')),
           make('button', { 'data-automation-id': 'createAccountLink' }, 'Create Account'),
           make('button', { 'data-automation-id': 'forgotPasswordLink' }, 'Forgot your password?')],
         create: () => [make('h3', { id: 'authViewTitle' }, 'Create Account'),
+          ...(minimum === null ? [] : [rulesList()]),
           make('form', { 'data-automation-id': 'signInFormo' }, field('input-1', 'Email Address', 'text', 'email', 'email'),
             field('input-2', 'Password', 'password', 'password', 'new-password'),
             field('input-3', 'Verify New Password', 'password', 'verifyPassword', 'new-password'),
@@ -156,6 +180,12 @@
         };
         form.addEventListener('submit', seen, { once: true });
         hidden.click();
+        // jr6 SHELL-A: the site refuses the sign-in: the Sign In view stays, with its alert above the form.
+        if (kind === 'signInSubmitButton' && params.get('refuse') === 'wrong') {
+          view.querySelector('[data-automation-id="errorMessage"]')?.remove();
+          form.before(alertOf('Wrong email address or password. Please try again.'));
+          return;
+        }
         next();
       });
       const wanted = new URLSearchParams(location.search).get('view');
