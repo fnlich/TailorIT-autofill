@@ -142,6 +142,20 @@
  * every armed Submit press, into the document's memory only (form-capture.ts), and handed to the worker with the arm
  * (submit/form, with the posting's names and visible text from the top frame), which sends them to TailorIT only once
  * the site confirmed that Submit.
+ *
+ * jr6 apply F2 (the owner, 2026-11-10: "extension should also click `apply` to find and run the form ... and `Autofill`
+ * word will be kept"; the session's APPLYPLAN §5 F2): Autofill on a page with no form. Its own Apply is offered on any
+ * address of a posting but its confirmation, by the address's own adapters (entryOffered). The panel's Autofill, the
+ * queue's and the agent's agent/enter are one entry (enter), one at a time (frame/wall `entering`): the page read again
+ * first (a form now is filled); the page's Apply waited for and pressed through the entry door (never a new tab, a
+ * download or another origin: the door says why), with the step the site shows after it (the adapter's choice, or the
+ * generic second step in a dialog our press opened: adapters/second-step.ts), told the worker at each press
+ * (entry/pressed, with the destination's key on this origin); then this document watched for what the press brought
+ * (afterPress): a form claimed in place by the address's own adapters, a posting's address included; a wall, the
+ * sign-in step's; else why not, in one closed word (frame/wall `refusal`). Forms drawn hidden are heard by their
+ * attributes (late-form.ts), at a posting's address where an adapter says so (quirks.formAtPosting), and for the
+ * document's life where it draws them in place (quirks.formInPlace), the generic adapter never claiming there. A
+ * posting's own text is read for policy text on an application's address too, while no form shows there.
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from '../adapters/address';
@@ -566,8 +580,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // The side panel's job card (v2, job-relay.ts): relayed with nothing in either answer, and the custom question's
       // job text.
       case 'job/refresh':
-        // A form of ours, or (v3 Phase 3b) a recognised posting page with no form, whose card the worker reads.
-        return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null || app?.page === 'posting');
+        // A form of ours, or (v3 Phase 3b) a recognised posting page with no form, whose card the worker reads; jr6
+        // apply F2 item 7 (apply-b-new-2): or a page with no form that told the worker it offers its own Apply (ADP's
+        // job details at its guest page's address), whose card the worker loads (F3a).
+        return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null || app?.page === 'posting'
+          || (page === null && wallTold?.entry === true));
       case 'run/skip':
         return current?.skipField(msg.fieldKey as FieldKey) === true ? ok({}) : refuse('expired');
       case 'plan/ready':
@@ -1631,7 +1648,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     } catch {
       return none;
     }
-    // v5 p2-fill: no wall: a posting page with no form may offer its own Apply (Open Application).
+    // v5 p2-fill: no wall: a page with no form may offer its own Apply (pressed by the panel's Autofill: atWall).
     if (shown === null) return { ...none, entry: entryOffered() };
     const wall = (SIGN_IN_WALLS as readonly string[]).includes(shown.kind) ? shown.kind as SignInWall : null;
     return { wall, choice: shown.kind === 'entry-choice' && adapter?.entryControl !== undefined,
@@ -2160,12 +2177,19 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     else watchLateForm();
   }
 
+  /** A posting page's text, read for policy text (policy/hit, under its application's key). jr6 apply F2 item 7
+   *  (apply-b-new-2; FIXPLAN ADP-10): also on an application's address while no form shows there, where an adapter of
+   *  the address names the posting's own text (Adapter.postingText: ADP's job details at its guest page's address), that
+   *  text alone, once shown. */
   async function readPosting(): Promise<void> {
-    if (app?.page !== 'posting') return;
-    const key = app.applicationKey;
+    if (app === null) return;
     const href = readHref();
     const url = urlOf(href);
     const named = url === null ? undefined : adapters(url).find((adapter) => adapter.postingText !== undefined);
+    // jr6 apply F2 item 7: an application's address, with no form, whose adapter names the posting's text.
+    const atApplication = app.page === 'application' && page === null && named !== undefined;
+    if (app.page !== 'posting' && !atApplication) return;
+    const key = app.applicationKey;
     const read = async (scope?: Element) => {
       try {
         await readPostingPage(channel, doc, key, scope);
@@ -2195,6 +2219,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     postingWatch?.();
     postingWatch = watchForLateForm(doc, lateFormMs([named]) || LATE_FORM_CAP_MS, () => {
       if (stopped || readHref() !== href) return true;
+      // jr6 apply F2 item 7: on an application's address, only while no form shows there.
+      if (atApplication && page !== null) return true;
       const scope = shown();
       if (scope === null) return false;
       void read(scope).catch(() => undefined);
