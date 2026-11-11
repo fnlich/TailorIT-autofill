@@ -59,9 +59,25 @@ describe('"Generate strong password"', () => {
       expect(password).toHaveLength(SIGNUP_PASSWORD_GENERATED);
       const checks = signupPasswordChecks(password);
       for (const rule of SIGNUP_PASSWORD_RULES) expect(checks[rule], `${rule} in run ${run}`).toBe(true);
+      // The jr6 review (R14): a special any site counts (a site that finds one with \W never counts `_`).
+      expect(/[^A-Za-z0-9_]/.test(password), `a special but _ in run ${run}`).toBe(true);
       seen.add(password);
     }
     expect(seen.size).toBe(1_000);
+  });
+
+  it('never makes `_` its one required special (the jr6 review, R14)', () => {
+    // Bytes that pick the first uppercase, lowercase and digit, then index 11 of the required special's draw (`_` in
+    // SIGNUP_SPECIALS), then letters alone: `_` would be the password's only special.
+    let call = 0;
+    const steered = (count: number) => {
+      call += 1;
+      return Uint8Array.from({ length: count }, () => (call === 4 ? 11 : 0));
+    };
+    const password = generateSignupPassword(steered);
+    expect(signupPasswordValid(password)).toBe(true);
+    expect(password).not.toContain('_');
+    expect(/[^A-Za-z0-9_]/.test(password)).toBe(true);
   });
 
   it('draws every allowed character, and places the required kinds anywhere', () => {

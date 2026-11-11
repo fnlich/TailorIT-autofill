@@ -32,6 +32,9 @@ const LOWER = 'abcdefghijklmnopqrstuvwxyz';
 const DIGITS = '0123456789';
 /** Every character a password may hold. */
 const ALPHABET = `${UPPER}${LOWER}${DIGITS}${SIGNUP_SPECIALS}`;
+/** The jr6 review (R14): the generator's one required special is drawn from these, every special but `_`, which a site
+ *  that finds a special with \W (or [^A-Za-z0-9_]) does not count; `_` may still fall at any other place. */
+const REQUIRED_SPECIALS = SIGNUP_SPECIALS.replace('_', '');
 
 /** The rules, in the order the settings' checklist shows them. */
 export const SIGNUP_PASSWORD_RULES = ['length', 'upper', 'lower', 'digit', 'special', 'allowed'] as const;
@@ -76,10 +79,11 @@ const pick = (set: string, random: RandomBytes) => set.charAt(indexBelow(set.len
 /**
  * "Generate strong password" (module header): SIGNUP_PASSWORD_GENERATED characters, one of each required kind placed
  * at a random position and the rest drawn uniformly from every allowed character, so each password meets every rule.
+ * The required special is never `_` (REQUIRED_SPECIALS): every password holds a special any site counts as one.
  */
 export function generateSignupPassword(random: RandomBytes, length = SIGNUP_PASSWORD_GENERATED): string {
   const size = Math.min(SIGNUP_PASSWORD_MAX, Math.max(SIGNUP_PASSWORD_MIN, Math.floor(length)));
-  const chars = [pick(UPPER, random), pick(LOWER, random), pick(DIGITS, random), pick(SIGNUP_SPECIALS, random)];
+  const chars = [pick(UPPER, random), pick(LOWER, random), pick(DIGITS, random), pick(REQUIRED_SPECIALS, random)];
   while (chars.length < size) chars.push(pick(ALPHABET, random));
   // Fisher-Yates, so the required kinds sit anywhere.
   for (let at = chars.length - 1; at > 0; at -= 1) {
