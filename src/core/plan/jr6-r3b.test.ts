@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { withoutFileTypes } from '../resolver/classifyRules';
 import type { FieldSpec } from '../types/field';
 import type { Profile } from '../types/profile';
+import { namesUnanswerableTopic } from './answers';
 import { asksOnlyFollowUp } from './drafts';
 import { fieldOf, goldenProfile, inOrder, planOf, specOf } from './plan.testkit';
 import type { PlanInput } from './types';
@@ -110,6 +111,23 @@ describe('53 (JV-13): a current employee of the company', () => {
       'select', { optionLabels: YES_NO });
     expect(planned([github], github, { posting: { company: 'GitHub' } }).write).toBeUndefined();
   });
+  // jr6 fix (ICIMS:stage1-4, merge1-18): on githubinc-candidate-questions.frame-1 that question's options name
+  // Microsoft's subsidiaries, among them "Gaming Studios: Id Software", which the answer screen read as an identifier:
+  // the question was left for the person, never asked of the AI as the item's moved row says.
+  it('asks the AI a set-aside company’s question whose options name a company called "Id"', () => {
+    const github = specOf('Are you a current Full-Time employee at Microsoft or a Microsoft subsidiary other than GitHub?',
+      'select', { required: true, optionLabels: ['Select...', 'No', 'Microsoft', 'LinkedIn', 'Gaming Studios: Id Software',
+        'Gaming Studios: Mojang'] });
+    expect(scopes([github], { posting: { company: 'GitHub' } })).toEqual(['standard']);
+    expect(planned([github], github, { posting: { company: 'GitHub' } }).row).toMatchObject({
+      category: 'screening.previouslyEmployed', reason: 'unknown-field' });
+    expect(namesUnanswerableTopic('Gaming Studios: Id Software')).toBe(false);
+    // An identifier stays one, in capitals or not, before an identifier's word or alone.
+    for (const text of ['ID', 'Login Id', 'Employee Id Number', 'Please enter your id', 'Skype id', 'Id Card',
+      'Gaming Studios: ID Software']) {
+      expect(namesUnanswerableTopic(text), text).toBe(true);
+    }
+  });
 });
 
 describe('54 (JZ-11): living or working inside a country', () => {
@@ -167,10 +185,32 @@ describe('56 (SR-9, smartrecruiters-new-2): a restriction’s file types name no
       + 'letter' });
     expect(planned([sentence], sentence).write).toBeUndefined();
   });
+  // jr6 fix (RULES-R56, WD-R3: Workday's Dana-Farber and Travelers My Experience draw "Upload a file (5MB max)" under
+  // "Resume/CV/Cover Letter"): a heading that lists documents starting with the résumé is the résumé's.
+  it('reads a drop zone under a list of documents that starts with the résumé as the résumé', () => {
+    for (const description of ['Resume/CV/Cover Letter', 'Resume or Cover Letter', 'Resume and Cover Letter',
+      'Upload your resume and cover letter', 'CV / Cover Letter', 'Resume and supporting documents']) {
+      const spec = specOf('Upload a file (5MB max)', 'file', { description, section: { id: 'resume-cv-cover-letter' } });
+      expect(planned([spec], spec).row.category, description).toBe('file.resume');
+      expect(planned([spec], spec).write, description).toMatchObject({ value: { kind: 'file', ref: 'resume' } });
+    }
+    for (const description of ['Cover Letter', 'Cover Letter/Resume', 'Additional attachments', 'Portfolio',
+      'Writing sample', 'Transcript']) {
+      const spec = specOf('Upload a file (5MB max)', 'file', { description });
+      expect(planned([spec], spec).row.category, description).not.toBe('file.resume');
+    }
+  });
+
   it('drops a run of file types and keeps a list of documents', () => {
     expect(withoutFileTypes('Supported files: DOC, DOCX, PDF (5MB)').replace(/\s+/g, ' ')).toBe('Supported files: (5MB)');
     expect(withoutFileTypes('Upload your Resume, CV, Bio')).toBe('Upload your Resume, CV, Bio');
     expect(withoutFileTypes('Accepted: .pdf, .docx, .txt')).not.toMatch(/pdf/);
+  });
+  // jr6 fix (RULES-TEST-GAPS-PER-ITEM (c)): the classification reads the help text without its file types, so a résumé's
+  // heading followed by the types it takes is still a résumé's heading.
+  it('reads a résumé’s heading followed by its file types as the résumé’s', () => {
+    const spec = specOf('Upload a file', 'file', { description: 'Resume: PDF, DOC, DOCX' });
+    expect(planned([spec], spec).row.category).toBe('file.resume');
   });
 });
 
@@ -274,5 +314,46 @@ describe('61 (O2): Oracle’s ZIP Code and Address Line 1 searches', () => {
     const results = specOf('Address Line 1', 'typeahead-remote', { optionLabels: ['4417 Quill Lane, Austin, TX',
       '4417 Quillfeather Lane, Dallas, OK'], searchResults: true });
     expect(planned([results], results).write).toBeUndefined();
+  });
+});
+
+// jr6 fix (RULES-R51): a pay question in a text box that asks for its currency too gets the pay, never the code alone.
+describe('51 (RULES-R51): a salary box that also asks for its currency', () => {
+  it('types the expected pay, not the currency’s code', () => {
+    for (const label of ['What is your expected salary? Please specify the currency.',
+      'What are your salary expectations? Please include currency and pay period.']) {
+      const box = specOf(label, 'text', { required: true });
+      const { write, row } = planned([box], box, { profile: paid('CAD') });
+      expect(row.category, label).toBe('salary.expected');
+      expect(written(write), label).toMatch(/\d/);
+      expect(written(write), label).not.toBe('CAD');
+    }
+  });
+});
+
+// jr6 fix (REVC-3, RULES-SR2-CITY-RESULTS-UNASSIGNED): SmartRecruiters' City search (xplor-one-click,
+// jr6-wiser-one-click) words its results "City, State, Country"; the golden profile lives in Austin, TX, US.
+describe('SR-2 (REVC-3): a city search’s results read by their place parts', () => {
+  it('types the city alone, as before', () => {
+    const city = specOf('City', 'typeahead-remote', { required: true });
+    expect(planned([city], city).write).toMatchObject({ value: { kind: 'query', queries: ['Austin'] },
+      origin: { provenance: 'profile', path: 'address.city', transform: 'typeahead.query' } });
+  });
+  it('chooses the result naming the person’s city and region, never another region’s', () => {
+    const results = specOf('City', 'typeahead-remote', { required: true, searchResults: true,
+      optionLabels: ['Austin, Minnesota, United States', 'Austin, Texas, United States'] });
+    const { write, row } = planned([results], results);
+    expect(write).toMatchObject({ value: { cleanLabel: 'Austin, Texas, United States' },
+      match: { stage: 'alias', rule: 'place' } });
+    expect(row).toMatchObject({ category: 'address.city', status: 'verified' });
+    const elsewhere = specOf('City', 'typeahead-remote', { required: true, searchResults: true,
+      optionLabels: ['Austin, Minnesota, United States', 'Austin, Arkansas, United States'] });
+    expect(planned([elsewhere], elsewhere).write).toBeUndefined();
+  });
+  it('still chooses a list’s option that is the city alone, and types the city into a box', () => {
+    const list = specOf('City', 'select', { optionLabels: ['Select...', 'Austin', 'Austin, MN', 'Dallas'] });
+    expect(written(planned([list], list).write)).toBe('Austin');
+    const box = specOf('City', 'text', { required: true });
+    expect(written(planned([box], box).write)).toBe('Austin');
   });
 });

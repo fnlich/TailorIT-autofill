@@ -219,8 +219,13 @@ const STREET_HINT =
 const ADDRESS_ALONE = /^\s*address\s*$/;
 
 /** jr6 RULES R3 (smartrecruiters-new-2): help text that is a résumé's heading and nothing more ("Resume/CV", "Resume",
- *  "Your CV", "Upload your resume"), as normalized. */
-const RESUME_HEADING = /^(?:(?:upload|attach)\s+)?(?:your\s+|a\s+)?(?:resume|cv|curriculum\s+vitae)(?:\s+(?:or\s+|and\s+)?(?:resume|cv|curriculum\s+vitae))*(?:\s+(?:upload|file|document))?$/;
+ *  "Your CV", "Upload your resume"), as normalized. jr6 fix (RULES-R56, WD-R3: Workday's "Upload a file (5MB max)" under
+ *  "Resume/CV/Cover Letter" on Dana-Farber's and Travelers' My Experience, fixtures jr6-danafarber-my-experience,
+ *  jr6-travelers-my-experience): or a list of documents that starts with the résumé ("Resume or Cover Letter", "Upload
+ *  your resume and cover letter", "CV / Cover Letter", "Resume and supporting documents"); never one that names no
+ *  résumé, or names it later ("Additional attachments", "Cover Letter/Resume"). */
+const RESUME_DOC = String.raw`(?:resume|cv|curriculum\s+vitae)`;
+const RESUME_HEADING = new RegExp(String.raw`^(?:(?:upload|attach)\s+)?(?:your\s+|a\s+)?${RESUME_DOC}(?:\s+(?:(?:and\s+)?or\s+|and\s+)?(?:a\s+|your\s+)?(?:${RESUME_DOC}|cover\s+letters?|(?:other\s+|supporting\s+|additional\s+)?(?:documents?|attachments?)))*(?:\s+(?:upload|uploads|file|files|document|documents))?$`);
 
 /** jr6 RULES R3 (SR-9: SmartRecruiters' drop zone restriction "Supported files: DOC, DOT, RMR, RSM, RESUME, OXPS, PDF,
  *  … (10MB size limit)" as the field's help, fixtures/smartrecruiters/xplor-screening, where "RESUME" is a file type): a
@@ -289,6 +294,9 @@ const GENERIC_TOKEN_CATEGORIES: Readonly<Record<string, readonly FieldCategory[]
   // label that does ("I agree to the privacy policy") decides.
   'name-id.accept-terms': FIELD_CATEGORIES.filter((category) => category.startsWith('consent.')),
 };
+
+/** jr6 fix (RULES-R49): a label naming a chosen or preferred first name ("Chosen First Name", "Preferred First Name"). */
+const CHOSEN_FIRST_NAME_LABEL = /\b(?:chosen|preferred)\s+first\s+name\b/;
 
 /** A field about someone other than the applicant, named in the label: a referee, an emergency contact, a manager. A
  *  job's own reference ("Job reference", "Reference number") is not a person. s2 core-gh (decision 13, the gh study's
@@ -463,6 +471,13 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   if (generic !== undefined && votes.some((vote) => vote.category !== generic.category
     && GENERIC_TOKEN_CATEGORIES[generic.rule]!.includes(vote.category))) {
     votes = votes.filter((vote) => vote !== generic);
+  }
+  // jr6 fix (RULES-R49-CHOSEN-NAME-CONFLICT): a chosen or preferred first name is a given name, more precisely named
+  // (NinjaOne's "Chosen First Name" with autocomplete="given-name", jobvite/ninjaone-step1): the label decides with no
+  // conflict flagged (the value is the first name either way when the profile holds no preferred one). A "Nickname"
+  // names no first name and still conflicts (§8.1's example).
+  if (CHOSEN_FIRST_NAME_LABEL.test(label) && votes.some((vote) => vote.category === 'identity.preferredName')) {
+    votes = votes.filter((vote) => vote.rule !== 'autocomplete.given-name');
   }
   const otherPerson = otherPersonNamedBy(spec, label);
   if (otherPerson !== null && votes.some(isOwnDetail)) {

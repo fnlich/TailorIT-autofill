@@ -71,6 +71,23 @@ function idsOf(hits: readonly KeyHit[]): string[] {
   return [...new Set(hits.map((hit) => hit.id))];
 }
 
+/** jr6 fix (AD-R1, ADP:stage1-5): "TX - Texas" or "Texas - TX", a region's code and name around a dash (ADP's State /
+ *  Territory rows, fixtures/adp/jr6-personal-us-*), as profile/entities.ts canonicalRegion reads a profile's value. */
+const NAME_AND_CODE = /^(.+?)\s+[-\u2013\u2014]\s+(.+)$/;
+
+/** The region a "code - name" label names: the hits of the half that names it best, when both halves name that one
+ *  region and nothing else in common; none otherwise ("Texas - Austin", two regions). */
+function pairedRegionHits(text: string, context: NormContext, vocab: Vocab): readonly KeyHit[] {
+  const pair = NAME_AND_CODE.exec(text);
+  if (pair === null) return [];
+  const halves = [pair[1]!, pair[2]!].map((half) => vocab.lookup('region', normalize(half, context).key)
+    .filter((hit) => !hit.ambiguous));
+  const shared = idsOf(halves[0]!).filter((id) => halves[1]!.some((hit) => hit.id === id));
+  if (shared.length !== 1) return [];
+  const hits = halves.flat().filter((hit) => hit.id === shared[0]);
+  return [hits.find((hit) => hit.tier === 'primary') ?? hits[0]!];
+}
+
 /** The parts a label joins with slashes: two to four, each of one to four words. */
 const SLASH = /\s*\/\s*/;
 
@@ -115,6 +132,7 @@ export function prepareOptions(options: readonly Option[], domain: MatchDomain, 
           });
         }
       }
+      if (entityHits.length === 0 && domain === 'region') entityHits = pairedRegionHits(text, context, vocab);
     }
     const unusable = placeholder || clean === '';
     return {

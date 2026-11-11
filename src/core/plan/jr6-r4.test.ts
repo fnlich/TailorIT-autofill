@@ -96,10 +96,26 @@ describe('65 (ICIMS-24): the school list first, its companion box only when the 
     expect(written(planned(specs, list).write)).toBe('Other');
     expect(written(planned(specs, companion).write)).toBe('The University of Texas at Austin');
   });
-  it('waits with the box while the list waits for its options', () => {
-    const specs = inOrder([listOf('lazy'), companion]);
-    expect(planned(specs, companion)).toMatchObject({ write: undefined,
-      row: { status: 'flagged', reason: 'waiting-for-options' } });
+  // jr6 fix (RULES-R65-R24, ICIMS:stage1-3): a box is no list. A waiting-for-options row on it was read by the loop's
+  // books as a list waiting for its own options, which a box never gets: it ended options-never-loaded, for the person,
+  // though the list took the school (jr6-nyu-profile-parsed.frame-1 in a run).
+  it('leaves the box empty, nobody’s to answer, while the list waits for its options or types its search', () => {
+    const search = specOf('School', 'typeahead-remote', { section: SCHOOL, ordinal: 0 });
+    for (const list of [listOf('lazy'), search]) {
+      const specs = inOrder([list, companion]);
+      expect(planned(specs, companion), list.kind).toMatchObject({ write: undefined,
+        row: { status: 'skipped', reason: 'conditional-question', needsUserAction: false } });
+    }
+    expect(planned(inOrder([search, companion]), search).write?.value.kind).toBe('query');
+  });
+  it('decides a box planned without its list by what the list shows', () => {
+    const shows = (labels: string[]) => ({ ...listOf(['Rice University', 'The University of Texas at Austin', 'Other']),
+      current: labels.length === 0 ? { kind: 'empty' as const } : { kind: 'selected' as const, labels } });
+    const alone = (list: FieldSpec) => planned(inOrder([list, companion]), companion, { planKeys: [companion.key] });
+    expect(alone(shows(['The University of Texas at Austin']))).toMatchObject({ write: undefined,
+      row: { status: 'skipped', reason: 'conditional-question', needsUserAction: false } });
+    expect(written(alone(shows(['Other'])).write)).toBe('The University of Texas at Austin');
+    expect(written(alone(shows([])).write)).toBe('The University of Texas at Austin');
   });
 });
 
@@ -158,6 +174,25 @@ describe('70 (ADP-20): a high-school diploma from the education entries', () => 
     const none: Profile = { ...golden, education: [] };
     expect(planned([spec], spec, { profile: none }).write).toBeUndefined();
     expect(asked([spec], { profile: none }).answers).toEqual([spec.key]);
+  });
+
+  // jr6 fix (RULES-R70): a question that asks for more than the diploma is no rule's: the AI's, as before.
+  it('gives no rule answer to a question that asks for more than the diploma', () => {
+    for (const label of ['Do you have a high school diploma and a valid driver’s license?',
+      'Question 1: Do you have a minimum of a High School diploma or GED along with relevant/required work experience?',
+      'Do you have a high school diploma and at least 2 years of experience in retail sales?',
+      'Do you have a high school diploma or GED and are you able to lift 50 pounds?']) {
+      const compound = specOf(label, 'radio', { optionLabels: YES_NO, required: true });
+      const out = planned([compound], compound);
+      expect(out.write, label).toBeUndefined();
+      expect(out.row.category, label).not.toBe('education.highSchool');
+    }
+    for (const label of ['Do you have a high school diploma or equivalent?', 'Do you have a high school diploma or GED?',
+      'Have you earned a high school diploma or its equivalent?']) {
+      const alone = specOf(label, 'radio', { optionLabels: YES_NO, required: true });
+      expect(planned([alone], alone).write, label).toMatchObject({ value: { cleanLabel: 'Yes' },
+        origin: { provenance: 'rule', ruleId: 'education.high-school' } });
+    }
   });
 });
 
