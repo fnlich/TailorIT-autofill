@@ -376,6 +376,37 @@ describe('item 2: the profile’s "Create a login" is a section of the profile',
     expect(clicked).not.toHaveBeenCalled();
     expect(JSON.stringify(worker.reports)).not.toContain(credential.password);
   });
+
+  // The jr6 review (sec-3): on Manual, a tab nobody looks at (the sequential auto-apply's background tab) is filled
+  // without the section: nothing is asked or typed, and the fill goes on; a run once the tab is shown types it.
+  it('a run on Manual in a hidden tab fills the rest and leaves the section, asking nothing; once shown, a run types it (jr6)', async () => {
+    testVocab();
+    const fixture = await load('githubinc-profile.frame-1');
+    let shown: DocumentVisibilityState = 'hidden';
+    Object.defineProperty(fixture.doc, 'visibilityState', { configurable: true, get: () => shown });
+    const button = fixture.doc.querySelector<HTMLElement>('input#cp_form_submit_i')!;
+    const clicked = vi.fn();
+    button.addEventListener('click', clicked);
+    const credential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real', press: false };
+    const worker = createFakeWorker({ settings: CAUTIOUS_SETTINGS, typeSignIn: true,
+      script: { 'signin/credential': [{ ok: true, data: credential }, { ok: true, data: credential }] } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => fixture.address, isTop: true,
+      adapters: () => [icimsAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    expect(await runtime.fill()).not.toBe('paused');
+    const box = (id: string) => fixture.doc.getElementById(id) as HTMLInputElement;
+    expect(worker.of('signin/credential')).toEqual([]);
+    expect(box('PersonProfileFields.Login').value).toBe('');
+    expect(box('PersonProfileFields.Password').value).toBe('');
+    expect(worker.reports.at(-1)!.fields.some((row) => row.wrote)).toBe(true);
+    // The person turns to the tab and runs Autofill.
+    shown = 'visible';
+    fixture.doc.dispatchEvent(new Event('visibilitychange'));
+    expect(await runtime.fill()).not.toBe('paused');
+    expect(worker.of('signin/credential')).toHaveLength(1);
+    expect(box('PersonProfileFields.Password').value).toBe(credential.password);
+    expect(clicked).not.toHaveBeenCalled();
+  });
 });
 
 describe('item 3: the frame that claims the wrapper’s application', () => {
