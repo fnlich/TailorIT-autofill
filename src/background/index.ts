@@ -53,6 +53,7 @@ import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT, type Reports } from
 import { createTailoring, editorUrlOf, OPEN_DOCUMENT_LIMIT, TAILOR_LIMIT, type Tailoring } from './tailor'; // v1.4 F
 import { createDocumentDialogs } from './document-dialog'; // v1.5 X
 import { fillsFromProfileOnly, latestReport, saysNoAi } from '../shared/report';
+import { SIGNUP_SECTION } from '../shared/sidebar';
 import { createResumeChooser } from './resume-choice';
 import { createResumeTransfer } from './resume-transfer';
 import { createRouter, type ContentChannel } from './router';
@@ -61,11 +62,13 @@ import { createRunRegistry, type RunRegistry } from './runs';
 import { createRunStateStore } from './runstate-store';
 import { channelOf, isConnectPage, offAtsChannelOf, offAtsSenderOf, SIDEBAR_PORTS, sidebarChannel } from './senders';
 import { createServerClient } from './server-client';
-import { contentSettingsOf, createSettingsStore, pushSettings } from './settings';
+import { contentSettingsOf, createSettingsStore, mergeSettings, pushSettings } from './settings';
 import { createSidebar, createSidebarVet, iconReachesPage, scopedPort, SIDEBAR_LOAD_LIMIT } from './sidebar';
 import { createPagePatches, PAGE_PATCHES_LIMIT } from './page-patches';
 import { createSignIn } from './sign-in';
 import { createSignUps } from './sign-up';
+import { createSignup, holdsSignInAuto } from './signup';
+import { createSignupVault } from './signup-vault';
 import { createSites, RECOGNISED_LIMIT } from './sites';
 import { createTelemetry } from './telemetry';
 import { systemTimers, type Timers } from './timers';
@@ -195,7 +198,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   });
   const profileCache = createProfileCache({ server, timers, core, now });
   profiles = profileCache;
-  const auth = createAuth({ platform, origin, server, keeper, storageAccess: () => state.storageAccess });
+  /** jr6: the job-site sign-up information, kept in this browser alone, the password encrypted (signup-vault.ts). */
+  const signupVault = createSignupVault({ local, keys: platform.signupKey, subtle: globalThis.crypto.subtle,
+    randomBytes: (count) => platform.randomBytes(count), now });
+  const auth = createAuth({ platform, origin, server, keeper, storageAccess: () => state.storageAccess,
+    signUp: () => signupVault.has() });
   const settings = createSettingsStore(local);
   const runs = createRunRegistry(platform, session);
   runRegistry = runs;
@@ -421,13 +428,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     }
     return checkLetter(letters, { jobId: tab.jobId, company: tab.company, jobTitle: tab.jobTitle, resumeId }, active);
   }
-  /** Whether Sign-in mode may act as Auto (v3 Phase 5): the connection holds credentials:read and the person
-   *  acknowledged the disclosure as it reads now. */
-  const signInAllowed = async () => ((await keeper.current())?.scopes ?? []).includes('credentials:read')
-    && (await auth.disclosed());
+  /** Whether Sign-in mode may act (v3 Phase 5): jr6, a job-site password is saved in this browser (signup-vault.ts;
+   *  the connection's credentials:read before jr6), and the person acknowledged the disclosure as it reads now. */
+  const signInAllowed = async () => (await signupVault.has()) && (await auth.disclosed());
   /** What holds a mode at Manual now: Submit until the disclosure was acknowledged (the v3 Phase 4 review); Sign-in
-   *  unless it is allowed (v3 Phase 5). */
-  const holds = async () => ({ holdSubmit: !(await auth.disclosed()), holdSignIn: !(await signInAllowed()) });
+   *  unless it is allowed (v3 Phase 5); jr6: where it is allowed, a saved password is typed on Manual too. */
+  const holds = async () => {
+    const allowed = await signInAllowed();
+    return { holdSubmit: !(await auth.disclosed()), holdSignIn: !allowed, typeSignIn: allowed };
+  };
   /** The content settings as they act now for a frame of `tabId` on `origin` showing `applicationKey` in document
    *  `documentId`: in the auto-apply agent's window, for its task's application and while it may run, the agent's (v3
    *  Phase 5: Next and Submit on Auto; Submit on Manual in a document but the one the job's Submit was pressed in, once
@@ -535,14 +544,41 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const placeIcon = async () => {
     await platform.sidePanel.openOnActionClick(!(await onPage())).catch(() => undefined);
   };
-  /** v3 Phase 5: Sign-in mode Auto's credential, for a paused run's top frame. */
-  const signIn = createSignIn({ server, session, now,
-    // v4: or the tab's Sign up & Autofill grant (sign-up.ts), every other rule held.
-    // The v4 review (M1): the grant's for a frame of the origin it was given for alone.
-    signInAuto: async (tabId, origin) => ((await settings.get()).modes.signIn === 'auto' || signUps.live(tabId, origin))
-      && (await signInAllowed()),
+  /** jr6: Settings › Sign-up Information's messages, and Sign-in mode's guard (signup.ts). */
+  const signup = createSignup({ vault: signupVault, settings, server,
+    scopes: async () => (await keeper.current())?.scopes ?? [],
+    // The box's first email: the profile's while the worker holds it, else the account's as read already, which TailorIT
+    // answers an empty profile email as; nothing is fetched for it (the page adds the account's own as it reads it).
+    suggestedEmail: async () => {
+      if (!(await auth.connected())) return null;
+      const profile = profileCache.holding ? await profileCache.get() : null;
+      const own = profile?.ok === true ? profile.value.profile.contact.email : '';
+      return own !== '' ? own : auth.knownAccountEmail();
+    },
+    changed: async ({ settings: modes }) => {
+      // Every frame hears whether a password may be typed (ContentSettings.typeSignIn), and Sign-in as it acts.
+      await pushNow();
+      reports.tellPanels('signup');
+      if (modes) reports.tellPanels('settings');
+    } });
+  /** v3 Phase 5: Sign-in mode Auto's credential, for a paused run's top frame. jr6: from this browser's Sign-up
+   *  Information (signup-vault.ts), never TailorIT's. */
+  const signIn = createSignIn({ vault: signupVault, session, now,
+    // v4: Auto, or the tab's Sign up & Autofill grant (sign-up.ts), every other rule held; the v4 review (M1): the
+    // grant's for a frame of the origin it was given for alone. jr6: Manual types a saved password, pressing nothing.
+    signInAct: async (tabId, origin) => {
+      if (!(await auth.disclosed())) return null;
+      return (await settings.get()).modes.signIn === 'auto' || signUps.live(tabId, origin) ? 'auto' : 'type';
+    },
     // core-x, item 3: a subframe that claims the tab's application signs in as a top frame does (frames.ts).
-    claimFrame: async (tabId) => claimFrameOf(await framesOfTab(session, tabId)) });
+    claimFrame: async (tabId) => claimFrameOf(await framesOfTab(session, tabId)),
+    // jr6: a password that can no longer be read was removed: Sign-in Auto, which needs one, goes back to Manual.
+    gone: async () => {
+      const reverted = await signup.keepModeHonest();
+      await pushNow();
+      reports.tellPanels('signup');
+      if (reverted) reports.tellPanels('settings');
+    } });
   /** core-x, items 7 and 14: the tabs' chains (chain.ts). */
   const chains = createChains({ session, now });
   /** Every frame with a form hears the settings as they act now for it (settings/changed): the agent's tab's documents
@@ -953,7 +989,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // v5 p2-fill: the page patches in the asking frame's page world (page-patches.ts).
         'page/patches': (_message, from) => pagePatches.load(from),
         'sidebar/options': async (message, from) => {
-          if (!sidebarChannel(from)) return refuse('bad_sender');
+          // jr6: the no-sign-in toast's Open in the frame that claims the tab's application (an iCIMS portal's) too, for
+          // Sign-up Information alone.
+          const claim = from.frameId !== 0 && message.section === SIGNUP_SECTION
+            ? claimFrameOf(await framesOfTab(session, from.tabId)) : null;
+          const claimed = claim !== null && claim.frameId === from.frameId
+            && claim.documentId === (from.documentId ?? null) && from.reach !== 'sentinel';
+          if (!sidebarChannel(from) && !claimed) return refuse('bad_sender');
           const retry = launcherLimit.take(`${from.tabId}/`);
           if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
           await platform.tabs.create(platform.runtime.getURL(`/options.html${message.section === undefined ? ''
@@ -1101,6 +1143,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         }),
         'settings/get': async () => ok({ settings: await settings.get() }),
         'settings/save': async (message) => {
+          // jr6 (signup.ts, Sign-in mode's guard): Sign-in on Auto needs a job-site password saved in this browser.
+          const wanted = message.base === undefined ? message.settings
+            : mergeSettings(await settings.get(), message.base, message.settings);
+          if (holdsSignInAuto(wanted) && !(await signupVault.has())) {
+            log('signup.refused', { auto: true });
+            return refuse('unavailable');
+          }
           // The audit's M4: what the page changed from the settings it read, applied to the stored ones.
           const saved = await settings.save(message.settings, message.base);
           // Every frame with a form hears of it, so a run in progress reads auto-advance afresh (Phase 5 review, C-S2).
@@ -1112,6 +1161,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           return ok({ settings: saved });
         },
         'auth/status': async () => ok(await auth.status()),
+        // jr6: Settings › Sign-up Information (signup.ts): the extension's own pages alone, never the sidebar's.
+        'signup/status': () => signup.status(),
+        'signup/save': (message) => signup.save(message),
+        'signup/delete': () => signup.remove(),
+        'signup/import': () => signup.importFromTailorIT(),
         'auth/startPairing': () => auth.startPairing(),
         'auth/redeemCode': (message) => auth.redeemCode(message.code),
         'auth/disconnect': () => auth.disconnect(),
@@ -1357,7 +1411,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     }
   }
   accessReady = restrict();
-  state.ready = accessReady.then(() => runStates.prune().catch(() => undefined));
+  state.ready = accessReady.then(() => runStates.prune().catch(() => undefined))
+    // jr6: Sign-in Auto needs a password saved in this browser; settings that held it before (when the password was
+    // TailorIT's), or with one that went, go back to Manual.
+    .then(() => signup.keepModeHonest().then((reverted) => {
+      if (reverted) reports.tellPanels('settings');
+    }).catch(() => undefined));
   // v3 Phase 5: the agent picks up where it was (its job, a result still to tell, the queue).
   void state.ready.then(() => agent.start()).catch(() => undefined);
   // v1.5 QX: the sequential auto-apply picks up where it was (its timer, its tabs, a result still to tell).

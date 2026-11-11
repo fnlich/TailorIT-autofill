@@ -11,9 +11,10 @@
  * applications I submit myself (On / Off), (v1.3, settings version 9) Keep my submitted answers in TailorIT (On / Off),
  * (snapshot round 2, settings version 7) When a list has no match (Choose its
  * Other / Leave it empty) and TailorIT notifications on the page (Until I close them / 30, 10 or 5 seconds / Never
- * show them), and (v3 Phase 5) the skip rules Submit mode Auto and the auto-apply agent read, each a box. Sign-in's Auto can be chosen only while it may act (signInAvailability: a connection holding
- * credentials:read, the disclosure acknowledged); otherwise its card is disabled and the group's "?" says why, and the
- * worker holds it Manual anyway.
+ * show them), and (v3 Phase 5) the skip rules Submit mode Auto and the auto-apply agent read, each a box. Sign-in's Auto can be chosen only while it may act (signInAvailability: connected, and,
+ * jr6, a job-site password saved in this browser's Sign-up Information (the connection's credentials:read before), the
+ * disclosure acknowledged); otherwise its card is disabled and the group's "?" says why, and the worker refuses a save
+ * of it and holds it Manual anyway.
  * v5 p1-shell (settings version 8): "Where the panel shows" (On the page / Chrome's side panel) is drawn right after
  * Default view, whose choices now say whether the sidebar opens by itself; the options page shows it here too.
  * v5 p1-shell (the review's S7): in the sidebar on the page (ui/panel/on-page.tsx), a choice that lets the extension act
@@ -47,13 +48,15 @@ type ShownMode = (typeof SHOWN_MODES)[number];
 export const SKIP_RULES = ['requiredEmpty', 'noAi', 'legalGuess'] as const satisfies
   ReadonlyArray<keyof Modes['agentSkip']>;
 
-/** Why Sign-in's Auto cannot be chosen now, or null when it can (v3 Phase 5). */
-export type SignInBlock = 'connection' | 'scope' | 'disclosure';
+/** Why Sign-in's Auto cannot be chosen now, or null when it can (v3 Phase 5; jr6: 'password' for 'scope'). */
+export type SignInBlock = 'connection' | 'password' | 'disclosure';
 
-/** Sign-in's Auto may be chosen while the connection holds credentials:read and the disclosure was acknowledged. */
+/** Sign-in's Auto may be chosen while connected, a job-site password is saved in this browser (jr6: the coordinator's
+ *  reading of the owner's "if password is setted, user can't set signup auto", an owner question) and the disclosure
+ *  was acknowledged. */
 export function signInAvailability(status: AuthStatus | null): SignInBlock | null {
   if (status === null || status.connection !== 'connected') return 'connection';
-  if (!status.scopes.includes('credentials:read')) return 'scope';
+  if (status.signUp !== 'set') return 'password';
   if (status.disclosure === 'changed') return 'disclosure';
   return null;
 }
@@ -61,7 +64,7 @@ export function signInAvailability(status: AuthStatus | null): SignInBlock | nul
 /** What a Sign-in block says. */
 const SIGN_IN_BLOCKS: Record<SignInBlock, string> = {
   connection: WORDS.signIn.needsConnection,
-  scope: WORDS.signIn.needsScope,
+  password: WORDS.signIn.needsPassword,
   disclosure: WORDS.signIn.needsDisclosure,
 };
 

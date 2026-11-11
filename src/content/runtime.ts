@@ -204,7 +204,7 @@ import { TouchLog } from './touches';
 import { showApplied } from './ui/applied';
 import { documentDialogShown, showEditConfirm, showPreviewDialog } from './ui/document-dialog'; // v1.5 X
 import { mountPageUi, type PageUi } from './ui/page-ui';
-import { sidebarAppOf, type SidebarApp } from '../shared/sidebar';
+import { sidebarAppOf, SIGNUP_SECTION, type SidebarApp } from '../shared/sidebar';
 import type { PanelPlace, PanelView } from '../core/types/settings';
 import type { ToastSpec } from './ui/toasts';
 import type { NotificationTime } from '../core/types/settings';
@@ -370,6 +370,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   let sidebarOpening = false;
   /** Sign-in mode as it acts (v3 Phase 5): frame/hello's settings, then each settings/changed. */
   let signInMode: 'manual' | 'auto' = 'manual';
+  /** jr6: a job-site password is saved and may be typed (ContentSettings.typeSignIn): frame/hello's, then each
+   *  settings/changed. */
+  let signInTypes = false;
   /** s2 profile (settings version 7): how long the page's toasts stay: frame/hello's settings, then each
    *  settings/changed; until closed until the worker says. */
   let notificationTime: NotificationTime = 'until-closed';
@@ -518,6 +521,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         panelView = msg.settings.view;
         placementChanged(msg.settings.panel);
         signInMode = msg.settings.modes.signIn;
+        signInTypes = msg.settings.typeSignIn === true;
         notificationsChanged(msg.settings.modes.notifications);
         return ok({});
       case 'run/policyDecision':
@@ -660,6 +664,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     panelView = answer.data.settings.view;
     placementChanged(answer.data.settings.panel);
     signInMode = answer.data.settings.modes.signIn;
+    signInTypes = answer.data.settings.typeSignIn === true;
     notificationsChanged(answer.data.settings.modes.notifications);
     if (answer.data.launcher !== undefined) {
       launcherPrefs = answer.data.launcher;
@@ -1159,7 +1164,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       autoPressed,
       // v3 Phase 5, Sign-in mode Auto: once, on the page this run paused at, until the run stops or is cancelled; the
       // site taking it continues the run.
-      signIn: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
+      signIn: (signal, typeOnly) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
+        // jr6: Sign-in on Manual with a password saved: typed, the press the person's.
+        ...(typeOnly === true ? { typeOnly: true as const } : {}),
         signal: AbortSignal.any([signal, lifetime.signal]) }),
       // core-x, item 2: Sign-in Auto types into the form's account section, pressing nothing.
       signInSection: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
@@ -1190,13 +1197,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** v4: how many times a paused run of this document carried on by itself (MAX_AUTO_CONTINUES). */
   let autoContinues = 0;
 
-  /** v4 (D10): TailorIT's Settings › Autofill in a new tab, inside the person's click on a toast's Open. */
+  /** v4 (D10): the settings where the job-site sign-in is saved, inside the person's click on a toast's Open. jr6: the
+   *  extension's own settings page at Sign-up Information (no page may open it itself: the worker does, as for the
+   *  sidebar's link), TailorIT's Settings › Autofill before. */
   function openSignInSettings(): void {
-    try {
-      view?.open(`${__TAILORIT_ORIGIN__}/settings/autofill`, '_blank', 'noopener,noreferrer');
-    } catch {
-      // A page that took window.open away: nothing opens.
-    }
+    void channel.request({ v: 1, type: 'sidebar/options', section: SIGNUP_SECTION }).catch(() => undefined);
   }
 
   /** run/continue, or the launcher's Continue: a fresh run after a pause. It never answers the policy card: Continue
@@ -1672,14 +1677,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** A toast of the wall's (no run holds it): what is left for the person there (D10), until its cause goes
    *  (tellWall). The v4 review (M5): the one to add a job-site sign-in in TailorIT for 'none-saved' alone (the worker
    *  holds none for the page); the sign-in to make on the page for any other sign-in the run could not make. */
-  function showWallToast(said: 'sign-in' | 'failed' | 'none-saved' | 'challenge'): void {
+  function showWallToast(said: 'sign-in' | 'failed' | 'none-saved' | 'challenge' | 'typed'): void {
     const words = PAGE_COPY.toasts;
     const toast: ToastSpec = said === 'challenge' ? { kind: 'challenge', text: words.challenge }
       : said === 'none-saved'
         ? { kind: 'no-sign-in', text: words.noSignIn, action: { label: words.open, run: () => openSignInSettings() } }
-        : { kind: 'sign-in', text: said === 'failed' ? words.signInFailed : words.signIn };
+        : { kind: 'sign-in', text: said === 'failed' ? words.signInFailed : said === 'typed' ? words.signInTyped
+          : words.signIn };
     wallToast = toast.kind === 'challenge' ? 'challenge' : toast.kind === 'no-sign-in' ? 'no-sign-in' : 'sign-in';
-    wallWaits = said === 'failed' ? 'sign-in-failed' : said === 'none-saved' ? 'no-sign-in' : said;
+    wallWaits = said === 'failed' ? 'sign-in-failed' : said === 'none-saved' ? 'no-sign-in'
+      : said === 'typed' ? 'sign-in' : said;
     wallUi()?.setToasts([toast]);
     // s2 profile (P1): the worker hears what the page waits for, for the side panel (the wall as last read; the toast
     // itself is tellWall's to take away, at the page's next change).
@@ -1735,12 +1742,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       return;
     }
     if (shown === null || !(SIGN_IN_WALLS as readonly string[]).includes(shown.kind)) return;
-    if (!signUp && signInMode !== 'auto') {
+    // jr6: on Manual, a saved password is typed into a sign-in or an account's creation, the press the person's.
+    const typeOnly = !signUp && signInMode !== 'auto';
+    if (typeOnly && (!signInTypes || (shown.kind !== 'sign-in' && shown.kind !== 'create-account'))) {
       showWallToast('sign-in');
       return;
     }
     const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, claimed,
-      signal: lifetime.signal });
+      ...(typeOnly ? { typeOnly: true as const } : {}), signal: lifetime.signal });
     log('content.sign-up', { taken: outcome === 'continue' || outcome === 'left' });
     if (stopped || outcome === 'left') return;
     if (outcome === 'continue') {
@@ -1756,9 +1765,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       return;
     }
     // The v4 review (M5): none saved, a challenge, the site refusing it, or anything else (not allowed now, no form
-    // read): each its own toast.
+    // read): each its own toast. jr6: typed on Manual, the site's button the person's.
     showWallToast(outcome === 'none-saved' ? 'none-saved' : outcome === 'challenged' ? 'challenge'
-      : outcome === 'failed' ? 'failed' : 'sign-in');
+      : outcome === 'failed' ? 'failed' : outcome === 'typed' ? 'typed' : 'sign-in');
   }
 
   /** After a wall or a choice was passed in this document: the form it shows now, else one drawn late. */

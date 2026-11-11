@@ -1165,9 +1165,10 @@ const OPTIONS = {
       name: 'Sign-in',
       manual: 'Manual',
       auto: 'Auto',
-      help: "Auto signs in to a job site that asks you to (Workday and others), or creates your account there, with the email and password you saved in TailorIT's Settings › Autofill › Job-site sign-in, then presses Sign in or Create account. A check that you are human and an email code stay yours, and a password the site does not take is not tried again. Manual: you sign in.",
+      // jr6: the password is the one saved in this browser's Sign-up Information (TailorIT's Job-site sign-in before).
+      help: "Auto signs in to a job site that asks you to (Workday, iCIMS and others), or creates your account there, with the email and password saved in Sign-up Information, then presses Sign In or Create Account. Manual: with a password saved, Autofill types them and you press the button; without one, you sign in. A check that you are human and an email code stay yours, and a password the site does not take is not tried again.",
       /** Why Auto cannot be chosen now. */
-      needsScope: "Sign-in Auto needs this browser's permission to read your saved job-site sign-in. Disconnect, then connect again with \"Let this browser sign in to job sites with my saved password\" ticked on TailorIT's page.",
+      needsPassword: 'Sign-in Auto can be chosen once a job-site password is saved in Sign-up Information.',
       needsDisclosure: 'Sign-in Auto can be chosen once you choose I understand on the updated notice.',
       needsConnection: 'Sign-in Auto can be chosen once this browser is connected to TailorIT.',
     },
@@ -1583,7 +1584,9 @@ export const PAGE_COPY = {
     challenge: 'Solve the check on this page and Autofill carries on.',
     signIn: 'Sign in or create an account on this page, or use Sign up & Autofill in the TailorIT panel.',
     signInFailed: "Your saved job-site sign-in didn't work here. Sign in or create an account on this page, and Autofill carries on.",
-    noSignIn: 'Add your job-site sign-in in TailorIT › Settings › Autofill',
+    // jr6: the job-site password is saved in this browser's Sign-up Information.
+    noSignIn: 'Save a job-site password in TailorIT Autofill › Settings › Sign-up Information',
+    signInTyped: 'Your job-site email and password are filled in. Press the page\'s Sign In or Create Account, and Autofill carries on.',
     open: 'Open',
     submitHeld: {
       required: 'Submit is on Auto, and a required field is still empty, so the application was not submitted.',
@@ -1781,6 +1784,11 @@ const SETTINGS_VIEW = {
   notConnected: 'Not connected to TailorIT',
   queue: 'Queue Settings',
   autofill: 'Autofill Settings',
+  // jr6: Sign-up Information, after Autofill Information (the sidebar on the page shows its state and a link alone).
+  signUp: 'Sign-up Information',
+  signUpSet: 'A job-site password is saved in this browser.',
+  signUpNotSet: 'No job-site password is saved yet.',
+  signUpManage: 'Manage on the settings page',
 } as const;
 // ── end v4 ui ──
 

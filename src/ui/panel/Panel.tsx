@@ -311,10 +311,11 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     if (nextGate === 'setup' && view.name === 'settings') setView({ name: 'main' });
   }
 
-  // The connection changed (a token stored or dropped, in this window or another): read it again.
+  // The connection changed (a token stored or dropped, in this window or another), or (jr6) the job-site password was
+  // saved or deleted: read it again.
   useEffect(() => {
-    if (changes.connection > 0) refresh();
-  }, [changes.connection, refresh]);
+    if (changes.connection > 0 || changes.signup > 0) refresh();
+  }, [changes.connection, changes.signup, refresh]);
 
   // The settings, at the start and whenever the worker says they changed.
   useEffect(() => {

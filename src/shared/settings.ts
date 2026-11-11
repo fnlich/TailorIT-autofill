@@ -101,7 +101,10 @@ export const ContentModesSchema = ModesSchema.pick({ next: true, afterPageTurn: 
  *  (ContentModesSchema), the AI switches (what a posting that forbids AI does among them), and whether to offer saving
  *  a fixed answer (Phase 6: off means no row is marked for the offer). v5 p1-shell (version 8): the Default view, so the
  *  top frame opens the sidebar by itself on a supported page under Expanded (a message without it, a test's or an older
- *  worker's, reads Expanded). */
+ *  worker's, reads Expanded). jr6: `typeSignIn`, whether a job-site password is saved in this browser and may be typed
+ *  now (the disclosure acknowledged): with Sign-in on Manual, a sign-in or create-account page then gets the email and
+ *  the password typed and its button left to the person (a message without it reads false: nothing typed). */
 export const ContentSettingsSchema = SettingsSchema.pick({ panel: true, llm: true, offerToSaveAnswers: true })
-  .extend({ modes: ContentModesSchema, view: z.enum(PANEL_VIEWS).default('expanded') });
+  .extend({ modes: ContentModesSchema, view: z.enum(PANEL_VIEWS).default('expanded'),
+    typeSignIn: z.boolean().default(false) });
 export type ContentSettings = z.infer<typeof ContentSettingsSchema>;

@@ -280,6 +280,8 @@ export interface FakeWorkerOptions {
   /** The settings it plans with (CAUTIOUS_SETTINGS by default: version 1's defaults, tiebreak and classification on,
    *  drafts and answers off, the policy card); their content part is also what frame/hello and run/begin answer. */
   settings?: Settings;
+  /** jr6: a job-site password is saved and may be typed (ContentSettings.typeSignIn): false by default. */
+  typeSignIn?: boolean;
   /** The LLM's answers (Phase 4), which the next plan/poll brings: by default no tiebreak picks anything and no
    *  classification names a category. `picked` is a candidate's position, as the worker hands it to the core. */
   ai?: {
@@ -374,7 +376,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   const settings = { panel: planned.panel, modes: { next: planned.modes.next, afterPageTurn: planned.modes.afterPageTurn, submit: planned.modes.submit, agentSkip: planned.modes.agentSkip, signIn: planned.modes.signIn,
     // s2 profile (settings version 7).
     noMatch: planned.modes.noMatch, notifications: planned.modes.notifications },
-    llm: { ...planned.llm }, offerToSaveAnswers: planned.offerToSaveAnswers };
+    llm: { ...planned.llm }, offerToSaveAnswers: planned.offerToSaveAnswers, typeSignIn: options.typeSignIn === true };
 
   const scripted = (type: string): unknown => {
     const queue = options.script?.[type as ContentMessage['type']];

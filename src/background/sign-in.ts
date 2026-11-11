@@ -1,37 +1,38 @@
 /*
  * Sign-in mode Auto, the worker's side (v3 Phase 5; docs/SPEC-AMENDMENTS.md §12 Decision 10; docs/PRIVACY.md
  * "Sign-in Auto"). A run that paused at a job site's sign-in or create-account page, in a tab's top frame, asks for the
- * person's job-site sign-in (signin/credential {wall}). The worker answers it only when:
- * - Sign-in mode acts as Auto: the person chose it, the connection holds credentials:read (they ticked the sign-in box
- *   when connecting) and they acknowledged the disclosure as it reads now (settings.ts holdSignIn);
+ * person's job-site sign-in (signin/credential {wall}).
+ * jr6 (the owner's words of 2026-11-10: "store the password on localstorage on browser like jobright.ai. if needed, you
+ * should fetch this, and autofill it"): the sign-in is the one the person saved in this browser's Sign-up Information
+ * (background/signup-vault.ts: one email and one password for every job site, the password encrypted), never TailorIT's:
+ * nothing is asked of TailorIT here any more (its credentials:read route stays for the settings' one-time import). It is
+ * the every-site sign-in (`*`), taken only where that one ever was. The worker answers only when:
+ * - Sign-in acts now (signInAct): the person acknowledged the disclosure as it reads now, and then either Sign-in acts
+ *   as Auto (the person's choice, or the tab's Sign up & Autofill grant for the sender's origin: background/sign-up.ts,
+ *   the v4 review's M1), whose answer says `press` (the form's own button is pressed), or Sign-in is on Manual, whose
+ *   answer is typed alone (`press` false: the person presses);
  * - the frame is a tab's top frame, or (the snapshot build of 2026-11-06, core-x item 3) the tab's claim frame: the one
  *   subframe that draws a company wrapper's application, directly below it, on its origin, at its application
  *   (frames.ts claimFrameOf: an iCIMS portal's iframe#icims_content_iframe); in no private (incognito) tab, at an https
- *   address Chrome reports (the sender's, never a payload's), whose host name is the one TailorIT is asked for;
+ *   address Chrome reports (the sender's, never a payload's);
+ * - the page is one the every-site sign-in covers (signInHostCovered: a Workday tenant's, an iCIMS portal's, Taleo's,
+ *   SuccessFactors', Oracle's, SmartRecruiters', UltiPro's, and (TailorIT's API 6) ADP Workforce Now's and
+ *   ClearCompany's by their candidate paths alone, the frame's path being the pathname of Chrome's address for it, never
+ *   anything the message says), and never a company's own page the worker injected (v3 Phase 8, reach 'site': the
+ *   Phase 8 review's P6);
  * - the tab was not answered a sign-in for this host and wall within SIGN_IN_ONCE_MS: a password the site did not take
- *   is never typed again by itself (no retry loop, whatever page the site shows next). Only an answered sign-in counts:
- *   TailorIT down ('unavailable'), or no sign-in saved for the host ('not_found': the v4 review, M5, so the page's
- *   toast says to add one, which it says for no other refusal), may be asked again;
- * - TailorIT answers one (GET /api/autofill/credentials?host=: the host's own, else, on a host signInHostCovered
- *   covers, the one for every site), and it is for this host: its own host equal to the frame's, or `*` on a covered
- *   host, checked again here; a company's own page the worker injected (v3 Phase 8, reach 'site') takes its exact
- *   host's alone, never `*` (the Phase 8 review, P6). TailorIT's API 6 (the snapshot build of 2026-11-06, contract6):
- *   on a host the every-site sign-in covers by its candidate paths alone (ADP Workforce Now's
- *   /mascsr/default|applicant/mdf/recruitment/, a ClearCompany tenant's /careers/), the frame's path, the pathname of
- *   Chrome's address for it (never a query, a fragment or anything the message says), decides it: it goes to TailorIT
- *   as &path= at such a path alone, and `*` is taken there alone, never on that host's employee pages.
- * v4 (background/sign-up.ts): "Sign up & Autofill" grants a tab Sign-in Auto for one run: signInAuto(tabId, origin)
- * then says Auto for that tab alone, and (the v4 review, M1) for a sender of the origin the grant was given for alone,
- * every other rule above held.
+ *   is never typed again by itself (no retry loop, whatever page the site shows next). Only a sign-in answered for a
+ *   press counts: one typed on Manual presses nothing, so the site refused nothing yet;
+ * - a password is saved and reads (the vault decrypts it for this answer alone). None saved: under Auto 'not_found' (the
+ *   v4 review's M5: the page's toast then says to set one in Sign-up Information), on Manual 'unavailable' (the person
+ *   signs in).
  * The answer to that frame's message is the one place the password goes: it is held in this function's memory only
  * until the answer is sent, never stored, logged, cached, put in a report or sent anywhere else, and the frame types it
  * into the page's password field only (src/content/sign-in.ts). At an email gate (v3 Phase 7b: wall 'email-gate', the
  * email-first identity step of Oracle Recruiting Cloud) the answer carries the email alone, never the password. Logs
  * say whether one was found, never a host, an email or a password.
  */
-import {
-  AUTOFILL_ANY_HOST, HostNameSchema, signInHostCovered,
-} from '../contract/tailorit';
+import { AUTOFILL_ANY_HOST, HostNameSchema, signInHostCovered } from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import type { ContentMessage, SignInCredential } from '../messaging/schemas';
 import type { StorageArea } from '../platform/types';
@@ -39,7 +40,7 @@ import { sha256Hex } from '../core/text/sha256';
 import { log } from '../shared/log';
 import type { FrameEntry } from './frames';
 import type { ContentChannel } from './router';
-import type { ServerClient } from './server-client';
+import type { SignupVault } from './signup-vault';
 
 /** A tab is answered one host's sign-in for one wall at most once this long (no retry loop). */
 export const SIGN_IN_ONCE_MS = 10 * 60_000;
@@ -49,17 +50,24 @@ export const SIGN_IN_TRIED_PREFIX = 'signin-tried:';
 
 type CredentialMessage = Extract<ContentMessage, { type: 'signin/credential' }>;
 
+/** How Sign-in acts now for a frame (module header): 'auto' (typed and pressed), 'type' (Manual: typed, the press the
+ *  person's), or null (not at all: the disclosure as it reads now not acknowledged). */
+export type SignInAct = 'auto' | 'type' | null;
+
 /** What the sign-in needs. */
 export interface SignInDeps {
-  server: Pick<ServerClient, 'credential'>;
+  /** jr6: the sign-up information saved in this browser (signup-vault.ts). */
+  vault: Pick<SignupVault, 'reveal'>;
   session: StorageArea;
   now(): number;
-  /** Sign-in mode as it acts now for a frame of the tab on `origin`: Auto (the person's mode, or v4's Sign up &
-   *  Autofill grant for that tab, given for that origin: the v4 review, M1), and allowed (credentials:read, the
-   *  disclosure acknowledged). */
-  signInAuto(tabId: number, origin: string): Promise<boolean>;
+  /** How Sign-in acts now for a frame of the tab on `origin` (SignInAct): the person's Auto, or v4's Sign up & Autofill
+   *  grant for that tab given for that origin (the v4 review, M1), is 'auto'. */
+  signInAct(tabId: number, origin: string): Promise<SignInAct>;
   /** core-x, item 3: the tab's claim frame (frames.ts claimFrameOf), or null; absent: only a top frame is answered. */
   claimFrame?(tabId: number): Promise<Pick<FrameEntry, 'frameId' | 'documentId'> | null>;
+  /** jr6: the saved password can never be read again (its key gone): the vault removed it, and Sign-in Auto, which
+   *  needs one, goes back to Manual (index.ts). */
+  gone?(): Promise<void>;
 }
 
 /** The frame's host name and (TailorIT's API 6, contract6) its path, the pathname alone (no query, no fragment), when
@@ -82,10 +90,11 @@ export function createSignIn(deps: SignInDeps) {
       && claim.documentId === (from.documentId ?? null);
   }
   return {
-    /** signin/credential (module header). Refusals: `unavailable` (not allowed now, TailorIT not reached or refusing),
-     *  `not_found` (the v4 review, M5: TailorIT holds no sign-in for this page, its own host's or the every-site one
-     *  where that covers it), `expired` (the tab was answered this host's sign-in for this wall already: the site did
-     *  not take it), `bad_sender` (not a top frame, not https, a private tab), `rate_limited` (TailorIT's limit). */
+    /** signin/credential (module header). Refusals: `unavailable` (Sign-in does not act now, the page is not one the
+     *  every-site sign-in covers, or (on Manual) none is saved), `not_found` (Sign-in acts as Auto and no password is
+     *  saved, or the saved one can no longer be read: the page says to set one), `expired` (the tab was answered this
+     *  host's sign-in for this wall already: the site did not take it), `bad_sender` (not a top frame, not https, a
+     *  private tab). */
     async credential(message: CredentialMessage, from: ContentChannel): Promise<Answer<SignInCredential>> {
       if (from.incognito === true || (from.frameId !== 0 && !(await claims(from)))) {
         log('signin.refused', { top: from.frameId === 0, incognito: from.incognito === true });
@@ -98,8 +107,15 @@ export function createSignIn(deps: SignInDeps) {
         return refuse('bad_sender');
       }
       const { host, path } = page;
-      if (!(await deps.signInAuto(from.tabId, new URL(from.url).origin))) {
+      const act = await deps.signInAct(from.tabId, new URL(from.url).origin);
+      if (act === null) {
         log('signin.refused', { allowed: false });
+        return refuse('unavailable');
+      }
+      // The every-site sign-in's pages alone (TailorIT's API 6: a path-scoped host at a candidate path), never a
+      // company's own page (reach 'site').
+      if (from.reach === 'site' || !signInHostCovered(host, path)) {
+        log('signin.refused', { host: false });
         return refuse('unavailable');
       }
       const key = `${SIGN_IN_TRIED_PREFIX}${from.tabId}|${message.wall}|${sha256Hex(host).slice(0, 16)}`;
@@ -108,32 +124,21 @@ export function createSignIn(deps: SignInDeps) {
         log('signin.refused', { again: true });
         return refuse('expired');
       }
-      // TailorIT's API 6 (contract6): the page's path goes with the host only where it decides the every-site sign-in,
-      // a host covered by its candidate paths alone (ADP Workforce Now, ClearCompany) at one of those paths; nowhere
-      // else, and never from a company's own page, which never takes that sign-in.
-      const byPath = from.reach !== 'site' && !signInHostCovered(host) && signInHostCovered(host, path);
-      const answer = await deps.server.credential(host, byPath ? path : undefined);
-      if (!answer.ok) {
-        log('signin.credential', { found: false, status: answer.status ?? 0 });
-        if (answer.failure === 'not-found') return refuse('not_found');
-        return answer.failure === 'rate-limited'
-          ? (answer.retryAfterSeconds === undefined ? refuse('rate_limited')
-            : { ok: false, error: 'rate_limited', retryAfterSeconds: answer.retryAfterSeconds })
-          : refuse('unavailable');
+      const saved = await deps.vault.reveal();
+      if (!saved.ok) {
+        log('signin.credential', { found: false, gone: saved.why === 'gone' });
+        if (saved.why === 'gone') await deps.gone?.().catch(() => undefined);
+        // None to use: under Auto the page says to set one (the v4 review, M5); on Manual the sign-in is the person's.
+        return refuse(act === 'auto' && saved.why !== 'unreadable' ? 'not_found' : 'unavailable');
       }
-      const { host: own, email, password } = answer.value;
-      // A company's own page (v3 Phase 8, the review's P6) takes a sign-in saved for its exact host alone: never the
-      // every-site one, whose hosts are the job sites' (signInHostCovered), not a company's or an employer's.
-      if (own !== host && !(own === AUTOFILL_ANY_HOST && from.reach !== 'site' && signInHostCovered(host, path))) {
-        log('signin.refused', { host: false });
-        // None that may be used here is saved (the v4 review, M5).
-        return refuse('not_found');
-      }
-      // Answered: this tab, wall and host are not answered again within SIGN_IN_ONCE_MS.
-      await deps.session.set({ [key]: deps.now() });
-      log('signin.credential', { found: true, everySite: own === AUTOFILL_ANY_HOST });
+      const press = act === 'auto';
+      // Answered for a press: this tab, wall and host are not answered again within SIGN_IN_ONCE_MS. jr6: one typed on
+      // Manual is no try (nothing is pressed, the site refused nothing), so Sign up & Autofill may still press it.
+      if (press) await deps.session.set({ [key]: deps.now() });
+      log('signin.credential', { found: true, press });
       // An email gate (v3 Phase 7b) types the email alone: the password never leaves the worker for one.
-      return ok(message.wall === 'email-gate' ? { host: own, email } : { host: own, email, password });
+      return ok(message.wall === 'email-gate' ? { host: AUTOFILL_ANY_HOST, email: saved.email, press }
+        : { host: AUTOFILL_ANY_HOST, email: saved.email, password: saved.password, press });
     },
 
     /** A closed tab's asks go with it. */

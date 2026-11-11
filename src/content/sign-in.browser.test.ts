@@ -34,7 +34,9 @@ import { signIn, signInRefusalWaits, type SignInContext } from './sign-in';
 const HOST = 'acme.wd5.myworkdayjobs.com';
 /** An application's account page on a Workday tenant (the Workday parser reads it; its /login names no posting). */
 const HREF = `https://${HOST}/en-US/careers/job/x/Engineer_JR-0000001/apply/applyManually`;
-const CREDENTIAL: SignInCredential = { host: HOST, email: 'alex.rivera@example.com', password: 'dummy-password-not-real' };
+/** jr6: Sign-in on Auto (`press`: the worker says the form's button may be pressed). */
+const CREDENTIAL: SignInCredential = { host: HOST, email: 'alex.rivera@example.com', password: 'dummy-password-not-real',
+  press: true };
 
 /** Sets a loaded page's base address (a srcdoc page's own is about:srcdoc), after it loaded: the fixture loader lets
  *  no markup name a network address, and an action resolved against it fetches nothing. */
@@ -207,7 +209,8 @@ describe('Sign-in mode Auto (sign-in.ts)', () => {
     // At its own address (e2e routes it there): its relative action resolves against it, as in a tab.
     const fixture = await loadFixture(document, signInHtml, { width: 1100, height: 900 });
     setBase(fixture.doc);
-    const dummy = { host: HOST, email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real' };
+    // jr6: the fixtures' dummy meets the job-site password rules (core/signup-password.ts), as the e2e's saved one must.
+    const dummy = { host: HOST, email: 'alex.rivera@example.com', password: 'E2e-Dummy-Signup-Pass-2026!', press: true };
     expect(await attempt(fixture, channelAnswering({ ok: true, data: dummy }))).toBe('continue');
     const body = fixture.doc.body.dataset;
     expect([body.emailOk, body.passwordOk, body.terms, body.trapsEmpty, body.steal])
@@ -987,7 +990,7 @@ const pressesOn = (fixture: Fixture) => (fixture.view as unknown as { presses?: 
 
 describe('a declared sign-in container (core pass Z1, item 24)', () => {
   async function pressAt(fixture: Fixture, adapter: Adapter, answer: unknown = { ok: true, data: { host: HOST,
-    email: CREDENTIAL.email } }, href = HREF) {
+    email: CREDENTIAL.email, press: true } }, href = HREF) {
     const channel = channelAnswering(answer);
     const outcome = await signIn({ doc: fixture.doc, adapter, channel, href: () => href, isTop: true, container: true,
       signal: new AbortController().signal, settleMs: 1_500 });
@@ -1013,7 +1016,7 @@ describe('a declared sign-in container (core pass Z1, item 24)', () => {
           + 'style="width:300px;height:80px"></iframe>', {}],
         ['an http page', '', { href: `http://${HOST}/en-US/careers/job/x/Engineer_JR-0000001/apply/applyManually` }],
         ['a sign-in for another host', '', { answer: { ok: true, data: { host: 'other.wd5.myworkdayjobs.com',
-          email: CREDENTIAL.email } } }],
+          email: CREDENTIAL.email, press: true } } }],
         ['no sign-in saved for the host', '', { answer: { ok: false, error: 'unavailable' } }],
       ];
       for (const [what, after, change] of refused) {
@@ -1122,7 +1125,7 @@ describe('a declared sign-in container (core pass Z1, item 24)', () => {
 
   it('with Sign-in Auto, presses the container’s button once the run filled the step and rests', async () => {
     const { fixture, worker, runtime } = await startRun(guestPage(), 'auto', guestAdapter(),
-      { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email } }] });
+      { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email, press: true } }] });
     await runtime.fill();
     await vi.waitFor(() => expect(pressesOn(fixture)).toBe(1), { timeout: 5_000 });
     // The step's fields were the profile's, filled before the press.
@@ -1143,7 +1146,7 @@ describe('a declared sign-in container (core pass Z1, item 24)', () => {
   it('with Sign-in Auto, never presses while a required question of the step is left unanswered', async () => {
     const { fixture, worker, runtime } = await startRun(guestPage({ inside: '<label for="ssn">Social Security Number</label>'
       + '<input id="ssn" type="text" required>' }), 'auto', guestAdapter(),
-    { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email } }] });
+    { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email, press: true } }] });
     await runtime.fill();
     await deadline(800);
     expect((fixture.doc.getElementById('ssn') as HTMLInputElement).value).toBe('');
@@ -1156,7 +1159,7 @@ describe('a declared sign-in container (core pass Z1, item 24)', () => {
       // A required box no label names (the scan reads no question there, as UltiPro's register labels read today).
       const { fixture, worker, runtime } = await startRun(guestPage({ inside: '<input id="unnamed" type="text" '
         + 'aria-required="true">' }), 'auto', guestAdapter(),
-      { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email } }] });
+      { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email, press: true } }] });
       await runtime.fill();
       await deadline(800);
       expect((fixture.doc.getElementById('unnamed') as HTMLInputElement).value).toBe('');
@@ -1177,7 +1180,7 @@ describe('a declared sign-in container’s gates (the behaviour review of 2026-1
       const root = doc.getElementById('step');
       return root === null ? null : { formRoot: root };
     } };
-  const SAVED = { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email } }] };
+  const SAVED = { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email, press: true } }] };
 
   async function run(page: string, request: { dryRun?: boolean } = {}) {
     const fixture = await loadFixture(document, page, { width: 1100, height: 900 });

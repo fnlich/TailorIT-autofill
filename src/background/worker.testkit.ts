@@ -26,7 +26,7 @@ import type { RunState } from '../core/types/run';
 import type { Vocab } from '../core/vocab/types';
 import { createWorkerPlatform } from '../platform/chrome';
 import { installHandFakes, type FakePortPeer, type HandFakes, type RawSender, type TabMessage } from '../platform/fake';
-import { createMemorySecrets } from '../platform/memory';
+import { createMemoryKeyStore, createMemorySecrets } from '../platform/memory';
 import type { FetchLike, WorkerPlatform } from '../platform/types';
 import type { FrameReport } from '../shared/report';
 import { DISCLOSURE_KEY, DISCLOSURE_VERSION, type TokenRecord } from '../shared/stored';
@@ -380,6 +380,8 @@ export interface TestWorker {
   tailorit: FakeTailorIT;
   core: FakeCore;
   secrets: ReturnType<typeof createMemorySecrets>;
+  /** jr6: the job-site password's key, as the extension origin's IndexedDB would keep it (kept across a restart). */
+  signupKey: ReturnType<typeof createMemoryKeyStore>;
   timers: ReturnType<typeof manualTimers>;
   /** Every timeout signal the server client asked for, with its length; abort one to time its request out. */
   timeouts: Array<{ ms: number; controller: AbortController }>;
@@ -425,7 +427,8 @@ export async function startTestWorker(options: TestWorkerOptions = {}): Promise<
   return launch({ ...options, before: async (fakes) => {
     if (disclosure !== null) await fakeBrowser.storage.local.set({ [DISCLOSURE_KEY]: { version: disclosure } });
     await options.before?.(fakes);
-  } }, { secrets, clock: { now: START_MS }, tailorit: options.tailorit ?? createFakeTailorIT() });
+  } }, { secrets, signupKey: createMemoryKeyStore(), clock: { now: START_MS },
+    tailorit: options.tailorit ?? createFakeTailorIT() });
 }
 
 /**
@@ -444,24 +447,26 @@ export async function restartTestWorker(previous: TestWorker, options: TestWorke
         await options.before?.(fakes);
       },
     },
-    { secrets: previous.secrets, clock: previous.clock, tailorit: previous.tailorit },
+    { secrets: previous.secrets, signupKey: previous.signupKey, clock: previous.clock, tailorit: previous.tailorit },
   );
 }
 
 async function launch(
   options: TestWorkerOptions,
-  kept: { secrets: ReturnType<typeof createMemorySecrets>; clock: { now: number }; tailorit: FakeTailorIT },
+  kept: { secrets: ReturnType<typeof createMemorySecrets>; signupKey: ReturnType<typeof createMemoryKeyStore>;
+    clock: { now: number }; tailorit: FakeTailorIT },
 ): Promise<TestWorker> {
   fakeBrowser.reset();
   const fakes = installHandFakes();
   await options.before?.(fakes);
-  const { tailorit, secrets, clock } = kept;
+  const { tailorit, secrets, signupKey, clock } = kept;
   const timers = manualTimers();
   const timeouts: TestWorker['timeouts'] = [];
   const core = fakeCore(options.core);
   const platform: WorkerPlatform = {
     ...createWorkerPlatform(),
     secrets,
+    signupKey,
     fetch: tailorit.fetch,
     timeout: (ms) => {
       const controller = new AbortController();
@@ -484,6 +489,7 @@ async function launch(
     tailorit,
     core,
     secrets,
+    signupKey,
     timers,
     timeouts,
     clock,
@@ -504,6 +510,17 @@ export function contentSender(overrides: Partial<RawSender> = {}): RawSender {
 /** One of the extension's own pages (the side panel). */
 export function pageSender(path = 'sidepanel.html'): RawSender {
   return { id: EXTENSION_ID, url: `chrome-extension://${EXTENSION_ID}/${path}` };
+}
+
+/** jr6: a synthetic job-site password that meets every rule (core/signup-password.ts), and the email saved with it. */
+export const SIGNUP_PASSWORD = 'Synthetic-Signup-Pass-2026!';
+export const SIGNUP_EMAIL = 'alex.rivera@example.com';
+
+/** jr6: saves Sign-up Information as the options page does (signup/save); a refusal fails the test. */
+export async function saveSignup(worker: TestWorker, input: { email?: string; password?: string } = {}): Promise<void> {
+  const answer = await worker.deliver({ v: 1, type: 'signup/save', email: input.email ?? SIGNUP_EMAIL,
+    password: input.password ?? SIGNUP_PASSWORD }, pageSender('options.html')) as { ok: boolean; error?: string };
+  if (!answer.ok) throw new Error(`signup/save was refused: ${answer.error ?? '?'}`);
 }
 
 /** TailorIT's connect page, as Chrome describes it to onMessageExternal. */

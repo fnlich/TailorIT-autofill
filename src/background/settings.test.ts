@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { contentSettingsOf } from './settings';
-import { contentSender, pageSender, sentToFrames, startTestWorker, tokenRecord, typeOfSent } from './worker.testkit';
+import {
+  contentSender, pageSender, saveSignup, sentToFrames, startTestWorker, tokenRecord, typeOfSent,
+} from './worker.testkit';
 
 const OPTIONS = pageSender('options.html');
 const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'side' as const, view: 'minimized' as const,
@@ -13,7 +15,9 @@ const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'side' as const, view: 'minimized' 
 const CHOSEN_CONTENT = { panel: 'side', view: 'minimized', modes: { next: CHOSEN.modes.next, afterPageTurn: CHOSEN.modes.afterPageTurn,
   submit: CHOSEN.modes.submit, agentSkip: CHOSEN.modes.agentSkip, signIn: CHOSEN.modes.signIn,
   noMatch: CHOSEN.modes.noMatch, notifications: CHOSEN.modes.notifications }, llm: CHOSEN.llm,
-  offerToSaveAnswers: false };
+  offerToSaveAnswers: false,
+  // jr6: no job-site password saved in this browser.
+  typeSignIn: false };
 /** v5 p1-shell: CHOSEN as versions 1 to 7 stored it, Chrome's side panel; and where every version 8 migration puts
  *  the panel, the page (the owner, 2026-11-08: the Jobright-like sidebar for everyone). */
 const OLD_PANEL = { panel: 'side' as const };
@@ -59,25 +63,36 @@ describe('settings', () => {
       data: { settings: off } });
   });
 
-  it('keeps Sign-in Auto as chosen (v3 Phase 5), and a frame gets it only while the connection may read sign-ins', async () => {
+  it('keeps Sign-in Auto as chosen (v3 Phase 5) once a job-site password is saved (jr6), and a frame gets it only while it may act', async () => {
     const chosen = { ...CHOSEN, modes: { ...CHOSEN.modes, signIn: 'auto' as const, submit: 'auto' as const } };
-    const allowed = await startTestWorker({ token: tokenRecord() });
+    // jr6: no credentials:read needed any more: the password is this browser's own.
+    const scopes = tokenRecord().scopes.filter((scope) => scope !== 'credentials:read');
+    const allowed = await startTestWorker({ token: tokenRecord({ scopes }) });
+    // Auto without a password saved is refused (jr6, Sign-in mode's guard), and nothing is stored.
+    expect(await allowed.deliver({ v: 1, type: 'settings/save', settings: chosen }, OPTIONS))
+      .toEqual({ ok: false, error: 'unavailable' });
+    expect(await allowed.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
+      data: { settings: DEFAULT_SETTINGS } });
+    await saveSignup(allowed);
     expect(await allowed.deliver({ v: 1, type: 'settings/save', settings: chosen }, OPTIONS)).toEqual({ ok: true,
       data: { settings: chosen } });
     expect(await allowed.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender()))
-      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'auto', submit: 'auto' } } } });
-    // A connection without credentials:read (the sign-in box unticked when connecting): Manual, as it acts.
-    const scopes = tokenRecord().scopes.filter((scope) => scope !== 'credentials:read');
-    const unticked = await startTestWorker({ token: tokenRecord({ scopes }),
-      before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
-    expect(await unticked.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: chosen } });
-    expect(await unticked.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender()))
-      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'manual', submit: 'auto' } } } });
-    // The disclosure not acknowledged as it reads now: Sign-in and Submit both Manual, as they act.
-    const older = await startTestWorker({ token: tokenRecord(), disclosure: 2,
-      before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
+      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'auto', submit: 'auto' }, typeSignIn: true } } });
+    // The disclosure not acknowledged as it reads now: Sign-in and Submit both Manual, as they act; nothing typed.
+    const older = await startTestWorker({ token: tokenRecord(), disclosure: 2 });
+    await saveSignup(older);
+    expect(await older.deliver({ v: 1, type: 'settings/save', settings: chosen }, OPTIONS)).toMatchObject({ ok: true });
     expect(await older.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender()))
-      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'manual', submit: 'manual' } } } });
+      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'manual', submit: 'manual' }, typeSignIn: false } } });
+  });
+
+  it('jr6: settings that held Sign-in Auto before (the password then TailorIT\'s) go back to Manual at start-up', async () => {
+    const chosen = { ...CHOSEN, modes: { ...CHOSEN.modes, signIn: 'auto' as const } };
+    const worker = await startTestWorker({ token: tokenRecord(),
+      before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
+    const manual = { ...chosen, modes: { ...chosen.modes, signIn: 'manual' } };
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: manual } });
+    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': manual });
   });
 
   it('gives the agent’s tab Next and Submit on Auto, the person’s posting rule kept (v3 Phase 5 review; v4: no card)', () => {

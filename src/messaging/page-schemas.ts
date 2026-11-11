@@ -80,12 +80,19 @@ export type QueueBlock = (typeof QUEUE_BLOCKS)[number];
 export const QUEUE_LIST_PAGE = 50;
 // ── end v1.5 QX ──
 
+// ── jr6 ──
+/** The longest email the sign-up information takes (as TailorIT caps one). */
+const SIGNUP_EMAIL_LIMIT = 254;
+/** The longest password a page may send (the rules hold it to 64: core/signup-password.ts). */
+const SIGNUP_PASSWORD_LIMIT = 256;
+// ── end jr6 ──
+
 export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('ping') }),
   z.strictObject({ v, type: z.literal('panel/fill'), tabId: TabId, dryRun: z.boolean(),
     /** v4: "Sign up & Autofill": this run signs in, or creates the account, at the tab's next account wall once, as
-     *  Sign-in mode Auto would (the same rules: credentials:read, the disclosure acknowledged, a password never kept),
-     *  whatever the mode says. */
+     *  Sign-in mode Auto would (the same rules: since jr6 the job-site password saved in this browser's Sign-up
+     *  Information, the disclosure acknowledged, a password never kept), whatever the mode says. */
     signIn: z.literal(true).optional() }),
   /** The toolbar's Continue and Cancel, for every frame that reported. Continue only resumes a pause; it never
    *  answers a policy card. */
@@ -230,6 +237,23 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   /** A row's click: its job's tab, while it is open, brought to the front. */
   z.strictObject({ v, type: z.literal('queue/focus'), id: AutofillAgentIdSchema }),
   // ── end v1.5 QX ──
+  // ── jr6 (the owner's words of 2026-11-10): the job-site sign-up information, kept in this browser ──
+  // The extension's own pages alone (the options page, Chrome's side panel): never the sidebar on the page
+  // (background/senders.ts SIDEBAR_PAGE_MESSAGES holds none of them), whose page process hears what is typed. No answer
+  // ever carries the password: it leaves the worker only to be typed into a job site's own sign-in form
+  // (signin/credential).
+  /** Sign-up Information as the settings show it: whether a password is saved, the email, when it was saved. */
+  z.strictObject({ v, type: z.literal('signup/status') }),
+  /** Save: the email and a new password (one that meets every rule of core/signup-password.ts, checked again by the
+   *  worker); without `password`, the saved one is kept under the email. */
+  z.strictObject({ v, type: z.literal('signup/save'), email: z.string().min(3).max(SIGNUP_EMAIL_LIMIT),
+    password: z.string().min(1).max(SIGNUP_PASSWORD_LIMIT).optional() }),
+  /** Delete: the password and its key go; Sign-in on Auto goes back to Manual (it needs one). */
+  z.strictObject({ v, type: z.literal('signup/delete') }),
+  /** "Import from TailorIT", once, while none is saved here and the connection may read job-site sign-ins
+   *  (credentials:read): the every-site sign-in TailorIT keeps, saved here when its password meets the rules. */
+  z.strictObject({ v, type: z.literal('signup/import') }),
+  // ── end jr6 ──
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
@@ -243,7 +267,9 @@ export const PANEL_CHANGES = ['connection', 'settings', 'agent',
   // v1.4 F: a tab's tailoring moved on (a step, done, failed): each panel reads its own tab's with panel/tailor.
   'tailor',
   // v1.5 QX: the sequential auto-apply moved on (a tab opened, a job's status, a phase).
-  'queue'] as const;
+  'queue',
+  // jr6: the job-site password was saved or deleted: each panel reads the connection's status again (its `signUp`).
+  'signup'] as const;
 
 export const PanelPortMessageSchema = z.discriminatedUnion('type', [
   /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). `side` (v3 Phase 3):
@@ -291,6 +317,9 @@ export const AuthStatusSchema = z.strictObject({
    *  ('current'), or it changed since they connected or last chose I understand ('changed': the side panel and the
    *  options page show it again; Submit mode Auto, recording Applied and the lookup as a page loads wait for it). */
   disclosure: z.enum(['current', 'changed']).optional(),
+  /** jr6: whether a job-site password is saved in this browser's Sign-up Information (Sign-in Auto needs one). A word,
+   *  never the email or the password: the sidebar on the page reads it too. */
+  signUp: z.enum(['set', 'not-set']).optional(),
 });
 export type AuthStatus = z.infer<typeof AuthStatusSchema>;
 
@@ -642,6 +671,29 @@ export const QueueFocusAnswerSchema = z.strictObject({ focused: z.boolean() });
 /** v5 p1-shell: panel/notes's answer: the notes the person closed. */
 export const PanelNotesAnswerSchema = z.strictObject({ closed: z.array(z.enum(PANEL_NOTES)).max(PANEL_NOTES.length) });
 
+// ── jr6 ──
+/** Sign-up Information as the settings show it (signup/status, and with the other answers): whether a password is saved,
+ *  its email and when; the email the box starts with when none is saved (the profile's); whether "Import from TailorIT"
+ *  is offered (none saved here, and the connection may read job-site sign-ins). Never the password. */
+export const SignupStatusSchema = z.strictObject({
+  set: z.boolean(),
+  email: Text(SIGNUP_EMAIL_LIMIT).nullable(),
+  updatedAt: Count.nullable(),
+  suggestedEmail: Text(SIGNUP_EMAIL_LIMIT).nullable(),
+  importable: z.boolean(),
+});
+export type SignupStatus = z.infer<typeof SignupStatusSchema>;
+
+/** signup/delete's answer: the status after, and whether Sign-in went back from Auto to Manual. */
+export const SignupDeleteAnswerSchema = z.strictObject({ status: SignupStatusSchema, reverted: z.boolean() });
+
+/** What "Import from TailorIT" came to: saved here; TailorIT holds no sign-in for every site; or its password misses a
+ *  rule (nothing saved: the person sets a new one here). */
+export const SIGNUP_IMPORT_OUTCOMES = ['imported', 'none', 'weak'] as const;
+export const SignupImportAnswerSchema = z.strictObject({ outcome: z.enum(SIGNUP_IMPORT_OUTCOMES),
+  status: SignupStatusSchema });
+// ── end jr6 ──
+
 /** The data schema of the worker's answer to each page message. */
 export const PAGE_ANSWER_SCHEMAS = {
   ping: PingAnswerSchema,
@@ -702,6 +754,11 @@ export const PAGE_ANSWER_SCHEMAS = {
   'queue/pause': QueueStatusSchema,
   'queue/resume': QueueStatusSchema,
   'queue/focus': QueueFocusAnswerSchema,
+  // jr6
+  'signup/status': SignupStatusSchema,
+  'signup/save': SignupStatusSchema,
+  'signup/delete': SignupDeleteAnswerSchema,
+  'signup/import': SignupImportAnswerSchema,
 } as const satisfies Record<PageMessage['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */

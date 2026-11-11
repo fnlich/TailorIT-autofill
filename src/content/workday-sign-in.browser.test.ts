@@ -47,7 +47,8 @@ const ACCOUNT = `https://${WORKDAY_HOST}/en-US/Workday/job/x/Senior-Product-Mana
 const ORACLE_HOST = 'elhr.fa.us2.oraclecloud.com';
 const GATE = `https://${ORACLE_HOST}/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/email`;
 /** A synthetic sign-in: the every-site one, a dummy address and a dummy password. */
-const CREDENTIAL: SignInCredential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real' };
+const CREDENTIAL: SignInCredential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real',
+  press: true };
 
 let logs: MockInstance;
 beforeAll(() => {
@@ -227,7 +228,7 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
   it('types the email alone, ticks the terms, presses NEXT; the honeypot stays empty', async () => {
     const fixture = await plainGate();
     const seen = actAsOracle(fixture);
-    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     expect(await attempt(fixture, oracleAdapter, channel, GATE)).toBe('continue');
     expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'email-gate' }]);
     expect(seen).toEqual({ presses: 1, typed: { email: CREDENTIAL.email, honeypot: '', terms: true } });
@@ -239,7 +240,7 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
   it('is taken as captured, its terms label read through the panel over the image', async () => {
     const fixture = await served(elhrGateHtml, GATE, 'form:has(input[name="primary-email"])');
     const seen = actAsOracle(fixture);
-    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     expect(await attempt(fixture, oracleAdapter, channel, GATE)).toBe('continue');
     expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'email-gate' }]);
     expect(seen).toEqual({ presses: 1, typed: { email: CREDENTIAL.email, honeypot: '', terms: true } });
@@ -251,7 +252,7 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
       el.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
     }
     const seen = actAsOracle(fixture);
-    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     expect(await attempt(fixture, oracleAdapter, channel, GATE)).toBe('unavailable');
     expect(channel.asked).toEqual([]);
     expect(seen.presses).toBe(0);
@@ -260,7 +261,7 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
   it('takes the gate on JPMC’s region-less host too, which the every-site sign-in covers since TailorIT’s API 5', async () => {
     const fixture = await plainGate();
     const seen = actAsOracle(fixture);
-    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     const jpmc = 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/1/apply/email';
     expect(await attempt(fixture, oracleAdapter, channel, jpmc)).toBe('continue');
     expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'email-gate' }]);
@@ -276,14 +277,14 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
     fixture.doc.querySelector('#legal-disclaimer-checkbox')!.addEventListener('click', () => {
       next.disabled = false;
     });
-    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     expect(await attempt(fixture, oracleAdapter, channel, GATE)).toBe('continue');
     expect(seen.presses).toBe(1);
     removeFixtures(document);
     const stuck = await plainGate();
     const never = actAsOracle(stuck);
     stuck.doc.querySelector<HTMLButtonElement>('button[type="submit"][title="Next"]')!.disabled = true;
-    expect(await attempt(stuck, oracleAdapter, channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } }),
+    expect(await attempt(stuck, oracleAdapter, channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } }),
       GATE)).toBe('failed');
     expect(never.presses).toBe(0);
   }, 15_000);
@@ -314,7 +315,7 @@ describe('a CAPTCHA comes first (the v3 Phase 6/7b review, S1)', () => {
     const gate = await served(elhrGateHtml, GATE, 'form:has(input[name="primary-email"])');
     for (const el of Array.from(gate.doc.querySelectorAll<HTMLElement>('.apply-flow'))) el.style.backgroundImage = 'none';
     challenge(gate.doc, gate.doc.querySelector('form:has(input[name="primary-email"])')!);
-    const asked = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    const asked = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } });
     expect(await attempt(gate, oracleAdapter, asked, GATE)).toBe('challenged');
     expect(asked.asked).toEqual([]);
     expect(gate.doc.querySelector<HTMLInputElement>('input[name="primary-email"]')!.value).toBe('');
@@ -337,7 +338,7 @@ describe('a CAPTCHA comes first (the v3 Phase 6/7b review, S1)', () => {
       event.preventDefault();
       challenge(gate.doc, gateForm);
     });
-    expect(await attempt(gate, oracleAdapter, channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } }),
+    expect(await attempt(gate, oracleAdapter, channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email, press: true } }),
       GATE)).toBe('continue');
   });
 

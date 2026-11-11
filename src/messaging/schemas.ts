@@ -458,10 +458,11 @@ const contentMessages = [
     fields: z.array(CapturedFieldSchema).max(300), posting: CapturedPostingSchema.optional() }),
   /** v3 Phase 5, Sign-in mode Auto: the top frame's run paused at a sign-in (`sign-in`) or create-account
    *  (`create-account`) page and asks for the job-site sign-in of its own host. The worker reads the host from Chrome's
-   *  sender address, never from a payload, fetches GET /credentials?host= only while the person chose Auto, the
-   *  connection may read sign-ins and the disclosure was acknowledged, and answers it to this frame alone, once per
-   *  tab, host and wall: the one message that ever carries the password. At an email gate (`email-gate`, v3 Phase 7b)
-   *  the answer carries the email alone. */
+   *  sender address, never from a payload, and answers it to this frame alone, once per tab, host and wall: the one
+   *  message that ever carries the password. At an email gate (`email-gate`, v3 Phase 7b) the answer carries the email
+   *  alone. jr6: the sign-in is the one saved in this browser (background/signup-vault.ts), decrypted for this answer
+   *  alone, on a page the every-site sign-in covers, once the disclosure was acknowledged; with Sign-in on Auto (or Sign
+   *  up & Autofill) its button is pressed, on Manual it is typed for the person to press. TailorIT is asked nothing. */
   z.strictObject({ v, type: z.literal('signin/credential'), wall: z.enum(SIGN_IN_WALLS) }),
   /** Round 3 of the v3 Phase 6/7b review (X8): the auto-apply agent's entry press was made in this frame (press.ts
    *  pressEntry, for agent/enter), told at once, before the entry waits on what the press brings: a press that takes
@@ -842,12 +843,16 @@ export type EntryAnswer = z.infer<typeof EntryAnswerSchema>;
 
 /** signin/credential's answer (v3 Phase 5): the job-site sign-in for the frame's own host, to that frame alone. The one
  *  message that carries a password: never logged, stored or put in a report. `host`: the sign-in's own host, or `*`
- *  (the one for every site, used only on a host signInHostCovered covers), which the frame checks against its own. */
+ *  (the one for every site, used only on a host signInHostCovered covers), which the frame checks against its own.
+ *  jr6: the sign-in is the one saved in this browser's Sign-up Information (background/signup-vault.ts), always `*`;
+ *  `press`: whether Sign-in acts as Auto for that frame now (the person's Auto, or the tab's Sign up & Autofill grant):
+ *  only then is the form's Sign In or Create Account pressed; on Manual it is typed, and the press is the person's. */
 export const SignInCredentialAnswerSchema = z.strictObject({
   host: AutofillSignInHostSchema,
   email: z.string().min(1).max(AUTOFILL_SIGN_IN_LIMITS.email),
   /** Absent only in the answer for an email gate (v3 Phase 7b), which types the email alone. */
   password: z.string().min(1).max(AUTOFILL_SIGN_IN_LIMITS.password).regex(/^[^\r\n]*$/).optional(),
+  press: z.boolean(),
 });
 export type SignInCredential = z.infer<typeof SignInCredentialAnswerSchema>;
 
@@ -964,4 +969,6 @@ export type {
   AddJobOutcome, AgentBlock, AgentPause, AgentPhase, AgentStatus, AskLength, AskOutcome, AuthStatus, ExternalMessage, JobCard, JobCardMatch, JobSearchRefusal, LetterOutcome, PageMessage, PanelAskAnswer, PanelJobAnswer, PanelJobSearchAnswer, PanelLauncherAnswer, PanelLetterAnswer, PanelPortMessage, PanelSaveProfileAnswer, ProfileSaveRefusal, ProfileView, ResumeListAnswer, SiteRequestOutcome, SitesState, TabReports, TelemetryAnswer,
   // v1.5 QX
   QueueItemStatus, QueueListAnswer, QueueListItem, QueueStatus,
+  // jr6
+  SignupStatus,
 } from './page-schemas';

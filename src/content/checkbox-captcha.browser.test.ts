@@ -410,7 +410,8 @@ describe('a checkbox widget never holds the fill (M6), and since v5 no press: th
     base.href = `https://${host}/`;
     fixture.doc.head.prepend(base);
     const asked: unknown[] = [];
-    const credential: SignInCredential = { host, email: 'alex.rivera@example.com', password: 'dummy-password-not-real' };
+    const credential: SignInCredential = { host, email: 'alex.rivera@example.com', password: 'dummy-password-not-real',
+      press: true };
     const channel = { request: async (message: unknown) => {
       asked.push(message);
       return { ok: true, data: credential };

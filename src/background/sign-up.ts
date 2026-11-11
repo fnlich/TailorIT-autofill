@@ -5,8 +5,9 @@
  * - the tab's content settings say Sign-in Auto (index.ts contentSettingsFor), so the run, and the run of the next
  *   document a sign-in brings, sign in at the account wall (content/sign-in.ts, every guard held);
  * - signin/credential is answered for that tab as under Sign-in Auto (background/sign-in.ts), with the same refusals:
- *   the connection must hold credentials:read and the disclosure be acknowledged (or no sign-in is answered, and the
- *   page's toast says to sign in on the page), a top or claim frame alone, https, once per tab, wall and host, and the
+ *   the disclosure acknowledged (or no sign-in is answered, and the page's toast says to sign in on the page) and, since
+ *   jr6, a job-site password saved in this browser's Sign-up Information (none: the page's toast says to save one; the
+ *   connection's credentials:read before), a top or claim frame alone, https, once per tab, wall and host, and the
  *   password never kept.
  * Where Autofill (or Sign up & Autofill) reaches a page that shows a wall or a choice of how to apply but no form, the
  * first form a frame of that tab then says hello with is started once (takeFill: run/start, with {signIn} under Sign up

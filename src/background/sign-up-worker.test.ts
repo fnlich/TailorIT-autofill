@@ -1,9 +1,10 @@
 /*
  * v4 (the owner, 2026-11-07; docs/SPEC-AMENDMENTS.md §13), the worker's side:
  * - "Sign up & Autofill" (panel/fill {signIn: true}): for that one run in that tab, Sign-in acts as Auto (the tab's
- *   content settings, and signin/credential), with every refusal Sign-in Auto has (credentials:read, the disclosure
- *   acknowledged, once per tab, wall and host); another tab, a dry run, and the run's end (its report at review) are
- *   outside it, and Sign-in Manual stays as it was otherwise.
+ *   content settings, and signin/credential), with every refusal Sign-in Auto has (jr6: a job-site password saved in
+ *   this browser, credentials:read before; the disclosure acknowledged, once per tab, wall and host); another tab, a dry
+ *   run, and the run's end (its report at review) are outside it, and Sign-in Manual stays as it was otherwise: jr6, the
+ *   saved password typed, never pressed (`press` false).
  * - PageState.wall: the account wall the tab's application frame (its top frame, or the claim frame) says it shows
  *   (frame/wall), kept while that document says hello again, gone with it.
  * - A wall with no form: Autofill reaches the wall's frame (run/start), and the tab's next form is started once.
@@ -12,14 +13,16 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { SIGN_UP_GRANT_MS } from './sign-up';
 import {
-  beginRun, contentSender, frameReport, pageSender, sentToFrames, startTestWorker, tokenRecord, typeOfSent,
-  type TestWorker,
+  beginRun, contentSender, frameReport, pageSender, saveSignup, sentToFrames, SIGNUP_PASSWORD, startTestWorker,
+  tokenRecord, typeOfSent, type TestWorker,
 } from './worker.testkit';
 
 const OPTIONS = pageSender('options.html');
 const PANEL = pageSender();
 const WORKDAY = 'https://acme.wd5.myworkdayjobs.com/en-US/careers/login';
-const PASSWORD = 'dummy-password-not-real';
+const PASSWORD = SIGNUP_PASSWORD;
+/** jr6: Sign-in Manual with a password saved: the sign-in is answered to be typed, never pressed. */
+const TYPED = { ok: true, data: { press: false } };
 
 let logs: MockInstance;
 beforeEach(() => {
@@ -37,16 +40,14 @@ const fill = (worker: TestWorker, tabId: number, extra: Record<string, unknown> 
 const pageOf = async (worker: TestWorker, tabId: number) => ((await worker.deliver({ v: 1, type: 'panel/reports',
   tabId }, PANEL)) as { data: { page?: Record<string, unknown> } }).data.page;
 
-/** A worker with Sign-in on Manual (the default), a connection that may read sign-ins (unless `scopes` is false), and
- *  TailorIT holding the Workday sign-in. */
-async function signUpWorker(options: { scopes?: boolean; disclosure?: number } = {}) {
+/** A worker with Sign-in on Manual (the default) and (jr6) a job-site password saved in this browser's Sign-up
+ *  Information (unless `password` is false); its connection holds no credentials:read, which jr6 no longer needs. */
+async function signUpWorker(options: { password?: boolean; disclosure?: number } = {}) {
   const record = tokenRecord();
-  const scopes = options.scopes === false ? record.scopes.filter((scope) => scope !== 'credentials:read') : record.scopes;
-  const worker = await startTestWorker({ token: tokenRecord({ scopes }),
-    ...(options.disclosure === undefined ? {} : { disclosure: options.disclosure }) });
+  const worker = await startTestWorker({ token: tokenRecord({ scopes: record.scopes.filter((scope) =>
+    scope !== 'credentials:read') }), ...(options.disclosure === undefined ? {} : { disclosure: options.disclosure }) });
   await worker.deliver({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS }, OPTIONS);
-  worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'acme.wd5.myworkdayjobs.com',
-    email: 'alex.rivera@example.com', password: PASSWORD } });
+  if (options.password !== false) await saveSignup(worker);
   return worker;
 }
 
@@ -59,8 +60,8 @@ describe('Sign up & Autofill: Sign-in Auto for one run, in one tab (v4)', () => 
   it('starts the tab’s form with {signIn}, tells its frames Sign-in Auto, and answers the credential for that tab alone', async () => {
     const worker = await signUpWorker();
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top());
-    // Sign-in Manual: refused before the grant.
-    expect(await ask(worker)).toEqual({ ok: false, error: 'unavailable' });
+    // Sign-in Manual before the grant: jr6, typed alone, never pressed.
+    expect(await ask(worker)).toMatchObject(TYPED);
     expect(await fill(worker, 12, { signIn: true })).toEqual({ ok: true, data: { frames: 1 } });
     expect(sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'run/start').map((sent) => sent.message))
       .toEqual([{ v: 1, type: 'run/start', dryRun: false, signIn: true }]);
@@ -68,22 +69,28 @@ describe('Sign up & Autofill: Sign-in Auto for one run, in one tab (v4)', () => 
     // The frame's next hello hears it too (and so does its run/begin: the same content settings).
     expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top()))
       .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'auto' } } } });
-    expect(await ask(worker)).toMatchObject({ ok: true, data: { password: PASSWORD } });
+    expect(await ask(worker)).toMatchObject({ ok: true, data: { password: PASSWORD, press: true } });
     // Once per tab, wall and host still.
     expect(await ask(worker)).toEqual({ ok: false, error: 'expired' });
-    // Another tab holds no grant: Sign-in Manual there.
+    // Another tab holds no grant: Sign-in Manual there (typed, never pressed).
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top(13));
-    expect(await ask(worker, top(13))).toEqual({ ok: false, error: 'unavailable' });
+    expect(await ask(worker, top(13))).toMatchObject(TYPED);
+    // TailorIT is never asked for a sign-in (jr6).
+    expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(0);
   });
 
-  it('keeps every refusal of Sign-in Auto: without credentials:read or the disclosure, nothing is answered', async () => {
-    for (const options of [{ scopes: false }, { disclosure: 2 }]) {
-      const worker = await signUpWorker(options);
-      await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top());
-      await fill(worker, 12, { signIn: true });
-      expect(await ask(worker), JSON.stringify(options)).toEqual({ ok: false, error: 'unavailable' });
-      expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(0);
-    }
+  it('keeps every refusal of Sign-in Auto: with no password saved the page says to save one; before the disclosure nothing', async () => {
+    const none = await signUpWorker({ password: false });
+    await none.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top());
+    await fill(none, 12, { signIn: true });
+    // Held at Manual, and the run's own Sign up & Autofill hears there is none to use.
+    expect(lastSettingsTo(none, 12)).toBe('manual');
+    expect(await ask(none)).toEqual({ ok: false, error: 'not_found' });
+    const older = await signUpWorker({ disclosure: 2 });
+    await older.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top());
+    await fill(older, 12, { signIn: true });
+    expect(await ask(older)).toEqual({ ok: false, error: 'unavailable' });
+    for (const worker of [none, older]) expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(0);
   });
 
   it('grants nothing in a dry run, and a plain Autofill ends the grant', async () => {
@@ -92,14 +99,14 @@ describe('Sign up & Autofill: Sign-in Auto for one run, in one tab (v4)', () => 
     await fill(dry, 12, { signIn: true, dryRun: true });
     expect(sentToFrames(dry).filter((sent) => typeOfSent(sent) === 'run/start').map((sent) => sent.message))
       .toEqual([{ v: 1, type: 'run/start', dryRun: true }]);
-    expect(await ask(dry)).toEqual({ ok: false, error: 'unavailable' });
+    expect(await ask(dry)).toMatchObject(TYPED);
 
     const worker = await signUpWorker();
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top());
     await fill(worker, 12, { signIn: true });
     await fill(worker, 12);
     expect(lastSettingsTo(worker, 12)).toBe('manual');
-    expect(await ask(worker)).toEqual({ ok: false, error: 'unavailable' });
+    expect(await ask(worker)).toMatchObject(TYPED);
   });
 
   it('ends with the run: its report at review, or SIGN_UP_GRANT_MS', async () => {
@@ -119,7 +126,7 @@ describe('Sign up & Autofill: Sign-in Auto for one run, in one tab (v4)', () => 
     await timed.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, top());
     await fill(timed, 12, { signIn: true });
     timed.clock.now += SIGN_UP_GRANT_MS;
-    expect(await ask(timed)).toEqual({ ok: false, error: 'unavailable' });
+    expect(await ask(timed)).toMatchObject(TYPED);
   });
 });
 
@@ -202,8 +209,8 @@ describe('a wall with no form (v4)', () => {
     await vi.waitFor(() => expect(starts()).toHaveLength(2));
     expect(starts().map((sent) => sent.message)).toEqual([{ v: 1, type: 'run/start', dryRun: false },
       { v: 1, type: 'run/start', dryRun: false }]);
-    // No grant of Sign-in Auto came with it.
-    expect(await ask(worker, top(12, { documentId: 'doc-form' }))).toEqual({ ok: false, error: 'unavailable' });
+    // No grant of Sign-in Auto came with it: Manual's typing alone.
+    expect(await ask(worker, top(12, { documentId: 'doc-form' }))).toMatchObject(TYPED);
   });
 
   it('sends nothing to a page with no form, wall or choice', async () => {
@@ -244,7 +251,7 @@ describe('the v4 review: a grant holds for the site it was given for (security M
     // Nothing of it is left for the tab: the Workday form that follows later is not started either.
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, at(FORM, 'doc-form'));
     expect(starts(worker)).toHaveLength(1);
-    expect(await ask(worker, at(FORM, 'doc-form'))).toEqual({ ok: false, error: 'unavailable' });
+    expect(await ask(worker, at(FORM, 'doc-form'))).toMatchObject(TYPED);
   });
 
   it('starts the form of the application it was given for, never another application of the same site', async () => {
@@ -261,20 +268,16 @@ describe('the v4 review: a grant holds for the site it was given for (security M
 
   it('answers the credential for a sender of the grant’s origin alone, and says Sign-in Auto to its frames alone', async () => {
     const worker = await walled();
-    // A frame on another site in the same tab (its document never said hello): no Sign-in Auto for it.
-    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'jobs.lever.co', email: 'alex.rivera@example.com',
-      password: PASSWORD } });
+    // A frame on another site in the same tab (its document never said hello): no Sign-in Auto for it, and (jr6) no
+    // sign-in at all: no job site's own page.
     expect(await ask(worker, at(LEVER, 'doc-lever-unsaid'))).toEqual({ ok: false, error: 'unavailable' });
-    expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(0);
-    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'acme.wd5.myworkdayjobs.com',
-      email: 'alex.rivera@example.com', password: PASSWORD } });
     // A subframe of another origin hears Sign-in Manual; the grant's own frame Sign-in Auto.
     expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: true },
       top(12, { url: LEVER, frameId: 4, documentId: 'doc-sub' })))
       .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'manual' } } } });
     expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false }, at(WORKDAY, 'doc-wall')))
       .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'auto' } } } });
-    expect(await ask(worker, at(WORKDAY, 'doc-wall'))).toMatchObject({ ok: true, data: { password: PASSWORD } });
+    expect(await ask(worker, at(WORKDAY, 'doc-wall'))).toMatchObject({ ok: true, data: { password: PASSWORD, press: true } });
   });
 
   it('tells the tab’s frames their settings again once the grant ends by time (its timer, or a read past it)', async () => {
@@ -284,7 +287,7 @@ describe('the v4 review: a grant holds for the site it was given for (security M
 
     const read = await walled();
     read.clock.now += SIGN_UP_GRANT_MS;
-    expect(await ask(read, at(WORKDAY, 'doc-wall'))).toEqual({ ok: false, error: 'unavailable' });
+    expect(await ask(read, at(WORKDAY, 'doc-wall'))).toMatchObject(TYPED);
     await vi.waitFor(() => expect(lastSettingsTo(read, 12)).toBe('manual'));
   });
 });

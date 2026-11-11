@@ -275,7 +275,7 @@ describe('item 2: the profile’s "Create a login" is a section of the profile',
     const button = fixture.doc.querySelector<HTMLElement>('input#cp_form_submit_i')!;
     const clicked = vi.fn();
     button.addEventListener('click', clicked);
-    const credential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real' };
+    const credential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real', press: true };
     const asked: unknown[] = [];
     const channel = { request: async (message: unknown) => {
       asked.push(message);
@@ -330,7 +330,7 @@ describe('item 2: the profile’s "Create a login" is a section of the profile',
     const button = fixture.doc.querySelector<HTMLElement>('input#cp_form_submit_i')!;
     const clicked = vi.fn();
     button.addEventListener('click', clicked);
-    const credential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real' };
+    const credential = { host: '*', email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real', press: true };
     const settings = { ...CAUTIOUS_SETTINGS, modes: { ...CAUTIOUS_SETTINGS.modes, signIn: 'auto' as const } };
     const worker = createFakeWorker({ settings, script: { 'signin/credential': [{ ok: true, data: credential }] } as never });
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => fixture.address, isTop: true,

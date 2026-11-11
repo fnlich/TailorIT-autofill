@@ -105,6 +105,24 @@ export function createMemorySecrets(): SecretStore & { readonly value: unknown }
   };
 }
 
+/** jr6: a key store in memory for the job-site password's key (signup-vault.ts), as IndexedDB keeps it: a structured
+ *  clone, which keeps a CryptoKey a CryptoKey (and its extractable flag as it was made). */
+export function createMemoryKeyStore(): SecretStore & { readonly value: unknown } {
+  let value: unknown;
+  return {
+    get value() {
+      return value;
+    },
+    get: async () => (value === undefined ? undefined : structuredClone(value)),
+    async set(next) {
+      value = structuredClone(next);
+    },
+    async clear() {
+      value = undefined;
+    },
+  };
+}
+
 /** A page platform for the side panel's and the options page's tests, and what the test drives and reads of it. */
 export interface MemoryPagePlatform extends PagePlatform {
   /** Every message the page sent, in order (copies). */

@@ -133,6 +133,8 @@ export interface AuthDeps {
   server: ServerClient;
   keeper: TokenKeeper;
   storageAccess(): AuthStatus['storageAccess'];
+  /** jr6: whether a job-site password is saved in this browser (AuthStatus.signUp; signup-vault.ts). */
+  signUp?(): Promise<boolean>;
 }
 
 /** The connection as extension pages and TailorIT's connect page drive it. */
@@ -148,6 +150,9 @@ export interface Auth {
   disclosed(): Promise<boolean>;
   /** auth/acknowledgeDisclosure: the person chose I understand on the updated disclosure. */
   acknowledgeDisclosure(): Promise<Answer<AuthStatus>>;
+  /** jr6: the account's email as read already (Sign-up Information's first email), never read for this: null until a
+   *  status read it. */
+  knownAccountEmail(): string | null;
 }
 
 /** The account as the options page shows it, cut to the answer's caps. */
@@ -249,6 +254,8 @@ export function createAuth(deps: AuthDeps): Auth {
       versionMismatch: keeper.versionMismatch,
       pairingExpiresAt: pairing?.expiresAt ?? null,
       ...(record !== null ? { disclosure: (await disclosed()) ? 'current' as const : 'changed' as const } : {}),
+      // jr6: the sign-up password's word, connected or not (Sign-in Auto needs one).
+      ...(deps.signUp === undefined ? {} : { signUp: (await deps.signUp()) ? 'set' as const : 'not-set' as const }),
     };
   }
 
@@ -256,6 +263,7 @@ export function createAuth(deps: AuthDeps): Auth {
     connected: async () => (await keeper.current()) !== null,
     status,
     disclosed,
+    knownAccountEmail: () => account?.email ?? null,
     async acknowledgeDisclosure() {
       await acknowledge();
       log('auth.disclosure-acknowledged');

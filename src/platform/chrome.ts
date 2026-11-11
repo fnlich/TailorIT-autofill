@@ -18,7 +18,6 @@ import type {
   PagePlatform,
   PortLike,
   QueueTabs,
-  SecretStore,
   Sender,
   SendFailure,
   SitesScripting,
@@ -26,6 +25,7 @@ import type {
   WorkerPlatform,
 } from './types';
 import type { CapturePagePlatform, CaptureTarget, CaptureWorkerPlatform } from './types';
+import { indexedDbSecret } from './indexed-db';
 
 /** What a page shows by its address (tabs.atsPageOf): a posting or another page on an applicant-tracking host, and
  *  that host's platform; null off those hosts or for an address that does not parse. The P2 review (L3): the hosts the
@@ -117,50 +117,6 @@ function area(raw: RawArea): StorageArea {
       await (raw as RawArea & { setAccessLevel(o: { accessLevel: string }): Promise<void> }).setAccessLevel({
         accessLevel: 'TRUSTED_CONTEXTS',
       });
-    },
-  };
-}
-
-const SECRETS_DB = 'tailorit';
-const SECRETS_STORE = 'secrets';
-const SECRETS_KEY = 'auth';
-
-function openSecrets(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(SECRETS_DB, 1);
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore(SECRETS_STORE);
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('indexeddb-open-failed'));
-    request.onblocked = () => reject(new Error('indexeddb-blocked'));
-  });
-}
-
-async function inSecrets<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const db = await openSecrets();
-  try {
-    return await new Promise<T>((resolve, reject) => {
-      const transaction = db.transaction(SECRETS_STORE, mode);
-      const request = run(transaction.objectStore(SECRETS_STORE));
-      transaction.oncomplete = () => resolve(request.result);
-      transaction.onerror = () => reject(transaction.error ?? new Error('indexeddb-failed'));
-      transaction.onabort = () => reject(transaction.error ?? new Error('indexeddb-aborted'));
-    });
-  } finally {
-    db.close();
-  }
-}
-
-/** The token's home: the extension origin's IndexedDB, which no content script can open. */
-function indexedDbSecrets(): SecretStore {
-  return {
-    get: () => inSecrets<unknown>('readonly', (store) => store.get(SECRETS_KEY)),
-    async set(value) {
-      await inSecrets('readwrite', (store) => store.put(value, SECRETS_KEY));
-    },
-    async clear() {
-      await inSecrets('readwrite', (store) => store.delete(SECRETS_KEY));
     },
   };
 }
@@ -467,7 +423,9 @@ export function createWorkerPlatform(): WorkerPlatform {
     queueTabs: queueTabs(), // v1.5 QX
     scripting: sitesScripting(),
     permissions: hostPermissions(),
-    secrets: indexedDbSecrets(),
+    secrets: indexedDbSecret('auth'),
+    // jr6: the job-site password's key (signup-vault.ts), beside the token, never extractable.
+    signupKey: indexedDbSecret('signup-key'),
     // The global is read at call time, so a test can stub it.
     fetch: (url, init) => fetch(url, init),
     timeout: (ms) => AbortSignal.timeout(ms),

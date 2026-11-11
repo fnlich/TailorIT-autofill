@@ -141,7 +141,7 @@ describe('the page states', () => {
       event.preventDefault();
     }, true);
     const press = (adapter: Adapter, href = REGISTER) => signIn({ doc: fixture.doc, adapter, href: () => href,
-      channel: { request: async () => ({ ok: true, data: { host: 'recruiting.ultipro.com', email: 'guest@example.com' } }) } as unknown as
+      channel: { request: async () => ({ ok: true, data: { host: 'recruiting.ultipro.com', email: 'guest@example.com', press: true } }) } as unknown as
         SignInContext['channel'],
       isTop: true, container: true, signal: new AbortController().signal, settleMs: 300 });
     expect(await press(ultiproAdapter, REGISTER.replace('https:', 'http:'))).toBe('unavailable');

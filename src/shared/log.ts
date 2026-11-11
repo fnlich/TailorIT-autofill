@@ -238,6 +238,15 @@ export const LOG_CODES = [
   'agent.paused',
   'signin.credential',
   'signin.refused',
+  // jr6: the job-site sign-up information (background/signup-vault.ts, signup.ts): flags only, never an email, a
+  // password or a password's length.
+  'signup.key-made',
+  'signup.saved',
+  'signup.removed',
+  'signup.refused',
+  'signup.unreadable',
+  'signup.imported',
+  'signup.mode-reverted',
   'content.agent-refused',
   'content.agent-entry',
   'content.sign-in',

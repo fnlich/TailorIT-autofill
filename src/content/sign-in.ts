@@ -90,6 +90,18 @@
  *   through the sign-in door (not-submit.ts clickAdapterSignIn, from 'container'), every guard above held: a challenge
  *   first and right before the press, challenge frames, no password box (dom/sign-in-form.ts containerShape),
  *   guardSubmission over the <form> the press would send, https and the host.
+ * jr6 (the owner's words of 2026-11-10: "store the password ... like jobright.ai. if needed, you should fetch this, and
+ * autofill it"; coordinator decisions 1 and 5): the credential is the one saved in this browser's Sign-up Information
+ * (background/signup-vault.ts), and the worker's answer says whether it may be pressed (`press`: Sign-in acting as Auto,
+ * or the tab's Sign up & Autofill grant). On Sign-in Manual with a password saved (SignInContext.typeOnly, the run's
+ * ContentSettings.typeSignIn), a sign-in or create-account page gets the email, the password and its confirmation typed
+ * and the account's required terms ticked, every guard above held, and its button is left to the person ('typed'): the
+ * boxes keep what was typed for their press, SIGN_IN_KEPT_MS at most, as a sign-in the site refused for its check does
+ * (the v5 review's S8: the password boxes written empty again then, or at once when the run stops or ends or the
+ * document goes, a box the person typed into since being theirs), as Jobright's account flow fills the form and tracks
+ * the person's own press of Create Account or Sign In (its ~contents/sites/myworkday/account-preflow: steps "Email Address", "Password",
+ * "Verify New Password", "Agree Privacy Notice", then a "track_submit" step that listens for the button's click and
+ * presses nothing). The button is pressed only when both the worker's answer and this frame's own run say Auto.
  */
 import { signInHostCovered } from '../contract/tailorit/credentials';
 import type { Adapter, SignInForm } from '../adapters/types';
@@ -133,7 +145,9 @@ export const CONTAINER_WALL: SignInWall = 'email-gate';
 
 /** What came of a sign-in (module header): the v4 review (M5) tells 'none-saved' and 'challenged' apart from
  *  'unavailable'. */
-export type SignInOutcome = 'continue' | 'failed' | 'unavailable' | 'none-saved' | 'challenged' | 'left';
+export type SignInOutcome = 'continue' | 'failed' | 'unavailable' | 'none-saved' | 'challenged' | 'left'
+  // jr6: typed on Sign-in Manual, the press left to the person (module header).
+  | 'typed';
 
 /** What a sign-in needs. */
 export interface SignInContext {
@@ -160,6 +174,8 @@ export interface SignInContext {
   preludeMs?: number;
   /** v5 review (S8): how long a refused sign-in stays typed for the person (SIGN_IN_KEPT_MS by default). */
   keptMs?: number;
+  /** jr6: Sign-in on Manual with a password saved: type, never press (module header). */
+  typeOnly?: true;
 }
 
 function urlOf(href: string): URL | null {
@@ -512,11 +528,21 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
   let kept = false;
   try {
     // The answer is held in this frame only for the writes below (module header, 2).
-    const typed = fill(ctx, wall, asked, form, answer.data as SignInCredential, secret);
+    const credential = answer.data as SignInCredential;
+    const typed = fill(ctx, wall, asked, form, credential, secret);
     // A form whose press is the person's (SignInForm.personPresses): typed, and handed over (module header).
     if (typed === 'typed' && form.personPresses === true) {
       log('content.sign-in', { pressed: false, person: true });
       outcome = 'continue';
+      return outcome;
+    }
+    // jr6: pressed only when the worker says Auto and this run does too; otherwise typed for the person's press, kept
+    // for it SIGN_IN_KEPT_MS at most (module header).
+    if (typed === 'typed' && (credential.press !== true || ctx.typeOnly === true)) {
+      log('content.sign-in', { pressed: false, typed: true });
+      outcome = 'typed';
+      kept = true;
+      keepForPerson(ctx, secret);
       return outcome;
     }
     const pressed = typed === 'typed' ? await press(ctx, wall, asked, form) : typed;
@@ -533,7 +559,7 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
     return outcome;
   } finally {
     // 'left' covers the run's own end too (the person's Stop, a route away), not only the document's: the boxes still
-    // in the page are written empty again then as well (round 2, E3).
+    // in the page are written empty again then as well (round 2, E3). jr6: 'typed' keeps them (`kept`) for the person.
     if (outcome !== 'continue' && !kept) clearSecret(secret);
     stopGuard();
     watching.abort();
