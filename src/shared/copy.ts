@@ -633,7 +633,6 @@ const PANEL = {
   },
   /** The links at the panel's foot, to the person's TailorIT. */
   autofillInfo: 'Your autofill information',
-  openJobs: 'Open TailorIT Jobs',
   // Phase 6: the rows' Confirm draft and Save my answer.
   draftConfirmed: 'Draft confirmed.',
   confirmFailed: 'The draft could not be confirmed. Is the form still open?',
@@ -736,7 +735,6 @@ const JOB = {
     profileOnly: "This posting doesn't allow AI, so only a letter you wrote is attached.",
     aiOff: 'AI-written answers are off, so only a letter you wrote is attached.',
     failed: "Your letter for this job isn't finished. Finish it in TailorIT's Cover Letters.",
-    notAllowed: "This connection can't attach cover letters. Connect it again from TailorIT's Settings › Autofill.",
     write: 'Write It Now', // v5 p1-panel
     writing: 'Writing…',
     ready: 'Ready',
@@ -981,7 +979,6 @@ const PROFILE = {
     citizenships: 'Citizenship',
   },
   placeholders: { month: 'YYYY-MM', country: 'US', currency: 'USD', skills: 'TypeScript, PostgreSQL, Leadership' },
-  monthHelp: 'As YYYY-MM.',
   /** An entry's date TailorIT holds as a year alone, which a month picker cannot show. */
   yearOnly: (year: string) => `Saved as ${year}, without a month. Choose one to change it.`,
   /** An empty email is the account's sign-in address (TailorIT's rule), named here. */
@@ -1271,13 +1268,11 @@ const OPTIONS = {
     answers: 'Answer the questions my profile does not',
     answersHelp: 'Questions like "How many years of Go have you used?" or "Are you open to travel?" are answered from your resume and profile. When nothing settles one, the AI gives its best guess.',
     confirmDrafts: 'Wait for me to confirm each draft',
-    confirmDraftsHelp: 'A draft waits in the review until you edit or confirm it, and the form is not ready until you have.',
     whenForbidden: {
       heading: 'When a posting says AI is not allowed',
       'profile-only': 'Fill from my profile only',
       'profile-onlyHelp': 'Nothing is sent to the AI for that posting, and questions only the AI could answer are left for you. The same goes for a form that asks you to confirm you did not use AI.',
       ask: 'Ask me each time',
-      askHelp: 'Filling stops at a notice until you choose Fill anyway or Cancel.',
       'use-ai': 'Use AI anyway',
       'use-aiHelp': 'The notice is shown, and filling goes on with the AI.',
     },
