@@ -190,19 +190,17 @@ describe('careers-sentinel’s posting title (FX-R1)', () => {
       expect(frame.header.replacedText).toEqual([1, 1]);
     });
 
-  // TOOLING's shared Apply postings (BUILD.md D-b, `jr6-apply-*`) are TOOLING's to convert: its fix round (TOOLING.md
-  // F.2, `708ac5c`) gave careers-sentinel's posting heading and description synthetic text and left the page's title to
-  // the converter (REDACTED where the list's generic job title stands: recorded as public there). So the guard reads
-  // every iCIMS case's title and heading, and only the posting heading of TOOLING's pages.
-  it('no jr6 page or frame shows REDACTED in its title or its posting heading (TOOLING’s postings: the heading)', () => {
+  // TOOLING's shared Apply postings (BUILD.md D-b, `jr6-apply-*`) are read in full too: TOOLING's G.2 (`78f6d8f`) gave
+  // careers-sentinel's page and frame titles (and the frame's title and description metas) synthetic text, and ARS's
+  // title never held REDACTED, so the heading-only exception of `fd236c3` went at the forms merge (jr6 round 2).
+  it('no jr6 page or frame, TOOLING’s postings too, shows REDACTED in its title or its posting heading', () => {
     const names = Object.keys(PAGES).map((path) => path.split('/').pop()!.replace(/\.html$/, ''))
       .filter((name) => !name.endsWith('.third-party-frame'));
     expect(names.length).toBe(30);
     expect(names.filter((name) => name.startsWith('jr6-apply-')).length).toBe(3);
     for (const name of names) {
       const { doc } = parsedOf(name);
-      const headings = [...doc.querySelectorAll('h1.iCIMS_Header')].map((h1) => h1.textContent ?? '');
-      const shown = name.startsWith('jr6-apply-') ? headings : [doc.title, ...headings];
+      const shown = [doc.title, ...[...doc.querySelectorAll('h1.iCIMS_Header')].map((h1) => h1.textContent ?? '')];
       expect(shown.filter((text) => text.includes('REDACTED')), name).toEqual([]);
     }
   });
