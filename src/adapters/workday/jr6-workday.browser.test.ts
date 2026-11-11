@@ -8,18 +8,28 @@
  *   accountErrorKind, WD-07 removeButton), WD-18's tags declaration, WD-20's Education sections, and WD-10 and
  *   workday-new-1's labels as the planner reads them;
  * - nothing presses the Create Account link or a block's Delete (both stay never pressed).
- * The outcomes that need ENGINE's E1 to E3 or RULES' rules (FIXPLAN §6.4 "P2 asserts") are P2's and are added here
- * then. Plans use the golden synthetic profile and DEFAULT_SETTINGS; the fixtures hold none of the owner's values.
+ * P2 (FIXPLAN §6.4 "P2 asserts", after merging jr6-engine E1-E3 and jr6-rules R1-R4) holds what the merged scanner,
+ * planner and fillers make of the same pages: each finding's question read and answered as the plan says (WD-07 to
+ * WD-17, WD-20, WD-25 to WD-30, workday-new-1 and -2; RULES' handoff edits 13 and 21), Skills filled one value at a
+ * time and read back by its pills (WD-18), and the dates' parts focused before their writes, their alert read (WD-23).
+ * A capture taken filled is set back to the step before the person's answers first (`unanswer`: its redacted choices
+ * and pills taken away); a list no capture shows open gets the words Workday tenants commonly use (ASSUMED_LISTS, so
+ * named in each test). Plans use the golden synthetic profile (or variants built here) and DEFAULT_SETTINGS; the
+ * fixtures hold none of the owner's values.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { planFrame } from '../../core/plan/frame';
 import type { PlanOutput } from '../../core/plan/types';
-import type { FieldSpec } from '../../core/types/field';
-import { DEFAULT_SETTINGS } from '../../core/types/settings';
+import { MANY_SEPARATOR } from '../../core/resolver/values';
+import type { BaseKey, FieldSpec } from '../../core/types/field';
+import type { FillResult, PlannedWrite } from '../../core/types/fill';
+import type { Profile } from '../../core/types/profile';
+import { DEFAULT_SETTINGS, type Settings } from '../../core/types/settings';
 import { detectPause } from '../../dom/pause-detect';
 import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.testkit';
 import { scan, toFieldSpec } from '../../dom/scan';
+import type { WidgetReading } from '../../dom/types';
 import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { WORKDAY_JR6_SNAPSHOTS, WORKDAY_SKILLS_CAP } from './application';
 import { workdayAdapter } from './index';
@@ -64,6 +74,12 @@ import snapSignIn from '../../../fixtures/workday/snap-sign-in.html?raw';
 import wdLanding from '../../../fixtures/workday/workday-landing.html?raw';
 import wdForgot from '../../../fixtures/workday/workday-forgot-password.html?raw';
 import verilyVerify from '../../../fixtures/workday/verily-sign-in-verify.html?raw';
+// P2: the committed pages FIXPLAN §6.4's P2 asserts name, and the Degree list one capture shows open.
+import danaVd from '../../../fixtures/workday/danafarber-voluntary-disclosures.html?raw';
+import resolveSource from '../../../fixtures/workday/resolvetech-source-open.html?raw';
+import aepAq2 from '../../../fixtures/workday/aep-application-questions-2.html?raw';
+import exelixisState from '../../../fixtures/workday/s2-exelixis-state-open.html?raw';
+import pureDegree from '../../../fixtures/workday/s2-pureinsurance-degree-open.html?raw';
 
 afterEach(() => removeFixtures(document));
 
@@ -412,4 +428,587 @@ describe('jr6 WD-20: the planner assigns the parsons Education block', () => {
     const { plan } = await planned(parsonsExp, 'Parsons');
     expect((plan.repeatables ?? []).map((each) => each.kind)).toEqual(['experience', 'education']);
   });
+});
+
+// ── jr6 WORKDAY P2 (FIXPLAN §6.4 "P2 asserts"): what the merged ENGINE and RULES make of the pages ──────────────────
+
+/** A capture taken filled set back to the step before the person's answers (the jr6 auditor's harness, its
+ *  `unanswer`): each dropdown's chosen answer (redacted by the converter) back to "Select One", as Workday draws an
+ *  empty one, and each prompt's pills (redacted) taken away. */
+function unanswer(doc: Document): void {
+  for (const button of Array.from(doc.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="listbox"]'))) {
+    if ((button.getAttribute('value') ?? '') === '') continue;
+    const field = button.closest('[data-automation-id^="formField-"]');
+    const label = words(field?.querySelector('label, legend')).replace(/\*/g, '').trim();
+    const star = (field?.querySelector('label abbr, legend abbr') ?? null) !== null;
+    button.setAttribute('value', '');
+    button.textContent = 'Select One';
+    button.setAttribute('aria-label', `${label} Select One${star ? ' Required' : ''}`);
+  }
+  for (const pill of Array.from(doc.querySelectorAll('[data-automation-id="selectedItem"]'))) {
+    (pill.closest('li') ?? pill).remove();
+  }
+}
+
+/** Lists no capture shows open: the words Workday tenants commonly use (the jr6 auditor's assumed lists, kept in
+ *  SP\jr6\workday-p1b), given to the closed dropdowns by their questions. Every test on one says "(assumed list)". */
+const ASSUMED_LISTS = {
+  yesNo: ['Yes', 'No'],
+  gender: ['Male', 'Female', 'I do not wish to self-identify'],
+  hispanic: ['Yes', 'No', 'I do not wish to self-identify'],
+  race: ['American Indian or Alaska Native (Not Hispanic or Latino) (United States of America)',
+    'Asian (Not Hispanic or Latino) (United States of America)',
+    'Black or African American (Not Hispanic or Latino) (United States of America)',
+    'Hispanic or Latino (United States of America)',
+    'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino) (United States of America)',
+    'Two or More Races (Not Hispanic or Latino) (United States of America)',
+    'White (Not Hispanic or Latino) (United States of America)', 'I do not wish to self-identify'],
+  veteran: ['I am not a protected veteran', 'I identify as one or more of the classifications of protected veteran',
+    'I do not wish to self-identify'],
+  formLanguage: ['English', 'Español'],
+} as const;
+
+/** The assumed list a closed dropdown gets by its question; none for any other (it stays waiting for its options). */
+function assumedList(label: string): readonly string[] | null {
+  if (/^language of this form$/i.test(label)) return ASSUMED_LISTS.formLanguage;
+  if (/\bgender\b/i.test(label)) return ASSUMED_LISTS.gender;
+  if (/\bhispanic\b/i.test(label)) return ASSUMED_LISTS.hispanic;
+  if (/\bethnic|\brace\b/i.test(label)) return ASSUMED_LISTS.race;
+  if (/\bveterans?\b/i.test(label)) return ASSUMED_LISTS.veteran;
+  // A question asked yes or no, its question mark or not (Genworth's relationship question has none).
+  if (/^(?:are|do|does|have|has|will|is|can|did|would|were|if)\b/i.test(label)) return ASSUMED_LISTS.yesNo;
+  return null;
+}
+
+/** The golden profile with the jr6 auditor's "+profile" screening answers, each one the golden profile leaves open: no
+ *  restrictive agreement, no military or government service, no relatives at any company, no clearance. */
+function screened(): Profile {
+  const golden = goldenProfile();
+  return { ...golden, screening: { ...golden.screening, restrictiveAgreement: { kind: 'value', value: false },
+    governmentService: { kind: 'value', value: { military: false, government: false } },
+    relativesAt: { kind: 'value', value: [] }, clearance: { kind: 'value', value: { level: 'none' } } } };
+}
+
+/** DEFAULT_SETTINGS with other modes, and other pre-approved consents where given. */
+const withModes = (modes: Partial<Settings['modes']>, preapproved?: Settings['preapprovedConsent']): Settings => ({
+  ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, ...modes },
+  ...(preapproved === undefined ? {} : { preapprovedConsent: [...preapproved] }) });
+
+/** Today, as the plan writes a date (content.testkit NOW). */
+const TODAY = `${NOW.y}-${String(NOW.m).padStart(2, '0')}-${String(NOW.d).padStart(2, '0')}`;
+
+/** What the plan asks TailorIT's AI about a field: a classification, an answer, a draft, or nothing. */
+function askOf(plan: PlanOutput, key: FieldSpec['key']): 'classify' | 'answer' | 'draft' | null {
+  if (plan.ask?.classify.some((item) => item.key === key) === true) return 'classify';
+  if (plan.ask?.answers?.some((item) => item.key === key) === true) return 'answer';
+  if (plan.ask?.drafts?.some((item) => item.key === key) === true) return 'draft';
+  return null;
+}
+
+interface StepOptions {
+  profile?: Profile;
+  settings?: Settings;
+  /** A change of the page made before the scan (a variant). */
+  prepare?: (doc: Document) => void;
+  /** The list each closed dropdown gets by its question (assumedList unless given). */
+  lists?: (label: string) => readonly string[] | null;
+}
+
+type Label = string | RegExp;
+const labelled = (label: Label) => (spec: FieldSpec) => (typeof label === 'string' ? spec.label === label
+  : label.test(spec.label));
+
+/** A step planned as the run plans it (the auditor's harness, its plan): the page set back to before the person's
+ *  answers, each closed dropdown read with its list (a "Select One" row first, never chosen, as Workday draws it),
+ *  scanned again, then planFrame with the golden profile, the posting's company and its repeatable sections. */
+async function stepPlan(html: string, company: string, options: StepOptions = {}) {
+  const { doc } = await load(html);
+  unanswer(doc);
+  options.prepare?.(doc);
+  const root = workdayAdapter.detect(doc)!.formRoot;
+  const readings = new Map<BaseKey, WidgetReading>();
+  for (const field of scan(root, workdayAdapter, { platform: 'workday' }).fields) {
+    const labels = field.kind === 'combobox' && field.options === 'lazy' ? (options.lists ?? assumedList)(field.label)
+      : null;
+    if (labels === null) continue;
+    readings.set(field.baseKey, { kind: 'options', multiselectable: false, complete: true,
+      options: [{ label: 'Select One', disabled: true }, ...labels.map((label) => ({ label, disabled: false }))] });
+  }
+  const specs = scan(root, workdayAdapter, { platform: 'workday', widgetReadings: readings }).fields.map(toFieldSpec);
+  const kinds = workdayAdapter.repeatables!(root).map((section) => section.kind);
+  const plan = planFrame({ specs, canaries: [], profile: options.profile ?? goldenProfile(), sensitiveState: 'loaded',
+    savedAnswers: [], settings: options.settings ?? DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+    posting: { company, location: 'Austin, TX, USA' },
+    ...(kinds.length > 0 ? { repeatables: kinds.map((kind) => ({ kind, entries: null })) } : {}) });
+  const specOf = (label: Label): FieldSpec => {
+    const found = specs.filter(labelled(label));
+    expect(found, String(label)).toHaveLength(1);
+    return found[0]!;
+  };
+  return {
+    doc, specs, plan, specOf,
+    all: (label: Label): FieldSpec[] => specs.filter(labelled(label)),
+    rowOf: (spec: FieldSpec): FillResult => plan.results.find((row) => row.key === spec.key)!,
+    writeOf: (spec: FieldSpec): PlannedWrite | undefined => plan.writes.find((write) => write.key === spec.key),
+    row: (label: Label): FillResult => plan.results.find((row) => row.key === specOf(label).key)!,
+    write: (label: Label): PlannedWrite | undefined => plan.writes.find((write) => write.key === specOf(label).key),
+    ask: (label: Label) => askOf(plan, specOf(label).key),
+  };
+}
+
+const optionOf = (write: PlannedWrite | undefined) => (write?.value.kind === 'option' ? write.value.cleanLabel
+  : undefined);
+const optionsOf = (write: PlannedWrite | undefined) => (write?.value.kind === 'options' ? write.value.cleanLabels
+  : undefined);
+const textOf = (write: PlannedWrite | undefined) => (write?.value.kind === 'text' ? write.value.text : undefined);
+const ruleOf = (write: PlannedWrite | undefined) => (write?.origin.provenance === 'rule' ? write.origin.ruleId
+  : undefined);
+
+describe('jr6 WD-08 (RULES item 1): the race or ethnicity question answered from the profile (golden: declined)', () => {
+  const DROPDOWNS: Array<[string, string, string, Label]> = [
+    ['jr6-gnw-voluntary-disclosures', gnwVd, 'Genworth',
+      'Please select the ethnicity which most accurately describes how you identify yourself.'],
+    ['jr6-resolvetech-voluntary-disclosures', resolveVd, 'Resolve Tech Solutions',
+      'Please select the ethnicity which most accurately describes how you identify yourself.'],
+    ['jr6-travelers-voluntary-disclosures', travelersVd, 'Travelers',
+      'Please select the race/ethnicity that best applies to you'],
+  ];
+  it.each(DROPDOWNS)('%s: its dropdown takes its list’s decline (assumed list)', async (_name, html, company, label) => {
+    const step = await stepPlan(html, company);
+    expect(step.row(label)).toMatchObject({ kind: 'combobox', category: 'eeo.race', needsUserAction: false });
+    expect(optionOf(step.write(label))).toBe('I do not wish to self-identify');
+    expect(ruleOf(step.write(label))).toBe('eeo.decline');
+  });
+
+  const GROUPS: Array<[string, string, string, Label, string]> = [
+    ['jr6-cisive-voluntary-disclosures', cisiveVd, 'Cisive',
+      /^Please select the ethnicity witch most accurately describe\(s\) how you identify yourself/,
+      'I do not wish to answer. (United States of America)'],
+    ['jr6-verawholehealth-voluntary-disclosures', veraVd, 'Vera Whole Health',
+      /^Please select the ethnicity which most accurately describes how you identify yourself/,
+      'Decline to State (United States of America)'],
+    ['danafarber-voluntary-disclosures', danaVd, 'Dana-Farber Cancer Institute',
+      'If you identify with one or more ethnic groups please choose from the list below.',
+      'I do not wish to answer (United States of America)'],
+  ];
+  it.each(GROUPS)('%s: its boxes tick the page’s own decline alone', async (_name, html, company, label, decline) => {
+    const step = await stepPlan(html, company);
+    expect(step.row(label)).toMatchObject({ kind: 'checkbox-group', category: 'eeo.race', needsUserAction: false });
+    expect(optionsOf(step.write(label))).toEqual([decline]);
+    expect(ruleOf(step.write(label))).toBe('eeo.decline');
+  });
+});
+
+describe('jr6 WD-09 (RULES item 2): the terms box Workday names acceptTermsAndAgreements, ticked', () => {
+  const CASES: Array<[string, string, string, string]> = [
+    ['jr6-resolvetech-voluntary-disclosures', resolveVd, 'Resolve Tech Solutions', 'Please confirm your consent.'],
+    ['jr6-travelers-voluntary-disclosures', travelersVd, 'Travelers', 'You must AGREE to proceed.'],
+  ];
+  it.each(CASES)('%s: ticked under Consents: All, and under Consents: Required only (it is required)',
+    async (_name, html, company, label) => {
+      // Under Required only the terms stay pre-approved by default (DEFAULT_PREAPPROVED_CONSENT); where the person took
+      // them off that list, the box is ticked because the page requires it.
+      const noTerms = DEFAULT_SETTINGS.preapprovedConsent.filter((consent) => consent !== 'terms');
+      for (const [settings, rule] of [[DEFAULT_SETTINGS, 'consent.preapproved'],
+        [withModes({ consents: 'required' }), 'consent.preapproved'],
+        [withModes({ consents: 'required' }, noTerms), 'consent.required']] as const) {
+        const step = await stepPlan(html, company, { settings });
+        expect(step.specOf(label).required).toBe(true);
+        expect(step.row(label)).toMatchObject({ kind: 'checkbox', category: 'consent.terms', needsUserAction: false });
+        expect(step.write(label)?.value).toEqual({ kind: 'check' });
+        expect(ruleOf(step.write(label))).toBe(rule);
+        removeFixtures(document);
+      }
+    });
+});
+
+describe('jr6 WD-10 and workday-new-1 (RULES item 5): Self Identify planned from its labels', () => {
+  const DISABILITY = 'Voluntary Self-Identification of Disability';
+  const DANA = 'Dana-Farber Cancer Institute';
+
+  /** The step as other tenants draw it (FIXPLAN §6.4, "the four required stars"): Workday's star on Name, Date signed
+   *  and the disability boxes too (Language of this form shows it already), their controls aria-required. */
+  function fourStars(doc: Document): void {
+    for (const id of ['formField-name', 'formField-dateSignedOn', 'formField-disabilityStatus']) {
+      const field = byId(doc, id)[0]!;
+      const label = field.querySelector('label')!;
+      const star = doc.createElement('abbr');
+      star.setAttribute('aria-hidden', 'true');
+      star.textContent = '*';
+      (label.querySelector('span') ?? label).append(star);
+      for (const control of Array.from(field.querySelectorAll('input, fieldset'))) {
+        control.setAttribute('aria-required', 'true');
+      }
+    }
+  }
+
+  it('danafarber-self-identify: the form’s language English (assumed list), the name, no employee ID, signed today, '
+    + 'the disability declined', async () => {
+    const step = await stepPlan(danaSelf, DANA);
+    expect(step.row('Language of this form')).toMatchObject({ category: 'languages.formLanguage',
+      needsUserAction: false });
+    expect(optionOf(step.write('Language of this form'))).toBe('English');
+    expect(ruleOf(step.write('Language of this form'))).toBe('form.language');
+    expect(step.row('Name')).toMatchObject({ category: 'identity.fullName', needsUserAction: false });
+    expect(textOf(step.write('Name'))).toBe('Alex Rivera');
+    // Employee ID: skipped, never asked of an AI.
+    expect(step.row('Employee ID (if applicable)')).toMatchObject({ category: 'identity.employeeId', status: 'skipped',
+      reason: 'no-profile-value', needsUserAction: false });
+    expect(step.write('Employee ID (if applicable)')).toBeUndefined();
+    expect(step.ask('Employee ID (if applicable)')).toBeNull();
+    // Date signed: today, on the signature's terms (pre-approved under the default Consents: All).
+    expect(step.row('Date signed')).toMatchObject({ category: 'consent.signatureDate', needsUserAction: false });
+    expect(step.write('Date signed')?.value).toEqual({ kind: 'date', iso: TODAY });
+    expect(ruleOf(step.write('Date signed'))).toBe('consent.signature-date');
+    // The disability boxes: the golden profile declines, so "I do not want to answer" alone.
+    expect(step.row(DISABILITY)).toMatchObject({ kind: 'checkbox-group', category: 'eeo.disability',
+      needsUserAction: false });
+    expect(optionsOf(step.write(DISABILITY))).toEqual(['I do not want to answer']);
+    expect(ruleOf(step.write(DISABILITY))).toBe('eeo.decline');
+    // Nothing on the step waits for the AI.
+    expect(step.plan.awaiting).toEqual([]);
+  });
+
+  it('ticks the disability box the profile’s own answer names (a variant of the golden profile)', async () => {
+    const golden = goldenProfile();
+    for (const [disabled, box] of [[false, 'No, I do not have a disability and have not had one in the past'],
+      [true, 'Yes, I have a disability, or have had one in the past']] as const) {
+      const step = await stepPlan(danaSelf, DANA, { profile: { ...golden,
+        eeo: { ...golden.eeo, disability: { kind: 'value', value: disabled } } } });
+      expect(optionsOf(step.write(DISABILITY))).toEqual([box]);
+      expect(step.write(DISABILITY)?.origin).toMatchObject({ provenance: 'profile', path: 'eeo.disability' });
+      removeFixtures(document);
+    }
+  });
+
+  it('the same with the four required stars: each of the four required, the plan unchanged', async () => {
+    const step = await stepPlan(danaSelf, DANA, { prepare: fourStars });
+    expect(step.specs.map((spec) => [spec.label, spec.required])).toEqual([['Language of this form', true],
+      ['Name', true], ['Employee ID (if applicable)', false], ['Date signed', true], [DISABILITY, true]]);
+    expect(optionOf(step.write('Language of this form'))).toBe('English');
+    expect(textOf(step.write('Name'))).toBe('Alex Rivera');
+    expect(step.write('Employee ID (if applicable)')).toBeUndefined();
+    expect(step.write('Date signed')?.value).toEqual({ kind: 'date', iso: TODAY });
+    expect(optionsOf(step.write(DISABILITY))).toEqual(['I do not want to answer']);
+    expect(step.plan.results.filter((row) => row.needsUserAction)).toEqual([]);
+  });
+
+  it('dates the signature only on its approval: signatures not pre-approved under Consents: Required only, the date '
+    + 'is written only where it is required', async () => {
+    const strict = withModes({ consents: 'required' },
+      DEFAULT_SETTINGS.preapprovedConsent.filter((consent) => consent !== 'signature'));
+    const optional = await stepPlan(danaSelf, DANA, { settings: strict });
+    expect(optional.write('Date signed')).toBeUndefined();
+    expect(optional.row('Date signed')).toMatchObject({ category: 'consent.signatureDate', status: 'skipped',
+      reason: 'consent-optional-unticked' });
+    removeFixtures(document);
+    const required = await stepPlan(danaSelf, DANA, { settings: strict, prepare: fourStars });
+    expect(required.write('Date signed')?.value).toEqual({ kind: 'date', iso: TODAY });
+    expect(ruleOf(required.write('Date signed'))).toBe('consent.required');
+  });
+});
+
+describe('jr6 WD-11 (RULES item 35): gender and veteran status answered from the profile (assumed lists)', () => {
+  it('danafarber-voluntary-disclosures: "Please select a gender." declined; the protected veterans question "not a '
+    + 'protected veteran"', async () => {
+    const step = await stepPlan(danaVd, 'Dana-Farber Cancer Institute');
+    expect(step.row('Please select a gender.')).toMatchObject({ category: 'eeo.gender', needsUserAction: false });
+    expect(optionOf(step.write('Please select a gender.'))).toBe('I do not wish to self-identify');
+    const VETERANS = /^If you believe you belong to any of the categories of protected veterans listed below/;
+    expect(step.row(VETERANS)).toMatchObject({ category: 'eeo.veteran', needsUserAction: false });
+    expect(optionOf(step.write(VETERANS))).toBe('I am not a protected veteran');
+    expect(step.write(VETERANS)?.origin).toMatchObject({ provenance: 'profile', path: 'eeo.veteran' });
+  });
+
+  it('jr6-web-voluntary-disclosures: "Veterans Status" and "Gender"', async () => {
+    const step = await stepPlan(webVd, 'Newfold Digital');
+    expect(step.row('Veterans Status')).toMatchObject({ category: 'eeo.veteran', needsUserAction: false });
+    expect(optionOf(step.write('Veterans Status'))).toBe('I am not a protected veteran');
+    expect(step.row('Gender')).toMatchObject({ category: 'eeo.gender', needsUserAction: false });
+    expect(optionOf(step.write('Gender'))).toBe('I do not wish to self-identify');
+  });
+});
+
+describe('jr6 WD-12 and WD-13 (RULES items 36 and 3): yes/no questions the profile answers (assumed lists)', () => {
+  it('jr6-verily-application-questions: the age of majority is the over-18 question: Yes', async () => {
+    const step = await stepPlan(verilyAq, 'Verily');
+    const MAJORITY = /^Are you at least the age of majority under applicable law/;
+    expect(step.row(MAJORITY)).toMatchObject({ category: 'screening.over18', needsUserAction: false });
+    expect(optionOf(step.write(MAJORITY))).toBe('Yes');
+    expect(step.write(MAJORITY)?.origin).toMatchObject({ provenance: 'profile', path: 'screening.over18' });
+  });
+
+  it('jr6-travelers-application-questions: an employer’s support for a visa is sponsorship: No', async () => {
+    const step = await stepPlan(travelersAq, 'Travelers');
+    const SUPPORT = /^Will you now or in the future require support from an employer to obtain\/extend a work visa/;
+    expect(step.row(SUPPORT)).toMatchObject({ category: 'workAuth.sponsorship', needsUserAction: false });
+    expect(optionOf(step.write(SUPPORT))).toBe('No');
+    expect(step.write(SUPPORT)?.origin).toMatchObject({ provenance: 'profile' });
+    // workday-new-2's other half (RULES item 4): "Are you currently employed by Travelers" stays the posting's own.
+    const EMPLOYED = /^Are you currently employed by Travelers/;
+    expect(step.row(EMPLOYED)).toMatchObject({ category: 'screening.previouslyEmployed', needsUserAction: false });
+    expect(optionOf(step.write(EMPLOYED))).toBe('No');
+  });
+});
+
+describe('jr6 WD-14, WD-15 and WD-17 on Genworth’s Application Questions (RULES items 37, 38, 40; assumed lists)',
+  () => {
+    const AGREEMENT = /^Do you have an agreement in place with a current or former employer that would prevent/;
+    const RELATIONSHIP = /^Do you have a familial or personal relationship with any current Genworth employee/;
+    const KPMG = 'Have you or your spouse previously worked for KPMG?';
+
+    it('golden profile (no screening answers): the agreement and the relationship are read as theirs, the spouse '
+      + 'question stays the person’s', async () => {
+      const step = await stepPlan(gnwAq, 'Genworth');
+      expect(step.row(AGREEMENT)).toMatchObject({ category: 'screening.restrictiveAgreement',
+        reason: 'legal-not-in-profile' });
+      expect(step.write(AGREEMENT)).toBeUndefined();
+      // A restrictive agreement the profile leaves open is asked of the AI under the default AI scope, all (RULES
+      // item 20).
+      expect(step.ask(AGREEMENT)).toBe('answer');
+      expect(step.row(RELATIONSHIP)).toMatchObject({ category: 'screening.relatives', reason: 'legal-not-in-profile' });
+      expect(step.write(RELATIONSHIP)).toBeUndefined();
+      // Its "(Relatives include spouse, …)" names other people: never sent to an AI (RULES' open issue 12).
+      expect(step.ask(RELATIONSHIP)).toBeNull();
+      // WD-17: "or your spouse" is another person's employment: left for the person, never answered by a rule or AI.
+      expect(step.row(KPMG)).toMatchObject({ category: 'screening.previouslyEmployed', needsUserAction: true });
+      expect(step.write(KPMG)).toBeUndefined();
+      expect(step.ask(KPMG)).toBeNull();
+    });
+
+    it('with the screening answers: no agreement, no relatives: No to both', async () => {
+      const step = await stepPlan(gnwAq, 'Genworth', { profile: screened() });
+      expect(optionOf(step.write(AGREEMENT))).toBe('No');
+      expect(step.write(AGREEMENT)?.origin).toMatchObject({ provenance: 'profile',
+        path: 'screening.restrictiveAgreement' });
+      expect(optionOf(step.write(RELATIONSHIP))).toBe('No');
+      expect(step.write(RELATIONSHIP)?.origin).toMatchObject({ provenance: 'profile', path: 'screening.relativesAt' });
+      expect(step.write(KPMG)).toBeUndefined();
+    });
+  });
+
+describe('jr6 WD-15 and workday-new-2 on Parsons’ Application Questions (RULES items 4 and 38; owner Q14)', () => {
+  const FRIEND = 'Are you a relative or close friend of a Parsons employee?';
+  const VENDOR = 'Are you a relative or close friend of any Parsons customer, subcontractor or vendor?';
+  const OUTSIDE = /^Are you currently the owner or employee of any outside company/;
+
+  it('jr6-parsons-application-questions: the close-friend, customer/vendor and outside-company questions stay unread '
+    + 'by the rules: classified by the AI, never a rule’s No', async () => {
+    const step = await stepPlan(parsonsAq, 'Parsons', { profile: screened() });
+    for (const label of [FRIEND, VENDOR, OUTSIDE]) {
+      expect(step.row(label), String(label)).toMatchObject({ category: 'unknown' });
+      expect(step.write(label), String(label)).toBeUndefined();
+      expect(step.ask(label), String(label)).toBe('classify');
+    }
+  });
+
+  it('a relative of a Parsons employee (the question without "or close friend", a variant) is the relatives question: '
+    + 'No with the screening answers', async () => {
+    const step = await stepPlan(parsonsAq, 'Parsons', { profile: screened(), prepare: (doc) => {
+      const label = Array.from(doc.querySelectorAll('legend, label')).find((each) => words(each).startsWith(FRIEND))!;
+      const text = Array.from(label.querySelectorAll('*')).concat(label).find((each) => Array.from(each.childNodes)
+        .some((node) => node.nodeType === 3 && (node.textContent ?? '').includes('or close friend')))!;
+      for (const node of Array.from(text.childNodes)) {
+        if (node.nodeType === 3) node.textContent = (node.textContent ?? '').replace(' or close friend', '');
+      }
+    } });
+    const RELATIVE = 'Are you a relative of a Parsons employee?';
+    expect(step.row(RELATIVE)).toMatchObject({ category: 'screening.relatives', needsUserAction: false });
+    expect(optionOf(step.write(RELATIVE))).toBe('No');
+  });
+});
+
+describe('jr6 WD-16 (RULES item 39): a question that names the posting company by its initials', () => {
+  const RTS = /^Have you previously been employed by RTS\? CURRENT EMPLOYEES/;
+
+  it('resolvetech-source-open: "Have you previously been employed by RTS?" is Resolve Tech Solutions’ own: No, '
+    + 'unflagged', async () => {
+    const step = await stepPlan(resolveSource, 'Resolve Tech Solutions');
+    expect(step.row(RTS)).toMatchObject({ kind: 'radio', category: 'screening.previouslyEmployed', reason: 'ok',
+      needsUserAction: false });
+    expect(optionOf(step.write(RTS))).toBe('No');
+    expect(ruleOf(step.write(RTS))).toBe('screening.previously-employed');
+  });
+
+  it('the same initials under another posting company are not its own: not answered as the posting’s', async () => {
+    const step = await stepPlan(resolveSource, 'Acme Corporation');
+    expect(step.row(RTS).category).toBe('screening.previouslyEmployed');
+    expect(step.row(RTS).reason).not.toBe('ok');
+  });
+});
+
+describe('jr6 WD-17, WD-29 and WD-30 on AEP’s Application Questions 2 of 2 (RULES items 33, 40, 41; assumed lists)',
+  () => {
+    const CONTRACTOR = 'Are you now or have you ever been a contractor at AEP?';
+    const OPT = 'Will you be using Optional Practical Training (OPT) or STEM OPT to begin employment at AEP?';
+    const MILITARY = 'Do you have military training or a military certification related to this position?';
+
+    it('golden: a contractor at AEP is the posting company’s own question: No; OPT: No (the posting’s country, '
+      + 'flagged); military training asked of the AI (the all scope)', async () => {
+      const step = await stepPlan(aepAq2, 'American Electric Power');
+      expect(step.row(CONTRACTOR)).toMatchObject({ category: 'screening.previouslyEmployed', needsUserAction: false });
+      expect(optionOf(step.write(CONTRACTOR))).toBe('No');
+      expect(ruleOf(step.write(CONTRACTOR))).toBe('screening.previously-employed');
+      expect(step.row(OPT)).toMatchObject({ category: 'workAuth.opt', reason: 'filled-low-confidence',
+        needsUserAction: false });
+      expect(optionOf(step.write(OPT))).toBe('No');
+      expect(step.row(MILITARY)).toMatchObject({ category: 'screening.militaryTraining',
+        reason: 'legal-not-in-profile' });
+      expect(step.write(MILITARY)).toBeUndefined();
+      expect(step.ask(MILITARY)).toBe('answer');
+    });
+
+    it('with the screening answers (no military service, not a veteran): military training No', async () => {
+      const step = await stepPlan(aepAq2, 'American Electric Power', { profile: screened() });
+      expect(optionOf(step.write(MILITARY))).toBe('No');
+      expect(step.write(MILITARY)?.origin).toMatchObject({ provenance: 'profile', path: 'screening.governmentService',
+        transform: 'legal.military-training' });
+      expect(step.ask(MILITARY)).toBeNull();
+    });
+  });
+
+describe('jr6 WD-25 and WD-26 (RULES items 62 and 13): a prefix and a county the profile never holds', () => {
+  it.each([['resolvetech-source-open', resolveSource, 'Resolve Tech Solutions'],
+    ['s2-exelixis-state-open', exelixisState, 'Exelixis'], ['jr6-web-my-information', webInfo, 'Newfold Digital']])(
+    '%s: "Prefix" is the name’s prefix: skipped, never asked of an AI', async (_name, html, company) => {
+      const step = await stepPlan(html, company);
+      expect(step.row('Prefix')).toMatchObject({ category: 'identity.prefix', status: 'skipped',
+        reason: 'no-profile-value', needsUserAction: false });
+      expect(step.write('Prefix')).toBeUndefined();
+      expect(step.ask('Prefix')).toBeNull();
+    });
+
+  it('jr6-danafarber-my-information: "County" is the address’s county: skipped, never asked of an AI', async () => {
+    const step = await stepPlan(danaInfo, 'Dana-Farber Cancer Institute');
+    expect(step.row('County')).toMatchObject({ category: 'address.county', status: 'skipped',
+      reason: 'no-profile-value', needsUserAction: false });
+    expect(step.write('County')).toBeUndefined();
+    expect(step.ask('County')).toBeNull();
+  });
+});
+
+describe('jr6 WD-27, WD-28 (RULES items 52 and 63)', () => {
+  it('jr6-parsons-application-questions: "When could you start?" is the start date: asked of the AI (the golden '
+    + 'profile holds none)', async () => {
+    const step = await stepPlan(parsonsAq, 'Parsons');
+    expect(step.row('When could you start?')).toMatchObject({ kind: 'date', category: 'availability.startDate' });
+    expect(step.write('When could you start?')).toBeUndefined();
+    expect(step.ask('When could you start?')).toBe('answer');
+    expect(step.plan.awaiting).toContain(step.specOf('When could you start?').key);
+  });
+
+  it('jr6-danafarber-application-questions-1: the student training programme question is no skills pick', async () => {
+    const step = await stepPlan(danaAq1, 'Dana-Farber Cancer Institute');
+    const TRAINING = /^Have you ever, or are you currently participating in a student training program/;
+    expect(step.row(TRAINING).category).not.toBe('skills.list');
+    expect(step.row(TRAINING).category).toBe('unknown');
+    expect(step.write(TRAINING)).toBeUndefined();
+    expect(step.ask(TRAINING)).toBe('classify');
+  });
+});
+
+describe('jr6 WD-07 (RULES item 6): a parsed Role Description in a block the run assigns is written from the profile',
+  () => {
+    /** Workday's résumé parse stood in for (made-up words): every Work Experience and Education text box and text area
+     *  of My Experience holds a value, as after "Autofill with Resume" (the jr6 auditor's harness, its `parsed`). */
+    function parsedText(doc: Document): void {
+      let n = 0;
+      for (const box of Array.from(doc.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+        '[data-automation-id="applyFlowMyExpPage"] [role="group"][aria-labelledby$="-panel"] input[type="text"], '
+        + '[data-automation-id="applyFlowMyExpPage"] [role="group"][aria-labelledby$="-panel"] textarea'))) {
+        if (box.closest('[data-automation-id="multiSelectContainer"]') !== null) continue;
+        box.value = `Parsed value ${n}`;
+        n += 1;
+      }
+    }
+
+    it('s2-exelixis-my-experience: the two assigned jobs take their entries’ descriptions over the parse’s '
+      + '(prefill-conflict); the parse’s two extra jobs are given none', async () => {
+      const step = await stepPlan(exelixisExp, 'Exelixis', { prepare: parsedText });
+      const roles = step.all('Role Description');
+      expect(roles.map((spec) => [spec.section, spec.current.kind])).toEqual([0, 1, 2, 3].map((block) =>
+        [{ id: 'experience', block }, 'text']));
+      const golden = goldenProfile();
+      for (const block of [0, 1]) {
+        expect(step.rowOf(roles[block]!)).toMatchObject({ category: 'experience.description',
+          reason: 'prefill-conflict' });
+        expect(textOf(step.writeOf(roles[block]!))).toBe(golden.experience[block]!.description);
+        expect(step.writeOf(roles[block]!)?.origin).toMatchObject({ provenance: 'profile',
+          path: `experience[${block}].description` });
+      }
+      expect(roles.slice(2).map((spec) => step.writeOf(spec))).toEqual([undefined, undefined]);
+    });
+  });
+
+describe('jr6 WD-20 (WORKDAY P1, RULES): Parsons’ "Education (Completed Degrees Only)" block written from the '
+  + 'profile’s school', () => {
+  /** The Degree list s2-pureinsurance-degree-open shows open (another tenant's list: Parsons' is in no capture). */
+  function capturedDegrees(): string[] {
+    const page = new DOMParser().parseFromString(pureDegree, 'text/html');
+    return Array.from(page.querySelectorAll('ul[role="listbox"]#sy8s1d [role="option"]'), words)
+      .filter((label) => label !== 'Select One');
+  }
+
+  it('jr6-parsons-my-experience: School, Degree (another tenant’s captured list) and Field of Study', async () => {
+    const degrees = capturedDegrees();
+    expect(degrees.length).toBeGreaterThan(5);
+    const step = await stepPlan(parsonsExp, 'Parsons',
+      { lists: (label) => (label === 'Degree' ? degrees : assumedList(label)) });
+    for (const label of ['School or University', 'Degree', 'Field of Study']) {
+      expect(step.specOf(label).section, label).toEqual({ id: 'education', block: 0 });
+    }
+    expect(textOf(step.write('School or University'))).toBe('The University of Texas at Austin');
+    expect(step.write('School or University')?.origin).toMatchObject({ provenance: 'profile',
+      path: 'education[0].institution' });
+    expect(optionOf(step.write('Degree'))).toBe('Bachelor of Science (B.S)');
+    expect(step.write('Field of Study')?.value).toMatchObject({ kind: 'query',
+      queries: expect.arrayContaining(['Computer Science']) });
+    expect(step.write('Field of Study')?.origin).toMatchObject({ path: 'education[0].degree.field' });
+  });
+});
+
+describe('jr6 WD-18 (ENGINE E3 item 13): Skills one text field, planned as the profile’s skills joined', () => {
+  it.each([['resolvetech-my-experience', resolveExp, 'Resolve Tech Solutions'],
+    ['s2-exelixis-my-experience', exelixisExp, 'Exelixis'],
+    ['jr6-danafarber-my-experience', danaExp, 'Dana-Farber Cancer Institute'],
+    ['jr6-parsons-my-experience', parsonsExp, 'Parsons']])('%s', async (_name, html, company) => {
+    const step = await stepPlan(html, company);
+    const skills = step.specOf('Type to Add Skills');
+    expect([skills.kind, skills.options, skills.current]).toEqual(['text', [], { kind: 'empty' }]);
+    expect(step.row('Type to Add Skills')).toMatchObject({ category: 'skills.list', needsUserAction: false });
+    expect(textOf(step.write('Type to Add Skills'))).toBe(['TypeScript', 'PostgreSQL', 'Kubernetes']
+      .join(MANY_SEPARATOR));
+    expect(step.ask('Type to Add Skills')).toBeNull();
+  });
+});
+
+describe('RULES regression (jr6-rules item 56, f1245ff): Workday’s "Resume/CV/Cover Letter" drop zone', () => {
+  /** The step before Workday's parse: the file it holds taken away (its file-upload-item). */
+  const blank = (doc: Document) => {
+    for (const item of Array.from(doc.querySelectorAll('[data-automation-id="file-upload-item"]'))) item.remove();
+  };
+  const CASES: Array<[string, string, string, boolean]> = [
+    ['jr6-danafarber-my-experience', danaExp, 'Dana-Farber Cancer Institute', true],
+    ['jr6-travelers-my-experience', travelersExp, 'Travelers', false],
+  ];
+
+  it.each(CASES)('%s: the drop zone sits under the help text "Resume/CV/Cover Letter"', async (_name, html, company,
+    required) => {
+    const step = await stepPlan(html, company, { prepare: blank });
+    const upload = step.specOf('Upload a file (5MB max)');
+    expect([upload.kind, upload.required, upload.description, upload.section.id, upload.current.kind]).toEqual(['file',
+      required, 'Resume/CV/Cover Letter', 'resume-cv-cover-letter', 'empty']);
+  });
+
+  // Before jr6-rules' f1245ff (classifyRules.ts RESUME_HEADING, labelRuleVote) this drop zone was the résumé's
+  // (file.resume: the résumé uploaded on a blank step, as on every "Resume/CV" step); since, help text that is more than
+  // a résumé's heading makes no upload the résumé's, so these steps never get the résumé (Dana-Farber's is required).
+  // Expected to fail until RULES' heading takes Workday's "Resume/CV/Cover Letter": then make these it().
+  for (const [name, html, company] of CASES) {
+    it.fails(`${name}: the drop zone is the résumé’s, and a blank step gets the résumé`, async () => {
+      const step = await stepPlan(html, company, { prepare: blank });
+      expect(step.row('Upload a file (5MB max)').category).toBe('file.resume');
+      expect(step.write('Upload a file (5MB max)')?.value.kind).toBe('file');
+    });
+  }
 });
