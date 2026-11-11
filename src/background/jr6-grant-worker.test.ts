@@ -318,6 +318,59 @@ describe('takeStep: a wall or a choice of the next document (AF-3)', () => {
     expect(starts(timed)).toHaveLength(1);
   });
 
+  // The line P review (revA-1): a step continues the press's own chain, within ENTRY_NEXT_MS of the grant's latest press
+  // or step; a page the person opens later in the tab (the job's choice, the site's account page, which names no
+  // application) gets none, though the grant's own time (SIGN_UP_GRANT_MS) still runs.
+  it('no step ENTRY_NEXT_MS after the press or the last step', async () => {
+    // A press that led nowhere: the job's choice page the person opens a minute later is theirs.
+    const stale = await applyWorker();
+    await pressedPosting(stale);
+    advance(stale, ENTRY_NEXT_MS);
+    const later = at(WD_CHOICE, 'doc-later');
+    await hello(stale, later, false);
+    await wall(stale, later, { choice: true });
+    await settle();
+    expect(starts(stale)).toHaveLength(1);
+
+    // Sign up & Autofill at the choice, pressed; the site's account page opened a minute later: nothing typed or pressed.
+    const keyless = await applyWorker();
+    await saveSignup(keyless);
+    const choice = at(WD_CHOICE, 'doc-choice');
+    await hello(keyless, choice, false);
+    await wall(keyless, choice, { choice: true });
+    await fill(keyless, TAB, { signIn: true });
+    expect(await press(keyless, choice)).toEqual({ ok: true, data: {} });
+    advance(keyless, ENTRY_NEXT_MS);
+    expect(keyOf(WD_LOGIN)).toBeUndefined();
+    const login = at(WD_LOGIN, 'doc-login');
+    await hello(keyless, login, false);
+    await wall(keyless, login, { wall: 'create-account' });
+    await settle();
+    expect(starts(keyless)).toHaveLength(1);
+
+    // Inside the window, counted from the latest press or step: the posting's choice, then an account page more than
+    // ENTRY_NEXT_MS after the press but within it of the choice's step, each get theirs...
+    const chain = await applyWorker();
+    await pressedPosting(chain);
+    advance(chain, ENTRY_NEXT_MS - 1);
+    const chainChoice = at(WD_CHOICE, 'doc-choice');
+    await hello(chain, chainChoice, false);
+    await wall(chain, chainChoice, { choice: true });
+    expect(await startsAfter(chain, 2)).toBe(2);
+    advance(chain, ENTRY_NEXT_MS - 1);
+    const first = at(WD_LOGIN, 'doc-login-1');
+    await hello(chain, first, false);
+    await wall(chain, first, { wall: 'sign-in' });
+    expect(await startsAfter(chain, 3)).toBe(3);
+    // ...and the next one, ENTRY_NEXT_MS after that step, none (2 steps given: the step limit is not what stops it).
+    advance(chain, ENTRY_NEXT_MS);
+    const second = at(WD_LOGIN, 'doc-login-2');
+    await hello(chain, second, false);
+    await wall(chain, second, { wall: 'sign-in' });
+    await settle();
+    expect(starts(chain)).toHaveLength(3);
+  });
+
   it('never on another origin or for another application of the same site', async () => {
     const worker = await applyWorker();
     await pressedPosting(worker);
@@ -782,6 +835,25 @@ describe('createSignUps alone: the origin and key checks', () => {
     const cancelled = given().signUps;
     cancelled.endEntry(1);
     expect(cancelled.pressed(1, place(A, KEY, 'd1'))).toBe(false);
+  });
+
+  // The line P review (revA-1): the steps' window, on the grants alone.
+  it('gives a step within ENTRY_NEXT_MS of the latest press, step or kept re-press alone', () => {
+    const { signUps, clock } = given();
+    signUps.pressed(1, place(A, KEY, 'd1'));
+    clock.now += ENTRY_NEXT_MS;
+    expect(signUps.takeStep(1, { ...place(A, KEY, 'd2'), hasForm: false }, 'choice')).toBeNull();
+    expect(signUps.takeStep(1, { ...place(A, undefined, 'd2'), hasForm: false }, 'wall')).toBeNull();
+    // The person's plain Autofill again keeps the grant (a fresh word): the chain counts from it.
+    expect(signUps.keep(1, place(A, KEY, 'd3'))).toBe(true);
+    expect(signUps.takeStep(1, { ...place(A, undefined, 'd4'), hasForm: false }, 'wall')).toEqual({ signIn: false });
+    clock.now += ENTRY_NEXT_MS - 1;
+    expect(signUps.takeStep(1, { ...place(A, KEY, 'd5'), hasForm: false }, 'choice')).toEqual({ signIn: false });
+    clock.now += ENTRY_NEXT_MS;
+    expect(signUps.takeStep(1, { ...place(A, KEY, 'd6'), hasForm: false }, 'choice')).toBeNull();
+    // A press again (a document it reached) opens the window again.
+    expect(signUps.pressed(1, place(A, KEY, 'd5'))).toBe(true);
+    expect(signUps.takeStep(1, { ...place(A, undefined, 'd6'), hasForm: false }, 'wall')).toEqual({ signIn: false });
   });
 
   it('a wall\'s grant given at once keeps v4\'s rule (no key: any form of its origin); a step still needs a key', () => {
