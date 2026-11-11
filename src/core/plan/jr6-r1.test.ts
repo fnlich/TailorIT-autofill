@@ -511,6 +511,24 @@ describe('22 (SR-3): "In your own words" turns off no AI', () => {
     expect(planOf([box]).aiAttestation).toBe(true);
     expect(classifyField(essay, vocab)).toMatchObject({ by: 'rules', rules: { category: 'freeText.other' } });
   });
+
+  // jr6 fix (RULES-R22): affirmed on a box or a choice, "in my own words" is the attestation: never ticked once AI was
+  // used (the owner's rule of 2026-11-01), and it makes the frame profile-only.
+  it('never ticks "… in my own words" once the run used AI, and reads the radio as the attestation', () => {
+    for (const label of ['I certify that all answers are in my own words',
+      'I confirm that I wrote all of my answers in my own words']) {
+      const box = specOf(label, 'checkbox', { required: true });
+      const out = planOf([box], { aiUsed: true });
+      expect(fieldOf(out, box).write, label).toBeUndefined();
+      expect(fieldOf(out, box).row.category, label).toBe('consent.aiAttestation');
+      expect(out.aiAttestation, label).toBe(true);
+    }
+    const radio = specOf('Are your answers written in your own words?', 'radio', { optionLabels: ['Yes', 'No'],
+      required: true });
+    const out = planOf([radio], { aiUsed: true });
+    expect(fieldOf(out, radio).write).toBeUndefined();
+    expect(out.aiAttestation).toBe(true);
+  });
 });
 
 describe('23 (U-02): UltiPro’s period boxes', () => {

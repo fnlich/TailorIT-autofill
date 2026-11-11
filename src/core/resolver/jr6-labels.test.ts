@@ -9,7 +9,7 @@ import type { FieldKind } from '../enums';
 import { specOf } from '../plan/plan.testkit';
 import type { SectionRef } from '../types/field';
 import type { FieldCategory } from '../types/intent';
-import { classifyByRules } from './classifyRules';
+import { classifyByRules, statesNoAiUse } from './classifyRules';
 import { classifyField } from './resolve';
 import { vocab } from '../plan/plan.testkit';
 
@@ -251,6 +251,23 @@ describe('jr6 RULES R1: the widened rules’ near misses', () => {
         .toBe('consent.aiAttestation');
     }
   });
+
+  // jr6 fix (RULES-R22): "in my own words" affirmed on a box or a choice is the attestation; only on a text box or a
+  // textarea is "in your own words" an instruction.
+  it('reads "in my own words" on a box or a choice as the AI attestation, an instruction only over a box of text (22)',
+    () => {
+      for (const label of ['I certify that all answers are in my own words',
+        'I confirm that I wrote all of my answers in my own words']) {
+        expect(read({ label, kind: 'checkbox' }), label).toMatchObject({ category: 'consent.aiAttestation',
+          rule: 'label.consent-ai' });
+      }
+      const radio = specOf('Are your answers written in your own words?', 'radio', { optionLabels: ['Yes', 'No'] });
+      expect(statesNoAiUse(radio)).toBe(true);
+      const essay = specOf('Describe a project you led, in your own words.', 'textarea');
+      expect(statesNoAiUse(essay)).toBe(false);
+      expect(read({ label: 'Describe a project you led, in your own words.', kind: 'textarea' }).category)
+        .toBe('freeText.other');
+    });
 
   it('reads an employer’s support for a visa as the combined sponsorship question, by its time (3, WD-13)', () => {
     expect(read({ label: 'Will you require support from an employer to obtain a work visa in the future?',

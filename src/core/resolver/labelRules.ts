@@ -481,9 +481,10 @@ const NEGATION = String.raw`(?:did\s+not|didnt|have\s+not|havent|has\s+not|hasnt
  *  The audit of 2026-11-06 (S-4) adds a claim of sole authorship ("I wrote every answer in this application myself",
  *  "I completed this application myself"), ticked, like the attestation, only when the run used no AI at all.
  *  jr6 RULES (SR-3, fixtures/smartrecruiters/xplor-screening: "Think about the industry … In your own words, what's one
- *  real challenge …"): "in (or using, with) your own words" is an instruction, never a statement that the work is one's
- *  own; and the whole of OWN_WORK counts only on a box or a choice the person affirms it on (OWN_WORK_KINDS). */
-const OWN_WORK = String.raw`\btrue\s+and\s+(?:\w+\s+)?(?:my|your|their)\s+own\b|(?<!\b(?:in|using|with)\s)\b(?:entirely\s+|completely\s+|all\s+)?(?:my|your)\s+own\s+(?:work|words|writing)\b|\b(?:i|myself)\b(?:\s+\w+){0,3}?\s+(?:wrote|written|write|authored|composed|drafted|prepared|completed|filled\s+(?:in|out))\b(?:\s+\w+){0,8}?\s+(?:myself|by\s+myself|on\s+my\s+own|personally|alone|without\s+(?:any\s+)?(?:help|assistance))\b|\b(?:written|authored|composed|prepared|completed)\s+(?:entirely\s+|solely\s+|only\s+|wholly\s+)?by\s+me\b|\bsole\s+author\b`;
+ *  real challenge …"): OWN_WORK counts only on a box or a choice the person affirms it on (OWN_WORK_KINDS), where "in my
+ *  own words" attests too (jr6 fix RULES-R22: "I certify that all answers are in my own words", ticked); on a text box
+ *  or a textarea, where "in your own words" is an instruction, attestationFor reads the explicit denials alone. */
+const OWN_WORK = String.raw`\btrue\s+and\s+(?:\w+\s+)?(?:my|your|their)\s+own\b|\b(?:entirely\s+|completely\s+|all\s+)?(?:my|your)\s+own\s+(?:work|words|writing)\b|\b(?:i|myself)\b(?:\s+\w+){0,3}?\s+(?:wrote|written|write|authored|composed|drafted|prepared|completed|filled\s+(?:in|out))\b(?:\s+\w+){0,8}?\s+(?:myself|by\s+myself|on\s+my\s+own|personally|alone|without\s+(?:any\s+)?(?:help|assistance))\b|\b(?:written|authored|composed|prepared|completed)\s+(?:entirely\s+|solely\s+|only\s+|wholly\s+)?by\s+me\b|\bsole\s+author\b`;
 
 /** What fills or writes an application other than the person: automation, autofill, a bot, a script, software, a tool,
  *  an extension or plug-in, an app, or someone's help (the audit of 2026-11-06, S-4). The extension itself is such
