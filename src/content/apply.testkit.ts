@@ -36,18 +36,19 @@ export function addressOf(routes: Record<string, string>, page: string): string 
 }
 
 /** The document read as served at `address` (a fixture's frame is about:srcdoc): its location and base say `address`,
- *  everything else is the document's own. */
-export function served(doc: Document, address: string): Document {
+ *  everything else is the document's own. `address` may be read anew at each use (a page's own route moves it). */
+export function served(doc: Document, address: string | (() => string)): Document {
+  const now = typeof address === 'string' ? () => address : address;
   return new Proxy(doc, { get(target, property) {
-    if (property === 'location') return { href: address };
-    if (property === 'baseURI') return address;
+    if (property === 'location') return { href: now() };
+    if (property === 'baseURI') return now();
     const value = Reflect.get(target, property, target) as unknown;
     return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
   } });
 }
 
-/** `adapter`, its hooks that take the document reading it as served at `address`. */
-export function servedAdapter(adapter: Adapter, address: string): Adapter {
+/** `adapter`, its hooks that take the document reading it as served at `address` (as `served` reads it). */
+export function servedAdapter(adapter: Adapter, address: string | (() => string)): Adapter {
   const read = (doc: Document) => served(doc, address);
   return {
     ...adapter,

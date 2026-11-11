@@ -242,6 +242,9 @@ export const MAX_AUTO_CONTINUES = 20;
  *  for what the press brings (a form drawn in place, a wall, a choice), at least; an adapter of the address whose
  *  formLateMs is longer is waited for that long (late-form.ts LATE_FORM_CAP_MS holds it). */
 export const ENTRY_FORM_WAIT_MS = 20_000;
+/** jr6 apply F2 (the line P review, revA-4): why an entry ended early, when a route to another application ended it
+ *  (its AbortSignal's reason; run/cancel's is the platform's own). */
+const ENTRY_MOVED = 'entry-moved';
 
 /** How the runtime is set up; every part defaults to the real one. */
 export interface RuntimeOptions extends RunOptions {
@@ -1398,19 +1401,25 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   // ── The page: which application, adapter and form root ──────────────────────────────────────────────────────────
+  /** The application an address of this document reads as: its parser's; core-x, items 7 and 14: a chain page the
+   *  worker keyed takes its application's key, while its address stays a chain page of the same family. jr6 apply F2
+   *  (the line P review, revA-4): read alone too, for the application an entry under way belongs to. */
+  function applicationAt(url: URL | null): ApplicationRef | null {
+    const read = url === null ? null : applicationOf(url);
+    const chainPage = url === null ? null : chainPageOf(url);
+    if (chained !== null && chainPage !== null && chainPage.family === chained.family) {
+      return { platform: chainPage.platform, page: 'application', applicationUrl: read?.applicationUrl ?? '',
+        applicationKey: chained.applicationKey };
+    }
+    return read;
+  }
+
   /** jr6 apply F2 item 2 (APPLYPLAN D5; AF-4, apply-c-new-1): `how.ownOnly`, only the address's own adapters may claim
    *  the page (never the generic one); `how.atPosting`, a posting's address too (after an entry press of ours, the form
    *  it drew in place is the posting's application), by those own adapters alone. */
   function resolvePage(href: string, how: { ownOnly?: boolean; atPosting?: boolean } = {}): void {
     const url = urlOf(href);
-    app = url === null ? null : applicationOf(url);
-    // core-x, items 7 and 14: a chain page the worker keyed takes its application's key, while its address stays a chain
-    // page of the same family.
-    const chainPage = url === null ? null : chainPageOf(url);
-    if (chained !== null && chainPage !== null && chainPage.family === chained.family) {
-      app = { platform: chainPage.platform, page: 'application', applicationUrl: app?.applicationUrl ?? '',
-        applicationKey: chained.applicationKey };
-    }
+    app = applicationAt(url);
     // core-x, item 3: a subframe that draws its wrapper's application.
     claimed = !isTop && claimsApplication(app, options.wrapper !== undefined ? options.wrapper() : wrapperOf(view),
       adapters);
@@ -1626,6 +1635,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   let entering: Promise<EntryAnswer> | null = null;
   /** jr6 apply F2 item 2: ends the entry's waits (run/cancel). */
   let entryCancel: AbortController | null = null;
+  /** jr6 apply F2 (the line P review, revA-4): the application key the entry under way started at (null: an address
+   *  that read none): a route of the page's own to another one ends the entry (onAddress). */
+  let entryKey: string | null = null;
   /** The toast a wall with no form shows (atWall), while its cause stands; null: none. */
   let wallToast: 'sign-in' | 'no-sign-in' | 'challenge' | null = null;
   /** s2 profile (P1): what that toast says the page waits for (WALL_WAITS), told the worker with the wall (tellWall) so
@@ -1920,19 +1932,21 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       ? ENTRY_FORM_WAIT_MS : 0;
   }
 
-  /** A form the address's own adapters claim within `ms` (claimed as it shows), or false when none came or `signal`
-   *  aborted first. */
-  function formWithin(ms: number, signal: AbortSignal): Promise<boolean> {
+  /** A form the address's own adapters claim within `ms` (claimed as it shows), or false when none came or the entry
+   *  ended first (`gone`: run/cancel, the document's end, or the line P review's revA-4, a route to another
+   *  application, whose form is never this entry's). */
+  function formWithin(ms: number, signal: AbortSignal, gone: () => boolean): Promise<boolean> {
+    if (gone()) return Promise.resolve(false);
     if (lookAgain()) return Promise.resolve(true);
     return new Promise((resolve) => {
       watchForLateForm(doc, ms, () => {
-        if (stopped || signal.aborted) return true;
+        if (stopped || gone()) return true;
         resolvePage(readHref(), { ownOnly: true });
         if (page === null) return false;
         formFound();
         resolve(true);
         return true;
-      }, signal, () => resolve(page !== null));
+      }, signal, () => resolve(page !== null && !gone()));
       signal.addEventListener('abort', () => resolve(false), { once: true });
     });
   }
@@ -1951,10 +1965,13 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    *   (afterPress); a wall shown instead (before or after the press) is the sign-in step's (wallStep), never a refusal;
    *   a door that refused the control by where it goes, nothing pressed: 'new-tab', 'elsewhere' or (a download) 'none';
    *   a check or a code: 'blocked'.
-   * run/cancel ends its waits (cancelRun: a press already made stays made, none is made after). The person's refusal is
-   * told the worker (frame/wall entryRefused and refusal) until the next press; the agent hears its answer (EntryAnswer:
-   * a door's refusal is 'blocked' 'other', so agent.ts reads it as before). Logged: content.entry (flags, counts, the
-   * refusal's place in ENTRY_REFUSALS), content.entry-step for a step pressed on the way.
+   * run/cancel ends its waits (cancelRun: a press already made stays made, none is made after). The line P review
+   * (revA-4): so does a route of the page's own to another application (the person opened another job in this
+   * document, or a page of none): the entry belongs to the one it started at, and nothing is pressed, claimed, signed in
+   * to or refused after that (onAddress hears the route; each look and press of the entry asks too: `gone`). The
+   * person's refusal is told the worker (frame/wall entryRefused and refusal) until the next press; the agent hears its
+   * answer (EntryAnswer: a door's refusal is 'blocked' 'other', so agent.ts reads it as before). Logged: content.entry
+   * (flags, counts, the refusal's place in ENTRY_REFUSALS), content.entry-step for a step pressed on the way.
    */
   function enter(source: EntrySource): Promise<EntryAnswer> {
     if (entering !== null) return entering;
@@ -1962,16 +1979,25 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (stopped || at === null || (!isTop && !claimed)) return Promise.resolve({ outcome: 'not-offered' });
     const cancel = new AbortController();
     const signal = AbortSignal.any([cancel.signal, lifetime.signal]);
+    // The line P review (revA-4): the application this entry belongs to; an address that reads another ends it.
+    const key = applicationAt(at)?.applicationKey ?? null;
+    const gone = (): boolean => {
+      if (!signal.aborted && (applicationAt(urlOf(readHref()))?.applicationKey ?? null) !== key) {
+        cancel.abort(ENTRY_MOVED);
+      }
+      return signal.aborted;
+    };
     let answer: (said: EntryAnswer) => void = () => undefined;
     const answered = new Promise<EntryAnswer>((resolve) => {
       answer = resolve;
     });
     entering = answered;
     entryCancel = cancel;
+    entryKey = key;
     // A refusal is told until the next press: this one.
     refusal = null;
     sendWall(wallNow());
-    void runEntry(source, at, signal, answer).catch(() => undefined).finally(() => {
+    void runEntry(source, at, signal, answer, gone).catch(() => undefined).finally(() => {
       answer({ outcome: 'not-offered' });
       if (entering === answered) entering = null;
       if (entryCancel === cancel) entryCancel = null;
@@ -1985,16 +2011,19 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (source.by === 'person') startRun({ trigger: 'panel', dryRun: false, ...(source.signUp ? { signIn: true } : {}) });
   }
 
-  /** enter's steps (its doc): answers the agent at its press's outcome, and ends once what the press brought is known. */
-  async function runEntry(source: EntrySource, at: URL, signal: AbortSignal, answer: (said: EntryAnswer) => void):
-    Promise<void> {
+  /** enter's steps (its doc): answers the agent at its press's outcome, and ends once what the press brought is known.
+   *  `gone`: whether the entry ended meanwhile (run/cancel, the document's end, a route to another application). */
+  async function runEntry(source: EntrySource, at: URL, signal: AbortSignal, answer: (said: EntryAnswer) => void,
+    gone: () => boolean): Promise<void> {
     const person = source.by === 'person';
     const facts: EntryFacts = { before: null, onChoice: false, presses: 0, followed: true, waited: false, found: false,
       wall: false, choice: false };
     const end = (refused: EntryRefusal | null): void => {
       const cancelled = signal.aborted && !stopped;
+      // The line P review (revA-4): an entry a route to another application ended says so (a flag).
+      const moved = cancelled && signal.reason === ENTRY_MOVED;
       log('content.entry', { agent: !person, presses: facts.presses, followed: facts.followed, waited: facts.waited,
-        found: facts.found, wall: facts.wall, choice: facts.choice, cancelled,
+        found: facts.found, wall: facts.wall, choice: facts.choice, cancelled, ...(moved ? { moved: true } : {}),
         ...(refused === null || cancelled ? {} : { refusal: ENTRY_REFUSALS.indexOf(refused) }) });
       // The person's refusal is told (enter's end tells the worker); a cancelled entry says nothing.
       if (person && refused !== null && !cancelled && !stopped) refusal = refused;
@@ -2011,7 +2040,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // No Apply declared: a form an adapter says it draws late is waited for (the person's), else none.
       const late = source.by === 'person' ? lateEntryMs(all) : 0;
       facts.waited = late > 0;
-      if (late > 0 && await formWithin(late, signal)) {
+      if (late > 0 && await formWithin(late, signal, gone)) {
         facts.found = true;
         startPersonRun(source);
         end(null);
@@ -2021,17 +2050,25 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       end('none');
       return;
     }
+    // The line P review (revA-4): a press only while the page the entry started at shows (its application's address).
     const result: EntryResult = await pressEntry(doc, all, signal, entryWaitOf(all), undefined,
       (pressed, before, onChoice) => {
         facts.before ??= before;
         facts.onChoice = onChoice;
         entryPressed(source, facts, pressed, false);
-      }, { address: at });
+      }, { address: at, here: () => !gone() });
     if (stopped) return;
     if (result.outcome === 'pressed') {
       facts.followed = result.followed !== false;
       answer({ outcome: 'pressed' });
-      end(await afterPress(source, signal, facts));
+      end(await afterPress(source, signal, facts, gone));
+      return;
+    }
+    // The line P review (revA-4, and run/cancel): an entry that ended meanwhile starts nothing, signs in nowhere and
+    // says nothing more (no press was made).
+    if (gone()) {
+      answer({ outcome: 'not-offered' });
+      end(null);
       return;
     }
     if (result.outcome === 'not-offered') {
@@ -2120,14 +2157,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    * worker's grant starts its run); a wall, the sign-in step's (the person's: wallStep; the line P review, P-B4: the
    * agent's, agentSignIn, as at a wall its entry met before its press); a choice of how to apply (told
    * the worker; the next press answers it); a check or a code, the person's ('blocked'). A new document ends it with
-   * this one, quietly. Nothing within the wait: 'nothing-followed'. Answers the person's refusal, or null (the agent's
-   * entry refuses nothing here: its own wait says it).
+   * this one, quietly; the line P review (revA-4): so does a route to another application (`gone`), before anything is
+   * claimed, pressed or signed in to there. Nothing within the wait: 'nothing-followed'. Answers the person's refusal,
+   * or null (the agent's entry refuses nothing here: its own wait says it).
    */
-  async function afterPress(source: EntrySource, signal: AbortSignal, facts: EntryFacts): Promise<EntryRefusal | null> {
+  async function afterPress(source: EntrySource, signal: AbortSignal, facts: EntryFacts, gone: () => boolean):
+    Promise<EntryRefusal | null> {
     const person = source.by === 'person';
     type Seen = { form: true } | { pause: NonNullable<ReturnType<typeof detectPause>> } | null;
     const seen = (): Seen => {
-      if (stopped || signal.aborted) return null;
+      if (stopped || gone()) return null;
       if (page !== null) return { form: true };
       resolvePage(readHref(), { ownOnly: true, atPosting: true });
       if (page !== null) {
@@ -2263,6 +2302,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (stopped) return;
     const before = app?.applicationKey ?? null;
     resolvePage(href);
+    // jr6 apply F2 (the line P review, revA-4): an entry under way belongs to the application it started at: a route to
+    // another one (the person opened another job in this document, or a page of none) ends it quietly, as run/cancel
+    // does: nothing pressed after it, nothing refused (enter).
+    if (entryCancel !== null && (app?.applicationKey ?? null) !== entryKey) entryCancel.abort(ENTRY_MOVED);
     if ((app?.applicationKey ?? null) !== before) {
       current?.abort();
       current = null;

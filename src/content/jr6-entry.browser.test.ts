@@ -691,4 +691,110 @@ describe('jr6 apply F2: the entry ends where the person says so (the line P revi
         removeFixtures(document);
       }
     }, 40_000);
+
+  // revA-4: the person opens another job in the same document (Workday's two-pane search, an Ashby or Workable board)
+  // while the entry waits. `heard`: the route is heard as it happens (onAddress); else not yet (a look or press asks).
+  it('an in-page route to another job during the late-Apply wait: nothing pressed, no refusal (revA-4)', async () => {
+    for (const heard of [true, false]) {
+      const label = heard ? 'heard' : 'not heard yet';
+      let here = LATE;
+      const { fixture, doc, clicks } = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1>
+        <div id="slot"></div></main></body>`, LATE);
+      const { worker, runtime } = await runtimeAt(doc, LATE, [servedAdapter(leverAdapter, () => here), genericAdapter],
+        { more: { href: () => here } });
+      runtimes.push(runtime);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering, label).toBe(true), { timeout: 3_000 });
+      await deadline(1_000);
+      expect(keyOf(DIALOG)).not.toBe(keyOf(LATE));
+      here = DIALOG;
+      if (heard) {
+        fixture.view.dispatchEvent(new PopStateEvent('popstate'));
+        // The route alone ends the entry, with nothing drawn yet (its Apply wait would run 7 s more).
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering, label).toBe(false), { timeout: 1_000 });
+      }
+      // The other job's posting draws its own Apply.
+      doc.querySelector('h1')!.textContent = 'Site Reliability Engineer';
+      const link = doc.createElement('a');
+      link.id = 'apply-b';
+      link.href = `${DIALOG}/apply`;
+      link.textContent = 'Apply for this job';
+      doc.getElementById('slot')!.append(link);
+      await deadline(2_500);
+      expect(clicks, label).toEqual([]);
+      expect(worker.of('entry/pressed'), label).toEqual([]);
+      expect(refusals(worker), label).toEqual([]);
+      expect(wallsOf(worker).at(-1)?.entering, label).toBe(false);
+      runtime.stop();
+      runtimes.splice(0);
+      removeFixtures(document);
+    }
+  }, 40_000);
+
+  it('an in-page route to another job’s application form during the wait: no run started for it (revA-4)',
+    async () => {
+      // `declared`: the entry waits for an Apply drawn late (pressEntry), or (no Apply declared) for a form an adapter
+      // draws late (formWithin).
+      for (const declared of ['an Apply', 'a late form'] as const) for (const heard of [true, false]) {
+        const label = `${declared}, ${heard ? 'heard' : 'not heard yet'}`;
+        let here = LATE;
+        // The late Apply is never drawn within this test.
+        const { fixture, doc } = await openAt(lateHtml.replace('data-apply-delay="3000"', 'data-apply-delay="600000"'),
+          LATE);
+        const own = servedAdapter(leverAdapter, () => here);
+        const { worker, runtime } = await runtimeAt(doc, LATE, [declared === 'an Apply' ? own
+          : { ...own, entryControl: undefined, quirks: { ...own.quirks, formLateMs: 10_000 } }, genericAdapter],
+        { more: { href: () => here } });
+        runtimes.push(runtime);
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering, label).toBe(true), { timeout: 3_000 });
+        await deadline(1_000);
+        // The person opens another job's application in the page's own route: its form is drawn there.
+        here = `${DIALOG}/apply`;
+        const template = doc.getElementById('form-template') as HTMLTemplateElement;
+        doc.getElementById('form-slot')!.append(template.content.cloneNode(true));
+        if (heard) fixture.view.dispatchEvent(new PopStateEvent('popstate'));
+        await deadline(2_000);
+        // Autofill was pressed for the first job: no run starts on the other one's form.
+        expect(worker.of('run/begin'), label).toEqual([]);
+        expect(refusals(worker), label).toEqual([]);
+        expect(wallsOf(worker).at(-1)?.entering, label).toBe(false);
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 40_000);
+
+  it('an in-page route to another job after our press: no step pressed for it there, no refusal (revA-4)',
+    async () => {
+      // `presses`: the adapter's own (1: the runtime's watch after the press would take a second step; 2: pressEntry's
+      // follow-up would).
+      for (const presses of [1, 2]) for (const heard of [true, false]) {
+        const label = `${presses} press(es), ${heard ? 'heard' : 'not heard yet'}`;
+        let here = LATE;
+        const { fixture, doc, clicks } = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1>
+          <a id="apply" href="${LATE}/apply">Apply for this job</a></main>
+          <dialog id="other"><button type="button" id="other-manually">Apply manually</button></dialog></body>`, LATE);
+        const own = servedAdapter(leverAdapter, () => here);
+        const { worker, runtime } = await runtimeAt(doc, LATE, [presses === 1 ? own
+          : { ...own, quirks: { ...own.quirks, entryPresses: 2 } }, genericAdapter], { more: { href: () => here } });
+        runtimes.push(runtime);
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+        await vi.waitFor(() => expect(clicks, label).toEqual(['apply']), { timeout: 3_000 });
+        // While the entry watches what its press brings, the person opens another job, whose page opens a dialog in a
+        // second step's words.
+        await deadline(500);
+        here = DIALOG;
+        if (heard) fixture.view.dispatchEvent(new PopStateEvent('popstate'));
+        doc.getElementById('other')!.setAttribute('open', '');
+        await deadline(2_000);
+        expect(clicks, label).toEqual(['apply']);
+        expect(worker.of('entry/pressed'), label).toHaveLength(1);
+        expect(refusals(worker), label).toEqual([]);
+        expect(wallsOf(worker).at(-1)?.entering, label).toBe(false);
+        runtime.stop();
+        runtimes.splice(0);
+        removeFixtures(document);
+      }
+    }, 40_000);
 });
