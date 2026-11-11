@@ -13,6 +13,9 @@
  *   radio in its wrapper, its bare words after it) is read with the words its adapter reads (Adapter.optionTextFor),
  *   only while a person sees them beside it; a label element still wins; the radio filler chooses by those words; on
  *   the owner's IForm page too (fixtures/icims/edgewater-self-id-veteran.frame-2.html);
+ * - item 11 (ADP-5): a label[for] or aria-labelledby label that ends with a copy of the control's own validation message
+ *   (ADP's "City is required" beside validationmessage=" is required"), or of its widget host's, is read without it;
+ *   any other label stands;
  * Every value is synthetic (no owner data), but the Oracle fixture's, which is the converted, redacted capture.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -26,8 +29,10 @@ import type { Adapter } from '../adapters/types';
 import { accountFormOf, accountLeft, accountRowsIn, accountSectionOf } from './account-section';
 import { loadFixture, removeFixtures } from './fixture.testkit';
 import { fill } from './fillers';
+import { labelOfControl } from './labels';
 import { detectPause } from './pause-detect';
 import { scan } from './scan';
+import { newScanCache } from './scan-cache';
 import { visibleText } from './visible-text';
 
 afterEach(() => removeFixtures(document));
@@ -370,5 +375,85 @@ describe('jr6 E2 item 8 (ICIMS-14): a radio named by the words its adapter reads
     expect(read).toHaveLength(3);
     const shown = visibleText(doc.body, { singleLine: true }).replace(/\s+/g, ' ');
     for (const words of read) expect(shown).toContain(words);
+  });
+});
+
+// ── item 11 (ADP-5): a validation message the page writes into a label ──────────────────────────────────────────────
+
+/** ADP's Personal Information after a refused Next, as the audit describes it (jr6-personal-us-errors): each label's
+ *  text rewritten to "<label> is required" (class mdf-label-error) before its required star, its input carrying
+ *  validationmessage=" is required"; State a widget host (wfn-dropdown-list) labelled through aria-labelledby, carrying
+ *  validation-message=" is required". */
+const ADP_ERRORS = `<!doctype html><html><head><style>body { font: 14px sans-serif; margin: 16px; }
+  input { display: block; width: 300px; } x-select { display: inline-block; width: 300px; height: 30px; }</style>
+  </head><body>
+  <form id="f">
+    <div><label for="line1" class=" mdf-label-error">Address Line 1 is required<span class="mdf-required-indicator">*</span></label>
+      <input id="line1" validationmessage=" is required" aria-required="true"></div>
+    <div><label for="city" class=" mdf-label-error">City is required<span class="mdf-required-indicator">*</span></label>
+      <input id="city" validationmessage=" is required" aria-required="true"></div>
+    <div><label for="phone">Mobile Number is invalid</label><input id="phone" type="tel" validationmessage=" is invalid"></div>
+    <div><label id="state-label" class=" mdf-label-error">State / Territory is required<span>*</span></label>
+      <x-select id="state" role="combobox" aria-expanded="false" aria-labelledby="state-label" validation-message=" is required"></x-select></div>
+    <div><label for="license">A driving license is required</label><input id="license"></div>
+    <div><label for="training">Training is required</label><input id="training" validationmessage=""></div>
+    <div><label for="only">is required</label><input id="only" validationmessage=" is required"></div>
+    <div><label for="other">Degree is invalid</label><input id="other" validationmessage=" is required"></div>
+    <div id="host-row"></div>
+  </form></body></html>`;
+
+describe('jr6 E2 item 11 (ADP-5): a label read without its control’s validation message', () => {
+  const labelsOf = async (change?: (doc: Document) => void) => {
+    const fixture = await loadFixture(document, ADP_ERRORS, { width: 1280, height: 900 });
+    change?.(fixture.doc);
+    const ctx = { cache: newScanCache(), adapter: null };
+    const read = (el: Element) => labelOfControl(el, ctx);
+    return { doc: fixture.doc, read, byId: (id: string) => read(fixture.doc.getElementById(id)!) };
+  };
+
+  it('reads "City is required" as City, required, beside validationmessage=" is required"', async () => {
+    const { byId } = await labelsOf();
+    expect(byId('city')).toMatchObject({ text: 'City', source: 'for', required: true, visible: true });
+    expect(byId('line1')).toMatchObject({ text: 'Address Line 1', required: true });
+    expect(byId('phone').text).toBe('Mobile Number');
+  });
+
+  it('reads a widget host’s aria-labelledby label without its validation-message', async () => {
+    const { byId } = await labelsOf();
+    expect(byId('state')).toMatchObject({ text: 'State / Territory', source: 'aria-labelledby', required: true });
+  });
+
+  it('reads a control inside a widget host’s shadow tree without the host’s message', async () => {
+    const { doc, read } = await labelsOf((page) => {
+      const host = page.createElement('x-field');
+      host.setAttribute('validationmessage', ' is invalid');
+      const shadow = host.attachShadow({ mode: 'open' });
+      const label = page.createElement('label');
+      label.htmlFor = 'inner';
+      label.textContent = 'Home Phone Number is invalid';
+      const input = page.createElement('input');
+      input.id = 'inner';
+      input.type = 'tel';
+      shadow.append(label, input);
+      page.getElementById('host-row')!.append(host);
+    });
+    const inner = doc.querySelector('x-field')!.shadowRoot!.getElementById('inner')!;
+    expect(read(inner).text).toBe('Home Phone Number');
+  });
+
+  it('leaves every other label as it reads: no message, an empty one, another one, or nothing left', async () => {
+    const { byId } = await labelsOf();
+    expect(byId('license').text).toBe('A driving license is required');
+    expect(byId('training').text).toBe('Training is required');
+    expect(byId('only').text).toBe('is required');
+    expect(byId('other').text).toBe('Degree is invalid');
+  });
+
+  it('gives the scan the label without the message', async () => {
+    const fixture = await loadFixture(document, ADP_ERRORS, { width: 1280, height: 900 });
+    const labels = scan(fixture.doc.getElementById('f')!, null, { platform: 'adp' }).fields.map((field) => field.label);
+    expect(labels).toContain('City');
+    expect(labels).toContain('Address Line 1');
+    expect(labels).not.toContain('City is required');
   });
 });
