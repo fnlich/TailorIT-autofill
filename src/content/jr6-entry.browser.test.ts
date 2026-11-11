@@ -902,6 +902,54 @@ describe('jr6 apply F2: the entry ends where the person says so (the line P revi
       }
     }, 40_000);
 
+  // revA-6: two safety rules of the entry, each with the case that fails without it.
+  it('a dialog chain after Apply ("Apply manually", "Continue to application", "Start application"): two presses at most (revA-6, D7)',
+    async () => {
+      const { doc, clicks } = await openAt(`<!doctype html><body><main><h1>Site Reliability Engineer</h1>
+        <a id="apply" href="${LATE}/apply">Apply for this job</a></main>
+        <dialog id="one"><button type="button" id="manually">Apply manually</button></dialog>
+        <dialog id="two"><button type="button" id="continue">Continue to application</button></dialog>
+        <dialog id="three"><button type="button" id="start">Start application</button></dialog></body>`, LATE);
+      const open = (id: string) => void deadline(300).then(() => doc.getElementById(id)!.setAttribute('open', ''));
+      doc.getElementById('apply')!.addEventListener('click', () => open('one'));
+      doc.getElementById('manually')!.addEventListener('click', () => {
+        doc.getElementById('one')!.removeAttribute('open');
+        open('two');
+      });
+      doc.getElementById('continue')!.addEventListener('click', () => {
+        doc.getElementById('two')!.removeAttribute('open');
+        open('three');
+      });
+      const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
+      runtimes.push(runtime);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(clicks).toContain('manually'), { timeout: 6_000 });
+      // The next dialog shows, in a second step's words too: never pressed (ENTRY_MAX_PRESSES stays 2).
+      await vi.waitFor(() => expect(doc.getElementById('two')!.hasAttribute('open')).toBe(true), { timeout: 3_000 });
+      await deadline(1_500);
+      expect(clicks).toEqual(['apply', 'manually']);
+      expect(worker.of('entry/pressed')).toHaveLength(2);
+      expect(refusals(worker)).toEqual([]);
+    }, 30_000);
+
+  it('a pressed link the page’s own click listener sends to another origin names no key (revA-6, D4)', async () => {
+    // An address of another origin that a parser reads as an application, with a key of its own.
+    const OTHER = 'https://job-boards.greenhouse.io/northwind/jobs/4012345';
+    expect(keyOf(OTHER)).not.toBeNull();
+    expect(new URL(OTHER).origin).not.toBe(new URL(LATE).origin);
+    const { doc, clicks } = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1><a id="apply"
+      href="${LATE}/apply">Apply for this job</a></main></body>`, LATE);
+    // The page's own script rewrites its Apply's address as it is clicked, after the door read it.
+    doc.getElementById('apply')!.addEventListener('click', (event) => {
+      (event.currentTarget as HTMLAnchorElement).setAttribute('href', OTHER);
+    });
+    const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
+    runtimes.push(runtime);
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+    await vi.waitFor(() => expect(clicks).toEqual(['apply']), { timeout: 3_000 });
+    expect(pressedKeys(worker)).toEqual([undefined]);
+  }, 30_000);
+
   // revA-4: the person opens another job in the same document (Workday's two-pane search, an Ashby or Workable board)
   // while the entry waits. `heard`: the route is heard as it happens (onAddress); else not yet (a look or press asks).
   it('an in-page route to another job during the late-Apply wait: nothing pressed, no refusal (revA-4)', async () => {
