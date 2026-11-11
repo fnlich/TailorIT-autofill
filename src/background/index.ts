@@ -599,7 +599,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       if (reverted) reports.tellPanels('settings');
     } });
   /** core-x, items 7 and 14: the tabs' chains (chain.ts). */
-  const chains = createChains({ session, now });
+  const chains = createChains({ session, now, tabs: platform.tabs, timers }); // jr6 SHELL-B: the step facts' handing
   /** Every frame with a form hears the settings as they act now for it (settings/changed): the agent's tab's documents
    *  the agent's, each as contentSettingsFor builds them for its application and document (the audit's m1: Submit stays
    *  on Manual in every document but the one the job's Submit was pressed in). */
@@ -837,6 +837,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           if (entry.applicationKey !== undefined && entry.chained !== true && from.incognito !== true) {
             await chains.notePortal(from.tabId, { frameId: entry.frameId, documentId: entry.documentId,
               applicationKey: entry.applicationKey, url: from.url });
+          }
+          // jr6 SHELL-B (ICIMS-17): a leaf frame's document the chain keyed now hears its portal's step facts (chain.ts).
+          if (entry.chained === true && (previous?.chained !== true || previous.documentId !== entry.documentId)) {
+            void chains.leafChained(from.tabId, entry, () => framesOfTab(session, from.tabId)); // jr6 SHELL-B
           }
           const newDocument = previous === null || previous.documentId !== entry.documentId;
           // The document it left goes; anything this document began before its hello stays.
@@ -1173,6 +1177,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           await launchers.hide(from.url, message.scope);
           return ok({});
         },
+        // jr6 SHELL-B (ICIMS-17): the tab's claim frame says its step bar's facts for the IForm leaf it frames: kept for
+        // its document and handed to the leaf frames chained from it (chain.ts factsSaid); any other frame: expired.
+        'chain/facts': async (message, from) => (from.incognito !== true && await chains.factsSaid(from.tabId, // jr6 SHELL-B
+          { frameId: from.frameId, documentId: from.documentId ?? null }, message.facts, // jr6 SHELL-B
+          () => framesOfTab(session, from.tabId)) ? ok({}) : refuse('expired')), // jr6 SHELL-B
         ...(__E2E__
           ? {
               'e2e/probe': async (message: { storageLocal?: 'refused' | 'allowed'; settled?: true }, from: ContentChannel) => {

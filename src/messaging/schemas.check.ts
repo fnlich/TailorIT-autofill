@@ -4,6 +4,7 @@
  * and the worker brands them after parsing. This file has no runtime code.
  */
 import type { z } from 'zod';
+import type { ChainStepFacts } from '../adapters/types'; // jr6 SHELL-B
 import type { PlanInput, PlanOutput } from '../core/plan/types';
 import type { FieldSpec, FillResult, PlannedWrite, RunState } from '../core/types';
 import type { Settings } from '../core/types/settings';
@@ -69,3 +70,13 @@ export type EntryWordsMatch = Assert<Same<Pick<FrameWall, EntryWords>, Pick<Page
 export type EntryWordsAreFlags = Assert<Same<Pick<FrameWall, EntryWords>,
   { entry?: true; entryRefused?: true; entering?: true; refusal?: EntryRefusal }>>;
 // ── end jr6 apply A0 ──
+// ── jr6 SHELL-B (ICIMS-17) ──
+/** chain/facts (the claim frame to the worker) and chain/leafFacts (the worker to the IForm leaf) carry the adapters'
+ *  ChainStepFacts, shape for shape (ids, a boolean and counts), or null, and nothing more. */
+type ChainFactsSaid = Extract<z.infer<typeof ContentMessageSchema>, { type: 'chain/facts' }>;
+type ChainFactsHanded = Extract<z.infer<typeof WorkerToContentSchema>, { type: 'chain/leafFacts' }>;
+export type ChainFactsSaidMatches = Assert<Same<ChainFactsSaid, { v: 1; type: 'chain/facts';
+  facts: ChainStepFacts | null }>>;
+export type ChainFactsHandedMatches = Assert<Same<ChainFactsHanded, { v: 1; type: 'chain/leafFacts';
+  facts: ChainStepFacts | null }>>;
+// ── end jr6 SHELL-B ──

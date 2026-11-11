@@ -341,6 +341,16 @@ const refusalBesideEntryRefused = (message: { refusal?: EntryRefusal; entryRefus
 const REFUSAL_ALONE = { message: 'a refusal names why an entry was refused, beside entryRefused', path: ['refusal'] };
 // ── end jr6 apply A0 ──
 
+// ── jr6 SHELL-B (INTEGRATION.md SHELL-B item 1; FIXPLAN §6.12 item 2, ICIMS-17) ──
+/** What a portal frame's step bar says for the iCIMS IForm leaf frame it frames (adapters/types.ts ChainStepFacts,
+ *  Adapter.chainStepFacts): the current step's id as the bar names it (li#Step_<step>), whether it is the bar's last,
+ *  the packet counter "( n/m )" and how many counters the page shows. Ids, a boolean and counts only: never a value,
+ *  a label or an address (content/chain-frame.ts, background/chain.ts). */
+export const ChainStepFactsSchema = z.strictObject({ stepId: z.string().regex(/^Step_[A-Za-z]{1,48}$/),
+  lastStep: z.boolean(), packet: z.strictObject({ n: Count.max(999), m: Count.max(999) }).nullable(),
+  counters: Count.max(99) });
+// ── end jr6 SHELL-B ──
+
 // ── v1.5 X (PLAN decisions 2 and 3): the documents' dialogs on the page ──
 /** The documents a fill attaches that the page's dialog shows (the preview's tabs), as the panel's TAILOR_KINDS. */
 export const DOCUMENT_KINDS = ['resume', 'coverLetter'] as const;
@@ -575,6 +585,13 @@ const contentMessages = [
    *  `skip` ("Don't show this again") in the settings. Frame 0. */
   z.strictObject({ v, type: z.literal('edit/confirmed'), grant: z.string().regex(DOCUMENT_GRANT), skip: z.boolean() }),
   // ── end v1.5 X ──
+  // ── jr6 SHELL-B (ICIMS-17) ──
+  /** The tab's claim frame, a portal page that frames an iCIMS IForm leaf, says what its step bar says (`facts`; null:
+   *  nothing it can say), after its hello and at each change of its page (content/chain-frame.ts watchChainFacts). The
+   *  worker keeps them for the sender's document and hands them to the leaf frames chained from it in the tab
+   *  (background/chain.ts factsSaid, chain/leafFacts); from any other frame: `expired`. */
+  z.strictObject({ v, type: z.literal('chain/facts'), facts: ChainStepFactsSchema.nullable() }),
+  // ── end jr6 SHELL-B ──
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -740,6 +757,13 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
    *  edit/confirmed with `grant`. Answered {shown}. */
   z.strictObject({ v, type: z.literal('edit/confirm'), grant: z.string().regex(DOCUMENT_GRANT) }),
   // ── end v1.5 X ──
+  // ── jr6 SHELL-B (ICIMS-17) ──
+  /** The worker's alone, to an IForm leaf frame chained from the tab's claim frame (the same family, the same tab): the
+   *  step facts that portal frame's document said (chain/facts; null: none), which the leaf's step machine judges its
+   *  own "Submit" by (content/chain-frame.ts holdChainFacts: held only where the portal loaded the leaf's document).
+   *  Answered `expired` where the frame holds none for it. */
+  z.strictObject({ v, type: z.literal('chain/leafFacts'), facts: ChainStepFactsSchema.nullable() }),
+  // ── end jr6 SHELL-B ──
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -957,6 +981,7 @@ export const CONTENT_ANSWER_SCHEMAS = {
   // v1.5 X
   'preview/openTab': DoneAnswerSchema,
   'edit/confirmed': DoneAnswerSchema,
+  'chain/facts': DoneAnswerSchema, // jr6 SHELL-B
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of a frame's answer to each message the worker sends it. */
@@ -987,6 +1012,7 @@ export const FRAME_ANSWER_SCHEMAS = {
   // v1.5 X
   'preview/show': DialogShownAnswerSchema,
   'edit/confirm': DialogShownAnswerSchema,
+  'chain/leafFacts': DoneAnswerSchema, // jr6 SHELL-B
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 // ── The resume port ───────────────────────────────────────────────────────────────────────────────────────────────

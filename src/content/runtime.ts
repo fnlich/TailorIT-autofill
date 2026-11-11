@@ -216,6 +216,7 @@ import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter,
 import { loadPagePatches } from './page-patches';
 import { dropKeptSignIns, signIn } from './sign-in';
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
+import { chainFactsOf, claimFrameFacts, holdChainFacts, saysChainFacts, watchChainFacts } from './chain-frame'; // jr6 SHELL-B
 import { createReportLimiter } from './report';
 // v1.3 B
 import { captureStep, createFormCapture, stepNameOf } from './form-capture';
@@ -674,6 +675,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         return ok(await postingTextOf(doc, now?.root ?? null, isTop, lifetime.signal, now?.app.platform ?? null,
           now === null ? [] : scanPage(now).fields.map(toFieldSpec)));
       }
+      // jr6 SHELL-B (ICIMS-17; chain-frame.ts): the worker's alone: the step facts of the portal frame around this IForm
+      // leaf, held for its step machine where that portal loaded this document.
+      case 'chain/leafFacts': // jr6 SHELL-B
+        if (!fromWorker(sender)) return refuse('bad_sender'); // jr6 SHELL-B
+        return !stopped && holdChainFacts(doc, msg.facts, { isTop, href: readHref(), // jr6 SHELL-B
+          referrer: options.referrer?.() ?? doc.referrer }) ? ok({}) : refuse('expired'); // jr6 SHELL-B
     }
   });
 
@@ -987,14 +994,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // v1.3 B: the person's own Next leaves the step: its questions and answers are read first.
     let next: HTMLElement | null = null;
     try {
-      next = on.adapter.nextButton?.(on.root) ?? null;
+      next = on.adapter.nextButton?.(on.root, chainFactsOf(doc)) ?? null; // jr6 SHELL-B: an IForm leaf's step facts
     } catch {
       next = null;
     }
     if (next !== null && path.includes(next)) captureNow();
     let submit: HTMLElement | null = null;
     try {
-      submit = on.adapter.submitButton?.(on.root) ?? null;
+      submit = on.adapter.submitButton?.(on.root, chainFactsOf(doc)) ?? null; // jr6 SHELL-B: an IForm leaf's step facts
     } catch {
       submit = null;
     }
@@ -2461,6 +2468,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       watchLateForm();
       // v4: the page's account wall, told to the worker as it changes (module header).
       watchWall();
+      // jr6 SHELL-B (ICIMS-17; chain-frame.ts): the claim frame's step facts, for the IForm leaf it frames.
+      watchChainFacts({ view, doc, signal: lifetime.signal, // jr6 SHELL-B
+        active: () => !stopped && (isTop || claimed) && saysChainFacts(urlOf(readHref()), adapters), // jr6 SHELL-B
+        read: () => claimFrameFacts(doc, urlOf(readHref()), adapters, isTop || claimed, page !== null), // jr6 SHELL-B
+        send: async (facts) => (await channel.request({ v: 1, type: 'chain/facts', facts })).ok }); // jr6 SHELL-B
       await resumeStored();
       // The platform's page after submitting (v3 Phase 4): the worker takes it only after a Submit this tab armed.
       if (onConfirmationPage()) await detected('confirmation-page');

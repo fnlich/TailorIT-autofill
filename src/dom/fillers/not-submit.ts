@@ -1,6 +1,10 @@
 /*
  * Never submit (docs/ARCHITECTURE.md "Filler"; docs/design/runtime.md §6). submit() and requestSubmit() are banned by
  * lint everywhere, and every untrusted click() the extension makes goes through assertNotSubmit, which refuses:
+ * (jr6 SHELL-B, ICIMS-17: an iCIMS IForm leaf frame shows no step bar; its portal frame's step facts, which the worker
+ * hands the leaf, ride in NotSubmitContext.facts, and every adapter hook below is asked with them: the step machine's
+ * Next on the leaf is its own "Submit" while they say a later form or step follows, and its final Submit is the adapter's
+ * Submit, through clickAdapterSubmit alone, where they say the last. No facts: every rule as before.)
  * - the adapter's Submit button, anything inside it, and anything that holds it;
  * - the adapter's Next button, anything inside it and anything that holds it, unless the step machine allows Next (an
  *   Add, an option or a box is never the step's Next: the Phase 5 review, X-S7);
@@ -47,7 +51,7 @@
  * refused control) are for elements, and a list's option is none of those (listOption: it holds no button, link or
  * input). A refused option is not sent: its click, on the events' path, goes through assertNotSubmit as before.
  */
-import type { Adapter, SignInWall } from '../../adapters/types';
+import type { Adapter, ChainStepFacts, SignInWall } from '../../adapters/types'; // jr6 SHELL-B: ChainStepFacts
 import { secondStepControl } from '../../adapters/second-step'; // jr6 apply F2
 import { pageChallenged, vendorFramesShown } from '../pause-detect';
 import { flatContains } from '../scan-cache';
@@ -70,6 +74,10 @@ export interface NotSubmitContext {
   adapter: Adapter | null;
   /** The form root the adapter's buttons are looked up in. */
   root: Element | null;
+  /** jr6 SHELL-B (ICIMS-17; ENGINE.md edits 3, 4 and 16): the step facts of the portal frame around an IForm leaf (the
+   *  worker's chain/leafFacts, content/chain-frame.ts chainFactsOf), which the adapter's isFinalStep, nextButton,
+   *  submitButton and stepSubmitNext.laterStep are asked with; absent or null: none (every rule as before). */
+  facts?: ChainStepFacts | null;
   /** The step machine's Next exception. Never set by a filler. */
   allowNext?: boolean;
 }
@@ -106,16 +114,19 @@ export function clickIfAllowed(el: HTMLElement, ctx: NotSubmitContext): boolean 
  * v3 Phase 4: presses the adapter's own Submit button once, with an untrusted click(), when the Submit exception allows
  * it (module header): the step declared final, that one element, never a Next or a never-pressed button. Answers the
  * element clicked, or null when nothing was. Only src/content/press.ts may call it (eslint.config.mjs).
+ * jr6 SHELL-B (ICIMS-17, ICIMS.md edit 4's other half): `facts`, an IForm leaf's portal step facts, with which the
+ * adapter finds its Submit and judges the step final (the leaf's own "Submit" on the packet's last form of the last
+ * step); without them, as before.
  */
-export function clickAdapterSubmit(adapter: Adapter, root: Element): HTMLElement | null {
+export function clickAdapterSubmit(adapter: Adapter, root: Element, facts?: ChainStepFacts | null): HTMLElement | null {
   let submit: HTMLElement | null = null;
   try {
-    submit = adapter.submitButton?.(root) ?? null;
+    submit = adapter.submitButton?.(root, facts) ?? null; // jr6 SHELL-B: facts
   } catch {
     return null;
   }
   if (submit === null) return null;
-  const ctx: SubmitPressContext = { adapter, root, [SUBMIT_PRESS]: true };
+  const ctx: SubmitPressContext = { adapter, root, ...(facts === undefined ? {} : { facts }), [SUBMIT_PRESS]: true }; // jr6 SHELL-B
   if (refusalOf(submit, ctx, 0) !== null) return null;
   submit.click();
   return submit;
@@ -407,9 +418,10 @@ export function clickAdapterSignInPrelude(adapter: Adapter, doc: Document, wall:
 }
 
 /** Whether the Submit exception would let `el` through (for the tests and the checks that read it; it clicks
- *  nothing): exactly the adapter's own Submit, on a final step, and nothing near it. */
-export function submitPressAllowed(el: Element, adapter: Adapter, root: Element): boolean {
-  const ctx: SubmitPressContext = { adapter, root, [SUBMIT_PRESS]: true };
+ *  nothing): exactly the adapter's own Submit, on a final step, and nothing near it. jr6 SHELL-B: `facts`, as
+ *  clickAdapterSubmit takes them. */
+export function submitPressAllowed(el: Element, adapter: Adapter, root: Element, facts?: ChainStepFacts | null): boolean {
+  const ctx: SubmitPressContext = { adapter, root, ...(facts === undefined ? {} : { facts }), [SUBMIT_PRESS]: true }; // jr6 SHELL-B
   return refusalOf(el, ctx, 0) === null;
 }
 
@@ -417,14 +429,14 @@ function refusalOf(el: Element, ctx: NotSubmitContext, depth: number, ownWords =
   if (depth === 0 && submitException(el, ctx)) return null;
   // The security fix of 2026-11-06 (S9): the adapter's Submit, its Next and the never-pressed list are read across
   // shadow roots (flatContains), so a native button a Submit host draws in its shadow root (UltiPro's ukg-button) is
-  // that Submit whatever its words say.
-  const submitButton = ctx.root !== null ? ctx.adapter?.submitButton?.(ctx.root) ?? null : null;
+  // that Submit whatever its words say. jr6 SHELL-B: each asked with the leaf's step facts (ctx.facts).
+  const submitButton = ctx.root !== null ? ctx.adapter?.submitButton?.(ctx.root, ctx.facts) ?? null : null;
   if (submitButton !== null && (flatContains(submitButton, el) || flatContains(el, submitButton))) return 'adapter-submit';
   if (SUBMIT_WORDS.test(ownWords && depth === 0 ? ownText(el) : shownText(el))
     && !(depth === 0 && !ownWords && stepSubmitNextException(el, ctx))) return 'submit-word';
   if (submitsForm(el) && !nextException(el, ctx)) return 'submits-form';
   // Next itself, on the step machine's word on a step declared not final, is the one click near it that may be made.
-  const next = ctx.root !== null ? ctx.adapter?.nextButton?.(ctx.root) ?? null : null;
+  const next = ctx.root !== null ? ctx.adapter?.nextButton?.(ctx.root, ctx.facts) ?? null : null;
   if (next !== null && (flatContains(next, el) || flatContains(el, next)) && !nextException(el, ctx)) return 'adapter-next';
   const never = ctx.root !== null ? ctx.adapter?.neverPress?.(ctx.root) ?? [] : [];
   if (never.some((button) => flatContains(button, el))) return 'adapter-never-press';
@@ -500,21 +512,21 @@ function submitsForm(el: Element): boolean {
  *  one the adapter names never to press, never a Next button, and never anything but that one element. */
 function submitException(el: Element, ctx: SubmitPressContext): boolean {
   if (ctx[SUBMIT_PRESS] !== true || ctx.root === null || ctx.adapter === null) return false;
-  const submit = ctx.adapter.submitButton?.(ctx.root) ?? null;
+  const submit = ctx.adapter.submitButton?.(ctx.root, ctx.facts) ?? null; // jr6 SHELL-B: facts
   if (submit === null || submit !== el) return false;
-  const next = ctx.adapter.nextButton?.(ctx.root) ?? null;
+  const next = ctx.adapter.nextButton?.(ctx.root, ctx.facts) ?? null; // jr6 SHELL-B: facts
   if (next !== null && (flatContains(next, el) || flatContains(el, next))) return false;
   const never = ctx.adapter.neverPress?.(ctx.root) ?? [];
   if (never.some((button) => flatContains(button, el) || flatContains(el, button))) return false;
-  return ctx.adapter.isFinalStep?.(el.ownerDocument) === 'final';
+  return ctx.adapter.isFinalStep?.(el.ownerDocument, ctx.facts) === 'final'; // jr6 SHELL-B: facts
 }
 
 /** The adapter's Next button on a step it declared not final, when the step machine allows it. */
 function nextException(el: Element, ctx: NotSubmitContext): boolean {
   if (ctx.allowNext !== true || ctx.root === null || ctx.adapter === null) return false;
-  const next = ctx.adapter.nextButton?.(ctx.root) ?? null;
+  const next = ctx.adapter.nextButton?.(ctx.root, ctx.facts) ?? null; // jr6 SHELL-B: facts
   if (next === null || next !== el) return false;
-  return ctx.adapter.isFinalStep?.(el.ownerDocument) === 'not-final';
+  return ctx.adapter.isFinalStep?.(el.ownerDocument, ctx.facts) === 'not-final'; // jr6 SHELL-B: facts
 }
 
 // ── snapshot build 2026-11-06 (core-x, item 1): a declared step button whose words say Submit ──
@@ -526,19 +538,36 @@ function nextException(el: Element, ctx: NotSubmitContext): boolean {
  * the button nor inside or around it). The adapter's Submit, a button holding or inside either, the never-pressed list
  * and every other submit word stay refused; a hook that throws refuses. A bar that does not show a later step (none,
  * hidden, one the adapter cannot read with certainty) leaves the button a Submit, pressed only through the Submit gates.
+ * jr6 SHELL-B (ICIMS-17, ICIMS.md edit 3): laterStep is asked with the leaf's step facts (ctx.facts); with them, the
+ * sign may be the leaf's own form (leafFormSign).
  */
 function stepSubmitNextException(el: Element, ctx: NotSubmitContext): boolean {
   const declared = ctx.adapter?.stepSubmitNext;
   if (declared === undefined || ctx.root === null) return false;
   try {
     if (!nextException(el, ctx) || !declared.buttons.some((selector) => el.matches(selector))) return false;
-    const later = declared.laterStep(el.ownerDocument);
-    return later !== null && later.isConnected && later.ownerDocument === el.ownerDocument && later !== el
-      && !el.contains(later) && !later.contains(el) && isUserVisible(later);
+    const later = declared.laterStep(el.ownerDocument, ctx.facts); // jr6 SHELL-B: facts
+    if (later === null || !later.isConnected || later.ownerDocument !== el.ownerDocument || later === el) return false;
+    if (leafFormSign(el, later, ctx)) return true; // jr6 SHELL-B
+    return !el.contains(later) && !later.contains(el) && isUserVisible(later);
   } catch {
     return false;
   }
 }
+
+// ── jr6 SHELL-B (INTEGRATION.md SHELL-B item 1; ICIMS-17, ICIMS.md edit 3): an IForm leaf's own form as the sign ──
+/** With an IForm leaf's portal step facts given (ctx.facts: a chained leaf, whose frame shows no bar), the adapter's later
+ *  step is the leaf's own form, standing for the portal's later form or step while the facts say one follows (iCIMS's
+ *  laterStep, factsReading: Jobright's ~contents/sites/icims isContinueNavigationButton takes the leaf's icims_submit as
+ *  Continue on the same counter rule). That form holds the button, so the rule above, a later step apart from it, would
+ *  refuse it: taken instead only where it is exactly the button's own form owner (read through its prototype), the step's
+ *  root (the form the step machine fills) and a person sees it. Without facts, never: the rule above alone. */
+function leafFormSign(el: Element, later: Element, ctx: NotSubmitContext): boolean {
+  if (ctx.facts == null || later.localName !== 'form' || later !== ctx.root) return false;
+  const ctor = el.localName === 'input' ? 'HTMLInputElement' : el.localName === 'button' ? 'HTMLButtonElement' : null;
+  return ctor !== null && protoGet(el, ctor, 'form') === later && isUserVisible(later);
+}
+// ── end jr6 SHELL-B ──
 
 // ── jr6 ENGINE E2 (FIXPLAN §6.2 item 9, JZ-4): the upload's reveal door ── // jr6 ENGINE
 /** The documents whose upload reveal the door pressed: never a second time in one document. */
