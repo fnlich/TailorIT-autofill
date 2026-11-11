@@ -561,6 +561,41 @@ describe('PageState.entering and refusal \'elsewhere\' from the grant (items 2 a
     await vi.waitFor(() => expect((panel.received.at(-1) as { page?: { entering?: true } }).page?.entering).toBeUndefined());
   });
 
+  // The line P review (P-B1): the pressed document's own frame said its entry is over at a wall or a choice its press drew
+  // in place (Sign-in Manual with no password saved: the sign-in toast; a choice drawn after the follow-up wait): the tab
+  // no longer says it is entering, so the wall's Sign Up & Autofill, or Autofill at the choice, can be pressed at once.
+  it('says entering no more once the pressed document\'s frame ends its entry at a wall or a choice in place', async () => {
+    for (const words of [{ wall: 'sign-in', waits: 'sign-in' }, { choice: true }]) {
+      const said = JSON.stringify(words);
+      const worker = await applyWorker();
+      const posting = await postingTab(worker, LEVER_POSTING);
+      await fill(worker);
+      await wall(worker, posting, { entry: true, entering: true });
+      expect(await press(worker, posting), said).toEqual({ ok: true, data: {} });
+      expect((await pageOf(worker))?.entering, said).toBe(true);
+      await wall(worker, posting, words);
+      expect(await pageOf(worker), said).toMatchObject(words);
+      expect((await pageOf(worker))?.entering, said).toBeUndefined();
+      // Only the panel's word changed: the grant still starts the form a later document shows.
+      expect(await formStarted(worker, LEVER_FORM, 'doc-form', 1), said).toBe(true);
+    }
+
+    // A press whose document went: entering until ENTRY_WAITING_MS, whatever a document the grant never reached says.
+    const gone = await applyWorker();
+    const sender = await postingTab(gone, LEVER_POSTING);
+    await fill(gone);
+    await wall(gone, sender, { entry: true, entering: true });
+    await press(gone, sender);
+    const next = at(LEVER_OTHER, 'doc-next');
+    await hello(gone, next, false);
+    await wall(gone, next, { entry: true });
+    expect((await pageOf(gone))?.entering).toBe(true);
+    advance(gone, ENTRY_WAITING_MS - 1);
+    expect((await pageOf(gone))?.entering).toBe(true);
+    advance(gone, 1);
+    expect((await pageOf(gone))?.entering).toBeUndefined();
+  });
+
   it('says refusal \'elsewhere\' once a recent press led to another origin, until the next press or ENTRY_ELSEWHERE_MS', async () => {
     const worker = await applyWorker();
     const posting = await postingTab(worker, LEVER_POSTING);
@@ -874,6 +909,24 @@ describe('createSignUps alone: the origin and key checks', () => {
     // A press again (a document it reached) opens the window again.
     expect(signUps.pressed(1, place(A, KEY, 'd5'))).toBe(true);
     expect(signUps.takeStep(1, { ...place(A, undefined, 'd6'), hasForm: false }, 'wall')).toEqual({ signIn: false });
+  });
+
+  // The line P review (P-B1): the frame's word that its entry is over ends the wait, from a document the grant reached.
+  it('settles the wait only after a press, for a document it reached on its origin; the grant goes on', () => {
+    const { signUps } = given();
+    expect(signUps.settled(1, place(A, KEY, 'd1'))).toBe(false);
+    signUps.pressed(1, place(A, KEY, 'd1'));
+    expect(signUps.settled(1, place(B, KEY, 'd1'))).toBe(false);
+    expect(signUps.settled(1, place(A, KEY, 'd2'))).toBe(false);
+    expect(signUps.settled(2, place(A, KEY, 'd1'))).toBe(false);
+    expect(signUps.waiting(1)).toBe(true);
+    expect(signUps.settled(1, place(A, KEY, 'd1'))).toBe(true);
+    expect(signUps.waiting(1)).toBe(false);
+    expect(signUps.settled(1, place(A, KEY, 'd1'))).toBe(false);
+    // A press again waits again; the form is still started.
+    expect(signUps.pressed(1, place(A, KEY, 'd1'))).toBe(true);
+    expect(signUps.waiting(1)).toBe(true);
+    expect(signUps.takeFill(1, place(A, KEY, 'd3'))).toEqual({ signIn: false });
   });
 
   it('a wall\'s grant given at once keeps v4\'s rule (no key: any form of its origin); a step still needs a key', () => {

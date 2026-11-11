@@ -51,7 +51,9 @@
  *   step continues the press's own chain; a page the person opens later in the tab (the job's choice, the site's
  *   account page that names no application) is theirs, though the grant's own time still runs.
  * - **Waiting** (apply-c-new-1): from an armed press until something of it is taken (a form, a step), at most
- *   ENTRY_WAITING_MS, the tab says it is entering (PageState.entering), while the frame that pressed may be gone.
+ *   ENTRY_WAITING_MS, the tab says it is entering (PageState.entering), while the frame that pressed may be gone. The
+ *   line P review (P-B1): or until the frame of a document this grant reached says, after the press, that its entry is
+ *   over (`settled`: a wall or a choice its press drew in place, taken by the frame or left to the person).
  * - **A press again** (apply-c-new-1): a plain Autofill at the same origin and application while an armed grant waits
  *   for its form keeps that grant (`keep`) instead of replacing it; it holds Sign-in Auto no longer.
  * Logs: closed codes, flags and counts only (grant.armed in index.ts; grant.step and grant.ended here).
@@ -136,6 +138,10 @@ export interface SignUps {
   endEntry(tabId: number): boolean;
   /** Whether the tab waits for what an armed press brings (nothing taken yet, at most ENTRY_WAITING_MS after it). */
   waiting(tabId: number): boolean;
+  /** The line P review (P-B1): the tab's application frame, in a document this grant sent run/start to (or started) on
+   *  its origin, says after the grant's latest press that its entry is over (frame/wall without `entering`): the tab
+   *  waits for that press no longer (`waiting`). Nothing else of the grant changes. Answers whether it changed that. */
+  settled(tabId: number, frame: FramePlace): boolean;
   /** Whether the tab's last armed press led to another origin within ENTRY_NEXT_MS (its grant ended there): for
    *  ENTRY_ELSEWHERE_MS, or until the next grant or press. */
   elsewhere(tabId: number): boolean;
@@ -393,6 +399,16 @@ export function createSignUps(deps: SignUpDeps): SignUps {
       const entry = liveGrant(tabId)?.entry;
       return entry !== undefined && entry.pressedAt !== undefined && !entry.taken
         && now() - entry.pressedAt < ENTRY_WAITING_MS;
+    },
+    settled(tabId, frame) {
+      const grant = liveGrant(tabId);
+      const document = docOf(frame.documentId);
+      const entry = grant?.entry;
+      if (grant === null || entry === undefined || entry.pressedAt === undefined || entry.taken
+        || frame.origin !== grant.origin || document === null || !grant.documents.has(document)) return false;
+      entry.taken = true;
+      tell(tabId);
+      return true;
     },
     elsewhere(tabId) {
       const held = elsewhereUntil.get(tabId);
