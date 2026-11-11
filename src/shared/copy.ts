@@ -1742,6 +1742,8 @@ const MAIN_VIEW = {
   // page whose site offers its own Apply the main button reads Autofill (PANEL.fill); its "?", and why an entry was
   // refused, in one line each (Panel.tsx; 'none' is also the "no form" modal's, MODALS.errors). Drafts for the owner. ──
   entryHelp: "This page shows the job. Autofill presses the site's own Apply first, then fills the application it opens.",
+  // The F1 fixer (the line P review, C4): the panel's status for a screen reader while the frame presses or waits.
+  entering: "Autofill is pressing the site's Apply.",
   entryRefused: {
     none: NO_FORM,
     ambiguous: 'This page shows more than one Apply. Press the one you want, then press Autofill on the application.',

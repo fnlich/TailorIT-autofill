@@ -15,7 +15,8 @@
  * The F1 fixer (the line P review), last describe block:
  * - C1, C2: one thing said at a time (no run line under the button while the frame presses or waits, the no-form strip
  *   once and only until a refusal's line); only a posting's strip promises the site's Apply, and the "no form" words
- *   claim neither a search nor a page without an Apply.
+ *   claim neither a search nor a page without an Apply;
+ * - C4: the press is busy, says so to a screen reader, and hands the button's focus to Cancel.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { ENTRY_REFUSALS, type PageState } from '../../messaging/schemas';
@@ -47,6 +48,8 @@ const lines = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('.tia
     const kind = each.dataset.strip ?? (each.classList.contains('tia-feedback') ? 'feedback' : 'modal');
     return `[${kind}] ${each.textContent}`;
   });
+/** The F1 fixer (C4): the status a screen reader hears. */
+const statusOf = (root: ParentNode) => root.querySelector<HTMLElement>('[data-entry-status]');
 
 describe('Autofill on a page with no form presses the site\'s Apply (jr6 apply F1)', () => {
   afterEach(() => unmountAll());
@@ -200,7 +203,7 @@ describe('Autofill on a page with no form presses the site\'s Apply (jr6 apply F
     const lines = ENTRY_REFUSALS.map((reason) => COPY.mainView.entryRefused[reason]);
     expect(new Set(lines).size).toBe(ENTRY_REFUSALS.length);
     for (const line of [...lines, COPY.mainView.entryHelp, COPY.strip.noForm, COPY.strip.posting,
-      COPY.modals.errors['no-form']]) {
+      COPY.mainView.entering, COPY.modals.errors['no-form']]) {
       expect(line).not.toMatch(/open application/i);
       expect(line).toMatch(/Autofill/);
     }
@@ -373,6 +376,58 @@ describe('Autofill on a page with no form says one thing at a time (the F1 fixer
     expect(lines(root)).toEqual([`[no-form] ${COPY.strip.noForm}`, `[modal] ${COPY.modals.errors['no-form']}`]);
     expect(COPY.modals.errors['no-form']).not.toMatch(/\b(found|looked|searched|checked)\b/i);
     expect(COPY.modals.errors['no-form']).not.toMatch(/no Apply button|no Apply that opens|no Apply on/i);
+  });
+
+  // C4.
+  it('is busy while the frame presses, hands the button\'s focus to Cancel, and says so in a status mounted before it', async () => {
+    const worker = createFakeWorker();
+    worker.script.pages.set(5, posting);
+    const root = await open(worker);
+    const status = statusOf(root);
+    expect([status?.getAttribute('role'), status?.textContent]).toEqual(['status', '']);
+    expect(mainOf(root)?.getAttribute('aria-busy')).toBeNull();
+    const main = mainOf(root)!;
+    main.focus();
+    await click(main);
+    await showPage(worker, 5, { ...posting, entering: true });
+    const cancel = root.querySelector<HTMLButtonElement>('[data-action="cancel"]');
+    expect(document.activeElement).toBe(cancel);
+    expect(mainOf(root)?.getAttribute('aria-busy')).toBe('true');
+    // The same node, mounted before it had anything to say, says the press.
+    expect(statusOf(root)).toBe(status);
+    expect(status?.textContent).toBe(COPY.mainView.entering);
+    // Refused: it says why, once (the line shown has no status of its own); the button is no longer busy.
+    await showPage(worker, 5, { ...posting, entryRefused: true, refusal: 'nothing-followed' });
+    expect(statusOf(root)).toBe(status);
+    expect(status?.textContent).toBe(COPY.mainView.entryRefused['nothing-followed']);
+    expect(refusalLine(root)?.getAttribute('role')).toBeNull();
+    expect(root.querySelectorAll('[role="status"]')).toHaveLength(1);
+    expect(mainOf(root)?.getAttribute('aria-busy')).toBeNull();
+    // A click made while the focus is elsewhere (the panel's gear) leaves it there.
+    const gear = root.querySelector<HTMLButtonElement>('[data-panel-settings]')!;
+    gear.focus();
+    await click(mainOf(root));
+    await showPage(worker, 5, { ...posting, entering: true });
+    expect(document.activeElement).toBe(gear);
+    expect(status?.textContent).toBe(COPY.mainView.entering);
+    // So does focus the person moved after the click, before the frame said it presses.
+    await showPage(worker, 5, { ...posting, entryRefused: true, refusal: 'blocked' });
+    mainOf(root)!.focus();
+    await click(mainOf(root));
+    gear.focus();
+    await showPage(worker, 5, { ...posting, entering: true });
+    expect(document.activeElement).toBe(gear);
+    // And a click made while nothing had the focus gives Cancel none.
+    await showPage(worker, 5, { ...posting, entryRefused: true, refusal: 'blocked' });
+    gear.blur();
+    expect(document.activeElement).toBe(document.body);
+    await click(mainOf(root));
+    await showPage(worker, 5, { ...posting, entering: true });
+    expect(document.activeElement).toBe(document.body);
+    // A run's progress takes over: the status is quiet, the button still busy.
+    await showPage(worker, 5, { ...posting, entering: true }, [frameReport(0, { status: 'fill-step', updatedAt: 9 })]);
+    expect(status?.textContent).toBe('');
+    expect(mainOf(root)?.getAttribute('aria-busy')).toBe('true');
   });
 
 });

@@ -35,10 +35,11 @@
  *     (PageState.entering) it spins with Cancel beside it; when it cannot, one line says why (PageState.refusal; 'none'
  *     after this panel's own click is the "no form" modal). The F1 fixer (the line P review): no line under the button
  *     meanwhile, as no report comes while the frame presses or waits, and one no-form strip until a refusal says why,
- *     a posting's promising the site's Apply and any other page's not (C1, C2). Whenever what it says and sends
- *     changes, it takes no click until the new label has been shown CONTROL_SEEN_MS (seen.ts, the v4 review's L4: a
- *     page cannot flip it as the pointer comes). While a run works it spins, and the progress below has Cancel. No Dry
- *     run, Continue or Cancel buttons (the messages stay);
+ *     a posting's promising the site's Apply and any other page's not (C1, C2); a status a screen reader hears,
+ *     mounted before it has words (the press, then the refusal), and Cancel taking the focus the button had (C4).
+ *     Whenever what it says and sends changes, it takes no click until the new label has been shown CONTROL_SEEN_MS
+ *     (seen.ts, the v4 review's L4: a page cannot flip it as the pointer comes). While a run works it spins, and the
+ *     progress below has Cancel. No Dry run, Continue or Cancel buttons (the messages stay);
  *   - "Ask custom question" (Ask.tsx: panel/ask), an outline button that unfolds the box;
  *   - "Résumé: <label> · Preview · Edit · Change" (JobCard.tsx ResumeLine: panel/resumes, panel/setResume,
  *     panel/withoutResume; v1.4 F: Preview and Edit are panel/openDocument) until a run lists the résumé's own row,
@@ -408,10 +409,22 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     if (!answer.ok && answer.error === 'not_connected') refresh();
   };
 
+  /** The F1 fixer (the line P review, C4): the main button had the focus at its last click. The button is held while
+   *  the frame presses or waits (a held button keeps no focus: it goes to the page's body), so the Cancel shown
+   *  meanwhile takes it, unless the person put it somewhere since. */
+  const focusCancel = useRef(false);
+  const takeFocus = useCallback((node: HTMLButtonElement | null) => {
+    if (node === null || !focusCancel.current) return;
+    focusCancel.current = false;
+    if (node.ownerDocument.activeElement === node.ownerDocument.body) node.focus();
+  }, []);
+
   /** v5 p1-panel: the main button's click. A fill (not a Continue) first checks the autofill information for work
    *  experience and education (Jobright's resume check): either missing opens the history modal, which holds the fill
-   *  until the person chooses Autofill Anyway or edits the information. */
-  const start = (message: RunMessage) => {
+   *  until the person chooses Autofill Anyway or edits the information. The F1 fixer (C4): `focused`, whether the
+   *  button had the focus. */
+  const start = (message: RunMessage, focused: boolean) => {
+    focusCancel.current = focused;
     const missing = message.type === 'panel/fill' && profile.state === 'read' ? profile.history : [];
     if (missing.length > 0) {
       setModal({ tabId: message.tabId, state: { kind: 'history', missing }, message });
@@ -663,6 +676,17 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     if (modal === null && shownModal !== null) setGoneSeen(true);
     setModal(null);
   };
+  // jr6 apply F1: why the site's Apply was not pressed or followed, in words (not under the "no form" modal, which says
+  // it after this panel's own click); the F1 fixer (C4): while the frame presses or waits with no run working.
+  const said = tabId === null || refusal === null || (refusal === 'none' && shownModal !== null) ? null
+    : COPY.mainView.entryRefused[refusal];
+  const pressing = offersFill && tabId !== null && entering && !working;
+  // v5 p2-fill review (L5), jr6 apply F1 (AF-12): that one line, under the main button.
+  const refusalLine = said !== null && (
+    <p className="tia-strip" data-strip="entry-refused" data-reason={refusal ?? undefined} data-tone="warning">
+      {said}
+    </p>
+  );
 
   // v1.5 QX: the Queue tab in place of everything under the tab bar.
   if (tab === 'queue') {
@@ -743,18 +767,20 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             <MainButton tabId={tabId} meaning={meaning} working={busy || working || entering} clock={seenClock}
               onRun={start} saved={auth.status.signUp !== 'not-set'} />
           )}
-          {/* jr6 apply F1: Cancel while the frame presses or waits and no run's progress offers one. */}
-          {offersFill && tabId !== null && entering && !working && (
-            <button type="button" className="tia-linkbutton" data-action="cancel"
+          {/* jr6 apply F1: Cancel while the frame presses or waits and no run's progress offers one (the F1 fixer's
+              C4: with the focus the main button had). */}
+          {pressing && (
+            <button type="button" className="tia-linkbutton" data-action="cancel" ref={takeFocus}
               onClick={() => void run({ v: 1, type: 'panel/cancel', tabId })}>{COPY.panel.cancel}</button>
           )}
-          {/* v5 p2-fill review (L5), jr6 apply F1 (AF-12): why the site's Apply was not pressed or followed, in one
-              line; not under the "no form" modal that says it after this panel's own click. */}
-          {tabId !== null && refusal !== null && !(refusal === 'none' && shownModal !== null) && (
-            <p className="tia-strip" data-strip="entry-refused" data-reason={refusal} data-tone="warning" role="status">
-              {COPY.mainView.entryRefused[refusal]}
+          {/* The F1 fixer (the line P review, C4): a status a screen reader hears, mounted before it has anything to
+              say (a line drawn already filled may go unheard): the press, then why it stopped. */}
+          {tabId !== null && (
+            <p className="tia-visually-hidden" role="status" data-entry-status="">
+              {pressing ? COPY.mainView.entering : said}
             </p>
           )}
+          {refusalLine}
           {tabId !== null && page?.support !== 'none' && (
             <AskQuestion key={viewKey} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
               connected={connection !== undefined && connection !== null} aiOff={aiOff === true}
@@ -867,9 +893,10 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
  *  CONTROL_SEEN_MS (seen.ts), disabled meanwhile; a click then sends the message of the meaning it shows. The jr6 review
  *  (R5): with no job-site password saved (`saved` false), Sign up & Autofill's "?" says to save one first. jr6 apply F1:
  *  on a page whose site offers its own Apply ('open') it reads Autofill, its "?" saying that Autofill presses that
- *  Apply first; while the frame presses or waits (PageState.entering) it spins, disabled, its word unchanged. */
+ *  Apply first; while the frame presses or waits (PageState.entering) it spins, disabled, its word unchanged. The F1
+ *  fixer (the line P review, C4): busy (aria-busy) while it spins, and its click says whether it had the focus. */
 function MainButton({ tabId, meaning, working, clock, onRun, saved }: { tabId: number; meaning: MainMeaning;
-  working: boolean; clock: SeenClock; onRun(message: RunMessage): void; saved: boolean }) {
+  working: boolean; clock: SeenClock; onRun(message: RunMessage, focused: boolean): void; saved: boolean }) {
   // jr6 apply F1 (APPLYPLAN D1): 'open' and 'fill' read the same word and send the same panel/fill, so they share one
   // seen key: an Apply the page draws late, flipping 'fill' to 'open', never drops a click the person aimed at Autofill.
   const seen = useShownFor(`${tabId}|${meaning === 'open' ? 'fill' : meaning}`, clock);
@@ -878,9 +905,9 @@ function MainButton({ tabId, meaning, working, clock, onRun, saved }: { tabId: n
   return (
     <div className="tia-toolbar">
       <button type="button" className="tia-cta" disabled={working || !seen} data-working={working ? 'true' : undefined}
-        data-main-action={meaning} onClick={() => {
+        aria-busy={working ? 'true' : undefined} data-main-action={meaning} onClick={(event) => {
           // Decided at the click, on what this render shows: a meaning not yet shown long enough is never acted on.
-          if (seen && !working) onRun(mainMessageOf(meaning, tabId));
+          if (seen && !working) onRun(mainMessageOf(meaning, tabId), event.currentTarget.matches(':focus'));
         }}>
         {working && <Icon name="spinner" size={20} className="tia-icon tia-spin" />}
         {label}
