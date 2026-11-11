@@ -18,8 +18,14 @@
  * v5 p2-detect (Jobright's record of SmartRecruiters' page after submitting, read as its behaviour, never its code):
  * .../publication/<uuid>/success is the one-click application's page after its Submit, the confirmation, under the
  * application's key.
+ * jr6 SR-14 (FIXPLAN §6.9 item 6; Jobright's record of SmartRecruiters' application addresses, its submission matcher,
+ * read as its behaviour, never its code): the one-click application is also opened by its job,
+ * /oneclick-ui/company/<Company>/job/<id> (then .../screening), the id the posting's own numeric one or a UUID. Such a
+ * page names neither a publication nor its posting's address, so it is keyed on its own canonical address,
+ * https://jobs.smartrecruiters.com/oneclick-ui/company/<Company>/job/<id> (a UUID in lower case, the screening step, the
+ * query and the fragment dropped). No capture shows one, so nothing after its screening step is read.
  * Other SmartRecruiters hosts (careers.smartrecruiters.com, www.smartr.me's "apply with SmartR") are not read: no
- * snapshot shows an application there.
+ * snapshot shows an application there (smartr.me waits for a capture).
  * TailorIT's parseAtsUrl reads the same since its API 6 (src/adapters/url.test.ts).
  */
 import type { ApplicationUrl } from '../application-key';
@@ -33,6 +39,8 @@ const COMPANY = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
 const POSTING = /^(\d{6,20})(?:-.*)?$/;
 /** A publication's UUID, in either case. */
 const PUBLICATION = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
+/** jr6 SR-14: a job's id in a one-click address, the posting's own numeric id (744000159905715); a UUID is read too. */
+const JOB_ID = /^\d{6,20}$/;
 /** The one-click application's steps after the publication, as the snapshots show them: its first page and its
  *  screening questions. */
 const APPLICATION_TAILS: ReadonlySet<string> = new Set(['', 'screening']);
@@ -54,6 +62,15 @@ export function parseSmartRecruitersUrl(url: URL): ApplicationUrl | null {
   const parts = path.split('/').slice(1);
   if (parts[0] === 'oneclick-ui') {
     const [, company, board, publication, id, ...tail] = parts;
+    // jr6 SR-14 (module header): the application opened by its job, keyed on its own canonical address.
+    if (company === 'company' && publication === 'job' && board !== undefined && id !== undefined) {
+      if (!COMPANY.test(board) || !(JOB_ID.test(id) || PUBLICATION.test(id)) || !APPLICATION_TAILS.has(tail.join('/'))) {
+        return null;
+      }
+      const jobId = id.toLowerCase();
+      return { platform: 'smartrecruiters', board, jobId, page: 'application',
+        applicationUrl: `${ORIGIN}/oneclick-ui/company/${board}/job/${jobId}` };
+    }
     // v5 p2-detect: /success after the publication is the page after submitting (module header).
     const confirmed = tail.join('/') === 'success';
     if (company !== 'company' || publication !== 'publication' || board === undefined || id === undefined
