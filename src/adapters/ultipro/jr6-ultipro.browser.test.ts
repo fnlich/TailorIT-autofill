@@ -99,7 +99,8 @@ describe('jr6 UltiPro: the pages as the step machine reads them (the audit harne
   it('the account step: its form, no Next, its Create account the sign-in container\'s button (ultipro-2)', async () => {
     const page = await open('register');
     expect(page.adapter).toBe(ultiproAdapter);
-    expect(page.root).toBe(page.doc.querySelector('form#registrationDetailsForm'));
+    // Element identities are compared as booleans: a failing diff of a whole form overflows the browser runner's channel.
+    expect(page.root === page.doc.querySelector('form#registrationDetailsForm')).toBe(true);
     expect(ultiproAdapter.stepSignature?.(page.doc)).toEqual({ anchors: ['state:register'] });
     expect(ultiproAdapter.isFinalStep?.(page.doc)).toBe('not-final');
     expect(ultiproAdapter.nextButton?.(page.root)).toBeNull();
@@ -111,7 +112,7 @@ describe('jr6 UltiPro: the pages as the step machine reads them (the audit harne
 
   it('the résumé review: its own root, "Save and continue" its Next, Submit the host (ultipro-1)', async () => {
     const page = await open('resume-review');
-    expect(page.root).toBe(page.doc.querySelector(REVIEW));
+    expect(page.root === page.doc.querySelector(REVIEW)).toBe(true);
     expect(ultiproAdapter.stepSignature?.(page.doc)).toEqual({ anchors: ['state:review'] });
     expect(ultiproAdapter.isFinalStep?.(page.doc)).toBe('not-final');
     expect(ultiproAdapter.nextButton?.(page.root)?.textContent).toBe('Save and continue');
@@ -123,7 +124,7 @@ describe('jr6 UltiPro: the pages as the step machine reads them (the audit harne
 
   it('the application: one final page, no Next, Submit the host, no error shown (ultipro-0)', async () => {
     const page = await open('application');
-    expect(page.root).toBe(page.doc.querySelector('#OpportunityApply'));
+    expect(page.root === page.doc.querySelector('#OpportunityApply')).toBe(true);
     expect(ultiproAdapter.isFinalStep?.(page.doc)).toBe('final');
     expect(ultiproAdapter.nextButton?.(page.root)).toBeNull();
     expect(ultiproAdapter.submitButton?.(page.root)?.localName).toBe('ukg-button');
@@ -187,7 +188,7 @@ describe('U-01: the review\'s parsed entries are blocks, matched by their finger
     for (const [index, block] of experience!.blocks().entries()) {
       const remove = experience!.removeButton!(block);
       expect(remove?.getAttribute('aria-label')).toBe(`Delete Work Experience ${index + 1}`);
-      expect(never).toContain(remove);
+      expect(remove !== null && never.includes(remove)).toBe(true);
     }
     const block = experience!.blocks()[0]!;
     (block.querySelector('button[data-automation="remove-button"]') as HTMLElement).style.display = 'none';
@@ -338,7 +339,9 @@ describe('U-05: the review\'s Skills box takes several skills, one at a time', (
     expect(decl.tags).toBeDefined();
     const chips = page.doc.querySelectorAll(`${REVIEW} strong[data-automation="skill-label"]`);
     expect(chips).toHaveLength(20);
-    expect(decl.tags!.chips()).toEqual(Array.from(chips));
+    const shown = decl.tags!.chips();
+    expect(shown).toHaveLength(20);
+    expect(shown.every((chip, at) => chip === chips[at])).toBe(true);
     const add = box.closest('div.form-inline')!.querySelector('button[data-automation="item-add-button"]');
     expect(decl.tags!.add!()).toBe(add);
     expect(decl.tags!.search).toBeUndefined();
@@ -377,7 +380,7 @@ describe('U-06 (now part, Decision 16): the résumé parser holds no field', () 
     expect(area.checkVisibility()).toBe(true);
     const excluded = ultiproAdapter.excluded!(page.root);
     expect(excluded.some((part) => part.contains(upload))).toBe(true);
-    expect(excluded).toContain(saved);
+    expect(excluded.includes(saved)).toBe(true);
     expect(excluded.some((part) => part.matches(REVIEW) || part.contains(page.doc.querySelector(REVIEW)))).toBe(false);
     const result = rescan(page);
     expect(fieldsIn(result, parser)).toEqual([]);
@@ -389,7 +392,7 @@ describe('U-06 (now part, Decision 16): the résumé parser holds no field', () 
   it('the review state, its root inside the parser\'s container, keeps every field (ultipro-1)', async () => {
     const page = await open('resume-review');
     expect(page.doc.querySelector('#ResumeParsingUploader')!.contains(page.root)).toBe(true);
-    expect(ultiproAdapter.excluded!(page.root)).toEqual([]);
+    expect(ultiproAdapter.excluded!(page.root)).toHaveLength(0);
     expect(page.result.fields).toHaveLength(rescan(page, { ...ultiproAdapter, excluded: undefined }).fields.length);
   });
 });
@@ -406,7 +409,8 @@ describe('U-07: the start date is one date drawn in three parts', () => {
       { part: 'day', input: part(page.doc, 'day'), display: null },
       { part: 'year', input: part(page.doc, 'year'), display: null }], keys: 'digits', snapshot: 'ultipro-0' });
     expect(ultiproAdapter.dateFor!(part(page.doc, 'month'))).toBeNull();
-    for (const name of ['month', 'day', 'year']) expect(ultiproAdapter.excluded!(page.root)).toContain(part(page.doc, name));
+    const excluded = ultiproAdapter.excluded!(page.root);
+    for (const name of ['month', 'day', 'year']) expect(excluded.includes(part(page.doc, name)), name).toBe(true);
     // The box around it: its datepicker container (ENGINE E2 reads it as the drawn box only where it shows one; this
     // capture holds none of UKG's component styles, so the component reads camouflaged here: P2 stages a border).
     expect(ultiproAdapter.controlBox!(host(page.doc))).toBe(page.doc.querySelector(
@@ -421,7 +425,7 @@ describe('U-07: the start date is one date drawn in three parts', () => {
     expect(dates).toHaveLength(1);
     expect(dates[0]).toMatchObject({ kind: 'date', label: 'When can you start? (MM/DD/YYYY)', labelSource: 'adapter',
       labelVisible: true, required: true, section: { id: 'questions' }, constraints: { format: 'date' } });
-    expect(page.result.target(dates[0]!.key)?.control).toBe(host(page.doc));
+    expect(page.result.target(dates[0]!.key)?.control === host(page.doc)).toBe(true);
     // The rule undone: three boxes, each a text field of its own.
     const plain = rescan(page, without('dateFor', 'excluded'));
     expect(fieldsIn(plain, host(page.doc)).map((field) => field.kind)).toEqual(['text', 'text', 'text']);
@@ -479,7 +483,7 @@ describe('U-12: the uploaded documents\' rows hold no field', () => {
   it('no field in a file row; the panel\'s own upload stays one', async () => {
     const page = await open('application');
     const row = page.doc.querySelector('#Documents div[data-automation="file-row"]')!;
-    expect(ultiproAdapter.excluded!(page.root)).toContain(row);
+    expect(ultiproAdapter.excluded!(page.root).includes(row)).toBe(true);
     expect(fieldsIn(page.result, row)).toEqual([]);
     expect(page.result.fields.filter((field) => field.section.id === 'documents').map((field) => field.label))
       .toEqual(['Upload a file']);
@@ -547,6 +551,6 @@ describe('apply-path C3: the application drawn after the sign-in round trip is w
         resolve(null);
       });
     });
-    expect(found).toBe(root);
+    expect(found === root).toBe(true);
   });
 });
