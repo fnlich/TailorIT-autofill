@@ -1299,8 +1299,38 @@ export function policyResidenceValue(spec: FieldSpec, profile: Profile, vocab: V
 }
 
 /** JV-17: an option that says the person does not live in, or within reach of, the place ("N/A - I do not live in
- *  Illinois.", "Currently reside outside commutable distance"), as normalizeLabel reads it. */
-const NOT_THERE_OPTION = /\boutside\b|\b(?:do\s+not|dont|does\s+not|doesnt)\s+(?:currently\s+)?(?:live|reside)\b|\bnot\s+(?:live|living|reside|residing|located|based)\b/;
+ *  Illinois.", "Currently reside outside commutable distance"), as normalizeLabel reads it. jr6 fix (RULES-R19,
+ *  REVC-6: NinjaOne's own options, fixtures/jobvite/ninjaone-step3, "N/A - I do not live in Illinois.", "No - I am in
+ *  Illinois and outside of Chicago, IL.", "Yes - My address is in Chicago, IL."): a denial of living in the place the
+ *  question asks about (NOT_THERE_DENIAL) wins; "outside" counts only for a commute, or outside that very place
+ *  (NOT_THERE_OUTSIDE); an option that says the person is there (IN_THE_PLACE) is never one. */
+const NOT_THERE_DENIAL = /\b(?:do\s+not|dont|does\s+not|doesnt)\s+(?:currently\s+)?(?:live|reside)\b|\bnot\s+(?:live|living|reside|residing|located|based)\b/;
+const NOT_THERE_OUTSIDE = /\boutside\s+(?:of\s+)?(?:the\s+)?(.*)$/;
+const IN_THE_PLACE = /\b(?:i\s+am|im|i\s+(?:currently\s+)?(?:live|reside))\s+(?:currently\s+)?in\b|\bmy\s+address\s+is\s+in\b/;
+
+/** JV-17: the option among `options` that says the person does not live in, or within reach of, the asked place, or
+ *  null for none or several (NOT_THERE_DENIAL before NOT_THERE_OUTSIDE). */
+function notThereOption<T extends { clean: string }>(options: readonly T[], asked: { place: string; commute: boolean }):
+  T | null {
+  const place = asked.place.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const names = (text: string) => new RegExp(String.raw`(?<![\p{L}\p{N}])${place}(?![\p{L}\p{N}])`, 'u').test(text);
+  const keyOf = (text: string) => normalize(text, 'label').key;
+  const denial = onlyOption(options, (text) => {
+    const key = keyOf(text);
+    const found = NOT_THERE_DENIAL.exec(key);
+    if (found === null || IN_THE_PLACE.test(key)) return false;
+    // "I do not live in Illinois" for Illinois, or "I do not live there"; never "I do not live in Chicago" for it.
+    const after = key.slice(found.index + found[0].length);
+    return names(after) || !/\bin\s+\w/.test(after);
+  });
+  if (denial !== null) return denial;
+  return onlyOption(options, (text) => {
+    const key = keyOf(text);
+    const outside = NOT_THERE_OUTSIDE.exec(key);
+    if (outside === null || IN_THE_PLACE.test(key)) return false;
+    return asked.commute || names(outside[1]!);
+  });
+}
 
 /** The regions a text names (a state's name, or its code in capitals in `raw`), as region entities. */
 function regionsNamed(text: string, raw: string, vocab: Vocab): Array<{ code: string; country: string }> {
@@ -1348,7 +1378,7 @@ export function residesInValue(spec: FieldSpec, profile: Profile, vocab: Vocab):
   if (elsewhere === null) return none('no-profile-value', false);
   const options = plainOptions(spec, vocab);
   if (options === null) return none('waiting-for-options', true);
-  const option = onlyOption(options, (text) => NOT_THERE_OPTION.test(normalize(text, 'label').key));
+  const option = notThereOption(options, asked);
   if (option === null) return none('no-match', true);
   return value({ origin: byRule('location.not-there', elsewhere.at), confidence: VALUE_TRANSFORM,
     choice: { intended: intendedText(option.clean), domain: 'generic' }, flag: 'filled-low-confidence' });

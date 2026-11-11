@@ -357,8 +357,15 @@ function listSearchFor(spec: FieldSpec, candidate: Candidate, choice: Choice, vo
   if (spec.optionsPartial !== true && spec.options.length < SEARCH_LIST_MIN_OPTIONS) return [];
   const dial = candidate.text?.trim() ?? '';
   const showsDialCodes = DIAL_CODE_TEXT.test(dial) && spec.options.some((option) => dialCodeOf(option.label) !== null);
-  return searchCandidates(choice.intended, vocab, choice.place,
+  return searchCandidates(choice.intended, vocab, searchPlace(candidate, choice),
     { ...(showsDialCodes ? { dialCode: dial } : {}), ...searchKind(choice), ...postalSearch(candidate) });
+}
+
+/** jr6 fix (REVC-3): the place a search types besides the value. A city's place parts only read the results ("Austin,
+ *  Texas, United States"); its queries stay the city as the profile writes it ("Austin"), as before. A location's
+ *  (location.current) are typed too ("Austin, TX", "Austin, Texas"). */
+function searchPlace(candidate: Candidate, choice: Choice): Choice['place'] {
+  return candidate.origin.provenance === 'profile' && candidate.origin.path === 'address.city' ? undefined : choice.place;
 }
 
 // s2 core-wd: what else a search types.
@@ -431,7 +438,8 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
       const choice = candidate.choice ?? (candidate.text !== undefined
         ? { intended: intendedText(candidate.text), domain: 'generic' as const } : undefined);
       if (!choice) return null;
-      const queries = typeaheadQueries(choice.intended, vocab, choice.place, remoteSearchExtras(spec, candidate, choice));
+      const queries = typeaheadQueries(choice.intended, vocab, searchPlace(candidate, choice),
+        remoteSearchExtras(spec, candidate, choice));
       return queries.length === 0 ? null : plain({ shape: 'search', queries, choice });
     }
   }

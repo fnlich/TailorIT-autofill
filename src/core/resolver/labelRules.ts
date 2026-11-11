@@ -481,9 +481,10 @@ const NEGATION = String.raw`(?:did\s+not|didnt|have\s+not|havent|has\s+not|hasnt
  *  The audit of 2026-11-06 (S-4) adds a claim of sole authorship ("I wrote every answer in this application myself",
  *  "I completed this application myself"), ticked, like the attestation, only when the run used no AI at all.
  *  jr6 RULES (SR-3, fixtures/smartrecruiters/xplor-screening: "Think about the industry … In your own words, what's one
- *  real challenge …"): "in (or using, with) your own words" is an instruction, never a statement that the work is one's
- *  own; and the whole of OWN_WORK counts only on a box or a choice the person affirms it on (OWN_WORK_KINDS). */
-const OWN_WORK = String.raw`\btrue\s+and\s+(?:\w+\s+)?(?:my|your|their)\s+own\b|(?<!\b(?:in|using|with)\s)\b(?:entirely\s+|completely\s+|all\s+)?(?:my|your)\s+own\s+(?:work|words|writing)\b|\b(?:i|myself)\b(?:\s+\w+){0,3}?\s+(?:wrote|written|write|authored|composed|drafted|prepared|completed|filled\s+(?:in|out))\b(?:\s+\w+){0,8}?\s+(?:myself|by\s+myself|on\s+my\s+own|personally|alone|without\s+(?:any\s+)?(?:help|assistance))\b|\b(?:written|authored|composed|prepared|completed)\s+(?:entirely\s+|solely\s+|only\s+|wholly\s+)?by\s+me\b|\bsole\s+author\b`;
+ *  real challenge …"): OWN_WORK counts only on a box or a choice the person affirms it on (OWN_WORK_KINDS), where "in my
+ *  own words" attests too (jr6 fix RULES-R22: "I certify that all answers are in my own words", ticked); on a text box
+ *  or a textarea, where "in your own words" is an instruction, attestationFor reads the explicit denials alone. */
+const OWN_WORK = String.raw`\btrue\s+and\s+(?:\w+\s+)?(?:my|your|their)\s+own\b|\b(?:entirely\s+|completely\s+|all\s+)?(?:my|your)\s+own\s+(?:work|words|writing)\b|\b(?:i|myself)\b(?:\s+\w+){0,3}?\s+(?:wrote|written|write|authored|composed|drafted|prepared|completed|filled\s+(?:in|out))\b(?:\s+\w+){0,8}?\s+(?:myself|by\s+myself|on\s+my\s+own|personally|alone|without\s+(?:any\s+)?(?:help|assistance))\b|\b(?:written|authored|composed|prepared|completed)\s+(?:entirely\s+|solely\s+|only\s+|wholly\s+)?by\s+me\b|\bsole\s+author\b`;
 
 /** What fills or writes an application other than the person: automation, autofill, a bot, a script, software, a tool,
  *  an extension or plug-in, an app, or someone's help (the audit of 2026-11-06, S-4). The extension itself is such
@@ -809,12 +810,17 @@ interface Refinement {
 
 // jr6 RULES: the refinements' own wordings (see REFINEMENTS).
 /** workday-new-2: an outside business, one doing business with the company, or its vendor, supplier, customer,
- *  subcontractor or competitor. */
-const OUTSIDE_BUSINESS = /\boutside\s+(?:\w+\s+)?(?:company|companies|organi[sz]ations?|business(?:es)?|firms?|entit(?:y|ies))\b|\bdoing\s+business\s+with\b|\b(?:vendors?|suppliers?|customers?|subcontractors?|competitors?)\b/;
+ *  subcontractor or competitor that the person works for or owns ("worked for one of our vendors", "employed by a
+ *  competitor", "employee of a supplier"). jr6 fix (RULES-R4-OUTSIDE-BUSINESS-CAPACITY-LIST): never a capacity in which
+ *  the person worked for the company itself ("… for any other Alphabet company as an employee, temp, vendor, contingent
+ *  worker, or intern?", workday/jr6-verily-application-questions; "as a vendor"). */
+const OUTSIDE_BUSINESS = /\boutside\s+(?:\w+\s+)?(?:company|companies|organi[sz]ations?|business(?:es)?|firms?|entit(?:y|ies))\b|\bdoing\s+business\s+with\b|\b(?:for|by|of|with)\s+(?:(?!as\b)\w+\s+){0,6}?(?:vendors?|suppliers?|customers?|subcontractors?|competitors?)\b/;
 const SCHOOL_WORD = String.raw`(?:school|schools|university|universities|college|colleges|institution|institutions|academy)`;
 /** JV-4: a school's own label ("School", "School name", "College / University", "University attended", "Name of
- *  institution", "Enter school name if not in the list above"), or which one the person attended. */
-const SCHOOL_NOUN = new RegExp(String.raw`^(?:name\s+of\s+(?:the\s+|your\s+)?)?(?:(?:current|most\s+recent|recent|last|previous|prior|high|graduate|undergraduate|secondary|post\s+secondary|educational|academic|your|the)\s+)*${SCHOOL_WORD}(?:\s+(?:(?:or|and)\s+)?${SCHOOL_WORD})*(?:\s+(?:name|attended|of\s+study))*(?:\s+if\s+not\s+in\s+the\s+list(?:\s+above)?)?$|^(?:which|what)\s+${SCHOOL_WORD}\s+(?:did|do)\s+you\s+(?:attend|graduate\s+from|study\s+at)\b`);
+ *  institution", "Enter school name if not in the list above"), or which one the person attended. jr6 fix
+ *  (RULES-R14-SCHOOL-ONLY-TOO-NARROW): also "Select your school", "Search for your school", "Name of the school you
+ *  attended" and "Highest Level School Attended", which main read as the school. */
+const SCHOOL_NOUN = new RegExp(String.raw`^(?:name\s+of\s+(?:the\s+|your\s+)?)?(?:(?:current|most\s+recent|recent|last|previous|prior|high|graduate|undergraduate|secondary|post\s+secondary|educational|academic|your|the)\s+)*${SCHOOL_WORD}(?:\s+(?:(?:or|and)\s+)?${SCHOOL_WORD})*(?:\s+(?:name|attended|of\s+study))*(?:\s+if\s+not\s+in\s+the\s+list(?:\s+above)?)?$|^(?:which|what)\s+${SCHOOL_WORD}\s+(?:did|do)\s+you\s+(?:attend|graduate\s+from|study\s+at)\b|^(?:select|choose|search\s+for|find|enter)\s+(?:your|the|a)\s+${SCHOOL_WORD}(?:\s+name)?$|^name\s+of\s+(?:the\s+)?${SCHOOL_WORD}\s+(?:you\s+)?(?:attended|graduated\s+from)$|^highest\s+(?:level\s+(?:of\s+)?)?${SCHOOL_WORD}\s+attended$`);
 /** JV-14: a company asking to text the person ("Can NinjaOne text you about your application?"), to contact them by
  *  text, or to send them texts; never "the text you entered". */
 const SMS_WIDE = /\b(?:can|may|could|will|would|to|we|us|they)\s+(?:\w+\s+){0,2}?text\s+(?:you|me)\b|\bcontact\s+(?:you|me)\s+(?:by|via|through)\s+text\b|\bsend\s+(?:you|me)\s+(?:a\s+)?texts?\b/;
@@ -1053,8 +1059,11 @@ const ENTRY_PLACE: Readonly<Record<EntryKind | 'home', { city: FieldCategory; re
 
 /** JV-1 (Jobvite's "Today's Date", read with the adapter's "signature" after it), workday-new-1 (Workday's Self
  *  Identify date, "Date signed" by the label contract of FIXPLAN §3.2), JZ-15 (JazzHR's disability signature date, no
- *  capture): the date that goes with a signature. */
-const SIGNATURE_DATE = /^(?:todays?\s+date|current\s+date|date\s+signed|signature\s+date|date\s+of\s+signature|signed\s+on|date)\s+signature$|^(?:todays?\s+date|date\s+signed|signature\s+date|date\s+of\s+signature|date\s+signed\s+on)$/;
+ *  capture): the date that goes with a signature. jr6 fix (RULES-R11, IC-R1: iCIMS's IForm dates drawn in parts, "<base
+ *  label> month/day/year" by the label contract of FIXPLAN §3.2: Edgewater's and Sentinel's "Today's Date month",
+ *  fixtures edgewater-self-id-veteran.frame-2, jr6-sentinel-iform-selfid.frame-2; NYU's "Date" with the adapter's
+ *  "signature" before the part, nyu-self-id-disability.frame-2): or one part of it (captured). */
+const SIGNATURE_DATE = /^(?:todays?\s+date|current\s+date|date\s+signed|signature\s+date|date\s+of\s+signature|signed\s+on|date)\s+signature(?:\s+(month|day|year))?$|^(?:todays?\s+date|date\s+signed|signature\s+date|date\s+of\s+signature|date\s+signed\s+on)(?:\s+(month|day|year))?$/;
 /** workday-new-1 (Workday's disability form "Language", "Language of this form" by the label contract): the language
  *  the form itself is in, never the person's languages. */
 const FORM_LANGUAGE = /^(?:the\s+)?language\s+of\s+(?:this|the)\s+(?:form|document|survey|questionnaire)$|^(?:form|document)\s+language$/;
@@ -1062,8 +1071,11 @@ const FORM_LANGUAGE = /^(?:the\s+)?language\s+of\s+(?:this|the)\s+(?:form|docume
  *  which the profile never holds. */
 const EMPLOYEE_ID = /^(?:your\s+)?(?:current\s+)?employee\s+(?:id|identification|number|no|num)(?:\s+(?:number|no))?$/;
 /** JV-3 (Jobvite's "County of Residence"), WD-26 (Workday's Address "County"), ADP-14 (ADP's "County"), O3 (Oracle's
- *  "County"): the word county, never "country", asked for, not as a yes or no. */
-const COUNTY = /\bcount(?:y|ies)\b/;
+ *  "County"): the word county, never "country", asked for, not as a yes or no. jr6 fix (RULES-R13): a county's own
+ *  label only ("County", "County of Residence", "County Name", "County or Parish", "Home County"); never a region's
+ *  label that names a county among a state, province or country ("County/State/Province", "State or County"), nor a
+ *  county of employment or a preference ("Which counties are you willing to work in?"): those go to the AI as before. */
+const COUNTY = /^(?:(?:your|current|home|residence|residential|resident)\s+)*county(?:\s+(?:or|and)\s+(?:parish|borough))?(?:\s+(?:name|of\s+(?:your\s+)?(?:current\s+)?(?:residence|home|address)))?$/;
 /** JV-9 (Jobvite's consent gate, "Location of Residence and Language", the label contract): the residence a privacy
  *  policy is chosen by. */
 const POLICY_RESIDENCE = /^(?:your\s+)?(?:location|country|region)\s+of\s+residence\s+and\s+language$/;
@@ -1101,8 +1113,10 @@ export const IN_TIME_ZONE = /\b(?:reside|resides|residing|live|lives|living|loca
  *  captured). */
 export const YEARS_IN = /^(?:do|have)\s+you\s+(?:have\s+)?(?:at\s+least\s+|a\s+minimum\s+of\s+)?(\d{1,2})\s+(?:or\s+more\s+)?years?\s+(?:of\s+)?(?:(?:professional|relevant|hands\s+on|work|working|industry)\s+)*experience\s+(?:in|as|with|working\s+(?:in|as|with))\s+(.+)$/;
 /** jr6 RULES R3 (JV-16: VHL's "Question 4: Do you have experience with …?"): experience with or using a tool (it
- *  captured), no number of years; never "experience in" a field ("in marketing": the AI's, as before). */
-export const EXPERIENCE_WITH = /^(?:do|have)\s+you\s+(?:have\s+)?(?:any\s+)?(?:(?:prior|previous|professional|hands\s+on|practical)\s+)*experience\s+(?:with|using|working\s+with)\s+(.+)$/;
+ *  captured), no number of years; never "experience in" a field ("in marketing": the AI's, as before). jr6 fix
+ *  (RULES-R48-EXPERIENCE-WITH-USING, REVC-8): VHL's own wording "experience with using Terraform" captures the tool, not
+ *  "using terraform". */
+export const EXPERIENCE_WITH = /^(?:do|have)\s+you\s+(?:have\s+)?(?:any\s+)?(?:(?:prior|previous|professional|hands\s+on|practical)\s+)*experience\s+(?:with\s+(?:using\s+)?|using\s+|working\s+with\s+)(.+)$/;
 /** jr6 RULES R3: what experience with a tool is never asked about: a self-identification, legal, pay or consent topic
  *  ("experience with sponsorship sales", "racial equity programs": the person's own, as the sensitive screen reads them),
  *  a government's or another client's work (the AI's, as before). */
@@ -1112,6 +1126,9 @@ const OPT_WORK = /\b(?:(?:stem\s+)?opt|cpt|optional\s+practical\s+training|curri
  *  for; never a yes or no about one, nor a currency as a field of work ("currency trading"). */
 const CURRENCY = /\bcurrency\b/;
 const CURRENCY_NOT = /\bcurrency\s+(?:trading|exchange|markets?|risk|conversion|hedging|operations|management)\b|\bforeign\s+currency\b/;
+/** jr6 fix (RULES-R51): on a text box, only a label that is the currency itself ("Currency", "Desired Salary currency",
+ *  "Currency code"): "What is your expected salary? Please specify the currency." asks for the pay, in a currency. */
+const CURRENCY_ALONE = /^(?:(?:select|choose|enter|your|the|preferred|desired|expected|salary|pay|compensation|wage|rate)\s+)*currency(?:\s+(?:type|code))?$/;
 /** jr6 RULES R3 (JZ-11: JazzHR's "Will you be working from inside the United States?" on invaluable-form, "Are you able
  *  to work remotely from a state within the United States?" on wellhive-submitting; "Do you currently reside in the
  *  United States?"): whether the person lives or will work inside the place named last (a country: policy.ts
@@ -1135,14 +1152,35 @@ const GRADUATED = /^(?:did|have)\s+you\s+graduated?(?:\s+from\s+(?:this|the)\s+(
  *  line, which the profile never holds. */
 const ADDRESS_LINE3 = /^(?:street\s+)?address\s+(?:line\s*)?3$/;
 /** jr6 RULES R4 (ADP-16: ADP's desired-salary Annually | Hourly radios, "<block title> pay basis" by the label contract
- *  of FIXPLAN §3.2): the period the pay is asked in. */
-const PAY_BASIS = /\b(?:pay|salary|compensation|wage|rate)\s+(?:basis|period|frequency)\b/;
+ *  of FIXPLAN §3.2): the period the pay is asked in. jr6 fix (RULES-R68-PAY-BASIS-NEAR-MISS): only a label that ends
+ *  with it ("… pay basis", "Desired Salary period"); a pay frequency asked for ("Please indicate your preferred pay
+ *  frequency", how often payroll pays) is no period of the expected pay. */
+const PAY_BASIS = /\b(?:pay|salary|compensation|wage|rate)\s+(?:basis|period)$/;
 /** jr6 RULES R4 (ADP-18: ADP's "How would you like to provide the candidate's resume?", Upload File | Enter Professional
  *  Details, fixtures jr6-resume-choice): how the résumé is given, chosen; never a consent. */
 const RESUME_METHOD = /\bhow\s+(?:would|do|will|can)\s+you\s+(?:like\s+to\s+|want\s+to\s+|prefer\s+to\s+)?(?:provide|submit|share|send|add|give|attach|upload)\s+(?:the\s+candidates?\s+|your\s+|a\s+|the\s+)?(?:resume|cv)\b/;
 /** jr6 RULES R4 (ADP-20: ADP's "Are you a high school graduate or passed the GED?", fixtures jr6-questions2-blank): a
  *  high-school diploma or its equivalent, asked yes or no. */
 const HIGH_SCHOOL = /\bhigh\s+school\s+(?:graduate|diploma|degree|education)\b|\bged\b|\bg\s+e\s+d\b/;
+/** jr6 fix (RULES-R70): what may stand between two of HIGH_SCHOOL's phrases ("… graduate or passed the GED"), and after
+ *  the last ("… diploma or (its) equivalent"); anything else asks for more than the diploma. */
+const DIPLOMA_BETWEEN = /^\s+or\s+(?:(?:have\s+|has\s+)?(?:passed|completed|obtained|earned|received|hold|have)\s+)?(?:the\s+|a\s+|an\s+|its\s+)?$/;
+const DIPLOMA_AFTER = /^(?:\s+or\s+(?:(?:have\s+|has\s+)?(?:passed|completed|obtained|earned|received|hold|have)\s+)?(?:the\s+|a\s+|an\s+|its\s+)?(?:equivalent|equivalency|high\s+school\s+equivalency|ged|g\s+e\s+d)(?:\s+(?:diploma|certificate|degree|test|exam|education))?)*\s*$/;
+/** jr6 fix (RULES-R70: "Do you have a high school diploma and a valid driver's license?", VHL's "Question 1: Do you have
+ *  a minimum of a High School diploma or GED along with relevant/required work experience?"): whether a question asks
+ *  for the diploma (or its equivalent) and nothing more; a compound question is the AI's, as before. */
+function asksDiplomaAlone(text: string): boolean {
+  const found = [...text.matchAll(new RegExp(HIGH_SCHOOL.source, 'g'))];
+  if (found.length === 0) return false;
+  const first = found[0]!;
+  const last = found.at(-1)!;
+  if (/\b(?:and|with|along|plus|also)\b/.test(text.slice(0, first.index))) return false;
+  for (let at = 1; at < found.length; at += 1) {
+    const before = found[at - 1]!;
+    if (!DIPLOMA_BETWEEN.test(text.slice(before.index + before[0].length, found[at]!.index))) return false;
+  }
+  return DIPLOMA_AFTER.test(text.slice(last.index + last[0].length));
+}
 /** jr6 RULES R4 (JV-19: VHL's "Mailing Address, if different from above", fixtures jr6-vhl-step1): a second address
  *  asked only where it differs, which the profile never holds. */
 const ADDRESS_IF_DIFFERENT = /\b(?:mailing|postal|address)\b(?:\s+\w+){0,4}?\s+if\s+(?:it\s+is\s+)?different\s+(?:from|than)\s+(?:the\s+)?(?:above|home|current|permanent|residential|physical|your)\b/;
@@ -1161,7 +1199,9 @@ interface Jr6Rule {
 
 /** The jr6 rules, tried in order before §8.3's list, each on a kind its category holds. */
 const JR6_RULES: readonly Jr6Rule[] = [
-  { id: 'label.signature-date', re: SIGNATURE_DATE, category: 'consent.signatureDate', strength: 'strong' },
+  // jr6 fix (RULES-R11): a list takes one part of the date (its month or its day), never the whole date.
+  { id: 'label.signature-date', re: SIGNATURE_DATE, strength: 'strong', category: (c, found) => ((c.kind === 'select'
+    || c.kind === 'combobox') && (found[1] ?? found[2]) === undefined ? null : 'consent.signatureDate') },
   { id: 'label.form-language', re: FORM_LANGUAGE, category: 'languages.formLanguage', strength: 'strong' },
   { id: 'label.employee-id', re: EMPLOYEE_ID, category: 'identity.employeeId', strength: 'strong' },
   { id: 'label.county', re: COUNTY, unless: YES_NO_QUESTION, category: 'address.county', strength: 'normal' },
@@ -1178,14 +1218,19 @@ const JR6_RULES: readonly Jr6Rule[] = [
   { id: 'label.military-training', re: MILITARY_TRAINING, category: 'screening.militaryTraining', strength: 'normal' },
   { id: 'label.residence-state', re: RESIDENCE_STATE, category: 'address.region', strength: 'normal' },
   { id: 'label.work-state', re: WORK_STATE, category: 'address.region', strength: 'normal' },
-  { id: 'label.time-zone', re: TIME_ZONE, category: 'preferences.timeZone', strength: 'normal' },
+  // jr6 fix (RULES-R48-TZ): the label is the time zone's own and nothing else (anchored), as strong as the form's
+  // language's, so a search may choose a single zone's result (frame.ts: a remote typeahead chooses in the fill band).
+  { id: 'label.time-zone', re: TIME_ZONE, category: 'preferences.timeZone', strength: 'strong' },
   { id: 'label.in-time-zone', re: IN_TIME_ZONE, category: 'location.inTimeZone', strength: 'normal' },
   { id: 'label.years-in', re: YEARS_IN, category: 'experience.yearsIn', strength: 'normal' },
   { id: 'label.experience-with', re: EXPERIENCE_WITH, unless: EXPERIENCE_WITH_NOT, category: 'skills.experienceWith',
     strength: 'normal' },
   // jr6 RULES R3 (ADP-7, JZ-11, U-11).
+  // jr6 fix (RULES-R51): the word anywhere on a list (FIXPLAN item 51: select, combobox); on a text box only the
+  // currency's own label (CURRENCY_ALONE), never a pay question that asks for its currency too.
   { id: 'label.currency', re: CURRENCY, unless: new RegExp(`${YES_NO_QUESTION.source}|${CURRENCY_NOT.source}`),
-    category: 'salary.currency', strength: 'normal' },
+    category: (c) => (c.kind === 'text' && !CURRENCY_ALONE.test(c.label) ? null : 'salary.currency'),
+    strength: 'normal' },
   { id: 'label.in-country', re: IN_COUNTRY, unless: IN_COUNTRY_NOT, category: 'location.inCountry', strength: 'normal' },
   { id: 'label.former-name', re: FORMER_NAME, category: 'identity.formerName', strength: 'strong' },
   // jr6 RULES R4 (WD-25, ICIMS-25, ADP-14, ADP-16, ADP-18, ADP-20, JV-19, SR-13).
@@ -1194,8 +1239,9 @@ const JR6_RULES: readonly Jr6Rule[] = [
   { id: 'label.address3', re: ADDRESS_LINE3, category: 'address.line3', strength: 'strong' },
   { id: 'label.pay-basis', re: PAY_BASIS, category: 'salary.period', strength: 'normal' },
   { id: 'label.resume-method', re: RESUME_METHOD, category: 'application.resumeMethod', strength: 'normal' },
-  { id: 'label.high-school', re: HIGH_SCHOOL, category: (c) => (YES_NO_QUESTION.test(c.label) ? 'education.highSchool'
-    : null), strength: 'normal' },
+  // jr6 fix (RULES-R70): only a question of the diploma alone (asksDiplomaAlone).
+  { id: 'label.high-school', re: HIGH_SCHOOL, category: (c) => (YES_NO_QUESTION.test(c.label)
+    && asksDiplomaAlone(c.label) ? 'education.highSchool' : null), strength: 'normal' },
   { id: 'label.address-if-different', re: ADDRESS_IF_DIFFERENT, category: 'address.mailing', strength: 'normal' },
   { id: 'label.facebook', re: FACEBOOK, category: 'links.facebook', strength: 'strong' },
 ];

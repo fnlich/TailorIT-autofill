@@ -8,7 +8,8 @@
  *   already-correct: unticked is what it should be);
  * - a box ticked for a list that lacks one leaves that list without a flag: its decline-option-missing row is skipped,
  *   since the box says it;
- * - a list whose options are not read yet keeps the box waiting for them.
+ * - a list whose options are not read yet leaves the box unticked (skipped, conditional-question: it follows its list;
+ *   jr6 fix RULES-R65-R24, no waiting-for-options row on a box, which the loop would end options-never-loaded).
  * The list a box belongs to: the one whose label the box's begins with (UltiPro: "Gender I decline to say" by the label
  * contract of FIXPLAN §3.2), else every list of its topics in its section (ADP's race and ethnicity lists). Labels are
  * page text: nothing here reads a profile value.
@@ -81,10 +82,13 @@ export function settleDeclineBoxes(planned: PlannedField[], resolutions: Readonl
     const lists = listsOf(field.spec, fields);
     const domain = resolution.category as MatchDomain;
     const offers = lists.map((list) => offersDecline(list, domain, vocab));
+    // jr6 fix (RULES-R65-R24): while a list is unread the box is left unticked (skipped, conditional-question: it follows
+    // its list), never a waiting-for-options row, which the loop's books read as a list waiting for its own options (a
+    // box gets none: it ended options-never-loaded, for the person, while the lists took their own decline).
     if (offers.includes('unread') || offers.includes(true)) {
       const { write: _write, ...rest } = field;
-      planned[at] = { ...rest, row: { ...field.row, status: offers.includes(true) ? 'skipped' : 'flagged',
-        reason: offers.includes(true) ? 'already-correct' : 'waiting-for-options', provenance: null,
+      planned[at] = { ...rest, row: { ...field.row, status: 'skipped',
+        reason: offers.includes(true) ? 'already-correct' : 'conditional-question', provenance: null,
         needsUserAction: false } };
       continue;
     }
