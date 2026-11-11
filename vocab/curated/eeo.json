@@ -15,7 +15,7 @@
         { "id": "american-indian-alaska-native", "labels": ["American Indian or Alaska Native", "American Indian or Alaskan Native", "American Indian/Alaska Native", "Native American or Alaska Native", "Native American", "American Indian"] },
         { "id": "asian", "labels": ["Asian", "Asian American"] },
         { "id": "black-african-american", "labels": ["Black or African American", "Black/African American", "African American", "Black"] },
-        { "id": "middle-eastern-north-african", "labels": ["Middle Eastern or North African", "Middle Eastern/North African", "MENA", "Middle Eastern"] },
+        { "id": "middle-eastern-north-african", "labels": ["Middle Eastern or North African", "Middle Eastern/North African", "MENA", "Middle Eastern", "Middle Eastern and North African"] },
         { "id": "native-hawaiian-pacific-islander", "labels": ["Native Hawaiian or Other Pacific Islander", "Native Hawaiian or Pacific Islander", "Native Hawaiian/Other Pacific Islander", "Pacific Islander", "Native Hawaiian"] },
         { "id": "white", "labels": ["White", "Caucasian", "White/Caucasian"] },
         { "id": "two-or-more-races", "derived": true, "labels": ["Two or More Races", "Two or more", "Multiracial", "Multiple races", "Mixed race", "Biracial"] },
