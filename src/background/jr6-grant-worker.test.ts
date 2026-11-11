@@ -595,12 +595,14 @@ describe('PageState.entering and refusal \'elsewhere\' from the grant (items 2 a
       expect(await formStarted(worker, LEVER_FORM, 'doc-form', 1), said).toBe(true);
     }
 
-    // A press whose document went: entering until ENTRY_WAITING_MS, whatever a document the grant never reached says.
+    // A press whose document went (its frame still said it was entering, its Apply gone): entering until
+    // ENTRY_WAITING_MS, whatever a document the grant never reached says.
     const gone = await applyWorker();
     const sender = await postingTab(gone, LEVER_POSTING);
     await fill(gone);
     await wall(gone, sender, { entry: true, entering: true });
     await press(gone, sender);
+    await wall(gone, sender, { entering: true });
     const next = at(LEVER_OTHER, 'doc-next');
     await hello(gone, next, false);
     await wall(gone, next, { entry: true });
