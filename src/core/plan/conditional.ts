@@ -77,6 +77,26 @@ export function answerWords(spec: FieldSpec, written: WriteValue | undefined): s
   return null;
 }
 
+/** jr6 RULES (JV-6, fixtures jr6-sikich-step3: "If yes, do the terms of the agreement restrict you from working at
+ *  Sikich?" after a non-compete question answered No): whether the answer above is the explicit opposite of what the
+ *  follow-up waits for (a No to an "If yes", a Yes to an "If no"); never for a follow-up that waits for an option's
+ *  words, nor for an answer that says both or neither. */
+export function conditionOpposed(condition: Condition, answer: readonly string[] | null): boolean {
+  if (condition.kind !== 'yes' && condition.kind !== 'no') return false;
+  const opposite: Condition = condition.kind === 'yes' ? { kind: 'no' } : { kind: 'yes' };
+  return conditionHolds(opposite, answer) && !conditionHolds(condition, answer);
+}
+
+/** jr6 RULES (JV-6): an option that says the question does not apply, as wordsOf reads it. */
+const NOT_APPLICABLE_OPTION = /^(?:not\s+applicable|n\s*a|does\s+not\s+apply|none)$/;
+
+/** jr6 RULES (JV-6): the place, among a list's option labels, of its one "Not Applicable" ("N/A", "Does not apply",
+ *  "None"); null when it has none, or several. */
+export function notApplicableOption(labels: readonly string[]): number | null {
+  const found = labels.flatMap((label, at) => (NOT_APPLICABLE_OPTION.test(wordsOf(label)) ? [at] : []));
+  return found.length === 1 ? found[0]! : null;
+}
+
 /** Whether an answer is the one a follow-up waits for. */
 export function conditionHolds(condition: Condition, answer: readonly string[] | null): boolean {
   if (answer === null || answer.length === 0) return false;

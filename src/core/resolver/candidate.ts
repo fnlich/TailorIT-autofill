@@ -7,7 +7,7 @@
  * format-unsupported rather than filled some other way.
  */
 import type { FieldKind } from '../enums';
-import type { PlaceParts } from '../matcher/place';
+import type { PlaceParts, StreetParts } from '../matcher/place';
 import type { MatchDomain } from '../matcher/types';
 import type { ReasonCode } from '../types/fill';
 import type { FileRef, IntendedValue, ValueOrigin } from '../types/intent';
@@ -28,6 +28,10 @@ export interface Choice {
   /** For a place (the current location, a job's): its parts, so a list of places is read by them where no text stage
    *  matches (matcher/place.ts: "Austin, TX" chooses "Austin, Texas, United States"). */
   place?: PlaceParts;
+  /** jr6 RULES R3 (O2: Oracle's Address Line 1 and ZIP Code searches, fixtures/oracle/hjf-apply-section): an address line
+   *  or a postal code a search's result starts with, and the places after it that make the result the person's (their
+   *  city, their state's code or name): matcher/place.ts matchStreet, where no text stage matches. */
+  street?: StreetParts;
   /** s2 core-wd: a less precise answer, chosen only where no option is the value itself: the kind of source a referral
    *  source is (the profile's referralSource.category, "Job board", for a source a list does not name; the wd study
    *  §5, Workday's "How Did You Hear About Us?"). A search types it as its reduced style (matcher/candidates.ts

@@ -115,12 +115,42 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'eeo.not-offered': (category) => policyClassOf(category) === 'eeo',
   'compose.text': (category) => COMPOSED.includes(category),
   // s2 core-gh end
+  // jr6 RULES (types/intent.ts): each rule fills its own category; a follow-up's "Not Applicable" any question of the
+  // open classes (a legal, EEO or consent one never takes it).
+  'consent.signature-date': (category) => category === 'consent.signatureDate',
+  'form.language': (category) => category === 'languages.formLanguage',
+  'address.enter-manually': (category) => category === 'address.lookup',
+  'conditional.not-applicable': (category) => OPEN_FOR_FOLLOW_UP.includes(policyClassOf(category)),
+  'location.policy-residence': (category) => category === 'location.policyResidence',
+  'referral.not-employee': (category) => category === 'referral.employeeReferred',
+  'location.not-there': (category) => category === 'location.residesIn',
+  'skills.qualifications': (category) => category === 'skills.list',
+  // jr6 RULES R2: a work status by its meaning, the located country's entry, and OPT, each a work-authorization
+  // answer.
+  'legal.work-status': (category) => category.startsWith('workAuth.'),
+  'legal.located-country': (category) => category.startsWith('workAuth.'),
+  'legal.opt': (category) => category === 'workAuth.opt',
+  // jr6 RULES R3: each fills its own category.
+  'legal.military-training': (category) => category === 'screening.militaryTraining',
+  'address.type-home': (category) => category === 'address.type',
+  'location.time-zone': (category) => category === 'preferences.timeZone' || category === 'location.inTimeZone',
+  'experience.years-in': (category) => category === 'experience.yearsIn',
+  'skills.experience-with': (category) => category === 'skills.experienceWith',
+  // jr6 RULES R3 (JZ-11): living or working in a country, from the address.
+  'location.in-country': (category) => category === 'location.inCountry',
+  // jr6 RULES R4 (ICIMS-25, ADP-20, ADP-18).
+  'education.graduated': (category) => category === 'education.graduated',
+  'education.high-school': (category) => category === 'education.highSchool',
+  'resume.upload-method': (category) => category === 'application.resumeMethod',
+  // jr6 RULES end
 };
 
 /** s2 core-gh: the yes/no legal questions a text box may ask (legal.yes-no-text), and the texts composed from the
  *  profile's parts (compose.text). */
 const YES_NO_LEGAL: readonly FieldCategory[] = ['workAuth.authorized', 'workAuth.sponsorship', 'workAuth.sponsorshipNow',
-  'workAuth.sponsorshipFuture'];
+  'workAuth.sponsorshipFuture',
+  // jr6 RULES R2 (WD-30).
+  'workAuth.opt'];
 const COMPOSED: readonly FieldCategory[] = ['address.full', 'preferences.relocationPlaces', 'skills.certifications',
   'education.summary'];
 
@@ -277,11 +307,13 @@ const CLASS_RULES: Readonly<Record<PolicyClass, readonly RuleId[] | 'any'>> = {
   legal: ['legal.decline', 'guard.revert'],
   eeo: ['eeo.decline', 'eeo.decline-default', 'eeo.not-offered', 'guard.revert'],
   consent: ['consent.preapproved', 'consent.signature-preapproved', 'consent.required', 'consent.no-ai-attestation',
-    'guard.revert'],
+    // jr6 RULES (JV-1): today's date beside a signature, approved as the signature is.
+    'consent.signature-date', 'guard.revert'],
   attention: [],
-  'free-text': ['other.free-text', 'guard.revert'],
+  'free-text': ['other.free-text', 'conditional.not-applicable', 'guard.revert'],
   file: [],
-  unknown: ['other.free-text', 'screening.previously-employed', 'guard.revert'],
+  // jr6 RULES (JV-6): a follow-up's one "Not Applicable".
+  unknown: ['other.free-text', 'screening.previously-employed', 'conditional.not-applicable', 'guard.revert'],
 };
 
 /** The provenances each class's values may have (§7.6, §8.2): `rule` is narrowed further by CLASS_RULES. */
