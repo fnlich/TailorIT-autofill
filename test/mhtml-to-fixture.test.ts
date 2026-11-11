@@ -46,6 +46,23 @@ import {
   POSTING_TEXT_PLACES,
   readReplaceOption,
   unevenChoiceRowsInPage,
+  // ── jr6 round 2 (TOOLING; BUILD.md 4b) ──
+  FIXED_ROWS,
+  ID_REFERENCES,
+  LIST_ROWS,
+  noteListRowsInPage,
+  redactListRowsInPage,
+  respelledAddress,
+  respelledEdge,
+  respelledIn,
+  respelledSources,
+  respelledSpans,
+  ROW_ID_ATTRIBUTES,
+  ROW_ID_DATA_SOURCE,
+  ROW_WORD_ATTRIBUTES,
+  ROW_WORD_DATA_SOURCE,
+  TYPED_LIST_BOXES,
+  TYPED_LISTS,
   // ── snapshot build 2026-11-06 (core pass Z1, item 36) ──
   CHOSEN_MARKS,
   PROFILE_PLACES,
@@ -178,7 +195,8 @@ function mhtml(snapshot: string, parts: Part[]): Buffer {
 }
 
 /** The synthetic company page: every kind of thing the converter inlines, removes or redacts, and probe elements.
- *  With `encoded`, a link also carries the owner's name percent-encoded, which the DOM redaction cannot see. */
+ *  With `encoded`, a link also carries the owner's name percent-encoded (jr6 round 2: an attribute's respelling, which
+ *  the converter now redacts), and so does a text run, which the DOM redaction cannot see and the final check refuses. */
 const mainHtml = (encoded: boolean) => `<!DOCTYPE html><html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <link rel="stylesheet" type="text/css" href="cid:css-cssom@mhtml.blink" />
 <link rel="stylesheet" href="${ORIGIN}/site.css">
@@ -205,7 +223,7 @@ const mainHtml = (encoded: boolean) => `<!DOCTYPE html><html lang="en"><head><me
 <p>Welcome back, Jane Roe. <!-- prepared for Jane Roe --> Questions: jobs@tailorit-fixture.example or
 +1 (555) 010-0199, or our office line 555-010-0142.</p>
 <p><a href="mailto:jobs@tailorit-fixture.example">Write to us</a> <a href="tel:+15550100199">Call us</a>
-<a href="javascript:alert(1)">Run</a> <a href="java&#9;script:alert(2)">Run too</a>${encoded ? ` <a href="${ORIGIN}/search?q=Jane%20Roe">Jobs like yours</a>` : ''}</p>
+<a href="javascript:alert(1)">Run</a> <a href="java&#9;script:alert(2)">Run too</a>${encoded ? ` <a href="${ORIGIN}/search?q=Jane%20Roe">Jobs like yours</a> <span>Saved search: q=Jane%20Roe</span>` : ''}</p>
 <form action="${ORIGIN}/apply" method="get">
 <label for="first" data-probe="label" data-expect="shown">First name</label>
 <input id="first" name="first" data-probe="first" data-expect="shown" value="Jane typed" title="Jane Roe" data-owner="jane roe">
@@ -464,6 +482,7 @@ describe('mhtml-to-fixture refusals', () => {
       .then(() => null, (caught: unknown) => caught);
     expect(error).toBeInstanceOf(ConversionError);
     const reasons = (error as ConversionError).reasons;
+    // The text run's (jr6 round 2: the link's, an attribute, is respelled away, so it is no reason of its own).
     expect(reasons).toEqual(['refuse.html: redact entry 1 is still in the file']);
     expect(reasons.join(' ')).not.toContain('Jane');
     expect(existsSync(join(work, 'greenhouse', 'refuse.html'))).toBe(false);
@@ -2946,6 +2965,405 @@ document.getElementById('photo').attachShadow({ mode: 'open' }).innerHTML = '<la
     expect(text).toContain('A phonenumber=5 and pnumbers stay words.');
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ── jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b, the gap SMARTRECRUITERS P1 found): an open list's rows keep nothing that
+// names them once their words go, a typed query's results lose their words, and no listed string survives in any
+// attribute, respelled or not. Each shape on a synthetic page in the platform's own markup; every value is made up
+// ("Roeville" is no listed string: the typed query's results are redacted by their markup alone). ──
+// ---------------------------------------------------------------------------------------------------------------------
+
+const ORACLE_APPLY = 'https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/1/apply/section/1';
+const ICIMS_APPLY = 'https://careers-acme.icims.com/jobs/1/engineer/candidate';
+const WORKDAY_APPLY = 'https://acme.wd1.myworkdayjobs.com/en-US/External/job/Remote/Engineer_R1/apply/applyManually';
+const GREENHOUSE_JOB = 'https://job-boards.greenhouse.io/acme/jobs/1';
+
+/** One page converted from a hand-built archive (no script: no shadow root). */
+async function convertPage(url: string, platform: string, caseName: string, body: string, redact: string[] = LISTED) {
+  const file = join(work, `${caseName}.mhtml`);
+  writeFileSync(file, mhtml(url, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: url,
+    body: `<!DOCTYPE html><html><head><title>Apply</title></head><body>${body}</body></html>` }]));
+  const conversion = await convertMhtml({ file, platform, caseName, redact, outDir: work });
+  return { conversion, text: conversion.files[0]?.text ?? '' };
+}
+
+/** SmartRecruiters' City search as the Wiser one-click capture draws it open (SP\jr6\build\SMARTRECRUITERS.md SR-8):
+ *  spl-autocomplete's shadow root holds its spl-input (Lit's ariacontrols; no typed text kept here, so the menu's own
+ *  mark, TYPED_LISTS, says it lists a query's results) and the menu, each result an spl-select-option whose value and
+ *  data-sr-id spell the place, its role=option inside its own shadow root; the manual-location row last. */
+const SR_CITY = `<label for="city">City</label>
+<spl-autocomplete id="city" data-sr-id="location-autocomplete-search" minquerylength="3" label="City"></spl-autocomplete>
+<script>
+const root = document.getElementById('city').attachShadow({ mode: 'open' });
+root.innerHTML = '<div data-sr-id="location-autocomplete-search-root"><spl-input id="spl-form-element_3" type="text" '
+  + 'value="" ariacontrols="menu-spl-form-element_3" ariaautocomplete="list" '
+  + 'data-sr-id="location-autocomplete-search-search"></spl-input>'
+  + '<div slot="menu" id="menu-spl-form-element_3" data-sr-id="location-autocomplete-search-menu" role="listbox">'
+  + '<spl-select-option value="roeville-nj-us" data-sr-id="location-autocomplete-search-option-roeville-nj-us">'
+  + '<spl-truncate title="Roeville, NJ, United States">Roeville, NJ, United States</spl-truncate>'
+  + '<div class="c-spl-autocomplete-option-content" data-sr-id="location-autocomplete-search-option-roeville-nj-us-content">'
+  + 'Roeville, NJ, United States</div></spl-select-option>'
+  + '<spl-select-option value="goToManualLocationMode" data-sr-id="location-autocomplete-search-option-goToManualLocationMode">'
+  + '<spl-truncate title="Enter your location manually">Enter your location manually</spl-truncate></spl-select-option>'
+  + '</div></div>';
+for (const [at, option] of [...root.querySelectorAll('spl-select-option')].entries()) {
+  // Each row's own shadow root: its role=option, a component's own tooltip label, and a label repeating its words.
+  option.attachShadow({ mode: 'open' }).innerHTML = '<div class="c-spl-dropdown-item" role="option" aria-selected="false"><slot></slot></div>'
+    + '<div role="tooltip" id="tooltip-' + (at + 1) + '" aria-label="Tooltip"></div>'
+    + '<span class="sr-only" aria-label="' + option.querySelector('spl-truncate').getAttribute('title') + '"></span>';
+}
+</script>`;
+
+describe('jr6 round 2: the names an open list\'s rows carry, and a listed string respelled (BUILD.md 4b, TOOLING)', () => {
+  it('spells a listed string as an attribute may: joined, camel-cased, its separators changed, percent-encoded', () => {
+    const sources = respelledSources(['Jane Roe', '555 010 0142', 'Avery']);
+    // A phone number keeps redactSources' own rule (its digits in any punctuation); each string keeps its position.
+    expect(sources.map(({ index }) => index)).toEqual([1, 3]);
+    const name = sources[0]?.source ?? '';
+    for (const spelled of ['jane-roe', 'JaneRoe', 'jane_roe', 'jane%20roe', 'janeroe', 'JANE.ROE', 'optionJaneRoe',
+      'u/jane+roe/2', 'Jane, Roe']) {
+      expect(respelledSpans(spelled, name), spelled).toHaveLength(1);
+    }
+    // A match counts only at words' edges: not inside a longer word, before or after.
+    for (const word of ['janeroebuck', 'mjaneroe', 'Janeroes', 'jane-roebuck']) expect(respelledSpans(word, name), word).toEqual([]);
+    expect(respelledSpans('x-avery2-y', sources[1]?.source ?? '')).toEqual([[2, 7]]);
+    expect([respelledEdge('aB', 1), respelledEdge('a2', 1), respelledEdge('a-b', 1), respelledEdge('ab', 1),
+      respelledEdge('AB', 1), respelledEdge('Ab', 1)]).toEqual([true, true, true, false, false, false]);
+  });
+
+  it('names each entry that survives in an attribute by its position, the attribute and the tag, never its value', () => {
+    const sources = respelledSources(LISTED);
+    const markup = '<a href="/people/jane-roe">x</a><div data-owner-id="u-JaneRoe-1" title="Jane Roe">Jane Roe in text</div>'
+      + '<iframe src="https://cards.example/c?u=jane%20roe"></iframe><img src="data:image/png;base64,SmFuZVJvZQ==">'
+      + '<style>.jane-roe { color: red; }</style><!-- jane-roe --><p class="ordinary">nothing here</p>'
+      + '<template shadowrootmode="open"><span aria-label="JANE_ROE">x</span></template><b title="Jane Roebuck">y</b>';
+    const reasons = respelledIn(markup, sources);
+    expect(reasons).toEqual(['redact entry 1 survives in an attribute (href on <a>)',
+      'redact entry 1 survives in an attribute (data-owner-id on <div>)',
+      'redact entry 1 survives in an attribute (title on <div>)',
+      'redact entry 1 survives in an attribute (src on <iframe>)',
+      'redact entry 1 survives in an attribute (aria-label on <span>)']);
+    expect(reasons.join(' ')).not.toMatch(/jane/i);
+    expect(respelledIn(markup, [])).toEqual([]);
+    expect(respelledIn('<p>Jane Roe</p><!-- Jane Roe -->', sources)).toEqual([]);
+  });
+
+  it('reads the rows before any redaction and strips what names them once their words went, by markup alone',
+    async () => {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await page.setContent(`<!DOCTYPE html><html><body>
+<div class="select__control"><input id="school" class="select__input" role="combobox" aria-autocomplete="list"
+  aria-controls="react-select-school-listbox" aria-activedescendant="react-select-school-option-1" value="Roe"></div>
+<div id="react-select-school-listbox" class="select__menu-list" role="listbox">
+  <div id="react-select-school-option-0" role="option" class="select__option">Roeville State University</div>
+  <div id="react-select-school-option-1" role="option" class="select__option">Roe College of Location Arts</div>
+  <div id="react-select-school-option-2" role="option" class="select__option" data-fixed="1">Not listed? Type it</div></div>
+<div id="react-select-country-listbox" class="select__menu-list" role="listbox">
+  <div id="react-select-country-option-0" role="option" class="select__option">Portugal +351</div></div>
+<x-search id="lit" value="Roe" ariacontrols="lit-menu"></x-search>
+<div id="lit-menu" role="listbox"><div id="lit-0" role="option">Roeville Lit Result</div></div>
+<ul id="cities" role="listbox" aria-activedescendant="city-roeville-4417">
+  <li id="city-roeville-4417" role="option" data-value="4417" value="1" aria-label="Roeville"><span>Roeville</span>
+    <a href="https://maps.tailorit-fixture.example/?q=Roeville">map</a></li>
+  <li id="city-roeville-4418" role="option" data-value="4418" aria-label="Roeville North"><span data-uniform-id="typography-body1">Roeville North</span></li>
+  <li id="city-alder-77" role="option" data-value="77" aria-label="Alder"><span>Alder</span></li>
+  <li id="city-east" role="option" aria-label="Roeville East"><span id="w3">  Roeville East, NJ  </span></li></ul>
+<label for="city-roeville-4418">A label naming the second city</label>
+<div role="listbox"><div id="prompt" role="option" aria-label="Roeville not checked" data-automation-id="menuItem">
+  <div data-automation-id="promptOption" data-automation-label="Roeville">Roeville</div></div></div>
+<input id="jobsearch" type="search" value="engineer" aria-controls="results-region">
+<div id="results-region"><select id="pick"><option value="a">Alpha</option><option value="b">Beta</option></select></div>
+</body></html>`);
+      const noted = await page.evaluate(noteListRowsInPage, { rows: LIST_ROWS, typedLists: TYPED_LISTS,
+        typedBoxes: TYPED_LIST_BOXES, words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE });
+      // Two typed lists: the school search (its box's typed text and aria-controls), and a custom element's (Lit's
+      // unhyphenated ariacontrols, as SmartRecruiters' spl-input writes it). A search box's aria-controls naming a region
+      // that is no list (holding a form's own select) makes nothing a typed list.
+      expect(noted).toEqual({ rows: 12, typedLists: 2 });
+      // Another redaction (a listed string, as transformInPage's) takes two cities' words and the prompt row's, and part
+      // of a third city's.
+      await page.evaluate(() => {
+        for (const id of ['city-roeville-4417', 'city-roeville-4418']) {
+          const row = document.getElementById(id)!;
+          row.querySelector('span')!.textContent = 'REDACTED';
+          row.setAttribute('aria-label', 'REDACTED');
+        }
+        document.getElementById('w3')!.textContent = '  REDACTED, NJ  ';
+        const prompt = document.getElementById('prompt')!;
+        prompt.setAttribute('aria-label', 'REDACTED not checked');
+        prompt.firstElementChild!.setAttribute('data-automation-label', 'REDACTED');
+        prompt.firstElementChild!.textContent = 'REDACTED';
+      });
+      const counts = await page.evaluate(redactListRowsInPage, { redacted: 'REDACTED', fixed: ['[data-fixed]'],
+        results: SEARCH_RESULT_PLACES, words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE, ids: ROW_ID_ATTRIBUTES,
+        idData: ROW_ID_DATA_SOURCE, references: ID_REFERENCES });
+      expect(counts).toEqual({ rows: 7, words: 5, names: 4, ids: 4 });
+      expect(await page.evaluate(() => document.getElementById('lit-menu')!.outerHTML))
+        .toBe('<div id="lit-menu" role="listbox"><div id="lit-0" role="option">REDACTED</div></div>');
+      // A word left beside a REDACTED one goes too, the white space around it kept.
+      expect(await page.evaluate(() => document.getElementById('w3')!.firstChild!.nodeValue)).toBe('  REDACTED  ');
+      expect(await page.evaluate(() => document.getElementById('w3')!.parentElement!.outerHTML))
+        .toBe('<li id="city-REDACTED-3" role="option" aria-label="REDACTED"><span id="w3">  REDACTED  </span></li>');
+      const html = await page.evaluate(() => document.body.innerHTML.replace(/\s+/g, ' '));
+      // The typed query's results lose their words; their ids, which name a position, stay; the site's own row stays.
+      expect(html).toContain('<div id="react-select-school-option-0" role="option" class="select__option">REDACTED</div>');
+      expect(html).toContain('<div id="react-select-school-option-1" role="option" class="select__option">REDACTED</div>');
+      expect(html).toContain('data-fixed="1">Not listed? Type it</div>');
+      // A list nobody typed into keeps its words.
+      expect(html).toContain('<div id="react-select-country-option-0" role="option" class="select__option">Portugal +351</div>');
+      // A row whose words went loses the words left (its link's) and its value, data-value and every id part naming it
+      // (its value, its words, an opaque number), a renamed id unique, and what named it follows; a row whose words
+      // stayed is untouched.
+      expect(html).toContain('<ul id="cities" role="listbox" aria-activedescendant="city-REDACTED">');
+      expect(html).toContain('<li id="city-REDACTED" role="option" data-value="REDACTED" value="REDACTED" aria-label="REDACTED">'
+        + '<span>REDACTED</span> <a href="https://maps.tailorit-fixture.example/?q=REDACTED">REDACTED</a></li>');
+      expect(html).toContain('<li id="city-REDACTED-2" role="option" data-value="REDACTED" aria-label="REDACTED">');
+      // A design token in a data- id ("body1": one digit) is no opaque id: it stays.
+      expect(html).toContain('<span data-uniform-id="typography-body1">REDACTED</span>');
+      expect(html).toContain('<label for="city-REDACTED-2">A label naming the second city</label>');
+      expect(html).toContain('<li id="city-alder-77" role="option" data-value="77" aria-label="Alder"><span>Alder</span></li>');
+      expect(html).toContain('<select id="pick"><option value="a">Alpha</option><option value="b">Beta</option></select>');
+      // Workday's "REDACTED not checked" stays as its own rule wrote it; its structural data-automation-id stays.
+      expect(html).toContain('<div id="prompt" role="option" aria-label="REDACTED not checked" data-automation-id="menuItem">');
+      expect(html).toContain('<div data-automation-id="promptOption" data-automation-label="REDACTED">REDACTED</div>');
+      expect(html).not.toMatch(/roeville|4417|4418|Roe College/i);
+      await context.close();
+    }, 30_000);
+
+  it("SmartRecruiters' City results (spl-select-option): a typed search's results lose their words, value and data-sr-id",
+    async () => {
+      const file = await liveCapture(SR_ONE_CLICK, SR_CITY, 'jr6r2-sr-city');
+      const convert = () => convertMhtml({ file, platform: 'smartrecruiters', caseName: 'jr6r2-sr-city', redact: LISTED,
+        outDir: work });
+      const one = await convert();
+      const text = one.files[0]?.text ?? '';
+      expect(text).not.toMatch(/roeville|nj-us|NJ, United/i);
+      // In its shadow root, the label repeating its words goes; the tooltip component's own label and id stay.
+      expect(text).toContain('<spl-select-option value="REDACTED" data-sr-id="location-autocomplete-search-option-REDACTED">'
+        + '<template shadowrootmode="open"><div class="c-spl-dropdown-item" role="option" aria-selected="false"><slot></slot>'
+        + '</div><div role="tooltip" id="tooltip-1" aria-label="Tooltip"></div><span class="sr-only" aria-label="REDACTED"></span>'
+        + '</template><spl-truncate title="REDACTED">REDACTED</spl-truncate><div class="c-spl-autocomplete-option-content" '
+        + 'data-sr-id="location-autocomplete-search-option-REDACTED-content">REDACTED</div></spl-select-option>');
+      // The manual-location row is the site's own (FIXED_ROWS): its value, id and words stay, so its adapter still
+      // reads it unchoosable.
+      expect(text).toContain('<spl-select-option value="goToManualLocationMode" '
+        + 'data-sr-id="location-autocomplete-search-option-goToManualLocationMode"><template shadowrootmode="open">');
+      expect(text).toContain('<span class="sr-only" aria-label="Enter your location manually"></span></template><spl-truncate '
+        + 'title="Enter your location manually">Enter your location manually</spl-truncate></spl-select-option>');
+      expect(TYPED_LISTS).toContain('[data-sr-id="location-autocomplete-search-menu"]');
+      expect(FIXED_ROWS).toEqual(['spl-select-option[value="goToManualLocationMode"]']);
+      expect(headerOf(text).redacted.listRows).toEqual({ rows: 1, words: 2, names: 3, ids: 2 });
+      // Deterministic: the same capture gives the same bytes.
+      const two = await convert();
+      expect(two.files.map((output) => output.text)).toEqual(one.files.map((output) => output.text));
+      expect(two.routes).toEqual(one.routes);
+    }, 90_000);
+
+  it('closes the gap itself: a row whose words a listed string took loses the value and ids that spell it otherwise',
+    async () => {
+      // No typed text and no typed-list mark: only the listed string ("Roeville Heights", made up) takes the row's
+      // words; its value and data-sr-id spell the place in a form no list holds ("roeville-hts-nj"), as the Wiser
+      // capture's did before SMARTRECRUITERS P1 listed that form.
+      const file = await liveCapture(SR_ONE_CLICK, `<spl-autocomplete id="city" data-sr-id="location-autocomplete-other"></spl-autocomplete>
+<script>
+const root = document.getElementById('city').attachShadow({ mode: 'open' });
+root.innerHTML = '<spl-input id="spl-form-element_4" type="text" value="" ariacontrols="menu-spl-form-element_4"></spl-input>'
+  + '<div slot="menu" id="menu-spl-form-element_4" data-sr-id="location-autocomplete-other-menu" role="listbox">'
+  + '<spl-select-option value="roeville-hts-nj" data-sr-id="location-autocomplete-other-option-roeville-hts-nj">'
+  + '<spl-truncate title="Roeville Heights, NJ, United States">Roeville Heights, NJ, United States</spl-truncate></spl-select-option>'
+  + '<spl-select-option value="alder-pa" data-sr-id="location-autocomplete-other-option-alder-pa">'
+  + '<spl-truncate title="Alder, PA, United States">Alder, PA, United States</spl-truncate></spl-select-option></div>';
+</script>`, 'jr6r2-sr-gap');
+      const text = (await convertMhtml({ file, platform: 'smartrecruiters', caseName: 'jr6r2-sr-gap',
+        redact: ['Roeville Heights'], outDir: work })).files[0]?.text ?? '';
+      expect(text).not.toMatch(/roeville|hts-nj/i);
+      // Its words go whole: "REDACTED, NJ, United States" would still tell part of the place.
+      expect(text).toContain('<spl-select-option value="REDACTED" data-sr-id="location-autocomplete-other-option-REDACTED">'
+        + '<spl-truncate title="REDACTED">REDACTED</spl-truncate></spl-select-option>');
+      // The other row's words stayed: so does everything that names it.
+      expect(text).toContain('<spl-select-option value="alder-pa" data-sr-id="location-autocomplete-other-option-alder-pa">'
+        + '<spl-truncate title="Alder, PA, United States">Alder, PA, United States</spl-truncate></spl-select-option>');
+    }, 60_000);
+
+  it("Oracle's searching cx-select (role=grid rows): its results lose their words and the ids that number them",
+    async () => {
+      // The box holds no typed text in this capture: its searching class alone says its grid lists a query's results.
+      const { text } = await convertPage(ORACLE_APPLY, 'oracle', 'jr6r2-oracle-grid', `<form>
+<label for="loc">Location</label>
+<input id="loc" type="text" class="cx-select-input cx-select-input--auto-suggest" role="combobox" aria-haspopup="grid"
+  aria-expanded="true" aria-controls="loc-listbox" aria-activedescendant="loc-row-300512" value="">
+<div id="loc-listbox" role="grid" class="cx-select__list">
+  <div role="row" id="loc-row-300512" class="cx-select__list-item"><div role="gridcell"><span class="cx-select__list-item--content">Roeville, NJ</span></div></div>
+  <div role="row" id="loc-row-300513" class="cx-select__list-item"><div role="gridcell"><span class="cx-select__list-item--content">Roeville Heights, NJ</span></div></div></div>
+<label for="degree">Degree</label>
+<input id="degree" type="text" class="cx-select-input" role="combobox" aria-haspopup="grid" aria-controls="degree-listbox" value="">
+<div id="degree-listbox" role="grid" class="cx-select__list"><div role="row" id="degree-row-1" class="cx-select__list-item"><div role="gridcell"><span class="cx-select__list-item--content">Bachelor</span></div></div></div>
+</form>`);
+      expect(text).not.toMatch(/roeville|300512|300513/i);
+      expect(text).toContain('aria-controls="loc-listbox" aria-activedescendant="loc-row-REDACTED" value="">');
+      expect(text).toContain('<div role="row" id="loc-row-REDACTED" class="cx-select__list-item"><div role="gridcell"><span '
+        + 'class="cx-select__list-item--content">REDACTED</span></div></div>');
+      expect(text).toContain('<div role="row" id="loc-row-REDACTED-2" class="cx-select__list-item">');
+      // A grid nobody typed into is the page's own list.
+      expect(text).toContain('<div role="row" id="degree-row-1" class="cx-select__list-item"><div role="gridcell"><span '
+        + 'class="cx-select__list-item--content">Bachelor</span></div></div>');
+      expect(TYPED_LIST_BOXES).toContain('input.cx-select-input--auto-suggest');
+    }, 60_000);
+
+  it("iCIMS's searched dropdown: its results' data-value goes with their words; an unsearched list's results stay",
+    async () => {
+      const { text } = await convertPage(ICIMS_APPLY, 'icims', 'jr6r2-icims-results', `<form>
+<label for="rcf3048">City</label>
+<select id="rcf3048" class="dropdown-hide" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1"><option value="501">Roeville</option></select>
+<a id="rcf3048_icimsDropdown" class="dropdown-select" role="combobox"><span class="dropdown-text">Roeville</span></a>
+<div id="rcf3048_icimsDropdown_ctnr" class="dropdown-container"><input class="dropdown-search" type="text" value="Roe">
+<ul id="rcf3048_dropdown-results" class="dropdown-results" role="listbox">
+  <li id="result-selectable_rcf3048_0" class="dropdown-result result-selectable" role="option" dropdown-index="0" title="Roeville" aria-label="Roeville" data-value="501">Roeville</li>
+  <li id="result-selectable_rcf3048_1" class="dropdown-result result-selectable" role="option" dropdown-index="1" title="Roeville Heights" aria-label="Roeville Heights" data-value="502">Roeville Heights</li></ul></div>
+<label for="rcf2">Shift</label>
+<select id="rcf2" class="dropdown-hide" icimsdropdown-enabled="0" icimsdropdown-search="0"><option value="">Make a Selection</option><option value="D">Day</option><option value="N">Night</option></select>
+<ul id="rcf2_dropdown-results" class="dropdown-results" role="listbox">
+  <li id="result-selectable_rcf2_0" class="dropdown-result result-selectable" role="option" dropdown-index="0" title="Day" data-value="D">Day</li>
+  <li id="result-selectable_rcf2_1" class="dropdown-result result-selectable" role="option" dropdown-index="1" title="Night" data-value="N">Night</li></ul>
+</form>`);
+      expect(text).not.toMatch(/roeville|"50[12]"/i);
+      expect(text).toContain('<li id="result-selectable_rcf3048_0" class="dropdown-result result-selectable" role="option" '
+        + 'dropdown-index="0" title="REDACTED" aria-label="REDACTED" data-value="REDACTED">REDACTED</li>');
+      expect(text).toContain('<li id="result-selectable_rcf2_0" class="dropdown-result result-selectable" role="option" '
+        + 'dropdown-index="0" title="Day" data-value="D">Day</li>');
+      expect(text).toContain('<option value="D">Day</option><option value="N">Night</option>');
+    }, 60_000);
+
+  it("Workday's prompt search: each result's menuItem id (Workday's id of it) goes, and its list's active descendant follows",
+    async () => {
+      const { text } = await convertPage(WORKDAY_APPLY, 'workday', 'jr6r2-workday-search', `<div data-automation-id="formField-school">
+<label for="input-5">School</label><input id="input-5" data-automation-id="searchBox" type="text" value="Roe">
+<div data-uxi-widget-type="multiselectlist" data-uxi-multiselectlist-issearch="true">
+  <div data-automation-id="activeListContainer" role="listbox" aria-activedescendant="menuItem-3f2a9c1b7e5d">
+    <div id="menuItem-3f2a9c1b7e5d" data-automation-id="menuItem" role="option" aria-label="Roeville College not checked" aria-selected="false">
+      <div data-automation-id="promptLeafNode" data-uxi-multiselect-id="0-1-2"><div id="promptOption-0-1" data-automation-id="promptOption" data-automation-label="Roeville College">Roeville College</div></div></div>
+    <div id="menuItem-4c8b2e6d1a9f" data-automation-id="menuItem" role="option" aria-label="Roe Institute not checked" aria-selected="false">
+      <div data-automation-id="promptLeafNode" data-uxi-multiselect-id="0-1-3"><div id="promptOption-0-2" data-automation-id="promptOption" data-automation-label="Roe Institute">Roe Institute</div></div></div></div></div>
+<div data-uxi-widget-type="multiselectlist" data-uxi-multiselectlist-issearch="false"><div role="listbox">
+  <div id="menuItem-aa11bb22cc" data-automation-id="menuItem" role="option" aria-label="Alder University not checked">
+    <div data-automation-id="promptOption" data-automation-label="Alder University">Alder University</div></div></div></div>
+</div>`);
+      expect(text).not.toMatch(/roeville|Roe Institute|3f2a9c1b7e5d|4c8b2e6d1a9f/i);
+      expect(text).toContain('role="listbox" aria-activedescendant="menuItem-REDACTED">');
+      expect(text).toContain('<div id="menuItem-REDACTED" data-automation-id="menuItem" role="option" aria-label="REDACTED not '
+        + 'checked" aria-selected="false">');
+      expect(text).toContain('<div id="menuItem-REDACTED-2" data-automation-id="menuItem" role="option"');
+      // Positions and the structure stay: promptOption-0-1, data-uxi-multiselect-id 0-1-2.
+      expect(text).toContain('<div data-automation-id="promptLeafNode" data-uxi-multiselect-id="0-1-2"><div id="promptOption-0-1" '
+        + 'data-automation-id="promptOption" data-automation-label="REDACTED">REDACTED</div></div>');
+      // A browse list is the tenant's own: kept whole.
+      expect(text).toContain('<div id="menuItem-aa11bb22cc" data-automation-id="menuItem" role="option" aria-label="Alder University '
+        + 'not checked">');
+    }, 60_000);
+
+  it("ADP's sdf-select-item: a row whose words a listed string took loses its value and label, inside its shadow root",
+    async () => {
+      const file = await liveCapture(ADP_PAGE, `
+<label for="q1">Preferred contact</label><sdf-select-simple id="q1"></sdf-select-simple>
+<label for="q2">State</label><sdf-select-simple id="q2"></sdf-select-simple>
+<script>
+document.getElementById('q1').attachShadow({ mode: 'open' }).innerHTML = '<div role="listbox">'
+  + '<sdf-select-item role="option" aria-selected="false" value="JR-7" aria-label="Jane Roe" embedded-context="select">Jane Roe</sdf-select-item></div>';
+document.getElementById('q2').attachShadow({ mode: 'open' }).innerHTML = '<div role="listbox">'
+  + '<sdf-select-item role="option" aria-selected="false" value="AL" aria-label="AL - Alabama" embedded-context="select">AL - Alabama</sdf-select-item>'
+  + '<sdf-select-item role="option" aria-selected="false" value="AK" aria-label="AK - Alaska" embedded-context="select">AK - Alaska</sdf-select-item></div>';
+</script>`, 'jr6r2-adp-items');
+      const text = (await convertMhtml({ file, platform: 'adp', caseName: 'jr6r2-adp-items', redact: LISTED, outDir: work }))
+        .files[0]?.text ?? '';
+      expect(text).not.toMatch(/JR-7|Jane/);
+      expect(text).toContain('<sdf-select-item role="option" aria-selected="false" value="REDACTED" aria-label="REDACTED" '
+        + 'embedded-context="select">REDACTED</sdf-select-item>');
+      expect(text).toContain('<sdf-select-item role="option" aria-selected="false" value="AL" aria-label="AL - Alabama" '
+        + 'embedded-context="select">AL - Alabama</sdf-select-item>');
+    }, 60_000);
+
+  it("react-select's options: the location search's and a typed school search's results lose their words; an untyped list stays",
+    async () => {
+      const select = (id: string, typed: string, rows: string[]) => `<label id="${id}-label" for="${id}">${id}</label>
+<div class="select__control"><input id="${id}" class="select__input" type="text" role="combobox" aria-autocomplete="list"
+  aria-expanded="true" aria-controls="react-select-${id}-listbox" value="${typed}"></div>
+<div id="react-select-${id}-listbox" class="select__menu-list" role="listbox">${rows.map((row, at) =>
+  `<div id="react-select-${id}-option-${at}" class="select__option" role="option" aria-selected="false">${row}</div>`).join('')}</div>`;
+      const { text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6r2-react-select', `<form>
+${select('candidate-location', 'Roe', ['Roeville (Location 4), New Jersey, United States'])}
+${select('school', 'Roe', ['Roeville State University', 'Roe College'])}
+${select('country', '', ['Portugal', 'Spain'])}</form>`);
+      expect(text).not.toMatch(/roeville|Roe College/i);
+      // A result's word that is also its list's own ("location") stays in its id: the list's structure, not the answer.
+      for (const id of ['react-select-candidate-location-option-0', 'react-select-school-option-0', 'react-select-school-option-1']) {
+        expect(text).toContain(`<div id="${id}" class="select__option" role="option" aria-selected="false">REDACTED</div>`);
+      }
+      expect(text).toContain('<div id="react-select-country-option-0" class="select__option" role="option" aria-selected="false">'
+        + 'Portugal</div><div id="react-select-country-option-1" class="select__option" role="option" aria-selected="false">Spain</div>');
+    }, 60_000);
+
+  it('redacts a listed string respelled in any attribute, and counts it in the header', async () => {
+    const { conversion, text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr6r2-respelled', `
+<a id="profile" href="/people/jane-roe?ref=JaneRoe">Profile</a>
+<div data-person="JANE_ROE" data-owner-id="u-janeroe-1">Card</div>
+<span class="badge" title="Jane.Roe">Badge</span>
+<p data-note="Roebuck Jane">Words around a listed one stay</p>`);
+    expect(text).toContain('<a id="profile" href="/people/REDACTED?ref=REDACTED">Profile</a>');
+    expect(text).toContain('<div data-person="REDACTED" data-owner-id="u-REDACTED-1">Card</div>');
+    expect(text).toContain('<span class="badge" title="REDACTED">Badge</span>');
+    expect(text).toContain('<p data-note="Roebuck Jane">');
+    expect(headerOf(text).redacted).toMatchObject({ respelled: 5 });
+    expect(respelledIn(text, respelledSources(LISTED))).toEqual([]);
+    expect(conversion.counts['jr6r2-respelled.html']).toMatchObject({ respelled: 5 });
+  }, 60_000);
+
+  it("redacts a listed string respelled in the page's and its frames' addresses: src, route map and header agree",
+    async () => {
+      // An iCIMS IForm's address spells its posting's title, which the list may hold: here the page's query and a
+      // third-party frame's path and query.
+      const page = `${GREENHOUSE_JOB}?ref=jane-roe`;
+      const card = 'https://cards.tailorit-fixture.example/card/JaneRoe?user=jane%20roe';
+      const file = join(work, 'jr6r2-addresses.mhtml');
+      writeFileSync(file, mhtml(page, [
+        { type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: page, body: '<!DOCTYPE html><html><head>'
+          + '<title>Apply</title></head><body><p>Apply</p><iframe src="cid:frame-CARD@mhtml.blink" width="300" height="80">'
+          + '</iframe></body></html>' },
+        { type: 'text/html', id: 'frame-CARD@mhtml.blink', location: card, body: '<html><body>A card</body></html>' }]));
+      const conversion = await convertMhtml({ file, platform: 'greenhouse', caseName: 'jr6r2-addresses', redact: LISTED,
+        outDir: work });
+      const text = conversion.files[0]?.text ?? '';
+      expect(headerOf(text).source).toBe(`${GREENHOUSE_JOB}?ref=REDACTED`);
+      expect(text).toContain('<iframe src="https://cards.tailorit-fixture.example/card/REDACTED?user=REDACTED" width="300" '
+        + 'height="80"></iframe>');
+      expect(Object.keys(conversion.routes)).toEqual([`${GREENHOUSE_JOB}?ref=REDACTED`,
+        'https://cards.tailorit-fixture.example/card/REDACTED?user=REDACTED']);
+      for (const output of conversion.files) expect(output.text, output.path).not.toMatch(/jane/i);
+      // Its scheme and host stay, so it is served where it was; anything else is answered as given.
+      expect(respelledAddress('https://jane-roe.example/jane-roe', respelledSources(LISTED)))
+        .toBe('https://jane-roe.example/REDACTED');
+      expect(respelledAddress('not an address jane-roe', respelledSources(LISTED))).toBe('not an address jane-roe');
+    }, 60_000);
+
+  it('refuses a page where a listed string survives in an attribute, respelled (a frame\'s host), naming no value',
+    async () => {
+      const file = join(work, 'jr6r2-refused.mhtml');
+      const card = 'https://jane-roe.cards.tailorit-fixture.example/card';
+      writeFileSync(file, mhtml(GREENHOUSE_JOB, [
+        { type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: GREENHOUSE_JOB, body: '<!DOCTYPE html><html><head>'
+          + '<title>Apply</title></head><body><p>Apply</p><iframe src="cid:frame-CARD@mhtml.blink" width="300" height="80">'
+          + '</iframe></body></html>' },
+        { type: 'text/html', id: 'frame-CARD@mhtml.blink', location: card, body: '<html><body>A card</body></html>' }]));
+      const error = await convertMhtml({ file, platform: 'greenhouse', caseName: 'jr6r2-refused', redact: LISTED, outDir: work })
+        .then(() => null, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConversionError);
+      const reasons = (error as ConversionError).reasons;
+      expect(reasons).toEqual(['jr6r2-refused.html: redact entry 1 survives in an attribute (src on <iframe>)']);
+      expect(reasons.join(' ')).not.toMatch(/jane/i);
+      expect(existsSync(join(work, 'greenhouse', 'jr6r2-refused.html'))).toBe(false);
+    }, 60_000);
+});
+// ── end jr6 round 2 ──
 
 /** jr6 (item 8): every jr6 case's page and frame in a platform's folder (or sites/), outside the frozen lists above. */
 const JR6_FILES = readdirSync(join(ROOT, 'fixtures'), { withFileTypes: true })
