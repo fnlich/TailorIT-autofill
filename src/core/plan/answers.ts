@@ -221,6 +221,12 @@ const CLEARANCE: readonly RegExp[] = [/\bclearances?\b/, /\bts\s*[/-]?\s*sci\b/,
 /** The short identifiers matched in capitals only, as the page wrote them: SIN, NI ("sin" and "ni" are words too). */
 const UNANSWERABLE_ACRONYMS: readonly RegExp[] = [/\bSIN\b/, /\bNI\b/];
 
+/** jr6 fix (ICIMS:stage1-4, merge1-18): "Id" written as a name's first word, before a capitalised word that is no
+ *  identifier's ("Gaming Studios: Id Software", an option of GitHub's "Are you a current Full-Time employee at Microsoft
+ *  or a Microsoft subsidiary other than GitHub?", fixtures/icims/githubinc-candidate-questions.frame-1), is no identifier:
+ *  it closed the whole question to the AI. "ID", "Login Id", "Id Number" and "your id" stay identifiers. */
+const PROPER_NAME_ID = /\bId(?=\s+(?!(?:Numbers?|Nos?|Cards?|Badges?|Documents?|Codes?|Verification)\b)[A-Z][a-z])/g;
+
 /** What the `all` scope lets a question name besides what the standard scope does: a clearance, and a number. */
 export interface AnswerAllowance {
   clearance?: boolean;
@@ -245,7 +251,7 @@ export function namesUnanswerableTopic(text: string, allow: AnswerAllowance = {}
   // waiver an answer would give.
   if (namesConsentTopic(normalized) || attestsNoAiUse(normalized) || asksHowApplicationMade(normalized)
     || (namesBindingWaiver(normalized) && !restrictiveAgreementFact(normalized))) return true;
-  return detectionViews(text).some((view) => {
+  return detectionViews(text.replace(PROPER_NAME_ID, ' ')).some((view) => {
     const lower = view.toLowerCase();
     return UNANSWERABLE.some((pattern) => pattern.test(lower)) || (allow.number !== true && BARE_NUMBER.test(lower))
       || (allow.clearance !== true && CLEARANCE.some((pattern) => pattern.test(lower)));

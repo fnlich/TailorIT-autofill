@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { withoutFileTypes } from '../resolver/classifyRules';
 import type { FieldSpec } from '../types/field';
 import type { Profile } from '../types/profile';
+import { namesUnanswerableTopic } from './answers';
 import { asksOnlyFollowUp } from './drafts';
 import { fieldOf, goldenProfile, inOrder, planOf, specOf } from './plan.testkit';
 import type { PlanInput } from './types';
@@ -109,6 +110,23 @@ describe('53 (JV-13): a current employee of the company', () => {
     const github = specOf('Are you a current Full-Time employee at Microsoft or a Microsoft subsidiary other than GitHub?',
       'select', { optionLabels: YES_NO });
     expect(planned([github], github, { posting: { company: 'GitHub' } }).write).toBeUndefined();
+  });
+  // jr6 fix (ICIMS:stage1-4, merge1-18): on githubinc-candidate-questions.frame-1 that question's options name
+  // Microsoft's subsidiaries, among them "Gaming Studios: Id Software", which the answer screen read as an identifier:
+  // the question was left for the person, never asked of the AI as the item's moved row says.
+  it('asks the AI a set-aside company’s question whose options name a company called "Id"', () => {
+    const github = specOf('Are you a current Full-Time employee at Microsoft or a Microsoft subsidiary other than GitHub?',
+      'select', { required: true, optionLabels: ['Select...', 'No', 'Microsoft', 'LinkedIn', 'Gaming Studios: Id Software',
+        'Gaming Studios: Mojang'] });
+    expect(scopes([github], { posting: { company: 'GitHub' } })).toEqual(['standard']);
+    expect(planned([github], github, { posting: { company: 'GitHub' } }).row).toMatchObject({
+      category: 'screening.previouslyEmployed', reason: 'unknown-field' });
+    expect(namesUnanswerableTopic('Gaming Studios: Id Software')).toBe(false);
+    // An identifier stays one, in capitals or not, before an identifier's word or alone.
+    for (const text of ['ID', 'Login Id', 'Employee Id Number', 'Please enter your id', 'Skype id', 'Id Card',
+      'Gaming Studios: ID Software']) {
+      expect(namesUnanswerableTopic(text), text).toBe(true);
+    }
   });
 });
 
