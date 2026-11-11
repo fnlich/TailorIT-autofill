@@ -44,6 +44,9 @@
  * - v5 p2-fill: a résumé control its adapter declares to open the site's own file picker (Adapter.uploadPickers: a
  *   button with no file input in the form) is a 'file' field of its own while a person can see it, its target marked
  *   `picker`, holding nothing the scan can read; its file goes in through the page's own picker (fillers/picker.ts).
+ * - jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a widget its adapter declares a box of several answers
+ *   (WidgetDecl.tags: Workday's Skills prompt, UltiPro's review Skills) is one field of kind 'text' with no options,
+ *   holding what its text box holds (widgets/tag-chips.ts); its chips are the tags filler's to read.
  * - Keys come from the core's keys.ts (labelSlug, optionSetHash, assignOrdinals, baseKey, fieldKey), so the worker and
  *   every frame build the same strings.
  * - A field's element is never cached across a write: ScanResult.rescan() scans afresh and target(key) finds the
@@ -74,8 +77,8 @@ import { proxyOf, type Proxy, unrecognisedUploadControl } from './proxy';
 import { newScanCache, styleOf, type ScanCache } from './scan-cache';
 import { sectionFinder } from './sections';
 import {
-  MAX_AUTOCOMPLETE_TOKENS, MAX_SCAN_FIELDS, MIN_BOX_PX, MIN_OPACITY, TEXT_CAP_ATTRIBUTE, TEXT_CAP_AUTOCOMPLETE_TOKEN,
-  TEXT_CAP_LABEL, TEXT_CAP_PATTERN,
+  MAX_AUTOCOMPLETE_TOKENS, MAX_SCAN_FIELDS, MAX_WIDGET_OPTIONS, MIN_BOX_PX, MIN_OPACITY, TEXT_CAP_ATTRIBUTE,
+  TEXT_CAP_AUTOCOMPLETE_TOKEN, TEXT_CAP_LABEL, TEXT_CAP_PATTERN,
 } from './thresholds';
 import type {
   DatePartsTarget, FieldTarget, ScanCounters, ScannedField, ScanResult, UnrecognisedUpload, WidgetKind, WidgetReading,
@@ -86,10 +89,11 @@ import { readSelectOptions, visiblePlaceholder, visibleText, type VisibleOption 
 import { isSubtreeHidden, isUserVisible, visibilityOf, type VisibilityVerdict } from './visibility';
 import {
   ariaWidgetKind, editableOf, isChosen, isMultiselectable, isUnavailable, isWidgetPart, listOf, membersOf, roleOf,
-  WIDGET_ROOT_SELECTOR,
+  WIDGET_ROOT_SELECTOR, widgetListOf,
 } from './widgets/aria';
 import { keepReading } from './widgets/fill';
 import { learnable, learnedListKey } from './widgets/known';
+import { declaredTags, tagsBoxValue } from './widgets/tag-chips';
 import type { StoredListId } from '../shared/learned-lists';
 import { chosenLabels, memberLabel, readShownList, scrolls } from './widgets/options';
 
@@ -191,26 +195,40 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
   const excluded = adapterParts(adapter?.excluded, root);
   const outside = (el: Element) => excluded.some((part) => holdsComposed(part, el));
   const extraRoots = adapterParts(adapter?.widgetRoots, root).filter((el) => !outside(el));
-  // The native controls a widget the adapter declares on one of its roots names as its own (WidgetDecl.parts).
-  const absorbed = new Set<Element>();
-  for (const el of extraRoots) {
-    for (const part of adapter?.widgetFor?.(el)?.parts ?? []) {
-      if (part !== el && holdsComposed(el, part) && part.matches(CONTROL_SELECTOR)) absorbed.add(part);
-    }
-  }
   // v5 p2-fill: the résumé controls that open the site's own file picker, as its adapter declares them.
   const pickers = new Set(adapterParts(adapter?.uploadPickers, root).filter((el) => !outside(el)));
   const collected = collectFields(root);
   const all = extraRoots.length === 0 && pickers.size === 0 ? collected
     : inDocumentOrder([...collected, ...extraRoots, ...pickers]);
-  const found = excluded.length === 0 && absorbed.size === 0 ? all : all.filter((el) => {
+  // jr6 ENGINE E1 (FIXPLAN §6.2 items 2 and 4): every declaration read once, before any control is judged, so what a
+  // declaration names as its widget's own is known wherever it stands in the page (declarationsOf):
+  // - the native controls it names as its parts (WidgetDecl.parts: the Yes/No's display:none checkbox; ADP's lists'
+  //   filter box in its shadow tree), inside its element across shadow roots, never fields, counted among the hidden
+  //   controls the scan ignored, as before for a widget root's;
+  // - the text box it declares (WidgetDecl.input), beside its element (iCIMS's search box, "— Type to Search —", in the
+  //   container its anchor opens) or inside it across shadow roots (a host whose box sits in a nested shadow tree, which
+  //   no light-DOM rule makes its part): the widget's part, never a field nor a control the scan counts.
+  const declarations = declarationsOf(all, adapter, pickers);
+  const absorbed = new Set<Element>();
+  const boxes = new Set<Element>();
+  for (const [el, declared] of declarations) {
+    if (declared === null || outside(el)) continue;
+    for (const part of declared.parts ?? []) {
+      if (part !== el && holdsComposed(el, part) && part.matches(CONTROL_SELECTOR)) absorbed.add(part);
+    }
+    const box = declaredBox(el, declared);
+    if (box !== null && box !== el) boxes.add(box);
+  }
+  const found = excluded.length === 0 && absorbed.size === 0 && boxes.size === 0 ? all : all.filter((el) => {
+    if (boxes.has(el)) return false;
     if (!outside(el) && !absorbed.has(el)) return true;
     // A control the adapter keeps out of the fields is still one the scan ignored.
     if (el.matches(CONTROL_SELECTOR) && kindOf(el).field) counters.hiddenControlsIgnored += 1;
     return false;
   });
-  // Every combobox's list, so a listbox that is one is not taken for a field of its own.
-  const lists = new Set(found.filter((el) => roleOf(el) === 'combobox').map((el) => listOf(el))
+  // Every combobox's list, so a listbox that is one is not taken for a field of its own (jr6 ENGINE E1: a declared box's
+  // too, though the box itself is no field).
+  const lists = new Set([...found, ...boxes].filter((el) => roleOf(el) === 'combobox').map((el) => listOf(el))
     .filter((list): list is Element => list !== null));
   for (const el of found) {
     // v5 p2-fill: a declared picker control a person can see is a file field; one they cannot is none.
@@ -238,8 +256,10 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       continue;
     }
     // A widget the adapter declares for this control (Lever's location search on its text input) is reported as that
-    // widget, never as the native control it is built on; else an ARIA widget, by its role (widgets/aria.ts).
-    const declared = adapter?.widgetFor?.(el) ?? null;
+    // widget, never as the native control it is built on; else an ARIA widget, by its role (widgets/aria.ts). jr6
+    // ENGINE E1: as the declarations read before the loop found it (declarationsOf).
+    const cached = declarations.get(el);
+    const declared = cached !== undefined ? cached : adapter?.widgetFor?.(el) ?? null;
     const aria = declared !== null ? null : !native || (kind.field && kind.kind === 'combobox')
       ? ariaWidgetKind(el, lists) : null;
     // s2 wd: a date drawn in parts its adapter declares (Adapter.dateFor: Workday's dateInputWrapper), one field of kind
@@ -318,7 +338,9 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     const base = baseKey(parts);
     const learned = scanned.widget !== null && options.learnedLists !== undefined && learnable(scanned.widget)
       ? options.learnedLists.get(learnedListKey(slugs[i]!, scanned.widget.learnContext)) : undefined;
-    const draft = scanned.widget === null ? scanned : withReading(scanned, base, options.widgetReadings, learned);
+    // jr6 ENGINE E3: a box of several answers is no list: nothing the run read of a list is its.
+    const draft = scanned.widget === null || scanned.widget.tags !== undefined ? scanned
+      : withReading(scanned, base, options.widgetReadings, learned);
     const optionSetHash = draft.options === null ? OPTION_SET_NONE : draft.options === 'lazy' ? OPTION_SET_LAZY
       : draft.kind === 'typeahead-remote' && draft.options.length === 0 ? OPTION_SET_NONE
         : hashOfOptions(draft.options.map((option) => option.label));
@@ -641,7 +663,9 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
       || (parts.length > 0 && parts.every(isRequired)),
     disabled: isDisabled(control) || (parts.length > 0 && parts.every(isDisabled)),
     readOnly: isReadOnly(control) || (parts.length > 0 && parts.every(isReadOnly)),
-    camouflaged: first.visibility === 'visible' && isControlCamouflaged(control, placeholder !== null, cache),
+    // jr6 ENGINE E2 (FIXPLAN §6.2 item 7, O4): the adapter's declared box (Adapter.controlBox) may draw it.
+    camouflaged: first.visibility === 'visible'
+      && isControlCamouflaged(control, placeholder !== null, cache, ctx.adapter),
     nameAttr: attribute(control, 'name'), idAttr: attribute(control, 'id'),
     autocomplete: autocompleteTokens(control).slice(0, MAX_AUTOCOMPLETE_TOKENS)
       .map((token) => capCodePoints(token, TEXT_CAP_AUTOCOMPLETE_TOKEN)),
@@ -672,11 +696,55 @@ function datePartsOf(el: Element, adapter: Adapter | null): DatePartsTarget | nu
 
 // ── Widgets (Phase 4) ────────────────────────────────────────────────────────────────────────────────────────────
 
+/** jr6 ENGINE E1: the adapter's widget declaration of each element the scan's loop asks about (a native control that can
+ *  be a field and is no widget's part nor a CAPTCHA's response field, or any other collected element; never a picker
+ *  control), read once before the loop (scan: what a declaration names as its own must be known wherever it stands).
+ *  Empty when the adapter declares no widgets. */
+function declarationsOf(all: readonly Element[], adapter: Adapter | null, pickers: ReadonlySet<Element>):
+  Map<Element, WidgetDecl | null> {
+  const declarations = new Map<Element, WidgetDecl | null>();
+  if (adapter?.widgetFor === undefined) return declarations;
+  for (const el of all) {
+    if (pickers.has(el)) continue;
+    if (el.matches(CONTROL_SELECTOR) && (isWidgetPart(el) || isCaptchaResponseField(el) || !kindOf(el).field)) continue;
+    declarations.set(el, adapter.widgetFor(el) ?? null);
+  }
+  return declarations;
+}
+
+/** jr6 ENGINE E1 (FIXPLAN §6.2 item 2): the text box a declaration names as its widget's own (WidgetDecl.input: iCIMS's
+ *  search box beside its anchor), when it is one: a text input in the page, not the extension's own; else null. */
+function declaredBox(el: Element, declared: WidgetDecl): HTMLInputElement | null {
+  const box = declared.input;
+  if (box === undefined || box === null || box.localName !== 'input' || !isTextLike(box)) return null;
+  if (!box.isConnected || box.ownerDocument !== el.ownerDocument || isInOwnUi(box)) return null;
+  return box;
+}
+
+/** jr6 ENGINE E1 (FIXPLAN §6.2 item 3, SR-1): the whole list a page publishes for its widget (WidgetDecl.knownOptions), as
+ *  its field's options: page text, untrusted as every option label is, each cut to TEXT_CAP_LABEL and the list to
+ *  MAX_WIDGET_OPTIONS; empty labels dropped. Undefined when it gives none. */
+function pageList(declared: WidgetDecl | null): readonly string[] | undefined {
+  const given = declared?.knownOptions;
+  if (given === undefined || !Array.isArray(given)) return undefined;
+  const labels = given.filter((label): label is string => typeof label === 'string')
+    .map((label) => capCodePoints(label.replace(/\s+/g, ' ').trim(), TEXT_CAP_LABEL)).filter((label) => label !== '')
+    .slice(0, MAX_WIDGET_OPTIONS);
+  return labels.length > 0 ? labels : undefined;
+}
+
 /** A widget's parts as this scan finds them: by ARIA, or as the adapter declared them. */
 function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
   storedLists?: ReadonlyMap<StoredListId, readonly string[]>): WidgetTarget {
-  const stored = declared?.storedList === undefined || kind !== 'combobox' ? undefined
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 3): the list the page publishes (WidgetDecl.knownOptions) is the field's reading at
+  // scan time, before a stored list (the page's own word, given again on every run; ENGINE E0's handoff suggestion); a
+  // combobox's or a multiselect's. A stored list is a combobox's only, as before.
+  const page = kind === 'combobox' || kind === 'multiselect' ? pageList(declared) : undefined;
+  const stored = page !== undefined || declared?.storedList === undefined || kind !== 'combobox' ? undefined
     : storedLists?.get(declared.storedList);
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 2): the text box its adapter declares (WidgetDecl.input), beside its element or in
+  // it; else ARIA's (editableOf).
+  const box = declared === null ? null : declaredBox(el, declared);
   // A group: an ARIA radio group or Yes/No group, or a 'radio' its adapter declares with its members, each inside its
   // element and none the extension's own. Inside counts across open shadow roots (core pass Z2 of 2026-11-06: ADP's
   // referral radios, sdf-radio-button[role=radio] in each wfn-radio-button's shadow root, fixtures/adp/questions.html;
@@ -685,7 +753,7 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
   const members = declared?.members === undefined ? membersOf(el)
     : declared.members.filter((member) => member !== el && holdsComposed(el, member) && !isInOwnUi(member));
   return {
-    kind, element: el, input: group ? null : editableOf(el),
+    kind, element: el, input: group ? null : box ?? editableOf(el),
     opener: group || roleOf(el) === 'listbox' ? null : declared?.opener ?? (el as HTMLElement),
     members: group ? [...members] : [], activation: declared?.activation ?? [],
     declared: declared !== null,
@@ -699,15 +767,24 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
       ...(declared.optionLabel ? { optionLabel: declared.optionLabel } : {}),
       ...(declared.emptyAfterMs !== undefined ? { emptyAfterMs: declared.emptyAfterMs } : {}),
       ...(declared.highlightIsNoChoice === true ? { highlightIsNoChoice: true } : {}),
-      // v4 (drop): a results list no ARIA names, and the key that starts a search.
+      // v4 (drop): a results list no ARIA names, and the key that starts a search. jr6 ENGINE E1: with its declared rows
+      // (WidgetResults.options) and the element a choice presses (WidgetResults.pressTarget).
       ...(declared.results !== undefined ? { results: declared.results } : {}),
       ...(declared.queryKey !== undefined ? { queryKey: declared.queryKey } : {}),
+      // jr6 ENGINE E1 (FIXPLAN §6.2 items 3 and 5): the page's shortest query, and a search whose typed text stands.
+      ...(Number.isInteger(declared.minQueryLength) && declared.minQueryLength! > 0
+        ? { minQueryLength: declared.minQueryLength! } : {}),
+      ...(declared.freeText === true && kind === 'typeahead-remote' ? { freeText: true as const } : {}),
       // s2 lists: a list its adapter stored (a combobox's only), and a list drawn whole.
       // s2 lists: the stored list its adapter names (a combobox's only), when the worker served it.
       ...(declared.storedList !== undefined && kind === 'combobox' ? { storedList: declared.storedList } : {}),
       ...(declared.learnContext !== undefined ? { learnContext: declared.learnContext } : {}),
-      ...(stored !== undefined && stored.length > 0 ? { knownOptions: stored, knownFrom: 'adapter' as const } : {}),
-      ...(declared.drawnWhole === true ? { drawnWhole: true as const } : {}) }),
+      ...(page !== undefined ? { knownOptions: page, knownFrom: 'page' as const }
+        : stored !== undefined && stored.length > 0 ? { knownOptions: stored, knownFrom: 'adapter' as const } : {}),
+      ...(declared.drawnWhole === true ? { drawnWhole: true as const } : {}),
+      // jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers (WidgetDecl.tags), a text box's.
+      ...(kind !== 'radio' && kind !== 'checkbox' && declaredTags(declared.tags) !== undefined
+        ? { tags: declaredTags(declared.tags)! } : {}) }),
   };
 }
 
@@ -759,8 +836,16 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
   sections: ReturnType<typeof sectionFinder>): Draft {
   const el = widget.element;
   const groupLike = widget.kind === 'radio' && widget.members.length > 0;
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers its adapter declares (WidgetDecl.tags)
+  // is one field of kind 'text', holding what its text box holds (widgets/tag-chips.ts), with no options: the planner
+  // gives it the person's values joined (core/resolver/values.ts manyValues), and the tags filler adds each.
+  const tagged = widget.tags !== undefined;
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 2): the field's text box, where it is the widget's own (inside its element, an
+  // ARIA 1.1 combobox's): a box its adapter declares beside the element (WidgetDecl.input: iCIMS's search box, labelled
+  // "— Type to Search —") names, requires, disables and names nothing of the field, which is the element's.
+  const own = widget.input !== null && holdsComposed(el, widget.input) ? widget.input : null;
   let label = groupLike ? labelOfGroup([], el, ctx) : labelOfControl(el, ctx);
-  if (label.source === 'none' && widget.input !== null && widget.input !== el) label = labelOfControl(widget.input, ctx);
+  if (label.source === 'none' && own !== null && own !== el) label = labelOfControl(own, ctx);
   let options: Option[] | 'lazy' = 'lazy';
   let partial = false;
   let members = widget.members;
@@ -770,33 +855,35 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
     members = shown.map((item) => item.member);
     options = shown.map((item, index) => optionOf(index, item.text, '', isUnavailable(item.member),
       isChosen(item.member)));
-  } else if (widget.kind !== 'typeahead-remote' && widget.kind !== 'checkbox') {
+  } else if (!tagged && widget.kind !== 'typeahead-remote' && widget.kind !== 'checkbox') {
     // A list shown whole is read as it is, exactly as a whole read takes it (readShownList: the Phase 4 review, R2);
-    // one that scrolls (perhaps drawn a part at a time) waits to be read whole.
-    const list = listOf(el, widget.input);
+    // one that scrolls (perhaps drawn a part at a time) waits to be read whole. jr6 ENGINE E1 (FIXPLAN §6.2 item 1): a
+    // list its adapter declares is read there by its declared rows, as a whole read takes it.
+    const list = widget.results !== undefined ? widgetListOf(widget) : listOf(el, widget.input);
     if (list !== null && isUserVisible(list, cache) && !scrolls(list)) {
-      const shown = readShownList(list, cache, widget.optionLabel);
+      const shown = readShownList(list, cache, widget.optionLabel, widget.results);
       if (shown.options.length > 0) {
         options = shown.options.map((option, index) => optionOf(index, option.label, '', option.disabled, false));
         partial = !shown.complete;
       }
     }
   }
-  const required = label.required || isRequired(el) || (widget.input !== null && isRequired(widget.input))
+  const required = label.required || isRequired(el) || (own !== null && isRequired(own))
     || adapterRequires(el, ctx.adapter);
   return {
-    kind: widget.kind, control: el, members: [], selectOptions: [], container: null, label, options, selectable: [],
+    kind: tagged ? 'text' : widget.kind, control: el, members: [], selectOptions: [], container: null, label,
+    options: tagged ? null : options, selectable: [],
     section: sections.sectionOf(el, label.element), description: descriptionOf(el, ctx), constraints: {},
     visibility: first.visibility, proxy: null, required,
-    disabled: groupLike ? members.every(isUnavailable) : isDisabled(el) || (widget.input !== null && isDisabled(widget.input)),
+    disabled: groupLike ? members.every(isUnavailable) : isDisabled(el) || (own !== null && isDisabled(own)),
     // A text box its adapter declares read-only by design (WidgetDecl.readOnlyBox: a select-only dropdown) is read-only
     // only by its aria-readonly; any other widget by the scanner's rule.
-    readOnly: widget.readOnlyBox === true ? [el, widget.input].some((part) => part !== null && ariaReadOnly(part))
-      : isReadOnly(el) || (widget.input !== null && isReadOnly(widget.input)),
+    readOnly: widget.readOnlyBox === true ? [el, own].some((part) => part !== null && ariaReadOnly(part))
+      : isReadOnly(el) || (own !== null && isReadOnly(own)),
     // A widget's text box is drawn inside the widget's own box, so it is not judged on its own.
     camouflaged: false,
-    nameAttr: attribute(widget.input ?? el, 'name'), idAttr: attribute(el, 'id'),
-    autocomplete: widget.input === null ? [] : autocompleteTokens(widget.input).slice(0, MAX_AUTOCOMPLETE_TOKENS)
+    nameAttr: attribute(own ?? el, 'name'), idAttr: attribute(el, 'id'),
+    autocomplete: own === null ? [] : autocompleteTokens(own).slice(0, MAX_AUTOCOMPLETE_TOKENS)
       .map((token) => capCodePoints(token, TEXT_CAP_AUTOCOMPLETE_TOKEN)),
     widget: members === widget.members ? widget : { ...widget, members },
     ...(partial ? { optionsPartial: true as const } : {}),
@@ -814,7 +901,7 @@ function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetR
   const stored = draft.widget!;
   if (stored.kind === 'radio' || stored.kind === 'checkbox') return draft;
   // The stored list is the field's only while nothing the run read, or the page shows now, replaces it.
-  const { knownOptions: known, knownFrom: _from, ...plain } = stored;
+  const { knownOptions: known, knownFrom: from, ...plain } = stored;
   const widget: WidgetTarget = plain;
   const reading = readings?.get(base);
   if (reading?.kind === 'remote') {
@@ -836,17 +923,21 @@ function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetR
   }
   if (reading === undefined) {
     const list = known ?? learned;
-    if (list === undefined || list.length === 0 || widget.kind !== 'combobox') return { ...draft, widget };
+    // jr6 ENGINE E1: a list the page publishes (WidgetDecl.knownOptions) is a multiselect's reading too.
+    const kinds = known !== undefined && from === 'page' ? ['combobox', 'multiselect'] : ['combobox'];
+    if (list === undefined || list.length === 0 || !kinds.includes(widget.kind)) return { ...draft, widget };
     // s2 lists: the stored list, whole, in its order; a placeholder ("Select One") is no option to choose.
     const { optionsPartial: _, ...whole } = draft;
     return { ...whole, options: list.map((label, index) => optionOf(index, label, '', !isUsableOption(label), false)),
-      widget: { ...widget, knownOptions: list, knownFrom: known !== undefined ? 'adapter' : 'learned' } };
+      widget: { ...widget, knownOptions: list, knownFrom: known !== undefined ? from ?? 'adapter' : 'learned' } };
   }
   return read(reading, widget.kind === 'combobox' && reading.multiselectable ? 'multiselect' : widget.kind);
 }
 
 /** What a widget field holds now (widgets/options.ts), its options marked chosen accordingly. */
 function widgetCurrent(draft: Draft, cache: ScanCache): CurrentValue {
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers holds what its text box holds.
+  if (draft.widget!.tags !== undefined) return tagsBoxValue(draft.widget!);
   const known = Array.isArray(draft.options) ? draft.options.map((option) => option.label) : [];
   const chosen = chosenLabels(draft.widget!, known, cache);
   if (Array.isArray(draft.options)) {
@@ -940,10 +1031,17 @@ function adapterRequires(el: Element, adapter: Adapter | null): boolean {
 /** A text control's constraints with the layout its adapter reads (formatFor), where neither its type nor a visible
  *  placeholder gave one: a format the control's own type gives, or a placeholder's pattern, stands. A format its
  *  inputmode alone gave is the keyboard a phone shows, not a layout: the adapter's declared format takes its place
- *  (Workable's date masks say inputmode="tel" over "MM/DD/YYYY"), its placeholder's pattern still standing. */
+ *  (Workable's date masks say inputmode="tel" over "MM/DD/YYYY"), its placeholder's pattern still standing. jr6 ENGINE
+ *  E3 (the ULTIPRO package's U-16): a format its type alone gave, with no pattern from the page, takes the pattern its
+ *  adapter declares for that same format (UltiPro's type="tel" phones, a ten-digit national number); a declared other
+ *  format, or one with no pattern, leaves it as it is. */
 function withAdapterFormat(constraints: Constraints, control: Element, adapter: Adapter | null): Constraints {
   const keyboardOnly = typeFormatOf(control) === undefined && inputModeFormatOf(control) !== undefined;
-  if (!keyboardOnly && (constraints.format !== undefined || constraints.pattern !== undefined)) return constraints;
+  // jr6 ENGINE (ULTIPRO U-16): a format its type alone gave takes the adapter's pattern for that same format.
+  const typeOnly = constraints.pattern === undefined && constraints.format !== undefined
+    && typeFormatOf(control) === constraints.format;
+  if (!keyboardOnly && !typeOnly // jr6 ENGINE
+    && (constraints.format !== undefined || constraints.pattern !== undefined)) return constraints;
   let declared: ReturnType<NonNullable<Adapter['formatFor']>> | undefined;
   try {
     declared = adapter?.formatFor?.(control);
@@ -951,6 +1049,8 @@ function withAdapterFormat(constraints: Constraints, control: Element, adapter: 
     declared = null;
   }
   if (declared === null || declared === undefined) return constraints;
+  // jr6 ENGINE (ULTIPRO U-16): only the same format, and only a pattern.
+  if (typeOnly && (declared.format !== constraints.format || declared.pattern === undefined)) return constraints;
   const pattern = constraints.pattern ?? declared.pattern;
   return { ...constraints, format: declared.format,
     ...(pattern !== undefined ? { pattern: capCodePoints(pattern, TEXT_CAP_PATTERN) } : {}) };

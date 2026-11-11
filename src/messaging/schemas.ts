@@ -14,7 +14,7 @@ import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_
   PLATFORMS } from '../core/enums';
 import { MAX_REVEAL_EDGES } from '../core/loop/bookkeeping';
 import { MAX_SEARCH_QUERIES } from '../core/matcher/searchLimits';
-import { SHOWN_CATEGORIES } from '../core/steps/blocks';
+import { SHOWN_CATEGORIES } from '../core/steps/shown-categories'; // jr6 ENGINE: keeps the resolver out of the sidebar
 import { REASON_CODES } from '../core/types/fill';
 import { ANSWER_BASES, FILE_REFS, RULE_IDS } from '../core/types/intent';
 import { MATCH_FLAGS, MATCH_RULES } from '../core/types/match';
