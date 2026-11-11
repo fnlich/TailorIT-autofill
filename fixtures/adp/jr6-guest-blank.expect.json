@@ -1,0 +1,29 @@
+{
+  "fixture": "adp/jr6-guest-blank",
+  "source": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001",
+  "captured": "2026-11-11T03:42:18.000Z",
+  "note": "The guest identity page drawn in place after the consent (snapshot6 adp1): the guest state, its Continue the sign-in container's button.",
+  "hooks": {
+    "detect": "div.guest-login-container",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "sdf-button#recruitment_login_signInWithLinkedIn",
+      "sdf-button#recruitment_login_signInWithGoogle",
+      "sdf-button#recruitment_login_signInWithFaceBook",
+      "sdf-button#recruitment_header_joinTalentCommunity",
+      "sfc-shell-left-nav-flat#recruitmentLeftNav",
+      "sdf-button#ot-sdk-btn",
+      "button#accept-recommended-btn-handler",
+      "button.save-preference-btn-handler",
+      "section#ot-fltr-modal",
+      "button#filter-apply-handler"
+    ],
+    "pressable": [
+      "sdf-button#recruitment_login_recaptcha"
+    ]
+  }
+}
