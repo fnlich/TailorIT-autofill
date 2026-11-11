@@ -643,6 +643,17 @@ describe('24 (U-09, ADP-17): an EEO decline box beside its list', () => {
     const adp = planOf(inOrder([race, adpBox]));
     expect(fieldOf(adp, adpBox)).toMatchObject({ write: undefined, row: { status: 'skipped' } });
   });
+
+  // jr6 fix (RULES-R65-R24): ADP's self-ID lists are lazy (fixtures/adp/self-id, jr6-self-id-blank, -filled). A
+  // waiting-for-options row on the box was read by the loop's books as a list waiting for its own options, which a box
+  // never gets: it ended options-never-loaded, for the person, while the lists took their own decline.
+  it('is left unticked, nobody’s to answer, while its lists are unread', () => {
+    const lazyRace = specOf('Race', 'select', { options: 'lazy', section: { id: 'self-id' } });
+    const adpBox = specOf('I decline to identify my race and ethnicity', 'checkbox', { section: { id: 'self-id' } });
+    const out = planOf(inOrder([lazyRace, adpBox]));
+    expect(fieldOf(out, adpBox)).toMatchObject({ write: undefined, row: { status: 'skipped',
+      reason: 'conditional-question', needsUserAction: false } });
+  });
 });
 
 describe('25 (JV-5): a checklist of qualifications', () => {
