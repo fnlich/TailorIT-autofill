@@ -28,7 +28,10 @@
  *    (docs/SPEC-AMENDMENTS.md §12): a combobox its adapter declares for the page-world bridge has its option chosen
  *    by its own React code before either (dom/widgets' chooseThroughBridge: the write's one command), and the search
  *    and the events follow only when nothing the frame can see changed; after a choice the bridge said it made, the
- *    list is not searched, and the events' path never ends as "nothing written";
+ *    list is not searched, and the events' path never ends as "nothing written". jr6 ENGINE E3 (FIXPLAN §6.2 item 13):
+ *    a box of several answers its adapter declares (WidgetDecl.tags) takes its planned text value by value, each
+ *    missing from its chips a guarded write of its own (writeTags, dom/widgets' fillTags), and is read back by its
+ *    chips;
  * 5. the planner's row is settled from what happened (settleRow).
  * The person's Skip of the write (v3 Phase 3: PassEnv.runSignal) ends its waits. A write that has not touched the page
  * yet throws RunAborted, and the loop flags the field skipped-by-you; once the page was touched (a file put into its
@@ -54,19 +57,27 @@ import { NO_MATCH_OTHER_QUERY } from '../core/matcher/searchLimits';
 import { accepts, acceptTokens, fill } from '../dom/fillers';
 import { fillDateParts } from '../dom/fillers/date-parts';
 import { mismatch } from '../dom/fillers/outcome';
-import { awaitUpload, uploadStateOf } from '../dom/fillers/upload';
+import { awaitUpload, revealUpload, uploadStateOf } from '../dom/fillers/upload';
 import { selectEditable } from '../dom/fillers/text';
 import { isEditingHost } from '../dom/kinds';
 import type { HeldDialogs } from '../dom/patch-protocol';
 import { withDialogsHeld, withDialogsHeldWhile } from '../dom/fillers/dialogs';
 import { fillThroughPicker, type PickerResult } from '../dom/fillers/picker';
 import { awaitResumeParse } from '../dom/resume-parse';
+import { isOptionList, optionsState } from '../dom/await-options';
+import { holdsComposed } from '../dom/composed';
+import { windowOf } from '../dom/fillers/events';
+import { quietWait } from '../dom/settle';
+import { widgetListOf } from '../dom/widgets/aria';
+import { widgetBusy } from '../dom/widgets/options';
 import { log } from '../shared/log';
 import { sameOptionLabel } from '../dom/fillers/verify';
 import { domGuardBeforeWrite, type PlannedField } from '../dom/guard';
 import { hashOfOptions } from '../dom/option-hash';
 import { toFieldSpec } from '../dom/scan';
-import { SEARCH_FIELD_BUDGET_MS, TEXT_CAP_LABEL } from '../dom/thresholds';
+import {
+  DEPENDENT_QUIET_MS, DEPENDENT_WAIT_CAP_MS, SEARCH_FIELD_BUDGET_MS, TEXT_CAP_LABEL,
+} from '../dom/thresholds';
 import { monotonicNow } from '../dom/time';
 import type {
   FieldTarget, FillOutcome as DomFillOutcome, ReadBackRule, ScannedField, ScanResult, WidgetOptionRead, WidgetReading,
@@ -74,9 +85,9 @@ import type {
 import { readBackTextOf } from '../dom/values';
 import { visiblePlaceholder } from '../dom/visible-text';
 import {
-  awaitPageReady, chooseThroughBridge, fillWidget, isActionable, searchesList, searchForOption, searchTypeahead,
-  widgetHolds,
-  type BridgeRun, type LearnList, type TypeaheadHooks, type TypeaheadResult, type WidgetFillContext,
+  awaitPageReady, chooseThroughBridge, fillTags, fillWidget, isActionable, searchesList, searchForOption,
+  searchTypeahead, widgetHolds,
+  type BridgeRun, type LearnList, type TagsHooks, type TypeaheadHooks, type TypeaheadResult, type WidgetFillContext,
   type WidgetReadiness,
 } from '../dom/widgets';
 import type { ContentPlatform } from '../platform/types';
@@ -219,7 +230,9 @@ function frameGuardRefusal(reason: ReasonCode): FillOutcome {
 }
 /** Mismatch reasons a row keeps instead of settleRow's verify-mismatch. */
 const MISMATCH_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['verify-mismatch', 'unexpected-selection',
-  'value-rejected-by-site', 'disabled-or-readonly', 'upload-failed', 'upload-not-confirmed']);
+  'value-rejected-by-site', 'disabled-or-readonly', 'upload-failed', 'upload-not-confirmed',
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers that took its cap of chips before every value.
+  'max-selections-reached']);
 
 /** `work`'s answer, or null as soon as `signal` aborts (the answer, when it comes, is unused). */
 function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T | null> {
@@ -321,12 +334,140 @@ export function plannedFieldOf(field: ScannedField): PlannedField {
   return { key: field.key, baseKey: field.baseKey, label: field.label, kind: field.kind };
 }
 
+// ── jr6 ENGINE E3 (FIXPLAN §6.2 item 14: ICIMS-02, O3, ICIMS-19, ADP-2): a write that resets other fields ──
+
+/** The field of a scan that `el` is: its control, its widget's element, text box or opener, its proxy or a member;
+ *  else the first field whose own elements hold it; null for none. */
+function fieldOwning(scanned: ScanResult, el: Element): ScannedField | null {
+  let holding: ScannedField | null = null;
+  for (const field of scanned.fields) {
+    const target = scanned.target(field.key);
+    if (target === null) continue;
+    const own = [target.control, target.widget?.element, target.widget?.input, target.widget?.opener, target.proxy,
+      ...target.members].filter((part): part is Element => part !== null && part !== undefined);
+    if (own.includes(el)) return field;
+    if (holding === null && own.some((part) => holdsComposed(part, el))) holding = field;
+  }
+  return holding;
+}
+
+/**
+ * Each field of a scan whose adapter names another field's control as the one whose write resets it
+ * (Adapter.dependsOn: iCIMS's State under its Country and "Please specify" under its source list, ADP's State under
+ * Country, Oracle's address block), child to parent by base key. A hook that throws, or names no field of the scan or
+ * the field itself, names none. Keys only.
+ */
+export function dependenciesOf(scanned: ScanResult, adapter: Adapter): Map<BaseKey, BaseKey> {
+  const parents = new Map<BaseKey, BaseKey>();
+  if (adapter.dependsOn === undefined) return parents;
+  for (const field of scanned.fields) {
+    const target = scanned.target(field.key);
+    if (target === null) continue;
+    let named: Element | null = null;
+    try {
+      named = adapter.dependsOn(target.control) ?? null;
+    } catch {
+      named = null;
+    }
+    const parent = named === null ? null : fieldOwning(scanned, named);
+    if (parent !== null && parent.baseKey !== field.baseKey) parents.set(field.baseKey, parent.baseKey);
+  }
+  return parents;
+}
+
+/**
+ * A pass's writes with each parent before the fields it resets (dependenciesOf): a dependent the queue holds before its
+ * parent is written right after it (its own dependents after it in turn); every other write keeps its place. Writes on
+ * a cycle keep their order. Jobright writes the country first and reads its dependents again after it
+ * (~contents/sites/icims fillCountry, ~contents/sites/adp-workforcenow runPreFillForm, Oracle's
+ * prefillCountryBeforeRules).
+ */
+export function parentsFirst<T extends { write: PlannedWrite }>(queue: readonly T[], scanned: ScanResult,
+  adapter: Adapter): T[] {
+  const parents = dependenciesOf(scanned, adapter);
+  if (parents.size === 0 || queue.length < 2) return [...queue];
+  const baseOf = (entry: T): BaseKey | undefined => scanned.fields.find((field) => field.key === entry.write.key)?.baseKey;
+  const queued = new Set(queue.map(baseOf).filter((base): base is BaseKey => base !== undefined));
+  const out: T[] = [];
+  const placed = new Set<BaseKey>();
+  const waiting = new Map<BaseKey, T[]>();
+  const place = (entry: T): void => {
+    out.push(entry);
+    const base = baseOf(entry);
+    if (base === undefined) return;
+    placed.add(base);
+    const children = waiting.get(base) ?? [];
+    waiting.delete(base);
+    for (const child of children) place(child);
+  };
+  for (const entry of queue) {
+    const base = baseOf(entry);
+    const parent = base === undefined ? undefined : parents.get(base);
+    if (parent !== undefined && queued.has(parent) && !placed.has(parent)) {
+      waiting.set(parent, [...(waiting.get(parent) ?? []), entry]);
+      continue;
+    }
+    place(entry);
+  }
+  // A cycle leaves its writes waiting: they keep their order.
+  for (const entry of queue) if (!out.includes(entry)) out.push(entry);
+  return out;
+}
+
+/** Whether a dependent shows its page still loading it: a widget's own busy signs (its declared ones beside its list
+ *  included), or a native list's busy sign or loading option (awaitOptions' optionsState). */
+function dependentBusy(target: FieldTarget): boolean {
+  if (target.widget !== undefined) return widgetBusy(target.widget, widgetListOf(target.widget));
+  if (!isOptionList(target.control)) return false;
+  const state = optionsState(target.control, null);
+  return !state.ready && (state.waiting === 'busy' || state.waiting === 'loading');
+}
+
+/**
+ * After the write of a field others depend on (dependenciesOf): the page's answer awaited before the next write, so a
+ * dependent is written into the list its parent's value brings, never into the old one the page is about to replace:
+ * quiet windows of DEPENDENT_QUIET_MS on the form root until no dependent shows a busy sign, at most
+ * DEPENDENT_WAIT_CAP_MS (Jobright waits up to 8 s for iCIMS's State list to settle, ~contents/sites/icims
+ * waitForIcimsStateProvinceOptionsRefresh, and for Oracle's own address fill). Each window's end finds the dependents
+ * again on a fresh scan (the page may draw them anew: ADP's State, a text box that becomes a list). The person's Skip
+ * and the run's end cut it short: the parent's write stands. Nothing is read of any value.
+ */
+async function awaitDependents(env: PassEnv, last: ScanResult, parent: BaseKey): Promise<void> {
+  if (env.adapter.dependsOn === undefined || env.signal.aborted) return;
+  const children = (scanned: ScanResult) => [...dependenciesOf(scanned, env.adapter)]
+    .filter(([, of]) => of === parent).map(([child]) => child);
+  if (children(last.rescan()).length === 0) return;
+  const busy = (): boolean => {
+    const now = last.rescan();
+    return children(now).some((child) => {
+      const field = now.fields.find((candidate) => candidate.baseKey === child);
+      const target = field === undefined ? null : now.target(field.key);
+      return target !== null && dependentBusy(target);
+    });
+  };
+  const wait = quietWait<boolean>({ view: windowOf(env.root), quietMs: DEPENDENT_QUIET_MS, capMs: DEPENDENT_WAIT_CAP_MS,
+    signal: env.signal, aborted: false, atQuiet: () => (busy() ? null : true), atCap: () => false });
+  wait.observe(env.root);
+  await wait.done;
+}
+
+// ── end jr6 ENGINE E3 (item 14) ──
+
 /**
  * Writes one planned value through both Guards: the row it ends with, and what was written. `last` is any earlier scan
  * of the form root (the guard scans afresh from it), `field` the field as the plan saw it, and `held` the run's
- * heldPlaceholders, which every scan of the run reads.
+ * heldPlaceholders, which every scan of the run reads. jr6 ENGINE E3 (FIXPLAN §6.2 item 14): a write of a field others
+ * depend on (Adapter.dependsOn) is followed by the page's answer to it (awaitDependents) before the next write.
  */
 export async function writeField(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
+  planned: FillResult, held: WeakMap<Element, string>, options: WriteOptions = {}): Promise<WriteResult> {
+  const result = await writeOnce(env, last, field, write, planned, held, options);
+  if (result.written !== undefined) await awaitDependents(env, last, result.written.field.baseKey);
+  return result;
+}
+
+/** One planned value written through both Guards (writeField, before the wait for what it resets). */
+async function writeOnce(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
   planned: FillResult, held: WeakMap<Element, string>, options: WriteOptions = {}): Promise<WriteResult> {
   const wanted = plannedFieldOf(field);
   // Nothing is written while the page asks for the person (a CAPTCHA, a code or a sign-in anywhere in the document),
@@ -381,6 +522,36 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
     if (!check.ok) {
       resume.release();
       return { row: settleRow(planned, frameGuardRefusal(check.reason)) };
+    }
+    // jr6 ENGINE E2 (FIXPLAN §6.2 item 9, JZ-4): a file input its adapter shows only through a link (JazzHR's "Attach
+    // resume"): the upload filler presses it once and waits for the input to show (dom/fillers/upload.ts revealUpload),
+    // found again by the guard's fresh scan; the field is then checked again as it shows. An input that stays hidden
+    // is the person's (needs-your-click), nothing written.
+    if (verdict.target.picker !== true) {
+      const revealed = await revealUpload(env.adapter, verdict.target.control as HTMLInputElement, () => {
+        const again = domGuardBeforeWrite(last, wanted);
+        return again.ok ? again.target.control as HTMLInputElement : null;
+      }, env.signal);
+      if (revealed.outcome === 'refused' || revealed.outcome === 'revealed') {
+        if (runOver(env) || env.signal.aborted) resume.release();
+        afterWait(env, false);
+      }
+      if (revealed.outcome === 'refused') {
+        resume.release();
+        return { row: settleRow(planned, { kind: 'not-written', reason: 'needs-your-click' }) };
+      }
+      if (revealed.outcome === 'revealed') {
+        verdict = domGuardBeforeWrite(last, wanted);
+        if (!verdict.ok) {
+          resume.release();
+          return { row: settleRow(planned, guardRefusal(field, write, verdict.reason)) };
+        }
+        check = guardWriteInFrame(write, toFieldSpec(verdict.target.field), env.canaries);
+        if (!check.ok) {
+          resume.release();
+          return { row: settleRow(planned, frameGuardRefusal(check.reason)) };
+        }
+      }
     }
   }
 
@@ -505,6 +676,10 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
     ...(widgets.bridge === undefined ? {} : { bridge: widgets.bridge }),
     ...(widgets.learn === undefined ? {} : { learn: widgets.learn }) };
   if (write.value.kind === 'query') return searchField(env, last, field, write, planned, target, widgets, ctx);
+  // jr6 ENGINE E3 (FIXPLAN §6.2 item 13): a box of several answers takes its planned text value by value.
+  if (target.widget?.tags !== undefined && write.value.kind === 'text') {
+    return writeTags(env, last, field, write, planned, target, ctx);
+  }
   const settled = (outcome: DomFillOutcome): WriteResult => {
     const row = rowAfterFill(planned, outcome);
     if (!outcome.wrote) return { row };
@@ -579,6 +754,55 @@ function queryGuard(env: PassEnv, last: ScanResult, wanted: PlannedField, write:
   };
 }
 
+// ── jr6 ENGINE E3 (FIXPLAN §6.2 item 13: U-05, WD-18): a box of several answers ──
+
+/** One value's Guard in a box of several answers (dom/widgets' fillTags): a pause the page shows or the person's Cancel
+ *  refuses it, then the DOM guard finds the field again on a fresh scan, and guardWriteInFrame checks `write` with that
+ *  one value as its text (its origin the write's own). */
+function tagGuard(env: PassEnv, last: ScanResult, wanted: PlannedField, write: PlannedWrite): TagsHooks['guard'] {
+  return async (value) => {
+    if (runOver(env)) throw new RunAborted();
+    if (env.signal.aborted) return { ok: false, reason: 'internal-error', blocked: false };
+    if (env.stopped()) return { ok: false, reason: 'user-stopped', blocked: false };
+    const hold = env.heldBy?.() ?? null;
+    if (hold !== null) return { ok: false, reason: hold, blocked: false };
+    const again = domGuardBeforeWrite(last, wanted);
+    if (!again.ok) return { ok: false, reason: again.reason, blocked: GUARD_BLOCKS.has(again.reason) };
+    const one: PlannedWrite = { ...write, value: { kind: 'text', text: value } };
+    const check = guardWriteInFrame(one, toFieldSpec(again.target.field), env.canaries);
+    if (!check.ok) return { ok: false, reason: check.reason, blocked: !FRAME_GUARD_FLAGS.has(check.reason) };
+    return { ok: true, target: again.target };
+  };
+}
+
+/**
+ * A box of several answers its adapter declares (WidgetDecl.tags: Workday's Skills, UltiPro's review Skills), planned
+ * as the person's values joined with MANY_SEPARATOR: each value missing from its chips added in turn by the tags filler
+ * (dom/widgets' fillTags), each a guarded write of its own (tagGuard), and the field read back by its chips. Nothing
+ * added: the planner's row flagged (blocked where a Guard refused) with why, or already-correct where every value shows
+ * already. Something added: written, verified when every value shows as a chip, else filled with why (at the box's cap,
+ * max-selections-reached). A chip is never removed.
+ */
+async function writeTags(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite, planned: FillResult,
+  target: FieldTarget, ctx: WidgetFillContext): Promise<WriteResult> {
+  if (write.value.kind !== 'text' || !isActionable(target.widget!)) {
+    return { row: settleRow(planned, { kind: 'not-written', reason: 'widget-unsupported' }) };
+  }
+  const wanted = plannedFieldOf(field);
+  const result = await fillTags(target, write.value.text, ctx, { guard: tagGuard(env, last, wanted, write) });
+  afterWait(env, result.added > 0);
+  if (result.added === 0) {
+    if (result.verified) return { row: alreadyCorrectRow(planned) };
+    return { row: settleRow(planned, result.blocked ? { kind: 'blocked', reason: result.reason }
+      : { kind: 'not-written', reason: result.reason }) };
+  }
+  const row = result.verified ? settleRow(planned, { kind: 'verified' }) : mismatchRow(planned, result.reason);
+  const now = last.rescan().target(write.key) ?? target;
+  return { row, written: writtenWidget(wanted, write, planned, target.field, result.verified), readBack: readBack(now) };
+}
+
+// ── end jr6 ENGINE E3 (item 13) ──
+
 // s2 core-wd: the list's own "Other", once three styles found nothing.
 
 /** Why a search ends before its "Other" query: the page did not answer typed text (or a click), the field went or
@@ -591,8 +815,9 @@ const OTHER_QUERY_STOPS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['needs-y
  *  (WriteValue query `other`), no Guard refused anything, it found nothing for a reason no stop names, and the run goes
  *  on. */
 function otherQueryFollows(value: WriteValue, result: TypeaheadResult, env: PassEnv): boolean {
-  return value.kind === 'query' && value.other === true && result.chosen === null && !result.blocked
-    && !OTHER_QUERY_STOPS.has(result.reason) && !env.signal.aborted && !env.stopped() && !runOver(env);
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 5): a free-text search's typed text stood: no "Other" follows it.
+  return value.kind === 'query' && value.other === true && result.chosen === null && result.freeText === undefined
+    && !result.blocked && !OTHER_QUERY_STOPS.has(result.reason) && !env.signal.aborted && !env.stopped() && !runOver(env);
 }
 
 // end s2 core-wd
@@ -690,13 +915,23 @@ async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, 
   if (otherQueryFollows(write.value, result, env) && monotonicNow() - started < SEARCH_FIELD_BUDGET_MS) {
     const again = last.rescan().target(write.key) ?? target;
     const other = await searchTypeahead(again, [NO_MATCH_OTHER_QUERY], ctx, hooksFor(true),
-      SEARCH_FIELD_BUDGET_MS - (monotonicNow() - started));
+      SEARCH_FIELD_BUDGET_MS - (monotonicNow() - started), { freeText: false });
     if (other.chosen !== null || other.blocked) {
       result = other;
       searched = again;
     }
   }
-  afterWait(env, result.chosen !== null);
+  afterWait(env, result.chosen !== null || result.freeText !== undefined);
+  // jr6 ENGINE E1 (FIXPLAN §6.2 item 5, U-04): nothing matched and the typed text stood as the answer of a search its
+  // adapter declares free text (WidgetDecl.freeText: UltiPro's School Name): the planner's row, written, read back now
+  // and after the settle by the box's value (widgetHolds' 'text'), as a text write of that one query is.
+  if (result.chosen === null && result.freeText !== undefined) {
+    const row = result.verified ? settleRow(planned, { kind: 'verified' }) : mismatchRow(planned, 'verify-mismatch');
+    const now = last.rescan().target(write.key) ?? target;
+    // Its origin is the query write's own (the profile's, transform typeahead.query: core/plan/frame.ts).
+    const typed: PlannedWrite = { ...write, value: { kind: 'text', text: result.freeText } };
+    return { row, written: writtenWidget(wanted, typed, planned, target.field, result.verified), readBack: readBack(now) };
+  }
   const picked = chosen as { row: FillResult; write: PlannedWrite } | null;
   if (result.chosen === null || picked === null) {
     return { row: settleRow(planned, result.blocked ? { kind: 'blocked', reason: result.reason }

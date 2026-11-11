@@ -14,10 +14,15 @@
  * is so often an example ("e.g. Jane", "https://") rather than a name, and the visible placeholder is what makes the
  * field fillable (visible true). A placeholder our own write hid counts only while the page still shows the text seen
  * at that write (heldPlaceholder, DOM-7). A trailing required mark ('*', or Lever's heavy asterisk) or "(required)" is
- * cut and sets `required`; "(optional)" is cut.
+ * cut and sets `required`; "(optional)" is cut. jr6 ENGINE E2 (FIXPLAN §6.2 item 11, ADP-5): a label[for] or
+ * aria-labelledby label that ends with a copy of the control's own validation message (its validationmessage or
+ * validation-message attribute, or a widget host's around it: ADP writes "City is required" into City's label after a
+ * refused Next) is read without it (withoutValidation).
  *
  * Groups (radios, checkbox groups) take their question from the container: its aria-labelledby, its legend, the
- * adapter's label, then its aria-label. Each member's own visible label is the option's label.
+ * adapter's label, then its aria-label. Each member's own visible label is the option's label; jr6 ENGINE E2 (FIXPLAN
+ * §6.2 item 8, ICIMS-14): where no label element holds it, the words its adapter reads after it (optionTextFor: iCIMS's
+ * self-identification radios, each followed by its bare words), only while a person can see those words beside it.
  *
  * The adapter's label is the visible text of the element its labelFor names, with the words its labelSuffix adds for a
  * control that shares that element with others (Ashby's month and year lists under one "Start Date"). One inside the
@@ -221,12 +226,12 @@ export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLab
   const ownFor = uploadControlsAmong(explicit, ctx);
   const forLabel = joinedText(explicit.filter((label) => !ownFor.has(label)), ctx);
   const byFor = fromText(forLabel.text, 'for', forLabel.first);
-  if (byFor) return byFor;
+  if (byFor) return withoutValidation(byFor, control); // jr6 ENGINE
   const targets = referenced(control, 'aria-labelledby');
   const ownTargets = uploadControlsAmong(targets, ctx);
   const labelledBy = joinedText(targets.filter((target) => !ownTargets.has(target)), ctx);
   const byLabelledBy = fromText(labelledBy.text, 'aria-labelledby', labelledBy.first);
-  if (byLabelledBy) return byLabelledBy;
+  if (byLabelledBy) return withoutValidation(byLabelledBy, control); // jr6 ENGINE
   const wrap = joinedText(wrapping, ctx, uploadControlsIn(wrapping, ctx));
   const byWrapping = fromText(wrap.text, 'wrapping-label', wrap.first);
   // The adapter's label inside the control's own wrapping label, where the two read differently, is that label's
@@ -264,6 +269,59 @@ export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLab
   }
   return ariaLabel(control, ctx) ?? NONE;
 }
+
+// ── jr6 ENGINE E2 (FIXPLAN §6.2 item 11, ADP-5): a validation message the page writes into a label ──
+/** The attributes a control, or the widget host around it, carries its validation message in (ADP's
+ *  <input validationmessage=" is required"> and <wfn-dropdown-list validation-message=" is required">: the jr6 ADP
+ *  audit's jr6-personal-us-errors, after a refused Next). */
+const VALIDATION_ATTRIBUTES = ['validationmessage', 'validation-message'] as const;
+
+/** How many shadow hosts above a control are read as its widget's hosts. */
+const VALIDATION_HOST_DEPTH = 4;
+
+/** Text as compared for a validation message: runs of white space as one space, trimmed, lower case. */
+const foldedWords = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
+
+/** The validation messages a control carries (VALIDATION_ATTRIBUTES), on itself and on the hosts of the shadow trees it
+ *  sits in (a widget host), each folded; none empty. */
+function validationMessagesOf(control: Element): string[] {
+  const messages = new Set<string>();
+  let at: Element | null = control;
+  for (let depth = 0; at !== null && depth <= VALIDATION_HOST_DEPTH; depth += 1) {
+    for (const name of VALIDATION_ATTRIBUTES) {
+      const message = foldedWords(at.getAttribute(name) ?? '');
+      if (message !== '') messages.add(message);
+    }
+    // A shadow root of the control's own frame (instanceof would read another window's as none).
+    const tree = at.getRootNode();
+    at = tree.nodeType === 11 && 'host' in tree ? (tree as ShadowRoot).host : null;
+  }
+  return [...messages];
+}
+
+/**
+ * The label without a trailing copy of the control's own validation message (validationMessagesOf): ADP rewrites a
+ * label's text to "<label> is required" (class mdf-label-error) while the input carries validationmessage=" is
+ * required", so "City is required" reads "City" again (the jr6 ADP audit's ADP-5; Jobright's ADP answer module strips
+ * the same suffix from its phone labels, normalizeAdpWorkforceNowPhoneLabel). Only a message the control (or its widget
+ * host) carries, only at the end, and only where words are left; a required mark the page draws after it is cut first
+ * (cleanLabel). Any other label is returned as it is.
+ */
+function withoutValidation(label: ResolvedLabel, control: Element): ResolvedLabel {
+  const messages = validationMessagesOf(control);
+  if (messages.length === 0) return label;
+  const cut = (text: string): { text: string; required: boolean } | null => {
+    const words = text.replace(/\s+/g, ' ').trim();
+    const message = messages.find((each) => words.toLowerCase().endsWith(` ${each}`));
+    if (message === undefined) return null;
+    const left = cleanLabel(words.slice(0, words.length - message.length - 1));
+    return left.text === '' ? null : left;
+  };
+  // A label that ends with the message was not cut at TEXT_CAP_LABEL, so it holds no `whole` to cut as well.
+  const shorter = cut(label.text);
+  return shorter === null ? label : { ...label, text: shorter.text, required: label.required || shorter.required };
+}
+// ── end jr6 ENGINE E2 item 11 ──
 
 /** Whether two texts are the same words in the same order, a word and its plural "s" alike (CareerPlug's prompt
  *  "State" for its aria-label "States"), and at least MIN_ARIA_LABEL_CHARS letters or digits in all. */
@@ -323,7 +381,8 @@ export function labelOfGroup(members: readonly HTMLInputElement[], container: El
 }
 
 /** The visible label of one radio or checkbox as an option of its group: its label[for], else its wrapping label, else
- *  the adapter's. '' when it shows none. */
+ *  the adapter's, else (jr6 ENGINE E2) the words its adapter reads after it (adapterOptionText). '' when it shows
+ *  none. */
 export function optionLabelOf(input: HTMLInputElement, ctx: LabelContext): { text: string; element: Element | null } {
   const tied = tiedLabels(input);
   const explicit = explicitLabels(input, tied.explicit, ctx);
@@ -334,8 +393,45 @@ export function optionLabelOf(input: HTMLInputElement, ctx: LabelContext): { tex
     if (text !== '') return { text, element: joined.first };
   }
   const adapter = adapterLabelOf(input, ctx);
-  return adapter ? { text: adapter.text, element: adapter.element } : { text: '', element: null };
+  if (adapter) return { text: adapter.text, element: adapter.element };
+  const words = adapterOptionText(input, ctx); // jr6 ENGINE
+  return { text: words ?? '', element: null };
 }
+
+// ── jr6 ENGINE E2 (FIXPLAN §6.2 item 8, ICIMS-14): an option's words that no label element holds ──
+/** How many ancestors above a radio or checkbox the words its adapter reads for it are looked for in. */
+const OPTION_TEXT_DEPTH = 4;
+
+/**
+ * The words of a radio's or a checkbox's option that its adapter reads where no label element holds them
+ * (Adapter.optionTextFor: iCIMS's self-identification IForms, <span class="... iCIMS_Forms_RadioGroup ..."><input
+ * type="radio" ...></span> followed by the option's bare words up to a <br>: fixtures/icims/edgewater-self-id-veteran
+ * .frame-2.html, nyu-self-id-disability.frame-2.html), cleaned and cut as a label is; null where the adapter reads none
+ * (or its hook throws), for any other control, and where a person cannot see those words beside it: they must stand
+ * whole and in order (at least MIN_ARIA_LABEL_CHARS letters or digits), as the page shows them, in the visible text of
+ * one of the control's nearest OPTION_TEXT_DEPTH ancestors below its form, as an aria-label's words must (DOM-11), so a
+ * page can never name an option one thing on screen and another to us.
+ */
+function adapterOptionText(input: HTMLInputElement, ctx: LabelContext): string | null {
+  if (ctx.adapter?.optionTextFor === undefined || (input.type !== 'radio' && input.type !== 'checkbox')) return null;
+  let raw: string | null;
+  try {
+    raw = ctx.adapter.optionTextFor(input) ?? null;
+  } catch {
+    return null;
+  }
+  const { text } = cleanLabel(raw ?? '');
+  if (text === '') return null;
+  // The words uncut: a label's cut (TEXT_CAP_LABEL) may fall inside a word.
+  const wanted = wordsOf(raw ?? '');
+  let depth = 0;
+  for (let at = input.parentElement; at !== null && depth < OPTION_TEXT_DEPTH; at = at.parentElement, depth += 1) {
+    if (at.localName === 'form' || at.localName === 'body' || at.localName === 'html') break;
+    if (containsWords(wordsOf(textOf(at, ctx)), wanted)) return text;
+  }
+  return null;
+}
+// ── end jr6 ENGINE E2 item 8 ──
 
 /** Visible help text: the aria-describedby targets a person can see, joined; else the adapter's (descriptionFor). */
 export function descriptionOf(el: Element, ctx: LabelContext): string {
