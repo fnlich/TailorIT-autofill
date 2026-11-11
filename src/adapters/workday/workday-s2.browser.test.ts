@@ -94,7 +94,8 @@ describe('Workday’s date input: one date field, written part by part (s2 wd, d
     removeFixtures(document);
     const selfId = await load(selfIdHtml);
     expect(selfId.scan().fields.filter((field) => field.kind === 'date').map((field) => [field.label,
-      field.constraints.format])).toEqual([['Date', 'date']]);
+      // jr6 workday-new-1: the disability form's own date reads "Date signed" (labelSuffix).
+      field.constraints.format])).toEqual([['Date signed', 'date']]);
   });
 
   it('is required, disabled or read-only as all its parts are, where its legend draws no star', async () => {

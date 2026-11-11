@@ -23,9 +23,10 @@
  *   prompt's search box; a fieldset's legend names a radio group; a checkbox group (fieldset[data-automation-id$=
  *   "-CheckboxGroup"], no legend of its own, inside a fieldset whose legend holds the question) is named by the outer
  *   legend. A question is required where its label or legend draws Workday's star, <abbr aria-hidden="true">*</abbr>
- *   ("* Indicates a required field" above each step): aria-required is set on text boxes alone. On Self Identify, the
- *   form's title (h3 "Voluntary Self-Identification of Disability") is each question's help text (descriptionFor): its
- *   "Please check one of the boxes below:" names no topic, so the core's EEO and sensitive rules read the title.
+ *   ("* Indicates a required field" above each step): aria-required is set on text boxes alone. On Self Identify (jr6
+ *   WD-10 and workday-new-1), the form's title (h3 "Voluntary Self-Identification of Disability") is the label of its
+ *   disability boxes alone, whose legend "Please check one of the boxes below:" names no topic; its "Date" reads "Date
+ *   signed" and its "Language" "Language of this form" (labelSuffix, labelFirst), the form's own, never the person's.
  * - Widgets (widgetRoots, widgetFor):
  *   - the dropdown, a button[aria-haspopup=listbox] (a hidden <input type="text"> beside it mirrors its answer): a
  *     select-only 'combobox'. Closed it names no list; opened (by the button's own click, a <button type="button">) it
@@ -85,7 +86,10 @@
  *   "Work Experience 1" with its Delete button) and its button[data-automation-id=add-button] ("Add" while it has no
  *   block, "Add Another" after); a Work Experience block's "I currently work here" is its input[name=currentlyWorkHere].
  *   Languages shows only its Add in the snapshots (no block's markup seen), Websites is no kind the core counts. s2 wd:
- *   each hook looks its section up again, so a section Workday draws anew after an Add is the one read.
+ *   each hook looks its section up again, so a section Workday draws anew after an Add is the one read. jr6 (FIXPLAN
+ *   §6.4): an Education section by any of its names ("Education (Completed Degrees Only)", Schools Attended...: WD-20);
+ *   each block's Delete is its removeButton, still never pressed (WD-07); Skills' prompt is declared a box of several
+ *   answers, its pills the chips (WidgetDecl.tags, WD-18).
  * - The account view (index.ts) shows Workday's sign-in error as div[data-automation-id=errorMessage][role=alert]
  *   above the form ("[verily.wd1.myworkdayjobs.com] Sign In (1)": "Verify your account before you sign in or request a
  *   verification email."): errors names it, so Sign-in Auto reads a failed sign-in at once. The busy sign is
@@ -102,7 +106,7 @@ import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
-import type { Adapter, DatePartsDecl, UploadState, WidgetDecl } from '../types';
+import type { Adapter, DatePartsDecl, UploadState, WidgetDecl, WidgetTags } from '../types';
 import { learnContextOf, storedListOf } from './lists';
 
 /** The owner's snapshots the step hooks were written from, as converted (fixtures/workday/). */
@@ -352,8 +356,16 @@ function legendIn(field: Element | null, from: Element): Element | null {
  */
 export function labelFor(control: Element): Element | null {
   if (control.matches('fieldset[data-automation-id$="-CheckboxGroup"]')) {
+    // jr6 WD-10: Self Identify's disability boxes are named by the form's own title (disabilityTitleOf).
+    const title = fieldNameOf(control) === 'disabilityStatus' ? disabilityTitleOf(control) : null;
+    if (title !== null) return title;
     const outer = control.parentElement?.closest('fieldset') ?? null;
     return outer === null ? null : legendIn(fieldOf(control), outer);
+  }
+  // jr6 workday-new-1: the disability form's Language, named by its own label read first (labelFirst), with
+  // labelSuffix's words after it.
+  if (fieldNameOf(control) === 'disabilityForm' && control.matches('button[aria-haspopup="listbox" i]')) {
+    return (control as HTMLButtonElement).labels[0] ?? null;
   }
   if (control.localName === 'button' && control.matches('button[aria-haspopup="listbox" i]')
     && (control as HTMLButtonElement).labels.length === 0) {
@@ -366,6 +378,58 @@ export function labelFor(control: Element): Element | null {
   if (control.matches('[data-automation-id="dateInputWrapper"][role="group" i]')) return legendIn(fieldOf(control), control);
   return null;
 }
+
+// ── jr6 WORKDAY P1: Self Identify's labels (FIXPLAN §6.4 items 1 and 2, WD-10 and workday-new-1; §3.2's contract) ──
+/** The name a question's field container gives it: "disabilityStatus" for <div data-automation-id=
+ *  "formField-disabilityStatus">; null outside one. */
+function fieldNameOf(control: Element): string | null {
+  const id = fieldOf(control)?.getAttribute('data-automation-id') ?? null;
+  return id === null ? null : id.slice('formField-'.length);
+}
+
+/**
+ * jr6 WD-10 (FIXPLAN §6.4 item 1): the Self Identify form's own title, the label of its disability boxes alone:
+ * fixtures/workday/danafarber-self-identify.html's <div data-automation-id="applyFlowSelfIdentifyPage"> ... <h3>Voluntary
+ * Self-Identification of Disability</h3> ... <div data-automation-id="formField-disabilityStatus"><fieldset><legend>
+ * <label>Please check one of the boxes below:</label></legend> ... <fieldset data-automation-id="disabilityStatus-
+ * CheckboxGroup">: the legend's words name no topic, the title says the boxes are the disability form, so the core's
+ * rules read the topic from the label and its sensitive policy applies as to any disability question. The nearest
+ * shown h3 before the boxes on the Self Identify page that says "disability"; null otherwise (the legend stands).
+ */
+function disabilityTitleOf(group: Element): Element | null {
+  const page = group.closest('[data-automation-id="applyFlowSelfIdentifyPage"]');
+  if (page === null) return null;
+  const before = Array.from(page.querySelectorAll('h3')).filter((heading) =>
+    (heading.compareDocumentPosition(group) & 4 /* Node.DOCUMENT_POSITION_FOLLOWING */) !== 0);
+  const title = before.at(-1) ?? null;
+  return title !== null && /\bdisabilit/i.test(wordsOf(title)) && isUserVisible(title) ? title : null;
+}
+
+/** jr6 workday-new-1 (FIXPLAN §6.4 item 2, §3.2): the words after a Self Identify question's label that make it the
+ *  form's own (RULES maps "Date signed" to the signature's date and "Language of this form" to the form's language,
+ *  never the person's): danafarber-self-identify.html's <div data-automation-id="formField-dateSignedOn"> ("Date",
+ *  dateFor's legend) and <div data-automation-id="formField-disabilityForm"> ("Language", its dropdown's label[for]).
+ *  Employee ID keeps its label (RULES skips it). */
+const SELF_IDENTIFY_SUFFIX: Readonly<Record<string, string>> = { dateSignedOn: 'signed', disabilityForm: 'of this form' };
+
+/** jr6 workday-new-1: the suffix for a Self Identify question SELF_IDENTIFY_SUFFIX names, on its own control (the date
+ *  wrapper, the dropdown's button); null otherwise. */
+export function labelSuffix(control: Element): string | null {
+  if (control.closest('[data-automation-id="applyFlowSelfIdentifyPage"]') === null) return null;
+  const name = fieldNameOf(control);
+  if (name === 'dateSignedOn' && control.matches('[data-automation-id="dateInputWrapper"][role="group" i]')) {
+    return SELF_IDENTIFY_SUFFIX[name]!;
+  }
+  if (name === 'disabilityForm' && control.matches('button[aria-haspopup="listbox" i]')) return SELF_IDENTIFY_SUFFIX[name]!;
+  return null;
+}
+
+/** jr6 workday-new-1: the disability form's Language is named by the adapter's label first (labelFor, with its
+ *  suffix), before its own label[for] would name it "Language" alone. */
+export function labelFirst(control: Element): boolean {
+  return labelSuffix(control) !== null;
+}
+// ── end jr6 WORKDAY P1 ──
 
 /** Whether Workday's star is drawn: a person sees it, though its <abbr aria-hidden="true"> keeps it from assistive
  *  technology (which the scanner's visibility rule reads as hidden): the abbr shown by its own style and box, inside an
@@ -388,20 +452,15 @@ export function requiredFor(control: Element): boolean {
   return label !== null && Array.from(label.querySelectorAll('abbr')).some(starDrawn);
 }
 
-/** The Self Identify step's form title, the help text of each of its questions: fixtures/workday/danafarber-self-
- *  identify.html's <div data-automation-id="applyFlowSelfIdentifyPage"> ... <h3>Voluntary Self-Identification of
- *  Disability</h3> above Name, Employee ID, Date and "Please check one of the boxes below:", whose own words name no
- *  topic: the title says the boxes are the disability form (the core's EEO rule then reads it, and a sensitive answer
- *  found by help text alone is the person's). None on any other step. */
+/** A drop zone's question (uploadGroupHeading, the behaviour review's M2), and nothing else. jr6 WD-10 (FIXPLAN §6.4
+ *  item 1): the Self Identify form's title (h3 "Voluntary Self-Identification of Disability") is no longer the help
+ *  text of each of its questions, which made Name, Employee ID and Date read as the disability question: it is the
+ *  label of the disability boxes alone (labelFor, disabilityTitleOf). */
 export function descriptionFor(control: Element): Element[] {
   // ── behaviour review 2026-11-06 (M2: the owner's setting "Résumé already on the page" acts on Workday's résumé) ──
   if (control.matches('input[type="file" i][data-automation-id="file-upload-input-ref"]')) return uploadGroupHeading(control);
   // ── end behaviour review (M2) ──
-  const page = control.closest('[data-automation-id="applyFlowSelfIdentifyPage"]');
-  if (page === null) return [];
-  const title = Array.from(page.querySelectorAll('h3')).find((heading) => isUserVisible(heading)
-    && (heading.compareDocumentPosition(control) & 4 /* Node.DOCUMENT_POSITION_FOLLOWING */) !== 0) ?? null;
-  return title === null ? [] : [title];
+  return [];
 }
 
 /** The dropdowns (module header): buttons are no element the scanner collects, so each is a widget root. */
@@ -470,10 +529,30 @@ export function widgetFor(control: Element): WidgetDecl | null {
     return { kind: 'typeahead-remote', opener: control as HTMLElement, box, shownAnswer: promptAnswer(container),
       results: { list: () => promptListOf(container), option: PROMPT_ROW, choose: 'label', unchoosable: UNCHOOSABLE_ROW },
       optionLabel: (row) => byId(row, 'promptOption'), queryKey: 'Enter',
+      ...(fieldNameOf(container) === 'skills' ? { tags: skillsTags(container) } : {}),
       snapshot: 'fixtures/workday/s2-verily-field-of-study-open.html' };
   }
   return null;
 }
+
+// ── jr6 WORKDAY P1: Skills, a box of several answers (FIXPLAN §6.4 item 7, WD-18; §3.1 item 5) ──
+/** The most skills the run adds to Workday's Skills prompt. Our own bound, to keep one step's run short (each skill is
+ *  a typed search, a chosen result and a pill drawn); Jobright 1.25.2's fillSkills (operations) adds up to 39. */
+export const WORKDAY_SKILLS_CAP = 30;
+
+/** jr6 WD-18: My Experience's "Type to Add Skills" prompt, fixtures/workday/resolvetech-my-experience.html's <div
+ *  data-automation-id="formField-skills"> around its multiSelectContainer, takes several answers one at a time, each a
+ *  pill once chosen (s2-exelixis-my-experience.html, jr6-danafarber-my-experience.html and jr6-parsons-my-experience.html
+ *  the same; jr6-parsons' and jr6-danafarber's captures show 15 pills): its chips are the pills a person can see in its
+ *  selectedItemList, each added by choosing the search result that matches it exactly. Read from ENGINE E3 on. */
+function skillsTags(container: Element): WidgetTags {
+  return {
+    chips: () => allById(container, 'selectedItem').filter((pill) => isUserVisible(pill)),
+    search: true,
+    cap: WORKDAY_SKILLS_CAP,
+  };
+}
+// ── end jr6 WORKDAY P1 ──
 
 // ── s2 wd: the prompt's results list (snapshot round 2) ──
 /** A row of a prompt's open list: fixtures/workday/s2-verily-field-of-study-open.html's <div aria-setsize="321"
@@ -610,8 +689,18 @@ function heldNameElements(input: HTMLInputElement): Element[] {
   });
 }
 
-/** The repeatable kinds the snapshots show blocks of, by their section's heading id prefix (module header). */
-const REPEATABLE_SECTIONS = [['experience', 'Work-Experience'], ['education', 'Education']] as const;
+/** The repeatable kinds the snapshots show blocks of, by their section's heading id (module header): Work Experience's
+ *  "Work-Experience-section"; jr6 WD-20 (FIXPLAN §6.4 item 8): any Education section, "Education-section" and
+ *  jr6-parsons-my-experience.html's "Education-(Completed-Degrees-Only)-section" (h4 "Education (Completed Degrees
+ *  Only)", blocks "Education-(Completed-Degrees-Only)-1-panel"), and the names other tenants give it (Jobright 1.25.2's
+ *  remote Workday rules match any section id holding "education" and ending "-section", and name Schools Attended,
+ *  Schooling, Academic Experience, Educational Background and History and Schools You Went To:
+ *  EDUCATION_SECTION_LABELLEDBY_KEYWORDS, EDUCATION_SECTION_LABELLEDBY_IDS, EDUCATION_GROUP_ARIA_PREFIXES_LOWER; the
+ *  pattern here is ours, and reads the section's start alone). */
+const REPEATABLE_SECTIONS: ReadonlyArray<readonly ['experience' | 'education', RegExp]> = [
+  ['experience', /^Work-Experience-section$/],
+  ['education', /^(?:education(?:al-background|al-history)?|schools?-attended|schooling|academic-experience|schools-you-went-to)(?:-\S*)?-section$/i],
+];
 
 /** My Experience's Work Experience and Education (module header). */
 export function repeatables(root: Element): ReturnType<NonNullable<Adapter['repeatables']>> {
@@ -630,23 +719,33 @@ export function repeatables(root: Element): ReturnType<NonNullable<Adapter['repe
   // s2 wd (snapshot round 2, decision 6): the section is looked up again on each call of its hooks, so a section Workday
   // draws anew after an Add is the one read, never a node it took out of the page (the wd study's scratch variant that
   // redraws the section stopped after one click, no-add-button).
-  const sectionOf = (prefix: string): Element | null => {
+  // jr6 WD-20: the section is the first group of the step whose heading id the kind's pattern reads, its heading
+  // inside it; its blocks are named by that id's prefix ("<prefix>-<n>-panel").
+  const sectionOf = (pattern: RegExp): { section: Element; prefix: string } | null => {
     const now = root.contains(step.page!.el) ? step.page!.el : byId(root, 'applyFlowMyExpPage');
     if (now === null) return null;
-    return Array.from(now.querySelectorAll(`[role="group" i][aria-labelledby="${prefix}-section"]`))
-      .find((group) => doc.getElementById(`${prefix}-section`)?.closest('[role="group" i]') === group) ?? null;
+    for (const group of Array.from(now.querySelectorAll('[role="group" i][aria-labelledby]'))) {
+      const id = (group.getAttribute('aria-labelledby') ?? '').trim();
+      if (!pattern.test(id) || doc.getElementById(id)?.closest('[role="group" i]') !== group) continue;
+      return { section: group, prefix: id.slice(0, -'-section'.length) };
+    }
+    return null;
   };
-  return REPEATABLE_SECTIONS.flatMap(([kind, prefix]) => {
-    if (sectionOf(prefix) === null) return [];
+  return REPEATABLE_SECTIONS.flatMap(([kind, pattern]) => {
+    if (sectionOf(pattern) === null) return [];
     const blocks = () => {
-      const section = sectionOf(prefix);
-      if (section === null) return [];
-      return Array.from(section.querySelectorAll(`[role="group" i][aria-labelledby^="${prefix}-"]`))
-        .filter((group) => /^\S+-\d+-panel$/.test(group.getAttribute('aria-labelledby') ?? '')
-          && group.parentElement?.closest('[role="group" i]') === section);
+      const found = sectionOf(pattern);
+      if (found === null) return [];
+      const { section, prefix } = found;
+      return Array.from(section.querySelectorAll('[role="group" i][aria-labelledby]'))
+        .filter((group) => {
+          const id = group.getAttribute('aria-labelledby') ?? '';
+          return id.startsWith(`${prefix}-`) && /^\d+-panel$/.test(id.slice(prefix.length + 1))
+            && group.parentElement?.closest('[role="group" i]') === section;
+        });
     };
     const addButton = () => {
-      const section = sectionOf(prefix);
+      const section = sectionOf(pattern)?.section ?? null;
       if (section === null) return null;
       return Array.from(section.querySelectorAll<HTMLElement>('button[data-automation-id="add-button"]'))
         .find((button) => button.closest('[role="group" i]') === section) ?? null;
@@ -657,8 +756,27 @@ export function repeatables(root: Element): ReturnType<NonNullable<Adapter['repe
       addButton,
       ...(kind === 'experience' ? { currentlyHere: (block: Element) =>
         block.querySelector<HTMLInputElement>('input[type="checkbox" i][name="currentlyWorkHere"]') } : {}),
+      // jr6 WD-07 (FIXPLAN §6.4 item 5): the block's own Delete; never pressed (neverPressedOnSteps names it).
+      removeButton: blockDeleteOf,
     }];
   });
+}
+
+/**
+ * jr6 WD-07 (FIXPLAN §6.4 item 5, §3.1 item 17): a block's own Delete, the one button beside its h5:
+ * fixtures/workday/s2-exelixis-my-experience.html's <div role="group" aria-labelledby="Work-Experience-2-panel"><div ...>
+ * <h5 id="Work-Experience-2-panel">Work Experience 2</h5><button ...>...Delete</button></div> ... (the first Education
+ * block there, and pureinsurance's first job, show none). Null where the block shows none a person can see. Never
+ * pressed by a run: neverPressedOnSteps names every such button, and only ENGINE's gated door may press it, after owner
+ * question Q1 (Jobright 1.25.2 deletes every parsed block before it adds the profile's: operations preclickAddButtons).
+ */
+function blockDeleteOf(block: Element): HTMLElement | null {
+  const id = (block.getAttribute('aria-labelledby') ?? '').trim();
+  const heading = id === '' ? null : block.ownerDocument.getElementById(id);
+  if (heading === null || heading.localName !== 'h5' || !block.contains(heading)) return null;
+  const buttons = Array.from(heading.parentElement?.children ?? [])
+    .filter((sibling): sibling is HTMLElement => sibling !== heading && sibling.localName === 'button');
+  return buttons.length === 1 && isUserVisible(buttons[0]!) ? buttons[0]! : null;
 }
 
 /** The sign-in's error above its form (module header), for the account view that holds `root` or that `root` holds. */

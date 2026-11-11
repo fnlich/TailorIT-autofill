@@ -37,7 +37,10 @@
  *   behind its visible label[for]. On the landing the form shows only after "Sign in with email"
  *   (button[data-automation-id=SignInWithEmailButton]), the one prelude declared; the tenant decides whether the account
  *   view opens on the landing (Workday, Snap) or on Create Account (Salesforce). The switch from Sign In to Create
- *   Account stays the person's: nothing tells whether the job-site sign-in has an account on this tenant.
+ *   Account stays the person's: nothing tells whether the job-site sign-in has an account on this tenant. jr6
+ *   (FIXPLAN §6.4): createAccountSwitch names that switch (createAccountLink, still never pressed: only SHELL's gated
+ *   door may press it), passwordRules reads Create Account's "Password Requirements" list, and accountErrorKind tells
+ *   the kind of the error above the form (verify the email, reset the password, wrong email or password).
  * - Never pressed (neverPress): the header's Sign In (utilityButtonSignIn), its menus and navigation, "View all jobs",
  *   the similar jobs, "Read more", the social links and the privacy link on the posting; the choice's Autofill with
  *   Resume, Use My Last Application, Apply with LinkedIn and Close; on the account views Apple's and Google's sign-ins,
@@ -50,11 +53,11 @@ import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
 import type { SuccessRule } from '../success';
-import type { Adapter, SignInForm, SignInWall } from '../types';
+import type { AccountErrorKind, Adapter, PagePasswordClass, PagePasswordRules, SignInForm, SignInWall } from '../types';
 import {
-  accountErrors, dateFor, descriptionFor, fieldAlerts, isBusy, isFinalStep, labelFor, neverPressedOnSteps, nextButton, repeatables,
-  requiredFor, sections, stepSignature, submitButton, uploadHeld, uploadHeldNames, uploadState, uploadWidgets, widgetFor,
-  widgetRoots,
+  accountErrors, dateFor, descriptionFor, fieldAlerts, isBusy, isFinalStep, labelFirst, labelFor, labelSuffix,
+  neverPressedOnSteps, nextButton, repeatables, requiredFor, sections, stepSignature, submitButton, uploadHeld,
+  uploadHeldNames, uploadState, uploadWidgets, widgetFor, widgetRoots,
 } from './application';
 import { canonicalApplicationUrl, matchesUrl, parseWorkdayUrl } from './url';
 
@@ -214,8 +217,101 @@ function signInPrelude(doc: Document, wall: SignInWall): HTMLElement | null {
     'button[data-automation-id="SignInWithEmailButton"]')));
 }
 
+// ── jr6 WORKDAY P1 (FIXPLAN §6.4 items 3, 4 and 6; the hooks of FIXPLAN §3.1 items 12 to 14, read by SHELL) ──
+/** The words of one rule of Create Account's "Password Requirements" list, each to what it requires (our own patterns,
+ *  read from every captured tenant's list: fixtures/workday/workday-create-account.html, salesforce-create-account.html,
+ *  s2-verily-create-account.html and jr6-aep-create-account.html, the six rules in any order). */
+const PASSWORD_CLASS_RULES: ReadonlyArray<readonly [PagePasswordClass, RegExp]> = [
+  ['upper', /^an? upper ?case (?:character|letter)$/i],
+  ['lower', /^an? lower ?case (?:character|letter)$/i],
+  ['digit', /^an? (?:numeric character|number|digit)$/i],
+  ['special', /^an? special character$/i],
+  ['alpha', /^an? (?:alphabetic character|letter)$/i],
+];
+/** "A minimum of 8 characters" (Jobright 1.25.2 reads the same item before it types: account-preflow
+ *  password-requirements getWorkdayCreateAccountPasswordMinimum, the largest such minimum of the list's shown items). */
+const PASSWORD_MINIMUM = /^a minimum of (\d{1,3}) characters?$/i;
+
+/**
+ * jr6 WD-02 (FIXPLAN §6.4 item 3): Create Account's own password rules, as its list shows them beside the password:
+ * fixtures/workday/workday-create-account.html's <div data-automation-id="signInContent"> ... <div
+ * data-automation-id="passwordRulesList"><div data-automation-id="richText"><ul><li>An alphabetic character</li> ...
+ * <li>A minimum of 8 characters</li></ul>, in the dialog or account view that holds the form's
+ * button[data-automation-id=createAccountSubmitButton] (Jobright 1.25.2's container, cited above). Each item a person
+ * can see is read whole ("A minimum of N characters", "An uppercase character", "A lowercase character", "A numeric
+ * character", "A special character", "An alphabetic character"); an item it does not know is left out. Fail open: null
+ * where there is no such list, it shows no rule read here, or the page is in another language (its lang). The page's
+ * words only, never a value.
+ */
+function passwordRules(form: SignInForm): PagePasswordRules | null {
+  const from = form.form ?? form.button;
+  const holder = from.closest('[role="dialog"], [data-automation-id="signInContent"]');
+  if (holder === null || holder.querySelector('button[data-automation-id="createAccountSubmitButton"]') === null) return null;
+  const lang = (holder.closest('[lang]')?.getAttribute('lang') ?? '').trim();
+  if (lang !== '' && !/^en(?:-|$)/i.test(lang)) return null;
+  const cache = newScanCache();
+  let minLength: number | null = null;
+  const requires = new Set<PagePasswordClass>();
+  for (const item of Array.from(holder.querySelectorAll('li, [role="listitem"]'))) {
+    if (!isUserVisible(item, cache)) continue;
+    const words = (item.textContent ?? '').replace(/\s+/g, ' ').trim().replace(/[.!]$/, '');
+    const minimum = PASSWORD_MINIMUM.exec(words);
+    if (minimum !== null) {
+      const n = Number(minimum[1]);
+      if (Number.isSafeInteger(n) && n > 0) minLength = Math.max(minLength ?? 0, n);
+      continue;
+    }
+    const known = PASSWORD_CLASS_RULES.find(([, pattern]) => pattern.test(words));
+    if (known !== undefined) requires.add(known[0]);
+  }
+  if (minLength === null && requires.size === 0) return null;
+  const ordered = PASSWORD_CLASS_RULES.map(([each]) => each).filter((each) => requires.has(each));
+  return { ...(minLength === null ? {} : { minLength }), ...(ordered.length === 0 ? {} : { requires: ordered }) };
+}
+
+/**
+ * jr6 WD-03 (FIXPLAN §6.4 item 4): the Sign In view's "Create Account" link, while a person can see it:
+ * fixtures/workday/workday-sign-in.html (snap-sign-in.html, jr6-brookfield-sign-in.html, verily-sign-in-verify.html)'s
+ * <button data-automation-id="createAccountLink">Create Account</button> in the account view whose form shows the
+ * signInSubmitButton (Jobright 1.25.2's remote rules name the same control, CREATE_ACCOUNT_LINK_CSS
+ * button[data-automation-id="createAccountLink"], which its account flow presses on a new tenant). Null on the landing
+ * (before "Sign in with email": no form), on Create Account and on Forgot Password. It stays in NEVER_PRESSED_IDS:
+ * only SHELL's gated door may press it (owner question Q4).
+ */
+function createAccountSwitch(doc: Document): HTMLElement | null {
+  const form = accountForm(doc);
+  const account = accountOf(doc);
+  if (form === null || account === null || byId(form, 'signInSubmitButton') === null) return null;
+  return shown(Array.from(account.querySelectorAll<HTMLElement>('button[data-automation-id="createAccountLink"]')));
+}
+
+/** jr6 WD-05: the kinds of an account error by its words, first match wins, in this order (our own patterns; the facts
+ *  from Jobright 1.25.2's remote rules ACCOUNT_SUBMIT_ERROR_PATTERNS, account_verification_required ("verify your
+ *  account", "verification email", "account verification"), password_reset_required ("reset your password", "forgot
+ *  password", "administrator request") and invalid_credentials_or_locked ("wrong email address or password", "account
+ *  might be locked"), tried in that order by its account-preflow detectWorkdayAccountSubmitError). */
+const ACCOUNT_ERROR_KINDS: ReadonlyArray<readonly [AccountErrorKind, RegExp]> = [
+  ['verify-email', /\bverify your (?:account|email(?: address)?)\b|\bverification e-?mail\b|\baccount verification\b/i],
+  ['reset-password', /\breset your password\b|\bforgot(?:ten)? (?:your )?password\b|\badministrator (?:has )?request(?:ed)?\b/i],
+  ['wrong-credentials', /\bwrong (?:email(?: address)?|password)\b|\b(?:email(?: address)?|user ?name) (?:and|or) password (?:is |are |was |were )?(?:incorrect|invalid|wrong)\b|\baccount (?:might|may) be locked\b|\baccount (?:is|has been) locked\b/i],
+];
+
+/**
+ * jr6 WD-05 (FIXPLAN §6.4 item 6): the kind of the account error `el` shows, `el` one of the errors this adapter reads
+ * on its account view (application.ts accountErrors: fixtures/workday/verily-sign-in-verify.html's <div
+ * data-automation-id="errorMessage" role="alert">Verify your account before you sign in or request a verification
+ * email.</div> above the Sign In form, 'verify-email'); null for any other element or words that name no kind.
+ */
+function accountErrorKind(el: Element): AccountErrorKind | null {
+  const alert = el.closest('[data-automation-id="errorMessage"]');
+  if (alert === null || alert.closest('[data-automation-id="signInContent"]') === null) return null;
+  const words = (alert.textContent ?? '').replace(/\s+/g, ' ').trim();
+  return ACCOUNT_ERROR_KINDS.find(([, pattern]) => pattern.test(words))?.[0] ?? null;
+}
+// ── end jr6 WORKDAY P1 ──
+
 /** The automation ids of the controls never pressed (module header). */
-const NEVER_PRESSED_IDS = ['utilityButtonSignIn', 'utilityMenuButton', 'utilityButtonBarLanguageMenu', 'hammyMenuIcon',
+const NEVER_PRESSED_IDS =['utilityButtonSignIn', 'utilityMenuButton', 'utilityButtonBarLanguageMenu', 'hammyMenuIcon',
   'toggle-all-jobs', 'similarJobsCard', 'readMore', 'socialIcon', 'privacyLink', 'logoLink', 'adventureButton',
   'autofillWithResume', 'applyManually', 'useMyLastApplication', 'applyWithLinkedIn', 'closeButton',
   'AppleSignInButton', 'GoogleSignInButton', 'backToJobPosting', 'createAccountLink', 'signInLink', 'forgotPasswordLink',
@@ -266,6 +362,10 @@ export const workdayAdapter: Adapter = {
   authState,
   signInForm,
   signInPrelude,
+  // jr6 WD-02, WD-03, WD-05 (FIXPLAN §6.4): read by SHELL; the Create Account link is never pressed here.
+  passwordRules,
+  createAccountSwitch,
+  accountErrorKind,
   neverPress,
   // The generic aria-invalid errors, and on the account view the sign-in's error above its form (./application.ts).
   errors: (root) => [...(genericAdapter.errors?.(root) ?? []), ...accountErrors(root).map((el) => ({ el })),
@@ -278,6 +378,9 @@ export const workdayAdapter: Adapter = {
   submitButton,
   sections,
   labelFor,
+  // jr6 workday-new-1: Self Identify's "Date signed" and "Language of this form" (./application.ts).
+  labelSuffix,
+  labelFirst,
   requiredFor,
   descriptionFor,
   widgetRoots,
