@@ -24,6 +24,7 @@ import { pressEntry, pressEntryChoice } from '../../content/press';
 import { newSuccessSign, shownSignsOf, successShown } from '../../content/submitted';
 import { planFrame } from '../../core/plan/frame';
 import type { PlanOutput } from '../../core/plan/types';
+import { labelSlug } from '../../core/text/keys';
 import type { BaseKey } from '../../core/types/field';
 import type { FillResult, PlannedWrite } from '../../core/types/fill';
 import type { Profile } from '../../core/types/profile';
@@ -36,7 +37,7 @@ import { scan, toFieldSpec } from '../../dom/scan';
 import type { ScanResult, ScannedField, WidgetReading } from '../../dom/types';
 import { deadline, startDeadline } from '../../dom/time';
 import { isUserVisible } from '../../dom/visibility';
-import { fillWidget, isActionable, readWidget } from '../../dom/widgets';
+import { fillWidget, isActionable, learnedListKey, readWidget } from '../../dom/widgets';
 import { configuredHooks, configuredSuccessSigns } from '../configured';
 import { successSignsOf } from '../success';
 import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
@@ -459,6 +460,68 @@ describe('jr6 ADP-2, ADP-3, ADP-15: ADP’s own lists (wfn-dropdown-list, sdf-se
     expect(adpAdapter.dependsOn!(q(fixture, 'input#PersonalAddress_city'))).toBeNull();
     expect(adpAdapter.dependsOn!(country)).toBeNull();
   });
+
+  // jr6 ifix C-6 (ADP-2's learnContext, index.ts selectDecl): a State list learned on this host is filed under the
+  // Country the page shows (the review of round 2, L2), so a list of another Country's States is never offered for this
+  // one; Oracle's equivalent is jr6-oracle's "the address's dependent lists learn under the Country the block shows".
+  // Each capture's Country reads REDACTED: a SYNTHETIC public one stands in, drawn where the page draws it.
+  const countryShown = (fixture: Fixture): Element => q(fixture, 'input#PersonalAddress_country')
+    .closest('.MDFSelectBox__control')!.querySelector('.MDFSelectBox__single-value')!;
+
+  it.each(['jr6-personal-us-errors', 'jr6-personal-us-state', 'jr6-personal-filled'])(
+    '%s: the State’s list learns under the Country the page shows (learnContext), and under none where none shows',
+    async (name) => {
+      const fixture = await open(name);
+      const host = q(fixture, 'wfn-dropdown-list#PersonalAddress_state');
+      const shown = countryShown(fixture);
+      shown.textContent = 'Canada';
+      expect(adpAdapter.widgetFor!(host)!.learnContext).toBe('Canada');
+      const result = scan(adpAdapter.detect(fixture.doc)!.formRoot, adpAdapter, { platform: 'adp' });
+      const state = fieldOf(result, host)!;
+      expect(result.target(state.key)!.widget!.learnContext).toBe('Canada');
+      shown.textContent = 'Mexico';
+      expect(adpAdapter.widgetFor!(host)!.learnContext).toBe('Mexico');
+      // No Country shown: no context (the list is learned under its label alone).
+      shown.remove();
+      expect(adpAdapter.widgetFor!(host)!.learnContext).toBeUndefined();
+    });
+
+  it('jr6-personal-us-state: a list learned under the Country shown is the State’s; one learned under another Country or none is not', async () => {
+    const fixture = await open('jr6-personal-us-state');
+    const host = q(fixture, 'wfn-dropdown-list#PersonalAddress_state');
+    countryShown(fixture).textContent = 'Canada';
+    // The list not drawn yet (no floating pane of rows under the body): what the scan offers is what this host learned.
+    for (const pane of Array.from(fixture.doc.querySelectorAll('body > sdf-floating-pane-portal'))) pane.remove();
+    const root = adpAdapter.detect(fixture.doc)!.formRoot;
+    const slug = labelSlug(fieldOf(scan(root, adpAdapter, { platform: 'adp' }), host)!);
+    const provinces = ['AB - Alberta', 'ON - Ontario', 'QC - Quebec'];
+    const optionsWith = (learned: ReadonlyArray<[string, readonly string[]]>) => {
+      const result = scan(root, adpAdapter, { platform: 'adp', learnedLists: new Map(learned) });
+      const options = toFieldSpec(fieldOf(result, host)!).options;
+      return Array.isArray(options) ? options.map((option) => option.label) : options;
+    };
+    expect(optionsWith([[learnedListKey(slug, 'Canada'), provinces], [learnedListKey(slug, 'Mexico'), ['NL - Nuevo Leon']],
+      [learnedListKey(slug), ['TX - Texas']]])).toEqual(provinces);
+    // Only other Countries' lists, or one under the label alone: none is offered, the list read when opened.
+    expect(optionsWith([[learnedListKey(slug, 'Mexico'), ['NL - Nuevo Leon']], [learnedListKey(slug), ['TX - Texas']]]))
+      .toBe('lazy');
+  });
+
+  it.each(['jr6-questions2-blank', 'jr6-questions2-filled'])(
+    '%s: the source list (question_7) and the currency learn under no context, a Country shown or not', async (name) => {
+      const fixture = await open(name);
+      const ids = ['question_7', 'add_info_select_box'];
+      for (const id of ids) expect(adpAdapter.widgetFor!(q(fixture, `sdf-select-simple#${id}`))!.learnContext, id).toBeUndefined();
+      // A Country drawn on the page as the Personal Information step draws it (SYNTHETIC): still none but the State's.
+      const doc = fixture.doc;
+      const control = Object.assign(doc.createElement('div'), { className: 'MDFSelectBox__control' });
+      control.append(Object.assign(doc.createElement('div'), { className: 'MDFSelectBox__single-value', textContent: 'Canada' }),
+        Object.assign(doc.createElement('input'), { id: 'PersonalAddress_country' }));
+      doc.body.append(control);
+      for (const id of ids) {
+        expect(adpAdapter.widgetFor!(q(fixture, `sdf-select-simple#${id}`))!.learnContext, id).toBeUndefined();
+      }
+    });
 
   it.each(['jr6-questions2-blank', 'jr6-questions2-filled'])(
     '%s: the source list and the currency are declared comboboxes with their own labels', async (name) => {
