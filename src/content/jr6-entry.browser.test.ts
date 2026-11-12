@@ -1132,3 +1132,119 @@ describe('jr6 apply F2: the line P review’s cases (revA-2, revA-4, revA-6, P-B
       }
     }, 40_000);
 });
+
+// ── jr6 ifix B4 (the integration review's behaviour lens): an entry's waits leave no abort listener behind ──
+
+/** The 'abort' listeners added to an entry's own signal (the first composite AbortSignal.any makes once this starts:
+ *  enter's), counted as each one is added, and how many are still held at a moment: one removed, or dropped by its own
+ *  `signal` option, is released (a signal that aborted fired them all). Restores everything at `stop`. */
+function entryListeners(): { added(): number; live(): number; stop(): void } {
+  let entry: AbortSignal | null = null;
+  const any = AbortSignal.any.bind(AbortSignal);
+  const made = vi.spyOn(AbortSignal, 'any').mockImplementation((signals) => {
+    const signal = any(signals);
+    entry ??= signal;
+    return signal;
+  });
+  const held: Array<{ listener: unknown; dropBy: AbortSignal | undefined; removed: boolean }> = [];
+  const add = EventTarget.prototype.addEventListener;
+  const remove = EventTarget.prototype.removeEventListener;
+  EventTarget.prototype.addEventListener = function (this: EventTarget, type: string, listener: unknown,
+    options?: boolean | AddEventListenerOptions) {
+    if (this === entry && type === 'abort' && listener !== null) {
+      held.push({ listener, dropBy: typeof options === 'object' ? options.signal : undefined, removed: false });
+    }
+    return add.call(this, type, listener as EventListener, options);
+  } as typeof add;
+  EventTarget.prototype.removeEventListener = function (this: EventTarget, type: string, listener: unknown,
+    options?: boolean | EventListenerOptions) {
+    if (this === entry && type === 'abort') for (const one of held) if (one.listener === listener) one.removed = true;
+    return remove.call(this, type, listener as EventListener, options);
+  } as typeof remove;
+  return {
+    added: () => held.length,
+    live: () => (entry === null || entry.aborted ? 0
+      : held.filter((one) => !one.removed && one.dropBy?.aborted !== true).length),
+    stop: () => {
+      made.mockRestore();
+      EventTarget.prototype.addEventListener = add;
+      EventTarget.prototype.removeEventListener = remove;
+    },
+  };
+}
+
+describe('jr6 ifix B4: an entry’s waits release their abort listeners once settled', () => {
+  it('an Apply drawn late, then a form drawn in place: the Apply wait and the watch after the press hold none after',
+    async () => {
+      const { doc, clicks } = await openAt(lateHtml.replace('data-apply-delay="3000"', 'data-apply-delay="1000"'), LATE);
+      const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
+      runtimes.push(runtime);
+      const listeners = entryListeners();
+      try {
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+        await vi.waitFor(() => expect(clicks).toEqual(['apply']), { timeout: 6_000 });
+        await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 5_000 });
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 3_000 });
+        // pressEntry's wait for the Apply and afterPress's watch each added one; neither holds it now.
+        expect(listeners.added()).toBeGreaterThanOrEqual(2);
+        expect(listeners.live()).toBe(0);
+      } finally {
+        listeners.stop();
+      }
+    }, 30_000);
+
+  it('no Apply declared, its form drawn late: formWithin’s wait holds none after', async () => {
+    const address = addressOf(ultiproRoutes, 'fixtures/ultipro/application.html');
+    const { doc } = await openAt(ultiproHtml, address);
+    const form = doc.querySelector('#OpportunityApply')!;
+    const parent = form.parentNode!;
+    const next = form.nextSibling;
+    form.remove();
+    const own: Adapter = { ...servedAdapter(ultiproAdapter, address), entryControl: undefined,
+      quirks: { ...ultiproAdapter.quirks, formLateMs: 15_000 } };
+    const { worker, runtime } = await runtimeAt(doc, address, [own, genericAdapter]);
+    runtimes.push(runtime);
+    const listeners = entryListeners();
+    try {
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(true), { timeout: 2_000 });
+      await deadline(500);
+      parent.insertBefore(form, next);
+      await vi.waitFor(() => expect(worker.of('run/begin').length).toBeGreaterThan(0), { timeout: 5_000 });
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 3_000 });
+      expect(listeners.added()).toBeGreaterThanOrEqual(1);
+      expect(listeners.live()).toBe(0);
+    } finally {
+      listeners.stop();
+    }
+  }, 30_000);
+
+  it('Workday: the choice drawn 500 ms after Apply: the follow-up wait (pressEntry’s follow) holds none after',
+    async () => {
+      const RESOLVETECH = addressOf(resolvetechRoutes, 'fixtures/workday/jr6-apply-resolvetech-posting.html');
+      const { doc, clicks } = await openAt(resolvetechHtml, RESOLVETECH);
+      const dialog = new DOMParser().parseFromString(choiceHtml, 'text/html')
+        .querySelector('[role="dialog"][data-automation-id="wd-popup-frame"]')!;
+      const signIn = new DOMParser().parseFromString(signInHtml, 'text/html').body;
+      doc.addEventListener('click', (event) => {
+        const pressed = (event.target as Element).closest('[data-automation-id]')?.getAttribute('data-automation-id');
+        if (pressed === 'adventureButton') void deadline(500).then(() => doc.body.append(doc.importNode(dialog, true)));
+        if (pressed === 'applyManually') void deadline(300).then(() => doc.body.replaceWith(doc.importNode(signIn, true)));
+      }, true);
+      const { worker, runtime } = await runtimeAt(doc, RESOLVETECH, [servedAdapter(workdayAdapter, RESOLVETECH),
+        genericAdapter]);
+      runtimes.push(runtime);
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entry).toBe(true), { timeout: 8_000 });
+      const listeners = entryListeners();
+      try {
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+        await vi.waitFor(() => expect(clicks).toEqual(['adventureButton', 'applyManually']), { timeout: 8_000 });
+        await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 6_000 });
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 3_000 });
+        expect(listeners.added()).toBeGreaterThanOrEqual(2);
+        expect(listeners.live()).toBe(0);
+      } finally {
+        listeners.stop();
+      }
+    }, 40_000);
+});

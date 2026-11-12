@@ -467,29 +467,41 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
     if (first === 'pressed') return follow();
     if (first !== 'wait') return Promise.resolve(first);
     return new Promise((resolve) => {
+      // jr6 ifix B4 (the integration review's behaviour lens): the wait's abort listener goes once it is settled.
+      const settled = new AbortController();
+      const settle = (answer: EntryResult | Promise<EntryResult>): void => {
+        settled.abort();
+        resolve(answer);
+      };
       watchForLateForm(doc, followMs, () => {
         const looked = next();
         if (looked === 'wait') return false;
-        resolve(looked === 'pressed' ? follow() : looked);
+        settle(looked === 'pressed' ? follow() : looked);
         return true;
       }, signal, () => {
         const last = next();
         // jr6 apply F2 item 3 (apply-b-new-1): no choice came, but the press was made: pressed, not followed.
-        resolve(last === 'pressed' ? follow() : last === 'wait' ? { outcome: 'pressed', followed: false } : last);
+        settle(last === 'pressed' ? follow() : last === 'wait' ? { outcome: 'pressed', followed: false } : last);
       });
-      signal.addEventListener('abort', () => resolve(done), { once: true });
+      signal.addEventListener('abort', () => settle(done), { once: true, signal: settled.signal });
     });
   };
   const now = attempt();
   if (now !== null) return now.outcome === 'pressed' ? follow() : Promise.resolve(now);
   return new Promise((resolve) => {
+    // jr6 ifix B4: the wait's abort listener goes once it is settled.
+    const settled = new AbortController();
+    const settle = (answer: EntryResult | Promise<EntryResult>): void => {
+      settled.abort();
+      resolve(answer);
+    };
     watchForLateForm(doc, waitMs, () => {
       const outcome = attempt();
       if (outcome === null) return false;
-      resolve(outcome.outcome === 'pressed' ? follow() : outcome);
+      settle(outcome.outcome === 'pressed' ? follow() : outcome);
       return true;
-    }, signal, () => resolve({ outcome: 'not-offered' }));
-    signal.addEventListener('abort', () => resolve({ outcome: 'not-offered' }), { once: true });
+    }, signal, () => settle({ outcome: 'not-offered' }));
+    signal.addEventListener('abort', () => settle({ outcome: 'not-offered' }), { once: true, signal: settled.signal });
   });
 }
 

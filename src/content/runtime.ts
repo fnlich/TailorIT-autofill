@@ -2068,6 +2068,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (lookAgain()) return Promise.resolve(true);
     const ours = (): boolean => page !== null && page.adapter.id !== 'generic';
     return new Promise((resolve) => {
+      // jr6 ifix B4 (the integration review's behaviour lens): the wait's abort listener goes once it is settled.
+      const settled = new AbortController();
+      const settle = (found: boolean): void => {
+        settled.abort();
+        resolve(found);
+      };
       watchForLateForm(doc, ms, () => {
         if (stopped || gone()) return true;
         if (page === null) {
@@ -2076,10 +2082,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           formFound();
         }
         if (!ours()) return false;
-        resolve(true);
+        settle(true);
         return true;
-      }, signal, () => resolve(ours() && !gone()));
-      signal.addEventListener('abort', () => resolve(false), { once: true });
+      }, signal, () => settle(ours() && !gone()));
+      signal.addEventListener('abort', () => settle(false), { once: true, signal: settled.signal });
     });
   }
 
@@ -2354,13 +2360,19 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       const url = urlOf(readHref());
       const capMs = Math.max(ENTRY_FORM_WAIT_MS, url === null ? 0 : lateFormMs(adapters(url)));
       outcome = await new Promise<Seen>((resolve) => {
+        // jr6 ifix B4: the wait's abort listener goes once it is settled.
+        const settled = new AbortController();
+        const settle = (got: Seen): void => {
+          settled.abort();
+          resolve(got);
+        };
         watchForLateForm(doc, capMs, () => {
           const got = seen();
           if (got === null && !signal.aborted && !stopped) return false;
-          resolve(got);
+          settle(got);
           return true;
-        }, signal, () => resolve(seen()));
-        signal.addEventListener('abort', () => resolve(null), { once: true });
+        }, signal, () => settle(seen()));
+        signal.addEventListener('abort', () => settle(null), { once: true, signal: settled.signal });
       });
     }
     if (stopped || signal.aborted) return null;
