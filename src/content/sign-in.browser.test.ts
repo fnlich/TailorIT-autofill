@@ -467,7 +467,7 @@ describe('v4: the account wall, its toast, and Sign up & Autofill (docs/SPEC-AME
   });
 
   // jr6 SHELL-A (WD-04): while the run waits for one to be saved, the toast says it carries on by itself; once the wait
-  // is over, to choose Sign Up & Autofill again.
+  // is over, to save one, then choose Sign Up & Autofill.
   it('Sign up & Autofill with no job-site sign-in saved: the toast to add one, with its Open', async () => {
     const { worker, runtime } = await start(signInPage(), 'manual', { 'signin/credential': [{ ok: false,
       error: 'not_found' }] }, [genericAdapter], 1_500);

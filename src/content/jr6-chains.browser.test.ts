@@ -300,6 +300,39 @@ describe('jr6 CHAINS: Jobvite across documents (E-Jobvite, RULES item 16 and F2;
       await deadline(2_000);
       expect(gate.accepted).toHaveLength(1);
     }, 60_000);
+
+  // jr6 ifix SEC-2 (the integration review's security lens): the run's press at the gate's choice (RunEnv.enterChoice)
+  // goes through the entry door with the frame's address, so a declared choice that leads to another site is never
+  // pressed. Jobvite's own choice is a form's submitter; a stand-in declaration here answers a link to another origin.
+  it('the run at the gate’s choice never presses a declared choice that leads to another site (SEC-2)', async () => {
+    const APPLY = addressOf(ninjaGateRoutes, 'fixtures/jobvite/ninjaone-consent-empty.html');
+    const gate = await jobviteGate(APPLY);
+    const away = gate.doc.createElement('a');
+    away.id = 'elsewhere';
+    away.href = 'https://apply.example-ats.com/job/1/apply';
+    away.textContent = 'Apply manually';
+    away.setAttribute('style', 'display:inline-block;padding:8px');
+    gate.doc.body.append(away);
+    const rewired = (url: URL): Adapter[] => registry(gate.doc, APPLY)(url).map((adapter) => (adapter.id !== 'jobvite'
+      ? adapter : { ...adapter, entryControl: (doc: Document) => doc.getElementById('elsewhere') }));
+    const info = vi.spyOn(console, 'info');
+    try {
+      const { worker, runtime } = await runtimeAt(gate.doc, APPLY, rewired);
+      runtimes.push(runtime);
+      await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 8_000 });
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      // The run reaches the choice and asks the door, which refuses the link: nothing pressed.
+      await vi.waitFor(() => expect(info.mock.calls.filter(([line]) => line === '[tailorit-autofill] content.entry-choice'))
+        .not.toEqual([]), { timeout: 30_000 });
+      await deadline(500);
+      expect(info.mock.calls.filter(([line]) => line === '[tailorit-autofill] content.entry-choice')
+        .map(([, data]) => data)).toEqual([{ pressed: false }]);
+      expect(gate.presses).not.toContain('elsewhere');
+      expect(gate.accepted).toEqual([]);
+    } finally {
+      info.mockRestore();
+    }
+  }, 60_000);
 });
 
 describe('jr6 CHAINS: Workday (E-Workday B5, B6 and F2; WORKDAY.md "Integration", F2.md 9)', () => {

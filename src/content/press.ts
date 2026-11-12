@@ -306,8 +306,10 @@ export function blockOf(kind: PauseKind): EntryBlock {
 /** v4 (D7): a run at a choice of how to apply (authState 'entry-choice': Workday's "Start Your Application") presses the
  *  adapter's declared entry on it (its Apply Manually) through the entry door, every guard of it held (never while a
  *  form or a challenge shows, never a control the adapter never presses): 'pressed', else 'none' (the run then rests
- *  silently, and follows the person's own choice). Called by src/content/runtime.ts alone (RunEnv.enterChoice). */
-export function pressEntryChoice(doc: Document, adapter: Adapter): 'pressed' | 'none' {
+ *  silently, and follows the person's own choice). Called by src/content/runtime.ts alone (RunEnv.enterChoice).
+ *  jr6 ifix SEC-2: `address`, the frame's own, lets the door refuse a choice that leads to another origin, as at the
+ *  entry (pressEntry's options.address): 'none' then, nothing pressed. */
+export function pressEntryChoice(doc: Document, adapter: Adapter, address?: URL): 'pressed' | 'none' {
   if (pageChallenged(doc)) return 'none';
   let state: ReturnType<NonNullable<Adapter['authState']>> = null;
   try {
@@ -316,8 +318,9 @@ export function pressEntryChoice(doc: Document, adapter: Adapter): 'pressed' | '
     state = null;
   }
   if (state !== 'entry-choice') return 'none';
-  // jr6 apply F2 item 4: a control the door refused by where it goes is no press either.
-  const clicked = pressDoor(adapter, doc);
+  // jr6 apply F2 item 4: a control the door refused by where it goes is no press either; jr6 ifix SEC-2: another
+  // origin included.
+  const clicked = pressDoor(adapter, doc, address);
   return clicked !== null && typeof clicked === 'object' ? 'pressed' : 'none';
 }
 
@@ -464,29 +467,41 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
     if (first === 'pressed') return follow();
     if (first !== 'wait') return Promise.resolve(first);
     return new Promise((resolve) => {
+      // jr6 ifix B4 (the integration review's behaviour lens): the wait's abort listener goes once it is settled.
+      const settled = new AbortController();
+      const settle = (answer: EntryResult | Promise<EntryResult>): void => {
+        settled.abort();
+        resolve(answer);
+      };
       watchForLateForm(doc, followMs, () => {
         const looked = next();
         if (looked === 'wait') return false;
-        resolve(looked === 'pressed' ? follow() : looked);
+        settle(looked === 'pressed' ? follow() : looked);
         return true;
       }, signal, () => {
         const last = next();
         // jr6 apply F2 item 3 (apply-b-new-1): no choice came, but the press was made: pressed, not followed.
-        resolve(last === 'pressed' ? follow() : last === 'wait' ? { outcome: 'pressed', followed: false } : last);
+        settle(last === 'pressed' ? follow() : last === 'wait' ? { outcome: 'pressed', followed: false } : last);
       });
-      signal.addEventListener('abort', () => resolve(done), { once: true });
+      signal.addEventListener('abort', () => settle(done), { once: true, signal: settled.signal });
     });
   };
   const now = attempt();
   if (now !== null) return now.outcome === 'pressed' ? follow() : Promise.resolve(now);
   return new Promise((resolve) => {
+    // jr6 ifix B4: the wait's abort listener goes once it is settled.
+    const settled = new AbortController();
+    const settle = (answer: EntryResult | Promise<EntryResult>): void => {
+      settled.abort();
+      resolve(answer);
+    };
     watchForLateForm(doc, waitMs, () => {
       const outcome = attempt();
       if (outcome === null) return false;
-      resolve(outcome.outcome === 'pressed' ? follow() : outcome);
+      settle(outcome.outcome === 'pressed' ? follow() : outcome);
       return true;
-    }, signal, () => resolve({ outcome: 'not-offered' }));
-    signal.addEventListener('abort', () => resolve({ outcome: 'not-offered' }), { once: true });
+    }, signal, () => settle({ outcome: 'not-offered' }));
+    signal.addEventListener('abort', () => settle({ outcome: 'not-offered' }), { once: true, signal: settled.signal });
   });
 }
 

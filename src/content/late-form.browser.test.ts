@@ -5,7 +5,7 @@
  * React draws the form it mounts the launcher and says hello again with the form; a page an adapter says nothing about
  * (a fixture-board page whose form appears later) is not watched, as before.
  */
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import ashbyHtml from '../../fixtures/synthetic/ashby-widgets/index.html?raw';
 import { mountAshbyForm, newLog } from '../../fixtures/synthetic/ashby-widgets/app';
 import { ashbyAdapter } from '../adapters/ashby';
@@ -13,6 +13,7 @@ import { genericAdapter } from '../adapters/generic';
 import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { quietWait } from '../dom/settle';
+import { startDeadline } from '../dom/time'; // jr6 ifix B3
 import { createFakeWorker, testVocab } from './content.testkit';
 import { LATE_FORM_CAP_MS, LATE_FORM_LOOK_MS, lateAdapters, lateFormMs, watchForLateForm,
   // jr6 apply F2 item 5
@@ -227,5 +228,59 @@ describe('the late watches hear an attribute that shows a form (jr6 apply F2 ite
     section.style.display = 'block';
     expect(await until(fixture.view, fixture.doc, () => looks === 1, 1_500)).toBe(true);
   });
+
+  // jr6 ifix B3 (the integration review's behaviour lens): the company page's watch runs for the document's life, so a
+  // class toggled on the body (a scroll class) or on a wrapper that holds a search box (a sticky header) must not cost a
+  // full look every 12 s. Fake timers: 60 s of toggles every 100 ms each.
+  it('never looks for a class toggled on the body; once for a sticky header holding a search box; again for a form shown (B3)',
+    async () => {
+      const fixture = await loadFixture(document, `<main><header id="top" class="a"><label for="q">Search jobs</label>
+        <input id="q" type="search"></header><section id="apply" style="display:none"><form><input id="n"></form>
+        </section><p>News</p></main>`);
+      const { doc, view } = fixture;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      // The browser's next frame, on the same fake clock (dom/time's timer).
+      const frames = new Map<number, () => void>();
+      let nextFrameId = 1;
+      vi.spyOn(view, 'requestAnimationFrame').mockImplementation((run) => {
+        const id = nextFrameId++;
+        frames.set(id, startDeadline(16, () => {
+          frames.delete(id);
+          run(0);
+        }));
+        return id;
+      });
+      vi.spyOn(view, 'cancelAnimationFrame').mockImplementation((id) => {
+        frames.get(id)?.();
+        frames.delete(id);
+      });
+      let looks = 0;
+      const stopped = new AbortController();
+      try {
+        watchForSiteForm(doc, () => {
+          looks += 1;
+          return false;
+        }, stopped.signal);
+        const toggle = async (el: Element) => {
+          for (let at = 0; at < 600; at += 1) {
+            el.classList.toggle('scrolled');
+            await vi.advanceTimersByTimeAsync(100);
+          }
+        };
+        await toggle(doc.body);
+        await toggle(doc.documentElement);
+        expect(looks).toBe(0);
+        await toggle(doc.getElementById('top')!);
+        expect(looks).toBe(1);
+        // A wrapper drawn hidden and then shown by its style still counts.
+        doc.getElementById('apply')!.style.display = 'block';
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(looks).toBe(2);
+      } finally {
+        stopped.abort();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+      }
+    });
 });
 // ── end jr6 apply F2 item 5 ──

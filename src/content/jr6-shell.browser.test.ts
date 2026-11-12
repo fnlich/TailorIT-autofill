@@ -522,7 +522,7 @@ describe('item 4: none saved under Sign up & Autofill, the run waits for one, th
     expect(seen.typed).toMatchObject({ email: EMAIL, password: PASSWORD, verify: PASSWORD });
   });
 
-  it('none saved within the wait: nothing asked again, and the toast says to choose Sign Up & Autofill again', async () => {
+  it('none saved within the wait: nothing more asked, and the toast says to save one, then choose Sign Up & Autofill', async () => {
     const { seen, worker, runtime } = await atCreateAccount(800, [{ ok: false, error: 'not_found' }]);
     await vi.waitFor(() => expect(toastText(runtime)).toBe(COPY.toasts.noSignIn), { timeout: 5_000 });
     // One saved later is no reason to ask: the wait is over.
@@ -611,6 +611,60 @@ describe('item 7: the panel’s Cancel during a wall’s own sign-in step (APPLY
     expect(boxesOf(fixture.doc)).toMatchObject({ email: '', password: '', verify: '' });
     await vi.waitFor(() => expect(worker.of('frame/wall').at(-1)).not.toHaveProperty('entering'));
   });
+});
+
+// ── jr6 ifix B1 (the integration review's behaviour lens): a wall's own step and the back/forward cache ─────────────
+
+describe('jr6 ifix B1: a wall step waiting for a password, and the back/forward cache', () => {
+  /** frame/hello's answer as the worker gives it, with typeSignIn as said. */
+  const helloAnswer = (typeSignIn: boolean) => ({ ok: true, data: { frameId: 0, connected: true,
+    settings: typeSignInPushed(typeSignIn).settings } });
+
+  /** Sign up & Autofill at Workday's account page drawn as a wall with no form, none saved: the step waits (WD-04). */
+  async function waiting(hellos: unknown[] = []) {
+    const fixture = await workday(createHtml, WORKDAY);
+    const seen = actAsWorkday(fixture);
+    const walled: Adapter = { ...workdayAdapter, detect: () => null };
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'manual' as const } };
+    const worker = createFakeWorker({ settings, script: { 'signin/credential': [{ ok: false, error: 'not_found' },
+      { ok: true, data: AUTO }], ...(hellos.length === 0 ? {} : { 'frame/hello': hellos }) } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => WORKDAY, isTop: true,
+      adapters: () => [walled], settle: { quietMs: 40 }, signIn: { passwordWaitMs: 60_000 } });
+    runtimes.push(runtime);
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
+    await vi.waitFor(() => expect(runtime.ui?.toasts.shown).toEqual(['no-sign-in']), { timeout: 10_000 });
+    expect(worker.of('frame/wall').at(-1)).toMatchObject({ wall: 'create-account', entering: true });
+    expect(worker.of('signin/credential')).toHaveLength(1);
+    return { fixture, seen, worker, runtime };
+  }
+
+  it('kept in the cache, the step ends (no lock held); back, its wall is told afresh and Sign up & Autofill acts again',
+    async () => {
+      const { seen, worker, runtime } = await waiting();
+      // The person leaves; the browser keeps the page (a trusted pagehide with persisted set).
+      runtime.cached();
+      await vi.waitFor(() => expect(worker.of('frame/wall').at(-1)).not.toHaveProperty('entering'));
+      // Its toast no longer says the step goes on by itself.
+      expect(runtime.ui?.toasts.shown).toEqual([]);
+      const told = worker.of('frame/wall').length;
+      // Back: the worker forgot this frame while it was away; the hello, then the wall told again.
+      await runtime.restored();
+      await vi.waitFor(() => expect(worker.of('frame/wall').length).toBeGreaterThan(told));
+      expect(worker.of('frame/wall').at(-1)).toMatchObject({ wall: 'create-account' });
+      // The person's Sign up & Autofill is not held by the step that was frozen: asked, typed and pressed.
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
+      await vi.waitFor(() => expect(seen.presses).toBe(1), { timeout: 10_000 });
+      expect(worker.of('signin/credential')).toHaveLength(2);
+    });
+
+  it('a hello answered while the step waits, saying a password may be typed now, wakes it: the wall asked again',
+    async () => {
+      // restored() stands for any hello this document says again (here with no hide before it, the step still waiting).
+      const { seen, worker, runtime } = await waiting([helloAnswer(false), helloAnswer(true)]);
+      await runtime.restored();
+      await vi.waitFor(() => expect(seen.presses).toBe(1), { timeout: 10_000 });
+      expect(worker.of('signin/credential')).toHaveLength(2);
+    });
 });
 
 // ── iCIMS's captures at their own addresses ─────────────────────────────────────────────────────────────────────────

@@ -428,6 +428,40 @@ describe('jr6 apply F2: the door’s refusals and each reason told (AP-7, C7, AF
       expect(ENTRY_REFUSALS).toContain('elsewhere');
     }, 40_000);
 
+  // jr6 ifix B2 (the integration review's behaviour lens; its probe's `data-state` case): a dialog our Apply shows by an
+  // attribute the watch does not hear, so only the cap's last look sees it and presses its "Apply manually". That press
+  // is watched after, as pressEntry's follow-up is: the form it draws in place is claimed, and nothing is refused.
+  it('the cap’s last look presses a second step: what it brings is watched for, never "nothing-followed" at once (B2)',
+    async () => {
+      const page = lateHtml.replace(/<script>[\s\S]*?<\/script>/, '')
+        .replace('<div id="apply-slot"></div>', `<div id="apply-slot"><a class="postings-btn" id="apply"
+          href="${LATE}/apply">Apply for this job</a></div>`)
+        .replace('</style>', '[data-state="closed"] { display: none; }</style>')
+        .replace('</body>', `<div role="dialog" aria-modal="true" id="choice" data-state="closed"
+          style="position:fixed;top:10%;left:10%;width:320px;padding:16px;background:#fff"><h3>How would you like to
+          apply?</h3><button type="button" id="manually">Apply manually</button></div></body>`);
+      const { doc, clicks } = await openAt(page, LATE);
+      const choice = doc.getElementById('choice')!;
+      doc.getElementById('apply')!.addEventListener('click', () => void deadline(500)
+        .then(() => choice.setAttribute('data-state', 'open')));
+      doc.getElementById('manually')!.addEventListener('click', () => void deadline(300).then(() => {
+        choice.setAttribute('data-state', 'closed');
+        doc.getElementById('form-slot')!.append((doc.getElementById('form-template') as HTMLTemplateElement)
+          .content.cloneNode(true));
+      }));
+      const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
+      runtimes.push(runtime);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(clicks).toEqual(['apply']), { timeout: 3_000 });
+      // The cap's last look presses "Apply manually"; the form it draws 300 ms later is claimed by Lever's adapter.
+      await vi.waitFor(() => expect(clicks).toEqual(['apply', 'manually']), { timeout: ENTRY_FORM_WAIT_MS + 5_000 });
+      await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 5_000 });
+      expect(runtime.page?.adapter.id).toBe('lever');
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 3_000 });
+      expect(worker.of('entry/pressed')).toHaveLength(2);
+      expect(refusals(worker)).toEqual([]);
+    }, ENTRY_FORM_WAIT_MS + 30_000);
+
   it('says "nothing-followed" when an Apply was pressed and nothing came within the wait', async () => {
     const { doc, clicks } = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1><a id="apply"
       href="${LATE}/apply">Apply for this job</a></main></body>`, LATE);
@@ -1130,5 +1164,162 @@ describe('jr6 apply F2: the line P review’s cases (revA-2, revA-4, revA-6, P-B
         runtimes.splice(0);
         removeFixtures(document);
       }
+    }, 40_000);
+});
+
+// ── jr6 ifix B4 (the integration review's behaviour lens): an entry's waits leave no abort listener behind ──
+
+/** The 'abort' listeners added to an entry's own signal (the first composite AbortSignal.any makes once this starts:
+ *  enter's), counted as each one is added, and how many are still held at a moment: one removed, or dropped by its own
+ *  `signal` option, is released (a signal that aborted fired them all). Restores everything at `stop`. */
+function entryListeners(): { added(): number; live(): number; stop(): void } {
+  let entry: AbortSignal | null = null;
+  const any = AbortSignal.any.bind(AbortSignal);
+  const made = vi.spyOn(AbortSignal, 'any').mockImplementation((signals) => {
+    const signal = any(signals);
+    entry ??= signal;
+    return signal;
+  });
+  const held: Array<{ listener: unknown; dropBy: AbortSignal | undefined; removed: boolean }> = [];
+  const add = EventTarget.prototype.addEventListener;
+  const remove = EventTarget.prototype.removeEventListener;
+  EventTarget.prototype.addEventListener = function (this: EventTarget, type: string, listener: unknown,
+    options?: boolean | AddEventListenerOptions) {
+    if (this === entry && type === 'abort' && listener !== null) {
+      held.push({ listener, dropBy: typeof options === 'object' ? options.signal : undefined, removed: false });
+    }
+    return add.call(this, type, listener as EventListener, options);
+  } as typeof add;
+  EventTarget.prototype.removeEventListener = function (this: EventTarget, type: string, listener: unknown,
+    options?: boolean | EventListenerOptions) {
+    if (this === entry && type === 'abort') for (const one of held) if (one.listener === listener) one.removed = true;
+    return remove.call(this, type, listener as EventListener, options);
+  } as typeof remove;
+  return {
+    added: () => held.length,
+    live: () => (entry === null || entry.aborted ? 0
+      : held.filter((one) => !one.removed && one.dropBy?.aborted !== true).length),
+    stop: () => {
+      made.mockRestore();
+      EventTarget.prototype.addEventListener = add;
+      EventTarget.prototype.removeEventListener = remove;
+    },
+  };
+}
+
+describe('jr6 ifix B4: an entry’s waits release their abort listeners once settled', () => {
+  it('an Apply drawn late, then a form drawn in place: the Apply wait and the watch after the press hold none after',
+    async () => {
+      const { doc, clicks } = await openAt(lateHtml.replace('data-apply-delay="3000"', 'data-apply-delay="1000"'), LATE);
+      const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
+      runtimes.push(runtime);
+      const listeners = entryListeners();
+      try {
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+        await vi.waitFor(() => expect(clicks).toEqual(['apply']), { timeout: 6_000 });
+        await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 5_000 });
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 3_000 });
+        // pressEntry's wait for the Apply and afterPress's watch each added one; neither holds it now.
+        expect(listeners.added()).toBeGreaterThanOrEqual(2);
+        expect(listeners.live()).toBe(0);
+      } finally {
+        listeners.stop();
+      }
+    }, 30_000);
+
+  it('no Apply declared, its form drawn late: formWithin’s wait holds none after', async () => {
+    const address = addressOf(ultiproRoutes, 'fixtures/ultipro/application.html');
+    const { doc } = await openAt(ultiproHtml, address);
+    const form = doc.querySelector('#OpportunityApply')!;
+    const parent = form.parentNode!;
+    const next = form.nextSibling;
+    form.remove();
+    const own: Adapter = { ...servedAdapter(ultiproAdapter, address), entryControl: undefined,
+      quirks: { ...ultiproAdapter.quirks, formLateMs: 15_000 } };
+    const { worker, runtime } = await runtimeAt(doc, address, [own, genericAdapter]);
+    runtimes.push(runtime);
+    const listeners = entryListeners();
+    try {
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(true), { timeout: 2_000 });
+      await deadline(500);
+      parent.insertBefore(form, next);
+      await vi.waitFor(() => expect(worker.of('run/begin').length).toBeGreaterThan(0), { timeout: 5_000 });
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 3_000 });
+      expect(listeners.added()).toBeGreaterThanOrEqual(1);
+      expect(listeners.live()).toBe(0);
+    } finally {
+      listeners.stop();
+    }
+  }, 30_000);
+
+  it('Workday: the choice drawn 500 ms after Apply: the follow-up wait (pressEntry’s follow) holds none after',
+    async () => {
+      const RESOLVETECH = addressOf(resolvetechRoutes, 'fixtures/workday/jr6-apply-resolvetech-posting.html');
+      const { doc, clicks } = await openAt(resolvetechHtml, RESOLVETECH);
+      const dialog = new DOMParser().parseFromString(choiceHtml, 'text/html')
+        .querySelector('[role="dialog"][data-automation-id="wd-popup-frame"]')!;
+      const signIn = new DOMParser().parseFromString(signInHtml, 'text/html').body;
+      doc.addEventListener('click', (event) => {
+        const pressed = (event.target as Element).closest('[data-automation-id]')?.getAttribute('data-automation-id');
+        if (pressed === 'adventureButton') void deadline(500).then(() => doc.body.append(doc.importNode(dialog, true)));
+        if (pressed === 'applyManually') void deadline(300).then(() => doc.body.replaceWith(doc.importNode(signIn, true)));
+      }, true);
+      const { worker, runtime } = await runtimeAt(doc, RESOLVETECH, [servedAdapter(workdayAdapter, RESOLVETECH),
+        genericAdapter]);
+      runtimes.push(runtime);
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entry).toBe(true), { timeout: 8_000 });
+      const listeners = entryListeners();
+      try {
+        await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+        await vi.waitFor(() => expect(clicks).toEqual(['adventureButton', 'applyManually']), { timeout: 8_000 });
+        await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 6_000 });
+        await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 3_000 });
+        expect(listeners.added()).toBeGreaterThanOrEqual(2);
+        expect(listeners.live()).toBe(0);
+      } finally {
+        listeners.stop();
+      }
+    }, 40_000);
+});
+
+// ── jr6 ifix B1 (the integration review's behaviour lens): an entry and the back/forward cache ──
+describe('jr6 ifix B1: an entry under way when the browser keeps the page in the back/forward cache', () => {
+  it('ends quietly at the persisted pagehide (no refusal, no lock); back, the wall is told and Autofill presses again',
+    async () => {
+      // A posting whose first Apply brings nothing (the person went Back from where it led) and whose second draws
+      // Lever's form in place.
+      const page = lateHtml.replace(/<script>[\s\S]*?<\/script>/, '')
+        .replace('<div id="apply-slot"></div>', `<div id="apply-slot"><a class="postings-btn" id="apply"
+          href="${LATE}/apply">Apply for this job</a></div>`);
+      const { doc, clicks } = await openAt(page, LATE);
+      let presses = 0;
+      doc.getElementById('apply')!.addEventListener('click', () => {
+        presses += 1;
+        if (presses !== 2) return;
+        void deadline(300).then(() => doc.getElementById('form-slot')!
+          .append((doc.getElementById('form-template') as HTMLTemplateElement).content.cloneNode(true)));
+      });
+      const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
+      runtimes.push(runtime);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(clicks).toEqual(['apply']), { timeout: 3_000 });
+      // The entry watches what its press brought (afterPress).
+      await deadline(500);
+      expect(wallsOf(worker).at(-1)?.entering).toBe(true);
+      // The browser keeps the page (a trusted pagehide with persisted set): the entry ends, quietly.
+      runtime.cached();
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 2_000 });
+      const told = worker.of('frame/wall').length;
+      // Back (a trusted pageshow with persisted set): hello, then the page's own Apply told afresh.
+      await runtime.restored();
+      await vi.waitFor(() => expect(worker.of('frame/wall').length).toBeGreaterThan(told), { timeout: 2_000 });
+      expect(wallsOf(worker).at(-1)).toMatchObject({ entry: true, entering: false });
+      // The person's Autofill is not held by the entry that went into the cache: pressed, and the form claimed.
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(clicks).toEqual(['apply', 'apply']), { timeout: 5_000 });
+      await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 5_000 });
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 3_000 });
+      expect(refusals(worker)).toEqual([]);
     }, 40_000);
 });

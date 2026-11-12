@@ -34,7 +34,9 @@ import { oracleAdapter } from '../adapters/oracle';
 import { workdayAdapter } from '../adapters/workday';
 import { genericAdapter } from '../adapters/generic';
 import { ENTRY_FOLLOW_MS, ENTRY_WAIT_CAP_MS, ENTRY_WAIT_MS, entryWaitOf, pressEntry, pressStep, requiredLeftOf,
-  stepButtonsOf } from './press';
+  stepButtonsOf,
+  // jr6 ifix SEC-2
+  pressEntryChoice } from './press';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
 const GREENHOUSE = 'https://job-boards.greenhouse.io/tailoritfixture/jobs/4401';
@@ -276,6 +278,21 @@ describe('the entry door: never a new tab, a download or another origin (jr6 app
       expect(await pressEntry(fixture.doc, [consent], new AbortController().signal, 300, 300))
         .toEqual({ outcome: 'pressed' });
       expect(clicks).toEqual(['apply']);
+    });
+
+  // jr6 ifix SEC-2 (the integration review's security lens): a run's press at a choice of how to apply goes through the
+  // same door, with the frame's address, so a choice that leads to another site is never pressed.
+  it('a run’s entry choice: a link to another origin is never pressed, given the frame’s address (SEC-2)',
+    async () => {
+      const choice: Adapter = { ...apply, authState: () => 'entry-choice' };
+      const other = await posting('<a id="apply" href="https://apply.example-ats.com/job/1/apply">Apply manually</a>');
+      expect(pressEntryChoice(other.fixture.doc, choice, new URL(ADDRESS))).toBe('none');
+      expect(other.clicks).toEqual([]);
+      removeFixtures(document);
+      // One on the frame's own origin is pressed.
+      const own = await posting(`<a id="apply" href="${ADDRESS}/apply">Apply manually</a>`);
+      expect(pressEntryChoice(own.fixture.doc, choice, new URL(ADDRESS))).toBe('pressed');
+      expect(own.clicks).toEqual(['apply']);
     });
 });
 // ── end jr6 apply F2 item 4 ──

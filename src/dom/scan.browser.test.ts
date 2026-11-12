@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { genericAdapter } from '../adapters/generic';
 import type { Adapter } from '../adapters/types';
 import { FIELD_KINDS } from '../core/enums';
+import { classifyByRules } from '../core/resolver/classifyRules'; // jr6 ifix C-1
 import { FieldSpecSchema } from '../messaging/schemas';
 import { fill } from './fillers';
 import { loadFixture, logEvents, removeFixtures } from './fixture.testkit';
@@ -308,6 +309,31 @@ describe('scan: labels, sections and keys', () => {
     expect(unseen!.labelVisible).toBe(false);
     expect(unseen!.statesNoAi).toBeUndefined();
   });
+
+  // jr6 ifix C-1 (SR-3, RULES item 22; the integration review's completeness gap 1): the long label is read with the
+  // field's kind. "In your own words" over a box of prose is an instruction, never a statement that turns AI off for the
+  // step; "… in my own words" on a box is still the attestation. Made-up words, each label past 300 characters.
+  it('reads a long label’s "own words" with its field’s kind: an essay’s instruction states nothing, a box’s still does',
+    async () => {
+      const lead = 'Tell us about a project you led from start to finish: the problem, the people involved, the choices you '
+        + 'made along the way, what went wrong and what you would do differently next time. We read every answer '
+        + 'carefully and there are no right or wrong answers here, so please take the time you need to answer well. ';
+      const essay = `${lead}In your own words, describe what you learned from it.`;
+      const box = `${lead}I certify that all of my answers on this application are in my own words.`;
+      expect([...essay].length).toBeGreaterThan(300);
+      expect([...box].length).toBeGreaterThan(300);
+      const fixture = await loadFixture(document, `<!doctype html><body><form>
+        <label for="e">${essay}</label><textarea id="e"></textarea>
+        <label><input type="checkbox" id="c"> ${box}</label>
+      </form></body>`);
+      const [written, ticked] = scan(fixture.doc.querySelector('form')!, null, OPTIONS).fields;
+      expect(written!.kind).toBe('textarea');
+      expect(written!.statesNoAi).toBeUndefined();
+      expect(classifyByRules(toFieldSpec(written!))?.category).not.toBe('consent.aiAttestation');
+      expect(ticked!.kind).toBe('checkbox');
+      expect(ticked!.statesNoAi).toBe(true);
+      expect(classifyByRules(toFieldSpec(ticked!))?.category).toBe('consent.aiAttestation');
+    });
 });
 
 describe('scan: re-finding and handing over', () => {

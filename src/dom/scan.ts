@@ -357,7 +357,10 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       description: draft.description, required: draft.required, options: draft.options ?? [], optionSetHash,
       ...(draft.optionsPartial ? { optionsPartial: true as const } : {}),
       // The core pass of 2026-11-06: an "I did not use AI" statement past the label's 300 characters (Dropzone's).
-      ...(draft.label.whole !== undefined && statesNoAiUse({ label: draft.label.whole, description: '' })
+      // jr6 ifix C-1 (SR-3, RULES item 22, RULES' hand-off edit 2): read with the field's kind, so "in your own words"
+      // over a box of prose is an instruction here too; only a box or a choice affirms it.
+      ...(draft.label.whole !== undefined
+        && statesNoAiUse({ label: draft.label.whole, description: '', kind: draft.kind })
         ? { statesNoAi: true as const } : {}),
       constraints: draft.constraints, autocomplete: draft.autocomplete, nameAttr: draft.nameAttr, idAttr: draft.idAttr,
       ordinal: ordinals[i]!, domOrder: i, visibility: draft.visibility, disabled: draft.disabled,
