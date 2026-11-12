@@ -701,7 +701,8 @@ root.getElementById('n').attachShadow({ mode: 'open' }).innerHTML = '<b data-pro
     expect(text).not.toMatch(/shadowmode=/);
     // Redacted inside the roots: the typed value, the checked box, the email, the file name; jr_id gone everywhere.
     expect(text).not.toMatch(new RegExp(`${FIRST}|example\\.test|cv final|cv%20final|jr_id|\\schecked`, 'i'));
-    expect(text).toContain('href="https://jobs.jobvite.com/x?src=1"');
+    // jr7 TOOLING-7 (r2): the link's other parameter is kept, its value REDACTED now that src is a referral source.
+    expect(text).toContain('href="https://jobs.jobvite.com/x?src=REDACTED"');
     const header = JSON.parse(/<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(conversion.files[0]?.text ?? '')?.[1] ?? '{}');
     expect(header).toMatchObject({ source: NEW_PAGE_CLEAN, shadowRoots: 2, removed: { jrIds: 1 } });
     expect(conversion.routes).toEqual({ [NEW_PAGE_CLEAN]: `${join(work, 'jobvite').split('\\').join('/')}/shadow.html` });
@@ -2593,7 +2594,14 @@ const CHOSEN_STATE_FIXTURES = [
  * hjf-apply-section, which kept each answered pill group's tab stop on the chosen pill (ORACLE); HiBob's form, which
  * kept Angular's state classes on its components (the jr6 privacy check).
  */
-const MARKED_FIXTURES: Record<string, string[]> = {};
+const MARKED_FIXTURES: Record<string, string[]> = {
+  // jr7 TOOLING-7 (r2, BOARDS-7's finding): SmartRecruiters' one-click pages keep their phone country list's chosen row
+  // drawn apart (c-spl-dropdown-item--with-suffix and its suffix check icon), which the converter clears since r2: a
+  // privacy finding, handed to BOARDS-7 to convert again (SP\jr7\build\TOOLING-7.md, r2).
+  'smartrecruiters/jr6-wiser-one-click.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
+  'smartrecruiters/jr6-xplor-one-click-filled.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
+  'smartrecruiters/xplor-one-click.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
+};
 
 /**
  * jr6 (jobvite-new-4): the committed fixtures converted before the converter cleared AngularJS's state classes, which
@@ -2665,6 +2673,14 @@ describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
     expect(kinds('<input type="checkbox" checked>')).toEqual(['a radio or box input that says it is checked']);
     expect(kinds('<div class="ant-radio-wrapper ant-radio-wrapper-checked"></div>'))
       .toEqual(['a chosen class CHOSEN_MARKS names']);
+    // jr7 TOOLING-7 (r2): SmartRecruiters' chosen row's --with-suffix and its suffix check icon (snapshot7
+    // smartrecruiter1's screening page: on the chosen Gender and Race/Ethnicity rows alone); its "active" is no answer.
+    expect(kinds('<div role="option" aria-selected="false" class="c-spl-dropdown-item c-spl-dropdown-item--with-suffix"></div>'))
+      .toEqual(['a chosen class CHOSEN_MARKS names']);
+    expect(kinds('<spl-dropdown-item><spl-icon slot="suffix"><svg></svg></spl-icon></spl-dropdown-item>'))
+      .toEqual([CHOSEN_MARK_LABELS.drawing]);
+    expect(kinds('<div role="option" class="c-spl-dropdown-item active" tabindex="0"></div><span slot="suffix">x</span>'
+      + '<spl-dropdown-item><spl-icon slot="prefix"><svg></svg></spl-icon></spl-dropdown-item>')).toEqual([]);
     // No answer: a tab's open marks, a menu's or a list's own BEM modifiers that name no choice, Workday's own
     // "Select One", a stylesheet or a comment naming a chosen class, a mark set false.
     expect(kinds('<a role="tab" class="mdc-tab mdc-tab--active" aria-selected="true">Application</a>'
@@ -2672,7 +2688,6 @@ describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
       + '<li role="none" class="portalLanguages__item--active">English</li>'
       + '<li role="option" data-value="" aria-selected="true">Select One</li>'
       + '<style>.Mui-checked{color:red}._checked_1sm4i_44{}</style><!-- <span class="Mui-checked"> -->'
-      + '<div role="option" aria-selected="false" class="c-spl-dropdown-item--with-suffix"></div>'
       + '<div role="radio" aria-checked="false" data-checked="false"></div><input type="radio">')).toEqual([]);
   });
 
@@ -3910,7 +3925,8 @@ describe('jr6 fixes: where the person came from (PRIV-4)', () => {
     expect(text).not.toMatch(/source=XB/);
     // Every name and prefix, plain, after &amp;, or percent-encoded once or twice; the value ends at the next separator.
     // jr7 TOOLING-7: and Jobvite's __jvsc.
-    expect(REFERRAL_PARAMS).toEqual(['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source', '__jvsc']);
+    // jr7 TOOLING-7: and Jobvite's __jvsc; (r2) and src.
+    expect(REFERRAL_PARAMS).toEqual(['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source', '__jvsc', 'src']);
     expect(REFERRAL_PREFIXES).toEqual(['utm_']);
     const cases: Array<[string, string]> = [
       ['https://jobs.jobvite.com/acme/job/oX1?__jvst=Job%20Board&__jvsd=FixtureBoard&nl=0',
@@ -4254,9 +4270,10 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
       expect(body).not.toMatch(/data-sitekey="(?!REDACTED")/);
     }
     expect(body).not.toMatch(/\bhashed=-?\d/);
-    // No chosen mark, as the conversion refuses one (chosenMarksIn); jr7 TOOLING-7 (T7-01): and no widget's shown text
-    // spelled in an id (spelledIdsIn).
-    expect(chosenMarksIn(html)).toEqual([]);
+    // No chosen mark, as the conversion refuses one (chosenMarksIn), but the marks MARKED_FIXTURES lets through while the
+    // file awaits its conversion again (jr7 TOOLING-7, r2); jr7 TOOLING-7 (T7-01): and no widget's shown text spelled in
+    // an id (spelledIdsIn).
+    expect(chosenMarksIn(html).filter((label) => !(MARKED_FIXTURES[`${name}.html`] ?? []).includes(label))).toEqual([]);
     expect(spelledIdsIn(html)).toEqual([]);
   });
 });
@@ -4275,6 +4292,18 @@ const JOBVITE_SHARE_FIXTURES = ['jobvite/ninjaone-posting.html', 'jobvite/jr6-si
   'jobvite/jr6-vhl-posting.html'];
 /** The share networks Jobvite's posting widget names in __jvsc (lower case, as checkedForms reads them). */
 const JOBVITE_SHARE_CHANNELS = ['linkedin', 'twitter', 'facebook', 'email'];
+/** jr7 TOOLING-7 (r3, UKGREADY-7's open item 1): the committed fixtures converted before src joined REFERRAL_PARAMS
+ *  that keep a src= value in an address (frozen: a privacy finding until each is converted again, its entry then going;
+ *  each listed file present on a branch must still hold one). Rippling's qu-careers pages (RBP-7's P2), Oracle's
+ *  fortive-email-code (ORACLE-7's P2), CareerPlug's two forms (a Facebook link's src=; no jr7 package: INT-7) and UKG
+ *  Ready's three jr7 cases committed on jr7-ukgready before r3 (UKGREADY-7's P2; absent from other branches). */
+const SRC_REFERRAL_FIXTURES = ['careerplug/cloudscouts-form.html', 'careerplug/eitacies-uploaded.html',
+  'oracle/fortive-email-code.expect.json', 'oracle/fortive-email-code.html', 'oracle/fortive-email-code.routes.json',
+  'rippling/qu-careers-form.expect.json', 'rippling/qu-careers-form.html', 'rippling/qu-careers-form.routes.json',
+  'rippling/qu-careers-posting.html', 'rippling/qu-careers-posting.routes.json',
+  'ukgready/jr7-saashr-choice.html', 'ukgready/jr7-saashr-choice.routes.json', 'ukgready/jr7-saashr-posting.html',
+  'ukgready/jr7-saashr-posting.routes.json', 'ukgready/jr7-saashr-start-filled.html',
+  'ukgready/jr7-saashr-start-filled.routes.json'];
 
 /** Each referral parameter (REFERRAL_PARAMS, REFERRAL_PREFIXES) that holds a value other than REDACTED in a text, by
  *  name, in every form the final check reads (checkedForms: as written, entities decoded, percent-decoded): the
@@ -4348,16 +4377,29 @@ describe('jr6 ifix C-4: referral parameters in the committed fixtures (PRIV-4)',
     expect(cut.length).toBeLessThanOrEqual(10);
   }, 60_000);
 
-  it("every committed fixture: no arrival tag a person's visit adds (iis, iisn, __jvst, __jvsd, gh_src, lever-source, __jvsc) holds a value", () => {
+  it("every committed fixture: no arrival tag a person's visit adds (iis, iisn, __jvst, __jvsd, gh_src, lever-source, __jvsc, src) holds a value", () => {
     // `source` and utm_* also name public share and footer links' constant tags in main's captures (Nextdoor's sharekit,
     // a Greenhouse sign-in link, Workable's and Dice's footers): the jr6 sweep above reads those in jr6 cases.
     const arrival = REFERRAL_PARAMS.filter((name) => name !== 'source');
-    expect(arrival).toEqual(['iis', 'iisn', '__jvst', '__jvsd', 'gh_src', 'lever-source', '__jvsc']);
+    expect(arrival).toEqual(['iis', 'iisn', '__jvst', '__jvsd', 'gh_src', 'lever-source', '__jvsc', 'src']);
     expect(ADDRESSED_FIXTURES.length).toBeGreaterThan(800);
-    const failing = ADDRESSED_FIXTURES.flatMap((file) => [...new Set(referralNamesIn(readFileSync(join(ROOT, 'fixtures',
-      file), 'utf8'), { shareChannels: JOBVITE_SHARE_FIXTURES.includes(file) }))].filter((name) => arrival.includes(name))
-      .map((name) => `${file}: ${name}`));
-    expect(failing).toEqual([]);
+    const named = (file: string, text = readFileSync(join(ROOT, 'fixtures', file), 'utf8')) => [...new Set(
+      referralNamesIn(text, { shareChannels: JOBVITE_SHARE_FIXTURES.includes(file) }))].filter((name) => arrival.includes(name));
+    // jr7 TOOLING-7 (r2): a src= value is let through in the frozen list's files alone, until each is converted again.
+    const hits = (file: string, text?: string) => named(file, text)
+      .filter((name) => !(name === 'src' && SRC_REFERRAL_FIXTURES.includes(file))).map((name) => `${file}: ${name}`);
+    expect(ADDRESSED_FIXTURES.flatMap((file) => hits(file))).toEqual([]);
+    // Each listed file present here still holds its src= (it leaves the list when converted again); the ten on every
+    // branch must be here.
+    for (const file of SRC_REFERRAL_FIXTURES.filter((each) => ADDRESSED_FIXTURES.includes(each))) {
+      expect(named(file), file).toContain('src');
+    }
+    expect(SRC_REFERRAL_FIXTURES.filter((each) => !each.startsWith('ukgready/'))
+      .every((each) => ADDRESSED_FIXTURES.includes(each))).toBe(true);
+    // The rule itself: a src= value anywhere else is a hit, a listed file's own let through, a REDACTED one none.
+    expect(hits('lever/fixture.html', '<a href="/jobs/1?src=FixtureBoard">')).toEqual(['lever/fixture.html: src']);
+    expect(hits('rippling/qu-careers-form.html', '<a href="/jobs/1?src=FixtureBoard">')).toEqual([]);
+    expect(hits('lever/fixture.html', '<a href="/jobs/1?src=REDACTED"><img src="/a.png">')).toEqual([]);
     // jr7 TOOLING-7: the share-button exemption is narrow: each listed file holds a __jvsc that only it excuses, and a
     // __jvsc naming no share network is a hit there too.
     for (const file of JOBVITE_SHARE_FIXTURES) {
@@ -4798,5 +4840,66 @@ document.head.appendChild(s);</script></body></html>` });
       // The filter list the owner's browser injected stands in older captures (INT-2 §4: 21 with a utm_ tag in it).
       expect(filterLists).toBeGreaterThanOrEqual(21);
     }, 60_000);
+
+  it("r2 (UKGREADY-7's open item 1): a posting's src= referral source reads REDACTED in its address and links, never an "
+    + "element's src attribute", async () => {
+    const posting = 'https://secure7.saashr.com/ta/6200000.careers?lang=en-US&ShowJob=123456789&src=FixtureBoard';
+    const { conversion, text } = await convertPage(posting, 'ukgready', 'jr7-r2-src', `<h1>Engineer</h1>
+<a class="apply" href="/ta/6200000.careers?ShowJob=123456789&amp;src=FixtureBoard&amp;lang=en-US">Apply</a>
+<a href="https://www.facebook.com/sharer.php?u=https%3A%2F%2Fsecure7.saashr.com%2Fta%2F6200000.careers%3FShowJob%3D1%26src%3DFixtureBoard">Share</a>`);
+    const clean = 'https://secure7.saashr.com/ta/6200000.careers?lang=en-US&ShowJob=123456789&src=REDACTED';
+    expect(headerOf(text).source).toBe(clean);
+    expect(Object.keys(conversion.routes)).toEqual([clean]);
+    expect(text).not.toContain('FixtureBoard');
+    expect(text).toContain('href="/ta/6200000.careers?ShowJob=123456789&amp;src=REDACTED&amp;lang=en-US"');
+    expect(text).toContain('%26src%3DREDACTED');
+    expect(headerOf(text).redacted.referral).toBeGreaterThanOrEqual(2);
+    // The one rule reads a query's src= alone: an element's src attribute, gh_src's own name and a srcset stay.
+    expect(redactReferralParams('<img src="https://cdn.example/a.png?w=1" srcset="b.png 2x"><a href="/j?gh_src=x1&amp;src=Two">')
+      .text).toBe('<img src="https://cdn.example/a.png?w=1" srcset="b.png 2x"><a href="/j?gh_src=REDACTED&amp;src=REDACTED">');
+  }, 60_000);
+
+  it("r2 (BOARDS-7's finding): SmartRecruiters' chosen list row reads as its siblings once cleared: its suffix class and icon, "
+    + "every row's focus mark, the first row's inner tab stop, its tooltip's words", async () => {
+    // snapshot7 smartrecruiter1's screening page, filled (markup only; words made up): each row an spl-select-option whose
+    // shadow root holds an spl-dropdown-item, whose own shadow root holds div[role=option]; an spl-truncate's tooltip
+    // repeats the row's words in its content. The unanswered look is the second list's: the first row "active" with the
+    // tab stop; the chosen row draws --with-suffix, aria-selected and the check icon (spl-icon slot="suffix").
+    const list = (id: string, rows: string[], chosen: number) => `<label for="${id}">Pick one</label>
+<spl-select id="${id}"></spl-select>
+<script>
+(() => {
+  const root = document.getElementById('${id}').attachShadow({ mode: 'open' });
+  root.innerHTML = '<div role="listbox" aria-label="Options">' + ${JSON.stringify(rows)}.map((words, at) =>
+    '<spl-select-option value="' + at + '"></spl-select-option>').join('') + '</div>';
+  [...root.querySelectorAll('spl-select-option')].forEach((option, at) => {
+    const item = document.createElement('spl-dropdown-item');
+    if (at === ${chosen}) item.setAttribute('selected', '');
+    item.innerHTML = '<spl-truncate title="' + ${JSON.stringify(rows)}[at] + '">' + ${JSON.stringify(rows)}[at] + '</spl-truncate>'
+      + (at === ${chosen} ? '<spl-icon slot="suffix"><svg width="16" height="16"><path d="M1 1h14v14H1z"></path></svg></spl-icon>' : '');
+    option.attachShadow({ mode: 'open' }).append(item);
+    item.attachShadow({ mode: 'open' }).innerHTML = '<div role="option" aria-selected="' + (at === ${chosen}) + '" class="'
+      + 'c-spl-dropdown-item' + (at === 0 ? ' active' : '') + (at === ${chosen} ? ' c-spl-dropdown-item--with-suffix' : '')
+      + '" tabindex="' + (at === 0 ? 0 : -1) + '"><slot></slot><slot name="suffix"></slot></div>';
+    item.querySelector('spl-truncate').attachShadow({ mode: 'open' }).innerHTML =
+      '<spl-tooltip content="' + ${JSON.stringify(rows)}[at] + '"><slot></slot></spl-tooltip>';
+  });
+})();
+</script>`;
+    const file = await liveCapture(SR_ONE_CLICK, list('gender', ['Alpha', 'Beta', 'Gamma'], 0)
+      + list('race', ['Delta', 'Epsilon', 'Zeta', 'Eta'], 2), 'jr7-r2-sr');
+    const conversion = await convertMhtml({ file, platform: 'smartrecruiters', caseName: 'jr7-r2-sr', outDir: work });
+    const text = conversion.files[0]?.text ?? '';
+    for (const gone of ['c-spl-dropdown-item--with-suffix', 'slot="suffix"><svg', 'aria-selected="true"', ' selected=""']) {
+      expect(text, gone).not.toContain(gone);
+    }
+    expect(text).not.toMatch(/class="c-spl-dropdown-item active"/);
+    // Each list's first row keeps the tab stop an unanswered list draws; every other row -1.
+    expect(text.match(/class="c-spl-dropdown-item" tabindex="0"/g)).toHaveLength(2);
+    expect(text.match(/class="c-spl-dropdown-item" tabindex="-1"/g)).toHaveLength(5);
+    // The tooltips' words stay, the list's own (no typed query here), read by presence alone in the rows' check.
+    expect(text).toContain('<spl-tooltip content="Epsilon">');
+    expect(ROW_WORD_ATTRIBUTES).toContain('content');
+  }, 120_000);
 });
 // ── end jr7 TOOLING-7 ──

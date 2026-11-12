@@ -516,9 +516,14 @@ export const FIXED_ROWS = ['spl-select-option[value="goToManualLocationMode"]'];
 export const LISTED_LISTS = 'select, datalist, [role="listbox" i], [role="grid" i], [role="treegrid" i], [role="tree" i], '
   + '[role="menu" i], [role="menubar" i]';
 /** The attributes that say a row's words (or its value): they become REDACTED with the row's words. Beside these, every
- *  data- attribute ROW_WORD_DATA_SOURCE names (Workday's data-automation-label). */
+ *  data- attribute ROW_WORD_DATA_SOURCE names (Workday's data-automation-label). jr7 TOOLING-7 (r2; snapshot7
+ *  smartrecruiter1's screening lists): and a tooltip's content, SmartRecruiters' <spl-tooltip content="<the row's
+ *  words>"> inside each row's spl-truncate (a typed result's row loses it with its words; the uneven-rows check reads
+ *  it by its presence, as a title). */
 export const ROW_WORD_ATTRIBUTES = ['value', 'data-value', 'label', 'aria-label', 'title', 'alt', 'aria-description',
-  'aria-valuetext', 'splarialabel'];
+  'aria-valuetext', 'splarialabel',
+  // jr7 TOOLING-7 (r2)
+  'content'];
 /** The data- attributes that say a row's words. */
 export const ROW_WORD_DATA_SOURCE = '^data-[\\w-]*(?:label|name|text|title|value|caption|display)$';
 /** The attributes that identify a row (its id, a name, an address, a data- id or key): normalised, so what names the
@@ -622,16 +627,22 @@ export const ROVING_GROUP_TAGS = ['select', 'datalist'];
  *  (svg.toggled > circle.radio-dot) on the chosen radio alone, a radio the page chooses by default included (snapshot6
  *  adp2's Questions and its salary basis, adp's Resume choice), and ADP's sdf-select-item a check mark
  *  (div#checked-icon > sdf-icon) on the chosen item alone (adp1's State list, adp2's Questions lists). Each names the
- *  host whose tree draws it and the part by its tag, id or class. @type {Array<{ host: string; tag?: string; id?: string;
- *  className?: string }>} */
+ *  host whose tree draws it and the part by its tag, id or class (jr7 TOOLING-7: or its slot). jr7 TOOLING-7 (r2,
+ *  BOARDS-7's finding on snapshot7 smartrecruiter1's screening page, filled): SmartRecruiters' spl-dropdown-item draws
+ *  a check icon on its chosen row alone, <spl-icon slot="suffix"> in its light tree (the Gender and Race/Ethnicity
+ *  lists; the phone country list of the one-click pages too). @type {Array<{ host: string; tag?: string; id?: string;
+ *  className?: string; slot?: string }>} */
 export const CHOSEN_DRAWINGS = [
   { host: 'sdf-radio-button', tag: 'circle', className: 'radio-dot' },
   { host: 'sdf-select-item', id: 'checked-icon' },
+  // jr7 TOOLING-7 (r2)
+  { host: 'spl-dropdown-item', tag: 'spl-icon', slot: 'suffix' },
 ];
 /** A CHOSEN_DRAWINGS part as a selector, in its host's light tree or its shadow root (deepenInPage reaches both).
- *  @param {{ host: string; tag?: string; id?: string; className?: string }} part */
-const drawingSelector = ({ host, tag = '', id, className }) => {
-  const own = `${tag}${id === undefined ? '' : `#${id}`}${className === undefined ? '' : `.${className}`}`;
+ *  @param {{ host: string; tag?: string; id?: string; className?: string; slot?: string }} part */
+const drawingSelector = ({ host, tag = '', id, className, slot }) => {
+  const own = `${tag}${id === undefined ? '' : `#${id}`}${className === undefined ? '' : `.${className}`}`
+    + `${slot === undefined ? '' : `[slot="${slot}"]`}`;
   return `${host} ${own}, :host(${host}) ${own}`;
 };
 /** jr6 fixes (PRIV-1's value mirror, found by the ADP fixer): an attribute in which a widget repeats its group's chosen
@@ -754,6 +765,13 @@ export const CHOSEN_MARKS = [
   // radio's wrapper (<div class="uiLibRadio ui-radio-lg ui-radio-checked">) and the ticked box's label (<label
   // class="uiLibCheckbox ui-checkbox-checked">); their icons are CHOSEN_ICONS'. ──
   { selector: '.ui-radio-checked, .ui-checkbox-checked', classes: ['ui-radio-checked', 'ui-checkbox-checked'] },
+  // jr7 TOOLING-7 (r2, BOARDS-7's finding; snapshot7 smartrecruiter1's screening page, filled): SmartRecruiters'
+  // spl-dropdown-item draws, inside its shadow root, <div class="c-spl-dropdown-item c-spl-dropdown-item--with-suffix"
+  // role="option"> on the chosen row alone (its suffix icon is a CHOSEN_DRAWINGS part), and "active" on the row its focus
+  // stands on (the first, or the chosen one): both go from every row, so no row reads apart. ("active" is read by its
+  // pattern on these rows alone: a tab's or a menu's own "active" elsewhere is no answer, and chosenMarksIn names it not.)
+  { selector: '.c-spl-dropdown-item.active, .c-spl-dropdown-item--with-suffix', classes: ['c-spl-dropdown-item--with-suffix'],
+    patterns: ['^active$'], aria: false },
 ];
 
 /** jr7 TOOLING-7 (T7-01; snapshot7 paycomonline1's application steps): an icon a widget draws for its chosen state, which
@@ -805,6 +823,9 @@ export const CHOICE_ROW_INPUT = {
     'title', ...ROW_ID_ATTRIBUTES, ...ROW_WORD_ATTRIBUTES])],
   ownData: [ROW_ID_DATA_SOURCE, ROW_WORD_DATA_SOURCE],
   fixed: FIXED_ROWS.join(', '),
+  // jr7 TOOLING-7 (r2): the roles whose roving tab stop the first row's own tree may hold (SmartRecruiters'
+  // div[role=option] inside its spl-dropdown-item's shadow root).
+  roving: ROVING_ROLES,
 };
 
 /** The account's and the profile's own text (the new ATSs, DESIGN-NEW-ATS §6.4): a welcome line, an account menu, a
@@ -913,11 +934,17 @@ const PER_LOAD_SOURCE = `([?&](?:${PER_LOAD_PARAMS.join('|')})=)[^&#]*`;
  *  (dropped whole). jr7 TOOLING-7 (SP\jr6\build\INT-2.md §5, the leftover BUILD7 hands TOOLING-7): and Jobvite's third
  *  source tag, __jvsc (the channel), beside __jvst and __jvsd: in a person's address it says how they came; on a
  *  posting's own share buttons it names the network (judged public in the three committed fixtures converted before it,
- *  which the referral sweeps read by name and value: test/mhtml-to-fixture.test.ts JOBVITE_SHARE_CHANNELS).
+ *  which the referral sweeps read by name and value: test/mhtml-to-fixture.test.ts JOBVITE_SHARE_CHANNELS). jr7 TOOLING-7
+ *  (r2, UKGREADY-7's open item 1): and src, a posting's referral source as a query parameter (UKG Ready's
+ *  /ta/<company>.careers?...&ShowJob=<id>&src=<source>, Rippling's and Oracle's posting addresses): read, as every name
+ *  here, only after a query's ? or & (plain, as &amp;, percent-encoded), so an element's own src attribute (src="...",
+ *  after a space) is never touched.
  *  @type {string[]} */
 export const REFERRAL_PARAMS = ['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source',
   // jr7 TOOLING-7
-  '__jvsc'];
+  '__jvsc',
+  // jr7 TOOLING-7 (r2)
+  'src'];
 /** The prefixes of referral parameters: every utm_* (utm_source, utm_medium, utm_campaign, utm_term, utm_content...;
  *  careers-sentinel's address and frame, a company's own links). */
 export const REFERRAL_PREFIXES = ['utm_'];
@@ -3814,9 +3841,14 @@ export function redactListRowsInPage(input) {
  * chosen sdf-radio-button and sdf-select-item draw their marks there); a class that only says where a row stands
  * (…-first, …-last, …-only) reads alike; the first row's roving tab stop (tabindex="0") reads as its siblings' tabindex,
  * an unanswered group's own, so the tab stop counts in the shape; the site's own rows (`fixed`: FIXED_ROWS) are left out.
+ * jr7 TOOLING-7 (r2): and a roving tab stop on an element of the first row's own tree (a `roving` role's, inside its
+ * shadow roots too: SmartRecruiters' div[role=option] in spl-dropdown-item's) reads as the tabindex its siblings' such
+ * elements most often hold: the stop an unanswered list draws on its first row (snapshot7 smartrecruiter1's
+ * Race/Ethnicity list: the first row "active" with tabindex="0", the chosen row elsewhere), which clearChoicesInPage
+ * moves there from any other row and chosenMarksIn refuses anywhere else.
  * Answers, per entry, how many groups it read and how many held rows apart; never a value.
  * @param {{ rows: Array<{ group: string; row: string; own?: string[] }>; own?: string[]; ownData?: string[];
- *   fixed?: string }} input
+ *   fixed?: string; roving?: string[] }} input
  * @returns {Array<{ groups: number; uneven: number }>}
  */
 export function unevenChoiceRowsInPage(input) {
@@ -3825,21 +3857,48 @@ export function unevenChoiceRowsInPage(input) {
     'title', ...(input.own ?? [])]);
   const ownData = (input.ownData ?? []).map((source) => new RegExp(source, 'i'));
   const position = /(?:^|[-_])(?:first|last|only)(?:-(?:child|of-type))?$/i;
+  const rovingRoles = input.roving ?? [];
+  /** Whether an element is a roving row (by its role's first word). @param {Element} element */
+  const isRoving = (element) => rovingRoles.includes((element.getAttribute('role') ?? '').trim().toLowerCase().split(/\s+/)[0] ?? '');
   /** @param {Element} element @param {string[]} named the row element's own attributes (CHOICE_ROWS' `own`)
    *  @param {string | null | undefined} stop the first row's tabindex read as its siblings' (null: none)
-   *  @returns {string} */
-  const shape = (element, named = [], stop = undefined) => {
+   *  @param {string | null | undefined} inner jr7 TOOLING-7 (r2): the first row's inner roving stop read as its
+   *  siblings' (null: none) @returns {string} */
+  const shape = (element, named = [], stop = undefined, inner = undefined, top = true) => {
+    // (The row element's own stop is `stop`'s; `inner` reads its descendants', shadow roots' included.)
+    const innerStop = !top && inner !== undefined && isRoving(element) && element.getAttribute('tabindex')?.trim() === '0';
     const attributes = Array.from(element.attributes).flatMap((attribute) => {
       const name = attribute.name.toLowerCase();
       if (own.has(name) || named.includes(name) || ownData.some((pattern) => pattern.test(name))) return [name];
-      if (name === 'tabindex' && stop === null) return [];
+      if (name === 'tabindex' && (stop === null || (innerStop && inner === null))) return [];
       const value = name === 'tabindex' && stop !== undefined && stop !== null ? stop
-        : name === 'class' ? attribute.value.split(/\s+/).filter((token) => token !== '' && !position.test(token)).sort().join(' ')
-          : attribute.value;
+        : name === 'tabindex' && innerStop && inner !== undefined && inner !== null ? inner
+          : name === 'class' ? attribute.value.split(/\s+/).filter((token) => token !== '' && !position.test(token)).sort().join(' ')
+            : attribute.value;
       return [`${name}=${value.replace(/\d+/g, '#')}`];
     }).sort().join(' ');
     const children = [...Array.from(element.shadowRoot?.children ?? []), ...Array.from(element.children)];
-    return `<${element.localName} ${attributes}>${children.map((child) => shape(child)).join('')}</>`;
+    return `<${element.localName} ${attributes}>${children.map((child) => shape(child, [], undefined, inner, false)).join('')}</>`;
+  };
+  /** jr7 TOOLING-7 (r2): the tabindex the roving elements inside rows' own trees (but the first row's) most often hold
+   *  (null: none), or undefined where those trees hold no roving element. @param {Element[]} rows
+   *  @returns {string | null | undefined} */
+  const innerCommonOf = (rows) => {
+    /** @type {Map<string | null, number>} */
+    const tally = new Map();
+    /** @param {Element} element */
+    const visit = (element) => {
+      if (isRoving(element)) {
+        const value = element.getAttribute('tabindex')?.trim() ?? null;
+        tally.set(value, (tally.get(value) ?? 0) + 1);
+      }
+      for (const child of [...Array.from(element.shadowRoot?.children ?? []), ...Array.from(element.children)]) visit(child);
+    };
+    for (const row of rows.slice(1)) {
+      for (const child of [...Array.from(row.shadowRoot?.children ?? []), ...Array.from(row.children)]) visit(child);
+    }
+    if (tally.size === 0) return undefined;
+    return [...tally].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   };
   return input.rows.map(({ group, row, own: named = [] }) => {
     let groups = 0;
@@ -3858,7 +3917,10 @@ export function unevenChoiceRowsInPage(input) {
       }
       const common = [...tally].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
       const first = rows[0]?.getAttribute('tabindex')?.trim() === '0' ? common : undefined;
-      if (new Set(rows.map((each, at) => shape(each, named, at === 0 ? first : undefined))).size > 1) uneven += 1;
+      // jr7 TOOLING-7 (r2): the first row's inner roving stop, read as its siblings' inner roving elements' tabindex.
+      const inner = rovingRoles.length > 0 ? innerCommonOf(rows) : undefined;
+      if (new Set(rows.map((each, at) => shape(each, named, at === 0 ? first : undefined, at === 0 ? inner : undefined)))
+        .size > 1) uneven += 1;
     }
     return { groups, uneven };
   });
@@ -4390,8 +4452,10 @@ export function chosenMarksIn(text) {
   // chosen row draws.
   const nodes = markupElements(text);
   if (rovingStopsOffFirst(nodes).length > 0) found.add(CHOSEN_MARK_LABELS.roving);
-  const drawn = nodes.some((node, at) => CHOSEN_DRAWINGS.some(({ host, tag, id, className }) => {
+  const drawn = nodes.some((node, at) => CHOSEN_DRAWINGS.some(({ host, tag, id, className, slot }) => {
     if ((tag !== undefined && node.tag !== tag) || (id !== undefined && node.attributes.get('id') !== id)) return false;
+    // jr7 TOOLING-7 (r2): a part named by its slot.
+    if (slot !== undefined && node.attributes.get('slot') !== slot) return false;
     if (className !== undefined && !(node.attributes.get('class') ?? '').split(/\s+/).includes(className)) return false;
     for (let up = nodes[at]?.parent ?? -1; up >= 0; up = nodes[up]?.parent ?? -1) if (nodes[up]?.tag === host) return true;
     return false;
