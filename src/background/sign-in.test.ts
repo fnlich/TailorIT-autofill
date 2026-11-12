@@ -54,8 +54,10 @@ function memoryArea(): StorageArea {
 const statusOf = (saved: Revealed): SignupStatus => (saved.ok ? { set: true, email: saved.email, updatedAt: 1 }
   : saved.why === 'none' ? { set: false, email: null, updatedAt: null } : { set: true, email: EMAIL, updatedAt: 1 });
 
-/** The handler over a vault that answers `saved`, Sign-in acting as `act`, at `clock.now`. */
-function handler(options: { act?: SignInAct; saved?: Revealed; clock?: { now: number } } = {}) {
+/** The handler over a vault that answers `saved`, Sign-in acting as `act`, at `clock.now`; jr6 SHELL-A: the profile's
+ *  contact email `profileEmail` (none by default). */
+function handler(options: { act?: SignInAct; saved?: Revealed; clock?: { now: number }; profileEmail?: string | null }
+  = {}) {
   let reveals = 0;
   const missing: Array<'none' | 'gone'> = [];
   const saved = () => options.saved ?? { ok: true, email: EMAIL, password: PASSWORD };
@@ -73,6 +75,7 @@ function handler(options: { act?: SignInAct; saved?: Revealed; clock?: { now: nu
     missing: async (why) => {
       missing.push(why);
     },
+    ...(options.profileEmail === undefined ? {} : { profileEmail: async () => options.profileEmail ?? null }),
   });
   return { signIn, reveals: () => reveals, missing: () => missing, gone: () => missing.filter((why) => why === 'gone').length };
 }
@@ -209,6 +212,67 @@ describe('the job-site sign-in, from this browser’s Sign-up Information (jr6)'
     expect(reveals()).toBe(0);
   });
 });
+
+// ── jr6 SHELL-A (BUILD D-d; FIXPLAN §6.12 item 6, APPLYPLAN G) ──
+describe('an email gate in every Sign-in mode: the Sign-up Information email, else the profile’s, never a password', () => {
+  const PROFILE_EMAIL = 'alex.rivera.profile@example.com';
+  const GATE = 'https://careers-acme.icims.com/jobs/1234/engineer/login?in_iframe=1';
+
+  it('with none saved, answers the profile’s contact email: typed alone on Manual, pressed on Auto', async () => {
+    const manual = handler({ act: 'type', saved: { ok: false, why: 'none' }, profileEmail: PROFILE_EMAIL });
+    expect(await manual.signIn.credential(ask('email-gate', true), frameAt(GATE)))
+      .toEqual({ ok: true, data: { host: '*', email: PROFILE_EMAIL, press: false } });
+    expect(manual.reveals()).toBe(0);
+    // Sign-in's mode is still looked at (none saved: Auto, which needs one, goes back to Manual).
+    expect(manual.missing()).toEqual(['none']);
+    const auto = handler({ saved: { ok: false, why: 'none' }, profileEmail: PROFILE_EMAIL });
+    expect(await auto.signIn.credential(ask('email-gate'), frameAt(GATE)))
+      .toEqual({ ok: true, data: { host: '*', email: PROFILE_EMAIL, press: true } });
+  });
+
+  it('answers the Sign-up Information email before the profile’s', async () => {
+    const { signIn } = handler({ act: 'type', profileEmail: PROFILE_EMAIL });
+    expect(await signIn.credential(ask('email-gate', true), frameAt(GATE)))
+      .toEqual({ ok: true, data: { host: '*', email: EMAIL, press: false } });
+  });
+
+  // The undo proof's case: a saved password never goes to an email gate, in any mode, and is never decrypted for one.
+  it('never answers a password at an email gate, whatever the mode, and decrypts nothing for one', async () => {
+    for (const act of ['auto', 'type', 'agent'] as const) {
+      const { signIn, reveals } = handler({ act, profileEmail: PROFILE_EMAIL });
+      const answer = await signIn.credential(ask('email-gate', act === 'type'), frameAt(GATE));
+      expect(answer, act).toMatchObject({ ok: true, data: { host: '*', email: EMAIL } });
+      expect(answer, act).not.toHaveProperty('data.password');
+      expect(JSON.stringify(answer), act).not.toContain(PASSWORD);
+      expect(reveals(), act).toBe(0);
+    }
+  });
+
+  it('never presses on Manual: its answer says press false', async () => {
+    const { signIn } = handler({ act: 'type', saved: { ok: false, why: 'none' }, profileEmail: PROFILE_EMAIL });
+    expect(await signIn.credential(ask('email-gate'), frameAt(GATE))).toMatchObject({ ok: true, data: { press: false } });
+  });
+
+  it('answers nothing with no email at all, nor with one the answer cannot carry, nor before the disclosure', async () => {
+    expect(await handler({ saved: { ok: false, why: 'none' }, profileEmail: null }).signIn
+      .credential(ask('email-gate'), frameAt(GATE))).toEqual({ ok: false, error: 'not_found' });
+    expect(await handler({ act: 'type', saved: { ok: false, why: 'none' }, profileEmail: '  ' }).signIn
+      .credential(ask('email-gate', true), frameAt(GATE))).toEqual({ ok: false, error: 'unavailable' });
+    expect(await handler({ act: 'type', saved: { ok: false, why: 'none' }, profileEmail: `${'a'.repeat(250)}@example.com` })
+      .signIn.credential(ask('email-gate', true), frameAt(GATE))).toEqual({ ok: false, error: 'unavailable' });
+    expect(await handler({ act: null, saved: { ok: false, why: 'none' }, profileEmail: PROFILE_EMAIL }).signIn
+      .credential(ask('email-gate'), frameAt(GATE))).toEqual({ ok: false, error: 'unavailable' });
+  });
+
+  it('logs no email, the profile’s included', async () => {
+    const { signIn } = handler({ act: 'type', saved: { ok: false, why: 'none' }, profileEmail: PROFILE_EMAIL });
+    await signIn.credential(ask('email-gate', true), frameAt(GATE));
+    expect(JSON.stringify(logs.mock.calls)).not.toContain(PROFILE_EMAIL);
+    expect(logs.mock.calls).toContainEqual(['[tailorit-autofill] signin.credential',
+      { found: true, press: false, again: false, gate: true, profile: true }]);
+  });
+});
+// ── end jr6 SHELL-A ──
 
 describe('the hosts covered by their candidate paths (TailorIT’s API 6), with this browser’s sign-in', () => {
   it('takes `*` at ADP’s guest page and steps and ClearCompany’s /careers/', async () => {

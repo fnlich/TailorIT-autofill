@@ -1575,6 +1575,26 @@ export const PAGE_COPY = {
     // jr6: the job-site password is saved in this browser's Sign-up Information; the jr6 review (R5): then pressed again.
     noSignIn: 'Save a job-site password in TailorIT Autofill › Settings › Sign-up Information, then choose Sign Up & Autofill again.',
     signInTyped: 'Your job-site email and password are filled in. Press the page\'s Sign In or Create Account, and Autofill carries on.',
+    // ── jr6 SHELL-A (FIXPLAN §6.12 items 1, 4 and 5; APPLYPLAN G, BUILD D-d). Our own words, drafts for the owner's
+    // review (password-docs.md owner question 7). ──
+    // Item 1: the saved password was not typed, as the site's own rules refuse it; the rule, never the password.
+    passwordRule: (rule: 'length' | 'upper' | 'lower' | 'digit' | 'special' | 'alpha' | 'login', minLength = 0) =>
+      `Your saved job-site password doesn't meet this site's rules: ${rule === 'length' ? `it needs at least ${minLength} characters`
+        : rule === 'login' ? "it can't be the same as your email" : `it needs ${{ upper: 'an uppercase letter',
+          lower: 'a lowercase letter', digit: 'a number', special: 'a special character', alpha: 'a letter' }[rule]}`
+      }. Autofill typed nothing. Save one that fits in Sign-up Information, or create the account here yourself.`,
+    // Item 4: the kind of account error the site shows (on arrival, or after its button was pressed).
+    account: {
+      'verify-email': 'This site wants you to confirm your email first. Open the message it sent you, then sign in here, and Autofill carries on.',
+      'reset-password': "This site asks for a new password. Use the page's Forgot password, then save the new one in Sign-up Information.",
+      'wrong-credentials': "This site didn't accept your saved email and password. If you made an account here before with another password, sign in with it or reset it here.",
+    },
+    // Item 5 (WD-04): no password saved yet; the run waits for one, then tries the page again by itself.
+    noSignInWaiting: 'Save a job-site password in TailorIT Autofill › Settings › Sign-up Information in the next 5 minutes, and Autofill carries on here by itself.',
+    // D-d: an email gate (a site that asks for your email first): typed in either Sign-in mode, its Next Auto's alone.
+    gateTyped: 'Your email is filled in. Check the page and press its Next; a code the site sends you is yours to enter.',
+    gate: 'Enter your email on this page and press its Next, or use Sign Up & Autofill in the TailorIT panel. A code the site sends you is yours to enter.',
+    // ── end jr6 SHELL-A ──
     open: 'Open',
     submitHeld: {
       required: 'Submit is on Auto, and a required field is still empty, so the application was not submitted.',
@@ -1744,6 +1764,9 @@ const MAIN_VIEW = {
   entryHelp: "This page shows the job. Autofill presses the site's own Apply first, then fills the application it opens.",
   // The F1 fixer (the line P review, C4): the panel's status for a screen reader while the frame presses or waits.
   entering: "Autofill is pressing the site's Apply.",
+  // jr6 SHELL-A (APPLY-MERGE round 2 §8 item 10): the same status while the frame does a wall's sign-in step (its
+  // PageState says the wall and `entering`). Our own words, a draft for the owner's review.
+  signingIn: "Autofill is filling in the site's sign-in.",
   entryRefused: {
     none: NO_FORM,
     ambiguous: 'This page shows more than one Apply. Press the one you want, then press Autofill on the application.',

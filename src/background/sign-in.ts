@@ -37,8 +37,11 @@
  * email-first identity step of Oracle Recruiting Cloud) the answer carries the email alone, never the password, and
  * (the jr6 review, R8) nothing is decrypted for it: the email is read from the record, where it is kept in the clear.
  * Logs say whether one was found, never a host, an email or a password.
+ * jr6 SHELL-A (BUILD D-d; FIXPLAN §6.12 item 6, APPLYPLAN G): an email gate is answered in every Sign-in mode with the
+ * email saved in Sign-up Information, else the TailorIT profile's contact email (profileEmail), never a password and
+ * nothing decrypted; `press` only under Auto (the person's, or Sign up & Autofill), as for any wall.
  */
-import { AUTOFILL_ANY_HOST, HostNameSchema, signInHostCovered } from '../contract/tailorit';
+import { AUTOFILL_ANY_HOST, AUTOFILL_SIGN_IN_LIMITS, HostNameSchema, signInHostCovered } from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import type { ContentMessage, SignInCredential } from '../messaging/schemas';
 import type { StorageArea } from '../platform/types';
@@ -78,6 +81,9 @@ export interface SignInDeps {
   /** jr6: no saved password to use: none is saved (`none`), or the saved one can never be read again (`gone`: its key
    *  went, and the vault removed it). Sign-in Auto, which needs one, goes back to Manual (index.ts). */
   missing?(why: 'none' | 'gone'): Promise<void>;
+  /** jr6 SHELL-A (BUILD D-d): the TailorIT profile's contact email (index.ts: the profile cache's), or null: an email
+   *  gate's email where none is saved in Sign-up Information. Never a password. */
+  profileEmail?(): Promise<string | null>;
 }
 
 /** The frame's host name and (TailorIT's API 6, contract6) its path, the pathname alone (no query, no fragment), when
@@ -89,6 +95,13 @@ function httpsPageOf(url: string): { host: string; path: string } | null {
   } catch {
     return null;
   }
+}
+
+/** jr6 SHELL-A (BUILD D-d): a profile's contact email an email gate may be answered with: one the answer's schema takes
+ *  (SignInCredentialAnswerSchema.email: 1 to AUTOFILL_SIGN_IN_LIMITS.email characters, trimmed), else null. */
+function gateEmail(email: string | null): string | null {
+  const trimmed = email?.trim() ?? '';
+  return trimmed !== '' && trimmed.length <= AUTOFILL_SIGN_IN_LIMITS.email ? trimmed : null;
 }
 
 /** The sign-in handler, as index.ts wires it. */
@@ -152,13 +165,18 @@ export function createSignIn(deps: SignInDeps) {
         if (again) press = false;
       }
       // An email gate (v3 Phase 7b) types the email alone: the password never leaves the worker for one, and (the jr6
-      // review, R8) is not decrypted for it: the record's email is kept in the clear.
+      // review, R8) is not decrypted for it: the record's email is kept in the clear. jr6 SHELL-A (BUILD D-d; FIXPLAN
+      // §6.12 item 6, APPLYPLAN G): in every Sign-in mode, the Sign-up Information email, else the profile's contact
+      // email (with none saved, Sign-in Auto still goes back to Manual: `missing`).
       if (message.wall === 'email-gate') {
         const held = await deps.vault.status();
-        if (!held.set || held.email === null) return none('none', act);
+        const saved = held.set && held.email !== null ? held.email : null;
+        const email = saved ?? gateEmail(await deps.profileEmail?.().catch(() => null) ?? null);
+        if (email === null) return none('none', act);
+        if (saved === null) await deps.missing?.('none').catch(() => undefined);
         if (press) await deps.session.set({ [key]: deps.now() });
-        log('signin.credential', { found: true, press, again, gate: true });
-        return ok({ host: AUTOFILL_ANY_HOST, email: held.email, press });
+        log('signin.credential', { found: true, press, again, gate: true, profile: saved === null });
+        return ok({ host: AUTOFILL_ANY_HOST, email, press });
       }
       const saved = await deps.vault.reveal();
       if (!saved.ok) return none(saved.why, act);

@@ -2,7 +2,8 @@
  * The UltiPro adapter on the owner's snapshots of 2026-11-06 (fixtures/ultipro, DESIGN-NEW-ATS §1): each page's hooks
  * and scan held to its hand-written expectations, then each rule held against the same page read without it (the rule
  * undone): the three page states (the account step, the résumé review and its "Save and continue", the application
- * and its Submit host), the panels as sections, Country's class-only required mark, the start date's shadow boxes, the
+ * and its Submit host), the panels as sections, Country's class-only required mark, the start date (one date in its
+ * component's shadow boxes, jr6 U-07), the
  * period boxes with no label of their own, the Skills typeahead, and the never-pressed controls. The start date's
  * shadow boxes are in application.expect.json, their selectors stepping into the shadow root (" >>> ").
  * KNOWN: what the scanner reads differently from the page today, each to be emptied once it reads it.
@@ -47,10 +48,15 @@ type CaseName = (typeof CASES)[number]['name'];
  *   page adopts as a constructed style sheet, and the snapshot (ultipro-2) holds none of it (its ukg-field templates hold
  *   no <style>, and no captured sheet names .ukg-field-container or .input-wrapper). Nothing in the capture shows a box
  *   around them, so the scanner refuses them here; a live page's computed style decides.
+ * - jr6 U-07: the application's start date is one date (Adapter.dateFor), its control the ukg-date-input-text component,
+ *   which draws no box of its own; what draws it is UKG's component style, which this capture (ultipro-0) holds none of,
+ *   and its datepicker container (Adapter.controlBox) shows no border or background here either, so the scanner reads
+ *   it camouflaged in this capture; a live page's computed style decides.
  */
 const KNOWN: Record<string, ReadonlyArray<{ control: string; property: string }>> = {
   register: ['firstName', 'lastName', 'phoneNumber'].map((name) => ({ control: `input[name="${name}"]`,
     property: 'fillable' })),
+  application: [{ control: 'ukg-date-input-text[role="group"]', property: 'fillable' }],
 };
 
 afterEach(() => removeFixtures(document));
@@ -197,16 +203,19 @@ describe('labels, required and sections', () => {
     expect(fieldAt(plain.doc, plain.result, 'select#Country')?.required).toBe(false);
   });
 
-  it("labels the start date's shadow boxes by the light question, with their part (ultipro-0)", async () => {
-    // Their reading (label, kind, required, section, fillable) is application.expect.json's, its entries stepping into
-    // the shadow root; here, that the adapter gives it.
-    const { result } = await scanWith('application');
-    const parts = result.fields.filter((field) => field.label.startsWith('When can you start? (MM/DD/YYYY) '));
-    expect(parts.map((field) => field.labelSource)).toEqual(['adapter', 'adapter', 'adapter']);
-    const target = result.target(parts[0]!.key)!;
-    expect((target.control.getRootNode() as ShadowRoot).host?.localName).toBe('ukg-date-input-text');
+  it("labels the start date, one date in its component's three shadow boxes, by the light question (ultipro-0, jr6 U-07)",
+    async () => {
+    // Its reading (label, kind, required, section, fillable) is application.expect.json's; here, that the adapter gives
+    // it: one date field, its control the component, its boxes no field of their own.
+    const { doc, result } = await scanWith('application');
+    const dates = result.fields.filter((field) => field.label.startsWith('When can you start? (MM/DD/YYYY)'));
+    expect(dates.map((field) => [field.kind, field.label, field.labelSource])).toEqual([['date',
+      'When can you start? (MM/DD/YYYY)', 'adapter']]);
+    const host = result.target(dates[0]!.key)!.control;
+    expect(host.localName).toBe('ukg-date-input-text');
+    expect(host).toBe(doc.querySelector('ukg-date-input-text[role="group"]'));
     // The rule undone: each box is "Month", " Day", "Year" from its own aria-label, the question lost.
-    const plain = await scanWith('application', without('labelFor', 'labelSuffix'));
+    const plain = await scanWith('application', without('labelFor', 'labelSuffix', 'dateFor', 'excluded'));
     expect(plain.result.fields.filter((field) => /^(?:Month|Day|Year)$/.test(field.label)).map((field) => field.label))
       .toEqual(['Month', 'Day', 'Year']);
   });

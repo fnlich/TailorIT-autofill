@@ -597,6 +597,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         reports.tellPanels('signup');
       }
       if (reverted) reports.tellPanels('settings');
+    },
+    // jr6 SHELL-A (BUILD D-d): an email gate's email where none is saved in Sign-up Information: the TailorIT profile's
+    // contact email, as the run's plan reads it (the profile cache's), never a password.
+    profileEmail: async () => {
+      const profile = await profileCache.get().catch(() => null);
+      const own = profile?.ok === true ? profile.value.profile.contact.email : '';
+      return own === '' ? null : own;
     } });
   /** core-x, items 7 and 14: the tabs' chains (chain.ts). */
   const chains = createChains({ session, now });
