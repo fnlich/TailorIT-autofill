@@ -463,8 +463,35 @@ function onScreen(box: ClientRect, el: Element, cache: ScanCache): boolean {
   const top = box.top + view.scrollY;
   const across = overlap(left, left + (box.right - box.left), 0, width) >= MIN_BOX_PX
     || overlap(box.left, box.right, 0, width) >= MIN_BOX_PX;
-  return across && overlap(top, top + (box.bottom - box.top), 0, height) >= MIN_BOX_PX;
+  if (across && overlap(top, top + (box.bottom - box.top), 0, height) >= MIN_BOX_PX) return true;
+  // jr7 ENGINE-7 E1 item 2 (UKGR-7): on a page that does not scroll itself (html or body at overflow hidden or clip), a
+  // box that scrolls with a container a person can scroll is on screen within that container's scroll area, as one
+  // under a fixed box is (scrollerBelowFixed); outside it, it stays off-screen. A page that scrolls is read as before.
+  if (!cache.memo('page-clipped', doc, () => pageClipped(doc, cache))) return false;
+  const scroller = scrollerAbove(el, cache);
+  return scroller !== null && scrollIn(box, scroller, cache);
 }
+
+// ── jr7 ENGINE-7 E1 item 2 (UKGR-7) ──
+/**
+ * The nearest container a person can scroll down (scrollsDown) that `el`'s box moves with, along its containing blocks
+ * (as scrollerBelowFixed follows them), html and body aside (the page's own scroll is rule 5's reachable height); null
+ * when there is none. UKG Ready keeps html and body at overflow hidden and scrolls its steps inside
+ * div.l-page-layout-content, overflow-y auto, 708 px tall over 1,430 px of content (snapshot7 secure7.saashr), so every
+ * control below the fold read off-screen against the viewport's height alone.
+ */
+function scrollerAbove(el: Element, cache: ScanCache): Element | null {
+  return cache.memo('scroller-above', el, (): Element | null => {
+    const doc = el.ownerDocument;
+    let at = containingBlockOf(el, cache);
+    while (at !== null && at !== doc.body && at !== doc.documentElement) {
+      if (scrollsDown(at, cache)) return at;
+      at = containingBlockOf(at, cache);
+    }
+    return null;
+  });
+}
+// ── end jr7 ENGINE-7 E1 item 2 ──
 
 /** v5 p1-shell (the review's S5): how wide a strip at each window's right edge our sidebar covers while it is open. */
 const coveredRight = new WeakMap<Window, number>();
@@ -479,9 +506,13 @@ export function coverRight(view: Window, px: number): void {
 function reachableHeight(doc: Document, view: Window, cache: ScanCache): number {
   const root = doc.documentElement;
   const body = doc.body;
-  const styles = [styleOf(root, cache), body ? styleOf(body, cache) : null];
-  const clipped = styles.some((style) => style !== null && (style.overflowY === 'hidden' || style.overflowY === 'clip'));
-  return clipped ? view.innerHeight : Math.max(root.scrollHeight, body?.scrollHeight ?? 0, view.innerHeight);
+  return pageClipped(doc, cache) ? view.innerHeight : Math.max(root.scrollHeight, body?.scrollHeight ?? 0, view.innerHeight);
+}
+
+/** Whether the page does not scroll itself: html or body at overflow-y hidden or clip (rule 5). */
+function pageClipped(doc: Document, cache: ScanCache): boolean {
+  const styles = [styleOf(doc.documentElement, cache), doc.body ? styleOf(doc.body, cache) : null];
+  return styles.some((style) => style !== null && (style.overflowY === 'hidden' || style.overflowY === 'clip'));
 }
 
 // ── The core pass of 2026-11-06: a scroll container inside a fixed box (rule 5) ──
