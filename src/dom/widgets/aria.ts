@@ -273,10 +273,21 @@ function isFieldLike(el: Element): boolean {
 }
 
 /** Whether a native control is part of a widget: inside a list or an option, or the text box of an ARIA 1.1
- *  combobox (one inside an element with role="combobox"). */
+ *  combobox (one inside an element with role="combobox"). jr7 ENGINE-7 E2 (DFPC-7's PC7-04): a native <select> alone
+ *  in a role=listbox wrapper that holds no option (Paycom's <div role="listbox" aria-label="..."> around each select,
+ *  snapshot7 paycomonline1 apply-2) is a field of its own, no list's part. */
 export function isWidgetPart(control: Element): boolean {
-  if (control.closest('[role~="listbox" i], [role~="option" i]') !== null) return true;
+  const list = control.closest('[role~="listbox" i], [role~="option" i]');
+  if (list !== null && !selectAloneInWrapper(control, list)) return true;
   return control.parentElement?.closest('[role~="combobox" i]') != null;
+}
+
+/** jr7 ENGINE-7 E2 (PC7-04): a native select that is the only control of the role=listbox element around it, which holds
+ *  no option of its own (a wrapper that names the select, not a list). */
+function selectAloneInWrapper(control: Element, list: Element): boolean {
+  return control.localName === 'select' && list.matches('[role~="listbox" i]')
+    && list.querySelector('[role~="option" i]') === null
+    && list.querySelectorAll('input, select, textarea, button').length === 1;
 }
 
 /** Whether standard ARIA tells where a widget's list is, or its members' state: the helpers act on nothing else. */

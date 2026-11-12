@@ -168,6 +168,9 @@ export function requiredLeftOf(scanned: ScanResult, leftRequired: readonly strin
     if (field !== undefined && (!emptyNow(field.current) || answeredByChips(scanned, field))) continue; // jr6 ENGINE
     left.add(field?.baseKey ?? key);
   }
+  // jr7 ENGINE-7 E1 item 9 (RBP7-V3): a required upload the scan recognises no control of (ScanResult
+  // .unrecognisedUploads: BambooHR's "Resume*"), until a file is in.
+  for (const upload of scanned.unrecognisedUploads) if (upload.requiredEmpty) left.add(upload.baseKey);
   return left.size;
 }
 
