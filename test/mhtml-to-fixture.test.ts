@@ -109,6 +109,9 @@ import {
   redactWorkdayInPage,
   workableRenderId,
   writeConversion,
+  // ── jr6 PRIVACY-FIX ──
+  POSTING_COPY_ATTRIBUTES,
+  ROW_ID_WORDS_KEPT,
 } from '../scripts/mhtml-to-fixture.mjs';
 import { FIELD_KINDS } from '../src/core/enums';
 import { platformOfUrl } from '../src/shared/hosts';
@@ -3185,6 +3188,41 @@ describe('jr6 round 2: the names an open list\'s rows carry, and a listed string
       await context.close();
     }, 30_000);
 
+  // jr6 PRIVACY-FIX: a chosen Workday pill (the owner's Skills, jr6-danafarber-my-experience) is a row whose own label
+  // says "press delete to clear value"; its delete icon's data-automation-id ("DELETE_charm") names the component, and
+  // Workday's adapter reads it (neverPress, the pill tests), so its words stay; an opaque token there still goes.
+  it("leaves the words of Workday's data-automation-id alone in a row's ids, its opaque tokens still taken (PRIVACY-FIX)",
+    async () => {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      const pills = `<!DOCTYPE html><html><body><ul role="listbox" data-automation-id="selectedItemList">
+<li id="pill-48213977" role="option" data-automation-id="selectedItem" aria-label="Roeville press delete to clear value">
+<p data-automation-id="promptOption">Roeville</p><div data-automation-id="DELETE_charm" role="presentation"></div>
+<div data-automation-id="charm-48213977"></div></li></ul></body></html>`;
+      /** The pill after the rows' rules ran with `kept` as the words kept, its words redacted as a listed string's are. */
+      const run = async (kept: string[]) => {
+        await page.setContent(pills);
+        await page.evaluate(noteListRowsInPage, { rows: LIST_ROWS, typedLists: TYPED_LISTS,
+          typedBoxes: TYPED_LIST_BOXES, words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE });
+        await page.evaluate(() => {
+          document.querySelector('[data-automation-id="promptOption"]')!.textContent = 'REDACTED';
+        });
+        await page.evaluate(redactListRowsInPage, { redacted: 'REDACTED', fixed: [], results: SEARCH_RESULT_PLACES,
+          words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE, ids: ROW_ID_ATTRIBUTES, idData: ROW_ID_DATA_SOURCE,
+          references: ID_REFERENCES, wordsKept: kept });
+        return page.evaluate(() => document.body.innerHTML.replace(/\s+/g, ' '));
+      };
+      expect(ROW_ID_WORDS_KEPT).toEqual(['data-automation-id']);
+      const html = await run(ROW_ID_WORDS_KEPT);
+      expect(html).toContain('<div data-automation-id="DELETE_charm" role="presentation"></div>');
+      expect(html).toContain('<li id="pill-REDACTED" role="option" data-automation-id="selectedItem" aria-label="REDACTED">');
+      expect(html).toContain('<div data-automation-id="charm-REDACTED"></div>');
+      expect(html).not.toMatch(/roeville|48213977/i);
+      // Without the rule, the label's "delete" takes the icon's own name (the regression it fixes).
+      expect(await run([])).toContain('<div data-automation-id="REDACTED_charm" role="presentation"></div>');
+      await context.close();
+    }, 30_000);
+
   it("SmartRecruiters' City results (spl-select-option): a typed search's results lose their words, value and data-sr-id",
     async () => {
       const file = await liveCapture(SR_ONE_CLICK, SR_CITY, 'jr6r2-sr-city');
@@ -3949,6 +3987,53 @@ for (const option of root.querySelectorAll('spl-select-option')) {
         + '<a href="/jobs/1/REDACTED/job">Share</a><meta property="og:url" content="https://careers-acme.icims.com/jobs/1/REDACTED">');
       expect(POSTING_TEXT_PLACES).toContain('.iCIMS_JobContent');
     }, 60_000);
+
+  // jr6 PRIVACY-FIX (SP\jr6\leakscan\VERDICTS-3.md): Breezy's page keeps a JSON copy of the posting in data-position on
+  // div.body-wrapper (its name, its description's HTML, its company); a REDACTED gap there names the value by elimination
+  // as one in the posting's own text does.
+  it("refuses a listed string in a posting's JSON copy in an attribute (Breezy's data-position), and gives it synthetic text "
+    + 'by <css>@<attribute> (PRIVACY-FIX)', async () => {
+    const tail = ', where a REDACTED tells the value by elimination; give each synthetic text with --replace-text';
+    const breezy = 'https://acme.breezy.hr/p/1-engineer/apply';
+    const page = (position: object) => `<div class="body-wrapper" data-position='${JSON.stringify(position)}'><form>`
+      + '<label for="n">Name</label><input id="n" type="text"></form></div>';
+    const copyOf = (text: string) => JSON.parse((/data-position="([^"]*)"/.exec(text)?.[1] ?? '{}').replace(/&quot;/g, '"')
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&'));
+    const listed = { name: 'Senior Jane Roe Engineer', friendly_id: '1-engineer',
+      description: '<p>Work beside the team.</p>', company: { name: 'Acme' } };
+    const refused = async (caseName: string, position: object) => {
+      const error = await convertPage(breezy, 'breezy', caseName, page(position)).then(() => null, (caught: unknown) => caught);
+      expect(error, caseName).toBeInstanceOf(ConversionError);
+      expect((error as ConversionError).reasons, caseName).toEqual([
+        `${caseName}.html: posting descriptions (POSTING_TEXT_PLACES) whose page text the redaction list met: 1${tail}`]);
+    };
+    // The title field as written, the description field respelled: each is refused.
+    await refused('jr6pf-copy-title', listed);
+    await refused('jr6pf-copy-description', { ...listed, name: 'Senior Engineer',
+      description: '<p>Work beside jane_roe.</p>' });
+    // A listed string in another field of the copy (the company's) is redacted and passes.
+    const other = await convertPage(breezy, 'breezy', 'jr6pf-copy-other', page({ ...listed, name: 'Senior Engineer',
+      company: { name: 'Jane Roe Corp' } }));
+    expect(copyOf(other.text)).toEqual({ ...listed, name: 'Senior Engineer', company: { name: 'REDACTED Corp' } });
+    // --replace-text '<css>@data-position=<file>': the title field takes the first line, the description the rest; the
+    // copy's other fields and the element itself are left as they are.
+    const file = join(work, 'jr6pf-copy-replaced.mhtml');
+    writeFileSync(file, mhtml(breezy, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: breezy,
+      body: `<!DOCTYPE html><html><head><title>Apply</title></head><body>${page(listed)}</body></html>` }]));
+    const options = { file, platform: 'breezy', caseName: 'jr6pf-copy-replaced', redact: LISTED, outDir: work };
+    const replaced = await convertMhtml({ ...options, replaceText: [{ selector: 'div.body-wrapper@data-position',
+      text: 'Synthetic Posting Title\nA synthetic description.\nIts second line.' }] });
+    const text = replaced.files[0]?.text ?? '';
+    expect(copyOf(text)).toEqual({ ...listed, name: 'Synthetic Posting Title',
+      description: 'A synthetic description. Its second line.' });
+    expect(text).toContain('<label for="n">Name</label>');
+    expect(headerOf(text).replacedText).toEqual([1]);
+    expect(text).not.toMatch(/jane/i);
+    // An attribute that holds no posting copy is refused, by the replacement's position.
+    await expect(convertMhtml({ ...options, replaceText: [{ selector: 'div.body-wrapper@data-other', text: 'x' }] }))
+      .rejects.toThrow('--replace-text #1 names an attribute that holds no copy of the posting (POSTING_COPY_ATTRIBUTES)');
+    expect(POSTING_COPY_ATTRIBUTES).toEqual([{ attribute: 'data-position', title: ['name'], description: ['description'] }]);
+  }, 90_000);
 
   it('passes a native list whose REDACTED row stands beside a placeholder alone (a résumé picker), refuses one beside '
     + 'public rows', async () => {
