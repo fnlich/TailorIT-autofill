@@ -29,7 +29,13 @@ const SKIP = /\/fixtures\/(?:traps|sites|synthetic|smoke|profiles)\/|\.frame-\d+
  *  jr6 CHAINS (integration, BUILD.md 4b): ADP's job details (line W's E-ADP, fixtures/adp/jr6-posting.html): ADP
  *  Workforce Now shows a job's details at its guest page's own address, and its header's Apply is the declared entry
  *  there (ADP_CONFIG.posting.entry). No other page may offer one. */
-const EXPECTED_OFFERS: ReadonlySet<string> = new Set<string>(['adp/jr6-posting.html']);
+const EXPECTED_OFFERS: ReadonlySet<string> = new Set<string>(['adp/jr6-posting.html',
+  // ── jr7 ADP-7 (FIX7PLAN §6.9) ──
+  // snapshot7 adp1's job details (both captures, at the guest page's address, as jr6-posting), and ADP7-10's signed-in
+  // landing, whose "Complete Your Application" is its entry (owner question Q7-14, default yes).
+  'adp/jr7-adp1-posting.html', 'adp/jr7-adp1-posting-2.html', 'adp/jr6-landing.html',
+  // ── end jr7 ADP-7 ──
+]);
 
 const runtimes: ContentRuntime[] = [];
 beforeAll(() => {
