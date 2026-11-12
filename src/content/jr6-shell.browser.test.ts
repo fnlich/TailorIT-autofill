@@ -390,7 +390,7 @@ describe('item 4: none saved under Sign up & Autofill, the run waits for one, th
     expect(seen.typed).toMatchObject({ email: EMAIL, password: PASSWORD, verify: PASSWORD });
   });
 
-  it('none saved within the wait: nothing asked again, and the toast says to choose Sign Up & Autofill again', async () => {
+  it('none saved within the wait: nothing more asked, and the toast says to save one, then choose Sign Up & Autofill', async () => {
     const { seen, worker, runtime } = await atCreateAccount(800, [{ ok: false, error: 'not_found' }]);
     await vi.waitFor(() => expect(toastText(runtime)).toBe(COPY.toasts.noSignIn), { timeout: 5_000 });
     // One saved later is no reason to ask: the wait is over.
