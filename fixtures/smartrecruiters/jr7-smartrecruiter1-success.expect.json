@@ -1,0 +1,19 @@
+{
+  "fixture": "smartrecruiters/jr7-smartrecruiter1-success",
+  "source": "https://jobs.smartrecruiters.com/oneclick-ui/company/CityStateEntertainmentLLC/publication/91ec1084-80c7-49ce-94e7-6c895e6e88a9/success?dcr_ci=CityStateEntertainmentLLC",
+  "captured": "2026-11-11T13:49:31.000Z",
+  "note": "The page after Submit (…/publication/<uuid>/success): \"Application submitted!\" in oc-success-page, no form (jr7 J7-SR-4: the adapter's successSigns reads it for an armed Submit).",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      ".ot-sdk-show-settings"
+    ],
+    "pressable": []
+  }
+}

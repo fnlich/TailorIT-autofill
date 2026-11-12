@@ -1,0 +1,5 @@
+{
+  "https://jobs.ashbyhq.com/yaklabs/b0141651-cb50-484f-8635-46766b6aafcb/application?embed=true": "fixtures/ashby/jr7-ashby-application.html",
+  "https://www.recaptcha.net/recaptcha/enterprise/anchor?ar=1&k=6LezdY0tAAAAAEnollNLCAI0z1VDGwM7AzGrU4XZ&co=aHR0cHM6Ly9qb2JzLmFzaGJ5aHEuY29tOjQ0Mw..&hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&size=invisible&anchor-ms=20000&execute-ms=30000&ovv=CADq00gF&cb=5jlbso5y1spn": "fixtures/ashby/jr7-ashby-application.third-party-frame.html",
+  "https://www.recaptcha.net/recaptcha/enterprise/bframe?hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&k=6LezdY0tAAAAAEnollNLCAI0z1VDGwM7AzGrU4XZ&bft=REDACTED": "fixtures/ashby/jr7-ashby-application.third-party-frame.html"
+}
