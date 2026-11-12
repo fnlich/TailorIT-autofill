@@ -20,6 +20,9 @@
  * attribute alone (a dialog's `open`, a class, a style, `hidden`: Workable's job site opens its form's dialog so), so
  * both watches also hear those attributes (SHOWN_ATTRIBUTES); an attribute change counts only on an element that is,
  * or holds, a control (attributesShow, a selector match: cheap), the company-page watch's its form's parts alone.
+ * jr6 ifix B3 (the integration review's behaviour lens): never on the page's html or body, and a wrapper that holds a
+ * part (not a part or a dialog itself) only as it turns from drawn hidden to drawn, so a scroll class, a carousel or a
+ * sticky header holding a search box no longer costs a full look every 12 s for the page's life.
  */
 import type { Adapter } from '../adapters/types';
 import { addsFormParts } from '../dom/page-signals';
@@ -59,10 +62,23 @@ export const PROMPT_PARTS = 'form, input, select, textarea, button, a[href], [ro
 export const FORM_PARTS = 'form, input, select, textarea';
 /** At most this many attribute records of a batch are read; a batch with more counts (as addsFormParts's own cap). */
 export const ATTRIBUTE_RECORDS_READ = 50;
+/** jr6 ifix B3: a dialog, whose own attribute change counts with what it holds. */
+export const DIALOGS = 'dialog, [role="dialog"], [aria-modal="true"]';
 
-/** Whether a batch of mutations changed an attribute of SHOWN_ATTRIBUTES on an element that is, or holds, `parts`
- *  (a selector match each, never text or layout; each element read once a batch; past ATTRIBUTE_RECORDS_READ: yes). */
-export function attributesShow(records: readonly MutationRecord[], parts: string): boolean {
+/** jr6 ifix B3: whether an element is drawn now (display and content-visibility: the browser's checkVisibility; an
+ *  opacity or a visibility in transition is no reason to miss a form shown). */
+function drawnNow(el: Element): boolean {
+  return typeof el.checkVisibility === 'function' ? el.checkVisibility() : el.getClientRects().length > 0;
+}
+
+/** Whether a batch of mutations changed an attribute of SHOWN_ATTRIBUTES on an element that shows `parts`: one that is
+ *  a part itself, a dialog holding one, or (jr6 ifix B3) a wrapper holding one that was drawn hidden and is drawn now,
+ *  as `drawn` last read it (each watch keeps its own; the first read of a wrapper drawn now counts once), never the
+ *  document's html or body. A class or style toggled on a page's body, a sticky header or a footer holding a search
+ *  box (the integration review's B3) counts no more after that once. A selector match each, and a wrapper's own
+ *  display read; each element once a batch; past ATTRIBUTE_RECORDS_READ: yes. */
+export function attributesShow(records: readonly MutationRecord[], parts: string,
+  drawn: WeakMap<Element, boolean> = new WeakMap()): boolean {
   const seen = new Set<Node>();
   for (const record of records) {
     if (record.type !== 'attributes' || seen.has(record.target)) continue;
@@ -71,8 +87,17 @@ export function attributesShow(records: readonly MutationRecord[], parts: string
     const target = record.target;
     if (target.nodeType !== 1) continue;
     const el = target as Element;
+    // jr6 ifix B3: the page's own html and body never count (a scroll class, a theme).
+    if (el === el.ownerDocument.documentElement || el === el.ownerDocument.body) continue;
     try {
-      if (el.matches(parts) || el.querySelector(parts) !== null) return true;
+      if (el.matches(parts)) return true;
+      if (el.querySelector(parts) === null) continue;
+      if (el.matches(DIALOGS)) return true;
+      // jr6 ifix B3: a wrapper counts only as it turns from drawn hidden to drawn.
+      const now = drawnNow(el);
+      const before = drawn.get(el);
+      drawn.set(el, now);
+      if (now && before !== true) return true;
     } catch {
       return true;
     }
@@ -92,10 +117,12 @@ export function watchForLateForm(doc: Document, capMs: number, look: () => boole
   if (view === null || capMs <= 0 || signal.aborted) return () => undefined;
   let pending: Cancel | null = null;
   let done = false;
+  /** jr6 ifix B3: the wrappers this watch read, drawn or not (attributesShow). */
+  const drawn = new WeakMap<Element, boolean>();
   const observer = new view.MutationObserver((records) => {
     if (done || pending !== null) return;
     // jr6 apply F2 item 5: nodes added count as before; attribute changes only where they show a control.
-    if (!records.some((record) => record.type === 'childList') && !attributesShow(records, PROMPT_PARTS)) return;
+    if (!records.some((record) => record.type === 'childList') && !attributesShow(records, PROMPT_PARTS, drawn)) return;
     pending = startDeadline(LATE_FORM_LOOK_MS, () => {
       pending = null;
       if (!done && look()) stop();
@@ -137,9 +164,11 @@ export function watchForSiteForm(doc: Document, look: () => boolean, signal: Abo
   let last = 0;
   let pending: Cancel | null = null;
   let done = false;
+  /** jr6 ifix B3: the wrappers this watch read, drawn or not (attributesShow). */
+  const drawn = new WeakMap<Element, boolean>();
   const observer = new view.MutationObserver((records) => {
     // jr6 apply F2 item 5: or an attribute change that shows a form's parts.
-    if (done || pending !== null || !(addsFormParts(records) || attributesShow(records, FORM_PARTS))) return;
+    if (done || pending !== null || !(addsFormParts(records) || attributesShow(records, FORM_PARTS, drawn))) return;
     const gap = looks === 0 ? 0 : Math.min(SITE_LOOK_GAP_MS * 2 ** (looks - 1), SITE_LOOK_MAX_GAP_MS);
     let frame: Cancel | null = null;
     const timer = startDeadline(Math.max(0, last + gap - monotonicNow()), () => {
