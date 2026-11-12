@@ -228,6 +228,26 @@ describe('the Queue tab (v1.5 QX)', () => {
       .toEqual(['rgb(2, 112, 60)', 'rgb(214, 249, 233)']);
   });
 
+  // ── jr7 AUTO-7 (AUTO7-01 D-4, ICIMS7-04) ──
+  it('says on a job that its Submit is the person’s on its site, and a hand-over in the extension’s words', async () => {
+    const worker = createFakeWorker();
+    worker.script.queue = { source: 'run', status: queueStatus({ phase: 'running', total: 3, opened: 3 }), items: [
+      queueItem(1, { status: 'filling', tab: true, submitYours: true }),
+      queueItem(2, { status: 'ready', tab: true, note: 'assessment' }), queueItem(3, { status: 'ready', tab: true })] };
+    const root = await open(worker);
+    await queueTab(root);
+    const rows = [...root.querySelectorAll<HTMLElement>('.tia-queue__row')];
+    expect(rows.map((row) => [...row.querySelectorAll('.tia-queue__why')].map((why) => why.textContent)))
+      .toEqual([[WORDS.submitYours], [WORDS.notes.assessment], []]);
+    expect(rows[0]!.querySelector('[data-queue-submit="yours"]')).not.toBeNull();
+    const focusable = [...root.querySelectorAll<HTMLButtonElement>('button[data-action="queue-focus"]')];
+    expect(focusable.map((each) => each.getAttribute('aria-label'))).toEqual([
+      WORDS.row('Engineer 1', 'Northwind', `${WORDS.statuses.filling}, ${WORDS.submitYours}`, true),
+      WORDS.row('Engineer 2', 'Northwind', `${WORDS.statuses.ready}, ${WORDS.notes.assessment}`, true),
+      WORDS.row('Engineer 3', 'Northwind', WORDS.statuses.ready, true)]);
+  });
+  // ── end jr7 AUTO-7 ──
+
   it('lists a page at a time, Show More reading the next', async () => {
     const worker = createFakeWorker();
     worker.script.queue.items = Array.from({ length: 120 }, (_, n) => queueItem(n + 1));

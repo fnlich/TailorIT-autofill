@@ -1,0 +1,26 @@
+{
+  "items": [
+    {
+      "id": "6b8d0f2c-4e6a-4b8c-8d2e-4f6a8b0c2d3e",
+      "jobId": 1211,
+      "title": "Site Reliability Engineer",
+      "company": "Northwind",
+      "location": "Remote in USA",
+      "url": "https://northwind.wd5.myworkdayjobs.com/en-US/careers/job/Remote-USA/Site-Reliability-Engineer_R10021",
+      "active": true,
+      "state": "queued",
+      "reason": null,
+      "source": "manual",
+      "attempts": 0,
+      "aiGuesses": null,
+      "createdAt": "2026-11-11T09:01:00.000Z",
+      "startedAt": null,
+      "finishedAt": null,
+      "applyUrl": "https://northwind.wd5.myworkdayjobs.com/careers/job/Remote-USA/Site-Reliability-Engineer_R10021",
+      "run": null,
+      "runs": ["window"]
+    }
+  ],
+  "total": 1,
+  "limit": 500
+}
