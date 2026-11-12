@@ -159,8 +159,9 @@ function explicitLabels(control: Element, tied: HTMLLabelElement[], ctx: LabelCo
 }
 
 /** The joined visible text of a list of elements ('' when none of them shows any), leaving out the text of
- *  `excluded` elements inside them. */
-function joinedText(elements: readonly Element[], ctx: LabelContext, excluded: readonly Element[] = []):
+ *  `excluded` elements inside them. jr7 ENGINE-7 E1 item 7: `once`, a control's label[for] elements, each words said
+ *  once. */
+function joinedText(elements: readonly Element[], ctx: LabelContext, excluded: readonly Element[] = [], once = false):
   { text: string; first: Element | null } {
   let first: Element | null = null;
   const parts: string[] = [];
@@ -171,8 +172,9 @@ function joinedText(elements: readonly Element[], ctx: LabelContext, excluded: r
     if (text === '') continue;
     // jr7 ENGINE-7 E1 item 7 (RBP7-21, as its verifier corrected it: Pinpoint draws its job-preference block twice with
     // the same ids, snapshot7 pinpointhq1, so the first control of each id takes both label[for] and read "Locations
-    // Locations"): labels of one control that say the same words count once.
-    if (parts.some((part) => foldedWords(part) === foldedWords(text))) continue;
+    // Locations"): labels of one control that say the same words count once. Its label[for] elements only (`once`):
+    // a wrapping label inside another (Workable's consent box) keeps its own reading (labelOfControl).
+    if (once && parts.some((part) => foldedWords(part) === foldedWords(text))) continue;
     first ??= el;
     parts.push(text);
   }
@@ -228,7 +230,7 @@ export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLab
   const explicit = explicitLabels(control, tied.explicit, ctx);
   const { wrapping } = tied;
   const ownFor = uploadControlsAmong(explicit, ctx);
-  const forLabel = joinedText(explicit.filter((label) => !ownFor.has(label)), ctx);
+  const forLabel = joinedText(explicit.filter((label) => !ownFor.has(label)), ctx, [], true); // jr7 ENGINE-7 E1 item 7
   const byFor = fromText(forLabel.text, 'for', forLabel.first);
   if (byFor) return withoutValidation(byFor, control); // jr6 ENGINE
   const targets = referenced(control, 'aria-labelledby');
