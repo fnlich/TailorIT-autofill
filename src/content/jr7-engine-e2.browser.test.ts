@@ -137,3 +137,46 @@ describe('item 1 (ADP7-2): a required, empty field the page holds read-only', ()
     expect(rows.get('Address Line 1')).toMatchObject({ status: 'verified', wrote: true });
   }, 40_000);
 });
+
+// ── item 2 (ADP7-7): past the email code, the application's next document resumes by itself ──────────────────────────
+describe('item 2 (ADP7-7): a run paused at an email code, then the application\'s next document shows its form', () => {
+  /** ADP's code step (snapshot7 jr7-adp1-code) and the Personal Information document after it
+   *  (jr7-adp1-personal-blank), as synthetic pages at one address: the same tab, the same application key. */
+  const CODE = `<!doctype html><html><head><title>Apply</title></head><body><main><form id="app" action="about:blank">
+    <p><label for="code">Verification code</label><input id="code" name="code" type="text"></p>
+    <button type="submit">Verify</button></form></main></body></html>`;
+  const PERSONAL = `<!doctype html><html><head><title>Apply</title></head><body><main><form id="app" action="about:blank">
+    <p><label for="first">First Name</label><input id="first" name="first" type="text"></p>
+    <p><label for="last">Last Name</label><input id="last" name="last" type="text"></p></form></main></body></html>`;
+  const CODE_HREF = 'https://careers.example.org/apply/jr7-adp7-7';
+
+  it('fills the form with no Continue: the run goes on past the code', async () => {
+    testVocab();
+    const worker = createFakeWorker();
+    const open = async (html: string) => {
+      const fixture = await loadFixture(document, html, { width: 1100, height: 900 });
+      const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => CODE_HREF, isTop: true,
+        adapters: () => [genericAdapter], settle: { quietMs: 40 } });
+      runtimes.push(runtime);
+      return { fixture, runtime };
+    };
+    const first = await open(CODE);
+    expect(await first.runtime.fill()).toBe('paused');
+    expect(worker.runStates.at(-1)).toMatchObject({ status: 'handoff', pauseReason: 'email-code' });
+    first.runtime.stop();
+    removeFixtures(document);
+    const begun = worker.of('run/begin').length;
+    const reported = worker.reports.length;
+
+    const next = await open(PERSONAL);
+    const box = (id: string) => (next.fixture.doc.getElementById(id) as HTMLInputElement).value;
+    await vi.waitFor(() => expect(box('first')).not.toBe(''), { timeout: 15_000 });
+    await vi.waitFor(() => expect(next.runtime.run?.ended).toBeDefined(), { timeout: 15_000 });
+    expect(box('last')).not.toBe('');
+    expect(worker.runStates.at(-1)!.status).not.toBe('handoff');
+    // One run, the load's own resume: the pause is never shown again in the new document, nor left by a Continue (the
+    // v4 watch's own, which a pause shown and gone at once would take).
+    expect(worker.of('run/begin').slice(begun).map((begin) => begin.trigger)).toEqual(['resume']);
+    expect(worker.reports.slice(reported).map((report) => report.status)).not.toContain('handoff');
+  }, 40_000);
+});

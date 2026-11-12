@@ -3462,7 +3462,11 @@ export class FillRun {
         this.sent = [...this.carried];
         this.hitsCounted = 0;
       }
-      await this.drive(from?.event ?? { type: 'DETECTED' });
+      // jr7 ENGINE-7 E2 item 2 (ADP7-7): a new document's resume names the application whose form it shows (this run's
+      // page: a run starts only with a form root), so a run paused at an email code or a sign-in wall goes on by itself.
+      const first = from?.event.type === 'RESUMED' && from.event.by === 'load'
+        ? { ...from.event, formOf: page.app.applicationKey } : from?.event;
+      await this.drive(first ?? { type: 'DETECTED' });
       if (this.ended === null) this.end(this.state.status === 'review' ? 'review' : 'stopped');
     } catch (failure) {
       if (failure instanceof Invalidated || failure instanceof RunAborted || this.controller.signal.aborted) {
