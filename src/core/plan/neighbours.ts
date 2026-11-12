@@ -106,6 +106,32 @@ export function settleSchoolCompanions(planned: PlannedField[],
   }
 }
 
+/**
+ * jr7 RULES-7 R2 (the jr6 leftover IFIX-ADAPTERS open 2, iCIMS's School list with its "Enter school name if not in the
+ * list above" box): a school list's "Other" chosen beside its companion box carries no free text of its own: the box
+ * is that text (settleSchoolCompanions types the school there, now or once the list's write re-plans it). So no box is
+ * looked for behind the "Other", and its row never ends other-without-free-text, asking the person, once the box holds
+ * the school. In place.
+ */
+export function otherBesideSchoolCompanion(planned: PlannedField[],
+  fields: ReadonlyArray<{ spec: FieldSpec; classification: FieldClassification }>): void {
+  for (const [at, field] of planned.entries()) {
+    const { spec, write } = field;
+    if (write === undefined || write.match.stage !== 'other' || write.value.kind !== 'option'
+      || write.value.freeText === undefined || !SCHOOL_LIST_KINDS.has(spec.kind)
+      || field.row.category !== 'education.school') continue;
+    const companion = fields.some((other) => other.spec.key !== spec.key
+      && (other.spec.kind === 'text' || other.spec.kind === 'textarea')
+      && sectionKey(other.spec.section) === sectionKey(spec.section)
+      && categoryOf(other.classification) === 'education.school'
+      && SCHOOL_COMPANION.test(normalizeLabel(other.spec.label)));
+    if (!companion) continue;
+    const { freeText: _value, ...value } = write.value;
+    const { freeText: _match, ...match } = write.match;
+    planned[at] = { ...field, write: { ...write, value, match } };
+  }
+}
+
 // ── U-16 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A phone that is not the person's first: secondary, alternate, other, additional, second, backup (its label). */

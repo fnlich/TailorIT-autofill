@@ -65,13 +65,21 @@ import { classifyByRules, consentChoice, consentChoiceOption, type RuleClassific
 import { dateIso, dateText, type DateParts } from './format';
 import { asksToAgree, EEO_DECLINE_BOX_RULE, statementPolarity, type NeedsUserCause } from './labelRules';
 import {
-  consentValue, eeoDeclineBoxValue, eeoDeclineDefault, eeoValue, inCountryValue, legalValue, policyResidenceValue,
+  consentValue, eeoDeclineBoxValue, eeoDeclineDefault, eeoValue, inCountryValue, inListedRegionValue, legalValue,
+  policyResidenceValue,
   residesInValue, sensitiveGate, signatureDateValue,
 } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
 import { findDraftAnswer, findSubmittedAnswer } from './submitted';
-import { placeholderAsked, previouslyEmployedValue, profileValue, type BlockEntries } from './values';
+import { placeholderAsked, placeholderForNo, previouslyEmployedValue, profileValue, type BlockEntries } from './values';
 import { askedAs } from './yesNoPair';
+
+/** jr7 RULES-7 R2 (UKGR-V2, UKG Ready's "Please type your full name to confirm: …", snapshot7 secure7.saashr): a
+ *  signature prompt that shows the name to type after its colon. */
+const NAME_SHOWN = /\btype\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\s+(?:to\s+(?:confirm|sign)\s*)?(?:as\s+(?:shown|written)\s*)?:\s*\S/i;
+
+/** jr7 RULES-7 (ADP7-3): the boxes of text a yes-or-no answer is typed into. */
+const TYPED_YES_NO_KINDS: ReadonlySet<FieldSpec['kind']> = new Set<FieldSpec['kind']>(['text', 'textarea']);
 
 /** What the resolver reads besides the field. */
 export interface ResolveContext {
@@ -92,6 +100,8 @@ export interface ResolveContext {
   postingCompany?: string;
   /** The profile entry each block of an assigned repeatable section is filled from (steps/blocks.ts, Phase 5). */
   blockEntries?: BlockEntries;
+  /** jr7 RULES-7 (ICIMS7-05): the field's block shows an "I currently work here" box (values.ts currentEndDate). */
+  currentBox?: boolean;
   /** The run used no AI at all (a profile-only frame, and no AI asked for its application before): an "I did not use
    *  AI" attestation is then true, and ticked (the owner's decision of 2026-11-01). */
   aiFree?: boolean;
@@ -429,8 +439,9 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
       return candidate.check === undefined ? null : plain({ shape: 'check', check: candidate.check });
     case 'date': {
       if (candidate.date === undefined) return null;
-      const iso = dateIso(candidate.date, spec.constraints);
-      return iso === null ? null : plain({ shape: 'date', iso });
+      // jr7 RULES-7 (DF7-04): a month-precision date in a full-date control is the month's 1st, guessed (flagged).
+      const laid = dateIso(candidate.date, spec.constraints);
+      return laid === null ? null : { shaped: { shape: 'date', iso: laid.iso }, guessed: laid.guessed };
     }
     case 'file':
       return candidate.file ? plain({ shape: 'file', ref: candidate.file }) : null;
@@ -505,7 +516,9 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
           ...(spec.kind === 'checkbox' ? { box: true } : {}),
           // Only DECIDED_CONSENT_CAUSES reach here with a needsUser (resolveField hands every other cause over); a
           // consent read from its help text alone is decided by its kinds, as any (the v4 review, security M3).
-          ...(rules.needsUser === 'binding-waiver' ? { bindingWaiver: true as const } : {}) });
+          ...(rules.needsUser === 'binding-waiver' ? { bindingWaiver: true as const } : {}),
+          // jr7 RULES-7 R2 (UKGR-V2): a prompt that shows the name to type.
+          ...(NAME_SHOWN.test(`${spec.label} ${spec.description}`) ? { namePrompt: true as const } : {}) });
     case 'attention':
       return none('attention-check', true, true);
     case 'free-text':
@@ -524,13 +537,16 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
       if (category === 'location.residesIn') return residesInValue(spec, profile, vocab);
       // jr6 RULES R3 (JZ-11): living or working in a country the question names, from the address.
       if (category === 'location.inCountry') return inCountryValue(spec, profile, vocab);
+      // jr7 RULES-7 R2 (RBP7-08): living in one of the states a question lists, from the address.
+      if (category === 'location.inListedRegion') return inListedRegionValue(spec, profile, vocab);
       // jr6 RULES R3 (ICIMS-21, JV-8, JZ-9): the state the person lives in, asked as a question.
       if (category === 'address.region' && RESIDENCE_STATE_RULES.has(rules.rule)) {
         return residenceStateValue(spec, rules.rule, profileValue(category, { spec, profile, vocab, now,
           separatePhoneCountry: false }), vocab);
       }
       return profileValue(category, { spec, profile, vocab, now, separatePhoneCountry: ctx.separatePhoneCountry ?? false,
-        ...(ctx.blockEntries ? { blockEntries: ctx.blockEntries } : {}) });
+        ...(ctx.blockEntries ? { blockEntries: ctx.blockEntries } : {}),
+        ...(ctx.currentBox === true ? { currentBox: true } : {}) });
   }
 }
 
@@ -739,8 +755,22 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
     const { reason, flagged, needsUser } = result.none;
     return answer(withoutValue(base, spec, reason, flagged, needsUser === true), null, needsSensitive);
   }
-  const { candidate } = result;
-  const shaped = shapeFor(spec, candidate, ctx.vocab);
+  let { candidate } = result;
+  let shaped = shapeFor(spec, candidate, ctx.vocab);
+  // jr7 RULES-7 (ADP7-3, ADP's required text box "Have you ever worked for <employer>? … If no, type N/A.", snapshot7
+  // adp1): a yes-or-no answer of the open classes asked in a box of text. A no is typed as the placeholder the
+  // question's own words ask for (values.ts placeholderForNo: our own N/A, never the page's characters), else "No"; a
+  // yes stays the person's (the name they were employed under is theirs), flagged.
+  if (shaped === null && TYPED_YES_NO_KINDS.has(spec.kind) && (policy === 'unknown' || policy === 'profile')) {
+    const intended = candidate.choice?.domain === 'polarity' ? candidate.choice.intended : undefined;
+    if (intended?.kind === 'boolean' && intended.value) {
+      return answer(withoutValue(base, spec, 'format-unsupported', true, true));
+    }
+    if (intended?.kind === 'boolean') {
+      candidate = { ...candidate, text: placeholderForNo(spec) ?? 'No' };
+      shaped = shapeFor(spec, candidate, ctx.vocab);
+    }
+  }
   if (shaped === null) return answer(withoutValue(base, spec, 'format-unsupported', true, false));
   // A lone checkbox states one thing, so it is ticked from an answer only when its statement is affirmative and the
   // tick then says exactly that answer (the review, CORE-2). A saved answer is the person's own for this very
@@ -750,6 +780,8 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
     && candidate.origin.provenance !== 'submitted-before' && policy !== 'consent'
     // jr6 RULES (U-09, ADP-17): a decline box states the decline its tick gives, the person's own explicit one.
     && rules?.rule !== EEO_DECLINE_BOX_RULE.id
+    // jr7 RULES-7 R2 (DF7-11): Dayforce's "Not Completed" states the in-progress flag its tick gives.
+    && !(rules?.rule === 'label.entry-field' && category === 'education.current')
     && statementPolarity(statementText(spec, rules)) !== 'affirmative') {
     return answer(withoutValue(base, spec, 'statement-not-affirmative', true, true));
   }
