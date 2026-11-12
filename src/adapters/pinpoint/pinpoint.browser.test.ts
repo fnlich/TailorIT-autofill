@@ -102,7 +102,7 @@ describe('the Pinpoint adapter: each rule, and the page read without it', () => 
     const page = await open();
     const input = q(page.doc, 'input.react-select__input[role="combobox"]');
     expect(pinpointAdapter.widgetFor?.(input)).toMatchObject({ kind: 'combobox', opener: input, expanded: input,
-      box: q(page.doc, 'div.react-select__control'), bridge: 'react-select', snapshot: 'pinpoint-0' });
+      box: q(page.doc, 'div.react-select__control'), bridge: 'react-select', snapshot: 'pinpoint-0, jr7-pinpointhq1-form' });
     const verdict = (adapter: typeof pinpointAdapter) => {
       const result = scan(page.root, adapter, { platform: 'pinpoint' });
       const field = result.fields.find((each) => each.kind === 'combobox')!;

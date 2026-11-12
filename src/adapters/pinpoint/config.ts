@@ -11,7 +11,13 @@
  *   by its title span;
  * - the single select: a react-select (react-select__control, an input role=combobox named by its aria-label) beside a
  *   native twin select.hide-at-sm-block for narrow screens: declared a combobox for the page-world bridge's
- *   react-select code, its box the react-select__control;
+ *   react-select code, its box the react-select__control; jr7 RBP-7 (RBP7-20, the adapter half; snapshot7 pinpointhq1,
+ *   fixtures/pinpoint/jr7-pinpointhq1-form): a react-select that takes no search (the EEO questions Gender,
+ *   Ethnicity/Race and Voluntary Self-Identification of Disability in fieldset#diversity-and-inclusion-form) draws
+ *   react-select's DummyInput instead (input[role=combobox][aria-readonly=true][inputmode=none], 0×0 at opacity 0, no
+ *   react-select__input class) beside a hidden native twin: it is declared alike, by any combobox input inside
+ *   div.react-select, so it is a field; ENGINE-7 E1 item 6 reads such a DummyInput of a declared react-select widget as
+ *   not read-only by its aria-readonly (the bridge chooses its option);
  * - the résumé: input.file-field__input, its label.file-field__label "Attach Résumé / CV" its control, its question the
  *   div.external-form__label above it ("Résumé / CV", required by its class);
  * - Submit: button[type=submit][name=button] "Submit Application" in fieldset#application-fieldset-submit;
@@ -52,8 +58,12 @@ export const PINPOINT_CONFIG: AtsConfig = {
       help: 'div.external-form__label > span', from: 'pinpoint-0' },
   ],
   required: [{ is: '.external-form__label--required', from: 'pinpoint-0' }],
-  widgets: [{ match: 'div.react-select input.react-select__input[role="combobox"]', kind: 'combobox',
-    expanded: 'input.react-select__input', box: 'div.react-select__control', bridge: 'react-select', from: 'pinpoint-0' }],
+  // jr7 RBP-7 (RBP7-20): <div class="… react-select …"><div class="react-select__control …">…<input
+  // id="application_form_equality_monitoring_gender" inputmode="none" aria-readonly="true" role="combobox"
+  // aria-expanded="false" class="…-dummyInput"> (jr7-pinpointhq1-form), beside the searchable input.react-select__input.
+  widgets: [{ match: 'div.react-select input[role="combobox"]', kind: 'combobox',
+    expanded: 'input[role="combobox"]', box: 'div.react-select__control', bridge: 'react-select',
+    from: 'pinpoint-0, jr7-pinpointhq1-form' }],
   uploads: [{ input: 'input.file-field__input[type="file"]', control: 'label.file-field__label', from: 'pinpoint-0' }],
   submit: { css: 'form#application-form button[type="submit"][name="button"]', from: 'pinpoint-0' },
   neverPress: [
