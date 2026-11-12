@@ -2345,7 +2345,9 @@ document.getElementById('jobright-helper-plugin').attachShadow({ mode: 'open' })
         title: document.querySelector('.attachment-upload-button__download')!.getAttribute('title'),
         pills: Array.from(document.querySelectorAll('.cx-select-pill-section'),
           (pill) => `${pill.getAttribute('aria-checked')}:${pill.className}`) }));
-      expect(oracle).toEqual({ widgetText: 4, checked: 1, typedValues: 0, placeholders: 0 });
+      // jr7 TOOLING-7 (jr7-O5): and its My Applications tiles' counts (none here).
+      expect(oracle).toEqual({ widgetText: 4, checked: 1, typedValues: 0, placeholders: 0, applications: 0,
+        keptApplications: 0 });
       expect(afterOracle.text).not.toMatch(/Jane|Engineer|Acme|2019|2020|cv\.pdf/);
       expect(afterOracle.text).toContain('Keep me');
       expect(afterOracle.title).toBe('REDACTED');
@@ -2359,7 +2361,7 @@ document.getElementById('jobright-helper-plugin').attachShadow({ mode: 'open' })
         chosen: document.querySelector('[slot="triggerPrefix"]')!.outerHTML }));
       await context.close();
       // The chosen spl-radio's aria-checked is the generic pass's (counted there).
-      expect(sr).toEqual({ widgetText: 1, checked: 0, typedValues: 0, placeholders: 1 });
+      expect(sr).toEqual({ widgetText: 1, checked: 0, typedValues: 0, placeholders: 1, applications: 0, keptApplications: 0 });
       expect(afterSr.chosen).not.toMatch(/Canada|CA"|\+1/);
       expect(afterSr).toMatchObject({ phone: '', group: '', option: '1', radio: 'false' });
       expect(Buffer.from(afterSr.flag!.split(',')[1]!, 'base64').toString()).toContain('width="24" height="18"');
