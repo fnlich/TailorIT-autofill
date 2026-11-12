@@ -1,6 +1,6 @@
 {
   "fixture": "oracle/fortive-email-code",
-  "source": "https://ejta.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/10672/apply/email?src=Eightfold",
+  "source": "https://ejta.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/10672/apply/email?src=REDACTED",
   "captured": "2026-11-06T16:49:20.000Z",
   "note": "The code page Oracle draws at the gate's own address after its NEXT (\"Confirm Your Identity\"; the email it was sent to is redacted).",
   "fields": [

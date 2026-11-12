@@ -4293,7 +4293,6 @@ const JOBVITE_SHARE_CHANNELS = ['linkedin', 'twitter', 'facebook', 'email'];
  *  fortive-email-code (ORACLE-7's P2), CareerPlug's two forms (a Facebook link's src=; no jr7 package: INT-7) and UKG
  *  Ready's three jr7 cases committed on jr7-ukgready before r3 (UKGREADY-7's P2; absent from other branches). */
 const SRC_REFERRAL_FIXTURES = ['careerplug/cloudscouts-form.html', 'careerplug/eitacies-uploaded.html',
-  'oracle/fortive-email-code.expect.json', 'oracle/fortive-email-code.html', 'oracle/fortive-email-code.routes.json',
   'rippling/qu-careers-form.expect.json', 'rippling/qu-careers-form.html', 'rippling/qu-careers-form.routes.json',
   'rippling/qu-careers-posting.html', 'rippling/qu-careers-posting.routes.json',
   'ukgready/jr7-saashr-choice.html', 'ukgready/jr7-saashr-choice.routes.json', 'ukgready/jr7-saashr-posting.html',
@@ -4384,7 +4383,7 @@ describe('jr6 ifix C-4: referral parameters in the committed fixtures (PRIV-4)',
     const hits = (file: string, text?: string) => named(file, text)
       .filter((name) => !(name === 'src' && SRC_REFERRAL_FIXTURES.includes(file))).map((name) => `${file}: ${name}`);
     expect(ADDRESSED_FIXTURES.flatMap((file) => hits(file))).toEqual([]);
-    // Each listed file present here still holds its src= (it leaves the list when converted again); the ten on every
+    // Each listed file present here still holds its src= (it leaves the list when converted again); those on every
     // branch must be here.
     for (const file of SRC_REFERRAL_FIXTURES.filter((each) => ADDRESSED_FIXTURES.includes(each))) {
       expect(named(file), file).toContain('src');
