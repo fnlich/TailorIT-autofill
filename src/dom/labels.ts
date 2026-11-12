@@ -467,7 +467,7 @@ function soleFieldLegend(control: Element, ctx: LabelContext): ResolvedLabel | n
   if (fieldset === null) return null;
   const legend = legendOf(fieldset);
   if (legend === null) return null;
-  const fields = Array.from(fieldset.querySelectorAll(CONTROL_SELECTOR)).filter((el) => kindOf(el).field);
+  const fields = Array.from(fieldset.querySelectorAll(CONTROL_SELECTOR)).filter((el) => kindOf(el, ctx.adapter).field);
   if (fields.length !== 1 || fields[0] !== control) return null;
   return fromText(textOf(legend, ctx), 'legend', legend);
 }

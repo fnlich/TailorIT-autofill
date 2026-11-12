@@ -223,7 +223,7 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     if (boxes.has(el)) return false;
     if (!outside(el) && !absorbed.has(el)) return true;
     // A control the adapter keeps out of the fields is still one the scan ignored.
-    if (el.matches(CONTROL_SELECTOR) && kindOf(el).field) counters.hiddenControlsIgnored += 1;
+    if (el.matches(CONTROL_SELECTOR) && kindOf(el, adapter).field) counters.hiddenControlsIgnored += 1;
     return false;
   });
   // Every combobox's list, so a listbox that is one is not taken for a field of its own (jr6 ENGINE E1: a declared box's
@@ -247,10 +247,11 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     // now goes on beside a checkbox widget): never a field. A field kind is counted with the hidden controls ignored, as
     // it was while hidden (Turnstile's hidden input never was).
     if (native && isCaptchaResponseField(el)) {
-      if (kindOf(el).field) counters.hiddenControlsIgnored += 1;
+      if (kindOf(el, adapter).field) counters.hiddenControlsIgnored += 1;
       continue;
     }
-    const kind = native ? kindOf(el) : { field: false as const, auth: false };
+    // jr7 ENGINE-7 E1 item 4 (EFA-3): read with the adapter, whose notCodeBox may name a one-time-code box no code box.
+    const kind = native ? kindOf(el, adapter) : { field: false as const, auth: false };
     if (native && !kind.field) {
       if (kind.auth && isUserVisible(el, cache)) authFields += 1;
       continue;
@@ -386,6 +387,7 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       return found !== null && found.control.isConnected ? found : null;
     },
     rescan: () => scan(root, adapter, options),
+    adapter, // jr7 ENGINE-7 E1 item 4
   };
 }
 

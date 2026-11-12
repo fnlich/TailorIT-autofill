@@ -5,7 +5,10 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { genericAdapter } from '../adapters/generic';
+import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures } from './fixture.testkit';
+import { domGuardBeforeWrite } from './guard';
+import { detectPause } from './pause-detect';
 import { scan } from './scan';
 
 afterEach(() => removeFixtures(document));
@@ -69,5 +72,45 @@ describe("item 6 (RBP7-20): a declared react-select's DummyInput", () => {
     expect(await readOnlyOf('aria-readonly="true"', { readOnlyBox: true })).toBe(true);
     // Its native readonly still makes it read-only.
     expect(await readOnlyOf(`${dummy} readonly`)).toBe(true);
+  });
+});
+
+// ── item 4 (EFA-3): a one-time-code box its adapter names no code box ───────────────────────────────────────────────
+describe('item 4 (EFA-3): one-time-code boxes the adapter names no code boxes', () => {
+  /** Eightfold's apply form as the jdef audit describes it (snapshot7 twillio): ordinary boxes marked
+   *  autocomplete="one-time-code" to keep the browser's autofill off, each with a data-test-id naming its section. */
+  const APPLY = page(`<label for="phone">Phone Number</label>
+    <input id="phone" type="tel" autocomplete="one-time-code" data-test-id="Contact_Information_phone">
+    <label for="city">City</label><input id="city" autocomplete="one-time-code" data-test-id="Contact_Information_city">
+    <label for="why">Why this role?</label>
+    <input id="why" autocomplete="one-time-code" data-test-id="Position_Specific_Questions_why">
+    <button type="submit" data-test-id="submitApplicationButton">Submit</button>`);
+  /** A code page: one box marked one-time-code, which the adapter does not name. */
+  const CODE = page(`<label for="otp">Enter the code we texted to your phone</label>
+    <input id="otp" autocomplete="one-time-code" data-test-id="Verify_code"><button type="submit">Verify</button>`);
+  /** The adapter JDEF-7 declares (FIX7PLAN §6.15, Eightfold item 2). */
+  const eightfold: Adapter = { ...genericAdapter, id: 'generic',
+    notCodeBox: (input) => input.closest('form:has([data-test-id="submitApplicationButton"])') !== null
+      && /^(?:Contact_Information_|Position_Specific_Questions_)/.test(input.getAttribute('data-test-id') ?? '') };
+
+  it('reads them as fields, pauses nothing, and lets the guard write them', async () => {
+    const { doc } = await loadFixture(document, APPLY);
+    const root = doc.getElementById('f')!;
+    expect(detectPause(doc, root, eightfold)).toBeNull();
+    const result = scan(root, eightfold, { platform: 'eightfold' });
+    expect(result.authFields).toBe(0);
+    expect(result.fields.map((field) => field.label)).toEqual(['Phone Number', 'City', 'Why this role?']);
+    const phone = result.fields[0]!;
+    expect(domGuardBeforeWrite(result, phone)).toMatchObject({ ok: true });
+    // Without the adapter's word they are code boxes: the step is an emailed code, and none is a field.
+    expect(detectPause(doc, root, genericAdapter)).toEqual({ kind: 'email-code', evidence: 'one-time-code' });
+    expect(scan(root, genericAdapter, { platform: 'eightfold' }).authFields).toBe(3);
+  });
+
+  it('still pauses on a code box the adapter does not name', async () => {
+    const { doc } = await loadFixture(document, CODE);
+    const root = doc.getElementById('f')!;
+    expect(detectPause(doc, root, eightfold)).toEqual({ kind: 'email-code', evidence: 'one-time-code' });
+    expect(scan(root, eightfold, { platform: 'eightfold' }).authFields).toBe(1);
   });
 });

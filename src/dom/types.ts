@@ -7,7 +7,7 @@
  * counts as busy, and the state and answer of a dependent option list (awaitOptions). Phase 4 added the ARIA widgets
  * the scanner recognises (WidgetTarget) and what opening one read (WidgetReading).
  */
-import type { WidgetTags } from '../adapters/types';
+import type { Adapter, WidgetTags } from '../adapters/types';
 import type { BaseKey, FieldDescriptor, FieldKey, OptionSetHash, ReasonCode, SectionRef } from '../core/types';
 import type { StoredListId } from '../shared/learned-lists';
 import type { QueryKey, WidgetKey } from './fillers/events';
@@ -277,6 +277,9 @@ export interface ScanResult {
   target(key: FieldKey): FieldTarget | null;
   /** A fresh scan of the same root, with the same adapter and options: how a field is re-found by key on every use. */
   rescan(): ScanResult;
+  /** jr7 ENGINE-7 E1 item 4 (EFA-3): the adapter the scan read with (null: none), so the DOM guard reads a control's
+   *  kind as the scan did (kinds.ts kindOf: a one-time-code box its notCodeBox names is a field). */
+  readonly adapter: Adapter | null;
 }
 
 /** The reason codes a filler can end with. */
