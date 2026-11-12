@@ -112,6 +112,10 @@ import {
   // ── jr6 PRIVACY-FIX ──
   POSTING_COPY_ATTRIBUTES,
   ROW_ID_WORDS_KEPT,
+  // ── jr7 TOOLING-7 ──
+  CHOSEN_ICONS,
+  SPELLED_IDS,
+  spelledIdsIn,
 } from '../scripts/mhtml-to-fixture.mjs';
 import { FIELD_KINDS } from '../src/core/enums';
 import { platformOfUrl } from '../src/shared/hosts';
@@ -4204,13 +4208,16 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
     // site key is normalised: a reCAPTCHA site key (JazzHR's classic board) is the page's public key and stays, as in
     // the older JazzHR fixtures (jr6 JAZZHR P1).
     expect(body).not.toMatch(/data-hcaptcha-widget-id="(?!REDACTED")/);
-    if (folder === 'icims' || folder === 'oracle') {
+    // jr7 TOOLING-7 (T7-01): and Paycom's.
+    if (folder === 'icims' || folder === 'oracle' || folder === 'paycom') {
       expect(body).not.toMatch(/[?&;#]sitekey=(?!REDACTED)[^&"'\s]/);
       expect(body).not.toMatch(/data-sitekey="(?!REDACTED")/);
     }
     expect(body).not.toMatch(/\bhashed=-?\d/);
-    // No chosen mark, as the conversion refuses one (chosenMarksIn).
+    // No chosen mark, as the conversion refuses one (chosenMarksIn); jr7 TOOLING-7 (T7-01): and no widget's shown text
+    // spelled in an id (spelledIdsIn).
     expect(chosenMarksIn(html)).toEqual([]);
+    expect(spelledIdsIn(html)).toEqual([]);
   });
 });
 // ── end jr6 ──
@@ -4359,5 +4366,74 @@ describe('jr7 TOOLING-7: the converter (FIX7PLAN §6.1)', () => {
       }
       expect(text).toContain('<span class="c-form-control__value--uC6xTb" aria-hidden="true">REDACTED</span>');
     }, 60_000);
+
+  it("T7-01: Paycom's chosen radios and boxes drawn as their unchosen twins, its tooltip anchors' spelled text, a canvas stood in",
+    async () => {
+      const radio = (chosen: boolean, value: string) => `<div class="uiLibRadio ui-radio-lg${chosen ? ' ui-radio-checked' : ''}">
+<label class="uiLibRadioLabel"><div class="uiLibRadioButtonBase"><span class="uiLibRadioBase"><span class="uiLibRadioIcon">${chosen
+    ? '<svg data-testid="uiLibRadioIconcheckedNoColorPassed" aria-label="radio button checked" color="#003a4f" width="24" height="24" viewBox="0 0 24 24"><path d="M1 1h22v22H1z"></path><path d="M7 7h10v10H7z"></path></svg>'
+    : '<svg data-testid="uiLibRadioIconUncheckedNoColorPassed" aria-label="radio button unchecked" color="rgba(0,0,0,0.72)" width="24" height="24" viewBox="0 0 24 24"><path d="M2 2h20v20H2z"></path><path d="M3 3h18v18H3z"></path></svg>'}</span>
+<input class="uiLibRadioInput" type="radio" name="q1" value="${value}"${chosen ? ' checked' : ''}></span></div>
+<span data-testid="anchor-for-${value}-tooltip">${value}</span></label></div>`;
+      const box = (chosen: boolean, label: string) => `<label class="uiLibCheckbox${chosen ? ' ui-checkbox-checked' : ''}">
+<div class="uiLibCheckboxIcon"><button class="uiLibCheckboxButton" type="button">${chosen
+    ? '<svg data-testid="Checked Checkbox-icon" aria-label="Checked Checkbox" color="#003a4f" width="24" height="24" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"></path><path d="M9 12l2 2 4-4"></path></svg>'
+    : '<svg data-testid="Unchecked Checkbox-icon" aria-label="Unchecked Checkbox" color="rgba(0,0,0,0.72)" width="24" height="24" viewBox="0 0 24 24"><path d="M19 5v14H5V5h14"></path><path d="M5 3h14"></path></svg>'}</button></div>
+<input class="uiLibCheckboxInput" type="checkbox"${chosen ? ' checked' : ''}><p class="uiLibCheckboxLabel">${label}</p></label>`;
+      const page = (boxes: string) => `<div id="ats-portal"><div id="questions-1-field"><p>Are you 18 or older?</p>
+<div class="uiLibRadioGroup" role="radiogroup">${radio(true, 'Yes')}${radio(false, 'No')}</div></div>${boxes}
+<div><span data-testid="anchor-for-Fixture Town-tooltip">Fixture Town</span><span data-testid="anchor-for--tooltip"></span></div>
+<div class="css-pad" style="width: 480px; height: 96px"><canvas class="css-sig" width="476" height="93" style="width: 100%; height: 100%"></canvas></div></div>`;
+      const { text } = await convertPage(`https://www.paycomonline.net/v4/ats/web.php/portal/${'ab'.repeat(16)}/applications`,
+        'paycom', 'jr7-t701', page(`${box(true, 'I acknowledge')}${box(false, 'I do not have a middle name')}`));
+      // Every radio and box draws its unchosen icon, the page's own twin's copy; no chosen class, test id or colour stays.
+      for (const gone of ['ui-radio-checked', 'ui-checkbox-checked', 'uiLibRadioIconchecked', '"Checked Checkbox-icon"',
+        'radio button checked', '#003a4f', 'anchor-for-Fixture Town-tooltip', 'anchor-for-Yes-tooltip', ' checked']) {
+        expect(text, gone).not.toContain(gone);
+      }
+      expect(text.match(/data-testid="uiLibRadioIconUncheckedNoColorPassed"/g)).toHaveLength(2);
+      expect(text.match(/data-testid="Unchecked Checkbox-icon"/g)).toHaveLength(2);
+      expect(text).toContain('data-testid="anchor-for-REDACTED-tooltip"');
+      expect(text).toContain('data-testid="anchor-for--tooltip"');
+      // The canvas keeps the box it draws (the capture measured it with scripting off, the fixture is served with it on).
+      expect(text).toContain('style="width: 100%; height: 100%; display: inline-block; min-width: 476px; min-height: 93px;"');
+      expect(headerOf(text).canvasStandIns).toBe(1);
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect(spelledIdsIn(text)).toEqual([]);
+      // A chosen box with no unchosen twin in the page to copy is refused, never written.
+      await expect(convertPage(`https://www.paycomonline.net/v4/ats/web.php/portal/${'ab'.repeat(16)}/applications`,
+        'paycom', 'jr7-t701-lone', page(box(true, 'I acknowledge'))))
+        .rejects.toThrow(`jr7-t701-lone.html: ${CHOSEN_MARK_LABELS.icon} is still in the file`);
+      // The final check reads each spelled id by its frame alone.
+      expect(spelledIdsIn('<span data-testid="anchor-for-Fixture Town-tooltip">')).toEqual([
+        "a widget's shown text spelled in its data-testid (on <span>; SPELLED_IDS)"]);
+      expect(spelledIdsIn('<span data-testid="anchor-for-REDACTED-tooltip"><b data-testid="anchor-for--tooltip">')).toEqual([]);
+      expect(SPELLED_IDS).toEqual([{ attribute: 'data-testid', source: '^(anchor-for-)(.+)(-tooltip)$' }]);
+      expect(CHOSEN_ICONS.map(({ testid }) => testid)).toEqual(['^uiLibRadioIconchecked', '^Checked Checkbox-icon$']);
+    }, 120_000);
+
+  it("T7-01 (PC7-08's markers): Paycom's hCaptcha site key, widget id and response normalised, as iCIMS's and Oracle's", () => {
+    const page = '<div class="h-captcha" data-sitekey="94fee806-5cac-4582-9738-384a0f4ea6f8" data-hcaptcha-widget-id="0gp98jgqs8c8"'
+      + ' data-hcaptcha-response="P1_eyJx.y"><iframe src="https://newassets.hcaptcha.com/captcha/v1/x/static/hcaptcha.html'
+      + '#frame=checkbox&amp;id=0gp98jgqs8c8&amp;host=www.paycomonline.net&amp;sitekey=94fee806-5cac-4582-9738-384a0f4ea6f8'
+      + '&amp;size=invisible"></iframe></div><p id="main">id=main stays</p>';
+    const { text, renderIds } = normaliseNewAts('paycom', page);
+    expect(text).not.toContain('94fee806');
+    expect(text).not.toContain('0gp98jgqs8c8');
+    expect(text).not.toContain('P1_eyJx');
+    expect(text).toContain('data-sitekey="REDACTED" data-hcaptcha-widget-id="REDACTED" data-hcaptcha-response="REDACTED"');
+    expect(text).toContain('&amp;id=REDACTED&amp;host=www.paycomonline.net&amp;sitekey=REDACTED&amp;size');
+    expect(text).toContain('<p id="main">id=main stays</p>');
+    expect(renderIds.length).toBeGreaterThanOrEqual(4);
+    // Another platform's page is left as it is (iCIMS's and Oracle's go through normaliseTokens).
+    expect(normaliseNewAts('hibob', page).text).toBe(page);
+  });
+
+  it("every committed fixture: no widget's shown text spelled in an id (T7-01, spelledIdsIn)", () => {
+    const files = committedFixtureFiles();
+    expect(files.length).toBeGreaterThan(400);
+    expect(files.flatMap((file) => spelledIdsIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'))
+      .map((label) => `${file}: ${label}`))).toEqual([]);
+  }, 60_000);
 });
 // ── end jr7 TOOLING-7 ──

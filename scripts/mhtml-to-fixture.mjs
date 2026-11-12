@@ -703,7 +703,35 @@ export const CHOSEN_MARKS = [
   // ADP's chosen sdf-radio-button draws its dot's svg toggled (the dot itself is a CHOSEN_DRAWINGS part).
   { selector: 'sdf-radio-button svg.toggled, :host(sdf-radio-button) svg.toggled', classes: ['toggled'], aria: false },
   // ── end jr6 fixes ──
+  // ── jr7 TOOLING-7 (T7-01; SP\jr7\audit\dayforce-paycom.md, snapshot7 paycomonline1): Paycom's uiLib marks the chosen
+  // radio's wrapper (<div class="uiLibRadio ui-radio-lg ui-radio-checked">) and the ticked box's label (<label
+  // class="uiLibCheckbox ui-checkbox-checked">); their icons are CHOSEN_ICONS'. ──
+  { selector: '.ui-radio-checked, .ui-checkbox-checked', classes: ['ui-radio-checked', 'ui-checkbox-checked'] },
 ];
+
+/** jr7 TOOLING-7 (T7-01; snapshot7 paycomonline1's application steps): an icon a widget draws for its chosen state, which
+ *  clearChoicesInPage replaces with a copy of the page's own unchosen twin (`twin`: the first in the document), as the
+ *  page draws an unchosen row; the conversion refuses a file where one stays (`testid`: chosenMarksIn reads it, a page
+ *  with no twin to copy among them). Paycom's uiLib radio, <span class="uiLibRadioIcon"><svg
+ *  data-testid="uiLibRadioIconcheckedNoColorPassed" aria-label="radio button checked" color="..."><path/><path/></svg>
+ *  (unchosen: uiLibRadioIconUncheckedNoColorPassed, "radio button unchecked"), and its box, <button
+ *  class="uiLibCheckboxButton"><svg data-testid="Checked Checkbox-icon" aria-label="Checked Checkbox"> (unchosen:
+ *  "Unchecked Checkbox-icon"): each svg's paths, colour, test id and label tell the answer.
+ *  @type {Array<{ chosen: string; twin: string; testid: string }>} */
+export const CHOSEN_ICONS = [
+  { chosen: '.uiLibRadioIcon > svg[data-testid^="uiLibRadioIconchecked"]',
+    twin: '.uiLibRadioIcon > svg[data-testid^="uiLibRadioIconUnchecked"]', testid: '^uiLibRadioIconchecked' },
+  { chosen: '.uiLibCheckboxButton svg[data-testid="Checked Checkbox-icon"]',
+    twin: '.uiLibCheckboxButton svg[data-testid="Unchecked Checkbox-icon"]', testid: '^Checked Checkbox-icon$' },
+];
+
+/** jr7 TOOLING-7 (T7-01): attributes in which a widget spells the text it shows, each value's middle (group 2 of
+ *  `source`) made REDACTED on every conversion (redactApplicantTextInPage) and refused where it stays (spelledIdsIn):
+ *  Paycom's uiLib names every tooltip anchor after the text it shows, data-testid="anchor-for-<text>-tooltip" (395 in
+ *  snapshot7 paycomonline1's eight captures: an email, a phone, cities, employers, job titles and a salary among the
+ *  page's own labels); an empty one (anchor-for--tooltip) is left as drawn.
+ *  @type {Array<{ attribute: string; source: string }>} */
+export const SPELLED_IDS = [{ attribute: 'data-testid', source: '^(anchor-for-)(.+)(-tooltip)$' }];
 
 /** jr6 (JV-10): the option rows of a choice group, which hold no answer once cleared, so every row of one group must
  *  read alike but for its text, ids, names, values and labels (unevenChoiceRowsInPage refuses a page where they do
@@ -992,6 +1020,30 @@ export function normaliseWorkable(html) {
 }
 
 /**
+ * hCaptcha's site key in its frames' addresses (sitekey=), and each widget's id, wherever it stands: in its
+ * data-hcaptcha-widget-id and as the id= of its frames' hcaptcha.com addresses (the v3 Phase 6/7b review, S9: iCIMS and
+ * Oracle, normaliseTokens; jr7 TOOLING-7, PC7-08's markers: Paycom's contact dialog, normaliseNewAts). Each value
+ * becomes REDACTED and goes into `ids` (never printed). @param {string} html @param {string[]} ids @returns {string}
+ */
+function redactHcaptchaIn(html, ids) {
+  let text = html.replace(/[?&#;]sitekey=([^&"'\s<#]+)/g, (whole, value) => {
+    if (value === REDACTED) return whole;
+    ids.push(value);
+    return whole.replace(value, REDACTED);
+  });
+  /** @type {Set<string>} */
+  const widgets = new Set();
+  for (const match of text.matchAll(/\bdata-hcaptcha-widget-id="([^"]+)"/g)) widgets.add(match[1] ?? '');
+  for (const match of text.matchAll(/hcaptcha\.com\/[^"'\s<]*?[#&;]id=([A-Za-z0-9_-]+)/g)) widgets.add(match[1] ?? '');
+  for (const id of widgets) {
+    if (id === '' || id === REDACTED) continue;
+    ids.push(id);
+    text = text.split(id).join(REDACTED);
+  }
+  return text;
+}
+
+/**
  * The per-load values of the v3 Phase 6 and 7b platforms (see the header), each kind of token replaced by a fixed one
  * wherever it stands: a numbered id becomes its kind's own numbering in the order the page first names it, an opaque
  * token becomes REDACTED. Answers the text and the values replaced (never their values). Other platforms: unchanged.
@@ -1026,19 +1078,9 @@ export function normaliseTokens(platform, html) {
       return whole.replace(value, REDACTED);
     });
   };
-  /** hCaptcha's site key in its frames' addresses (sitekey=), and each widget's id, wherever it stands: in its
-   *  data-hcaptcha-widget-id and as the id= of its frames' hcaptcha.com addresses. */
+  /** hCaptcha's site key in its frames' addresses and each widget's id (redactHcaptchaIn). */
   const redactCaptcha = () => {
-    redactValue(/[?&#;]sitekey=([^&"'\s<#]+)/g);
-    /** @type {Set<string>} */
-    const widgets = new Set();
-    for (const match of text.matchAll(/\bdata-hcaptcha-widget-id="([^"]+)"/g)) widgets.add(match[1] ?? '');
-    for (const match of text.matchAll(/hcaptcha\.com\/[^"'\s<]*?[#&;]id=([A-Za-z0-9_-]+)/g)) widgets.add(match[1] ?? '');
-    for (const id of widgets) {
-      if (id === '' || id === REDACTED) continue;
-      renderIds.push(id);
-      text = text.split(id).join(REDACTED);
-    }
+    text = redactHcaptchaIn(text, renderIds);
   };
   if (platform === 'workday') {
     renumber(/\b(input)-(\d+)\b/g, (prefix, index) => `${prefix}-${index + 1}`);
@@ -1240,6 +1282,17 @@ export function normaliseNewAts(platform, html) {
     // formSectionView-view<N>, appView-view<N>), so the name takes either case.
     text = renumberIn(text, /\b(subscriberid="[A-Za-z-]+-view)\d+"/g, (prefix, index) => `${prefix}${index + 1}"`, renderIds);
     text = renumberIn(text, /\b(name="form)\d+"/g, (prefix, index) => `${prefix}${index + 1}"`, renderIds);
+  } else if (platform === 'paycom') {
+    // jr7 TOOLING-7 (T7-01, PC7-08's markers; snapshot7 paycomonline1's contact dialog): its invisible hCaptcha, as iCIMS's
+    // and Oracle's are (normaliseTokens): the widget's site key, its id wherever it stands, and a response it holds.
+    for (const pattern of [/\bdata-sitekey="([^"]+)"/g, /\bdata-hcaptcha-response="([^"]+)"/g]) {
+      text = text.replace(pattern, (whole, value) => {
+        if (value === REDACTED) return whole;
+        renderIds.push(value);
+        return whole.replace(value, REDACTED);
+      });
+    }
+    text = redactHcaptchaIn(text, renderIds);
   }
   return { text, renderIds };
 }
@@ -1680,12 +1733,14 @@ export function stripInjectedInPage(input) {
  *   ROVING_GROUP_TAGS widget, else in the nearest ancestor holding another row of their kind) that stands on a row but
  *   the widget's first, every other row of its kind "-1" or without a tabindex, moves to the first row, the two rows
  *   swapping their tabindex: the stop an unanswered widget draws (ADP's blank lists, SmartRecruiters' and Workable's
- *   unanswered radios), so a page converted again where nothing was chosen stays as it was.
+ *   unanswered radios), so a page converted again where nothing was chosen stays as it was;
+ * - jr7 TOOLING-7 (T7-01): an icon drawn for the chosen state (`icons`: CHOSEN_ICONS) becomes a copy of the page's own
+ *   unchosen twin (none in the page: it stays, and the conversion refuses it).
  * Returns how many it cleared.
  * @param {{ redacted: string; marks?: Array<{ selector: string; classes?: string[]; patterns?: string[];
  *   attributes?: string[]; aria?: boolean; swap?: Record<string, string> }>; drawings?: string[];
  *   roving?: { roles: string[]; tags: string[]; groupRoles: string[]; groupTags: string[] };
- *   mirrors?: Array<{ tag: string; attribute: string }> }} input
+ *   mirrors?: Array<{ tag: string; attribute: string }>; icons?: Array<{ chosen: string; twin: string }> }} input
  * @returns {{ choices: number }}
  */
 export function clearChoicesInPage(input) {
@@ -1740,6 +1795,16 @@ export function clearChoicesInPage(input) {
   for (const part of (input.drawings ?? []).length > 0 ? doc.querySelectorAll((input.drawings ?? []).join(', ')) : []) {
     part.remove();
     choices += 1;
+  }
+  // jr7 TOOLING-7 (T7-01): an icon drawn for the chosen state (`icons`: CHOSEN_ICONS, Paycom's uiLib radios and boxes)
+  // becomes a copy of the page's own unchosen twin; with no twin in the page it stays, and the conversion refuses it.
+  for (const { chosen, twin } of input.icons ?? []) {
+    const model = doc.querySelector(twin);
+    if (model === null) continue;
+    for (const icon of doc.querySelectorAll(chosen)) {
+      icon.replaceWith(model.cloneNode(true));
+      choices += 1;
+    }
   }
   // jr6 fixes (PRIV-1's value mirror, from the ADP fixer): a group's chosen value repeated on each of its rows
   // (`mirrors`: VALUE_MIRRORS, ADP's wfn-radio-button radio-group-value) is blanked, as an unanswered group draws it.
@@ -1870,10 +1935,12 @@ export function clearChoicesInPage(input) {
  * - a custom element's typed or chosen value and default-value (ukg-input, an answered sdf-radio-group; never an
  *   option's own element: -button, -option, -item, -radio, -checkbox, -tab), a date widget's data-date-value, and the
  *   data-gtm-form-interact-* attributes a tag manager adds once a form is typed into;
- * - s2 wd: each search result place's (`results`: SEARCH_RESULT_PLACES) text, title and aria-label, a role=option's too.
+ * - s2 wd: each search result place's (`results`: SEARCH_RESULT_PLACES) text, title and aria-label, a role=option's too;
+ * - jr7 TOOLING-7 (T7-01): the shown text a widget spells in an attribute (`spelled`: SPELLED_IDS, Paycom's tooltip
+ *   anchors' data-testid), REDACTED inside its frame of words.
  * Returns how many places and repeats it cleared, and the file names (kept in memory, never printed or written).
  * @param {{ fileNames: string[]; entries: string[]; chosen: string[]; profile: string[]; links: string[];
- *   results?: string[]; redacted: string }} input
+ *   results?: string[]; redacted: string; spelled?: Array<{ attribute: string; source: string }> }} input
  * @returns {{ applicantText: number; names: string[] }}
  */
 export function redactApplicantTextInPage(input) {
@@ -2019,6 +2086,15 @@ export function redactApplicantTextInPage(input) {
     for (const attribute of [...element.attributes]) {
       if (attribute.name.toLowerCase().startsWith('data-gtm-form-interact')) element.removeAttribute(attribute.name);
     }
+    // jr7 TOOLING-7 (T7-01): an attribute in which a widget spells the text it shows (`spelled`: SPELLED_IDS, Paycom's
+    // uiLib data-testid="anchor-for-<text>-tooltip") keeps its frame, the text REDACTED; an empty one stays as drawn.
+    for (const { attribute, source } of input.spelled ?? []) {
+      const value = element.getAttribute(attribute);
+      const parts = value === null ? null : new RegExp(source).exec(value);
+      if (parts === null || parts[2] === redacted) continue;
+      element.setAttribute(attribute, `${parts[1] ?? ''}${redacted}${parts[3] ?? ''}`);
+      applicantText += 1;
+    }
   }
   // Each file name wherever else the frame repeats it, longest first, as written and percent-encoded.
   const variants = [...names].sort((a, b) => b.length - a.length)
@@ -2082,6 +2158,33 @@ export function measureInPage() {
     states.push(`${element.tagName.toLowerCase()}${shown ? '+' : '-'}`);
   }
   return states;
+}
+
+/**
+ * jr7 TOOLING-7 (T7-01; snapshot7 paycomonline1's signature step, capture 7): a canvas stood in by the box it draws.
+ * The capture is opened with scripting off, where a <canvas> is no picture but an inline box for its fallback content
+ * (HTML: "when scripting is disabled, the canvas represents its fallback content"), measured hidden (Paycom's signature
+ * pad: 1 by 17 pixels); the fixture is served with scripting on, where it is a picture of its own size, shown (476 by 93
+ * inside its 480 by 96 pad), so the visibility check refused the page. Before anything is measured, every canvas, on
+ * every platform, keeps the box it draws with scripting on in both settings: display inline-block, at least its width
+ * and height attributes' pixels (300 by 150 without them, as HTML defaults them), its page's own sizing left on top.
+ * It draws nothing: a capture keeps no drawing of a canvas. Answers how many it stood in.
+ * @returns {number}
+ */
+export function standInCanvasesInPage() {
+  const doc = globalThis.document;
+  let count = 0;
+  for (const canvas of doc.querySelectorAll('canvas')) {
+    const size = (/** @type {string} */ name, /** @type {number} */ fallback) => {
+      const value = Number.parseInt(canvas.getAttribute(name) ?? '', 10);
+      return Number.isFinite(value) && value >= 0 ? value : fallback;
+    };
+    const style = (canvas.getAttribute('style') ?? '').trim();
+    canvas.setAttribute('style', [...(style === '' ? [] : [style.endsWith(';') ? style : `${style};`]),
+      `display: inline-block; min-width: ${size('width', 300)}px; min-height: ${size('height', 150)}px;`].join(' '));
+    count += 1;
+  }
+  return count;
 }
 
 // --- Workday's application steps (the owner's snapshots of 2026-11-06; docs/OWNER-QUESTIONS.md 93) ------------------
@@ -3981,6 +4084,8 @@ export const CHOSEN_MARK_LABELS = {
   roving: "a widget's roving tab stop on a row but its first (tabindex)",
   drawing: 'a part a widget draws on its chosen row alone (CHOSEN_DRAWINGS)',
   mirrored: "a radio group's chosen value mirrored on its rows (VALUE_MIRRORS: radio-group-value)",
+  // jr7 TOOLING-7 (T7-01)
+  icon: "an icon drawn for a chosen row with no unchosen twin in the page to copy (CHOSEN_ICONS: Paycom's uiLib)",
 };
 
 /**
@@ -4001,7 +4106,8 @@ export const CHOSEN_MARK_LABELS = {
  * - jr6 fixes (PRIV-2, REVC-4; CHOSEN_MARK_LABELS): an Angular state class on any other element but a form; a checked or
  *   selected attribute on an element but an input or an option (a custom list item's selected keeps its own label); a
  *   widget's roving tab stop on a row but its first (rovingStopsOffFirst); a CHOSEN_DRAWINGS part inside its host;
- * - jr6 fixes (PRIV-1's value mirror): a VALUE_MIRRORS attribute that is not empty (ADP's radio-group-value).
+ * - jr6 fixes (PRIV-1's value mirror): a VALUE_MIRRORS attribute that is not empty (ADP's radio-group-value);
+ * - jr7 TOOLING-7 (T7-01): an icon CHOSEN_ICONS names by its test id (Paycom's uiLib chosen radio and box).
  * @param {string} text @returns {string[]}
  */
 export function chosenMarksIn(text) {
@@ -4048,6 +4154,9 @@ export function chosenMarksIn(text) {
       && decodeEntities(attributes.get(attribute) ?? '').trim() !== '')) {
       found.add(CHOSEN_MARK_LABELS.mirrored);
     }
+    // jr7 TOOLING-7 (T7-01): an icon drawn for a chosen row (Paycom's uiLib), which no twin replaced.
+    const testid = decodeEntities(attributes.get('data-testid') ?? '');
+    if (testid !== '' && CHOSEN_ICONS.some((icon) => new RegExp(icon.testid).test(testid))) found.add(CHOSEN_MARK_LABELS.icon);
     const angularElement = ['input', 'select', 'textarea', 'ng-form'].includes(name)
       || ['ng-model', 'data-ng-model', 'ng-form', 'data-ng-form'].some((attribute) => attributes.has(attribute));
     if (classes.some((each) => angular.test(each))) {
@@ -4070,6 +4179,29 @@ export function chosenMarksIn(text) {
   return [...found];
 }
 // ── end of the security fix's block ──
+
+/**
+ * jr7 TOOLING-7 (T7-01): each attribute SPELLED_IDS names that still spells a widget's shown text (Paycom's uiLib
+ * data-testid="anchor-for-<text>-tooltip", its text neither REDACTED nor empty), by the attribute's name and its
+ * element's tag, never a value: the conversion refuses such a file, and test/mhtml-to-fixture.test.ts sweeps every
+ * committed fixture with it. Read over the markup, stylesheets, scripts and comments aside.
+ * @param {string} text @returns {string[]}
+ */
+export function spelledIdsIn(text) {
+  const markup = text.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  /** @type {Set<string>} */
+  const found = new Set();
+  for (const [, tag = '', rest = ''] of markup.matchAll(/<([a-zA-Z][\w-]*)((?:\s[^<>]*?)?)\/?>/g)) {
+    const attributes = attributesOf(rest);
+    for (const { attribute, source } of SPELLED_IDS) {
+      const middle = new RegExp(source).exec(decodeEntities(attributes.get(attribute) ?? ''))?.[2];
+      if (middle !== undefined && middle !== REDACTED) {
+        found.add(`a widget's shown text spelled in its ${attribute} (on <${tag.toLowerCase()}>; SPELLED_IDS)`);
+      }
+    }
+  }
+  return [...found];
+}
 
 /**
  * jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b): each redaction-list entry that survives in an attribute of a written file,
@@ -4336,12 +4468,16 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     // visibility check compares the page as the replacements left it.
     /** @type {number[][]} */
     const replaced = [];
+    // jr7 TOOLING-7 (T7-01): each frame's canvases stood in by the box they draw with scripting on (standInCanvasesInPage).
+    /** @type {number[]} */
+    const canvases = [];
     for (const { frame } of converted) {
       if (deep) await frame.evaluate(deepenInPage);
       stripped.push({ ...await frame.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: PER_LOAD_SOURCE,
         dropOverlays: !deep, redacted: REDACTED, closedMark: CLOSED_ROOT_MARK }),
         ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
-        marks: CHOSEN_MARKS, ...CLEAR_CHOICE_INPUT }) });
+        marks: CHOSEN_MARKS, ...CLEAR_CHOICE_INPUT, icons: CHOSEN_ICONS }) });
+      canvases.push(await frame.evaluate(standInCanvasesInPage));
       replaced.push(replacements.length === 0 ? [] : await frame.evaluate(replaceTextInPage, { replacements,
         copies: POSTING_COPY_ATTRIBUTES }));
     }
@@ -4376,7 +4512,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       // (PLATFORM_REDACTIONS).
       const applicant = await frame.evaluate(redactApplicantTextInPage, { fileNames: FILE_NAME_PLACES,
         entries: ENTRY_SUMMARY_PLACES, chosen: CHOSEN_PLACES, profile: PROFILE_PLACES,
-        links: [...FILE_LINK_PLACES, ...ENTRY_SUMMARY_CONTROLS], results: SEARCH_RESULT_PLACES, redacted: REDACTED });
+        links: [...FILE_LINK_PLACES, ...ENTRY_SUMMARY_CONTROLS], results: SEARCH_RESULT_PLACES, redacted: REDACTED,
+        spelled: SPELLED_IDS });
       for (const name of applicant.names) fileNames.add(name);
       const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
@@ -4487,6 +4624,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         ...(deep ? { shadowRoots: counts.shadowRoots } : {}),
         // The closed shadow roots stood in by their hosts' boxes (DESIGN-NEW-ATS §6.2).
         ...(counts.closedRoots > 0 ? { closedShadowRoots: counts.closedRoots } : {}),
+        // jr7 TOOLING-7 (T7-01): the canvases stood in by the box they draw (standInCanvasesInPage).
+        ...((canvases[index] ?? 0) > 0 ? { canvasStandIns: canvases[index] } : {}),
         // What was taken as not the site's (another extension's UI and parameters, overlays, per-load values) and the
         // choices cleared, each named only when there was something.
         ...(Object.values(took).some((count) => count > 0) ? { injected: took } : {}),
@@ -4579,6 +4718,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       }
       // The security fix of 2026-11-06 (S2): no chosen mark (an answer drawn on a control or a list) is written.
       for (const label of chosenMarksIn(output.text)) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
+      // jr7 TOOLING-7 (T7-01): no widget's shown text spelled in an id (SPELLED_IDS).
+      for (const label of spelledIdsIn(output.text)) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
       // jr6 round 2 (TOOLING; BUILD.md 4b): no listed string in any attribute, as written or respelled.
       // jr6 fixes (PRIV-6): and none in a page's text either.
       for (const label of respelledIn(output.text, respelled, { text: output.path.endsWith('.html') })) {
