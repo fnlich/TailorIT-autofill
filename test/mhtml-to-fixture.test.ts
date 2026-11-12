@@ -2593,7 +2593,14 @@ const CHOSEN_STATE_FIXTURES = [
  * hjf-apply-section, which kept each answered pill group's tab stop on the chosen pill (ORACLE); HiBob's form, which
  * kept Angular's state classes on its components (the jr6 privacy check).
  */
-const MARKED_FIXTURES: Record<string, string[]> = {};
+const MARKED_FIXTURES: Record<string, string[]> = {
+  // jr7 TOOLING-7 (r2, BOARDS-7's finding): SmartRecruiters' one-click pages keep their phone country list's chosen row
+  // drawn apart (c-spl-dropdown-item--with-suffix and its suffix check icon), which the converter clears since r2: a
+  // privacy finding, handed to BOARDS-7 to convert again (SP\jr7\build\TOOLING-7.md, r2).
+  'smartrecruiters/jr6-wiser-one-click.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
+  'smartrecruiters/jr6-xplor-one-click-filled.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
+  'smartrecruiters/xplor-one-click.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
+};
 
 /**
  * jr6 (jobvite-new-4): the committed fixtures converted before the converter cleared AngularJS's state classes, which
@@ -2665,6 +2672,14 @@ describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
     expect(kinds('<input type="checkbox" checked>')).toEqual(['a radio or box input that says it is checked']);
     expect(kinds('<div class="ant-radio-wrapper ant-radio-wrapper-checked"></div>'))
       .toEqual(['a chosen class CHOSEN_MARKS names']);
+    // jr7 TOOLING-7 (r2): SmartRecruiters' chosen row's --with-suffix and its suffix check icon (snapshot7
+    // smartrecruiter1's screening page: on the chosen Gender and Race/Ethnicity rows alone); its "active" is no answer.
+    expect(kinds('<div role="option" aria-selected="false" class="c-spl-dropdown-item c-spl-dropdown-item--with-suffix"></div>'))
+      .toEqual(['a chosen class CHOSEN_MARKS names']);
+    expect(kinds('<spl-dropdown-item><spl-icon slot="suffix"><svg></svg></spl-icon></spl-dropdown-item>'))
+      .toEqual([CHOSEN_MARK_LABELS.drawing]);
+    expect(kinds('<div role="option" class="c-spl-dropdown-item active" tabindex="0"></div><span slot="suffix">x</span>'
+      + '<spl-dropdown-item><spl-icon slot="prefix"><svg></svg></spl-icon></spl-dropdown-item>')).toEqual([]);
     // No answer: a tab's open marks, a menu's or a list's own BEM modifiers that name no choice, Workday's own
     // "Select One", a stylesheet or a comment naming a chosen class, a mark set false.
     expect(kinds('<a role="tab" class="mdc-tab mdc-tab--active" aria-selected="true">Application</a>'
@@ -2672,7 +2687,6 @@ describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
       + '<li role="none" class="portalLanguages__item--active">English</li>'
       + '<li role="option" data-value="" aria-selected="true">Select One</li>'
       + '<style>.Mui-checked{color:red}._checked_1sm4i_44{}</style><!-- <span class="Mui-checked"> -->'
-      + '<div role="option" aria-selected="false" class="c-spl-dropdown-item--with-suffix"></div>'
       + '<div role="radio" aria-checked="false" data-checked="false"></div><input type="radio">')).toEqual([]);
   });
 
@@ -4249,9 +4263,10 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
       expect(body).not.toMatch(/data-sitekey="(?!REDACTED")/);
     }
     expect(body).not.toMatch(/\bhashed=-?\d/);
-    // No chosen mark, as the conversion refuses one (chosenMarksIn); jr7 TOOLING-7 (T7-01): and no widget's shown text
-    // spelled in an id (spelledIdsIn).
-    expect(chosenMarksIn(html)).toEqual([]);
+    // No chosen mark, as the conversion refuses one (chosenMarksIn), but the marks MARKED_FIXTURES lets through while the
+    // file awaits its conversion again (jr7 TOOLING-7, r2); jr7 TOOLING-7 (T7-01): and no widget's shown text spelled in
+    // an id (spelledIdsIn).
+    expect(chosenMarksIn(html).filter((label) => !(MARKED_FIXTURES[`${name}.html`] ?? []).includes(label))).toEqual([]);
     expect(spelledIdsIn(html)).toEqual([]);
   });
 });
@@ -4793,5 +4808,48 @@ document.head.appendChild(s);</script></body></html>` });
       // The filter list the owner's browser injected stands in older captures (INT-2 §4: 21 with a utm_ tag in it).
       expect(filterLists).toBeGreaterThanOrEqual(21);
     }, 60_000);
+
+  it("r2 (BOARDS-7's finding): SmartRecruiters' chosen list row reads as its siblings once cleared: its suffix class and icon, "
+    + "every row's focus mark, the first row's inner tab stop, its tooltip's words", async () => {
+    // snapshot7 smartrecruiter1's screening page, filled (markup only; words made up): each row an spl-select-option whose
+    // shadow root holds an spl-dropdown-item, whose own shadow root holds div[role=option]; an spl-truncate's tooltip
+    // repeats the row's words in its content. The unanswered look is the second list's: the first row "active" with the
+    // tab stop; the chosen row draws --with-suffix, aria-selected and the check icon (spl-icon slot="suffix").
+    const list = (id: string, rows: string[], chosen: number) => `<label for="${id}">Pick one</label>
+<spl-select id="${id}"></spl-select>
+<script>
+(() => {
+  const root = document.getElementById('${id}').attachShadow({ mode: 'open' });
+  root.innerHTML = '<div role="listbox" aria-label="Options">' + ${JSON.stringify(rows)}.map((words, at) =>
+    '<spl-select-option value="' + at + '"></spl-select-option>').join('') + '</div>';
+  [...root.querySelectorAll('spl-select-option')].forEach((option, at) => {
+    const item = document.createElement('spl-dropdown-item');
+    if (at === ${chosen}) item.setAttribute('selected', '');
+    item.innerHTML = '<spl-truncate title="' + ${JSON.stringify(rows)}[at] + '">' + ${JSON.stringify(rows)}[at] + '</spl-truncate>'
+      + (at === ${chosen} ? '<spl-icon slot="suffix"><svg width="16" height="16"><path d="M1 1h14v14H1z"></path></svg></spl-icon>' : '');
+    option.attachShadow({ mode: 'open' }).append(item);
+    item.attachShadow({ mode: 'open' }).innerHTML = '<div role="option" aria-selected="' + (at === ${chosen}) + '" class="'
+      + 'c-spl-dropdown-item' + (at === 0 ? ' active' : '') + (at === ${chosen} ? ' c-spl-dropdown-item--with-suffix' : '')
+      + '" tabindex="' + (at === 0 ? 0 : -1) + '"><slot></slot><slot name="suffix"></slot></div>';
+    item.querySelector('spl-truncate').attachShadow({ mode: 'open' }).innerHTML =
+      '<spl-tooltip content="' + ${JSON.stringify(rows)}[at] + '"><slot></slot></spl-tooltip>';
+  });
+})();
+</script>`;
+    const file = await liveCapture(SR_ONE_CLICK, list('gender', ['Alpha', 'Beta', 'Gamma'], 0)
+      + list('race', ['Delta', 'Epsilon', 'Zeta', 'Eta'], 2), 'jr7-r2-sr');
+    const conversion = await convertMhtml({ file, platform: 'smartrecruiters', caseName: 'jr7-r2-sr', outDir: work });
+    const text = conversion.files[0]?.text ?? '';
+    for (const gone of ['c-spl-dropdown-item--with-suffix', 'slot="suffix"><svg', 'aria-selected="true"', ' selected=""']) {
+      expect(text, gone).not.toContain(gone);
+    }
+    expect(text).not.toMatch(/class="c-spl-dropdown-item active"/);
+    // Each list's first row keeps the tab stop an unanswered list draws; every other row -1.
+    expect(text.match(/class="c-spl-dropdown-item" tabindex="0"/g)).toHaveLength(2);
+    expect(text.match(/class="c-spl-dropdown-item" tabindex="-1"/g)).toHaveLength(5);
+    // The tooltips' words stay, the list's own (no typed query here), read by presence alone in the rows' check.
+    expect(text).toContain('<spl-tooltip content="Epsilon">');
+    expect(ROW_WORD_ATTRIBUTES).toContain('content');
+  }, 120_000);
 });
 // ── end jr7 TOOLING-7 ──
