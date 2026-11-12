@@ -340,8 +340,11 @@ export interface UploadPrompt {
 
 /** jr7 FIX7PLAN §3.1 (ICIMS7-04: iCIMS's Assessments step after the final Submit, a#assessmentLink0
  *  .iCIMS_Assessment_Recovery, snapshot7 icims3): a step that is the person's by design, which no run fills or presses
- *  (Adapter.handOver). 'assessment': the application goes on with an assessment the person takes. */
-export type HandOverKind = 'assessment';
+ *  (Adapter.handOver). 'assessment': the application goes on with an assessment the person takes. 'documents' (jr7
+ *  ENGINE-7 E2, ULTIPRO-7's UP7-07, gated Q7-8): the site asks after the Submit whether to save the application's
+ *  documents to the person's profile (UltiPro's div#AttachmentsChangedModal[role=dialog]): their answer. */
+export const HAND_OVER_KINDS = ['assessment', 'documents'] as const;
+export type HandOverKind = (typeof HAND_OVER_KINDS)[number];
 // ── end jr7 ENGINE-7 E0 ──
 
 export interface Adapter {
@@ -645,7 +648,7 @@ export interface Adapter {
    *  'other', and keeps a Queue item ready. A list of patterns, never a page read. */
   identityHosts?: readonly RegExp[];
   /** jr7 FIX7PLAN §3.1 (HandOverKind names its snapshot; implemented by ICIMS-7): the step the document shows that is
-   *  the person's by design ('assessment'), or null. Read by AUTO-7 (FIX7PLAN §6.4 item 14): the agent after its
+   *  the person's by design ('assessment', 'documents'), or null. Read by AUTO-7 (FIX7PLAN §6.4 item 14): the agent after its
    *  Submit ends needs-you with its words, never timed_out; the Queue tab's status says so. Nothing in it is pressed. */
   handOver?(doc: Document): HandOverKind | null;
   /** jr7 FIX7PLAN §3.1 (ICIMS7-11, D-6: the Jibe posting <customer>.jibeapply.com/jobs/<id>, snapshot7 icims2, whose
