@@ -17,7 +17,7 @@ import { ExternalMessageSchema } from '../messaging/page-schemas';
 import { createWorkerPlatform } from '../platform/chrome';
 import type { PortLike, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
-import { AGENT_ALARM, createAgent, type Agent } from './agent';
+import { AGENT_ALARM, createAgent, identityHostOf, type Agent } from './agent';
 import { createQueueRunner, QUEUE_ALARM, type QueueRunner } from './queue-runner'; // v1.5 QX
 import { createAuth, createTokenKeeper } from './auth';
 import { toBase64Url } from './bytes';
@@ -27,7 +27,7 @@ import { checkLetter, createPanelLetters, LETTER_LIMIT } from './cover-letters';
 import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
 import {
-  agentFramesOf, cardFrameOf, chainOf, claimFrameOf, createFrameSweep, forgetFrames, forgetTab as forgetTabFrames,
+  agentFramesOf, cardFrameOf, chainOf, checkedTailoritAddress, claimFrameOf, createFrameSweep, forgetFrames, forgetTab as forgetTabFrames,
   frameEntry, framesOfTab, frameTarget, navOf, registerFrame, setWall, wallFrameOf, type FrameChain, type FrameEntry,
 } from './frames';
 import { createChains } from './chain';
@@ -44,7 +44,7 @@ import { createProfileCache, type ProfileCache } from './profile-cache';
 import { createProfileEditor, PROFILE_EDIT_LIMIT } from './profile-editor';
 import { createSiteRequests, SITE_REQUEST_LIMIT } from './site-requests';
 import {
-  CONFIRMATION_PAGE_MS, createSubmissions, SUBMIT_ARM_PREFIX, SUBMIT_MESSAGE_LIMIT, type Submissions,
+  confirmationAfterOf, CONFIRMATION_PAGE_MS, createSubmissions, SUBMIT_ARM_PREFIX, SUBMIT_MESSAGE_LIMIT, type Submissions,
 } from './submissions';
 // v1.3 B
 import { categoryOfSpec } from './submitted-forms';
@@ -398,7 +398,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     keepAnswers: async () => (await settings.get()).modes.keepAnswers === 'on',
     categoryOf: (spec) => categoryOfSpec(spec, core.vocab()),
     rowsOf: async (tabId, frameId) => (await reports.ofTab(tabId)).find((report) => report.frameId === frameId)?.fields
-      ?? [] });
+      ?? [],
+    // jr7 AUTO-7 A1 (ICIMS7-02): a chained subframe's arm, and the tab's claim frame where its confirmation shows.
+    frameOf: (tabId, frameId) => frameEntry(session, tabId, frameId),
+    claimFrame: async (tabId) => claimFrameOf(await framesOfTab(session, tabId)),
+    // jr7 AUTO-7 (AUTO7-06): the platform's own reading of its page after submitting, on the armed page's origin alone.
+    confirmationAfter: (platform, armed, here) => confirmationAfterOf(platform, armed, here) });
   submissions = submitted;
   /** The resume a fill of the tab would attach, for the side panel's preview (v3 Phase 3b): the person's choice, else
    *  the card's; read from the account's list, for its file kind and name. None while the tab applies without one. */
@@ -456,8 +461,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const contentSettingsFor = async (tabId: number, applicationKey: string | null | undefined,
     documentId: string | null | undefined, origin: string) => {
     const task = await agent.task(tabId, applicationKey, documentId);
+    // jr7 AUTO-7 (AUTO7-01, FIX7PLAN D-4): a queued tab on a platform whose success sign no capture shows read keeps
+    // Submit the person's, whatever Submit is set to (QUEUE_SUBMIT_PLATFORMS).
+    const queueHeld = task === null && (await queueRunner.submitHeld(tabId, applicationKey ?? null));
     return contentSettingsOf(await settings.get(), { ...(await holds()), agent: task !== null,
-      agentSubmitHeld: task?.submitHeld === true, signUp: signUps.live(tabId, origin) });
+      agentSubmitHeld: task?.submitHeld === true, signUp: signUps.live(tabId, origin),
+      ...(queueHeld ? { queueSubmitHeld: true } : {}) });
   };
   /** v4: the settings as they act now, told to one tab's frames with a form, a wall or (the v4 review) a choice of how
    *  to apply (a Sign up & Autofill grant made or ended there). A frame that cannot be reached reads them at its next
@@ -505,7 +514,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     assign: (tabId, applicationKey, task) => jobs.assign(tabId, applicationKey, task.jobId, task.resumeId),
     changed: () => reports.tellPanels('agent'),
     // The e2e build: its test browser routes the agent's new window before the job's address opens in it.
-    windowSettleMs: __E2E__ ? AGENT_E2E_SETTLE_MS : 0 });
+    windowSettleMs: __E2E__ ? AGENT_E2E_SETTLE_MS : 0,
+    // jr7 AUTO-7 (AUTO7-05 b): the tab's host, and the job's platform's identity hosts (its adapter's list).
+    ...(platform.tabs.hostOf === undefined ? {} : { hostOf: (tabId: number) => platform.tabs.hostOf!(tabId) }),
+    identityHost: (on, host) => identityHostOf(on, host) });
   agentRef = agent;
   // v1.5 QX: the sequential auto-apply (queue-runner.ts). Its alarm's listener is registered below, with the others.
   const queueRunner = createQueueRunner({ server, session, tabs: platform.queueTabs, alarms: platform.alarms, timers,
@@ -524,7 +536,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     assign: (tabId, applicationKey, task) => jobs.assign(tabId, applicationKey, task.jobId, task.resumeId),
     changed: () => reports.tellPanels('queue'),
     // The e2e build: its test browser routes the queued tab before the job's address opens in it.
-    tabSettleMs: __E2E__ ? AGENT_E2E_SETTLE_MS : 0 });
+    tabSettleMs: __E2E__ ? AGENT_E2E_SETTLE_MS : 0,
+    // jr7 AUTO-7 (AUTO7-05 c): the tab's host, and the job's platform's identity hosts (its adapter's list).
+    ...(platform.tabs.hostOf === undefined ? {} : { hostOf: (tabId: number) => platform.tabs.hostOf!(tabId) }),
+    identityHost: (on, host) => identityHostOf(on, host) });
   queueRef = queueRunner;
   /** The e2e build only: a test event in storage.session (e2e:events), never an address; one write at a time, so two
    *  frames' events at once both land. */
@@ -708,8 +723,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   /** The frame as TailorIT is asked about it (core-x, items 6 and 7): a frame whose document took its application from
    *  the tab's chain is named by that application's canonical address, never its own (a session token, the person's
    *  iCIMS id); any other by its own, which server-client.ts names by tailoritAddressOf. */
-  function tailoritFrom<T extends { url: string }>(from: T, entry: Pick<FrameEntry, 'chained' | 'chainUrl'> | null): T {
-    return entry?.chained === true && entry.chainUrl !== undefined ? { ...from, url: entry.chainUrl } : from;
+  function tailoritFrom<T extends { url: string }>(from: T,
+    entry: Pick<FrameEntry, 'chained' | 'chainUrl' | 'tailoritUrl'> | null): T {
+    if (entry?.chained === true && entry.chainUrl !== undefined) return { ...from, url: entry.chainUrl };
+    // jr7 AUTO-7 (ICIMS7-11, D-6): a Jibe page's iCIMS posting, as the worker's own check took it.
+    return entry?.tailoritUrl !== undefined ? { ...from, url: entry.tailoritUrl } : from;
   }
 
   /** tailoritFrom, with the frame's entry read from the registry (the same document's only). */
@@ -810,6 +828,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           // The audit's S-6: a private (incognito) tab's runs are kept for it alone, in storage.session, before any of
           // its runs can begin.
           if (from.incognito === true) await runStates.markPrivate(from.tabId);
+          // jr7 AUTO-7 (ICIMS7-11, D-6): the address a Jibe page names for TailorIT, checked here against its own.
+          const tailoritUrl = message.tailoritAddress === undefined || from.frameId !== 0 ? null
+            : checkedTailoritAddress(from.url, message.tailoritAddress);
+          if (message.tailoritAddress !== undefined && tailoritUrl === null) log('tailorit.address-refused');
           const { previous, entry } = await lockTab(from.tabId, async () => {
             const held = await frameEntry(session, from.tabId, from.frameId);
             // The same document at an address no parser reads keeps the application it last showed only shortly after
@@ -834,7 +856,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
               // and (at the same address) the entry it said, for its card.
               ...(same && held.entry === true ? { entry: true } : {}),
               ...(same && held.entering === true && !message.hasForm ? { entering: true } : {}),
-              ...(same && held.entrySaid === true && navOf(held) === (message.nav ?? 0) ? { entrySaid: true } : {}) },
+              ...(same && held.entrySaid === true && navOf(held) === (message.nav ?? 0) ? { entrySaid: true } : {}),
+              ...(tailoritUrl === null ? {} : { tailoritUrl }) }, // jr7 AUTO-7 (ICIMS7-11)
             now()) };
           });
           // core-x, items 7 and 14: a top document with an application is the tab's chain from now on; a portal frame
@@ -881,14 +904,21 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           // The side panel's strip and card follow what the tab holds now (v2).
           void reports.pageChanged(from.tabId).catch(() => undefined);
           log('frame.registered', { frameId: entry.frameId, top: entry.isTop });
-          // v3 Phase 5: the agent's window: a form's document gets the agent's run, a posting's its entry.
-          void agent.hello(from.tabId, entry).catch(() => undefined);
+          // v3 Phase 5: the agent's window: a form's document gets the agent's run, a posting's its entry. jr7 AUTO-7
+          // (ICIMS7-04): with the step its adapter reads as the person's by design.
+          const handOver = message.handOver;
+          void agent.hello(from.tabId, entry, { handOver }).catch(() => undefined);
+          // jr7 AUTO-7 (ICIMS7-04 (3)): a Submit armed before that step waits SUBMIT_ARM_MS for its confirmation.
+          if (handOver !== undefined && entry.applicationKey !== undefined) {
+            void submitted.handedOver(from, entry.applicationKey).catch(() => undefined);
+          }
           // v1.5 QX: a queued tab's page is open; its first form fills with Automatically (the top frame, or the frame
           // that claims its application, as the Sign up & Autofill start reads them).
           void (async () => {
             if (!(await queueRunner.ownsTab(from.tabId))) return;
             await queueRunner.hello(from.tabId, entry, entry.frameId === 0
-              || claimFrameOf(await framesOfTab(session, from.tabId))?.frameId === entry.frameId);
+              || claimFrameOf(await framesOfTab(session, from.tabId))?.frameId === entry.frameId,
+            handOver === undefined ? {} : { handOver }); // jr7 AUTO-7 (ICIMS7-04)
           })().catch(() => undefined);
           // The v4 review (M1): the tab's top frame shows a document on another origin than the one a grant was given
           // for: the grant ends, and the tab's frames hear their settings again.
@@ -1026,12 +1056,19 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         },
         // v3 Phase 4: a Submit pressed in the frame, and the platform's confirmation after it (submissions.ts).
         'submit/armed': async (message, from) => {
-          const answer = await submitted.armed(message, await tailoritFromNow(from));
+          // jr7 AUTO-7 A1 (AUTOV-01): with the frame's own address, before tailoritFrom swaps in its chain's.
+          const answer = await submitted.armed(message, await tailoritFromNow(from), { url: from.url });
           // v3 Phase 5: the agent's job's one Submit (agent.ts pressed).
           if (answer.ok) await agent.pressed(from.tabId, message.applicationKey, from.documentId).catch(() => undefined);
+          // jr7 AUTO-7 (AUTO7-01, D-4): a queued tab's Submit armed (Ready for you where it is the person's).
+          if (answer.ok) await queueRunner.pressed(from.tabId, message.applicationKey).catch(() => undefined);
           return answer;
         },
-        'submit/detected': async (message, from) => submitted.detected(message, await tailoritFromNow(from)),
+        'submit/detected': async (message, from) => submitted.detected(message, await tailoritFromNow(from),
+          { url: from.url }), // jr7 AUTO-7 A1 (AUTOV-01)
+        // jr7 AUTO-7 (AUTO7-06, UP7-01, WD7-05): a page no parser reads, after a Submit this frame armed: by its own
+        // address as Chrome gives it.
+        'submit/after': (_message, from) => submitted.after(from),
         // v1.3 B: the armed Submit's form, held for it in memory only (submissions.ts).
         'submit/form': async (message, from) => submitted.form(message, await tailoritFromNow(from)),
         // v3 Phase 5: Sign-in mode Auto's credential, to the asking top frame alone (sign-in.ts).

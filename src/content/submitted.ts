@@ -80,6 +80,11 @@ export const SUBMIT_CONFIRM_MS = 45_000;
  *  minutes (src/content/submit-watch.test.ts holds them equal). */
 export const SUBMIT_WATCH_MS = 10 * 60_000;
 
+/** jr7 AUTO-7 (WD7-04, AUTO7-06): how often an armed Submit's document is read again for its sign while it waits (until
+ *  SUBMIT_CONFIRM_MS), besides its mutations and its animations' and transitions' ends: a sign whose fade-in ends
+ *  changes no node (Workday's dialogs, snapshot7 workday2 and workday3; Jobright re-checks every 200 ms). */
+export const SIGN_RECHECK_MS = 250;
+
 /** What a press of ours reads just before its click (the review, M1 and M6): the application and platform the page
  *  shows, its form root and adapter, and the success signs already there. The click may move the page (a confirmation
  *  drawn in place, an address the parser does not read) before the press is armed. */
@@ -89,10 +94,40 @@ export interface PressSnapshot {
   root: Element;
   adapter: Adapter;
   signs: ReadonlySet<Element>;
+  /** jr7 AUTO-7 (AUTO7-06): the document's address at the press (memory only, never sent): the `armed` address its
+   *  adapter's confirmationAfter reads the next one against. Absent: the address when it was armed. */
+  url?: string;
 }
 
-/** The platform's success blocks in the document (shown or not). */
-export function signsOf(doc: Document, platform: Platform): Element[] {
+// ── jr7 AUTO-7 (FIX7PLAN §6.4 item 8: jr7-O2's and J7-SR-4's wiring) ──
+/** The application a Submit was armed for, as its adapter's own drawn signs are read for it (Adapter.successSigns):
+ *  only after a press, and only for that application's key (never "any active tile": D-10). */
+export interface ArmedFor {
+  adapter: Adapter;
+  applicationKey: string;
+}
+
+/** The adapter's own signs for the armed application; none where it declares none or throws. */
+function adapterSignsOf(doc: Document, armed: ArmedFor | undefined): Element[] {
+  if (armed?.adapter.successSigns === undefined) return [];
+  try {
+    return armed.adapter.successSigns(doc, armed.applicationKey);
+  } catch {
+    return [];
+  }
+}
+// ── end jr7 AUTO-7 ──
+
+/** The platform's success blocks in the document (shown or not). jr7 AUTO-7: with `armed`, the adapter's own signs for
+ *  that armed application too (Adapter.successSigns: Oracle's my-profile tile, SmartRecruiters' drawn confirmation). */
+export function signsOf(doc: Document, platform: Platform, armed?: ArmedFor): Element[] {
+  const own = adapterSignsOf(doc, armed); // jr7 AUTO-7
+  const platformSigns = platformSignsOf(doc, platform);
+  return own.length === 0 ? platformSigns : [...new Set([...platformSigns, ...own])];
+}
+
+/** The platform's own success blocks (its rules here and its config's). */
+function platformSignsOf(doc: Document, platform: Platform): Element[] {
   if (platform === 'ashby') {
     return ashbySubmitted(doc) ? [...doc.querySelectorAll('.ashby-application-form-success-container')] : [];
   }
@@ -151,9 +186,9 @@ function formRootLeft(doc: Document, adapter: Adapter): boolean {
 /** The behaviour review of 2026-11-06 (M1): the platform's success signs a person can see now, what a press is armed
  *  with (PressSnapshot.signs). A sign the page holds hidden from the start (Breezy's confirmation, ng-hide in the form
  *  page: fixtures/breezy/concurrent-form) is not among them, so once the page shows it after the Submit it is new. */
-export function shownSignsOf(doc: Document, platform: Platform): Set<Element> {
+export function shownSignsOf(doc: Document, platform: Platform, armed?: ArmedFor): Set<Element> {
   const cache = newScanCache();
-  return new Set(signsOf(doc, platform).filter((sign) => signShown(sign, platform, cache))); // jr6 ENGINE
+  return new Set(signsOf(doc, platform, armed).filter((sign) => signShown(sign, platform, cache))); // jr6 ENGINE, jr7
 }
 
 /** Whether the document shows the platform's success message (shown, anywhere). */
@@ -166,7 +201,7 @@ export function successShown(doc: Document, platform: Platform): boolean {
  *  form root gone or hidden (or, jr6 ENGINE, no form root left: formRootLeft), and outside the posting's own text. Null
  *  when there is none. */
 export function newSuccessSign(doc: Document, platform: Platform, armedWith: { before: ReadonlySet<Element>;
-  root: Element; adapter: Adapter }): Element | null {
+  root: Element; adapter: Adapter; applicationKey?: string }): Element | null {
   const cache = newScanCache();
   const rootGone = !armedWith.root.isConnected || !isUserVisible(armedWith.root, cache)
     || formRootLeft(doc, armedWith.adapter); // jr6 ENGINE
@@ -177,7 +212,10 @@ export function newSuccessSign(doc: Document, platform: Platform, armedWith: { b
   } catch {
     posting = null;
   }
-  return signsOf(doc, platform).find((sign) => !armedWith.before.has(sign) && signShown(sign, platform, cache) // jr6 ENGINE
+  // jr7 AUTO-7: with the armed application's own signs (its key: the arm's).
+  const armed = armedWith.applicationKey === undefined ? undefined
+    : { adapter: armedWith.adapter, applicationKey: armedWith.applicationKey };
+  return signsOf(doc, platform, armed).find((sign) => !armedWith.before.has(sign) && signShown(sign, platform, cache)
     && (posting === null || !posting.contains(sign))) ?? null;
 }
 
