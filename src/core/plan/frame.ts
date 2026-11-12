@@ -94,7 +94,7 @@ import { guardWrite, type GuardContext, type WriteSubject } from '../guard/write
 import { cacheEntryFor } from '../matcher/cache';
 import { noMatch, matchOne } from '../matcher/cascade';
 import { matchPlace, matchStreet } from '../matcher/place';
-import { settleSchoolCompanions, settleSecondaryPhones } from './neighbours';
+import { otherBesideSchoolCompanion, settleSchoolCompanions, settleSecondaryPhones } from './neighbours';
 import { completeTiebreak } from '../matcher/tiebreak';
 import { dialCodeOf } from '../matcher/dialCode';
 import { prepareOptions } from '../matcher/prepare';
@@ -1502,6 +1502,8 @@ export function planFrame(asked: PlanInput): PlanOutput {
   // jr6 RULES R4 (ICIMS-24): a school's companion box only where its list lacks the school; (U-16) a secondary phone
   // left empty beside the primary.
   settleSchoolCompanions(planned, classified, input.vocab);
+  // jr7 RULES-7 R2 (the jr6 leftover): the list's "Other" beside its companion box carries no free text of its own.
+  otherBesideSchoolCompanion(planned, classified);
   settleSecondaryPhones(planned, classified);
   // jr6 RULES R4 (jobvite-new-5, Sikich's optional "If yes, …" after a question answered No, fixtures jr6-sikich-step3):
   // an optional follow-up whose answer above is the opposite of what it follows is never classified (one AI round

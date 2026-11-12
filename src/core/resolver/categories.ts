@@ -79,6 +79,8 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   'experience.detail': 'profile', 'skills.certificationDetail': 'profile',
   // jr7 RULES-7 R2 (WD7V-02): the person's native language.
   'languages.preferred': 'profile',
+  // jr7 RULES-7 R2 (RBP7-08): from the profile's address.
+  'location.inListedRegion': 'profile',
   unknown: 'unknown',
 };
 
@@ -233,7 +235,7 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'identity.nationalId': ['text', ...CHOICE],
   // jr7 RULES-7 R2: an entry's detail typed or chosen; a licence's number typed, its state typed, chosen or searched.
   'experience.detail': ['text', 'textarea', ...CHOICE], 'skills.certificationDetail': [...LOOKUP],
-  'languages.preferred': ['text', ...CHOICE],
+  'languages.preferred': ['text', ...CHOICE], 'location.inListedRegion': YES_NO,
   unknown: ANY,
 };
 
@@ -372,5 +374,7 @@ export const ANSWERABLE_PROFILE_CATEGORIES: ReadonlySet<FieldCategory> = new Set
   'experience.yearsIn', 'skills.experienceWith', 'location.inTimeZone',
   // jr6 RULES R3 (JZ-11): living or working in a country the address does not settle (a place no country names).
   'location.inCountry',
+  // jr7 RULES-7 R2 (RBP7-08): living in one of the listed states, where the list cannot be read.
+  'location.inListedRegion',
   // jr6 RULES R4 (ICIMS-25, ADP-20): a graduation, a high-school diploma the education entries do not settle.
   'education.graduated', 'education.highSchool']);

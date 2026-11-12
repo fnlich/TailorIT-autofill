@@ -80,6 +80,8 @@ export const FIELD_CATEGORIES = [
   'experience.detail', 'skills.certificationDetail',
   // jr7 RULES-7 R2 (WD7V-02): the language the person prefers to be written to in (their native one).
   'languages.preferred',
+  // jr7 RULES-7 R2 (RBP7-08): whether the person lives in one of the states a question lists.
+  'location.inListedRegion',
   'unknown',
 ] as const;
 export type FieldCategory = (typeof FIELD_CATEGORIES)[number];

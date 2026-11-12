@@ -65,13 +65,18 @@ import { classifyByRules, consentChoice, consentChoiceOption, type RuleClassific
 import { dateIso, dateText, type DateParts } from './format';
 import { asksToAgree, EEO_DECLINE_BOX_RULE, statementPolarity, type NeedsUserCause } from './labelRules';
 import {
-  consentValue, eeoDeclineBoxValue, eeoDeclineDefault, eeoValue, inCountryValue, legalValue, policyResidenceValue,
+  consentValue, eeoDeclineBoxValue, eeoDeclineDefault, eeoValue, inCountryValue, inListedRegionValue, legalValue,
+  policyResidenceValue,
   residesInValue, sensitiveGate, signatureDateValue,
 } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
 import { findDraftAnswer, findSubmittedAnswer } from './submitted';
 import { placeholderAsked, placeholderForNo, previouslyEmployedValue, profileValue, type BlockEntries } from './values';
 import { askedAs } from './yesNoPair';
+
+/** jr7 RULES-7 R2 (UKGR-V2, UKG Ready's "Please type your full name to confirm: …", snapshot7 secure7.saashr): a
+ *  signature prompt that shows the name to type after its colon. */
+const NAME_SHOWN = /\btype\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\s+(?:to\s+(?:confirm|sign)\s*)?(?:as\s+(?:shown|written)\s*)?:\s*\S/i;
 
 /** jr7 RULES-7 (ADP7-3): the boxes of text a yes-or-no answer is typed into. */
 const TYPED_YES_NO_KINDS: ReadonlySet<FieldSpec['kind']> = new Set<FieldSpec['kind']>(['text', 'textarea']);
@@ -511,7 +516,9 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
           ...(spec.kind === 'checkbox' ? { box: true } : {}),
           // Only DECIDED_CONSENT_CAUSES reach here with a needsUser (resolveField hands every other cause over); a
           // consent read from its help text alone is decided by its kinds, as any (the v4 review, security M3).
-          ...(rules.needsUser === 'binding-waiver' ? { bindingWaiver: true as const } : {}) });
+          ...(rules.needsUser === 'binding-waiver' ? { bindingWaiver: true as const } : {}),
+          // jr7 RULES-7 R2 (UKGR-V2): a prompt that shows the name to type.
+          ...(NAME_SHOWN.test(`${spec.label} ${spec.description}`) ? { namePrompt: true as const } : {}) });
     case 'attention':
       return none('attention-check', true, true);
     case 'free-text':
@@ -530,6 +537,8 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
       if (category === 'location.residesIn') return residesInValue(spec, profile, vocab);
       // jr6 RULES R3 (JZ-11): living or working in a country the question names, from the address.
       if (category === 'location.inCountry') return inCountryValue(spec, profile, vocab);
+      // jr7 RULES-7 R2 (RBP7-08): living in one of the states a question lists, from the address.
+      if (category === 'location.inListedRegion') return inListedRegionValue(spec, profile, vocab);
       // jr6 RULES R3 (ICIMS-21, JV-8, JZ-9): the state the person lives in, asked as a question.
       if (category === 'address.region' && RESIDENCE_STATE_RULES.has(rules.rule)) {
         return residenceStateValue(spec, rules.rule, profileValue(category, { spec, profile, vocab, now,

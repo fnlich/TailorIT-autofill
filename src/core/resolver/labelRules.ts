@@ -1308,6 +1308,10 @@ const CURRENCY_ALONE = /^(?:(?:select|choose|enter|your|the|preferred|desired|ex
  *  inCountryValue reads it), asked yes or no; never a county, a city, an area or a state ("Do you currently reside in Los
  *  Angeles County?", "in the Denver Metro area?": the AI's, as before). */
 export const IN_COUNTRY = /^(?:will|would|do|are|can|could)\s+you\s+(?:\w+\s+){0,4}?(?:(?:live|living|reside|residing|located|based)\b(?:\s+\w+){0,5}?\s+(?:inside|within|in)|(?:work|working)\b(?:\s+\w+){0,4}?\s+(?:inside|within|from\s+(?:\w+\s+){0,3}?(?:inside|within|in)))\s+(?:the\s+)?(?!(?:a|an|any|one|this|that|our|your|which|what)\b)(?!(?:\w+\s+){0,3}?(?:county|counties|area|metro|metropolitan|city|town|region|district|borough|parish|state|province|office|campus)\b)(\w+(?:\s+\w+){0,3})$/;
+/** jr7 RULES-7 R2 (RBP7-08, Rippling's required "<employer> can only hire candidates with a primary residence in the
+ *  following States: AZ, CA, … TX, …", snapshot7 rippling1; BambooHR's "Do you currently reside in one of the states
+ *  where <employer> is au…", snapshot7 bamboohr2): whether the person lives in one of the states a question lists. */
+const IN_LISTED_REGIONS = /\b(?:residen(?:ce|cy|t|ts)|resides?|reside|live|lives|located|based)\b(?:\s+\w+){0,4}?\s+in\s+(?:one\s+of\s+)?the\s+(?:following|listed|below)\s+(?:states|provinces|regions)\b|\b(?:reside|live|located|based)\s+in\s+one\s+of\s+the\s+(?:states|provinces)\s+(?:where|in\s+which|listed|below)\b/;
 /** jr6 RULES R3 (JZ-11): never a preference, a move, a commute or travel ("Are you willing to relocate to the United
  *  States?"), and never the right to work there (work authorization's own question). */
 const IN_COUNTRY_NOT = /\b(?:willing|open|prepared|happy|want|wish|like|prefer|plan|planning|intend|intending|relocat\w*|move|moving|commut\w*|travel\w*|authori[sz]\w*|eligib\w*|permit\w*|entitled|right|legal\w*|lawful\w*|citizen\w*|visas?|sponsor\w*|resident|residency|remote\s+role)\b/;
@@ -1409,6 +1413,8 @@ const JR6_RULES: readonly Jr6Rule[] = [
     category: (c) => (c.kind === 'text' && !CURRENCY_ALONE.test(c.label) ? null : 'salary.currency'),
     strength: 'normal' },
   { id: 'label.in-country', re: IN_COUNTRY, unless: IN_COUNTRY_NOT, category: 'location.inCountry', strength: 'normal' },
+  // jr7 RULES-7 R2 (RBP7-08).
+  { id: 'label.in-listed-regions', re: IN_LISTED_REGIONS, category: 'location.inListedRegion', strength: 'normal' },
   { id: 'label.former-name', re: FORMER_NAME, category: 'identity.formerName', strength: 'strong' },
   // jr6 RULES R4 (WD-25, ICIMS-25, ADP-14, ADP-16, ADP-18, ADP-20, JV-19, SR-13).
   { id: 'label.prefix', re: PREFIX, category: 'identity.prefix', strength: 'strong' },
