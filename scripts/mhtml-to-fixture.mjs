@@ -163,6 +163,13 @@
 //   - PRIV-7: the elimination refusal (listedPlacesInPage) reads every list row (LIST_ROWS, the outermost, through
 //     shadow roots' hosts) in its list (LISTED_LISTS), the site's own rows (FIXED_ROWS) and a native placeholder aside;
 //     REVC-4: the committed-fixture sweep reads the written lists alike (eliminatedListsIn).
+// - jr6 PRIVACY-FIX (SP\jr6\leakscan\VERDICTS-3.md), on every platform:
+//   - a JSON copy of the posting in an attribute (POSTING_COPY_ATTRIBUTES: Breezy's data-position) is a posting place:
+//     a listed or respelled string met in its title or description fields is redacted there, as in any attribute, and
+//     the elimination refusal asks for synthetic text, which --replace-text '<css>@<attribute>=<file>' gives (each
+//     title field the file's first line, each description field its other lines);
+//   - a list row's id normalisation leaves the words of Workday's data-automation-id alone (ROW_ID_WORDS_KEPT: a chosen
+//     pill's DELETE_charm names the component, not the row), its opaque tokens and the row's values still taken.
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -172,11 +179,12 @@
 // Usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <greenhouse|lever|ashby|workday|workable|icims|taleo|
 //          successfactors|oracle|smartrecruiters|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|
 //          ultipro|dayforce|paylocity|dice|clearcompany|adp> --case <name>
-//          [--redact <file>] [--out <folder>] [--folder <name>] [--replace-text <css>=<file>]...
+//          [--redact <file>] [--out <folder>] [--folder <name>] [--replace-text <css>[@<attribute>]=<file>]...
 // The redact file holds one string per line (blank lines and lines starting with # are skipped); a string that looks
 // like a phone number matches whatever its punctuation. --out defaults to fixtures/. Each --replace-text names a CSS
 // selector and, after its last "=", a UTF-8 file of synthetic text (made up, never a person's); a selector that names
-// no element in any converted frame is refused, by its position among the --replace-text options.
+// no element in any converted frame is refused, by its position among the --replace-text options. A selector ending in
+// @<attribute> names a posting copy's attribute (POSTING_COPY_ATTRIBUTES) on those elements; any other is refused.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -461,6 +469,21 @@ export const ID_REFERENCES = ['aria-activedescendant', 'aria-controls', 'aria-ow
   'aria-describedby', 'aria-details', 'aria-errormessage', 'aria-flowto', 'for', 'headers', 'list', 'ariacontrols',
   'ariaactivedescendant', 'arialabelledby', 'ariadescribedby'];
 // ── end jr6 round 2 ──
+
+// ── jr6 PRIVACY-FIX ──
+/** The id attributes whose words a row's id normalisation leaves alone (redactListRowsInPage): Workday's
+ *  data-automation-id is built from Workday's own vocabulary and names the component's kind (a chosen pill's
+ *  DELETE_charm, promptOption, selectedItem), so a word the row's own label also says (the pill's "press delete to clear
+ *  value") is no name of the row there; an opaque token in it and a value the row gave are still made REDACTED. */
+export const ROW_ID_WORDS_KEPT = ['data-automation-id'];
+/** The attributes that hold a JSON copy of the posting (Breezy's data-position on div.body-wrapper: the posting's name,
+ *  its description's HTML, its address, its company), each with its title and description fields (top-level keys). A
+ *  listed or respelled string met in those fields is redacted there, as in any attribute, and noted as a posting place,
+ *  so the elimination refusal (listedPlacesInPage) asks for synthetic text; --replace-text '<css>@<attribute>=<file>'
+ *  gives it: each title field the file's first line, each description field its other lines (all of them if it has
+ *  one). Another platform's copy is one more entry. */
+export const POSTING_COPY_ATTRIBUTES = [{ attribute: 'data-position', title: ['name'], description: ['description'] }];
+// ── end jr6 PRIVACY-FIX ──
 
 /** jr6 (jobvite-new-2): a posting's description, where the redaction list may meet the page's own words (a town, a
  *  school, an employer the posting names): each adapter's posting text (src/adapters/<platform> postingText or its
@@ -772,7 +795,9 @@ export const REFERRAL_PREFIXES = ['utm_'];
  *  (?, &, &amp;, or percent-encoded once or twice inside another address), its name and = (or %3D, %253D) in group 1,
  *  kept; its value up to the next separator, plain or percent-encoded (an INJECTED_PARAMS value is left for
  *  stripInjectedParams, which drops it whole). */
-export const REFERRAL_SOURCE = `((?:\\?|&amp;|&|%3F|%26|%253F|%2526)(?:${[...REFERRAL_PARAMS.map(escapeSource),
+// jr6 PRIVACY-FIX: "&amp;amp;" too, an address escaped twice (Jobvite's LinkedIn share widget writes the page's own
+// address into data-lnkd-debug with its "&amp;" escaped again: jobvite/ninjaone-posting's __jvsd).
+export const REFERRAL_SOURCE = `((?:\\?|&amp;amp;|&amp;|&|%3F|%26|%253F|%2526)(?:${[...REFERRAL_PARAMS.map(escapeSource),
   ...REFERRAL_PREFIXES.map((prefix) => `${escapeSource(prefix)}[A-Za-z0-9_]+`)].join('|')})(?:=|%3D|%253D))`
   + `(?!(?:${INJECTED_PARAMS.flatMap((entry) => (entry.includes('=') ? [escapeSource(entry.split('=')[1] ?? '')] : []))
     .join('|')})(?![\\w-]))(?:(?!%26|%23|%2526|%2523)[^&#"'\\s<>])*`;
@@ -2298,7 +2323,8 @@ export function redactWorkdayInPage(input) {
  * @param {{ resources: Record<string, Resource>; frameUrls: Record<string, string | null>; frameUrl: string;
  *   redact: string[]; email: string; notEmail: string; phone: string;
  *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; redacted: string;
- *   postingPlaces?: string; respelled?: Array<{ index: number; source: string }>; listRows?: string }} input
+ *   postingPlaces?: string; respelled?: Array<{ index: number; source: string }>; listRows?: string;
+ *   postingCopies?: Array<{ attribute: string; title: string[]; description: string[] }> }} input
  */
 export function transformInPage(input) {
   const doc = globalThis.document;
@@ -2725,6 +2751,19 @@ export function transformInPage(input) {
     }
     return out;
   };
+  // jr6 PRIVACY-FIX: whether a posting copy's title or description fields (POSTING_COPY_ATTRIBUTES) read otherwise in
+  // two JSON texts of the attribute; a text that is no JSON object is the copy whole.
+  /** @param {{ title: string[]; description: string[] }} copy @param {string} before @param {string} after */
+  const postingFieldsDiffer = (copy, before, after) => {
+    try {
+      const was = JSON.parse(before);
+      const now = JSON.parse(after);
+      if (was === null || typeof was !== 'object' || now === null || typeof now !== 'object') return before !== after;
+      return [...copy.title, ...copy.description].some((field) => was[field] !== now[field]);
+    } catch {
+      return before !== after;
+    }
+  };
   for (const element of doc.querySelectorAll('*')) {
     for (const attribute of [...element.attributes]) {
       if (/^\s*data:/i.test(attribute.value)) continue;
@@ -2732,6 +2771,7 @@ export function transformInPage(input) {
       const lowerValue = attribute.value.trim().toLowerCase();
       const phones = input.phoneAttributes.includes(name) || name.startsWith('data-') ||
         (name === 'href' && (lowerValue.startsWith('tel:') || lowerValue.startsWith('sms:')));
+      const listedBefore = counts.listed + counts.respelled;
       const scrubbed = scrub(attribute.value, phones, element);
       // A frame's address keeps its spelling here (its route answers it as written; respelledAddress already took what
       // its path and query spelled); what stays (its host) the final check refuses.
@@ -2744,6 +2784,12 @@ export function transformInPage(input) {
       const address = urlAttributes.includes(name) || name === 'srcset'
         || /^\s*(?:https?:|mailto:|tel:|\/\/|\/(?!\s))/i.test(attribute.value);
       if (clean !== scrubbed && !address) noteListed(element);
+      // jr6 PRIVACY-FIX: a JSON copy of the posting in an attribute (POSTING_COPY_ATTRIBUTES: Breezy's data-position)
+      // whose title or description fields a listed or respelled string met is a posting place, as a posting's own text
+      // is: its REDACTED gaps tell the value by elimination, so the refusal asks for --replace-text '<css>@<attribute>'.
+      const copy = (input.postingCopies ?? []).find((each) => each.attribute === name);
+      if (copy !== undefined && counts.listed + counts.respelled > listedBefore
+        && postingFieldsDiffer(copy, attribute.value, clean)) listedAt.push({ element, kind: 'posting' });
       if (clean !== attribute.value) element.setAttribute(attribute.name, clean);
     }
   }
@@ -3249,7 +3295,7 @@ export function noteListRowsInPage(input) {
  *   reference to it follows (`references`: ID_REFERENCES, and an href="#<id>").
  * Answers counts, never a value.
  * @param {{ redacted: string; fixed: string[]; results: string[]; words: string[]; wordData: string; ids: string[];
- *   idData: string; references: string[] }} input
+ *   idData: string; references: string[]; wordsKept?: string[] }} input
  * @returns {{ rows: number; words: number; names: number; ids: number }}
  */
 export function redactListRowsInPage(input) {
@@ -3283,9 +3329,11 @@ export function redactListRowsInPage(input) {
     const rest = value.split(redacted).join(' ');
     return rest.trim() !== '' && !(value.includes(redacted) && /^(?:\s|not|checked)*$/i.test(rest));
   };
-  /** An id with what names its row made REDACTED (see above). @param {string} value
-   *  @param {{ words: string[]; values: string[]; structure: string[] }} record */
-  const normalise = (value, record) => {
+  /** An id with what names its row made REDACTED (see above). jr6 PRIVACY-FIX: `wordsToo` false (ROW_ID_WORDS_KEPT:
+   *  Workday's data-automation-id) leaves the row's own words alone there, its values and opaque tokens still taken.
+   *  @param {string} value @param {{ words: string[]; values: string[]; structure: string[] }} record
+   *  @param {boolean} [wordsToo] */
+  const normalise = (value, record, wordsToo = true) => {
     let out = value;
     for (const given of [...record.values].sort((a, b) => b.length - a.length)) {
       const runs = given.match(new RegExp(`[${char}]+`, 'g')) ?? [];
@@ -3314,6 +3362,7 @@ export function redactListRowsInPage(input) {
       // id); a design token such as "body1" is no row's name.
       const digits = run.replace(/\D/g, '').length;
       if ((run.length >= 5 && digits >= 3) || (run.length >= 8 && digits >= 1)) return redacted;
+      if (!wordsToo) return run;
       return run.split(/(?<=[a-z\u00df-\u00ff])(?=[A-Z\u00c0-\u00de])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])/)
         .map((part) => (words.has(part.toLowerCase()) ? redacted : part)).join('');
     });
@@ -3366,7 +3415,7 @@ export function redactListRowsInPage(input) {
           element.setAttribute(attribute.name, redacted);
           counts.names += 1;
         } else if ((input.ids.includes(name) || idData.test(name)) && !(name === 'href' && value.trim().startsWith('#'))) {
-          let next = normalise(value, record);
+          let next = normalise(value, record, !(input.wordsKept ?? []).includes(name));
           if (next === value) continue;
           if (name === 'id') {
             let unique = next;
@@ -3467,14 +3516,19 @@ export function unevenChoiceRowsInPage(input) {
  * on one line; an element holding no form control keeps only the text; any other element keeps its controls, its first
  * text run taking the text and its other runs emptied. Its title, aria-label and label, and an option's or an input's
  * value, where present, take the text's first line.
+ * jr6 PRIVACY-FIX: a replacement with an `attribute` (--replace-text '<css>@<attribute>=<file>') rewrites only that
+ * attribute's JSON copy of the posting (`copies`: POSTING_COPY_ATTRIBUTES) on each element the selector names: each
+ * title field takes the text's first line, each description field its other lines (all of them if it has one); the
+ * copy's other fields and the element itself are left as they are. It counts the elements whose copy it rewrote.
  * Answers how many elements each replacement took, in order: -1 for a selector the page cannot read.
- * @param {{ replacements: Array<{ selector: string; text: string }> }} input
+ * @param {{ replacements: Array<{ selector: string; text: string; attribute?: string }>;
+ *   copies?: Array<{ attribute: string; title: string[]; description: string[] }> }} input
  * @returns {number[]}
  */
 export function replaceTextInPage(input) {
   const doc = globalThis.document;
   const controls = 'input, select, textarea, button';
-  return input.replacements.map(({ selector, text }) => {
+  return input.replacements.map(({ selector, text, attribute }) => {
     /** @type {Element[]} */
     let elements;
     try {
@@ -3484,6 +3538,29 @@ export function replaceTextInPage(input) {
     }
     const lines = text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
     const first = lines[0] ?? '';
+    if (attribute !== undefined) {
+      const copy = (input.copies ?? []).find((each) => each.attribute === attribute);
+      if (copy === undefined) return -1;
+      const rest = lines.length > 1 ? lines.slice(1).join(' ') : first;
+      let rewritten = 0;
+      for (const element of elements) {
+        const value = element.getAttribute(attribute);
+        if (value === null) continue;
+        /** @type {any} */
+        let data;
+        try {
+          data = JSON.parse(value);
+        } catch {
+          continue;
+        }
+        if (data === null || typeof data !== 'object' || Array.isArray(data)) continue;
+        for (const field of copy.title) if (typeof data[field] === 'string') data[field] = first;
+        for (const field of copy.description) if (typeof data[field] === 'string') data[field] = rest;
+        element.setAttribute(attribute, JSON.stringify(data));
+        rewritten += 1;
+      }
+      return rewritten;
+    }
     for (const element of elements) {
       // A meta element's words are its content (a description copied into the page's metadata), on one line.
       if (element.localName === 'meta') {
@@ -4105,8 +4182,17 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   for (const [index, { selector, text }] of replaceText.entries()) {
     if (selector.trim() === '' || text.trim() === '') fail(`--replace-text #${index + 1} needs a selector and a non-empty file`);
   }
-  const replacements = replaceText.map(({ selector, text }) => ({ selector: selector.trim(),
-    text: text.replace(/\r\n?/g, '\n').trim() }));
+  // jr6 PRIVACY-FIX: <css>@<attribute> names a JSON copy of the posting in that attribute (POSTING_COPY_ATTRIBUTES).
+  const replacements = replaceText.map(({ selector, text }) => {
+    const copy = /^(.*\S)@([A-Za-z][\w-]*)$/.exec(selector.trim());
+    return { selector: copy === null ? selector.trim() : copy[1] ?? '', attribute: copy?.[2]?.toLowerCase(),
+      text: text.replace(/\r\n?/g, '\n').trim() };
+  });
+  for (const [index, { attribute }] of replacements.entries()) {
+    if (attribute !== undefined && !POSTING_COPY_ATTRIBUTES.some((each) => each.attribute === attribute)) {
+      fail(`--replace-text #${index + 1} names an attribute that holds no copy of the posting (POSTING_COPY_ATTRIBUTES)`);
+    }
+  }
   const mhtml = parseMhtml(readFileSync(file));
   const htmlParts = mhtml.parts.filter((part) => part.contentType === 'text/html');
   const main = htmlParts[0];
@@ -4204,7 +4290,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         dropOverlays: !deep, redacted: REDACTED, closedMark: CLOSED_ROOT_MARK }),
         ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
         marks: CHOSEN_MARKS, ...CLEAR_CHOICE_INPUT }) });
-      replaced.push(replacements.length === 0 ? [] : await frame.evaluate(replaceTextInPage, { replacements }));
+      replaced.push(replacements.length === 0 ? [] : await frame.evaluate(replaceTextInPage, { replacements,
+        copies: POSTING_COPY_ATTRIBUTES }));
     }
     for (const [index] of replacements.entries()) {
       if (replaced.some((counts) => counts[index] === -1)) fail(`--replace-text #${index + 1} is not a selector the page can read`);
@@ -4241,13 +4328,14 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       for (const name of applicant.names) fileNames.add(name);
       const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
-        ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', '), respelled, listRows: LIST_ROWS.join(', ') });
+        ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', '), respelled, listRows: LIST_ROWS.join(', '),
+        postingCopies: POSTING_COPY_ATTRIBUTES });
       const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const ownCounts = ownBefore ?? ownAfter;
       // jr6 round 2: a typed query's results lose their words, and every row whose words went loses what names it.
       const rowNames = await frame.evaluate(redactListRowsInPage, { redacted: REDACTED, fixed: FIXED_ROWS,
         results: SEARCH_RESULT_PLACES, words: ROW_WORD_ATTRIBUTES, wordData: ROW_WORD_DATA_SOURCE, ids: ROW_ID_ATTRIBUTES,
-        idData: ROW_ID_DATA_SOURCE, references: ID_REFERENCES });
+        idData: ROW_ID_DATA_SOURCE, references: ID_REFERENCES, wordsKept: ROW_ID_WORDS_KEPT });
       if (own?.counts === 'frame' && ownCounts !== null) {
         for (const [key, count] of Object.entries(ownCounts)) {
           outcome.counts[/** @type {keyof typeof outcome.counts} */ (key)] += count;
