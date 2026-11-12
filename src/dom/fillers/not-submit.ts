@@ -642,9 +642,11 @@ const CONSENT_REFUSAL_WORDS = /\b(?:cancel|decline|disagree|reject|no\b)/i;
  * jr7 ENGINE-7: the press of the one control a dialog the site draws after the run's own file write asks for
  * (Adapter.uploadPrompt: UKG Ready's "Upload Complete", answered Cancel, kind 'dismiss'; Eightfold's Data Privacy
  * Agreement, answered I Agree, kind 'consent'), with an untrusted click(). Only while the control is connected, in the
- * document, shown, pressable now and assertNotSubmit allows it with the control itself left out of the adapter's
- * never-pressed list (the application's Submit and Next, a submit word, a control that submits a form, every other
- * never-pressed control around or inside it, all refuse); never a control whose words say a parse of the file
+ * document, shown, pressable now and assertNotSubmit allows it (the application's Submit and Next, a submit word, a
+ * control that submits a form all refuse); never a control the adapter's neverPress names, nor one holding or inside
+ * one (the coordinator's decision of 2026-11-12, UKGREADY-7 open 3: no exemption, unlike the reveal door: the hook
+ * names a control no never-press rule covers, Eightfold's Cancel staying in neverPress beside its I Agree); never a
+ * control whose words say a parse of the file
  * (Populate: PROMPT_NEVER_WORDS), never a refusal on a consent (Cancel: CONSENT_REFUSAL_WORDS). At most once per
  * control. Answers the element clicked, or null. Only src/dom/fillers/upload-prompt.ts may call it
  * (test/allow-submit.test.ts); it is not exported from fillers/index.ts. A hook that throws refuses.
@@ -662,12 +664,11 @@ export function clickUploadPrompt(adapter: Adapter, doc: Document, prompt: Uploa
   } catch {
     return null;
   }
-  if (never.some((other) => other !== control && control.contains(other))) return null;
-  const others: Adapter = { ...adapter,
-    neverPress: (scope) => (adapter.neverPress?.(scope) ?? []).filter((other) => other !== control) };
+  // The coordinator's decision of 2026-11-12 (UKGREADY-7 open 3): no never-pressed control, itself, around or inside it.
+  if (never.some((other) => other === control || control.contains(other) || other.contains(control))) return null;
   let allowed: boolean;
   try {
-    allowed = assertNotSubmit(control, { adapter: others, root }).ok;
+    allowed = assertNotSubmit(control, { adapter, root }).ok;
   } catch {
     return null;
   }
@@ -694,9 +695,11 @@ const EDITOR_NEVER_WORDS = /\b(?:delete|remove|cancel|discard|submit|apply)\b/i;
  * jr7 ENGINE-7: the press of a control that opens a single-entry editor the run must fill (Adapter.editorOpener: UKG
  * Ready's Contact Edit while its summary says "Missing Information", snapshot7 secure7.saashr), with an untrusted
  * click(). At most once per control, and only while it is connected, in the document, shown, pressable now and
- * assertNotSubmit allows it with the control itself left out of the adapter's never-pressed list (the application's
- * Submit and Next, a submit word, a control that submits a form, every other never-pressed control around or inside it,
- * all refuse); never one whose words say it removes, gives up or sends (EDITOR_NEVER_WORDS). Answers the element
+ * assertNotSubmit allows it (the application's Submit and Next, a submit word, a control that submits a form all
+ * refuse); never a control the adapter's neverPress names, nor one holding or inside one (the coordinator's decision of
+ * 2026-11-12, UKGREADY-7 open 3: no exemption, so an existing entry's Edit and Delete, in neverPress, are never pressed;
+ * the hook names an "Add"-type opener no never-press rule covers); never one whose words say it removes, gives up or
+ * sends (EDITOR_NEVER_WORDS). Answers the element
  * clicked, or null. Only src/dom/fillers/editor-opener.ts may call it (test/allow-submit.test.ts); it is not exported
  * from fillers/index.ts. A hook that throws refuses.
  */
@@ -711,12 +714,11 @@ export function clickEditorOpener(adapter: Adapter, doc: Document, control: HTML
   } catch {
     return null;
   }
-  if (never.some((other) => other !== control && control.contains(other))) return null;
-  const others: Adapter = { ...adapter,
-    neverPress: (scope) => (adapter.neverPress?.(scope) ?? []).filter((other) => other !== control) };
+  // The coordinator's decision of 2026-11-12 (UKGREADY-7 open 3): no never-pressed control, itself, around or inside it.
+  if (never.some((other) => other === control || control.contains(other) || other.contains(control))) return null;
   let allowed: boolean;
   try {
-    allowed = assertNotSubmit(control, { adapter: others, root }).ok;
+    allowed = assertNotSubmit(control, { adapter, root }).ok;
   } catch {
     return null;
   }

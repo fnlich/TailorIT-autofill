@@ -145,6 +145,15 @@ describe('item 4 (UKGR-10, EFA-6): the upload-prompt door', () => {
     }
   });
 
+  // The coordinator's decision of 2026-11-12 (UKGREADY-7 open 3): the declared prompt button only, never a never-pressed
+  // control, even where the hook names one.
+  it('never presses a prompt control the adapter also names never-pressed', async () => {
+    const guarded = (pick: string, kind: UploadPromptKind): Adapter => ({ ...prompting(pick, kind),
+      neverPress: (root) => [root.ownerDocument.getElementById(pick)].filter((el): el is HTMLElement => el !== null) });
+    expect(await answer('complete', guarded('cancel', 'dismiss'))).toEqual({ outcome: 'refused', pressed: {} });
+    expect(await answer('privacy', guarded('i-agree', 'consent'), true)).toEqual({ outcome: 'refused', pressed: {} });
+  });
+
   it("never presses the application's Submit, and answers none where no prompt shows", async () => {
     expect(await answer('complete', prompting('submit', 'dismiss'))).toEqual({ outcome: 'refused', pressed: {} });
     expect(await answer('complete', prompting('nowhere', 'dismiss'), false, 300)).toEqual({ outcome: 'none', pressed: {} });
@@ -182,4 +191,16 @@ describe('item 5 (UKGR-9): the editor-opener door', () => {
     expect(openEditors(adapter, doc, root)).toBe(0);
     expect((doc.defaultView as unknown as { presses: Record<string, number> }).presses).toEqual({ edit: 1 });
   });
+
+  // The coordinator's decision of 2026-11-12 (UKGREADY-7 open 3): no exemption from neverPress, unlike the reveal door.
+  it('never presses an opener the adapter also names never-pressed (an existing entry\'s Edit), nor one inside one',
+    async () => {
+      const { doc } = await loadFixture(document, PAGE);
+      const root = doc.getElementById('f')!;
+      const guarded = (never: string): Adapter => ({ ...opening(['edit']),
+        neverPress: (scope) => [scope.ownerDocument.getElementById(never)!] });
+      expect(openEditors(guarded('edit'), doc, root)).toBe(0);
+      expect(openEditors(guarded('contact'), doc, root)).toBe(0);
+      expect((doc.defaultView as unknown as { presses: Record<string, number> }).presses).toEqual({});
+    });
 });

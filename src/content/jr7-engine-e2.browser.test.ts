@@ -56,7 +56,8 @@ describe('item 5 (UKGR-9): a step whose editor opens on its Edit', () => {
     },
     submitButton: (root) => root.ownerDocument.getElementById('submit'),
     isFinalStep: () => 'final',
-    neverPress: (root) => [root.ownerDocument.getElementById('edit')!],
+    // The coordinator's decision of 2026-11-12: the opener is no never-pressed control (its door presses none).
+    neverPress: () => [],
     ...(declared ? { editorOpener: (root: Element) => {
       const edit = root.ownerDocument.getElementById('edit');
       return edit !== null && root.ownerDocument.getElementById('editor')!.hidden ? [edit] : [];
