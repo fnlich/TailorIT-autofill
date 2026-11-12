@@ -22,6 +22,23 @@
  * frame of its company (the worker's frame registry: no token and no message between frames, the security fix S4);
  * always on the same platform and the same family (chainFamilyOf), within CHAIN_MS. Any
  * other page, or any doubt, is no chain: it stays unkeyed (or keyed by its own address).
+ * jr7 CHAIN-7 (SP\jr7\FIX7PLAN.md §6.5):
+ * - UKG Ready (UKGR-3, AUTO7-11; the owner's snapshot7 [secure7.saashr.com]): the posting
+ *   /ta/<company>.careers?ShowJob=<digits> names its job; the applicant session after its start form
+ *   (/ta/<company>.careers?…&ActiveSessionId=<…>, no ShowJob) names none, and every step, the review and the confirmation
+ *   stay at that one address. The session is a top frame's chain page of the posting's family
+ *   (ukgready:<host>:<company>), keyed by the browser's referrer as SmartRecruiters' one-click page is. Never a session
+ *   value: the family reads the host and the company's number alone.
+ * - Paycom (PC7-03; the owner's snapshot7 [www.paycomonline.net]): the posting …/portal/<client key>/jobs/<n> hands over,
+ *   through its contact dialog's "Continue To Application", to …/portal/<client key>/applications#/applications/<m>, a
+ *   new document whose number is never the posting's (6 of 6 captures). That page is a pair page (`pair`): it takes the
+ *   application of the same tab's posting of the same client key whose latest press (its Apply, its sign-in step, its
+ *   dialog) came within PAIR_MS (background/chain.ts notePair, inheritPair), once per press; never by its number, never
+ *   by the referrer.
+ * - iCIMS (ICIMS7-01; snapshot7 [arc-onesolutions.icims.com]): a portal whose forms host is not its own name's
+ *   (arc-onesolutions frames its IForms from oneblood.icims.com) declares the forms frame's origin
+ *   (Adapter.chainChildOrigins); declaredChildOrigin says which declared origins the worker may take: an https origin
+ *   whose /forms page is a chain subframe page of the portal's platform.
  */
 import type { Platform } from '../core/enums';
 import { sha256Hex } from '../core/text/sha256';
@@ -35,6 +52,9 @@ export interface ChainPage {
   platform: Platform;
   role: 'top' | 'frame';
   family: string;
+  /** jr7 CHAIN-7 (PC7-03): a top page keyed by its tab's latest posting press of its family (background/chain.ts
+   *  inheritPair), never by its referrer. */
+  pair?: true;
 }
 
 /** SuccessFactors' career sites (successfactors/url.ts HOST). */
@@ -51,6 +71,47 @@ const ICIMS_PREFIX = `(?:${[/us-careers|uscareers|internationalcareers|corporate
   .map((part) => part.source).join('|')})`;
 const ICIMS_PORTAL = new RegExp(`^${ICIMS_PREFIX}-([a-z0-9-]+)\\.icims\\.com$`);
 const ICIMS_FORMS = new RegExp(`^(?!(?:www|api|login|internal-|${ICIMS_PREFIX}-))([a-z0-9-]+)\\.icims\\.com$`);
+// ── jr7 CHAIN-7 (module header): UKG Ready's and Paycom's addresses, as src/shared/hosts.ts registers them ──
+/** UKG Ready's candidate host (secure<n>.saashr.com) and its careers page's path, the company's number in it. */
+const UKGR_HOST = /^secure\d{0,2}\.saashr\.com$/;
+const UKGR_PATH = /^\/ta\/(\d{3,10})\.careers$/;
+/** A posting's ShowJob: digits only. */
+const UKGR_JOB = /^\d{1,15}$/;
+/** Paycom's candidate host and its portal's paths, the client key in them. */
+const PAYCOM_HOST = 'www.paycomonline.net';
+const PAYCOM_PATH = /^\/v4\/ats\/web\.php\/portal\/([A-Fa-f0-9]{32})\/(jobs\/\d+|applications)$/;
+/** The application's route in a Paycom /applications page's fragment (its number is never read). */
+const PAYCOM_ROUTE = /^#\/applications\/\d+(?:[/?].*)?$/;
+
+/** UKG Ready's family (ukgready:<host>:<company>) and which of its pages an address shows: the posting (one ShowJob of
+ *  digits) or the applicant session (an ActiveSessionId, no ShowJob); null for any other address. Reads no session
+ *  value: only whether one is there. */
+function ukgReadyPage(url: URL, host: string, path: string): { family: string; page: 'posting' | 'session' } | null {
+  if (!UKGR_HOST.test(host)) return null;
+  const company = UKGR_PATH.exec(path);
+  if (company === null) return null;
+  const family = `ukgready:${host}:${company[1]}`;
+  const job = url.searchParams.getAll('ShowJob');
+  if (job.length > 0) return job.length === 1 && UKGR_JOB.test(job[0]!) ? { family, page: 'posting' } : null;
+  return (url.searchParams.get('ActiveSessionId') ?? '') !== '' ? { family, page: 'session' } : null;
+}
+
+/** Paycom's family (paycom:<client key>, lower case) and which of its pages an address shows: a posting (/jobs/<n>) or
+ *  an application (/applications, its route in the fragment); null for any other address. */
+function paycomPage(url: URL, host: string, path: string): { family: string; page: 'posting' | 'application' } | null {
+  if (host !== PAYCOM_HOST) return null;
+  const parts = PAYCOM_PATH.exec(path);
+  if (parts === null) return null;
+  const family = `paycom:${parts[1]!.toLowerCase()}`;
+  if (parts[2] !== 'applications') return { family, page: 'posting' };
+  return PAYCOM_ROUTE.test(url.hash) ? { family, page: 'application' } : null;
+}
+
+/** A path without its one trailing slash (the root aside). */
+function trimmed(path: string): string {
+  return path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
+}
+// ── end jr7 CHAIN-7 ──
 
 /** An https address on the default port, with no credentials. */
 function plain(url: URL): boolean {
@@ -73,6 +134,9 @@ export function chainFamilyOf(url: URL): string | null {
     const company = smartRecruitersCompany(url);
     return company === null ? null : `smartrecruiters:${company}`;
   }
+  const path = trimmed(url.pathname); // jr7 CHAIN-7
+  const own = ukgReadyPage(url, host, path) ?? paycomPage(url, host, path); // jr7 CHAIN-7: UKG Ready's, Paycom's
+  if (own !== null) return own.family; // jr7 CHAIN-7
   const portal = ICIMS_PORTAL.exec(host);
   if (portal !== null) return `icims:${portal[1]}`;
   const forms = ICIMS_FORMS.exec(host);
@@ -83,7 +147,7 @@ export function chainFamilyOf(url: URL): string | null {
 export function chainPageOf(url: URL): ChainPage | null {
   if (!plain(url)) return null;
   const host = url.hostname.toLowerCase();
-  const path = url.pathname.endsWith('/') && url.pathname !== '/' ? url.pathname.slice(0, -1) : url.pathname;
+  const path = trimmed(url.pathname); // jr7 CHAIN-7: the one trailing slash, as before
   if (SF_HOST.test(host)) {
     // The behaviour review of 2026-11-06 (minor 9): /portalcareer, the application form after the account, is no chain
     // page until a fixture shows it and the adapter has its rules: chained, the generic adapter filled its whole form.
@@ -101,8 +165,41 @@ export function chainPageOf(url: URL): ChainPage | null {
   if (forms !== null && path === '/forms' && parseIcimsUrl(url) === null) {
     return { platform: 'icims', role: 'frame', family: `icims:${forms[1]}` };
   }
+  // ── jr7 CHAIN-7 (module header): UKG Ready's applicant session; Paycom's application, a pair page ──
+  const ukg = ukgReadyPage(url, host, path);
+  if (ukg !== null) return ukg.page === 'session' ? { platform: 'ukgready', role: 'top', family: ukg.family } : null;
+  const paycom = paycomPage(url, host, path);
+  if (paycom !== null) {
+    return paycom.page === 'application' ? { platform: 'paycom', role: 'top', family: paycom.family, pair: true } : null;
+  }
+  // ── end jr7 CHAIN-7 ──
   return null;
 }
+
+// ── jr7 CHAIN-7 (module header) ──
+/** ICIMS7-01: whether a portal page may declare `origin` as the origin of the chain subframes it frames
+ *  (Adapter.chainChildOrigins, said in its hello): an https origin on the default port, nothing but an origin, whose
+ *  /forms page is a chain subframe page (chainPageOf, role 'frame') of `platform`. The worker takes no other. */
+export function declaredChildOrigin(origin: string, platform: Platform): boolean {
+  let url: URL;
+  try {
+    url = new URL(`${origin}/forms`);
+  } catch {
+    return false;
+  }
+  if (url.origin !== origin || url.href !== `${origin}/forms` || !plain(url)) return false;
+  const page = chainPageOf(url);
+  return page !== null && page.role === 'frame' && page.platform === platform;
+}
+
+/** PC7-03: the family of a posting whose press a pair page of that family takes (Paycom's …/jobs/<n>); null for any other
+ *  address. */
+export function pairPostingFamilyOf(url: URL): string | null {
+  if (!plain(url)) return null;
+  const paycom = paycomPage(url, url.hostname.toLowerCase(), trimmed(url.pathname));
+  return paycom !== null && paycom.page === 'posting' ? paycom.family : null;
+}
+// ── end jr7 CHAIN-7 ──
 
 /** The origin of the chain subframes an application page frames (iCIMS's IForm page: https://<co>.icims.com for
  *  careers-<co>.icims.com), or null where its pages frame none. */
