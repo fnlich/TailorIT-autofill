@@ -1115,7 +1115,34 @@ describe('mhtml-to-fixture command line', () => {
     const run = spawnSync(process.execPath, [SCRIPT, '--platform', 'lever'], { encoding: 'utf8', windowsHide: true });
     expect(run.status).toBe(1);
     expect(run.stderr).toContain('usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform');
+    // jr7 TOOLING-7: and its three new options.
+    expect(run.stderr).toContain('[--style-order archive|live] [--keep-application <job id>] [--frame-src <css>=<https address>]...');
   });
+
+  it("jr7 TOOLING-7: reads --style-order, --frame-src (repeatable) and --keep-application, refusing each one's misuse", () => {
+    const file = join(work, 'cli-jr7.mhtml');
+    writeFileSync(file, syntheticCapture());
+    const out = join(work, 'cli-jr7-out');
+    const anchor = 'https://www.google.com/recaptcha/api2/anchor?ar=1&size=normal';
+    const run = (...extra: string[]) => spawnSync(process.execPath, [SCRIPT, file, '--platform', 'greenhouse', '--case',
+      'cli-jr7', '--out', out, ...extra], { encoding: 'utf8', windowsHide: true, timeout: 60_000 });
+    const ok = run('--style-order', 'live', '--frame-src', `iframe[src^="cid:frame-BLANK"]=${anchor}`);
+    expect(ok.stderr).toBe('');
+    expect(ok.status).toBe(0);
+    const written = readFileSync(join(out, 'greenhouse', 'cli-jr7.html'), 'utf8');
+    expect(written).toContain(`src="${anchor.replace(/&/g, '&amp;')}" width="10" height="10"`);
+    expect(headerOf(written)).toMatchObject({ styleOrder: 'live', frames: { given: 1 } });
+    for (const [extra, refusal] of [
+      [['--keep-application', '41'], '--keep-application is for --platform oracle'],
+      [['--style-order', 'page'], '--style-order must be one of archive, live'],
+      [['--frame-src', 'iframe=http://www.google.com/x'], '--frame-src #1 must be <css>=<https address>'],
+      [['--frame-src', `iframe[title="Nothing"]=${anchor}`], '--frame-src #1 names no frame the capture saved unloaded'],
+    ] as Array<[string[], string]>) {
+      const refused = run(...extra);
+      expect(refused.status, refusal).toBe(1);
+      expect(refused.stderr, refusal).toContain(refusal);
+    }
+  }, 120_000);
 });
 
 describe('mhtml-to-fixture helpers', () => {

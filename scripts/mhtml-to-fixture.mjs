@@ -171,6 +171,28 @@
 //     title field the file's first line, each description field its other lines);
 //   - a list row's id normalisation leaves the words of Workday's data-automation-id alone (ROW_ID_WORDS_KEPT: a chosen
 //     pill's DELETE_charm names the component, not the row), its opaque tokens and the row's values still taken.
+// - jr7 TOOLING-7 (the owner's snapshot7 of 2026-11-11; SP\jr7\FIX7PLAN.md §6.1), on every platform but where named:
+//   - the platforms jr7 adds (FIXTURE_PLATFORMS, NEW_ATS_PLATFORMS, NEW_ATS_HOSTS, a whole candidate path by
+//     pathPattern): ukgready (secure<n>.saashr.com/ta/<company>.careers), paycom (www.paycomonline.net's portal posting
+//     and applications paths), jobdiva (www<n>.jobdiva.com/portal/), eightfold (<tenant>.eightfold.ai/careers) and jibe
+//     (<tenant>.jibeapply.com/jobs/);
+//   - before anything is measured: UltiPro's Race row drawn open (OPENED_ROWS, UP7-14); a chosen uiLib icon drawn as a
+//     copy of the page's own unchosen twin (CHOSEN_ICONS, T7-01: none to copy is refused) and its uiLib marks
+//     (CHOSEN_MARKS); every canvas kept at the box it draws with scripting on (standInCanvasesInPage, T7-01: the capture
+//     is opened with scripting off, where a canvas is an inline box for its fallback content); with --style-order live,
+//     the cid: sheets Blink's serializer hoisted above the head's own <link> sheets moved back after them
+//     (liveStyleOrderInPage, JDEF-V1; jobdiva's default, STYLE_ORDER_DEFAULTS);
+//   - places (UKGR-20, T7-02, JDEF-16): UKG Ready's value mirror, review values, entry metadata and avatar; Dayforce's
+//     Personal Information read view, its chosen source included; JobDiva's file card; Paycom's tooltip anchors'
+//     spelled text (SPELLED_IDS); Oracle's profile tile summaries and every My Applications tile but the one
+//     --keep-application names (jr7-O5); a searched iCIMS list's result keeping a REDACTED in each text run, so its
+//     bolded query keeps its box (ICIMS7-15);
+//   - values: UKG Ready's ActiveSessionId, sft, rnd and file-service ticket (PER_LOAD_PARAMS), a phone-shaped listed
+//     string in an address (respelledSources' phones), Eightfold's _csrf meta, Paycom's hCaptcha (redactHcaptchaIn),
+//     Jobvite's __jvsc (REFERRAL_PARAMS);
+//   - --frame-src gives a frame the capture saved unloaded its public vendor address, a third party's (RBP7-V2 a);
+//   and it also refuses a widget's shown text spelled in an id (spelledIdsIn) and, in the inlined stylesheets, what
+//   the token and referral needles find there (checkedStyleForms).
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -179,13 +201,22 @@
 //
 // Usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <greenhouse|lever|ashby|workday|workable|icims|taleo|
 //          successfactors|oracle|smartrecruiters|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|
-//          ultipro|dayforce|paylocity|dice|clearcompany|adp> --case <name>
+//          ultipro|dayforce|paylocity|dice|clearcompany|adp|ukgready|paycom|jobdiva|eightfold|jibe> --case <name>
 //          [--redact <file>] [--out <folder>] [--folder <name>] [--replace-text <css>[@<attribute>]=<file>]...
+//          [--style-order archive|live] [--keep-application <job id>] [--frame-src <css>=<https address>]...
 // The redact file holds one string per line (blank lines and lines starting with # are skipped); a string that looks
 // like a phone number matches whatever its punctuation. --out defaults to fixtures/. Each --replace-text names a CSS
 // selector and, after its last "=", a UTF-8 file of synthetic text (made up, never a person's); a selector that names
 // no element in any converted frame is refused, by its position among the --replace-text options. A selector ending in
 // @<attribute> names a posting copy's attribute (POSTING_COPY_ATTRIBUTES) on those elements; any other is refused.
+// (UltiPro's education editor, jr7 UP7-14: its Major and Minor lists hold the field-of-study list a listed field meets,
+// so they take synthetic lines: --replace-text 'select[data-automation="major-dropdown"],
+// select[data-automation="minor-dropdown"]=<file>'.)
+// jr7 TOOLING-7: --style-order keeps the archive's cascade order (archive, the default but for jobdiva) or the live one
+// (live). --keep-application (Oracle only) names the captured posting's job id, whose My Applications tile a my-profile
+// page keeps; it is refused where no tile names it. Each --frame-src names, before its address's "=https://", the frames
+// the capture saved unloaded that take that public https address of a third party's (no credentials, no site key):
+// refused where it names no such frame, or a frame with an address of its own.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL, URLSearchParams } from 'node:url';
@@ -5092,7 +5123,7 @@ function parseArgs(argv) {
     }
   }
   if (positional.length !== 1 || !options.platform || !options.case) {
-    fail('usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <platform> --case <name> [--redact <file>] [--out <folder>] [--folder <name>] [--replace-text <css>=<file>]...');
+    fail('usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <platform> --case <name> [--redact <file>] [--out <folder>] [--folder <name>] [--replace-text <css>=<file>]... [--style-order archive|live] [--keep-application <job id>] [--frame-src <css>=<https address>]...');
   }
   return { file: positional[0] ?? '', platform: options.platform, caseName: options.case, redactFile: options.redact,
     outDir: options.out ? resolve(options.out) : join(ROOT, 'fixtures'), folderName: options.folder ?? options.platform,
