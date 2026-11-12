@@ -3,9 +3,8 @@
  * and scan held to its hand-written expectations, then each rule held against the same page read without it (the rule
  * undone): the three page states (the account step, the résumé review and its "Save and continue", the application
  * and its Submit host), the panels as sections, Country's class-only required mark, the start date (one date in its
- * component's shadow boxes, jr6 U-07), the
- * period boxes with no label of their own, the Skills typeahead, and the never-pressed controls. The start date's
- * shadow boxes are in application.expect.json, their selectors stepping into the shadow root (" >>> ").
+ * component's shadow boxes, jr6 U-07), the period boxes with no label of their own, the Skills typeahead, and the
+ * never-pressed controls. The start date is one row of application.expect.json, its control the component.
  * KNOWN: what the scanner reads differently from the page today, each to be emptied once it reads it.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -48,15 +47,10 @@ type CaseName = (typeof CASES)[number]['name'];
  *   page adopts as a constructed style sheet, and the snapshot (ultipro-2) holds none of it (its ukg-field templates hold
  *   no <style>, and no captured sheet names .ukg-field-container or .input-wrapper). Nothing in the capture shows a box
  *   around them, so the scanner refuses them here; a live page's computed style decides.
- * - jr6 U-07: the application's start date is one date (Adapter.dateFor), its control the ukg-date-input-text component,
- *   which draws no box of its own; what draws it is UKG's component style, which this capture (ultipro-0) holds none of,
- *   and its datepicker container (Adapter.controlBox) shows no border or background here either, so the scanner reads
- *   it camouflaged in this capture; a live page's computed style decides.
  */
 const KNOWN: Record<string, ReadonlyArray<{ control: string; property: string }>> = {
   register: ['firstName', 'lastName', 'phoneNumber'].map((name) => ({ control: `input[name="${name}"]`,
     property: 'fillable' })),
-  application: [{ control: 'ukg-date-input-text[role="group"]', property: 'fillable' }],
 };
 
 afterEach(() => removeFixtures(document));
@@ -98,8 +92,8 @@ describe('the UltiPro adapter: its hooks and scans on the snapshots', () => {
   it.each(CASES)('$name: the scan of its root is the expectation', async ({ name, html, json, address }) => {
     const scanned = await scanCase(document, html, address);
     expect(scanned.adapter).toBe(ultiproAdapter);
-    // The start date's three boxes sit in ukg-date-input-text's shadow root: their entries step into it with " >>> "
-    // (expectations.testkit selectComposed, core pass Z2 of 2026-11-06), so they are compared as every other field is.
+    // The start date is one date (jr6 U-07), its row's control the ukg-date-input-text component; an entry may still
+    // step into an open shadow root with " >>> " (expectations.testkit selectComposed, core pass Z2 of 2026-11-06).
     const found = compareWithExpectation(scanned.doc, scanned.result, readExpectation(json));
     const known = KNOWN[name] ?? [];
     for (const each of known) expect(found, `${each.control} ${each.property}`).toContainEqual(expect.objectContaining(each));
