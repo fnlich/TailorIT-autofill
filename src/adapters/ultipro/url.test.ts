@@ -35,11 +35,13 @@ describe("UltiPro's page after submitting (jr7 UP7-01)", () => {
     const other = parseUltiproUrl(new URL(done(undefined, undefined, undefined, `applicationId=${OPPORTUNITY}`)));
     expect(other).toEqual(one);
     expect(JSON.stringify(one)).not.toContain(APPLICATION);
+    // Its value is never read: the fixtures hold it redacted, and they read the same.
+    expect(parseUltiproUrl(new URL(done(undefined, undefined, undefined, 'applicationId=REDACTED')))).toEqual(one);
   });
 
   it.each([
     ['no applicationId', ''],
-    ['an applicationId that is no uuid', 'applicationId=12345'],
+    ['an empty applicationId', 'applicationId='],
     ['another parameter beside it', `applicationId=${APPLICATION}&x=1`],
     ['the applicationId twice', `applicationId=${APPLICATION}&applicationId=${APPLICATION}`],
   ])('reads none with %s', (_, query) => {

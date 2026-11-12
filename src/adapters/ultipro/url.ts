@@ -24,7 +24,7 @@
  * and ultipro2, fixtures/ultipro/jr7-ultipro{1,2}-submitted.html): the page after submitting,
  * /<tenant>/JobBoard/<board uuid>/OpportunityApply/ApplicationSubmitted?applicationId=<uuid>, on the same host, tenant
  * and board as its form, is the board's confirmation. Its address names no opportunity, and its applicationId is a
- * per-person record id (FIX7PLAN §5 D-10): only its shape is checked, never kept, so the reading holds no job id ('')
+ * per-person record id (FIX7PLAN §5 D-10): only whether it is there is read, so the reading holds no job id ('')
  * and the path without its query, the same for every application of the board. Which application it confirms is the
  * armed Submit's to say (confirmationAfter, by host, tenant and board).
  */
@@ -73,11 +73,12 @@ function boardPosting(path: string, param: (name: string) => string | null, host
 const SUBMITTED = 'OpportunityApply/ApplicationSubmitted';
 
 /** The board's page after submitting (the header): /<tenant>/JobBoard/<uuid>/OpportunityApply/ApplicationSubmitted with
- *  one applicationId, a uuid (its shape alone is read, never its value), and nothing else in its query; or null. */
+ *  one applicationId, not empty (only whether it is there is read, never its value: the fixtures hold it redacted), and
+ *  nothing else in its query; or null. */
 function submittedPage(url: URL): ApplicationUrl | null {
   const [tenant = '', jobBoard, board = '', ...rest] = url.pathname.split('/').slice(1);
   if (!TENANT.test(tenant) || jobBoard !== 'JobBoard' || !UUID.test(board) || rest.join('/') !== SUBMITTED
-    || [...url.searchParams.keys()].join() !== 'applicationId' || !UUID.test(url.searchParams.get('applicationId')!)) {
+    || [...url.searchParams.keys()].join() !== 'applicationId' || url.searchParams.get('applicationId') === '') {
     return null;
   }
   const lower = tenant.toLowerCase();
@@ -88,7 +89,7 @@ function submittedPage(url: URL): ApplicationUrl | null {
 /** Adapter.confirmationAfter (FIX7PLAN §3.1, UP7-01): whether `here` is the page after submitting the application whose
  *  Submit was armed at `armed` (its form, OpportunityApply, or the posting address the worker's arm keeps for it): `here`
  *  reads as the board's page after submitting (submittedPage), on the same host, tenant and board uuid. Pure; reads no
- *  per-person id (the applicationId's shape alone, never kept). */
+ *  per-person id (whether the applicationId is there, never its value). */
 export function confirmationAfter(armed: URL, here: URL): boolean {
   const form = parseUltiproUrl(armed);
   const done = matchesUrl(here) ? submittedPage(here) : null;
