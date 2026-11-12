@@ -1061,6 +1061,14 @@ export function eeoValue(category: FieldCategory, spec: FieldSpec, profile: Prof
   const question = category.slice('eeo.'.length) as 'gender' | 'hispanicLatino' | 'race' | 'veteran' | 'disability';
   const answer: Explicit<unknown> | undefined = eeo[question];
   if (answer === undefined) return eeoDeclineDefault(category, spec, settings) ?? none('eeo-not-in-profile');
+  // jr7 RULES-7 R2 (jr7-O6, Oracle's lone "Hispanic or Latino" box under "Ethnicity", snapshot7 oraclecloud1): a lone box
+  // whose label is that one answer is ticked only when the person's explicit answer is yes; a no or a decline leaves it
+  // as it is (unticked: already correct), never a tick the person did not give.
+  if (spec.kind === 'checkbox' && question === 'hispanicLatino') {
+    const yes = answer.kind === 'value' && (answer as { value: boolean }).value;
+    return value({ origin: answer.kind === 'decline' ? byRule('eeo.decline', `eeo.${question}`)
+      : fromProfile(`eeo.${question}`), confidence: VALUE_EXPLICIT, check: yes });
+  }
   if (!EEO_CHOICE_KINDS.includes(spec.kind)) return none('format-unsupported');
   const at = `eeo.${question}`;
   if (answer.kind === 'decline') {
@@ -1159,6 +1167,9 @@ export interface ConsentContext {
    *  text alone (the other cause the rules once handed over) needs no flag: its kinds decide it like any consent's (the
    *  v4 review, security M3). */
   bindingWaiver?: true;
+  /** jr7 RULES-7 R2 (UKGR-V2): the signature's prompt shows the name to type ("Please type your full name to confirm:
+   *  <first> <last>", the names the run typed at the start form): the profile's first and last name, in that order. */
+  namePrompt?: true;
 }
 
 /** A consent's tick (or Yes, or its one option that agrees: `option`), by the rule that gives it. */
@@ -1214,7 +1225,11 @@ export function consentValue(category: FieldCategory, consentKinds: readonly Fie
     return ticked(approved ? 'consent.signature-preapproved' : 'consent.required');
   }
   if (category === 'consent.signature') {
-    const name = profile.identity.fullName.trim();
+    // jr7 RULES-7 R2 (UKGR-V2): the first and last name where the prompt shows the name to type (never the page's own
+    // words), else the full name.
+    const shown = `${profile.identity.firstName} ${profile.identity.lastName}`.trim();
+    const name = consent.namePrompt === true && profile.identity.firstName.trim() !== ''
+      && profile.identity.lastName.trim() !== '' ? shown : profile.identity.fullName.trim();
     if (name === '') return none('no-profile-value');
     return value({ origin: byRule(approved ? 'consent.signature-preapproved' : 'consent.required', 'identity.fullName'),
       confidence: VALUE_CONSENT_PREAPPROVED, text: name });
@@ -1413,6 +1428,24 @@ export function inCountryValue(spec: FieldSpec, profile: Profile, vocab: Vocab):
   if (home === undefined || places.ambiguous || places.countries.length === 0) return none('no-profile-value', false);
   return yesNo(places.countries.includes(home), byRule('location.in-country', 'address.country'), VALUE_TRANSFORM,
     { flag: 'filled-low-confidence' });
+}
+
+/**
+ * jr7 RULES-7 R2 (RBP7-08): whether the person lives in one of the states (or provinces) a question lists: yes when the
+ * profile's region is among them, no when it is another one of the same country, flagged either way (the list is read
+ * from the question's own words, codes in capitals only); nothing when the list cannot be read or the profile holds no
+ * region (the `all` scope's AI).
+ */
+export function inListedRegionValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
+  const own = profile.address?.region?.code;
+  const regions = regionsNamed(`${spec.label} ${spec.description}`, `${spec.label} ${spec.description}`, vocab);
+  if (own === undefined || regions.length < 2) return none('no-profile-value', false);
+  const country = profile.address?.country;
+  const listed = regions.some((region) => region.code === own && (country === undefined || region.country === country));
+  if (!listed && country !== undefined && !regions.some((region) => region.country === country)) {
+    return none('no-profile-value', false);
+  }
+  return yesNo(listed, fromProfile('address.region'), VALUE_TRANSFORM, { flag: 'filled-low-confidence' });
 }
 
 // jr6 RULES end
