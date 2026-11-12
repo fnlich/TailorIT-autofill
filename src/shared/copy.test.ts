@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CONSENT_CATEGORIES, FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES } from '../core/enums';
+import { AI_OPENED_CATEGORIES } from '../core/resolver/categories';
 import { TELEMETRY_FIELDS } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
 import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
@@ -236,6 +237,32 @@ describe('the copy', () => {
       'only the question and its options are sent']) expect(help).toContain(words);
     expect(help).not.toMatch(/essential function/i);
     expect(help).toMatch(SENTENCE);
+  });
+
+  // The jr6 integration fixes (DOC-1): while a job's essential functions stay out of AI_OPENED_CATEGORIES (RULES
+  // revD-01), docs/PRIVACY.md, the store listing's source, never says they go to the AI: each clause naming them that
+  // says something goes, or gets a guess, says "never".
+  it.skipIf(AI_OPENED_CATEGORIES.has('screening.essentialFunctions'))(
+    'never says in docs/PRIVACY.md that a job’s essential functions go to the AI', () => {
+      const privacy = readFileSync(new URL('../../docs/PRIVACY.md', import.meta.url), 'utf8');
+      const clauses = privacy.split(/[;:()\n]|(?<=\.)\s+/).filter((clause) => /essential function/i.test(clause));
+      expect(clauses.length).toBeGreaterThan(2);
+      const saysTheyGo = clauses.filter((clause) => /\b(?:do|does|now|also) go\b|\bgo(?:es)? to (?:the )?(?:AI|Claude)\b|\bbest guess\b/i
+        .test(clause) && !/\bnever\b/i.test(clause));
+      expect(saysTheyGo).toEqual([]);
+    });
+
+  // The jr6 integration fixes (SEC-3, the coordinator's choice (b): keep the fetch, fix the words): an email gate with no
+  // Sign-up Information email takes the profile's (background/index.ts profileEmail: profileCache.get()), which fetches
+  // the profile when the worker has dropped it. PRIVACY.md and ARCHITECTURE.md say so, never that nothing is fetched.
+  it('says an email gate’s profile email is read as any Autofill run reads the profile, fetched when not held', () => {
+    const privacy = readFileSync(new URL('../../docs/PRIVACY.md', import.meta.url), 'utf8');
+    const gates = privacy.slice(privacy.indexOf('## Email gates'), privacy.indexOf('## What reaches an AI model'));
+    expect(gates).toContain('as any Autofill run reads the profile');
+    expect(gates).toMatch(/GET \/profile/);
+    expect(gates).not.toMatch(/nothing new is fetched/);
+    const architecture = readFileSync(new URL('../../docs/ARCHITECTURE.md', import.meta.url), 'utf8');
+    expect(architecture).not.toMatch(/the profile cache the fill already read, no new request/);
   });
 
   // The jr6 review (R3, R10): the job-site sign-in is the one saved in Sign-up Information (this browser) since jr6:
