@@ -3841,6 +3841,9 @@ describe('jr6 fixes: where the person came from (PRIV-4)', () => {
       ['https://jobs.lever.co/acme/1-2?lever-source=FixtureBoard&lever-origin=applied',
         'https://jobs.lever.co/acme/1-2?lever-source=REDACTED&lever-origin=applied'],
       ['/x?utm_medium=cpc&amp;utm_term=fixture+word&amp;utm_id=7', '/x?utm_medium=REDACTED&amp;utm_term=REDACTED&amp;utm_id=REDACTED'],
+      // jr6 PRIVACY-FIX: an address escaped twice in an attribute (Jobvite's data-lnkd-debug), its "&amp;" escaped again.
+      ['<span data-lnkd-debug="https://jobs.jobvite.com/acme/job/oX1?__jvst=Fixture&amp;amp;__jvsd=FixtureBoard&amp;amp;nl=0">',
+        '<span data-lnkd-debug="https://jobs.jobvite.com/acme/job/oX1?__jvst=REDACTED&amp;amp;__jvsd=REDACTED&amp;amp;nl=0">'],
       ['/login?redirect=%2Fjob%3Fsource%3DFixture%2520Board%26x%3D1', '/login?redirect=%2Fjob%3Fsource%3DREDACTED%26x%3D1'],
       ['/a?r=%252Fjob%253Fiis%253DFixture%252BBoard%2526y%253D2', '/a?r=%252Fjob%253Fiis%253DREDACTED%2526y%253D2'],
       // Not a referral parameter: another name holding the word, a fragment, an empty value, Simplify's own tag (which

@@ -795,7 +795,9 @@ export const REFERRAL_PREFIXES = ['utm_'];
  *  (?, &, &amp;, or percent-encoded once or twice inside another address), its name and = (or %3D, %253D) in group 1,
  *  kept; its value up to the next separator, plain or percent-encoded (an INJECTED_PARAMS value is left for
  *  stripInjectedParams, which drops it whole). */
-export const REFERRAL_SOURCE = `((?:\\?|&amp;|&|%3F|%26|%253F|%2526)(?:${[...REFERRAL_PARAMS.map(escapeSource),
+// jr6 PRIVACY-FIX: "&amp;amp;" too, an address escaped twice (Jobvite's LinkedIn share widget writes the page's own
+// address into data-lnkd-debug with its "&amp;" escaped again: jobvite/ninjaone-posting's __jvsd).
+export const REFERRAL_SOURCE = `((?:\\?|&amp;amp;|&amp;|&|%3F|%26|%253F|%2526)(?:${[...REFERRAL_PARAMS.map(escapeSource),
   ...REFERRAL_PREFIXES.map((prefix) => `${escapeSource(prefix)}[A-Za-z0-9_]+`)].join('|')})(?:=|%3D|%253D))`
   + `(?!(?:${INJECTED_PARAMS.flatMap((entry) => (entry.includes('=') ? [escapeSource(entry.split('=')[1] ?? '')] : []))
     .join('|')})(?![\\w-]))(?:(?!%26|%23|%2526|%2523)[^&#"'\\s<>])*`;
