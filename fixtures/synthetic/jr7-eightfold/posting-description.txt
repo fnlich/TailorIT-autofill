@@ -1,0 +1,1 @@
+A synthetic description of a software role, written for a test fixture.
