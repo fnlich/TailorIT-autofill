@@ -54,6 +54,10 @@ function answersQuestion(pair: readonly PreparedOption[], labelKey: string, voca
   const stated = topicsOf(said);
   return asked.size === 0 || stated.size === 0 || [...stated].some((topic) => asked.has(topic));
 }
+/** jr7 RULES-7 (UP7-08): an option that plainly agrees, as its own whole answer ("I Confirm", "I agree", "Accept",
+ *  "I acknowledge", "I certify", "Agreed"). */
+const AGREES = /^(?:i\s+)?(?:(?:hereby|fully|do)\s+)?(?:confirm|confirmed|agree|agreed|acknowledge|acknowledged|accept|accepted|certify|attest|consent|understand|understood)$/;
+
 /** Auxiliaries, set aside when two options are compared ("I will require" / "I do not require"). */
 const AUXILIARIES: ReadonlySet<string> = new Set(['will', 'do', 'does', 'am', 'is', 'are', 'have', 'has', 'can']);
 
@@ -95,6 +99,16 @@ export function polarityHits(value: boolean, options: PreparedOptions, vocab: Vo
   if (leading.length > 0) {
     return leading.map((option) =>
       stageHit(option, 'alias', 'polarity', MATCH_POLARITY_LEADING, `key:${option.fullKey}`));
+  }
+  // jr7 RULES-7 (UP7-08, UltiPro's certification "I Confirm" / "No", snapshot7 ultipro1): of two options, one a leading
+  // "No", the other that plainly agrees ("I Confirm", "I agree", "Acknowledge") and denies nothing is the yes.
+  if (value && candidates.length === 2) {
+    const no = candidates.find((option) => leadingPolarity(option) === false);
+    const other = candidates.find((option) => option !== no);
+    if (no !== undefined && other !== undefined && leadingPolarity(other) === null && !negated(other, vocab)
+      && AGREES.test(other.norm.tokens.join(' '))) {
+      return [stageHit(other, 'alias', 'polarity', MATCH_POLARITY_NEGATION, 'bool:true')];
+    }
   }
   if (candidates.length !== 2 || candidates.some((option) => leadingPolarity(option) !== null)) return [];
   const negatives = candidates.filter((option) => negated(option, vocab));

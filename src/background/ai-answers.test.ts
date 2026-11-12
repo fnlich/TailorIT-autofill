@@ -195,6 +195,18 @@ describe('Edit with AI’s draft request', () => {
 });
 
 describe('what an answer never states (M2), screened again here', () => {
+  // jr7 RULES-7 (WD7-03, Workday's republic, snapshot7 workday2): "identification" as a work task is no identifier; a
+  // document or a self-identification stays withheld.
+  it('sends a work task’s identification, never a document’s or a self-identification', () => {
+    const task = { ...choice(1, ['Yes', 'No'], 'Do you have 2 years of experience with problem identification techniques '
+      + 'and analyzing reports to support service delivery?') };
+    expect(answerItemOfCore(task)).not.toBeNull();
+    for (const question of ['Identification type', 'Type of identification', 'Form of identification',
+      'Voluntary Self-Identification', 'Identification number']) {
+      expect(answerItemOfCore({ ...text(98), question: u(question) }), question).toBeNull();
+    }
+  });
+
   it('never sends a question about another person, an identifier, an address or a clearance', () => {
     const questions = ['Emergency contact name', 'Reference 1: full name', "Your manager's name at your current job",
       'Spouse name', 'Driver license number', 'Passport number', 'National ID number', 'Home address',

@@ -72,6 +72,15 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   'identity.prefix': 'profile', 'education.graduated': 'profile', 'address.line3': 'profile', 'salary.period': 'sensitive',
   'application.resumeMethod': 'profile', 'education.highSchool': 'profile', 'address.mailing': 'profile',
   'links.facebook': 'profile', 'links.numbered': 'profile',
+  // jr7 RULES-7 (UKGR-14): a national id or a social security number, which the profile never holds and nothing else
+  // may give (sensitive: no saved answer, no AI, no tiebreak).
+  'identity.nationalId': 'sensitive',
+  // jr7 RULES-7 R2 (DF7-11, ICIMS7-14): an entry's detail and a licence's number or state, the profile's (none held).
+  'experience.detail': 'profile', 'skills.certificationDetail': 'profile',
+  // jr7 RULES-7 R2 (WD7V-02): the person's native language.
+  'languages.preferred': 'profile',
+  // jr7 RULES-7 R2 (RBP7-08): from the profile's address.
+  'location.inListedRegion': 'profile',
   unknown: 'unknown',
 };
 
@@ -161,12 +170,17 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'languages.language': [...LOOKUP, 'checkbox-group', 'multiselect'], 'languages.proficiency': CHOICE,
   'skills.list': ['text', 'textarea', 'combobox', 'typeahead-remote', 'checkbox-group', 'multiselect'],
   'salary.expected': ['text', 'textarea', ...CHOICE], 'salary.currency': ['text', 'select', 'combobox'],
-  'availability.startDate': ['text', 'textarea', 'date', ...CHOICE], 'availability.noticePeriod': ['text', ...CHOICE],
+  // jr7 RULES-7 (WD7-02: Workday draws its questionnaire's text questions as textareas, aristocrat's required "What is
+  // your notice period in weeks, if applicable?", snapshot7 workday1): a notice period in a box of prose too.
+  'availability.startDate': ['text', 'textarea', 'date', ...CHOICE],
+  'availability.noticePeriod': ['text', 'textarea', ...CHOICE],
   'preferences.relocation': YES_NO, 'preferences.workArrangement': [...YES_NO, 'checkbox-group', 'multiselect'],
   // A text box takes the profile's travel share (docs/SPEC-AMENDMENTS.md §8; the Phase E review, MINOR 6).
   'preferences.travel': [...YES_NO, 'text'],
   // s2 core-wd: Workday's "How Did You Hear About Us?" is a prompt on some tenants (verily, exelixis: the wd study §5).
-  'referral.source': ['text', ...CHOICE, 'typeahead-remote', 'checkbox-group', 'multiselect'],
+  // jr7 RULES-7 (RBP7-19: Pinpoint's required "How did you hear about this job?" is a textarea, snapshot7 pinpointhq1):
+  // the profile's source written in a box of prose too.
+  'referral.source': ['text', 'textarea', ...CHOICE, 'typeahead-remote', 'checkbox-group', 'multiselect'],
   'referral.referrerName': LINE,
   'consent.privacy': CONSENT, 'consent.terms': CONSENT, 'consent.certify': CONSENT, 'consent.dataRetention': CONSENT,
   'consent.marketing': CONSENT, 'consent.sms': CONSENT, 'consent.backgroundCheck': CONSENT,
@@ -205,7 +219,9 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   // chosen, jr6 fix (RULES-R48-TZ, IC-R2: ARS's iCIMS "Time Zone", a dropdown with icimsdropdown-search, fixtures
   // jr6-ars-profile) or searched for.
   'screening.militaryTraining': YES_NO, 'address.type': CHOICE, 'referral.detail': CHOICE,
-  'preferences.timeZone': ['text', ...CHOICE, 'typeahead-remote'], 'location.inTimeZone': YES_NO,
+  // jr7 RULES-7 (ADP7-4: ADP's "What time zone do you live in?" is a multi react-select, snapshot7 adp1): one zone as a
+  // set of one on a list that takes several too.
+  'preferences.timeZone': ['text', ...CHOICE, 'typeahead-remote', 'multiselect'], 'location.inTimeZone': YES_NO,
   'experience.yearsIn': YES_NO,
   'skills.experienceWith': YES_NO,
   // jr6 RULES R3: living or working in a country, yes or no; a former name typed.
@@ -215,6 +231,11 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'identity.prefix': ['text', ...CHOICE], 'education.graduated': YES_NO, 'address.line3': LINE, 'salary.period': CHOICE,
   'application.resumeMethod': CHOICE, 'education.highSchool': YES_NO, 'address.mailing': PROSE,
   'links.facebook': PROSE, 'links.numbered': PROSE,
+  // jr7 RULES-7 (UKGR-14): a national id or social security number typed, or its type chosen; never filled.
+  'identity.nationalId': ['text', ...CHOICE],
+  // jr7 RULES-7 R2: an entry's detail typed or chosen; a licence's number typed, its state typed, chosen or searched.
+  'experience.detail': ['text', 'textarea', ...CHOICE], 'skills.certificationDetail': [...LOOKUP],
+  'languages.preferred': ['text', ...CHOICE], 'location.inListedRegion': YES_NO,
   unknown: ANY,
 };
 
@@ -353,5 +374,7 @@ export const ANSWERABLE_PROFILE_CATEGORIES: ReadonlySet<FieldCategory> = new Set
   'experience.yearsIn', 'skills.experienceWith', 'location.inTimeZone',
   // jr6 RULES R3 (JZ-11): living or working in a country the address does not settle (a place no country names).
   'location.inCountry',
+  // jr7 RULES-7 R2 (RBP7-08): living in one of the listed states, where the list cannot be read.
+  'location.inListedRegion',
   // jr6 RULES R4 (ICIMS-25, ADP-20): a graduation, a high-school diploma the education entries do not settle.
   'education.graduated', 'education.highSchool']);
