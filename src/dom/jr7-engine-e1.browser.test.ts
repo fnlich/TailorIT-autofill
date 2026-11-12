@@ -235,3 +235,32 @@ describe("item 1 (UKGR-6): a native select hidden only by its opacity, inside th
     }
   });
 });
+
+// ── item 2 (UKGR-7): a box inside a container a person can scroll ───────────────────────────────────────────────────
+describe('item 2 (UKGR-7): a control below the fold of an inner scroll container', () => {
+  /** UKG Ready's layout as its audit measured it (snapshot7 secure7.saashr): html and body at overflow hidden, the step
+   *  inside div.l-page-layout-content (overflow-y auto) taller in content than the window; a box far down it (`style`:
+   *  the lower box's). `scrolls`: false, the container at overflow visible (no scroller). */
+  const layout = (options: { style?: string; scrolls?: boolean } = {}) => `<!doctype html><html><head><style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; color: #222; font: 16px/1.5 system-ui; }
+    .l-page-layout-content { height: 400px; overflow-y: ${options.scrolls === false ? 'visible' : 'auto'};
+      position: relative; }
+    input { display: block; width: 300px; padding: 6px; border: 1px solid #888; background: #fff; }
+  </style></head><body><form id="f"><div class="l-page-layout-content">
+    <label for="top">First name</label><input id="top">
+    <div style="height:1100px"></div>
+    <label for="low">Summary</label><input id="low" style="${options.style ?? ''}">
+  </div></form></body></html>`;
+  const labelsOf = async (html: string) => {
+    const { doc } = await loadFixture(document, html, { width: 1100, height: 800 });
+    const labels = scan(doc.getElementById('f')!, genericAdapter, { platform: 'ukgready' }).fields.map((f) => f.label);
+    removeFixtures(document);
+    return labels;
+  };
+
+  it("is on screen within the container's scroll area, and off-screen outside it or with no scroller", async () => {
+    expect(await labelsOf(layout())).toEqual(['First name', 'Summary']);
+    expect(await labelsOf(layout({ style: 'position:absolute;left:-5000px' }))).toEqual(['First name']);
+    expect(await labelsOf(layout({ scrolls: false }))).toEqual(['First name']);
+  });
+});
