@@ -20,6 +20,13 @@
  * recruiting2.ultipro.com and recruiting.ultipro.ca (whole hosts, candidate-only as recruiting.ultipro.com is: their
  * account step too), and <x>.rec.pro.ukg.net on its job boards' paths alone (shared/hosts.ts ULTIPRO_BOARD_PATH); never
  * another <n>.ultipro.com or ultipro.ca host, an employer's UKG Pro for its staff.
+ * jr7 ULTIPRO-7 (FIX7PLAN §6.8 item 1: UP7-01 with its verifier's corrections, UP7-V2; the owner's snapshot7 ultipro1
+ * and ultipro2, fixtures/ultipro/jr7-ultipro{1,2}-submitted.html): the page after submitting,
+ * /<tenant>/JobBoard/<board uuid>/OpportunityApply/ApplicationSubmitted?applicationId=<uuid>, on the same host, tenant
+ * and board as its form, is the board's confirmation. Its address names no opportunity, and its applicationId is a
+ * per-person record id (FIX7PLAN §5 D-10): only its shape is checked, never kept, so the reading holds no job id ('')
+ * and the path without its query, the same for every application of the board. Which application it confirms is the
+ * armed Submit's to say (confirmationAfter, by host, tenant and board).
  */
 import type { ApplicationPage, ApplicationUrl } from '../application-key';
 
@@ -61,6 +68,37 @@ function boardPosting(path: string, param: (name: string) => string | null, host
     applicationUrl: `https://${host}/${lower}/JobBoard/${boardId}/OpportunityApply?opportunityId=${jobId}` };
 }
 
+// ── jr7 ULTIPRO-7 (FIX7PLAN §6.8 item 1, UP7-01): the page after submitting ──
+/** Its path after the board (ultipro1, ultipro2: …/OpportunityApply/ApplicationSubmitted). */
+const SUBMITTED = 'OpportunityApply/ApplicationSubmitted';
+
+/** The board's page after submitting (the header): /<tenant>/JobBoard/<uuid>/OpportunityApply/ApplicationSubmitted with
+ *  one applicationId, a uuid (its shape alone is read, never its value), and nothing else in its query; or null. */
+function submittedPage(url: URL): ApplicationUrl | null {
+  const [tenant = '', jobBoard, board = '', ...rest] = url.pathname.split('/').slice(1);
+  if (!TENANT.test(tenant) || jobBoard !== 'JobBoard' || !UUID.test(board) || rest.join('/') !== SUBMITTED
+    || [...url.searchParams.keys()].join() !== 'applicationId' || !UUID.test(url.searchParams.get('applicationId')!)) {
+    return null;
+  }
+  const lower = tenant.toLowerCase();
+  return { platform: 'ultipro', board: lower, jobId: '', page: 'confirmation',
+    applicationUrl: `https://${url.hostname}/${lower}/JobBoard/${board.toLowerCase()}/${SUBMITTED}` };
+}
+
+/** Adapter.confirmationAfter (FIX7PLAN §3.1, UP7-01): whether `here` is the page after submitting the application whose
+ *  Submit was armed at `armed` (its form, OpportunityApply, or the posting address the worker's arm keeps for it): `here`
+ *  reads as the board's page after submitting (submittedPage), on the same host, tenant and board uuid. Pure; reads no
+ *  per-person id (the applicationId's shape alone, never kept). */
+export function confirmationAfter(armed: URL, here: URL): boolean {
+  const form = parseUltiproUrl(armed);
+  const done = matchesUrl(here) ? submittedPage(here) : null;
+  // Both readings name the board on the same host's address (https://<host>/<tenant>/JobBoard/<uuid>/…), in lower case.
+  const boardPath = (read: ApplicationUrl) => read.applicationUrl.split('/').slice(3, 6).join('/');
+  return form !== null && done !== null && form.page !== 'confirmation' && here.hostname === armed.hostname
+    && boardPath(form) === boardPath(done);
+}
+// ── end jr7 ULTIPRO-7 (UP7-01) ──
+
 /** A query's parameter as written (`a=1&b=2`), decoded once, or null; a value that does not decode is none. */
 function paramOf(query: string, name: string): string | null {
   for (const pair of query.split('&')) {
@@ -78,7 +116,8 @@ function paramOf(query: string, name: string): string | null {
 /** The posting an address shows (see the header), or null on every other page of the host. */
 export function parseUltiproUrl(url: URL): ApplicationUrl | null {
   if (!matchesUrl(url)) return null;
-  const direct = boardPosting(url.pathname, (name) => url.searchParams.get(name), url.hostname);
+  const direct = boardPosting(url.pathname, (name) => url.searchParams.get(name), url.hostname)
+    ?? submittedPage(url); // jr7 ULTIPRO-7 (UP7-01)
   if (direct !== null || !RECRUITING_HOSTS.has(url.hostname)) return direct;
   const [tenant, auth, register, ...rest] = url.pathname.split('/').slice(1);
   if (tenant === undefined || !TENANT.test(tenant) || auth !== REGISTER[0] || register !== REGISTER[1] || rest.length > 0) {
