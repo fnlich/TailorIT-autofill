@@ -225,9 +225,13 @@ describe('the frame that claims a wrapper’s application (item 3)', () => {
     const worker = await startTestWorker({ token: tokenRecord() });
     await hello(worker, frame(ICIMS_WRAPPER, 0, 'doc-wrapper'), { hasForm: false, wraps: true });
     await hello(worker, frame(ICIMS_PORTAL, 3, 'doc-portal'), { isTop: false, claimed: true });
-    // Sign-in is on Manual: the claim frame passes the frame check and is told none may be used now.
-    expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'email-gate' },
-      frame(ICIMS_PORTAL, 3, 'doc-portal'))).toEqual({ ok: false, error: 'unavailable' });
+    // Sign-in is on Manual: the claim frame passes the frame check. jr6 SHELL-A (BUILD D-d): an email gate is answered
+    // in every Sign-in mode, with the profile's contact email where none is saved in Sign-up Information: never a
+    // password, and nothing pressed on Manual.
+    const answer = await worker.deliver({ v: 1, type: 'signin/credential', wall: 'email-gate' },
+      frame(ICIMS_PORTAL, 3, 'doc-portal'));
+    expect(answer).toMatchObject({ ok: true, data: { host: '*', press: false } });
+    expect(answer).not.toHaveProperty('data.password');
     // Another subframe of the same host, one that never said it claims, and the claim frame's old document: refused.
     await hello(worker, frame(ICIMS_PORTAL, 4, 'doc-other'), { isTop: false });
     expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'email-gate' },
