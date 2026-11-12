@@ -1064,7 +1064,12 @@ export const PRE_RULES: ReadonlyArray<PreRule> = [
     questionsOnly: true, category: 'workAuth.authorized', strength: 'strong', needsUser: 'authorization-and-sponsorship' },
   { id: 'label.work-permit', re: /\b(?:work|working|residence|residency)\s+permits?\b|\bblue\s+card\b|\bpermit\s+to\s+work\b/,
     unless: /\bsponsor/, category: 'workAuth.authorized', strength: 'strong', needsUser: 'work-permit' },
-  { id: 'label.nationality', re: /\bnationalit(?:y|ies)\b|\bnational\s+origin\b|\bcountr(?:y|ies)\s+of\s+(?:citizenship|nationality|birth|origin)\b|\bcountr(?:y|ies)\b(?:\s+\w+){0,6}?\s+citizen\w*|\bcitizen\w*(?:\s+\w+){0,4}?\s+countr(?:y|ies)\b|\bpassport\s+(?:country|nationality)\b|\bplace\s+of\s+birth\b|\bbirth\s*place\b/,
+  // jr7 RULES-7 (EFA-10, Eightfold's twilio "Please indicate whether you are either a citizen or resident of any of
+  // the following countries: Cuba, Iran, North Korea, Syria or Crimea Region of Ukraine.", snapshot7 twillio; and
+  // WD7-07's export-control "… a citizen or permanent resident of any of the following countries/regions?"): a citizen
+  // or resident of any listed country asks a citizenship whose No the profile never states: the person's (owner Q7-3,
+  // default theirs).
+  { id: 'label.nationality', re: /\bcitizens?\s+(?:or|and|and\s+or)\s+(?:a\s+)?(?:permanent\s+)?residents?\s+of\s+any\s+of\s+the\s+(?:following|listed|below|these)\b|\bresidents?\s+(?:or|and)\s+(?:a\s+)?citizens?\s+of\s+any\s+of\s+the\s+(?:following|listed|below|these)\b|\bnationalit(?:y|ies)\b|\bnational\s+origin\b|\bcountr(?:y|ies)\s+of\s+(?:citizenship|nationality|birth|origin)\b|\bcountr(?:y|ies)\b(?:\s+\w+){0,6}?\s+citizen\w*|\bcitizen\w*(?:\s+\w+){0,4}?\s+countr(?:y|ies)\b|\bpassport\s+(?:country|nationality)\b|\bplace\s+of\s+birth\b|\bbirth\s*place\b/,
     readsQualifiers: true, category: 'workAuth.status', strength: 'normal', needsUser: 'nationality' },
   // An age, a date of birth, or an age line other than 18 ("under 18" inverts the over-18 answer; 21 is another line).
   { id: 'label.age', re: /^(?:what\s+is\s+)?(?:your\s+)?(?:current\s+)?age(?:\s+(?:range|group|bracket|in\s+years))?$|\bdate\s+of\s+birth\b|\bbirth\s*date\b|\bbirthday\b|\bdob\b|\bhow\s+old\s+are\s+you\b|\byear\s+of\s+birth\b|\bbirth\s+year\b|\byour\s+age\b|\b(?:under|younger\s+than|below)\s+(?:the\s+age\s+of\s+)?(?:18|eighteen|21|twenty\s+one)\b|\b(?:21|twenty\s+one)\s+(?:years\s+)?(?:of\s+age\s+)?(?:old\s+)?(?:or|and)\s+(?:older|over|above)\b|\b(?:over|at\s+least|older\s+than)\s+(?:the\s+age\s+of\s+)?(?:21|twenty\s+one)\b/,

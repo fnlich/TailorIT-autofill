@@ -232,6 +232,18 @@ describe('J7-GH-1: a question that names Zip', () => {
 });
 
 describe('EFA-10: Eightfold’s self-identification and acknowledgement labels', () => {
+  it('hands the citizen-or-resident-of-listed-countries question to the person (owner Q7-3, default theirs)', () => {
+    for (const label of ['Please indicate whether you are either a citizen or resident of any of the following countries: '
+      + 'Cuba, Iran, North Korea, Syria or Crimea Region of Ukraine.', 'For the purpose of determining if an export control '
+      + 'license may be required, are you currently a citizen or permanent resident of any of the following '
+      + 'countries/regions? If you are not, please select "Not Applicable."']) {
+      expect(read({ label, kind: 'radio', options: YES_NO }), label).toMatchObject({ category: 'workAuth.status',
+        rule: 'label.nationality', needsUser: 'nationality' });
+    }
+    // A citizenship asked as which country stays the person's citizenships (decision 11).
+    expect(read({ label: 'Country of citizenship', kind: 'select', options: ['United States', 'Canada'] }).category)
+      .toBe('workAuth.citizenship');
+  });
   it('reads the other self-identification wordings as before', () => {
     expect(read({ label: 'Voluntary Self-Identification of Disability', kind: 'radio', options: YES_NO }).category)
       .toBe('eeo.disability');
