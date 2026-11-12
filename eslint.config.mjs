@@ -85,6 +85,19 @@ const UPLOAD_REVEAL_WRAPPER_RULE = {
   message: "Only src/content/pass.ts calls upload.ts's revealUpload (the pass's write of a file).",
 };
 
+/** jr7 ENGINE-7 E2 item 4 (UKGR-10, EFA-6): the upload-prompt door's press, named nowhere but
+ *  src/dom/fillers/upload-prompt.ts, and its wrapper, answerUploadPrompt, called by src/content/pass.ts alone. */
+const UPLOAD_PROMPT_RULE = {
+  selector: "ImportSpecifier[imported.name='clickUploadPrompt'], ExportSpecifier[local.name='clickUploadPrompt'], "
+    + "MemberExpression[property.name='clickUploadPrompt']",
+  message: "Only src/dom/fillers/upload-prompt.ts presses an upload prompt's control.",
+};
+const UPLOAD_PROMPT_WRAPPER_RULE = {
+  selector: "ImportSpecifier[imported.name='answerUploadPrompt'], ExportSpecifier[local.name='answerUploadPrompt'], "
+    + "MemberExpression[property.name='answerUploadPrompt']",
+  message: "Only src/content/pass.ts calls upload-prompt.ts's answerUploadPrompt (the pass's write of a file).",
+};
+
 /** Raw HTML, eval and form submission, banned everywhere in src: nothing may submit, and nothing parses markup. */
 const UNSAFE_SYNTAX = [
   SUBMIT_PRESS_RULE,
@@ -96,6 +109,8 @@ const UNSAFE_SYNTAX = [
   SIGN_IN_WRAPPER_RULE,
   UPLOAD_REVEAL_RULE, // jr6 ENGINE E2 (JZ-4)
   UPLOAD_REVEAL_WRAPPER_RULE, // jr6 revD-05
+  UPLOAD_PROMPT_RULE, // jr7 ENGINE-7 E2 item 4
+  UPLOAD_PROMPT_WRAPPER_RULE, // jr7 ENGINE-7 E2 item 4
   { selector: "AssignmentExpression[left.property.name=/^(innerHTML|outerHTML)$/]", message: 'Build DOM nodes; never assign markup.' },
   { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'Build DOM nodes; never insert markup.' },
   { selector: "CallExpression[callee.object.name='document'][callee.property.name=/^write(ln)?$/]", message: 'No document.write.' },
@@ -274,10 +289,14 @@ export default tseslint.config(
     ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_REVEAL_RULE)] } },
   // jr6 revD-05: the one module that calls the reveal door's wrapper (content/pass.ts, a file's write).
   { files: ['src/content/pass.ts'], rules: { 'no-restricted-syntax': ['error',
-    ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_REVEAL_WRAPPER_RULE)] } },
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_REVEAL_WRAPPER_RULE && rule !== UPLOAD_PROMPT_WRAPPER_RULE)] } },
+  // jr7 ENGINE-7 E2 item 4: the one module that presses an upload prompt's control (dom/fillers/upload-prompt.ts).
+  { files: ['src/dom/fillers/upload-prompt.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_PROMPT_RULE)] } },
   // Tests drive the wrappers directly (never the doors).
   { files: ['src/**/*.test.{ts,tsx}'], rules: { 'no-restricted-syntax': ['error',
-    ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, UPLOAD_REVEAL_WRAPPER_RULE].includes(rule))] } },
+    ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, UPLOAD_REVEAL_WRAPPER_RULE,
+      UPLOAD_PROMPT_WRAPPER_RULE].includes(rule))] } }, // jr7 ENGINE-7 E2: and the upload prompt's wrapper
   // But for the one test of Sign-in mode Auto's two doors on their own (the v3 Phase 6/7b review, C2).
   { files: ['src/dom/fillers/sign-in-doors.browser.test.ts'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, UPLOAD_REVEAL_WRAPPER_RULE,

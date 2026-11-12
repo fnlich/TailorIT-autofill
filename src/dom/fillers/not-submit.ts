@@ -51,7 +51,7 @@
  * refused control) are for elements, and a list's option is none of those (listOption: it holds no button, link or
  * input). A refused option is not sent: its click, on the events' path, goes through assertNotSubmit as before.
  */
-import type { Adapter, ChainStepFacts, SignInWall } from '../../adapters/types'; // jr6 SHELL-B: ChainStepFacts
+import type { Adapter, ChainStepFacts, SignInWall, UploadPrompt } from '../../adapters/types'; // jr6 SHELL-B: ChainStepFacts
 import { secondStepControl } from '../../adapters/second-step'; // jr6 apply F2
 import { pageChallenged, vendorFramesShown } from '../pause-detect';
 import { flatContains } from '../scan-cache';
@@ -631,6 +631,60 @@ export function clickUploadReveal(adapter: Adapter, input: HTMLInputElement): HT
   }
   return reveal;
 }
+
+// ── jr7 ENGINE-7 E2 item 4 (UKGR-10, EFA-6): the upload-prompt door ──
+/** The words of a prompt's control the door never presses: a site's parse of the file into the form (UKG Ready's
+ *  Populate: Decision 16, no site-parsed entries), and, on a consent, its refusal. */
+const PROMPT_NEVER_WORDS = /\b(?:populate|import|autofill|parse)\b/i;
+const CONSENT_REFUSAL_WORDS = /\b(?:cancel|decline|disagree|reject|no\b)/i;
+
+/**
+ * jr7 ENGINE-7: the press of the one control a dialog the site draws after the run's own file write asks for
+ * (Adapter.uploadPrompt: UKG Ready's "Upload Complete", answered Cancel, kind 'dismiss'; Eightfold's Data Privacy
+ * Agreement, answered I Agree, kind 'consent'), with an untrusted click(). Only while the control is connected, in the
+ * document, shown, pressable now and assertNotSubmit allows it with the control itself left out of the adapter's
+ * never-pressed list (the application's Submit and Next, a submit word, a control that submits a form, every other
+ * never-pressed control around or inside it, all refuse); never a control whose words say a parse of the file
+ * (Populate: PROMPT_NEVER_WORDS), never a refusal on a consent (Cancel: CONSENT_REFUSAL_WORDS). At most once per
+ * control. Answers the element clicked, or null. Only src/dom/fillers/upload-prompt.ts may call it
+ * (test/allow-submit.test.ts); it is not exported from fillers/index.ts. A hook that throws refuses.
+ */
+export function clickUploadPrompt(adapter: Adapter, doc: Document, prompt: UploadPrompt): HTMLElement | null {
+  const control = prompt.press;
+  if (PROMPTED.has(control) || control.ownerDocument !== doc || !control.isConnected || !pressableNow(control)) return null;
+  const words = (control.textContent ?? '') + ' ' + (control.getAttribute('aria-label') ?? '');
+  if (PROMPT_NEVER_WORDS.test(words) || (prompt.kind === 'consent' && CONSENT_REFUSAL_WORDS.test(words))) return null;
+  let root: Element | null = null;
+  let never: Element[] = [];
+  try {
+    root = adapter.detect(doc)?.formRoot ?? null;
+    never = adapter.neverPress?.(doc.documentElement) ?? [];
+  } catch {
+    return null;
+  }
+  if (never.some((other) => other !== control && control.contains(other))) return null;
+  const others: Adapter = { ...adapter,
+    neverPress: (scope) => (adapter.neverPress?.(scope) ?? []).filter((other) => other !== control) };
+  let allowed: boolean;
+  try {
+    allowed = assertNotSubmit(control, { adapter: others, root }).ok;
+  } catch {
+    return null;
+  }
+  if (!allowed) return null;
+  PROMPTED.add(control);
+  const stop = cancelLinkOnce(control);
+  try {
+    control.click();
+  } finally {
+    stop();
+  }
+  return control;
+}
+
+/** The prompt controls the door pressed: never a second time. */
+const PROMPTED = new WeakSet<Element>();
+// ── end jr7 ENGINE-7 E2 item 4 ──
 
 /** jr6 ENGINE: for a link (or an element inside one), a click listener on its window for the door's one press, in the
  *  capture phase, so it runs before anything the page listens with: it cancels the default of a click on the link or
