@@ -150,6 +150,9 @@ describe("the page-world scripts' own host lookup (jr7 ENGINE-7 E0, the bridge's
     }
     // A top frame (no ancestor) is never silenced.
     expect(framedByEmployerPage(frames[0]![0], [])).toBe(false);
-    expect(postingAddressOf(new URL(frames[0]![0]))).toBeNull();
+    // ── jr7 UKGREADY-7: UKG Ready's reader is built: its posting is read (src/adapters/ukgready/url.test.ts) ──
+    expect(postingAddressOf(new URL(frames[0]![0]))).toEqual({ platform: 'ukgready', page: 'posting',
+      applicationUrl: 'https://secure7.saashr.com/ta/1234567.careers?ShowJob=987654321' });
+    // ── end jr7 UKGREADY-7 ──
   });
 });
