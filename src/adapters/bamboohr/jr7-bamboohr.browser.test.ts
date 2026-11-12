@@ -253,6 +253,21 @@ describe('jr7 RBP-7 RBP7-14: a Fabric dropdown\'s menu, tied by data-menu-id, is
       expect(fillabilityOf(unread, bare.target(unread.key)!.widget)).toEqual({ fillable: false, reason: 'widget-phase-4' });
     });
 
+  it('bamboohr2 blank (menus closed, no aria-controls): the list is the element its toggle\'s data-menu-id names, once '
+    + 'drawn', async () => {
+    const page = await open(b2Blank);
+    const state = page.doc.querySelector(STATE)!;
+    const toggle = state.querySelector<HTMLButtonElement>('button[data-menu-id]')!;
+    expect(toggle.hasAttribute('aria-controls')).toBe(false);
+    const list = bambooHrAdapter.widgetFor!(state)!.results!.list as () => Element | null;
+    expect(list()).toBeNull();
+    const menu = page.doc.createElement('div');
+    menu.id = toggle.getAttribute('data-menu-id')!;
+    menu.setAttribute('role', 'menu');
+    page.doc.body.append(menu);
+    expect(list()).toBe(menu);
+  });
+
   it('bamboohr2 blank: reads State\'s list and chooses the profile\'s region through it (BambooHR\'s script stood in for)',
     async () => {
       const page = await open(b2Blank);
