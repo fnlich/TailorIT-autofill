@@ -647,6 +647,14 @@ async function formAfterPrelude(ctx: SignInContext, wall: SignInWall, asked: URL
   const read = () => signInFormOf(ctx.adapter, ctx.doc, wall);
   const now = read();
   if (now !== null || ctx.adapter.signInPrelude === undefined) return now;
+  // jr6 ifix SEC-4 (the jr6 review's sec-3): on Manual, the prelude's press waits, as the typing does, for the document
+  // to be shown to the person: a background tab presses nothing. The page is read again once it is (the person may
+  // have shown the form themselves).
+  if (ctx.typeOnly === true) {
+    if (!(await shownToPerson(ctx.doc, ctx.signal))) return null;
+    const shownNow = read();
+    if (shownNow !== null) return shownNow;
+  }
   if (clickAdapterSignInPrelude(ctx.adapter, ctx.doc, wall, asked) === null) return null;
   log('content.sign-in-prelude');
   const shown = (): SignInForm | null => {

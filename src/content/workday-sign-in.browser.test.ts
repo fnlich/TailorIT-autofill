@@ -36,6 +36,7 @@ import { workdayAdapter } from '../adapters/workday';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
 import { guardSubmission, signInFormOf, signInRefusal } from '../dom/sign-in-form';
+import { deadline } from '../dom/time'; // jr6 ifix SEC-4
 import { isUserVisible } from '../dom/visibility';
 import type { SignInCredential } from '../messaging/schemas';
 import { createFakeWorker, testVocab } from './content.testkit';
@@ -163,6 +164,40 @@ describe('Sign-in Auto on Workday (v3 Phase 6)', () => {
     expect(await attempt(fixture, workdayAdapter, channel, ACCOUNT)).toBe('continue');
     expect(preludes).toEqual(['SignInWithEmailButton']);
     expect(seen.typed).toMatchObject({ email: CREDENTIAL.email, password: CREDENTIAL.password });
+  });
+
+  // jr6 ifix SEC-4 (the integration review's security lens; the jr6 review's sec-3): on Manual (typeOnly), the prelude's
+  // press waits for the document to be shown to the person, as the typing does: a background tab presses nothing.
+  it('on Manual, presses "Sign in with email" in a hidden tab only once it is shown, then types (SEC-4)', async () => {
+    const source = await loadFixture(document, landingHtml, { width: 1280, height: 900 });
+    const fixture = await served(signInHtml, ACCOUNT, 'form[data-automation-id="signInFormo"]');
+    const signInView = fixture.doc.querySelector('[data-automation-id="signInContent"]')!;
+    const landing = fixture.doc.importNode(source.doc.querySelector('[data-automation-id="signInContent"]')!, true);
+    signInView.replaceWith(landing);
+    let shown: DocumentVisibilityState = 'hidden';
+    Object.defineProperty(fixture.doc, 'visibilityState', { configurable: true, get: () => shown });
+    const preludes: string[] = [];
+    fixture.doc.addEventListener('click', (event) => {
+      const target = (event.target as Element).closest('[data-automation-id]');
+      if (target?.getAttribute('data-automation-id') !== 'SignInWithEmailButton') return;
+      preludes.push('SignInWithEmailButton');
+      landing.replaceWith(signInView);
+    });
+    const seen = actAsWorkday(fixture);
+    const channel = channelAnswering({ ok: true, data: { ...CREDENTIAL, press: false } });
+    const outcome = attempt(fixture, workdayAdapter, channel, ACCOUNT, { typeOnly: true });
+    await deadline(400);
+    expect(preludes).toEqual([]);
+    expect(channel.asked).toEqual([]);
+    shown = 'visible';
+    fixture.doc.dispatchEvent(new Event('visibilitychange'));
+    expect(await outcome).toBe('typed');
+    expect(preludes).toEqual(['SignInWithEmailButton']);
+    expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'sign-in', typing: true }]);
+    // Typed, the press the person's.
+    expect(seen.presses).toBe(0);
+    const value = (id: string) => fixture.doc.querySelector<HTMLInputElement>(`input[data-automation-id="${id}"]`)!.value;
+    expect([value('email'), value('password')]).toEqual([CREDENTIAL.email, CREDENTIAL.password]);
   });
 
   it('asks for nothing and presses nothing where the landing shows no form after its prelude', async () => {
