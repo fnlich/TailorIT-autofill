@@ -28,6 +28,9 @@ import { ADP_CONFIG } from '../adp';
 import { DAYFORCE_CONFIG } from '../dayforce/config';
 import { ULTIPRO_CONFIG } from '../ultipro';
 // ── end New ATSs, builder A ──
+// ── jr7 DFPC-7 ──
+import { PAYCOM_CONFIG } from '../paycom/config';
+// ── end jr7 DFPC-7 ──
 
 /** Every configured platform's config. */
 export const ATS_CONFIGS: Partial<Record<Platform, AtsConfig>> = {
@@ -51,4 +54,7 @@ export const ATS_CONFIGS: Partial<Record<Platform, AtsConfig>> = {
   hibob: HIBOB_CONFIG,
   // ── end builder C ──
   // ── end New ATSs ──
+  // ── jr7 DFPC-7 ──
+  paycom: PAYCOM_CONFIG,
+  // ── end jr7 DFPC-7 ──
 };
