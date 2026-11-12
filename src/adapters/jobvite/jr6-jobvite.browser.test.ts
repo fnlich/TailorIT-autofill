@@ -1034,8 +1034,8 @@ describe('jr6 JOBVITE P2 on NinjaOne\'s pages: JV-9, JV-14, JV-7, JV-8, JV-13, J
   // jr6 regression of RULES (reported in SP\jr6\build\JOBVITE.md, P2): the page's own options are "N/A - I do not live
   // in Illinois.", "No - I am in Illinois and outside of Chicago, IL." and "Yes - My address is in Chicago, IL.";
   // policy.ts NOT_THERE_OPTION's `\boutside\b` also reads the second, so residesInValue finds two options and chooses
-  // none (no-match). RULES' own test used "Yes" and "No" in their place. Remove `.fails` once RULES reads only the
-  // option that says the person lives elsewhere (jr6-rules 4f8707d: policy.ts notThereOption).
+  // none (no-match). RULES' own test used "Yes" and "No" in their place. Fixed: RULES reads only the option that says
+  // the person lives elsewhere (jr6-rules 4f8707d: policy.ts notThereOption).
   it('JV-17 (RULES regression): NinjaOne\'s Illinois question takes "N/A - I do not live in Illinois." for the '
     + 'golden profile (Austin, TX)', async () => {
     const plan = await planOf(ninjaStep3Html, NINJA_COMPANY);

@@ -7,8 +7,8 @@
  * - P2 (after jr6-engine-e3 and jr6-rules-r4 merged, the section "P2" at the end): the shared outcomes. Whole runs drive
  *   iCIMS's dropdowns on the snapshots with the page's dropdown script stood in for (standIn), and the real planner decides
  *   each question RULES reads, with the golden synthetic profile or variants built in the test; each page's scan is its
- *   expectation (fixtures/icims/jr6-*.expect.json). Two outcomes RULES' code does not give yet are held as expected
- *   failures (it.fails), each naming the regression reported in the ICIMS handoff.
+ *   expectation (fixtures/icims/jr6-*.expect.json). Two outcomes RULES' code did not give at first (ICIMS-26, ICIMS-24
+ *   in a run), each naming the regression reported in the ICIMS handoff, are asserted as RULES' fix round gives them.
  * Lists a fixture redacts (iCIMS's dropdowns) are given SYNTHETIC public words (countries, states, schools) where a test
  * needs them. Nothing here prints or reads a snapshot's value.
  */
