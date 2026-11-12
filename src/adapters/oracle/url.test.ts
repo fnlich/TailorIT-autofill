@@ -110,6 +110,13 @@ describe('the page after submitting: the site’s my-profile (jr7-O2)', () => {
       expect(oracleConfirmationAfter(at(armed), at(PROFILE)), armed).toBe(true);
       expect(oracleConfirmationAfter(at(armed), at(`${PROFILE}/`)), armed).toBe(true);
     }
+    // An employer's own domain (v5 p2-detect): its canonical posting address (the worker's form) and its section page
+    // (the content runtime's), each before the same domain's my-profile.
+    const OWN = 'https://careers.example-employer.com/hcmUI/CandidateExperience/en/sites/CX_1';
+    for (const armed of [`${OWN}/job/4285`, `${OWN}/job/4285/apply/section/1/`]) {
+      expect(oracleConfirmationAfter(at(armed), at(`${OWN}/my-profile`)), armed).toBe(true);
+      expect(oracleConfirmationAfter(at(armed), at(PROFILE)), armed).toBe(false);
+    }
     // Another language on the same site (the canonical address writes en).
     expect(oracleConfirmationAfter(at(`${JOB}/apply/section/1/`),
       at('https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/fr/sites/cx_1/my-profile'))).toBe(true);

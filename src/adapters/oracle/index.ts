@@ -816,9 +816,8 @@ const BLOCK_CONTROL = 'input:not([type="hidden" i]), select, textarea, [contente
   + '[role="switch"], [role="spinbutton"], [role="slider"]';
 
 /** jr7-O7 (FIX7PLAN §3.1 requiredBlocksLeft; the Oracle verifier's missed finding): the form's required blocks that
- *  hold nothing yet and nothing to fill: each <div class="apply-flow-block ..."> a person sees whose own title is marked
- *  required (its header's <h3 class="apply-flow-block__title apply-flow-block__title--required"> shown) and whose <div
- *  class="apply-flow-block__form-list"> shows no entry's tile and no open editor, and holds no control. On
+ *  hold nothing yet and nothing to fill: each <div class="apply-flow-block ..."> whose own title is marked required (its header's <h3 class="apply-flow-block__title apply-flow-block__title--required"> shown) and whose <div
+ *  class="apply-flow-block__form-list"> shows no entry's tile, holds no open editor and no control. On
  *  jr7-oraclecloud1-section-blank.html that is the Skills block (apply-flow-block--skill: "Skills" with its star, its
  *  list region "Skills Required" holding only "Add More Skills", never pressed), which Oracle refuses a Submit without:
  *  so Submit Auto holds and the review shows the block (ENGINE-7 E1, orchestrator.ts requiredBlocksNow, reading the
@@ -827,14 +826,16 @@ const BLOCK_CONTROL = 'input:not([type="hidden" i]), select, textarea, [contente
 function requiredBlocksLeft(root: Element): Element[] {
   const cache = newScanCache();
   return Array.from(root.querySelectorAll('.apply-flow-block')).filter((block) => {
-    if (!isUserVisible(block, cache)) return false;
+    // A title a person sees is in a block a person sees.
     const required = Array.from(block.querySelectorAll(
       ':scope > .apply-flow-block__header .apply-flow-block__title.apply-flow-block__title--required'))
       .some((title) => isUserVisible(title, cache));
     const list = block.querySelector(':scope > .apply-flow-block__form-list');
     if (!required || list === null) return false;
     const shows = (css: string) => Array.from(list.querySelectorAll(css)).some((el) => isUserVisible(el, cache));
-    return !shows(BLOCK_ENTRY) && !shows(`${ITEM_EDITOR}, ${TIMELINE_EDITOR}`)
+    // An editor is in the page only while an entry is opened or added (none on -section-blank): an entry under way,
+    // whether or not its rows are drawn yet.
+    return !shows(BLOCK_ENTRY) && list.querySelector(`${ITEM_EDITOR}, ${TIMELINE_EDITOR}`) === null
       && list.querySelector(BLOCK_CONTROL) === null;
   });
 }

@@ -227,8 +227,12 @@ describe('jr7-O2: my-profile after the Submit, and its tile of the armed applica
   it('takes the site’s my-profile as the page after submitting the armed application, and keys it nothing', () => {
     expect(applicationOf(new URL(PROFILE))).toBeNull();
     expect(keyOf(JOB)).toBe(ARMED);
+    // Both forms of the armed address AUTO-7 passes: the content runtime's (the address at the press) and the
+    // worker's (the arm's canonical posting address).
     expect(oracleAdapter.confirmationAfter?.(new URL(SECTION), new URL(PROFILE))).toBe(true);
-    expect(oracleAdapter.confirmationAfter?.(new URL(JOB), new URL(PROFILE))).toBe(true);
+    const canonical = applicationOf(new URL(SECTION))!.applicationUrl;
+    expect(canonical).toBe(JOB);
+    expect(oracleAdapter.confirmationAfter?.(new URL(canonical), new URL(PROFILE))).toBe(true);
     expect(oracleAdapter.confirmationAfter?.(new URL(SECTION), new URL(`${PROFILE}/sign-in`))).toBe(false);
     expect(oracleAdapter.confirmationAfter?.(new URL(SECTION), new URL(SECTION))).toBe(false);
     expect(oracleAdapter.confirmationAfter?.(new URL(SECTION),
@@ -451,6 +455,13 @@ describe('jr7-O7: the required Skills block, empty', () => {
       tile.remove();
     }
     expect(left(editing)).toEqual([]);
+    // The editor open before its rows are drawn (no control in it yet): still an entry under way, not a block left.
+    const rows = editing.querySelector('.apply-flow-block--skill .profile-item-content--form form-builder')!;
+    const drawn = Array.from(rows.childNodes);
+    for (const row of drawn) row.remove();
+    expect(editing.querySelectorAll('.apply-flow-block--skill .apply-flow-block__form-list input').length).toBe(0);
+    expect(left(editing)).toEqual([]);
+    rows.append(...drawn);
     // Once the editor is gone (Cancel), the block is left again.
     editing.querySelector('.apply-flow-block--skill .profile-item-content')!.remove();
     expect(left(editing).map(titleOf)).toEqual(['Skills']);
