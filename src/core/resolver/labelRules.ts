@@ -890,8 +890,10 @@ const WILLING_CHECK = /^(?!.*\b(?:convicted|convictions?|felon\w*|pleaded|pled|c
 /** J7-GH-1: "zip" that is no postal code: inside a yes-or-no question, or the name of an organisation after a
  *  preposition ("support from Zip", "work at Zip", "hear about Zip"), never "Zip code" or "Zip+4". */
 const POSTAL_NOT = new RegExp(String.raw`${YES_NO_QUESTION.source}|\b(?:at|for|with|from|about|join(?:ing)?|to|by)\s+zip\b(?!\s*(?:code|postal|\+))`);
-/** RBP7-07, UKGR-18: a name typed as the person's signature. */
-const TYPED_NAME_SIGNATURE = /\btyp(?:e|ing)\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\b|\bfull\s+(?:legal\s+)?name\s+to\s+(?:confirm|sign)\b/;
+/** RBP7-07, UKGR-18: a name typed as the person's signature: by typing it (to acknowledge), typed to confirm, sign,
+ *  acknowledge or certify, or typed as a signature. A bare "Please type your full name." stays a name box (ADP's
+ *  e-signature is one only by its "electronic signature" suffix: adapters/adp adp-4). */
+const TYPED_NAME_SIGNATURE = /\btyping\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\b|\btype\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\s+(?:to\s+(?:confirm|sign|acknowledge|certify|attest|agree)|as\s+(?:your\s+)?(?:electronic\s+)?signature|below\s+to\s+(?:confirm|sign|acknowledge|certify|attest|agree))\b|\bfull\s+(?:legal\s+)?name\s+to\s+(?:confirm|sign)\b/;
 /** UKGR-16: the single-choice kinds a bare "Referral" is the source on. */
 const CHOICE_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['select', 'radio', 'combobox']);
 /** UKGR-18: a signature's prompt with the name it shows, to its end ("please type your full name to confirm <name>"). */

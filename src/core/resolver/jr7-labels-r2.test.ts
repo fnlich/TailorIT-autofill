@@ -86,7 +86,7 @@ const LABELS: Array<[string, Case, FieldCategory, string]> = [
     'label.referral-source'],
   // UKGR-18 + RBP7-07: a typed name as the signature.
   ['UKGR-18', { label: 'Full name to confirm', kind: 'text' }, 'consent.signature', 'label.consent-signature'],
-  ['RBP7-07', { label: 'Please type your full name', kind: 'text' },
+  ['RBP7-07', { label: 'Please acknowledge by typing your full name', kind: 'text' },
     'consent.signature', 'label.consent-signature'],
   // DF7-11: Dayforce's records.
   ['DF7-11', { label: 'Not Completed', kind: 'checkbox', section: DAYFORCE_SCHOOL }, 'education.current',
@@ -134,6 +134,9 @@ describe('R2 near misses', () => {
   it('J7-GH-2: the role’s state is no state of residence', () => {
     expect(read({ label: 'What US state is the role in?', kind: 'select', options: ['Texas', 'Ohio'] }).rule)
       .not.toBe('label.residence-state');
+  });
+  it('RBP7-07: a bare "Please type your full name." stays a name box, never a signature', () => {
+    expect(read({ label: 'Please type your full name.', kind: 'text' }).category).not.toBe('consent.signature');
   });
   it('UKGR-16: a bare "Referral" box may name the referrer, never the source', () => {
     expect(read({ label: 'Referral', kind: 'text' }).category).not.toBe('referral.source');
