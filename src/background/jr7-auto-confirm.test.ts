@@ -11,8 +11,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { applicationOf } from '../adapters';
+import { oracleAdapter } from '../adapters/oracle';
 import { ultiproAdapter } from '../adapters/ultipro';
-import { confirmationAfterOf, CONFIRMATION_PAGE_MS, SUBMIT_ARM_MS } from './submissions';
+import { confirmationAfterOf, CONFIRMATION_PAGE_MS, ROUTE_WAITS_FOR_SIGN, SUBMIT_ARM_MS } from './submissions';
 import { contentSender, goldens, startTestWorker, tokenRecord, type TestWorker } from './worker.testkit';
 
 let logs: MockInstance;
@@ -22,6 +23,7 @@ beforeEach(() => {
 afterEach(() => {
   logs.mockRestore();
   delete (ultiproAdapter as { confirmationAfter?: unknown }).confirmationAfter;
+  delete (oracleAdapter as { confirmationAfter?: unknown }).confirmationAfter;
 });
 
 const TAB = 7;
@@ -133,5 +135,56 @@ describe('jr7 AUTO-7, ICIMS7-04 (3): a confirmation an assessment holds back', (
     expect(await worker.deliver({ v: 1, type: 'submit/detected', applicationKey: keyOf(DONE),
       evidence: 'confirmation-page' }, done)).toMatchObject({ ok: false, error: 'expired' });
     expect(applied(worker)).toBe(0);
+  });
+});
+
+// ── The coordinator's decision on ORACLE-7's open item 1 (2026-11-12): Oracle's route alone never records ──
+describe('jr7 AUTO-7: Oracle’s my-profile route waits for the keyed tile (ROUTE_WAITS_FOR_SIGN)', () => {
+  const SITE = 'https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1';
+  const SECTION = `${SITE}/job/12345/apply/section/1`;
+  const PROFILE = `${SITE}/my-profile`;
+  /** ORACLE-7's hook, as its handoff describes it (a stand-in): the same origin's my-profile of the same site. */
+  function oracleStandIn(): void {
+    (oracleAdapter as { confirmationAfter?: (armed: URL, here: URL) => boolean }).confirmationAfter = (armed, here) =>
+      armed.origin === here.origin && here.pathname.endsWith('/sites/CX_1/my-profile')
+      && armed.pathname.includes('/sites/CX_1/job/');
+  }
+  async function armedSection(): Promise<{ worker: TestWorker; key: string }> {
+    oracleStandIn();
+    const worker = await startTestWorker({ token: tokenRecord() });
+    worker.tailorit.reply('POST /api/autofill/applied', { json: goldens.lookup });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, frame(SECTION, 'doc-app'));
+    const key = keyOf(SECTION);
+    expect(await worker.deliver({ v: 1, type: 'submit/armed', applicationKey: key, by: 'auto' },
+      frame(SECTION, 'doc-app'))).toEqual({ ok: true, data: {} });
+    return { worker, key };
+  }
+  const sign = (worker: TestWorker, key: string, evidence: 'confirmation-page' | 'success-message') =>
+    worker.deliver({ v: 1, type: 'submit/detected', applicationKey: key, evidence }, frame(PROFILE, 'doc-app')) as
+      Promise<Answer>;
+
+  it('names Oracle alone; my-profile names no application', () => {
+    expect([...ROUTE_WAITS_FOR_SIGN]).toEqual(['oracle']);
+    expect(applicationOf(new URL(PROFILE))).toBeNull();
+    oracleStandIn();
+    expect(confirmationAfterOf('oracle', new URL(SECTION), new URL(PROFILE))).toBe(true);
+  });
+
+  it('the route alone (a route of the arming document, or a new document) records nothing', async () => {
+    const { worker, key } = await armedSection();
+    expect(await sign(worker, key, 'confirmation-page')).toMatchObject({ ok: false, error: 'expired' });
+    expect(await after(worker, frame(PROFILE, 'doc-profile'))).toMatchObject({ ok: false, error: 'expired' });
+    expect(applied(worker)).toBe(0);
+  });
+
+  it('the keyed tile, read in the arming document after the route, records it once, within SUBMIT_ARM_MS', async () => {
+    const { worker, key } = await armedSection();
+    expect(await sign(worker, key, 'confirmation-page')).toMatchObject({ ok: false, error: 'expired' });
+    // On this tenant my-profile comes about two minutes after the press (the person types Oracle's code first).
+    worker.clock.now += 2 * 60_000 + 17_000;
+    expect(await sign(worker, key, 'success-message')).toEqual({ ok: true, data: {} });
+    expect(applied(worker)).toBe(1);
+    expect(await sign(worker, key, 'success-message')).toMatchObject({ ok: false, error: 'expired' });
+    expect(applied(worker)).toBe(1);
   });
 });

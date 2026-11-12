@@ -2576,11 +2576,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     watchLateForm();
     // jr7 AUTO-7 (AUTO7-06, WD7-05, UP7-01): while a Submit is armed in this document, the page after submitting its
     // adapter reads by the two addresses (confirmationAfter), also where no parser reads this one: under the arm's own
-    // application. No per-person id of the address is read.
+    // application. No per-person id of the address is read. The arm's watch goes on until the worker takes it
+    // (detected ends it then): a route the worker refuses (late; Oracle's, which waits for its keyed tile: submissions.ts
+    // ROUTE_WAITS_FOR_SIGN) still leaves the sign drawn after it to be read.
     const record = armed;
     if (record !== null && confirmedAfter(record, href)) {
-      record.stopWatch();
-      armed = null;
       void detected('confirmation-page', record).catch(() => undefined);
       return;
     }

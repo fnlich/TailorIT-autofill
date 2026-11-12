@@ -99,6 +99,26 @@ describe('jr7 AUTO-7, AUTO7-06: the page after submitting its adapter reads by a
     expect(worker.of('submit/detected')).toHaveLength(1);
   });
 
+  it('a route the worker refuses (late; Oracle’s, which waits for its tile) keeps the arm’s watch for its sign',
+    async () => {
+      const ownSign = (doc: Document, armedKey: string) => (armedKey === KEY ? [...doc.querySelectorAll('#done')] : []);
+      const { fixture, worker, route } = await start(standIn({ confirmationAfter: pageAfter, successSigns: ownSign }),
+        FORM, { 'submit/detected': [{ ok: false, error: 'expired' }] });
+      await personSubmits(fixture);
+      await vi.waitFor(() => expect(worker.of('submit/armed')).toHaveLength(1));
+      route(AFTER);
+      await vi.waitFor(() => expect(worker.of('submit/detected')).toEqual([expect.objectContaining({
+        applicationKey: KEY, evidence: 'confirmation-page' })]));
+      // The page then draws the application's own sign where the form was: the watch reads it.
+      fixture.doc.getElementById('application-form')!.style.display = 'none';
+      const done = fixture.doc.createElement('div');
+      done.id = 'done';
+      done.textContent = 'Your application';
+      fixture.doc.querySelector('main')!.append(done);
+      await vi.waitFor(() => expect(worker.of('submit/detected').map((each) => each.evidence))
+        .toEqual(['confirmation-page', 'success-message']));
+    });
+
   it('nothing with no hook, with a hook that reads it no such page, or with no Submit armed', async () => {
     for (const hooks of [{}, { confirmationAfter: () => false }] as const) {
       const { fixture, worker, route } = await start(standIn(hooks));

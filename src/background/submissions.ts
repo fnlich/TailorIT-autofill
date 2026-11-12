@@ -164,6 +164,14 @@ const SubmittedSchema = z.strictObject({ state: z.enum(SUBMITTED_STATES), docKey
   applicationKey: z.string().max(80) });
 type Submitted = z.infer<typeof SubmittedSchema>;
 
+// ── jr7 AUTO-7 (the coordinator's decision on ORACLE-7's open item 1, 2026-11-12) ──
+/** The platforms whose page after submitting, read by its route alone (Adapter.confirmationAfter), never records an
+ *  application: Oracle's my-profile is also where a person opens My Applications after a Submit Oracle refused (a
+ *  draft). There the route only keeps the arm waiting, and the adapter's own sign keyed to the arm (successSigns: the
+ *  active application tile) records it, within SUBMIT_ARM_MS, as a success message. */
+export const ROUTE_WAITS_FOR_SIGN: ReadonlySet<string> = new Set(['oracle']);
+// ── end jr7 AUTO-7 ──
+
 // ── jr7 AUTO-7 (AUTO7-06) ──
 /** Whether `here` is the page after submitting the application of `platform` armed at `armed`, by that platform's own
  *  adapter (Adapter.confirmationAfter), on the armed page's origin alone (the hook's own rule, held here too): a pure
@@ -302,6 +310,8 @@ export function createSubmissions(deps: SubmissionsDeps) {
    *  canonical address the arm keeps), by its platform's adapter (confirmationAfter). */
   function afterSubmit(applicationKey: string, armedUrl: string, here: string): boolean {
     if (deps.confirmationAfter === undefined) return false;
+    // The coordinator's decision (ROUTE_WAITS_FOR_SIGN): Oracle's route alone pairs no arm.
+    if (ROUTE_WAITS_FOR_SIGN.has(applicationKey.split(':')[0] ?? '')) return false;
     try {
       return deps.confirmationAfter(applicationKey.split(':')[0] ?? '', new URL(armedUrl), new URL(here));
     } catch {
@@ -512,6 +522,16 @@ export function createSubmissions(deps: SubmissionsDeps) {
         if (held !== null && held.detectedAt === undefined && age > SUBMIT_ARM_MS) await dropArm(key);
         log('submit.refused', { armed: held !== null });
         return refuse('expired');
+      }
+      // The coordinator's decision (ROUTE_WAITS_FOR_SIGN): on Oracle a page after submitting counts only where its own
+      // address reads as that application's page after submitting (none does today); its route (my-profile, read by
+      // confirmationAfter in the arming document) keeps the arm waiting for the keyed tile, never recording it.
+      if (page && ROUTE_WAITS_FOR_SIGN.has(applicationKey.split(':')[0] ?? '')) {
+        const ownPage = refOf(own?.url ?? from.url);
+        if (ownPage === null || ownPage.applicationKey !== applicationKey || ownPage.page !== 'confirmation') {
+          log('submit.refused', { armed: true, route: true });
+          return refuse('expired');
+        }
       }
       return take(applicationKey, key, held, from, page);
     },
