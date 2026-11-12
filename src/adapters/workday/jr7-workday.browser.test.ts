@@ -136,7 +136,8 @@ describe('jr7 WD7-05: confirmationAfter (the page after submitting, against the 
       ['no id', armed, variant(here, (u) => { u.search = ''; })],
       ['another site', armed, variant(here, (u) => { u.pathname = `${u.pathname}x`; })],
       ['a page under the site', armed, variant(here, (u) => { u.pathname = `${u.pathname}/details`; })],
-      ['the site with no locale', armed, variant(here, (u) => { u.pathname = u.pathname.replace(/^\/en-US/, ''); })],
+      ['another site under a locale', armed, variant(here, (u) => { u.pathname = u.pathname.replace(/^\/en-US\//, '/en-US/x'); })],
+      ['a locale under the site', armed, variant(here, (u) => { u.pathname = u.pathname.replace(/^\/en-US(\/[^/]+)$/, '$1/en-US'); })],
       ['another tenant’s host', armed, variant(here, (u) => { u.hostname = `x${u.hostname}`; })],
       ['http', armed, variant(here, (u) => { u.protocol = 'http:'; })],
       ['a port', armed, variant(here, (u) => { u.port = '8443'; })],
@@ -155,6 +156,27 @@ describe('jr7 WD7-05: confirmationAfter (the page after submitting, against the 
     expect(after(armed, variant(here, (u) => { u.pathname = `${u.pathname}/`; }))).toBe(true);
     for (const id of ['a', 'b0c1', 'REDACTED']) {
       expect(after(armed, variant(here, (u) => u.searchParams.set('Job_Application_ID', id)))).toBe(true);
+    }
+    // One site whatever the locale and the case (url.ts: it loads so, and the key folds both).
+    expect(after(armed, variant(here, (u) => { u.pathname = u.pathname.replace(/^\/en-US/, ''); }))).toBe(true);
+    expect(after(armed, variant(here, (u) => { u.pathname = u.pathname.replace(/^\/en-US/, '/fr-FR'); }))).toBe(true);
+    expect(after(armed, variant(here, (u) => { u.pathname = u.pathname.toUpperCase().replace(/^\/EN-US/, '/en-US'); })))
+      .toBe(true);
+  });
+
+  it.each(FOLDERS)('%s: the canonical application URL the worker’s arm keeps reads as the armed page does', (folder) => {
+    const review = byName(`jr7-${folder}-review`).source;
+    const canonical = workdayAdapter.canonicalApplicationUrl(review);
+    expect(canonical).not.toBeNull();
+    const armed = new URL(canonical!);
+    // No locale, the site in lower case: the captured pages' addresses carry /en-US/ (and unity's own case).
+    expect(armed.pathname.startsWith('/en-US/')).toBe(false);
+    expect(after(armed, byName(`jr7-${folder}-confirmation`).source)).toBe(true);
+    for (const item of CASES.filter((each) => each.folder === folder && each.step !== 'confirmation')) {
+      expect(after(armed, item.source), item.name).toBe(false);
+    }
+    for (const other of FOLDERS.filter((each) => each !== folder)) {
+      expect(after(armed, byName(`jr7-${other}-confirmation`).source), other).toBe(false);
     }
   });
 

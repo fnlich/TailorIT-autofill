@@ -392,7 +392,11 @@ export const WORKDAY_SUCCESS: readonly SuccessRule[] = [
  * - or the candidate home's completed task, /[<locale>/]<site>/jobTasks/completed/application (republic.wd5, signed in),
  *   with its "Application Submitted" task dialog (WORKDAY_SUCCESS's first rule).
  * The application's base is its address before /job/<location>/<slug>_<reqId>/apply[/<way>] (url.ts reads the rest):
- * /[<locale>/]<site>, or /[<locale>/]recruiting/<tenant>/<site> on myworkdaysite.com. Facts cited from Jobright 1.25.2:
+ * /[<locale>/]<site>, or /[<locale>/]recruiting/<tenant>/<site> on myworkdaysite.com; two bases are one site when they
+ * name it alike once the locale is set aside and the case folded (url.ts: the site loads in any case and with any
+ * locale, and the application key folds both), so the canonical application URL the worker's arm keeps
+ * (https://<host>/<site>/job/x/<slug>/apply/applyManually, no locale, lower case) reads as the address the page armed
+ * at (/en-US/<Site>/job/...) does. Facts cited from Jobright 1.25.2:
  * its isAtsSubmissionConfirmationUrl('myworkday', from, to) reads `to` as the page after the application armed at `from`
  * when `to`'s path is that base with exactly one Job_Application_ID, non-empty, with no white space around it, `from`
  * holding none, or the base's /jobTasks/completed/application (where it also asks its own jr_id, which is not ours); and its
@@ -412,6 +416,9 @@ const APPLICATION_ID = 'Job_Application_ID';
 
 /** An address's path with one trailing '/' set aside. */
 const pathOf = (url: URL) => url.pathname.replace(/\/$/, '');
+/** A base's site as one site is named whatever its address's locale and case (above): a first segment shaped as a
+ *  locale (url.ts) set aside where more follows, the rest in lower case. */
+const siteOf = (base: string) => base.replace(/^\/[a-zA-Z]{2,3}(?:-[a-zA-Z\d]{2,4})?(?=\/)/, '').toLowerCase();
 
 /** The base of the application armed at `armed` (above): its path before the application's own part, where the
  *  address reads as this posting's application (url.ts; or verily's steps at …/apply, quirks.formAtPosting), else
@@ -433,9 +440,10 @@ function namesNewApplication(here: URL): boolean {
 /**
  * jr7 WD7-05 (Adapter.confirmationAfter): whether `here` is the page after submitting the application whose Submit was
  * armed at `armed` (above): both Workday candidate addresses of one origin (https, no port, no credentials), `armed` the
- * application's own address naming no Job_Application_ID, and `here` its base with one new Job_Application_ID, or its
- * base's /jobTasks/completed/application. Any other address, another site, tenant or host, a second or an empty id,
- * the posting, a sign-in page or Candidate Home's /userHome: no. Pure.
+ * application's own address (as the page armed at it, or its canonical application URL) naming no Job_Application_ID,
+ * and `here` a base of the same site (siteOf) with one new Job_Application_ID, or that base's
+ * /jobTasks/completed/application. Any other address, another site, tenant or host, a second or an empty id, the
+ * posting, a sign-in page or Candidate Home's /userHome: no. Pure.
  */
 function confirmationAfter(armed: URL, here: URL): boolean {
   if (!matchesUrl(armed) || !matchesUrl(here) || armed.origin !== here.origin || armed.searchParams.has(APPLICATION_ID)) {
@@ -444,7 +452,9 @@ function confirmationAfter(armed: URL, here: URL): boolean {
   const base = applicationBase(armed);
   if (base === null) return false;
   const path = pathOf(here);
-  return path === `${base}${COMPLETED_TASK}` || (path === base && namesNewApplication(here));
+  const task = path.endsWith(COMPLETED_TASK);
+  const shown = task ? path.slice(0, -COMPLETED_TASK.length) : path;
+  return siteOf(shown) === siteOf(base) && (task || namesNewApplication(here));
 }
 
 /** Whether `here` is shaped as a Workday page after submitting (above), whatever application it follows: a base with
