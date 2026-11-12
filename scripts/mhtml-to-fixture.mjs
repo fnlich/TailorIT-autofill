@@ -934,11 +934,17 @@ const PER_LOAD_SOURCE = `([?&](?:${PER_LOAD_PARAMS.join('|')})=)[^&#]*`;
  *  (dropped whole). jr7 TOOLING-7 (SP\jr6\build\INT-2.md §5, the leftover BUILD7 hands TOOLING-7): and Jobvite's third
  *  source tag, __jvsc (the channel), beside __jvst and __jvsd: in a person's address it says how they came; on a
  *  posting's own share buttons it names the network (judged public in the three committed fixtures converted before it,
- *  which the referral sweeps read by name and value: test/mhtml-to-fixture.test.ts JOBVITE_SHARE_CHANNELS).
+ *  which the referral sweeps read by name and value: test/mhtml-to-fixture.test.ts JOBVITE_SHARE_CHANNELS). jr7 TOOLING-7
+ *  (r2, UKGREADY-7's open item 1): and src, a posting's referral source as a query parameter (UKG Ready's
+ *  /ta/<company>.careers?...&ShowJob=<id>&src=<source>, Rippling's and Oracle's posting addresses): read, as every name
+ *  here, only after a query's ? or & (plain, as &amp;, percent-encoded), so an element's own src attribute (src="...",
+ *  after a space) is never touched.
  *  @type {string[]} */
 export const REFERRAL_PARAMS = ['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source',
   // jr7 TOOLING-7
-  '__jvsc'];
+  '__jvsc',
+  // jr7 TOOLING-7 (r2)
+  'src'];
 /** The prefixes of referral parameters: every utm_* (utm_source, utm_medium, utm_campaign, utm_term, utm_content...;
  *  careers-sentinel's address and frame, a company's own links). */
 export const REFERRAL_PREFIXES = ['utm_'];
