@@ -4,14 +4,20 @@
  * file filler (dom/fillers/file.ts) checks the same list right before it writes.
  */
 
+/** jr7 ENGINE-7 E1 item 12 (DF7-V1, DF7-10: Dayforce's résumé and cover-letter inputs say accept="doc,docx,pdf,rtf",
+ *  snapshot7 dayforce1): a bare token, letters or digits alone (no dot, no slash), which the browser's own picker reads
+ *  as that extension. */
+const BARE_EXTENSION = /^[a-z0-9]+$/;
+
 /** Does an accept list take this file? An empty list takes anything; a token is an extension ('.pdf'), a MIME type
- *  ('application/pdf') or a family ('application/*'). */
+ *  ('application/pdf') or a family ('application/*'); jr7: or a bare extension ('pdf', read as '.pdf'). */
 export function accepts(tokens: readonly string[], file: { name: string; type: string }): boolean {
   if (tokens.length === 0) return true;
   const name = file.name.toLowerCase();
   const type = file.type.toLowerCase();
   return tokens.some((token) => (token.startsWith('.') ? name.endsWith(token)
-    : token.endsWith('/*') ? type.startsWith(token.slice(0, -1)) : token === type));
+    : BARE_EXTENSION.test(token) ? name.endsWith(`.${token}`) // jr7 ENGINE-7 E1 item 12
+      : token.endsWith('/*') ? type.startsWith(token.slice(0, -1)) : token === type));
 }
 
 /** The file a cover letter arrives as (TailorIT's Download: a PDF), as an accept list sees it. */

@@ -74,6 +74,7 @@ import { hashOfOptions, isUsableOption } from './option-hash';
 import { isInOwnUi } from './own-ui';
 import { isCaptchaResponseField } from './pause-detect';
 import { proxyOf, type Proxy, unrecognisedUploadControl } from './proxy';
+import { markShownByBox } from './box-shown';
 import { newScanCache, styleOf, type ScanCache } from './scan-cache';
 import { sectionFinder } from './sections';
 import {
@@ -223,7 +224,7 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     if (boxes.has(el)) return false;
     if (!outside(el) && !absorbed.has(el)) return true;
     // A control the adapter keeps out of the fields is still one the scan ignored.
-    if (el.matches(CONTROL_SELECTOR) && kindOf(el).field) counters.hiddenControlsIgnored += 1;
+    if (el.matches(CONTROL_SELECTOR) && kindOf(el, adapter).field) counters.hiddenControlsIgnored += 1;
     return false;
   });
   // Every combobox's list, so a listbox that is one is not taken for a field of its own (jr6 ENGINE E1: a declared box's
@@ -247,10 +248,11 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     // now goes on beside a checkbox widget): never a field. A field kind is counted with the hidden controls ignored, as
     // it was while hidden (Turnstile's hidden input never was).
     if (native && isCaptchaResponseField(el)) {
-      if (kindOf(el).field) counters.hiddenControlsIgnored += 1;
+      if (kindOf(el, adapter).field) counters.hiddenControlsIgnored += 1;
       continue;
     }
-    const kind = native ? kindOf(el) : { field: false as const, auth: false };
+    // jr7 ENGINE-7 E1 item 4 (EFA-3): read with the adapter, whose notCodeBox may name a one-time-code box no code box.
+    const kind = native ? kindOf(el, adapter) : { field: false as const, auth: false };
     if (native && !kind.field) {
       if (kind.auth && isUserVisible(el, cache)) authFields += 1;
       continue;
@@ -297,6 +299,7 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       continue;
     }
     if (!kind.field) continue;
+    if (el.localName === 'select') markShownByBox(el, false); // jr7 ENGINE-7 E1 item 1: set afresh by this scan
     if (verdict.visible) {
       candidates.push({ el, kind: widget?.kind ?? kind.kind, format: widget === null ? kind.format : undefined,
         visibility: 'visible', proxy: null, declared: declared !== null, widget });
@@ -304,6 +307,17 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     }
     if (verdict.deferred) {
       counters.deferredFields += 1;
+      continue;
+    }
+    // jr7 ENGINE-7 E1 item 1 (UKGR-6): a native select hidden only by its own opacity, inside the box its adapter
+    // declares around it (Adapter.controlBox), which a person can see, is that select shown: written natively, read
+    // back by its value (selectInDeclaredBox).
+    const boxed = widget === null && (kind.kind === 'select' || kind.kind === 'multiselect')
+      && selectInDeclaredBox(el, adapter, cache);
+    markShownByBox(el, boxed); // dom/box-shown.ts: its options read as a shown select's
+    if (boxed) {
+      candidates.push({ el, kind: kind.kind, format: kind.format, visibility: 'visible', proxy: null, declared: false,
+        widget: null });
       continue;
     }
     if (widget === null && (kind.kind === 'radio' || kind.kind === 'checkbox' || kind.kind === 'file')) {
@@ -386,6 +400,7 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       return found !== null && found.control.isConnected ? found : null;
     },
     rescan: () => scan(root, adapter, options),
+    adapter, // jr7 ENGINE-7 E1 item 4
   };
 }
 
@@ -819,6 +834,36 @@ function narrowWithin(el: Element, own: VisibilityVerdict, box: Element): boolea
     && inner.top >= outer.top && inner.bottom <= outer.bottom;
 }
 
+// ── jr7 ENGINE-7 E1 item 1 (UKGR-6, as its verifier corrected it) ──
+/**
+ * Whether a native select a person cannot see is drawn by the box its adapter declares around it (Adapter.controlBox):
+ * UKG Ready draws every select at opacity 0, z-index 2, over its c-form-control box, which shows the chosen option
+ * (snapshot7 secure7.saashr: the EEO, questionnaire, Country and editors' selects). Only a select hidden by nothing but
+ * its own opacity (transparentByItself, the rule widgetVisibility applies to a declared widget's box), wholly inside
+ * the declared box (which is not the select, holds it and encloses its box), and only while a person can see that box.
+ * A box that is hidden is no box; one that draws nothing makes the field camouflaged (dom/camouflage.ts
+ * drawnByDeclaredBox), which no write passes. None declared, or a hook that throws: false.
+ */
+function selectInDeclaredBox(el: Element, adapter: Adapter | null, cache: ScanCache): boolean {
+  if (el.localName !== 'select' || adapter?.controlBox === undefined) return false;
+  let box: Element | null;
+  try {
+    box = adapter.controlBox(el) ?? null;
+  } catch {
+    return false;
+  }
+  if (box === null || box === el || !holdsComposed(box, el) || !transparentByItself(el, cache)) return false;
+  const inner = el.getBoundingClientRect();
+  const outer = box.getBoundingClientRect();
+  if (inner.width <= 0 || inner.height <= 0 || inner.left < outer.left - BOX_SLACK_PX || inner.right > outer.right
+    + BOX_SLACK_PX || inner.top < outer.top - BOX_SLACK_PX || inner.bottom > outer.bottom + BOX_SLACK_PX) return false;
+  return visibilityOf(box, cache).visible;
+}
+
+/** How far a select's box may stand past its declared box's on a side (sub-pixel rounding). */
+const BOX_SLACK_PX = 1;
+// ── end jr7 ENGINE-7 E1 item 1 ──
+
 /** An element hidden only by its own opacity: its parent shown (no hiding rule, its opacity product kept), and the
  *  element itself not display: none, visibility: hidden, hidden, inert or aria-hidden. */
 function transparentByItself(el: Element, cache: ScanCache): boolean {
@@ -831,6 +876,18 @@ function transparentByItself(el: Element, cache: ScanCache): boolean {
   const opacity = Number(style.opacity);
   return Number.isFinite(opacity) && opacity < MIN_OPACITY;
 }
+
+// ── jr7 ENGINE-7 E1 item 6 (RBP7-20, as its verifier corrected it) ──
+/** Whether `part` is react-select's DummyInput inside a widget its adapter declares with the react-select bridge:
+ *  the input a non-searchable react-select draws (Pinpoint's EEO selects, snapshot7 pinpointhq1), which says
+ *  aria-readonly="true" and inputmode="none" because a person cannot type into it, not because its answer cannot
+ *  change: the bridge chooses its option. Only its native readonly then makes it read-only. Any other aria-readonly box,
+ *  a plain one or a declared widget's without the bridge or without inputmode none, stays read-only. */
+function reactSelectDummy(part: Element, widget: WidgetTarget): boolean {
+  return widget.bridge === 'react-select' && part.localName === 'input' && ariaReadOnly(part)
+    && (part.getAttribute('inputmode') ?? '').trim().toLowerCase() === 'none';
+}
+// ── end jr7 ENGINE-7 E1 item 6 ──
 
 /** A widget as a field: its label by the same visible-label rules (a group's from its container), its options a
  *  group's members, or its list's when it is shown whole now (else 'lazy' until it is read), and its constraints none
@@ -880,9 +937,12 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
     visibility: first.visibility, proxy: null, required,
     disabled: groupLike ? members.every(isUnavailable) : isDisabled(el) || (own !== null && isDisabled(own)),
     // A text box its adapter declares read-only by design (WidgetDecl.readOnlyBox: a select-only dropdown) is read-only
-    // only by its aria-readonly; any other widget by the scanner's rule.
-    readOnly: widget.readOnlyBox === true ? [el, own].some((part) => part !== null && ariaReadOnly(part))
-      : isReadOnly(el) || (own !== null && isReadOnly(own)),
+    // only by its aria-readonly; any other widget by the scanner's rule. jr7 ENGINE-7 E1 item 6 (RBP7-20): never by
+    // the aria-readonly of a declared react-select's DummyInput (reactSelectDummy).
+    readOnly: widget.readOnlyBox === true
+      ? [el, own].some((part) => part !== null && ariaReadOnly(part) && !reactSelectDummy(part, widget))
+      : [el, own].some((part) => part !== null && (reactSelectDummy(part, widget)
+        ? (part as HTMLInputElement).readOnly : isReadOnly(part))),
     // A widget's text box is drawn inside the widget's own box, so it is not judged on its own.
     camouflaged: false,
     nameAttr: attribute(own ?? el, 'name'), idAttr: attribute(el, 'id'),
@@ -1085,6 +1145,9 @@ function unrecognisedRows(found: ReadonlyArray<{ input: HTMLInputElement; contro
     const ordinal = taken.get(id) ?? 0;
     taken.set(id, ordinal + 1);
     const parts = { platform, section, labelSlug: slug, ordinal };
-    return { key: fieldKey({ ...parts, optionSetHash: OPTION_SET_NONE }), baseKey: baseKey(parts), label, section };
+    // jr7 ENGINE-7 E1 item 9 (RBP7-V3): a required upload no rule recognises holds Submit until a file is in.
+    const required = isRequired(input) || adapterRequires(input, ctx.adapter) || adapterRequires(control, ctx.adapter);
+    return { key: fieldKey({ ...parts, optionSetHash: OPTION_SET_NONE }), baseKey: baseKey(parts), label, section,
+      requiredEmpty: required && (input.files?.length ?? 0) === 0 };
   });
 }
