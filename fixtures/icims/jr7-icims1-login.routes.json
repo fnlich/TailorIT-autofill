@@ -1,0 +1,4 @@
+{
+  "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/login?mobile=false&width=1715&height=1742&bga=true&needsRedirect=false&jan1offset=-420&jun1offset=-360": "fixtures/icims/jr7-icims1-login.html",
+  "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/login?in_iframe=1&mobile=false&width=1715&height=1742&bga=true&needsRedirect=false&jan1offset=-420&jun1offset=-360": "fixtures/icims/jr7-icims1-login.frame-1.html"
+}

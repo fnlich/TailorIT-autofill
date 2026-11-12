@@ -1,0 +1,5 @@
+{
+  "https://arc-onesolutions.icims.com/jobs/17204/login?_sp=REDACTED&_jsqid=REDACTED&_ga=REDACTED&_gl=REDACTED&mobile=false&width=1728&height=500&bga=true&needsRedirect=false&jan1offset=-420&jun1offset=-360": "fixtures/icims/jr7-icims2-login.html",
+  "https://arc-onesolutions.icims.com/jobs/17204/login?_ga=REDACTED&_gl=REDACTED&in_iframe=1&mobile=false&width=1728&height=500&bga=true&needsRedirect=false&jan1offset=-420&jun1offset=-360": "fixtures/icims/jr7-icims2-login.frame-1.html",
+  "https://newassets.hcaptcha.com/captcha/v1/b7cb55144cfb1f79ab8b18a24ea5786dc178370e/static/hcaptcha.html": "fixtures/icims/jr7-icims2-login.third-party-frame.html"
+}

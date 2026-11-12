@@ -1,0 +1,5 @@
+{
+  "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/form?form=PreOffer_OFCCP&step=6&isPacket=1&type=4&hashed=REDACTED": "fixtures/icims/jr7-icims1-iform-2.html",
+  "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/form?form=PreOffer_OFCCP&step=6&isPacket=1&type=4&hashed=REDACTED&in_iframe=1": "fixtures/icims/jr7-icims1-iform-2.frame-1.html",
+  "https://oneblood.icims.com/forms?token=REDACTED&isPacket=1&brandtype=ccc&portalid=112885&selected=Voluntary_Self_Identification_of_Disability_template&in_iframe=1&step=6": "fixtures/icims/jr7-icims1-iform-2.frame-2.html"
+}

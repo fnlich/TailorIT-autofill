@@ -1,0 +1,5 @@
+{
+  "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/candidate?from=login&csrf=REDACTED&hashed=REDACTED&uploadResume=1&uploadResume=1": "fixtures/icims/jr7-icims1-profile-3.html",
+  "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/candidate?from=login&csrf=REDACTED&in_iframe=1&hashed=REDACTED&uploadResume=1&uploadResume=1": "fixtures/icims/jr7-icims1-profile-3.frame-1.html",
+  "https://newassets.hcaptcha.com/captcha/v1/b7cb55144cfb1f79ab8b18a24ea5786dc178370e/static/hcaptcha.html": "fixtures/icims/jr7-icims1-profile-3.third-party-frame.html"
+}
