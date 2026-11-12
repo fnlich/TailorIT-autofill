@@ -2596,8 +2596,9 @@ export class FillRun {
         // An entry the profile has that no block holds yet stays out of the form (v4, D1: nothing asks the person).
         this.addsLeft = Math.max(this.addsLeft, entriesLeft(this.sections, profile));
       }
-      // v4 (D3): only a required field left empty, or a hard-rule stop, holds auto-Next (report.ts lastFillOf).
-      const counts = lastFillOf(all);
+      // v4 (D3): only a required field left empty, or a hard-rule stop, holds auto-Next (report.ts lastFillOf). jr7
+      // ENGINE-7 E1 item 11 (ICIMS7-V4): left empty as this step's fresh scan reads it (heldIn).
+      const counts = lastFillOf(all.map((row) => heldIn(after, row)));
       return { type: 'FILLED', filledKeys: written, flagged: counts.flagged, blocked: counts.blocked,
         unresolved: counts.unresolved };
     }
@@ -3613,3 +3614,18 @@ function requiredBlockRow(block: Element, ordinal: number, platform: Platform): 
   wrote: false, verification: 'not-applicable', needsUserAction: true };
 }
 // ── end jr7 ENGINE-7 E1 item 10 ──
+
+// ── jr7 ENGINE-7 E1 item 11 (ICIMS7-V4, as its verifier corrected it) ──
+/** A row the run left open (unfilled by it) whose field holds an answer in `scanned` (the step's fresh scan at FILLED),
+ *  with detail.filledByYou set, as withFilledByYou folds it in at rest: a required field the page answered itself
+ *  (iCIMS's prefilled "Today's Date" month, day and year on arc-onesolutions' IForm, snapshot7 iCIMS1) is no required
+ *  field left empty, so it holds no auto-Next (report.ts lastFillOf). Any other row as it is. A flag only: it claims
+ *  nothing about who filled the field. */
+export function heldIn(scanned: ScanResult, row: FillResult): FillResult {
+  if (!open(row) || row.detail?.filledByYou === true) return row;
+  const field = scanned.fields.find((candidate) => candidate.key === row.key)
+    ?? scanned.fields.find((candidate) => candidate.baseKey === baseKeyOf(row.key));
+  if (field === undefined || !holdsAnswer(field.current)) return row;
+  return { ...row, detail: { ...row.detail, filledByYou: true } };
+}
+// ── end jr7 ENGINE-7 E1 item 11 ──

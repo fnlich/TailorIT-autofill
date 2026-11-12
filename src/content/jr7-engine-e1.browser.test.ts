@@ -11,11 +11,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { genericAdapter } from '../adapters/generic';
 import { greenhouseAdapter } from '../adapters/greenhouse';
 import type { Adapter } from '../adapters/types';
+import type { FillResult } from '../core/types/fill';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
 import { signInContainerOf, signInRefusal } from '../dom/sign-in-form';
+import { scan } from '../dom/scan';
 import { deadline } from '../dom/time';
 import { createFakeWorker, testVocab } from './content.testkit';
+import { heldIn } from './orchestrator';
+import { lastFillOf } from './report';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 import { signIn, type SignInContext } from './sign-in';
 
@@ -175,5 +179,74 @@ describe('item 10 (jr7-O7): a required block the adapter reads empty', () => {
     expect(await done.runtime.fill()).toBe('review');
     await vi.waitFor(() => expect(submitted(done.fixture)).toBe(1));
     expect(done.worker.reports.at(-1)!.fields.some((row) => row.label.endsWith(': add at least one'))).toBe(false);
+  });
+});
+
+// ── item 11 (ICIMS7-V4): a required field the page answered itself is no field left empty at FILLED ────────────────
+describe('item 11 (ICIMS7-V4): the rows lastFillOf counts at FILLED', () => {
+  /** An IForm step as the iCIMS verifier probed it (snapshot7 iCIMS1, arc-onesolutions' IForm 1/2): a required date's
+   *  month the page prefilled (a synthetic date), and a required box it left empty. */
+  const PAGE = `<!doctype html><html><body><form id="f">
+    <label for="month">Today's Date month</label>
+    <select id="month" required><option value="">Month</option><option value="11" selected>11</option></select>
+    <label for="badge">Badge number</label><input id="badge" type="text" required>
+  </form></body></html>`;
+
+  it('counts a required row the run left flagged only while its field reads empty in the fresh scan', async () => {
+    const fixture = await loadFixture(document, PAGE);
+    const scanned = scan(fixture.doc.getElementById('f')!, genericAdapter, { platform: 'icims' });
+    const rows: FillResult[] = scanned.fields.map((field) => ({ key: field.key, label: field.label, kind: field.kind,
+      category: 'unknown', section: 'main', required: true, status: 'flagged', provenance: null,
+      matcherStage: 'not-applicable', confidence: 0, reason: 'unknown-field', wrote: false,
+      verification: 'not-applicable', needsUserAction: true }));
+    expect(rows.map((row) => row.label)).toEqual(["Today's Date month", 'Badge number']);
+    expect(lastFillOf(rows).flagged).toBe(2);
+    expect(lastFillOf(rows.map((row) => heldIn(scanned, row))).flagged).toBe(1);
+    // A row the run filled, or one already flagged as the person's, as it is.
+    expect(heldIn(scanned, { ...rows[0]!, status: 'filled', wrote: true })).toEqual({ ...rows[0]!, status: 'filled', wrote: true });
+  });
+});
+
+describe('item 11 (ICIMS7-V4): a not-final step whose required field the page answered itself', () => {
+  const HREF = 'https://job-boards.greenhouse.io/tailoritfixture/jobs/4402';
+  /** A not-final step: the names the profile fills, and a required select the page prefilled whose question no rule
+   *  answers (iCIMS's "Today's Date" parts are left flagged by the planner); Next counts its presses. */
+  const STEP = `<!doctype html><html><head><title>Apply</title></head><body><main>
+    <form id="application-form">
+      <div><label for="first_name">First Name</label><input id="first_name" name="first_name" type="text" required></div>
+      <div><label for="month">Today's Date month</label>
+        <select id="month" name="month" required><option value="">Month</option><option value="11" selected>11</option></select></div>
+      <button id="next" type="button">Next</button>
+    </form></main>
+    <script>
+      window.nexts = 0;
+      document.getElementById('next').addEventListener('click', () => { window.nexts += 1; });
+    </script></body></html>`;
+  const stepped: Adapter = { ...greenhouseAdapter,
+    detect: (doc) => {
+      const formRoot = doc.getElementById('application-form');
+      return formRoot === null ? null : { formRoot };
+    },
+    nextButton: (root) => root.ownerDocument.getElementById('next'),
+    submitButton: () => null,
+    isFinalStep: () => 'not-final',
+    stepSignature: () => ({ anchors: ['step-1'] }) };
+  const runtimes: ContentRuntime[] = [];
+  afterEach(() => {
+    for (const runtime of runtimes.splice(0)) runtime.stop();
+  });
+
+  it('is no required field left empty: Next mode Auto presses Next', async () => {
+    testVocab();
+    const fixture = await loadFixture(document, STEP, { width: 1100, height: 900 });
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' as const } };
+    const worker = createFakeWorker({ settings });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
+      adapters: () => [stepped], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    await runtime.fill();
+    const month = worker.reports.at(-1)?.fields.find((row) => row.label === "Today's Date month");
+    expect([month?.status, month?.required]).toEqual(['flagged', true]);
+    await vi.waitFor(() => expect((fixture.view as unknown as { nexts: number }).nexts).toBe(1), { timeout: 4_000 });
   });
 });
