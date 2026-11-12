@@ -103,6 +103,48 @@ describe('item 4 (UKGR-10, EFA-6): the upload-prompt door', () => {
     expect(await answer('privacy', prompting('cancel', 'consent'), true)).toEqual({ outcome: 'refused', pressed: {} });
   });
 
+  // The coordinator's note from JDEF-7 (EFA-6): Eightfold's dialog opens animated, its hook answering nothing until its
+  // I Agree shows whole; its Cancel is in neverPress.
+  it('waits, bounded, for a dialog that opens animated, then presses only its declared I Agree', async () => {
+    const animated = `<!doctype html><html><body><form id="f">
+      <input type="file" id="resume"><button type="submit" id="submit">Submit application</button></form>
+      <script>
+        window.presses = {};
+        setTimeout(() => {
+          const dialog = document.createElement('div');
+          dialog.id = 'privacy';
+          dialog.setAttribute('role', 'dialog');
+          dialog.style.cssText = 'opacity:0;transition:opacity 600ms linear';
+          for (const words of ['I Agree', 'Cancel']) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = words;
+            button.id = words.replace(/\\s/g, '-').toLowerCase();
+            button.addEventListener('click', () => { window.presses[button.id] = (window.presses[button.id] || 0) + 1; });
+            dialog.append(button);
+          }
+          document.body.append(dialog);
+          requestAnimationFrame(() => requestAnimationFrame(() => { dialog.style.opacity = '1'; }));
+        }, 150);
+      </script></body></html>`;
+    const eightfold: Adapter = { ...genericAdapter, id: 'generic',
+      detect: (doc) => ({ formRoot: doc.getElementById('f')! }),
+      submitButton: (root) => root.ownerDocument.getElementById('submit'),
+      neverPress: (root) => [root.ownerDocument.getElementById('cancel')].filter((el): el is HTMLElement => el !== null),
+      uploadPrompt: (doc) => {
+        const dialog = doc.getElementById('privacy');
+        const shown = dialog !== null && doc.defaultView!.getComputedStyle(dialog).opacity === '1';
+        return shown ? { press: doc.getElementById('i-agree')!, kind: 'consent' } : null;
+      } };
+    for (const consents of [true, false]) {
+      const { doc } = await loadFixture(document, animated);
+      const outcome = await answerUploadPrompt(eightfold, doc, { consents, capMs: 4_000 });
+      expect(outcome, String(consents)).toBe(consents ? 'pressed' : 'left');
+      expect(presses(doc), String(consents)).toEqual(consents ? { 'i-agree': 1 } : {});
+      removeFixtures(document);
+    }
+  });
+
   it("never presses the application's Submit, and answers none where no prompt shows", async () => {
     expect(await answer('complete', prompting('submit', 'dismiss'))).toEqual({ outcome: 'refused', pressed: {} });
     expect(await answer('complete', prompting('nowhere', 'dismiss'), false, 300)).toEqual({ outcome: 'none', pressed: {} });
