@@ -126,11 +126,13 @@ describe('entry/pressed (jr6 apply A0)', () => {
 });
 
 describe('the log codes (jr6 apply A0)', () => {
-  it('hold the entry\'s, the grant\'s and the queue\'s codes, and keep content.open-application until integration', () => {
+  it('hold the entry\'s, the grant\'s and the queue\'s codes, and no longer the old posting button\'s', () => {
     for (const code of ['content.entry', 'content.entry-step', 'grant.armed', 'grant.step', 'grant.ended',
-      'queue.entry-timeout', 'content.open-application']) {
+      'queue.entry-timeout']) {
       expect(LOG_CODES, code).toContain(code);
     }
+    // jr6 integration (APPLYPLAN §7 item 4): the code F2 stopped logging is gone; content.entry says how an entry ends.
+    expect(LOG_CODES).not.toContain('content.open-application');
     expect(new Set(LOG_CODES).size).toBe(LOG_CODES.length);
   });
 });

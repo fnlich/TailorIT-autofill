@@ -663,13 +663,13 @@ The descriptor records `proxy: 'label'|'adapter'`, and highlights point at the p
 - A value present before our first write is "prefilled" (a resume parse, browser autofill, or Workday's "Use My Last Application"). Prefilled values are reconciled, not overwritten (§8.7).
 
 ### 5.11 Pause detection (`pause-detect.ts`)
-- **Sign-in and accounts.** A visible `input[type=password]` means sign-in; two of them, or a "confirm password" label, means account creation. `autocomplete="one-time-code"` or visible code-entry text means an email code. `adapter.authState(doc)` adds platform knowledge from snapshots. On an auth step nothing is filled, not even the email.
+- **Sign-in and accounts.** A visible `input[type=password]` means sign-in; two of them, or a "confirm password" label, means account creation. `autocomplete="one-time-code"` or visible code-entry text means an email code. `adapter.authState(doc)` adds platform knowledge from snapshots. On an auth step nothing is filled, not even the email. (Since jr6 a box the job-site password was typed into stays an auth field whatever the page later makes it, `dom/secret-boxes.ts`.)
 - **CAPTCHA.**
   - A visible challenge iframe from google.com/recaptcha, recaptcha.net, hcaptcha.com, challenges.cloudflare.com or arkoselabs pauses the run.
   - So does a visible vendor container (`.g-recaptcha`, `.h-captcha`, `.cf-turnstile`, `[data-sitekey]`) over or inside the form.
   - The invisible-reCAPTCHA badge alone does not pause.
   - FLAG: this vendor markup gets confirmed from vendor documentation in Phase 5, not guessed.
-- **Entry choice.** Workday's "Autofill with Resume / Apply Manually / Use My Last Application" is adapter-declared; the run pauses and the user chooses.
+- **Entry choice.** Workday's "Autofill with Resume / Apply Manually / Use My Last Application" is adapter-declared; the run pauses and the user chooses. (Since v4 the person's Autofill at such a choice presses its declared entry, Apply Manually, and since jr6 Autofill on a page with no form presses the site's own Apply and the steps the site shows on the way, as docs/ARCHITECTURE.md "jr6" says.)
 
 ---
 

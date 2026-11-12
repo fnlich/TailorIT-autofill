@@ -10,7 +10,8 @@
  *
  * The F1 fixer (the line P review, C7): the docs (docs/**.md) and the shared code beside the copy (src/shared/log.ts,
  * src/shared/stored.ts) too, words and the old log code `content.open-application`. File names keep the old name
- * (e2e 62-open-application, open-application-worker.test.ts, open-application.browser.test.tsx). History is kept as
+ * (e2e 62-open-application, open-application-worker.test.ts, open-application.browser.test.tsx, and since the jr6
+ * docs fold this test's own, which the docs name among the tests). History is kept as
  * written (APPLYPLAN §7): what v5 decided and asked then (docs/SPEC-AMENDMENTS.md §15, docs/OWNER-QUESTIONS.md §16 with
  * Q300-Q309) and what the disclosure's past versions said (ARCHITECTURE's "Disclosure version 11", PRIVACY's "This
  * wording changed" line, stored.ts's DISCLOSURE_VERSION comment). Every other line that still names it describes the
@@ -30,7 +31,8 @@ const OLD_NAME = /Open Application|openApplication/;
 /** In the docs and the shared code, its log code too. */
 const OLD_IN_DOCS = /Open Application|openApplication|open-application/;
 /** The file names that keep it. */
-const FILE_NAMES = /\b62-open-application(?:\.spec\.ts)?|\bopen-application-worker\.test\.ts|\bopen-application\.browser\.test\.tsx/g;
+const FILE_NAMES =
+  /\b62-open-application(?:\.spec\.ts)?|\bopen-application-worker\.test\.ts|\bopen-application\.browser\.test\.tsx|\bno-open-application\.test\.ts/g;
 
 /** History kept as written (module header): a section (its heading, to the next heading of its level or above), or one
  *  line, each found by words of its own. */
@@ -43,28 +45,7 @@ const HISTORY: Readonly<Record<string, ReadonlyArray<{ section: string } | { lin
 };
 
 /** The lines integration rewords (module header), in file order, each by a phrase of its own. */
-const PENDING: Readonly<Record<string, readonly string[]>> = {
-  'docs/ARCHITECTURE.md': [
-    'the résumé first and Open Application (P2-fill)',
-    '- **Open Application** (`content/runtime.ts`',
-    "the panel's Submit and Open Application never press there",
-    'and `PageState` the same two (Open Application)',
-    '`content.open-application {pressed}`',
-    '`COPY.mainView.openApplication` ("Open Application")',
-    "Lever's posting: Open Application presses its Apply",
-  ],
-  'docs/PRIVACY.md': [
-    '- **Open Application:** on a job posting that shows no form',
-    // The disclosure's quote, reworded with it (version 15).
-    "Open Application in its panel presses the site's own Apply when you choose it",
-  ],
-  'src/shared/log.ts': [
-    // The code and its comments go when integration drops the unused code (APPLYPLAN §7 item 4; F2 no longer logs it).
-    'and Open Application on a posting (whether its Apply was pressed)',
-    "'content.open-application',",
-    'content.open-application stays until integration.',
-  ],
-};
+const PENDING: Readonly<Record<string, readonly string[]>> = {};
 
 function files(dir: string, kinds = /\.(ts|tsx|css|html)$/): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
