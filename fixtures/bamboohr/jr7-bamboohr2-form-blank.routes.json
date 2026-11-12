@@ -1,0 +1,5 @@
+{
+  "https://mosai.bamboohr.com/careers/322?source=REDACTED": "fixtures/bamboohr/jr7-bamboohr2-form-blank.html",
+  "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LfZ4KEsAAAAAP7osErua7mOIzcdDjnUdaZfp08m&co=aHR0cHM6Ly9tb3NhaS5iYW1ib29oci5jb206NDQz&hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&size=normal&anchor-ms=20000&execute-ms=30000&ovv=CADq00gF&cb=tgg6evakx5zi": "fixtures/bamboohr/jr7-bamboohr2-form-blank.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/bframe?hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&k=6LfZ4KEsAAAAAP7osErua7mOIzcdDjnUdaZfp08m&bft=REDACTED": "fixtures/bamboohr/jr7-bamboohr2-form-blank.third-party-frame.html"
+}
