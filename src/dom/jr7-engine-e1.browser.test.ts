@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { genericAdapter } from '../adapters/generic';
 import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures } from './fixture.testkit';
+import { fill } from './fillers';
 import { domGuardBeforeWrite } from './guard';
 import { requiredLeftOf } from '../content/press';
 import { detectPause } from './pause-detect';
@@ -189,4 +190,48 @@ describe("item 5 (EFA-4): a declared proxy's radio whose own label[for] is aria-
       expect(await optionsOf(question(option('No', `No, ${Q}`, 'q-Yes') + option('Yes', `Yes, ${Q}`, 'q-No')),
         eightfold())).not.toEqual(['No', 'Yes']);
     });
+});
+
+// ── item 1 (UKGR-6): a native select at opacity 0 inside its adapter's declared box ────────────────────────────────
+describe("item 1 (UKGR-6): a native select hidden only by its opacity, inside the adapter's declared box", () => {
+  /** UKG Ready's select as its audit measured it (snapshot7 secure7.saashr): a bordered c-form-control box showing the
+   *  chosen option, and over it the select at opacity 0, z-index 2. `selectStyle` and `boxStyle` stand a change in. */
+  const page2 = (options: { selectStyle?: string; boxStyle?: string; outside?: boolean } = {}) => page(`
+    <label for="vet">Veteran status</label>
+    <div class="c-form-control" id="box" style="position:relative;width:300px;height:36px;border:1px solid #888;
+      background:#fff;${options.boxStyle ?? ''}">
+      <span class="c-form-control__value">Select one</span>
+      ${options.outside === true ? '' : `<select id="vet" style="position:absolute;left:0;top:0;width:100%;height:100%;
+        opacity:0;z-index:2;appearance:none;${options.selectStyle ?? ''}"><option value="">Select one</option>
+        <option value="n">Not a veteran</option><option value="y">Veteran</option></select>`}
+    </div>
+    ${options.outside === true ? '<select id="vet" style="opacity:0;width:300px;height:36px"><option value="">Select one</option><option value="n">Not a veteran</option></select>' : ''}`);
+  const ukg = (declared = true): Adapter => ({ ...genericAdapter, id: 'generic',
+    ...(declared ? { controlBox: (control: Element) => control.ownerDocument.getElementById('box') } : {}) });
+  const fieldOf = async (html: string, adapter: Adapter) => {
+    const { doc } = await loadFixture(document, html);
+    const result = scan(doc.getElementById('f')!, adapter, { platform: 'ukgready' });
+    return { doc, result, field: result.fields.find((each) => each.label === 'Veteran status') };
+  };
+
+  it('is a visible select, not camouflaged, written natively and read back by its value', async () => {
+    const { doc, result, field } = await fieldOf(page2(), ukg());
+    expect([field?.kind, field?.visibility, field?.camouflaged]).toEqual(['select', 'visible', false]);
+    const outcome = fill(result.target(field!.key)!, { kind: 'option', index: 1, cleanLabel: 'Not a veteran' },
+      { adapter: ukg(), root: doc.getElementById('f') });
+    expect(outcome).toMatchObject({ wrote: true, verification: 'verified' });
+    expect((doc.getElementById('vet') as HTMLSelectElement).value).toBe('n');
+  });
+
+  it('stays a hidden control with no box declared, a box out of sight, a select outside it or hidden otherwise', async () => {
+    for (const [html, adapter] of [[page2(), ukg(false)], [page2({ boxStyle: 'visibility:hidden' }), ukg()],
+      [page2({ boxStyle: 'position:absolute;left:-5000px' }), ukg()],
+      [page2({ outside: true }), ukg()], [page2({ selectStyle: 'visibility:hidden' }), ukg()],
+      [page2({ selectStyle: 'display:none' }), ukg()]] as const) {
+      const { field, result } = await fieldOf(html, adapter);
+      expect(field, html.slice(0, 0)).toBeUndefined();
+      expect(result.counters.hiddenControlsIgnored).toBeGreaterThan(0);
+      removeFixtures(document);
+    }
+  });
 });
