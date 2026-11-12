@@ -46,6 +46,13 @@
  *   its status as before, the timer gone (an email gate is a form: the grant starts its run, whose reports say filling,
  *   then ready). The queue never continues the press itself: its Autofill is the panel's, whose grant takes the walls
  *   and choices of the next documents (sign-up.ts takeStep); wall() still starts once per job.
+ * - jr6 SHELL-B (INTEGRATION.md SHELL-B item 3; F4a's open gap, F4a.md §8): a job Filling whose tab no fill report shows
+ *   any more (its run's page turned to a document where no run starts or reports: "Autofill after page turn: Manually",
+ *   a wall the grant does not take, a form whose run/start never arrived) is Ready for you once that has lasted
+ *   QUEUE_ENTRY_WAIT_MS, as F4a's entry wait (its words, its log, quietly: nothing told, nothing pressed, its open-tab
+ *   place kept). The wait starts at the first look at the tab that finds no report (quietAt) and ends with the next
+ *   report seen, so a working run's page turn, whose next step reports within moments, never flickers; the alarm stays
+ *   on while a job fills, paused and stopped runs too, so a look still comes.
  * - It survives a worker restart: the run lives in storage.session (QUEUE_RUN_KEY; gone at a browser restart, with the
  *   tab ids it names), and the queue-tick alarm (chrome.alarms, every QUEUE_TICK_MINUTES) wakes the worker while it
  *   runs, a tab waits for its page or for its entry's run, or a result waits to be told; timers take the ticks in
@@ -121,6 +128,10 @@ const ItemSchema = z.strictObject({
   /** jr6 apply F4a (AF-5): when wall() started its fill at a page with no form, until a run of its tab reports (or
    *  QUEUE_ENTRY_WAIT_MS passes: Ready for you); null otherwise. A run saved without it reads as null. */
   entryAt: Count.nullable().default(null),
+  /** jr6 SHELL-B (F4a's gap): when a look first found the tab of this Filling job with no fill report (its run's page
+   *  turned to a document where no run reports), until a report shows again (or QUEUE_ENTRY_WAIT_MS passes: Ready for
+   *  you); null otherwise. A run saved without it reads as null. */
+  quietAt: Count.nullable().default(null),
   /** The result TailorIT has not taken yet. */
   tell: ResultSchema.nullable(),
 });
@@ -209,7 +220,8 @@ export function statusOfReports(reports: readonly FrameReport[]): 'filling' | 'r
 function signatureOf(run: Run): string {
   // jr6 apply F4a: whether an entry still waits for its run (so its start and its end are saved).
   const items = run.items.map((item) => `${item.status}:${item.reason ?? ''}:${item.tabId ?? ''}:${item.tell === null ? 0 : 1}`
-    + `:${item.entryAt === null ? 0 : 1}`);
+    + `:${item.entryAt === null ? 0 : 1}`
+    + `:${item.quietAt === null ? 0 : 1}`); // jr6 SHELL-B: a quiet tab's wait, its start and end saved
   return [run.phase, run.hold, run.nextAt, run.leftMs, run.opened, run.stoppedBy, ...items].join('|');
 }
 
@@ -254,11 +266,15 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
     === true;
   /** jr6 apply F4a: an open job whose entry waits for its run (paused or stopped too: it still ends Ready for you). */
   const waitingForEntry = (run: Run | null) => run?.items.some((item) => item.entryAt !== null && isOpen(item)) === true;
+  /** jr6 SHELL-B (F4a's gap): an open job Filling (paused or stopped too): a look must still come to find its reports
+   *  gone, and its quiet wait (quietAt) ends Ready for you. */
+  const waitingForRun = (run: Run | null) => run?.items.some((item) => item.status === 'filling' && isOpen(item)) === true;
 
   /** Keeps the alarm while there is a reason to wake: the run going, a tab waiting for its page or for its entry's run,
-   *  a result to tell. */
+   *  a result to tell; jr6 SHELL-B, a job filling. */
   async function keepAlarm(run: Run | null): Promise<void> {
-    if (run !== null && (run.phase === 'running' || pending(run) || waitingForPage(run) || waitingForEntry(run))) {
+    if (run !== null && (run.phase === 'running' || pending(run) || waitingForPage(run) || waitingForEntry(run)
+      || waitingForRun(run))) { // jr6 SHELL-B
       await deps.alarms.start(QUEUE_ALARM, QUEUE_TICK_MINUTES).catch(() => undefined);
     } else {
       await deps.alarms.stop(QUEUE_ALARM).catch(() => undefined);
@@ -284,6 +300,7 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
     for (const item of run.items) {
       if (item.status === 'opening' && item.openedAt !== null) times.push(item.openedAt + QUEUE_FORM_WAIT_MS + 100);
       if (item.entryAt !== null && isOpen(item)) times.push(item.entryAt + QUEUE_ENTRY_WAIT_MS + 100); // jr6 apply F4a
+      if (item.quietAt !== null && isOpen(item)) times.push(item.quietAt + QUEUE_ENTRY_WAIT_MS + 100); // jr6 SHELL-B
     }
     if (times.length > 0) tickAt(Math.min(...times));
   }
@@ -389,6 +406,7 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
         return 'stopped';
       }
       Object.assign(item, { status: 'opening', tabId, openedAt: deps.now(), heardAt: null, startedAt: null, entryAt: null,
+        quietAt: null, // jr6 SHELL-B
         reason: null, applicationKey: target.applicationKey,
         resumeId: task.resumeId === null ? null : task.resumeId.slice(0, 64) });
       await save(run);
@@ -428,7 +446,19 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       if (status !== null) {
         // jr6 apply F4a: a run reported: its reports lead from now on, the entry's wait over.
         item.entryAt = null;
+        item.quietAt = null; // jr6 SHELL-B: a report shows: the tab is not quiet
         if (item.status !== 'opening') item.status = status;
+      } else if (item.entryAt === null && item.status === 'filling') {
+        // jr6 SHELL-B (F4a's gap): Filling, and no fill report shows on the tab (its run's page turned to a document
+        // where no run reports): from the first look that finds it so, QUEUE_ENTRY_WAIT_MS, then Ready for you, as F4a's
+        // entry wait ends (its open-tab place kept; nothing told, nothing pressed). A report seen before then ends the
+        // wait.
+        if (item.quietAt === null) item.quietAt = now;
+        else if (now - item.quietAt >= QUEUE_ENTRY_WAIT_MS) {
+          item.quietAt = null;
+          log('queue.entry-timeout', { from: QUEUE_ITEM_STATUSES.indexOf(item.status), quiet: true });
+          item.status = 'ready';
+        }
       } else if (item.entryAt !== null && now - item.entryAt >= QUEUE_ENTRY_WAIT_MS) {
         // jr6 apply F4a (AF-5): the queue's Autofill at a page with no form, and no run of the tab reported since
         // (refused, a choice or a wall nothing took, nothing followed): Ready for you, never Filling for ever. It keeps
@@ -580,7 +610,7 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
   function itemOf(task: QueueTask): Item {
     return { id: task.id, jobId: task.jobId, resumeId: null, title: task.title.slice(0, 300),
       company: task.company.slice(0, 200), applicationKey: null, status: 'queued', reason: null, tabId: null,
-      openedAt: null, heardAt: null, startedAt: null, entryAt: null, tell: null };
+      openedAt: null, heardAt: null, startedAt: null, entryAt: null, quietAt: null, tell: null }; // jr6 SHELL-B
   }
 
   async function start(): Promise<Answer<QueueStatus>> {
@@ -767,7 +797,8 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
         // An account wall rests for the person (or Sign-in Auto signs in, and the next form's run says so).
         // jr6 apply F4a: an entry or a choice whose run never reports is Ready for you after QUEUE_ENTRY_WAIT_MS (sweep).
         const now = deps.now();
-        Object.assign(item, { startedAt: now, entryAt: now, status: frame.wall ? 'ready' : 'filling' });
+        Object.assign(item, { startedAt: now, entryAt: now, status: frame.wall ? 'ready' : 'filling',
+          quietAt: null }); // jr6 SHELL-B: the entry's own wait leads
         log('queue.fill-started', { form: false });
         void deps.fill(tabId).catch(() => undefined);
         return true;
@@ -779,8 +810,10 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       const next = statusOfReports(await deps.reports(tabId).catch(() => []));
       if (next === null) return false;
       // jr6 apply F4a: a run of the tab reported: its reports lead from now on, the entry's wait over (saved).
-      const waited = item.entryAt !== null;
+      // jr6 SHELL-B: and the tab is not quiet (a quiet wait ends).
+      const waited = item.entryAt !== null || item.quietAt !== null;
       item.entryAt = null;
+      item.quietAt = null;
       if (next === item.status) return waited;
       item.status = next;
       return true;

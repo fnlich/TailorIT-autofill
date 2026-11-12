@@ -208,6 +208,12 @@ export function chainOf(entry: FrameEntry): FrameChain | undefined {
  * iCIMS's iframe#icims_content_iframe), the one subframe whose hello says it claims it (`claimed`: directly below the
  * wrapper, on its origin), on the wrapper's origin and at the wrapper's application. Null when there is none, or more
  * than one (if unsure, none).
+ * jr6 SHELL-B (F3a.md's open issue; the apply audit's AP-2 race, SP\jr6\audit\apply-a.md): a wrapper that reloads (iCIMS's
+ * top moving to /login after Apply, with a fresh frame below it) leaves its old claimed frame registered until the
+ * sweep forgets it (FRAME_PROBE_GRACE_MS); a new claimed frame that says hello before then made two, and the claim none,
+ * so the gate's run never started. Of several claimed frames, the one that holds a form wins where it is the only one
+ * (the old frame showed the posting, which holds none); each is still on the wrapper's origin (so of its family), at its
+ * application and no chain page. Several holding a form, or none: unsure, none, as before.
  */
 export function claimFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
   const top = frames.find((frame) => frame.frameId === 0) ?? null;
@@ -215,7 +221,9 @@ export function claimFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
   if (top.wraps !== true) return top;
   const claimed = frames.filter((frame) => frame.frameId !== 0 && frame.claimed === true && frame.origin === top.origin
     && frame.applicationKey === top.applicationKey && frame.chained !== true);
-  return claimed.length === 1 ? claimed[0]! : null;
+  if (claimed.length === 1) return claimed[0]!;
+  const holding = claimed.filter((frame) => frame.hasForm); // jr6 SHELL-B
+  return holding.length === 1 ? holding[0]! : null; // jr6 SHELL-B
 }
 
 /** core-x, items 3 and 7: the frames the agent may act in for the tab's application: its claim frame, and a chain

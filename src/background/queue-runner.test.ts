@@ -924,6 +924,202 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
     });
   });
 
+  /*
+   * jr6 SHELL-B (INTEGRATION.md SHELL-B item 3; F4a's open gap, F4a.md §8): a job Filling whose tab no fill report shows
+   * any more (its run's page turned to a document where no run starts or reports: "Autofill after page turn: Manually",
+   * a wall the grant does not take, a run/start that never arrived) is Ready for you once that lasted
+   * QUEUE_ENTRY_WAIT_MS, F4a's wait and words (queue.entry-timeout, `quiet`); a report before then ends the wait.
+   */
+  describe('jr6 SHELL-B: never Filling for ever after a page turn no run reports from', () => {
+    let logs: MockInstance;
+    beforeEach(() => {
+      logs = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    });
+    afterEach(() => logs.mockRestore());
+    const timeouts = () => logs.mock.calls.filter(([line]) => line === '[tailorit-autofill] queue.entry-timeout')
+      .map((call) => call[1] as unknown);
+    const QUIET = { from: QUEUE_ITEM_STATUSES.indexOf('filling'), quiet: true };
+    const countsOf = async (on: Harness) => (await on.runner.status()).counts;
+    const settled = async () => {
+      for (let step = 0; step < 3; step += 1) await new Promise((resolve) => setImmediate(resolve));
+    };
+    /** Job `n`'s tab shows its form and the queue starts its run (Automatically), once. */
+    async function started(on: Harness, n: number) {
+      const target = agentAddressOf(URL_OF(n))!;
+      const tab = on.tabs.find((each) => each.url === target.address)!.tabId;
+      await on.runner.hello(tab, { frameId: 0, documentId: `form-${n}`, hasForm: true,
+        applicationKey: target.applicationKey }, true);
+      await Promise.resolve();
+      return { tab, key: target.applicationKey };
+    }
+    async function says(on: Harness, tab: number, status: FrameReport['status']) {
+      on.reports.set(tab, [report({ status })]);
+      await on.runner.reported(tab);
+    }
+
+    it('a working run whose page turns to a document no run reports from is Ready for you QUEUE_ENTRY_WAIT_MS later, its place held', async () => {
+      h = harness({ maxOpenTabs: 1 });
+      seed(h, 2);
+      await h.runner.start();
+      const { tab, key } = await started(h, 1);
+      await says(h, tab, 'fill-step');
+      await h.advance(30_000, 1_000);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, queued: 1 });
+      // Its Next turned the page: the step's report went with its document, and the next document's run never reports
+      // ("Autofill after page turn: Manually", or a wall the grant does not take).
+      h.reports.delete(tab);
+      await h.runner.hello(tab, { frameId: 0, documentId: 'step-2', hasForm: true, applicationKey: key }, true);
+      const quietFrom = h.clock.now;
+      await h.advance(QUEUE_ENTRY_WAIT_MS - 1_000, 1_000);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      expect(timeouts()).toEqual([]);
+      await h.advance(2_000, 1_000);
+      expect(h.clock.now - quietFrom).toBeLessThanOrEqual(QUEUE_ENTRY_WAIT_MS + 1_000);
+      expect(await h.runner.status()).toMatchObject({ phase: 'running', hold: 'cap', openTabs: 1,
+        counts: { filling: 0, ready: 1, queued: 1 } });
+      expect(timeouts()).toEqual([QUIET]);
+      // Ten minutes on: the person's tab, its place held; nothing pressed again, nothing told, logged once.
+      await h.advance(10 * 60_000, 1_000);
+      expect(await h.runner.status()).toMatchObject({ hold: 'cap', counts: { ready: 1, queued: 1 } });
+      expect(h.sent).toHaveLength(1);
+      expect(h.filled).toEqual([]);
+      expect(h.results).toEqual([]);
+      expect(timeouts()).toHaveLength(1);
+      // A run that comes after all still leads; the person's close frees the place.
+      await says(h, tab, 'fill-step');
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      h.open.delete(tab);
+      await h.runner.tabRemoved(tab);
+      await h.advance(8_000);
+      expect(h.tabs).toHaveLength(2);
+    });
+
+    it('a report a look sees ends the quiet wait: the run leads, and a later page turn waits afresh', async () => {
+      seed(h, 1);
+      await h.runner.start();
+      const { tab } = await started(h, 1);
+      await says(h, tab, 'fill-step');
+      // A slow page turn: no report for 60 s, then the next step's run reports (its message missed: a look sees it).
+      h.reports.delete(tab);
+      await h.advance(60_000, 1_000);
+      h.reports.set(tab, [report({ status: 'scan-step' })]);
+      // It works on, reporting, past any wait.
+      await h.advance(2 * QUEUE_ENTRY_WAIT_MS, 1_000);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      // A quick page turn later: still filling, the wait counted from this turn alone.
+      h.reports.delete(tab);
+      await h.advance(3_000, 1_000);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      await says(h, tab, 'review');
+      expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      expect(timeouts()).toEqual([]);
+    });
+
+    it('a report heard as its message ends the quiet wait, though no look saw it', async () => {
+      seed(h, 1);
+      await h.runner.start();
+      const { tab } = await started(h, 1);
+      await says(h, tab, 'fill-step');
+      h.reports.delete(tab);
+      await h.advance(1_000);
+      const quietFrom = h.clock.now;
+      await h.advance(80_000, 1_000);
+      // The next step's run reports, and its page turns at once, before any look at the tabs.
+      await says(h, tab, 'fill-step');
+      h.reports.delete(tab);
+      await h.advance(15_000, 1_000);
+      expect(h.clock.now - quietFrom).toBeGreaterThan(QUEUE_ENTRY_WAIT_MS);
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      expect(timeouts()).toEqual([]);
+    });
+
+    it('a form the queue started whose run never reports is Ready for you after the wait', async () => {
+      seed(h, 1);
+      await h.runner.start();
+      const { tab } = await started(h, 1);
+      expect(h.sent).toHaveLength(1);
+      expect(await countsOf(h)).toMatchObject({ filling: 1 });
+      await h.advance(QUEUE_ENTRY_WAIT_MS + 1_000, 1_000);
+      expect(await countsOf(h)).toMatchObject({ filling: 0, ready: 1 });
+      expect(timeouts()).toEqual([QUIET]);
+      expect(h.tabs.map((each) => each.tabId)).toEqual([tab]);
+    });
+
+    it('keeps the alarm while a job fills, paused or stopped, and ends its quiet wait by its own timer', async () => {
+      seed(h, 2);
+      await h.runner.start();
+      const { tab } = await started(h, 1);
+      await says(h, tab, 'fill-step');
+      await h.runner.pause();
+      // Paused, a job still filling keeps the worker waking.
+      expect(h.alarm.on).toBe(true);
+      h.reports.delete(tab);
+      // The alarm's look finds the tab quiet; from then on only the timers run.
+      await h.runner.tick();
+      for (let passed = 0; passed < QUEUE_ENTRY_WAIT_MS; passed += 1_000) {
+        h.clock.now += 1_000;
+        h.timers.advance(1_000);
+        await settled();
+      }
+      expect(await countsOf(h)).toMatchObject({ filling: 1, ready: 0 });
+      h.clock.now += 100;
+      h.timers.advance(100);
+      await settled();
+      expect(await h.runner.status()).toMatchObject({ phase: 'paused', counts: { filling: 0, ready: 1, queued: 1 } });
+      expect(timeouts()).toEqual([QUIET]);
+      // Nothing fills now: the alarm goes.
+      expect(h.alarm.on).toBe(false);
+      // Stopped, the same.
+      const stopped = harness();
+      seed(stopped, 1);
+      await stopped.runner.start();
+      const second = await started(stopped, 1);
+      await says(stopped, second.tab, 'fill-step');
+      await stopped.runner.stop();
+      expect(stopped.alarm.on).toBe(true);
+      stopped.reports.delete(second.tab);
+      await stopped.advance(QUEUE_ENTRY_WAIT_MS + 1_000, 1_000);
+      expect(await stopped.runner.status()).toMatchObject({ phase: 'stopped', counts: { ready: 1 } });
+      expect(stopped.alarm.on).toBe(false);
+    });
+
+    it('picks a quiet wait up after a worker restart, from its start as saved', async () => {
+      seed(h, 1);
+      await h.runner.start();
+      const { tab } = await started(h, 1);
+      await says(h, tab, 'fill-step');
+      h.reports.delete(tab);
+      await h.advance(1_000);
+      const quietFrom = h.clock.now;
+      await h.advance(49_000, 1_000);
+      const again = h.restart();
+      await again.runner.boot();
+      expect(await countsOf(again)).toMatchObject({ filling: 1 });
+      await again.advance(quietFrom + QUEUE_ENTRY_WAIT_MS - 1_000 - again.clock.now, 1_000);
+      expect(await countsOf(again)).toMatchObject({ filling: 1, ready: 0 });
+      await again.advance(1_100, 100);
+      expect(await countsOf(again)).toMatchObject({ filling: 0, ready: 1 });
+      expect(timeouts()).toEqual([QUIET]);
+    });
+
+    it('times no job that is not filling: one opened (Manually) or ready for you stays as it is', async () => {
+      const manual = harness({ autofillOnOpen: 'manual' });
+      seed(manual, 1);
+      await manual.runner.start();
+      await started(manual, 1);
+      await manual.advance(2 * QUEUE_ENTRY_WAIT_MS, 1_000);
+      expect(await countsOf(manual)).toMatchObject({ opened: 1, filling: 0, ready: 0 });
+      seed(h, 1);
+      await h.runner.start();
+      const { tab } = await started(h, 1);
+      await says(h, tab, 'review');
+      h.reports.delete(tab);
+      await h.advance(2 * QUEUE_ENTRY_WAIT_MS, 1_000);
+      expect(await countsOf(h)).toMatchObject({ ready: 1, filling: 0 });
+      expect(timeouts()).toEqual([]);
+    });
+  });
+
   it('with Manually, leaves each tab for the person’s Autofill', async () => {
     h = harness({ autofillOnOpen: 'manual' });
     seed(h, 1);

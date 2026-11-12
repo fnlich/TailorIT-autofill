@@ -222,6 +222,7 @@ import {
   type NoticeCode, type ReportHeader, type ReportLimiter,
 } from './report';
 import { postingNamesOf } from './job-relay';
+import { chainFactsOf } from './chain-frame'; // jr6 SHELL-B (ICIMS-17)
 import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
 import {
   signInChallenged, signInDetailOf, signInHandedOver, signInRefusalWaits, type SignInDetail, type SignInOutcome,
@@ -2649,15 +2650,17 @@ export class FillRun {
     }
     const errors = this.errorsNow(root, cache);
     this.lastErrorEls = errors;
+    // jr6 SHELL-B (ICIMS-17): an IForm leaf's portal step facts (chain-frame.ts), else null: its step judged by them.
+    const facts = chainFactsOf(env.doc); // jr6 SHELL-B
     let finality: StepFacts['finality'] = 'unknown';
     try {
-      finality = adapter.isFinalStep?.(env.doc) ?? 'unknown';
+      finality = adapter.isFinalStep?.(env.doc, facts) ?? 'unknown'; // jr6 SHELL-B: facts
     } catch {
       finality = 'unknown';
     }
     let next: HTMLElement | null = null;
     try {
-      next = adapter.nextButton?.(root) ?? null;
+      next = adapter.nextButton?.(root, facts) ?? null; // jr6 SHELL-B: facts
     } catch {
       next = null;
     }
@@ -2778,9 +2781,10 @@ export class FillRun {
       log('content.next-withheld');
       return { type: 'NEXT_WITHHELD', reason: 'captcha-unsolved' };
     }
+    const facts = chainFactsOf(this.env.doc); // jr6 SHELL-B (ICIMS-17): an IForm leaf's portal step facts, else null
     let next: HTMLElement | null = null;
     try {
-      next = adapter.nextButton?.(root) ?? null;
+      next = adapter.nextButton?.(root, facts) ?? null; // jr6 SHELL-B: facts
     } catch {
       next = null;
     }
@@ -2788,7 +2792,7 @@ export class FillRun {
     if (next === null || !isUserVisible(next, newScanCache())) return { type: 'NEXT_WITHHELD', reason: 'not-pressable' };
     // v1.3 B: the step's questions and answers, read before it is left.
     this.env.stepLeaving?.();
-    if (!clickIfAllowed(next, { adapter, root, allowNext: true })) {
+    if (!clickIfAllowed(next, { adapter, root, allowNext: true, facts })) { // jr6 SHELL-B: facts
       log('content.next-refused');
       return { type: 'NEXT_WITHHELD', reason: 'not-pressable' };
     }
