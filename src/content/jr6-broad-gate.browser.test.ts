@@ -26,9 +26,10 @@ const PAGES = import.meta.glob('../../fixtures/**/*.html', { query: '?raw', impo
  *  frames served inside another page. */
 const SKIP = /\/fixtures\/(?:traps|sites|synthetic|smoke|profiles)\/|\.frame-\d+\.html$|third-party-frame\.html$/;
 /** The pages at an application address whose own adapter offers its declared entry there by design (APPLYPLAN D6).
- *  None is committed on this branch: FIXPLAN's ADP package adds its job details (E-ADP) on line W, and integration
- *  lists it here. */
-const EXPECTED_OFFERS: ReadonlySet<string> = new Set<string>();
+ *  jr6 CHAINS (integration, BUILD.md 4b): ADP's job details (line W's E-ADP, fixtures/adp/jr6-posting.html): ADP
+ *  Workforce Now shows a job's details at its guest page's own address, and its header's Apply is the declared entry
+ *  there (ADP_CONFIG.posting.entry). No other page may offer one. */
+const EXPECTED_OFFERS: ReadonlySet<string> = new Set<string>(['adp/jr6-posting.html']);
 
 const runtimes: ContentRuntime[] = [];
 beforeAll(() => {
@@ -99,5 +100,9 @@ describe('jr6 apply F2 item 1: the entry gate on application addresses (D6)', ()
       expect(tally.noForm).toBeGreaterThan(0);
       expect(offered.filter((name) => !EXPECTED_OFFERS.has(name))).toEqual([]);
       expect(told.filter((name) => !EXPECTED_OFFERS.has(name))).toEqual([]);
+      // jr6 CHAINS: each page listed offers its entry, and its runtime tells it (a listed page that stopped offering is
+      // a stale list, or a lost declaration).
+      expect(offered.filter((name) => EXPECTED_OFFERS.has(name)).sort()).toEqual([...EXPECTED_OFFERS].sort());
+      expect(told.filter((name) => EXPECTED_OFFERS.has(name)).sort()).toEqual([...EXPECTED_OFFERS].sort());
     }, 900_000);
 });

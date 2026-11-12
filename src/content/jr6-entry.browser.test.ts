@@ -8,6 +8,9 @@
  * the platform's own adapter. Ported from the auditors' harnesses (-wt-v4drop src/content/jr6-apply.browser.test.ts,
  * -wt-v4fixA src/adapters/jr6-apply-b.browser.test.ts, -wt-v4fixB src/content/jr6-apply-c*.browser.test.ts) and the
  * verifiers' measures (SP\jr6\verify-b\slow-follow, late-window). Flags, counts and markup names only.
+ * jr6 CHAINS (integration, line W and line P together): those declarations are line W's adapters' own now (ADP_CONFIG's
+ * posting, Workday's formAtPosting, SmartRecruiters' and UltiPro's formLateMs), so each undo case strips the very
+ * declaration it removes (adpStub, withoutQuirk), and the chains across both lines are src/content/jr6-chains.browser.test.ts.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import dialogHtml from '../../fixtures/synthetic/apply/dialog-second-step.html?raw';
@@ -78,9 +81,12 @@ const ADP = 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruit
 const lever = (address: string): Adapter[] => [servedAdapter(leverAdapter, address), genericAdapter];
 
 /** A stand-in for ADP's declarations on line W (E-ADP: posting.text and entry, quirks), built from ADP's own rules;
- *  `states`, more page states before ADP's own (ADP_PANES). */
+ *  `states`, more page states before ADP's own (ADP_PANES). jr6 CHAINS (integration): line W's ADP_CONFIG declares
+ *  `posting` itself now (E-ADP), so a stub with `posting` false strips it, and its undo cases (item 7, P-1) again read a
+ *  page whose adapter names no posting. */
 function adpStub(quirks: NonNullable<Adapter['quirks']>, posting = true, states: readonly PageState[] = []): Adapter {
-  const hooks = configuredHooks({ ...ADP_CONFIG,
+  const { posting: _declared, ...undeclared } = ADP_CONFIG;
+  const hooks = configuredHooks({ ...undeclared,
     states: [...states, ...(ADP_CONFIG.states ?? [])],
     ...(posting ? { posting: { text: 'div.job-description-data',
       entry: 'button#recruitment_jobDescription_apply, button#recruitment_jobDescription_candidateApply',
@@ -90,6 +96,16 @@ function adpStub(quirks: NonNullable<Adapter['quirks']>, posting = true, states:
     quirks });
   return { ...adpAdapter, ...hooks, id: 'adp', labelFor: adpAdapter.labelFor, labelSuffix: adpAdapter.labelSuffix,
     requiredFor: adpAdapter.requiredFor, widgetFor: adpAdapter.widgetFor, widgetRoots: adpAdapter.widgetRoots };
+}
+
+/** jr6 CHAINS (integration): `quirks` without the one named. Line W's adapters declare formAtPosting (Workday, B5) and
+ *  formLateMs (SmartRecruiters and UltiPro, C3) themselves now, so an undo case that spread their quirks strips the very
+ *  quirk it removes. */
+function withoutQuirk(quirks: Adapter['quirks'], name: keyof NonNullable<Adapter['quirks']>):
+  NonNullable<Adapter['quirks']> {
+  const rest: NonNullable<Adapter['quirks']> = { ...quirks };
+  delete rest[name];
+  return rest;
 }
 
 /** Draws the guest container of in-place-details.html in place (as ADP's script does after Apply). */
@@ -553,6 +569,8 @@ describe('jr6 apply F2: forms drawn in place, late or at the posting’s address
 
   it('ADP-like details: the posting’s own text is read on its application address while no form shows (item 7)',
     async () => {
+      // jr6 CHAINS: line W's ADP declares the posting's text (E-ADP, ADP-10); the undo case strips it (adpStub).
+      expect(ADP_CONFIG.posting?.text).toBe('div.job-description-data');
       for (const posting of [true, false]) {
         const { doc } = await openAt(detailsHtml, ADP);
         const { worker, runtime } = await runtimeAt(doc, ADP, [adpStub({ formInPlace: true }, posting), genericAdapter]);
@@ -572,10 +590,13 @@ describe('jr6 apply F2: forms drawn in place, late or at the posting’s address
     async () => {
       const VERILY = Object.keys(verilyRoutes)[0]!;
       expect(applicationOf(new URL(VERILY))?.page).toBe('posting');
+      // jr6 CHAINS: line W's Workday declares formAtPosting (B5); the undo case strips it.
+      expect(workdayAdapter.quirks?.formAtPosting).toBe(true);
       for (const atPosting of [true, false]) {
         const { doc } = await openAt(verilyHtml, VERILY);
         const adapter: Adapter = { ...servedAdapter(workdayAdapter, VERILY),
-          quirks: { ...workdayAdapter.quirks, ...(atPosting ? { formAtPosting: true as const } : {}) } };
+          quirks: { ...withoutQuirk(workdayAdapter.quirks, 'formAtPosting'),
+            ...(atPosting ? { formAtPosting: true as const } : {}) } };
         const { worker, runtime } = await runtimeAt(doc, VERILY, [adapter, genericAdapter]);
         runtimes.push(runtime);
         await deadline(1_500);
@@ -744,6 +765,8 @@ describe('jr6 apply F2: forms drawn in place, late or at the posting’s address
       ['ultipro', ultiproAdapter, ultiproHtml, addressOf(ultiproRoutes, 'fixtures/ultipro/application.html'),
         '#OpportunityApply']] as const;
       for (const [name, adapter, html, address, root] of cases) {
+        // jr6 CHAINS: line W's SmartRecruiters and UltiPro declare a late form (C3, 30 s); the undo case strips it.
+        expect(adapter.quirks?.formLateMs, name).toBe(30_000);
         for (const lateMs of [15_000, 0]) {
           const { doc } = await openAt(html, address);
           const form = doc.querySelector(root)!;
@@ -751,7 +774,7 @@ describe('jr6 apply F2: forms drawn in place, late or at the posting’s address
           const next = form.nextSibling;
           form.remove();
           const own: Adapter = { ...servedAdapter(adapter, address),
-            quirks: { ...adapter.quirks, ...(lateMs > 0 ? { formLateMs: lateMs } : {}) } };
+            quirks: { ...withoutQuirk(adapter.quirks, 'formLateMs'), ...(lateMs > 0 ? { formLateMs: lateMs } : {}) } };
           const { worker, runtime } = await runtimeAt(doc, address, [own, genericAdapter]);
           runtimes.push(runtime);
           await deadline(1_000);
