@@ -1061,6 +1061,40 @@ function selectBehind(control: Element): Element | null {
   return dropdownOf(control)?.select ?? (control.localName === 'select' ? control : null);
 }
 
+/** jr6 ifix C-3 (ICIMS-24): a text box's label asking for what the list above it lacks ("Enter school name if not in
+ *  the list above", jr6-nyu-profile-parsed.frame-1.html's label_-1_CandProfileFields.Minor; "… (if not listed)"). */
+const LIST_LACKS = /\bnot\s+(?:in|on)\s+(?:the\s+)?(?:list|dropdown|menu)\b|\bnot\s+listed\b/i;
+
+/** The id prefix of a profile block's controls ("-1_", "-330156_"), '' for none. */
+const blockPrefix = (id: string): string => /^-?\d+_/.exec(id)?.[0] ?? '';
+
+/**
+ * jr6 ifix C-3 (ICIMS-24, FIXPLAN item 65; RULES-R65-R24's optional re-plan trigger): the list a companion text box
+ * stands under. jr6-nyu-profile-parsed.frame-1.html draws the School dropdown (select#-1_CandProfileFields.School,
+ * icimsdropdown-search="1") in one .iCIMS_TableRow and, in the next row of the same block, the text box
+ * input#-1_CandProfileFields.Minor labelled "Enter school name if not in the list above". The box is answered by what the
+ * list ends with (the school typed only where the list lacks it: RULES' settleSchoolCompanions), so the list's write is
+ * what changes the box's answer. Jobright chooses "Other" in the School list, then types the companion
+ * (~contents/sites/icims ./operations resolveIcimsSchoolCompanionInput). The answer is the list's control (its trigger,
+ * or the select), only for a text box or textarea whose own label says the list lacks it (LIST_LACKS), the row right
+ * before its own holding a select of the same block; null for any other.
+ */
+function listAboveOf(control: Element): Element | null {
+  const type = (control.getAttribute('type') ?? 'text').toLowerCase();
+  if (control.id === '' || !(control.localName === 'textarea' || (control.localName === 'input' && type === 'text'))) {
+    return null;
+  }
+  const row = control.closest('.iCIMS_TableRow');
+  if (row === null) return null;
+  const label = control.ownerDocument.getElementById(`label_${control.id}`)
+    ?? Array.from(row.querySelectorAll('label[for]')).find((each) => each.getAttribute('for') === control.id) ?? null;
+  if (label === null || !LIST_LACKS.test((label.textContent ?? '').replace(/\s+/g, ' '))) return null;
+  const before = row.previousElementSibling;
+  const select = before?.matches('.iCIMS_TableRow') === true ? before.querySelector('select') : null;
+  return select !== null && select !== undefined && blockPrefix(select.id) === blockPrefix(control.id)
+    ? controlOfSelect(select) : null;
+}
+
 /**
  * The control whose write resets this one (Adapter.dependsOn):
  * - ICIMS-02: a dependent dropdown, by its select's data-ddd-parent-link, in its own block (the same id prefix:
@@ -1073,15 +1107,17 @@ function selectBehind(control: Element): Element | null {
  * - ICIMS-19: "Please specify" (select#rcf3049, list="lists.sources" with selectsourcemsg="Please select a source",
  *   disabled until a source is chosen: jr6-ars-profile.html; enabled with its list: jr6-ars-profile-filled.html), under
  *   the source list in the row before it, "How did you hear about us?" (select#rcf3048), in every snapshot that shows it.
+ * - jr6 ifix C-3 (ICIMS-24): a companion text box under the list above it (listAboveOf: NYU's "Enter school name if not
+ *   in the list above" under its School list).
  * Each answer is the control a person sees for the parent (a dropdown's trigger, or a select); null for any other.
  */
 function dependsOn(control: Element): Element | null {
   const select = selectBehind(control);
-  if (select === null) return null;
+  if (select === null) return listAboveOf(control);
   const doc = select.ownerDocument;
   const link = select.getAttribute('data-ddd-parent-link');
   if (link !== null && link !== '') {
-    const prefix = /^-?\d+_/.exec(select.id)?.[0] ?? '';
+    const prefix = blockPrefix(select.id);
     const parent = doc.getElementById(`${prefix}${link}`) ?? (prefix === '' ? null : doc.getElementById(link));
     const back = parent?.getAttribute('data-ddd-child-link') ?? '';
     const named = back !== '' && (select.id === back || select.id.endsWith(`.${back}`) || select.id.endsWith(`_${back}`));
