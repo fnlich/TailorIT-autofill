@@ -33,6 +33,8 @@ export const AUTOFILL_SIGN_IN_HOST_SUFFIXES: readonly string[] = [
   'smartrecruiters.com',
   'oraclegovcloud.com',
   'ultipro.com',
+  // jr7 7a: recruiting.ultipro.ca, one of UKG's candidate-only recruiting hosts.
+  'ultipro.ca',
   'clearcompany.com',
   'adp.com',
 ];
@@ -52,7 +54,10 @@ export const AUTOFILL_SIGN_IN_HOST_SUFFIXES: readonly string[] = [
  *   Oracle Cloud service; and (version 6) a tenant on Oracle's government cloud, `<tenant>.fa.ocs.oraclegovcloud.com`,
  *   by the same tenant rule (the whole tenant host, as the commercial cloud's);
  * - SmartRecruiters: `jobs.smartrecruiters.com` and `careers.smartrecruiters.com`;
- * - (version 6) UltiPro: `recruiting.ultipro.com`, UKG Pro Recruiting's candidate host (its account step is there).
+ * - (version 6) UltiPro: `recruiting.ultipro.com`, UKG Pro Recruiting's candidate host (its account step is there);
+ *   and (jr7 7a, additive within version 6: the owner's snapshot7 of 2026-11-11) its other candidate-only recruiting
+ *   hosts, `recruiting2.ultipro.com` and `recruiting.ultipro.ca`, whose account step is theirs too; never another
+ *   `<n>.ultipro.com` or `ultipro.ca` host, an employer's UKG Pro for its staff.
  */
 const SIGN_IN_HOSTS: readonly RegExp[] = [
   /^(?!www\.)[a-z0-9-]+(?:\.wd\d{1,3})?\.myworkday(?:jobs|site)\.com$/,
@@ -64,7 +69,8 @@ const SIGN_IN_HOSTS: readonly RegExp[] = [
   /^[a-z0-9-]+\.fa(?:\.[a-z0-9-]+)?\.oraclecloud\.com$/,
   /^(?:jobs|careers)\.smartrecruiters\.com$/,
   /^[a-z0-9-]+\.fa\.ocs\.oraclegovcloud\.com$/,
-  /^recruiting\.ultipro\.com$/,
+  /^recruiting2?\.ultipro\.com$/,
+  /^recruiting\.ultipro\.ca$/,
 ];
 
 /**
