@@ -51,8 +51,9 @@
 //     entries shown as text (ENTRY_SUMMARY_PLACES), chosen answers drawn outside a native control (CHOSEN_PLACES), the
 //     account's and the profile's own text (PROFILE_PLACES), the controls that name a file or an entry, a custom
 //     element's value and default-value, data-date-value and data-gtm-form-interact-*, a searchable Ant select's open
-//     list and UltiPro's Race row (drawn open), and (s2 wd) a search's results that list the applicant's answer
-//     (SEARCH_RESULT_PLACES: Greenhouse's and Lever's location results), inside an option too;
+//     list (UltiPro's Race row is drawn open before the measure: jr7 OPENED_ROWS), and (s2 wd) a search's results that
+//     list the applicant's answer (SEARCH_RESULT_PLACES: Greenhouse's and Lever's location results), inside an option
+//     too;
 //   - a tel: or sms: link's number becomes REDACTED whatever its spelling, and so does a per-visitor id a script wrote
 //     into a stylesheet (--sa-uid, Dice's) once the sheet is inlined (transformInPage);
 //   - another extension's parameters (INJECTED_PARAMS: Jobright's jr_id, Simplify's utm_source) leave every address and
@@ -170,6 +171,28 @@
 //     title field the file's first line, each description field its other lines);
 //   - a list row's id normalisation leaves the words of Workday's data-automation-id alone (ROW_ID_WORDS_KEPT: a chosen
 //     pill's DELETE_charm names the component, not the row), its opaque tokens and the row's values still taken.
+// - jr7 TOOLING-7 (the owner's snapshot7 of 2026-11-11; SP\jr7\FIX7PLAN.md §6.1), on every platform but where named:
+//   - the platforms jr7 adds (FIXTURE_PLATFORMS, NEW_ATS_PLATFORMS, NEW_ATS_HOSTS, a whole candidate path by
+//     pathPattern): ukgready (secure<n>.saashr.com/ta/<company>.careers), paycom (www.paycomonline.net's portal posting
+//     and applications paths), jobdiva (www<n>.jobdiva.com/portal/), eightfold (<tenant>.eightfold.ai/careers) and jibe
+//     (<tenant>.jibeapply.com/jobs/);
+//   - before anything is measured: UltiPro's Race row drawn open (OPENED_ROWS, UP7-14); a chosen uiLib icon drawn as a
+//     copy of the page's own unchosen twin (CHOSEN_ICONS, T7-01: none to copy is refused) and its uiLib marks
+//     (CHOSEN_MARKS); every canvas kept at the box it draws with scripting on (standInCanvasesInPage, T7-01: the capture
+//     is opened with scripting off, where a canvas is an inline box for its fallback content); with --style-order live,
+//     the cid: sheets Blink's serializer hoisted above the head's own <link> sheets moved back after them
+//     (liveStyleOrderInPage, JDEF-V1; jobdiva's default, STYLE_ORDER_DEFAULTS);
+//   - places (UKGR-20, T7-02, JDEF-16): UKG Ready's value mirror, review values, entry metadata and avatar; Dayforce's
+//     Personal Information read view, its chosen source included; JobDiva's file card; Paycom's tooltip anchors'
+//     spelled text (SPELLED_IDS); Oracle's profile tile summaries and every My Applications tile but the one
+//     --keep-application names (jr7-O5); a searched iCIMS list's result keeping a REDACTED in each text run, so its
+//     bolded query keeps its box (ICIMS7-15);
+//   - values: UKG Ready's ActiveSessionId, sft, rnd and file-service ticket (PER_LOAD_PARAMS), a phone-shaped listed
+//     string in an address (respelledSources' phones), Eightfold's _csrf meta, Paycom's hCaptcha (redactHcaptchaIn),
+//     Jobvite's __jvsc (REFERRAL_PARAMS);
+//   - --frame-src gives a frame the capture saved unloaded its public vendor address, a third party's (RBP7-V2 a);
+//   and it also refuses a widget's shown text spelled in an id (spelledIdsIn) and, in the inlined stylesheets, what
+//   the token and referral needles find there (checkedStyleForms).
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
 // email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
 // an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
@@ -178,16 +201,25 @@
 //
 // Usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <greenhouse|lever|ashby|workday|workable|icims|taleo|
 //          successfactors|oracle|smartrecruiters|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|
-//          ultipro|dayforce|paylocity|dice|clearcompany|adp> --case <name>
+//          ultipro|dayforce|paylocity|dice|clearcompany|adp|ukgready|paycom|jobdiva|eightfold|jibe> --case <name>
 //          [--redact <file>] [--out <folder>] [--folder <name>] [--replace-text <css>[@<attribute>]=<file>]...
+//          [--style-order archive|live] [--keep-application <job id>] [--frame-src <css>=<https address>]...
 // The redact file holds one string per line (blank lines and lines starting with # are skipped); a string that looks
 // like a phone number matches whatever its punctuation. --out defaults to fixtures/. Each --replace-text names a CSS
 // selector and, after its last "=", a UTF-8 file of synthetic text (made up, never a person's); a selector that names
 // no element in any converted frame is refused, by its position among the --replace-text options. A selector ending in
 // @<attribute> names a posting copy's attribute (POSTING_COPY_ATTRIBUTES) on those elements; any other is refused.
+// (UltiPro's education editor, jr7 UP7-14: its Major and Minor lists hold the field-of-study list a listed field meets,
+// so they take synthetic lines: --replace-text 'select[data-automation="major-dropdown"],
+// select[data-automation="minor-dropdown"]=<file>'.)
+// jr7 TOOLING-7: --style-order keeps the archive's cascade order (archive, the default but for jobdiva) or the live one
+// (live). --keep-application (Oracle only) names the captured posting's job id, whose My Applications tile a my-profile
+// page keeps; it is refused where no tile names it. Each --frame-src names, before its address's "=https://", the frames
+// the capture saved unloaded that take that public https address of a third party's (no credentials, no site key):
+// refused where it names no such frame, or a frame with an address of its own.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, URLSearchParams } from 'node:url';
 import { TextDecoder } from 'node:util';
 import { chromium } from 'playwright';
 import { paint } from './proc.mjs';
@@ -203,6 +235,11 @@ export const FIXTURE_PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'wo
   'jobvite', 'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor', 'hibob', 'ultipro', 'dayforce',
   'paylocity', 'dice', 'clearcompany', 'adp',
   // ── end New ATSs ──
+  // ── jr7 TOOLING-7 (FIX7PLAN §3.2, §6.1 items 4, 5, 7; UKGR-20, T7-01, JDEF-16): the platforms jr7 adds, in
+  // src/core/enums.ts PLATFORMS' order: UKG Ready (secure<n>.saashr.com), Paycom, JobDiva, Eightfold and Jibe (iCIMS's
+  // front end, ICIMS7-11) ──
+  'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe',
+  // ── end jr7 TOOLING-7 ──
 ];
 
 /** The hosts the extension runs on (src/shared/hosts.ts, the one list): only frames on these are converted. */
@@ -219,7 +256,8 @@ const ATS_HOST = new RegExp('^(?:(?:job-)?boards\\.greenhouse\\.io|jobs\\.(?:eu\
 // ── New ATSs (DESIGN-NEW-ATS §6.1, Phase 0) ──
 /** The new ATSs' candidate hosts, as src/shared/hosts.ts HOST_PLATFORMS reads them, each by its candidate paths where
  *  the host serves other pages too: a frame on such a host off those paths (ClearCompany's /blank/page) is a
- *  third-party stand-in, one on them (UltiPro's RelyingPartyIframe) is converted. */
+ *  third-party stand-in, one on them (UltiPro's RelyingPartyIframe) is converted.
+ *  @type {Array<{ host: RegExp; paths?: string[]; pathPattern?: RegExp }>} */
 export const NEW_ATS_HOSTS = [
   { host: /^jobs\.jobvite\.com$/ },
   { host: /^(?!www\.)[a-z0-9-]+\.applytojob\.com$/, paths: ['/apply/'] },
@@ -236,10 +274,25 @@ export const NEW_ATS_HOSTS = [
   { host: /^(?!cc-)[a-z0-9-]+\.clearcompany\.com$/, paths: ['/careers/'] },
   { host: /^workforcenow\.adp\.com$/, paths: ['/mascsr/default/mdf/recruitment/', '/mascsr/applicant/mdf/recruitment/'] },
   { host: /^[a-z0-9-]+\.bamboohr\.com$/, paths: ['/careers/'] },
+  // ── jr7 TOOLING-7 (FIX7PLAN §3.2, the verified specs; as src/shared/hosts.ts HOST_PLATFORMS reads them once ENGINE-7 E0
+  // registers them): a candidate path only, never an employee page of the same host. `pathPattern` is a whole path the
+  // candidate pages have (UKG Ready's /ta/<company>.careers, Paycom's /v4/ats/web.php/portal/<client key>/jobs/<id> and
+  // .../applications); `paths` are prefixes as above. ──
+  { host: /^secure\d{0,2}\.saashr\.com$/, pathPattern: /^\/ta\/\d{3,10}\.careers$/ }, // ukgready (UKGR-2)
+  { host: /^www\.paycomonline\.net$/,
+    pathPattern: /^\/v4\/ats\/web\.php\/portal\/[A-Fa-f0-9]{32}\/(?:jobs\/\d+|applications)\/?$/ }, // paycom (PC7-02)
+  { host: /^www\d{0,2}\.jobdiva\.com$/, paths: ['/portal/'] }, // jobdiva (JDEF-12)
+  { host: /^(?!(?:app|www)\.)[a-z0-9-]+\.eightfold\.ai$/, paths: ['/careers'] }, // eightfold (JDEF-12)
+  { host: /^[a-z0-9-]+\.jibeapply\.com$/, paths: ['/jobs/'] }, // jibe (ICIMS7-11)
+  // ── end jr7 TOOLING-7 ──
 ];
-/** The new ATSs' fixture platforms (normaliseNewAts). */
+/** The new ATSs' fixture platforms (normaliseNewAts). jr7 TOOLING-7: and jr7's five, which keep their shadow roots and
+ *  have their unused style rules pruned as the new ATSs' do (the auditors converted them as `hibob`, a new ATS with no
+ *  normalisation of its own, and the Jibe page as `icims`, pruned too). */
 export const NEW_ATS_PLATFORMS = ['jobvite', 'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor',
-  'hibob', 'ultipro', 'dayforce', 'paylocity', 'dice', 'clearcompany', 'adp'];
+  'hibob', 'ultipro', 'dayforce', 'paylocity', 'dice', 'clearcompany', 'adp',
+  // jr7 TOOLING-7
+  'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe'];
 // ── end New ATSs ──
 
 /** The platforms whose fixtures keep only the style rules their own elements match (pruneCssInPage). */
@@ -257,6 +310,8 @@ export const PRUNED_CSS_PLATFORMS = ['icims', 'taleo', 'successfactors', 'oracle
   // as words of the redaction list (Font Awesome's star icon in breezy-0, careerplug-0 and -1, pinpoint-0 to -2).
   'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor', 'hibob',
   // ── end New ATSs ──
+  // jr7 TOOLING-7: UKG Ready's, Paycom's, JobDiva's, Eightfold's and Jibe's.
+  'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe',
 ];
 
 /** The platforms whose pages keep their open shadow roots (the snapshot build of 2026-11-06: SmartRecruiters, oracle-sf-sr,
@@ -373,6 +428,10 @@ export const FILE_NAME_PLACES = ['.file-upload__filename', '.ashby-application-f
   // one-click page: <span class="c-spl-file-list-item-name">NAME</span>, its delete spl-button's splarialabel repeating
   // the name).
   '.c-spl-file-list-item-name',
+  // jr7 TOOLING-7 (JDEF-16; SP\jr7\audit\jobdiva-eightfold.md, snapshot7 jobdiva2's Quick Apply): JobDiva's drop zone
+  // shows the attached résumé as <div class="jd-dropzone-filecard"><span>NAME</span><span><svg/></span></div> (its
+  // remove icon beside it), a name the redaction list only caught by chance.
+  '.jd-dropzone-filecard > span:first-child',
 ];
 /** Chosen answers drawn outside a native control (a select's shown value, a chip; the new ATSs, DESIGN-NEW-ATS §6.4):
  *  cleared, their words (aria-label, title, alt) and all, a list's own options kept (redactApplicantTextInPage). */
@@ -406,6 +465,11 @@ export const CHOSEN_PLACES = [
   // jr6 (adp-new-4): ADP's react-select (classNamePrefix MDFSelectBox) names the chosen chip in its remove button,
   // aria-label="Remove ANSWER" (adp2's multi-select questions).
   '.MDFSelectBox__multi-value__remove[aria-label]',
+  // jr7 TOOLING-7 (UKGR-20; SP\jr7\audit\ukgready.md, snapshot7 secure7.saashr): UKG Ready's value mirror, <span
+  // class="c-form-control__value--<hash>" aria-hidden="true"> beside each select and box of a span.c-form-control,
+  // which repeats the chosen option or the typed value once the control itself is cleared (an address, a salary, the
+  // questionnaire's answers); empty while nothing is chosen.
+  '[class*="c-form-control__value"]',
 ];
 /** s2 wd (the eeo study's converter findings): a search's results that list the applicant's own answer, an option of
  *  the list or not: each result's text, title and aria-label become REDACTED, inside a role=option too (redactApplicant-
@@ -580,10 +644,21 @@ const drawingSelector = ({ host, tag = '', id, className }) => {
 export const VALUE_MIRRORS = [{ tag: 'wfn-radio-button', attribute: 'radio-group-value' }];
 /** What clearChoicesInPage reads beside CHOSEN_MARKS on every conversion: the roving rows and their widgets, the
  *  CHOSEN_DRAWINGS parts and the VALUE_MIRRORS. */
+/** jr7 TOOLING-7 (UP7-14; SP\jr7\audit\ultipro.md, snapshot7 ultipro1 and ultipro2): a row a page opens or closes by
+ *  the person's answer, drawn open (`className` added) by clearChoicesInPage before anything is measured, as before any
+ *  answer, so the row's state tells nothing and the visibility measured is the fixture's. UltiPro's self-identification
+ *  survey opens its Race row unless the Hispanic-origin answer is "No" (<div class="row collapse" data-bind="collapse:
+ *  isHispanic() != 'No'">; Bootstrap's collapse shows it with "in"): open in ultipro-0, closed in ultipro-1 and in all 19
+ *  of snapshot7's application captures, which the converter refused ("visibility changed for 9 elements") while it opened
+ *  the row only after the measure (redactApplicantTextInPage).
+ *  @type {Array<{ selector: string; className: string }>} */
+export const OPENED_ROWS = [{ selector: '.collapse[data-bind*="isHispanic()"]', className: 'in' }];
 export const CLEAR_CHOICE_INPUT = {
   roving: { roles: ROVING_ROLES, tags: ROVING_TAGS, groupRoles: ROVING_GROUP_ROLES, groupTags: ROVING_GROUP_TAGS },
   drawings: CHOSEN_DRAWINGS.map(drawingSelector),
   mirrors: VALUE_MIRRORS,
+  // jr7 TOOLING-7 (UP7-14)
+  opened: OPENED_ROWS,
 };
 // ── end jr6 fixes ──
 
@@ -675,7 +750,35 @@ export const CHOSEN_MARKS = [
   // ADP's chosen sdf-radio-button draws its dot's svg toggled (the dot itself is a CHOSEN_DRAWINGS part).
   { selector: 'sdf-radio-button svg.toggled, :host(sdf-radio-button) svg.toggled', classes: ['toggled'], aria: false },
   // ── end jr6 fixes ──
+  // ── jr7 TOOLING-7 (T7-01; SP\jr7\audit\dayforce-paycom.md, snapshot7 paycomonline1): Paycom's uiLib marks the chosen
+  // radio's wrapper (<div class="uiLibRadio ui-radio-lg ui-radio-checked">) and the ticked box's label (<label
+  // class="uiLibCheckbox ui-checkbox-checked">); their icons are CHOSEN_ICONS'. ──
+  { selector: '.ui-radio-checked, .ui-checkbox-checked', classes: ['ui-radio-checked', 'ui-checkbox-checked'] },
 ];
+
+/** jr7 TOOLING-7 (T7-01; snapshot7 paycomonline1's application steps): an icon a widget draws for its chosen state, which
+ *  clearChoicesInPage replaces with a copy of the page's own unchosen twin (`twin`: the first in the document), as the
+ *  page draws an unchosen row; the conversion refuses a file where one stays (`testid`: chosenMarksIn reads it, a page
+ *  with no twin to copy among them). Paycom's uiLib radio, <span class="uiLibRadioIcon"><svg
+ *  data-testid="uiLibRadioIconcheckedNoColorPassed" aria-label="radio button checked" color="..."><path/><path/></svg>
+ *  (unchosen: uiLibRadioIconUncheckedNoColorPassed, "radio button unchecked"), and its box, <button
+ *  class="uiLibCheckboxButton"><svg data-testid="Checked Checkbox-icon" aria-label="Checked Checkbox"> (unchosen:
+ *  "Unchecked Checkbox-icon"): each svg's paths, colour, test id and label tell the answer.
+ *  @type {Array<{ chosen: string; twin: string; testid: string }>} */
+export const CHOSEN_ICONS = [
+  { chosen: '.uiLibRadioIcon > svg[data-testid^="uiLibRadioIconchecked"]',
+    twin: '.uiLibRadioIcon > svg[data-testid^="uiLibRadioIconUnchecked"]', testid: '^uiLibRadioIconchecked' },
+  { chosen: '.uiLibCheckboxButton svg[data-testid="Checked Checkbox-icon"]',
+    twin: '.uiLibCheckboxButton svg[data-testid="Unchecked Checkbox-icon"]', testid: '^Checked Checkbox-icon$' },
+];
+
+/** jr7 TOOLING-7 (T7-01): attributes in which a widget spells the text it shows, each value's middle (group 2 of
+ *  `source`) made REDACTED on every conversion (redactApplicantTextInPage) and refused where it stays (spelledIdsIn):
+ *  Paycom's uiLib names every tooltip anchor after the text it shows, data-testid="anchor-for-<text>-tooltip" (395 in
+ *  snapshot7 paycomonline1's eight captures: an email, a phone, cities, employers, job titles and a salary among the
+ *  page's own labels); an empty one (anchor-for--tooltip) is left as drawn.
+ *  @type {Array<{ attribute: string; source: string }>} */
+export const SPELLED_IDS = [{ attribute: 'data-testid', source: '^(anchor-for-)(.+)(-tooltip)$' }];
 
 /** jr6 (JV-10): the option rows of a choice group, which hold no answer once cleared, so every row of one group must
  *  read alike but for its text, ids, names, values and labels (unevenChoiceRowsInPage refuses a page where they do
@@ -742,6 +845,22 @@ export const PROFILE_PLACES = [
   // redactPlatformInPage's).
   'oc-experience-entry [data-test^="experience-entry-"]', 'oc-education-entry [data-test^="education-entry-"]',
   'spl-avatar',
+  // ── jr7 TOOLING-7 (UKGR-20; SP\jr7\audit\ukgready.md, snapshot7 secure7.saashr, signed in to the applicant session) ──
+  // The review's values (step 8/9: <div class="c-profile-summary-container"> ... <span
+  // class="c-one-column-layout__value">), each saved entry's metadata (a work or education entry, a reference: <div
+  // class="c-fat-item__body"><span class="c-metadata__text">: its place, its dates) and the avatar's initials (<span
+  // class="c-user-picture__abbr" title="<name>">, too short for any list; and its button, <button
+  // class="c-user-picture-button" title="<name>" aria-label="<name>">, which names the person whatever the list holds).
+  '.c-profile-summary-container .c-one-column-layout__value', '.c-fat-item__body .c-metadata__text',
+  'span.c-user-picture__abbr', 'button.c-user-picture-button',
+  // ── jr7 TOOLING-7 (T7-02; SP\jr7\audit\dayforce-paycom.md, snapshot7 dayforce1 captures 5 to 8): Dayforce's Personal
+  // Information read view once Update is pressed, outside any form[test-id$="-record"]: the name (a middle name too),
+  // address, city, state and zip, country, the preferred contact (personal-info-read-listed-items), the phone and the
+  // email, each a [test-id^="personal-info-read-"]; its labels end in "-label" ("Mobile Phone:", "Email:", the question
+  // "How did you hear about this job?") and stay. One "-label" is the answer itself: personal-info-read-candidate-source-
+  // label holds the source the person chose (no colon or question mark, no option of the form's), the fact FIXPLAN §0
+  // protects, so it goes too.
+  '[test-id^="personal-info-read-"]:not([test-id$="-label"])', '[test-id="personal-info-read-candidate-source-label"]',
 ];
 
 /** The controls beside an uploaded file that name it, and link to it: Workable's <a data-action="view" href="<the
@@ -771,8 +890,13 @@ export const ENTRY_SUMMARY_CONTROLS = ['[data-ui="education"] li [data-ui$="-sec
  *  (1).mht and of [seatgeek.com] ...SeatGeek.mht; /embed/job_board?for=<board>&validityToken=<token> in [weka.io]
  *  ...WEKA.mht); reCAPTCHA's challenge frame, bft= (recaptcha.net/recaptcha/enterprise/bframe in [jobs.ashbyhq.com]
  *  Head of Technology Foundations @ Rivian ....mht; and Dayforce's, google.com/recaptcha/api2/bframe in dayforce-0 to -2);
- *  HubSpot's visitor ids in a company page's links, hsutk=, __hstc=, __hssc=, __hsfp= (the ABC Legal capture). */
-export const PER_LOAD_PARAMS = ['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp'];
+ *  HubSpot's visitor ids in a company page's links, hsutk=, __hstc=, __hssc=, __hsfp= (the ABC Legal capture).
+ *  jr7 TOOLING-7 (UKGR-20; SP\jr7\audit\ukgready.md, snapshot7 secure7.saashr): UKG Ready's applicant session in every
+ *  address of the application, ActiveSessionId= (11 digits), sft= and rnd=; and its file service's ticket=, a JWT that
+ *  opens the applicant's uploaded document (/ta/fs?ticket=<JWT>). */
+export const PER_LOAD_PARAMS = ['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp',
+  // jr7 TOOLING-7 (UKGR-20)
+  'ActiveSessionId', 'sft', 'rnd', 'ticket'];
 
 /** The pattern source of a PER_LOAD_PARAMS value in an address (group 1: its separator, name and =), as
  *  withoutInjectedParams and stripInjectedInPage read it. */
@@ -786,8 +910,14 @@ const PER_LOAD_SOURCE = `([?&](?:${PER_LOAD_PARAMS.join('|')})=)[^&#]*`;
  *  careers-sentinel's posting, its frame, links and route map), ADP's source (snapshot6 adp1 and adp2: every address of
  *  the application), and for the same reason Workday's source, Jobvite's __jvst and __jvsd, Greenhouse's gh_src and
  *  Lever's lever-source; every REFERRAL_PREFIXES parameter too. Simplify's utm_source=Simplify stays INJECTED_PARAMS'
- *  (dropped whole). */
-export const REFERRAL_PARAMS = ['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source'];
+ *  (dropped whole). jr7 TOOLING-7 (SP\jr6\build\INT-2.md §5, the leftover BUILD7 hands TOOLING-7): and Jobvite's third
+ *  source tag, __jvsc (the channel), beside __jvst and __jvsd: in a person's address it says how they came; on a
+ *  posting's own share buttons it names the network (judged public in the three committed fixtures converted before it,
+ *  which the referral sweeps read by name and value: test/mhtml-to-fixture.test.ts JOBVITE_SHARE_CHANNELS).
+ *  @type {string[]} */
+export const REFERRAL_PARAMS = ['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source',
+  // jr7 TOOLING-7
+  '__jvsc'];
 /** The prefixes of referral parameters: every utm_* (utm_source, utm_medium, utm_campaign, utm_term, utm_content...;
  *  careers-sentinel's address and frame, a company's own links). */
 export const REFERRAL_PREFIXES = ['utm_'];
@@ -951,6 +1081,30 @@ export function normaliseWorkable(html) {
 }
 
 /**
+ * hCaptcha's site key in its frames' addresses (sitekey=), and each widget's id, wherever it stands: in its
+ * data-hcaptcha-widget-id and as the id= of its frames' hcaptcha.com addresses (the v3 Phase 6/7b review, S9: iCIMS and
+ * Oracle, normaliseTokens; jr7 TOOLING-7, PC7-08's markers: Paycom's contact dialog, normaliseNewAts). Each value
+ * becomes REDACTED and goes into `ids` (never printed). @param {string} html @param {string[]} ids @returns {string}
+ */
+function redactHcaptchaIn(html, ids) {
+  let text = html.replace(/[?&#;]sitekey=([^&"'\s<#]+)/g, (whole, value) => {
+    if (value === REDACTED) return whole;
+    ids.push(value);
+    return whole.replace(value, REDACTED);
+  });
+  /** @type {Set<string>} */
+  const widgets = new Set();
+  for (const match of text.matchAll(/\bdata-hcaptcha-widget-id="([^"]+)"/g)) widgets.add(match[1] ?? '');
+  for (const match of text.matchAll(/hcaptcha\.com\/[^"'\s<]*?[#&;]id=([A-Za-z0-9_-]+)/g)) widgets.add(match[1] ?? '');
+  for (const id of widgets) {
+    if (id === '' || id === REDACTED) continue;
+    ids.push(id);
+    text = text.split(id).join(REDACTED);
+  }
+  return text;
+}
+
+/**
  * The per-load values of the v3 Phase 6 and 7b platforms (see the header), each kind of token replaced by a fixed one
  * wherever it stands: a numbered id becomes its kind's own numbering in the order the page first names it, an opaque
  * token becomes REDACTED. Answers the text and the values replaced (never their values). Other platforms: unchanged.
@@ -985,19 +1139,9 @@ export function normaliseTokens(platform, html) {
       return whole.replace(value, REDACTED);
     });
   };
-  /** hCaptcha's site key in its frames' addresses (sitekey=), and each widget's id, wherever it stands: in its
-   *  data-hcaptcha-widget-id and as the id= of its frames' hcaptcha.com addresses. */
+  /** hCaptcha's site key in its frames' addresses and each widget's id (redactHcaptchaIn). */
   const redactCaptcha = () => {
-    redactValue(/[?&#;]sitekey=([^&"'\s<#]+)/g);
-    /** @type {Set<string>} */
-    const widgets = new Set();
-    for (const match of text.matchAll(/\bdata-hcaptcha-widget-id="([^"]+)"/g)) widgets.add(match[1] ?? '');
-    for (const match of text.matchAll(/hcaptcha\.com\/[^"'\s<]*?[#&;]id=([A-Za-z0-9_-]+)/g)) widgets.add(match[1] ?? '');
-    for (const id of widgets) {
-      if (id === '' || id === REDACTED) continue;
-      renderIds.push(id);
-      text = text.split(id).join(REDACTED);
-    }
+    text = redactHcaptchaIn(text, renderIds);
   };
   if (platform === 'workday') {
     renumber(/\b(input)-(\d+)\b/g, (prefix, index) => `${prefix}-${index + 1}`);
@@ -1051,15 +1195,19 @@ export function normaliseTokens(platform, html) {
 export function icimsRedactInPage(redacted) {
   const doc = globalThis.document;
   const counts = { names: 0, files: 0, options: 0, choices: 0, results: 0 };
-  /** Its text nodes' words become one REDACTED, every element inside kept (the visibility check counts them).
-   *  @param {Element} el */
-  const blank = (el) => {
+  /** Its text nodes' words become one REDACTED, every element inside kept (the visibility check counts them). jr7
+   *  TOOLING-7 (ICIMS7-15): with `each`, every text run keeps a REDACTED of its own (the white space around it kept), so
+   *  no element that held words loses its box: a searched list's result bolds the typed query in a <b> of its own
+   *  (snapshot7 iCIMS1's profile saves (4) and (5), an open School search), which an emptied run collapsed, and the
+   *  visibility check refused the page. @param {Element} el @param {boolean} [each] */
+  const blank = (el, each = false) => {
     if ((el.textContent ?? '').trim() === '' || (el.textContent ?? '').trim() === redacted) return false;
     const walker = doc.createTreeWalker(el, 4 /* NodeFilter.SHOW_TEXT */);
     let first = true;
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-      if ((node.nodeValue ?? '').trim() === '') continue;
-      node.nodeValue = first ? redacted : '';
+      const text = node.nodeValue ?? '';
+      if (text.trim() === '') continue;
+      node.nodeValue = each ? text.replace(/\S(?:[\s\S]*\S)?/, redacted) : first ? redacted : '';
       first = false;
     }
     return true;
@@ -1101,7 +1249,8 @@ export function icimsRedactInPage(redacted) {
         counts.choices += 1;
       }
       if (!searched) continue;
-      if (blank(result)) counts.results += 1;
+      // jr7 TOOLING-7 (ICIMS7-15): each run of a result keeps a REDACTED, so a bolded query's box stays.
+      if (blank(result, true)) counts.results += 1;
       for (const attribute of ['title', 'aria-label']) {
         if (result.hasAttribute(attribute)) result.setAttribute(attribute, redacted);
       }
@@ -1199,6 +1348,17 @@ export function normaliseNewAts(platform, html) {
     // formSectionView-view<N>, appView-view<N>), so the name takes either case.
     text = renumberIn(text, /\b(subscriberid="[A-Za-z-]+-view)\d+"/g, (prefix, index) => `${prefix}${index + 1}"`, renderIds);
     text = renumberIn(text, /\b(name="form)\d+"/g, (prefix, index) => `${prefix}${index + 1}"`, renderIds);
+  } else if (platform === 'paycom') {
+    // jr7 TOOLING-7 (T7-01, PC7-08's markers; snapshot7 paycomonline1's contact dialog): its invisible hCaptcha, as iCIMS's
+    // and Oracle's are (normaliseTokens): the widget's site key, its id wherever it stands, and a response it holds.
+    for (const pattern of [/\bdata-sitekey="([^"]+)"/g, /\bdata-hcaptcha-response="([^"]+)"/g]) {
+      text = text.replace(pattern, (whole, value) => {
+        if (value === REDACTED) return whole;
+        renderIds.push(value);
+        return whole.replace(value, REDACTED);
+      });
+    }
+    text = redactHcaptchaIn(text, renderIds);
   }
   return { text, renderIds };
 }
@@ -1222,6 +1382,9 @@ const NEW_ATS_ADDRESS_VALUES = {
   pinpoint: [SESSION_METAS, /(\/applications\/thanks\?(?:[^"'\s<>#]*?(?:&amp;|&))?token=|[?&;]cache_key=|\bX-Amz-(?:Credential|Signature)=)([A-Za-z0-9_%-]+)()/g],
   // Builder C: CareerPlug's session metas.
   careerplug: [SESSION_METAS],
+  // jr7 TOOLING-7 (JDEF-16; snapshot7 twillio, twilio.eightfold.ai): Eightfold's per-session CSRF token in its head,
+  // <meta name="_csrf" content="<token>"> (its _csrf_header names the header and stays).
+  eightfold: [/(<meta\b[^>]*?\bname="_csrf"[^>]*?\bcontent=")([^"]+)(")/g],
 };
 
 /** The new ATSs' per-session values (NEW_ATS_ADDRESS_VALUES) REDACTED in a page or an address; the values replaced go
@@ -1476,11 +1639,18 @@ const RESPELL_CHAR = 'A-Za-z0-9\\u00C0-\\u024F';
  * separator, a lower-case letter followed by a capital, a letter beside a digit), so "JaneRoe" in "optionJaneRoe" counts
  * and "Roe" in "Roebuck" does not. A string that looks like a phone number is left to redactSources' own rule, which
  * matches its digits with any punctuation. Answers each string's position in the list (from 1) and its pattern source.
- * @param {string[]} strings @returns {Array<{ index: number; source: string }>}
+ * jr7 TOOLING-7 (UKGR-20): with `phones`, a string that looks like a phone number is read too, as redactSources reads
+ * it (its digits in order, never inside a longer run of digits) with its punctuation also percent-encoded between them:
+ * the addresses (respelledAddress) take it so, where the exact rule never runs (UKG Ready's 11-digit applicant session,
+ * listed, in the header's source and the route map).
+ * @param {string[]} strings @param {{ phones?: boolean }} [options] @returns {Array<{ index: number; source: string }>}
  */
-export function respelledSources(strings) {
+export function respelledSources(strings, options = {}) {
   return strings.flatMap((entry, at) => {
-    if (/^[\d\s().+-]+$/.test(entry) && entry.replace(/\D/g, '').length >= 7) return [];
+    if (/^[\d\s().+-]+$/.test(entry) && entry.replace(/\D/g, '').length >= 7) {
+      if (options.phones !== true) return [];
+      return [{ index: at + 1, source: `(?<!\\d)${[...entry.replace(/\D/g, '')].join('(?:[\\s().+-]|%[0-9A-Fa-f]{2}){0,4}')}(?!\\d)` }];
+    }
     const runs = entry.match(new RegExp(`[${RESPELL_CHAR}]+`, 'g')) ?? [];
     if (runs.join('').length < 3) return [];
     const separators = `(?:[^${RESPELL_CHAR}]|%[0-9A-Fa-f]{2}){0,4}`;
@@ -1632,12 +1802,17 @@ export function stripInjectedInPage(input) {
  *   ROVING_GROUP_TAGS widget, else in the nearest ancestor holding another row of their kind) that stands on a row but
  *   the widget's first, every other row of its kind "-1" or without a tabindex, moves to the first row, the two rows
  *   swapping their tabindex: the stop an unanswered widget draws (ADP's blank lists, SmartRecruiters' and Workable's
- *   unanswered radios), so a page converted again where nothing was chosen stays as it was.
+ *   unanswered radios), so a page converted again where nothing was chosen stays as it was;
+ * - jr7 TOOLING-7 (T7-01): an icon drawn for the chosen state (`icons`: CHOSEN_ICONS) becomes a copy of the page's own
+ *   unchosen twin (none in the page: it stays, and the conversion refuses it);
+ * - jr7 TOOLING-7 (UP7-14): a row a page opens or closes by an answer (`opened`: OPENED_ROWS, UltiPro's Race row) is
+ *   drawn open, as before any answer, so the visibility measured is the fixture's.
  * Returns how many it cleared.
  * @param {{ redacted: string; marks?: Array<{ selector: string; classes?: string[]; patterns?: string[];
  *   attributes?: string[]; aria?: boolean; swap?: Record<string, string> }>; drawings?: string[];
  *   roving?: { roles: string[]; tags: string[]; groupRoles: string[]; groupTags: string[] };
- *   mirrors?: Array<{ tag: string; attribute: string }> }} input
+ *   mirrors?: Array<{ tag: string; attribute: string }>; icons?: Array<{ chosen: string; twin: string }>;
+ *   opened?: Array<{ selector: string; className: string }> }} input
  * @returns {{ choices: number }}
  */
 export function clearChoicesInPage(input) {
@@ -1692,6 +1867,25 @@ export function clearChoicesInPage(input) {
   for (const part of (input.drawings ?? []).length > 0 ? doc.querySelectorAll((input.drawings ?? []).join(', ')) : []) {
     part.remove();
     choices += 1;
+  }
+  // jr7 TOOLING-7 (UP7-14): a row a page opens or closes by an answer (`opened`: OPENED_ROWS, UltiPro's Race row) is
+  // drawn open, as before any answer.
+  for (const { selector, className } of input.opened ?? []) {
+    for (const row of doc.querySelectorAll(selector)) {
+      if (row.classList.contains(className)) continue;
+      row.classList.add(className);
+      choices += 1;
+    }
+  }
+  // jr7 TOOLING-7 (T7-01): an icon drawn for the chosen state (`icons`: CHOSEN_ICONS, Paycom's uiLib radios and boxes)
+  // becomes a copy of the page's own unchosen twin; with no twin in the page it stays, and the conversion refuses it.
+  for (const { chosen, twin } of input.icons ?? []) {
+    const model = doc.querySelector(twin);
+    if (model === null) continue;
+    for (const icon of doc.querySelectorAll(chosen)) {
+      icon.replaceWith(model.cloneNode(true));
+      choices += 1;
+    }
   }
   // jr6 fixes (PRIV-1's value mirror, from the ADP fixer): a group's chosen value repeated on each of its rows
   // (`mirrors`: VALUE_MIRRORS, ADP's wfn-radio-button radio-group-value) is blanked, as an unanswered group draws it.
@@ -1813,8 +2007,8 @@ export function clearChoicesInPage(input) {
  *   names are answered, so the reload, the rescan and the written files are checked for them as for a found email;
  * - each entry summary's text becomes REDACTED; each chosen or profile place's text, and its aria-label, title and alt
  *   words, in it and its descendants (an open shadow root's too, where the platform keeps them);
- * - an open searchable Ant select's options' words and titles (dayforce-2), and UltiPro's Race row drawn open (its
- *   state told the Hispanic-origin answer: ultipro-0, -1);
+ * - an open searchable Ant select's options' words and titles (dayforce-2) (UltiPro's Race row, which this pass drew
+ *   open after the measure, is clearChoicesInPage's since jr7 TOOLING-7, UP7-14: OPENED_ROWS);
  * - each file or entry control keeps the words before the name that say what it does (its data-action, or its title,
  *   which names nothing else) in its aria-label and title, the rest REDACTED (jr6: one with neither keeps its label's
  *   words around a file name the page showed, the name REDACTED); its address becomes "#" and its download name
@@ -1822,10 +2016,12 @@ export function clearChoicesInPage(input) {
  * - a custom element's typed or chosen value and default-value (ukg-input, an answered sdf-radio-group; never an
  *   option's own element: -button, -option, -item, -radio, -checkbox, -tab), a date widget's data-date-value, and the
  *   data-gtm-form-interact-* attributes a tag manager adds once a form is typed into;
- * - s2 wd: each search result place's (`results`: SEARCH_RESULT_PLACES) text, title and aria-label, a role=option's too.
+ * - s2 wd: each search result place's (`results`: SEARCH_RESULT_PLACES) text, title and aria-label, a role=option's too;
+ * - jr7 TOOLING-7 (T7-01): the shown text a widget spells in an attribute (`spelled`: SPELLED_IDS, Paycom's tooltip
+ *   anchors' data-testid), REDACTED inside its frame of words.
  * Returns how many places and repeats it cleared, and the file names (kept in memory, never printed or written).
  * @param {{ fileNames: string[]; entries: string[]; chosen: string[]; profile: string[]; links: string[];
- *   results?: string[]; redacted: string }} input
+ *   results?: string[]; redacted: string; spelled?: Array<{ attribute: string; source: string }> }} input
  * @returns {{ applicantText: number; names: string[] }}
  */
 export function redactApplicantTextInPage(input) {
@@ -1919,16 +2115,8 @@ export function redactApplicantTextInPage(input) {
     }
     applicantText += 1;
   }
-  // The new ATSs, builder A: UltiPro's self-identification survey opens its Race row unless the Hispanic origin answer
-  // is "No" (data-bind "collapse: isHispanic() != 'No'"): open in ultipro-0, closed in ultipro-1, where the row sits in
-  // the hidden application. Drawn open in every fixture, as before any answer, so the row's state tells nothing. It is
-  // opened after the measure, so where that would change what a person sees the reload's visibility check refuses the
-  // conversion.
-  for (const row of doc.querySelectorAll('.collapse[data-bind*="isHispanic()"]')) {
-    if (row.classList.contains('in')) continue;
-    row.classList.add('in');
-    applicantText += 1;
-  }
+  // (The new ATSs, builder A: UltiPro's Race row, drawn open in every fixture, as before any answer. jr7 TOOLING-7,
+  // UP7-14: clearChoicesInPage opens it now, before the measure: OPENED_ROWS.)
   for (const control of placesOf(input.links)) {
     for (const element of [control, ...control.querySelectorAll('*')]) {
       // The words before the name that say what the control does ("view", "delete": its data-action; "Edit", "Delete":
@@ -1970,6 +2158,15 @@ export function redactApplicantTextInPage(input) {
     }
     for (const attribute of [...element.attributes]) {
       if (attribute.name.toLowerCase().startsWith('data-gtm-form-interact')) element.removeAttribute(attribute.name);
+    }
+    // jr7 TOOLING-7 (T7-01): an attribute in which a widget spells the text it shows (`spelled`: SPELLED_IDS, Paycom's
+    // uiLib data-testid="anchor-for-<text>-tooltip") keeps its frame, the text REDACTED; an empty one stays as drawn.
+    for (const { attribute, source } of input.spelled ?? []) {
+      const value = element.getAttribute(attribute);
+      const parts = value === null ? null : new RegExp(source).exec(value);
+      if (parts === null || parts[2] === redacted) continue;
+      element.setAttribute(attribute, `${parts[1] ?? ''}${redacted}${parts[3] ?? ''}`);
+      applicantText += 1;
     }
   }
   // Each file name wherever else the frame repeats it, longest first, as written and percent-encoded.
@@ -2034,6 +2231,81 @@ export function measureInPage() {
     states.push(`${element.tagName.toLowerCase()}${shown ? '+' : '-'}`);
   }
   return states;
+}
+
+/** jr7 TOOLING-7 (JDEF-V1): the style orders a conversion can keep (--style-order): `archive`, the order the capture
+ *  holds; `live`, the order the live page had where Blink's MHTML serializer is known to invert it (below). */
+export const STYLE_ORDERS = ['archive', 'live'];
+/** jr7 TOOLING-7 (JDEF-V1): each platform's default style order where it is not `archive` (JobDiva's: the verifier
+ *  measured its form's text boxes drawn with no edge in the archived order, none in the live one). */
+export const STYLE_ORDER_DEFAULTS = { jobdiva: 'live' };
+
+/**
+ * jr7 TOOLING-7 (JDEF-V1; SP\jr7\audit\jobdiva-eightfold-verify.md §2.1): the live cascade order, put back. Blink's MHTML
+ * serializer writes every <style> element (the page's own and the ones its scripts append at run time) as a
+ * <link rel="stylesheet" href="cid:css-<id>@mhtml.blink"> at the top of <head>, above the head's own <link> sheets (the
+ * verifier's experiment: a page with <link a.css> and a <style> appended by its script, border 1px live, 0px from the
+ * archive; JobDiva's captures: 33 cid sheets, then <title>, ..., bootstrap.min.css, a.css). Where the two conflict, the
+ * archive inverts the live page: JobDiva's .jd-form edge lost under a.css's .form-control { border: 0 }, its own error
+ * edge too. With --style-order live, before anything is measured, those cid sheets move, in their order, to just after
+ * the head's last <link> sheet that is no cid: (each loaded again from the archive: the conversion waits for them,
+ * sheetsLoadedInPage, before it measures), and transformInPage inlines every sheet where it then stands. Answers how many
+ * it moved (none where the head links no sheet of its own). (Synchronous: the page runs no script, so no event or timer
+ * of its fires; the conversion polls from outside.)
+ * @returns {number}
+ */
+export function liveStyleOrderInPage() {
+  const doc = globalThis.document;
+  const head = doc.head;
+  if (!head) return 0;
+  /** @param {Element} link */
+  const isSheet = (link) => (link.getAttribute('rel') ?? '').toLowerCase().split(/\s+/).includes('stylesheet');
+  const links = Array.from(head.querySelectorAll('link')).filter(isSheet);
+  const archived = links.filter((link) => /^cid:css-/i.test(link.getAttribute('href') ?? ''));
+  const own = links.filter((link) => !archived.includes(link));
+  const last = own[own.length - 1];
+  if (last === undefined || archived.length === 0) return 0;
+  const moved = archived.filter((link) => (last.compareDocumentPosition(link) & 2 /* PRECEDING */) !== 0);
+  last.after(...moved);
+  return moved.length;
+}
+
+/** jr7 TOOLING-7 (JDEF-V1): whether every stylesheet <link> of the head whose cid: sheet the archive holds (`held`) has
+ *  its sheet again, after liveStyleOrderInPage moved it (one the archive lacks never loads, and is not waited for).
+ *  @param {string[]} held @returns {boolean} */
+export function sheetsLoadedInPage(held) {
+  return Array.from(globalThis.document.head?.querySelectorAll('link') ?? []).every((link) => {
+    const rel = (link.getAttribute('rel') ?? '').toLowerCase().split(/\s+/);
+    return !rel.includes('stylesheet') || !held.includes(link.getAttribute('href') ?? '')
+      || /** @type {HTMLLinkElement} */ (link).sheet !== null;
+  });
+}
+
+/**
+ * jr7 TOOLING-7 (T7-01; snapshot7 paycomonline1's signature step, capture 7): a canvas stood in by the box it draws.
+ * The capture is opened with scripting off, where a <canvas> is no picture but an inline box for its fallback content
+ * (HTML: "when scripting is disabled, the canvas represents its fallback content"), measured hidden (Paycom's signature
+ * pad: 1 by 17 pixels); the fixture is served with scripting on, where it is a picture of its own size, shown (476 by 93
+ * inside its 480 by 96 pad), so the visibility check refused the page. Before anything is measured, every canvas, on
+ * every platform, keeps the box it draws with scripting on in both settings: display inline-block, at least its width
+ * and height attributes' pixels (300 by 150 without them, as HTML defaults them), its page's own sizing left on top.
+ * It draws nothing: a capture keeps no drawing of a canvas. Answers how many it stood in.
+ * @returns {number}
+ */
+export function standInCanvasesInPage() {
+  const doc = globalThis.document;
+  let count = 0;
+  for (const canvas of doc.querySelectorAll('canvas')) {
+    const size = (/** @type {string} */ name, /** @type {number} */ fallback) => {
+      const value = Number.parseInt(canvas.getAttribute(name) ?? '', 10);
+      return Number.isFinite(value) && value >= 0 ? value : fallback;
+    };
+    const style = (canvas.getAttribute('style') ?? '').trim();
+    canvas.setAttribute('style', [...(style === '' ? [] : [style.endsWith(';') ? style : `${style};`]),
+      `display: inline-block; min-width: ${size('width', 300)}px; min-height: ${size('height', 150)}px;`].join(' '));
+    count += 1;
+  }
+  return count;
 }
 
 // --- Workday's application steps (the owner's snapshots of 2026-11-06; docs/OWNER-QUESTIONS.md 93) ------------------
@@ -2324,7 +2596,8 @@ export function redactWorkdayInPage(input) {
  *   redact: string[]; email: string; notEmail: string; phone: string;
  *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; redacted: string;
  *   postingPlaces?: string; respelled?: Array<{ index: number; source: string }>; listRows?: string;
- *   postingCopies?: Array<{ attribute: string; title: string[]; description: string[] }> }} input
+ *   postingCopies?: Array<{ attribute: string; title: string[]; description: string[] }>;
+ *   frameSrc?: Array<{ selector: string; url: string }> }} input
  */
 export function transformInPage(input) {
   const doc = globalThis.document;
@@ -2521,24 +2794,56 @@ export function transformInPage(input) {
   // address the archive lacks stays, and the final check refuses the request it makes.
   /** @type {string[]} */
   const linkedFrames = [];
+  // jr7 TOOLING-7 (RBP7-V2 a): --frame-src gives a frame the capture saved unloaded (no web address) the public vendor
+  // address its selector names, served by the third-party stand-in; one that names a frame with an address of its own
+  // changes nothing and is counted, so the conversion refuses it. `given[n]`, `refused[n]`: per entry.
+  const frameSrc = input.frameSrc ?? [];
+  const given = frameSrc.map(() => 0);
+  const refused = frameSrc.map(() => 0);
+  /** The --frame-src entry a frame matches, by position, or -1. @param {Element} frame */
+  const entryOf = (frame) => frameSrc.findIndex(({ selector }) => {
+    try {
+      return frame.matches(selector);
+    } catch {
+      return false;
+    }
+  });
+  /** Gives an unloaded frame its entry's address; answers whether it did. @param {Element} frame */
+  const giveAddress = (frame) => {
+    const at = entryOf(frame);
+    const url = frameSrc[at]?.url;
+    if (url === undefined) return false;
+    frame.setAttribute('src', url);
+    linkedFrames.push(url);
+    given[at] = (given[at] ?? 0) + 1;
+    return true;
+  };
   for (const frame of doc.querySelectorAll('iframe[src], frame[src]')) {
     const src = frame.getAttribute('src') ?? '';
     if (!src.startsWith('cid:')) {
       if (!/^https?:/i.test(src.trim())) {
+        if (giveAddress(frame)) continue;
         frame.removeAttribute('src');
         counts.framesDropped += 1;
+      } else if (entryOf(frame) >= 0) {
+        refused[entryOf(frame)] = (refused[entryOf(frame)] ?? 0) + 1;
       }
       continue;
     }
     const url = frameUrls[src] ?? null;
     if (url) {
+      if (entryOf(frame) >= 0) refused[entryOf(frame)] = (refused[entryOf(frame)] ?? 0) + 1;
       frame.setAttribute('src', url);
       linkedFrames.push(url);
       counts.frames += 1;
-    } else {
+    } else if (!giveAddress(frame)) {
       frame.removeAttribute('src');
       counts.framesDropped += 1;
     }
+  }
+  // jr7 TOOLING-7 (RBP7-V2 a): a frame saved with no address at all.
+  for (const frame of frameSrc.length > 0 ? doc.querySelectorAll('iframe:not([src]), frame:not([src])') : []) {
+    giveAddress(frame);
   }
 
   // Forms never reach the site: the e2e harness records any request to /__submitted as a failure.
@@ -2849,7 +3154,7 @@ export function transformInPage(input) {
   }
 
   return { counts, found: [...found], tokens: [...tokens].map(([token, where]) => ({ token, where })), notes,
-    linkedFrames };
+    linkedFrames, frameSrc: { given, refused } };
 }
 
 /**
@@ -2999,13 +3304,16 @@ export function serializeDeepInPage() {
 /**
  * The per-platform redactions (see the header), after transformInPage: each named element's text becomes REDACTED (its
  * box kept), and a chosen answer the page draws on a button or a custom element is unchosen. Answers counts (never
- * values) to add to the frame's own.
- * @param {{ platform: string; redacted: string }} input
- * @returns {{ widgetText: number; checked: number; typedValues: number; placeholders: number }}
+ * values) to add to the frame's own. jr7 TOOLING-7 (jr7-O5): Oracle's profile tiles and its My Applications tiles
+ * (`keepApplication`: the captured posting's job id, whose tile stays), counted in `applications` (tiles redacted) and
+ * `keptApplications`.
+ * @param {{ platform: string; redacted: string; keepApplication?: string }} input
+ * @returns {{ widgetText: number; checked: number; typedValues: number; placeholders: number; applications: number;
+ *   keptApplications: number }}
  */
 export function redactPlatformInPage(input) {
   const doc = globalThis.document;
-  const counts = { widgetText: 0, checked: 0, typedValues: 0, placeholders: 0 };
+  const counts = { widgetText: 0, checked: 0, typedValues: 0, placeholders: 0, applications: 0, keptApplications: 0 };
   /** Every non-blank text node inside `element` becomes REDACTED. @param {Element} element */
   const redactText = (element) => {
     const walker = doc.createTreeWalker(element, 4 /* NodeFilter.SHOW_TEXT */);
@@ -3036,6 +3344,53 @@ export function redactPlatformInPage(input) {
       }
       pill.setAttribute('aria-checked', 'false');
       pill.classList.remove('cx-select-pill-section--selected');
+    }
+    // jr7 TOOLING-7 (jr7-O5; SP\jr7\audit\oracle.md, snapshot7 oraclecloud1's step 1 filled, captures 4 to 8): the newer
+    // layout's profile tiles, <article class="apply-flow-profile-item-tile"><div class="apply-flow-profile-item-tile__summary"
+    // aria-label="<the entry's words>"><div class="...__summary-content"><div class="...__summary-title"><span>TITLE</span>
+    // </div><div class="...__summary-subtitle">...</div><div class="...__summary-validation">...</div></div>, each an
+    // education or work entry or a skill of the person's: the summary's and its parts' text runs and the aria-label and
+    // title of each element in them, but the tile's actions (<div class="...__actions-container">: its Edit and Delete
+    // buttons, named generically), which stay.
+    const actions = '[class*="apply-flow-profile-item-tile__actions"]';
+    for (const summary of doc.querySelectorAll('[class*="apply-flow-profile-item-tile__summary"]')) {
+      let changed = false;
+      const walker = doc.createTreeWalker(summary, 4 /* NodeFilter.SHOW_TEXT */);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.nodeValue?.trim() || node.nodeValue === input.redacted || node.parentElement?.closest(actions)) continue;
+        node.nodeValue = input.redacted;
+        changed = true;
+      }
+      for (const element of [summary, ...summary.querySelectorAll('*')]) {
+        if (element.closest(actions)) continue;
+        for (const name of ['aria-label', 'title']) {
+          if ((element.getAttribute(name) ?? '').trim() === '' || element.getAttribute(name) === input.redacted) continue;
+          element.setAttribute(name, input.redacted);
+          changed = true;
+        }
+      }
+      if (changed) counts.widgetText += 1;
+    }
+    // jr7 TOOLING-7 (jr7-O5, the verifier's addition; oraclecloud1's confirmation at <site>/my-profile): "My Applications"
+    // lists every application the person has, in its active, drafts and resolved containers (<li class="cs-application-tile">,
+    // its <a class="cs-job-info__title" href="<site>/job/<id>">): their job-search history. Every tile but the captured
+    // posting's (`keepApplication`, --keep-application <job id>: the one its title link names /job/<id>) loses its words,
+    // its labels and its links' addresses; with no job named, every tile does.
+    for (const tile of doc.querySelectorAll('.cs-application-tile')) {
+      const named = input.keepApplication === undefined ? false : [...tile.querySelectorAll('a.cs-job-info__title[href]')]
+        .some((link) => new RegExp(`/job/${input.keepApplication}(?:[/?#]|$)`).test(link.getAttribute('href') ?? ''));
+      if (named) {
+        counts.keptApplications += 1;
+        continue;
+      }
+      redactText(tile);
+      for (const element of [tile, ...tile.querySelectorAll('*')]) {
+        for (const name of ['aria-label', 'title', 'alt']) {
+          if ((element.getAttribute(name) ?? '').trim() !== '') element.setAttribute(name, input.redacted);
+        }
+        if (element.hasAttribute('href')) element.setAttribute('href', '#');
+      }
+      counts.applications += 1;
     }
   } else if (input.platform === 'smartrecruiters') {
     // [jobs.smartrecruiters.com] the one-click application: its form elements carry what was typed or chosen in their
@@ -3703,6 +4058,23 @@ export function checkedForms(text) {
   return [masked, entities, decodePercents(entities)].map((form) => form.toLowerCase());
 }
 
+/**
+ * jr7 TOOLING-7 (the jr6 leftover, SP\jr6\build\INT-2.md §6 item 3: "inlined stylesheets are never checked"): the
+ * written file's inlined stylesheets, which checkedForms masks as page assets, as the final check reads them for the
+ * needles no stylesheet may hold either (tokenNeedles: jr_id, another extension's parameter or UI, a per-load token, a
+ * sign-in token, a JWT; referralNeedles: a referral parameter's value): each <style>'s text (a declarative shadow root's
+ * too) with base64 payloads masked, as written and percent-decoded, in lower case. (The listed strings are not read
+ * here: a page's own class names and icon rules may spell a listed word, which leakcount and the leak gate judge.)
+ * redactReferralParams already runs over the whole written text, a stylesheet's included (an injected content blocker's
+ * filter list spells link addresses with their utm_ tags: INT-2 §4), so this check proves it ran.
+ * @param {string} text @returns {string[]}
+ */
+export function checkedStyleForms(text) {
+  const styles = [...text.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)]
+    .map((match) => (match[1] ?? '').replace(/(data:[^,"'\s)]*;base64,)[A-Za-z0-9+/=\s]+/gi, '$1'));
+  return styles.flatMap((style) => [style, decodePercents(style)]).map((form) => form.toLowerCase());
+}
+
 // ── snapshot build 2026-11-06 (core pass Z1, item 38): the token checks, one list for the conversion and the sweep ──
 /**
  * The final check's needles that read no owner's list: Jobright's jr_id anywhere (DESIGN-NEW-ATS §6.4, §6.5); and (the
@@ -3933,6 +4305,8 @@ export const CHOSEN_MARK_LABELS = {
   roving: "a widget's roving tab stop on a row but its first (tabindex)",
   drawing: 'a part a widget draws on its chosen row alone (CHOSEN_DRAWINGS)',
   mirrored: "a radio group's chosen value mirrored on its rows (VALUE_MIRRORS: radio-group-value)",
+  // jr7 TOOLING-7 (T7-01)
+  icon: "an icon drawn for a chosen row with no unchosen twin in the page to copy (CHOSEN_ICONS: Paycom's uiLib)",
 };
 
 /**
@@ -3953,7 +4327,8 @@ export const CHOSEN_MARK_LABELS = {
  * - jr6 fixes (PRIV-2, REVC-4; CHOSEN_MARK_LABELS): an Angular state class on any other element but a form; a checked or
  *   selected attribute on an element but an input or an option (a custom list item's selected keeps its own label); a
  *   widget's roving tab stop on a row but its first (rovingStopsOffFirst); a CHOSEN_DRAWINGS part inside its host;
- * - jr6 fixes (PRIV-1's value mirror): a VALUE_MIRRORS attribute that is not empty (ADP's radio-group-value).
+ * - jr6 fixes (PRIV-1's value mirror): a VALUE_MIRRORS attribute that is not empty (ADP's radio-group-value);
+ * - jr7 TOOLING-7 (T7-01): an icon CHOSEN_ICONS names by its test id (Paycom's uiLib chosen radio and box).
  * @param {string} text @returns {string[]}
  */
 export function chosenMarksIn(text) {
@@ -4000,6 +4375,9 @@ export function chosenMarksIn(text) {
       && decodeEntities(attributes.get(attribute) ?? '').trim() !== '')) {
       found.add(CHOSEN_MARK_LABELS.mirrored);
     }
+    // jr7 TOOLING-7 (T7-01): an icon drawn for a chosen row (Paycom's uiLib), which no twin replaced.
+    const testid = decodeEntities(attributes.get('data-testid') ?? '');
+    if (testid !== '' && CHOSEN_ICONS.some((icon) => new RegExp(icon.testid).test(testid))) found.add(CHOSEN_MARK_LABELS.icon);
     const angularElement = ['input', 'select', 'textarea', 'ng-form'].includes(name)
       || ['ng-model', 'data-ng-model', 'ng-form', 'data-ng-form'].some((attribute) => attributes.has(attribute));
     if (classes.some((each) => angular.test(each))) {
@@ -4022,6 +4400,29 @@ export function chosenMarksIn(text) {
   return [...found];
 }
 // ── end of the security fix's block ──
+
+/**
+ * jr7 TOOLING-7 (T7-01): each attribute SPELLED_IDS names that still spells a widget's shown text (Paycom's uiLib
+ * data-testid="anchor-for-<text>-tooltip", its text neither REDACTED nor empty), by the attribute's name and its
+ * element's tag, never a value: the conversion refuses such a file, and test/mhtml-to-fixture.test.ts sweeps every
+ * committed fixture with it. Read over the markup, stylesheets, scripts and comments aside.
+ * @param {string} text @returns {string[]}
+ */
+export function spelledIdsIn(text) {
+  const markup = text.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  /** @type {Set<string>} */
+  const found = new Set();
+  for (const [, tag = '', rest = ''] of markup.matchAll(/<([a-zA-Z][\w-]*)((?:\s[^<>]*?)?)\/?>/g)) {
+    const attributes = attributesOf(rest);
+    for (const { attribute, source } of SPELLED_IDS) {
+      const middle = new RegExp(source).exec(decodeEntities(attributes.get(attribute) ?? ''))?.[2];
+      if (middle !== undefined && middle !== REDACTED) {
+        found.add(`a widget's shown text spelled in its ${attribute} (on <${tag.toLowerCase()}>; SPELLED_IDS)`);
+      }
+    }
+  }
+  return [...found];
+}
 
 /**
  * jr6 round 2 (TOOLING; SP\jr6\BUILD.md 4b): each redaction-list entry that survives in an attribute of a written file,
@@ -4143,8 +4544,10 @@ export function onAtsHost(url) {
     }
     // ── New ATSs (DESIGN-NEW-ATS §6.1): their hosts, path-scoped as src/shared/hosts.ts reads them ──
     const host = parsed.hostname.toLowerCase();
+    // jr7 TOOLING-7: an entry's pathPattern is a whole candidate path (UKG Ready's, Paycom's).
     if (parsed.protocol === 'https:' && NEW_ATS_HOSTS.some((entry) => entry.host.test(host)
-      && (entry.paths === undefined || entry.paths.some((path) => parsed.pathname.startsWith(path))))) return true;
+      && (entry.paths === undefined || entry.paths.some((path) => parsed.pathname.startsWith(path)))
+      && (entry.pathPattern === undefined || entry.pathPattern.test(parsed.pathname)))) return true;
     // ── end New ATSs ──
     return parsed.protocol === 'https:' && ATS_HOST.test(parsed.hostname);
   } catch {
@@ -4167,16 +4570,37 @@ const commentJson = (value) => JSON.stringify(value).replace(/--/g, '-\\u002d');
  * visibility changed. jr6: `replaceText` (--replace-text) gives each element its selector names synthetic text before
  * anything is measured (replaceTextInPage); a listed string met in the page's own text where it tells its value by
  * elimination (listedPlacesInPage), or choice rows that differ after clearing (unevenChoiceRowsInPage), are refused.
+ * jr7 TOOLING-7 (jr7-O5): `keepApplication` (--keep-application <job id>, Oracle only) names the captured posting, whose
+ * My Applications tile a my-profile page keeps (redactPlatformInPage); a page whose tiles name none of it is refused.
+ * jr7 TOOLING-7 (JDEF-V1): `styleOrder` (--style-order archive|live; default STYLE_ORDER_DEFAULTS[platform], else
+ * archive): with live, the cid: sheets Blink hoisted go after the head's own linked sheets before anything is measured
+ * (liveStyleOrderInPage); the header records styleOrder and the sheets moved.
+ * jr7 TOOLING-7 (RBP7-V2 a): `frameSrc` (--frame-src <css>=<https address>, repeatable) gives each frame the capture
+ * saved unloaded (no web address) that the selector names the public vendor address, served by the third-party
+ * stand-in (readFrameSrcOption checks the address: https, a third party's, no credentials, no site key); an entry that
+ * names no such frame, or names a frame with an address of its own, is refused.
  * @param {{ file: string; platform: string; caseName: string; redact?: string[]; outDir?: string; folderName?: string;
- *   replaceText?: Array<{ selector: string; text: string }> }} options
+ *   replaceText?: Array<{ selector: string; text: string }>; keepApplication?: string; styleOrder?: string;
+ *   frameSrc?: Array<{ selector: string; url: string }> }} options
  * @returns {Promise<Conversion>}
  */
 export async function convertMhtml({ file, platform, caseName, redact = [], outDir = join(ROOT, 'fixtures'),
-  folderName = platform, replaceText = [] }) {
+  folderName = platform, replaceText = [], keepApplication, styleOrder: styleOrderOption, frameSrc = [] }) {
   if (!FIXTURE_PLATFORMS.includes(platform)) fail(`--platform must be one of ${FIXTURE_PLATFORMS.join(', ')}`);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(caseName)) fail('--case must be lower-case words joined by hyphens');
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(folderName)) fail('--folder must be lower-case words joined by hyphens');
   if (!/\.mht(?:ml)?$/i.test(file)) fail('the capture must be an .mhtml file');
+  // jr7 TOOLING-7 (RBP7-V2 a): each --frame-src entry's address is a third party's public one.
+  for (const [index, { selector, url }] of frameSrc.entries()) readFrameSrcOption(`${selector}=${url}`, index + 1);
+  // jr7 TOOLING-7 (JDEF-V1): the style order kept, given or the platform's default.
+  const styleOrder = styleOrderOption
+    ?? /** @type {Record<string, string>} */ (STYLE_ORDER_DEFAULTS)[platform] ?? 'archive';
+  if (!STYLE_ORDERS.includes(styleOrder)) fail(`--style-order must be one of ${STYLE_ORDERS.join(', ')}`);
+  // jr7 TOOLING-7 (jr7-O5): the captured posting's job id, whose My Applications tile stays (Oracle's my-profile).
+  if (keepApplication !== undefined) {
+    if (platform !== 'oracle') fail('--keep-application is for --platform oracle (its My Applications tiles) alone');
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(keepApplication)) fail('--keep-application must be a job id (letters, digits, - or _)');
+  }
   // jr6 (jobvite-new-2): each replacement names an element and the synthetic text it takes; named by position, never by
   // its selector or text, in what is printed.
   for (const [index, { selector, text }] of replaceText.entries()) {
@@ -4199,8 +4623,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   // jr6 round 2 (TOOLING; BUILD.md 4b): the listed strings as they may stand respelled in an attribute or an address;
   // the page's and its frames' addresses lose them (respelledAddress), the frames' src, route map and header alike.
   const respelled = respelledSources(redact);
+  // jr7 TOOLING-7 (UKGR-20): the addresses read the phone-shaped strings too (the exact rule never runs on them).
+  const addressSources = respelledSources(redact, { phones: true });
   const capturedUrl = main?.location ?? mhtml.snapshotUrl;
-  const mainUrl = capturedUrl ? respelledAddress(capturedUrl, respelled) : capturedUrl;
+  const mainUrl = capturedUrl ? respelledAddress(capturedUrl, addressSources) : capturedUrl;
   if (!main || !mainUrl || !/^https?:/i.test(mainUrl)) fail('the capture names no web address for its page');
   const captured = mhtml.date && !Number.isNaN(Date.parse(mhtml.date)) ? new Date(mhtml.date).toISOString() : null;
 
@@ -4229,7 +4655,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     // Snapshot build, boards: a frame's address without another extension's parameters (INJECTED_PARAMS).
     if (part.contentId) {
       frameUrls[part.contentId] = part.location && /^https?:/i.test(part.location)
-        ? respelledAddress(withoutInjectedParams(part.location), respelled) : null;
+        ? respelledAddress(withoutInjectedParams(part.location), addressSources) : null;
     }
   }
   const resources = resourcesOf(mhtml);
@@ -4284,12 +4710,32 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     // visibility check compares the page as the replacements left it.
     /** @type {number[][]} */
     const replaced = [];
+    // jr7 TOOLING-7 (T7-01): each frame's canvases stood in by the box they draw with scripting on (standInCanvasesInPage).
+    /** @type {number[]} */
+    const canvases = [];
+    // jr7 TOOLING-7 (RBP7-V2 a): the frames each --frame-src entry gave an address, and those it would not.
+    /** @type {number[]} */
+    const framesGiven = frameSrc.map(() => 0);
+    /** @type {number[]} */
+    const framesRefused = frameSrc.map(() => 0);
+    // jr7 TOOLING-7 (JDEF-V1): the cid: sheets each frame's live style order moved (liveStyleOrderInPage).
+    /** @type {number[]} */
+    const restyled = [];
+    const heldSheets = Object.keys(resources).filter((key) => key.startsWith('cid:') && resources[key]?.css !== undefined);
     for (const { frame } of converted) {
       if (deep) await frame.evaluate(deepenInPage);
       stripped.push({ ...await frame.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: PER_LOAD_SOURCE,
         dropOverlays: !deep, redacted: REDACTED, closedMark: CLOSED_ROOT_MARK }),
         ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
-        marks: CHOSEN_MARKS, ...CLEAR_CHOICE_INPUT }) });
+        marks: CHOSEN_MARKS, ...CLEAR_CHOICE_INPUT, icons: CHOSEN_ICONS }) });
+      canvases.push(await frame.evaluate(standInCanvasesInPage));
+      // jr7 TOOLING-7 (JDEF-V1): the live style order, each moved sheet loaded again before the measure (the page runs no
+      // script, so the conversion polls; one the archive lacks is not waited for).
+      const moved = styleOrder === 'live' ? await frame.evaluate(liveStyleOrderInPage) : 0;
+      for (let tries = 0; moved > 0 && tries < 100 && !await frame.evaluate(sheetsLoadedInPage, heldSheets); tries += 1) {
+        await new Promise((done) => setTimeout(done, 50));
+      }
+      restyled.push(moved);
       replaced.push(replacements.length === 0 ? [] : await frame.evaluate(replaceTextInPage, { replacements,
         copies: POSTING_COPY_ATTRIBUTES }));
     }
@@ -4324,13 +4770,22 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       // (PLATFORM_REDACTIONS).
       const applicant = await frame.evaluate(redactApplicantTextInPage, { fileNames: FILE_NAME_PLACES,
         entries: ENTRY_SUMMARY_PLACES, chosen: CHOSEN_PLACES, profile: PROFILE_PLACES,
-        links: [...FILE_LINK_PLACES, ...ENTRY_SUMMARY_CONTROLS], results: SEARCH_RESULT_PLACES, redacted: REDACTED });
+        links: [...FILE_LINK_PLACES, ...ENTRY_SUMMARY_CONTROLS], results: SEARCH_RESULT_PLACES, redacted: REDACTED,
+        spelled: SPELLED_IDS });
       for (const name of applicant.names) fileNames.add(name);
-      const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, own.arg(platform)) : null;
+      // jr7 TOOLING-7 (jr7-O5): Oracle's own pass also takes the captured posting's job id (--keep-application).
+      const ownArg = own === undefined ? null : platform === 'oracle' && keepApplication !== undefined
+        ? { .../** @type {object} */ (own.arg(platform)), keepApplication } : own.arg(platform);
+      const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, ownArg) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
         ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', '), respelled, listRows: LIST_ROWS.join(', '),
-        postingCopies: POSTING_COPY_ATTRIBUTES });
-      const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, own.arg(platform)) : null;
+        postingCopies: POSTING_COPY_ATTRIBUTES, frameSrc });
+      // jr7 TOOLING-7 (RBP7-V2 a): what each --frame-src entry did in this frame.
+      for (const [at] of frameSrc.entries()) {
+        framesGiven[at] = (framesGiven[at] ?? 0) + (outcome.frameSrc.given[at] ?? 0);
+        framesRefused[at] = (framesRefused[at] ?? 0) + (outcome.frameSrc.refused[at] ?? 0);
+      }
+      const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, ownArg) : null;
       const ownCounts = ownBefore ?? ownAfter;
       // jr6 round 2: a typed query's results lose their words, and every row whose words went loses what names it.
       const rowNames = await frame.evaluate(redactListRowsInPage, { redacted: REDACTED, fixed: FIXED_ROWS,
@@ -4338,7 +4793,9 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         idData: ROW_ID_DATA_SOURCE, references: ID_REFERENCES, wordsKept: ROW_ID_WORDS_KEPT });
       if (own?.counts === 'frame' && ownCounts !== null) {
         for (const [key, count] of Object.entries(ownCounts)) {
-          outcome.counts[/** @type {keyof typeof outcome.counts} */ (key)] += count;
+          // jr7 TOOLING-7 (jr7-O5): a count of the platform's own (Oracle's applications) starts at 0.
+          const counted = /** @type {Record<string, number>} */ (outcome.counts);
+          counted[key] = (counted[key] ?? 0) + count;
         }
       }
       // jr6 (jobvite-new-2): a listed string met in the page's own text where a REDACTED tells it by elimination; (JV-10)
@@ -4421,20 +4878,33 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
           ...(signInTokens.length > 0 ? { signInTokens: signInTokens.length } : {}),
           // jr6 fixes (PRIV-4): the referral parameters' values redacted in the frame's text (only when there was one).
           ...(referred.count > 0 ? { referral: referred.count } : {}),
-          ...(own?.counts === 'header' && ownCounts !== null ? { [platform]: ownCounts } : {}) },
+          ...(own?.counts === 'header' && ownCounts !== null ? { [platform]: ownCounts } : {}),
+          // jr7 TOOLING-7 (jr7-O5): Oracle's My Applications tiles redacted, and the captured posting's kept (each only
+          // when there was one).
+          ...(((/** @type {Record<string, number>} */ (counts)).applications ?? 0) > 0
+            ? { applications: /** @type {Record<string, number>} */ (counts).applications } : {}),
+          ...(((/** @type {Record<string, number>} */ (counts)).keptApplications ?? 0) > 0
+            ? { keptApplications: /** @type {Record<string, number>} */ (counts).keptApplications } : {}) },
         removed: { scripts: counts.scripts, eventHandlers: counts.eventHandlers, javascriptUrls: counts.javascriptUrls,
           bases: counts.bases, metaRefresh: counts.metaRefresh, metaHttpEquiv: counts.metaHttpEquiv,
           embeds: counts.embeds, links: counts.links, srcdoc: counts.srcdoc, ...(jrIds > 0 ? { jrIds } : {}) },
         inlined: { stylesheets: counts.stylesheets, images: counts.images, placeholders: counts.placeholders,
           missing: counts.missing },
         ...(pruned === null ? {} : { pruned: { rulesKept: pruned.kept, rulesDropped: pruned.dropped } }),
-        frames: { linked: counts.frames, blanked: counts.framesDropped },
+        frames: { linked: counts.frames, blanked: counts.framesDropped,
+          // jr7 TOOLING-7 (RBP7-V2 a): the unloaded frames --frame-src gave their public address.
+          ...(outcome.frameSrc.given.some((count) => count > 0)
+            ? { given: outcome.frameSrc.given.reduce((sum, count) => sum + count, 0) } : {}) },
         forms: counts.forms,
         ...(normalised === null ? {} : { normalised: { renderIds: normalised.renderIds.length, nonces: normalised.nonces } }),
         // The open shadow roots kept, written as declarative ones (SHADOW_ROOT_PLATFORMS).
         ...(deep ? { shadowRoots: counts.shadowRoots } : {}),
         // The closed shadow roots stood in by their hosts' boxes (DESIGN-NEW-ATS §6.2).
         ...(counts.closedRoots > 0 ? { closedShadowRoots: counts.closedRoots } : {}),
+        // jr7 TOOLING-7 (T7-01): the canvases stood in by the box they draw (standInCanvasesInPage).
+        ...((canvases[index] ?? 0) > 0 ? { canvasStandIns: canvases[index] } : {}),
+        // jr7 TOOLING-7 (JDEF-V1): the live style order, and the cid: sheets it moved (only when it is not archive's).
+        ...(styleOrder === 'archive' ? {} : { styleOrder, styleSheetsMoved: restyled[index] ?? 0 }),
         // What was taken as not the site's (another extension's UI and parameters, overlays, per-load values) and the
         // choices cleared, each named only when there was something.
         ...(Object.values(took).some((count) => count > 0) ? { injected: took } : {}),
@@ -4525,13 +4995,31 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       for (const { label, pattern } of needles) {
         if (forms.some((form) => pattern.test(form))) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
       }
+      // jr7 TOOLING-7 (the jr6 leftover, INT-2 §6 item 3): and the inlined stylesheets, for the token and referral needles.
+      const styleForms = checkedStyleForms(output.text);
+      for (const { label, pattern } of [...tokenNeedles(), ...referralNeedles()]) {
+        if (styleForms.some((form) => pattern.test(form))) {
+          reasons.push(`${basename(output.path)}: ${label} is still in an inlined stylesheet`);
+        }
+      }
       // The security fix of 2026-11-06 (S2): no chosen mark (an answer drawn on a control or a list) is written.
       for (const label of chosenMarksIn(output.text)) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
+      // jr7 TOOLING-7 (T7-01): no widget's shown text spelled in an id (SPELLED_IDS).
+      for (const label of spelledIdsIn(output.text)) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
       // jr6 round 2 (TOOLING; BUILD.md 4b): no listed string in any attribute, as written or respelled.
       // jr6 fixes (PRIV-6): and none in a page's text either.
       for (const label of respelledIn(output.text, respelled, { text: output.path.endsWith('.html') })) {
         reasons.push(`${basename(output.path)}: ${label}`);
       }
+    }
+    // jr7 TOOLING-7 (RBP7-V2 a): each --frame-src entry gave a frame the capture saved unloaded, and no other.
+    for (const [at] of frameSrc.entries()) {
+      if ((framesRefused[at] ?? 0) > 0) reasons.push(`--frame-src #${at + 1} names a frame with an address of its own`);
+      else if ((framesGiven[at] ?? 0) === 0) reasons.push(`--frame-src #${at + 1} names no frame the capture saved unloaded`);
+    }
+    // jr7 TOOLING-7 (jr7-O5): --keep-application must name a tile the page shows.
+    if (keepApplication !== undefined && !Object.values(result.counts).some((each) => (each.keptApplications ?? 0) > 0)) {
+      reasons.push('--keep-application names no My Applications tile of the page (a.cs-job-info__title to /job/<id>)');
     }
     if (reasons.length > 0) throw new ConversionError(reasons);
     return result;
@@ -4580,6 +5068,34 @@ export function readReplaceOption(value, position) {
   return { selector, file };
 }
 
+/**
+ * jr7 TOOLING-7 (RBP7-V2 a): a --frame-src value, <css>=<https address>, split where its address starts (the last
+ * "=https://"; a selector and an address may both hold "="). The address must be an absolute https one on no host the
+ * extension runs on (a third party's: reCAPTCHA's anchor, say), with no credentials and no site key (k=, sitekey=,
+ * render=): a public vendor path only, as a live page's frame element names it before it loads.
+ * @param {string} value @param {number} position @returns {{ selector: string; url: string }}
+ */
+export function readFrameSrcOption(value, position) {
+  const at = value.lastIndexOf('=https://');
+  const selector = at < 0 ? '' : value.slice(0, at).trim();
+  const url = at < 0 ? '' : value.slice(at + 1).trim();
+  if (selector === '' || url === '') fail(`--frame-src #${position} must be <css>=<https address>`);
+  /** @type {URL} */
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return fail(`--frame-src #${position} is no address`);
+  }
+  if (parsed.username !== '' || parsed.password !== '') fail(`--frame-src #${position} holds credentials`);
+  if (onAtsHost(url)) fail(`--frame-src #${position} names a host the extension runs on, not a third party's`);
+  if ([...parsed.searchParams.keys(), ...new URLSearchParams(parsed.hash.slice(1)).keys()]
+    .some((key) => ['k', 'sitekey', 'render'].includes(key.toLowerCase()))) {
+    fail(`--frame-src #${position} holds a site key (k=, sitekey=, render=)`);
+  }
+  return { selector, url };
+}
+
 /** @param {string[]} argv */
 function parseArgs(argv) {
   /** @type {Record<string, string>} */
@@ -4588,12 +5104,16 @@ function parseArgs(argv) {
   const positional = [];
   /** @type {Array<{ selector: string; file: string }>} */
   const replaceText = [];
+  /** @type {Array<{ selector: string; url: string }>} */
+  const frameSrc = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? '';
-    if (['--platform', '--case', '--redact', '--out', '--folder', '--replace-text'].includes(arg)) {
+    if (['--platform', '--case', '--redact', '--out', '--folder', '--replace-text', '--keep-application', '--style-order',
+      '--frame-src'].includes(arg)) {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) fail(`${arg} needs a value`);
       if (arg === '--replace-text') replaceText.push(readReplaceOption(value, replaceText.length + 1));
+      else if (arg === '--frame-src') frameSrc.push(readFrameSrcOption(value, frameSrc.length + 1));
       else options[arg.slice(2)] = value;
       index += 1;
     } else if (arg.startsWith('--')) {
@@ -4603,17 +5123,17 @@ function parseArgs(argv) {
     }
   }
   if (positional.length !== 1 || !options.platform || !options.case) {
-    fail('usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <platform> --case <name> [--redact <file>] [--out <folder>] [--folder <name>] [--replace-text <css>=<file>]...');
+    fail('usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <platform> --case <name> [--redact <file>] [--out <folder>] [--folder <name>] [--replace-text <css>=<file>]... [--style-order archive|live] [--keep-application <job id>] [--frame-src <css>=<https address>]...');
   }
   return { file: positional[0] ?? '', platform: options.platform, caseName: options.case, redactFile: options.redact,
     outDir: options.out ? resolve(options.out) : join(ROOT, 'fixtures'), folderName: options.folder ?? options.platform,
-    replaceText };
+    replaceText, keepApplication: options['keep-application'], styleOrder: options['style-order'], frameSrc };
 }
 
 async function main() {
   try {
-    const { file, platform, caseName, redactFile, outDir, folderName, replaceText: replaceFiles } =
-      parseArgs(process.argv.slice(2));
+    const { file, platform, caseName, redactFile, outDir, folderName, replaceText: replaceFiles, keepApplication,
+      styleOrder, frameSrc } = parseArgs(process.argv.slice(2));
     if (!existsSync(file)) fail(`${file} does not exist`);
     if (redactFile !== undefined && !existsSync(redactFile)) fail(`${redactFile} does not exist`);
     const redact = redactFile === undefined ? [] : readRedactList(readFileSync(redactFile, 'utf8'));
@@ -4621,7 +5141,8 @@ async function main() {
       if (!existsSync(textFile)) fail(`--replace-text #${index + 1}: its file does not exist`);
       return { selector, text: readFileSync(textFile, 'utf8') };
     });
-    const conversion = await convertMhtml({ file, platform, caseName, redact, outDir, folderName, replaceText });
+    const conversion = await convertMhtml({ file, platform, caseName, redact, outDir, folderName, replaceText,
+      keepApplication, styleOrder, frameSrc });
     const written = writeConversion(conversion, join(outDir, folderName), caseName);
     console.log(paint('green', `✓ ${basename(file)} -> ${platform}/${caseName} (Chromium ${conversion.chrome})`));
     for (const path of written) {
