@@ -1549,6 +1549,9 @@ export const PAGE_COPY = {
   brand: { name: ['Tailor', 'IT'], product: 'Autofill', settings: 'Autofill settings' },
   panelTitle: 'Review',
   panelEmpty: 'Nothing to review yet. Open a job application and choose Autofill.',
+  // jr7 ENGINE-7 E1 item 10 (jr7-O7): the review's row for a required block that holds no entry yet (Oracle's Skills),
+  // `block` its title as the page shows it.
+  requiredBlockLeft: (block: string) => `${block}: add at least one`,
   optionsTitle: 'TailorIT Autofill settings',
   tripwire: NOTICES.tripwire,
   notices: NOTICES,

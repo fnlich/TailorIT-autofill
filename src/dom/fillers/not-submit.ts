@@ -51,7 +51,7 @@
  * refused control) are for elements, and a list's option is none of those (listOption: it holds no button, link or
  * input). A refused option is not sent: its click, on the events' path, goes through assertNotSubmit as before.
  */
-import type { Adapter, ChainStepFacts, SignInWall } from '../../adapters/types'; // jr6 SHELL-B: ChainStepFacts
+import type { Adapter, ChainStepFacts, SignInWall, UploadPrompt } from '../../adapters/types'; // jr6 SHELL-B: ChainStepFacts
 import { secondStepControl } from '../../adapters/second-step'; // jr6 apply F2
 import { pageChallenged, vendorFramesShown } from '../pause-detect';
 import { flatContains } from '../scan-cache';
@@ -631,6 +631,152 @@ export function clickUploadReveal(adapter: Adapter, input: HTMLInputElement): HT
   }
   return reveal;
 }
+
+// ── jr7 ENGINE-7 E2 item 4 (UKGR-10, EFA-6): the upload-prompt door ──
+/** The words of a prompt's control the door never presses: a site's parse of the file into the form (UKG Ready's
+ *  Populate: Decision 16, no site-parsed entries), and, on a consent, its refusal. */
+const PROMPT_NEVER_WORDS = /\b(?:populate|import|autofill|parse)\b/i;
+const CONSENT_REFUSAL_WORDS = /\b(?:cancel|decline|disagree|reject|no\b)/i;
+
+/**
+ * jr7 ENGINE-7: the press of the one control a dialog the site draws after the run's own file write asks for
+ * (Adapter.uploadPrompt: UKG Ready's "Upload Complete", answered Cancel, kind 'dismiss'; Eightfold's Data Privacy
+ * Agreement, answered I Agree, kind 'consent'), with an untrusted click(). Only while the control is connected, in the
+ * document, shown, pressable now and assertNotSubmit allows it (the application's Submit and Next, a submit word, a
+ * control that submits a form all refuse); never a control the adapter's neverPress names, nor one holding or inside
+ * one (the coordinator's decision of 2026-11-12, UKGREADY-7 open 3: no exemption, unlike the reveal door: the hook
+ * names a control no never-press rule covers, Eightfold's Cancel staying in neverPress beside its I Agree); never a
+ * control whose words say a parse of the file
+ * (Populate: PROMPT_NEVER_WORDS), never a refusal on a consent (Cancel: CONSENT_REFUSAL_WORDS). At most once per
+ * control. Answers the element clicked, or null. Only src/dom/fillers/upload-prompt.ts may call it
+ * (test/allow-submit.test.ts); it is not exported from fillers/index.ts. A hook that throws refuses.
+ */
+export function clickUploadPrompt(adapter: Adapter, doc: Document, prompt: UploadPrompt): HTMLElement | null {
+  const control = prompt.press;
+  if (PROMPTED.has(control) || control.ownerDocument !== doc || !control.isConnected || !pressableNow(control)) return null;
+  const words = (control.textContent ?? '') + ' ' + (control.getAttribute('aria-label') ?? '');
+  if (PROMPT_NEVER_WORDS.test(words) || (prompt.kind === 'consent' && CONSENT_REFUSAL_WORDS.test(words))) return null;
+  let root: Element | null = null;
+  let never: Element[] = [];
+  try {
+    root = adapter.detect(doc)?.formRoot ?? null;
+    never = adapter.neverPress?.(doc.documentElement) ?? [];
+  } catch {
+    return null;
+  }
+  // The coordinator's decision of 2026-11-12 (UKGREADY-7 open 3): no never-pressed control, itself, around or inside it.
+  if (never.some((other) => other === control || control.contains(other) || other.contains(control))) return null;
+  let allowed: boolean;
+  try {
+    allowed = assertNotSubmit(control, { adapter, root }).ok;
+  } catch {
+    return null;
+  }
+  if (!allowed) return null;
+  PROMPTED.add(control);
+  const stop = cancelLinkOnce(control);
+  try {
+    control.click();
+  } finally {
+    stop();
+  }
+  return control;
+}
+
+/** The prompt controls the door pressed: never a second time. */
+const PROMPTED = new WeakSet<Element>();
+// ── end jr7 ENGINE-7 E2 item 4 ──
+
+// ── jr7 ENGINE-7 E2 item 5 (UKGR-9): the editor-opener door ──
+/** The words of a control the editor-opener door never presses: one that removes, gives up or sends. */
+const EDITOR_NEVER_WORDS = /\b(?:delete|remove|cancel|discard|submit|apply)\b/i;
+
+/**
+ * jr7 ENGINE-7: the press of a control that opens a single-entry editor the run must fill (Adapter.editorOpener: UKG
+ * Ready's Contact Edit while its summary says "Missing Information", snapshot7 secure7.saashr), with an untrusted
+ * click(). At most once per control, and only while it is connected, in the document, shown, pressable now and
+ * assertNotSubmit allows it (the application's Submit and Next, a submit word, a control that submits a form all
+ * refuse); never a control the adapter's neverPress names, nor one holding or inside one (the coordinator's decision of
+ * 2026-11-12, UKGREADY-7 open 3: no exemption, so an existing entry's Edit and Delete, in neverPress, are never pressed;
+ * the hook names an "Add"-type opener no never-press rule covers); never one whose words say it removes, gives up or
+ * sends (EDITOR_NEVER_WORDS). Answers the element
+ * clicked, or null. Only src/dom/fillers/editor-opener.ts may call it (test/allow-submit.test.ts); it is not exported
+ * from fillers/index.ts. A hook that throws refuses.
+ */
+export function clickEditorOpener(adapter: Adapter, doc: Document, control: HTMLElement): HTMLElement | null {
+  if (OPENED.has(control) || control.ownerDocument !== doc || !control.isConnected || !pressableNow(control)) return null;
+  if (EDITOR_NEVER_WORDS.test(`${control.textContent ?? ''} ${control.getAttribute('aria-label') ?? ''}`)) return null;
+  let root: Element | null = null;
+  let never: Element[] = [];
+  try {
+    root = adapter.detect(doc)?.formRoot ?? null;
+    never = adapter.neverPress?.(doc.documentElement) ?? [];
+  } catch {
+    return null;
+  }
+  // The coordinator's decision of 2026-11-12 (UKGREADY-7 open 3): no never-pressed control, itself, around or inside it.
+  if (never.some((other) => other === control || control.contains(other) || other.contains(control))) return null;
+  let allowed: boolean;
+  try {
+    allowed = assertNotSubmit(control, { adapter, root }).ok;
+  } catch {
+    return null;
+  }
+  if (!allowed) return null;
+  OPENED.add(control);
+  const stop = cancelLinkOnce(control);
+  try {
+    control.click();
+  } finally {
+    stop();
+  }
+  return control;
+}
+
+/** The editor openers the door pressed: never a second time (a control lives in one document). */
+const OPENED = new WeakSet<Element>();
+// ── end jr7 ENGINE-7 E2 item 5 ──
+
+// ── jr7 ENGINE-7 E2 item 6 (DF7-V4, gated on Q7-1's Dayforce live check: built off, block-save.ts) ──
+/** The words of a block's control the block-save door never presses: one that removes, gives up or sends the
+ *  application. */
+const BLOCK_SAVE_NEVER_WORDS = /\b(?:delete|remove|cancel|discard|submit|apply)\b/i;
+
+/**
+ * jr7 ENGINE-7: the press of a repeatable block's declared Save that submits the block's own form (Dayforce's record
+ * editors: each block a <form> whose Save is its submit button, snapshot7 dayforce), with an untrusted click(). The one
+ * exception to "never a control that submits a form", and only where every rule holds: the button is connected, in the
+ * document, inside the block, shown and pressable now, never pressed before, its words no removal, refusal or send
+ * (BLOCK_SAVE_NEVER_WORDS), it names no other address or target of its own (formaction, formtarget); its form is the
+ * declared block itself; that form holds no adapter Next or Submit and no never-pressed control (nor is the button
+ * one), and every control the form owns (its elements, those a form attribute ties to it included) sits inside the
+ * block. Answers the element clicked, or null. Only src/dom/fillers/block-save.ts may call it (test/allow-submit.test.ts);
+ * it is not exported from fillers/index.ts. A hook that throws refuses.
+ */
+export function clickBlockSave(adapter: Adapter, root: Element, block: Element, button: HTMLElement): HTMLElement | null {
+  if (SAVED.has(button) || !button.isConnected || button.ownerDocument !== block.ownerDocument || !block.contains(button)
+    || !pressableNow(button)) return null;
+  if (BLOCK_SAVE_NEVER_WORDS.test(`${button.textContent ?? ''} ${button.getAttribute('aria-label') ?? ''}`)) return null;
+  if (button.hasAttribute('formaction') || button.hasAttribute('formtarget')) return null;
+  const form = (button as HTMLButtonElement).form ?? null;
+  if (form === null || form !== block) return null;
+  let guarded: Element[];
+  try {
+    guarded = [adapter.nextButton?.(root) ?? null, adapter.submitButton?.(root) ?? null,
+      ...(adapter.neverPress?.(root) ?? [])].filter((el): el is HTMLElement => el !== null);
+  } catch {
+    return null;
+  }
+  if (guarded.some((el) => el === button || form.contains(el) || el.contains(button))) return null;
+  if (Array.from(form.elements).some((el) => !block.contains(el))) return null;
+  SAVED.add(button);
+  button.click();
+  return button;
+}
+
+/** The block saves the door pressed: never a second time. */
+const SAVED = new WeakSet<Element>();
+// ── end jr7 ENGINE-7 E2 item 6 ──
 
 /** jr6 ENGINE: for a link (or an element inside one), a click listener on its window for the door's one press, in the
  *  capture phase, so it runs before anything the page listens with: it cancels the default of a click on the link or

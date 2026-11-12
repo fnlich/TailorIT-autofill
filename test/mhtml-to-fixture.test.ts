@@ -112,6 +112,14 @@ import {
   // ── jr6 PRIVACY-FIX ──
   POSTING_COPY_ATTRIBUTES,
   ROW_ID_WORDS_KEPT,
+  // ── jr7 TOOLING-7 ──
+  checkedStyleForms,
+  readFrameSrcOption,
+  STYLE_ORDER_DEFAULTS,
+  OPENED_ROWS,
+  CHOSEN_ICONS,
+  SPELLED_IDS,
+  spelledIdsIn,
 } from '../scripts/mhtml-to-fixture.mjs';
 import { FIELD_KINDS } from '../src/core/enums';
 import { platformOfUrl } from '../src/shared/hosts';
@@ -626,8 +634,43 @@ describe('mhtml-to-fixture on the new ATSs (DESIGN-NEW-ATS §6)', () => {
       expect(onAtsHost(url), url).toBe(platformOfUrl(url) !== null);
     }
     for (const platform of NEW_ATS_PLATFORMS) expect(FIXTURE_PLATFORMS, platform).toContain(platform);
-    expect(NEW_ATS_PLATFORMS).toHaveLength(15);
+    // jr7 TOOLING-7: 15, and jr7's five (UKG Ready, Paycom, JobDiva, Eightfold, Jibe).
+    expect(NEW_ATS_PLATFORMS).toHaveLength(20);
   });
+
+  it("jr7 TOOLING-7: converts jr7's platforms' frames on their candidate paths alone, never an employee page (FIX7PLAN §3.2)",
+    () => {
+      const client = 'a'.repeat(16) + '0123456789ABCDEF';
+      const cases: Array<[string, boolean]> = [
+        // UKG Ready (UKGR-2): /ta/<company>.careers only; the login, the home page and the file service are employee pages.
+        ['https://secure7.saashr.com/ta/6200000.careers?ShowJob=123456789', true],
+        ['https://secure.saashr.com/ta/6200000.careers', true], ['https://secure12.saashr.com/ta/123.careers', true],
+        ['https://secure7.saashr.com/ta/6200000.login', false], ['https://secure7.saashr.com/ta/6200000.home', false],
+        ['https://secure7.saashr.com/ta/fs?ticket=x', false], ['https://www.saashr.com/ta/6200000.careers', false],
+        // Paycom (PC7-02): the portal's posting and application paths only; never /v4/ee/ or /v4/cl/.
+        [`https://www.paycomonline.net/v4/ats/web.php/portal/${client}/jobs/53215`, true],
+        [`https://www.paycomonline.net/v4/ats/web.php/portal/${client}/applications`, true],
+        [`https://www.paycomonline.net/v4/ats/web.php/portal/${client}/jobs`, false],
+        ['https://www.paycomonline.net/v4/ee/web.php/app/login', false], ['https://www.paycomonline.net/v4/cl/x', false],
+        ['https://www.paycomonline.com/v4/ats/web.php/portal/x/jobs/1', false],
+        // JobDiva (JDEF-12): /portal/ on www<n>.jobdiva.com.
+        ['https://www1.jobdiva.com/portal/?a=x#/jobs/1', true], ['https://www2.jobdiva.com/portal/', true],
+        ['https://www1.jobdiva.com/candidates/myjobs/x', false], ['https://login.jobdiva.com/portal/', false],
+        // Eightfold (JDEF-12): a tenant's /careers; never app., www. or a career hub.
+        ['https://twilio.eightfold.ai/careers?pid=1', true], ['https://twilio.eightfold.ai/careers/job/1', true],
+        ['https://app.eightfold.ai/careers', false], ['https://twilio.eightfold.ai/careerhub/me', false],
+        ['https://www.eightfold.ai/careers', false],
+        // Jibe (ICIMS7-11): a tenant's /jobs/ pages; never its marketing pages.
+        ['https://oneblood.jibeapply.com/jobs/1234', true], ['https://oneblood.jibeapply.com/about', false],
+        ['https://jibeapply.com/jobs/1', false], ['http://oneblood.jibeapply.com/jobs/1', false],
+      ];
+      for (const [url, candidate] of cases) {
+        expect(onAtsHost(url), url).toBe(candidate);
+        // src/shared/hosts.ts agrees wherever it already names the page (ENGINE-7 E0 registers these hosts).
+        if (platformOfUrl(url) !== null) expect(candidate, url).toBe(true);
+      }
+      expect(FIXTURE_PLATFORMS.slice(-5)).toEqual(['ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe']);
+    });
 
   it('keeps open shadow roots, nested ones too, as declarative shadow DOM: redacted inside and measured inside', async () => {
     const live = await browser.newContext({ viewport: VIEWPORT });
@@ -1072,7 +1115,34 @@ describe('mhtml-to-fixture command line', () => {
     const run = spawnSync(process.execPath, [SCRIPT, '--platform', 'lever'], { encoding: 'utf8', windowsHide: true });
     expect(run.status).toBe(1);
     expect(run.stderr).toContain('usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform');
+    // jr7 TOOLING-7: and its three new options.
+    expect(run.stderr).toContain('[--style-order archive|live] [--keep-application <job id>] [--frame-src <css>=<https address>]...');
   });
+
+  it("jr7 TOOLING-7: reads --style-order, --frame-src (repeatable) and --keep-application, refusing each one's misuse", () => {
+    const file = join(work, 'cli-jr7.mhtml');
+    writeFileSync(file, syntheticCapture());
+    const out = join(work, 'cli-jr7-out');
+    const anchor = 'https://www.google.com/recaptcha/api2/anchor?ar=1&size=normal';
+    const run = (...extra: string[]) => spawnSync(process.execPath, [SCRIPT, file, '--platform', 'greenhouse', '--case',
+      'cli-jr7', '--out', out, ...extra], { encoding: 'utf8', windowsHide: true, timeout: 60_000 });
+    const ok = run('--style-order', 'live', '--frame-src', `iframe[src^="cid:frame-BLANK"]=${anchor}`);
+    expect(ok.stderr).toBe('');
+    expect(ok.status).toBe(0);
+    const written = readFileSync(join(out, 'greenhouse', 'cli-jr7.html'), 'utf8');
+    expect(written).toContain(`src="${anchor.replace(/&/g, '&amp;')}" width="10" height="10"`);
+    expect(headerOf(written)).toMatchObject({ styleOrder: 'live', frames: { given: 1 } });
+    for (const [extra, refusal] of [
+      [['--keep-application', '41'], '--keep-application is for --platform oracle'],
+      [['--style-order', 'page'], '--style-order must be one of archive, live'],
+      [['--frame-src', 'iframe=http://www.google.com/x'], '--frame-src #1 must be <css>=<https address>'],
+      [['--frame-src', `iframe[title="Nothing"]=${anchor}`], '--frame-src #1 names no frame the capture saved unloaded'],
+    ] as Array<[string[], string]>) {
+      const refused = run(...extra);
+      expect(refused.status, refusal).toBe(1);
+      expect(refused.stderr, refusal).toContain(refusal);
+    }
+  }, 120_000);
 });
 
 describe('mhtml-to-fixture helpers', () => {
@@ -1392,10 +1462,13 @@ describe('mhtml-to-fixture, snapshot build: boards', () => {
     expect(INJECTED_PARAMS).toEqual(['jr_id', 'utm_source=Simplify']);
     // The fix of 2026-11-08: Jobright's Edit with AI hosts too (snapshot5).
     expect(INJECTED_UI).toEqual(['plasmo-csui#jobright-helper-plugin', '#swooped-extension-root', '.jr-edit-ai-host']);
-    expect(PER_LOAD_PARAMS).toEqual(['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp']);
+    // jr7 TOOLING-7 (UKGR-20): and UKG Ready's applicant session and file-service ticket.
+    expect(PER_LOAD_PARAMS).toEqual(['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp', 'ActiveSessionId', 'sft',
+      'rnd', 'ticket']);
     // Greenhouse's, Ashby's and Workable's (boards), Workday's upload preview, the new ATSs' eleven and (jr6) ADP's
-    // résumé row and SmartRecruiters' drop zone list (the generic applicant-text pass, redactApplicantTextInPage).
-    expect(FILE_NAME_PLACES).toHaveLength(17);
+    // résumé row and SmartRecruiters' drop zone list (the generic applicant-text pass, redactApplicantTextInPage); jr7
+    // TOOLING-7 (JDEF-16): and JobDiva's file card.
+    expect(FILE_NAME_PLACES).toHaveLength(18);
     // Workable's file menu and (jr6) ADP's résumé Remove.
     expect(FILE_LINK_PLACES).toHaveLength(2);
     expect(ENTRY_SUMMARY_PLACES).toHaveLength(2);
@@ -1422,8 +1495,9 @@ interface Expectation {
 
 /** jr6 (FIXPLAN 6.1 item 8): a case of the jr6 build (2026-11-10: the owner's snapshot6 and the Apply audits' pages),
  *  named jr6-*. The frozen counts and lists below leave them out; every jr6 file still goes through the per-file checks
- *  (its platform's, and those of every jr6 case: JR6_FILES). */
-const isJr6 = (name: string): boolean => /(?:^|\/)jr6-/.test(name);
+ *  (its platform's, and those of every jr6 case: JR6_FILES). jr7 TOOLING-7: and a case of the jr7 build (2026-11-11: the
+ *  owner's snapshot7, FIX7PLAN §11), named jr7-*, alike: out of the frozen lists, through every per-file check. */
+const isJr6 = (name: string): boolean => /(?:^|\/)jr[67]-/.test(name);
 
 /** The reasons a control is not fillable (docs/FIXTURES.md). */
 const NOT_FILLABLE = ['widget-phase-4', 'not-user-visible'];
@@ -1661,7 +1735,9 @@ describe('pruneCssInPage (the v3 Phase 6/7b review, C10)', () => {
     expect(PRUNED_CSS_PLATFORMS).toEqual(['icims', 'taleo', 'successfactors', 'oracle', 'smartrecruiters',
       // The new ATSs: builder A's, builder B's, then builder C's.
       'adp', 'dayforce', 'ultipro', 'clearcompany', 'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint',
-      'paycor', 'hibob']);
+      'paycor', 'hibob',
+      // jr7 TOOLING-7: jr7's five.
+      'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe']);
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><head><style>
@@ -2299,7 +2375,9 @@ document.getElementById('jobright-helper-plugin').attachShadow({ mode: 'open' })
         title: document.querySelector('.attachment-upload-button__download')!.getAttribute('title'),
         pills: Array.from(document.querySelectorAll('.cx-select-pill-section'),
           (pill) => `${pill.getAttribute('aria-checked')}:${pill.className}`) }));
-      expect(oracle).toEqual({ widgetText: 4, checked: 1, typedValues: 0, placeholders: 0 });
+      // jr7 TOOLING-7 (jr7-O5): and its My Applications tiles' counts (none here).
+      expect(oracle).toEqual({ widgetText: 4, checked: 1, typedValues: 0, placeholders: 0, applications: 0,
+        keptApplications: 0 });
       expect(afterOracle.text).not.toMatch(/Jane|Engineer|Acme|2019|2020|cv\.pdf/);
       expect(afterOracle.text).toContain('Keep me');
       expect(afterOracle.title).toBe('REDACTED');
@@ -2313,7 +2391,7 @@ document.getElementById('jobright-helper-plugin').attachShadow({ mode: 'open' })
         chosen: document.querySelector('[slot="triggerPrefix"]')!.outerHTML }));
       await context.close();
       // The chosen spl-radio's aria-checked is the generic pass's (counted there).
-      expect(sr).toEqual({ widgetText: 1, checked: 0, typedValues: 0, placeholders: 1 });
+      expect(sr).toEqual({ widgetText: 1, checked: 0, typedValues: 0, placeholders: 1, applications: 0, keptApplications: 0 });
       expect(afterSr.chosen).not.toMatch(/Canada|CA"|\+1/);
       expect(afterSr).toMatchObject({ phone: '', group: '', option: '1', radio: 'false' });
       expect(Buffer.from(afterSr.flag!.split(',')[1]!, 'base64').toString()).toContain('width="24" height="18"');
@@ -3831,7 +3909,8 @@ describe('jr6 fixes: where the person came from (PRIV-4)', () => {
     expect(text).toContain(`<a href="${ADP_PAGE}&amp;source=REDACTED&amp;jobId=1">Engineer</a>`);
     expect(text).not.toMatch(/source=XB/);
     // Every name and prefix, plain, after &amp;, or percent-encoded once or twice; the value ends at the next separator.
-    expect(REFERRAL_PARAMS).toEqual(['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source']);
+    // jr7 TOOLING-7: and Jobvite's __jvsc.
+    expect(REFERRAL_PARAMS).toEqual(['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source', '__jvsc']);
     expect(REFERRAL_PREFIXES).toEqual(['utm_']);
     const cases: Array<[string, string]> = [
       ['https://jobs.jobvite.com/acme/job/oX1?__jvst=Job%20Board&__jvsd=FixtureBoard&nl=0',
@@ -4164,13 +4243,16 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
     // site key is normalised: a reCAPTCHA site key (JazzHR's classic board) is the page's public key and stays, as in
     // the older JazzHR fixtures (jr6 JAZZHR P1).
     expect(body).not.toMatch(/data-hcaptcha-widget-id="(?!REDACTED")/);
-    if (folder === 'icims' || folder === 'oracle') {
+    // jr7 TOOLING-7 (T7-01): and Paycom's.
+    if (folder === 'icims' || folder === 'oracle' || folder === 'paycom') {
       expect(body).not.toMatch(/[?&;#]sitekey=(?!REDACTED)[^&"'\s]/);
       expect(body).not.toMatch(/data-sitekey="(?!REDACTED")/);
     }
     expect(body).not.toMatch(/\bhashed=-?\d/);
-    // No chosen mark, as the conversion refuses one (chosenMarksIn).
+    // No chosen mark, as the conversion refuses one (chosenMarksIn); jr7 TOOLING-7 (T7-01): and no widget's shown text
+    // spelled in an id (spelledIdsIn).
     expect(chosenMarksIn(html)).toEqual([]);
+    expect(spelledIdsIn(html)).toEqual([]);
   });
 });
 // ── end jr6 ──
@@ -4180,13 +4262,26 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
 /** Every committed fixture's page, frame, route map and expectation (each holds addresses), by its path under fixtures/. */
 const ADDRESSED_FIXTURES = committedFixtureFiles(undefined, '', /\.(?:html|routes\.json|expect\.json)$/);
 
+/** jr7 TOOLING-7: the committed fixtures converted before __jvsc joined REFERRAL_PARAMS that keep a __jvsc value, each
+ *  on the posting's own share buttons only (LinkedIn's IN/Share data-url, the share links' href, ng-href and ng-click),
+ *  whose __jvst and __jvsd beside it read REDACTED: judged public (SP\jr6\build\INT-2.md §5). A file converted again
+ *  reads REDACTED there and needs no entry. */
+const JOBVITE_SHARE_FIXTURES = ['jobvite/ninjaone-posting.html', 'jobvite/jr6-sikich-posting.html',
+  'jobvite/jr6-vhl-posting.html'];
+/** The share networks Jobvite's posting widget names in __jvsc (lower case, as checkedForms reads them). */
+const JOBVITE_SHARE_CHANNELS = ['linkedin', 'twitter', 'facebook', 'email'];
+
 /** Each referral parameter (REFERRAL_PARAMS, REFERRAL_PREFIXES) that holds a value other than REDACTED in a text, by
  *  name, in every form the final check reads (checkedForms: as written, entities decoded, percent-decoded): the
- *  converter's own needle (referralNeedles), every match of it. Names only: a value is never read out. */
-function referralNamesIn(text: string): string[] {
+ *  converter's own needle (referralNeedles), every match of it. Names only: a value is never read out. jr7 TOOLING-7:
+ *  with `shareChannels`, a __jvsc whose value is a share network's (JOBVITE_SHARE_CHANNELS) is left out (the value is
+ *  compared in memory, never read out). */
+function referralNamesIn(text: string, options: { shareChannels?: boolean } = {}): string[] {
   const [needle] = referralNeedles();
   const every = new RegExp(needle!.pattern.source, 'gi');
   return checkedForms(text).flatMap((form) => [...form.matchAll(every)]
+    .filter((match) => !(options.shareChannels === true && match[0].slice(1, match[0].indexOf('=')) === '__jvsc'
+      && JOBVITE_SHARE_CHANNELS.includes(/^[^&#"'\s<]*/.exec(form.slice((match.index ?? 0) + match[0].length))?.[0] ?? '')))
     .map(([match]) => match.slice(1, match.indexOf('='))));
 }
 
@@ -4238,7 +4333,9 @@ describe('jr6 ifix C-4: referral parameters in the committed fixtures (PRIV-4)',
     const failing = files.flatMap((file) => {
       const kept = withoutIcimsHelpTags(readFileSync(join(ROOT, 'fixtures', file), 'utf8'), vendor);
       if (kept.cut > 0) cut.push(file);
-      return [...new Set(referralNamesIn(kept.text))].map((name) => `${file}: ${name}`);
+      // jr7 TOOLING-7: Jobvite's share buttons' __jvsc in the two jr6 postings converted before it joined.
+      return [...new Set(referralNamesIn(kept.text, { shareChannels: JOBVITE_SHARE_FIXTURES.includes(file) }))]
+        .map((name) => `${file}: ${name}`);
     });
     expect(failing).toEqual([]);
     // The exemption stands on iCIMS's step pages alone (the ten of the review, or fewer once converted again).
@@ -4246,15 +4343,23 @@ describe('jr6 ifix C-4: referral parameters in the committed fixtures (PRIV-4)',
     expect(cut.length).toBeLessThanOrEqual(10);
   }, 60_000);
 
-  it("every committed fixture: no arrival tag a person's visit adds (iis, iisn, __jvst, __jvsd, gh_src, lever-source) holds a value", () => {
+  it("every committed fixture: no arrival tag a person's visit adds (iis, iisn, __jvst, __jvsd, gh_src, lever-source, __jvsc) holds a value", () => {
     // `source` and utm_* also name public share and footer links' constant tags in main's captures (Nextdoor's sharekit,
     // a Greenhouse sign-in link, Workable's and Dice's footers): the jr6 sweep above reads those in jr6 cases.
     const arrival = REFERRAL_PARAMS.filter((name) => name !== 'source');
-    expect(arrival).toEqual(['iis', 'iisn', '__jvst', '__jvsd', 'gh_src', 'lever-source']);
+    expect(arrival).toEqual(['iis', 'iisn', '__jvst', '__jvsd', 'gh_src', 'lever-source', '__jvsc']);
     expect(ADDRESSED_FIXTURES.length).toBeGreaterThan(800);
     const failing = ADDRESSED_FIXTURES.flatMap((file) => [...new Set(referralNamesIn(readFileSync(join(ROOT, 'fixtures',
-      file), 'utf8')))].filter((name) => arrival.includes(name)).map((name) => `${file}: ${name}`));
+      file), 'utf8'), { shareChannels: JOBVITE_SHARE_FIXTURES.includes(file) }))].filter((name) => arrival.includes(name))
+      .map((name) => `${file}: ${name}`));
     expect(failing).toEqual([]);
+    // jr7 TOOLING-7: the share-button exemption is narrow: each listed file holds a __jvsc that only it excuses, and a
+    // __jvsc naming no share network is a hit there too.
+    for (const file of JOBVITE_SHARE_FIXTURES) {
+      const text = readFileSync(join(ROOT, 'fixtures', file), 'utf8');
+      expect(referralNamesIn(text), file).toContain('__jvsc');
+      expect(referralNamesIn(`${text}<a href="/x?__jvsc=Fixture">`, { shareChannels: true }), file).toContain('__jvsc');
+    }
   }, 60_000);
 
   it("exempts iCIMS's logo link only with the vendor's own tags: another value, link, host, path or place is a hit", () => {
@@ -4273,3 +4378,420 @@ describe('jr6 ifix C-4: referral parameters in the committed fixtures (PRIV-4)',
   });
 });
 // ── end jr6 ifix C-4 ──
+
+// ── jr7 TOOLING-7 (FIX7PLAN §6.1: the converter's nine findings, and the jr6 leftovers BUILD7 names) ──
+// Each rule on a synthetic page in the platform's own markup (read from the snapshot7 captures; every value made up).
+// ---------------------------------------------------------------------------------------------------------------------
+
+const UKG_SESSION = 'https://secure7.saashr.com/ta/6200000.careers?rnd=Ab1&Ext=careers&sft=QWERTY12'
+  + '&ActiveSessionId=12345678901&cb=5550100142#applicant/profile';
+
+describe('jr7 TOOLING-7: the converter (FIX7PLAN §6.1)', () => {
+  it("UKGR-20: UKG Ready's session values, its file service's ticket, a phone-shaped listed string in the address, and its value places",
+    async () => {
+      const { conversion, text } = await convertPage(UKG_SESSION, 'ukgready', 'jr7-ukgr20', `
+<header><button class="c-user-picture-button m-reset-styles" title="${JR6_NAME}" aria-label="${JR6_NAME}" aria-haspopup="true">
+  <span class="c-user-picture m-has-size m-medium" aria-hidden="true"><span class="c-user-picture__abbr" title="${JR6_NAME}">AQ</span></span></button>
+  <div class="c-menu-header"><span class="c-user-picture m-has-size m-large" aria-hidden="true"><span class="c-user-picture__abbr">QA</span></span></div></header>
+<main><span class="c-form-control m-rounded"><label class="c-form-control__label--T25fFY" for="st"><span>State</span></label>
+  <span class="c-form-control__field--zgYl4G"><span class="c-form-control__area--MtrJbA" aria-hidden="true">
+  <span class="c-form-control__value--uC6xTb" aria-hidden="true">Ohio</span>
+  <select id="st"><option value="">Select</option><option value="OH" selected>Ohio</option><option value="TX">Texas</option></select></span></span></span>
+<span class="c-form-control m-rounded"><label class="c-form-control__label--T25fFY" for="sal"><span>Desired salary</span></label>
+  <span class="c-form-control__field--zgYl4G"><span class="c-form-control__area--MtrJbA">
+  <span class="c-form-control__value--uC6xTb" aria-hidden="true">95000</span><input id="sal" value="95000"></span></span></span>
+<div class="m-border c-fat-item"><div class="c-fat-item__box"><h3 class="c-fat-item__title">Work entry</h3>
+  <div class="c-fat-item__body"><span class="c-metadata__text">Fixture Town, OH</span><span class="c-metadata__text">2019 - 2024</span></div></div></div>
+<div class="c-profile-summary-container"><span class="c-one-column-layout__label">City</span>
+  <span class="c-one-column-layout__value">Fixture Town</span></div>
+<a href="/ta/fs?ticket=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl">Your resume</a>
+<a href="https://secure7.saashr.com/ta/6200000.careers?rnd=Ab1&amp;Ext=careers&amp;sft=QWERTY12&amp;ActiveSessionId=12345678901">Back</a>
+</main>`);
+      const header = headerOf(text);
+      const clean = 'https://secure7.saashr.com/ta/6200000.careers?rnd=REDACTED&Ext=careers&sft=REDACTED'
+        + '&ActiveSessionId=REDACTED&cb=REDACTED#applicant/profile';
+      expect(header.source).toBe(clean);
+      expect(Object.keys(conversion.routes)).toEqual([clean.split('#')[0]]);
+      expect(text).toContain('href="/ta/fs?ticket=REDACTED"');
+      expect(text).toContain('rnd=REDACTED&amp;Ext=careers&amp;sft=REDACTED&amp;ActiveSessionId=REDACTED"');
+      for (const gone of ['12345678901', 'QWERTY12', 'Ab1&', 'eyJ', '5550100142', 'Avery', 'Quill', '>AQ<', '95000',
+        'Fixture Town', '2019 - 2024', '>Ohio</span>', '>QA<']) {
+        expect(text, gone).not.toContain(gone);
+      }
+      // The page's own words stay: the select's options, an entry's title, the review's labels.
+      for (const kept of ['<option value="OH">Ohio</option>', '>Work entry</h3>', '>City</span>', '<span>State</span>']) {
+        expect(text, kept).toContain(kept);
+      }
+      expect(text).toContain('<span class="c-form-control__value--uC6xTb" aria-hidden="true">REDACTED</span>');
+    }, 60_000);
+
+  it("T7-01: Paycom's chosen radios and boxes drawn as their unchosen twins, its tooltip anchors' spelled text, a canvas stood in",
+    async () => {
+      const radio = (chosen: boolean, value: string) => `<div class="uiLibRadio ui-radio-lg${chosen ? ' ui-radio-checked' : ''}">
+<label class="uiLibRadioLabel"><div class="uiLibRadioButtonBase"><span class="uiLibRadioBase"><span class="uiLibRadioIcon">${chosen
+    ? '<svg data-testid="uiLibRadioIconcheckedNoColorPassed" aria-label="radio button checked" color="#003a4f" width="24" height="24" viewBox="0 0 24 24"><path d="M1 1h22v22H1z"></path><path d="M7 7h10v10H7z"></path></svg>'
+    : '<svg data-testid="uiLibRadioIconUncheckedNoColorPassed" aria-label="radio button unchecked" color="rgba(0,0,0,0.72)" width="24" height="24" viewBox="0 0 24 24"><path d="M2 2h20v20H2z"></path><path d="M3 3h18v18H3z"></path></svg>'}</span>
+<input class="uiLibRadioInput" type="radio" name="q1" value="${value}"${chosen ? ' checked' : ''}></span></div>
+<span data-testid="anchor-for-${value}-tooltip">${value}</span></label></div>`;
+      const box = (chosen: boolean, label: string) => `<label class="uiLibCheckbox${chosen ? ' ui-checkbox-checked' : ''}">
+<div class="uiLibCheckboxIcon"><button class="uiLibCheckboxButton" type="button">${chosen
+    ? '<svg data-testid="Checked Checkbox-icon" aria-label="Checked Checkbox" color="#003a4f" width="24" height="24" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"></path><path d="M9 12l2 2 4-4"></path></svg>'
+    : '<svg data-testid="Unchecked Checkbox-icon" aria-label="Unchecked Checkbox" color="rgba(0,0,0,0.72)" width="24" height="24" viewBox="0 0 24 24"><path d="M19 5v14H5V5h14"></path><path d="M5 3h14"></path></svg>'}</button></div>
+<input class="uiLibCheckboxInput" type="checkbox"${chosen ? ' checked' : ''}><p class="uiLibCheckboxLabel">${label}</p></label>`;
+      const page = (boxes: string) => `<div id="ats-portal"><div id="questions-1-field"><p>Are you 18 or older?</p>
+<div class="uiLibRadioGroup" role="radiogroup">${radio(true, 'Yes')}${radio(false, 'No')}</div></div>${boxes}
+<div><span data-testid="anchor-for-Fixture Town-tooltip">Fixture Town</span><span data-testid="anchor-for--tooltip"></span></div>
+<div class="css-pad" style="width: 480px; height: 96px"><canvas class="css-sig" width="476" height="93" style="width: 100%; height: 100%"></canvas></div></div>`;
+      const { text } = await convertPage(`https://www.paycomonline.net/v4/ats/web.php/portal/${'ab'.repeat(16)}/applications`,
+        'paycom', 'jr7-t701', page(`${box(true, 'I acknowledge')}${box(false, 'I do not have a middle name')}`));
+      // Every radio and box draws its unchosen icon, the page's own twin's copy; no chosen class, test id or colour stays.
+      for (const gone of ['ui-radio-checked', 'ui-checkbox-checked', 'uiLibRadioIconchecked', '"Checked Checkbox-icon"',
+        'radio button checked', '#003a4f', 'anchor-for-Fixture Town-tooltip', 'anchor-for-Yes-tooltip', ' checked']) {
+        expect(text, gone).not.toContain(gone);
+      }
+      expect(text.match(/data-testid="uiLibRadioIconUncheckedNoColorPassed"/g)).toHaveLength(2);
+      expect(text.match(/data-testid="Unchecked Checkbox-icon"/g)).toHaveLength(2);
+      expect(text).toContain('data-testid="anchor-for-REDACTED-tooltip"');
+      expect(text).toContain('data-testid="anchor-for--tooltip"');
+      // The canvas keeps the box it draws (the capture measured it with scripting off, the fixture is served with it on).
+      expect(text).toContain('style="width: 100%; height: 100%; display: inline-block; min-width: 476px; min-height: 93px;"');
+      expect(headerOf(text).canvasStandIns).toBe(1);
+      expect(chosenMarksIn(text)).toEqual([]);
+      expect(spelledIdsIn(text)).toEqual([]);
+      // A chosen box with no unchosen twin in the page to copy is refused, never written.
+      await expect(convertPage(`https://www.paycomonline.net/v4/ats/web.php/portal/${'ab'.repeat(16)}/applications`,
+        'paycom', 'jr7-t701-lone', page(box(true, 'I acknowledge'))))
+        .rejects.toThrow(`jr7-t701-lone.html: ${CHOSEN_MARK_LABELS.icon} is still in the file`);
+      // The final check reads each spelled id by its frame alone.
+      expect(spelledIdsIn('<span data-testid="anchor-for-Fixture Town-tooltip">')).toEqual([
+        "a widget's shown text spelled in its data-testid (on <span>; SPELLED_IDS)"]);
+      expect(spelledIdsIn('<span data-testid="anchor-for-REDACTED-tooltip"><b data-testid="anchor-for--tooltip">')).toEqual([]);
+      expect(SPELLED_IDS).toEqual([{ attribute: 'data-testid', source: '^(anchor-for-)(.+)(-tooltip)$' }]);
+      expect(CHOSEN_ICONS.map(({ testid }) => testid)).toEqual(['^uiLibRadioIconchecked', '^Checked Checkbox-icon$']);
+    }, 120_000);
+
+  it("T7-01 (PC7-08's markers): Paycom's hCaptcha site key, widget id and response normalised, as iCIMS's and Oracle's", () => {
+    const page = '<div class="h-captcha" data-sitekey="94fee806-5cac-4582-9738-384a0f4ea6f8" data-hcaptcha-widget-id="0gp98jgqs8c8"'
+      + ' data-hcaptcha-response="P1_eyJx.y"><iframe src="https://newassets.hcaptcha.com/captcha/v1/x/static/hcaptcha.html'
+      + '#frame=checkbox&amp;id=0gp98jgqs8c8&amp;host=www.paycomonline.net&amp;sitekey=94fee806-5cac-4582-9738-384a0f4ea6f8'
+      + '&amp;size=invisible"></iframe></div><p id="main">id=main stays</p>';
+    const { text, renderIds } = normaliseNewAts('paycom', page);
+    expect(text).not.toContain('94fee806');
+    expect(text).not.toContain('0gp98jgqs8c8');
+    expect(text).not.toContain('P1_eyJx');
+    expect(text).toContain('data-sitekey="REDACTED" data-hcaptcha-widget-id="REDACTED" data-hcaptcha-response="REDACTED"');
+    expect(text).toContain('&amp;id=REDACTED&amp;host=www.paycomonline.net&amp;sitekey=REDACTED&amp;size');
+    expect(text).toContain('<p id="main">id=main stays</p>');
+    expect(renderIds.length).toBeGreaterThanOrEqual(4);
+    // Another platform's page is left as it is (iCIMS's and Oracle's go through normaliseTokens).
+    expect(normaliseNewAts('hibob', page).text).toBe(page);
+  });
+
+  it("T7-02: Dayforce's Personal Information read view, its values and the source chosen, its labels kept", async () => {
+    const { text } = await convertPage('https://jobs.dayforcehcm.com/en-US/acme/CANDIDATEPORTAL/jobs/1/apply', 'dayforce',
+      'jr7-t702', `<div test-id="personal-info-read"><h3 test-id="personal-info-read-candidate-name">${JR6_NAME} Q</h3>
+<span test-id="personal-info-read-address1">1 Fixture Way</span><span test-id="personal-info-read-city-state-zip">Fixture Town, OH 00000</span>
+<span test-id="personal-info-read-country">Fixtureland</span>
+<div test-id="personal-info-read-listed-items"><div>Preferred contact</div><div>Text me</div><div>Fixture</div></div>
+<div test-id="personal-info-read-phone-type-label">Mobile Phone:</div><div test-id="personal-info-read-mobile-phone-number">Ext 7</div>
+<div test-id="personal-info-read-email-label">Email:</div><div test-id="personal-info-read-email"><a href="#">avery at example</a></div>
+<span test-id="personal-info-read-candidate-source-statement-label">How did you hear about this job?</span>
+<span test-id="personal-info-read-candidate-source-label">Billboard</span></div>
+<form test-id="workhistory-record"><h3 test-id="workHistory-read-position-title">Staff Engineer</h3></form>`);
+    for (const gone of ['Avery', 'Quill', 'Fixture Way', 'Fixture Town', 'Fixtureland', 'Preferred contact', 'Text me', 'Ext 7',
+      'avery at example', 'Billboard', 'Staff Engineer']) {
+      expect(text, gone).not.toContain(gone);
+    }
+    for (const kept of ['>Mobile Phone:</div>', '>Email:</div>', '>How did you hear about this job?</span>']) {
+      expect(text, kept).toContain(kept);
+    }
+  }, 60_000);
+
+  it("JDEF-16: JobDiva's file card, wherever the page repeats the name, and Eightfold's per-session CSRF token", async () => {
+    const { text } = await convertPage('https://www1.jobdiva.com/portal/?a=fixture#/jobs/1', 'jobdiva', 'jr7-jdef16', `
+<div class="jd-dropzone"><div class="jd-dropzone-filecard"><span>${JR6_FILE}</span><span><svg width="16" height="16"
+  viewBox="0 0 16 16"><path d="M4 4l8 8"></path></svg></span></div></div>
+<p class="jd-note">Uploaded: ${JR6_FILE}</p><button type="button" aria-label="Remove ${JR6_FILE}">x</button>`);
+    for (const gone of ['cv final', 'cv%20final']) expect(text, gone).not.toContain(gone);
+    expect(text).toContain('<div class="jd-dropzone-filecard"><span>REDACTED</span>');
+    expect(text).toContain('aria-label="Remove REDACTED"');
+    expect(headerOf(text).source).toBe('https://www1.jobdiva.com/portal/?a=fixture#/jobs/1');
+    const head = '<meta name="_csrf_header" content="X-CSRF-TOKEN"><meta name="_csrf" content="0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0">';
+    const eightfold = normaliseNewAts('eightfold', head);
+    expect(eightfold.text).toBe('<meta name="_csrf_header" content="X-CSRF-TOKEN"><meta name="_csrf" content="REDACTED">');
+    expect(eightfold.renderIds).toEqual(['0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0']);
+    expect(normaliseNewAts('jobdiva', head).text).toBe(head);
+  }, 60_000);
+
+  it("ICIMS7-15: an open searched iCIMS list converts, each result's runs (the bolded query's among them) keeping a REDACTED",
+    async () => {
+      const row = (at: number, before: string, after: string) => `<li class="dropdown-result result-selectable${at === 0
+        ? ' result-focus" aria-selected="true' : ''}" id="result-selectable_-1_PersonProfileFields.School_${at}" role="option"
+  dropdown-index="${at}" title="${before}Roeville${after}" aria-label="${before}Roeville${after}">${before}<b>Roeville</b>${after}</li>`;
+      const { text } = await convertPage(ICIMS_APPLY, 'icims', 'jr7-icims715', `<style>.dropdown-results li b { font-weight: 700; }</style>
+<label for="-1_PersonProfileFields.School">School</label>
+<select id="-1_PersonProfileFields.School" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1"
+  icimsdropdown-selected="7"><option value="7">Roeville State University</option></select>
+<a id="-1_PersonProfileFields.School_icimsDropdown" class="dropdown-select" aria-activedescendant="result-selectable_-1_PersonProfileFields.School_0"><span class="dropdown-text">Roeville State University</span></a>
+<div class="dropdown-container"><input type="text" class="dropdown-search" value="Roeville" aria-controls="-1_PersonProfileFields.School_dropdown-results">
+<ul id="-1_PersonProfileFields.School_dropdown-results" class="dropdown-results" role="listbox">
+${row(0, '', ' State University')}${row(1, 'Old ', ' College')}${row(2, 'North ', '')}</ul></div>`);
+      expect(text).not.toContain('Roeville');
+      expect(text).not.toContain('State University');
+      expect(text.match(/<b>REDACTED<\/b>/g)).toHaveLength(3);
+      // Each run keeps its own REDACTED, the white space around it as written.
+      expect(text).toContain('>REDACTED <b>REDACTED</b> REDACTED</li>');
+      expect(text).toContain('><b>REDACTED</b> REDACTED</li>');
+    }, 60_000);
+
+  it("UP7-14: UltiPro's Race row, closed by the capture's answer, is drawn open before the measure, so the page converts",
+    async () => {
+      const { text } = await convertPage('https://recruiting.ultipro.com/ACM1000/JobBoard/0000/OpportunityApply?opportunityId=1',
+        'ultipro', 'jr7-up714', `<style>.collapse { display: none; } .collapse.in { display: block; }</style>
+<div class="form-group"><label for="hisp">Are you Hispanic or Latino?</label>
+  <select id="hisp" data-bind="value: isHispanic"><option>Choose...</option><option>Yes</option><option selected>No</option></select></div>
+<div class="row collapse" data-bind="collapse: isHispanic() != 'No'"><div class="col-md-6"><label for="race">Race</label>
+  <select id="race"><option>Choose...</option><option>Fixture race</option></select></div></div>
+<p>Thank you.</p>`);
+      expect(text).toContain('<div class="row collapse in" data-bind="collapse: isHispanic() != \'No\'">');
+      expect(headerOf(text).cleared.choices).toBeGreaterThanOrEqual(1);
+      expect(OPENED_ROWS).toEqual([{ selector: '.collapse[data-bind*="isHispanic()"]', className: 'in' }]);
+    }, 60_000);
+
+  it("jr7-O5: Oracle's profile tile summaries, their words and labels, the tile's own Edit and Delete kept", async () => {
+    const tile = (title: string, subtitle: string) => `<article class="apply-flow-profile-item-tile" data-qa="tile">
+<div class="apply-flow-profile-item-tile__summary" data-profile-item-tile="" role="button" tabindex="0" aria-label="${title}, ${subtitle}">
+<div class="apply-flow-profile-item-tile__summary-content"><div class="apply-flow-profile-item-tile__summary-title"><span>${title}</span></div>
+<div class="apply-flow-profile-item-tile__summary-subtitle text-color-secondary">${subtitle}</div>
+<div class="apply-flow-profile-item-tile__summary-validation"><span title="${title} is complete">Complete</span></div></div>
+<div class="apply-flow-profile-item-tile__actions-container"><button class="apply-flow-profile-item-tile__edit-item-icon" title="Edit" aria-label="Edit"></button>
+<button class="apply-flow-profile-item-tile__delete-icon" title="Delete" aria-label="Delete"></button></div></div></article>`;
+    const { text } = await convertPage(ORACLE_APPLY, 'oracle', 'jr7-o5-tiles', `<div class="apply-flow-block apply-flow-block--skill">
+<h3 class="apply-flow-block__title">Experience</h3>${tile('Staff Engineer', 'Initech, 2019 - 2024')}${tile('Kubernetes', 'Expert')}</div>`);
+    for (const gone of ['Staff Engineer', 'Initech', '2019 - 2024', 'Kubernetes', 'Expert', 'is complete', '>Complete<']) {
+      expect(text, gone).not.toContain(gone);
+    }
+    expect(text.match(/class="apply-flow-profile-item-tile__summary"[^>]*aria-label="REDACTED"/g)).toHaveLength(2);
+    expect(text.match(/class="apply-flow-profile-item-tile__edit-item-icon" title="Edit" aria-label="Edit"/g)).toHaveLength(2);
+    expect(text.match(/class="apply-flow-profile-item-tile__delete-icon" title="Delete" aria-label="Delete"/g)).toHaveLength(2);
+    expect(text).toContain('>Experience</h3>');
+  }, 60_000);
+
+  it("jr7-O5: Oracle's My Applications keep the captured posting's tile (--keep-application) and redact the person's others",
+    async () => {
+      const site = 'https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX';
+      const tile = (job: string, title: string, status: string) => `<li class="cs-application-tile"><div class="cs-application-tile__column cs-job-info">
+<div class="cs-job-info__title-container"><a class="cs-job-info__title cs-button--link" aria-haspopup="false" href="${site}/job/${job}">${title}</a></div>
+<span class="cs-job-info__location text-color-secondary"><span>Fixture Town</span></span></div>
+<div class="cs-job-status"><span class="cs-job-status__label">Status</span><span class="cs-job-status__value" title="${status}">${status}</span></div>
+<div class="cs-job-info__metadata"><span>Submitted Date</span><span>11/11/2026</span></div></li>`;
+      const page = `<div class="cs-applications__container cs-applications__container-active"><h2 class="cs-header">Active Job Applications</h2>
+<ul class="cs-applications__list" role="list">${tile('41', 'Platform Engineer', 'Under Consideration')}${tile('42', 'Data Engineer', 'Under Consideration')}</ul></div>
+<div class="cs-applications__container cs-applications__container-drafts"><ul class="cs-applications__list">${tile('43', 'Site Engineer', 'Draft')}</ul></div>
+<div class="cs-applications__container cs-applications__container-resolved"><ul class="cs-applications__list">${tile('44', 'Cloud Engineer', 'Not Selected')}</ul></div>`;
+      const file = join(work, 'jr7-o5-profile.mhtml');
+      writeFileSync(file, mhtml(`${site}/my-profile`, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink',
+        location: `${site}/my-profile`, body: `<!DOCTYPE html><html><head><title>My Applications</title></head><body>${page}</body></html>` }]));
+      const kept = (await convertMhtml({ file, platform: 'oracle', caseName: 'jr7-o5-profile', redact: LISTED, outDir: work,
+        keepApplication: '41' })).files[0]?.text ?? '';
+      // The captured posting's tile stays whole: its link (the success sign ORACLE-7 reads), title and status.
+      expect(kept).toContain(`href="${site}/job/41">Platform Engineer</a>`);
+      expect(kept).toContain('title="Under Consideration">Under Consideration</span>');
+      // The others are the person's history: every word, label and address gone.
+      for (const gone of ['/job/42', '/job/43', '/job/44', 'Data Engineer', 'Site Engineer', 'Cloud Engineer', 'Not Selected',
+        '>Draft<']) {
+        expect(kept, gone).not.toContain(gone);
+      }
+      expect(kept.match(/<a class="cs-job-info__title cs-button--link" aria-haspopup="false" href="#">REDACTED<\/a>/g)).toHaveLength(3);
+      expect(headerOf(kept).redacted).toMatchObject({ applications: 3, keptApplications: 1 });
+      expect(kept).toContain('>Active Job Applications</h2>');
+      // With no job named, every tile goes.
+      const none = (await convertMhtml({ file, platform: 'oracle', caseName: 'jr7-o5-profile', redact: LISTED, outDir: work }))
+        .files[0]?.text ?? '';
+      expect(none).not.toContain('/job/4');
+      expect(headerOf(none).redacted.applications).toBe(4);
+      // A job id that names no tile, an id that is no id, another platform: refused.
+      await expect(convertMhtml({ file, platform: 'oracle', caseName: 'jr7-o5-profile', redact: LISTED, outDir: work,
+        keepApplication: '9' })).rejects.toThrow('--keep-application names no My Applications tile');
+      await expect(convertMhtml({ file, platform: 'oracle', caseName: 'jr7-o5-profile', outDir: work,
+        keepApplication: '4.*' })).rejects.toThrow('--keep-application must be a job id');
+      await expect(convertMhtml({ file, platform: 'workday', caseName: 'jr7-o5-profile', outDir: work,
+        keepApplication: '41' })).rejects.toThrow('--keep-application is for --platform oracle');
+    }, 120_000);
+
+  it("JDEF-V1: --style-order live puts the sheets Blink hoisted back after the head's own, so the run-time style wins (1px)",
+    async () => {
+      // The verifier's experiment (SP\jr7\audit\jobdiva-eightfold-verify.md §2.1), saved by Chrome's own serializer: a
+      // linked sheet, then a <style> the page's script appends at run time; live, the later one wins.
+      const url = 'https://www1.jobdiva.com/portal/?a=fixture';
+      const live = await browser.newContext({ viewport: VIEWPORT });
+      await live.route('**/*', (route) => {
+        const at = route.request().url();
+        if (at === url) {
+          return route.fulfill({ status: 200, contentType: 'text/html', body: `<!DOCTYPE html><html><head><title>Portal</title>
+<link rel="stylesheet" href="https://www1.jobdiva.com/portal/a.css"><style>.jd-static { outline: 0; }</style></head>
+<body><input class="form-control jd-form" id="box" aria-label="First name"><p class="jd-static">Quick Apply</p>
+<script>const s = document.createElement('style'); s.textContent = '.jd-form { border: 1px solid rgb(218, 222, 227); }';
+document.head.appendChild(s);</script></body></html>` });
+        }
+        if (at.endsWith('/a.css')) {
+          return route.fulfill({ status: 200, contentType: 'text/css', body: '.form-control { border: 0px solid rgb(204, 204, 204); }' });
+        }
+        return route.abort();
+      });
+      const page = await live.newPage();
+      await page.goto(url);
+      const liveBorder = await page.evaluate(() => getComputedStyle(document.getElementById('box')!).borderTopWidth);
+      const session = await live.newCDPSession(page);
+      const { data } = await session.send('Page.captureSnapshot', { format: 'mhtml' });
+      await live.close();
+      const file = join(work, 'jr7-jdefv1.mhtml');
+      writeFileSync(file, data);
+      // The archive hoists both <style>s above the linked sheet (Blink's layout).
+      const head = /<head>([\s\S]*?)<\/head>/i.exec(data.replace(/=\r?\n/g, ''))?.[1] ?? '';
+      expect(head.indexOf('cid:css-')).toBeGreaterThanOrEqual(0);
+      expect(head.indexOf('cid:css-')).toBeLessThan(head.indexOf('a.css'));
+      const borderOf = async (conversion: Awaited<ReturnType<typeof convertMhtml>>) => {
+        const { context } = await servedContext(conversion);
+        const served = await context.newPage();
+        await served.goto(url);
+        const border = await served.evaluate(() => getComputedStyle(document.getElementById('box')!).borderTopWidth);
+        await context.close();
+        return border;
+      };
+      const liveOrder = await convertMhtml({ file, platform: 'jobdiva', caseName: 'jr7-jdefv1-live', outDir: work });
+      const archived = await convertMhtml({ file, platform: 'jobdiva', caseName: 'jr7-jdefv1-archive', outDir: work,
+        styleOrder: 'archive' });
+      expect(liveBorder).toBe('1px');
+      // jobdiva's default is live: the fixture draws the box's edge as the live page did; the archive's order loses it.
+      expect(await borderOf(liveOrder)).toBe('1px');
+      expect(await borderOf(archived)).toBe('0px');
+      expect(headerOf(liveOrder.files[0]?.text ?? '')).toMatchObject({ styleOrder: 'live', styleSheetsMoved: 2 });
+      expect(headerOf(archived.files[0]?.text ?? '').styleOrder).toBeUndefined();
+      // Another platform keeps the archive's order unless asked; an unknown order is refused.
+      const asked = await convertMhtml({ file, platform: 'hibob', caseName: 'jr7-jdefv1-asked', outDir: work, styleOrder: 'live' });
+      expect(await borderOf(asked)).toBe('1px');
+      expect(await borderOf(await convertMhtml({ file, platform: 'hibob', caseName: 'jr7-jdefv1-hibob', outDir: work })))
+        .toBe('0px');
+      await expect(convertMhtml({ file, platform: 'jobdiva', caseName: 'jr7-jdefv1-bad', outDir: work, styleOrder: 'page' }))
+        .rejects.toThrow('--style-order must be one of archive, live');
+      expect(STYLE_ORDER_DEFAULTS).toEqual({ jobdiva: 'live' });
+    }, 120_000);
+
+  it("RBP7-V2(a): --frame-src gives a frame the capture saved unloaded its public vendor address, a third party's stand-in",
+    async () => {
+      // bamboohr1-blank's shape (SP\jr7\audit\rippling-bamboohr-pinpoint-verify.md RBP7-V2): the reCAPTCHA anchor's part
+      // has no Content-Location and an empty document, so the fixture's frame has no address.
+      const page = 'https://acme.bamboohr.com/careers/1';
+      const anchor = 'https://www.google.com/recaptcha/api2/anchor?ar=1&hl=en&size=normal&cb=fixture';
+      const other = 'https://www.google.com/recaptcha/api2/bframe?hl=en';
+      const file = join(work, 'jr7-v2a.mhtml');
+      writeFileSync(file, mhtml(page, [
+        { type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: page, body: `<!DOCTYPE html><html><head><title>Apply</title></head>
+<body><form><label for="first">First name</label><input id="first">
+<div class="g-recaptcha"><iframe title="reCAPTCHA" src="cid:frame-ANCHOR@mhtml.blink" width="304" height="78"></iframe>
+<textarea name="g-recaptcha-response" style="display: none"></textarea></div>
+<iframe title="recaptcha challenge" src="cid:frame-CHALLENGE@mhtml.blink" width="10" height="10"></iframe></form></body></html>` },
+        { type: 'text/html', id: 'frame-ANCHOR@mhtml.blink', body: '<html><head></head><body></body></html>' },
+        { type: 'text/html', id: 'frame-CHALLENGE@mhtml.blink', location: other, body: '<html><body>A challenge</body></html>' },
+      ]));
+      const plain = await convertMhtml({ file, platform: 'bamboohr', caseName: 'jr7-v2a', outDir: work });
+      expect(plain.files[0]?.text).toContain('<iframe title="reCAPTCHA" width="304" height="78"></iframe>');
+      expect(headerOf(plain.files[0]?.text ?? '').frames).toEqual({ linked: 1, blanked: 1 });
+      const given = await convertMhtml({ file, platform: 'bamboohr', caseName: 'jr7-v2a', outDir: work,
+        frameSrc: [readFrameSrcOption(`iframe[title="reCAPTCHA"]=${anchor}`, 1)] });
+      const text = given.files[0]?.text ?? '';
+      expect(text).toContain(`<iframe title="reCAPTCHA" src="${anchor.replace(/&/g, '&amp;')}" width="304" height="78"></iframe>`);
+      expect(headerOf(text).frames).toEqual({ linked: 1, blanked: 0, given: 1 });
+      // The route map answers it with the third-party stand-in, as the captured challenge frame's.
+      const standIn = given.files.find((output) => output.path.endsWith('jr7-v2a.third-party-frame.html'))?.path.split('\\').join('/');
+      expect(given.routes[anchor]).toBe(standIn);
+      expect(given.routes[other]).toBe(standIn);
+      // Refused: an entry that names no unloaded frame, or a frame with an address of its own; an address that is no
+      // third party's public one.
+      await expect(convertMhtml({ file, platform: 'bamboohr', caseName: 'jr7-v2a', outDir: work,
+        frameSrc: [{ selector: 'iframe[title="Nothing"]', url: anchor }] }))
+        .rejects.toThrow('--frame-src #1 names no frame the capture saved unloaded');
+      await expect(convertMhtml({ file, platform: 'bamboohr', caseName: 'jr7-v2a', outDir: work,
+        frameSrc: [{ selector: 'iframe', url: anchor }] })).rejects.toThrow('--frame-src #1 names a frame with an address of its own');
+      expect(() => readFrameSrcOption(`iframe=${anchor}&k=6LcFixtureKey`, 2)).toThrow('--frame-src #2 holds a site key');
+      expect(() => readFrameSrcOption('iframe=https://acme.bamboohr.com/careers/2', 1)).toThrow('names a host the extension runs on');
+      expect(() => readFrameSrcOption('iframe=https://user:pw@www.google.com/recaptcha/api2/anchor', 1)).toThrow('holds credentials');
+      expect(() => readFrameSrcOption('iframe=http://www.google.com/recaptcha/api2/anchor', 1)).toThrow('must be <css>=<https address>');
+      expect(readFrameSrcOption(`iframe[title="reCAPTCHA"]=${anchor}`, 1)).toEqual({ selector: 'iframe[title="reCAPTCHA"]', url: anchor });
+    }, 120_000);
+
+  it("the jr6 leftover (INT-2 §5): Jobvite's __jvsc reads REDACTED in the address, its links and its share buttons", async () => {
+    const posting = 'https://jobs.jobvite.com/acme/job/oFixture2?__jvst=Job%20Board&__jvsd=FixtureBoard&__jvsc=FixtureChannel';
+    const { conversion, text } = await convertPage(posting, 'jobvite', 'jr7-jvsc', `<h1>Engineer</h1>
+<a class="share" href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fjobs.jobvite.com%2Facme%2Fjob%2FoFixture2%3F__jvst%3DSocial%26__jvsc%3DTwitter">Share</a>
+<a ng-href="/acme/job/oFixture2/apply?__jvsc=FixtureChannel&amp;nl=0" href="/acme/job/oFixture2/apply?__jvsc=FixtureChannel&amp;nl=0">Apply</a>`);
+    const clean = 'https://jobs.jobvite.com/acme/job/oFixture2?__jvst=REDACTED&__jvsd=REDACTED&__jvsc=REDACTED';
+    expect(headerOf(text).source).toBe(clean);
+    expect(Object.keys(conversion.routes)).toEqual([clean]);
+    expect(text).not.toMatch(/FixtureChannel|FixtureBoard|%3DTwitter|%3DSocial/);
+    expect(text).toContain('/acme/job/oFixture2/apply?__jvsc=REDACTED&amp;nl=0');
+    expect(text).toContain('%26__jvsc%3DREDACTED');
+  }, 60_000);
+
+  it("every committed fixture: no widget's shown text spelled in an id (T7-01, spelledIdsIn)", () => {
+    const files = committedFixtureFiles();
+    expect(files.length).toBeGreaterThan(400);
+    expect(files.flatMap((file) => spelledIdsIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'))
+      .map((label) => `${file}: ${label}`))).toEqual([]);
+  }, 60_000);
+
+  it('the jr6 leftover (INT-2 §6 item 3): the final check reads the inlined stylesheets for the token and referral needles',
+    async () => {
+      // A content blocker's filter list, as the owner's browser injected it (INT-2 §4: one rule, hundreds of link-matching
+      // selectors, display: none !important), its utm_ tag made up: the whole-text pass redacts it, as in any text.
+      const filter = `<style>a[href^="https://ads.tailorit-fixture.example/"][href*="&utm_source=FixtureAds"], .fixture-ad
+  { display: none !important; visibility: hidden !important; }</style>`;
+      const { text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr7-styles', `${filter}<h1>Engineer</h1>`);
+      expect(text).toContain('[href*="&utm_source=REDACTED"]');
+      expect(checkedStyleForms(text).some((form) => form.includes('utm_source=redacted'))).toBe(true);
+      // What no pass redacts there is refused now: a per-load token in a selector, a JWT in a content string.
+      await expect(convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr7-styles-token', `<style>a[href*="?bft=0dAFfixture"] { color: red; }
+.x::after { content: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl"; }</style><h1>Engineer</h1>`))
+        .rejects.toThrow(/jr7-styles-token\.html: a per-load token is still in an inlined stylesheet[\s\S]*a JWT is still in an inlined stylesheet/);
+      // Base64 payloads are no text, and a page's text is checkedForms', as before.
+      expect(checkedStyleForms('<style>.a { background: url("data:image/png;base64,ZXlKaGJHY2lPaUpJVXpJMU5pSjk=") }</style><p>x</p>'))
+        .toEqual(['.a { background: url("data:image/png;base64,") }', '.a { background: url("data:image/png;base64,") }']);
+    }, 120_000);
+
+  it("every committed fixture's inlined stylesheets: no token needle; no referral value but inside a content blocker's filter list",
+    () => {
+      const files = committedFixtureFiles(undefined, '', /\.html$/);
+      expect(files.length).toBeGreaterThan(400);
+      /** A content blocker's cosmetic filter list (INT-2 §4): a rule block whose every rule hides with display: none
+       *  !important, a hundred selectors or more; the referral needle reads a stylesheet without it. */
+      const withoutFilterLists = (style: string) => {
+        const rules = [...style.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+        const selectors = rules.reduce((sum, rule) => sum + (rule[1] ?? '').split(',').length, 0);
+        return rules.length > 0 && selectors >= 100 && rules.every((rule) => /display\s*:\s*none\s*!important/i.test(rule[2] ?? ''))
+          ? '' : style;
+      };
+      const token: string[] = [];
+      const referral: string[] = [];
+      let filterLists = 0;
+      for (const file of files) {
+        const text = readFileSync(join(ROOT, 'fixtures', file), 'utf8');
+        const forms = checkedStyleForms(text);
+        for (const { label, pattern } of tokenNeedles()) if (forms.some((form) => pattern.test(form))) token.push(`${file}: ${label}`);
+        const styles = [...text.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((match) => match[1] ?? '');
+        const kept = styles.map(withoutFilterLists);
+        filterLists += kept.filter((style, at) => style !== styles[at]).length;
+        // A jr7 case (converted by this converter) has none anywhere; an older one none outside a filter list.
+        const read = isJr6(file) && /(?:^|\/)jr7-/.test(file) ? styles : kept;
+        const [needle] = referralNeedles();
+        if (checkedStyleForms(read.map((style) => `<style>${style}</style>`).join('')).some((form) => needle!.pattern.test(form))) {
+          referral.push(file);
+        }
+      }
+      expect(token).toEqual([]);
+      expect(referral).toEqual([]);
+      // The filter list the owner's browser injected stands in older captures (INT-2 §4: 21 with a utm_ tag in it).
+      expect(filterLists).toBeGreaterThanOrEqual(21);
+    }, 60_000);
+});
+// ── end jr7 TOOLING-7 ──

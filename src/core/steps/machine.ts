@@ -54,7 +54,10 @@
  * - After a reload (resumeMode): automatic in the same tab within RESUME_AUTO_MS of updatedAt, otherwise the person's
  *   Continue; never in another tab, and never once RunState has expired (RUN_STATE_TTL_MS). A paused run shows its
  *   pause again. A run at review (a final, unknown or limited step: the person's turn) is never filled again by
- *   itself: it offers Continue, and done is never resumed.
+ *   itself: it offers Continue, and done is never resumed. jr7 ENGINE-7 E2 item 2 (FIX7PLAN §6.2, ADP7-7): except a run
+ *   paused at an email code or a sign-in wall (not one handed off from review) whose application's next document in
+ *   the same tab shows a form within RESUME_AUTO_MS (RESUMED's formOf, resumeMode's): the person has typed the code or
+ *   signed in, so it resumes by itself at that form (pastPause), as Jobright goes on after a page turn.
  * - RunState holds no value: signatures are hashes, filled keys are stored with their section and label slug hashed
  *   (storedFieldKey, as the reveal edges are), counters are numbers, and the canaries are the page's, which the worker
  *   checks against the profile before storing. The reducer never adds a field RunState does not declare.
@@ -165,7 +168,10 @@ export type RunEvent =
   | { type: 'SUBMITTED' }
   /** A new document found this tab's RunState (`load`, the content script's own start), or the person chose
    *  Continue on it (`person`, a trusted click). `sameTab`: the worker's tab index names this tab. */
-  | { type: 'RESUMED'; by: 'load' | 'person'; sameTab: boolean }
+  | { type: 'RESUMED'; by: 'load' | 'person'; sameTab: boolean;
+    /** jr7 ENGINE-7 E2 item 2 (ADP7-7): the application whose form the new document shows (the content script's run,
+     *  which starts only with a form root). Absent: no form is known to show. */
+    formOf?: string }
   /** A repeatable section's counters on the current step (planRepeatable's), stored before each Add click. */
   | { type: 'REPEATABLE'; kind: RepeatableKind; counter: RepeatableCounter }
   /** The person's Cancel. */
@@ -360,8 +366,11 @@ export function noticeOfPause(reason: PauseReason): StepNotice {
  * itself), or more than RESUME_AUTO_MS have passed since its last update. Otherwise it resumes by itself at the step it
  * was on (its attempts counted).
  */
-export function resumeMode(state: RunState | null, input: { now: number; sameTab: boolean }): ResumeMode {
+export function resumeMode(state: RunState | null, input: { now: number; sameTab: boolean; formOf?: string }):
+  ResumeMode {
   if (state === null || !input.sameTab || expired(state, input.now) || FINISHED.has(state.status)) return 'none';
+  // jr7 ENGINE-7 E2 item 2 (ADP7-7): past an email code or a sign-in wall, the application's form shown.
+  if (pastPause(state, input.formOf, input.now)) return 'auto';
   if (PAUSED.has(state.status) || state.status === 'review' || input.now - state.updatedAt > RESUME_AUTO_MS) {
     return 'continue';
   }
@@ -654,6 +663,8 @@ function resumed(state: RunState, event: Extract<RunEvent, { type: 'RESUMED' }>,
   const { status } = state;
   // v4 (D6): a run stored at the old policy card is scanned again: the content script reads the posting's rule itself.
   if (status === 'policy-notice' || event.by === 'person') return rescan(state);
+  // jr7 ENGINE-7 E2 item 2 (ADP7-7): the application's next document shows a form past the code or the sign-in wall.
+  if (pastPause(state, event.formOf, ctx.now) && ctx.fillAfterPageTurn !== false) return rescan(state);
   if (status === 'auth-needed') return quiet([{ type: 'pause', kind: 'auth' }, notify('auth')]);
   if (status === 'handoff') {
     return quiet([{ type: 'pause', kind: 'handoff' }, notify(noticeOfPause(state.pauseReason ?? 'needs-click'))]);
@@ -665,6 +676,20 @@ function resumed(state: RunState, event: Extract<RunEvent, { type: 'RESUMED' }>,
   }
   return rescan(state);
 }
+
+// ── jr7 ENGINE-7 E2 item 2 (FIX7PLAN §6.2, ADP7-7) ──
+/**
+ * Whether a run found by a new document goes on by itself past its pause: it is paused at an email code (handoff,
+ * email-code) or at a sign-in wall (auth-needed), not handed off from review (a Submit the person or the run pressed:
+ * never filled again by itself), the new document in the same tab shows that application's form (`formOf`, its key),
+ * and its last update is within RESUME_AUTO_MS. Nothing else resumes so.
+ */
+function pastPause(state: RunState, formOf: string | undefined, now: number): boolean {
+  const pause = state.status === 'auth-needed' || (state.status === 'handoff' && state.pauseReason === 'email-code');
+  return pause && state.resumeStatus !== 'review' && formOf !== undefined && formOf === state.applicationKey
+    && now - state.updatedAt <= RESUME_AUTO_MS;
+}
+// ── end jr7 ENGINE-7 E2 item 2 ──
 
 /** A repeatable section's counters on the step being filled: stored, nothing else changes. */
 function repeatable(state: RunState, kind: RepeatableKind, counter: RepeatableCounter): Outcome | null {
