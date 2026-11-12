@@ -31,6 +31,7 @@ import {
   frameEntry, framesOfTab, frameTarget, navOf, registerFrame, setWall, wallFrameOf, type FrameChain, type FrameEntry,
 } from './frames';
 import { createChains } from './chain';
+import { chainPageOf } from '../adapters/chain'; // jr7 CHAIN-7 (PC7-03)
 import { createJobCards, JOB_RELAY_LIMIT, LOOKUP_ON_LOAD_LIMIT, type JobCards } from './job-cards';
 import { createLauncherStore, LAUNCHER_LIMIT } from './launcher';
 import { createLearnedListStore, LEARNED_LISTS_LIMIT } from './learned-lists';
@@ -700,6 +701,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       const kept = chainOf(held);
       if (kept !== undefined) return kept;
     }
+    // ── jr7 CHAIN-7 (PC7-03): a top pair page (Paycom's application) takes its tab's latest posting press, whatever its
+    // hello names (chain.ts inheritPair; Chrome's address for the frame, never the page's word) ──
+    if (from.frameId === 0 && from.incognito !== true && URL.canParse(from.url)
+      && chainPageOf(new URL(from.url))?.pair === true) {
+      return (await chains.inheritPair(from.tabId, { url: from.url, documentId: from.documentId ?? null })) ?? undefined;
+    }
+    // ── end jr7 CHAIN-7 ──
     if (message.chain === undefined || from.incognito === true) return undefined;
     const frame = { url: from.url, documentId: from.documentId ?? null, frameId: from.frameId };
     const inherited = 'from' in message.chain
@@ -720,6 +728,20 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     const entry = await frameEntry(session, from.tabId, from.frameId);
     return tailoritFrom(from, entry !== null && entry.documentId === (from.documentId ?? null) ? entry : null);
   }
+
+  // ── jr7 CHAIN-7 (PC7-03; background/chain.ts notePair) ──
+  /** The tab's top frame, in its registered document, pressed (its Apply, the agent's entry, its sign-in step) or
+   *  changed its dialog: kept as its tab's latest posting press where a pair page of its family may take it (Paycom's
+   *  posting). Nothing for any other frame, document or a private tab. */
+  function notePairNow(from: ContentChannel): void {
+    if (from.frameId !== 0 || from.incognito === true) return;
+    void (async () => {
+      const entry = await frameEntry(session, from.tabId, 0);
+      if (entry === null || entry.documentId !== (from.documentId ?? null)) return;
+      await chains.notePair(from.tabId, entry, from.url);
+    })().catch(() => undefined);
+  }
+  // ── end jr7 CHAIN-7 ──
 
   /** The tab's top frame, when it is one of ours: the one that draws the launcher at the page's edge (v3 Phase 3). */
   /** The tab's top frame of ours: frame 0, whatever a frame's hello said of itself. */
@@ -849,7 +871,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           }
           if (entry.applicationKey !== undefined && entry.chained !== true && from.incognito !== true) {
             await chains.notePortal(from.tabId, { frameId: entry.frameId, documentId: entry.documentId,
-              applicationKey: entry.applicationKey, url: from.url });
+              applicationKey: entry.applicationKey, url: from.url,
+              ...(message.childOrigins === undefined ? {} : { childOrigins: message.childOrigins }) }); // jr7 CHAIN-7 (ICIMS7-01)
           }
           // jr6 SHELL-B (ICIMS-17): a leaf frame's document the chain keyed now hears its portal's step facts (chain.ts).
           if (entry.chained === true && (previous?.chained !== true || previous.documentId !== entry.documentId)) {
@@ -1040,7 +1063,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // v1.3 B: the armed Submit's form, held for it in memory only (submissions.ts).
         'submit/form': async (message, from) => submitted.form(message, await tailoritFromNow(from)),
         // v3 Phase 5: Sign-in mode Auto's credential, to the asking top frame alone (sign-in.ts).
-        'signin/credential': (message, from) => signIn.credential(message, from),
+        'signin/credential': (message, from) => {
+          notePairNow(from); // jr7 CHAIN-7 (PC7-03): a posting's sign-in step (Paycom's "Continue To Application")
+          return signIn.credential(message, from);
+        },
         // Round 3 of the v3 Phase 6/7b review (X8): the agent's entry pressed in the top frame, told before the entry
         // waits on what the press brings (agent.ts entered).
         // v3 Phase 8: the sentinel's one message (sites.ts).
@@ -1131,6 +1157,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           });
           if (entry === null) return refuse('expired');
           log('frame.wall', { shown: message.wall !== null, choice: message.choice === true });
+          notePairNow(from); // jr7 CHAIN-7 (PC7-03): a posting's dialog shown, changed or gone (its Continue pressed)
           void reports.pageChanged(from.tabId).catch(() => undefined);
           // v1.5 QX: a queued tab whose application frame (its top frame or claim frame, wallFrameOf) shows the
           // posting's own Apply, an entry choice or an account wall, and no form: with Automatically, its Autofill.
@@ -1164,6 +1191,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             log('grant.armed', { armed: false, frame: false });
             return refuse('bad_sender');
           }
+          notePairNow(from); // jr7 CHAIN-7 (PC7-03): the person's Autofill pressed a posting's Apply
           const armed = signUps.pressed(from.tabId, application, message.nextKey);
           log('grant.armed', { armed, nextKey: message.nextKey !== undefined });
           return armed ? ok({}) : refuse('expired');
@@ -1175,6 +1203,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             return refuse('bad_sender');
           }
           await agent.entered(from.tabId, from.documentId).catch(() => undefined);
+          notePairNow(from); // jr7 CHAIN-7 (PC7-03): the agent's entry on a posting
           return ok({});
         },
         'launcher/hide': async (message, from) => {
@@ -1197,6 +1226,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'chain/facts': async (message, from) => (from.incognito !== true && await chains.factsSaid(from.tabId, // jr6 SHELL-B
           { frameId: from.frameId, documentId: from.documentId ?? null }, message.facts, // jr6 SHELL-B
           () => framesOfTab(session, from.tabId)) ? ok({}) : refuse('expired')), // jr6 SHELL-B
+        // jr7 CHAIN-7 (ICIMS7-V1): an IForm leaf pressed its form's Submit: its portal's facts so far count as said
+        // before the press (chain.ts leafPressed); any other frame: expired.
+        'chain/pressed': async (_message, from) => (from.incognito !== true && await chains.leafPressed(from.tabId, // jr7 CHAIN-7
+          { frameId: from.frameId, documentId: from.documentId ?? null }, // jr7 CHAIN-7
+          () => framesOfTab(session, from.tabId)) ? ok({}) : refuse('expired')), // jr7 CHAIN-7
         ...(__E2E__
           ? {
               'e2e/probe': async (message: { storageLocal?: 'refused' | 'allowed'; settled?: true }, from: ContentChannel) => {
