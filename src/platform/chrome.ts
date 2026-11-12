@@ -198,11 +198,21 @@ function agentWindows(): AgentWindows {
       }
     },
     async othersOpen(except) {
+      // jr7 AUTO-7: one window or several (the jobs' windows left open for the person).
+      const excluded: readonly (number | null)[] = Array.isArray(except) ? except : [except as number | null];
       try {
         const open = await browser.windows.getAll({ windowTypes: ['normal'] });
-        return open.some((window) => window.id !== except);
+        return open.some((window) => window.id === undefined || !excluded.includes(window.id));
       } catch {
         return false;
+      }
+    },
+    // ── jr7 AUTO-7 (jr7-O1 part 4, D-9 Q-O2): the window flagged for the person, never focused ──
+    async drawAttention(windowId) {
+      try {
+        await browser.windows.update(windowId, { drawAttention: true });
+      } catch {
+        // Gone already.
       }
     },
   };

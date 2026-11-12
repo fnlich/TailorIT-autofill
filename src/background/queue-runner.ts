@@ -72,10 +72,12 @@ import {
   QUEUE_HOLDS, QUEUE_ITEM_STATUSES, QUEUE_LIST_PAGE, QUEUE_STOPS, type QueueBlock, type QueueItemStatus,
   type QueueListAnswer, type QueueStatus, type QueueStop,
 } from '../messaging/page-schemas';
+import { AGENT_NOTES, type AgentNote } from '../messaging/schemas';
 import type { AgentAlarms, AtsPage, QueueTabs, StorageArea } from '../platform/types';
 import { log } from '../shared/log';
 import type { FrameReport } from '../shared/report';
-import { agentAddressOf } from './agent';
+import { agentAddressOf, queueAddressOf } from './agent';
+import { queueSubmitIsPersons } from './settings';
 import type { FrameEntry } from './frames';
 import { createKeyedQueue } from './locks';
 import { pageOf, type QueueTask } from './queue-source';
@@ -134,6 +136,14 @@ const ItemSchema = z.strictObject({
   quietAt: Count.nullable().default(null),
   /** The result TailorIT has not taken yet. */
   tell: ResultSchema.nullable(),
+  // ── jr7 AUTO-7 ──
+  /** AUTO7-01 (D-4): when a Submit of the job's application was armed in its tab: a job whose Submit is the person's
+   *  is Ready for you from then on, and a tab closed after it is never told cancelled (it may have been sent:
+   *  timed_out). A run saved without it reads as null. */
+  pressedAt: Count.nullable().default(null),
+  /** ICIMS7-04: why the job rests with the person, in the extension's words (a step that is theirs by design). */
+  note: z.enum(AGENT_NOTES).nullable().default(null),
+  // ── end jr7 AUTO-7 ──
 });
 type Item = z.infer<typeof ItemSchema>;
 
@@ -196,6 +206,12 @@ export interface QueueRunnerDeps {
   changed(): void;
   /** How long the new tab rests on its empty page before the job's address opens in it (the e2e build's routing). */
   tabSettleMs?: number;
+  // ── jr7 AUTO-7 (AUTO7-05 c) ──
+  /** The host name of the tab's page, in lower case (WorkerPlatform tabs.hostOf), or null. Absent: not known. */
+  hostOf?(tabId: number): Promise<string | null>;
+  /** Whether `host` is one the platform's own sign-in leaves to (its adapter's identityHosts). Absent: none is. */
+  identityHost?(platform: string, host: string): boolean;
+  // ── end jr7 AUTO-7 ──
 }
 
 /** A frame of a queued tab, as its hello registered it. */
@@ -221,7 +237,8 @@ function signatureOf(run: Run): string {
   // jr6 apply F4a: whether an entry still waits for its run (so its start and its end are saved).
   const items = run.items.map((item) => `${item.status}:${item.reason ?? ''}:${item.tabId ?? ''}:${item.tell === null ? 0 : 1}`
     + `:${item.entryAt === null ? 0 : 1}`
-    + `:${item.quietAt === null ? 0 : 1}`); // jr6 SHELL-B: a quiet tab's wait, its start and end saved
+    + `:${item.quietAt === null ? 0 : 1}` // jr6 SHELL-B: a quiet tab's wait, its start and end saved
+    + `:${item.pressedAt === null ? 0 : 1}:${item.note ?? ''}`); // jr7 AUTO-7
   return [run.phase, run.hold, run.nextAt, run.leftMs, run.opened, run.stoppedBy, ...items].join('|');
 }
 
@@ -355,6 +372,15 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
   const openItemOf = (run: Run | null, tabId: number) =>
     run?.items.find((item) => item.tabId === tabId && OPEN.has(item.status)) ?? null;
 
+  // ── jr7 AUTO-7 ──
+  /** AUTO7-05 (c): whether the job's tab shows its platform's own sign-in (identityHosts). */
+  async function onIdentityHost(item: Item, tabId: number): Promise<boolean> {
+    if (item.applicationKey === null || deps.hostOf === undefined || deps.identityHost === undefined) return false;
+    const host = await deps.hostOf(tabId).catch(() => null);
+    return host !== null && deps.identityHost(item.applicationKey.split(':')[0] ?? '', host);
+  }
+  // ── end jr7 AUTO-7 ──
+
   /** The phase once nothing is queued: finished while no tab is open and not done. */
   function settle(run: Run): void {
     if (run.phase !== 'running') return;
@@ -391,7 +417,9 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
         finishAs(item, answer.value.state, answer.value.reason);
         continue;
       }
-      const target = agentAddressOf(task.url);
+      // jr7 AUTO-7 (AUTO7-01, F4b): the agent's address, else the Queue tab's (the posting or the form of every
+      // platform the extension fills, read so it says hello before any redirect; the contract's queueApplicationUrl).
+      const target = agentAddressOf(task.url) ?? queueAddressOf(task.url);
       if (target === null) {
         // No address the extension fills: never opened.
         finish(item, 'failed', { state: 'failed', reason: 'unsupported_site' });
@@ -407,6 +435,7 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       }
       Object.assign(item, { status: 'opening', tabId, openedAt: deps.now(), heardAt: null, startedAt: null, entryAt: null,
         quietAt: null, // jr6 SHELL-B
+        pressedAt: null, note: null, // jr7 AUTO-7
         reason: null, applicationKey: target.applicationKey,
         resumeId: task.resumeId === null ? null : task.resumeId.slice(0, 64) });
       await save(run);
@@ -438,6 +467,14 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
         continue;
       }
       if (item.status === 'opening' && item.openedAt !== null && now - item.openedAt >= QUEUE_FORM_WAIT_MS) {
+        // jr7 AUTO-7 (AUTO7-05 c; the UltiPro verifier's addition): a tab at the job's platform's own sign-in (its
+        // adapter's identityHosts) is never failed page_error: Ready for you, its place kept, and its hellos taken at
+        // the job's key once the person signed in.
+        if (await onIdentityHost(item, tabId)) {
+          item.status = 'ready';
+          log('queue.held', { identity: true });
+          continue;
+        }
         const shown = deps.atsPageOf === undefined ? null : await deps.atsPageOf(tabId).catch(() => null);
         finish(item, 'failed', { state: 'failed', reason: shown?.page === 'other' ? 'posting_closed' : 'page_error' });
         continue;
@@ -448,6 +485,15 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
         item.entryAt = null;
         item.quietAt = null; // jr6 SHELL-B: a report shows: the tab is not quiet
         if (item.status !== 'opening') item.status = status;
+      } else if (item.entryAt === null && item.status === 'opened' && item.quietAt !== null && item.startedAt === null) {
+        // jr7 AUTO-7 (AUTO7-04, O-10: on SHELL-B's quiet rule): with Automatically, an application frame that said hello
+        // with no form and showed no wall, choice or entry (its quietAt, hello) is Ready for you QUEUE_ENTRY_WAIT_MS
+        // later, its open-tab place kept: the person is told to act, never "Opened" for ever.
+        if (now - item.quietAt >= QUEUE_ENTRY_WAIT_MS) {
+          item.quietAt = null;
+          log('queue.entry-timeout', { from: QUEUE_ITEM_STATUSES.indexOf(item.status), opened: true });
+          item.status = 'ready';
+        }
       } else if (item.entryAt === null && item.status === 'filling') {
         // jr6 SHELL-B (F4a's gap): Filling, and no fill report shows on the tab (its run's page turned to a document
         // where no run reports): from the first look that finds it so, QUEUE_ENTRY_WAIT_MS, then Ready for you, as F4a's
@@ -610,7 +656,8 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
   function itemOf(task: QueueTask): Item {
     return { id: task.id, jobId: task.jobId, resumeId: null, title: task.title.slice(0, 300),
       company: task.company.slice(0, 200), applicationKey: null, status: 'queued', reason: null, tabId: null,
-      openedAt: null, heardAt: null, startedAt: null, entryAt: null, quietAt: null, tell: null }; // jr6 SHELL-B
+      openedAt: null, heardAt: null, startedAt: null, entryAt: null, quietAt: null, tell: null, // jr6 SHELL-B
+      pressedAt: null, note: null }; // jr7 AUTO-7
   }
 
   async function start(): Promise<Answer<QueueStatus>> {
@@ -661,7 +708,11 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
     if (run !== null && run.items.length > 0) {
       const items = run.items.slice(offset, offset + QUEUE_LIST_PAGE).map((item) => ({ id: item.id,
         title: item.title, company: item.company, status: item.status, reason: item.reason,
-        tab: item.tabId !== null }));
+        tab: item.tabId !== null,
+        // jr7 AUTO-7 (D-4, ICIMS7-04): Submit is the person's on this job's site; why it rests with them.
+        ...(item.applicationKey !== null && queueSubmitIsPersons(item.applicationKey) && OPEN.has(item.status)
+          ? { submitYours: true as const } : {}),
+        ...(item.note === null ? {} : { note: item.note }) }));
       return ok({ source: 'run', items, offset, total: run.items.length,
         more: offset + QUEUE_LIST_PAGE < run.items.length });
     }
@@ -765,7 +816,8 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
     /** A frame of a queued tab said hello (`acts`: the tab's top frame, or the frame that claims its application, as
      *  index.ts reads the registry): the job's page is open; at the job's own application its job and resume are
      *  named, and with Automatically its first form gets its run, once. */
-    hello: (tabId: number, frame: QueueFrame, acts: boolean) => onItem(tabId, async (_run, item) => {
+    hello: (tabId: number, frame: QueueFrame, acts: boolean, said: { handOver?: AgentNote | undefined } = {}) =>
+      onItem(tabId, async (_run, item) => {
       let changed = false;
       const now = deps.now();
       if (item.status === 'opening') {
@@ -774,6 +826,19 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       }
       if (!acts || item.applicationKey === null || frame.applicationKey !== item.applicationKey) return changed;
       deps.assign(tabId, item.applicationKey, { jobId: item.jobId, resumeId: item.resumeId });
+      // jr7 AUTO-7 (ICIMS7-04): a step that is the person's by design: Ready for you, with its words; nothing pressed.
+      if (said.handOver !== undefined) {
+        Object.assign(item, { status: 'ready', note: said.handOver, entryAt: null, quietAt: null });
+        log('queue.held', { handOver: true });
+        return true;
+      }
+      // jr7 AUTO-7 (AUTO7-04): an application frame with no form, before anything started: its quiet wait begins
+      // (Automatically only; a wall, a choice or an entry it then shows starts the panel's Autofill, wall(), and ends it).
+      if (!frame.hasForm && item.startedAt === null && item.status === 'opened' && item.quietAt === null
+        && (await deps.settings()).queue.autofillOnOpen === 'auto') {
+        item.quietAt = now;
+        return true;
+      }
       if (!frame.hasForm || item.startedAt !== null) return changed;
       if ((await deps.settings()).queue.autofillOnOpen !== 'auto') return changed;
       Object.assign(item, { startedAt: now, status: 'filling' });
@@ -838,10 +903,40 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       return outcome;
     },
 
+    // ── jr7 AUTO-7 (AUTO7-01, FIX7PLAN D-4) ──
+    /** A Submit of the job's own application was armed in its tab (submit/armed taken): noted; where the platform's
+     *  Submit is the person's (no success sign read: QUEUE_SUBMIT_PLATFORMS), the job is Ready for you, never
+     *  cancelled; a sign that still fires records it (submitted). */
+    pressed: (tabId: number, applicationKey: string) => onItem(tabId, async (_run, item) => {
+      if (item.applicationKey !== applicationKey || item.pressedAt !== null) return false;
+      item.pressedAt = deps.now();
+      if (queueSubmitIsPersons(applicationKey)) {
+        item.status = 'ready';
+        item.entryAt = null;
+        item.quietAt = null;
+      }
+      log('queue.pressed', { persons: queueSubmitIsPersons(applicationKey) });
+      return true;
+    }),
+
+    /** Whether a frame of a queued tab (an open job's) at `applicationKey` (or the job's own, where the frame names
+     *  none) keeps Submit on Manual: its platform is not one whose success sign a capture shows read (D-4). */
+    async submitHeld(tabId: number, applicationKey: string | null): Promise<boolean> {
+      const item = openItemOf(await load(), tabId);
+      if (item === null) return false;
+      const key = applicationKey ?? item.applicationKey;
+      return key === null || queueSubmitIsPersons(key)
+        || (item.applicationKey !== null && queueSubmitIsPersons(item.applicationKey));
+    },
+    // ── end jr7 AUTO-7 ──
+
     /** A tab closed: a queued job not done is skipped (the person closed it: needs-you cancelled), and its place in the
-     *  cap freed; a done job's tab is no longer open. */
+     *  cap freed; a done job's tab is no longer open. jr7 AUTO-7 (AUTO7-01, D-4): one whose Submit was armed in it is
+     *  never told cancelled: it may have been sent (needs-you timed_out, TailorIT's "check the site"). */
     tabRemoved: (tabId: number) => onItem(tabId, async (_run, item) => {
-      if (OPEN.has(item.status)) finish(item, 'skipped', { state: 'needs-you', reason: 'cancelled' });
+      if (OPEN.has(item.status)) {
+        finish(item, 'skipped', { state: 'needs-you', reason: item.pressedAt !== null ? 'timed_out' : 'cancelled' });
+      }
       item.tabId = null;
       if (item.tell !== null) await tellOne(item);
       return true;

@@ -124,6 +124,13 @@ export function adaptersFor(url: URL, doc?: Document): Adapter[] {
   return __E2E__ ? [...e2eAdaptersFor(url), ...candidates] : candidates;
 }
 
+// ── jr7 AUTO-7 (FIX7PLAN §6.4 items 6 and 7): a platform's own adapter, for the worker's reading of the hooks it
+// declares about addresses alone (identityHosts, confirmationAfter): no page is read through it. ──
+export function platformAdapter(platform: string): Adapter | null {
+  return PLATFORM_ADAPTERS[platform as Platform] ?? null;
+}
+// ── end jr7 AUTO-7 ──
+
 /** The application an address belongs to. */
 export interface ApplicationRef {
   platform: Platform;
