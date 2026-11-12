@@ -12,7 +12,7 @@
  *  claims by the application-form score (src/adapters/site). The snapshot build of 2026-11-06
  *  (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06): `smartrecruiters`, its postings and its one-click application on
  *  jobs.smartrecruiters.com (src/adapters/smartrecruiters). TailorIT's ATS_KINDS lists every one but `site` since
- *  its API 6 (PLATFORMS_AHEAD_OF_CONTRACT). */
+ *  its API 6 (PLATFORMS_AHEAD_OF_CONTRACT), and, jr7, every one but the snapshot7 platforms until its API 7. */
 export const PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable', 'icims', 'taleo', 'successfactors',
   'oracle',
   // ── New ATSs (DESIGN-NEW-ATS Phase 0) ──
@@ -22,6 +22,13 @@ export const PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable',
   'site',
   // ── snapshot build 2026-11-06 (oracle-sf-sr): SmartRecruiters ──
   'smartrecruiters',
+  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2; AUTO7-12, UKGR-1, PC7-01, JDEF-1 stage 1, ICIMS7-11): the owner's snapshot7 platforms,
+  // appended in this order: UKG Ready (secure<n>.saashr.com), Paycom (www.paycomonline.net's candidate portal), JobDiva
+  // (www<n>.jobdiva.com/portal/), Eightfold (<company>.eightfold.ai/careers) and Jibe, iCIMS's candidate front
+  // (<customer>.jibeapply.com/jobs/), whose application is on iCIMS. Each is a static ATS match of src/shared/hosts.ts
+  // whose adapter is its package's (a stub that reads nothing until then: src/adapters/<platform>/). ──
+  'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe',
+  // ── end jr7 ENGINE-7 E0 ──
 ] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
@@ -32,7 +39,11 @@ export type Platform = (typeof PLATFORMS)[number];
  *  TailorIT nowhere: its AI classification is not asked for (the fields go on to the AI answer, which names no
  *  platform) and no saved answer keeps it. test/contract.test.ts holds ATS_KINDS to PLATFORMS without these, and fails
  *  once the contract lists one, so a platform the extension adds ahead of TailorIT goes here until it does. */
-export const PLATFORMS_AHEAD_OF_CONTRACT: readonly Platform[] = ['site'];
+export const PLATFORMS_AHEAD_OF_CONTRACT: readonly Platform[] = ['site',
+  // jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 1): the snapshot7 platforms, until TailorIT's API 7 lists them (TAILORIT-7 7b,
+  // pulled by INT-7, which puts this list back to ['site', 'jibe']). `jibe` stays for good: TailorIT keeps a Jibe
+  // job as the iCIMS job its Apply leads to (FIX7PLAN §5 D-6).
+  'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe'];
 
 /** The spec's field kinds plus one 'checkbox' (a lone box: consent, "I currently work here"). Equals TailorIT's list. */
 export const FIELD_KINDS = ['text', 'textarea', 'select', 'radio', 'checkbox', 'checkbox-group', 'combobox',

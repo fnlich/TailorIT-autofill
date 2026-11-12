@@ -34,8 +34,8 @@
  * The new ATSs of the owner's snapshots of 2026-11-06 (DESIGN-NEW-ATS §4, Phase 0): a static match each, path-scoped
  * wherever the host serves anything but candidate pages (HOST_PLATFORMS' `paths`: the platform is null on the host's
  * other paths, so the content script stays dormant there). The paths are the ones the snapshots show and no wider.
- * Paycom waits for its snapshots (no match, only its HR exclusion) and DFIN (a company's own host) stays a career
- * site. Chrome reads a host permission without its path, so the path-scoped hosts' permission covers the whole host,
+ * Paycom waited for its snapshots (no match, only its HR exclusion; matched since jr7, below) and DFIN (a company's
+ * own host) stays a career site. Chrome reads a host permission without its path, so the path-scoped hosts' permission covers the whole host,
  * as Oracle's does (docs/PRIVACY.md).
  * v5 p2-detect (the engine audit's gap 1a; each from Jobright's site list, read as its behaviour, never its code): the
  * address variants of platforms already here, each read by that platform's own url.ts: a Workday tenant's
@@ -53,6 +53,15 @@
  * (HiringThing's white-label, not Rippling's application), Breezy's other /apply paths, ADP MyJobs and
  * recruiting.adp.com, Dayforce's sign-in pages, ClearCompany's hrmdirect.com and smartr.me (other applications or
  * redirects, none in any snapshot). SUBMIT_WATCH_MATCHES names where the page-world submit watcher runs.
+ * jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3; the owner's snapshot7 of 2026-11-11, each from its verified audit spec): UKG
+ * Ready (UKGR-2, corrected), Paycom (PC7-02), JobDiva and Eightfold (JDEF-12) and Jibe (ICIMS7-11), each a static match
+ * on its candidate paths alone, its platform null on every other path of the host, so the content script stays dormant
+ * there. Four of them serve employees beside candidates, so their domains (UKG Ready's saashr.com, JobDiva's
+ * jobdiva.com, Eightfold's eightfold.ai: its recruiters' app. host and every company's /careerhub/, employees' internal
+ * mobility) or host (Paycom's www.paycomonline.net, there already) join HR_HOST_MATCHES and isHrHost: the sentinel and
+ * a company page's content script never reach them; only the static match runs, on the candidate paths. Jibe is iCIMS's
+ * candidate front, no employee system: its pages off /jobs/ stay company pages. paycomonline.com and Eightfold on an
+ * employer's own domain (EFA-14) wait for captures.
  */
 import type { Platform } from '../core/enums';
 
@@ -107,6 +116,19 @@ export const ATS_MATCHES = [
   'https://*.sfagentcareers.com/jobs/*',
   'https://*.apscareerportal.com/jobs/*',
   // ── end v5 p2-detect ──
+  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3): the snapshot7 platforms' candidate paths (module header) ──
+  // UKG Ready (UKGR-2): a company's careers page, /ta/<company>.careers (its postings ?ShowJob=, its application session
+  // ?ActiveSessionId=), never /ta/<company>.login or .home, the employee system's.
+  'https://*.saashr.com/ta/*.careers*',
+  // Paycom (PC7-02): the candidate portal under its client key, never /v4/ee/ (employees) or /v4/cl/ (clients).
+  'https://www.paycomonline.net/v4/ats/web.php/portal/*',
+  // JobDiva (JDEF-12, the jdef audit §6.1): its candidate portal, /portal/ (Jobright's pattern).
+  'https://*.jobdiva.com/portal/*',
+  // Eightfold (JDEF-12, §7.1): a company's careers site, /careers (its postings, /careers/apply, the success page).
+  'https://*.eightfold.ai/careers*',
+  // Jibe (ICIMS7-11): a customer's posting, /jobs/<id>.
+  'https://*.jibeapply.com/jobs/*',
+  // ── end jr7 ENGINE-7 E0 ──
 ] as const;
 
 // ── v5 p2-detect: the page-world submit watcher's hosts (entrypoints/submit-watch.content.ts, PLAN decision 14) ──
@@ -189,6 +211,21 @@ const HOST_PLATFORMS: ReadonlyArray<{ host: RegExp; platform: Platform; paths?: 
   // ── end New ATSs ──
   // ── v5 p2-detect: CareerPlug's partner domains (Jobright's site list: State Farm agents' and APS's career portals) ──
   { host: CAREERPLUG_PARTNER_HOST, platform: 'careerplug', paths: ['/jobs/'] },
+  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3): the snapshot7 platforms, each by its candidate paths alone ──
+  // UKG Ready (UKGR-2, corrected): secure<n>.saashr.com (secure7 in snapshot7), its careers page alone, the company part
+  // the one shape seen (digits); any other path (.login, .home, a company part of another shape) is no platform's.
+  { host: /^secure\d{0,2}\.saashr\.com$/, platform: 'ukgready', pathPattern: /^\/ta\/\d{3,10}\.careers$/ },
+  // Paycom (PC7-02): a posting, /jobs/<n>, or the application, /applications, under the 32-hex client key; any other
+  // portal path (a career page's job list) is no platform's.
+  { host: /^www\.paycomonline\.net$/, platform: 'paycom',
+    pathPattern: /^\/v4\/ats\/web\.php\/portal\/[A-Fa-f0-9]{32}\/(?:jobs\/\d+|applications)\/?$/ },
+  // JobDiva (JDEF-12): www1 and www2 seen; the candidate portal alone.
+  { host: /^www\d{0,2}\.jobdiva\.com$/, platform: 'jobdiva', paths: ['/portal/'] },
+  // Eightfold (JDEF-12): a company's own <company>.eightfold.ai, never app. (recruiters) or www.; /careers alone.
+  { host: /^(?!(?:app|www)\.)[a-z0-9-]+\.eightfold\.ai$/, platform: 'eightfold', paths: ['/careers'] },
+  // Jibe (ICIMS7-11): a customer's <customer>.jibeapply.com, its postings alone.
+  { host: /^[a-z0-9-]+\.jibeapply\.com$/, platform: 'jibe', paths: ['/jobs/'] },
+  // ── end jr7 ENGINE-7 E0 ──
 ];
 
 /** Whether the manifest's static content script runs at an address (one of ATS_MATCHES matches it: a host as written
@@ -238,7 +275,9 @@ export const ORACLE_REFUSED_DOMAINS: readonly string[] = ['oraclecloud.com', 'or
   // The P2 review (security 2)
   'ultipro.ca',
   'paycomonline.net', 'careerplug.com', 'google.com', 'recaptcha.net', 'hcaptcha.com', 'cloudflare.com', 'arkoselabs.com',
-  'funcaptcha.com', 'captcha-delivery.com', 'protechts.net', 'geetest.com'];
+  'funcaptcha.com', 'captcha-delivery.com', 'protechts.net', 'geetest.com',
+  // jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3): the snapshot7 HR domains (HR_HOST_MATCHES)
+  'saashr.com', 'jobdiva.com', 'eightfold.ai'];
 // ── end v5 p2-detect ──
 
 /** A match pattern's path as Chrome reads it: each `*` any run of characters, the rest as written, from the start. */
@@ -403,6 +442,8 @@ export function isLinkedInHost(host: string): boolean {
  *  candidate hosts (jobs.dayforcehcm.com, recruiting.ultipro.com, recruiting.paylocity.com, ats.rippling.com,
  *  <co>.careers.hibob.com, workforcenow.adp.com's recruitment paths) stay static ATS matches: a static content script
  *  has no exclusions (scripts/check-build.mjs refuses exclude_matches), so this list keeps only the sentinel off them.
+ *  jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3; the module header): UKG Ready's saashr.com, JobDiva's jobdiva.com and
+ *  Eightfold's eightfold.ai likewise, Paycom's candidate portal now a static match beside its HR host.
  *  The principle: a system where a person works for their employer never gets the sentinel, nor the content script. */
 export const HR_HOST_MATCHES = ['https://*.oraclecloud.com/*', 'https://*.myworkday.com/*', 'https://*.sapsf.com/*',
   'https://*.sapsf.eu/*',
@@ -419,6 +460,12 @@ export const HR_HOST_MATCHES = ['https://*.oraclecloud.com/*', 'https://*.mywork
   // ── end of the security fix's block (S5) ──
   // The P2 review (security 2): UKG Pro Canada's employee hosts (<n>.ultipro.ca), as <n>.ultipro.com's.
   'https://*.ultipro.ca/*',
+  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3; module header): UKG Ready's employee system (/ta/<company>.login, .home:
+  // UKGR-2), JobDiva's every page but its portal (JDEF-12) and Eightfold's recruiters' app.eightfold.ai and its
+  // employees' /careerhub/ on every company's host (JDEF-12), each by its whole domain as the S5 vendor domains are;
+  // Paycom's www.paycomonline.net is here already (PC7-02). Their candidate paths stay static ATS matches. ──
+  'https://*.saashr.com/*', 'https://*.jobdiva.com/*', 'https://*.eightfold.ai/*',
+  // ── end jr7 ENGINE-7 E0 ──
 ] as const;
 
 /** The HR_HOST_MATCHES written for one host (no `*.`): that host alone, never one under it. */
@@ -434,7 +481,9 @@ export function isHrHost(host: string): boolean {
     // ── The security fix of 2026-11-06 (S5) ──
     'dayforcehcm.com', 'ultipro.com', 'ukg.net', 'paylocity.com', 'paycor.com', 'rippling.com', 'hibob.com', 'adp.com',
     // The P2 review (security 2)
-    'ultipro.ca'])
+    'ultipro.ca',
+    // jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3)
+    'saashr.com', 'jobdiva.com', 'eightfold.ai'])
     || HR_HOSTS_EXACT.includes(host.toLowerCase().replace(/\.+$/, ''));
 }
 

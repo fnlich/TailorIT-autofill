@@ -55,6 +55,13 @@ import { parseDiceUrl } from './dice/url';
 import { parseJobviteUrl } from './jobvite/url';
 import { parsePaylocityUrl } from './paylocity/url';
 // ── end New ATSs, builder B ──
+// ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 4): the snapshot7 platforms' parsers (stubs until their packages write them) ──
+import { parseEightfoldUrl } from './eightfold/url';
+import { parseJibeUrl } from './jibe/url';
+import { parseJobDivaUrl } from './jobdiva/url';
+import { parsePaycomUrl } from './paycom/url';
+import { parseUkgReadyUrl } from './ukgready/url';
+// ── end jr7 ENGINE-7 E0 ──
 
 /** The platforms whose addresses are read by a parser of their own (each platform's url.ts). */
 const URL_PARSERS: Partial<Record<Platform, (url: URL) => ApplicationUrl | null>> = {
@@ -79,6 +86,13 @@ const URL_PARSERS: Partial<Record<Platform, (url: URL) => ApplicationUrl | null>
   paycor: parsePaycorUrl,
   hibob: parseHiBobUrl,
   // ── end New ATSs, builder C ──
+  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 4): each platform's own parser, so an address it does not read is no
+  // application (the content script stays dormant there, never the generic rule's origin and path) and its package's
+  // reading is the one applicationOf uses. None is in adapters/bridge-address.ts SHARED_DOMAIN_PARSERS (the bridge's
+  // bundle holds none of them): the page-world bridge does not install on their hosts, each a shared domain. ──
+  ukgready: parseUkgReadyUrl, paycom: parsePaycomUrl, jobdiva: parseJobDivaUrl, eightfold: parseEightfoldUrl,
+  jibe: parseJibeUrl,
+  // ── end jr7 ENGINE-7 E0 ──
 };
 
 /** The reserved Lever board the trap and synthetic fixtures are served on (https://jobs.lever.co/tailorit-fixture/...).
