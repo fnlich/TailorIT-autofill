@@ -51,6 +51,9 @@ export interface ValueContext {
   separatePhoneCountry: boolean;
   /** The entry each assigned block is filled from; a section absent here uses each block's place. */
   blockEntries?: BlockEntries;
+  /** jr7 RULES-7 (ICIMS7-05): the field's block (or section) shows an "I currently work here" box, which then decides a
+   *  current job's end date (steps' planCurrentJob). Absent: none shown. */
+  currentBox?: boolean;
 }
 
 const path = (text: string) => text as ProfilePath;
@@ -749,6 +752,25 @@ export function placeholderAsked(spec: Pick<FieldSpec, 'label' | 'description' |
   return null;
 }
 
+/** jr7 RULES-7 (ADP7-3, ADP's required text box "Have you ever worked for <employer>? … If no, type N/A.", snapshot7
+ *  adp1): an instruction for a "no" answer ("If no, type N/A", "If not, please enter None"). */
+const NO_ANSWER_INSTRUCTION = new RegExp(String.raw`\bif\s+(?:no|not)\s*,?\s*(?:then\s+)?(?:please\s+)?${TYPE_VERB}\s+${TOKEN}`);
+
+/**
+ * jr7 RULES-7 (ADP7-3): the placeholder a yes-or-no question asked in a text box tells an applicant whose answer is no
+ * to type ("If no, type N/A"), from NO_VALUE_PLACEHOLDERS, else null. As placeholderAsked: the page's token only selects
+ * one, and only a visible label or its help text is read.
+ */
+export function placeholderForNo(spec: Pick<FieldSpec, 'label' | 'description' | 'labelVisible'>):
+  NoValuePlaceholder | null {
+  for (const raw of [spec.labelVisible ? spec.label : '', spec.description]) {
+    const text = raw.toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ');
+    const token = NO_ANSWER_INSTRUCTION.exec(text)?.[1];
+    if (token !== undefined) return TOKEN_PLACEHOLDER[token] ?? null;
+  }
+  return null;
+}
+
 // s2 core-gh end
 // s2 core-wd: a referral source's kind.
 
@@ -983,7 +1005,7 @@ function experienceValue(category: FieldCategory, ctx: ValueContext): ValueResul
       return entry.startDate === undefined ? none('no-profile-value', false)
         : value({ origin: fromProfile(`${at}.startDate`), confidence: VALUE_EXPLICIT, date: entry.startDate });
     case 'experience.endDate':
-      if (entry.current) return none('end-date-not-applicable', false);
+      if (entry.current) return currentEndDate(ctx, at);
       return entry.endDate === undefined ? none('no-profile-value', false)
         : value({ origin: fromProfile(`${at}.endDate`), confidence: VALUE_EXPLICIT, date: entry.endDate });
     case 'experience.current':
@@ -992,6 +1014,31 @@ function experienceValue(category: FieldCategory, ctx: ValueContext): ValueResul
     default:
       return none('no-profile-value', false);
   }
+}
+
+// jr7 RULES-7 (ICIMS7-05, iCIMS's arc-onesolutions "End Date (If presently employed put today's date)" month, day and
+// year, required in every employment block, snapshot7 iCIMS1; Jobright's filterIcimsOptionalEndDateRecord drops an end
+// date only for an optional field, and names "leave blank if current employer": cited).
+/** A current job's end date the field's own words ask for as today ("If presently employed put today's date"). */
+const TODAY_IF_CURRENT = /\bif\s+(?:you\s+are\s+)?(?:presently|currently|still)\s+(?:employed|working)\b(?:\s+\w+){0,6}?\s+(?:today\s?s|current|present)\s+date\b|\b(?:today\s?s|current|present)\s+date\s+if\s+(?:you\s+are\s+)?(?:presently|currently|still)\s+(?:employed|working)\b/;
+/** One the field's words ask to leave blank ("Leave blank if current employer"). */
+const BLANK_IF_CURRENT = /\bleave\s+(?:(?:it|this|this\s+field)\s+)?(?:blank|empty)\s+if\s+(?:this\s+is\s+)?(?:(?:your|the|a)\s+)?(?:current|present)\b|\bleave\s+(?:(?:it|this|this\s+field)\s+)?(?:blank|empty)\s+if\s+(?:you\s+are\s+)?(?:presently|currently|still)\s+(?:employed|working)\b/;
+
+/**
+ * jr7 RULES-7 (ICIMS7-05): a current job's end date. Today (day precision) where the field's own words say so; left
+ * empty where they say to leave it blank, or where the block shows an "I currently work here" box (steps' planCurrentJob
+ * ticks it); today, flagged for a look, where the field is required and says neither; else left empty as before.
+ * Today is the current entry's own end, laid out as a date (its origin: the entry's `current`, date.format).
+ */
+function currentEndDate(ctx: ValueContext, at: string): ValueResult {
+  const words = `${ctx.spec.label} ${ctx.spec.description}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  if (BLANK_IF_CURRENT.test(words)) return none('end-date-not-applicable', false);
+  const origin = fromProfile(`${at}.current`, 'date.format');
+  if (TODAY_IF_CURRENT.test(words)) return value({ origin, confidence: VALUE_EXPLICIT, date: ctx.now });
+  if (ctx.spec.required && ctx.currentBox !== true) {
+    return value({ origin, confidence: VALUE_DERIVED, date: ctx.now, flag: 'filled-low-confidence' });
+  }
+  return none('end-date-not-applicable', false);
 }
 
 // ── jr6 RULES (FIXPLAN §6.3 R1): the values of the eight platform audits' categories ─────────────────────────────
@@ -1322,7 +1369,7 @@ function jr6Value(category: FieldCategory, ctx: ValueContext): ValueResult | und
     case 'education.graduated':
       return graduatedValue(ctx);
     case 'salary.period':
-      return payPeriodValue(ctx.profile, ctx.vocab);
+      return payPeriodValue(ctx.spec, ctx.profile, ctx.vocab);
     case 'application.resumeMethod':
       return resumeMethodValue(ctx.spec, ctx.profile);
     case 'education.highSchool':
@@ -1534,11 +1581,13 @@ function highSchoolValue(profile: Profile): ValueResult {
     choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' }, check: true });
 }
 
-/** The words each pay period is written with on a list ("Annually | Hourly", ADP's), the first a box's. */
+/** The words each pay period is written with on a list ("Annually | Hourly", ADP's), the first a box's. jr7 RULES-7
+ *  (ICIMS7-V3, iCIMS's arc-onesolutions Time Frame "Hr., Da., Wk., Mo., Yr.", snapshot7 iCIMS1): and their
+ *  abbreviations. The profile's pay is never weekly or daily, so "Wk." and "Da." are never chosen. */
 const PERIOD_WORDS: Readonly<Record<'year' | 'month' | 'hour', readonly [string, ...string[]]>> = {
-  year: ['Annually', 'Annual', 'Yearly', 'Per Year', 'Per Annum', 'Salary', 'Salaried'],
-  month: ['Monthly', 'Per Month', 'Month'],
-  hour: ['Hourly', 'Per Hour', 'Hour'],
+  year: ['Annually', 'Annual', 'Yearly', 'Per Year', 'Per Annum', 'Salary', 'Salaried', 'Yr', 'Year'],
+  month: ['Monthly', 'Per Month', 'Month', 'Mo'],
+  hour: ['Hourly', 'Per Hour', 'Hour', 'Hr'],
 };
 
 /**
@@ -1546,12 +1595,18 @@ const PERIOD_WORDS: Readonly<Record<'year' | 'month' | 'hour', readonly [string,
  * pay's period (preferences.expectedSalary); none without it, so the field is left (no default: Jobright's preselected
  * Annually is not taken).
  */
-function payPeriodValue(profile: Profile, vocab: Vocab): ValueResult {
+function payPeriodValue(spec: FieldSpec, profile: Profile, vocab: Vocab): ValueResult {
   const salary = profile.preferences.expectedSalary;
   if (salary === undefined || salary.kind === 'decline') return none('no-profile-value');
   const [first, ...rest] = PERIOD_WORDS[salary.value.period];
-  return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT, text: first,
-    choice: { intended: intendedUnknown('generic', first, rest, vocab), domain: 'generic' } });
+  // jr7 RULES-7 (ICIMS7-V3): the generic list matches the spelling exactly (no alias stage), so the one option the list
+  // writes the period with ("Yr.") is the spelling looked for.
+  const words = new Set([first, ...rest].map((word) => normalizeLabel(word)));
+  const shown = spec.options === 'lazy' ? [] : spec.options
+    .filter((option) => !option.disabled && words.has(normalizeLabel(cutInjected(option.label).clean)));
+  const spelled = shown.length === 1 ? cutInjected(shown[0]!.label).clean.trim() : first;
+  return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT, text: spelled,
+    choice: { intended: intendedUnknown('generic', spelled, [first, ...rest], vocab), domain: 'generic' } });
 }
 
 /** ADP-18: an option that uploads a file ("Upload File"), and one that types the résumé's parts in instead ("Enter

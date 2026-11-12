@@ -72,6 +72,9 @@ export const FIELD_CATEGORIES = [
   'identity.prefix', 'education.graduated', 'address.line3', 'salary.period', 'application.resumeMethod',
   'education.highSchool', 'address.mailing', 'links.facebook', 'links.numbered',
   // jr6 RULES end
+  // jr7 RULES-7 (FIX7PLAN §6.3 R1, UKGR-14): a national id or social security number (UKG Ready's SSN box, labelled
+  // only by its "999-99-9999" placeholder), and the type of one: never filled, never asked of an AI.
+  'identity.nationalId',
   'unknown',
 ] as const;
 export type FieldCategory = (typeof FIELD_CATEGORIES)[number];

@@ -101,6 +101,9 @@ const FOLLOW_UP_ASK = /\b(?:if\s+(?:yes|no|so|not|applicable|other)|please\s+(?:
  *  ADP's, fixtures/adp/questions). */
 const OWN_QUESTION_ASK = /^please\s+(?:explain|describe|share|tell\s+us|elaborate\s+on)\s+(?:how|why|what|which|when|where|who|in\s+what\s+way)\b(?:\s+\S+){4,}/;
 
+/** jr7 RULES-7 (WD7V-01): a question word or an auxiliary that leads a label asking its own question. */
+const OWN_QUESTION_START = /^(?:what|how|when|which|where|who|whom|whose|why|do|does|did|are|is|was|were|have|has|had|will|would|can|could|should|may)\b/;
+
 /** jr6 RULES R3 (U-10, UltiPro's required "Do you have experience with SQL, APIs, … troubleshooting? Please briefly
  *  explain:", fixtures/ultipro/application): whether a label only asks for more about another question (FOLLOW_UP_ASK):
  *  its phrase starts the label, or no question of its own (a "?") stands before it. A whole question that ends "Please
@@ -109,6 +112,10 @@ export function asksOnlyFollowUp(label: string): boolean {
   const text = foldLetters(label).toLowerCase().trim();
   const found = FOLLOW_UP_ASK.exec(text);
   if (found === null || text.slice(0, found.index).includes('?')) return false;
+  // jr7 RULES-7 (WD7V-01, Workday's aristocrat "What is your notice period in weeks, if applicable?", snapshot7
+  // workday1): a label that asks its own question (a question word or an auxiliary leads it) and only ends ", if
+  // applicable" is that question, no follow-up of the one before it. "If applicable, please explain" still is.
+  if (/^if\s+applicable$/.test(found[0]) && found.index > 0 && OWN_QUESTION_START.test(text)) return false;
   return !(found.index === 0 && OWN_QUESTION_ASK.test(text.replace(/[^\p{L}\p{N}\s]+/gu, ' ').replace(/\s+/g, ' ')));
 }
 

@@ -1267,6 +1267,11 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const phoneCountrySections = new Set(classified
     .filter((field) => categoryOf(field.classification) === 'contact.phoneCountry')
     .map((field) => sectionKey(field.spec.section)));
+  // jr7 RULES-7 (ICIMS7-05): the blocks that show an "I currently work here" box, which decides a current job's end
+  // date there (values.ts currentEndDate).
+  const currentBoxSections = new Set(classified
+    .filter((field) => categoryOf(field.classification) === 'experience.current')
+    .map((field) => sectionKey(field.spec.section)));
   const chosen = classified.filter((field) => wanted === null || wanted.has(field.spec.key));
   const specs = chosen.map((field) => field.spec);
   const posting = input.posting ?? {};
@@ -1282,6 +1287,7 @@ export function planFrame(asked: PlanInput): PlanOutput {
     ...(input.submittedAnswers !== undefined && input.submittedAnswers.length > 0
       ? { submitted: input.submittedAnswers } : {}),
     ...(repeatables.length > 0 ? { blockEntries } : {}),
+    ...(currentBoxSections.has(sectionKey(spec.section)) ? { currentBox: true } : {}),
     ...(postingCountry !== undefined ? { postingCountry } : {}),
     ...(posting.company !== undefined && posting.company.trim() !== '' ? { postingCompany: posting.company } : {}),
   }, classification);

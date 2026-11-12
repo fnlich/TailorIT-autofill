@@ -29,7 +29,8 @@ import { autocompleteRule } from './autocomplete';
 import { kindAllowed, policyClassOf } from './categories';
 import { FOLD_MAX_CODE_POINTS } from '../text/fold';
 import {
-  affirmativeOption, attestsNoAiUse, consentChoiceHit, entryOf, matchLabelRules, noAiStatementHit, sectionKindOf,
+  affirmativeOption, attestsNoAiUse, consentChoiceHit, entryOf, matchLabelRules, nationalIdHit, noAiStatementHit,
+  sectionKindOf,
   unlabelledTextarea, unrecognisedField, withDescriptionConsent, type LabelContext, type LabelRuleHit,
   type NeedsUserCause,
 } from './labelRules';
@@ -439,6 +440,17 @@ function optionsRule(spec: FieldSpec, label: string, rules: RuleClassification |
 
 // jr6 RULES end
 
+/** jr7 RULES-7 (ICIMS7-06): whether a list, a combobox or a radio group read whole offers exactly a Yes and a No (its
+ *  options normalized, a placeholder aside): a yes-or-no question, never a skills list. */
+function offersOnlyYesNo(spec: FieldSpec): boolean {
+  if (!OPTION_RULE_KINDS.has(spec.kind) || spec.options === 'lazy' || spec.optionsPartial === true) return false;
+  const options = spec.options.map((option) => normalizeLabel(option.label))
+    .filter((text) => text !== '' && !PLACEHOLDER_OPTION.test(text));
+  return options.length === 2 && options.includes('yes') && options.includes('no');
+}
+/** An option that only asks to choose ("Make a Selection", "Select…", "Please select", "Choose one"). */
+const PLACEHOLDER_OPTION = /^(?:please\s+)?(?:make\s+a\s+selection|select(?:\s+(?:one|an?\s+option))?|choose(?:\s+(?:one|an?\s+option))?|none\s+selected)$/;
+
 /**
  * What the deterministic rules say `spec` is: the autocomplete, name/id and label votes combined (§8.1), each checked
  * against the field's kind (CATEGORY_KINDS), so a mismatch is no vote. A field about another person keeps none of the
@@ -459,6 +471,12 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   if (entry !== null) context.entry = entry;
   const questions = questionsOf(spec.label);
   if (questions !== undefined) context.questions = questions;
+  // jr7 RULES-7 (UKGR-14): a national id or a social security number, by its label, its mask or its name, before any
+  // other source (the "999-99-9999" placeholder reads as a phone's mask).
+  const nationalId = nationalIdHit(label, spec.label, spec.constraints.pattern, nameIdText(spec.nameAttr, spec.idAttr));
+  if (nationalId !== null) return combine([labelVote(nationalId, 'label')]);
+  // jr7 RULES-7 (ICIMS7-06): a list read whole of a Yes and a No.
+  if (offersOnlyYesNo(spec)) context.yesNoOptions = true;
   const autocomplete = autocompleteRule(spec.autocomplete, spec.kind);
   const nameId = nameIdRule(spec.nameAttr, spec.idAttr, spec.kind);
   let votes = [

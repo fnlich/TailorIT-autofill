@@ -82,6 +82,9 @@ export interface LabelContext {
   questions?: string;
   /** jr6 RULES: the entry the field's section is (entryOf), when it is one. */
   entry?: EntryKind;
+  /** jr7 RULES-7 (ICIMS7-06): the field is a list read whole whose options are exactly a Yes and a No: a skills list it
+   *  never is. */
+  yesNoOptions?: true;
 }
 
 /** One label rule. `^…$` in a pattern means the whole label must match. */
@@ -123,6 +126,9 @@ export const NEEDS_USER_CAUSES = [
   /** A binding waiver or covenant (arbitration, a jury-trial or class-action waiver, a non-compete or non-solicitation)
    *  asked on anything but a lone checkbox (the audit of 2026-11-06, S-5): the person's, never an AI's. */
   'binding-waiver',
+  /** jr7 RULES-7 (UKGR-14): a national id or a social security number, or its type: only the person types one, never a
+   *  profile value, a saved or earlier answer, nor an AI. */
+  'identifier',
 ] as const;
 export type NeedsUserCause = (typeof NEEDS_USER_CAUSES)[number];
 
@@ -421,7 +427,10 @@ const SPONSORED_NEED = /\b(?:require|requires|required|requiring|need|needs|need
 // country/province you are applying for?"): a need for the employer to sponsor, a few words on, is sponsorship, whatever
 // "work authorization" the sentence names after it. §8.3's authorization rule, read first, took it for authorization
 // and answered a person who needs no sponsorship "Yes".
-const NEED_TO_SPONSOR = /\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,4}?\s+sponsor\w*/;
+// jr7 RULES-7 (WD7-01, Workday's aristocrat "Will you now, or in the future, require any immigration filing or visa
+// sponsorship by Aristocrat to maintain work authorization (…)?", snapshot7 workday1): five words between the need and
+// the sponsorship, the narrowest width that reads it (the verifier's trial of {0,4} to {0,8}).
+const NEED_TO_SPONSOR = /\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,5}?\s+sponsor\w*/;
 // s2 core-gh end
 
 // Self-identification wordings: a topic word without one ("experience supporting individuals with disabilities") is a
@@ -443,12 +452,15 @@ const RACE_SELF = /^(?:race|races|ethnicity|ethnicities|racial|ethnic)\b|\b(?:yo
 // believe you belong to any of the categories of protected veterans listed below, …": fixtures
 // danafarber-voluntary-disclosures, jr6-web-voluntary-disclosures): a gender asked to be selected, chosen, indicated or
 // provided (never "gender neutral"); veterans in the plural, and the categories of protected veterans one belongs to.
-const GENDER_WIDE = /^(?!.*\b(?:transgender|cisgender|assigned\s+at\s+birth|sexual\s+orientation)\b)(?:.*\b(?:your|my)\s+(?:gender|sex)\b|.*\b(?:which|what)\s+gender\b|.*\bgender\s+(?:do\s+you|you)\s+(?:\w+\s+)?identify\b|^(?:gender|sex)\s+(?:identity|identification|self\s+identification)$|.*\b(?:select|choose|indicate|provide|specify)\s+(?:a|your)\s+gender\b(?!\s+neutral))/;
+// jr7 RULES-7 (EFA-10, Eightfold's twilio "Voluntary Self-Identification of Gender", snapshot7 twillio): the
+// self-identification of a gender or a sex, its noun after.
+const GENDER_WIDE = /^(?!.*\b(?:transgender|cisgender|assigned\s+at\s+birth|sexual\s+orientation)\b)(?:.*\b(?:your|my)\s+(?:gender|sex)\b|.*\b(?:which|what)\s+gender\b|.*\bgender\s+(?:do\s+you|you)\s+(?:\w+\s+)?identify\b|^(?:gender|sex)\s+(?:identity|identification|self\s+identification)$|.*\b(?:select|choose|indicate|provide|specify)\s+(?:a|your)\s+gender\b(?!\s+neutral)|^(?:voluntary\s+)?self\s+identification\s+(?:of\s+)?(?:gender|sex)(?:\s+identity)?$)/;
 const VETERAN_WIDE = /\b(?:have|did)\s+you\s+(?:ever\s+)?serve[d]?\s+in\s+the\s+(?:us\s+|u\s+s\s+|united\s+states\s+)?(?:military|armed\s+forces|army|navy|air\s+force|marines?|marine\s+corps|coast\s+guard|national\s+guard|reserves?|space\s+force)\b|\bmilitary\s+status\b|\bveterans\b/;
 const VETERAN_SELF = /^(?:(?:protected|military|us|u\s+s|armed\s+forces)\s+(?:and\s+|or\s+)?)*(?:veterans?|military)(?:\s+(?:and\s+|or\s+)?(?:veterans?|military|protected))*(?:\s+(?:status|self\s+identification|classification|information|service))*$|\b(?:are\s+you|i\s+am|you\s+are)\s+(?:not\s+)?(?:a\s+|an\s+)?(?:(?:protected|military|us|u\s+s|armed\s+forces|disabled|recently\s+separated)\s+)*veteran\b|\bidentify\s+as\s+(?:a\s+|one\s+or\s+more\s+of\s+the\s+classifications\s+of\s+)?(?:protected\s+)?veteran\b|\b(?:veterans?|military)\s+status\b|\bprotected\s+veterans?\b|\b(?:have|did)\s+you\s+(?:ever\s+)?serve[d]?\s+in\s+the\b|\b(?:your|my)\s+(?:veteran|military)\s+(?:status|service)\b|\bbelongs?\s+to\s+(?:any\s+of\s+|one\s+or\s+more\s+of\s+)?the\s+(?:categories|classifications)\s+of\s+protected\s+veterans\b/;
 const DISABILITY_SELF = /^(?:voluntary\s+)?(?:self\s+identification\s+(?:of\s+)?)?disabilit(?:y|ies)(?:\s+(?:status|self\s+identification|disclosure|information|inclusion))*$|\bdisability\s+status\b|\b(?:do|did)\s+you\s+(?:currently\s+)?(?:identify|consider\s+yourself)\s+(?:as\s+|to\s+be\s+)?(?:a\s+)?disabled\b|\b(?:do|did)\s+you\s+(?:currently\s+)?(?:have|consider\s+yourself\s+to\s+have|identify\s+as\s+(?:having|a\s+person\s+with|an?\s+individual\s+with))\s+(?:a\s+|any\s+)?disabilit|\b(?:are\s+you|i\s+am)\s+(?:a\s+|an\s+)?(?:person|individual)\s+with\s+(?:a\s+)?disabilit|\bi\s+(?:have|do\s+not\s+have|dont\s+have)\s+(?:a\s+)?disabilit|\b(?:have\s+you\s+ever\s+had|history\s+of)\s+(?:a\s+)?disabilit|\bself\s+identif\w*(?:\s+\w+){0,4}\s+disabilit|\bdisabilit\w*(?:\s+\w+){0,4}\s+self\s+identif/;
 const ORIENTATION_WIDE = /\blgbt\w*|\bqueer\b/;
-const ORIENTATION_SELF = /^(?:your\s+)?sexual\s+orientation\b|\b(?:your|my)\s+sexual\s+orientation\b|\bsexual\s+orientation\s+(?:do\s+you|you)\s+(?:most\s+)?identify\b|\bidentify\b(?:\s+\w+){0,4}\s+sexual\s+orientation\b|\b(?:do\s+you\s+identify\s+as|are\s+you|i\s+am|i\s+identify\s+as|i\s+consider\s+myself|do\s+you\s+consider\s+yourself)\b(?:\s+\w+){0,4}?\s+(?:lgbt\w*|queer|gay|lesbian|bisexual)\b|^(?:lgbt\w*\+?|queer)(?:\s+(?:status|identity|community|community\s+member))?$/;
+// jr7 RULES-7 (EFA-10, Eightfold's twilio "Voluntary Self-Identification of Sexual Orientation", snapshot7 twillio).
+const ORIENTATION_SELF = /^(?:voluntary\s+)?self\s+identification\s+(?:of\s+)?sexual\s+orientation$|^(?:your\s+)?sexual\s+orientation\b|\b(?:your|my)\s+sexual\s+orientation\b|\bsexual\s+orientation\s+(?:do\s+you|you)\s+(?:most\s+)?identify\b|\bidentify\b(?:\s+\w+){0,4}\s+sexual\s+orientation\b|\b(?:do\s+you\s+identify\s+as|are\s+you|i\s+am|i\s+identify\s+as|i\s+consider\s+myself|do\s+you\s+consider\s+yourself)\b(?:\s+\w+){0,4}?\s+(?:lgbt\w*|queer|gay|lesbian|bisexual)\b|^(?:lgbt\w*\+?|queer)(?:\s+(?:status|identity|community|community\s+member))?$/;
 const TRANSGENDER_WIDE = /\bassigned\s+at\s+birth\b|\bcisgender\b/;
 const TRANSGENDER_SELF = /^transgender(?:\s+(?:status|identity|experience|history))?$|\b(?:do\s+you\s+identify\s+as|are\s+you|i\s+am|i\s+identify\s+as|do\s+you\s+consider\s+yourself|i\s+consider\s+myself)\s+(?:to\s+be\s+)?(?:a\s+)?(?:trans|transgender|cisgender|cis)\b|\bassigned\s+at\s+birth\b|\bcisgender\b|\btransgender\s+(?:experience|history|status|identity)\b/;
 /** Over-18 wordings §8.3's rule misses ("over the age of 18", "18 or older"). "Under 18" is not among them: its yes
@@ -846,6 +858,49 @@ const REFERRAL_FIRST = /how\s+did\s+you\s+(?:first|initially|originally)\s+(?:he
 const LOCATION_WHOLE = /^(?:(?:what\s+is\s+)?your\s+)?(?:current\s+)?location$|^where\s+are\s+you\s+(?:currently\s+|presently\s+)?(?:located|based)(?:\s+(?:now|today|currently))?$|^where\s+do\s+you\s+(?:currently\s+)?(?:live|reside)$/;
 // jr6 RULES end
 
+// ── jr7 RULES-7 (FIX7PLAN §6.3 R1): the refinements' own wordings, each from the owner's snapshot7 ──────────────────
+
+/** ICIMS7-06: an attestation's words, which a skills list never holds (label.consent-certify's: "I (hereby) certify",
+ *  "true and complete/accurate", "to the best of my knowledge", "attest"). */
+const SKILLS_NOT = /\bi\s+(?:hereby\s+)?certify\b|\btrue\s+and\s+(?:complete|accurate)\b|\bto\s+the\s+best\s+of\s+my\s+knowledge\b|\battest\b/;
+/** ICIMS7-07 (careers-quartzbenefits' Q47 "… contingent upon successful completion of a pre-employment criminal
+ *  background check. Are you willing to submit to a pre-employment background check if offered a position?", snapshot7
+ *  icims3): a willingness or a consent to undergo a (criminal) background check, with no conviction asked about. */
+const WILLING_CHECK = /^(?!.*\b(?:convicted|convictions?|felon\w*|pleaded|pled|charged|arrest\w*|guilty|misdemeanou?rs?|offen[cs]es?)\b).*\b(?:willing|consent\w*|agree\w*|authori[sz]\w*)\b(?:\s+\w+){0,8}?\s+(?:criminal\s+)?background\s+(?:checks?|screenings?|investigations?)\b/;
+/** J7-GH-1: "zip" that is no postal code: inside a yes-or-no question, or the name of an organisation after a
+ *  preposition ("support from Zip", "work at Zip", "hear about Zip"), never "Zip code" or "Zip+4". */
+const POSTAL_NOT = new RegExp(String.raw`${YES_NO_QUESTION.source}|\b(?:at|for|with|from|about|join(?:ing)?|to|by)\s+zip\b(?!\s*(?:code|postal|\+))`);
+/** DF7-V3: the application's own candidate acknowledgement ("I agree to the Candidate Acknowledgement"). */
+const CANDIDATE_ACKNOWLEDGEMENT = /\b(?:candidate|applicant)\s+acknowledge?ments?\b/;
+/** UP7-08: a certification that the information is truthful (and complete, and accurate). */
+const CERTIFY_WIDE = /\btruthful\s+(?:and\s+)?(?:complete|accurate|correct)\b|\b(?:complete|accurate|correct)\s+and\s+truthful\b|\btrue\s+(?:complete|correct)\s+and\s+(?:accurate|complete|correct)\b/;
+/** UP7-08 (UltiPro's "If offered employment by <employer>, would you be legally eligible in the United States to begin
+ *  employment immediately?", snapshot7 ultipro1): legally eligible to begin, start or take up employment. */
+const ELIGIBLE_TO_BEGIN = /\b(?:legally|lawfully)\s+eligible\b(?:\s+\w+){0,5}?\s+to\s+(?:begin|start|commence|take\s+up|accept)\s+(?:employment|work)\b/;
+
+/** UKGR-14 (UKG Ready's "Primary National ID" list and its SSN box, snapshot7 secure7.saashr): a national id's or a
+ *  social security number's own label, or the type of one. */
+const NATIONAL_ID_LABEL = /^(?:(?:your|primary|secondary)\s+)*(?:ssn|social\s+security(?:\s+(?:number|no|num|card))?|social\s+insurance\s+(?:number|no)|national\s+(?:id|identification|identity|insurance)(?:\s+(?:number|no|num|card|type))?|(?:type\s+of\s+)?national\s+id|tax\s+(?:id|identification)\s+(?:number|no))$|\blast\s+(?:4|four)\s+(?:digits\s+)?of\s+(?:your\s+)?(?:ssn|social\s+security(?:\s+number)?)\b/;
+/** UKGR-14: a social security number's mask ("999-99-9999", "###-##-####"), as a placeholder or the label it gave. */
+const SSN_MASK = /^[9#Xx0]{3}-[9#Xx0]{2}-[9#Xx0]{4}$/;
+/** UKGR-14: a national id or social security number by the control's name or id ("SSN", "social_security_number"). */
+const NATIONAL_ID_NAME = /(?:^|[_ ])(?:ssn|social_?security(?:_?(?:number|no|num))?|social_?insurance_?number|national_?id(?:_?number)?)(?=[_ \d]|$)/;
+const NATIONAL_ID_RULE = { id: 'label.national-id', strength: 'strong' } as const;
+
+/**
+ * jr7 RULES-7 (UKGR-14, the safety line: UKG Ready's SSN box, labelled only by its "999-99-9999" placeholder, was read as
+ * the phone and planned with the person's number): whether a field asks for a national id or a social security number
+ * (or its type) by its label, its mask (the label or the pattern a placeholder gave) or its name or id. Such a field is
+ * `identity.nationalId`, handed to the person (`identifier`): never filled, never asked of an AI, never a phone.
+ */
+export function nationalIdHit(label: string, rawLabel: string, pattern: string | undefined, nameId: string):
+  LabelRuleHit | null {
+  if (!NATIONAL_ID_LABEL.test(label) && !SSN_MASK.test(rawLabel.trim()) && !SSN_MASK.test((pattern ?? '').trim())
+    && !NATIONAL_ID_NAME.test(nameId)) return null;
+  return { ...hitOf(NATIONAL_ID_RULE, 'identity.nationalId'), needsUser: 'identifier' };
+}
+// jr7 RULES-7 end
+
 /** A self-identification topic without a self-identification wording: a question about the job, the person's own. */
 const SENSITIVE_TOPIC = { id: 'label.sensitive-topic', category: 'screening.other', strength: 'normal',
   needsUser: 'sensitive-topic' } as const;
@@ -861,6 +916,11 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.phone-country': { also: /\bcountry\s+phone\s+code\b|\bphone\s+country(?:\s+code)?\b/, unless: PHONE_WITH_CODE },
   'label.phone': { only: PHONE_NOUN, ask: true },
   'label.address2': { only: ADDRESS2_NOUN },
+  // jr7 RULES-7 (J7-GH-1, Greenhouse's "Do you now or will you in the future require any form of immigration sponsorship
+  // or work authorization support from Zip to legally work in the United States …?", snapshot7 greenhouse): "zip" is the
+  // postal code only as the label's own noun, never inside a yes-or-no question nor right after a preposition naming
+  // an organisation (POSTAL_NOT); the next rule is tried.
+  'label.postal': { unless: POSTAL_NOT },
   // jr6 RULES (ICIMS-09, O7): a City, a State/Region or a Country in a job's or a school's block is that entry's
   // (fixtures/icims/nyu-profile.frame-1's employer and school blocks; Oracle's education editor), never the home
   // address.
@@ -889,12 +949,15 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // s2 core-gh (decision 13): a need for the employer to sponsor is sponsorship too (NEED_TO_SPONSOR).
   // s2 core-gh review (C1): read in the question alone, so a disclaimer after it ("Are you authorized to work in the
   // US? Candidates requiring sponsorship are not eligible.") leaves the authorization question authorization.
-  'label.work-auth': { also: WORK_AUTH_WIDE, only: WORK_AUTH_LEGAL,
+  // jr7 RULES-7 (UP7-08): legally eligible to begin employment (ELIGIBLE_TO_BEGIN).
+  'label.work-auth': { also: new RegExp(`${WORK_AUTH_WIDE.source}|${ELIGIBLE_TO_BEGIN.source}`), only: WORK_AUTH_LEGAL,
     unless: new RegExp(`${SPONSORED_NEED.source}|${NEED_TO_SPONSOR.source}`), unlessQuestionsOnly: true },
   'label.sponsorship': { also: SPONSORED_NEED, only: VISA_SPONSORSHIP, readsQualifiers: true,
     needsUser: (c) => (sponsorshipTime(c.label) === 'unclear' ? 'unclear-time' : null) },
   'label.over18': { also: OVER18_WIDE },
-  'label.criminal': { also: CRIMINAL_WIDE },
+  // jr7 RULES-7 (ICIMS7-07): a willingness to undergo a (criminal) background check is no claim about a record
+  // (WILLING_CHECK): label.consent-background then decides it.
+  'label.criminal': { also: CRIMINAL_WIDE, unless: WILLING_CHECK },
   'label.hispanic': { only: HISPANIC_SELF, otherwise: SENSITIVE_TOPIC },
   'label.race': { also: RACE_WIDE, only: RACE_SELF, otherwise: SENSITIVE_TOPIC },
   'label.gender': { also: GENDER_WIDE },
@@ -934,7 +997,11 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // jr6 RULES R4 (WD-28, Workday's Dana-Farber "Have you ever, or are you currently participating in a student training
   // program …", fixtures jr6-danafarber-application-questions-1): skills never on a yes or no question (a list that takes
   // several answers aside: "Do you have any of these skills?" over the skills themselves).
-  'label.skills': { onlyFor: (kind) => (kind === 'checkbox-group' || kind === 'multiselect' ? undefined : NOT_YES_NO) },
+  // jr7 RULES-7 (ICIMS7-06, careers-quartzbenefits' required "I certify that the information provided in this
+  // application … I confirm that all statements regarding my skills, qualifications, and experiences, are my own. …",
+  // an iCIMS dropdown, snapshot7 icims3): never an attestation (SKILLS_NOT), whose consent reading then decides it.
+  'label.skills': { onlyFor: (kind) => (kind === 'checkbox-group' || kind === 'multiselect' ? undefined : NOT_YES_NO),
+    unless: SKILLS_NOT },
   'label.travel': { unless: /\btravel\s+(?:restrictions?|limitations?|constraints?|bans?|reimbursements?|expenses?|polic(?:y|ies)|documents?|history)\b|\brestrictions?\s+on\s+(?:your\s+)?travel\b/ },
   // "Which languages do you speak?" (Phase 2): §8.3's rule takes "languages you speak" with nothing between. Only
   // "speak": "What programming languages do you know?" asks about skills.
@@ -951,6 +1018,13 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // jr6 RULES (JV-14, fixtures ninjaone-step1: "Can NinjaOne text you about your application?").
   'label.consent-sms': { also: SMS_WIDE },
   'label.consent-generic': { also: CONSENT_WIDE },
+  // jr7 RULES-7 (UP7-08, UltiPro's "I confirm that the information provided within this application is truthful,
+  // complete, and accurate…", snapshot7 ultipro1): a certification by "truthful" (CERTIFY_WIDE).
+  'label.consent-certify': { also: CERTIFY_WIDE },
+  // jr7 RULES-7 (DF7-V3, Dayforce's Submit step "I agree to the Candidate Acknowledgement", fixtures/dayforce/
+  // submit-challenge; Jobright's agreeCheckbox rule treats it as the application's required terms: cited): the
+  // application's terms, decided by the Consents mode.
+  'label.consent-terms': { also: CANDIDATE_ACKNOWLEDGEMENT },
   // jr6 RULES (JV-15, JV-22, ADP-19, U-11): the name of whoever referred the person ("Referral Name", "If yes, please
   // provide their name or enter N/A if you were not referred.").
   'label.referrer': { also: REFERRER_WIDE },
@@ -1155,7 +1229,9 @@ const ADDRESS_LINE3 = /^(?:street\s+)?address\s+(?:line\s*)?3$/;
  *  of FIXPLAN §3.2): the period the pay is asked in. jr6 fix (RULES-R68-PAY-BASIS-NEAR-MISS): only a label that ends
  *  with it ("… pay basis", "Desired Salary period"); a pay frequency asked for ("Please indicate your preferred pay
  *  frequency", how often payroll pays) is no period of the expected pay. */
-const PAY_BASIS = /\b(?:pay|salary|compensation|wage|rate)\s+(?:basis|period)$/;
+// jr7 RULES-7 (ICIMS7-V3, iCIMS's arc-onesolutions "Desired Salary" Time Frame select, "Desired Salary time frame" by the
+// label contract of FIX7PLAN §3.3, snapshot7 iCIMS1): or its time frame.
+const PAY_BASIS = /\b(?:pay|salary|compensation|wage|rate)\s+(?:basis|period|time\s*frame)$/;
 /** jr6 RULES R4 (ADP-18: ADP's "How would you like to provide the candidate's resume?", Upload File | Enter Professional
  *  Details, fixtures jr6-resume-choice): how the résumé is given, chosen; never a consent. */
 const RESUME_METHOD = /\bhow\s+(?:would|do|will|can)\s+you\s+(?:like\s+to\s+|want\s+to\s+|prefer\s+to\s+)?(?:provide|submit|share|send|add|give|attach|upload)\s+(?:the\s+candidates?\s+|your\s+|a\s+|the\s+)?(?:resume|cv)\b/;
@@ -1521,6 +1597,13 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
     && kindAllowed('screening.restrictiveAgreement', kind)) {
     return hitOf(RESTRICTIVE_RULE, 'screening.restrictiveAgreement');
   }
+  // jr7 RULES-7 (UP7-08, UltiPro's required textarea "Are you currently subject to any non-competition,
+  // non-solicitation …?", snapshot7 ultipro1): asked as a fact in a box of prose it is still the restrictive agreement,
+  // before the waiver rule claims it: a legal question on a kind that cannot hold its Yes or No (kind-mismatch), which
+  // stays the person's (legal-not-in-profile) unless TailorIT's AI answers it, marked an AI guess (GUESS_ONLY).
+  if (RESTRICTIVE_TOPIC.test(withQualifiers) && RESTRICTIVE_FACT.test(text) && (kind === 'text' || kind === 'textarea')) {
+    return { ...hitOf(RESTRICTIVE_RULE, 'screening.restrictiveAgreement'), needsUser: 'kind-mismatch' };
+  }
   if (kind !== 'checkbox' && namesBindingWaiver(text)) {
     return { ...hitOf(BINDING_WAIVER_RULE, 'consent.other'), consentKinds: ['consent.other'],
       needsUser: 'binding-waiver' };
@@ -1569,6 +1652,8 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   if (jr6 !== null) return jr6;
   for (const rule of LABEL_RULES) {
     if (DATE_RULES.has(rule.id) && section === 'other' && context.block !== undefined) continue;
+    // jr7 RULES-7 (ICIMS7-06): a list of a Yes and a No is never the skills list.
+    if (rule.id === 'label.skills' && context.yesNoOptions === true) continue;
     const verdict = refinedMatch(rule, text, context.questions, kind);
     if (verdict === null) continue;
     const refinement = REFINEMENTS[rule.id];
