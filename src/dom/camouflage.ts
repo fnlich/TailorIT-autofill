@@ -265,7 +265,9 @@ export function isControlCamouflaged(control: Element, placeholderVisible: boole
  * as shared. The declared box counts where it is not the control, holds it (across shadow roots), a person can see it,
  * its visibility is 'visible', its box encloses the control's, and it shows a border, an outline or a shadow
  * (drawnByWrapper's reading) or a background, against what is behind it. Unlike a wrapper, it may hold other controls:
- * the adapter wrote it from a snapshot. None declared, or a hook that throws: false.
+ * the adapter wrote it from a snapshot. None declared, or a hook that throws: false. jr7 ENGINE-7 E2 (DFPC-7's PC7-04):
+ * a declared box may also be a decoration beside the control (declaredDecoration: MUI's outlined box, Paycom's, draws
+ * its border on an aria-hidden fieldset inside the input root, beside the input); only where the adapter declares it.
  */
 function drawnByDeclaredBox(control: Element, adapter: Adapter | null, cache: ScanCache): boolean {
   if (adapter?.controlBox === undefined) return false;
@@ -275,13 +277,87 @@ function drawnByDeclaredBox(control: Element, adapter: Adapter | null, cache: Sc
   } catch {
     return false;
   }
-  if (box === null || box === control || !flatContains(box, control) || !isUserVisible(box, cache)) return false;
+  if (box === null || box === control) return false;
+  // jr7 ENGINE-7 E2 (DFPC-7's PC7-04): or the declared decoration beside it.
+  const decoration = declaredDecoration(box, control, cache);
+  if (!decoration && (!flatContains(box, control) || !isUserVisible(box, cache))) return false;
   const style = styleOf(box, cache);
   const outer = box.getBoundingClientRect();
   if (style === null || style.visibility !== 'visible' || !encloses(outer, control.getBoundingClientRect())) return false;
-  return drawsBox(box, style, outer, cache, true);
+  return drawsBox(box, style, outer, cache, true) || pseudoEdgeDraws(box, cache); // jr7 ENGINE-7 E2 (UKGR-5)
 }
 // ── end jr6 ENGINE E2 item 7 ──
+
+// ── jr7 ENGINE-7 E2 (DFPC-7's PC7-04: Paycom's outlined text boxes, textareas and selects) ──
+/** The controls a decoration never holds. */
+const DECORATION_HOLDS_NONE = 'input, select, textarea, button, [contenteditable]:not([contenteditable="false" i])';
+
+/**
+ * Whether the box an adapter declares for a control (Adapter.controlBox) is a decoration drawn beside it: MUI's
+ * outlined text box (Paycom, snapshot7 paycomonline1 apply-2) draws its border on a <fieldset aria-hidden="true"> laid
+ * over its input root, beside the input, so the box neither holds the control nor reads as visible (aria-hidden). It
+ * counts only where the box itself says aria-hidden="true" (never an aria-hidden it sits under: its parent must be
+ * visible), holds no control of any kind, and its parent holds the control and a person can see that parent. The rest
+ * of drawnByDeclaredBox's rules then hold as for any declared box (visibility 'visible', its box enclosing the
+ * control's, an edge or a fill that shows). Never read for a box no adapter declares: an undeclared aria-hidden wrapper,
+ * and a white-on-white or clipped honeypot (judged by the visibility rules before any of this), stay as they are.
+ */
+function declaredDecoration(box: Element, control: Element, cache: ScanCache): boolean {
+  if ((box.getAttribute('aria-hidden') ?? '').trim().toLowerCase() !== 'true') return false;
+  const parent = box.parentElement;
+  if (parent === null || !flatContains(parent, control) || !isUserVisible(parent, cache)) return false;
+  return box.querySelector(DECORATION_HOLDS_NONE) === null && !box.matches(DECORATION_HOLDS_NONE);
+}
+// ── end jr7 ENGINE-7 E2 (PC7-04) ──
+
+// ── jr7 ENGINE-7 E2 (UKGR-5, gated by O-7: TOOLING-7's live-order re-check still read UKG Ready's boxes camouflaged) ──
+/** The thinnest pseudo-element edge pseudoEdgeDraws counts: a border or an inset ring this wide draws a line a person
+ *  sees (UKG Ready's 0.5 px ring), under MIN_SHADOW_REACH_PX, which an outer shadow needs. */
+const PSEUDO_EDGE_MIN_PX = 0.5;
+
+/**
+ * Whether the declared box draws its edge with a pseudo-element: UKG Ready's span.c-form-control__field is white on
+ * the page's near-white (or on its white dialogs) and its edge is its ::before, absolutely positioned at inset 0 with an
+ * inset box-shadow ring of 0.5 px in a dark translucent colour (snapshot7 secure7.saashr; the UKG Ready audit's UKGR-5).
+ * A ::before or ::after counts only where it is generated (content not none), shown (display not none, visibility
+ * visible, opacity at MIN_OPACITY or above), absolutely positioned at inset 0 (it covers the box), and draws a border on
+ * a side, or an inset box-shadow of spread PSEUDO_EDGE_MIN_PX or more, in a colour that shows against the box's own
+ * fill (CONTROL_DRAWN_MIN_CONTRAST). A pseudo-box with no visible edge draws nothing: a honeypot stays refused.
+ */
+function pseudoEdgeDraws(box: Element, cache: ScanCache): boolean {
+  const view = viewOf(box);
+  const doc = box.ownerDocument;
+  if (view === null) return false;
+  const fill = backdropOf(box, cache);
+  if (fill === 'unknown') return false;
+  const opacity = opacityOf(box, cache);
+  return (['::before', '::after'] as const).some((which) => {
+    let pseudo: CSSStyleDeclaration;
+    try {
+      pseudo = view.getComputedStyle(box, which);
+    } catch {
+      return false;
+    }
+    if (pseudo.content === 'none' || pseudo.content === 'normal' || pseudo.display === 'none'
+      || pseudo.visibility !== 'visible' || pseudo.position !== 'absolute') return false;
+    if (!['top', 'right', 'bottom', 'left'].every((side) => parseFloat(pseudo.getPropertyValue(side)) === 0)) return false;
+    const alpha = opacity * Number(pseudo.opacity);
+    if (!Number.isFinite(alpha) || alpha < MIN_OPACITY) return false;
+    const shows = (colour: Rgba | null) => colour !== null && colour.a * alpha >= MIN_OPACITY
+      && against(fade(colour, alpha), fill, CONTROL_DRAWN_MIN_CONTRAST) === 'clear';
+    const border = (['top', 'right', 'bottom', 'left'] as const).some((side) => {
+      const lineStyle = pseudo.getPropertyValue(`border-${side}-style`);
+      return lineStyle !== 'none' && lineStyle !== 'hidden'
+        && parseFloat(pseudo.getPropertyValue(`border-${side}-width`)) >= PSEUDO_EDGE_MIN_PX
+        && shows(parseColor(pseudo.getPropertyValue(`border-${side}-color`), doc));
+    });
+    // An inset ring: an inset shadow whose spread draws a line inside the box's edge (insetShadows reads them).
+    return border || (insetShadows(pseudo.boxShadow, doc) ?? []).some((ring) => ring.spread >= PSEUDO_EDGE_MIN_PX
+      && shows(ring.colour));
+  });
+}
+
+// ── end jr7 ENGINE-7 E2 (UKGR-5) ──
 
 /**
  * Some forms draw a control's box on an element around it instead of on the control: Greenhouse outlines the

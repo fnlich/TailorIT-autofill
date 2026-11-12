@@ -22,6 +22,7 @@
  *   comment.
  */
 import { capCodePoints } from '../core/text/fold';
+import { shownByBox } from './box-shown';
 import type { VisibleText } from '../core/types/text';
 import { inkAgainst, isCamouflaged, optionBackdrop, optionCamouflage, textAgainstBackground } from './camouflage';
 import { fade, over, parseColor } from './color';
@@ -199,7 +200,8 @@ export interface VisibleOption {
 /** The options of `select` a person can see, in list order; [] when the select itself is not visible, and [] when an
  *  option it would list holds elements that are not plainly drawn (optionShowsAllItsText). */
 export function readSelectOptions(select: HTMLSelectElement, cache: ScanCache = newScanCache()): VisibleOption[] {
-  if (!isUserVisible(select, cache)) return [];
+  // jr7 ENGINE-7 E1 item 1 (UKGR-6): or one the last scan found drawn by its adapter's declared box (dom/box-shown.ts).
+  if (!isUserVisible(select, cache) && !shownByBox(select)) return [];
   const result: VisibleOption[] = [];
   for (const option of Array.from(select.options)) {
     if (result.length >= MAX_OPTIONS) break;

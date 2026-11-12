@@ -28,7 +28,7 @@ import { parseJobDivaUrl } from './jobdiva/url';
 import { paycomAdapter } from './paycom';
 import { parsePaycomUrl } from './paycom/url';
 import { siteAdapter } from './site';
-import type { Adapter } from './types';
+import { HAND_OVER_KINDS, type Adapter, type HandOverKind } from './types';
 import { ukgReadyAdapter } from './ukgready';
 import { parseUkgReadyUrl } from './ukgready/url';
 
@@ -106,5 +106,15 @@ describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
       ...STUBS.map(({ platform }) => item(`k-${platform}`, platform))]);
     expect(batches.flatMap((batch) => batch.items.map((each) => each.key))).toEqual(['k-lever']);
     expect(withheld).toEqual(STUBS.map(({ platform }) => ({ key: `k-${platform}`, category: null, why: 'unknown-field' })));
+  });
+});
+
+// jr7 ENGINE-7 E2 (ULTIPRO-7's UP7-07, gated Q7-8): the E0 contract's hand-over kinds name UltiPro's documents dialog.
+describe('jr7 ENGINE-7 E2: Adapter.handOver\'s kinds (UP7-07)', () => {
+  it('include the documents the site asks to save to the profile after the Submit, beside the assessment', () => {
+    expect(HAND_OVER_KINDS).toEqual(['assessment', 'documents']);
+    const ultipro: Pick<Adapter, 'handOver'> = { handOver: () => 'documents' };
+    const kind: HandOverKind | null = ultipro.handOver!({} as Document);
+    expect(kind).toBe('documents');
   });
 });

@@ -1,8 +1,9 @@
 /*
  * jr7 ENGINE-7 E0 (FIX7PLAN §3.1; UP7-04, UltiPro's Register privacy box drawn as an ARIA checkbox): SignInForm.terms
- * may hold a declared ARIA checkbox (role="checkbox", no native input) beside native boxes. Until ENGINE-7 E1 item 8
- * reads one, dom/sign-in-form.ts signInRefusal refuses a form that declares one ('shape'), as it did before the type
- * was widened, and reads a native terms box as before. A synthetic page of the framework's own markup.
+ * may hold a declared ARIA checkbox (role="checkbox", no native input) beside native boxes. jr7 ENGINE-7 E1 item 8:
+ * dom/sign-in-form.ts signInRefusal takes one inside a declared container (it refused every one at E0), and reads a
+ * native terms box as before (src/content/jr7-engine-e1.browser.test.ts holds the rest). A synthetic page of the
+ * framework's own markup.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SignInForm } from '../adapters/types';
@@ -19,6 +20,7 @@ const PAGE = `<!doctype html><html><head><style>
   <div id="register"><h1>Create your account</h1>
     <label for="em">Email</label><input id="em" type="email">
     <p><span id="aria-terms" role="checkbox" aria-checked="false" tabindex="0">I agree to the privacy policy</span></p>
+    <p><span id="no-state" role="checkbox" tabindex="0">I agree to the cookie policy</span></p>
     <p><input id="native-terms" type="checkbox"><label for="native-terms">I agree to the terms of use</label></p>
     <button id="create" type="button">Create account</button>
   </div>
@@ -29,13 +31,16 @@ const ADDRESS = new URL('https://recruiting.ultipro.com/ACME1000/JobBoard/000000
 afterEach(() => removeFixtures(document));
 
 describe('a declared ARIA checkbox among the account terms (jr7 ENGINE-7 E0, FIX7PLAN §3.1)', () => {
-  it('refuses the form until ENGINE-7 E1 reads it, and reads a native terms box as before', async () => {
+  it('takes it inside a declared container, refuses one that shows no state, and reads a native terms box as before',
+    async () => {
     const { doc } = await loadFixture(document, PAGE, { width: 1100, height: 800 });
     const byId = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
     const form = (terms: SignInForm['terms']): SignInForm => ({ email: byId<HTMLInputElement>('em'), password: null,
       confirm: null, terms, button: byId('create'), container: byId('register'), declared: true });
     expect(signInRefusal(form([]), ADDRESS)).toBeNull();
     expect(signInRefusal(form([byId<HTMLInputElement>('native-terms')]), ADDRESS)).toBeNull();
-    expect(signInRefusal(form([byId('aria-terms')]), ADDRESS)).toBe('shape');
+    expect(signInRefusal(form([byId('aria-terms')]), ADDRESS)).toBeNull();
+    expect(signInRefusal(form([byId('no-state')]), ADDRESS)).toBe('shape');
+    expect(signInRefusal({ ...form([byId('aria-terms')]), declared: undefined }, ADDRESS)).toBe('shape');
   });
 });

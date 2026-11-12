@@ -58,6 +58,7 @@ import { accepts, acceptTokens, fill } from '../dom/fillers';
 import { fillDateParts } from '../dom/fillers/date-parts';
 import { mismatch } from '../dom/fillers/outcome';
 import { awaitUpload, revealUpload, uploadStateOf } from '../dom/fillers/upload';
+import { answerUploadPrompt } from '../dom/fillers/upload-prompt';
 import { selectEditable } from '../dom/fillers/text';
 import { isEditingHost } from '../dom/kinds';
 import type { HeldDialogs } from '../dom/patch-protocol';
@@ -141,6 +142,10 @@ export interface PassEnv {
   dialogsHeld?(held: HeldDialogs): void;
   /** Overrides for the transfer, for tests. */
   resume?: { idleMs?: number; releaseAfterMs?: number };
+  /** jr7 ENGINE-7 E2 item 4 (EFA-6, FIX7PLAN §5 D-9): whether the Consents mode ticks a consent a site's upload prompt
+   *  asks for (Eightfold's Data Privacy Agreement), from the run's settings; absent, false: such a prompt is the
+   *  person's (dom/fillers/upload-prompt.ts). The content settings carry no Consents mode yet (INT-7's wiring). */
+  consentPrompts?: boolean;
 }
 
 /** A field the pass wrote: what the verification after the settle and the final Guard need. Memory only. */
@@ -611,6 +616,15 @@ async function writeOnce(env: PassEnv, last: ScanResult, field: ScannedField, wr
   if (!outcome.wrote) {
     resume?.release();
     return { row };
+  }
+  // jr7 ENGINE-7 E2 item 4 (UKGR-10, EFA-6): the dialog the site draws for the run's own file write is answered once,
+  // before the page's word on the upload, which a consent holds back (dom/fillers/upload-prompt.ts).
+  if (write.value.kind === 'file' && env.adapter.uploadPrompt !== undefined) {
+    await answerUploadPrompt(env.adapter, doc, { consents: env.consentPrompts === true, signal: env.signal });
+    if (runOver(env)) {
+      resume?.release();
+      throw new RunAborted();
+    }
   }
   // A page that uploads a file the moment it goes in says whether its upload worked (Adapter.uploadState): waited for,
   // and a failed or unconfirmed upload is never verified. v5 p2-fill: the input is the one the page's picker opened
