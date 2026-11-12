@@ -17,9 +17,16 @@
  * parser is read, and no ancestor readableAncestors gives a frame on a shared domain is on its hosts. src/adapters/
  * url.test.ts holds bridgeInstallsAt and framedByEmployerPage to their reading with every parser (address.ts
  * postingAddressOf) over every address of its table, and to the rule that every shared-domain platform is here.
+ * jr7 ENGINE-7 E0 (the coordinator's decision of 2026-11-11, the bridge's budget): the page-world scripts read the
+ * platform of an address by shared/hosts.ts bridgePlatformOfUrl, which leaves out the platforms the bridge installs
+ * on none of the hosts of (UNBRIDGED_PLATFORMS: no public host, no parser here), so neither bundle holds their host
+ * table. Every answer is the one platformOfUrl gave (src/adapters/jr7-bridge-lookup.test.ts): bridgeInstallsAt's
+ * everywhere; bridgeFramedByEmployerPage's wherever the bridge installs, and on every frame of the watcher's
+ * platforms. framedByEmployerPage keeps platformOfUrl for the content runtime (content/runtime.ts), which runs on those
+ * hosts too: a frame there below an ancestor of its own origin that is no posting's page stays silent.
  */
 import type { Platform } from '../core/enums';
-import { ORACLE_CANDIDATE_APP, platformOfUrl } from '../shared/hosts';
+import { bridgePlatformOfUrl, ORACLE_CANDIDATE_APP, platformOfUrl } from '../shared/hosts';
 import type { ApplicationPage, ApplicationUrl } from './application-key';
 import { parseAdpUrl } from './adp/url';
 import { parseBambooHrUrl } from './bamboohr/url';
@@ -73,9 +80,10 @@ export function publicJobHost(host: string): boolean {
 
 /** The page of a posting an address on a shared domain shows, by its platform's parser (SHARED_DOMAIN_PARSERS), or
  *  null: no platform, a platform with no parser here (every host of it public), or an address its parser reads no
- *  posting from. */
-function sharedDomainPage(url: URL): ApplicationPage | null {
-  const platform = platformOfUrl(url.href);
+ *  posting from. jr7 ENGINE-7 E0: the platform as `platformOf` reads it (platformOfUrl, or the page-world scripts'
+ *  bridgePlatformOfUrl: the module header). */
+function sharedDomainPage(url: URL, platformOf: (url: string) => Platform | null): ApplicationPage | null {
+  const platform = platformOf(url.href);
   const parser = platform === null ? undefined : SHARED_DOMAIN_PARSERS[platform];
   return parser === undefined ? null : parser(url)?.page ?? null;
 }
@@ -89,9 +97,11 @@ export function bridgeInstallsAt(href: string): boolean {
   } catch {
     return false;
   }
-  if (platformOfUrl(url.href) === null) return false;
+  // jr7 ENGINE-7 E0: bridgePlatformOfUrl (module header): its answer, where it differs from platformOfUrl's, is a
+  // platform with no public host and no parser here, so false either way.
+  if (bridgePlatformOfUrl(url.href) === null) return false;
   if (publicJobHost(url.hostname)) return true;
-  const page = sharedDomainPage(url);
+  const page = sharedDomainPage(url, bridgePlatformOfUrl);
   return page === 'posting' || page === 'application';
 }
 
@@ -149,6 +159,19 @@ function hrefOf(view: AncestorView): string | null {
  * address) is a posting's page, so its frame is not silent; a frame below another origin's page is read as before.
  */
 export function framedByEmployerPage(href: string, ancestors: readonly string[]): boolean {
+  return framedBy(href, ancestors, platformOfUrl);
+}
+
+// ── jr7 ENGINE-7 E0 (the module header) ──
+/** framedByEmployerPage as the page-world scripts read it (the bridge, after bridgeInstallsAt; the submit watcher), by
+ *  bridgePlatformOfUrl: the same answer wherever the bridge installs, and on every frame of a watcher's platform, whose
+ *  host and its same-origin ancestors' are HOST_PLATFORMS' (src/adapters/jr7-bridge-lookup.test.ts). */
+export function bridgeFramedByEmployerPage(href: string, ancestors: readonly string[]): boolean {
+  return framedBy(href, ancestors, bridgePlatformOfUrl);
+}
+
+/** framedByEmployerPage's reading, the platform of an address as `platformOf` reads it. */
+function framedBy(href: string, ancestors: readonly string[], platformOf: (url: string) => Platform | null): boolean {
   if (ancestors.length === 0) return false;
   let url: URL;
   try {
@@ -156,16 +179,17 @@ export function framedByEmployerPage(href: string, ancestors: readonly string[])
   } catch {
     return false;
   }
-  if (platformOfUrl(url.href) === null) return false;
+  if (platformOf(url.href) === null) return false;
   if (publicJobHost(url.hostname)) return false;
   return ancestors.some((ancestor) => {
     try {
-      return sharedDomainPage(new URL(ancestor)) === null;
+      return sharedDomainPage(new URL(ancestor), platformOf) === null;
     } catch {
       return true;
     }
   });
 }
+// ── end jr7 ENGINE-7 E0 ──
 
 // ── v5 p2-detect: where the page-world submit watcher installs (the P2 review, M3) ──
 /** Workday's shared host's candidate app: /[<locale>/]recruiting/<tenant>/<site>[/...] on wd<n>.myworkdaysite.com
@@ -198,7 +222,8 @@ export function submitWatchInstallsAt(href: string, platform: Platform, ancestor
   } catch {
     return false;
   }
-  if (platformOfUrl(url.href) !== platform || framedByEmployerPage(url.href, ancestors)) return false;
+  // jr7 ENGINE-7 E0: the page-world scripts' lookup (module header); every watcher platform is HOST_PLATFORMS'.
+  if (bridgePlatformOfUrl(url.href) !== platform || bridgeFramedByEmployerPage(url.href, ancestors)) return false;
   if (bridgeInstallsAt(url.href)) return true;
   switch (platform) {
     case 'oracle':
