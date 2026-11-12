@@ -134,7 +134,8 @@ describe('Sign-in Auto on Workday (v3 Phase 6)', () => {
       const seen = actAsWorkday(fixture);
       const channel = channelAnswering({ ok: true, data: CREDENTIAL });
       expect(await attempt(fixture, workdayAdapter, channel, ACCOUNT)).toBe('continue');
-      expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account' }]);
+      expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account',
+        rules: { minLength: 8, requires: ['upper', 'lower', 'digit', 'special', 'alpha'] } }]); // jr6 ifix SEC-1
       expect(seen.typed).toEqual({ email: CREDENTIAL.email, password: CREDENTIAL.password, verify: CREDENTIAL.password,
         terms: true, bee: '' });
       removeFixtures(document);

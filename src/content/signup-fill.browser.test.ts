@@ -116,7 +116,9 @@ describe('Workday’s Create Account and Sign In with the saved job-site sign-in
       const seen = actAsWorkday(fixture);
       const channel = channelAnswering({ ok: true, data: AUTO });
       expect(await attempt(fixture, channel)).toBe('continue');
-      expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account' }]);
+      // jr6 ifix SEC-1: the page's own rules go with the ask (Workday's "Password Requirements").
+      expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account',
+        rules: { minLength: 8, requires: ['upper', 'lower', 'digit', 'special', 'alpha'] } }]);
       expect(seen).toEqual({ presses: 1, typed: { email: SAVED.email, password: SAVED.password, verify: SAVED.password,
         terms: hasTerms } });
     });
@@ -201,7 +203,9 @@ describe('iCIMS’s "Create a login" and its email gate with the saved job-site 
         expect(await signIn({ doc: fixture.doc, adapter: icimsAdapter, channel, href: () => fixture.address, isTop: false,
           claimed: true, section: true, signal: new AbortController().signal })).toBe('continue');
         // The jr6 review (R1): a section is never pressed here, which the ask says.
-        expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true }]);
+        // jr6 ifix SEC-1: the page's own rules go with the ask (iCIMS's create-login rules, its boxes' maxlength).
+        expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true,
+          rules: { maxLength: 128, minLength: name === 'nyu-profile.frame-1' ? 10 : 8, notLogin: true, requires: ['alpha', 'lower', 'upper', 'digit', 'special'] } }]);
         const box = (id: string) => (fixture.doc.getElementById(id) as HTMLInputElement).value;
         expect([box('PersonProfileFields.Login'), box('PersonProfileFields.Password'),
           box('PersonProfileFields.Password_Confirm')]).toEqual([SAVED.email, SAVED.password, SAVED.password]);
@@ -276,7 +280,8 @@ describe('a run at Workday’s Create Account (jr6)', () => {
     const { seen, worker } = await run('auto', true, AUTO);
     await vi.waitFor(() => expect(seen.presses).toBe(1), { timeout: 5_000 });
     expect(seen.typed).toEqual({ email: SAVED.email, password: SAVED.password, verify: SAVED.password, terms: true });
-    expect(worker.of('signin/credential')).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account' }]);
+    expect(worker.of('signin/credential')).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account',
+      rules: { minLength: 8, requires: ['upper', 'lower', 'digit', 'special', 'alpha'] } }]); // jr6 ifix SEC-1
   });
 
   // The jr6 review (R7): the run's own Manual is what keeps the press the person's while the worker would say press (a
@@ -290,7 +295,7 @@ describe('a run at Workday’s Create Account (jr6)', () => {
     expect(seen.presses).toBe(0);
     // The ask said it never presses (the jr6 review, R1).
     expect(worker.of('signin/credential')).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account',
-      typing: true }]);
+      typing: true, rules: { minLength: 8, requires: ['upper', 'lower', 'digit', 'special', 'alpha'] } }]); // jr6 ifix SEC-1
   });
 
   it('empties what it typed for the person once no password may be typed any more (the jr6 review, sec-8)', async () => {
@@ -374,7 +379,8 @@ describe('the jr6 review: a password typed for the person', () => {
     const fixture = await served(createHtml);
     const channel = channelAnswering({ ok: true, data: AUTO });
     expect(await attempt(fixture, channel, { typeOnly: true })).toBe('typed');
-    expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true }]);
+    expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true,
+      rules: { minLength: 8, requires: ['upper', 'lower', 'digit', 'special', 'alpha'] } }]); // jr6 ifix SEC-1
   });
 
   it('R1: a press the site refuses keeps what was typed for the person, SIGN_IN_KEPT_MS at most', async () => {

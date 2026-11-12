@@ -15,12 +15,17 @@
  *   sets the limit;
  * - the jr6 review (R8): an email gate is answered from the record's email, nothing decrypted;
  * - no log line holds a path, a host, an email, a password or the password's length.
+ * - jr6 ifix SEC-1 (the jr6 integration review's SEC-1), over the real vault (signup-vault.ts, Node's WebCrypto): an ask
+ *   whose page rules (`rules`) the saved password breaks is refused in closed words, with no password, nothing
+ *   decrypted and no `signin-tried:` key; a password saved after it, which meets them, is pressed as a first ask is.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { ContentMessageSchema, SIGN_IN_RULE_KINDS, type SignInRules } from '../messaging/schemas';
+import { createMemoryKeyStore } from '../platform/memory';
 import type { StorageArea } from '../platform/types';
 import type { ContentChannel } from './router';
-import { createSignIn, SIGN_IN_ONCE_MS, type SignInAct } from './sign-in';
-import type { Revealed, SignupStatus } from './signup-vault';
+import { createSignIn, SIGN_IN_ONCE_MS, SIGN_IN_TRIED_PREFIX, type SignInAct } from './sign-in';
+import { createSignupVault, type Revealed, type SignupStatus } from './signup-vault';
 
 const PASSWORD = 'Dummy-Password-Not-Real-2026!';
 const EMAIL = 'alex.rivera@example.com';
@@ -324,3 +329,125 @@ describe('the hosts covered by their candidate paths (TailorIT’s API 6), with 
     expect(numbers).not.toContain(PASSWORD.length);
   });
 });
+
+// ── jr6 ifix SEC-1 (the jr6 integration review's SEC-1) ──
+describe('the page’s own password rules, checked before anything is decrypted or marked (jr6 ifix SEC-1)', () => {
+  /** Synthetic passwords that meet every rule of core/signup-password.ts: 20 characters, and 32. */
+  const SHORT = 'Synthetic-Pass-20ch!';
+  const LONG = 'Synthetic-Rules-Pass-2026-32ch!!';
+  /** Workday's Create Account asking `minLength` (its captured classes), and iCIMS's create-login rules. */
+  const workdayAsking = (minLength: number): SignInRules =>
+    ({ minLength, requires: ['upper', 'lower', 'digit', 'special', 'alpha'] });
+  const ICIMS_RULES: SignInRules = { maxLength: 128, minLength: 8, notLogin: true,
+    requires: ['alpha', 'lower', 'upper', 'digit', 'special'] };
+
+  /** The real vault and the handler over it, Sign-in acting as `act`; every decryption counted. */
+  function realVault(act: SignInAct = 'auto') {
+    const subtle = globalThis.crypto.subtle;
+    let decrypted = 0;
+    const counting = new Proxy(subtle, { get(target, key) {
+      if (key === 'decrypt') {
+        return (...args: Parameters<SubtleCrypto['decrypt']>) => {
+          decrypted += 1;
+          return target.decrypt(...args);
+        };
+      }
+      const value = Reflect.get(target, key) as unknown;
+      return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+    } });
+    let clock = 1_000;
+    const vault = createSignupVault({ local: memoryArea(), keys: createMemoryKeyStore(), subtle: counting,
+      randomBytes: (count) => globalThis.crypto.getRandomValues(new Uint8Array(count)), now: () => (clock += 1) });
+    const session = memoryArea();
+    const signIn = createSignIn({ vault, session, now: () => 5_000, signInAct: async () => act });
+    return { vault, signIn, decrypted: () => decrypted,
+      tried: async () => Object.keys(await session.getMany(SIGN_IN_TRIED_PREFIX)) };
+  }
+  /** An ask as the router parses it (the schema's own bounds held). */
+  const askWith = (wall: 'sign-in' | 'create-account' | 'email-gate', rules: SignInRules, typing = false) =>
+    ContentMessageSchema.parse({ ...ask(wall, typing), rules }) as ReturnType<typeof ask>;
+
+  it('refuses a password the page’s minimum breaks: no password, nothing decrypted, no press marked; one saved after '
+    + 'it that meets the minimum is pressed (Sign up & Autofill’s second press)', async () => {
+    const { vault, signIn, decrypted, tried } = realVault();
+    expect(await vault.save({ email: EMAIL, password: SHORT })).toBe('saved');
+    const frame = frameAt(WORKDAY);
+    const refused = await signIn.credential(askWith('create-account', workdayAsking(30)), frame);
+    expect(refused).toEqual({ ok: true, data: { refused: 'rules', rule: 'length' } });
+    expect(JSON.stringify(refused)).not.toContain(SHORT);
+    expect(JSON.stringify(refused)).not.toContain(EMAIL);
+    expect(decrypted()).toBe(0);
+    expect(await tried()).toEqual([]);
+    expect(logs.mock.calls).toContainEqual(['[tailorit-autofill] signin.refused',
+      { rules: SIGN_IN_RULE_KINDS.indexOf('length') }]);
+    // The person saves a longer one and presses Sign up & Autofill again within the ten minutes: pressed, once.
+    expect(await vault.save({ email: EMAIL, password: LONG })).toBe('saved');
+    expect(await signIn.credential(askWith('create-account', workdayAsking(30)), frame))
+      .toEqual({ ok: true, data: { host: '*', email: EMAIL, password: LONG, press: true } });
+    expect(decrypted()).toBe(1);
+    expect(await tried()).toHaveLength(1);
+  });
+
+  it('refuses one longer than the page’s password boxes take (`fits`), at a sign-in too; one that fits is answered',
+    async () => {
+      const { vault, signIn, decrypted, tried } = realVault();
+      await vault.save({ email: EMAIL, password: LONG });
+      const frame = frameAt(WORKDAY);
+      expect(await signIn.credential(askWith('sign-in', { maxLength: 30 }), frame))
+        .toEqual({ ok: true, data: { refused: 'fits' } });
+      expect(logs.mock.calls).toContainEqual(['[tailorit-autofill] signin.refused', { fits: false }]);
+      expect([decrypted(), (await tried()).length]).toEqual([0, 0]);
+      // A box that takes exactly its length takes it.
+      expect(await signIn.credential(askWith('sign-in', { maxLength: LONG.length }), frame))
+        .toMatchObject({ ok: true, data: { password: LONG, press: true } });
+    });
+
+  it('takes what every saved password meets: the classes a page lists, its minimum met exactly, "not the login" with '
+    + 'an email (iCIMS’s create-login rules)', async () => {
+    const { vault, signIn, decrypted } = realVault('type');
+    await vault.save({ email: EMAIL, password: SHORT });
+    expect(await signIn.credential(askWith('create-account', ICIMS_RULES, true), frameAt(ICIMS)))
+      .toEqual({ ok: true, data: { host: '*', email: EMAIL, password: SHORT, press: false } });
+    expect(await signIn.credential(askWith('create-account', workdayAsking(SHORT.length)), frameAt(WORKDAY)))
+      .toMatchObject({ ok: true, data: { password: SHORT } });
+    expect(await signIn.credential(askWith('create-account', workdayAsking(SHORT.length + 1)), frameAt(WORKDAY)))
+      .toEqual({ ok: true, data: { refused: 'rules', rule: 'length' } });
+    expect(decrypted()).toBe(2);
+  });
+
+  it('in the auto-apply agent’s tab, a wall the rules refused is not refused `expired` once a password that meets them '
+    + 'is saved: it was never pressed', async () => {
+    const { vault, signIn, tried } = realVault('agent');
+    await vault.save({ email: EMAIL, password: SHORT });
+    const frame = frameAt(WORKDAY);
+    expect(await signIn.credential(askWith('create-account', workdayAsking(24)), frame))
+      .toEqual({ ok: true, data: { refused: 'rules', rule: 'length' } });
+    expect(await tried()).toEqual([]);
+    await vault.save({ email: EMAIL, password: LONG });
+    expect(await signIn.credential(askWith('create-account', workdayAsking(24)), frame))
+      .toMatchObject({ ok: true, data: { password: LONG, press: true } });
+  });
+
+  it('never refuses an email gate for rules: it asks for no password, and nothing is decrypted', async () => {
+    const { vault, signIn, decrypted } = realVault();
+    await vault.save({ email: EMAIL, password: SHORT });
+    expect(await signIn.credential(askWith('email-gate', { minLength: 64 }), frameAt(ADP_GUEST)))
+      .toEqual({ ok: true, data: { host: '*', email: EMAIL, press: true } });
+    expect(decrypted()).toBe(0);
+  });
+
+  it('logs no password, email or length on a refusal, only the rule’s place', async () => {
+    const { vault, signIn } = realVault();
+    await vault.save({ email: EMAIL, password: SHORT });
+    logs.mockClear();
+    await signIn.credential(askWith('create-account', workdayAsking(40)), frameAt(WORKDAY));
+    await signIn.credential(askWith('sign-in', { maxLength: 17 }), frameAt(WORKDAY));
+    const logged = JSON.stringify(logs.mock.calls);
+    for (const secret of [SHORT, EMAIL]) expect(logged).not.toContain(secret);
+    const numbers = logs.mock.calls.flatMap((call) => Object.values((call[1] ?? {}) as Record<string, unknown>))
+      .filter((value): value is number => typeof value === 'number');
+    expect(numbers).not.toContain(SHORT.length);
+    expect(numbers.every((n) => n < SIGN_IN_RULE_KINDS.length)).toBe(true);
+  });
+});
+// ── end jr6 ifix SEC-1 ──

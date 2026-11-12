@@ -299,6 +299,31 @@ export type RunTrigger = (typeof RUN_TRIGGERS)[number];
 export const SIGN_IN_WALLS = ['sign-in', 'create-account', 'email-gate'] as const;
 export type SignInWall = (typeof SIGN_IN_WALLS)[number];
 
+// ── jr6 ifix SEC-1 (the jr6 integration review's SEC-1): the page's own password rules go with the ask ──
+/** The character classes a page's own password rules may require (adapters/types.ts PagePasswordClass, which
+ *  schemas.check.ts holds equal to this list). */
+export const SIGN_IN_PASSWORD_CLASSES = ['upper', 'lower', 'digit', 'special', 'alpha'] as const;
+export type SignInPasswordClass = (typeof SIGN_IN_PASSWORD_CLASSES)[number];
+/** The page's rules a saved password can break, in the order they are checked: its minimum, each class, "not the
+ *  login" (content/sign-in.ts PASSWORD_RULE_KINDS, the same list, whose place in it the logs give). */
+export const SIGN_IN_RULE_KINDS = ['length', ...SIGN_IN_PASSWORD_CLASSES, 'login'] as const;
+export type SignInRuleKind = (typeof SIGN_IN_RULE_KINDS)[number];
+
+/** signin/credential's `rules`: what the page itself asks of a password, as the frame reads it before it asks
+ *  (messaging/sign-in-rules.ts signInRulesOf): numbers and closed words alone, never a value. On an account's creation
+ *  the page's minimum, its required classes and "not the login" (Adapter.passwordRules); on a sign-in or an account's
+ *  creation the smallest maxlength of its password boxes. The worker checks the saved password against them before it
+ *  marks a press or decrypts anything (background/signup-vault.ts reveal), and a password they refuse is answered
+ *  SignInRefusedSchema: it never leaves the worker. Both numbers are held to the password's cap. */
+export const SignInRulesSchema = z.strictObject({
+  minLength: z.number().int().min(1).max(AUTOFILL_SIGN_IN_LIMITS.password).optional(),
+  requires: z.array(z.enum(SIGN_IN_PASSWORD_CLASSES)).min(1).max(SIGN_IN_PASSWORD_CLASSES.length).optional(),
+  notLogin: z.literal(true).optional(),
+  maxLength: z.number().int().min(1).max(AUTOFILL_SIGN_IN_LIMITS.password).optional(),
+});
+export type SignInRules = z.infer<typeof SignInRulesSchema>;
+// ── end jr6 ifix SEC-1 ──
+
 /** s2 profile (the review fix P1): what a page with no form waits for while no run holds it, as its wall's toast says
  *  (content/runtime.ts showWallToast): a check to solve, a sign-in to make there (or the saved one failed), or a
  *  job-site sign-in to add in TailorIT. The side panel says it when the page's toasts are not shown until closed.
@@ -501,9 +526,11 @@ const contentMessages = [
    *  up & Autofill) its button is pressed, on Manual it is typed for the person to press. TailorIT is asked nothing.
    *  The jr6 review (R1): `typing`, an ask whose form this frame never presses (a form's account section, or a run on
    *  Sign-in Manual): answered `press` false, and it neither meets nor sets the once-per-tab press limit. It can only
-   *  lessen what is done, never add a press. */
+   *  lessen what is done, never add a press.
+   *  jr6 ifix SEC-1: `rules`, the page's own password rules (SignInRulesSchema), absent where it states none: a saved
+   *  password they refuse is answered SignInRefusedSchema, with nothing decrypted, sent or marked. */
   z.strictObject({ v, type: z.literal('signin/credential'), wall: z.enum(SIGN_IN_WALLS),
-    typing: z.literal(true).optional() }),
+    typing: z.literal(true).optional(), rules: SignInRulesSchema.optional() }),
   /** Round 3 of the v3 Phase 6/7b review (X8): the auto-apply agent's entry press was made in this frame (press.ts
    *  pressEntry, for agent/enter), told at once, before the entry waits on what the press brings: a press that takes
    *  the document away ends it before agent/enter is answered. The worker takes it from the agent's tab's top frame,
@@ -934,6 +961,16 @@ export const SignInCredentialAnswerSchema = z.strictObject({
 });
 export type SignInCredential = z.infer<typeof SignInCredentialAnswerSchema>;
 
+/** jr6 ifix SEC-1 (the jr6 integration review's SEC-1): signin/credential's answer when the page's own rules (the ask's
+ *  `rules`) refuse the saved password: why, in closed words alone (`fits`, longer than a password box takes; `rules`
+ *  and the rule's kind), and nothing else: no password, no email, no press. The worker decrypted nothing for it and
+ *  marked nothing (no `signin-tried:` key), so a password saved after it is pressed as any first ask is. */
+export const SignInRefusedSchema = z.discriminatedUnion('refused', [
+  z.strictObject({ refused: z.literal('fits') }),
+  z.strictObject({ refused: z.literal('rules'), rule: z.enum(SIGN_IN_RULE_KINDS) }),
+]);
+export type SignInRefused = z.infer<typeof SignInRefusedSchema>;
+
 // ── Which answer goes with which message ──────────────────────────────────────────────────────────────────────────
 
 /** The data schema of the worker's answer to each content message (wrap it in envelope.ts's answerSchema). The e2e
@@ -962,7 +999,8 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'submit/detected': DoneAnswerSchema,
   // v1.3 B
   'submit/form': DoneAnswerSchema,
-  'signin/credential': SignInCredentialAnswerSchema,
+  // jr6 ifix SEC-1: or the page's own rules refused the saved password (no password in it)
+  'signin/credential': z.union([SignInCredentialAnswerSchema, SignInRefusedSchema]),
   'agent/entered': DoneAnswerSchema,
   // jr6 apply A0: its handler is F3a's (until then the router answers not_implemented)
   'entry/pressed': DoneAnswerSchema,

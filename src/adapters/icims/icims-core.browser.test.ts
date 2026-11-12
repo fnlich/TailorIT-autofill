@@ -285,7 +285,9 @@ describe('item 2: the profile’s "Create a login" is a section of the profile',
       isTop: false, claimed: true, section: true, signal: new AbortController().signal });
     expect(outcome).toBe('continue');
     // The jr6 review (R1): a section is never pressed here, which the ask says.
-    expect(asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true }]);
+    // jr6 ifix SEC-1: and carries the page's own rules (its create-login rules, its boxes' maxlength).
+    expect(asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true,
+      rules: { maxLength: 128, minLength: 8, notLogin: true, requires: ['alpha', 'lower', 'upper', 'digit', 'special'] } }]);
     const box = (id: string) => fixture.doc.getElementById(id) as HTMLInputElement;
     expect(box('PersonProfileFields.Login').value).toBe(credential.email);
     expect(box('PersonProfileFields.Password').value).toBe(credential.password);
@@ -366,7 +368,7 @@ describe('item 2: the profile’s "Create a login" is a section of the profile',
     expect(await runtime.fill()).not.toBe('paused');
     // The ask says the section is never pressed (the jr6 review, R1).
     expect(worker.of('signin/credential')).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account',
-      typing: true }]);
+      typing: true, rules: { maxLength: 128, minLength: 8, notLogin: true, requires: ['alpha', 'lower', 'upper', 'digit', 'special'] } }]); // jr6 ifix SEC-1
     const box = (id: string) => fixture.doc.getElementById(id) as HTMLInputElement;
     expect(box('PersonProfileFields.Login').value).toBe(credential.email);
     expect(box('PersonProfileFields.Password').value).toBe(credential.password);

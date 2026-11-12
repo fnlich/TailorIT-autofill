@@ -27,9 +27,20 @@
  * typed (sign-in.ts credential), and is held in that call's memory only, never kept: an email changed alone is written
  * over the record as it stands, its ciphertext untouched (coordinator decision 2 of jr6). A save takes a password that
  * meets every rule of core/signup-password.ts; none is ever logged, nor its length.
+ * jr6 ifix SEC-1 (the jr6 integration review's SEC-1): an ask carries the page's own password rules (its minimum, its
+ * required classes, "not the login", its boxes' maxlength); reveal checks the saved password against them before it
+ * decrypts anything, and answers a refusal (`refused`, the rule's kind alone) where they refuse it: the password is then
+ * decrypted for nothing and sent nowhere. The check reads no plaintext: every saved password meets the rules above (a
+ * save refuses any other, and a record no save wrote never decrypts), so it holds every class a page asks for; its length
+ * is the ciphertext's less its 16-byte tag (AES-GCM adds nothing else, and a saved password is ASCII alone: one byte a
+ * character), compared with the page's numbers and never logged, kept or answered; and a saved email always holds a
+ * character no saved password may (SignupEmailSchema: a dot in its domain), so it is never the password.
  */
 import { z } from 'zod';
-import { signupPasswordValid } from '../core/signup-password';
+import {
+  SIGNUP_PASSWORD_MAX, SIGNUP_PASSWORD_MIN, signupPasswordChecks, signupPasswordValid,
+} from '../core/signup-password';
+import type { SignInPasswordClass, SignInRefused, SignInRules } from '../messaging/schemas';
 import type { SecretStore, StorageArea } from '../platform/types';
 import { log } from '../shared/log';
 import { fromBase64, toBase64 } from './bytes';
@@ -43,6 +54,14 @@ export const SIGNUP_EMAIL_MAX = 254;
 const IV_BYTES = 12;
 /** Bound into every ciphertext (the encryption's additional data): what the record is, and its version. */
 const AAD = new TextEncoder().encode('tailorit-signup:v1');
+/** jr6 ifix SEC-1: AES-GCM's tag, at the ciphertext's end (the browser's default, 128 bits). */
+const TAG_BYTES = 16;
+/** jr6 ifix SEC-1: whether every saved password holds each class a page's rules may ask for (module header: a save
+ *  refuses one without an uppercase, a lowercase, a digit and a special, and every special is neither a letter nor a
+ *  digit; core/signup-password.ts). Over every class, so one added to the schema must be answered here. */
+const EVERY_SAVED_HOLDS: Readonly<Record<SignInPasswordClass, boolean>> = {
+  upper: true, lower: true, digit: true, special: true, alpha: true,
+};
 
 /** An email as a job site's account takes it. */
 export const SignupEmailSchema = z.email().max(SIGNUP_EMAIL_MAX);
@@ -68,7 +87,9 @@ export interface SignupStatus {
 /** The sign-up information decrypted (reveal), or why there is none: none saved; one saved that can never be read
  *  again (its key gone, or its ciphertext or nonce changed: it was removed); the key could not be read now (kept, tried
  *  again). */
-export type Revealed = { ok: true; email: string; password: string } | { ok: false; why: 'none' | 'gone' | 'unreadable' };
+export type Revealed = { ok: true; email: string; password: string } | { ok: false; why: 'none' | 'gone' | 'unreadable' }
+  // jr6 ifix SEC-1: the page's own rules refuse it, nothing decrypted (module header).
+  | { ok: false; why: 'refused'; refused: SignInRefused };
 
 /** A save: the email, and a new password (absent: the saved one is kept, under the new email, never decrypted). */
 export interface SignupSave {
@@ -96,8 +117,9 @@ export interface SignupVault {
   save(input: SignupSave): Promise<SignupSaved>;
   /** Deletes the record and the key; answers whether a record was held. */
   remove(): Promise<boolean>;
-  /** The email and the password, decrypted, for the one sign-in about to be typed (module header). */
-  reveal(): Promise<Revealed>;
+  /** The email and the password, decrypted, for the one sign-in about to be typed (module header); jr6 ifix SEC-1: never
+   *  decrypted where `rules`, the page's own, refuse it. */
+  reveal(rules?: SignInRules): Promise<Revealed>;
 }
 
 /** Whether `value` is the vault's key as made: AES-GCM, never extractable, for encrypting and decrypting. */
@@ -107,6 +129,29 @@ function isVaultKey(value: unknown): value is CryptoKey {
 }
 
 const encoder = new TextEncoder();
+
+/** jr6 ifix SEC-1: why the page's own rules refuse the saved password in `held`, read without decrypting it (module
+ *  header), in the order the frame checks them (content/sign-in.ts fill: the boxes' maxlength, then the minimum, each
+ *  class, "not the login"); null where they take it. A ciphertext whose length no save could have written is left to
+ *  the decryption, which finds it changed ('gone'). */
+function refusalOf(held: SignupRecord, rules: SignInRules): SignInRefused | null {
+  const data = fromBase64(held.data);
+  const length = data === null ? 0 : data.length - TAG_BYTES;
+  if (length < SIGNUP_PASSWORD_MIN || length > SIGNUP_PASSWORD_MAX) return null;
+  if (rules.maxLength !== undefined && length > rules.maxLength) return { refused: 'fits' };
+  if (rules.minLength !== undefined && length < rules.minLength) return { refused: 'rules', rule: 'length' };
+  for (const kind of rules.requires ?? []) {
+    if (!EVERY_SAVED_HOLDS[kind]) return { refused: 'rules', rule: kind };
+  }
+  // "Not the login": the frame compares the password with the email it types, case aside. An email whose every
+  // character a saved password may hold, of the same length, could be it: refused, never decrypted to look (no email
+  // the vault takes is such a one).
+  const login = held.email.trim().toLowerCase();
+  if (rules.notLogin === true && login.length === length && signupPasswordChecks(login).allowed) {
+    return { refused: 'rules', rule: 'login' };
+  }
+  return null;
+}
 
 export function createSignupVault(deps: SignupVaultDeps): SignupVault {
   const { local, keys, subtle } = deps;
@@ -220,10 +265,13 @@ export function createSignupVault(deps: SignupVaultDeps): SignupVault {
         return held;
       });
     },
-    reveal() {
+    reveal(rules) {
       return writes.run(SIGNUP_RECORD_KEY, async () => {
         const held = await record();
         if (held === null) return { ok: false, why: 'none' } as const;
+        // jr6 ifix SEC-1: the page's own rules first; one they refuse is never decrypted (module header).
+        const refused = rules === undefined ? null : refusalOf(held, rules);
+        if (refused !== null) return { ok: false, why: 'refused', refused } as const;
         return open(held);
       });
     },

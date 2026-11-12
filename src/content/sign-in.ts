@@ -153,7 +153,8 @@ import {
 } from '../dom/sign-in-form';
 import { deadline, monotonicNow, startDeadline } from '../dom/time';
 import { isUserVisible } from '../dom/visibility';
-import type { SignInCredential, SignInWall } from '../messaging/schemas';
+import type { SignInCredential, SignInRefused, SignInWall } from '../messaging/schemas';
+import { signInRulesOf } from '../messaging/sign-in-rules'; // jr6 ifix SEC-1
 import { log } from '../shared/log';
 import { Invalidated, type Channel } from './channel';
 import { watchForLateForm } from './late-form';
@@ -723,10 +724,13 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
   if (ctx.typeOnly === true && !(await shownToPerson(ctx.doc, ctx.signal))) return 'left';
   // The jr6 review (R1): an ask this frame never presses says so: the worker's press limit neither refuses nor counts it.
   const typing = ctx.typeOnly === true || ctx.section === true;
+  // jr6 ifix SEC-1: the page's own rules go with the ask (numbers and closed words), so the worker refuses a saved
+  // password they break before it marks a press or decrypts it; fill() still checks them on what is answered.
+  const rules = signInRulesOf(wall, form, ctx.adapter);
   let answer: Awaited<ReturnType<Channel['request']>>;
   try {
     answer = await ctx.channel.request({ v: 1, type: 'signin/credential', wall,
-      ...(typing ? { typing: true as const } : {}) });
+      ...(typing ? { typing: true as const } : {}), ...(rules === null ? {} : { rules }) });
   } catch (failure) {
     if (failure instanceof Invalidated) return 'left';
     throw failure;
@@ -737,6 +741,17 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
     // The v4 review (M5): no sign-in saved for the page is told apart from one not allowed or not reached. ('expired':
     // a worker from before the jr6 review, which refused a second press.)
     return answer.error === 'expired' ? 'failed' : answer.error === 'not_found' ? 'none-saved' : 'unavailable';
+  }
+  // jr6 ifix SEC-1: refused for those rules: no password came, nothing is typed, and the rule is said as fill() says it.
+  if ('refused' in answer.data) {
+    const refused = answer.data as SignInRefused;
+    if (refused.refused === 'fits') log('content.sign-in-refused', { fits: false });
+    else {
+      details.set(ctx.doc, { rule: refused.rule === 'length' ? { kind: 'length', minLength: rules?.minLength ?? 0 }
+        : { kind: refused.rule } });
+      log('content.sign-in-refused', { rules: PASSWORD_RULE_KINDS.indexOf(refused.rule) });
+    }
+    return 'unavailable';
   }
   // From the typing to the end of the watch, and (the jr6 review, sec-1) for as long as a typed password stays in the
   // page for the person, the browser never sends the form itself where the rules refuse (module header).

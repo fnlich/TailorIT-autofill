@@ -4,7 +4,7 @@
  * and the worker brands them after parsing. This file has no runtime code.
  */
 import type { z } from 'zod';
-import type { ChainStepFacts } from '../adapters/types'; // jr6 SHELL-B
+import type { ChainStepFacts, PagePasswordClass, PagePasswordRules } from '../adapters/types'; // jr6 SHELL-B; ifix SEC-1
 import type { PlanInput, PlanOutput } from '../core/plan/types';
 import type { FieldSpec, FillResult, PlannedWrite, RunState } from '../core/types';
 import type { Settings } from '../core/types/settings';
@@ -13,7 +13,7 @@ import type { FillResultSchema } from '../shared/report';
 import type { TelemetryCountSchema } from './page-schemas';
 import type {
   ContentMessageSchema, EntryRefusal, FieldSpecSchema, PageState, PlanAnswerSchema, PlannedWriteSchema, RunStateSchema,
-  WorkerToContentSchema,
+  SignInPasswordClass, SignInRules, WorkerToContentSchema,
 } from './schemas';
 
 type Unbrand<T> = T extends string
@@ -80,3 +80,10 @@ export type ChainFactsSaidMatches = Assert<Same<ChainFactsSaid, { v: 1; type: 'c
 export type ChainFactsHandedMatches = Assert<Same<ChainFactsHanded, { v: 1; type: 'chain/leafFacts';
   facts: ChainStepFacts | null }>>;
 // ── end jr6 SHELL-B ──
+// ── jr6 ifix SEC-1 ──
+/** signin/credential's `rules` name the classes the adapters read (PagePasswordClass), class for class, and the page's
+ *  rules a frame reads (PagePasswordRules) and a box's maxlength, nothing more: numbers and closed words. */
+export type SignInPasswordClassesMatch = Assert<Same<SignInPasswordClass, PagePasswordClass>>;
+export type SignInRulesMatch = Assert<Same<Unbrand<Required<SignInRules>>,
+  Unbrand<Required<PagePasswordRules>> & { maxLength: number }>>;
+// ── end jr6 ifix SEC-1 ──

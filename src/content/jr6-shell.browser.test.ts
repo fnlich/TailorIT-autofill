@@ -14,6 +14,9 @@
  *   the wall once more; none within the wait, or the person's Cancel: nothing more asked;
  * - item 7: a wall's own sign-in step (Sign up & Autofill at a wall with no form) says `entering`, and the panel's Cancel
  *   (run/cancel) ends it at once: nothing typed or pressed after.
+ * - jr6 ifix SEC-1 (the jr6 integration review's SEC-1): the page's rules go with the ask, and the real worker over the
+ *   real vault refuses a saved password they break before it decrypts it or marks a press; a password saved after it
+ *   is pressed by Sign up & Autofill; a run says the worker's refusal on the toast.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
 import createHtml from '../../fixtures/workday/workday-create-account.html?raw';
@@ -42,6 +45,13 @@ import { startContentRuntime, type ContentRuntime } from './runtime';
 import {
   ACCOUNT_ERROR_KINDS, PASSWORD_RULE_KINDS, signIn, signInDetailOf, type SignInContext,
 } from './sign-in';
+// jr6 ifix SEC-1: the worker's side, real, for the rules' case.
+import { createSignIn, SIGN_IN_TRIED_PREFIX } from '../background/sign-in';
+import { createSignupVault } from '../background/signup-vault';
+import { answerSchema } from '../messaging/envelope';
+import { CONTENT_ANSWER_SCHEMAS, ContentMessageSchema, SIGN_IN_RULE_KINDS } from '../messaging/schemas';
+import { createMemoryKeyStore } from '../platform/memory';
+import type { StorageArea } from '../platform/types';
 
 /** The jr6 synthetic sign-in: one the jr6 rule takes (16+, an uppercase, a lowercase, a digit, a special). */
 const EMAIL = 'alex.rivera@example.com';
@@ -242,6 +252,124 @@ describe('item 1: the page’s own password rules, read before typing (WD-02, IC
   });
 });
 
+// ── jr6 ifix SEC-1 (the jr6 integration review's SEC-1): the rules checked by the worker first ─────────────────────────
+
+describe('jr6 ifix SEC-1: the page’s rules go with the ask, and the worker refuses first', () => {
+  /** Synthetic passwords the jr6 rule takes: 20 characters, and 32. */
+  const SHORT = 'Synthetic-Pass-20ch!';
+  const LONG = 'Synthetic-Rules-Pass-2026-32ch!!';
+
+  function memoryArea(): StorageArea {
+    const data = new Map<string, unknown>();
+    return {
+      get: async (key) => data.get(key),
+      getMany: async (prefix) => Object.fromEntries([...data].filter(([key]) => key.startsWith(prefix))),
+      async set(entries) {
+        for (const [key, value] of Object.entries(entries)) data.set(key, value);
+      },
+      async remove(keys) {
+        for (const key of keys) data.delete(key);
+      },
+      async restrictToTrustedContexts() {},
+    };
+  }
+
+  it('the frame’s words for a rule are the worker’s, place for place (the logs number them alike)', () => {
+    expect([...PASSWORD_RULE_KINDS]).toEqual([...SIGN_IN_RULE_KINDS]);
+  });
+
+  it('rules refused by the real worker (nothing decrypted, sent or marked), a password saved, then Sign up & Autofill '
+    + 'types it and presses Create Account (aep, asking 30 characters)', async () => {
+    let decrypted = 0;
+    const subtle = globalThis.crypto.subtle;
+    const counting = new Proxy(subtle, { get(target, key) {
+      if (key === 'decrypt') {
+        return (...args: Parameters<SubtleCrypto['decrypt']>) => {
+          decrypted += 1;
+          return target.decrypt(...args);
+        };
+      }
+      const value = Reflect.get(target, key) as unknown;
+      return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+    } });
+    const vault = createSignupVault({ local: memoryArea(), keys: createMemoryKeyStore(), subtle: counting,
+      randomBytes: (count) => globalThis.crypto.getRandomValues(new Uint8Array(count)), now: () => 1 });
+    expect(await vault.save({ email: EMAIL, password: SHORT })).toBe('saved');
+    const session = memoryArea();
+    // Sign up & Autofill: the tab's grant for the page's origin makes Sign-in act as Auto (background/sign-up.ts).
+    const worker = createSignIn({ vault, session, now: () => 1_000, signInAct: async () => 'auto' });
+    const answers: unknown[] = [];
+    // The message as the router parses it, the answer as the frame's channel parses it.
+    const channel = { request: async (message: unknown) => {
+      const parsed = ContentMessageSchema.parse(message) as Parameters<typeof worker.credential>[0];
+      const answer = await worker.credential(parsed, { kind: 'content', tabId: 41, frameId: 0, documentId: 'doc-aep',
+        url: AEP });
+      answers.push(answer);
+      return answerSchema(CONTENT_ANSWER_SCHEMAS['signin/credential']).parse(answer);
+    } } as SignInContext['channel'];
+
+    const first = await workday(aepCreateHtml, AEP);
+    minimumOf(first.doc, 30);
+    const refused = actAsWorkday(first);
+    logs.mockClear();
+    expect(await attempt(first, AEP, channel)).toBe('unavailable');
+    expect(answers).toEqual([{ ok: true, data: { refused: 'rules', rule: 'length' } }]);
+    expect([decrypted, Object.keys(await session.getMany(SIGN_IN_TRIED_PREFIX)).length]).toEqual([0, 0]);
+    expect(refused.presses).toBe(0);
+    expect(boxesOf(first.doc)).toEqual({ email: '', password: '', verify: '', terms: false });
+    expect(signInDetailOf(first.doc)).toEqual({ rule: { kind: 'length', minLength: 30 } });
+    expect(logs.mock.calls).toContainEqual(['[tailorit-autofill] content.sign-in-refused',
+      { rules: PASSWORD_RULE_KINDS.indexOf('length') }]);
+    expect(JSON.stringify(logs.mock.calls)).not.toContain(SHORT);
+    expect(signInLogNumbers()).not.toContain(SHORT.length);
+    removeFixtures(document);
+
+    // The toast said which rule: the person saves a longer password and chooses Sign up & Autofill again at once.
+    expect(await vault.save({ email: EMAIL, password: LONG })).toBe('saved');
+    const second = await workday(aepCreateHtml, AEP);
+    minimumOf(second.doc, 30);
+    const pressed = actAsWorkday(second);
+    expect(await attempt(second, AEP, channel)).toBe('continue');
+    expect(pressed.presses).toBe(1);
+    expect(pressed.typed).toMatchObject({ email: EMAIL, password: LONG, verify: LONG, terms: true });
+    expect(answers.at(-1)).toEqual({ ok: true, data: { host: '*', email: EMAIL, password: LONG, press: true } });
+    expect(decrypted).toBe(1);
+  });
+
+  it('a password longer than the page’s boxes take: refused by the worker as `fits`, nothing typed', async () => {
+    const fixture = await workday(aepCreateHtml, AEP);
+    for (const id of ['password', 'verifyPassword']) {
+      fixture.doc.querySelector(`input[data-automation-id="${id}"]`)!.setAttribute('maxlength', '18');
+    }
+    const channel = channelAnswering({ ok: true, data: { refused: 'fits' } });
+    logs.mockClear();
+    expect(await attempt(fixture, AEP, channel)).toBe('unavailable');
+    expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account',
+      rules: { minLength: 8, requires: ['upper', 'lower', 'digit', 'special', 'alpha'], maxLength: 18 } }]);
+    expect(boxesOf(fixture.doc)).toEqual({ email: '', password: '', verify: '', terms: false });
+    expect(signInDetailOf(fixture.doc)).toBeNull();
+    expect(logs.mock.calls).toContainEqual(['[tailorit-autofill] content.sign-in-refused', { fits: false }]);
+  });
+
+  it('a run says the worker’s refusal on the page’s toast, as for the frame’s own check', async () => {
+    const fixture = await workday(aepCreateHtml, AEP);
+    minimumOf(fixture.doc, 40);
+    const seen = actAsWorkday(fixture);
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'manual' as const } };
+    const worker = createFakeWorker({ settings, typeSignIn: true,
+      script: { 'signin/credential': [{ ok: true, data: { refused: 'rules', rule: 'length' } }] } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => AEP, isTop: true,
+      adapters: () => [workdayAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    expect(await runtime.fill()).toBe('paused');
+    await vi.waitFor(() => expect(runtime.ui!.shadow.querySelector('.toast[data-kind="sign-in"] .notice')?.textContent)
+      .toBe(COPY.toasts.passwordRule('length', 40)));
+    expect(boxesOf(fixture.doc)).toMatchObject({ email: '', password: '', verify: '' });
+    expect(seen.presses).toBe(0);
+  });
+});
+// ── end jr6 ifix SEC-1 ──
+
 // ── Item 2: coverage on the jr6 captures (WD-01, ICIMS-06) ───────────────────────────────────────────────────────────
 
 describe('item 2: the jr6 captures’ account forms with the saved sign-in (WD-01, ICIMS-06)', () => {
@@ -252,7 +380,9 @@ describe('item 2: the jr6 captures’ account forms with the saved sign-in (WD-0
       const kept = actAsWorkday(manual);
       const asked = channelAnswering({ ok: true, data: MANUAL });
       expect(await attempt(manual, address, asked)).toBe('typed');
-      expect(asked.asked).toEqual([{ v: 1, type: 'signin/credential', wall }]);
+      // jr6 ifix SEC-1: Create Account's own rules go with the ask; Sign In states none.
+      expect(asked.asked).toEqual([{ v: 1, type: 'signin/credential', wall,
+        ...(wall === 'create-account' ? { rules: { minLength: 8, requires: ['upper', 'lower', 'digit', 'special', 'alpha'] } } : {}) }]);
       expect(kept.presses).toBe(0);
       expect(boxesOf(manual.doc)).toMatchObject({ email: EMAIL, password: PASSWORD,
         ...(wall === 'create-account' ? { verify: PASSWORD } : {}) });
@@ -276,7 +406,9 @@ describe('item 2: the jr6 captures’ account forms with the saved sign-in (WD-0
         const channel = channelAnswering({ ok: true, data: credential });
         expect(await signIn({ doc: fixture.doc, adapter: icimsAdapter, channel, href: () => fixture.address, isTop: top,
           claimed: !top, section: true, signal: new AbortController().signal }), name).toBe('continue');
-        expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true }]);
+        // jr6 ifix SEC-1: the page's own rules go with the ask (iCIMS's create-login rules, its boxes' maxlength).
+        expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'create-account', typing: true,
+          rules: { maxLength: 128, minLength: name === 'jr6-nyu-profile-parsed.frame-1' ? 10 : 8, notLogin: true, requires: ['alpha', 'lower', 'upper', 'digit', 'special'] } }]);
         const box = (id: string) => (fixture.doc.getElementById(id) as HTMLInputElement).value;
         expect([box('PersonProfileFields.Login'), box('PersonProfileFields.Password'),
           box('PersonProfileFields.Password_Confirm')], name).toEqual([EMAIL, PASSWORD, PASSWORD]);

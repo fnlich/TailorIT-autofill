@@ -40,10 +40,19 @@
  * jr6 SHELL-A (BUILD D-d; FIXPLAN §6.12 item 6, APPLYPLAN G): an email gate is answered in every Sign-in mode with the
  * email saved in Sign-up Information, else the TailorIT profile's contact email (profileEmail), never a password and
  * nothing decrypted; `press` only under Auto (the person's, or Sign up & Autofill), as for any wall.
+ * jr6 ifix SEC-1 (the jr6 integration review's SEC-1): the ask carries the page's own password rules (`rules`: its
+ * minimum, its required classes, "not the login", its boxes' maxlength), and the vault checks the saved password against
+ * them before it decrypts anything (signup-vault.ts reveal). One they refuse is answered a closed refusal (`refused`,
+ * the rule's kind alone: SignInRefusedSchema), with no password, nothing decrypted, and no `signin-tried:` key written:
+ * a password saved after it (the toast says which rule) is pressed as any first ask is, and the auto-apply agent's tab
+ * is not refused `expired` for a wall it never pressed.
+ * jr6 ifix SEC-3 (the jr6 integration review's SEC-3, the coordinator's decision: keep the fetch, fix the words): the
+ * profile's email is read as any Autofill reads the profile (index.ts profileEmail: the worker's copy, or fetched from
+ * TailorIT when it holds none, as after five idle minutes).
  */
 import { AUTOFILL_ANY_HOST, AUTOFILL_SIGN_IN_LIMITS, HostNameSchema, signInHostCovered } from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
-import type { ContentMessage, SignInCredential } from '../messaging/schemas';
+import { SIGN_IN_RULE_KINDS, type ContentMessage, type SignInCredential, type SignInRefused } from '../messaging/schemas';
 import type { StorageArea } from '../platform/types';
 import { sha256Hex } from '../core/text/sha256';
 import { log } from '../shared/log';
@@ -81,8 +90,9 @@ export interface SignInDeps {
   /** jr6: no saved password to use: none is saved (`none`), or the saved one can never be read again (`gone`: its key
    *  went, and the vault removed it). Sign-in Auto, which needs one, goes back to Manual (index.ts). */
   missing?(why: 'none' | 'gone'): Promise<void>;
-  /** jr6 SHELL-A (BUILD D-d): the TailorIT profile's contact email (index.ts: the profile cache's), or null: an email
-   *  gate's email where none is saved in Sign-up Information. Never a password. */
+  /** jr6 SHELL-A (BUILD D-d): the TailorIT profile's contact email (index.ts: the profile cache's, fetched when the
+   *  worker holds none: the jr6 integration review's SEC-3), or null: an email gate's email where none is saved in
+   *  Sign-up Information. Never a password. */
   profileEmail?(): Promise<string | null>;
 }
 
@@ -125,7 +135,7 @@ export function createSignIn(deps: SignInDeps) {
      *  saved, or the saved one can no longer be read: the page says to set one), `bad_sender` (not a top frame, not
      *  https, a private tab). Since the jr6 review (R1) a tab pressed for this host's wall already is answered `press`
      *  false, never refused. */
-    async credential(message: CredentialMessage, from: ContentChannel): Promise<Answer<SignInCredential>> {
+    async credential(message: CredentialMessage, from: ContentChannel): Promise<Answer<SignInCredential | SignInRefused>> {
       if (from.incognito === true || (from.frameId !== 0 && !(await claims(from)))) {
         log('signin.refused', { top: from.frameId === 0, incognito: from.incognito === true });
         return refuse('bad_sender');
@@ -178,8 +188,15 @@ export function createSignIn(deps: SignInDeps) {
         log('signin.credential', { found: true, press, again, gate: true, profile: saved === null });
         return ok({ host: AUTOFILL_ANY_HOST, email, press });
       }
-      const saved = await deps.vault.reveal();
-      if (!saved.ok) return none(saved.why, act);
+      // jr6 ifix SEC-1: the page's own rules are checked before anything is decrypted or marked (module header).
+      const saved = await deps.vault.reveal(message.rules);
+      if (!saved.ok) {
+        if (saved.why !== 'refused') return none(saved.why, act);
+        const { refused } = saved;
+        log('signin.refused', refused.refused === 'fits' ? { fits: false }
+          : { rules: SIGN_IN_RULE_KINDS.indexOf(refused.rule) });
+        return ok(refused);
+      }
       // Answered for a press: this tab, wall and host are not pressed again within SIGN_IN_ONCE_MS. jr6: one typed on
       // Manual is no try (nothing is pressed, the site refused nothing), so Sign up & Autofill may still press it.
       if (press) await deps.session.set({ [key]: deps.now() });
