@@ -98,19 +98,18 @@ describe('item 1 (ADP7-2): a required, empty field the page holds read-only', ()
     </script></body></html>`;
   const HELD_HREF = 'https://careers.example.org/apply/jr7-adp7-2';
 
-  async function run(html: string) {
+  async function run(html: string, worker = createFakeWorker()) {
     testVocab();
     const logs = vi.spyOn(console, 'info');
     try {
       const fixture = await loadFixture(document, html, { width: 1100, height: 900 });
-      const worker = createFakeWorker();
       const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HELD_HREF, isTop: true,
         adapters: () => [genericAdapter], settle: { quietMs: 40 } });
       runtimes.push(runtime);
       await runtime.fill();
       const rows = new Map(worker.reports.at(-1)!.fields.map((row) => [row.label, row] as const));
       const ended = logs.mock.calls.filter((call) => call[0] === '[tailorit-autofill] content.loop-ended')
-        .map((call) => call[1] as { cut: boolean; nothingPending: boolean });
+        .map((call) => call[1] as { cut: boolean; nothingPending: boolean; passes: number });
       const value = (id: string) => (fixture.doc.getElementById(id) as HTMLInputElement).value;
       return { rows, ended, value };
     } finally {
@@ -140,6 +139,19 @@ describe('item 1 (ADP7-2): a required, empty field the page holds read-only', ()
     const { rows } = await run(page(400, true));
     expect(rows.get('Email')).toMatchObject({ status: 'skipped', reason: 'disabled-or-readonly', needsUserAction: false });
     expect(rows.get('Address Line 1')).toMatchObject({ status: 'verified', wrote: true });
+  }, 40_000);
+
+  it('waits once only where the page lets it in and the plan still says it is locked: its row stands, no spin', async () => {
+    // Address Line 1 writable from the start, the plan saying disabled-or-readonly every time (as phase6's L-M7 stands
+    // a box the page disabled in): one re-plan once the page reads writable, then the row stands.
+    const worker = createFakeWorker({ editPlan: (plan) => ({ ...plan,
+      results: plan.results.map((row) => (row.label === 'Address Line 1' ? { ...row, status: 'skipped' as const,
+        reason: 'disabled-or-readonly' as const, needsUserAction: false, wrote: false } : row)),
+      writes: plan.writes.filter((write) => !write.key.includes('address-line-1')) }) });
+    const { rows, ended } = await run(page(null).replace(' required readonly>', ' required>'), worker);
+    expect(rows.get('Address Line 1')).toMatchObject({ status: 'skipped', reason: 'disabled-or-readonly' });
+    expect(ended.at(-1)).toMatchObject({ nothingPending: true });
+    expect(ended.at(-1)!.passes).toBeLessThanOrEqual(3);
   }, 40_000);
 });
 

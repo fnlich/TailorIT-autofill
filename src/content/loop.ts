@@ -359,13 +359,17 @@ function isCleared(current: CurrentValue): boolean {
 
 /** jr7 ENGINE-7 E2 item 1 (ADP7-2): the keys of a pass's rows that wrote nothing for disabled-or-readonly (the
  *  planner's skip, the DOM guard's refusal) on a field the fresh scan shows required and empty: the books hold them
- *  waiting for the page to let them in (recordRows' `locked`). A field that holds a value never waits. */
-function lockedIn(fresh: ScanResult, rows: ReadonlyMap<FieldKey, FillResult>): FieldKey[] {
+ *  waiting for the page to let them in (recordRows' `locked`). A field that holds a value never waits. Nor does one
+ *  that waited before (`waited`) and that the fresh scan reads writable again: the page let it in and the plan still
+ *  says it is locked, so a second wait would only plan it again, pass after pass; its row stands. */
+function lockedIn(fresh: ScanResult, rows: ReadonlyMap<FieldKey, FillResult>, waited: (baseKey: BaseKey) => boolean):
+  FieldKey[] {
   const byKey = new Map(fresh.fields.map((field) => [field.key, field] as const));
   return [...rows.values()].filter((row) => {
     if (row.wrote || row.reason !== 'disabled-or-readonly') return false;
     const field = byKey.get(row.key);
-    return field !== undefined && field.required && isCleared(field.current);
+    return field !== undefined && field.required && isCleared(field.current)
+      && !(waited(field.baseKey) && writableField(field));
   }).map((row) => row.key);
 }
 
@@ -827,7 +831,8 @@ class ReactiveLoop {
     // A field this pass wrote anyway (a choice's free text typed into it) no longer waits for the LLM: its answer
     // would only overwrite the row of our write.
     const waiting = awaiting.filter((key) => rows.get(key)?.wrote !== true);
-    this.state = recordRows(this.state, rows.values(), { awaiting: waiting, locked: lockedIn(fresh, rows) });
+    this.state = recordRows(this.state, rows.values(), { awaiting: waiting,
+      locked: lockedIn(fresh, rows, (baseKey) => this.lockedFrom.has(baseKey)) });
     if (arrivalOnly) this.state = noteArrivalPass(this.state);
     this.settleFollowUps(rows);
     if (settled !== null && !settled.settled) {
