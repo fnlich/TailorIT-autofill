@@ -19,7 +19,12 @@
  *   is one whose kind, or whose element where we never wrote it, changed under its base key after a write
  *   ('reshaped'): dependsAgain. jr6 line W review (REVC-7): a pass may hold such a field back, unwritten and with no
  *   row, while its parent waits for its options (content/loop.ts heldDependents): it stays pending, and the scan after
- *   that pass is no stall (holdBack).
+ *   that pass is no stall (holdBack). jr7 ENGINE-7 (BUILD7's jr6 leftovers: FIXERS-I "Left for jr7", IFIX-ADAPTERS open 1
+ *   and 3): such a field is planned again too ('parent-settled') once its parent's row settled no-match with nothing
+ *   written in the pass since the scan before (LoopState.settled: iCIMS's School list whose search finds no school and
+ *   offers no "Other", its "Enter school name if not in the list above" box under it, left empty while the search ran),
+ *   or once its parent, a lazy list, was read for the first time at this scan (a box that follows its list, decided
+ *   while the list was unread): each says what the list holds, which no write of it would tell.
  * - Our value changed (the Phase 3 review, LC-3 and LC-4). A field the person touched after our write (a trusted
  *   input, keydown, paste or drop: ScanInput.touched) is frozen: never planned or written again, and once its value is
  *   no longer ours its row is the person's (changed-by-you). Otherwise a value is written again only after the page
@@ -110,10 +115,12 @@ export type TrackedStatus = (typeof TRACKED_STATUSES)[number];
  *  (FIXPLAN §6.2 item 14): 'parent-written': the field its adapter names as resetting it (Adapter.dependsOn) was
  *  written since the scan before (decided again, and written where its plan says so); 'reshaped': its kind, or the
  *  element the page draws it as, changed under the same base key (ADP's State: a text box that becomes a list).
+ *  jr7 ENGINE-7 (jr6 leftovers): 'parent-settled': that field's row settled no-match since the scan before, or that
+ *  field, a lazy list, was read for the first time at this scan.
  *  jr7 ENGINE-7 E2 item 1 (ADP7-2): 'writable': a field that waited while the page held it disabled or read-only, now
  *  writable. */
 export const PENDING_CAUSES = ['new', 'reappeared', 'options-changed', 'value-changed', 'replaced', 'retry',
-  'required', 'parent-written', 'reshaped', 'writable'] as const;
+  'required', 'parent-written', 'reshaped', 'writable', 'parent-settled'] as const;
 export type PendingCause = (typeof PENDING_CAUSES)[number];
 
 /** How the loop ended: nothing left to do, the passes ran out, the page stopped changing, or the content script cut it
@@ -215,6 +222,10 @@ export interface LoopState {
    *  row, while the field whose write resets them waited for its options (holdBack): the next scan is then no stall,
    *  since they are planned again. Absent: none. */
   heldBack?: number;
+  /** jr7 ENGINE-7 (jr6 leftovers): the fields whose row settled no-match, nothing written, in the pass since the latest
+   *  scan (recordRows): a field its adapter names as reset by one of them (ScanInput.dependsOn) is decided again
+   *  ('parent-settled'). Keys only. Absent: none. */
+  settled?: readonly BaseKey[];
 }
 
 /** What happened at a scan. Value-free: keys and counts only. */
@@ -463,14 +474,17 @@ function madeRequired(old: TrackedField, spec: LoopField, state: LoopState): boo
  * the AI waits on; a stopped one never moves), or one pending as 'replaced' after its parent's write; never a field
  * the person skipped; and only after a write, so a page that changes nothing ends the loop as before.
  */
-function dependsAgain(old: TrackedField, field: TrackedField, spec: LoopField, state: LoopState, input: ScanInput):
-  'parent-written' | 'reshaped' | null {
+function dependsAgain(old: TrackedField, field: TrackedField, spec: LoopField, state: LoopState, input: ScanInput,
+  firstRead: ReadonlySet<BaseKey>): 'parent-written' | 'reshaped' | 'parent-settled' | null {
   if (field.row?.reason === 'skipped-by-you') return null;
   const parent = input.dependsOn?.get(spec.baseKey);
   const parentWritten = parent !== undefined && parent !== spec.baseKey && state.writers.includes(parent);
   const decided = field.status === 'resolved' || field.status === 'unresolvable';
   if (parentWritten && (decided || (field.status === 'pending' && field.cause === 'replaced'))) return 'parent-written';
   if (!decided) return null;
+  // jr7 ENGINE-7 (jr6 leftovers): the parent's no-match settled, or the lazy parent read for the first time.
+  if (parent !== undefined && parent !== spec.baseKey
+    && ((state.settled ?? []).includes(parent) || firstRead.has(parent))) return 'parent-settled';
   if (spec.kind !== old.kind) return 'reshaped';
   const ours = old.wrote || old.ourRow !== null;
   return state.writers.length > 0 && !ours && input.replaced?.has(spec.baseKey) === true ? 'reshaped' : null;
@@ -491,6 +505,9 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
     if (!seen.has(spec.baseKey)) seen.set(spec.baseKey, spec);
   }
   const parentOf = parentFinder(state.writers, seen, input.attribution);
+  // jr7 ENGINE-7 (jr6 leftovers): the lazy lists this scan reads for the first time (dependsAgain's 'parent-settled').
+  const firstRead = new Set([...seen.values()].filter((spec) => spec.optionSetHash !== OPTION_SET_LAZY
+    && state.fields.get(spec.baseKey)?.optionSetHash === OPTION_SET_LAZY).map((spec) => spec.baseKey));
   const added: RevealEdge[] = [];
   const edgeFor = (child: BaseKey, domOrder: number, kind: RevealEdge['kind']) => {
     const parent = pass > 0 ? parentOf(child, domOrder) : null;
@@ -604,7 +621,7 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
       field = { ...field, status: 'pending', cause: 'required' };
     }
     // jr6 ENGINE E3 (FIXPLAN §6.2 item 14): decided again after a write that reset it (dependsAgain).
-    const again = dependsAgain(old, field, spec, state, input);
+    const again = dependsAgain(old, field, spec, state, input, firstRead);
     if (again !== null) field = { ...field, status: 'pending', cause: again, reason: null };
     fields.set(spec.baseKey, field);
   }
@@ -714,11 +731,16 @@ export function recordRows(state: LoopState, rows: Iterable<FillResult>,
   const awaiting = new Set(options.awaiting ?? []);
   const locked = new Set(options.locked ?? []);
   const fields = new Map(state.fields);
+  // jr7 ENGINE-7 (jr6 leftovers): the rows that settle no-match now, nothing written (LoopState.settled).
+  const settled = new Set(state.settled ?? []);
   for (const row of rows) {
     const baseKey = baseKeyOf(row.key);
     const field = fields.get(baseKey);
     if (field === undefined || field.key !== row.key) continue;
     const ourRow = field.ourRow;
+    if (!row.wrote && row.reason === 'no-match' && !(field.row?.reason === 'no-match' && !field.row.wrote)) {
+      settled.add(baseKey);
+    }
     const ours = ourRow !== null && row.status === 'skipped' && row.reason === 'already-correct';
     const kept = ours ? { ...ourRow, key: row.key }
       : field.cause === 'replaced' ? { ...settleRow(ourRow ?? row, { kind: 'mismatch' }), key: row.key }
@@ -740,7 +762,7 @@ export function recordRows(state: LoopState, rows: Iterable<FillResult>,
       fields.set(baseKey, { ...books, status: 'resolved', cause: null, reason: kept.reason });
     }
   }
-  return { ...state, fields };
+  return { ...state, fields, ...(settled.size === 0 ? {} : { settled: [...settled] }) };
 }
 
 /**

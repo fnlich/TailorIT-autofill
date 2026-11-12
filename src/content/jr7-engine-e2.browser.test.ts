@@ -287,3 +287,67 @@ describe('item 3 (jr7-O1 part 3): resting at an email-code pause after its own S
       { timeout: 10_000 });
   }, 40_000);
 });
+
+// ── jr6 leftovers (BUILD7): a dependent decided again when its lazy parent is read, or its parent settles no-match ────
+describe('jr6 leftovers: a school box under a lazy School list that holds neither the school nor "Other"', () => {
+  /** iCIMS's School list and its "Enter school name if not in the list above" box (jr6-nyu-profile-parsed, ICIMS-24),
+   *  as a synthetic page: the list a select-only combobox whose rows are drawn only while it is open (read lazily),
+   *  holding two synthetic schools and no "Other"; the box under it. */
+  const PAGE = `<!doctype html><html><head><title>Apply</title></head><body>
+<form id="app" action="about:blank"><h2>Education</h2>
+  <div><span id="school-label">School</span>
+    <div id="school" role="combobox" tabindex="0" aria-labelledby="school-label" aria-haspopup="listbox"
+      aria-expanded="false" aria-controls="school-list">Select a school</div>
+    <ul id="school-list" role="listbox" aria-labelledby="school-label" hidden></ul></div>
+  <p><label for="school-box">Enter school name if not in the list above</label>
+    <input id="school-box" name="school-box" type="text"></p>
+</form>
+<script>
+  const school = document.getElementById('school');
+  const list = document.getElementById('school-list');
+  const show = (open) => {
+    list.replaceChildren(...(open ? ['Northfield University', 'Lakeside College'] : []).map((name, at) => {
+      const row = document.createElement('li');
+      row.id = 'school-option-' + at;
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', String(school.textContent === name));
+      row.textContent = name;
+      row.addEventListener('click', () => { school.textContent = name; show(false); });
+      return row;
+    }));
+    list.hidden = !open;
+    school.setAttribute('aria-expanded', String(open));
+  };
+  school.addEventListener('click', () => show(list.hidden));
+  school.addEventListener('focusout', () => show(false));
+</script></body></html>`;
+  const LEFTOVER_HREF = 'https://careers.example.org/apply/jr7-leftovers';
+
+  async function run(declared: boolean) {
+    testVocab();
+    const fixture = await loadFixture(document, PAGE, { width: 1100, height: 900 });
+    const doc = fixture.doc;
+    const adapter: Adapter = declared ? { ...genericAdapter, dependsOn: (control: Element) => (control.id === 'school-box'
+      ? doc.getElementById('school') : null) } : genericAdapter;
+    const worker = createFakeWorker({ settings: DEFAULT_SETTINGS });
+    const runtime = await startContentRuntime(worker.platform, doc, { href: () => LEFTOVER_HREF, isTop: true,
+      adapters: () => [adapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    await runtime.fill();
+    const rows = new Map(worker.reports.at(-1)!.fields.map((row) => [row.label, row] as const));
+    return { rows, box: (doc.getElementById('school-box') as HTMLInputElement).value };
+  }
+
+  it('the box takes the school once the list is read and holds no option of it', async () => {
+    const { rows, box } = await run(true);
+    expect(box).not.toBe('');
+    expect(rows.get('Enter school name if not in the list above')).toMatchObject({ status: 'verified', wrote: true });
+  }, 40_000);
+
+  it('the control: with no parent named, the box stays as it was decided while the list was unread', async () => {
+    const { rows, box } = await run(false);
+    expect(box).toBe('');
+    expect(rows.get('Enter school name if not in the list above')).toMatchObject({ wrote: false,
+      reason: 'conditional-question' });
+  }, 40_000);
+});
