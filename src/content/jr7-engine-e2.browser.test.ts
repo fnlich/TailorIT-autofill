@@ -8,10 +8,11 @@ import { greenhouseAdapter } from '../adapters/greenhouse';
 import type { Adapter } from '../adapters/types';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
+import { signInContainerOf, signInRefusal } from '../dom/sign-in-form';
 import { deadline } from '../dom/time';
 import { createFakeWorker, testVocab } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
-import { signIn, signInDetailOf, type SignInContext } from './sign-in';
+import { signIn, signInDetailOf, type AccountConsents, type SignInContext } from './sign-in';
 
 const runtimes: ContentRuntime[] = [];
 afterEach(() => {
@@ -394,4 +395,87 @@ describe('jr6 leftover: a run paused at its wall, waiting for a job-site passwor
     await deadline(800);
     expect(worker.of('signin/credential')).toHaveLength(1);
   }, 40_000);
+});
+
+// ── ULTIPRO-7's UP7-04: a declared ARIA account term the page does not mark required, per the Consents mode ──────────
+describe('UP7-04: UltiPro\'s Register privacy box, a declared ARIA term with no aria-required', () => {
+  /** UltiPro's Register as a synthetic page (snapshot7 ultipro1's markup shape): names in div#register, the privacy
+   *  box a ukg-checkbox-like ARIA checkbox with no aria-required, drawn ticked a moment after its click, and Create
+   *  account, enabled once it is ticked, which replaces the step when pressed. `news`: the term is instead an optional
+   *  native consent box ("Send me job alerts"), Create account enabled from the start. */
+  const page = (news: boolean) => `<!doctype html><html><head><style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui; }
+    input[type=text] { display: block; width: 300px; padding: 6px; border: 1px solid #888; }
+  </style></head><body><main>
+  <div id="register"><h1>Create your account</h1>
+    <label for="first">First name</label><input id="first" type="text">
+    ${news ? '<label><input id="news" type="checkbox"> Send me job alerts</label>' : `<span id="privacy" role="checkbox"
+      aria-checked="false" tabindex="0" style="display:inline-block;padding:4px;border:1px solid #333">I have read and
+      agree to the Privacy Policy</span>`}
+    <button id="create" type="button" ${news ? '' : 'disabled'}>Create account</button>
+  </div></main>
+  <script>
+    window.presses = 0;
+    const privacy = document.getElementById('privacy');
+    const create = document.getElementById('create');
+    privacy?.addEventListener('click', () => setTimeout(() => {
+      privacy.setAttribute('aria-checked', 'true');
+      create.disabled = false;
+    }, 60));
+    create.addEventListener('click', () => {
+      window.presses += 1;
+      setTimeout(() => document.getElementById('register').replaceWith(Object.assign(document.createElement('p'),
+        { textContent: 'Welcome' })), 30);
+    });
+  </script></body></html>`;
+  const REGISTER_HREF = 'https://recruiting2.ultipro.com/ACM1000ACME/JobBoard/a1b2c3d4-0000-4000-8000-000000000001/Account/Register';
+  const register: Adapter = { ...genericAdapter, id: 'generic',
+    detect: (doc) => {
+      const root = doc.getElementById('register');
+      return root === null ? null : { formRoot: root };
+    },
+    signInContainer(doc) {
+      const container = doc.getElementById('register');
+      const button = doc.getElementById('create');
+      const terms = ['privacy', 'news'].map((id) => doc.getElementById(id)).filter((el): el is HTMLElement => el !== null);
+      return container === null || button === null ? null : { email: null, password: null, confirm: null, terms, button,
+        container, enablesWhenFilled: true };
+    } };
+
+  async function pressed(consents: AccountConsents | undefined, news = false) {
+    const fixture = await loadFixture(document, page(news), { width: 1100, height: 900 });
+    const doc = fixture.doc;
+    const refusal = signInRefusal(signInContainerOf(register, doc)!, new URL(REGISTER_HREF));
+    // Held now: Create account draws the next step in the container's place.
+    const privacy = doc.getElementById('privacy');
+    const newsBox = doc.getElementById('news') as HTMLInputElement | null;
+    const channel = { request: async () => ({ ok: true, data: { host: 'recruiting2.ultipro.com',
+      email: 'applicant@example.test', press: true } }) } as unknown as SignInContext['channel'];
+    const outcome = await signIn({ doc, adapter: register, channel, href: () => REGISTER_HREF, isTop: true,
+      container: true, signal: new AbortController().signal, settleMs: 1_500, ...(consents === undefined ? {} : { consents }) });
+    return { refusal, outcome, ticked: privacy?.getAttribute('aria-checked') ?? null, news: newsBox?.checked ?? null,
+      presses: (fixture.view as unknown as { presses: number }).presses };
+  }
+
+  it('Consents All: the container is taken, the box ticked and read back, Create account pressed once', async () => {
+    expect(await pressed({ mode: 'all', preapproved: [] })).toEqual({ refusal: null, outcome: 'continue',
+      ticked: 'true', news: null, presses: 1 });
+  });
+
+  it('Required only with privacy and terms pre-approved (the defaults) ticks it too', async () => {
+    expect(await pressed({ mode: 'required', preapproved: ['privacy', 'terms', 'dataRetention'] }))
+      .toMatchObject({ outcome: 'continue', ticked: 'true', presses: 1 });
+  });
+
+  it('Required only with neither pre-approved, or no mode known: left for the person, nothing pressed', async () => {
+    for (const consents of [{ mode: 'required', preapproved: [] } as const, undefined]) {
+      expect(await pressed(consents)).toMatchObject({ refusal: null, outcome: 'failed', ticked: 'false', presses: 0 });
+      removeFixtures(document);
+    }
+  });
+
+  it('an optional native consent at the gate is still left (the plan\'s), whatever the mode', async () => {
+    expect(await pressed({ mode: 'all', preapproved: [] }, true)).toEqual({ refusal: null, outcome: 'continue',
+      ticked: null, news: false, presses: 1 });
+  });
 });

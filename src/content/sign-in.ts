@@ -139,6 +139,7 @@
  */
 import { signInHostCovered } from '../contract/tailorit/credentials';
 import type { AccountErrorKind, Adapter, PagePasswordClass, PagePasswordRules, SignInForm } from '../adapters/types';
+import type { ConsentCategory } from '../core/enums';
 import { clickIfAllowed } from '../dom/fillers';
 import { fireChange, fireInput, fireLeave, setValue } from '../dom/fillers/events';
 import { accountFormOf } from '../dom/account-section';
@@ -217,6 +218,26 @@ export interface SignInContext {
   /** The jr6 review (sec-1): aborted when the document goes (the runtime's lifetime), which `signal` also ends with: a
    *  password typed into a form whose press is the person's stays guarded until then. Absent: `signal`. */
   page?: AbortSignal;
+  /** jr7 ENGINE-7 E2 (ULTIPRO-7's UP7-04; FIX7PLAN D-9): the person's Consents mode, as the run's settings hold it. At an
+   *  email gate, a declared ARIA term the page does not mark required (UltiPro's Register privacy box), which no plan
+   *  can write, is ticked only where it says so (ticksAccountTerms). Absent: such a term is left for the person. */
+  consents?: AccountConsents;
+}
+
+/** jr7 ENGINE-7 E2 (UP7-04): the Consents mode and the optional consents it pre-approves (Settings.modes.consents,
+ *  Settings.preapprovedConsent), as SignInContext.consents carries them. */
+export interface AccountConsents {
+  mode: 'all' | 'required';
+  preapproved: readonly ConsentCategory[];
+}
+
+/** jr7 ENGINE-7 E2 (UP7-04; D-9: account terms are ticked per the Consents mode): whether an account's optional terms
+ *  (its privacy policy and terms of use) are ticked: Consents All, or Required only with both pre-approved (as the
+ *  policy ticks an optional consent: core/resolver/policy.ts consentValue). */
+export function ticksAccountTerms(consents: AccountConsents | undefined): boolean {
+  if (consents === undefined) return false;
+  return consents.mode === 'all'
+    || (consents.preapproved.includes('privacy') && consents.preapproved.includes('terms'));
 }
 
 function urlOf(href: string): URL | null {
@@ -539,9 +560,12 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
     return 'failed';
   }
   // jr6 SHELL-A (D-d): at an email gate, only the terms the page marks required (ticked in either Consents mode); any
-  // other is the run's plan's, which decided it per the Consents mode as it filled the gate (module header).
+  // other is the run's plan's, which decided it per the Consents mode as it filled the gate (module header). jr7
+  // ENGINE-7 E2 (ULTIPRO-7's UP7-04): but a declared ARIA term, which no plan can write, is ticked as an account's
+  // terms are, per the Consents mode (SignInContext.consents: ticksAccountTerms); without the mode, left.
   for (const box of form.terms) {
-    if (wall === 'email-gate' && !markedRequired(box)) continue;
+    if (wall === 'email-gate' && !markedRequired(box)
+      && (box.localName === 'input' || !ticksAccountTerms(ctx.consents))) continue;
     // jr7 ENGINE-7 E1 item 8 (UP7-04): a declared ARIA checkbox (signInRefusal took it) is clicked only while it says
     // aria-checked="false", once; press reads "true" back before the form's button is pressed.
     if (box.localName !== 'input') {
