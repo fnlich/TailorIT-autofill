@@ -272,13 +272,17 @@ function QueueButton({ kind, clock, disabled, onPress }: { kind: 'start' | 'stop
 function QueueRow({ item, onFocus }: { item: QueueListItem; onFocus(): void }) {
   const status = WORDS.statuses[item.status];
   const why = item.reason !== null && (item.status === 'skipped' || item.status === 'failed') ? WORDS.reasons[item.reason]
-    : null;
+    // jr7 AUTO-7 (ICIMS7-04): why a job Ready for you rests with the person, in the extension's words.
+    : item.note !== undefined ? WORDS.notes[item.note] : null;
+  // jr7 AUTO-7 (AUTO7-01, D-4): the job's Submit is the person's on its site, whatever Submit is set to.
+  const yours = item.submitYours === true ? WORDS.submitYours : null;
   const body = (
     <>
       <span className="tia-queue__job">
         <span className="tia-queue__jobtitle">{item.title}</span>
         {item.company !== '' && <span className="tia-queue__company">{item.company}</span>}
         {why !== null && <span className="tia-queue__why">{why}</span>}
+        {yours !== null && <span className="tia-queue__why" data-queue-submit="yours">{yours}</span>}
       </span>
       <span className="tia-chip tia-queue__chip" data-tone={TONES[item.status]}>{status}</span>
     </>
@@ -287,7 +291,8 @@ function QueueRow({ item, onFocus }: { item: QueueListItem; onFocus(): void }) {
     <li className="tia-queue__row" data-queue-row={item.status}>
       {item.tab ? (
         <button type="button" className="tia-queue__item" data-action="queue-focus"
-          aria-label={WORDS.row(item.title, item.company, why === null ? status : `${status}, ${why}`, true)}
+          aria-label={WORDS.row(item.title, item.company, [status, why, yours].filter((part) => part !== null).join(', '),
+            true)}
           onClick={onFocus}>
           {body}
         </button>

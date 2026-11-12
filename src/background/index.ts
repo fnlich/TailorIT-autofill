@@ -27,7 +27,7 @@ import { checkLetter, createPanelLetters, LETTER_LIMIT } from './cover-letters';
 import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
 import {
-  agentFramesOf, cardFrameOf, chainOf, claimFrameOf, createFrameSweep, forgetFrames, forgetTab as forgetTabFrames,
+  agentFramesOf, cardFrameOf, chainOf, checkedTailoritAddress, claimFrameOf, createFrameSweep, forgetFrames, forgetTab as forgetTabFrames,
   frameEntry, framesOfTab, frameTarget, navOf, registerFrame, setWall, wallFrameOf, type FrameChain, type FrameEntry,
 } from './frames';
 import { createChains } from './chain';
@@ -723,8 +723,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   /** The frame as TailorIT is asked about it (core-x, items 6 and 7): a frame whose document took its application from
    *  the tab's chain is named by that application's canonical address, never its own (a session token, the person's
    *  iCIMS id); any other by its own, which server-client.ts names by tailoritAddressOf. */
-  function tailoritFrom<T extends { url: string }>(from: T, entry: Pick<FrameEntry, 'chained' | 'chainUrl'> | null): T {
-    return entry?.chained === true && entry.chainUrl !== undefined ? { ...from, url: entry.chainUrl } : from;
+  function tailoritFrom<T extends { url: string }>(from: T,
+    entry: Pick<FrameEntry, 'chained' | 'chainUrl' | 'tailoritUrl'> | null): T {
+    if (entry?.chained === true && entry.chainUrl !== undefined) return { ...from, url: entry.chainUrl };
+    // jr7 AUTO-7 (ICIMS7-11, D-6): a Jibe page's iCIMS posting, as the worker's own check took it.
+    return entry?.tailoritUrl !== undefined ? { ...from, url: entry.tailoritUrl } : from;
   }
 
   /** tailoritFrom, with the frame's entry read from the registry (the same document's only). */
@@ -825,6 +828,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           // The audit's S-6: a private (incognito) tab's runs are kept for it alone, in storage.session, before any of
           // its runs can begin.
           if (from.incognito === true) await runStates.markPrivate(from.tabId);
+          // jr7 AUTO-7 (ICIMS7-11, D-6): the address a Jibe page names for TailorIT, checked here against its own.
+          const tailoritUrl = message.tailoritAddress === undefined || from.frameId !== 0 ? null
+            : checkedTailoritAddress(from.url, message.tailoritAddress);
+          if (message.tailoritAddress !== undefined && tailoritUrl === null) log('tailorit.address-refused');
           const { previous, entry } = await lockTab(from.tabId, async () => {
             const held = await frameEntry(session, from.tabId, from.frameId);
             // The same document at an address no parser reads keeps the application it last showed only shortly after
@@ -849,7 +856,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
               // and (at the same address) the entry it said, for its card.
               ...(same && held.entry === true ? { entry: true } : {}),
               ...(same && held.entering === true && !message.hasForm ? { entering: true } : {}),
-              ...(same && held.entrySaid === true && navOf(held) === (message.nav ?? 0) ? { entrySaid: true } : {}) },
+              ...(same && held.entrySaid === true && navOf(held) === (message.nav ?? 0) ? { entrySaid: true } : {}),
+              ...(tailoritUrl === null ? {} : { tailoritUrl }) }, // jr7 AUTO-7 (ICIMS7-11)
             now()) };
           });
           // core-x, items 7 and 14: a top document with an application is the tab's chain from now on; a portal frame

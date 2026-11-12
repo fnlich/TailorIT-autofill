@@ -82,9 +82,40 @@ export interface FrameEntry {
    *  its top frame is the tab's card frame while it shows no form, through the consent and the guest view drawn in
    *  place at the same address. Kept by setWall, and by a hello of the same document at the same address. */
   entrySaid?: true;
+  // ── jr7 AUTO-7 (ICIMS7-11, FIX7PLAN D-6 and §6.4 item 20) ──
+  /** The top frame's posting address its adapter gives TailorIT in place of the page's own (a Jibe page's iCIMS
+   *  posting), as the worker's own check took it (checkedTailoritAddress): TailorIT is asked with it (lookup, Add job).
+   *  Kept for the document it was said in. */
+  tailoritUrl?: string;
+  // ── end jr7 AUTO-7 ──
 }
 
 const keyOf = (tabId: number, frameId: number) => `frames:${tabId}:${frameId}`;
+
+// ── jr7 AUTO-7 (ICIMS7-11, D-6; FIX7PLAN §6.4 item 20) ──
+/** The address a Jibe page's adapter names for TailorIT (`candidate`, frame/hello's tailoritAddress), checked again
+ *  here against the page's own address as Chrome gives it (`pageUrl`): only on a Jibe posting page, an https iCIMS
+ *  posting or application page of the same numeric job id, with no credentials, no query and no fragment (built from
+ *  parts, never a link's query). Anything else: null (the page's own address is given). */
+export function checkedTailoritAddress(pageUrl: string, candidate: string): string | null {
+  let page: URL;
+  let named: URL;
+  try {
+    page = new URL(pageUrl);
+    named = new URL(candidate);
+  } catch {
+    return null;
+  }
+  if (platformOfUrl(page.href) !== 'jibe') return null;
+  if (named.protocol !== 'https:' || named.username !== '' || named.password !== '' || named.search !== ''
+    || named.hash !== '') return null;
+  const ref = applicationOf(named);
+  if (ref === null || ref.platform !== 'icims' || (ref.page !== 'posting' && ref.page !== 'application')) return null;
+  const jobOf = (url: URL) => /^\/jobs\/(\d{1,12})(?:\/|$)/.exec(url.pathname)?.[1] ?? null;
+  const id = jobOf(page);
+  return id !== null && id === jobOf(named) ? named.href : null;
+}
+// ── end jr7 AUTO-7 ──
 
 /** The application a chain gave a frame's document (background/chain.ts): its key, its canonical address and the frame
  *  that framed it (a subframe's). */
@@ -99,6 +130,8 @@ export async function registerFrame(
   session: StorageArea,
   frame: { tabId: number; frameId: number; documentId: string | undefined; url: string; isTop: boolean; hasForm: boolean;
     nav?: number; letter?: true; keepKey?: string; wraps?: true; claimed?: true; chain?: FrameChain;
+    /** jr7 AUTO-7 (ICIMS7-11): the checked address TailorIT is asked with for a top frame's posting. */
+    tailoritUrl?: string;
     /** v4: the same document's wall and choice, kept from its entry (frame/wall); s2 profile, what it waits for;
      *  v5 p2-fill, its posting's own Apply; jr6 apply F3a, its press under way and the entry it said. */
     wall?: SignInWall; choice?: true; waits?: WallWaits; entry?: true; entering?: true; entrySaid?: true },
@@ -116,7 +149,8 @@ export async function registerFrame(
     registeredAt: now,
     ...(frame.nav === undefined || frame.nav === 0 ? {} : { nav: frame.nav }),
     ...(frame.letter === true && frame.hasForm ? { letter: true as const } : {}),
-    ...(!frame.hasForm && frame.frameId === 0 && postingAddress(frame.url) ? { posting: true as const } : {}),
+    ...(!frame.hasForm && frame.frameId === 0 && postingAddress(frame.url, frame.tailoritUrl) // jr7 AUTO-7
+      ? { posting: true as const } : {}),
     // core-x, item 3: the frame that claims a wrapper's application shows its page after submitting as a top frame does.
     ...(!frame.hasForm && (frame.frameId === 0 || frame.claimed === true) && confirmationAddress(frame.url)
       ? { confirmation: true as const } : {}),
@@ -134,6 +168,8 @@ export async function registerFrame(
     // jr6 apply F3a.
     ...(frame.entering === true ? { entering: true as const } : {}),
     ...(frame.entrySaid === true ? { entrySaid: true as const } : {}),
+    // jr7 AUTO-7 (ICIMS7-11): a top frame's alone.
+    ...(frame.tailoritUrl !== undefined && frame.frameId === 0 ? { tailoritUrl: frame.tailoritUrl } : {}),
   };
   await session.set({ [keyOf(frame.tabId, frame.frameId)]: entry });
   return entry;
@@ -255,10 +291,11 @@ export async function framesOfTab(session: StorageArea, tabId: number): Promise<
  *  Oracle's; since its API 6 (contract6) those of the new ATSs that have one, and SmartRecruiters' (Jobvite's,
  *  Rippling's, Breezy's, Pinpoint's, UltiPro's and SmartRecruiters' postings). A posting TailorIT's parseAtsUrl does
  *  not read (a platform ahead of its contract) is no card frame here: the card reads through its form frame. */
-export function postingAddress(url: string): boolean {
+export function postingAddress(url: string, tailoritUrl?: string): boolean {
   try {
     const ref = applicationOf(new URL(url));
-    return ref !== null && ref.page === 'posting' && parseAtsUrl(url) !== null;
+    // jr7 AUTO-7 (ICIMS7-11, D-6): a Jibe posting is TailorIT's by the iCIMS address the worker checked for it.
+    return ref !== null && ref.page === 'posting' && parseAtsUrl(tailoritUrl ?? url) !== null;
   } catch {
     return false;
   }

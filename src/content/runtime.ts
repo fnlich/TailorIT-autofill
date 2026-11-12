@@ -166,7 +166,7 @@ import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from '../adapters/address';
 import { chainPageOf, hrefHash } from '../adapters/chain';
 import { companyOfUrl, scopeOf } from '../adapters/company';
-import type { Adapter } from '../adapters/types';
+import type { Adapter, HandOverKind } from '../adapters/types';
 import type { Platform } from '../core/enums';
 import { reduceRun, resumeMode, type RunEvent } from '../core/steps/machine';
 import type { BaseKey, FieldKey } from '../core/types/field';
@@ -205,7 +205,7 @@ import {
   FillRun, PASSWORD_WAIT_MS, RunFailure, type HeldAnswer, type RunEnd, type RunOptions, type RunPage, type RunRequest,
 } from './orchestrator';
 import { readPostingPage } from './policy';
-import { newSuccessSign, shownSignsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot,
+import { newSuccessSign, shownSignsOf, SIGN_RECHECK_MS, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot,
   // v5 p2-detect
   watchNetworkSigns } from './submitted';
 import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter,
@@ -701,7 +701,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // platform's candidate host (applicationOf: a posting, its application or the page after submitting), the same
     // reading the page-world bridge installs by; one whose address never did stays silent (an employer's own pages on
     // an ATS domain, a board). One that said hello before says it again, so the worker hears its form go.
-    if (app === null && told === null && chainHello === null) return null;
+    if (app === null && told === null && chainHello === null && !afterSeen) return null; // jr7 AUTO-7: afterSeen
     // v3 Phase 8: on a company's own page (injected once the sentinel recognised it) nothing is said until the site
     // adapter claims an application form there, but by a top frame a job signal recognised (the review's B10): it says
     // a form-less hello, so the side panel shows its "No application form" strip. A page embedding an ATS says none:
@@ -710,8 +710,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const hasForm = page !== null;
     const letter = hasForm && asksForLetter();
     const at = urlOf(readHref());
+    // jr7 AUTO-7 (ICIMS7-04, ICIMS7-11): the step that is the person's by design; the address TailorIT is asked with.
+    const handOver = handOverNow(at);
+    const tailoritAddress = tailoritAddressHere(at);
     const answer = await channel.request({ v: 1, type: 'frame/hello', isTop, hasForm, ...(nav === 0 ? {} : { nav }),
       ...(letter ? { letter: true as const } : {}),
+      ...(handOver === null ? {} : { handOver }), ...(tailoritAddress === null ? {} : { tailoritAddress }), // jr7 AUTO-7
       // core-x, items 3, 7 and 14 (chain-frame.ts, background/chain.ts).
       ...(isTop && page === null && wrapsApplication(doc, at, adapters) ? { wraps: true as const } : {}),
       ...(claimed ? { claimed: true as const } : {}),
@@ -866,8 +870,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     /** The run was told that nothing came within SUBMIT_CONFIRM_MS (the audit's m10): the watch goes on quietly. */
     quiet: boolean;
     stopWatch(): void;
+    /** jr7 AUTO-7 (AUTO7-06): the document's address at the press (memory only): its adapter's confirmationAfter
+     *  reads a later address of this document against it. */
+    url: string;
   }
   let armed: ArmedSubmit | null = null;
+  /** jr7 AUTO-7 (UP7-01, item 16): the worker took this keyless document as the page after a Submit this frame armed
+   *  (submit/after): it says hello, so the worker holds the frame. */
+  let afterSeen = false;
   /** The worker's answer to the latest submit/armed: a sign seen at once waits for it, so the worker holds the arm
    *  before it hears the sign. */
   let armedHeard: Promise<unknown> = Promise.resolve();
@@ -903,7 +913,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // the parser does not read), which is the sign this arm waits for.
     const at = before ?? (app === null || page === null ? null : { applicationKey: app.applicationKey,
       // The behaviour review of 2026-11-06 (M1): the signs shown at the press; one hidden then is new once shown.
-      platform: app.platform, root: page.root, adapter: page.adapter, signs: shownSignsOf(doc, app.platform) });
+      platform: app.platform, root: page.root, adapter: page.adapter, url: readHref(),
+      signs: shownSignsOf(doc, app.platform, { adapter: page.adapter, applicationKey: app.applicationKey }) }); // jr7
     if (stopped || at === null || !channel.valid()) return;
     log('content.submit-armed', { page: by === 'page', panel: by === 'panel', auto: by === 'auto' });
     // The resume is named to the tracker only when the run's own upload row verified on this form.
@@ -920,7 +931,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     let cancelWatch: Cancel = () => undefined;
     const observer = view === null ? null : new view.MutationObserver(() => check());
     const record: ArmedSubmit = { at: platform.now(), by, applicationKey: at.applicationKey, platform: at.platform,
-      root: at.root, adapter: at.adapter, before: at.signs, quiet: false, stopWatch: () => {
+      root: at.root, adapter: at.adapter, before: at.signs, quiet: false, url: at.url ?? readHref(), stopWatch: () => {
         observer?.disconnect();
         cancelTimer();
         cancelWatch();
@@ -954,6 +965,18 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     };
     observer?.observe(doc.documentElement, { childList: true, subtree: true, attributes: true,
       attributeFilter: ['class', 'style', 'hidden'] });
+    // ── jr7 AUTO-7 (WD7-04, AUTO7-06): a sign that fades in (Workday's dialogs) changes no node when it ends showing:
+    // read again at each animation's and transition's end (capture phase), and every SIGN_RECHECK_MS while the arm
+    // waits (until its quiet watch, SUBMIT_CONFIRM_MS), the watch's signal ending both (stopWatch). ──
+    doc.addEventListener('animationend', check, { capture: true, signal: watch.signal });
+    doc.addEventListener('transitionend', check, { capture: true, signal: watch.signal });
+    const recheck = (): void => void startDeadline(SIGN_RECHECK_MS, () => {
+      if (armed !== record || stopped || record.quiet) return;
+      check();
+      if (armed === record) recheck();
+    }, watch.signal);
+    recheck();
+    // ── end jr7 AUTO-7 ──
     const confirmMs = options.submitConfirmMs ?? SUBMIT_CONFIRM_MS;
     cancelTimer = startDeadline(confirmMs, () => {
       if (armed === record) endArm(record, 'unconfirmed');
@@ -1256,7 +1279,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         if (current === run) captureNow();
       },
       beforePress: () => (app === null || page === null ? null : { applicationKey: app.applicationKey,
-        platform: app.platform, root: page.root, adapter: page.adapter, signs: shownSignsOf(doc, app.platform) }),
+        platform: app.platform, root: page.root, adapter: page.adapter, url: readHref(), // jr7 AUTO-7
+        signs: shownSignsOf(doc, app.platform, { adapter: page.adapter, applicationKey: app.applicationKey }) }),
       autoPressed,
       // v3 Phase 5, Sign-in mode Auto: once, on the page this run paused at, until the run stops or is cancelled; the
       // site taking it continues the run.
@@ -2231,7 +2255,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         end(null);
         return;
       }
-      answer({ outcome: 'not-offered' });
+      answer({ outcome: 'not-offered', declared: false }); // jr7 AUTO-7 (AUTO7-03): no adapter declares an Apply
       end('none');
       return;
     }
@@ -2287,7 +2311,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           return;
         }
       }
-      answer({ outcome: 'not-offered' });
+      answer({ outcome: 'not-offered', declared: true }); // jr7 AUTO-7 (AUTO7-03): declared, and not found
       end(signal.aborted ? null : 'none');
       return;
     }
@@ -2550,9 +2574,81 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (told !== (page !== null) || page !== null) void hello().catch(() => undefined);
     void readPosting().catch(() => undefined);
     watchLateForm();
+    // jr7 AUTO-7 (AUTO7-06, WD7-05, UP7-01): while a Submit is armed in this document, the page after submitting its
+    // adapter reads by the two addresses (confirmationAfter), also where no parser reads this one: under the arm's own
+    // application. No per-person id of the address is read.
+    const record = armed;
+    if (record !== null && confirmedAfter(record, href)) {
+      record.stopWatch();
+      armed = null;
+      void detected('confirmation-page', record).catch(() => undefined);
+      return;
+    }
     // v3 Phase 4: the platform's page after submitting, shown by an address change in this document.
     if (app?.page === 'confirmation') void detected('confirmation-page').catch(() => undefined);
   }
+
+  // ── jr7 AUTO-7 (AUTO7-06) ──
+  /** Whether `href` is the page after submitting the application armed at `record.url`, by its adapter
+   *  (Adapter.confirmationAfter), on the same origin, at another address. */
+  function confirmedAfter(record: ArmedSubmit, href: string): boolean {
+    const armedAt = urlOf(record.url);
+    const here = urlOf(href);
+    if (armedAt === null || here === null || armedAt.origin !== here.origin || armedAt.href === here.href) return false;
+    try {
+      return record.adapter.confirmationAfter?.(armedAt, here) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** UP7-01 (FIX7PLAN §6.4 item 16): a top document whose address no parser reads, on a host whose adapter reads the
+   *  page after submitting (confirmationAfter): the worker is asked whether it is the confirmation of a Submit armed
+   *  in this frame (submit/after: no key, no address; Chrome gives the worker the frame's address). Once taken, the
+   *  document says hello, so the worker holds the frame. */
+  async function afterSubmitHere(): Promise<void> {
+    const url = urlOf(readHref());
+    if (stopped || !isTop || app !== null || url === null) return;
+    if (!adapters(url).some((adapter) => adapter.confirmationAfter !== undefined)) return;
+    const answer = await channel.request({ v: 1, type: 'submit/after' });
+    if (!answer.ok || stopped) return;
+    log('content.submit-detected', { page: true, after: true });
+    afterSeen = true;
+    await hello();
+  }
+
+  /** ICIMS7-04: the step this top or claim frame shows that is the person's by design (Adapter.handOver), or null. */
+  function handOverNow(at: URL | null): HandOverKind | null {
+    if (at === null || (!isTop && !claimed)) return null;
+    for (const adapter of adapters(at)) {
+      try {
+        const kind = adapter.handOver?.(doc) ?? null;
+        if (kind !== null) return kind;
+      } catch {
+        // An adapter that throws reads none.
+      }
+    }
+    return null;
+  }
+
+  /** ICIMS7-11 (D-6): the posting address the top frame's adapter gives TailorIT instead of this page's own
+   *  (Adapter.tailoritAddress: a Jibe page's iCIMS posting), when it is an https address of at most 2000 characters;
+   *  the worker checks it again before using it. */
+  function tailoritAddressHere(at: URL | null): string | null {
+    if (at === null || !isTop) return null;
+    for (const adapter of adapters(at)) {
+      let named: string | null;
+      try {
+        named = adapter.tailoritAddress?.(doc, at) ?? null;
+      } catch {
+        named = null;
+      }
+      const url = named === null || named.length > 2000 ? null : urlOf(named);
+      if (url !== null && url.protocol === 'https:') return url.href;
+    }
+    return null;
+  }
+  // ── end jr7 AUTO-7 ──
 
   function handle(): ContentRuntime {
     return {
@@ -2645,6 +2741,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       await resumeStored();
       // The platform's page after submitting (v3 Phase 4): the worker takes it only after a Submit this tab armed.
       if (onConfirmationPage()) await detected('confirmation-page');
+      else await afterSubmitHere(); // jr7 AUTO-7 (AUTO7-06, UP7-01): one no parser reads
       // e2e only: the document's start-up is over, its confirmation page's sign told and answered.
       if (__E2E__) await platform.runtime.send({ v: 1, type: 'e2e/probe', settled: true }).catch(() => undefined);
     }

@@ -19,7 +19,7 @@ import type {
 } from '../core/types/profile';
 import type { PauseReason, RunStatus } from '../core/types/run';
 import type {
-  AddJobOutcome, AgentBlock, AgentPause, AgentStatus, AskLength, AskOutcome, EntryRefusal, JobSearchRefusal, LetterOutcome,
+  AddJobOutcome, AgentBlock, AgentNote, AgentPause, AgentStatus, AskLength, AskOutcome, EntryRefusal, JobSearchRefusal, LetterOutcome,
   PressOutcome, ProfileSaveRefusal, SaveAnswerOutcome, SiteRequestOutcome, SubmittedState,
 } from '../messaging/schemas';
 import type { TailorFailure, TailorKind } from '../messaging/page-schemas'; // v1.4 F
@@ -1423,6 +1423,13 @@ const AGENT_PAUSE_WORDS = {
   'window-closed': 'you closed its window',
 } as const satisfies Record<AgentPause, string>;
 
+// ── jr7 AUTO-7 (ICIMS7-04; FIX7PLAN §6.4 items 3 and 14): the agent's and the Queue tab's own words beside the
+// contract's reasons. Drafts for the owner's review (Q7-15). ──
+const AGENT_NOTE_WORDS = {
+  assessment: 'This application continues with an assessment',
+} as const satisfies Record<AgentNote, string>;
+// ── end jr7 AUTO-7 ──
+
 const AGENT = {
   label: 'Auto-apply',
   stop: 'Stop',
@@ -1441,8 +1448,10 @@ const AGENT = {
       ? `paused because ${AGENT_PAUSE_WORDS[status.paused]}; turn Run auto-apply on to go on` : null;
     const phase = status.phase === 'running' ? (job === '' ? 'running' : `running ${job}`)
       : status.phase === 'waiting' ? 'waiting for a job' : status.phase === 'blocked' ? 'paused' : paused ?? 'off';
-    const last = status.last === null ? '' : ` · last: ${AGENT_STATES[status.last.state]}${status.last.reason === null
-      ? '' : ` (${AGENT_REASONS[status.last.reason]})`}`;
+    // jr7 AUTO-7 (ICIMS7-04): the extension's own words, where the result has them, in place of the reason's.
+    const why = status.last?.note !== undefined ? AGENT_NOTE_WORDS[status.last.note]
+      : status.last?.reason == null ? null : AGENT_REASONS[status.last.reason];
+    const last = status.last === null ? '' : ` · last: ${AGENT_STATES[status.last.state]}${why === null ? '' : ` (${why})`}`;
     const pending = status.pending === true ? ' · a result not yet told TailorIT' : '';
     return `Auto-apply: ${phase} · ${status.doneToday} done today${last}${pending}`;
   },
@@ -1502,6 +1511,12 @@ const QUEUE = {
   startHelp: (autofill: 'auto' | 'manual', submit: 'auto' | 'manual') => `Start opens your queued jobs one by one in new tabs, in the background. ${autofill === 'auto' ? 'Each fills by itself as it opens' : 'Each waits for you to choose Autofill in it'}, and ${submit === 'auto' ? 'Submit mode Auto submits it unless a rule leaves it for you' : 'you press Submit in each (Submit mode Manual)'}. Change this in Settings.`,
   statuses: QUEUE_STATUS_WORDS,
   reasons: AGENT_REASONS,
+  // ── jr7 AUTO-7 ──
+  /** AUTO7-01 (FIX7PLAN D-4): a job on a site where the extension cannot read that an application went through. */
+  submitYours: 'Submit is yours on this site',
+  /** ICIMS7-04: why a job rests with the person, in the extension's words. */
+  notes: AGENT_NOTE_WORDS,
+  // ── end jr7 AUTO-7 ──
   /** A row's button: its title, company and status, and that it goes to its tab. */
   row: (title: string, company: string, status: string, tab: boolean) =>
     `${title}${company === '' ? '' : `, ${company}`}: ${status}${tab ? '. Go to its tab' : ''}`,
