@@ -183,6 +183,13 @@ export function answerFormatOf(spec: Pick<FieldSpec, 'kind' | 'constraints'>): A
   }
 }
 
+/** jr7 RULES-7 (WD7-03, the verifier's corrected fix): "identification" as an identifier, never a work task: not right
+ *  after a problem, a risk, a hazard, an issue, a defect, a threat, a root cause, an opportunity, a need, a trend, a
+ *  pattern, a bug, a fault, a vulnerability or a gap ("problem identification", "risk-identification"), and never
+ *  "identification and analysis …" or "identification of" such things in the plural. */
+const TASK_NOUNS = String.raw`(?:problems?|risks?|hazards?|issues?|defects?|threats?|root\s+causes?|opportunit(?:y|ies)|needs?|trends?|patterns?|bugs?|faults?|vulnerabilit(?:y|ies)|gaps?)`;
+const IDENTIFICATION_NOT_A_TASK = new RegExp(String.raw`(?<!\b${TASK_NOUNS}[\s-]+)\bidentification\b(?!\s+(?:and\s+(?:analysis|resolution|mitigation|remediation|assessment)|of\s+(?:problems|risks|hazards|issues|defects|threats|root\s+causes|opportunities|needs|trends|patterns|bugs|faults|vulnerabilities|gaps)))`);
+
 /**
  * What an AI answer never states, read in a question's text, its hint, its section's words and its options (the Phase
  * E review, M2): another person's details (an emergency contact, a referee or reference, a manager's, a spouse's), an
@@ -195,7 +202,10 @@ const UNANSWERABLE: readonly RegExp[] = [
   /\b(?:manager|supervisor|spouse|partner|parent|guardian)(?:'|’)s\b/,
   /\b(?:managers?|supervisors?)\s+(?:name|e\s?-?mail|phone|contact|title)\b/,
   // Identifiers (a bare "number" is BARE_NUMBER).
-  /\bids?\b/, /\bidentification\b/, /\bidentifier\b/, /\blicen[cs]e[sd]?\b/, /\bpassports?\b/,
+  // jr7 RULES-7 (WD7-03, Workday's republic "Do you have 2 years of experience with problem identification techniques
+  // …?", snapshot7 workday2): identification stays an identifier except as a work task (IDENTIFICATION_NOT_A_TASK):
+  // "Identification type", "Form of identification" and "Voluntary Self-Identification" stay refused.
+  /\bids?\b/, IDENTIFICATION_NOT_A_TASK, /\bidentifier\b/, /\blicen[cs]e[sd]?\b/, /\bpassports?\b/,
   /\bssn\b/, /\bsocial\s+(?:security|insurance)\b/, /\bnational\s+insurance\b/, /\btax\s+(?:id|file|number)\b/,
   // A postal address ("address" as a verb, "How would you address a conflict?", is none).
   /\b(?:home|mailing|postal|street|current|permanent|residential|billing|physical|full|your|e\s?-?mail)\s+address(?:es)?\b/,
