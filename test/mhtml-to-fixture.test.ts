@@ -3881,7 +3881,8 @@ describe('jr6 fixes: where the person came from (PRIV-4)', () => {
     expect(text).toContain(`<a href="${ADP_PAGE}&amp;source=REDACTED&amp;jobId=1">Engineer</a>`);
     expect(text).not.toMatch(/source=XB/);
     // Every name and prefix, plain, after &amp;, or percent-encoded once or twice; the value ends at the next separator.
-    expect(REFERRAL_PARAMS).toEqual(['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source']);
+    // jr7 TOOLING-7: and Jobvite's __jvsc.
+    expect(REFERRAL_PARAMS).toEqual(['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source', '__jvsc']);
     expect(REFERRAL_PREFIXES).toEqual(['utm_']);
     const cases: Array<[string, string]> = [
       ['https://jobs.jobvite.com/acme/job/oX1?__jvst=Job%20Board&__jvsd=FixtureBoard&nl=0',
@@ -4233,13 +4234,26 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
 /** Every committed fixture's page, frame, route map and expectation (each holds addresses), by its path under fixtures/. */
 const ADDRESSED_FIXTURES = committedFixtureFiles(undefined, '', /\.(?:html|routes\.json|expect\.json)$/);
 
+/** jr7 TOOLING-7: the committed fixtures converted before __jvsc joined REFERRAL_PARAMS that keep a __jvsc value, each
+ *  on the posting's own share buttons only (LinkedIn's IN/Share data-url, the share links' href, ng-href and ng-click),
+ *  whose __jvst and __jvsd beside it read REDACTED: judged public (SP\jr6\build\INT-2.md §5). A file converted again
+ *  reads REDACTED there and needs no entry. */
+const JOBVITE_SHARE_FIXTURES = ['jobvite/ninjaone-posting.html', 'jobvite/jr6-sikich-posting.html',
+  'jobvite/jr6-vhl-posting.html'];
+/** The share networks Jobvite's posting widget names in __jvsc (lower case, as checkedForms reads them). */
+const JOBVITE_SHARE_CHANNELS = ['linkedin', 'twitter', 'facebook', 'email'];
+
 /** Each referral parameter (REFERRAL_PARAMS, REFERRAL_PREFIXES) that holds a value other than REDACTED in a text, by
  *  name, in every form the final check reads (checkedForms: as written, entities decoded, percent-decoded): the
- *  converter's own needle (referralNeedles), every match of it. Names only: a value is never read out. */
-function referralNamesIn(text: string): string[] {
+ *  converter's own needle (referralNeedles), every match of it. Names only: a value is never read out. jr7 TOOLING-7:
+ *  with `shareChannels`, a __jvsc whose value is a share network's (JOBVITE_SHARE_CHANNELS) is left out (the value is
+ *  compared in memory, never read out). */
+function referralNamesIn(text: string, options: { shareChannels?: boolean } = {}): string[] {
   const [needle] = referralNeedles();
   const every = new RegExp(needle!.pattern.source, 'gi');
   return checkedForms(text).flatMap((form) => [...form.matchAll(every)]
+    .filter((match) => !(options.shareChannels === true && match[0].slice(1, match[0].indexOf('=')) === '__jvsc'
+      && JOBVITE_SHARE_CHANNELS.includes(/^[^&#"'\s<]*/.exec(form.slice((match.index ?? 0) + match[0].length))?.[0] ?? '')))
     .map(([match]) => match.slice(1, match.indexOf('='))));
 }
 
@@ -4291,7 +4305,9 @@ describe('jr6 ifix C-4: referral parameters in the committed fixtures (PRIV-4)',
     const failing = files.flatMap((file) => {
       const kept = withoutIcimsHelpTags(readFileSync(join(ROOT, 'fixtures', file), 'utf8'), vendor);
       if (kept.cut > 0) cut.push(file);
-      return [...new Set(referralNamesIn(kept.text))].map((name) => `${file}: ${name}`);
+      // jr7 TOOLING-7: Jobvite's share buttons' __jvsc in the two jr6 postings converted before it joined.
+      return [...new Set(referralNamesIn(kept.text, { shareChannels: JOBVITE_SHARE_FIXTURES.includes(file) }))]
+        .map((name) => `${file}: ${name}`);
     });
     expect(failing).toEqual([]);
     // The exemption stands on iCIMS's step pages alone (the ten of the review, or fewer once converted again).
@@ -4299,15 +4315,23 @@ describe('jr6 ifix C-4: referral parameters in the committed fixtures (PRIV-4)',
     expect(cut.length).toBeLessThanOrEqual(10);
   }, 60_000);
 
-  it("every committed fixture: no arrival tag a person's visit adds (iis, iisn, __jvst, __jvsd, gh_src, lever-source) holds a value", () => {
+  it("every committed fixture: no arrival tag a person's visit adds (iis, iisn, __jvst, __jvsd, gh_src, lever-source, __jvsc) holds a value", () => {
     // `source` and utm_* also name public share and footer links' constant tags in main's captures (Nextdoor's sharekit,
     // a Greenhouse sign-in link, Workable's and Dice's footers): the jr6 sweep above reads those in jr6 cases.
     const arrival = REFERRAL_PARAMS.filter((name) => name !== 'source');
-    expect(arrival).toEqual(['iis', 'iisn', '__jvst', '__jvsd', 'gh_src', 'lever-source']);
+    expect(arrival).toEqual(['iis', 'iisn', '__jvst', '__jvsd', 'gh_src', 'lever-source', '__jvsc']);
     expect(ADDRESSED_FIXTURES.length).toBeGreaterThan(800);
     const failing = ADDRESSED_FIXTURES.flatMap((file) => [...new Set(referralNamesIn(readFileSync(join(ROOT, 'fixtures',
-      file), 'utf8')))].filter((name) => arrival.includes(name)).map((name) => `${file}: ${name}`));
+      file), 'utf8'), { shareChannels: JOBVITE_SHARE_FIXTURES.includes(file) }))].filter((name) => arrival.includes(name))
+      .map((name) => `${file}: ${name}`));
     expect(failing).toEqual([]);
+    // jr7 TOOLING-7: the share-button exemption is narrow: each listed file holds a __jvsc that only it excuses, and a
+    // __jvsc naming no share network is a hit there too.
+    for (const file of JOBVITE_SHARE_FIXTURES) {
+      const text = readFileSync(join(ROOT, 'fixtures', file), 'utf8');
+      expect(referralNamesIn(text), file).toContain('__jvsc');
+      expect(referralNamesIn(`${text}<a href="/x?__jvsc=Fixture">`, { shareChannels: true }), file).toContain('__jvsc');
+    }
   }, 60_000);
 
   it("exempts iCIMS's logo link only with the vendor's own tags: another value, link, host, path or place is a hit", () => {
@@ -4668,6 +4692,19 @@ document.head.appendChild(s);</script></body></html>` });
       expect(() => readFrameSrcOption('iframe=http://www.google.com/recaptcha/api2/anchor', 1)).toThrow('must be <css>=<https address>');
       expect(readFrameSrcOption(`iframe[title="reCAPTCHA"]=${anchor}`, 1)).toEqual({ selector: 'iframe[title="reCAPTCHA"]', url: anchor });
     }, 120_000);
+
+  it("the jr6 leftover (INT-2 §5): Jobvite's __jvsc reads REDACTED in the address, its links and its share buttons", async () => {
+    const posting = 'https://jobs.jobvite.com/acme/job/oFixture2?__jvst=Job%20Board&__jvsd=FixtureBoard&__jvsc=FixtureChannel';
+    const { conversion, text } = await convertPage(posting, 'jobvite', 'jr7-jvsc', `<h1>Engineer</h1>
+<a class="share" href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fjobs.jobvite.com%2Facme%2Fjob%2FoFixture2%3F__jvst%3DSocial%26__jvsc%3DTwitter">Share</a>
+<a ng-href="/acme/job/oFixture2/apply?__jvsc=FixtureChannel&amp;nl=0" href="/acme/job/oFixture2/apply?__jvsc=FixtureChannel&amp;nl=0">Apply</a>`);
+    const clean = 'https://jobs.jobvite.com/acme/job/oFixture2?__jvst=REDACTED&__jvsd=REDACTED&__jvsc=REDACTED';
+    expect(headerOf(text).source).toBe(clean);
+    expect(Object.keys(conversion.routes)).toEqual([clean]);
+    expect(text).not.toMatch(/FixtureChannel|FixtureBoard|%3DTwitter|%3DSocial/);
+    expect(text).toContain('/acme/job/oFixture2/apply?__jvsc=REDACTED&amp;nl=0');
+    expect(text).toContain('%26__jvsc%3DREDACTED');
+  }, 60_000);
 
   it("every committed fixture: no widget's shown text spelled in an id (T7-01, spelledIdsIn)", () => {
     const files = committedFixtureFiles();

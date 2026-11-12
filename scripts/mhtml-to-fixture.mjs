@@ -879,8 +879,14 @@ const PER_LOAD_SOURCE = `([?&](?:${PER_LOAD_PARAMS.join('|')})=)[^&#]*`;
  *  careers-sentinel's posting, its frame, links and route map), ADP's source (snapshot6 adp1 and adp2: every address of
  *  the application), and for the same reason Workday's source, Jobvite's __jvst and __jvsd, Greenhouse's gh_src and
  *  Lever's lever-source; every REFERRAL_PREFIXES parameter too. Simplify's utm_source=Simplify stays INJECTED_PARAMS'
- *  (dropped whole). */
-export const REFERRAL_PARAMS = ['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source'];
+ *  (dropped whole). jr7 TOOLING-7 (SP\jr6\build\INT-2.md §5, the leftover BUILD7 hands TOOLING-7): and Jobvite's third
+ *  source tag, __jvsc (the channel), beside __jvst and __jvsd: in a person's address it says how they came; on a
+ *  posting's own share buttons it names the network (judged public in the three committed fixtures converted before it,
+ *  which the referral sweeps read by name and value: test/mhtml-to-fixture.test.ts JOBVITE_SHARE_CHANNELS).
+ *  @type {string[]} */
+export const REFERRAL_PARAMS = ['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source',
+  // jr7 TOOLING-7
+  '__jvsc'];
 /** The prefixes of referral parameters: every utm_* (utm_source, utm_medium, utm_campaign, utm_term, utm_content...;
  *  careers-sentinel's address and frame, a company's own links). */
 export const REFERRAL_PREFIXES = ['utm_'];
