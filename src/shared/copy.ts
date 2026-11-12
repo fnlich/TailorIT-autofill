@@ -1586,11 +1586,13 @@ export const PAGE_COPY = {
         : rule === 'login' ? "it can't be the same as your email" : `it needs ${{ upper: 'an uppercase letter',
           lower: 'a lowercase letter', digit: 'a number', special: 'a special character', alpha: 'a letter' }[rule]}`
       }. Autofill typed nothing. Save one that fits in Sign-up Information, or create the account here yourself.`,
-    // Item 4: the kind of account error the site shows (on arrival, or after its button was pressed).
+    // Item 4: the kind of account error the site shows (on arrival, or after its button was pressed). The jr6
+    // integration fixes (DOC-12, owner question 436): Sign-up Information keeps one password for every job site (owner
+    // question 384), so a reset or a refused password says so before it points there.
     account: {
       'verify-email': 'This site wants you to confirm your email first. Open the message it sent you, then sign in here, and Autofill carries on.',
-      'reset-password': "This site asks for a new password. Use the page's Forgot password, then save the new one in Sign-up Information.",
-      'wrong-credentials': "This site didn't accept your saved email and password. If you made an account here before with another password, sign in with it or reset it here.",
+      'reset-password': "This site asks for a new password: set one with the page's Forgot password. Sign-up Information keeps one password for every job site, so change it there only if the new one is for all of them.",
+      'wrong-credentials': "This site didn't accept your saved email and password. If you made an account here before with another password, sign in with it, or reset it here to the one in Sign-up Information, which Autofill uses on every job site.",
     },
     // Item 5 (WD-04): no password saved yet; the run waits for one, then tries the page again by itself.
     noSignInWaiting: 'Save a job-site password in TailorIT Autofill › Settings › Sign-up Information in the next 5 minutes, and Autofill carries on here by itself.',

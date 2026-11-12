@@ -290,6 +290,19 @@ describe('the copy', () => {
     expect(account['wrong-credentials']).toMatch(/didn't accept/);
   });
 
+  // The jr6 integration fixes (DOC-12, owner question 436): Sign-up Information keeps one password for every job site
+  // (owner question 384), so the toasts for a reset or a refused password never send the person to change it there
+  // without saying that it is every job site's.
+  it('says the saved password is every job site’s wherever an account error points at Sign-up Information', () => {
+    const { account } = COPY.toasts;
+    for (const kind of ['reset-password', 'wrong-credentials'] as const) {
+      expect(account[kind], kind).toContain('Sign-up Information');
+      expect(account[kind], kind).toMatch(/\bevery job site\b/);
+      expect(account[kind], kind).toMatch(SENTENCE);
+    }
+    expect(account['reset-password']).not.toMatch(/then save the new one/);
+  });
+
   it('says an email gate’s Next is the person’s, never asks for a password there, and that the run waits for one to be '
     + 'saved', () => {
     for (const words of [COPY.toasts.gateTyped, COPY.toasts.gate]) {
