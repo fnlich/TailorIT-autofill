@@ -180,8 +180,13 @@ export interface AgentWindows {
   closeTab(tabId: number): Promise<void>;
   /** Whether a tab is still there. */
   tabExists(tabId: number): Promise<boolean>;
-  /** Whether a normal browser window other than `except` is open: the agent works only while the person's browser is. */
-  othersOpen(except: number | null): Promise<boolean>;
+  /** Whether a normal browser window other than `except` is open: the agent works only while the person's browser is.
+   *  jr7 AUTO-7 (jr7-O1 part 4): `except` may name several windows (the jobs' windows left open for the person). */
+  othersOpen(except: number | readonly number[] | null): Promise<boolean>;
+  /** jr7 AUTO-7 (jr7-O1 part 4, FIX7PLAN D-9 Q-O2): flags a window the agent left open for the person (Chrome's
+   *  windows.update drawAttention: its taskbar entry flashes; no permission), never focusing it. A window gone is no
+   *  error. Absent: nothing is flagged. */
+  drawAttention?(windowId: number): Promise<void>;
 }
 
 // v1.5 QX
