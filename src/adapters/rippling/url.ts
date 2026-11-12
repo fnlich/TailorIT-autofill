@@ -13,6 +13,15 @@
  * posting's uuid, /apply, and jobBoardSlug, jobId and step=application in that order. Whether the form loads without
  * that query is a live check no snapshot answers (DESIGN-NEW-ATS §7), so it is kept.
  * TailorIT's parseAtsUrl reads the same since its API 6 (src/adapters/url.test.ts).
+ * jr7 RBP-7 (RBP7-01, FIX7PLAN §6.12; snapshot7 rippling1: a board reached under a locale,
+ * /en-GB/<board>/jobs/<uuid> and its /apply with step=application and step=confirmation): a first segment shaped as a
+ * locale (BCP-47's language, with a script, a region or a UN M.49 region: en, en-GB, pt-BR, zh-Hant, es-419) is dropped
+ * before the board is read, but never where the second segment is `jobs`: there the first is the board itself (a
+ * two-letter board, or one named "en": /ab/jobs/<uuid> stays a posting of board ab; the verifier's guard). The canonical
+ * addresses stay locale-free, so the posting, the form and the confirmation of either spelling share one key. TailorIT's
+ * contract reads the same since jr7-tailorit-a (its RIPPLING_LOCALE, TAILORIT-7's twin), and is asked by the
+ * locale-free canonical address anyway (tailoritAddressOf). Whether ats.rippling.com/<board>/jobs/<uuid>/apply without
+ * the locale opens that board's form is a live check (Q7-1).
  */
 import type { ApplicationPage, ApplicationUrl } from '../application-key';
 
@@ -22,6 +31,8 @@ const HOST = 'ats.rippling.com';
 const BOARD = /^[a-z0-9-]+$/;
 /** A posting's id: a lower-case uuid, as every address writes it. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** jr7 RBP-7 (RBP7-01): a first segment that is a locale's (the module header), dropped before the board is read. */
+const LOCALE = /^[a-z]{2,3}(?:-(?:[A-Za-z]{4}|[A-Za-z]{2}|\d{3}))?$/;
 /** What follows the uuid, and the page it makes. */
 const PAGES: ReadonlyMap<string, ApplicationPage> = new Map([['', 'posting'], ['apply', 'application']]);
 
@@ -36,7 +47,10 @@ export function matchesUrl(url: URL): boolean {
 export function parseRipplingUrl(url: URL): ApplicationUrl | null {
   if (!matchesUrl(url)) return null;
   const path = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
-  const [board, jobs, id, ...rest] = path.split('/').slice(1);
+  const parts = path.split('/').slice(1);
+  // jr7 RBP-7 (RBP7-01): a locale before the board, never the board itself (`jobs` second: the module header).
+  if (parts.length > 1 && parts[1] !== 'jobs' && LOCALE.test(parts[0] ?? '')) parts.shift();
+  const [board, jobs, id, ...rest] = parts;
   const page = PAGES.get(rest.join('/'));
   if (board === undefined || !BOARD.test(board) || jobs !== 'jobs' || id === undefined || !UUID.test(id)
     || page === undefined) return null;
