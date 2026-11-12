@@ -443,8 +443,9 @@ describe('the patterns over normalized labels', () => {
   /** The patterns that read text before normalization: the raw label ("Why Acme?"), attribute text, section ids, and
    *  where a passage breaks into sentences before each is normalized (classifyRules SENTENCE_BREAK, the core pass of
    *  2026-11-06). jr6 RULES R3 (SR-9): a help text's run of file types, read before normalization (classifyRules
-   *  withoutFileTypes). */
-  const RAW_TEXT = /WHY_NAME =|OTHER_PERSON_ID =|SENTENCE_BREAK =|\(\[a-z0-9\]\)\(\[A-Z\]\)|WORD_RUN =|run\.split\(','\)/;
+   *  withoutFileTypes). jr7 RULES-7 (UKGR-14): a social security number's mask, read in the raw label or placeholder
+   *  pattern, and a national id's name or id attribute text. */
+  const RAW_TEXT = /WHY_NAME =|OTHER_PERSON_ID =|SENTENCE_BREAK =|\(\[a-z0-9\]\)\(\[A-Z\]\)|WORD_RUN =|run\.split\(','\)|SSN_MASK =|NATIONAL_ID_NAME =/;
 
   it('need no character normalizeLabel always removes, but the one the design’s AI line still writes', () => {
     const dead = ['./labelRules.ts', './classifyRules.ts'].flatMap((file) => patternsIn(file))
