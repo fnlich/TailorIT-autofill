@@ -158,3 +158,86 @@ describe('the upload reveal door (jr6 ENGINE)', () => { // jr6 ENGINE
     expect(readFileSync(join(SRC, 'content/pass.ts'), 'utf8').match(/revealUpload\(/g)).toHaveLength(1);
   });
 }); // jr6 ENGINE
+
+// jr7 ENGINE-7 E2 item 4 (UKGR-10, EFA-6): the upload-prompt door. clickUploadPrompt presses the one control a dialog
+// the site draws after the run's own file write asks for, so it is held as the other doors are: defined once in
+// not-submit.ts, which never calls it, named by upload-prompt.ts alone (which calls it once), not exported by
+// fillers/index.ts; and its wrapper, answerUploadPrompt, is imported by content/pass.ts alone. // jr7 ENGINE-7
+describe('the upload-prompt door (jr7 ENGINE-7)', () => {
+  it('is named by upload-prompt.ts alone, beside not-submit.ts where it is defined', () => {
+    const naming = sources(SRC).map(nameOf).filter((name) => !isTest(name))
+      .filter((name) => /\bclickUploadPrompt\b/.test(readFileSync(join(SRC, name), 'utf8')));
+    expect(naming.sort()).toEqual(['dom/fillers/not-submit.ts', 'dom/fillers/upload-prompt.ts']);
+    expect(readFileSync(join(SRC, 'dom/fillers/upload-prompt.ts'), 'utf8').match(/clickUploadPrompt\(/g)).toHaveLength(1);
+    const notSubmit = readFileSync(join(SRC, 'dom/fillers/not-submit.ts'), 'utf8');
+    expect(notSubmit.match(/\bclickUploadPrompt\(/g)).toHaveLength(1);
+    expect(notSubmit).toMatch(/export function clickUploadPrompt\(/);
+    expect(readFileSync(join(SRC, 'dom/fillers/index.ts'), 'utf8')).not.toMatch(/clickUploadPrompt|answerUploadPrompt/);
+  });
+
+  it('has its wrapper, answerUploadPrompt, imported by content/pass.ts alone', () => {
+    const importing = sources(SRC).map(nameOf).filter((each) => !isTest(each)).filter((each) => {
+      const text = readFileSync(join(SRC, each), 'utf8');
+      return [...text.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g)]
+        .some(([, isType, names, source]) => isType === undefined && /(^|\/)upload-prompt$/.test(source!)
+          && names!.split(',').some((name) => name.trim().split(/\s+as\s+/)[0] === 'answerUploadPrompt'));
+    });
+    expect(importing).toEqual(['content/pass.ts']);
+    expect(readFileSync(join(SRC, 'content/pass.ts'), 'utf8').match(/answerUploadPrompt\(/g)).toHaveLength(1);
+  });
+});
+
+// jr7 ENGINE-7 E2 item 5 (UKGR-9): the editor-opener door, held as the other doors are: defined once in not-submit.ts,
+// named by editor-opener.ts alone (which calls it once), not exported by fillers/index.ts; its wrapper, openEditors,
+// imported by content/orchestrator.ts alone. // jr7 ENGINE-7
+// jr7 ENGINE-7 E2 item 6 (DF7-V4, built off until Q7-1): the block-save door, held as the other doors are: defined once
+// in not-submit.ts, named by block-save.ts alone (which calls it once), not exported by fillers/index.ts; its switch
+// off, and its wrapper, saveBlockForm, imported by no module yet (content/repeatables.ts alone once on). // jr7 ENGINE-7
+describe('the block-save door (jr7 ENGINE-7, built off)', () => {
+  it('is named by block-save.ts alone, beside not-submit.ts where it is defined', () => {
+    const naming = sources(SRC).map(nameOf).filter((name) => !isTest(name))
+      .filter((name) => /\bclickBlockSave\b/.test(readFileSync(join(SRC, name), 'utf8')));
+    expect(naming.sort()).toEqual(['dom/fillers/block-save.ts', 'dom/fillers/not-submit.ts']);
+    expect(readFileSync(join(SRC, 'dom/fillers/block-save.ts'), 'utf8').match(/clickBlockSave\(/g)).toHaveLength(1);
+    const notSubmit = readFileSync(join(SRC, 'dom/fillers/not-submit.ts'), 'utf8');
+    expect(notSubmit.match(/\bclickBlockSave\(/g)).toHaveLength(1);
+    expect(notSubmit).toMatch(/export function clickBlockSave\(/);
+    expect(readFileSync(join(SRC, 'dom/fillers/index.ts'), 'utf8')).not.toMatch(/clickBlockSave|saveBlockForm/);
+  });
+
+  it('is off, and its wrapper, saveBlockForm, is imported by no module until it is on', () => {
+    expect(readFileSync(join(SRC, 'dom/fillers/block-save.ts'), 'utf8'))
+      .toMatch(/export const BLOCK_SAVE_DOOR_ON = false;/);
+    const importing = sources(SRC).map(nameOf).filter((each) => !isTest(each)).filter((each) => {
+      const text = readFileSync(join(SRC, each), 'utf8');
+      return [...text.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g)]
+        .some(([, isType, names, source]) => isType === undefined && /(^|\/)block-save$/.test(source!)
+          && names!.split(',').some((name) => name.trim().split(/\s+as\s+/)[0] === 'saveBlockForm'));
+    });
+    expect(importing).toEqual([]);
+  });
+});
+
+describe('the editor-opener door (jr7 ENGINE-7)', () => {
+  it('is named by editor-opener.ts alone, beside not-submit.ts where it is defined', () => {
+    const naming = sources(SRC).map(nameOf).filter((name) => !isTest(name))
+      .filter((name) => /\bclickEditorOpener\b/.test(readFileSync(join(SRC, name), 'utf8')));
+    expect(naming.sort()).toEqual(['dom/fillers/editor-opener.ts', 'dom/fillers/not-submit.ts']);
+    expect(readFileSync(join(SRC, 'dom/fillers/editor-opener.ts'), 'utf8').match(/clickEditorOpener\(/g)).toHaveLength(1);
+    const notSubmit = readFileSync(join(SRC, 'dom/fillers/not-submit.ts'), 'utf8');
+    expect(notSubmit.match(/\bclickEditorOpener\(/g)).toHaveLength(1);
+    expect(notSubmit).toMatch(/export function clickEditorOpener\(/);
+    expect(readFileSync(join(SRC, 'dom/fillers/index.ts'), 'utf8')).not.toMatch(/clickEditorOpener|openEditors/);
+  });
+
+  it('has its wrapper, openEditors, imported by content/orchestrator.ts alone', () => {
+    const importing = sources(SRC).map(nameOf).filter((each) => !isTest(each)).filter((each) => {
+      const text = readFileSync(join(SRC, each), 'utf8');
+      return [...text.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g)]
+        .some(([, isType, names, source]) => isType === undefined && /(^|\/)editor-opener$/.test(source!)
+          && names!.split(',').some((name) => name.trim().split(/\s+as\s+/)[0] === 'openEditors'));
+    });
+    expect(importing).toEqual(['content/orchestrator.ts']);
+    expect(readFileSync(join(SRC, 'content/orchestrator.ts'), 'utf8').match(/openEditors\(/g)).toHaveLength(1);
+  });
+});
