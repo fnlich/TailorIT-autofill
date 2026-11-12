@@ -29,10 +29,13 @@ const CASES = [
   { name: 'smartsuite-uploaded', html: smartHtml, expectation: readExpectation(smartExpect) },
 ] as const;
 
-/** The same config with one of its rules undone. */
+/** The same config with one of its rules undone. jr7 RBP-7: the widgets' rule undone takes the code's widget hook with
+ *  it (the rules' radios and the declared lists: config.ts). */
 function without(key: Exclude<keyof AtsConfig, 'platform' | 'snapshots' | 'parse' | 'root'>) {
   const { [key]: _undone, ...rest } = RIPPLING_CONFIG;
-  return configuredAdapter(rest);
+  if (key !== 'widgets') return configuredAdapter(rest);
+  const { widgetFor: _declared, ...code } = RIPPLING_CONFIG.code!;
+  return configuredAdapter({ ...rest, code });
 }
 
 async function open(html: string) {
@@ -132,14 +135,15 @@ describe('the Rippling adapter: each rule, and the page read without it', () => 
     expect(without('uploads').uploadState?.(kept, 'resume.pdf')).toBeNull();
   });
 
-  it('names Apply as Submit, yet never reads its step as final: what follows Apply is in no snapshot (the behaviour review, minor 5)', async () => {
+  it('names Apply as Submit, and reads the one-page form as final while it shows (jr7 RBP-7, RBP7-02: snapshot7 shows '
+    + 'the confirmation step after Apply)', async () => {
     const page = await open(quHtml);
     const apply = q(page.doc, 'form button[type="submit"][data-testid="Apply"]');
     expect(ripplingAdapter.submitButton?.(page.root)).toBe(apply);
-    expect(ripplingAdapter.isFinalStep?.(page.doc)).toBe('unknown');
-    // The layer alone (the code's isFinalStep undone) would read a one-page form's shown Submit as final.
-    const { isFinalStep: _unknown, ...code } = RIPPLING_CONFIG.code!;
-    expect(configuredAdapter({ ...RIPPLING_CONFIG, code }).isFinalStep?.(page.doc)).toBe('final');
+    expect(ripplingAdapter.isFinalStep?.(page.doc)).toBe('final');
+    // The behaviour review of 2026-11-06 (minor 5) held the step at "unknown" while no snapshot showed what followed
+    // Apply; the code declares no finality of its own any more (jr7-rippling.browser.test.ts holds it on snapshot7).
+    expect(RIPPLING_CONFIG.code?.isFinalStep).toBeUndefined();
     expect(without('submit').submitButton?.(page.root)).toBeNull();
     expect(without('submit').isFinalStep?.(page.doc)).toBe('unknown');
   });
