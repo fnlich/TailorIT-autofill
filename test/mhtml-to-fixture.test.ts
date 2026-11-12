@@ -626,8 +626,43 @@ describe('mhtml-to-fixture on the new ATSs (DESIGN-NEW-ATS §6)', () => {
       expect(onAtsHost(url), url).toBe(platformOfUrl(url) !== null);
     }
     for (const platform of NEW_ATS_PLATFORMS) expect(FIXTURE_PLATFORMS, platform).toContain(platform);
-    expect(NEW_ATS_PLATFORMS).toHaveLength(15);
+    // jr7 TOOLING-7: 15, and jr7's five (UKG Ready, Paycom, JobDiva, Eightfold, Jibe).
+    expect(NEW_ATS_PLATFORMS).toHaveLength(20);
   });
+
+  it("jr7 TOOLING-7: converts jr7's platforms' frames on their candidate paths alone, never an employee page (FIX7PLAN §3.2)",
+    () => {
+      const client = 'a'.repeat(16) + '0123456789ABCDEF';
+      const cases: Array<[string, boolean]> = [
+        // UKG Ready (UKGR-2): /ta/<company>.careers only; the login, the home page and the file service are employee pages.
+        ['https://secure7.saashr.com/ta/6200000.careers?ShowJob=123456789', true],
+        ['https://secure.saashr.com/ta/6200000.careers', true], ['https://secure12.saashr.com/ta/123.careers', true],
+        ['https://secure7.saashr.com/ta/6200000.login', false], ['https://secure7.saashr.com/ta/6200000.home', false],
+        ['https://secure7.saashr.com/ta/fs?ticket=x', false], ['https://www.saashr.com/ta/6200000.careers', false],
+        // Paycom (PC7-02): the portal's posting and application paths only; never /v4/ee/ or /v4/cl/.
+        [`https://www.paycomonline.net/v4/ats/web.php/portal/${client}/jobs/53215`, true],
+        [`https://www.paycomonline.net/v4/ats/web.php/portal/${client}/applications`, true],
+        [`https://www.paycomonline.net/v4/ats/web.php/portal/${client}/jobs`, false],
+        ['https://www.paycomonline.net/v4/ee/web.php/app/login', false], ['https://www.paycomonline.net/v4/cl/x', false],
+        ['https://www.paycomonline.com/v4/ats/web.php/portal/x/jobs/1', false],
+        // JobDiva (JDEF-12): /portal/ on www<n>.jobdiva.com.
+        ['https://www1.jobdiva.com/portal/?a=x#/jobs/1', true], ['https://www2.jobdiva.com/portal/', true],
+        ['https://www1.jobdiva.com/candidates/myjobs/x', false], ['https://login.jobdiva.com/portal/', false],
+        // Eightfold (JDEF-12): a tenant's /careers; never app., www. or a career hub.
+        ['https://twilio.eightfold.ai/careers?pid=1', true], ['https://twilio.eightfold.ai/careers/job/1', true],
+        ['https://app.eightfold.ai/careers', false], ['https://twilio.eightfold.ai/careerhub/me', false],
+        ['https://www.eightfold.ai/careers', false],
+        // Jibe (ICIMS7-11): a tenant's /jobs/ pages; never its marketing pages.
+        ['https://oneblood.jibeapply.com/jobs/1234', true], ['https://oneblood.jibeapply.com/about', false],
+        ['https://jibeapply.com/jobs/1', false], ['http://oneblood.jibeapply.com/jobs/1', false],
+      ];
+      for (const [url, candidate] of cases) {
+        expect(onAtsHost(url), url).toBe(candidate);
+        // src/shared/hosts.ts agrees wherever it already names the page (ENGINE-7 E0 registers these hosts).
+        if (platformOfUrl(url) !== null) expect(candidate, url).toBe(true);
+      }
+      expect(FIXTURE_PLATFORMS.slice(-5)).toEqual(['ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe']);
+    });
 
   it('keeps open shadow roots, nested ones too, as declarative shadow DOM: redacted inside and measured inside', async () => {
     const live = await browser.newContext({ viewport: VIEWPORT });
@@ -1422,8 +1457,9 @@ interface Expectation {
 
 /** jr6 (FIXPLAN 6.1 item 8): a case of the jr6 build (2026-11-10: the owner's snapshot6 and the Apply audits' pages),
  *  named jr6-*. The frozen counts and lists below leave them out; every jr6 file still goes through the per-file checks
- *  (its platform's, and those of every jr6 case: JR6_FILES). */
-const isJr6 = (name: string): boolean => /(?:^|\/)jr6-/.test(name);
+ *  (its platform's, and those of every jr6 case: JR6_FILES). jr7 TOOLING-7: and a case of the jr7 build (2026-11-11: the
+ *  owner's snapshot7, FIX7PLAN §11), named jr7-*, alike: out of the frozen lists, through every per-file check. */
+const isJr6 = (name: string): boolean => /(?:^|\/)jr[67]-/.test(name);
 
 /** The reasons a control is not fillable (docs/FIXTURES.md). */
 const NOT_FILLABLE = ['widget-phase-4', 'not-user-visible'];
@@ -1661,7 +1697,9 @@ describe('pruneCssInPage (the v3 Phase 6/7b review, C10)', () => {
     expect(PRUNED_CSS_PLATFORMS).toEqual(['icims', 'taleo', 'successfactors', 'oracle', 'smartrecruiters',
       // The new ATSs: builder A's, builder B's, then builder C's.
       'adp', 'dayforce', 'ultipro', 'clearcompany', 'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint',
-      'paycor', 'hibob']);
+      'paycor', 'hibob',
+      // jr7 TOOLING-7: jr7's five.
+      'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe']);
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><head><style>

@@ -203,6 +203,11 @@ export const FIXTURE_PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'wo
   'jobvite', 'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor', 'hibob', 'ultipro', 'dayforce',
   'paylocity', 'dice', 'clearcompany', 'adp',
   // ── end New ATSs ──
+  // ── jr7 TOOLING-7 (FIX7PLAN §3.2, §6.1 items 4, 5, 7; UKGR-20, T7-01, JDEF-16): the platforms jr7 adds, in
+  // src/core/enums.ts PLATFORMS' order: UKG Ready (secure<n>.saashr.com), Paycom, JobDiva, Eightfold and Jibe (iCIMS's
+  // front end, ICIMS7-11) ──
+  'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe',
+  // ── end jr7 TOOLING-7 ──
 ];
 
 /** The hosts the extension runs on (src/shared/hosts.ts, the one list): only frames on these are converted. */
@@ -219,7 +224,8 @@ const ATS_HOST = new RegExp('^(?:(?:job-)?boards\\.greenhouse\\.io|jobs\\.(?:eu\
 // ── New ATSs (DESIGN-NEW-ATS §6.1, Phase 0) ──
 /** The new ATSs' candidate hosts, as src/shared/hosts.ts HOST_PLATFORMS reads them, each by its candidate paths where
  *  the host serves other pages too: a frame on such a host off those paths (ClearCompany's /blank/page) is a
- *  third-party stand-in, one on them (UltiPro's RelyingPartyIframe) is converted. */
+ *  third-party stand-in, one on them (UltiPro's RelyingPartyIframe) is converted.
+ *  @type {Array<{ host: RegExp; paths?: string[]; pathPattern?: RegExp }>} */
 export const NEW_ATS_HOSTS = [
   { host: /^jobs\.jobvite\.com$/ },
   { host: /^(?!www\.)[a-z0-9-]+\.applytojob\.com$/, paths: ['/apply/'] },
@@ -236,10 +242,25 @@ export const NEW_ATS_HOSTS = [
   { host: /^(?!cc-)[a-z0-9-]+\.clearcompany\.com$/, paths: ['/careers/'] },
   { host: /^workforcenow\.adp\.com$/, paths: ['/mascsr/default/mdf/recruitment/', '/mascsr/applicant/mdf/recruitment/'] },
   { host: /^[a-z0-9-]+\.bamboohr\.com$/, paths: ['/careers/'] },
+  // ── jr7 TOOLING-7 (FIX7PLAN §3.2, the verified specs; as src/shared/hosts.ts HOST_PLATFORMS reads them once ENGINE-7 E0
+  // registers them): a candidate path only, never an employee page of the same host. `pathPattern` is a whole path the
+  // candidate pages have (UKG Ready's /ta/<company>.careers, Paycom's /v4/ats/web.php/portal/<client key>/jobs/<id> and
+  // .../applications); `paths` are prefixes as above. ──
+  { host: /^secure\d{0,2}\.saashr\.com$/, pathPattern: /^\/ta\/\d{3,10}\.careers$/ }, // ukgready (UKGR-2)
+  { host: /^www\.paycomonline\.net$/,
+    pathPattern: /^\/v4\/ats\/web\.php\/portal\/[A-Fa-f0-9]{32}\/(?:jobs\/\d+|applications)\/?$/ }, // paycom (PC7-02)
+  { host: /^www\d{0,2}\.jobdiva\.com$/, paths: ['/portal/'] }, // jobdiva (JDEF-12)
+  { host: /^(?!(?:app|www)\.)[a-z0-9-]+\.eightfold\.ai$/, paths: ['/careers'] }, // eightfold (JDEF-12)
+  { host: /^[a-z0-9-]+\.jibeapply\.com$/, paths: ['/jobs/'] }, // jibe (ICIMS7-11)
+  // ── end jr7 TOOLING-7 ──
 ];
-/** The new ATSs' fixture platforms (normaliseNewAts). */
+/** The new ATSs' fixture platforms (normaliseNewAts). jr7 TOOLING-7: and jr7's five, which keep their shadow roots and
+ *  have their unused style rules pruned as the new ATSs' do (the auditors converted them as `hibob`, a new ATS with no
+ *  normalisation of its own, and the Jibe page as `icims`, pruned too). */
 export const NEW_ATS_PLATFORMS = ['jobvite', 'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor',
-  'hibob', 'ultipro', 'dayforce', 'paylocity', 'dice', 'clearcompany', 'adp'];
+  'hibob', 'ultipro', 'dayforce', 'paylocity', 'dice', 'clearcompany', 'adp',
+  // jr7 TOOLING-7
+  'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe'];
 // ── end New ATSs ──
 
 /** The platforms whose fixtures keep only the style rules their own elements match (pruneCssInPage). */
@@ -257,6 +278,8 @@ export const PRUNED_CSS_PLATFORMS = ['icims', 'taleo', 'successfactors', 'oracle
   // as words of the redaction list (Font Awesome's star icon in breezy-0, careerplug-0 and -1, pinpoint-0 to -2).
   'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor', 'hibob',
   // ── end New ATSs ──
+  // jr7 TOOLING-7: UKG Ready's, Paycom's, JobDiva's, Eightfold's and Jibe's.
+  'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe',
 ];
 
 /** The platforms whose pages keep their open shadow roots (the snapshot build of 2026-11-06: SmartRecruiters, oracle-sf-sr,
@@ -4143,8 +4166,10 @@ export function onAtsHost(url) {
     }
     // ── New ATSs (DESIGN-NEW-ATS §6.1): their hosts, path-scoped as src/shared/hosts.ts reads them ──
     const host = parsed.hostname.toLowerCase();
+    // jr7 TOOLING-7: an entry's pathPattern is a whole candidate path (UKG Ready's, Paycom's).
     if (parsed.protocol === 'https:' && NEW_ATS_HOSTS.some((entry) => entry.host.test(host)
-      && (entry.paths === undefined || entry.paths.some((path) => parsed.pathname.startsWith(path))))) return true;
+      && (entry.paths === undefined || entry.paths.some((path) => parsed.pathname.startsWith(path)))
+      && (entry.pathPattern === undefined || entry.pathPattern.test(parsed.pathname)))) return true;
     // ── end New ATSs ──
     return parsed.protocol === 'https:' && ATS_HOST.test(parsed.hostname);
   } catch {
