@@ -123,8 +123,9 @@ describe('the page states', () => {
     // the button, the native button the host's shadow root draws; no box (Sign-in Auto types nothing there). It is no
     // never-pressed control any more: Sign-in Auto's door alone presses it.
     const native = host.shadowRoot!.querySelector('button.ukg-button-native');
+    // jr7 ULTIPRO-7 (UP7-04): enabled by the page once the step is filled; this tenant draws no privacy box.
     expect(ultiproAdapter.signInContainer?.(fixture.doc)).toEqual({ email: null, password: null, confirm: null, terms: [],
-      button: native, container: form });
+      button: native, container: form, enablesWhenFilled: true });
     expect(form.contains(host)).toBe(false);
     expect(ultiproAdapter.neverPress?.(fixture.doc.body)).not.toContain(host);
     // Read at its own address (the converter wrote every form's action as /__submitted, which then resolves there).

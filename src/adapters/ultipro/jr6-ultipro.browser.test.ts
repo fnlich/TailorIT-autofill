@@ -247,12 +247,14 @@ describe('jr6 UltiPro: the pages as the step machine reads them (the audit harne
     expect(page.result.fields).toHaveLength(32);
   });
 
-  it('the addresses: the posting parses as one (no Apply declared: apply-path C2 waits for a capture), the hosts', () => {
+  it('the addresses: the posting parses as one (its Apply declared since jr7 UP7-09: the snapshot7 postings), the hosts', () => {
     const detail = new URL(DETAIL);
     expect(parseUltiproUrl(detail)).toMatchObject({ page: 'posting',
       applicationUrl: ultiproAdapter.canonicalApplicationUrl(new URL(APPLY)) });
     expect(ultiproAdapter.canonicalApplicationUrl(detail)).toBeNull();
-    expect(ULTIPRO_CONFIG.posting).toBeUndefined();
+    // jr7 ULTIPRO-7 (UP7-09): apply-path C2, waiting for a capture since jr6, is declared from snapshot7's two postings
+    // (src/adapters/ultipro/jr7-ultipro.browser.test.ts).
+    expect(ULTIPRO_CONFIG.posting?.entry).toContain('ukg-button[data-automation="apply-now-button"]');
     for (const host of ['recruiting2.ultipro.com', 'recruiting.ultipro.ca', 'acme.rec.pro.ukg.net']) {
       const other = new URL(APPLY.replace('recruiting.ultipro.com', host));
       expect(ultiproAdapter.matchesUrl(other), host).toBe(true);
