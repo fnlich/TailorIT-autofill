@@ -1,0 +1,5 @@
+{
+  "https://recruiting.ultipro.com/pre1019prsd/JobBoard/4c05f321-903e-43d5-a4c0-5d9dd55dc34d/OpportunityApply?opportunityId=4d20739d-b2f5-4343-8f02-4a1fb28b5cc2": "fixtures/ultipro/jr7-ultipro2-apply-6.html",
+  "https://recruiting.ultipro.com/pre1019prsd/JobBoard/4c05f321-903e-43d5-a4c0-5d9dd55dc34d/RelyingPartyIframe?id_token=REDACTED": "fixtures/ultipro/jr7-ultipro2-apply-6.frame-1.html",
+  "https://recruiting.ultipro.com/content/silent-callback.html?code=REDACTED&state=ta%3DPRE1019PRSD": "fixtures/ultipro/jr7-ultipro2-apply-6.frame-2.html"
+}

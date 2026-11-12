@@ -1,0 +1,9 @@
+Synthetic Field Alpha
+Synthetic Field Bravo
+Synthetic Field Charlie
+Synthetic Field Delta
+Synthetic Field Echo
+Synthetic Field Foxtrot
+Synthetic Field Golf
+Synthetic Field Hotel
+Other
