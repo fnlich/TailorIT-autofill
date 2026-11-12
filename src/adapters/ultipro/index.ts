@@ -74,7 +74,7 @@ import { isUserVisible } from '../../dom/visibility';
 import { configuredHooks } from '../configured';
 import type { AtsConfig } from '../configured/types';
 import type { Adapter, DatePartsDecl, SignInForm, WidgetDecl } from '../types';
-import { canonicalApplicationUrl, confirmationAfter, matchesUrl, parseUltiproUrl } from './url';
+import { canonicalApplicationUrl, confirmationAfter, matchesUrl, parseUltiproAddress } from './url';
 
 /** The fixtures the adapter was read from (fixtures/ultipro/<case>.html). */
 export const ULTIPRO_SNAPSHOTS = ['fixtures/ultipro/register.html', 'fixtures/ultipro/resume-review.html',
@@ -88,7 +88,7 @@ const REVIEW = 'div[data-bind="if: isParsingResume()"]';
 export const ULTIPRO_CONFIG: AtsConfig = {
   platform: 'ultipro',
   snapshots: ['register', 'resume-review', 'application'],
-  parse: parseUltiproUrl,
+  parse: parseUltiproAddress, // jr7 ULTIPRO-7 (UP7-01): with the page after submitting
   matchesUrl,
   states: [
     // ── jr7 ULTIPRO-7 (FIX7PLAN §6.8 item 5, UP7-07; owner question Q7-8, default: the person's) ──

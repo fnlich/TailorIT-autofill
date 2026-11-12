@@ -33,7 +33,7 @@ import { adaptersFor, applicationOf } from '../index';
 import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import type { Adapter } from '../types';
 import { ULTIPRO_CONFIG, ULTIPRO_IDENTITY_HOSTS, ultiproAdapter } from './index';
-import { parseUltiproUrl } from './url';
+import { parseUltiproAddress, parseUltiproUrl } from './url';
 
 const HTML = import.meta.glob('../../../fixtures/ultipro/*.html', { query: '?raw', import: 'default', eager: true }) as
   Record<string, string>;
@@ -72,7 +72,7 @@ describe('jr7 UP7-01, UP7-V2: the page after submitting', () => {
   it('reads both captures as their board\'s confirmation, confirming the Submit armed on that board\'s form alone', () => {
     for (const [form, done] of [['jr7-ultipro1-apply-11', SUBMITTED[0]!], ['jr7-ultipro2-apply-8', SUBMITTED[1]!]] as const) {
       const here = new URL(addressOf(done));
-      const read = parseUltiproUrl(here)!;
+      const read = parseUltiproAddress(here)!;
       expect(read).toMatchObject({ platform: 'ultipro', jobId: '', page: 'confirmation' });
       // No per-person id is held: no query, and the key is the board's page, the same for every application of it.
       expect(read.applicationUrl).not.toContain('?');

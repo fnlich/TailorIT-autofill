@@ -26,7 +26,11 @@
  * and board as its form, is the board's confirmation. Its address names no opportunity, and its applicationId is a
  * per-person record id (FIX7PLAN §5 D-10): only whether it is there is read, so the reading holds no job id ('')
  * and the path without its query, the same for every application of the board. Which application it confirms is the
- * armed Submit's to say (confirmationAfter, by host, tenant and board).
+ * armed Submit's to say (confirmationAfter, by host, tenant and board). parseUltiproAddress reads it (the content
+ * runtime's and the worker's reading: adapters/address.ts URL_PARSERS); parseUltiproUrl, the page-world scripts'
+ * reading (adapters/bridge-address.ts SHARED_DOMAIN_PARSERS), does not: a confirmation is no posting or form, so the
+ * bridge's and the submit watcher's answers are the same, and their bundles keep their budget (measured: +452 bytes
+ * each with it).
  */
 import type { ApplicationPage, ApplicationUrl } from '../application-key';
 
@@ -95,8 +99,14 @@ export function confirmationAfter(armed: URL, here: URL): boolean {
   const done = matchesUrl(here) ? submittedPage(here) : null;
   // Both readings name the board on the same host's address (https://<host>/<tenant>/JobBoard/<uuid>/…), in lower case.
   const boardPath = (read: ApplicationUrl) => read.applicationUrl.split('/').slice(3, 6).join('/');
-  return form !== null && done !== null && form.page !== 'confirmation' && here.hostname === armed.hostname
-    && boardPath(form) === boardPath(done);
+  return form !== null && done !== null && here.hostname === armed.hostname && boardPath(form) === boardPath(done);
+}
+
+/** Every page an UltiPro address shows (the header): parseUltiproUrl's posting, application and account step, and the
+ *  board's page after submitting (UP7-01); null on every other page of the host. The content runtime's and the
+ *  worker's reading (adapters/address.ts URL_PARSERS, ULTIPRO_CONFIG.parse). */
+export function parseUltiproAddress(url: URL): ApplicationUrl | null {
+  return parseUltiproUrl(url) ?? (matchesUrl(url) ? submittedPage(url) : null);
 }
 // ── end jr7 ULTIPRO-7 (UP7-01) ──
 
@@ -117,8 +127,7 @@ function paramOf(query: string, name: string): string | null {
 /** The posting an address shows (see the header), or null on every other page of the host. */
 export function parseUltiproUrl(url: URL): ApplicationUrl | null {
   if (!matchesUrl(url)) return null;
-  const direct = boardPosting(url.pathname, (name) => url.searchParams.get(name), url.hostname)
-    ?? submittedPage(url); // jr7 ULTIPRO-7 (UP7-01)
+  const direct = boardPosting(url.pathname, (name) => url.searchParams.get(name), url.hostname);
   if (direct !== null || !RECRUITING_HOSTS.has(url.hostname)) return direct;
   const [tenant, auth, register, ...rest] = url.pathname.split('/').slice(1);
   if (tenant === undefined || !TENANT.test(tenant) || auth !== REGISTER[0] || register !== REGISTER[1] || rest.length > 0) {
