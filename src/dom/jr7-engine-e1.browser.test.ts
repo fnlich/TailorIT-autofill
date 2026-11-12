@@ -146,3 +146,47 @@ describe('item 9 (RBP7-V3): a required upload the scan recognises no control of'
     expect(await leftOn('')).toEqual({ uploads: 1, left: 0 });
   });
 });
+
+// ── item 5 (EFA-4): an option's words painted in an aria-hidden label of that very input ───────────────────────────
+describe("item 5 (EFA-4): a declared proxy's radio whose own label[for] is aria-hidden", () => {
+  /** One of Eightfold's radio questions as the jdef audit describes it (snapshot7 twillio): each radio at opacity 0 in
+   *  its selector wrapper, its own label[for] aria-hidden drawing the words, its aria-label `aria(word)`. */
+  const option = (word: string, aria: string, labelFor = `q-${word}`, opacity = 0) => `<div class="radio-module_selector__x1"
+      style="position:relative;display:inline-block;padding:6px 12px;border:1px solid #888">
+      <input type="radio" id="q-${word}" name="q" value="${word}" aria-label="${aria}"
+        style="opacity:${opacity};position:absolute;left:0;top:0;width:100%;height:100%;margin:0">
+      <label for="${labelFor}" aria-hidden="true" class="selector-label">${word}</label></div>`;
+  const question = (options: string) => page(`<div role="radiogroup" id="group">
+      <p id="title">Are you legally authorized to work here?</p>${options}</div>`);
+  /** The adapter JDEF-7 declares: the wrapper the radio's proxy, its words the wrapper's selector label, the title. */
+  const eightfold = (proxies = true): Adapter => ({ ...genericAdapter, id: 'generic',
+    ...(proxies ? { proxyFor: (input: HTMLInputElement) => input.closest('[class*="radio-module_selector__"]') } : {}),
+    optionTextFor: (input) => input.closest('[class*="radio-module_selector__"]')
+      ?.querySelector('[class*="selector-label"]')?.textContent ?? null,
+    labelFor: (control) => (control.id === 'group' ? control.ownerDocument.getElementById('title') : null) });
+  const optionsOf = async (html: string, adapter: Adapter) => {
+    const { doc } = await loadFixture(document, html);
+    const field = scan(doc.getElementById('f')!, adapter, { platform: 'eightfold' }).fields
+      .find((each) => each.kind === 'radio');
+    removeFixtures(document);
+    return field === undefined || field.options === 'lazy' ? null : field.options.map((each) => each.label);
+  };
+  const Q = 'Are you legally authorized to work here?';
+
+  it('reads its words, and never where no proxy is declared, the aria-label says other words, or the label is another\'s',
+    async () => {
+      expect(await optionsOf(question(option('No', `No, ${Q}`) + option('Yes', `Yes, ${Q}`)), eightfold()))
+        .toEqual(['No', 'Yes']);
+      expect(await optionsOf(question(option('No', `No, ${Q}`) + option('Yes', `Yes, ${Q}`)), eightfold(false)))
+        .not.toEqual(['No', 'Yes']);
+      // Radios a person can see themselves (a field with no proxy): their hidden labels' words are never read.
+      const shown = question(option('No', `No, ${Q}`, 'q-No', 1) + option('Yes', `Yes, ${Q}`, 'q-Yes', 1));
+      expect(await optionsOf(shown, eightfold(false))).not.toBeNull();
+      expect(await optionsOf(shown, eightfold(false))).not.toEqual(['No', 'Yes']);
+      expect(await optionsOf(question(option('No', `${Q} No`) + option('Yes', `${Q} Yes`)), eightfold()))
+        .not.toEqual(['No', 'Yes']);
+      // Each label names the other radio: never read for this one.
+      expect(await optionsOf(question(option('No', `No, ${Q}`, 'q-Yes') + option('Yes', `Yes, ${Q}`, 'q-No')),
+        eightfold())).not.toEqual(['No', 'Yes']);
+    });
+});

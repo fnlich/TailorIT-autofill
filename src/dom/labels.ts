@@ -433,9 +433,33 @@ function adapterOptionText(input: HTMLInputElement, ctx: LabelContext): string |
     if (at.localName === 'form' || at.localName === 'body' || at.localName === 'html') break;
     if (containsWords(wordsOf(textOf(at, ctx)), wanted)) return text;
   }
-  return null;
+  return hiddenOwnLabelSays(input, wanted, ctx) ? text : null; // jr7 ENGINE-7 E1 item 5
 }
 // ── end jr6 ENGINE E2 item 8 ──
+
+// ── jr7 ENGINE-7 E1 item 5 (EFA-4, as its verifier corrected it) ──
+/**
+ * Whether the option's words its adapter reads (`wanted`) are painted inside a label[for] of that very input that the
+ * page marks aria-hidden, where a person sees them while the visible-text reading skips them: Eightfold's radio
+ * questions (snapshot7 twillio: each radio at opacity 0, its own label[for] aria-hidden="true" drawing "No" or "Yes",
+ * the input's aria-label "No, <the question>"). Only for an input of a proxy its adapter declares (Adapter.proxyFor
+ * answers one), only where the input's own aria-label starts with those words, and only a label of its own: drawn
+ * (it has a box), naming its id, holding the words whole. Never a label of another control.
+ */
+function hiddenOwnLabelSays(input: HTMLInputElement, wanted: readonly string[], ctx: LabelContext): boolean {
+  if (input.id === '' || ctx.adapter?.proxyFor === undefined) return false;
+  try {
+    if (ctx.adapter.proxyFor(input) === null) return false;
+  } catch {
+    return false;
+  }
+  const own = wordsOf(ariaLabelOf(input));
+  if (wanted.length === 0 || own.length < wanted.length || !wanted.every((word, at) => own[at] === word)) return false;
+  return tiedLabels(input).explicit.some((label) => label.htmlFor === input.id
+    && label.closest('[aria-hidden="true" i]') !== null && label.getClientRects().length > 0
+    && containsWords(wordsOf(label.textContent ?? ''), wanted));
+}
+// ── end jr7 ENGINE-7 E1 item 5 ──
 
 /** Visible help text: the aria-describedby targets a person can see, joined; else the adapter's (descriptionFor). */
 export function descriptionOf(el: Element, ctx: LabelContext): string {
