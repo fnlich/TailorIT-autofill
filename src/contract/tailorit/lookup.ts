@@ -815,13 +815,15 @@ const ICIMS_POSTING_ID = /^\d{1,12}$/;
  * The words a posting's pages end in, as the extension reads them: its posting (job, and job?mode=submit_apply, the
  * page after submitting), its email gate (login) and (version 6, the owner's snapshots of 2026-11-06) the application's
  * steps after the gate: the Candidate Profile (candidate), the Candidate and Job Specific Questions (questions), EEO
- * (eeo) and an IForm's page (form).
+ * (eeo) and an IForm's page (form); jr7 7a (additive within version 6, the owner's snapshot7 of 2026-11-11): the
+ * Assessments step after the final IForm (assessment), which the extension reads as the same application (ICIMS7-04).
  */
-const ICIMS_PAGES: ReadonlySet<string> = new Set(['job', 'login', 'candidate', 'questions', 'eeo', 'form']);
+const ICIMS_PAGES: ReadonlySet<string> = new Set(['job', 'login', 'candidate', 'questions', 'eeo', 'form', 'assessment']);
 
 /**
  * iCIMS (version 5): /jobs/<id>/[<slug>/]job, the posting, and /jobs/<id>/[<slug>/]login, its email gate (the slug is
- * free); version 6: the steps after the gate, /jobs/<id>/[<slug>/]candidate, questions, eeo and form; never "Log back
+ * free); version 6: the steps after the gate, /jobs/<id>/[<slug>/]candidate, questions, eeo and form (jr7 7a: and
+ * assessment); never "Log back
  * in" (login?loginOnly=1, iCIMS's own sign-in, which names no job) nor any other page under a posting (its referral).
  * The board is the portal's host label (careers-<co>), the id the posting's number; every page reads as the posting
  * (its /jobs/<id>/job), and the query (the wrapper's layout, in_iframe, hashed, a step's eem, code and csrf, the
@@ -1021,12 +1023,23 @@ const RIPPLING_HOST = 'ats.rippling.com';
 const RIPPLING_BOARD = /^[a-z0-9-]+$/;
 
 /**
+ * jr7 7a (RBP7-01, the owner's snapshot7 of 2026-11-11: a board under /<language>-<REGION>/): a first segment shaped as
+ * a locale (a language, then a script, a region or a UN M.49 area), dropped only where the path goes on
+ * <board>/jobs/<uuid>, so a board whose name looks like one (/ab/jobs/<uuid>, /en/jobs/<uuid>) stays a board.
+ */
+const RIPPLING_LOCALE = /^[a-z]{2,3}(?:-(?:[A-Za-z]{4}|[A-Za-z]{2}|\d{3}))?$/;
+
+/**
  * Rippling: ats.rippling.com/<board>/jobs/<uuid>, the posting, and .../apply, its form (whose query the path
- * decides). The form's address names the board and the posting again in its query, which its canonical address keeps
- * (jobBoardSlug, jobId and step=application, in that order): whether the form loads without them is not known.
+ * decides); jr7 7a: the same under a locale (RIPPLING_LOCALE), /<locale>/<board>/jobs/<uuid>[/apply]. The form's
+ * address names the board and the posting again in its query, which its canonical address keeps (jobBoardSlug, jobId
+ * and step=application, in that order): whether the form loads without them is not known. The canonical addresses name
+ * no locale, so both spellings are one posting.
  */
 function ripplingPosting(url: UrlLike): ParsedAtsUrl | null {
-  const [board, jobs, id, ...rest] = segmentsOf(url);
+  const parts = segmentsOf(url);
+  const localized = parts.length > 1 && parts[1] !== 'jobs' && RIPPLING_LOCALE.test(parts[0]!);
+  const [board, jobs, id, ...rest] = localized ? parts.slice(1) : parts;
   const tail = rest.join('/');
   if (board === undefined || !RIPPLING_BOARD.test(board) || jobs !== 'jobs' || id === undefined) return null;
   if (!LOWER_UUID.test(id) || (tail !== '' && tail !== 'apply')) return null;
@@ -1067,12 +1080,15 @@ function careerPlugPosting(url: UrlLike): ParsedAtsUrl | null {
 
 /** Pinpoint: a tenant's host, <tenant>.pinpointhq.com, never app. (Pinpoint's own), under /en/postings/. */
 const PINPOINT_HOST = /^(?!app\.)[a-z0-9-]+\.pinpointhq\.com$/;
-/** What follows a Pinpoint posting's id: nothing (the posting), its form, and the page after submitting. */
-const PINPOINT_PAGES: ReadonlySet<string> = new Set(['', 'applications/new', 'applications/thanks']);
+/**
+ * What follows a Pinpoint posting's id: nothing (the posting), its form, and the page after submitting; jr7 7a
+ * (RBP7-22): .../applications, where the form posts (the form again after a refusal).
+ */
+const PINPOINT_PAGES: ReadonlySet<string> = new Set(['', 'applications/new', 'applications/thanks', 'applications']);
 
 /**
- * Pinpoint: /en/postings/<uuid>, the posting, .../applications/new, its form, and .../applications/thanks, the page
- * after submitting (its ?token= never kept).
+ * Pinpoint: /en/postings/<uuid>, the posting, .../applications/new, its form, .../applications (jr7 7a), where the form
+ * posts, and .../applications/thanks, the page after submitting (its ?token= never kept).
  */
 function pinpointPosting(url: UrlLike): ParsedAtsUrl | null {
   if (!url.pathname.startsWith('/en/postings/')) return null;
@@ -1112,17 +1128,27 @@ function hiBobPosting(url: UrlLike): ParsedAtsUrl | null {
 
 /** UltiPro (UKG Pro Recruiting): its candidate host. */
 const ULTIPRO_HOST = 'recruiting.ultipro.com';
+/**
+ * jr7 7a (additive within version 6; UP7-05, the owner's snapshot7 of 2026-11-11 on recruiting2.ultipro.com): UKG's
+ * other candidate-only recruiting hosts, read whole as ULTIPRO_HOST is (the extension's ultipro/url.ts
+ * RECRUITING_HOSTS), their account step too.
+ */
+const ULTIPRO_RECRUITING_HOSTS: ReadonlySet<string> = new Set([ULTIPRO_HOST, 'recruiting2.ultipro.com', 'recruiting.ultipro.ca']);
+/** jr7 7a: UKG's recruiting tenants' own hosts, read on their job boards' pages alone (the extension's OTHER_HOST). */
+const ULTIPRO_TENANT_HOST = /^[a-z0-9-]+\.rec\.pro\.ukg\.net$/;
 const ULTIPRO_TENANT = /^[A-Za-z0-9_-]{1,64}$/;
 /** A board's pages that name a posting in ?opportunityId=: its application and its posting. */
 const ULTIPRO_PAGES: ReadonlySet<string> = new Set(['OpportunityApply', 'OpportunityDetail']);
 
 /**
- * /<tenant>/JobBoard/<board uuid>/<page> with its opportunityId (read by `param`): the posting it names, and whether
- * the page is its application; or null.
+ * /<tenant>/JobBoard/<board uuid>/<page> with its opportunityId (read by `param`), on `host`: the posting it names,
+ * its canonical addresses on that host (jr7 7a: each host's postings are its own), and whether the page is its
+ * application; or null.
  */
 function ultiproBoardPosting(
   path: string,
   param: (name: string) => string | null,
+  host: string,
 ): { posting: ParsedAtsUrl; apply: boolean } | null {
   const [tenant, jobBoard, board, page, ...rest] = path.split('/').slice(1);
   const id = param('opportunityId') ?? '';
@@ -1132,7 +1158,7 @@ function ultiproBoardPosting(
   }
   const lower = tenant.toLowerCase();
   const externalId = id.toLowerCase();
-  const pages = `https://${ULTIPRO_HOST}/${lower}/JobBoard/${board.toLowerCase()}`;
+  const pages = `https://${host}/${lower}/JobBoard/${board.toLowerCase()}`;
   const canonical = [
     `${pages}/OpportunityApply?opportunityId=${externalId}`,
     `${pages}/OpportunityDetail?opportunityId=${externalId}`,
@@ -1155,11 +1181,13 @@ function rawQueryValue(query: string, name: string): string | null {
  * OpportunityDetail, the posting; and the account step, /<TENANT>/AuthCode/Register?state=returnUrl=<that
  * application's path and query>|ta=<TENANT>, read as the application its returnUrl names on the same tenant, as Taleo's
  * account pages are (its state is never kept). The board is the tenant in lower case, the id the opportunity in lower
- * case.
+ * case. jr7 7a: the same on recruiting2.ultipro.com and recruiting.ultipro.ca, and the board pages alone on a tenant's
+ * <x>.rec.pro.ukg.net; the canonical addresses on the page's own host.
  */
 function ultiproPosting(url: UrlLike): ParsedAtsUrl | null {
-  const direct = ultiproBoardPosting(url.pathname, (name) => exactQueryValue(url, name));
+  const direct = ultiproBoardPosting(url.pathname, (name) => exactQueryValue(url, name), url.hostname);
   if (direct !== null) return direct.posting;
+  if (!ULTIPRO_RECRUITING_HOSTS.has(url.hostname)) return null;
   const [tenant, auth, register, ...rest] = url.pathname.split('/').slice(1);
   if (tenant === undefined || !ULTIPRO_TENANT.test(tenant) || auth !== 'AuthCode' || register !== 'Register') return null;
   if (rest.length > 0) return null;
@@ -1168,7 +1196,10 @@ function ultiproPosting(url: UrlLike): ParsedAtsUrl | null {
   const returnUrl = parts.find((part) => part.startsWith('returnUrl='))?.slice('returnUrl='.length) ?? '';
   const ta = parts.find((part) => part.startsWith('ta='))?.slice('ta='.length) ?? '';
   const [path, query] = returnUrl.split('?', 2) as [string, string | undefined];
-  const read = path.startsWith('/') && query !== undefined ? ultiproBoardPosting(path, (name) => rawQueryValue(query, name)) : null;
+  const read =
+    path.startsWith('/') && query !== undefined
+      ? ultiproBoardPosting(path, (name) => rawQueryValue(query, name), url.hostname)
+      : null;
   const tenantBoard = tenant.toLowerCase();
   if (read === null || !read.apply || read.posting.board !== tenantBoard) return null;
   return ta === '' || ta.toLowerCase() === tenantBoard ? read.posting : null;
@@ -1180,20 +1211,48 @@ const DAYFORCE_LOCALE = /^[A-Za-z]{2,3}-[A-Za-z]{2}$/;
 const DAYFORCE_SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
 const DAYFORCE_POSTING_ID = /^\d{1,15}$/;
 
+/** A Dayforce posting's canonical addresses: step 1 of its guest application, then (jr7 7a) its posting, in en-US. */
+function dayforceAddresses(namespace: string, site: string, id: string): string[] {
+  const posting = `https://${DAYFORCE_HOST}/en-US/${namespace}/${site}/jobs/${id}`;
+  return [`${posting}/apply/manualApplication?applicationSource=Manual`, posting];
+}
+
+/**
+ * jr7 7a (AUTO7-02, DF7-07; the owner's snapshot7 of 2026-11-11): a Dayforce posting's own page,
+ * /[<locale>/]<client namespace>/<career site>/jobs/<id>, and its way-to-apply choice, .../apply, one trailing slash
+ * ignored, as the extension's dayforce/url.ts reads them (its posting page, under the application's key); or null.
+ */
+function dayforcePostingPage(url: UrlLike): ParsedAtsUrl | null {
+  const segments = segmentsOf(url);
+  const posting = (length: number) => segments.length === length || (segments.length === length + 1 && segments[length] === 'apply');
+  if (DAYFORCE_LOCALE.test(segments[0] ?? '') && posting(5)) segments.shift();
+  if (!posting(4)) return null;
+  const [namespace, site, jobs, id] = segments as [string, string, string, string];
+  if (!DAYFORCE_SEGMENT.test(namespace) || !DAYFORCE_SEGMENT.test(site) || jobs !== 'jobs') return null;
+  if (!DAYFORCE_POSTING_ID.test(id)) return null;
+  return { kind: 'dayforce', board: namespace, externalId: id, canonical: dayforceAddresses(namespace, site, id) };
+}
+
 /**
  * Dayforce: /[<locale>/]<client namespace>/<career site>/jobs/<id>/apply/manualApplication, every step of a guest
- * application (step 1 with its locale, the later steps without it, their query naming the step). The board is the
- * client namespace as written; the canonical address is step 1's, in en-US, with ?applicationSource=Manual.
+ * application (step 1 with its locale, the later steps without it, their query naming the step); and (jr7 7a) the
+ * posting and its way-to-apply choice (dayforcePostingPage), under the same job. The board is the client namespace as
+ * written; the canonical addresses are step 1's, in en-US, with ?applicationSource=Manual, then the posting's.
  */
 function dayforcePosting(url: UrlLike): ParsedAtsUrl | null {
   const segments = url.pathname.split('/').slice(1);
   if (segments.length === 7 && DAYFORCE_LOCALE.test(segments[0]!)) segments.shift();
-  if (segments.length !== 6) return null;
   const [namespace, site, jobs, id, apply, manual] = segments as [string, string, string, string, string, string];
-  if (!DAYFORCE_SEGMENT.test(namespace) || !DAYFORCE_SEGMENT.test(site) || jobs !== 'jobs') return null;
-  if (!DAYFORCE_POSTING_ID.test(id) || apply !== 'apply' || manual !== 'manualApplication') return null;
-  const canonical = [`https://${DAYFORCE_HOST}/en-US/${namespace}/${site}/jobs/${id}/apply/manualApplication?applicationSource=Manual`];
-  return { kind: 'dayforce', board: namespace, externalId: id, canonical };
+  const step =
+    segments.length === 6 &&
+    DAYFORCE_SEGMENT.test(namespace) &&
+    DAYFORCE_SEGMENT.test(site) &&
+    jobs === 'jobs' &&
+    DAYFORCE_POSTING_ID.test(id) &&
+    apply === 'apply' &&
+    manual === 'manualApplication';
+  if (!step) return dayforcePostingPage(url);
+  return { kind: 'dayforce', board: namespace, externalId: id, canonical: dayforceAddresses(namespace, site, id) };
 }
 
 /** Paylocity: its recruiting host, under /Recruiting/ (compared as written). */
@@ -1209,15 +1268,25 @@ function paylocityPosting(url: UrlLike): ParsedAtsUrl | null {
   return { kind: 'paylocity', board: null, externalId: id, canonical: [`https://${PAYLOCITY_HOST}/Recruiting/Jobs/Apply/${id}`] };
 }
 
-/** Dice: its host, under /job-applications/ alone (its postings, /job-detail/, and its sign-in are not read). */
+/**
+ * Dice: its host, under /job-applications/ (its Easy Apply) and, since jr7 7a, /job-detail/ (its postings); its
+ * sign-in and every other page are not read.
+ */
 const DICE_HOST = 'www.dice.com';
 
-/** Dice: /job-applications/<uuid>/wizard, every step of an Easy Apply; it names no board, the uuid as written. */
+/**
+ * Dice: /job-applications/<uuid>/wizard, every step of an Easy Apply; and (jr7 7a, AUTO7-02: the owner's snapshot7 of
+ * 2026-11-11, whose wizard names its posting's own uuid) /job-detail/<uuid>, its posting, read only (no run opens it).
+ * It names no board, the uuid as written; the canonical addresses are the wizard's, then the posting's.
+ */
 function dicePosting(url: UrlLike): ParsedAtsUrl | null {
-  if (!url.pathname.startsWith('/job-applications/')) return null;
   const [section, id, wizard, ...rest] = segmentsOf(url);
-  if (section !== 'job-applications' || !id || !ANY_UUID.test(id) || wizard !== 'wizard' || rest.length > 0) return null;
-  return { kind: 'dice', board: null, externalId: id, canonical: [`https://${DICE_HOST}/job-applications/${id}/wizard`] };
+  if (!id || !ANY_UUID.test(id) || rest.length > 0) return null;
+  const easyApply = section === 'job-applications' && wizard === 'wizard';
+  const detail = section === 'job-detail' && wizard === undefined;
+  if (!easyApply && !detail) return null;
+  const canonical = [`https://${DICE_HOST}/job-applications/${id}/wizard`, `https://${DICE_HOST}/job-detail/${id}`];
+  return { kind: 'dice', board: null, externalId: id, canonical };
 }
 
 /** ClearCompany: a tenant's host, never its cc- file hosts, under /careers/ alone (its other pages are not a candidate's). */
@@ -1312,8 +1381,11 @@ function smartRecruitersPosting(url: UrlLike): ParsedAtsUrl | null {
  * the extension's adapters read them (see each reader). Version 6: Jobvite, JazzHR, BambooHR, Rippling, Breezy HR,
  * CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now and
  * SmartRecruiters, Oracle's government cloud, Workable's job-search site and iCIMS's steps after its gate, likewise.
- * Hosts are compared in lower case, and the query parameter names of Greenhouse, Lever, Ashby and Workable too; the
- * fragment never matters.
+ * jr7 7a (additive within version 6, the owner's snapshot7 of 2026-11-11): Dayforce's posting and its way-to-apply
+ * choice, Rippling's boards under a locale, UltiPro's other recruiting hosts, Pinpoint's .../applications, iCIMS's
+ * Assessments step and Dice's posting page, each read as the posting the platform's other pages name. Hosts are
+ * compared in lower case, and the query parameter names of Greenhouse, Lever, Ashby and Workable too; the fragment
+ * never matters.
  */
 export function parseAtsUrl(address: string): ParsedAtsUrl | null {
   const url = webUrl(address);
@@ -1357,6 +1429,10 @@ const HOST_READERS: ReadonlyArray<readonly [RegExp | string, (url: UrlLike) => P
   [PAYCOR_HOST, paycorPosting],
   [HIBOB_HOST, hiBobPosting],
   [ULTIPRO_HOST, ultiproPosting],
+  // jr7 7a: UKG's other recruiting hosts (ultiproPosting).
+  ['recruiting2.ultipro.com', ultiproPosting],
+  ['recruiting.ultipro.ca', ultiproPosting],
+  [ULTIPRO_TENANT_HOST, ultiproPosting],
   [DAYFORCE_HOST, dayforcePosting],
   [PAYLOCITY_HOST, paylocityPosting],
   [DICE_HOST, dicePosting],
