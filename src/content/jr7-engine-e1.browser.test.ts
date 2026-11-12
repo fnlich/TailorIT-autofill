@@ -190,6 +190,8 @@ describe('item 11 (ICIMS7-V4): the rows lastFillOf counts at FILLED', () => {
     <label for="month">Today's Date month</label>
     <select id="month" required><option value="">Month</option><option value="11" selected>11</option></select>
     <label for="badge">Badge number</label><input id="badge" type="text" required>
+    <label for="frame">Desired Salary time frame</label>
+    <select id="frame" required><option value="hr" selected>Hr.</option><option value="yr">Yr.</option></select>
   </form></body></html>`;
 
   it('counts a required row the run left flagged only while its field reads empty in the fresh scan', async () => {
@@ -199,9 +201,13 @@ describe('item 11 (ICIMS7-V4): the rows lastFillOf counts at FILLED', () => {
       category: 'unknown', section: 'main', required: true, status: 'flagged', provenance: null,
       matcherStage: 'not-applicable', confidence: 0, reason: 'unknown-field', wrote: false,
       verification: 'not-applicable', needsUserAction: true }));
-    expect(rows.map((row) => row.label)).toEqual(["Today's Date month", 'Badge number']);
-    expect(lastFillOf(rows).flagged).toBe(2);
-    expect(lastFillOf(rows.map((row) => heldIn(scanned, row))).flagged).toBe(1);
+    // FIX7PLAN O-3: the salary's time frame, a question the run knows and leaves for the person (no profile pay), its
+    // page default "Hr." shown: never counted filled by that default.
+    rows[2] = { ...rows[2]!, category: 'salary.period' as FillResult['category'], reason: 'no-profile-value' };
+    expect(rows.map((row) => row.label)).toEqual(["Today's Date month", 'Badge number', 'Desired Salary time frame']);
+    expect(lastFillOf(rows).flagged).toBe(3);
+    expect(lastFillOf(rows.map((row) => heldIn(scanned, row))).flagged).toBe(2);
+    expect(heldIn(scanned, rows[2]!)).toEqual(rows[2]);
     // A row the run filled, or one already flagged as the person's, as it is.
     expect(heldIn(scanned, { ...rows[0]!, status: 'filled', wrote: true })).toEqual({ ...rows[0]!, status: 'filled', wrote: true });
   });
@@ -246,7 +252,8 @@ describe('item 11 (ICIMS7-V4): a not-final step whose required field the page an
     runtimes.push(runtime);
     await runtime.fill();
     const month = worker.reports.at(-1)?.fields.find((row) => row.label === "Today's Date month");
-    expect([month?.status, month?.required]).toEqual(['flagged', true]);
+    // A date the planner cannot write in the page's month list (format-unsupported), the page's own answer in it.
+    expect([month?.status, month?.required, month?.reason]).toEqual(['flagged', true, 'format-unsupported']);
     await vi.waitFor(() => expect((fixture.view as unknown as { nexts: number }).nexts).toBe(1), { timeout: 4_000 });
   });
 });

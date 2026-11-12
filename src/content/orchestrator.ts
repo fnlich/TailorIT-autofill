@@ -3625,15 +3625,23 @@ function requiredBlockRow(block: Element, ordinal: number, platform: Platform): 
 /** A row the run left open (unfilled by it) whose field holds an answer in `scanned` (the step's fresh scan at FILLED),
  *  with detail.filledByYou set, as withFilledByYou folds it in at rest: a required field the page answered itself
  *  (iCIMS's prefilled "Today's Date" month, day and year on arc-onesolutions' IForm, snapshot7 iCIMS1) is no required
- *  field left empty, so it holds no auto-Next (report.ts lastFillOf). Any other row as it is. A flag only: it claims
- *  nothing about who filled the field. */
+ *  field left empty, so it holds no auto-Next (report.ts lastFillOf). Only a row of HELD_BY_PAGE_REASONS: any other
+ *  row as it is. A flag only: it claims nothing about who filled the field. */
 export function heldIn(scanned: ScanResult, row: FillResult): FillResult {
-  if (!open(row) || row.detail?.filledByYou === true) return row;
+  // FIX7PLAN O-3 (the coordinator's note of 2026-11-12): only a row the run could not decide by its own limits
+  // (HELD_BY_PAGE_REASONS). A row whose question it knows and leaves for the person (no-profile-value: iCIMS's salary
+  // Time Frame with no profile pay, its page default "Hr." shown) is never counted filled by the page's default.
+  if (!open(row) || row.detail?.filledByYou === true || !HELD_BY_PAGE_REASONS.has(row.reason)) return row;
   const field = scanned.fields.find((candidate) => candidate.key === row.key)
     ?? scanned.fields.find((candidate) => candidate.baseKey === baseKeyOf(row.key));
   if (field === undefined || !holdsAnswer(field.current)) return row;
   return { ...row, detail: { ...row.detail, filledByYou: true } };
 }
+/** The reasons of a row the run could not decide by its own limits, whose field the page may answer itself: a question
+ *  it could not tell (unknown-field: iCIMS's "Today's Date" parts as the verifier probed them), or one it knows but
+ *  cannot write in the page's shape (format-unsupported: a date asked as month, day and year lists). Never a question
+ *  the run knows the person must answer (no-profile-value, a consent, a legal or EEO question). */
+const HELD_BY_PAGE_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['unknown-field', 'format-unsupported']);
 // ── end jr7 ENGINE-7 E1 item 11 ──
 
 /** jr7 ENGINE-7 E2 item 5: how long the fill lets an editor it opened draw its fields before the loop's first scan
