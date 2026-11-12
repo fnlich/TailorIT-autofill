@@ -147,8 +147,8 @@ describe('jr7 DFPC-7: the Paycom adapter on snapshot7 paycomonline1', () => {
     expect(container?.container).toBe(root);
     expect(container?.password).toBeNull();
     const never = paycomAdapter.neverPress!(root);
-    expect(never.includes(doc.querySelector('[data-testid="signInClickableTextClickableText"]'))).toBe(true);
-    expect(never.includes(doc.querySelector('[data-testid="createAccountClickableTextClickableText"]'))).toBe(true);
+    expect(never.includes(doc.querySelector('[data-testid="signInClickableTextClickableText"]')!)).toBe(true);
+    expect(never.includes(doc.querySelector('[data-testid="createAccountClickableTextClickableText"]')!)).toBe(true);
     const { field } = scanned(doc);
     expect(field('input#firstName')?.label).toBe('Legal First Name');
     expect(field('input#confirmEmail')?.label).toBe('Confirm Email');
@@ -170,7 +170,7 @@ describe('jr7 DFPC-7: the Paycom adapter on snapshot7 paycomonline1', () => {
     expect(words(paycomAdapter.nextButton!(root))).toBe('Next');
     expect(paycomAdapter.submitButton!(root)).toBeNull();
     expect(paycomAdapter.neverPress!(root).includes(Array.from(doc.querySelectorAll('button'))
-      .find((button) => words(button) === 'Cancel'))).toBe(true);
+      .find((button) => words(button) === 'Cancel')!)).toBe(true);
     const { result } = scanned(doc);
     expect(result.fields.map((each) => [each.kind, each.label, each.required])).toEqual([
       ['radio', 'Are you legally authorized to work in the United States?', true]]);
