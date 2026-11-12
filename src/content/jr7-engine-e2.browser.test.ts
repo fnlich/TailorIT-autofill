@@ -9,6 +9,7 @@ import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
 import { createFakeWorker, testVocab } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
+import { signIn, signInDetailOf, type SignInContext } from './sign-in';
 
 const runtimes: ContentRuntime[] = [];
 afterEach(() => {
@@ -180,3 +181,51 @@ describe('item 2 (ADP7-7): a run paused at an email code, then the application\'
     expect(worker.reports.slice(reported).map((report) => report.status)).not.toContain('handoff');
   }, 40_000);
 });
+
+// ── WD7-06 (WORKDAY-7's exact edit): the page's notices that are none of its errors are read too ──────────────────────
+describe('WD7-06: a notice beside the sign-in form that the adapter reads as an account kind', () => {
+  /** A sign-in page whose notice (role=alert) sits outside its form, as Workday's "verify your account" notice after
+   *  Create Account does; the adapter's errors() reads only the form's own error boxes (none shown here). */
+  const page = (notice: string) => `<!doctype html><html><head><title>Sign In</title></head><body><main>
+    <div id="notice" role="alert">${notice}</div>
+    <form id="sign-in" method="post">
+      <p class="error" hidden></p>
+      <label for="email">Email Address</label><input id="email" type="email" autocomplete="username">
+      <label for="password">Password</label><input id="password" type="password" autocomplete="current-password">
+      <button id="go" type="submit">Sign In</button>
+    </form></main></body></html>`;
+  /** The generic adapter with Workday's two hooks, in its manner: errors are the form's own; a notice asking to verify
+   *  the account is verify-email, any other words none. */
+  const noticing: Adapter = { ...genericAdapter,
+    errors: (root) => Array.from(root.querySelectorAll('.error')).map((el) => ({ el })),
+    accountErrorKind: (el) => (/verify your account/i.test(el.textContent ?? '') ? 'verify-email' : null) };
+  const SIGN_IN_HREF = 'https://careers.example.org/login';
+
+  async function arrive(notice: string) {
+    const fixture = await loadFixture(document, page(notice), { width: 1100, height: 900 });
+    const asked: unknown[] = [];
+    const channel = { request: async (message: unknown) => {
+      asked.push(message);
+      return { ok: false, error: 'not_found' };
+    } } as unknown as SignInContext['channel'];
+    const outcome = await signIn({ doc: fixture.doc, adapter: noticing, channel, href: () => SIGN_IN_HREF, isTop: true,
+      signal: new AbortController().signal, settleMs: 1_000 });
+    return { outcome, asked, detail: signInDetailOf(fixture.doc), email: (fixture.doc.getElementById('email') as
+      HTMLInputElement).value };
+  }
+
+  it('a verify notice outside the form, none of the errors: nothing asked or typed, the kind said', async () => {
+    const { outcome, asked, detail, email } = await arrive('An email has been sent to you. Please verify your account.');
+    expect(outcome).toBe('unavailable');
+    expect(asked).toEqual([]);
+    expect(email).toBe('');
+    expect(detail).toEqual({ account: 'verify-email' });
+  });
+
+  it('an ordinary alert the adapter names no kind of changes nothing: the sign-in is asked for', async () => {
+    const { asked, detail } = await arrive('Welcome back. Sign in to go on.');
+    expect(asked).toHaveLength(1);
+    expect(detail).toBeNull();
+  });
+});
+

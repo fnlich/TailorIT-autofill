@@ -370,8 +370,9 @@ function brokenRule(adapter: Adapter, form: SignInForm, password: string, login:
 }
 
 /** jr6 SHELL-A (FIXPLAN §6.12 item 4; WD-05): the kind of the account error the page shows about `form` now (the
- *  adapter's errors on the form's own <form>, each a person can see, read by Adapter.accountErrorKind), the first that
- *  names one; null otherwise (no hook, none shown, a hook that throws). Nothing of the error's words is kept or logged. */
+ *  adapter's errors on the form's own <form>, then (jr7 WD7-06) the document's other alerts, each a person can see, read
+ *  by Adapter.accountErrorKind), the first that names one; null otherwise (no hook, none shown, a hook that throws).
+ *  Nothing of the error's words is kept or logged. */
 function accountErrorShown(ctx: SignInContext, form: SignInForm): AccountErrorKind | null {
   const kindOf = ctx.adapter.accountErrorKind;
   const owner = anchorOf(form)?.form ?? form.form ?? null;
@@ -383,7 +384,11 @@ function accountErrorShown(ctx: SignInContext, form: SignInForm): AccountErrorKi
   } catch {
     return null;
   }
-  for (const el of errors) {
+  // jr7 WORKDAY-7 (WD7-06): and the page's shown notices (role=alert) that are none of its errors, after them: Workday's
+  // "An email has been sent to you. Please verify your account." beside its Sign In form after Create Account, which
+  // the adapter reads as verify-email and never counts as an error (adapters/workday accountErrorKind).
+  const notices = Array.from(ctx.doc.querySelectorAll('[role="alert" i]')).filter((el) => !errors.includes(el));
+  for (const el of [...errors, ...notices]) {
     if (!el.isConnected || !isUserVisible(el, cache)) continue;
     let kind: AccountErrorKind | null = null;
     try {
