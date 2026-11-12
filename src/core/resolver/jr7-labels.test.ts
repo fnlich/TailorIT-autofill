@@ -142,8 +142,11 @@ describe('ICIMS7-06: a skills list is never a Yes and No list, nor an attestatio
       .not.toBe('skills.list');
     expect(read({ label: 'Please list your skills', kind: 'textarea' }).category).toBe('skills.list');
     expect(read({ label: 'Skills', kind: 'combobox', options: ['Python', 'Go'] }).category).toBe('skills.list');
+    // A statement (no yes-or-no question) over a Yes and a No list: no skills list either.
+    expect(read({ label: 'Please confirm you have the following skills: Python and SQL', kind: 'combobox',
+      options: YES_NO }).category).not.toBe('skills.list');
     // A placeholder option aside, the list is still a Yes and a No.
-    expect(read({ label: 'Do you have the skills required?', kind: 'select',
+    expect(read({ label: 'Skills required for this role: Python and SQL', kind: 'combobox',
       options: ['Make a Selection', 'Yes', 'No'] }).category).not.toBe('skills.list');
   });
   it('turns it away on certify wording, whatever the kind', () => {
@@ -161,6 +164,14 @@ describe('ICIMS7-07: a conviction question stays criminal history', () => {
     'Have you been arrested or charged? We will run a background check if you are willing.',
   ])('%s', (label) => {
     expect(read({ label, kind: 'select', options: YES_NO })).toMatchObject({ category: 'screening.criminalHistory' });
+  });
+});
+
+describe('UP7-08: the truthful certification names the certification kind', () => {
+  it('reads consent.certify among its kinds (the unrecognised object of "the information" stays the strictest)', () => {
+    const { byRules } = read({ label: 'I confirm that the information provided within this application is truthful, '
+      + 'complete, and accurate.', kind: 'checkbox' });
+    expect(byRules?.consentKinds).toEqual(['consent.other', 'consent.certify']);
   });
 });
 
