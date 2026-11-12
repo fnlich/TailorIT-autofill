@@ -7,7 +7,7 @@ import { REASON_CODES } from '../core/types/fill';
 import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
 import { SAVE_ANSWER_OUTCOMES } from '../messaging/schemas';
 import { SIGNUP_COPY } from '../ui/page/signup-copy';
-import { CAPTURE_COPY, COPY } from './copy';
+import { CAPTURE_COPY, COPY, PAGE_COPY } from './copy';
 import { NOTICE_CODES } from './report';
 import { DISCLOSURE_VERSION } from './stored';
 
@@ -24,7 +24,7 @@ const SENTENCE = /^["A-Z(].*[.]$/s;
  */
 const DISCLOSURE_HASHES: readonly { version: number; sha256: string }[] = [
   { version: 14, sha256: 'ad97b204db52277072884bbc2168b5f85d7d2edad738e7a10885428ad03f0532' }, // v1.5 part 2
-  { version: 15, sha256: '72e36c2db89b2e0904132d9d3d4bab32e0c42b82229fda5b14a611133cdbbbc6' }, // jr6
+  { version: 15, sha256: '3383e740883fcc6c5fe8048c3c0d6df52db758235fbe6b33d69433fd14da3e1d' }, // jr6
 ];
 
 /** The disclosure's words as DISCLOSURE_HASHES pins them. */
@@ -32,6 +32,18 @@ function disclosureHash(): string {
   const { disclosure, consentLine } = COPY.options.connection;
   return createHash('sha256').update(JSON.stringify([...disclosure, consentLine])).digest('hex');
 }
+
+/** Every string a COPY tree holds (a function's own source too, for the words it builds). */
+function stringsOf(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (typeof value === 'function') return [String(value)];
+  if (value !== null && typeof value === 'object') return Object.values(value).flatMap(stringsOf);
+  return [];
+}
+
+/** The disclosure's sentences, as a person reads them. */
+const disclosureSentences = () => COPY.options.connection.disclosure
+  .flatMap((paragraph) => paragraph.split(/(?<=\.)\s+(?=["A-Z])/));
 
 describe('the copy', () => {
   it('has a plain sentence for every reason code, and nothing for a code that does not exist', () => {
@@ -186,6 +198,33 @@ describe('the copy', () => {
     for (const words of ['Consent & Continue', 'never its Decline', 'Apply manually', 'same tab', 'new tab',
       'another site', 'presses nothing']) expect(first).toContain(words);
     expect(first).not.toMatch(/Open Application/);
+  });
+
+  // The jr6 integration fixes (SEC-5): the door refuses an Apply that downloads a file, and the runtime says it as the
+  // refusal 'none' (content/runtime.ts: `result.refusal === 'download' ? 'none'`), whose words are the "no form" line's.
+  // So the notice says that, never that it tells you why.
+  it('says what a download Apply is told: that there is no Apply Autofill could press', () => {
+    const holding = disclosureSentences().filter((sentence) => sentence.includes('download a file'));
+    expect(holding, 'one sentence names the download (reworded? update this test)').toHaveLength(1);
+    const clause = holding[0]!.split(';').find((part) => part.includes('download a file'))!;
+    expect(clause, clause).not.toMatch(/tells you why/);
+    expect(clause, clause).toContain('no Apply it could press');
+    expect(COPY.mainView.entryRefused.none).toContain('no Apply that Autofill could press');
+  });
+
+  // The jr6 integration fixes (DOC-11): the panel's button reads Sign Up & Autofill (mainView.signUpFill). Every word of
+  // ours that names it, the notice and docs/PRIVACY.md included, names it so, and the no-password toast never asks for
+  // it "again": Sign-in Auto shows that toast too, where the person never chose the button.
+  it('names Sign Up & Autofill as its button reads, wherever the copy, the notice or PRIVACY.md names it', () => {
+    const button = COPY.mainView.signUpFill;
+    const privacy = readFileSync(new URL('../../docs/PRIVACY.md', import.meta.url), 'utf8');
+    const named = [...stringsOf(COPY), ...stringsOf(PAGE_COPY), ...stringsOf(SIGNUP_COPY), privacy]
+      .flatMap((words) => words.match(/sign[ -]?up & autofill/gi) ?? []);
+    expect(named.length).toBeGreaterThan(10);
+    expect([...new Set(named)]).toEqual([button]);
+    expect(disclosureSentences().filter((sentence) => sentence.includes(button))).toHaveLength(2);
+    expect(COPY.toasts.noSignIn).toContain(button);
+    expect(COPY.toasts.noSignIn).not.toMatch(/\bagain\b/);
   });
 
   // The jr6 integration (RULES revD-01 and revD-04, owner question 435): AI answers' All also guesses a non-compete,
