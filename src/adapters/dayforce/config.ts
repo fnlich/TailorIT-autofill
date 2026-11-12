@@ -31,9 +31,36 @@
  * - The invisible reCAPTCHA (div.grecaptcha-badge) raises an image challenge on Submit (dayforce-1): it is the person's
  *   (dom/pause-detect.ts reads its frame; the agent and Submit mode hold while it shows).
  * The posting page, the confirmation, the record editors (Add, Edit) and every error are in no snapshot.
+ * jr7 DFPC-7 (SP\jr7\FIX7PLAN.md §6.11; the owner's snapshot7 dayforce1, one guest application's posting, its way-to-apply
+ * choice and six captures of step 1, converted as fixtures/dayforce/jr7-dayforce1-*.html):
+ * - DF7-01: the posting's Apply, button[test-id=apply-button], is its entry (posting.entry), pressed only by the entry
+ *   door (Jobright 1.25.2 ~contents/sites/dayforce/entry-preflow createDayforceEntryAdapter, read as its behaviour);
+ * - DF7-02: its …/apply page, [test-id=flow-selection-page], is an entry choice whose entry is "Apply without an Account"
+ *   (state apply-choice); its Sign In and "Create one now." are never pressed; quirks.entryPresses 2, so one agent/enter
+ *   presses Apply, then the choice it routes to in the same document (the same createDayforceEntryAdapter);
+ * - AUTO7-13 (⊃ DF7-01, DF7-02): Next and Submit stay the snapshots' (button[test-id=application-next-step],
+ *   button[test-id=application-submit], as Jobright's DAYFORCE_ADVANCE_BUTTON_SELECTOR and its dayforce submission rule
+ *   name them);
+ * - DF7-03: the page after submitting draws [test-id=application-successfullsubmission-message] or its
+ *   -with-confirmation-number twin (success; Jobright's m/ats-rules.js `dayforce` rule, any words, route /apply/success,
+ *   which ./url.ts reads as the confirmation already); no capture shows it (owner question Q7-1);
+ * - DF7-05 (corrected by the verifier): Education History and Employment History are repeatable sections
+ *   ([test-id=education-history], [test-id=work-history]), each form[test-id=educationhistory-record] or
+ *   workhistory-record a block, filled in place: an open editor is an entry's block, a saved card (its
+ *   [test-id*=-read-] words, no field) one the planner matches by its words (prefill.readEntries), never filled again;
+ *   no record is added (Add is never offered: Decision 16, owner question Q7-11), and each editor's Update is declared
+ *   its Save but is a form submit the click door refuses (DF7-V4: the block-form save door is ENGINE-7's, off until the
+ *   live check), so an editor left open is the person's to finish. The Reference editor is no repeatable: its boxes are
+ *   no profile's, and its Cancel is never pressed (Q7-11);
+ * - DF7-V2: the résumé input is the site's import (the parser's and Resume Upload's inputs share an id; after it the
+ *   editors become saved cards): quirks.resumeParse, the résumé written first and its parse waited for (Jobright's
+ *   uploadResumeBeforeRegularFields);
+ * - identityHosts: dfid.dayforcehcm.com, where its Sign In and Create account lead (Jobright's dayforceIdentity site,
+ *   m/ats-rules.js L10).
  */
 import { configuredHooks } from '../configured';
-import type { AtsConfig } from '../configured/types';
+import type { AtsConfig, ConfiguredHooks } from '../configured/types';
+import type { PrefillEntryView } from '../types'; // jr7 DFPC-7
 import { matchesUrl, parseDayforceUrl } from './url';
 
 /** The step body (dayforce-0 to -2): <div class="mt-5" test-id="application-step-candidateinfo|questionnaire|submit">. */
@@ -41,12 +68,42 @@ const STEP_BODY = '#jobPostingApplication [test-id^="application-step-"]';
 /** The three upload sections (dayforce-2): <section test-id="resume-upload-section">, cover-letter-, additional-documents-. */
 const UPLOAD_SECTIONS = ['resume', 'cover-letter', 'additional-documents'] as const;
 
+// ── jr7 DFPC-7 (the header's jr7 list) ──
+/** The snapshot7 cases the jr7 rules were read from (fixtures/dayforce/<case>.html). */
+export const DAYFORCE_JR7_CASES = ['jr7-dayforce1-posting', 'jr7-dayforce1-choice', 'jr7-dayforce1-apply-1',
+  'jr7-dayforce1-apply-2', 'jr7-dayforce1-apply-3', 'jr7-dayforce1-apply-4', 'jr7-dayforce1-apply-5',
+  'jr7-dayforce1-apply-6'] as const;
+/** DF7-05: the two repeatable sections and their blocks (jr7-dayforce1-apply-1 to -6): <div test-id="education-history">
+ *  holding <form id="educationHistory-<n>" test-id="educationhistory-record"> (an open editor, or a saved card), and
+ *  <div test-id="work-history"> holding <form id="workHistory-<n>" test-id="workhistory-record">; each editor's
+ *  <button type="submit" test-id="educationHistory-update-button">Update</button> (workHistory-). */
+const HISTORY = [
+  { kind: 'education', section: '[test-id="education-history"]', block: 'form[test-id="educationhistory-record"]',
+    save: 'button[test-id="educationHistory-update-button"]' },
+  { kind: 'experience', section: '[test-id="work-history"]', block: 'form[test-id="workhistory-record"]',
+    save: 'button[test-id="workHistory-update-button"]',
+    // jr7-dayforce1-apply-1: <input id="jobPostingApplication_workHistory_0_isCurrent" type="checkbox"
+    // test-id="work-history-currentjob-checkbox"> "Current Job".
+    currentlyHere: 'input[test-id="work-history-currentjob-checkbox"]' },
+] as const;
+// ── end jr7 DFPC-7 ──
+
 /** The rules, each naming its snapshot (see the header). */
 const RULES: AtsConfig = {
   platform: 'dayforce',
-  snapshots: ['candidate-info', 'questionnaire', 'submit-challenge'],
+  snapshots: ['candidate-info', 'questionnaire', 'submit-challenge', ...DAYFORCE_JR7_CASES],
   parse: parseDayforceUrl,
   matchesUrl,
+  // ── jr7 DFPC-7 DF7-02 ──
+  states: [
+    // jr7-dayforce1-choice (…/jobs/<id>/apply?…&flowSelection): <div test-id="flow-selection-page"> … <button
+    // test-id="apply-without-account" …>Apply without an Account</button> … <button
+    // test-id="logged-out-content-signin-button">Sign In</button> … <a test-id="logged-out-content-register">Create one
+    // now.</a>: the way to apply, its entry the guest application (createDayforceEntryAdapter presses the same one).
+    { name: 'apply-choice', when: '[test-id="flow-selection-page"]', auth: 'entry-choice',
+      entry: 'button[test-id="apply-without-account"]', from: 'jr7-dayforce1-choice' },
+  ],
+  // ── end jr7 DFPC-7 DF7-02 ──
   // dayforce-0 to -2: <div id="jobPostingApplication" class="ant-form ant-form-vertical css-59ygyz"><div class="mt-5"
   // test-id="application-step-...">.
   root: { css: 'div#jobPostingApplication', holds: '[test-id^="application-step-"]', from: 'dayforce-0, dayforce-1, dayforce-2' },
@@ -141,11 +198,40 @@ const RULES: AtsConfig = {
     // test-id="cookie-prefs-link">, and the steps bar's items (<div class="ant-steps-item-container" role="button">).
     { css: 'div[test-id="header-sign-in"] a, a[test-id="cookie-prefs-link"]', from: 'dayforce-2' },
     { css: '.ant-steps-item-container[role="button" i]', from: 'dayforce-0' },
+    // ── jr7 DFPC-7 ──
+    // DF7-02, jr7-dayforce1-choice: the choice's Sign In and "Create one now." (an account at dfid.dayforcehcm.com).
+    { css: 'button[test-id="logged-out-content-signin-button"], a[test-id="logged-out-content-register"]',
+      from: 'jr7-dayforce1-choice' },
+    // DF7-05, jr7-dayforce1-apply-1 to -6: a record's Add (<button test-id="add-educationhistory-record">,
+    // add-workhistory-record, add-reference-record), an editor's Cancel (<button test-id="educationHistory-cancel-button"
+    // type="reset">, workHistory-, reference-), the Reference editor's Update, and the read view's <button
+    // test-id="personal-info-edit-button">: no record is added, edited or dropped by a run (Decision 16, Q7-11).
+    { css: 'button[test-id="add-educationhistory-record"], button[test-id="add-workhistory-record"], '
+      + 'button[test-id="add-reference-record"]', from: 'jr7-dayforce1-apply-1' },
+    { css: 'button[test-id="educationHistory-cancel-button"], button[test-id="workHistory-cancel-button"], '
+      + 'button[test-id="reference-cancel-button"], button[test-id="reference-update-button"]', from: 'jr7-dayforce1-apply-1' },
+    { css: 'button[test-id="personal-info-edit-button"]', from: 'jr7-dayforce1-apply-3' },
+    // ── end jr7 DFPC-7 ──
   ],
   // dayforce-2: <div test-id="import-resume-section" ...> (Import Resume, its file input and its list).
   excluded: [{ css: 'div[test-id="import-resume-section"]', from: 'dayforce-2' }],
   // dayforce-0: <button test-id="application-next-step" type="button" class="ant-btn ... ant-btn-loading">.
   busy: [{ css: 'button[test-id="application-next-step"].ant-btn-loading', from: 'dayforce-0' }],
+  // ── jr7 DFPC-7 ──
+  // DF7-01, jr7-dayforce1-posting (…/jobs/<id>): <button … test-id="apply-button" aria-label="Apply for …">Apply</button>,
+  // the one entry (createDayforceEntryAdapter: the one shown, enabled apply-button); the posting's own text <div
+  // test-id="job-detail-body">.
+  posting: { entry: 'button[test-id="apply-button"]', text: '[test-id="job-detail-body"]', from: 'jr7-dayforce1-posting' },
+  // DF7-03: Jobright 1.25.2's m/ats-rules.js `dayforce` rule (dayforce-application-submitted, read as its behaviour):
+  // either message, with any words, drawn after Submit (its route, …/apply/success, ./url.ts reads as the
+  // confirmation). No capture shows it (owner question Q7-1): dayforce-jr7.browser.test.ts holds it on a page of our own.
+  success: { css: '[test-id="application-successfullsubmission-message"], '
+    + '[test-id="application-successfullsubmission-message-with-confirmation-number"]', text: /\S/,
+  from: 'Jobright 1.25.2 m/ats-rules.js dayforce-application-submitted' },
+  // DF7-02: Apply, then the choice it routes to in the same document (createDayforceEntryAdapter); DF7-V2: the résumé
+  // first, its import waited for (Jobright's uploadResumeBeforeRegularFields), jr7-dayforce1-apply-1 → -apply-2.
+  quirks: { entryPresses: 2, resumeParse: true },
+  // ── end jr7 DFPC-7 ──
 };
 
 /** The rule-built hooks the code below falls back to. */
@@ -183,5 +269,69 @@ function labelSuffix(control: Element): string | null {
   return phoneOf(control) === null ? null : 'country code';
 }
 
-/** Dayforce's config: the rules, and the label hooks no rule can say. */
-export const DAYFORCE_CONFIG: AtsConfig = { ...RULES, code: { labelFor, labelSuffix } };
+// ── jr7 DFPC-7 DF7-05 (the header's jr7 list) ──
+/** A block that holds no control a person types into: a saved card (jr7-dayforce1-apply-2: <form id="workHistory-0"
+ *  test-id="workhistory-record"> holding only its [test-id*="-read-"] words and its Edit and Delete). */
+const isCard = (block: Element) => block.querySelector('input, textarea, select') === null;
+
+/** The two sections as repeatables, filled in place (the header): each record form a block, in page order; no Add
+ *  (null: Decision 16, Q7-11); the editor's Update its Save (a form submit the click door refuses, DF7-V4: the
+ *  person's while ENGINE-7's block-form save door stays off). A section the page does not show declares nothing. */
+function repeatables(root: Element): ReturnType<NonNullable<ConfiguredHooks['repeatables']>> {
+  return HISTORY.flatMap((rule) => {
+    const section = root.querySelector(rule.section);
+    if (section === null) return [];
+    return [{
+      kind: rule.kind,
+      blocks: () => Array.from(section.querySelectorAll(rule.block)),
+      addButton: () => null,
+      save: (block: Element) => block.querySelector<HTMLElement>(rule.save),
+      ...('currentlyHere' in rule
+        ? { currentlyHere: (block: Element) => block.querySelector<HTMLInputElement>(rule.currentlyHere) } : {}),
+    }];
+  });
+}
+
+/** A saved card's words at `testId`, white space folded; '' where it shows none. */
+function cardText(block: Element, testId: string): string {
+  return (block.querySelector(`[test-id="${testId}"]`)?.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/** The first part of a card line Dayforce joins with ", " (jr7-dayforce1-apply-2, measured as shapes on the capture:
+ *  education-history-read-schoolName-city-state and work-history-read-company-detail-description each three parts,
+ *  the school's or the employer's name first). */
+const firstPart = (text: string) => text.split(', ')[0]!.trim();
+
+/** DF7-05, the verifier's correction 2: the saved cards' words by the category the planner fingerprints an entry by
+ *  (core/steps/blocks.ts SHOWN_CATEGORIES), so a card the site's import made is matched to its profile entry, never
+ *  filled again into a new block: an education's school (<span test-id="education-history-read-schoolName-city-state">,
+ *  its first part: the card's h3 educationHistory-read-name is its degree), an experience's employer (<span
+ *  test-id="work-history-read-company-detail-description">, its first part) and title (<h3
+ *  test-id="workHistory-read-position-title">). An open editor (it holds fields) is read by its fields instead. Read
+ *  into the plan request in memory only, as a field's current value is. */
+function readEntries(kind: string, blocks: Element[]): PrefillEntryView[] {
+  return blocks.flatMap((block, index): PrefillEntryView[] => {
+    if (!isCard(block)) return [];
+    const values: PrefillEntryView['values'][number][] = [];
+    if (kind === 'education' && block.matches(HISTORY[0].block)) {
+      const school = firstPart(cardText(block, 'education-history-read-schoolName-city-state'));
+      if (school !== '') values.push({ category: 'education.school', text: school });
+    } else if (kind === 'experience' && block.matches(HISTORY[1].block)) {
+      const company = firstPart(cardText(block, 'work-history-read-company-detail-description'));
+      const title = cardText(block, 'workHistory-read-position-title');
+      if (company !== '') values.push({ category: 'experience.company', text: company });
+      if (title !== '') values.push({ category: 'experience.title', text: title });
+    }
+    return values.length === 0 ? [] : [{ block: index, values }];
+  });
+}
+
+/** identityHosts: Dayforce's candidate identity host, where the choice's Sign In and "Create one now." lead (Jobright
+ *  1.25.2's dayforceIdentity site, m/ats-rules.js L10: dfid.dayforcehcm.com/globalidentity/account/(register|login)). */
+const IDENTITY_HOSTS: readonly RegExp[] = [/^dfid\.dayforcehcm\.com$/];
+// ── end jr7 DFPC-7 DF7-05 ──
+
+/** Dayforce's config: the rules, and the label hooks no rule can say; jr7 DFPC-7: the repeatables, the saved cards'
+ *  words and the identity host. */
+export const DAYFORCE_CONFIG: AtsConfig = { ...RULES, code: { labelFor, labelSuffix,
+  repeatables, prefill: { readEntries }, identityHosts: IDENTITY_HOSTS } }; // jr7 DFPC-7: the last line
