@@ -2,7 +2,8 @@
  * jr7 ENGINE-7 E2 (FIX7PLAN §6.2), the content half: how a run drives the doors and the step, through the content
  * runtime with a fake worker, on synthetic pages shaped as the jr7 audits describe each platform. Every value synthetic.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { genericAdapter } from '../adapters/generic';
 import { greenhouseAdapter } from '../adapters/greenhouse';
 import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
@@ -69,4 +70,70 @@ describe('item 5 (UKGR-9): a step whose editor opens on its Edit', () => {
     expect(await shut.runtime.fill()).toBe('review');
     expect([edits(shut.fixture), lastName(shut.fixture)]).toEqual([0, '']);
   });
+});
+
+// ── item 1 (ADP7-2): a required field the page holds read-only until it lets it in ────────────────────────────────────
+describe('item 1 (ADP7-2): a required, empty field the page holds read-only', () => {
+  /** ADP's personal step (snapshot7, jr7-adp1-personal-blank) as a synthetic page: Address Line 1 is required and
+   *  read-only until the page lets it in, `unlockMs` after First Name's change (never with null); City follows it.
+   *  `email`: a required Email the page shows read-only and filled (a signed-in account's). */
+  const page = (unlockMs: number | null, email = false) => `<!doctype html><html><head><title>Apply</title></head><body>
+    <form id="app" action="about:blank">
+      <p><label for="first">First Name</label><input id="first" name="first" type="text" required></p>
+      ${email ? '<p><label for="email">Email</label><input id="email" name="email" type="email" required readonly value="applicant@example.test"></p>' : ''}
+      <p><label for="line1">Address Line 1</label><input id="line1" name="line1" type="text" required readonly></p>
+      <p><label for="city">City</label><input id="city" name="city" type="text"></p>
+    </form>
+    <script>
+      const UNLOCK = ${unlockMs === null ? 'null' : String(unlockMs)};
+      const first = document.getElementById('first');
+      first.addEventListener('change', () => {
+        if (UNLOCK !== null) setTimeout(() => { document.getElementById('line1').readOnly = false; }, UNLOCK);
+      });
+    </script></body></html>`;
+  const HELD_HREF = 'https://careers.example.org/apply/jr7-adp7-2';
+
+  async function run(html: string) {
+    testVocab();
+    const logs = vi.spyOn(console, 'info');
+    try {
+      const fixture = await loadFixture(document, html, { width: 1100, height: 900 });
+      const worker = createFakeWorker();
+      const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HELD_HREF, isTop: true,
+        adapters: () => [genericAdapter], settle: { quietMs: 40 } });
+      runtimes.push(runtime);
+      await runtime.fill();
+      const rows = new Map(worker.reports.at(-1)!.fields.map((row) => [row.label, row] as const));
+      const ended = logs.mock.calls.filter((call) => call[0] === '[tailorit-autofill] content.loop-ended')
+        .map((call) => call[1] as { cut: boolean; nothingPending: boolean });
+      const value = (id: string) => (fixture.doc.getElementById(id) as HTMLInputElement).value;
+      return { rows, ended, value };
+    } finally {
+      logs.mockRestore();
+    }
+  }
+
+  for (const unlockMs of [400, 1_500]) {
+    it(`waits for it and writes it once the page lets it in at ${unlockMs} ms`, async () => {
+      const { rows, value } = await run(page(unlockMs));
+      expect(value('line1')).not.toBe('');
+      expect(rows.get('Address Line 1')).toMatchObject({ status: 'verified', wrote: true });
+      expect(rows.get('City')).toMatchObject({ status: 'verified', wrote: true });
+    }, 40_000);
+  }
+
+  it('never let in: flagged for the person past the bound, and the loop ends with nothing pending, not cut', async () => {
+    const { rows, ended, value } = await run(page(null));
+    expect(value('line1')).toBe('');
+    expect(rows.get('Address Line 1')).toMatchObject({ status: 'flagged', reason: 'disabled-or-readonly', wrote: false,
+      needsUserAction: true });
+    expect(rows.get('City')).toMatchObject({ status: 'verified', wrote: true });
+    expect(ended.at(-1)).toMatchObject({ cut: false, nothingPending: true });
+  }, 40_000);
+
+  it('a locked Email that holds a value never waits: its skip stands', async () => {
+    const { rows } = await run(page(400, true));
+    expect(rows.get('Email')).toMatchObject({ status: 'skipped', reason: 'disabled-or-readonly', needsUserAction: false });
+    expect(rows.get('Address Line 1')).toMatchObject({ status: 'verified', wrote: true });
+  }, 40_000);
 });

@@ -38,7 +38,9 @@
  *    of this pass is known to change (childrenOf, its options edges) are awaited (awaitOptions), each counted from its parent's write, else the pass's last write: ready means
  *    the next scan sees the options, never-loaded flags options-never-loaded, gone is left to the next scan; Cancel ends
  *    the waits at once, and so does the run's end. A list the page replaces is found again by one shared scan while the
- *    page has not changed since it was made, and a pass makes at most MAX_REFIND_SCANS of them (L-S5).
+ *    page has not changed since it was made, and a pass makes at most MAX_REFIND_SCANS of them (L-S5). Last (jr7
+ *    ENGINE-7 E2 item 1, ADP7-2), a required field the pass left empty because the page held it disabled or read-only
+ *    is waited for (awaitWritable) until the page lets it in, then planned again; past WRITABLE_WAIT_MS it is flagged.
  * jr6 ENGINE E3 (FIXPLAN §6.2 item 14: ICIMS-02, O3, ICIMS-19, ADP-2): a field its adapter names as resetting another
  * (Adapter.dependsOn) is written before it in the pass (pass.ts parentsFirst), and the page's answer awaited after its
  * write (pass.ts writeField); each scan tells the books which fields depend on which, and which the page now draws as
@@ -85,8 +87,8 @@
  */
 import {
   awaitingKeys, baseKeyOf, carriedFields, childrenOf, createLoop, holdBack, isStopped, loopVerdict, mayWrite,
-  noteArrivalPass, orderPending, recordOptionsWait, recordRows, recordWrite, requeueAwaiting, revealEdgesOf,
-  observeScan, type LoopEnd, type LoopEvent, type LoopState, type LoopVerdict, type ScanObservation, type TrackedField,
+  noteArrivalPass, orderPending, recordOptionsWait, recordRows, recordWritableWait, recordWrite, requeueAwaiting,
+  revealEdgesOf, observeScan, type LoopEnd, type LoopEvent, type LoopState, type LoopVerdict, type ScanObservation, type TrackedField,
 } from '../core/loop/bookkeeping';
 import { loopRows, unplannedRow, unresolvedRow } from '../core/loop/rows';
 import type { Provenance } from '../core/enums';
@@ -144,6 +146,21 @@ export const LETTER_WAIT_CAP_MS = 185_000;
 export const MAX_AI_REASKS = 4;
 /** A dry run plans one pass, and asks again at most this many times for fields the worker forgot (it restarted). */
 const DRY_RUN_ASKS = 2;
+
+// ── jr7 ENGINE-7 E2 item 1 (FIX7PLAN §6.2, ADP7-2) ──
+/** How long a required, empty field the page holds disabled or read-only is waited for, from the end of the pass that
+ *  first found it so (ADP's Address Line 1, read-only until its Country is in): then it is flagged for the person. */
+export const WRITABLE_WAIT_MS = 3_000;
+/** The wait looks at the page again at least this often, besides each change of the attributes that lock a field. */
+const WRITABLE_POLL_MS = 200;
+/** The attributes whose change may let a held field in. */
+const LOCK_ATTRIBUTES = ['disabled', 'readonly', 'aria-disabled', 'aria-readonly'];
+
+/** A field the page lets a person write: as the planner reads it (frame.ts: disabled or read-only is skipped). */
+function writableField(field: ScannedField): boolean {
+  return !field.disabled && !field.readOnly;
+}
+// ── end jr7 ENGINE-7 E2 item 1 ──
 
 // v5 p2-stream
 /**
@@ -338,6 +355,18 @@ function isCleared(current: CurrentValue): boolean {
     case 'files':
       return current.count === 0;
   }
+}
+
+/** jr7 ENGINE-7 E2 item 1 (ADP7-2): the keys of a pass's rows that wrote nothing for disabled-or-readonly (the
+ *  planner's skip, the DOM guard's refusal) on a field the fresh scan shows required and empty: the books hold them
+ *  waiting for the page to let them in (recordRows' `locked`). A field that holds a value never waits. */
+function lockedIn(fresh: ScanResult, rows: ReadonlyMap<FieldKey, FillResult>): FieldKey[] {
+  const byKey = new Map(fresh.fields.map((field) => [field.key, field] as const));
+  return [...rows.values()].filter((row) => {
+    if (row.wrote || row.reason !== 'disabled-or-readonly') return false;
+    const field = byKey.get(row.key);
+    return field !== undefined && field.required && isCleared(field.current);
+  }).map((row) => row.key);
 }
 
 /** The provenances of what the AI writes: an option it picked, a draft, an answer. */
@@ -547,8 +576,11 @@ class ReactiveLoop {
     this.alive();
     const touched = this.touchedIn(scanned, wrote);
     const cleared = new Set(wrote.filter((field) => isCleared(field.current)).map((field) => field.baseKey));
+    // jr7 ENGINE-7 E2 item 1 (ADP7-2): the held fields the page now lets in.
+    const writable = new Set(scanned.fields.filter((field) => writableField(field)
+      && this.state.fields.get(field.baseKey)?.status === 'waiting-writable').map((field) => field.baseKey));
     const observed = observeScan(this.state, scanned.fields, { valueMacs, attribution: this.attribution.take(),
-      touched, cleared, uploaded: this.uploadsTaken(), ...this.reshapes(scanned) });
+      touched, cleared, uploaded: this.uploadsTaken(), ...this.reshapes(scanned), writable });
     this.state = observed.state;
     this.afterScan(observed.events);
     return observed;
@@ -795,7 +827,7 @@ class ReactiveLoop {
     // A field this pass wrote anyway (a choice's free text typed into it) no longer waits for the LLM: its answer
     // would only overwrite the row of our write.
     const waiting = awaiting.filter((key) => rows.get(key)?.wrote !== true);
-    this.state = recordRows(this.state, rows.values(), { awaiting: waiting });
+    this.state = recordRows(this.state, rows.values(), { awaiting: waiting, locked: lockedIn(fresh, rows) });
     if (arrivalOnly) this.state = noteArrivalPass(this.state);
     this.settleFollowUps(rows);
     if (settled !== null && !settled.settled) {
@@ -811,8 +843,60 @@ class ReactiveLoop {
     // The lists' waits are over; the AI's are in the books (awaitingKeys) now.
     this.waitingNow = [];
     this.progress(new Map(), [], null);
-    return { kind: 'next', scan: waited || read ? this.scanNow() : fresh };
+    const after = waited || read ? this.scanNow() : fresh;
+    // jr7 ENGINE-7 E2 item 1 (ADP7-2): then the fields the page holds disabled or read-only.
+    return { kind: 'next', scan: await this.awaitWritable(after) ? this.scanNow() : after };
   }
+
+  // ── jr7 ENGINE-7 E2 item 1 (FIX7PLAN §6.2, ADP7-2) ──
+  /** When each held field's wait began (monotonicNow), by base key: one bound for the loop, however often the page
+   *  locks it again. */
+  private readonly lockedFrom = new Map<BaseKey, number>();
+
+  /**
+   * Waits on the page while required, empty fields are held disabled or read-only (the books' 'waiting-writable'):
+   * until one of them is writable (the next scan plans it again, ScanInput.writable), the person stops the run, or each
+   * has waited WRITABLE_WAIT_MS from the end of the pass that first found it held; those past the bound are flagged
+   * (recordWritableWait: disabled-or-readonly, for the person). It reads the page at each change of a locking attribute
+   * and every WRITABLE_POLL_MS. Answers whether it waited (then the next pass scans again). Never writes.
+   */
+  private async awaitWritable(after: ScanResult): Promise<boolean> {
+    const { env } = this;
+    const held = [...this.state.fields.values()].filter((tracked) => tracked.present
+      && tracked.status === 'waiting-writable');
+    if (held.length === 0) return false;
+    const now = monotonicNow();
+    for (const tracked of held) if (!this.lockedFrom.has(tracked.baseKey)) this.lockedFrom.set(tracked.baseKey, now);
+    const left = (tracked: TrackedField) => WRITABLE_WAIT_MS - (monotonicNow() - this.lockedFrom.get(tracked.baseKey)!);
+    const letIn = (scanned: ScanResult) => held.some((tracked) => {
+      const field = scanned.fields.find((candidate) => candidate.baseKey === tracked.baseKey);
+      return field !== undefined && writableField(field);
+    });
+    const stop = env.stopSignal === undefined ? env.signal : AbortSignal.any([env.signal, env.stopSignal]);
+    const view = env.root.ownerDocument.defaultView;
+    let scanned = after;
+    let waited = false;
+    while (!letIn(scanned) && !stop.aborted) {
+      const longest = Math.max(...held.map(left));
+      if (longest <= 0) break;
+      waited = true;
+      const changed = new AbortController();
+      const watch = view === null ? null : new view.MutationObserver(() => changed.abort());
+      watch?.observe(env.root, { subtree: true, attributeFilter: LOCK_ATTRIBUTES });
+      try {
+        await deadline(Math.min(longest, WRITABLE_POLL_MS), AbortSignal.any([stop, changed.signal]));
+      } finally {
+        watch?.disconnect();
+      }
+      this.alive();
+      if (env.stopped()) return waited;
+      scanned = this.scanNow();
+    }
+    if (stop.aborted || letIn(scanned)) return waited;
+    for (const tracked of held) if (left(tracked) <= 0) this.state = recordWritableWait(this.state, tracked.key);
+    return waited;
+  }
+  // ── end jr7 ENGINE-7 E2 item 1 ──
 
   /**
    * One write, which the person's Skip may give up (v3 Phase 3, CurrentWrite): the write sees a signal its Skip aborts

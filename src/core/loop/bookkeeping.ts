@@ -33,6 +33,12 @@
  *   waits the same way until the frame opens it and reads its options (Phase 4): that first read changes its key to
  *   the hash of what it read, and is planned again like any change of options, except that no writer is its parent
  *   and it counts as no change of options (MAX_OPTION_CHANGES).
+ * - jr7 ENGINE-7 E2 item 1 (FIX7PLAN §6.2, ADP7-2): a required field the page holds disabled or read-only while it is
+ *   empty (the planner's skip, or the DOM guard's refusal: disabled-or-readonly; recordRows' `locked`, which the content
+ *   script names) waits as a list with no options does ('waiting-writable'): the loop does not end nothing-pending
+ *   meanwhile, the content script waits on the page a few seconds (content/loop.ts WRITABLE_WAIT_MS), a scan that finds
+ *   it writable (ScanInput.writable) plans it again ('writable'), and past the bound it is unresolvable, flagged for the
+ *   person (recordWritableWait), never skipped. A field that holds a value is never named, so it never waits.
  * - Disappeared: a field that was planned or written and is missing from a scan. Its recorded write is dropped, and
  *   its row becomes field-disappeared (rows.ts). A field never planned is dropped silently.
  * - Reveal edges: a field that appears after a pass's writes, or whose options change after them, gets one parent: the
@@ -93,7 +99,9 @@ export const MAX_REVEAL_EDGES = 100;
 /** A tracked field's state. 'oscillating' and 'frozen' are final: such a field is never planned or written again.
  *  'frozen': the person touched it after our write. */
 export const TRACKED_STATUSES = ['pending', 'awaiting-llm', 'waiting-options', 'resolved', 'unresolvable',
-  'disappeared', 'oscillating', 'frozen'] as const;
+  'disappeared', 'oscillating', 'frozen',
+  // jr7 ENGINE-7 E2 item 1 (ADP7-2): a required, empty field the page holds disabled or read-only, until it lets it in.
+  'waiting-writable'] as const;
 export type TrackedStatus = (typeof TRACKED_STATUSES)[number];
 
 /** Why a field is pending. 'value-changed': the page reset our value (it is written again); 'replaced': the page put
@@ -101,9 +109,11 @@ export type TrackedStatus = (typeof TRACKED_STATUSES)[number];
  *  left unwritten as optional required after our writes (decided again as a required question). jr6 ENGINE E3
  *  (FIXPLAN §6.2 item 14): 'parent-written': the field its adapter names as resetting it (Adapter.dependsOn) was
  *  written since the scan before (decided again, and written where its plan says so); 'reshaped': its kind, or the
- *  element the page draws it as, changed under the same base key (ADP's State: a text box that becomes a list). */
+ *  element the page draws it as, changed under the same base key (ADP's State: a text box that becomes a list).
+ *  jr7 ENGINE-7 E2 item 1 (ADP7-2): 'writable': a field that waited while the page held it disabled or read-only, now
+ *  writable. */
 export const PENDING_CAUSES = ['new', 'reappeared', 'options-changed', 'value-changed', 'replaced', 'retry',
-  'required', 'parent-written', 'reshaped'] as const;
+  'required', 'parent-written', 'reshaped', 'writable'] as const;
 export type PendingCause = (typeof PENDING_CAUSES)[number];
 
 /** How the loop ended: nothing left to do, the passes ran out, the page stopped changing, or the content script cut it
@@ -247,6 +257,9 @@ export interface ScanInput {
    *  value): with a write since that scan, one we did not write is decided again ('reshaped'). */
   replaced?: ReadonlySet<BaseKey>;
   // ── end jr6 ENGINE E3 ──
+  /** jr7 ENGINE-7 E2 item 1 (ADP7-2): the fields waiting while the page held them disabled or read-only that this scan
+   *  finds writable (neither disabled, aria-disabled nor read-only): each is planned again ('writable'). Keys only. */
+  writable?: ReadonlySet<BaseKey>;
 }
 
 /** Whether the loop is over, and what it leaves unresolved. */
@@ -581,6 +594,9 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
         field = { ...field, status: 'unresolvable', reason: 'options-never-loaded' };
         events.push({ type: 'options-never-loaded', key: spec.key, baseKey: spec.baseKey });
       }
+    } else if (field.status === 'waiting-writable') {
+      // jr7 ENGINE-7 E2 item 1 (ADP7-2): planned again once the page lets it be written; else it waits on.
+      if (input.writable?.has(spec.baseKey) === true) field = { ...field, status: 'pending', cause: 'writable', reason: null };
     } else if (field.status === 'resolved' && field.row !== null && RETRY_REASONS.has(field.row.reason)
       && field.retries < MAX_RETRIES) {
       field = { ...field, status: 'pending', cause: 'retry', retries: field.retries + 1 };
@@ -685,14 +701,18 @@ export function recordWrite(state: LoopState, key: FieldKey, write: { valueMac: 
 
 /**
  * Records a pass's rows (planned, filled, verified), by key. A row resolves its field, except waiting-for-options
- * (waiting) and a key in `awaiting` (the LLM's, Phase 4). A row under a key the field no longer has (its options
- * changed since) is stale and ignored. When a value we wrote is planned again and found in place (already-correct),
- * the row of our write stays, under the key the field has now (LC-9); a value the page replaced, planned for its row
- * only, otherwise ends as our write that no longer reads back (a mismatch, LC-4).
+ * (waiting), a key in `awaiting` (the LLM's, Phase 4) and (jr7 ENGINE-7 E2 item 1, ADP7-2) a key in `locked` whose row
+ * wrote nothing for disabled-or-readonly: a required field the page holds disabled or read-only while it is empty,
+ * which the content script names (a field holding a value is never named), waits for the page to let it in
+ * ('waiting-writable'). A row under a key the field no longer has (its options changed since) is stale and ignored.
+ * When a value we wrote is planned again and found in place (already-correct), the row of our write stays, under the
+ * key the field has now (LC-9); a value the page replaced, planned for its row only, otherwise ends as our write that
+ * no longer reads back (a mismatch, LC-4).
  */
-export function recordRows(state: LoopState, rows: Iterable<FillResult>, options: { awaiting?: Iterable<FieldKey> } = {}):
-  LoopState {
+export function recordRows(state: LoopState, rows: Iterable<FillResult>,
+  options: { awaiting?: Iterable<FieldKey>; locked?: Iterable<FieldKey> } = {}): LoopState {
   const awaiting = new Set(options.awaiting ?? []);
+  const locked = new Set(options.locked ?? []);
   const fields = new Map(state.fields);
   for (const row of rows) {
     const baseKey = baseKeyOf(row.key);
@@ -713,6 +733,9 @@ export function recordRows(state: LoopState, rows: Iterable<FillResult>, options
     } else if (kept.reason === 'waiting-for-options') {
       fields.set(baseKey, { ...books, status: 'waiting-options', cause: null, reason: kept.reason,
         waitedScans: field.status === 'waiting-options' ? field.waitedScans : 0 });
+    } else if (locked.has(row.key) && !kept.wrote && kept.reason === 'disabled-or-readonly') {
+      // jr7 ENGINE-7 E2 item 1 (ADP7-2).
+      fields.set(baseKey, { ...books, status: 'waiting-writable', cause: null, reason: kept.reason });
     } else {
       fields.set(baseKey, { ...books, status: 'resolved', cause: null, reason: kept.reason });
     }
@@ -744,6 +767,18 @@ export function recordOptionsWait(state: LoopState, key: FieldKey, verdict: 'rea
   if (verdict !== 'never-loaded' || field === undefined || field.status !== 'waiting-options') return state;
   const fields = new Map(state.fields);
   fields.set(baseKey, { ...field, status: 'unresolvable', reason: 'options-never-loaded' });
+  return { ...state, fields };
+}
+
+/** jr7 ENGINE-7 E2 item 1 (ADP7-2): a field that waited while the page held it disabled or read-only, past the content
+ *  script's bound (content/loop.ts WRITABLE_WAIT_MS): unresolvable, disabled-or-readonly, so its row is flagged for the
+ *  person, never skipped. A key the field no longer has, or a field that does not wait so, is left alone. */
+export function recordWritableWait(state: LoopState, key: FieldKey): LoopState {
+  const baseKey = baseKeyOf(key);
+  const field = state.fields.get(baseKey);
+  if (field === undefined || field.key !== key || field.status !== 'waiting-writable') return state;
+  const fields = new Map(state.fields);
+  fields.set(baseKey, { ...field, status: 'unresolvable', cause: null, reason: 'disabled-or-readonly' });
   return { ...state, fields };
 }
 
@@ -791,18 +826,21 @@ export function loopVerdict(state: LoopState, options: { cut?: ReasonCode } = {}
   const pending = presentWith(state.fields, 'pending');
   const waiting = presentWith(state.fields, 'waiting-options');
   const awaiting = presentWith(state.fields, 'awaiting-llm');
+  // jr7 ENGINE-7 E2 item 1 (ADP7-2): a required, empty field the page holds disabled or read-only, for a bounded wait.
+  const locked = presentWith(state.fields, 'waiting-writable');
   // v5 p2-stream: the passes that only wrote what the AI's stream brought are not counted.
   const counted = state.pass - (state.arrivalPasses ?? 0);
   // s2 core-gh (decision 14): past MAX_PASSES the loop goes on, up to MAX_AI_PASSES, while a field waits for the AI or
   // for its list to be read (a lazy list is read, then classified or answered with its options: one pass each).
   const listRead = (field: TrackedField) => field.cause === 'options-changed'
     && field.row?.reason === 'waiting-for-options';
-  const stillComing = awaiting.length > 0 || waiting.length > 0 || pending.some(listRead);
+  const stillComing = awaiting.length > 0 || waiting.length > 0 || locked.length > 0 || pending.some(listRead);
   const end: LoopEnd | null = options.cut !== undefined ? 'cut'
-    : pending.length + waiting.length + awaiting.length === 0 ? 'nothing-pending'
+    : pending.length + waiting.length + awaiting.length + locked.length === 0 ? 'nothing-pending'
       : (counted >= MAX_PASSES && (!stillComing || counted >= MAX_AI_PASSES)) || state.pass >= MAX_LOOP_PASSES
         ? 'max-passes'
-        : state.stalled && awaiting.length === 0 ? 'stalled' : null;
+        // jr7 ENGINE-7 E2 item 1 (ADP7-2): a page that holds a field shut is no stall while the content script waits.
+        : state.stalled && awaiting.length === 0 && locked.length === 0 ? 'stalled' : null;
   if (end === null) return { done: false, end, unresolved: [] };
   const reasonOf = (field: TrackedField): ReasonCode | null => {
     switch (field.status) {
@@ -812,6 +850,8 @@ export function loopVerdict(state: LoopState, options: { cut?: ReasonCode } = {}
         return end === 'stalled' ? 'internal-error' : 'max-passes-reached';
       case 'waiting-options':
         return options.cut ?? 'options-never-loaded';
+      case 'waiting-writable':
+        return options.cut ?? 'disabled-or-readonly';
       case 'unresolvable':
       case 'oscillating':
       case 'frozen':
