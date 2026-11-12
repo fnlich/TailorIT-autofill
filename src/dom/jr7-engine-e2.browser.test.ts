@@ -50,6 +50,65 @@ describe("UKGR-5: a declared box whose edge is its ::before's inset ring", () =>
   });
 });
 
+// ── DFPC-7's PC7-04: Paycom's outlined boxes (a declared aria-hidden decoration) and its selects in listbox wrappers ──
+describe("PC7-04: Paycom's MUI outlined text box and its select in a role=listbox wrapper", () => {
+  /** MUI's outlined text box as Paycom draws it (snapshot7 paycomonline1 apply-2): a white page; the input, with no
+   *  border or fill, in its input root; the border drawn by a <fieldset aria-hidden="true"> laid over that root, beside
+   *  the input. `edge`: the fieldset's border colour. `holds`: the fieldset also holds a control. `hiddenInput`: the
+   *  input itself aria-hidden. `clipped`: the input clipped to nothing (a honeypot's way). Then a select alone in a
+   *  role=listbox wrapper with no option, and a real listbox whose option rows hold checkboxes. */
+  const page = (o: { edge?: string; holds?: boolean; hiddenInput?: boolean; clipped?: boolean } = {}) => `<!doctype html>
+  <html><head><style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui; }
+    .root { position: relative; display: inline-flex; width: 300px; margin: 8px; background: #fff; border-radius: 4px; }
+    .root input { display: block; width: 100%; border: 0; outline: none; background: transparent; padding: 8px 14px;
+      box-sizing: border-box; color: #222; font: inherit;
+      ${o.clipped === true ? 'position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden;' : ''} }
+    .outline { position: absolute; inset: -5px 0 0; margin: 0; padding: 0 8px; border: 1px solid ${o.edge ?? 'rgba(0, 0, 0, 0.23)'};
+      border-radius: 4px; pointer-events: none; min-width: 0; }
+    .outline legend { visibility: hidden; max-width: 0.01px; height: 11px; padding: 0; font-size: 0.75em; }
+  </style></head><body><form id="f">
+    <label for="first">First name</label>
+    <div class="root"><input id="first" type="text" ${o.hiddenInput === true ? 'aria-hidden="true"' : ''}>
+      <fieldset aria-hidden="true" class="outline" id="outline"><legend><span>First name</span></legend>
+        ${o.holds === true ? '<input id="inner" type="checkbox">' : ''}</fieldset></div>
+    <label for="state">State</label>
+    <div role="listbox" aria-label="State"><select id="state"><option value="">Select</option><option>Texas</option></select></div>
+    <div role="listbox" aria-label="Skills"><div role="option" aria-selected="false"><label><input id="skill-1" type="checkbox"> Go</label></div>
+      <div role="option" aria-selected="false"><label><input id="skill-2" type="checkbox"> Rust</label></div></div>
+  </form></body></html>`;
+  const paycom = (declared = true): Adapter => ({ ...genericAdapter, id: 'generic',
+    ...(declared ? { controlBox: (control: Element) => control.parentElement?.querySelector(':scope > fieldset') ?? null }
+      : {}) });
+  const read = async (html: string, adapter: Adapter) => {
+    const { doc } = await loadFixture(document, html);
+    const fields = scan(doc.getElementById('f')!, adapter, { platform: 'paycom' }).fields;
+    removeFixtures(document);
+    const first = fields.find((each) => each.idAttr === 'first');
+    return { first: first === undefined ? 'no field' : first.visibility !== 'visible' ? 'not visible' : first.camouflaged,
+      ids: fields.map((field) => field.idAttr) };
+  };
+
+  it('the declared fieldset draws the box: not camouflaged; undeclared, it is', async () => {
+    expect((await read(page(), paycom())).first).toBe(false);
+    expect((await read(page(), paycom(false))).first).toBe(true);
+  });
+
+  it('negatives: a white-on-white edge, a decoration holding a control, an aria-hidden or clipped input', async () => {
+    expect((await read(page({ edge: '#fff' }), paycom())).first).toBe(true);
+    expect((await read(page({ holds: true }), paycom())).first).toBe(true);
+    expect((await read(page({ hiddenInput: true }), paycom())).first).not.toBe(false);
+    expect((await read(page({ clipped: true }), paycom())).first).not.toBe(false);
+  });
+
+  it('a select alone in a role=listbox wrapper with no option is a field; a real listbox\'s option rows stay parts',
+    async () => {
+      const { ids } = await read(page(), paycom());
+      expect(ids).toContain('state');
+      expect(ids.filter((id) => id.startsWith('skill-'))).toEqual([]);
+    });
+});
+
 // ── item 4 (UKGR-10, EFA-6): the upload-prompt door ────────────────────────────────────────────────────────────────
 describe('item 4 (UKGR-10, EFA-6): the upload-prompt door', () => {
   /** A form with a file input and Submit; 150 ms after it loads (standing for the run's file write), the site draws

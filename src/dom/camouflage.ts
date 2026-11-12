@@ -265,7 +265,9 @@ export function isControlCamouflaged(control: Element, placeholderVisible: boole
  * as shared. The declared box counts where it is not the control, holds it (across shadow roots), a person can see it,
  * its visibility is 'visible', its box encloses the control's, and it shows a border, an outline or a shadow
  * (drawnByWrapper's reading) or a background, against what is behind it. Unlike a wrapper, it may hold other controls:
- * the adapter wrote it from a snapshot. None declared, or a hook that throws: false.
+ * the adapter wrote it from a snapshot. None declared, or a hook that throws: false. jr7 ENGINE-7 E2 (DFPC-7's PC7-04):
+ * a declared box may also be a decoration beside the control (declaredDecoration: MUI's outlined box, Paycom's, draws
+ * its border on an aria-hidden fieldset inside the input root, beside the input); only where the adapter declares it.
  */
 function drawnByDeclaredBox(control: Element, adapter: Adapter | null, cache: ScanCache): boolean {
   if (adapter?.controlBox === undefined) return false;
@@ -275,13 +277,38 @@ function drawnByDeclaredBox(control: Element, adapter: Adapter | null, cache: Sc
   } catch {
     return false;
   }
-  if (box === null || box === control || !flatContains(box, control) || !isUserVisible(box, cache)) return false;
+  if (box === null || box === control) return false;
+  // jr7 ENGINE-7 E2 (DFPC-7's PC7-04): or the declared decoration beside it.
+  const decoration = declaredDecoration(box, control, cache);
+  if (!decoration && (!flatContains(box, control) || !isUserVisible(box, cache))) return false;
   const style = styleOf(box, cache);
   const outer = box.getBoundingClientRect();
   if (style === null || style.visibility !== 'visible' || !encloses(outer, control.getBoundingClientRect())) return false;
   return drawsBox(box, style, outer, cache, true) || pseudoEdgeDraws(box, cache); // jr7 ENGINE-7 E2 (UKGR-5)
 }
 // ── end jr6 ENGINE E2 item 7 ──
+
+// ── jr7 ENGINE-7 E2 (DFPC-7's PC7-04: Paycom's outlined text boxes, textareas and selects) ──
+/** The controls a decoration never holds. */
+const DECORATION_HOLDS_NONE = 'input, select, textarea, button, [contenteditable]:not([contenteditable="false" i])';
+
+/**
+ * Whether the box an adapter declares for a control (Adapter.controlBox) is a decoration drawn beside it: MUI's
+ * outlined text box (Paycom, snapshot7 paycomonline1 apply-2) draws its border on a <fieldset aria-hidden="true"> laid
+ * over its input root, beside the input, so the box neither holds the control nor reads as visible (aria-hidden). It
+ * counts only where the box itself says aria-hidden="true" (never an aria-hidden it sits under: its parent must be
+ * visible), holds no control of any kind, and its parent holds the control and a person can see that parent. The rest
+ * of drawnByDeclaredBox's rules then hold as for any declared box (visibility 'visible', its box enclosing the
+ * control's, an edge or a fill that shows). Never read for a box no adapter declares: an undeclared aria-hidden wrapper,
+ * and a white-on-white or clipped honeypot (judged by the visibility rules before any of this), stay as they are.
+ */
+function declaredDecoration(box: Element, control: Element, cache: ScanCache): boolean {
+  if ((box.getAttribute('aria-hidden') ?? '').trim().toLowerCase() !== 'true') return false;
+  const parent = box.parentElement;
+  if (parent === null || !flatContains(parent, control) || !isUserVisible(parent, cache)) return false;
+  return box.querySelector(DECORATION_HOLDS_NONE) === null && !box.matches(DECORATION_HOLDS_NONE);
+}
+// ── end jr7 ENGINE-7 E2 (PC7-04) ──
 
 // ── jr7 ENGINE-7 E2 (UKGR-5, gated by O-7: TOOLING-7's live-order re-check still read UKG Ready's boxes camouflaged) ──
 /** The thinnest pseudo-element edge pseudoEdgeDraws counts: a border or an inset ring this wide draws a line a person
