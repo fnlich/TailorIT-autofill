@@ -16,6 +16,10 @@
  *   delete, and a sign-in that found none under Auto, set Sign-in back (sec-9); the card says what the worker did by
  *   itself (R12); setting Sign-in back keeps a change saved meanwhile (R13); a claiming subframe of another origin is
  *   never answered, through the real claim-frame rule (sec-10).
+ * - jr6 ifix SEC-3 (the jr6 integration review's SEC-3; the coordinator's decision: keep the fetch, fix the words): an
+ *   email gate with no Sign-up Information saved is answered the TailorIT profile's contact email, read as any Autofill
+ *   reads the profile: from the worker's memory, else fetched from TailorIT (GET /profile, with its saved answers), as
+ *   after five idle minutes; with one saved, or not connected, no profile is read.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -23,6 +27,7 @@ import profileGolden from '../contract/tailorit/v1/fixtures/AutofillProfileEnvel
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import type { StorageArea } from '../platform/types';
 import { SIDEBAR_PAGE_MESSAGES } from './senders';
+import { PROFILE_IDLE_MS } from './profile-cache';
 import { createSettingsStore } from './settings';
 import { createSignup, SIGNUP_IMPORT_HOST } from './signup';
 import { SIGNUP_RECORD_KEY, type SignupVault } from './signup-vault';
@@ -404,3 +409,52 @@ describe('the jr6 review: Sign-up Information', () => {
       .toMatchObject({ ok: true, data: { password: SIGNUP_PASSWORD, press: false } });
   });
 });
+
+// ── jr6 ifix SEC-3 (the jr6 integration review's SEC-3) ──
+describe('an email gate’s email with none saved in Sign-up Information: the profile’s, read as any Autofill reads it '
+  + '(jr6 ifix SEC-3)', () => {
+  const GATE = 'https://careers-acme.icims.com/jobs/1234/engineer/login';
+  const PROFILE_EMAIL = profileGolden.profile.contact.email;
+  /** The gate's ask, from the tab's top frame, as a run on Manual sends it (index.ts's real wiring answers it). */
+  const askGate = (worker: TestWorker) => worker.deliver({ v: 1, type: 'signin/credential', wall: 'email-gate',
+    typing: true }, contentSender({ url: GATE, tab: { id: 31, url: GATE }, documentId: 'doc-gate' }));
+  const profileReads = (worker: TestWorker) => worker.tailorit.count('GET /api/autofill/profile');
+
+  it('with no profile in the worker’s memory, fetches it (GET /profile and its answers) and answers its contact email; '
+    + 'held, asks again for nothing; after five idle minutes, fetches it again', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    expect(profileReads(worker)).toBe(0);
+    logs.mockClear();
+    expect(await askGate(worker)).toEqual({ ok: true, data: { host: '*', email: PROFILE_EMAIL, press: false } });
+    expect([profileReads(worker), worker.tailorit.count('GET /api/autofill/answers')]).toEqual([1, 1]);
+    // The reads name nothing of the gate: no address, no host, no body.
+    const reads = worker.tailorit.requests.filter((request) => request.path.startsWith('/api/autofill/'));
+    expect(reads.map((request) => [request.method, request.url.replace(/^https?:\/\/[^/]+/, ''), request.body]))
+      .toEqual([['GET', '/api/autofill/profile', null], ['GET', '/api/autofill/answers', null]]);
+    // Held now: the next gate reads nothing.
+    expect(await askGate(worker)).toMatchObject({ ok: true, data: { email: PROFILE_EMAIL } });
+    expect(profileReads(worker)).toBe(1);
+    // Five idle minutes on, the worker holds none (profile-cache.ts PROFILE_IDLE_MS): fetched again.
+    worker.timers.advance(PROFILE_IDLE_MS);
+    expect(await askGate(worker)).toMatchObject({ ok: true, data: { email: PROFILE_EMAIL } });
+    expect(profileReads(worker)).toBe(2);
+    // The log says the profile's email was used, never the email.
+    expect(logs.mock.calls).toContainEqual(['[tailorit-autofill] signin.credential',
+      { found: true, press: false, again: false, gate: true, profile: true }]);
+    expect(JSON.stringify(logs.mock.calls)).not.toContain(PROFILE_EMAIL);
+  });
+
+  it('with Sign-up Information saved, answers its email and reads no profile', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await saveSignup(worker);
+    expect(await askGate(worker)).toEqual({ ok: true, data: { host: '*', email: SIGNUP_EMAIL, press: false } });
+    expect(profileReads(worker)).toBe(0);
+  });
+
+  it('not connected: no profile is read from TailorIT, and the gate is the person’s', async () => {
+    const worker = await startTestWorker();
+    expect(await askGate(worker)).toEqual({ ok: false, error: 'unavailable' });
+    expect(worker.tailorit.requests).toEqual([]);
+  });
+});
+// ── end jr6 ifix SEC-3 ──

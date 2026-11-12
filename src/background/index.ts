@@ -599,7 +599,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       if (reverted) reports.tellPanels('settings');
     },
     // jr6 SHELL-A (BUILD D-d): an email gate's email where none is saved in Sign-up Information: the TailorIT profile's
-    // contact email, as the run's plan reads it (the profile cache's), never a password.
+    // contact email, as the run's plan reads it (the profile cache's), never a password. jr6 ifix SEC-3 (the jr6
+    // integration review; the coordinator: keep the fetch): read as any Autofill reads the profile, from the worker's
+    // memory, else fetched from TailorIT (GET /profile and its saved answers) when it holds none, as after five idle
+    // minutes (profile-cache.ts PROFILE_IDLE_MS); not connected, nothing is fetched (signup-worker.test.ts pins it).
     profileEmail: async () => {
       const profile = await profileCache.get().catch(() => null);
       const own = profile?.ok === true ? profile.value.profile.contact.email : '';
