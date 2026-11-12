@@ -429,6 +429,11 @@ export const CHOSEN_PLACES = [
   // jr6 (adp-new-4): ADP's react-select (classNamePrefix MDFSelectBox) names the chosen chip in its remove button,
   // aria-label="Remove ANSWER" (adp2's multi-select questions).
   '.MDFSelectBox__multi-value__remove[aria-label]',
+  // jr7 TOOLING-7 (UKGR-20; SP\jr7\audit\ukgready.md, snapshot7 secure7.saashr): UKG Ready's value mirror, <span
+  // class="c-form-control__value--<hash>" aria-hidden="true"> beside each select and box of a span.c-form-control,
+  // which repeats the chosen option or the typed value once the control itself is cleared (an address, a salary, the
+  // questionnaire's answers); empty while nothing is chosen.
+  '[class*="c-form-control__value"]',
 ];
 /** s2 wd (the eeo study's converter findings): a search's results that list the applicant's own answer, an option of
  *  the list or not: each result's text, title and aria-label become REDACTED, inside a role=option too (redactApplicant-
@@ -765,6 +770,14 @@ export const PROFILE_PLACES = [
   // redactPlatformInPage's).
   'oc-experience-entry [data-test^="experience-entry-"]', 'oc-education-entry [data-test^="education-entry-"]',
   'spl-avatar',
+  // ── jr7 TOOLING-7 (UKGR-20; SP\jr7\audit\ukgready.md, snapshot7 secure7.saashr, signed in to the applicant session) ──
+  // The review's values (step 8/9: <div class="c-profile-summary-container"> ... <span
+  // class="c-one-column-layout__value">), each saved entry's metadata (a work or education entry, a reference: <div
+  // class="c-fat-item__body"><span class="c-metadata__text">: its place, its dates) and the avatar's initials (<span
+  // class="c-user-picture__abbr" title="<name>">, too short for any list; and its button, <button
+  // class="c-user-picture-button" title="<name>" aria-label="<name>">, which names the person whatever the list holds).
+  '.c-profile-summary-container .c-one-column-layout__value', '.c-fat-item__body .c-metadata__text',
+  'span.c-user-picture__abbr', 'button.c-user-picture-button',
 ];
 
 /** The controls beside an uploaded file that name it, and link to it: Workable's <a data-action="view" href="<the
@@ -794,8 +807,13 @@ export const ENTRY_SUMMARY_CONTROLS = ['[data-ui="education"] li [data-ui$="-sec
  *  (1).mht and of [seatgeek.com] ...SeatGeek.mht; /embed/job_board?for=<board>&validityToken=<token> in [weka.io]
  *  ...WEKA.mht); reCAPTCHA's challenge frame, bft= (recaptcha.net/recaptcha/enterprise/bframe in [jobs.ashbyhq.com]
  *  Head of Technology Foundations @ Rivian ....mht; and Dayforce's, google.com/recaptcha/api2/bframe in dayforce-0 to -2);
- *  HubSpot's visitor ids in a company page's links, hsutk=, __hstc=, __hssc=, __hsfp= (the ABC Legal capture). */
-export const PER_LOAD_PARAMS = ['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp'];
+ *  HubSpot's visitor ids in a company page's links, hsutk=, __hstc=, __hssc=, __hsfp= (the ABC Legal capture).
+ *  jr7 TOOLING-7 (UKGR-20; SP\jr7\audit\ukgready.md, snapshot7 secure7.saashr): UKG Ready's applicant session in every
+ *  address of the application, ActiveSessionId= (11 digits), sft= and rnd=; and its file service's ticket=, a JWT that
+ *  opens the applicant's uploaded document (/ta/fs?ticket=<JWT>). */
+export const PER_LOAD_PARAMS = ['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp',
+  // jr7 TOOLING-7 (UKGR-20)
+  'ActiveSessionId', 'sft', 'rnd', 'ticket'];
 
 /** The pattern source of a PER_LOAD_PARAMS value in an address (group 1: its separator, name and =), as
  *  withoutInjectedParams and stripInjectedInPage read it. */
@@ -1499,11 +1517,18 @@ const RESPELL_CHAR = 'A-Za-z0-9\\u00C0-\\u024F';
  * separator, a lower-case letter followed by a capital, a letter beside a digit), so "JaneRoe" in "optionJaneRoe" counts
  * and "Roe" in "Roebuck" does not. A string that looks like a phone number is left to redactSources' own rule, which
  * matches its digits with any punctuation. Answers each string's position in the list (from 1) and its pattern source.
- * @param {string[]} strings @returns {Array<{ index: number; source: string }>}
+ * jr7 TOOLING-7 (UKGR-20): with `phones`, a string that looks like a phone number is read too, as redactSources reads
+ * it (its digits in order, never inside a longer run of digits) with its punctuation also percent-encoded between them:
+ * the addresses (respelledAddress) take it so, where the exact rule never runs (UKG Ready's 11-digit applicant session,
+ * listed, in the header's source and the route map).
+ * @param {string[]} strings @param {{ phones?: boolean }} [options] @returns {Array<{ index: number; source: string }>}
  */
-export function respelledSources(strings) {
+export function respelledSources(strings, options = {}) {
   return strings.flatMap((entry, at) => {
-    if (/^[\d\s().+-]+$/.test(entry) && entry.replace(/\D/g, '').length >= 7) return [];
+    if (/^[\d\s().+-]+$/.test(entry) && entry.replace(/\D/g, '').length >= 7) {
+      if (options.phones !== true) return [];
+      return [{ index: at + 1, source: `(?<!\\d)${[...entry.replace(/\D/g, '')].join('(?:[\\s().+-]|%[0-9A-Fa-f]{2}){0,4}')}(?!\\d)` }];
+    }
     const runs = entry.match(new RegExp(`[${RESPELL_CHAR}]+`, 'g')) ?? [];
     if (runs.join('').length < 3) return [];
     const separators = `(?:[^${RESPELL_CHAR}]|%[0-9A-Fa-f]{2}){0,4}`;
@@ -4224,8 +4249,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   // jr6 round 2 (TOOLING; BUILD.md 4b): the listed strings as they may stand respelled in an attribute or an address;
   // the page's and its frames' addresses lose them (respelledAddress), the frames' src, route map and header alike.
   const respelled = respelledSources(redact);
+  // jr7 TOOLING-7 (UKGR-20): the addresses read the phone-shaped strings too (the exact rule never runs on them).
+  const addressSources = respelledSources(redact, { phones: true });
   const capturedUrl = main?.location ?? mhtml.snapshotUrl;
-  const mainUrl = capturedUrl ? respelledAddress(capturedUrl, respelled) : capturedUrl;
+  const mainUrl = capturedUrl ? respelledAddress(capturedUrl, addressSources) : capturedUrl;
   if (!main || !mainUrl || !/^https?:/i.test(mainUrl)) fail('the capture names no web address for its page');
   const captured = mhtml.date && !Number.isNaN(Date.parse(mhtml.date)) ? new Date(mhtml.date).toISOString() : null;
 
@@ -4254,7 +4281,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     // Snapshot build, boards: a frame's address without another extension's parameters (INJECTED_PARAMS).
     if (part.contentId) {
       frameUrls[part.contentId] = part.location && /^https?:/i.test(part.location)
-        ? respelledAddress(withoutInjectedParams(part.location), respelled) : null;
+        ? respelledAddress(withoutInjectedParams(part.location), addressSources) : null;
     }
   }
   const resources = resourcesOf(mhtml);

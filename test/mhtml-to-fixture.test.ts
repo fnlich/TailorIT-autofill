@@ -1427,7 +1427,9 @@ describe('mhtml-to-fixture, snapshot build: boards', () => {
     expect(INJECTED_PARAMS).toEqual(['jr_id', 'utm_source=Simplify']);
     // The fix of 2026-11-08: Jobright's Edit with AI hosts too (snapshot5).
     expect(INJECTED_UI).toEqual(['plasmo-csui#jobright-helper-plugin', '#swooped-extension-root', '.jr-edit-ai-host']);
-    expect(PER_LOAD_PARAMS).toEqual(['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp']);
+    // jr7 TOOLING-7 (UKGR-20): and UKG Ready's applicant session and file-service ticket.
+    expect(PER_LOAD_PARAMS).toEqual(['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp', 'ActiveSessionId', 'sft',
+      'rnd', 'ticket']);
     // Greenhouse's, Ashby's and Workable's (boards), Workday's upload preview, the new ATSs' eleven and (jr6) ADP's
     // résumé row and SmartRecruiters' drop zone list (the generic applicant-text pass, redactApplicantTextInPage).
     expect(FILE_NAME_PLACES).toHaveLength(17);
@@ -4311,3 +4313,51 @@ describe('jr6 ifix C-4: referral parameters in the committed fixtures (PRIV-4)',
   });
 });
 // ── end jr6 ifix C-4 ──
+
+// ── jr7 TOOLING-7 (FIX7PLAN §6.1: the converter's nine findings, and the jr6 leftovers BUILD7 names) ──
+// Each rule on a synthetic page in the platform's own markup (read from the snapshot7 captures; every value made up).
+// ---------------------------------------------------------------------------------------------------------------------
+
+const UKG_SESSION = 'https://secure7.saashr.com/ta/6200000.careers?rnd=Ab1&Ext=careers&sft=QWERTY12'
+  + '&ActiveSessionId=12345678901&cb=5550100142#applicant/profile';
+
+describe('jr7 TOOLING-7: the converter (FIX7PLAN §6.1)', () => {
+  it("UKGR-20: UKG Ready's session values, its file service's ticket, a phone-shaped listed string in the address, and its value places",
+    async () => {
+      const { conversion, text } = await convertPage(UKG_SESSION, 'ukgready', 'jr7-ukgr20', `
+<header><button class="c-user-picture-button m-reset-styles" title="${JR6_NAME}" aria-label="${JR6_NAME}" aria-haspopup="true">
+  <span class="c-user-picture m-has-size m-medium" aria-hidden="true"><span class="c-user-picture__abbr" title="${JR6_NAME}">AQ</span></span></button>
+  <div class="c-menu-header"><span class="c-user-picture m-has-size m-large" aria-hidden="true"><span class="c-user-picture__abbr">QA</span></span></div></header>
+<main><span class="c-form-control m-rounded"><label class="c-form-control__label--T25fFY" for="st"><span>State</span></label>
+  <span class="c-form-control__field--zgYl4G"><span class="c-form-control__area--MtrJbA" aria-hidden="true">
+  <span class="c-form-control__value--uC6xTb" aria-hidden="true">Ohio</span>
+  <select id="st"><option value="">Select</option><option value="OH" selected>Ohio</option><option value="TX">Texas</option></select></span></span></span>
+<span class="c-form-control m-rounded"><label class="c-form-control__label--T25fFY" for="sal"><span>Desired salary</span></label>
+  <span class="c-form-control__field--zgYl4G"><span class="c-form-control__area--MtrJbA">
+  <span class="c-form-control__value--uC6xTb" aria-hidden="true">95000</span><input id="sal" value="95000"></span></span></span>
+<div class="m-border c-fat-item"><div class="c-fat-item__box"><h3 class="c-fat-item__title">Work entry</h3>
+  <div class="c-fat-item__body"><span class="c-metadata__text">Fixture Town, OH</span><span class="c-metadata__text">2019 - 2024</span></div></div></div>
+<div class="c-profile-summary-container"><span class="c-one-column-layout__label">City</span>
+  <span class="c-one-column-layout__value">Fixture Town</span></div>
+<a href="/ta/fs?ticket=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl">Your resume</a>
+<a href="https://secure7.saashr.com/ta/6200000.careers?rnd=Ab1&amp;Ext=careers&amp;sft=QWERTY12&amp;ActiveSessionId=12345678901">Back</a>
+</main>`);
+      const header = headerOf(text);
+      const clean = 'https://secure7.saashr.com/ta/6200000.careers?rnd=REDACTED&Ext=careers&sft=REDACTED'
+        + '&ActiveSessionId=REDACTED&cb=REDACTED#applicant/profile';
+      expect(header.source).toBe(clean);
+      expect(Object.keys(conversion.routes)).toEqual([clean.split('#')[0]]);
+      expect(text).toContain('href="/ta/fs?ticket=REDACTED"');
+      expect(text).toContain('rnd=REDACTED&amp;Ext=careers&amp;sft=REDACTED&amp;ActiveSessionId=REDACTED"');
+      for (const gone of ['12345678901', 'QWERTY12', 'Ab1&', 'eyJ', '5550100142', 'Avery', 'Quill', '>AQ<', '95000',
+        'Fixture Town', '2019 - 2024', '>Ohio</span>', '>QA<']) {
+        expect(text, gone).not.toContain(gone);
+      }
+      // The page's own words stay: the select's options, an entry's title, the review's labels.
+      for (const kept of ['<option value="OH">Ohio</option>', '>Work entry</h3>', '>City</span>', '<span>State</span>']) {
+        expect(text, kept).toContain(kept);
+      }
+      expect(text).toContain('<span class="c-form-control__value--uC6xTb" aria-hidden="true">REDACTED</span>');
+    }, 60_000);
+});
+// ── end jr7 TOOLING-7 ──
