@@ -2,16 +2,16 @@
   "apiVersion": 6,
   "zod": "4.6.7",
   "files": {
-    "agent.ts": "fcb7a79e7bbf8656a94b927c6c11bb66e22f2392863c85c31493b09fde8ddd6f",
+    "agent.ts": "7409f777c8ff8c65952f29bd2b0b8b1c3235cc74c6156ba89fc9789308c47c6f",
     "ai.ts": "cb3290749fdc383f7712d72f40ad90cca189fc5bf0c16cef23d11aa712d4bbdb",
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "49960ec62489547d78a01bdc51d82142b6ce44168c31a81f060a282774da20f1",
     "connect.ts": "c7c32bda21eb64b78ec9e8085549144384fbf1d5c676b72918dbe726588b0071",
     "cover-letters.ts": "99634afc594f27fb9c2951c8539dcd59aa91c950f42734eaf9f178cd87d7903d",
-    "credentials.ts": "c09ae7e8fd46ce7f16d136a90b85b76ed99817cf68d543d572ec0851950d699d",
+    "credentials.ts": "5cf3103ad52c8208e34cbcf00081700eec66e26ed75f84c71e09efab6c8f7f35",
     "forms.ts": "90095d14dc80ae456cdf121f05ae63e302fe04e1eb8223d74dda5a301b07df3e",
     "index.ts": "d82fa73c2ad73e1c69f6bd2914dbac7fc0ac329a3b0b57313094d9d1b4c1f827",
-    "lookup.ts": "9c4ff64ddef5114b7dfefa99cf25423a4e5d8048b065a39f942942026ba5c0b6",
+    "lookup.ts": "845ee780f0ddd003e724fb6e23bc5395ab96080e3777968b3d773bf893728e17",
     "profile.ts": "83865e029fbf8d67bb6ffe93a7eac8e3b555d853b2125199afce03706d4db15b",
     "registry.ts": "3513fcdcd94e7be83816f6697477062568d8fe7742f317f5e930ebe8be51ac31",
     "resumes.ts": "4ff18ed3654e5127b36f7c747f665dcd5e8c3f301e238a20f85fef1655de46f4",
@@ -46,10 +46,13 @@
     "AutofillAgentOpened/invalid/unknown-state.json": "ec51554793ef683937d80e2e012ad03c91c8a0e2735344cd113cb4a48a2b8eac",
     "AutofillAgentOpened/valid/finished-at-claim.json": "f2d9c3b502de36f98f70099b362182eb908087b93efec2fd3735f0f8fb6201d6",
     "AutofillAgentOpened/valid/golden.json": "18c4ff12ddbb60a905a2aaf59855b0a3cd5a984013a5ce40f4538e95f020feaa",
+    "AutofillAgentOpened/valid/queue-tab.json": "8d65d717bf22a19666371ec06b864038c6ac4044f998ffe68a02422ae138e8ec",
     "AutofillAgentQueueList/invalid/unknown-reason.json": "7c14ba466b8613a44a8b78250ab687a240218571c65bf4c8898050eed49427c6",
     "AutofillAgentQueueList/invalid/unknown-run.json": "95ec89e7e5e9ebf016316d294c8514cfb1a5ffdff46a1f08f53ef3fd2b23c620",
+    "AutofillAgentQueueList/invalid/unknown-runs.json": "0530412d240c2426e046e2ce0d695511afac8122e76c354c8189d3ac35fb19d1",
     "AutofillAgentQueueList/valid/golden.json": "e60b9e0ca6b1d14638ca6ea749adc4346cf777cef03ce28a878261adca44cf51",
     "AutofillAgentQueueList/valid/older-server.json": "1fcd08744658c08f3fc7b7cae22f3e0cb715b6605a7533bfaf8abf6250f644bb",
+    "AutofillAgentQueueList/valid/queue-tab.json": "85e14b15d981a1d7bafd2f5b8a44ce866a3325dabb2872c558828627e0e1abf0",
     "AutofillAgentQueueList/valid/whole-list.json": "10fccb59ab4ae6bc2235ab7fa2915428dcc916555b62de48dfc98ea722a2e120",
     "AutofillAgentQueueQuery/invalid/limit-too-large.json": "c5a9b4a26e91801f30f75185965dc1b0377f6cba0f695c2e1b6a47b5950a76ad",
     "AutofillAgentQueueQuery/invalid/unknown-state.json": "16a0ee99472c8c058c76aabda6381ed83ea595bd07f73a6d5266a2daa28b8e28",
@@ -16266,6 +16269,17 @@
                     "type": "null"
                   }
                 ]
+              },
+              "runs": {
+                "maxItems": 2,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "agent",
+                    "tab"
+                  ]
+                }
               }
             },
             "required": [

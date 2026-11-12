@@ -341,6 +341,16 @@ export type EntryOutcome = (typeof ENTRY_OUTCOMES)[number];
 export const ENTRY_BLOCKS = ['sign-in', 'sign-in-failed', 'email-code', 'captcha', 'other'] as const;
 export type EntryBlock = (typeof ENTRY_BLOCKS)[number];
 
+// ── jr7 AUTO-7 ──
+/** Why a job of the agent or the Queue tab rests with the person, in the extension's own words beside the contract's
+ *  reason (FIX7PLAN §6.4 item 14, ICIMS7-04): 'assessment', the application went on with an assessment the person takes
+ *  (Adapter.handOver). */
+export const AGENT_NOTES = ['assessment'] as const;
+export type AgentNote = (typeof AGENT_NOTES)[number];
+/** The steps that are the person's by design (adapters/types.ts HandOverKind), as a frame's hello says one shows. */
+export const HAND_OVER_KINDS = ['assessment'] as const;
+// ── end jr7 AUTO-7 ──
+
 // ── jr6 apply A0 (the contract): Autofill presses the site's own Apply ──
 // The owner, 2026-11-10: "extension should also click `apply` to find and run the form [...] and `Autofill` word will
 // be kept (not open application or the other word)". The build plan is the session's jr6 APPLYPLAN (§1 D1-D13, §5 A0,
@@ -416,7 +426,18 @@ const contentMessages = [
      *  security fix of 2026-11-06, S4, the worker reads the tab's frame registry). The worker keys it by that
      *  application where its rules allow (background/chain.ts). */
     chain: z.union([z.strictObject({ from: z.string().regex(/^[0-9a-f]{16}$/) }),
-      z.strictObject({ frame: z.literal(true) })]).optional() }),
+      z.strictObject({ frame: z.literal(true) })]).optional(),
+    // ── jr7 AUTO-7 ──
+    /** ICIMS7-04 (FIX7PLAN §6.4 item 14): the step this top or claim frame shows is the person's by design (its
+     *  adapter's handOver, read from the page's markup: iCIMS's Assessments): the agent and the Queue tab leave it to
+     *  them, and a Submit armed before it waits SUBMIT_ARM_MS for its confirmation. */
+    handOver: z.enum(HAND_OVER_KINDS).optional(),
+    /** ICIMS7-11 (D-6; FIX7PLAN §6.4 item 20): the posting address its adapter gives TailorIT instead of this page's own
+     *  (Adapter.tailoritAddress: a Jibe page's iCIMS posting, built from its Apply link's parts), which the worker takes
+     *  only once its own check passes (an iCIMS posting of the same job id, https, no credentials, no query). */
+    tailoritAddress: z.string().url().max(2000).optional(),
+    // ── end jr7 AUTO-7 ──
+  }),
   /** Answers a run id and the content settings; never the profile. */
   z.strictObject({ v, type: z.literal('run/begin'), applicationKey: z.string().max(80),
     /** 'agent' (v3 Phase 5): the auto-apply agent's run, which the worker takes only from the tab it opened. */
@@ -511,6 +532,14 @@ const contentMessages = [
    *  when this tab armed the same application within SUBMIT_ARM_MS. */
   z.strictObject({ v, type: z.literal('submit/detected'), applicationKey: z.string().max(80),
     evidence: z.enum(SUBMIT_EVIDENCE) }),
+  // ── jr7 AUTO-7 (AUTO7-06, UP7-01, WD7-05; FIX7PLAN §6.4 items 7 and 16) ──
+  /** A frame whose page names no application (applicationOf none: UltiPro's ApplicationSubmitted, Workday's page with
+   *  its new Job_Application_ID, Oracle's my-profile) on a host whose adapter reads the page after submitting
+   *  (Adapter.confirmationAfter): the worker takes it as the confirmation of the Submit this frame armed within
+   *  CONFIRMATION_PAGE_MS, where that adapter reads this address as its page after submitting; nothing else. No key, no
+   *  address: the worker reads the frame's own address from Chrome. */
+  z.strictObject({ v, type: z.literal('submit/after') }),
+  // ── end jr7 AUTO-7 ──
   /** v1.3 B: the questions and answers of the form whose Submit this frame armed a moment before (content/
    *  form-capture.ts: every step's, as each was left, and the step shown at the press), and, from the top frame, the
    *  posting as the page shows it. The worker holds them in its memory only, for the arm's life, and sends them to
@@ -943,7 +972,10 @@ export const PressAnswerSchema = z.strictObject({ outcome: z.enum(PRESS_OUTCOMES
 export type PressAnswer = z.infer<typeof PressAnswerSchema>;
 
 /** agent/enter's answer (v3 Phase 5). */
-export const EntryAnswerSchema = z.strictObject({ outcome: z.enum(ENTRY_OUTCOMES), block: z.enum(ENTRY_BLOCKS).optional() });
+export const EntryAnswerSchema = z.strictObject({ outcome: z.enum(ENTRY_OUTCOMES), block: z.enum(ENTRY_BLOCKS).optional(),
+  /** jr7 AUTO-7 (AUTO7-03): with 'not-offered', whether an adapter of the page declares an entry at all (false: the
+   *  agent cannot press this site's Apply; true: it was declared and not found). Absent: not said. */
+  declared: z.boolean().optional() });
 export type EntryAnswer = z.infer<typeof EntryAnswerSchema>;
 
 /** signin/credential's answer (v3 Phase 5): the job-site sign-in for the frame's own host, to that frame alone. The one
@@ -997,6 +1029,7 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'launcher/hide': DoneAnswerSchema,
   'submit/armed': DoneAnswerSchema,
   'submit/detected': DoneAnswerSchema,
+  'submit/after': DoneAnswerSchema, // jr7 AUTO-7
   // v1.3 B
   'submit/form': DoneAnswerSchema,
   // jr6 ifix SEC-1: or the page's own rules refused the saved password (no password in it)

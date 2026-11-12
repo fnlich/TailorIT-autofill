@@ -64,17 +64,20 @@
  * logged as their places in the contract's lists.
  */
 import { z } from 'zod';
-import { applicationOf } from '../adapters';
+import { applicationOf, platformAdapter } from '../adapters';
 import {
   agentApplicationUrl, AUTOFILL_AGENT_FINISHED_STATES, AUTOFILL_AGENT_REASONS, AutofillAgentIdSchema,
-  type AutofillAgentFinishedState, type AutofillAgentReason,
+  queueApplicationUrl, type AutofillAgentFinishedState, type AutofillAgentReason,
 } from '../contract/tailorit';
 import { ok, type Answer } from '../messaging/envelope';
-import { type AgentBlock, type AgentPause, type AgentStatus, type EntryAnswer, type EntryBlock } from '../messaging/schemas';
+import {
+  AGENT_NOTES, type AgentBlock, type AgentNote, type AgentPause, type AgentStatus, type EntryAnswer, type EntryBlock,
+} from '../messaging/schemas';
 import { AGENT_PAUSES } from '../messaging/page-schemas';
 import type { AgentAlarms, AgentWindows, AtsPage, StorageArea } from '../platform/types';
 import { staticPlatformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
+import type { HandOverKind } from '../adapters/types';
 import type { FrameReport } from '../shared/report';
 import type { FrameEntry } from './frames';
 import { createKeyedQueue } from './locks';
@@ -106,8 +109,11 @@ export const AGENT_NEXT_MS = 1_000;
 export const AGENT_LOAD_SETTLE_MS = 1_500;
 /** Entry presses (Apply, Application) per job: a posting that keeps showing itself is not pressed forever. */
 export const AGENT_MAX_ENTRIES = 2;
-/** Runs started per job (one per document of the form): a form that keeps loading again is not filled forever. */
-export const AGENT_MAX_STARTS = 8;
+/** Runs started per job (one per document of the form): a form that keeps loading again is not filled forever. jr7
+ *  AUTO-7 (AUTO7-15, FIX7PLAN D-9): 12, as iCIMS's applications show 5 and 6 form documents (gate, profile and its
+ *  résumé reload, questions, EEO, IForm, Assessments: snapshot7 iCIMS1 and icims3), and a reload on a refusal or a
+ *  two-page IForm packet adds more. */
+export const AGENT_MAX_STARTS = 12;
 /** Jobs in a row ended page_error before the agent pauses itself (the audit of 2026-11-06, M5): pages that do not load
  *  one after another are an outage, not the jobs', and the queue is not drained through it. */
 export const AGENT_MAX_PAGE_ERRORS = 3;
@@ -126,6 +132,9 @@ const Count = z.number().int().nonnegative();
 const ResultSchema = z.strictObject({
   state: z.enum(AUTOFILL_AGENT_FINISHED_STATES),
   reason: z.enum(AUTOFILL_AGENT_REASONS).nullable(),
+  /** jr7 AUTO-7 (ICIMS7-04): why, in the extension's own words, beside the contract's reason: the application went on
+   *  with a step that is the person's by design (Adapter.handOver). */
+  note: z.enum(AGENT_NOTES).optional(),
 });
 const NONCE = /^[A-Za-z0-9_-]{8,64}$/;
 
@@ -178,6 +187,18 @@ const RunSchema = z.strictObject({
   waiting: z.strictObject({ kind: z.enum(['settle', 'sign-in']), at: Count, updatedAt: Count }).nullable(),
   /** The result once decided, until TailorIT took it. */
   result: ResultSchema.extend({ aiGuesses: Count }).nullable(),
+  // ── jr7 AUTO-7 (FIX7PLAN §6.4) ──
+  /** AUTO7-03: the entry answered that it offered nothing, and whether an adapter of the page declares an entry at all
+   *  (not declared: the agent cannot press this site's Apply, unsupported_site; declared and not found: a closed
+   *  posting, as before). */
+  notOffered: z.strictObject({ declared: z.boolean() }).nullable().optional(),
+  /** AUTO7-10: the latest hello of a frame the agent acts in (the form's wait counts from it too). */
+  helloAt: Count.nullable().optional(),
+  /** AUTO7-08: what the hold after the job's Submit waits on: a form that showed again ('form': other, or
+   *  validation_error after the retry, as before), or a page after the Submit that names no application of the task or
+   *  another one ('page': its sign is waited for, then timed_out: it may have been sent). */
+  heldKind: z.enum(['form', 'page']).optional(),
+  // ── end jr7 AUTO-7 ──
 });
 type AgentRun = z.infer<typeof RunSchema>;
 
@@ -353,7 +374,34 @@ export interface AgentDeps {
   /** How long the new window rests on its empty page before the job's address is opened in it (0 by default; the e2e
    *  build waits for its test browser to route the new page first, so no request of it can reach a real site). */
   windowSettleMs?: number;
+  // ── jr7 AUTO-7 ──
+  /** AUTO7-05 (b): the host name of the tab's page, in lower case (WorkerPlatform tabs.hostOf), or null. Absent: not
+   *  known. */
+  hostOf?(tabId: number): Promise<string | null>;
+  /** AUTO7-05 (b): whether `host` is one the platform's own sign-in leaves to (its adapter's identityHosts). Absent:
+   *  none is. */
+  identityHost?(platform: string, host: string): boolean;
+  // ── end jr7 AUTO-7 ──
 }
+
+// ── jr7 AUTO-7 ──
+/** AUTOV-03: an entry the agent asked for (agent/enter, sent inside serial()), its answer awaited outside it. */
+interface PendingEntry {
+  runId: string;
+  answer: Promise<unknown>;
+}
+/** storage.session: the windows of jobs the agent left open for the person (jr7-O1 part 4, D-9: a code or a check after
+ *  its own Submit; ICIMS7-04: an assessment after it), their ids alone: never counted as a window of the person's. */
+export const AGENT_KEPT_KEY = 'agent:kept';
+/** The most such windows remembered (the oldest forgotten first). */
+export const AGENT_KEPT_MAX = 20;
+/** How a finished job's tab goes: closed (as before), or kept for the person (`keepTab`), its window flagged
+ *  (windows.update drawAttention, no permission); `note` says why in the extension's words. */
+interface FinishOptions {
+  keepTab?: boolean;
+  note?: AgentNote;
+}
+// ── end jr7 AUTO-7 ──
 
 /** A failure TailorIT may answer differently later: the result is kept and sent again. */
 const PASSING: ReadonlySet<ServerFailure> = new Set(['unreachable', 'timeout', 'server-error', 'rate-limited',
@@ -389,6 +437,37 @@ export function agentAddressOf(url: string): { address: string; applicationKey: 
   const applicationKey = applicationKeyOf(address);
   return applicationKey === null ? null : { address, applicationKey };
 }
+
+// ── jr7 AUTO-7 ──
+/** AUTO7-01 (F4b; FIX7PLAN §6.4 item 3): the address the Queue tab opens for a task's `url` the agent does not open:
+ *  the contract's queueApplicationUrl (jr7-tailorit-a: the posting, or the form, of a platform the extension fills,
+ *  read so that it says hello before any redirect: UltiPro's OpportunityDetail, never OpportunityApply, AUTO7-05 a),
+ *  https on an applicant-tracking host the manifest's script runs on, with an application key; null when there is none.
+ *  The queue opens agentAddressOf(url) ?? queueAddressOf(url). */
+export function queueAddressOf(url: string): { address: string; applicationKey: string } | null {
+  const address = queueApplicationUrl(url);
+  if (address === null || staticPlatformOfUrl(address) === null) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(address);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:') return null;
+  const applicationKey = applicationKeyOf(address);
+  return applicationKey === null ? null : { address, applicationKey };
+}
+
+/** AUTO7-05 (b, c): whether `host` (lower case) is one `platform`'s own sign-in leaves to: its adapter's identityHosts,
+ *  whole-host patterns (a list, never a page read). */
+export function identityHostOf(platform: string, host: string): boolean {
+  const patterns = platformAdapter(platform)?.identityHosts ?? [];
+  return patterns.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(host);
+  });
+}
+// ── end jr7 AUTO-7 ──
 
 /** The agent of this worker. */
 export function createAgent(deps: AgentDeps) {
@@ -429,7 +508,13 @@ export function createAgent(deps: AgentDeps) {
    * person's to look at, never a sign-in. Before it began: the board or its "not found", a closed posting, at once.
    */
   async function noPosting(run: AgentRun, samePlatform: boolean | null): Promise<void> {
-    if (run.pressedAt !== null) return;
+    if (run.pressedAt !== null) {
+      // jr7 AUTO-7 (AUTO7-08 a): after the job's Submit, a page of its own platform that names no application (UltiPro's
+      // ApplicationSubmitted, Oracle's my-profile, iCIMS's Assessments) is held AGENT_CONFIRM_MS for the sign its
+      // adapter reads (confirmationAfter), then the person's: timed_out (it may have been sent), never other.
+      if (samePlatform === true) await holdForSign(run, 'page');
+      return;
+    }
     if (begun(run)) {
       await finishRun(run, 'needs-you', samePlatform === true ? 'sign_in' : 'other');
       return;
@@ -439,6 +524,25 @@ export function createAgent(deps: AgentDeps) {
 
   /** Whether a page of `platform`'s host is the job's own platform's. */
   const onJobPlatform = (run: AgentRun, platform: string) => run.applicationKey.startsWith(`${platform}:`);
+
+  // ── jr7 AUTO-7 ──
+  /** AUTO7-08: after the job's Submit, a page whose sign is awaited (`kind`), held from now (once) for
+   *  AGENT_CONFIRM_MS: never acted on, never closed meanwhile; its sign (submitted) ends it. */
+  async function holdForSign(run: AgentRun, kind: 'form' | 'page'): Promise<void> {
+    if (run.heldAt !== null) return;
+    await saveRun({ ...run, heldAt: deps.now(), heldKind: kind });
+    deps.timers.after(AGENT_CONFIRM_MS + 100, () => void tick().catch(() => undefined));
+  }
+
+  /** AUTO7-05 (b): whether the run's tab shows a page on a host its platform's own sign-in leaves to (https, the
+   *  adapter's identityHosts: a list, never a page read). */
+  async function onIdentityHost(run: AgentRun): Promise<boolean> {
+    if (run.tabId === null || deps.hostOf === undefined || deps.identityHost === undefined) return false;
+    const host = await deps.hostOf(run.tabId).catch(() => null);
+    const platform = run.applicationKey.split(':')[0] ?? '';
+    return host !== null && deps.identityHost(platform, host);
+  }
+  // ── end jr7 AUTO-7 ──
 
   /** This browser session's nonce: storage.session's, made when it holds none (a browser restart empties it). */
   async function sessionNonce(): Promise<string> {
@@ -519,6 +623,29 @@ export function createAgent(deps: AgentDeps) {
     await deps.windows.closeTab(run.tabId).catch(() => undefined);
   }
 
+  // ── jr7 AUTO-7 (jr7-O1 part 4, D-9 Q-O2; ICIMS7-04) ──
+  /** The windows of jobs left open for the person (AGENT_KEPT_KEY). */
+  async function keptWindows(): Promise<number[]> {
+    const parsed = z.array(z.number().int()).max(AGENT_KEPT_MAX).safeParse(await deps.session.get(AGENT_KEPT_KEY));
+    return parsed.success ? parsed.data : [];
+  }
+
+  /** Lets go of the run's tab for the person to finish in (a code or a check its own Submit drew, an assessment after
+   *  it): run/cancel and the person's settings to its frames (deps.release), never closed; the runtime's armed Submit
+   *  stays, so a later sign is recorded the normal way (POST /applied). Its window is flagged and is never counted as
+   *  the person's (claim: othersOpen). Only a tab of this session that is still there. */
+  async function keep(run: AgentRun): Promise<void> {
+    if (run.tabId === null || !(await ofThisSession(run))) return;
+    if (!(await deps.windows.tabExists(run.tabId))) return;
+    await deps.release(run.tabId).catch(() => undefined);
+    if (run.windowId !== null) {
+      const kept = (await keptWindows()).filter((id) => id !== run.windowId);
+      await deps.session.set({ [AGENT_KEPT_KEY]: [...kept, run.windowId].slice(-AGENT_KEPT_MAX) });
+      await deps.windows.drawAttention?.(run.windowId).catch(() => undefined);
+    }
+  }
+  // ── end jr7 AUTO-7 ──
+
   /** Keeps the alarm while there is a reason to wake: Run auto-apply on, or a result not told yet. */
   async function keepAlarm(): Promise<void> {
     const pending = (await runOf())?.result != null;
@@ -541,16 +668,19 @@ export function createAgent(deps: AgentDeps) {
 
   /** The job's result: kept, its tab released and closed, then told to TailorIT (reportResult). Jobs that end
    *  page_error one after another pause the agent at AGENT_MAX_PAGE_ERRORS (M5). */
-  async function finishRun(run: AgentRun, state: AutofillAgentFinishedState, reason: AutofillAgentReason | null):
-    Promise<boolean> {
-    const done: AgentRun = { ...run, result: { state, reason, aiGuesses: guessesOf(run) }, waiting: null };
+  async function finishRun(run: AgentRun, state: AutofillAgentFinishedState, reason: AutofillAgentReason | null,
+    options: FinishOptions = {}): Promise<boolean> {
+    const done: AgentRun = { ...run, result: { state, reason, aiGuesses: guessesOf(run),
+      ...(options.note === undefined ? {} : { note: options.note }) }, waiting: null };
     await saveRun(done);
     log('agent.finished', { state: AUTOFILL_AGENT_FINISHED_STATES.indexOf(state),
-      reason: reason === null ? -1 : AUTOFILL_AGENT_REASONS.indexOf(reason) });
+      reason: reason === null ? -1 : AUTOFILL_AGENT_REASONS.indexOf(reason), ...(options.keepTab ? { kept: true } : {}) });
     const errors = reason === 'page_error' ? (await errorsOf()) + 1 : 0;
     await deps.session.set({ [AGENT_ERRORS_KEY]: errors >= AGENT_MAX_PAGE_ERRORS ? 0 : errors });
     if (errors >= AGENT_MAX_PAGE_ERRORS) await pause('page-errors');
-    await release(done);
+    // jr7 AUTO-7 (jr7-O1 part 4, ICIMS7-04): a tab the person must finish in is let go of, never closed.
+    if (options.keepTab === true) await keep(done);
+    else await release(done);
     if (!(await mayTell())) {
       await keepAlarm();
       deps.changed();
@@ -580,7 +710,8 @@ export function createAgent(deps: AgentDeps) {
     const day = dayOf(deps.now());
     const tally = await tallyOf();
     await deps.local.set({ [AGENT_TALLY_KEY]: { day, done: (tally?.day === day ? tally.done : 0) + 1,
-      last: { state: result.state, reason: result.reason } } satisfies AgentTally });
+      last: { state: result.state, reason: result.reason,
+        ...(result.note === undefined ? {} : { note: result.note }) } } satisfies AgentTally }); // jr7 AUTO-7
     await savePoll({ nextAt: 0, misses: 0 });
     await keepAlarm();
     deps.changed();
@@ -631,7 +762,8 @@ export function createAgent(deps: AgentDeps) {
     const now = deps.now();
     const poll = await pollOf();
     if (poll.nextAt > now) return;
-    if (!(await deps.windows.othersOpen(null))) {
+    // jr7 AUTO-7 (jr7-O1 part 4): a window left open for the person after a job is never counted as theirs.
+    if (!(await deps.windows.othersOpen(await keptWindows()))) {
       if (!noWindow) deps.changed();
       noWindow = true;
       return;
@@ -707,7 +839,10 @@ export function createAgent(deps: AgentDeps) {
       await finishRun(run, 'needs-you', 'timed_out');
       return;
     }
-    if (run.formAt === null && run.openedAt !== null && now - run.openedAt >= AGENT_FORM_WAIT_MS) {
+    // jr7 AUTO-7 (AUTO7-10): the form's wait counts from the latest progress before a form: the window's opening, the
+    // entry's press, the latest hello, a wait a report began (a sign-in at work); AGENT_JOB_MAX_MS still bounds it.
+    const formSince = Math.max(run.openedAt ?? 0, run.pressedEntryAt ?? 0, run.helloAt ?? 0, run.waiting?.at ?? 0);
+    if (run.formAt === null && run.openedAt !== null && now - formSince >= AGENT_FORM_WAIT_MS) {
       // The tab's address names a page of the platform's host that shows no posting (which says no hello: the v3 Phase
       // 6/7b review, S3): a closed posting, or, once the job has begun, the person's sign-in on the job's own platform
       // (round 2, E8; noPosting). A page that said hello and never showed a form (its posting gone, a page that says
@@ -719,6 +854,18 @@ export function createAgent(deps: AgentDeps) {
         return;
       }
       if (run.heardAt !== null) {
+        // jr7 AUTO-7 (AUTO7-05 b): once the job began, a tab on a host the job's platform's own sign-in leaves to
+        // (its adapter's identityHosts: UKG's signin-us.ultipro.com) is the person's sign-in, never 'other'.
+        if (begun(run) && await onIdentityHost(run)) {
+          await finishRun(run, 'needs-you', 'sign_in');
+          return;
+        }
+        // jr7 AUTO-7 (AUTO7-03): an entry no adapter of the page declares is one the agent cannot press: the site is
+        // not one it fills unattended (unsupported_site); declared and not found, a closed posting, as before.
+        if (!begun(run) && run.notOffered?.declared === false) {
+          await finishRun(run, 'needs-you', 'unsupported_site');
+          return;
+        }
         await finishRun(run, begun(run) ? 'needs-you' : 'failed', begun(run) ? 'other' : 'posting_closed');
         return;
       }
@@ -726,7 +873,9 @@ export function createAgent(deps: AgentDeps) {
       return;
     }
     if (run.heldAt !== null && now - run.heldAt >= AGENT_CONFIRM_MS) {
-      await finishRun(run, run.retried ? 'failed' : 'needs-you', run.retried ? 'validation_error' : 'other');
+      // jr7 AUTO-7 (AUTO7-08): a page after the Submit whose sign never came: it may have been sent (timed_out).
+      if (run.heldKind === 'page') await finishRun(run, 'needs-you', 'timed_out');
+      else await finishRun(run, run.retried ? 'failed' : 'needs-you', run.retried ? 'validation_error' : 'other');
       return;
     }
     // Its report first: a run at work is progress (its AI answers awaited, its waits stretched in a hidden window), even
@@ -777,7 +926,10 @@ export function createAgent(deps: AgentDeps) {
         await saveRun({ ...next, waiting: null });
         return;
       case 'finish':
-        await finishRun(next, verdict.state, verdict.reason);
+        // jr7 AUTO-7 (jr7-O1 part 4, D-9 Q-O2): a code or a check the job's own Submit drew keeps its tab for the person
+        // (never closed, never typed); its sign, when it comes, is recorded the normal way.
+        await finishRun(next, verdict.state, verdict.reason, { keepTab: next.pressedAt !== null
+          && (verdict.reason === 'email_code' || verdict.reason === 'captcha') });
         return;
       case 'retry': {
         await saveRun({ ...next, retried: true, staleRunId: top.runId, waiting: null });
@@ -889,65 +1041,88 @@ export function createAgent(deps: AgentDeps) {
   /** A frame the agent acts in said hello (hello: the tab's top frame, or core-x item 3's claim frame and its chain
    *  frame), at the task's application: a form's document gets its run (once each, at most AGENT_MAX_STARTS, never
    *  after the job's Submit); one with no form its entry (once each, at most AGENT_MAX_ENTRIES), never the platform's
-   *  page after submitting, nor (minor 13) any page after the job's Submit. Called inside serial(). */
+   *  page after submitting, nor (minor 13) any page after the job's Submit. Called inside serial().
+   *  jr7 AUTO-7 (AUTOV-03): agent/enter is sent here, inside serial(), and its answer is the caller's to await outside
+   *  it (entryAnswered then records it in a serial step of its own), so a tick, the person's Stop or a closed tab is
+   *  heard while a Sign-in Auto at the posting signs in. ICIMS7-04 (2): after the job's Submit, a step that is the
+   *  person's by design (`handOver`: iCIMS's Assessments) ends the job needs-you with its words, its tab kept. */
   async function act(tabId: number, run: AgentRun, entry: Pick<FrameEntry, 'frameId' | 'documentId' | 'hasForm'
-    | 'confirmation'>): Promise<void> {
+    | 'confirmation'>, handOver: HandOverKind | null = null): Promise<PendingEntry | null> {
     const doc = entry.documentId ?? '';
     const now = deps.now();
-    const heard: AgentRun = { ...run, heardAt: run.heardAt ?? now, progressAt: now };
+    const heard: AgentRun = { ...run, heardAt: run.heardAt ?? now, progressAt: now, helloAt: now };
     deps.assign(tabId, run.applicationKey, { jobId: run.jobId, resumeId: run.resumeId });
+    // jr7 AUTO-7 (ICIMS7-04 (2)): never timed_out after ten minutes; the person takes the assessment in this tab.
+    if (handOver !== null && run.pressedAt !== null) {
+      await finishRun(heard, 'needs-you', 'other', { keepTab: true, note: handOver });
+      return null;
+    }
     if (entry.hasForm) {
       const shown: AgentRun = { ...heard, formAt: run.formAt ?? now };
       if (run.started.includes(doc)) {
         await saveRun(shown);
-        return;
+        return null;
       }
       if (run.pressedAt !== null) {
         // One Submit per job: a form that shows again after it is never filled again; its confirmation is awaited.
-        await saveRun({ ...shown, heldAt: run.heldAt ?? now });
-        deps.timers.after(AGENT_CONFIRM_MS + 100, () => void tick().catch(() => undefined));
-        return;
+        await saveRun(shown);
+        await holdForSign(shown, 'form'); // jr7 AUTO-7
+        return null;
       }
       if (run.starts >= AGENT_MAX_STARTS) {
         await finishRun(shown, 'needs-you', 'other');
-        return;
+        return null;
       }
       await saveRun({ ...shown, starts: run.starts + 1, started: [...run.started, doc].slice(-AGENT_MAX_STARTS) });
       log('agent.run-started');
       await sendTo(tabId, entry, { v: 1, type: 'run/start', dryRun: false, agent: true });
-      return;
+      return null;
     }
     if (entry.confirmation === true || run.entered.includes(doc)) {
       await saveRun(heard);
-      return;
+      return null;
     }
     if (run.pressedAt !== null) {
       // The behaviour review of 2026-11-06 (minor 13): after the job's Submit, a page with no form is never entered (an
-      // entry pressed there would begin the application again); its confirmation is awaited, as a form's is.
-      await saveRun({ ...heard, heldAt: run.heldAt ?? now });
-      deps.timers.after(AGENT_CONFIRM_MS + 100, () => void tick().catch(() => undefined));
-      return;
+      // entry pressed there would begin the application again); its confirmation is awaited, as a form's is. jr7 AUTO-7
+      // (AUTO7-08 a): a page, so timed_out once AGENT_CONFIRM_MS passed with no sign (it may have been sent).
+      await saveRun(heard);
+      await holdForSign(heard, 'page');
+      return null;
     }
     if (run.entered.length >= AGENT_MAX_ENTRIES) {
       await finishRun(heard, 'failed', 'page_error');
-      return;
+      return null;
     }
     await saveRun({ ...heard, entered: [...run.entered, doc] });
-    const answer = await sendTo(tabId, entry, { v: 1, type: 'agent/enter' });
+    // jr7 AUTO-7 (AUTOV-03): sent now, inside serial(); answered outside it (entryAnswered).
+    return { runId: run.id, answer: sendTo(tabId, entry, { v: 1, type: 'agent/enter' }) };
+  }
+
+  /** jr7 AUTO-7 (AUTOV-03): what an entry answered, recorded in a serial step of its own on the run as it stands now
+   *  (a Stop, a tick or a closed tab may have finished it meanwhile: nothing then). */
+  async function entryAnswered(pending: PendingEntry): Promise<void> {
+    const answer = await pending.answer;
     const data = (answer as { ok?: boolean; data?: EntryAnswer } | undefined)?.data;
     log('agent.entered', { pressed: data?.outcome === 'pressed' });
-    if (data?.outcome === 'pressed') {
-      const now = await runOf();
-      if (now !== null && now.id === run.id && (now.pressedEntryAt ?? null) === null) {
-        await saveRun({ ...now, pressedEntryAt: deps.now() });
+    await serial(async () => {
+      const run = await runOf();
+      if (run === null || run.id !== pending.runId || run.result !== null) return;
+      if (data?.outcome === 'pressed') {
+        if ((run.pressedEntryAt ?? null) === null) await saveRun({ ...run, pressedEntryAt: deps.now() });
+        return;
       }
-    }
-    // A CAPTCHA, a sign-in or a code before the form: the person's. Not offered (a form drawn late, a page still
-    // loading): the form's wait covers it.
-    if (data?.outcome === 'blocked') {
-      const result = ENTRY_RESULTS[data.block ?? 'other'];
-      await finishRun((await runOf()) ?? heard, result.state, result.reason);
-    }
+      // A CAPTCHA, a sign-in or a code before the form: the person's. Not offered (a form drawn late, a page still
+      // loading): the form's wait covers it; jr7 AUTO-7 (AUTO7-03): with whether an adapter declares the entry at all.
+      if (data?.outcome === 'blocked') {
+        const result = ENTRY_RESULTS[data.block ?? 'other'];
+        await finishRun(run, result.state, result.reason);
+        return;
+      }
+      if (data?.outcome === 'not-offered' && data.declared !== undefined) {
+        await saveRun({ ...run, notOffered: { declared: data.declared } });
+      }
+    });
   }
 
   return {
@@ -1007,50 +1182,67 @@ export function createAgent(deps: AgentDeps) {
 
     /** A frame of the agent's tab said hello: another posting's page (or one that names none: a closed posting) ends
      *  the job; a form's document gets its run (once each, at most AGENT_MAX_STARTS, never after the job's Submit); one
-     *  with no form its entry (once each, at most AGENT_MAX_ENTRIES), never the platform's page after submitting. */
+     *  with no form its entry (once each, at most AGENT_MAX_ENTRIES), never the platform's page after submitting.
+     *  jr7 AUTO-7: `said.handOver`, the step its adapter reads as the person's by design (ICIMS7-04); the entry's answer is
+     *  awaited after the serial step (AUTOV-03). */
     async hello(tabId: number, entry: Pick<FrameEntry, 'frameId' | 'documentId' | 'hasForm' | 'posting' | 'confirmation'
-      | 'applicationKey'> & Partial<Pick<FrameEntry, 'platform' | 'wraps'>>): Promise<void> {
-      await serial(async () => {
+      | 'applicationKey'> & Partial<Pick<FrameEntry, 'platform' | 'wraps'>>,
+    said: { handOver?: HandOverKind | undefined } = {}): Promise<void> {
+      const handOver = said.handOver ?? null;
+      const pending = await serial(async (): Promise<PendingEntry[]> => {
         const run = await activeRun();
-        if (run === null || run.tabId !== tabId) return;
+        if (run === null || run.tabId !== tabId) return [];
         // The snapshot build of 2026-11-06 (core-x, item 3): a subframe only where it is one of the frames the agent acts
         // in for the tab's application (frames.ts agentFramesOf: the frame that claims a company wrapper's application,
         // an iCIMS portal's iframe#icims_content_iframe, and a chain frame it framed); the S-9 rules keep any other
         // silent, and nothing a frame says of itself makes it one but the registry's own checks.
         if (entry.frameId !== 0) {
           const frames = (await deps.agentFrames?.(tabId).catch(() => [])) ?? [];
-          if (!frames.some((frame) => frame.frameId === entry.frameId && frame.documentId === entry.documentId)) return;
-          if (entry.applicationKey !== run.applicationKey) return;
-          await act(tabId, run, entry);
-          return;
+          if (!frames.some((frame) => frame.frameId === entry.frameId && frame.documentId === entry.documentId)) return [];
+          if (entry.applicationKey !== run.applicationKey) return [];
+          const one = await act(tabId, run, entry, handOver);
+          return one === null ? [] : [one];
         }
         if (entry.applicationKey === undefined) {
           await noPosting(run, entry.platform === null || entry.platform === undefined ? null
             : onJobPlatform(run, entry.platform));
-          return;
+          return [];
         }
         if (entry.applicationKey !== run.applicationKey) {
+          // jr7 AUTO-7 (AUTO7-08 b, J7-AG-1, UP7-01 item 4): after the job's Submit, the top frame's page after
+          // submitting of the job's own platform under another key (a chained application's: SmartRecruiters'
+          // publication, JazzHR's /apply/confirm) is held for its sign (submitted, by the arm's key), never acted on.
+          if (run.pressedAt !== null && entry.confirmation === true && entry.platform !== null
+            && entry.platform !== undefined && onJobPlatform(run, entry.platform)) {
+            await holdForSign(run, 'page');
+            return [];
+          }
           // Another posting's page (a redirect, a link followed): never filled.
           await finishRun(run, 'needs-you', 'other');
-          return;
+          return [];
         }
         if (entry.wraps === true) {
           // core-x, item 3: a company's wrapper draws the application in a frame of its own: the agent acts there, never
           // here. That frame's hello may have come first: it is acted on now, once each document.
           const now = deps.now();
-          let held: AgentRun = { ...run, heardAt: run.heardAt ?? now, progressAt: now };
+          let held: AgentRun = { ...run, heardAt: run.heardAt ?? now, progressAt: now, helloAt: now };
           await saveRun(held);
+          const found: PendingEntry[] = [];
           for (const frame of (await deps.agentFrames?.(tabId).catch(() => [])) ?? []) {
             if (frame.frameId === 0 || frame.applicationKey !== run.applicationKey) continue;
             const current = await runOf();
-            if (current === null || current.id !== run.id || current.result !== null) return;
+            if (current === null || current.id !== run.id || current.result !== null) return found;
             held = current;
-            await act(tabId, held, frame);
+            const one = await act(tabId, held, frame);
+            if (one !== null) found.push(one);
           }
-          return;
+          return found;
         }
-        await act(tabId, run, entry);
+        const one = await act(tabId, run, entry, handOver);
+        return one === null ? [] : [one];
       });
+      // jr7 AUTO-7 (AUTOV-03): each entry's answer awaited outside the serial step.
+      await Promise.all(pending.map((each) => entryAnswered(each)));
     },
 
     /** A Submit of the task's application was pressed (armed) in the agent's tab, in document `documentId`: the job's

@@ -20,7 +20,7 @@ import { HISTORY_KINDS, PROFILE_GAPS } from '../shared/profile-gaps';
 import { FrameReportSchema } from '../shared/report';
 import { SettingsSchema } from '../shared/settings';
 import {
-  Count, DOCUMENT_GRANT, DoneAnswerSchema, FieldDescribeAnswerSchema, Id, Key, PageStateSchema, PingAnswerSchema,
+  AGENT_NOTES, Count, DOCUMENT_GRANT, DoneAnswerSchema, FieldDescribeAnswerSchema, Id, Key, PageStateSchema, PingAnswerSchema,
   POLICY_DECISIONS, PressAnswerSchema, SaveAnswerAnswerSchema, STEP_TARGETS, Text, TRANSFER_MESSAGES, v,
 } from './schemas';
 
@@ -590,7 +590,9 @@ export const AgentStatusSchema = z.strictObject({
   pending: z.boolean(),
   job: z.strictObject({ company: Text(200), title: Text(300) }).nullable(),
   doneToday: Count,
-  last: z.strictObject({ state: z.enum(AUTOFILL_AGENT_FINISHED_STATES), reason: z.enum(AUTOFILL_AGENT_REASONS).nullable() })
+  last: z.strictObject({ state: z.enum(AUTOFILL_AGENT_FINISHED_STATES), reason: z.enum(AUTOFILL_AGENT_REASONS).nullable(),
+    /** jr7 AUTO-7 (ICIMS7-04): why, in the extension's words (AGENT_NOTES). */
+    note: z.enum(AGENT_NOTES).optional() })
     .nullable(),
 });
 export type AgentStatus = z.infer<typeof AgentStatusSchema>;
@@ -653,6 +655,13 @@ export const QueueListItemSchema = z.strictObject({
   status: z.enum(QUEUE_ITEM_STATUSES),
   reason: z.enum(AUTOFILL_AGENT_REASONS).nullable(),
   tab: z.boolean(),
+  // ── jr7 AUTO-7 ──
+  /** AUTO7-01 (FIX7PLAN D-4): Submit is the person's on this job's site in the Queue tab (no success sign read there:
+   *  background/settings.ts QUEUE_SUBMIT_PLATFORMS), while its tab is open and not done. */
+  submitYours: z.literal(true).optional(),
+  /** ICIMS7-04: why the job rests with the person, in the extension's words (AGENT_NOTES). */
+  note: z.enum(AGENT_NOTES).optional(),
+  // ── end jr7 AUTO-7 ──
 });
 export type QueueListItem = z.infer<typeof QueueListItemSchema>;
 
