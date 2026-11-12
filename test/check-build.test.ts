@@ -25,8 +25,9 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { MatchPattern } from 'wxt/utils/match-patterns';
 import { CAPTURE_MARKER } from '../src/background/capture';
-import { ATS_MATCHES, isCompanySiteUrl, onAtsMatch, SUBMIT_WATCH_MATCHES } from '../src/shared/hosts';
+import { ATS_MATCHES, HR_HOST_MATCHES, isCompanySiteUrl, isHrHost, onAtsMatch, SUBMIT_WATCH_MATCHES } from '../src/shared/hosts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
@@ -483,13 +484,14 @@ describe("check-build's three content scripts: ours, the page-world bridge and (
   });
 
   // (The snapshot build of 2026-11-06, core pass Z1 items 26 and 39: the bridge reads only the shared domains' address
-  // parsers, under a budget of 24 KiB; v5 p2-detect: 26 KiB, for the address variants its parsers read.)
-  it("fail a page-world bridge over its 26 KiB budget, or one whose file is missing", () => {
+  // parsers, under a budget of 24 KiB; v5 p2-detect: 26 KiB, for the address variants its parsers read; jr7 ENGINE-7
+  // E0: 28 KiB, for jr7's five new platforms' static matches, which the bridge's manifest must equal.)
+  it("fail a page-world bridge over its 28 KiB budget, or one whose file is missing", () => {
     const big = checkBuild(project((write) => {
-      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(26 * 1024)}";`);
+      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(28 * 1024)}";`);
     }));
     expect(big.output).toContain('.output/chrome-mv3: the page-world bridge is');
-    expect(big.output).toContain('over the 26624-byte budget');
+    expect(big.output).toContain('over the 28672-byte budget');
     expect(big.status).toBe(1);
 
     const missing = checkBuild(project((write) => everyManifest(write, (changed) => {
@@ -683,7 +685,8 @@ describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel an
   it('fail a sentinel that is missing, listed in the manifest, over its budget, or that names React, zod or a DOM write', () => {
     const cases: Array<[string, string]> = [
       // v5 p2-detect: 19 KiB (Oracle's Candidate Experience on a company's own domain, recognised by its address).
-      [`var big="${'a'.repeat(19 * 1024)}";`, 'the sentinel is 19467 bytes, over the 19456-byte budget'],
+      // jr7 ENGINE-7 E0: 20 KiB (jr7's new hosts and HR lists).
+      [`var big="${'a'.repeat(20 * 1024)}";`, 'the sentinel is 20491 bytes, over the 20480-byte budget'],
       ['(function(){document.body.appendChild(document.createElement("div"))})();', 'the sentinel names "createElement"'],
       ['(function(){e.innerHTML="x"})();', 'the sentinel names "innerHTML"'],
       ['(function(){e.setAttribute("x","y")})();', 'the sentinel names "setAttribute"'],
@@ -920,3 +923,32 @@ describe("check-build's TailorIT origin (TAILORIT_ORIGIN)", () => {
     expect(status).toBe(1);
   }, 30_000);
 });
+
+// ── jr7 ENGINE-7 E0 (the coordinator's decision of 2026-11-11): check-build's own HR lists, a second lock ──
+describe("check-build's own HR lists, a second lock on src/shared/hosts.ts (jr7 ENGINE-7 E0)", () => {
+  /** The quoted https addresses and patterns of scripts/check-build.mjs's `const <name> = [...]`, comments aside. */
+  const listOf = (name: string): string[] => {
+    const source = readFileSync(join(ROOT, 'scripts', 'check-build.mjs'), 'utf8');
+    const start = source.indexOf(`\nconst ${name} = [`);
+    const body = start < 0 ? '' : source.slice(start, source.indexOf('];', start));
+    return [...body.matchAll(/'(https:\/\/[^'\s]+)'/g)].map((match) => match[1]!);
+  };
+
+  it('names exactly the HR patterns hosts.ts names, each with an address it covers, on an HR host no career-site page is',
+    () => {
+      const excluded = listOf('HR_EXCLUDED');
+      const addresses = listOf('HR_ADDRESSES');
+      expect(excluded.length).toBeGreaterThan(20);
+      // A host missing from either list fails here: the sentinel's registration (hosts.ts) and the build's own check
+      // (check-build.mjs) keep the same employee systems off.
+      expect([...excluded].sort()).toEqual([...HR_HOST_MATCHES].sort());
+      for (const pattern of excluded) {
+        expect(addresses.some((address) => new MatchPattern(pattern).includes(address)), pattern).toBe(true);
+      }
+      for (const address of addresses) {
+        expect(isHrHost(new URL(address).hostname), address).toBe(true);
+        expect(isCompanySiteUrl(address), address).toBe(false);
+      }
+    });
+});
+// ── end jr7 ENGINE-7 E0 ──
