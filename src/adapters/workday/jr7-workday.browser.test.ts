@@ -16,6 +16,7 @@ import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.tes
 import { deadline } from '../../dom/time';
 import { isUserVisible } from '../../dom/visibility';
 import { signIn, signInDetailOf, type SignInContext } from '../../content/sign-in';
+import { parseAtsUrl } from '../../contract/tailorit/lookup';
 import type { SignInCredential } from '../../messaging/schemas';
 import { applicationOf } from '../index';
 import { successSignsOf } from '../success';
@@ -115,15 +116,34 @@ describe('jr7 WD7-05: confirmationAfter (the page after submitting, against the 
     }
   });
 
-  it('an address armed anywhere but the application never arms it: the posting, its choice, a sign-in page, Candidate Home', () => {
+  it('the posting’s own page arms too (the worker keeps the posting); a sign-in page, Candidate Home or the page after submitting never', () => {
     for (const folder of FOLDERS) {
       const here = byName(`jr7-${folder}-confirmation`).source;
-      for (const item of CASES.filter((each) => each.folder === folder && (applicationOf(each.source)?.page !== 'application'
-        || each.source.pathname.includes('/login')))) {
-        expect(after(item.source, here), item.name).toBe(false);
-      }
+      const postings = CASES.filter((each) => each.folder === folder && applicationOf(each.source)?.page === 'posting');
+      expect(postings.length, folder).toBeGreaterThan(0);
+      for (const item of postings) expect(after(item.source, here), item.name).toBe(true);
+      const never = CASES.filter((each) => each.folder === folder && (applicationOf(each.source) === null
+        || each.source.pathname.includes('/login')));
+      expect(never.map((each) => each.step), folder).toEqual(expect.arrayContaining(['confirmation', 'login-verify-sent']));
+      for (const item of never) expect(after(item.source, here), item.name).toBe(false);
     }
   });
+
+  it.each(FOLDERS)('%s: the worker’s arm, the canonical posting address TailorIT reads (no locale, no /apply), reads alike',
+    (folder) => {
+      const review = byName(`jr7-${folder}-review`).source;
+      const posting = parseAtsUrl(review.href)?.canonical[0];
+      expect(posting).toBeDefined();
+      const armed = new URL(posting!);
+      expect(armed.pathname).not.toMatch(/^\/en-US\/|\/apply/);
+      expect(after(armed, byName(`jr7-${folder}-confirmation`).source)).toBe(true);
+      for (const item of CASES.filter((each) => each.folder === folder && each.step !== 'confirmation')) {
+        expect(after(armed, item.source), item.name).toBe(false);
+      }
+      for (const other of FOLDERS.filter((each) => each !== folder)) {
+        expect(after(armed, byName(`jr7-${other}-confirmation`).source), other).toBe(false);
+      }
+    });
 
   it('refuses each variant of the address after submitting that is not the armed application’s', () => {
     const armed = byName('jr7-workday1-review').source;
@@ -189,9 +209,15 @@ describe('jr7 WD7-05: confirmationAfter (the page after submitting, against the 
     expect(after(shared, new URL('https://wd5.myworkdaysite.com/en-US/External?Job_Application_ID=x'))).toBe(false);
     const verily = new URL('https://verily.wd1.myworkdayjobs.com/en-US/verily_careers/job/Dallas-Texas/Engineer_REQ-1/apply');
     expect(after(verily, new URL('https://verily.wd1.myworkdayjobs.com/en-US/verily_careers?Job_Application_ID=x'))).toBe(true);
-    // The posting itself (no /apply) is no application armed.
-    expect(after(new URL('https://verily.wd1.myworkdayjobs.com/en-US/verily_careers/job/Dallas-Texas/Engineer_REQ-1'),
-      new URL('https://verily.wd1.myworkdayjobs.com/en-US/verily_careers?Job_Application_ID=x'))).toBe(false);
+    // The posting itself (no /apply, the worker's form) arms as well; its sign-in page and a search never.
+    expect(after(new URL('https://verily.wd1.myworkdayjobs.com/verily_careers/job/Dallas-Texas/Engineer_REQ-1'),
+      new URL('https://verily.wd1.myworkdayjobs.com/en-US/verily_careers?Job_Application_ID=x'))).toBe(true);
+    for (const armed of ['https://verily.wd1.myworkdayjobs.com/en-US/verily_careers/login',
+      'https://verily.wd1.myworkdayjobs.com/en-US/verily_careers/details/Engineer_REQ-1',
+      'https://verily.wd1.myworkdayjobs.com/en-US/verily_careers']) {
+      expect(after(new URL(armed), new URL('https://verily.wd1.myworkdayjobs.com/en-US/verily_careers?Job_Application_ID=x')),
+        armed).toBe(false);
+    }
   });
 });
 
