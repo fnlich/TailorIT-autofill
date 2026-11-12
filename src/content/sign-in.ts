@@ -590,10 +590,11 @@ async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: Sig
     ? 'unavailable' : 'pressed';
 }
 
-/** Writes the password boxes empty again (module header, 4), where they are still in the page. Nothing is read. */
+/** Writes the password boxes empty again (module header, 4), where they are still in the page. Nothing is read. jr6
+ *  INT-2: a box still in a document that lost its window (its frame removed) is in no page: nothing to write. */
 function clearSecret(secret: readonly HTMLInputElement[]): void {
   for (const box of secret) {
-    if (!box.isConnected) continue;
+    if (!box.isConnected || box.ownerDocument.defaultView === null) continue;
     setValue(box, '');
     fireInput(box, 'text');
     fireChange(box);

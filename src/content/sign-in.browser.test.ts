@@ -767,6 +767,32 @@ describe('the v4 review: each sign-in the run could not make says why (behaviour
       await vi.waitFor(() => expect(password(forged).value).toBe(''), { timeout: 3_000 });
     });
 
+  // jr6 INT-2: a keep whose time ends after its document lost its window (here the test's frame removed; a frame's own
+  // content script ends with its window) has nothing left in a page to write: it writes nothing and throws nothing.
+  it('a keep whose time ends after its frame went writes nothing and throws nothing', async () => {
+    const thrown: string[] = [];
+    const onError = (event: ErrorEvent) => {
+      thrown.push(String(event.message));
+    };
+    window.addEventListener('error', onError);
+    try {
+      const fixture = await loadFixture(document, signInPage({ before: CHECKBOX, needsTick: true }));
+      const box = fixture.doc.getElementById('password') as HTMLInputElement;
+      expect(await signIn({ doc: fixture.doc, adapter: genericAdapter, channel: channelAnswering({ ok: true,
+        data: CREDENTIAL }), href: () => HREF, isTop: true, signal: new AbortController().signal, settleMs: 300,
+      keptMs: 400 })).toBe('challenged');
+      removeFixtures(document);
+      // Still in its own document, which has no window any more.
+      expect(box.isConnected).toBe(true);
+      expect(box.ownerDocument.defaultView).toBeNull();
+      await deadline(900);
+      expect(thrown).toEqual([]);
+      expect(box.value).toBe(CREDENTIAL.password);
+    } finally {
+      window.removeEventListener('error', onError);
+    }
+  });
+
   it('a refusal while the box is ticked is the sign-in’s own failure: the password is written empty again', async () => {
     const fixture = await loadFixture(document, signInPage({ before: CHECKBOX, wrong: true }));
     (fixture.doc.querySelector('textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement).value = '03AFcWeA-token';
