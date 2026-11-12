@@ -452,3 +452,24 @@ describe('Autofill on a page with no form says one thing at a time (the F1 fixer
     expect(root.querySelector('[data-unsupported]')).not.toBeNull();
   });
 });
+
+// jr6 SHELL-A (APPLY-MERGE round 2 §8 item 10; INTEGRATION.md SHELL-A item 8): beside an account wall the frame does the
+// sign-in step (runtime.ts ownWallStep: frame/wall says the wall and `entering`), so the status says that, not the Apply.
+describe('the status while the frame signs in beside a wall (jr6 SHELL-A item 8)', () => {
+  afterEach(() => unmountAll());
+
+  it('says the sign-in step at a wall, and the Apply on a posting', async () => {
+    const worker = createFakeWorker();
+    worker.script.pages.set(5, { ...posting, entry: true, wall: 'sign-in' });
+    const root = await open(worker);
+    const status = statusOf(root);
+    expect(status?.textContent).toBe('');
+    await showPage(worker, 5, { ...posting, entry: true, wall: 'sign-in', entering: true });
+    expect(root.querySelector('[data-action="cancel"]')).not.toBeNull();
+    expect(statusOf(root)).toBe(status);
+    expect(status?.textContent).toBe(COPY.mainView.signingIn);
+    // The wall gone, the frame pressing the site's Apply: the Apply's words again.
+    await showPage(worker, 5, { ...posting, entering: true });
+    expect(status?.textContent).toBe(COPY.mainView.entering);
+  });
+});

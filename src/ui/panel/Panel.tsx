@@ -781,7 +781,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
               say (a line drawn already filled may go unheard): the press, then why it stopped. */}
           {tabId !== null && (
             <p className="tia-visually-hidden" role="status" data-entry-status="">
-              {pressing ? COPY.mainView.entering : said}
+              {/* jr6 SHELL-A (APPLY-MERGE round 2 §8 item 10): beside a wall, the frame does the sign-in step. */}
+              {pressing ? (wall ? COPY.mainView.signingIn : COPY.mainView.entering) : said}
             </p>
           )}
           {page?.support !== 'none' && refusalLine}
