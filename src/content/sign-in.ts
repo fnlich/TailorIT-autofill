@@ -142,6 +142,7 @@ import type { AccountErrorKind, Adapter, PagePasswordClass, PagePasswordRules, S
 import { clickIfAllowed } from '../dom/fillers';
 import { fireChange, fireInput, fireLeave, setValue } from '../dom/fillers/events';
 import { accountFormOf } from '../dom/account-section';
+import { ariaCheckboxState } from '../dom/sign-in-form';
 import { clickAdapterSignIn, clickAdapterSignInPrelude } from '../dom/fillers/not-submit';
 import {
   captchaErrorsShown, checkboxCaptchasUnsolved, detectPause, pageChallenged, vendorFramesShown,
@@ -467,7 +468,7 @@ function sameForm(form: SignInForm, held: SignInForm): boolean {
  * boxes the password went into are added to `secret`. Answers 'typed', or why not.
  */
 function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm, credential: SignInCredential,
-  secret: HTMLInputElement[]): 'typed' | 'unavailable' | 'challenged' | 'failed' {
+  secret: HTMLInputElement[], ariaTicked: HTMLElement[] = []): 'typed' | 'unavailable' | 'challenged' | 'failed' {
   const now = samePage(ctx, asked);
   if (now === null) {
     log('content.sign-in-refused', { moved: true });
@@ -536,10 +537,22 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
   // other is the run's plan's, which decided it per the Consents mode as it filled the gate (module header).
   for (const box of form.terms) {
     if (wall === 'email-gate' && !markedRequired(box)) continue;
+    // jr7 ENGINE-7 E1 item 8 (UP7-04): a declared ARIA checkbox (signInRefusal took it) is clicked only while it says
+    // aria-checked="false", once; press reads "true" back before the form's button is pressed.
+    if (box.localName !== 'input') {
+      if (ariaCheckboxState(box) !== 'false') continue;
+      clickIfAllowed(box, { adapter: ctx.adapter, root: null });
+      ariaTicked.push(box);
+      continue;
+    }
     clickIfAllowed(box, { adapter: ctx.adapter, root: null });
   }
   return 'typed';
 }
+
+/** jr7 ENGINE-7 E1 item 8 (UP7-04): how long the press waits for a ticked ARIA term to say aria-checked="true" (a
+ *  custom element may draw its state a frame later), at most. */
+export const ARIA_TERM_MS = 1_500;
 
 /** signInRefusal, but (core-x, item 2) in an account section, whose button is never pressed here (its declared form's
  *  press is the person's), the button's own state is no reason to refuse the boxes: the page may disable "Submit
@@ -558,8 +571,8 @@ function enabledNow(button: HTMLElement): boolean {
 
 /** Presses the form's own button through the sign-in door (module header, 3): at once, or, on a declared form whose page
  *  enables it once filled, once it is enabled (SIGN_IN_ENABLE_MS at most), with the page read again first. */
-async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm):
-  Promise<'pressed' | 'unavailable' | 'challenged' | 'failed' | 'left'> {
+async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm,
+  ariaTicked: readonly HTMLElement[] = []): Promise<'pressed' | 'unavailable' | 'challenged' | 'failed' | 'left'> {
   const current = () => {
     try {
       return formNow(ctx, wall);
@@ -567,6 +580,18 @@ async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: Sig
       return null;
     }
   };
+  // jr7 ENGINE-7 E1 item 8 (UP7-04): each ARIA term fill clicked reads aria-checked="true" back first, ARIA_TERM_MS at
+  // most; one that does not refuses the press ('failed': the page took no tick, so its button is not pressed).
+  if (ariaTicked.length > 0) {
+    const until = monotonicNow() + ARIA_TERM_MS;
+    while (!ariaTicked.every((term) => term.isConnected && ariaCheckboxState(term) === 'true')) {
+      if (monotonicNow() >= until) {
+        log('content.sign-in', { terms: false });
+        return 'failed';
+      }
+      if ((await deadline(ENABLE_LOOK_MS, ctx.signal)) === 'aborted') return 'left';
+    }
+  }
   if (held.declared === true && held.enablesWhenFilled === true) {
     const until = monotonicNow() + SIGN_IN_ENABLE_MS;
     for (;;) {
@@ -774,13 +799,15 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
     watching.abort();
   };
   const secret: HTMLInputElement[] = [];
+  /** jr7 ENGINE-7 E1 item 8: the declared ARIA terms fill clicked, read back by press. */
+  const ariaTicked: HTMLElement[] = [];
   let outcome: SignInOutcome = 'failed';
   /** What ends the guard, when not this function: the keep (`keep`), or the document's end (`page`). */
   let handedTo: 'keep' | 'page' | null = null;
   try {
     // The answer is held in this frame only for the writes below (module header, 2).
     const credential = answer.data as SignInCredential;
-    const typed = fill(ctx, wall, asked, form, credential, secret);
+    const typed = fill(ctx, wall, asked, form, credential, secret, ariaTicked);
     // A form whose press is the person's (SignInForm.personPresses): typed, and handed over (module header).
     if (typed === 'typed' && form.personPresses === true) {
       log('content.sign-in', { pressed: false, person: true });
@@ -803,7 +830,7 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
       keepForPerson(ctx, secret, false, release);
       return outcome;
     }
-    const pressed = typed === 'typed' ? await press(ctx, wall, asked, form) : typed;
+    const pressed = typed === 'typed' ? await press(ctx, wall, asked, form, ariaTicked) : typed;
     log('content.sign-in', { pressed: pressed === 'pressed' });
     outcome = pressed === 'pressed' ? await outcomeAfter(ctx, form) : pressed;
     // jr6 SHELL-A (FIXPLAN §6.12 item 4; WD-05): a press the site refused says why where the page names a kind.
