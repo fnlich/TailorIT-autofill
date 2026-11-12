@@ -832,6 +832,18 @@ function transparentByItself(el: Element, cache: ScanCache): boolean {
   return Number.isFinite(opacity) && opacity < MIN_OPACITY;
 }
 
+// ── jr7 ENGINE-7 E1 item 6 (RBP7-20, as its verifier corrected it) ──
+/** Whether `part` is react-select's DummyInput inside a widget its adapter declares with the react-select bridge:
+ *  the input a non-searchable react-select draws (Pinpoint's EEO selects, snapshot7 pinpointhq1), which says
+ *  aria-readonly="true" and inputmode="none" because a person cannot type into it, not because its answer cannot
+ *  change: the bridge chooses its option. Only its native readonly then makes it read-only. Any other aria-readonly box,
+ *  a plain one or a declared widget's without the bridge or without inputmode none, stays read-only. */
+function reactSelectDummy(part: Element, widget: WidgetTarget): boolean {
+  return widget.bridge === 'react-select' && part.localName === 'input' && ariaReadOnly(part)
+    && (part.getAttribute('inputmode') ?? '').trim().toLowerCase() === 'none';
+}
+// ── end jr7 ENGINE-7 E1 item 6 ──
+
 /** A widget as a field: its label by the same visible-label rules (a group's from its container), its options a
  *  group's members, or its list's when it is shown whole now (else 'lazy' until it is read), and its constraints none
  *  but required. */
@@ -880,9 +892,12 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
     visibility: first.visibility, proxy: null, required,
     disabled: groupLike ? members.every(isUnavailable) : isDisabled(el) || (own !== null && isDisabled(own)),
     // A text box its adapter declares read-only by design (WidgetDecl.readOnlyBox: a select-only dropdown) is read-only
-    // only by its aria-readonly; any other widget by the scanner's rule.
-    readOnly: widget.readOnlyBox === true ? [el, own].some((part) => part !== null && ariaReadOnly(part))
-      : isReadOnly(el) || (own !== null && isReadOnly(own)),
+    // only by its aria-readonly; any other widget by the scanner's rule. jr7 ENGINE-7 E1 item 6 (RBP7-20): never by
+    // the aria-readonly of a declared react-select's DummyInput (reactSelectDummy).
+    readOnly: widget.readOnlyBox === true
+      ? [el, own].some((part) => part !== null && ariaReadOnly(part) && !reactSelectDummy(part, widget))
+      : [el, own].some((part) => part !== null && (reactSelectDummy(part, widget)
+        ? (part as HTMLInputElement).readOnly : isReadOnly(part))),
     // A widget's text box is drawn inside the widget's own box, so it is not judged on its own.
     camouflaged: false,
     nameAttr: attribute(own ?? el, 'name'), idAttr: attribute(el, 'id'),

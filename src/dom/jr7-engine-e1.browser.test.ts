@@ -35,3 +35,39 @@ describe('item 7 (RBP7-21): two labels of one control saying the same words', ()
     expect(labels).toContain('Preferred start date');
   });
 });
+
+// ── item 6 (RBP7-20): react-select's DummyInput is not read-only by its aria-readonly ──────────────────────────────
+describe("item 6 (RBP7-20): a declared react-select's DummyInput", () => {
+  /** A non-searchable react-select as Pinpoint draws its EEO questions (snapshot7 pinpointhq1): its control box, and
+   *  inside it the DummyInput, a transparent input that says role=combobox, aria-readonly="true" and inputmode="none".
+   *  `attrs` stands a test's change in. */
+  const select = (attrs: string) => page(`<div class="react-select"><div class="react-select__control" id="ctl"
+      style="border:1px solid #888;width:300px;height:38px;display:flex;align-items:center">
+      <span>Select...</span><input id="dummy" role="combobox" aria-label="Gender" ${attrs}
+        style="opacity:0;width:1px;border:0;padding:0;background:0"></div></div>`);
+  /** The adapter Pinpoint's package declares: the input a react-select widget with its box and (`bridge`) the bridge. */
+  const adapter = (options: { bridge?: boolean; readOnlyBox?: boolean } = {}) => ({ ...genericAdapter, id: 'generic' as const,
+    widgetFor: (control: Element) => control.id !== 'dummy' ? null : {
+      kind: 'combobox' as const, opener: control.ownerDocument.getElementById('ctl')!, box: control.ownerDocument.getElementById('ctl')!,
+      ...(options.bridge === false ? {} : { bridge: 'react-select' as const }),
+      ...(options.readOnlyBox === true ? { readOnlyBox: true as const } : {}), snapshot: 'synthetic' } });
+  const readOnlyOf = async (attrs: string, options: { bridge?: boolean; readOnlyBox?: boolean } = {}) => {
+    const { doc } = await loadFixture(document, select(attrs));
+    const field = scan(doc.getElementById('f')!, adapter(options), { platform: 'pinpoint' }).fields
+      .find((each) => each.label === 'Gender');
+    removeFixtures(document);
+    return field?.readOnly ?? 'no field';
+  };
+
+  it('is writable through the bridge, and every other aria-readonly box stays read-only', async () => {
+    const dummy = 'aria-readonly="true" inputmode="none"';
+    expect(await readOnlyOf(dummy)).toBe(false);
+    expect(await readOnlyOf(dummy, { readOnlyBox: true })).toBe(false);
+    // No bridge declared, or an aria-readonly box that is no DummyInput (it can be typed into): read-only, as before.
+    expect(await readOnlyOf(dummy, { bridge: false })).toBe(true);
+    expect(await readOnlyOf('aria-readonly="true"')).toBe(true);
+    expect(await readOnlyOf('aria-readonly="true"', { readOnlyBox: true })).toBe(true);
+    // Its native readonly still makes it read-only.
+    expect(await readOnlyOf(`${dummy} readonly`)).toBe(true);
+  });
+});
