@@ -57,11 +57,10 @@
       "kind": "combobox",
       "required": true,
       "section": "main",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "div.fab-Select:has(> select[name=\"state.value\"])",
-      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end and tied to it by data-helium-id, not aria-controls, so the widget helpers do not act on it yet; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
+      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end, tied to it by data-menu-id (aria-controls only while open): jr7 RBP-7 (RBP7-14, bamboohr/widgets.ts) declares that menu as its list, so the widget helpers act on it; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
     },
     {
       "label": "ZIP",
@@ -76,11 +75,10 @@
       "kind": "combobox",
       "required": true,
       "section": "main",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "div.fab-Select:has(> select[name=\"countryId.value\"])",
-      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end and tied to it by data-helium-id, not aria-controls, so the widget helpers do not act on it yet; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
+      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end, tied to it by data-menu-id (aria-controls only while open): jr7 RBP-7 (RBP7-14, bamboohr/widgets.ts) declares that menu as its list, so the widget helpers act on it; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
     },
     {
       "label": "Date Available",
@@ -113,11 +111,10 @@
       "kind": "combobox",
       "required": true,
       "section": "main",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "div.fab-Select:has(> select[name=\"educationLevelId\"])",
-      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end and tied to it by data-helium-id, not aria-controls, so the widget helpers do not act on it yet; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
+      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end, tied to it by data-menu-id (aria-controls only while open): jr7 RBP-7 (RBP7-14, bamboohr/widgets.ts) declares that menu as its list, so the widget helpers act on it; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
     },
     {
       "label": "College/University",
@@ -157,22 +154,20 @@
       "kind": "combobox",
       "required": false,
       "section": "main",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "div.fab-Select:has(> select[name=\"genderId\"])",
-      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end and tied to it by data-helium-id, not aria-controls, so the widget helpers do not act on it yet; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
+      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end, tied to it by data-menu-id (aria-controls only while open): jr7 RBP-7 (RBP7-14, bamboohr/widgets.ts) declares that menu as its list, so the widget helpers act on it; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
     },
     {
       "label": "Ethnicity",
       "kind": "combobox",
       "required": false,
       "section": "main",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "div.fab-Select:has(> select[name=\"ethnicityId\"])",
-      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end and tied to it by data-helium-id, not aria-controls, so the widget helpers do not act on it yet; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
+      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end, tied to it by data-menu-id (aria-controls only while open): jr7 RBP-7 (RBP7-14, bamboohr/widgets.ts) declares that menu as its list, so the widget helpers act on it; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
     },
     {
       "label": "Veteran Status",
