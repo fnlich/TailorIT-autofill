@@ -130,7 +130,8 @@ const TABLE: Record<string, Row> = {
   'jr6-guest-send-code': { ...NONE, auth: 'email-code', step: 'state:code-choice', entry: null, posting: false },
   'jr6-code-dialog': { ...NONE, detect: 'sdf-focus-pane#login_view_show_opt_dialog div.otpDialogContent', auth: 'email-code',
     step: 'state:code', entry: null, posting: false },
-  'jr6-landing': { ...NONE, auth: null, step: null, entry: null, posting: true },
+  // jr7 ADP7-10 (owner question Q7-14, default yes): the landing's "Complete Your Application" is an entry.
+  'jr6-landing': { ...NONE, auth: null, step: null, entry: 'recruitment_jobDescription_complete', posting: true },
   'jr6-personal-blank': STEP('Personal Information'),
   'jr6-personal-us-errors': STEP('Personal Information'),
   'jr6-personal-us-state': STEP('Personal Information'),
@@ -853,10 +854,11 @@ describe('jr6 P2 ADP-2: the State list once Country is chosen (ENGINE E1, E3)', 
       const result = scan(adpAdapter.detect(fixture.doc)!.formRoot, adpAdapter, { platform: 'adp' });
       const state = result.fields.find((field) => field.idAttr === 'PersonalAddress_state')!;
       const country = result.fields.find((field) => field.idAttr === 'PersonalAddress_country')!;
+      const line1 = result.fields.find((field) => field.idAttr === 'PersonalAddress_address_line1')!;
       const parents = dependenciesOf(result, adpAdapter);
       removeFixtures(document);
-      return { kind: state.kind, state: state.baseKey, country: country.baseKey, parent: parents.get(state.baseKey),
-        others: [...parents.keys()].filter((key) => key !== state.baseKey) };
+      return { kind: state.kind, state: state.baseKey, country: country.baseKey, line1: line1.baseKey,
+        parent: parents.get(state.baseKey), others: [...parents.keys()].filter((key) => key !== state.baseKey) };
     };
     // As loaded the State is a text box; once a country is chosen, ADP draws its list under the same id.
     const box = await keysOf('jr6-personal-blank');
@@ -864,7 +866,8 @@ describe('jr6 P2 ADP-2: the State list once Country is chosen (ENGINE E1, E3)', 
     expect([box.kind, list.kind]).toEqual(['text', 'combobox']);
     expect(list.state).toBe(box.state);
     expect([box.parent, list.parent]).toEqual([box.country, list.country]);
-    expect([box.others, list.others]).toEqual([[], []]);
+    // jr7 ADP7-2 (adapter half): Address Line 1 is the Country's other dependent, nothing else.
+    expect([box.others, list.others]).toEqual([[box.line1], [list.line1]]);
   });
 
   // jr6-rules b395249 (AD-R1): the option matcher reads "TX - Texas" as the region both halves name.

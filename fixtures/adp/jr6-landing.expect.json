@@ -2,18 +2,19 @@
   "fixture": "adp/jr6-landing",
   "source": "https://workforcenow.adp.com/mascsr/applicant/mdf/recruitment/postLogin.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001&jobId=590196&requisitionId=9207368240764_11&lang=en_US&params=jobId&OTP_login=true",
   "captured": "2026-11-11T03:45:07.000Z",
-  "note": "The signed-in posting after the code (snapshot6 adp1): its posting text (description replaced with synthetic text by the converter); \"Complete Your Application\" is not declared as an entry (BUILD.md §4 names none).",
+  "note": "The signed-in posting after the code (snapshot6 adp1): its posting text (description replaced with synthetic text by the converter) and its entry, \"Complete Your Application\" (jr7 ADP7-10, owner question Q7-14: one press resumes the person's own unfinished application); it and Back are never pressed by a run (the entry door alone presses the entry).",
   "hooks": {
     "detect": null,
     "authState": null,
     "postingText": "div.job-description-data",
-    "entryControl": null,
+    "entryControl": "button#recruitment_jobDescription_complete",
     "signInForm": null,
     "signInPrelude": null,
     "neverPress": [
       "sdf-button#recruitment_header_joinTalentCommunity",
       "sfc-shell-left-nav-flat#recruitmentLeftNav",
-      "button#recruitment_jobDescription_back"
+      "button#recruitment_jobDescription_back",
+      "button#recruitment_jobDescription_complete"
     ],
     "pressable": []
   }
