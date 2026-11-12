@@ -158,8 +158,10 @@ describe('the rest of the table', () => {
     expect(addWeeks({ y: 2028, m: 2, d: 22 }, 1)).toEqual({ y: 2028, m: 2, d: 29 });
     const pay: Profile = { ...profile, preferences: { expectedSalary: { kind: 'value', value: { min: 65,
       currency: 'USD', period: 'hour' } } } };
+    // jr7 RULES-7 R2 (ADP7-8): another period than the person's is never converted, and stays open (no-profile-value:
+    // only the `all` scope's AI answers it, flagged as its guess).
     expect(valueOf('salary.expected', field('Expected annual salary'), pay)).toEqual({ ok: false,
-      none: { reason: 'format-unsupported', flagged: true } });
+      none: { reason: 'no-profile-value', flagged: true } });
     expect(candidate(valueOf('salary.expected', field('Desired hourly rate'), pay))).toMatchObject({ text: '65',
       choice: { intended: { kind: 'number', value: 65, unit: 'currency-hour' } } });
   });

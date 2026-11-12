@@ -8,7 +8,8 @@ import {
 
 /** §8.2's "Categories" column, read row by row; whatever no row names is profile. */
 const DESIGN_CLASS: Array<[PolicyClass, (category: FieldCategory) => boolean]> = [
-  ['sensitive', (c) => c.startsWith('salary.') || c === 'identity.pronouns'],
+  // jr7 RULES-7 (UKGR-14): a national id or social security number, never filled from anything.
+  ['sensitive', (c) => c.startsWith('salary.') || c === 'identity.pronouns' || c === 'identity.nationalId'],
   // s2 core-gh: the screening answers of snapshot round 2 are the person's own, legal.
   ['legal', (c) => c.startsWith('workAuth.') || c === 'screening.over18' || c === 'screening.criminalHistory'
     || ['screening.restrictiveAgreement', 'screening.governmentService', 'screening.relatives',

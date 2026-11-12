@@ -101,6 +101,12 @@ function slashPartsOf(clean: string, domain: MatchDomain, context: NormContext):
   return [...new Set(parts.map((part) => normalize(matchedText(part, domain), context).key).filter((key) => key !== ''))];
 }
 
+/** jr7 RULES-7 R2 (ICIMS7-13): an Other's qualifier that restricts it to what it is not ("Non Internet", "not listed
+ *  online", "except job boards", "excluding"). "Other (please specify)" and "Other (Internet)" stay catch-alls. */
+const restrictsOther = (qualifier: { tokens: readonly string[] }) =>
+  /^(?:non|not|except|excluding|other\s+than|besides)\b/.test(qualifier.tokens.join(' '))
+  || (qualifier.tokens[0]?.startsWith('non') === true && qualifier.tokens[0].length > 4);
+
 /** Prepares a field's options for one domain (§4.0). */
 export function prepareOptions(options: readonly Option[], domain: MatchDomain, vocab: Vocab): PreparedOptions {
   const context = domainContext(domain);
@@ -151,7 +157,9 @@ export function prepareOptions(options: readonly Option[], domain: MatchDomain, 
       unusable,
       exclusive: !unusable && exclusive.has(answerKey),
       decline: !unusable && decline.has(answerKey),
-      other: !unusable && other.has(answerKey),
+      // jr7 RULES-7 R2 (ICIMS7-13, arc-onesolutions' "How did you hear about us?" offering "Other (Non Internet)",
+      // snapshot7 iCIMS1): an Other whose qualifier restricts it ("non …", "not …", "except …") is no catch-all.
+      other: !unusable && other.has(answerKey) && !norm.qualifiers.some(restrictsOther),
       ...(domain === 'degree' && !unusable ? { degree: parseDegree(clean, vocab) } : {}),
       bracketSiblings: false,
       slashParts: unusable ? [] : slashPartsOf(clean, domain, context),
