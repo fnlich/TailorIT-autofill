@@ -1238,8 +1238,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         autoContinues += 1;
         continueRun(run.trigger);
       },
-      // v4 (D7): at an entry choice, the adapter's declared entry ("Apply manually"), through the entry door.
-      enterChoice: () => pressEntryChoice(doc, on.adapter),
+      // v4 (D7): at an entry choice, the adapter's declared entry ("Apply manually"), through the entry door; jr6 ifix
+      // SEC-2: with the frame's address, so a choice that leads to another site is refused as an entry's is.
+      enterChoice: () => pressEntryChoice(doc, on.adapter, urlOf(readHref()) ?? undefined),
       // v4 (D10): the no-sign-in toast's Open.
       openSignInSettings: () => openSignInSettings(),
     }, request);

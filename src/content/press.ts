@@ -306,8 +306,10 @@ export function blockOf(kind: PauseKind): EntryBlock {
 /** v4 (D7): a run at a choice of how to apply (authState 'entry-choice': Workday's "Start Your Application") presses the
  *  adapter's declared entry on it (its Apply Manually) through the entry door, every guard of it held (never while a
  *  form or a challenge shows, never a control the adapter never presses): 'pressed', else 'none' (the run then rests
- *  silently, and follows the person's own choice). Called by src/content/runtime.ts alone (RunEnv.enterChoice). */
-export function pressEntryChoice(doc: Document, adapter: Adapter): 'pressed' | 'none' {
+ *  silently, and follows the person's own choice). Called by src/content/runtime.ts alone (RunEnv.enterChoice).
+ *  jr6 ifix SEC-2: `address`, the frame's own, lets the door refuse a choice that leads to another origin, as at the
+ *  entry (pressEntry's options.address): 'none' then, nothing pressed. */
+export function pressEntryChoice(doc: Document, adapter: Adapter, address?: URL): 'pressed' | 'none' {
   if (pageChallenged(doc)) return 'none';
   let state: ReturnType<NonNullable<Adapter['authState']>> = null;
   try {
@@ -316,8 +318,9 @@ export function pressEntryChoice(doc: Document, adapter: Adapter): 'pressed' | '
     state = null;
   }
   if (state !== 'entry-choice') return 'none';
-  // jr6 apply F2 item 4: a control the door refused by where it goes is no press either.
-  const clicked = pressDoor(adapter, doc);
+  // jr6 apply F2 item 4: a control the door refused by where it goes is no press either; jr6 ifix SEC-2: another
+  // origin included.
+  const clicked = pressDoor(adapter, doc, address);
   return clicked !== null && typeof clicked === 'object' ? 'pressed' : 'none';
 }
 
