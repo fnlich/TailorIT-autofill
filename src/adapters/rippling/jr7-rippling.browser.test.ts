@@ -353,3 +353,26 @@ describe('jr7 RBP-7 RBP7-05 (live): the Location, a remote search over places', 
     expect(box.value).toBe('Austin, TX, USA');
   });
 });
+
+describe('jr7 RBP-7 RBP7-07 (the adapter half; FIX7PLAN §3.3): a custom question\'s help is its description', () => {
+  it('rippling1 blank: the attestation reads its help, which asks for the full name typed; no other question gains one',
+    async () => {
+      const page = await open(r1Blank);
+      const result = scan(page.root!, ripplingAdapter, { platform: 'rippling' });
+      const attestation = result.fields.find((field) => field.label === 'Truth Certification/Attestation Clause')!;
+      expect([attestation.kind, attestation.required]).toEqual(['text', true]);
+      expect(attestation.description.length).toBeGreaterThan(400);
+      expect(attestation.description).toMatch(/\btyping your full name\b/);
+      // The help is read from the block's second div.marginBottom--4 alone: every other custom question shows none.
+      const others = result.fields.filter((field) => field !== attestation && field.description !== ''
+        && page.doc.getElementById(field.idAttr ?? '')?.closest('div.marginY--36') !== null);
+      expect(others.map((field) => field.label)).toEqual([]);
+      // Without the rule's help, the attestation has no description (RULES-7 could read no signature request).
+      const noHelp = configuredAdapter({ ...RIPPLING_CONFIG, questions: RIPPLING_CONFIG.questions!.map((rule) => {
+        const { help: _help, ...rest } = rule;
+        return rest;
+      }) });
+      const bare = scan(page.root!, noHelp, { platform: 'rippling' });
+      expect(bare.fields.find((field) => field.label === attestation.label)?.description).toBe('');
+    });
+});

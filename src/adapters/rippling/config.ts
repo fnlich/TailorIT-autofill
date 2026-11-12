@@ -66,7 +66,12 @@ const RULES: AtsConfig = {
       from: 'rippling-0, rippling-2' },
     // <div class="marginY--36"><div class="paddingX--16"><div class="marginBottom--4"><p>What are your Salary
     // Expectations for the role?<div class="css-18yxg8r"></div></p>…<div data-testid="field">…<input aria-required="true">
-    { container: 'div.marginY--36', title: 'div.marginBottom--4 > p', from: 'rippling-2' },
+    // jr7 RBP-7 (RBP7-07, the adapter half; FIX7PLAN §3.3's label contract; snapshot7 rippling1's "Truth
+    // Certification/Attestation Clause"): its help, <div class="marginBottom--4"><p>…title…</p></div><div
+    // class="marginBottom--4"><div>I certify that … Please acknowledge this by typing your full name in the text
+    // field.</div></div>, is the question's description, from which RULES-7 (jr7-rules-r2) reads a typed-name signature.
+    { container: 'div.marginY--36', title: 'div.marginBottom--4 > p', help: 'div.marginBottom--4 + div',
+      from: 'rippling-2; jr7-rippling1-apply-blank' },
     // <div class="paddingX--16"><p>Check <strong>Yes</strong> or <strong>No</strong> to indicate …</p>
     // <div data-testid="field">…<div role="radiogroup" data-testid="sms_opt_in">
     { container: `${FIELD}:has([data-testid="sms_opt_in"])`, titleBefore: 'p', from: 'rippling-0 to -3' },
