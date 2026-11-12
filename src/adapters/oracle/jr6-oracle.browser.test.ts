@@ -1476,7 +1476,7 @@ describe('jr6 P2 O1, O2, O3, O5 in the content runtime: the contact and address 
   /** The address block's boxes a new Country empties (the block drawn again for it). */
   const BLOCK = ['addressLine1-39', 'postalCode-42', 'city-43', 'region2-44', 'region1-45'];
 
-  it('chooses every list, types the street again after the Country emptied it and the ZIP after the street, decides '
+  it('chooses every list, types the street once after the Country and the ZIP after the street, decides '
     + 'the dependents again after each parent’s write, and ends with the number national beside its code',
   async () => {
     const doc = await load(hjfSectionHtml, SECTION, contactAndAddress);
@@ -1525,12 +1525,16 @@ describe('jr6 P2 O1, O2, O3, O5 in the content runtime: the contact and address 
     expect(rows.get('County')).toMatchObject({ category: 'address.county', status: 'flagged',
       reason: 'no-profile-value' });
 
-    // The order: the Country chosen once; the street typed again after it (the new Country emptied it) and the ZIP
-    // after the street's last choice.
+    // The order (jr6 line W review REVC-7, ENGINE 02d667f): the Country chosen once; the street and the ZIP held
+    // back while it waited for its options, so each chosen once, the street after the Country, the ZIP after the
+    // street.
     const at = (id: string) => timeline.flatMap((entry, index) => (entry.kind === 'choose' && entry.id === id ? [index]
       : []));
     const [country, street, zip] = [at('country-17'), at('addressLine1-39'), at('postalCode-42')];
     expect(country.length).toBe(1);
+    expect([street.length, zip.length]).toEqual([1, 1]);
+    expect(street[0]!).toBeGreaterThan(country[0]!);
+    expect(zip[0]!).toBeGreaterThan(street[0]!);
     expect(street.at(-1)!).toBeGreaterThan(country[0]!);
     expect(zip.at(-1)!).toBeGreaterThan(street.at(-1)!);
     // Decided again after a parent's write (bookkeeping's 'parent-written'): Address Line 1 after the Country's; City

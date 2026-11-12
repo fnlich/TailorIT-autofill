@@ -93,11 +93,7 @@ test.describe("Jobvite's three steps", () => {
     const tabId = await ext.fill(page);
     const first = await runAt(ext, tabId, key, { statuses: ['wait-transition'],
       until: (runState) => Object.keys(runState.stepAttempts).length === 1 });
-    // jr6 RULES item 49: "Chosen First Name" is the preferred name (the golden profile's first name: it has none),
-    // flagged for a look because the page's autocomplete="given-name" names the first name (classification-conflict).
-    expect(row(first.report!, 'Chosen First Name')).toMatchObject({ status: 'flagged', reason: 'classification-conflict',
-      wrote: true });
-    for (const label of ['Chosen Last Name', 'Email', 'Cell Phone', 'Add Resume']) {
+    for (const label of ['Chosen First Name', 'Chosen Last Name', 'Email', 'Cell Phone', 'Add Resume']) {
       expect(row(first.report!, label), label).toMatchObject({ status: 'verified', wrote: true });
     }
     await expectStepOneOnPage(page);

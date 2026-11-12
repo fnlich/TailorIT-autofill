@@ -9,7 +9,7 @@ import type { FieldKind } from '../enums';
 import { specOf } from '../plan/plan.testkit';
 import type { SectionRef } from '../types/field';
 import type { FieldCategory } from '../types/intent';
-import { classifyByRules } from './classifyRules';
+import { classifyByRules, statesNoAiUse } from './classifyRules';
 import { classifyField } from './resolve';
 import { vocab } from '../plan/plan.testkit';
 
@@ -251,6 +251,23 @@ describe('jr6 RULES R1: the widened rules’ near misses', () => {
         .toBe('consent.aiAttestation');
     }
   });
+
+  // jr6 fix (RULES-R22): "in my own words" affirmed on a box or a choice is the attestation; only on a text box or a
+  // textarea is "in your own words" an instruction.
+  it('reads "in my own words" on a box or a choice as the AI attestation, an instruction only over a box of text (22)',
+    () => {
+      for (const label of ['I certify that all answers are in my own words',
+        'I confirm that I wrote all of my answers in my own words']) {
+        expect(read({ label, kind: 'checkbox' }), label).toMatchObject({ category: 'consent.aiAttestation',
+          rule: 'label.consent-ai' });
+      }
+      const radio = specOf('Are your answers written in your own words?', 'radio', { optionLabels: ['Yes', 'No'] });
+      expect(statesNoAiUse(radio)).toBe(true);
+      const essay = specOf('Describe a project you led, in your own words.', 'textarea');
+      expect(statesNoAiUse(essay)).toBe(false);
+      expect(read({ label: 'Describe a project you led, in your own words.', kind: 'textarea' }).category)
+        .toBe('freeText.other');
+    });
 
   it('reads an employer’s support for a visa as the combined sponsorship question, by its time (3, WD-13)', () => {
     expect(read({ label: 'Will you require support from an employer to obtain a work visa in the future?',
@@ -734,5 +751,132 @@ describe('jr6 RULES R4 (items 62 to 79): the widened rules’ near misses', () =
 
   it('keeps "Phone (if different from above)" the phone (72: the bracket is left out)', () => {
     expect(read({ label: 'Phone (if different from above)', kind: 'text' }).category).toBe('contact.phone');
+  });
+});
+
+// ── jr6 fix round 1: the reviews' findings in these rules (SP\jr6\build\RULES.md "Fix round 1") ─────────────────────
+
+/** [issue id, the field, the category it asks (null: none), the rule id (null: any)]: what each fix reads. */
+const LABELS_FIX: Array<[string, Case, FieldCategory | null, string | null]> = [
+  // RULES-R51: a pay question that asks for its currency too is the pay; the currency's own label is the currency.
+  ['R51', { label: 'What is your expected salary? Please specify the currency.', kind: 'text' }, 'salary.expected',
+    'label.salary'],
+  ['R51', { label: 'What are your salary expectations? Please include currency and pay period.', kind: 'text' },
+    'salary.expected', 'label.salary'],
+  ['R51', { label: 'Currency', kind: 'text' }, 'salary.currency', 'label.currency'],
+  ['R51', { label: 'Desired Salary currency', kind: 'text' }, 'salary.currency', 'label.currency'],
+  ['R51', { label: 'What currency would you like to be paid in?', kind: 'select' }, 'salary.currency',
+    'label.currency'],
+  // RULES-R70: a question of the diploma alone, never one that asks for more.
+  ['R70', { label: 'Do you have a high school diploma or equivalent?', kind: 'radio', options: ['Yes', 'No'] },
+    'education.highSchool', 'label.high-school'],
+  ['R70', { label: 'Are you a high school graduate or passed the GED?', kind: 'radio', options: ['Yes', 'No'] },
+    'education.highSchool', 'label.high-school'],
+  ['R70', { label: 'Do you have a high school diploma and a valid driver’s license?', kind: 'radio',
+    options: ['Yes', 'No'] }, null, null],
+  ['R70', { label: 'Question 1: Do you have a minimum of a High School diploma or GED along with relevant/required work '
+    + 'experience?', kind: 'radio', options: ['Yes', 'No'] }, null, null],
+  ['R70', { label: 'Do you have a high school diploma or GED and are you able to lift 50 pounds?', kind: 'radio',
+    options: ['Yes', 'No'] }, null, null],
+  // RULES-R13: a county's own label.
+  ['R13', { label: 'County', kind: 'text' }, 'address.county', 'label.county'],
+  ['R13', { label: 'County Name', kind: 'text' }, 'address.county', 'label.county'],
+  ['R13', { label: 'County or Parish', kind: 'select' }, 'address.county', 'label.county'],
+  ['R13', { label: 'Home County', kind: 'combobox' }, 'address.county', 'label.county'],
+  // RULES-R11, IC-R1: iCIMS's IForm signature date in parts ("<base label> month/day/year"; NYU's bare "Date" with the
+  // adapter's "signature" before the part).
+  ['R11', { label: 'Today\'s Date month', kind: 'select', options: ['Month', 'January', 'February', 'March', 'April', 'May',
+    'June', 'July', 'August', 'September', 'October', 'November', 'December'] }, 'consent.signatureDate',
+    'label.signature-date'],
+  ['R11', { label: 'Today\'s Date day', kind: 'select', options: ['Day', '1', '2', '3'] }, 'consent.signatureDate',
+    'label.signature-date'],
+  ['R11', { label: 'Today\'s Date year', kind: 'text' }, 'consent.signatureDate', 'label.signature-date'],
+  ['R11', { label: 'Date signature month', kind: 'select', options: ['Month', 'January', 'February'] },
+    'consent.signatureDate', 'label.signature-date'],
+  // RULES-R48-TZ, IC-R2: ARS's "Time Zone" searched for (typeahead-remote).
+  ['R48', { label: 'Time Zone', kind: 'typeahead-remote' }, 'preferences.timeZone', 'label.time-zone'],
+  // A whole date on a list stays no signature date (item 11's near miss).
+  ['R11', { label: 'Today\'s Date', kind: 'select' }, null, null],
+  // After the stop: RULES-R14: the school's own labels main read as the school.
+  ['R14', { label: 'Select your school', kind: 'combobox' }, 'education.school', 'label.school'],
+  ['R14', { label: 'Search for your school', kind: 'typeahead-remote' }, 'education.school', 'label.school'],
+  ['R14', { label: 'Name of the school you attended', kind: 'text' }, 'education.school', 'label.school'],
+  ['R14', { label: 'Highest Level School Attended', kind: 'text' }, 'education.school', 'label.school'],
+  // RULES-R4: a capacity in which the person worked for the company itself; employment by its vendor stays outside.
+  ['R4', { label: 'Do you currently or have you previously worked for any other Alphabet company as an employee, temp, '
+    + 'vendor, contingent worker, or intern?', kind: 'radio', options: ['Yes', 'No'] }, 'screening.previouslyEmployed',
+  'label.previously-employed'],
+  ['R4', { label: 'Have you ever worked for Acme as an employee, contractor or vendor?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'screening.previouslyEmployed', 'label.previously-employed'],
+  ['R4', { label: 'Have you ever worked for Acme as a vendor?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.previouslyEmployed', 'label.previously-employed'],
+  // RULES-R68: the pay's period, by the label contract or its own label.
+  ['R68', { label: 'What is your desired salary? pay basis', kind: 'radio', options: ['Annually', 'Hourly'] },
+    'salary.period', 'label.pay-basis'],
+  ['R68', { label: 'Pay period', kind: 'select' }, 'salary.period', 'label.pay-basis'],
+  // RULES-TEST-GAPS-PER-ITEM (e): item 1's RACE_SELF alternatives, each the only one a label meets.
+  ['gaps 1', { label: 'Voluntary Self-Identification of Race/Ethnicity', kind: 'select' }, 'eeo.race', 'label.race'],
+  ['gaps 1', { label: 'Please select the ethnicity that best describes you', kind: 'select' }, 'eeo.race', 'label.race'],
+  ['gaps 1', { label: 'Select the racial category that applies to you', kind: 'radio' }, 'eeo.race', 'label.race'],
+];
+
+/** [issue id, the field, what it must not be read as]: the fixes' near misses. */
+const NEAR_MISSES_FIX: Array<[string, Case, FieldCategory]> = [
+  // RULES-R13: a region's label that names a county among other places, a county of employment, a preference.
+  ['R13', { label: 'County/State/Province', kind: 'text' }, 'address.county'],
+  ['R13', { label: 'State/Province/County', kind: 'text' }, 'address.county'],
+  ['R13', { label: 'State / County', kind: 'select' }, 'address.county'],
+  ['R13', { label: 'County / State / Province', kind: 'text' }, 'address.county'],
+  ['R13', { label: 'State or County', kind: 'text' }, 'address.county'],
+  ['R13', { label: 'Which counties are you willing to work in?', kind: 'select' }, 'address.county'],
+  ['R13', { label: 'Country/County', kind: 'select' }, 'address.county'],
+  ['R13', { label: 'County of employment', kind: 'text' }, 'address.county'],
+  // After the stop: RULES-R4: employment by a vendor, a supplier, a customer, a competitor stays no employment here.
+  ['R4', { label: 'Are you an employee of a vendor or supplier of Acme?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.previouslyEmployed'],
+  ['R4', { label: 'Have you ever worked for one of our customers?', kind: 'radio', options: ['Yes', 'No'] },
+    'screening.previouslyEmployed'],
+  // RULES-R68: how often payroll pays is no period of the expected pay.
+  ['R68', { label: 'Please indicate your preferred pay frequency', kind: 'select', options: ['Weekly', 'Bi-weekly',
+    'Monthly'] }, 'salary.period'],
+  ['R68', { label: 'What pay frequency do you prefer?', kind: 'select' }, 'salary.period'],
+  // RULES-TEST-GAPS-PER-ITEM (a): item 63's yes or no question that names skills, on the kinds skills.list takes (a
+  // Workday combobox, a text box); radio and select never take skills.list, so they test nothing of the rule.
+  ['gaps 63', { label: 'Do you have strong communication skills?', kind: 'combobox', options: ['Yes', 'No'] },
+    'skills.list'],
+  ['gaps 63', { label: 'Do you have strong communication skills?', kind: 'text' }, 'skills.list'],
+  ['gaps 63', { label: DANAFARBER_TRAINING, kind: 'combobox', options: ['Yes', 'No'] }, 'skills.list'],
+  // (b): item 38's RELATIVES_NOT: a relationship with a customer's employee.
+  ['gaps 38', { label: 'Do you have a personal relationship with any employee of our customers?', kind: 'radio',
+    options: ['Yes', 'No'] }, 'screening.relatives'],
+];
+
+// After the stop: RULES-R49: NinjaOne's "Chosen First Name" carries autocomplete="given-name" (jobvite/ninjaone-step1).
+describe('jr6 fix (RULES-R49): a chosen or preferred first name beside the page’s given-name token', () => {
+  it('is the preferred name, read by its label with no conflict flagged', () => {
+    for (const label of ['Chosen First Name', 'Preferred First Name']) {
+      const spec = specOf(label, 'text', { autocomplete: ['given-name'] });
+      expect(classifyByRules(spec), label).toMatchObject({ category: 'identity.preferredName',
+        rule: 'label.preferred-name', reason: 'ok' });
+    }
+    // The given name itself is still the first name, and a label naming something else still conflicts.
+    expect(classifyByRules(specOf('First Name', 'text', { autocomplete: ['given-name'] })))
+      .toMatchObject({ category: 'identity.firstName', reason: 'ok' });
+    expect(classifyByRules(specOf('Last Name', 'text', { autocomplete: ['given-name'] })))
+      .toMatchObject({ reason: 'classification-conflict' });
+  });
+});
+
+describe('jr6 fix round 1: the fixed rules’ near misses', () => {
+  it.each(NEAR_MISSES_FIX)('%s: %j is no %s', (_issue, field, category) => {
+    expect(read(field).category).not.toBe(category);
+  });
+});
+
+describe('jr6 fix round 1: what the fixed rules read', () => {
+  it.each(LABELS_FIX)('%s: %j', (_issue, field, category, rule) => {
+    const got = read(field);
+    expect(got.category).toBe(category);
+    if (rule !== null) expect(got.rule).toBe(rule);
   });
 });

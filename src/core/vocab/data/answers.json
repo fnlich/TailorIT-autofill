@@ -54,7 +54,8 @@
 ["Not declared","not declared"],
 ["Opt Out","opt out"],
 ["I opt out","i opt out"],
-["Opt out of self-identification","opt out of self identification"]
+["Opt out of self-identification","opt out of self identification"],
+["Decline self-identification","decline self identification"]
 ],
 "eeo":{
 "disability":{"decline":[],"values":[{"id":"yes","s":[["Yes, I have a disability (or previously had a disability)","yes i have a disability","c"],["Yes, I have a disability, or have had one in the past","yes i have a disability or have had one in past","c"],["Yes, I have a disability or have a history/record of having a disability","yes i have a disability or have a history record of having a disability","c"]]},{"id":"no","s":[["No, I do not have a disability and have not had one in the past","no i do not have a disability and have not had one in past","c"],["No, I don't have a disability and have not had one in the past","no i dont have a disability and have not had one in past","c"],["No, I don't have a disability, or a history/record of having a disability","no i dont have a disability or a history record of having a disability","c"],["No, I do not have a disability","no i do not have a disability","c"],["No, I don't have a disability","no i dont have a disability","c"]]}]},
@@ -132,7 +133,8 @@
 ["Not declared","not declared"],
 ["Opt Out","opt out"],
 ["I opt out","i opt out"],
-["Opt out of self-identification","opt out of self identification"]
+["Opt out of self-identification","opt out of self identification"],
+["Decline self-identification","decline self identification"]
 ],
 "other":[
 ["Other","other"],

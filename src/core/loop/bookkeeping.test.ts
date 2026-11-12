@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BaseKey } from '../types/field';
 import type { ValueMac } from '../types/loop';
 import {
-  awaitingKeys, baseKeyOf, carriedFields, childrenOf, createLoop, isFollowUpLabel, isStopped, loopVerdict,
+  awaitingKeys, baseKeyOf, carriedFields, childrenOf, createLoop, holdBack, isFollowUpLabel, isStopped, loopVerdict,
   MAX_OPTION_CHANGES, MAX_PASSES, MAX_REAPPEARANCES, MAX_REVEAL_EDGES, MAX_VALUE_FLIPS, mayWrite, observeScan,
   OPTION_WAIT_PASSES, orderPending, recordOptionsWait, recordRows, recordWrite, requeueAwaiting, revealEdgesOf,
   storedBaseKey, type LoopEvent, type LoopField, type LoopState,
@@ -991,5 +991,24 @@ describe('jr6 ENGINE E3 item 14: a field a write resets (dependsOn), and a field
     // With no write since the scan before, a page that draws its fields anew plans nothing again.
     const quiet = recordRows(seen.state, [unwrittenRow(ci, 'no-profile-value')]);
     expect(observeScan(quiet, fields, { valueMacs: values, replaced: new Set([ci.baseKey]) }).pending).toEqual([]);
+  });
+
+  // jr6 line W review (REVC-7): a pass that held a dependent back while its parent waited for its options.
+  it('keeps a dependent held back pending, and calls the scan after that pass no stall', () => {
+    const first = observeScan(createLoop(), fields).state;
+    // The pass: Country waits for its options; State, held back for it, gets no row; City is decided.
+    const pass = recordRows(first, [unwrittenRow(co, 'waiting-for-options'), unwrittenRow(ci, 'no-profile-value')]);
+    // The parent's options never loaded within the pass's wait: it is decided, the page unchanged, nothing written.
+    const never = recordOptionsWait(pass, co.key, 'never-loaded');
+    const held = holdBack(never, [st.key]);
+    expect(held.heldBack).toBe(1);
+    const seen = observeScan(held, fields, { dependsOn });
+    expect([seen.state.stalled, seen.verdict.done]).toEqual([false, false]);
+    expect(seen.pending).toEqual([st.key]);
+    expect(seen.state.heldBack).toBeUndefined();
+    // Without the hold's word, the same scan is a stall, and State would end unwritten (internal-error).
+    expect(observeScan(never, fields, { dependsOn }).verdict).toMatchObject({ done: true, end: 'stalled' });
+    // Only a pending field under its key counts.
+    expect(holdBack(never, [ci.key, withOptions(st, ['Texas']).key])).toBe(never);
   });
 });

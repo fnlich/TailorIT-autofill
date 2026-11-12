@@ -72,6 +72,11 @@
  *   query is in the box (that write guarded too), then change, focusout and blur, its list closed, and read back by the
  *   box's value (TypeaheadResult.freeText). A guard's refusal, the person's Skip, a gone field or a result the page did
  *   not take still put the box back as before; searchForOption (an option already planned) never keeps free text.
+ * jr6 line W review (ENG-REV-2): a widget this search's own activation opened is closed as one our click opened
+ * (closeList's `activated`), whether a result was chosen or not, so a select-only anchor whose box is beside it gets
+ * its toggling second click (iCIMS's search, whose container neither the box's blur nor any declared key shuts): a
+ * search never leaves open a popup it opened. And (ENG-REV-3) a search for a box of several answers (the tags filler:
+ * SearchOptions.keepChosen) never chooses a result its list marks chosen already, since there a choice takes it away.
  */
 import { searchedOption } from '../../core/matcher/listSearch';
 import { MAX_SEARCH_QUERIES } from '../../core/matcher/searchLimits';
@@ -124,6 +129,11 @@ export interface SearchOptions {
   /** jr6 ENGINE E1: whether a widget declared free text keeps the planner's first query when nothing matched (a
    *  remote typeahead's search does; a long list's search for an option already planned, or for its "Other", never). */
   freeText?: boolean;
+  /** jr6 line W review (ENG-REV-3): whether a result its list marks chosen already (aria-selected, aria-checked or
+   *  aria-pressed "true") is left as it is rather than chosen: on a box of several answers (the tags filler) a choice
+   *  of it takes the answer away, as a multiselect's click does (fill.ts addOptions' rule). The search then ends with
+   *  nothing chosen, reason 'already-correct', its box put back and its list closed. */
+  keepChosen?: boolean;
 }
 
 /** Types one query into the text box: the prototype setter, then the input event a replacement of the whole value
@@ -234,6 +244,10 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
   let current = target;
   // jr6 ENGINE E1 (FIXPLAN §6.2 item 5): the first query typed, the free text a freeText search keeps.
   let firstTyped: string | null = null;
+  // jr6 line W review (ENG-REV-2): this search's own activation opened the widget (its box beside it was hidden, or it
+  // said it was shut, and the page answered): each close of its list then counts it ours (closeList's `activated`), so
+  // a select-only anchor gets its toggling second click (iCIMS's, whose container no blur and no key shuts).
+  let openedHere = false;
   const giveUp = async (why: ReasonCode, blocked = false): Promise<TypeaheadResult> => {
     const widget = current.widget!;
     const closing = closingContext(ctx);
@@ -242,7 +256,7 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
       restore(widget.input ?? input, before, !keepOpen);
       await afterAction(widget, closing);
     }
-    if (!keepOpen) await closeList(widget, closing, { activated: false });
+    if (!keepOpen) await closeList(widget, closing, { activated: openedHere });
     return none(why, blocked);
   };
   // A wait ended early: by the person's Skip, what was typed is put back and the list closed (giveUp on its tidy
@@ -276,7 +290,7 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     fireChange(box);
     fireLeave(box);
     await afterAction(widget, closingContext(ctx));
-    await closeList(widget, closingContext(ctx), { activated: false });
+    await closeList(widget, closingContext(ctx), { activated: openedHere });
     const verified = box.isConnected && tidy(box.value) === tidy(text);
     return { chosen: null, verified, reason: verified ? 'ok' : 'verify-mismatch', blocked: false, typed, freeText: text };
   };
@@ -312,6 +326,7 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
       if (opened.status === 'aborted') return ended();
       if (opened.status === 'gone') return giveUp('element-not-found');
       if (opened.status !== 'answered') return giveUp('needs-your-click');
+      openedHere = true;
     }
     // Never typed into a box beside the widget that a person cannot see, or that takes no text.
     if (beside && !boxTakes(box)) return giveUp('needs-your-click');
@@ -359,6 +374,14 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     if (picked === undefined || picked.disabled || !sameOptionLabel(picked.label, choice.cleanLabel)) {
       return giveUp('options-changed');
     }
+    // jr6 line W review (ENG-REV-3): a result its list marks chosen already is never chosen again where a choice would
+    // take it away (SearchOptions.keepChosen: the tags filler), by the bridge or by a click: the search ends there.
+    if (options.keepChosen === true) {
+      const row = await revealOption(listbox, picked, { signal: ctx.signal, labelOf: widget.optionLabel,
+        ...(widget.results === undefined ? {} : { option: widget.results, unchoosable: widget.results.unchoosable }) });
+      if (ctx.signal?.aborted) return ended();
+      if (row !== null && row.selected) return giveUp('already-correct');
+    }
     const typedNow = box.value;
     const known = results.map((result) => result.label);
     const shows = () => chosenLabels(widget, known).some((label) => sameOptionLabel(label, choice.cleanLabel));
@@ -376,12 +399,12 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
         const held = await afterBridge(widget, ctx, () => answered() && shows());
         const changed = answered() || !sameLabels(chosenLabels(widget, known), before);
         if (held || changed) {
-          await closeList(widget, closingContext(ctx), { activated: false });
+          await closeList(widget, closingContext(ctx), { activated: openedHere });
           return chosenOf(held && shows());
         }
         // A Skip during the bridge's wait: React may hold the choice, so it is written, not verified.
         if (ctx.signal?.aborted) {
-          await closeList(widget, closingContext(ctx), { activated: false });
+          await closeList(widget, closingContext(ctx), { activated: openedHere });
           return chosenOf(false);
         }
       }
@@ -399,13 +422,13 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     // The person's Skip cut the wait for the page's answer short: the click was made, so it stands, read back as it
     // shows now, and the list is closed.
     if (ctx.signal?.aborted && skipTidyContext(ctx) !== null) {
-      await closeList(widget, closingContext(ctx), { activated: false });
+      await closeList(widget, closingContext(ctx), { activated: openedHere });
       return chosenOf(shows());
     }
     const closed = openListOf(widget) === null;
     if (!pageChose(widget, option.el, typedNow, closed, markedBefore)) return stop('needs-your-click');
     // Clicked and answered: the choice stands.
-    await closeList(widget, closingContext(ctx), { activated: false });
+    await closeList(widget, closingContext(ctx), { activated: openedHere });
     const verified = shows();
     return { chosen: { ...choice, results }, verified, reason: verified ? 'ok' : 'verify-mismatch', blocked: false,
       typed };

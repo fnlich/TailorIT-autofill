@@ -41,9 +41,12 @@ describe('parseWorkdayUrl', () => {
 
   it('drops the locale, the free-text location, the query and the fragment, and folds the site to lower case', () => {
     for (const address of [`${HOST}/Workday/job/Anywhere/${SLUG}`, `${HOST}/workday/job/x/${SLUG}/`,
-      `${HOST}/en-US/WORKDAY/job/USA%2C-CA%2C-Pleasanton/${SLUG}?source=LinkedIn#top`, `${HOST}/en-US/Workday/job/x/${SLUG}/apply/`]) {
+      `${HOST}/en-US/WORKDAY/job/USA%2C-CA%2C-Pleasanton/${SLUG}?source=LinkedIn#top`, `${HOST}/en-US/Workday/job/x/${SLUG}/apply/`,
+      // jr6 WORKDAY fix (WD-R2, the path in one expression): the posting with one more '/', as before.
+      `${HOST}/en-US/Workday/job/x/${SLUG}//`]) {
       expect(parseWorkdayUrl(at(address))?.applicationUrl, address).toBe(CANONICAL);
     }
+    expect(parseWorkdayUrl(at(`${HOST}/en-US/Workday/job/x/${SLUG}//`))?.page).toBe('posting');
   });
 
   it('reads the requisition id after the last underscore, and folds the slug’s percent-encoding', () => {
@@ -52,6 +55,9 @@ describe('parseWorkdayUrl', () => {
         applicationUrl: 'https://salesforce.wd12.myworkdayjobs.com/external_career_site/job/x/Senior-Executive-Assistant_JR337145/apply/applyManually' });
     expect(parseWorkdayUrl(at(`${HOST}/Workday/job/x/A%2CB_JR1`))?.applicationUrl)
       .toBe(parseWorkdayUrl(at(`${HOST}/Workday/job/x/A,B_JR1`))?.applicationUrl);
+    // jr6 WORKDAY fix (WD-R2): a slug with several underscores, its last one before the requisition id.
+    expect(parseWorkdayUrl(at(`${HOST}/Workday/job/x/Data_Engineer_II_R0012345`))).toMatchObject({ jobId: 'R0012345',
+      applicationUrl: `${HOST}/workday/job/x/Data_Engineer_II_R0012345/apply/applyManually` });
   });
 
   it('reads myworkdaysite.com, its tenant in the path', () => {
@@ -76,6 +82,13 @@ describe('parseWorkdayUrl', () => {
       .toBe(`${HOST}/ext/job/x/${SLUG}/apply/applyManually`);
     expect(parseWorkdayUrl(at('https://wd1.myworkdaysite.com/fr-fr/recruiting/snapchat/snap/job/x/A_R1'))?.board)
       .toBe('snapchat');
+    // jr6 WORKDAY fix (WD-R2, the path in one expression): a first segment read as a locale is decided once; where what
+    // follows reads as no posting, the address is none, never read again with that segment as the site.
+    for (const address of [`${HOST}/en/job/job/A_R1`, `${HOST}/job/job/job/A_R1/`]) {
+      expect(parseWorkdayUrl(at(address)), address).toBeNull();
+    }
+    expect(parseWorkdayUrl(at(`${HOST}/en/job/job/x/A_R1`))?.applicationUrl)
+      .toBe(`${HOST}/job/job/x/A_R1/apply/applyManually`);
   });
 
   it('reads a tenant host with no wd<n>, as shared/hosts.ts names it', () => {
@@ -106,7 +119,9 @@ describe('parseWorkdayUrl', () => {
 
     it('reads a redirect to the posting, its choice or any way of applying, with or without a locale or a query', () => {
       for (const redirect of [`/en-US/verily_careers/job/Dallas/${VERILY_SLUG}`, `/verily_careers/job/x/${VERILY_SLUG}/apply`,
-        `/en-US/verily_careers/job/x/${VERILY_SLUG}/apply/applyManually`, `/en-us/Verily_Careers/job/x/${VERILY_SLUG}/apply/useMyLastApplication?source=x`]) {
+        `/en-US/verily_careers/job/x/${VERILY_SLUG}/apply/applyManually`, `/en-us/Verily_Careers/job/x/${VERILY_SLUG}/apply/useMyLastApplication?source=x`,
+        // jr6 WORKDAY fix (WD-R2): dots inside a segment are no dot segment; a fragment is set aside like a query.
+        `/en-US/verily_careers/job/St.-Louis%2C-MO/${VERILY_SLUG}/apply`, `/en-US/verily_careers/job/..x/${VERILY_SLUG}/apply#top`]) {
         expect(parseWorkdayUrl(login(redirect)), redirect).toEqual(verily);
         expect(parseWorkdayUrl(login(redirect, `${VERILY}/verily_careers/login`)), redirect).toEqual(verily);
       }
@@ -131,13 +146,24 @@ describe('parseWorkdayUrl', () => {
         // A dot segment, a space or a control character in the path.
         login(`/en-US/verily_careers/./job/x/${VERILY_SLUG}/apply`), login(`/en-US/x/%2E%2E/verily_careers/job/x/${VERILY_SLUG}`),
         login(`/en-US/verily_careers/job/x/${VERILY_SLUG}/apply `), login(`/en-US/verily_careers/job/x\u0001/${VERILY_SLUG}/apply`),
+        // jr6 WORKDAY fix (WD-R2, B6 in one expression): each would read as the application but for its own rule (the
+        // location is free text): no leading '/'; a '.' or '..' segment, plain or percent-encoded; a space, a tab, a line
+        // break, a no-break space; a backslash; DEL and a C1 control.
+        login(`a/en-US/verily_careers/job/x/${VERILY_SLUG}/apply`), login(`/en-US/verily_careers/job/../${VERILY_SLUG}/apply`),
+        login(`/en-US/verily_careers/job/%2E/${VERILY_SLUG}/apply`), login(`/en-US/verily_careers/job/.%2e/${VERILY_SLUG}/apply`),
+        login(`/en-US/verily_careers/job/x y/${VERILY_SLUG}/apply`), login(`/en-US/verily_careers/job/x\ty/${VERILY_SLUG}/apply`),
+        login(`/en-US/verily_careers/job/x\ny/${VERILY_SLUG}/apply`), login(`/en-US/verily_careers/job/x\u00a0y/${VERILY_SLUG}/apply`),
+        login(`/en-US/verily_careers/job/x\\y/${VERILY_SLUG}/apply`), login(`/en-US/verily_careers/job/x\u007fy/${VERILY_SLUG}/apply`),
+        login(`/en-US/verily_careers/job/x\u0085y/${VERILY_SLUG}/apply`),
         // No application: the candidate home, the board, a search, a sign-in page.
         login('/en-US/verily_careers/userHome'), login('/en-US/verily_careers'), login(`/en-US/verily_careers/details/${VERILY_SLUG}`),
         login(`/en-US/verily_careers/login?redirect=${encodeURIComponent(posting)}`),
         // No redirect, two, an empty one; a path after /login.
         at(`${VERILY}/en-US/verily_careers/login`), at(`${VERILY}/en-US/verily_careers/login?redirect=`),
         at(`${VERILY}/en-US/verily_careers/login?redirect=${encodeURIComponent(posting)}&redirect=${encodeURIComponent(posting)}`),
-        at(`${VERILY}/en-US/verily_careers/login/x?redirect=${encodeURIComponent(posting)}`)]) {
+        at(`${VERILY}/en-US/verily_careers/login/x?redirect=${encodeURIComponent(posting)}`),
+        // jr6 WORKDAY fix (WD-R2): and with no locale, where the site and /login are read before what follows.
+        at(`${VERILY}/verily_careers/login/x?redirect=${encodeURIComponent(posting)}`)]) {
         expect(parseWorkdayUrl(address), address.href).toBeNull();
         expect(canonicalApplicationUrl(address), address.href).toBeNull();
       }
@@ -148,7 +174,9 @@ describe('parseWorkdayUrl', () => {
     for (const address of [`${HOST}/en-US/Workday/login`, `${HOST}/en-US/Workday/userHome`, `${HOST}/en-US/Workday/details/${SLUG}`,
       `${HOST}/en-US/Workday`, `${HOST}/en-US/Workday/job/x/no-requisition`, `${HOST}/en-US/Workday/job/x/_JR1`,
       `${HOST}/en-US/Workday/job/x/${SLUG}/apply/applyManually/extra`, 'https://wd1.myworkdaysite.com/en-US/snap/job/x/A_R1',
-      `${HOST}/en-US/Workday/job/x/%E0%A4%A_R1`]) {
+      `${HOST}/en-US/Workday/job/x/%E0%A4%A_R1`,
+      // jr6 WORKDAY fix (WD-R2): another way of applying than the choice's three, and the apply page with two more '/'.
+      `${HOST}/en-US/Workday/job/x/${SLUG}/apply/applyWithLinkedIn`, `${HOST}/en-US/Workday/job/x/${SLUG}/apply//`]) {
       expect(parseWorkdayUrl(at(address)), address).toBeNull();
     }
   });

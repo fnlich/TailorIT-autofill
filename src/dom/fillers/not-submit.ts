@@ -554,9 +554,12 @@ const REVEALED = new WeakSet<Document>(); // jr6 ENGINE
  * connected, enabled file input inside the declared area that a person cannot see; the link shows inside that area and
  * can be pressed now; assertNotSubmit allows it, with the link itself left out of the adapter's never-pressed list
  * (the application's Submit and Next, a submit word, a control that submits a form, a button around it, another
- * never-pressed control around it, all refuse) and no other never-pressed control inside it. A link (<a href>) whose
- * click the page's own handler did not cancel has its default cancelled by a one-shot listener on the window, in the
- * bubble phase, after the page's own listeners, so the page never navigates (JazzHR's link points at the posting itself).
+ * never-pressed control around it, all refuse) and no other never-pressed control inside it. A link (<a href>) has the
+ * default of its click cancelled by a listener on its window in the capture phase, the first to run for that click
+ * (cancelLinkOnce), so the page never navigates (JazzHR's link points at the posting itself): neither a page handler
+ * that stops the click's propagation without cancelling it, on the link or delegated on the document, nor a click the
+ * page's handler makes meanwhile (its label's, its input's) can skip it; the page's own handlers still run, on a click
+ * whose default is cancelled already (jr6 line W review, revD-03).
  * The link stays in neverPress for every other path. Answers the element clicked, or null. Only
  * src/dom/fillers/upload.ts may call it (test/allow-submit.test.ts); it is not exported from fillers/index.ts. A hook
  * that throws refuses.
@@ -600,9 +603,12 @@ export function clickUploadReveal(adapter: Adapter, input: HTMLInputElement): HT
   return reveal;
 }
 
-/** jr6 ENGINE: for a link (or an element inside one), a one-shot click listener on its window, in the bubble phase,
- *  that cancels the click's default where nothing the page ran cancelled it (clickUploadReveal); answers its removal,
- *  which the door runs once its click returned. Nothing for any other element. */
+/** jr6 ENGINE: for a link (or an element inside one), a click listener on its window for the door's one press, in the
+ *  capture phase, so it runs before anything the page listens with: it cancels the default of a click on the link or
+ *  inside it (clickUploadReveal). It is no one-shot: a click the page's own handler makes meanwhile (its label's, its
+ *  input's) passes through it untouched and leaves it in place for the link's own (jr6 line W review, revD-03: a
+ *  bubble-phase one-shot listener was skipped by a handler that stopped the click's propagation, and spent by such a
+ *  nested click). Answers its removal, which the door runs once its click returned. Nothing for any other element. */
 function cancelLinkOnce(reveal: HTMLElement): () => void { // jr6 ENGINE
   const view = reveal.ownerDocument.defaultView;
   if (view === null || reveal.closest('a[href]') === null) return () => undefined;
@@ -612,7 +618,7 @@ function cancelLinkOnce(reveal: HTMLElement): () => void { // jr6 ENGINE
       event.preventDefault();
     }
   };
-  view.addEventListener('click', onClick, { once: true });
-  return () => view.removeEventListener('click', onClick);
+  view.addEventListener('click', onClick, { capture: true }); // jr6 ENGINE (revD-03)
+  return () => view.removeEventListener('click', onClick, { capture: true }); // jr6 ENGINE (revD-03)
 }
 // ── end jr6 ENGINE E2 item 9 ── // jr6 ENGINE

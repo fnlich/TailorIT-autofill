@@ -7,7 +7,9 @@
  * the input is hidden and the link shows inside the rule's area, then settles at least 300 ms (Jobright's JazzHR
  * uploadResume), finds the input again and writes only once a person can see it; otherwise the row is the person's.
  * The page never navigates: with the page's own handler (which cancels the link, as JazzHR's does, or leaves it) and
- * without one. The link stays never-pressed for every other path. The page is synthetic, shaped as the audit
+ * without one, and (the jr6 line W review, revD-03) with a handler that leaves its default and stops its propagation,
+ * on the link or delegated on the document, or clicks the Resume label meanwhile. The link stays never-pressed for every
+ * other path. The page is synthetic, shaped as the audit
  * describes jr6-centroid-form; the adapter is the configured layer over JazzHR's own config with the upload rule the
  * JAZZHR package declares (FIXPLAN §6.8, JZ-4 (a) and (b)); the file is a fake PDF named as the golden resume.
  * jr6 ENGINE E3 (FIXPLAN §6.2 item 15, WD-23): a date drawn in parts (Workday's, dom/fillers/date-parts.ts) gets focus
@@ -75,6 +77,39 @@ function pageToggle(doc: Document, cancels: boolean): void {
   });
 }
 
+/** jr6 line W review (revD-03): a toggle that shows the upload wrapper as JazzHR's does but never cancels the link,
+ *  and keeps a window listener in the bubble phase from seeing the link's click:
+ *  - 'stops': the link's own handler stops the click's propagation;
+ *  - 'delegated': a handler delegated on the document (jQuery's $(document).on) stops it there;
+ *  - 'nested': the link's handler clicks the Resume label meanwhile, a click of its own that reaches the window first;
+ *  - 'ahead': a listener of the page's on its window, in the capture phase and so ahead of any the door adds later,
+ *    clicks the Resume label as the link's click starts, and the link's handler shows the wrapper. */
+function stubbornToggle(doc: Document, how: 'stops' | 'delegated' | 'nested' | 'ahead'): void {
+  const show = () => {
+    doc.getElementById('resumator-resume-upload-wrapper')!.classList.remove('none');
+    doc.getElementById('resumator-resume-options')!.classList.add('none');
+  };
+  const label = () => doc.getElementById('resumator-resume-label')!;
+  if (how === 'delegated') {
+    doc.addEventListener('click', (event) => {
+      if ((event.target as Element).closest('#resumator-choose-upload') === null) return;
+      event.stopPropagation();
+      show();
+    });
+    return;
+  }
+  if (how === 'ahead') {
+    doc.defaultView!.addEventListener('click', (event) => {
+      if ((event.target as Element).closest('#resumator-choose-upload') !== null) label().click();
+    }, { capture: true });
+  }
+  doc.getElementById('resumator-choose-upload')!.addEventListener('click', (event) => {
+    show();
+    if (how === 'stops') event.stopPropagation();
+    else if (how === 'nested') label().click();
+  });
+}
+
 async function centroid(change?: (doc: Document) => void) {
   const fixture = await loadFixture(document, CENTROID, { width: 1280, height: 900 });
   const doc = fixture.doc;
@@ -134,6 +169,24 @@ describe('jr6 E2 item 9 (JZ-4): the upload filler presses a declared reveal once
     expect(page.presses()).toBe(1);
     expect(await page.navigated()).toBe(false);
   });
+
+  // jr6 line W review (revD-03): the door's guard runs first, in the capture phase, for the link's own click.
+  for (const [how, name] of [['stops', 'the link’s handler stops the click’s propagation'],
+    ['delegated', 'a handler delegated on the document stops it'],
+    ['nested', 'the link’s handler clicks the Resume label meanwhile'],
+    ['ahead', 'a window listener of the page’s, ahead of the door’s, clicks the Resume label first']] as const) {
+    it(`with a page handler that leaves the link’s default and ${name}: no navigation, the input shows`, async () => {
+      // The control: pressed with no guard, the toggle lets the link navigate.
+      const bare = await centroid((doc) => stubbornToggle(doc, how));
+      bare.link.click();
+      expect(await bare.navigated(), 'control').toBe(true);
+      removeFixtures(document);
+      const page = await centroid((doc) => stubbornToggle(doc, how));
+      expect(await page.reveal(jazzhr())).toEqual({ outcome: 'revealed', input: page.input() });
+      expect(page.presses()).toBe(1);
+      expect(await page.navigated()).toBe(false);
+    });
+  }
 
   it('with no page handler: pressed once, no navigation, the input stays hidden and the row is the person’s',
     async () => {

@@ -357,7 +357,7 @@
       "required": false,
       "section": "Education",
       "fillable": true,
-      "options": 270,
+      "options": 31,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"major-dropdown\"]"
     },
     {
@@ -366,7 +366,7 @@
       "required": false,
       "section": "Education",
       "fillable": true,
-      "options": 270,
+      "options": 31,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"minor-dropdown\"]"
     },
     {
