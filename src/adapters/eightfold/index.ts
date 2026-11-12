@@ -1,16 +1,15 @@
 /*
- * The Eightfold adapter (jr7 FIX7PLAN §3.2 item 4, ENGINE-7 E0): a stub, registered so the registry compiles with the
- * platform id. It reads nothing: no form root, no address (./url.ts), so an Eightfold page gets no run until JDEF-7
- * builds the adapter (FIX7PLAN §6.15). JDEF-7 owns this folder from the tag jr7-engine-e0 on.
+ * The Eightfold adapter (jr7 FIX7PLAN §6.15, JDEF-7): its config (./config.ts, every rule naming the snapshot7 capture
+ * it was read from) turned into the Adapter contract by the configured layer, and its address reading (./url.ts). Its
+ * success rule is registered in ../configured/registry.ts ATS_CONFIGS, so content/submitted.ts reads it.
  */
-import { platformOfUrl } from '../../shared/hosts';
+import { configuredAdapter } from '../configured';
 import type { Adapter } from '../types';
-import { canonicalApplicationUrl } from './url';
+import { EIGHTFOLD_CONFIG, EIGHTFOLD_SNAPSHOTS } from './config';
 
-export const eightfoldAdapter: Adapter = {
-  id: 'eightfold',
-  /** Its candidate paths, as src/shared/hosts.ts names them. */
-  matchesUrl: (url) => platformOfUrl(url.href) === 'eightfold',
-  canonicalApplicationUrl,
-  detect: () => null,
-};
+export { EIGHTFOLD_CONFIG } from './config';
+
+/** The fixtures the adapter was written from. */
+export const EIGHTFOLD_FIXTURES = EIGHTFOLD_SNAPSHOTS.map((name) => `fixtures/eightfold/${name}.html`);
+
+export const eightfoldAdapter: Adapter = configuredAdapter(EIGHTFOLD_CONFIG);

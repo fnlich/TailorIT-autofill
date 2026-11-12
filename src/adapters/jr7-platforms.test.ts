@@ -57,6 +57,13 @@ const STUBS: Array<{ platform: Platform; adapter: Adapter; parse: (url: URL) => 
     other: 'https://acme.jibeapply.com/' },
 ];
 
+// ── jr7 platform packages: a platform whose package built its parser reads its candidate pages (its own tests hold
+// them), so it is no stub here any more. ──
+const BUILT = new Set<Platform>([
+  'jobdiva', 'eightfold', // jr7 JDEF-7 (src/adapters/{jobdiva,eightfold}/url.test.ts, *.browser.test.ts)
+]);
+// ── end jr7 platform packages ──
+
 describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
   it('appends their ids in order, each ahead of the contract and named as the panel and the report show it', () => {
     expect(PLATFORMS.slice(-5)).toEqual(STUBS.map((each) => each.platform));
@@ -72,6 +79,7 @@ describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
   it('gives each candidate page its stub, then the generic adapter, and no application: the page stays dormant', () => {
     for (const { platform, adapter, parse, candidate } of STUBS) {
       expect(adapter.id).toBe(platform);
+      if (BUILT.has(platform)) continue; // jr7 platform packages
       expect(adapter.detect({} as Document), platform).toBeNull();
       for (const url of candidate) {
         expect(adapter.matchesUrl(new URL(url)), url).toBe(true);

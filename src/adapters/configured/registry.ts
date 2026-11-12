@@ -28,6 +28,10 @@ import { ADP_CONFIG } from '../adp';
 import { DAYFORCE_CONFIG } from '../dayforce/config';
 import { ULTIPRO_CONFIG } from '../ultipro';
 // ── end New ATSs, builder A ──
+// ── jr7 JDEF-7 ──
+import { EIGHTFOLD_CONFIG } from '../eightfold/config';
+import { JOBDIVA_CONFIG } from '../jobdiva/config';
+// ── end jr7 JDEF-7 ──
 
 /** Every configured platform's config. */
 export const ATS_CONFIGS: Partial<Record<Platform, AtsConfig>> = {
@@ -51,4 +55,8 @@ export const ATS_CONFIGS: Partial<Record<Platform, AtsConfig>> = {
   hibob: HIBOB_CONFIG,
   // ── end builder C ──
   // ── end New ATSs ──
+  // ── jr7 JDEF-7 ──
+  jobdiva: JOBDIVA_CONFIG,
+  eightfold: EIGHTFOLD_CONFIG,
+  // ── end jr7 JDEF-7 ──
 };
