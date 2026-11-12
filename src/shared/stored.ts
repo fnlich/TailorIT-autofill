@@ -85,9 +85,8 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  iCIMS with the phone and country code, its Next Auto's or Sign up & Autofill's alone; ADP's and ClearCompany's path
  *  no longer sent; on a page with no form Autofill pressing the site's Apply and the steps on the way, consents among
  *  them, filling in the same tab and site, refusing a new tab, another site or a download; military training, a
- *  non-compete, relatives and essential functions among the AI's guesses). Raise it whenever the disclosure's
- *  substance changes. */
-export const DISCLOSURE_VERSION = 14;
+ *  non-compete and relatives among the AI's guesses). Raise it whenever the disclosure's substance changes. */
+export const DISCLOSURE_VERSION = 15;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */

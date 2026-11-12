@@ -128,11 +128,11 @@ describe('the copy', () => {
   });
 
   // The jr6 review (C3): where a site asks for the email first, Autofill goes on only on Sign-in Auto or with Sign up &
-  // Autofill. Oracle's email gate is typed and its Next pressed only then (content/orchestrator.ts typeableWallShown,
-  // runtime.ts wallStep). ADP's guest page is filled like any step in every mode, and its Continue is pressed on Auto
-  // alone (signInContainerNow). So the disclosure says it in the sentence that names Sign-in on Auto, as version 14 does.
-  // Once SHELL types a gate's email on Manual too (BUILD D-d), the clause may stand in a sentence of its own, naming its
-  // Next as Auto's alone and never saying it goes on: Manual never presses it.
+  // Autofill. Version 14 said it in the sentence that names Sign-in on Auto. Since jr6 SHELL-A (BUILD D-d) a declared
+  // email gate's email is typed in either Sign-in mode (content/orchestrator.ts gateFilling, runtime.ts wallStep), its
+  // Next pressed only on Auto or with Sign up & Autofill; ADP's guest page is filled like any step in every mode, and
+  // its Continue is pressed on Auto alone (signInContainerNow). So version 15's clause stands in a sentence of its own,
+  // naming its Next as Auto's alone and never saying it goes on: Manual never presses it.
   it('says what it does where a site asks for your email first for Sign-in on Auto alone, or names Next as Auto’s alone', () => {
     const clause = 'asks for your email first';
     const sentences = COPY.options.connection.disclosure.flatMap((paragraph) => paragraph.split(/(?<=\.)\s+(?=["A-Z])/));
@@ -143,6 +143,16 @@ describe('the copy', () => {
     const autoAlone = lead.includes('Sign-in on Auto') && !lead.includes('Manual');
     expect(autoAlone || /\bNext only\b[^.;]*\bAuto\b/.test(sentence), sentence).toBe(true);
     if (!autoAlone) expect(sentence, sentence).not.toMatch(/\bgoes on\b/);
+  });
+
+  // jr6 apply F1 (F1.md §7, C6; the jr6 integration, disclosure 15): Autofill on a page with no form presses the site's
+  // own Apply and the steps on the way (a consent among them, never its Decline), fills in the same tab on that site, and
+  // presses nothing where the Apply would open a new tab, lead to another site or download a file.
+  it('says where Autofill presses on a page with no form: the next step, the same tab and site, and what it refuses', () => {
+    const [first] = COPY.options.connection.disclosure;
+    for (const words of ['Consent & Continue', 'never its Decline', 'Apply manually', 'same tab', 'new tab',
+      'another site', 'presses nothing']) expect(first).toContain(words);
+    expect(first).not.toMatch(/Open Application/);
   });
 
   // The jr6 review (R3, R10): the job-site sign-in is the one saved in Sign-up Information (this browser) since jr6:
