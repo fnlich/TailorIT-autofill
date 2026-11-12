@@ -57,12 +57,11 @@ const STUBS: Array<{ platform: Platform; adapter: Adapter; parse: (url: URL) => 
     other: 'https://acme.jibeapply.com/' },
 ];
 
-// ── jr7 platform packages: a platform whose package built its parser reads its candidate pages (its own tests hold
-// them), so it is no stub here any more. ──
-const BUILT = new Set<Platform>([
-  'jobdiva', 'eightfold', // jr7 JDEF-7 (src/adapters/{jobdiva,eightfold}/url.test.ts, *.browser.test.ts)
-]);
-// ── end jr7 platform packages ──
+// ── jr7 JDEF-7 (FIX7PLAN §6.15; JDV-2, EFA-2): the stubs whose packages' parsers read their candidate pages now
+// (src/adapters/{jobdiva,eightfold}/url.test.ts and their browser tests). INT-7 merges each package's entries here
+// (ICIMS-7: 'jibe'); the check below holds for any of them. ──
+const READING: ReadonlySet<Platform> = new Set<Platform>(['jobdiva', 'eightfold']);
+// ── end jr7 JDEF-7 ──
 
 describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
   it('appends their ids in order, each ahead of the contract and named as the panel and the report show it', () => {
@@ -79,11 +78,21 @@ describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
   it('gives each candidate page its stub, then the generic adapter, and no application: the page stays dormant', () => {
     for (const { platform, adapter, parse, candidate } of STUBS) {
       expect(adapter.id).toBe(platform);
-      if (BUILT.has(platform)) continue; // jr7 platform packages
       expect(adapter.detect({} as Document), platform).toBeNull();
       for (const url of candidate) {
         expect(adapter.matchesUrl(new URL(url)), url).toBe(true);
         expect(adaptersFor(new URL(url)), url).toEqual([adapter, genericAdapter]);
+        // ── jr7 JDEF-7: a reading parser's page is its application's, keyed by its own reading ──
+        if (READING.has(platform)) {
+          const read = parse(new URL(url)) as { page: string; applicationUrl: string } | null;
+          expect(read, url).not.toBeNull();
+          expect(applicationOf(new URL(url)), url).toMatchObject({ platform, page: read!.page,
+            applicationUrl: read!.applicationUrl });
+          expect(adapter.canonicalApplicationUrl(new URL(url)), url)
+            .toBe(read!.page === 'application' ? read!.applicationUrl : null);
+          continue;
+        }
+        // ── end jr7 JDEF-7 ──
         expect(parse(new URL(url)), url).toBeNull();
         expect(adapter.canonicalApplicationUrl(new URL(url)), url).toBeNull();
         // Its own parser reads it (address.ts URL_PARSERS), so it is no application yet: never the generic rule's
