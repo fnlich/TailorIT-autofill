@@ -297,6 +297,9 @@ export interface ContentRuntime {
   /** What the browser bringing the document back from the back/forward cache does (its trusted pageshow with persisted
    *  set, which a test cannot make). */
   restored(): Promise<void>;
+  /** jr6 ifix B1: what the browser keeping the document in the back/forward cache does (its trusted pagehide with
+   *  persisted set, which a test cannot make either). */
+  cached(): void;
 }
 
 /** The first adapter whose detect() finds a form root, with that root. The behaviour review of 2026-11-06 (M3): an
@@ -358,7 +361,7 @@ export function loadedHref(view: Window | null): string | null {
 /** A runtime that does nothing at all (S-9's silent frame): no listener, no hello, no UI, no run. */
 function silentRuntime(): ContentRuntime {
   return { ui: null, run: null, page: null, frameId: null, fill: () => null, stopped: true, stop: () => undefined,
-    restored: () => Promise.resolve() };
+    restored: () => Promise.resolve(), cached: () => undefined };
 }
 
 /** Starts the content runtime in `doc`. Resolves once the frame has said hello and its UI is mounted. */
@@ -411,8 +414,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    *  settings/changed. */
   let signInTypes = false;
   /** jr6 SHELL-A (WD-04): the wall steps that wait for a job-site password to be saved (wallStep), each ended when a
-   *  settings/changed says one may be typed. */
-  const passwordWaiters = new Set<() => void>();
+   *  settings/changed says one may be typed (true). jr6 ifix B1: or when hello's answer says so, and dropped (false)
+   *  when the browser keeps the document in the back/forward cache. */
+  const passwordWaiters = new Set<(saved: boolean) => void>();
   /** s2 profile (settings version 7): how long the page's toasts stay: frame/hello's settings, then each
    *  settings/changed; until closed until the worker says. */
   let notificationTime: NotificationTime = 'until-closed';
@@ -566,7 +570,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         // press stays in this document.
         if (!signInTypes) dropKeptSignIns(doc);
         // jr6 SHELL-A (WD-04): one was saved: a wall step that waits for it tries its wall once more.
-        else for (const waiter of [...passwordWaiters]) waiter();
+        else for (const waiter of [...passwordWaiters]) waiter(true);
         notificationsChanged(msg.settings.modes.notifications);
         return ok({});
       case 'run/policyDecision':
@@ -719,7 +723,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     panelView = answer.data.settings.view;
     placementChanged(answer.data.settings.panel);
     signInMode = answer.data.settings.modes.signIn;
+    const typedBefore = signInTypes;
     signInTypes = answer.data.settings.typeSignIn === true;
+    // jr6 ifix B1: a password saved while no settings/changed reached this document (it was away, in the back/forward
+    // cache): a wall step that waits for one tries its wall once more, as at settings/changed.
+    if (signInTypes && !typedBefore) for (const waiter of [...passwordWaiters]) waiter(true);
     notificationsChanged(answer.data.settings.modes.notifications);
     if (answer.data.launcher !== undefined) {
       launcherPrefs = answer.data.launcher;
@@ -756,13 +764,43 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   /** Back from the back/forward cache (a trusted pageshow with persisted set): it says hello again (W1). A company's
    *  page the worker no longer knows (the career sites stopped while it was away, and site/stop reaches active
-   *  documents alone) ends its run and removes its UI (round 2 of the Phase 8 review, M3). */
+   *  documents alone) ends its run and removes its UI (round 2 of the Phase 8 review, M3). jr6 ifix B1 (the integration
+   *  review's behaviour lens): and the page's wall is told afresh (tellWall, nothing deduplicated against what was
+   *  told before it went away), so the worker's registry and the panel read the page as it shows now. */
   async function restored(): Promise<void> {
     if (stopped) return;
-    if ((await hello()) !== 'refused' || !injectedHere || stopped) return;
-    log('content.site-stopped');
-    cancelRun();
-    teardown('leaving');
+    if ((await hello()) === 'refused' && injectedHere && !stopped) {
+      log('content.site-stopped');
+      cancelRun();
+      teardown('leaving');
+      return;
+    }
+    if (stopped) return;
+    wallTold = undefined;
+    tellWall();
+  }
+
+  /** jr6 ifix B1: the browser keeps the document in the back/forward cache (a trusted pagehide with persisted set). The
+   *  run that works or watches is dropped, and the launcher offers Fill again (W1); an entry or a wall's own sign-in
+   *  step under way ends too (entryCancel: quietly, as at run/cancel: nothing refused, nothing pressed or typed after),
+   *  its toast with it, and a step that waits for a password to be saved stops waiting. Frozen, none of them would
+   *  resume on the page's return with its deadline overdue, refuse what did follow, or hold the one-at-a-time lock. */
+  function cachedAway(): void {
+    if (stopped) return;
+    if (current !== null && (current.ended === null || current.watching)) {
+      current.abort();
+      ui?.setToasts([]);
+      ui?.setLauncher({ state: 'idle', action: 'fill' });
+    }
+    if (entering !== null) {
+      entryCancel?.abort();
+      if (page === null) {
+        wallToast = null;
+        wallWaits = null;
+        ui?.setToasts([]);
+      }
+    }
+    for (const waiter of [...passwordWaiters]) waiter(false);
   }
 
   /** v3 Phase 8 (the review's B10): this top frame shows a company's job page by a job signal (its address a career
@@ -1986,7 +2024,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         resolve(saved);
       };
       const gone = () => done(false);
-      const saw = () => done(true);
+      const saw = (saved: boolean) => done(saved);
       passwordWaiters.add(saw);
       stopTimer = startDeadline(options.signIn?.passwordWaitMs ?? PASSWORD_WAIT_MS, () => done(false));
       signal.addEventListener('abort', gone, { once: true });
@@ -2534,6 +2572,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       },
       stop: () => teardown('leaving'),
       restored,
+      cached: cachedAway,
     };
   }
 
@@ -2555,12 +2594,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       teardown('leaving');
       return;
     }
-    // The page may come back from the back/forward cache: the run is dropped, the launcher offers Fill again.
-    if (current !== null && (current.ended === null || current.watching)) {
-      current.abort();
-      ui?.setToasts([]);
-      ui?.setLauncher({ state: 'idle', action: 'fill' });
-    }
+    // The page may come back from the back/forward cache: the run is dropped, the launcher offers Fill again; jr6 ifix
+    // B1: an entry or a wall step under way ends too (cachedAway).
+    cachedAway();
   }, { signal: lifetime.signal });
   // Back from the back/forward cache: the worker forgot this document's frame while it was away (its sweep drops a
   // frame that does not answer), so it says hello again, and the side panel's messages reach this document (W1).

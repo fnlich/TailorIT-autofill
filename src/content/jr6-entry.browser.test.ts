@@ -1282,3 +1282,44 @@ describe('jr6 ifix B4: an entry’s waits release their abort listeners once set
       }
     }, 40_000);
 });
+
+// ── jr6 ifix B1 (the integration review's behaviour lens): an entry and the back/forward cache ──
+describe('jr6 ifix B1: an entry under way when the browser keeps the page in the back/forward cache', () => {
+  it('ends quietly at the persisted pagehide (no refusal, no lock); back, the wall is told and Autofill presses again',
+    async () => {
+      // A posting whose first Apply brings nothing (the person went Back from where it led) and whose second draws
+      // Lever's form in place.
+      const page = lateHtml.replace(/<script>[\s\S]*?<\/script>/, '')
+        .replace('<div id="apply-slot"></div>', `<div id="apply-slot"><a class="postings-btn" id="apply"
+          href="${LATE}/apply">Apply for this job</a></div>`);
+      const { doc, clicks } = await openAt(page, LATE);
+      let presses = 0;
+      doc.getElementById('apply')!.addEventListener('click', () => {
+        presses += 1;
+        if (presses !== 2) return;
+        void deadline(300).then(() => doc.getElementById('form-slot')!
+          .append((doc.getElementById('form-template') as HTMLTemplateElement).content.cloneNode(true)));
+      });
+      const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
+      runtimes.push(runtime);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(clicks).toEqual(['apply']), { timeout: 3_000 });
+      // The entry watches what its press brought (afterPress).
+      await deadline(500);
+      expect(wallsOf(worker).at(-1)?.entering).toBe(true);
+      // The browser keeps the page (a trusted pagehide with persisted set): the entry ends, quietly.
+      runtime.cached();
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 2_000 });
+      const told = worker.of('frame/wall').length;
+      // Back (a trusted pageshow with persisted set): hello, then the page's own Apply told afresh.
+      await runtime.restored();
+      await vi.waitFor(() => expect(worker.of('frame/wall').length).toBeGreaterThan(told), { timeout: 2_000 });
+      expect(wallsOf(worker).at(-1)).toMatchObject({ entry: true, entering: false });
+      // The person's Autofill is not held by the entry that went into the cache: pressed, and the form claimed.
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(clicks).toEqual(['apply', 'apply']), { timeout: 5_000 });
+      await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 5_000 });
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 3_000 });
+      expect(refusals(worker)).toEqual([]);
+    }, 40_000);
+});
