@@ -52,7 +52,7 @@
  * in storage.session only, never in storage.local.
  */
 import { z } from 'zod';
-import { applicationOf, type ApplicationRef } from '../adapters';
+import { applicationOf, platformAdapter, type ApplicationRef } from '../adapters';
 // v5 p2-detect
 import { confirmsApplication } from '../adapters/address';
 import { AUTOFILL_LOOKUP_URL_MAX } from '../contract/tailorit';
@@ -125,6 +125,11 @@ export interface SubmissionsDeps {
   /** The tab's claim frame now (frames.ts claimFrameOf over the registry), or null. Absent: none. */
   claimFrame?(tabId: number): Promise<Pick<FrameEntry, 'frameId' | 'documentId' | 'applicationKey'> | null>;
   // ── end jr7 AUTO-7 A1 ──
+  // ── jr7 AUTO-7 (AUTO7-06, UP7-01, WD7-05, jr7-O2's address) ──
+  /** Whether `here` is the page after submitting the application armed at `armed` (its platform's adapter's
+   *  confirmationAfter: a pure reading of the two addresses, never a per-person id). Absent: no platform reads one. */
+  confirmationAfter?(platform: string, armed: URL, here: URL): boolean;
+  // ── end jr7 AUTO-7 ──
 }
 
 /** A Submit armed, as storage.session keeps it: ids, keys and times only. */
@@ -148,12 +153,30 @@ const ArmSchema = z.strictObject({
    *  (SmartRecruiters' one-click, screening and success pages share it). */
   pageKey: z.string().regex(/^[a-z]+:[0-9a-f]{16}$/).optional(),
   // ── end jr7 AUTO-7 A1 ──
+  /** jr7 AUTO-7 (ICIMS7-04 (3)): when the frame that armed it, or the tab's claim frame for a chained arm, showed a step
+   *  that is the person's by design (Adapter.handOver: iCIMS's Assessments) after this Submit: its confirmation page is
+   *  then waited for SUBMIT_ARM_MS, not CONFIRMATION_PAGE_MS (the person's Continue comes when they are done). */
+  handOverAt: z.number().int().nonnegative().optional(),
 });
 type Arm = z.infer<typeof ArmSchema>;
 
 const SubmittedSchema = z.strictObject({ state: z.enum(SUBMITTED_STATES), docKey: z.string().max(200),
   applicationKey: z.string().max(80) });
 type Submitted = z.infer<typeof SubmittedSchema>;
+
+// ── jr7 AUTO-7 (AUTO7-06) ──
+/** Whether `here` is the page after submitting the application of `platform` armed at `armed`, by that platform's own
+ *  adapter (Adapter.confirmationAfter), on the armed page's origin alone (the hook's own rule, held here too): a pure
+ *  reading of the two addresses; an adapter that throws reads none. */
+export function confirmationAfterOf(platform: string, armed: URL, here: URL): boolean {
+  if (armed.origin !== here.origin) return false;
+  try {
+    return platformAdapter(platform)?.confirmationAfter?.(armed, here) === true;
+  } catch {
+    return false;
+  }
+}
+// ── end jr7 AUTO-7 ──
 
 /** The submissions of the tabs. */
 export function createSubmissions(deps: SubmissionsDeps) {
@@ -263,15 +286,33 @@ export function createSubmissions(deps: SubmissionsDeps) {
       if (!parsed.success) continue;
       const arm = parsed.data;
       const age = deps.now() - arm.at;
-      if (arm.frameId !== from.frameId || arm.detectedAt !== undefined || age < 0 || age > CONFIRMATION_PAGE_MS) continue;
+      if (arm.frameId !== from.frameId || arm.detectedAt !== undefined || age < 0 || age > pageWindowOf(arm)) continue;
       const paired = (ownKey !== null && arm.pageKey === ownKey) // jr7 AUTO-7 A1 (AUTOV-01)
-        || (arm.url !== undefined && confirmsApplication(arm.url, from.url));
+        || (arm.url !== undefined && (confirmsApplication(arm.url, from.url)
+          || afterSubmit(key.slice(prefix.length), arm.url, from.url))); // jr7 AUTO-7 (AUTO7-06)
       if (!paired) continue;
       if (best === null || arm.at > best.held.at) best = { applicationKey: key.slice(prefix.length), key, held: arm };
     }
     return best;
   }
   // ── end v5 p2-detect ──
+
+  // ── jr7 AUTO-7 (AUTO7-06) ──
+  /** Whether `here` is the page after submitting the application `applicationKey` armed at `armedUrl` (the posting's
+   *  canonical address the arm keeps), by its platform's adapter (confirmationAfter). */
+  function afterSubmit(applicationKey: string, armedUrl: string, here: string): boolean {
+    if (deps.confirmationAfter === undefined) return false;
+    try {
+      return deps.confirmationAfter(applicationKey.split(':')[0] ?? '', new URL(armedUrl), new URL(here));
+    } catch {
+      return false;
+    }
+  }
+
+  /** ICIMS7-04 (3): how long after its press a confirmation page counts for this arm: SUBMIT_ARM_MS once a step that is
+   *  the person's by design showed after it, else CONFIRMATION_PAGE_MS. */
+  const pageWindowOf = (arm: Arm) => (arm.handOverAt !== undefined ? SUBMIT_ARM_MS : CONFIRMATION_PAGE_MS);
+  // ── end jr7 AUTO-7 ──
 
   // ── jr7 AUTO-7 A1 (ICIMS7-02) ──
   /** Whether `from` is the tab's claim frame now (frames.ts claimFrameOf over the registry: its frame and document), at
@@ -358,7 +399,7 @@ export function createSubmissions(deps: SubmissionsDeps) {
     }
   }
 
-  return {
+  const signs = {
     /** submit/armed (module header). jr7 AUTO-7 A1: `own` is the frame's own address as Chrome gave it, before
      *  tailoritFrom swapped in its chain's (index.ts): its key is the arm's `pageKey` where it differs (AUTOV-01). */
     async armed(message: Of<'submit/armed'>, from: ContentChannel, own?: { url: string }):
@@ -466,24 +507,70 @@ export function createSubmissions(deps: SubmissionsDeps) {
       const inFrame = held !== null && page && (held.frameId === from.frameId
         || (held.chainedFrom !== undefined && await claimFrameNow(from, applicationKey)));
       const fresh = held !== null && held.detectedAt === undefined && age >= 0 && ownDocument
-        && (page ? inFrame && age <= CONFIRMATION_PAGE_MS : age <= SUBMIT_ARM_MS);
+        && (page ? inFrame && age <= pageWindowOf(held) : age <= SUBMIT_ARM_MS); // jr7 AUTO-7 (ICIMS7-04 (3))
       if (held === null || !fresh) {
         if (held !== null && held.detectedAt === undefined && age > SUBMIT_ARM_MS) await dropArm(key);
         log('submit.refused', { armed: held !== null });
         return refuse('expired');
       }
-      // A confirmation page's own address, when it names the same application, is the posting's too.
-      const ref = refOf(from.url);
-      const seenUrl = ref !== null && ref.applicationKey === applicationKey && held.url === undefined
-        ? lookupAddressOf(from.url) : null;
-      const taken: Arm = { ...held, detectedAt: deps.now(),
-        ...(seenUrl !== null && seenUrl.length <= AUTOFILL_LOOKUP_URL_MAX ? { url: seenUrl } : {}) };
-      await deps.session.set({ [key]: taken });
-      log('submit.detected', { page });
-      seenIn.set(from.tabId, { tabId: from.tabId, frameId: from.frameId, documentId: from.documentId, url: from.url });
-      await recordOnce(applicationKey, taken, from, docKeyOf(from));
-      return ok({});
+      return take(applicationKey, key, held, from, page);
     },
+
+    // ── jr7 AUTO-7 (AUTO7-06, UP7-01, WD7-05; FIX7PLAN §6.4 items 7 and 16) ──
+    /** submit/after: a frame whose page names no application, on a host whose adapter reads the page after submitting
+     *  (schemas.ts): the confirmation of the Submit this frame armed within its window (CONFIRMATION_PAGE_MS, or
+     *  SUBMIT_ARM_MS after a hand-over), where that platform's adapter reads the frame's own address as its page after
+     *  submitting (confirmedArm); else expired. Once, as every sign. */
+    async after(from: ContentChannel): Promise<Answer<Record<string, never>>> {
+      const retry = deps.limit.take(`${from.tabId}/`);
+      if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+      if (from.incognito === true) return refuse('expired');
+      // Only where no parser reads the address: a page that names an application says its key (submit/detected).
+      if (refOf(from.url) !== null) return refuse('bad_message');
+      const found = await confirmedArm(from, null);
+      if (found === null) {
+        log('submit.refused', { armed: false, after: true });
+        return refuse('expired');
+      }
+      return take(found.applicationKey, found.key, found.held, from, true);
+    },
+
+    /** ICIMS7-04 (3): a frame of the tab showed a step that is the person's by design (frame/hello's handOver) at
+     *  `applicationKey`: an unconfirmed arm of that application made in that frame, or (a chained arm) shown in the
+     *  tab's claim frame now, within CONFIRMATION_PAGE_MS of its press, waits SUBMIT_ARM_MS for its confirmation page. */
+    async handedOver(from: FrameRef, applicationKey: string): Promise<void> {
+      const key = armKey(from.tabId, applicationKey);
+      const held = await armOf(key);
+      if (held === null || held.detectedAt !== undefined || held.handOverAt !== undefined) return;
+      const age = deps.now() - held.at;
+      if (age < 0 || age > CONFIRMATION_PAGE_MS) return;
+      const here = held.frameId === from.frameId
+        || (held.chainedFrom !== undefined && await claimFrameNow(from, applicationKey));
+      if (!here) return;
+      await deps.session.set({ [key]: { ...held, handOverAt: deps.now() } satisfies Arm });
+      log('submit.handed-over');
+    },
+    // ── end jr7 AUTO-7 ──
+  };
+
+  /** A sign taken for an arm (detected, after): kept once, and recorded. */
+  async function take(applicationKey: string, key: string, held: Arm, from: ContentChannel, page: boolean):
+    Promise<Answer<Record<string, never>>> {
+    // A confirmation page's own address, when it names the same application, is the posting's too.
+    const ref = refOf(from.url);
+    const seenUrl = ref !== null && ref.applicationKey === applicationKey && held.url === undefined
+      ? lookupAddressOf(from.url) : null;
+    const taken: Arm = { ...held, detectedAt: deps.now(),
+      ...(seenUrl !== null && seenUrl.length <= AUTOFILL_LOOKUP_URL_MAX ? { url: seenUrl } : {}) };
+    await deps.session.set({ [key]: taken });
+    log('submit.detected', { page });
+    seenIn.set(from.tabId, { tabId: from.tabId, frameId: from.frameId, documentId: from.documentId, url: from.url });
+    await recordOnce(applicationKey, taken, from, docKeyOf(from));
+    return ok({});
+  }
+
+  return {
+    ...signs,
 
     /** panel/retryApplied: Try again, for the tab whose recording failed (offline, TailorIT's failure). `frameOf`
      *  names the frame that saw the confirmation, as the registry holds it now. */
