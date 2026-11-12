@@ -725,9 +725,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     signInMode = answer.data.settings.modes.signIn;
     const typedBefore = signInTypes;
     signInTypes = answer.data.settings.typeSignIn === true;
+    // jr6 INT-2 (the jr6 review's sec-8, as at settings/changed): a password deleted while no settings/changed reached
+    // this document (it was away, in the back/forward cache): none typed for the person's press stays in it.
+    if (!signInTypes) dropKeptSignIns(doc);
     // jr6 ifix B1: a password saved while no settings/changed reached this document (it was away, in the back/forward
     // cache): a wall step that waits for one tries its wall once more, as at settings/changed.
-    if (signInTypes && !typedBefore) for (const waiter of [...passwordWaiters]) waiter(true);
+    else if (!typedBefore) for (const waiter of [...passwordWaiters]) waiter(true);
     notificationsChanged(answer.data.settings.modes.notifications);
     if (answer.data.launcher !== undefined) {
       launcherPrefs = answer.data.launcher;

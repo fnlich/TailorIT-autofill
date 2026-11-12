@@ -239,11 +239,13 @@ describe('iCIMS’s "Create a login" and its email gate with the saved job-site 
 // ── A run at Workday's Create Account ────────────────────────────────────────────────────────────────────────────────
 
 describe('a run at Workday’s Create Account (jr6)', () => {
-  async function run(mode: 'auto' | 'manual', typeSignIn: boolean, credential: SignInCredential) {
+  async function run(mode: 'auto' | 'manual', typeSignIn: boolean, credential: SignInCredential,
+    script: Record<string, unknown[]> = {}) {
     const fixture = await served(createHtml);
     const seen = actAsWorkday(fixture);
     const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: mode } };
-    const worker = createFakeWorker({ settings, typeSignIn, script: { 'signin/credential': [{ ok: true, data: credential }] } as never });
+    const worker = createFakeWorker({ settings, typeSignIn,
+      script: { 'signin/credential': [{ ok: true, data: credential }], ...script } as never });
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => ACCOUNT, isTop: true,
       adapters: () => [workdayAdapter], settle: { quietMs: 40 } });
     runtimes.push(runtime);
@@ -310,6 +312,29 @@ describe('a run at Workday’s Create Account (jr6)', () => {
       typeSignIn: false } });
     expect(boxesOf(fixture)).toEqual({ email: SAVED.email, password: '', verify: '', terms: true });
   });
+
+  // jr6 INT-2 (IFIX-CONTENT's open item 1; sec-8 as above): the password deleted while the page sat in the back/forward
+  // cache, where no settings/changed reaches it. Back, the worker's answer to the frame's hello says none may be typed:
+  // what was typed for the person's press is written empty, as at settings/changed.
+  it('empties what it typed for the person when, back from the back/forward cache, hello says none may be typed (sec-8)',
+    async () => {
+      const hellos: unknown[] = [];
+      const { fixture, runtime } = await run('manual', true, MANUAL, { 'frame/hello': hellos });
+      await vi.waitFor(() => expect(boxesOf(fixture)).toMatchObject({ password: SAVED.password, verify: SAVED.password }));
+      // The person leaves; the browser keeps the page (a trusted pagehide with persisted set): the press stays theirs,
+      // and what was typed for it stays with the page.
+      runtime.cached();
+      expect(boxesOf(fixture)).toMatchObject({ password: SAVED.password, verify: SAVED.password });
+      // Meanwhile the password is deleted. Back (a persisted pageshow), the frame says hello again.
+      const s = DEFAULT_SETTINGS;
+      hellos.push({ ok: true, data: { frameId: 0, connected: true, settings: { panel: s.panel, view: s.view,
+        modes: { next: s.modes.next, afterPageTurn: s.modes.afterPageTurn, submit: s.modes.submit,
+          agentSkip: s.modes.agentSkip, signIn: 'manual', noMatch: s.modes.noMatch, notifications: s.modes.notifications },
+        llm: s.llm, offerToSaveAnswers: s.offerToSaveAnswers, typeSignIn: false } } });
+      await runtime.restored();
+      expect(hellos).toEqual([]);
+      expect(boxesOf(fixture)).toEqual({ email: SAVED.email, password: '', verify: '', terms: true });
+    });
 });
 
 // ── The jr6 review ───────────────────────────────────────────────────────────────────────────────────────────────────
