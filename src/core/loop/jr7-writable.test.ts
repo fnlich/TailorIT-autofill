@@ -5,6 +5,7 @@
  * `locked`), tells which the page now lets in (ScanInput.writable) and when the bound passed (recordWritableWait).
  */
 import { describe, expect, it } from 'vitest';
+import type { FieldKey } from '../types/field';
 import { createLoop, loopVerdict, observeScan, recordRows, recordWritableWait, type LoopState } from './bookkeeping';
 import { field, inOrder, unwrittenRow } from './loop.testkit';
 import { loopRows } from './rows';
@@ -62,6 +63,6 @@ describe('jr7 ENGINE-7 E2 item 1 (ADP7-2): a required, empty field the page hold
   it('recordWritableWait leaves alone a field that does not wait so, or a key it no longer has', () => {
     const state = firstPass();
     expect(recordWritableWait(state, email!.key)).toBe(state);
-    expect(recordWritableWait(state, 'lever|main|nothing|none|0' as typeof address.key)).toBe(state);
+    expect(recordWritableWait(state, 'lever|main|nothing|none|0' as FieldKey)).toBe(state);
   });
 });
