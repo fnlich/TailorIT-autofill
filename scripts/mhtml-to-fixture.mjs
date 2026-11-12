@@ -2196,6 +2196,54 @@ export function measureInPage() {
   return states;
 }
 
+/** jr7 TOOLING-7 (JDEF-V1): the style orders a conversion can keep (--style-order): `archive`, the order the capture
+ *  holds; `live`, the order the live page had where Blink's MHTML serializer is known to invert it (below). */
+export const STYLE_ORDERS = ['archive', 'live'];
+/** jr7 TOOLING-7 (JDEF-V1): each platform's default style order where it is not `archive` (JobDiva's: the verifier
+ *  measured its form's text boxes drawn with no edge in the archived order, none in the live one). */
+export const STYLE_ORDER_DEFAULTS = { jobdiva: 'live' };
+
+/**
+ * jr7 TOOLING-7 (JDEF-V1; SP\jr7\audit\jobdiva-eightfold-verify.md §2.1): the live cascade order, put back. Blink's MHTML
+ * serializer writes every <style> element (the page's own and the ones its scripts append at run time) as a
+ * <link rel="stylesheet" href="cid:css-<id>@mhtml.blink"> at the top of <head>, above the head's own <link> sheets (the
+ * verifier's experiment: a page with <link a.css> and a <style> appended by its script, border 1px live, 0px from the
+ * archive; JobDiva's captures: 33 cid sheets, then <title>, ..., bootstrap.min.css, a.css). Where the two conflict, the
+ * archive inverts the live page: JobDiva's .jd-form edge lost under a.css's .form-control { border: 0 }, its own error
+ * edge too. With --style-order live, before anything is measured, those cid sheets move, in their order, to just after
+ * the head's last <link> sheet that is no cid: (each loaded again from the archive: the conversion waits for them,
+ * sheetsLoadedInPage, before it measures), and transformInPage inlines every sheet where it then stands. Answers how many
+ * it moved (none where the head links no sheet of its own). (Synchronous: the page runs no script, so no event or timer
+ * of its fires; the conversion polls from outside.)
+ * @returns {number}
+ */
+export function liveStyleOrderInPage() {
+  const doc = globalThis.document;
+  const head = doc.head;
+  if (!head) return 0;
+  /** @param {Element} link */
+  const isSheet = (link) => (link.getAttribute('rel') ?? '').toLowerCase().split(/\s+/).includes('stylesheet');
+  const links = Array.from(head.querySelectorAll('link')).filter(isSheet);
+  const archived = links.filter((link) => /^cid:css-/i.test(link.getAttribute('href') ?? ''));
+  const own = links.filter((link) => !archived.includes(link));
+  const last = own[own.length - 1];
+  if (last === undefined || archived.length === 0) return 0;
+  const moved = archived.filter((link) => (last.compareDocumentPosition(link) & 2 /* PRECEDING */) !== 0);
+  last.after(...moved);
+  return moved.length;
+}
+
+/** jr7 TOOLING-7 (JDEF-V1): whether every stylesheet <link> of the head whose cid: sheet the archive holds (`held`) has
+ *  its sheet again, after liveStyleOrderInPage moved it (one the archive lacks never loads, and is not waited for).
+ *  @param {string[]} held @returns {boolean} */
+export function sheetsLoadedInPage(held) {
+  return Array.from(globalThis.document.head?.querySelectorAll('link') ?? []).every((link) => {
+    const rel = (link.getAttribute('rel') ?? '').toLowerCase().split(/\s+/);
+    return !rel.includes('stylesheet') || !held.includes(link.getAttribute('href') ?? '')
+      || /** @type {HTMLLinkElement} */ (link).sheet !== null;
+  });
+}
+
 /**
  * jr7 TOOLING-7 (T7-01; snapshot7 paycomonline1's signature step, capture 7): a canvas stood in by the box it draws.
  * The capture is opened with scripting off, where a <canvas> is no picture but an inline box for its fallback content
@@ -4437,16 +4485,23 @@ const commentJson = (value) => JSON.stringify(value).replace(/--/g, '-\\u002d');
  * elimination (listedPlacesInPage), or choice rows that differ after clearing (unevenChoiceRowsInPage), are refused.
  * jr7 TOOLING-7 (jr7-O5): `keepApplication` (--keep-application <job id>, Oracle only) names the captured posting, whose
  * My Applications tile a my-profile page keeps (redactPlatformInPage); a page whose tiles name none of it is refused.
+ * jr7 TOOLING-7 (JDEF-V1): `styleOrder` (--style-order archive|live; default STYLE_ORDER_DEFAULTS[platform], else
+ * archive): with live, the cid: sheets Blink hoisted go after the head's own linked sheets before anything is measured
+ * (liveStyleOrderInPage); the header records styleOrder and the sheets moved.
  * @param {{ file: string; platform: string; caseName: string; redact?: string[]; outDir?: string; folderName?: string;
- *   replaceText?: Array<{ selector: string; text: string }>; keepApplication?: string }} options
+ *   replaceText?: Array<{ selector: string; text: string }>; keepApplication?: string; styleOrder?: string }} options
  * @returns {Promise<Conversion>}
  */
 export async function convertMhtml({ file, platform, caseName, redact = [], outDir = join(ROOT, 'fixtures'),
-  folderName = platform, replaceText = [], keepApplication }) {
+  folderName = platform, replaceText = [], keepApplication, styleOrder: styleOrderOption }) {
   if (!FIXTURE_PLATFORMS.includes(platform)) fail(`--platform must be one of ${FIXTURE_PLATFORMS.join(', ')}`);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(caseName)) fail('--case must be lower-case words joined by hyphens');
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(folderName)) fail('--folder must be lower-case words joined by hyphens');
   if (!/\.mht(?:ml)?$/i.test(file)) fail('the capture must be an .mhtml file');
+  // jr7 TOOLING-7 (JDEF-V1): the style order kept, given or the platform's default.
+  const styleOrder = styleOrderOption
+    ?? /** @type {Record<string, string>} */ (STYLE_ORDER_DEFAULTS)[platform] ?? 'archive';
+  if (!STYLE_ORDERS.includes(styleOrder)) fail(`--style-order must be one of ${STYLE_ORDERS.join(', ')}`);
   // jr7 TOOLING-7 (jr7-O5): the captured posting's job id, whose My Applications tile stays (Oracle's my-profile).
   if (keepApplication !== undefined) {
     if (platform !== 'oracle') fail('--keep-application is for --platform oracle (its My Applications tiles) alone');
@@ -4564,6 +4619,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     // jr7 TOOLING-7 (T7-01): each frame's canvases stood in by the box they draw with scripting on (standInCanvasesInPage).
     /** @type {number[]} */
     const canvases = [];
+    // jr7 TOOLING-7 (JDEF-V1): the cid: sheets each frame's live style order moved (liveStyleOrderInPage).
+    /** @type {number[]} */
+    const restyled = [];
+    const heldSheets = Object.keys(resources).filter((key) => key.startsWith('cid:') && resources[key]?.css !== undefined);
     for (const { frame } of converted) {
       if (deep) await frame.evaluate(deepenInPage);
       stripped.push({ ...await frame.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: PER_LOAD_SOURCE,
@@ -4571,6 +4630,13 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
         marks: CHOSEN_MARKS, ...CLEAR_CHOICE_INPUT, icons: CHOSEN_ICONS }) });
       canvases.push(await frame.evaluate(standInCanvasesInPage));
+      // jr7 TOOLING-7 (JDEF-V1): the live style order, each moved sheet loaded again before the measure (the page runs no
+      // script, so the conversion polls; one the archive lacks is not waited for).
+      const moved = styleOrder === 'live' ? await frame.evaluate(liveStyleOrderInPage) : 0;
+      for (let tries = 0; moved > 0 && tries < 100 && !await frame.evaluate(sheetsLoadedInPage, heldSheets); tries += 1) {
+        await new Promise((done) => setTimeout(done, 50));
+      }
+      restyled.push(moved);
       replaced.push(replacements.length === 0 ? [] : await frame.evaluate(replaceTextInPage, { replacements,
         copies: POSTING_COPY_ATTRIBUTES }));
     }
@@ -4730,6 +4796,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         ...(counts.closedRoots > 0 ? { closedShadowRoots: counts.closedRoots } : {}),
         // jr7 TOOLING-7 (T7-01): the canvases stood in by the box they draw (standInCanvasesInPage).
         ...((canvases[index] ?? 0) > 0 ? { canvasStandIns: canvases[index] } : {}),
+        // jr7 TOOLING-7 (JDEF-V1): the live style order, and the cid: sheets it moved (only when it is not archive's).
+        ...(styleOrder === 'archive' ? {} : { styleOrder, styleSheetsMoved: restyled[index] ?? 0 }),
         // What was taken as not the site's (another extension's UI and parameters, overlays, per-load values) and the
         // choices cleared, each named only when there was something.
         ...(Object.values(took).some((count) => count > 0) ? { injected: took } : {}),
@@ -4891,7 +4959,8 @@ function parseArgs(argv) {
   const replaceText = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? '';
-    if (['--platform', '--case', '--redact', '--out', '--folder', '--replace-text', '--keep-application'].includes(arg)) {
+    if (['--platform', '--case', '--redact', '--out', '--folder', '--replace-text', '--keep-application', '--style-order']
+      .includes(arg)) {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) fail(`${arg} needs a value`);
       if (arg === '--replace-text') replaceText.push(readReplaceOption(value, replaceText.length + 1));
@@ -4908,13 +4977,13 @@ function parseArgs(argv) {
   }
   return { file: positional[0] ?? '', platform: options.platform, caseName: options.case, redactFile: options.redact,
     outDir: options.out ? resolve(options.out) : join(ROOT, 'fixtures'), folderName: options.folder ?? options.platform,
-    replaceText, keepApplication: options['keep-application'] };
+    replaceText, keepApplication: options['keep-application'], styleOrder: options['style-order'] };
 }
 
 async function main() {
   try {
-    const { file, platform, caseName, redactFile, outDir, folderName, replaceText: replaceFiles, keepApplication } =
-      parseArgs(process.argv.slice(2));
+    const { file, platform, caseName, redactFile, outDir, folderName, replaceText: replaceFiles, keepApplication,
+      styleOrder } = parseArgs(process.argv.slice(2));
     if (!existsSync(file)) fail(`${file} does not exist`);
     if (redactFile !== undefined && !existsSync(redactFile)) fail(`${redactFile} does not exist`);
     const redact = redactFile === undefined ? [] : readRedactList(readFileSync(redactFile, 'utf8'));
@@ -4923,7 +4992,7 @@ async function main() {
       return { selector, text: readFileSync(textFile, 'utf8') };
     });
     const conversion = await convertMhtml({ file, platform, caseName, redact, outDir, folderName, replaceText,
-      keepApplication });
+      keepApplication, styleOrder });
     const written = writeConversion(conversion, join(outDir, folderName), caseName);
     console.log(paint('green', `✓ ${basename(file)} -> ${platform}/${caseName} (Chromium ${conversion.chrome})`));
     for (const path of written) {

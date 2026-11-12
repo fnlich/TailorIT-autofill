@@ -113,6 +113,7 @@ import {
   POSTING_COPY_ATTRIBUTES,
   ROW_ID_WORDS_KEPT,
   // ── jr7 TOOLING-7 ──
+  STYLE_ORDER_DEFAULTS,
   OPENED_ROWS,
   CHOSEN_ICONS,
   SPELLED_IDS,
@@ -4563,6 +4564,65 @@ ${row(0, '', ' State University')}${row(1, 'Old ', ' College')}${row(2, 'North '
         keepApplication: '4.*' })).rejects.toThrow('--keep-application must be a job id');
       await expect(convertMhtml({ file, platform: 'workday', caseName: 'jr7-o5-profile', outDir: work,
         keepApplication: '41' })).rejects.toThrow('--keep-application is for --platform oracle');
+    }, 120_000);
+
+  it("JDEF-V1: --style-order live puts the sheets Blink hoisted back after the head's own, so the run-time style wins (1px)",
+    async () => {
+      // The verifier's experiment (SP\jr7\audit\jobdiva-eightfold-verify.md §2.1), saved by Chrome's own serializer: a
+      // linked sheet, then a <style> the page's script appends at run time; live, the later one wins.
+      const url = 'https://www1.jobdiva.com/portal/?a=fixture';
+      const live = await browser.newContext({ viewport: VIEWPORT });
+      await live.route('**/*', (route) => {
+        const at = route.request().url();
+        if (at === url) {
+          return route.fulfill({ status: 200, contentType: 'text/html', body: `<!DOCTYPE html><html><head><title>Portal</title>
+<link rel="stylesheet" href="https://www1.jobdiva.com/portal/a.css"><style>.jd-static { outline: 0; }</style></head>
+<body><input class="form-control jd-form" id="box" aria-label="First name"><p class="jd-static">Quick Apply</p>
+<script>const s = document.createElement('style'); s.textContent = '.jd-form { border: 1px solid rgb(218, 222, 227); }';
+document.head.appendChild(s);</script></body></html>` });
+        }
+        if (at.endsWith('/a.css')) {
+          return route.fulfill({ status: 200, contentType: 'text/css', body: '.form-control { border: 0px solid rgb(204, 204, 204); }' });
+        }
+        return route.abort();
+      });
+      const page = await live.newPage();
+      await page.goto(url);
+      const liveBorder = await page.evaluate(() => getComputedStyle(document.getElementById('box')!).borderTopWidth);
+      const session = await live.newCDPSession(page);
+      const { data } = await session.send('Page.captureSnapshot', { format: 'mhtml' });
+      await live.close();
+      const file = join(work, 'jr7-jdefv1.mhtml');
+      writeFileSync(file, data);
+      // The archive hoists both <style>s above the linked sheet (Blink's layout).
+      const head = /<head>([\s\S]*?)<\/head>/i.exec(data.replace(/=\r?\n/g, ''))?.[1] ?? '';
+      expect(head.indexOf('cid:css-')).toBeGreaterThanOrEqual(0);
+      expect(head.indexOf('cid:css-')).toBeLessThan(head.indexOf('a.css'));
+      const borderOf = async (conversion: Awaited<ReturnType<typeof convertMhtml>>) => {
+        const { context } = await servedContext(conversion);
+        const served = await context.newPage();
+        await served.goto(url);
+        const border = await served.evaluate(() => getComputedStyle(document.getElementById('box')!).borderTopWidth);
+        await context.close();
+        return border;
+      };
+      const liveOrder = await convertMhtml({ file, platform: 'jobdiva', caseName: 'jr7-jdefv1-live', outDir: work });
+      const archived = await convertMhtml({ file, platform: 'jobdiva', caseName: 'jr7-jdefv1-archive', outDir: work,
+        styleOrder: 'archive' });
+      expect(liveBorder).toBe('1px');
+      // jobdiva's default is live: the fixture draws the box's edge as the live page did; the archive's order loses it.
+      expect(await borderOf(liveOrder)).toBe('1px');
+      expect(await borderOf(archived)).toBe('0px');
+      expect(headerOf(liveOrder.files[0]?.text ?? '')).toMatchObject({ styleOrder: 'live', styleSheetsMoved: 2 });
+      expect(headerOf(archived.files[0]?.text ?? '').styleOrder).toBeUndefined();
+      // Another platform keeps the archive's order unless asked; an unknown order is refused.
+      const asked = await convertMhtml({ file, platform: 'hibob', caseName: 'jr7-jdefv1-asked', outDir: work, styleOrder: 'live' });
+      expect(await borderOf(asked)).toBe('1px');
+      expect(await borderOf(await convertMhtml({ file, platform: 'hibob', caseName: 'jr7-jdefv1-hibob', outDir: work })))
+        .toBe('0px');
+      await expect(convertMhtml({ file, platform: 'jobdiva', caseName: 'jr7-jdefv1-bad', outDir: work, styleOrder: 'page' }))
+        .rejects.toThrow('--style-order must be one of archive, live');
+      expect(STYLE_ORDER_DEFAULTS).toEqual({ jobdiva: 'live' });
     }, 120_000);
 
   it("every committed fixture: no widget's shown text spelled in an id (T7-01, spelledIdsIn)", () => {
