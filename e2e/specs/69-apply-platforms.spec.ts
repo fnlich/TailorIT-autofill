@@ -13,8 +13,8 @@
  *   Close), then the guest view drawn in place at the same address (adp1's capture): filled from the golden profile;
  *   its Continue, which mails a code, the person's on Manual.
  * - iCIMS (careers-ars's posting, the top page): Apply, iCIMS's own redirect to the gate, the gate reached and its run
- *   resting at the wall; nothing pressed there. The email typed on Manual comes with SHELL-A (BUILD.md D-d): INT-1
- *   enables the block marked "INT-1" below once jr6-shell is merged.
+ *   resting at the wall; the gate's email typed on Manual (SHELL-A, BUILD.md D-d: the profile's, none being saved in
+ *   Sign-up Information), its Next never pressed.
  * - A posting with no Apply (Jobvite's VHL posting, its Apply links not shown): the "no form" modal, nothing pressed.
  */
 import { readFileSync } from 'node:fs';
@@ -215,7 +215,7 @@ test.describe('Autofill presses the site’s Apply on the jr6 platforms (e2e 69,
     expect(routeLog.submitted).toEqual([]);
   });
 
-  test('iCIMS: careers-ars’s Apply, iCIMS’s redirect to the gate; the gate reached and its run resting at the wall, nothing pressed', async ({ extContext, connected: ext, routeLog }) => {
+  test('iCIMS: careers-ars’s Apply, iCIMS’s redirect to the gate; the gate reached, its email typed on Manual, nothing pressed', async ({ extContext, connected: ext, routeLog }) => {
     const POSTING = Object.keys(routesFile('fixtures/icims/jr6-apply-ars-posting.routes.json'))[0]!;
     const gateRoutes = routesFile('fixtures/icims/ars-gate-phone.routes.json');
     const GATE = Object.entries(gateRoutes).find(([, path]) => path === 'fixtures/icims/ars-gate-phone.html')![0];
@@ -253,11 +253,10 @@ test.describe('Autofill presses the site’s Apply on the jr6 platforms (e2e 69,
     // Nothing pressed at the gate: its Next is the person's.
     await page.waitForTimeout(1_500);
     expect(await countsOf(page, 'tia69-icims')).toEqual({ next: 0 });
-    // ── INT-1: enable once jr6-shell (SHELL-A, BUILD.md D-d) is merged: at an email gate the run types the gate's email
-    // in every Sign-in mode (the Sign-up Information email, else the profile's: none is saved here), Next untouched. ──
-    // await expect(page.locator('input#email')).toHaveValue(GOLDEN.email, { timeout: 15_000 });
-    // expect(await countsOf(page, 'tia69-icims')).toEqual({ next: 0 });
-    // ── end INT-1 ──
+    // jr6 SHELL-A (BUILD.md D-d): at an email gate the run types the gate's email in every Sign-in mode (the Sign-up
+    // Information email, else the profile's: none is saved here), Next untouched.
+    await expect(page.locator('input#email')).toHaveValue(GOLDEN.email, { timeout: 15_000 });
+    expect(await countsOf(page, 'tia69-icims')).toEqual({ next: 0 });
     expect(await mock.requestsTo('GET /api/autofill/credentials')).toEqual([]);
     expect(page.url()).toBe(GATE);
     expect(routeLog.unexpected).toEqual([]);

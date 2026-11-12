@@ -283,10 +283,11 @@ describe('jr6 CHAINS: Jobvite across documents (E-Jobvite, RULES item 16 and F2;
       expect(refusals(worker)).toEqual([]);
     }, 150_000);
 
-  // A regression this chain found (CHAINS.md section 4): the run's entry choice presses again as soon as it carries on,
-  // so while the gate's form posts (the page still shown) "I Accept" is pressed about every 20-50 ms, 21 times in all
-  // (runtime.ts MAX_AUTO_CONTINUES = 20). The rule asserted: one press per gate document. Flip to it() once fixed.
-  it.fails('the gate’s "I Accept" is pressed once while its form posts (the page still shown): never again in that document',
+  // A regression this chain found (CHAINS.md section 4): the run's entry choice pressed again as soon as it carried on,
+  // so while the gate's form posts (the page still shown) "I Accept" was pressed about every 20-50 ms, 21 times in all
+  // (runtime.ts MAX_AUTO_CONTINUES = 20). Fixed by jr6 SHELL-A (25f6f14: orchestrator.ts enterChoiceNow waits for the
+  // choice to go, watchPauseGone). The rule asserted: one press per gate document.
+  it('the gate’s "I Accept" is pressed once while its form posts (the page still shown): never again in that document',
     async () => {
       const APPLY = addressOf(ninjaGateRoutes, 'fixtures/jobvite/ninjaone-consent-empty.html');
       const gate = await jobviteGate(APPLY);
