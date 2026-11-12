@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { genericAdapter } from '../adapters/generic';
 import { greenhouseAdapter } from '../adapters/greenhouse';
 import type { Adapter } from '../adapters/types';
+import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
+import { deadline } from '../dom/time';
 import { createFakeWorker, testVocab } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 import { signIn, signInDetailOf, type SignInContext } from './sign-in';
@@ -229,3 +231,59 @@ describe('WD7-06: a notice beside the sign-in form that the adapter reads as an 
   });
 });
 
+// ── item 3 (jr7-O1 part 3): a Submit of the run's own that brings an email code says nothing of it unconfirmed ───────
+describe('item 3 (jr7-O1 part 3): resting at an email-code pause after its own Submit', () => {
+  /** A Greenhouse-shaped final step whose Submit draws an email-code step in the form instead of a confirmation (Oracle's
+   *  "Verify your email" after its Submit: snapshot7 oracle -submit-code), or (`code` false) draws
+   *  nothing at all. */
+  const page = (code: boolean) => `<!doctype html><html><head><title>Apply</title></head><body><main class="main">
+    <form id="application-form" class="application--form">
+      <div class="field-wrapper"><label for="first_name">First Name<span>*</span></label>
+        <input id="first_name" name="first_name" type="text" aria-required="true"></div>
+      <div class="application--submit"><button id="submit" class="btn" type="submit">Submit application</button></div>
+    </form></main>
+    <script>
+      const form = document.getElementById('application-form');
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (${code ? 'true' : 'false'}) {
+          form.innerHTML = '<h2>Verify your email</h2><div><label for="code">Verification code</label>'
+            + '<input id="code" name="code" type="text"></div><button type="button">Verify</button>';
+        }
+      });
+    </script></body></html>`;
+
+  /** Greenhouse's adapter with a step signature (a wizard's steps, as Oracle's are), so the run at review watches the
+   *  step for its change after the Submit. */
+  const stepped: Adapter = { ...greenhouseAdapter, stepSignature: (doc) => ({
+    heading: doc.querySelector('#application-form h2')?.textContent ?? 'Apply', anchors: [] }) };
+
+  async function pressed(code: boolean) {
+    testVocab();
+    const fixture = await loadFixture(document, page(code), { width: 1100, height: 1200 });
+    const worker = createFakeWorker({ settings: DEFAULT_SETTINGS });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
+      adapters: () => [stepped], settle: { quietMs: 40 }, submitConfirmMs: 1_500 });
+    runtimes.push(runtime);
+    expect(await runtime.fill()).toBe('review');
+    expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
+      .toEqual({ ok: true, data: { outcome: 'pressed' } });
+    return worker;
+  }
+
+  it('the pause is the report\'s word: no submit-unconfirmed beside it once the wait passes', async () => {
+    const worker = await pressed(true);
+    await vi.waitFor(() => expect(worker.reports.at(-1)).toMatchObject({ status: 'handoff', pauseReason: 'email-code' }),
+      { timeout: 10_000 });
+    await deadline(3_000);
+    expect(worker.reports.flatMap((report) => report.notices.map((notice) => notice.code)))
+      .not.toContain('submit-unconfirmed');
+    expect(worker.reports.at(-1)).toMatchObject({ status: 'handoff', pauseReason: 'email-code' });
+  }, 40_000);
+
+  it('the control: a Submit that brings nothing still says it went unconfirmed', async () => {
+    const worker = await pressed(false);
+    await vi.waitFor(() => expect(worker.reports.at(-1)!.notices).toContainEqual({ code: 'submit-unconfirmed' }),
+      { timeout: 10_000 });
+  }, 40_000);
+});

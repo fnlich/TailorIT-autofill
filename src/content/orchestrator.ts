@@ -3287,6 +3287,10 @@ export class FillRun {
    *  (submit-unconfirmed), and the panel's Submit is offered again. */
   submitUnconfirmed(): void {
     if (!this.submitPending) return;
+    // jr7 ENGINE-7 E2 item 3 (FIX7PLAN §6.2, jr7-O1 part 3): the run rests at an email-code or CAPTCHA pause its own
+    // Submit brought (Oracle's "Verify your email"): the pause is what the page waits on, and the report says nothing
+    // more (no submit-unconfirmed beside it); the Submit stays pressed, its sign still watched quietly.
+    if (this.restsAtSubmitPause()) return;
     this.submitPending = false;
     // v5 (PLAN decision 9): nothing came of a Submit while the page's check is still unticked: the check's (below), only
     // when it was unticked as the Submit was pressed or the site says so (v5 review, F2).
@@ -3296,6 +3300,12 @@ export class FillRun {
     }
     this.notices.add('submit-unconfirmed');
     this.rowsChanged();
+  }
+
+  /** jr7 ENGINE-7 E2 item 3 (jr7-O1 part 3): the run rests at an email-code or CAPTCHA pause (handoff). */
+  private restsAtSubmitPause(): boolean {
+    const pause = this.machine?.pauseReason ?? null;
+    return this.ended === 'paused' && this.machine?.status === 'handoff' && (pause === 'email-code' || pause === 'captcha');
   }
 
   /** The page refused a Submit pressed (the review): its errors, the fields its form marked, its failure message,
