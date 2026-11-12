@@ -579,6 +579,36 @@ describe('ICIMS-02 and -19: dependsOn', () => {
       expect(icimsAdapter.dependsOn!(byId(fixture.doc, 'rcf3049')!)).toBe(byId(fixture.doc, 'rcf3048'));
       expect(icimsAdapter.dependsOn!(byId(fixture.doc, 'rcf3048')!)).toBeNull();
     });
+
+  // jr6 ifix C-3 (ICIMS-24): the companion box is decided again once the School list is written.
+  it.each(['jr6-nyu-profile-parsed.frame-1', 'jr6-nyu-profile-filled.frame-1', 'nyu-profile.frame-1'])(
+    '%s: "Enter school name if not in the list above" under the School list above it, and no other box under anything', async (name) => {
+      const fixture = await load(name);
+      const doc = fixture.doc;
+      const box = byId(doc, '-1_CandProfileFields.Minor')!;
+      expect(icimsAdapter.dependsOn!(box)).toBe(byId(doc, '-1_CandProfileFields.School_icimsDropdown'));
+      const boxes = Array.from(doc.querySelectorAll('input[type="text" i], input:not([type]), textarea'));
+      expect(boxes.length).toBeGreaterThan(5);
+      expect(boxes.filter((each) => icimsAdapter.dependsOn!(each) !== null).map((each) => each.id))
+        .toEqual(['-1_CandProfileFields.Minor']);
+      // Only where its own label says the list lacks it, and the row before it holds a list of its own block.
+      const label = byId(doc, 'label_-1_CandProfileFields.Minor')!;
+      const words = Array.from(label.childNodes);
+      label.textContent = 'Minor';
+      expect(icimsAdapter.dependsOn!(box)).toBeNull();
+      label.replaceChildren(...words);
+      expect(icimsAdapter.dependsOn!(box)).not.toBeNull();
+      byId(doc, '-1_CandProfileFields.School')!.id = '-2_CandProfileFields.School';
+      expect(icimsAdapter.dependsOn!(box)).toBeNull();
+    });
+
+  it.each(['jr6-ars-profile', 'jr6-ars-profile-filled', 'jr6-sentinel-profile.frame-1', 'githubinc-profile.frame-1'])(
+    '%s: no text box depends on a list (no companion box drawn)', async (name) => {
+      const fixture = await load(name);
+      const boxes = Array.from(fixture.doc.querySelectorAll('input[type="text" i], input:not([type]), textarea'));
+      expect(boxes.length).toBeGreaterThan(0);
+      expect(boxes.filter((each) => icimsAdapter.dependsOn!(each) !== null).map((each) => each.id)).toEqual([]);
+    });
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -933,13 +963,14 @@ const chosenAt = (stand: Stand, entry: string): number => stand.chosen.indexOf(e
 
 /** A whole run (Fill, the default settings) on a snapshot with its dropdown script stood in for, to its end. */
 async function runOn(runtimes: ContentRuntime[], name: string, options: { adapter?: Adapter;
-  vary?: (doc: Document) => void; timing?: Parameters<typeof standIn>[2] } = {}) {
+  vary?: (doc: Document) => void; timing?: Parameters<typeof standIn>[2];
+  lists?: Readonly<Record<string, Rows>> } = {}) {
   const fixture = await load(name);
   const doc = fixture.doc;
   // A step's Submit pressed in a test posts nothing (a run presses none on these steps: Next is Manual).
   doc.addEventListener('submit', (event) => event.preventDefault(), true);
   options.vary?.(doc);
-  const stand = standIn(doc, LISTS, options.timing);
+  const stand = standIn(doc, options.lists ?? LISTS, options.timing);
   const worker = createFakeWorker({ settings: DEFAULT_SETTINGS });
   const runtime = await startContentRuntime(worker.platform, doc, { href: () => fileOf(name).address, isTop: true,
     adapters: () => [options.adapter ?? icimsAdapter], settle: { quietMs: 40 } });
@@ -1490,6 +1521,26 @@ describe('P2: what the rules decide on the snapshots (RULES R1-R4 on the iCIMS a
       expect(shownOf(doc, '-1_CandProfileFields.School')).toBe('The University of Texas at Austin');
       expect(rows('Enter school name if not in the list above')).toMatchObject([{ status: 'skipped',
         reason: 'conditional-question', needsUserAction: false }]);
+    } finally {
+      for (const runtime of runtimes) runtime.stop();
+    }
+  }, 150_000);
+
+  // jr6 ifix C-3 (ICIMS-24, FIXPLAN item 65; RULES' optional re-plan trigger RULES-R65-R24): the companion box is left
+  // while the School list types its search; iCIMS's dependsOn names that list as the box's parent, so once the list is
+  // written the books decide the box again (ENGINE E3's 'parent-written') and settleSchoolCompanions reads what the list
+  // shows. A school the list lacks (SYNTHETIC rows: another school and "Other") is then typed into the box.
+  it('ICIMS-24 in a run (jr6-nyu-profile-parsed.frame-1), the school unlisted: the search finds none, and the companion box ends written with the school', async () => {
+    const runtimes: ContentRuntime[] = [];
+    try {
+      const school = 'The University of Texas at Austin';
+      const { doc, rows } = await runOn(runtimes, 'jr6-nyu-profile-parsed.frame-1',
+        { lists: { ...LISTS, 'CandProfileFields.School': ['Texas A&M University', 'Other'] } });
+      // The search finds none of the school: the list takes its "Other" (ICIMS-20's no-match choice), the box the school.
+      expect(shownOf(doc, '-1_CandProfileFields.School')).toBe('Other');
+      expect((doc.getElementById('-1_CandProfileFields.Minor') as HTMLInputElement).value).toBe(school);
+      expect(rows('Enter school name if not in the list above')).toMatchObject([{ category: 'education.school',
+        status: 'verified', wrote: true, needsUserAction: false }]);
     } finally {
       for (const runtime of runtimes) runtime.stop();
     }

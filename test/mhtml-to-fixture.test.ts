@@ -2369,13 +2369,14 @@ describe('the committed SmartRecruiters fixtures (the snapshot build of 2026-11-
 // ── snapshot build 2026-11-06 (core pass Z1, item 38): every committed fixture against the token checks ──
 /** Every committed fixture's page, frame and route map (fixtures/<platform>/...), by its path under fixtures/. The
  *  git-ignored folders (.gitignore: fixtures/_incoming/, a checkout's raw captures before conversion, and
- *  fixtures/.generated/) are never committed, so they are not walked. */
+ *  fixtures/.generated/) are never committed, so they are not walked. jr6 ifix C-4: `names`, the files' names to take
+ *  (the referral sweep reads the expectations' addresses too). */
 const IGNORED_FIXTURE_DIRS: readonly string[] = ['_incoming', '.generated'];
-function committedFixtureFiles(dir = join(ROOT, 'fixtures'), under = ''): string[] {
+function committedFixtureFiles(dir = join(ROOT, 'fixtures'), under = '', names = /\.(?:html|routes\.json)$/): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => (entry.isDirectory()
     ? under === '' && IGNORED_FIXTURE_DIRS.includes(entry.name) ? []
-      : committedFixtureFiles(join(dir, entry.name), `${under}${entry.name}/`)
-    : /\.(?:html|routes\.json)$/.test(entry.name) ? [`${under}${entry.name}`] : []));
+      : committedFixtureFiles(join(dir, entry.name), `${under}${entry.name}/`, names)
+    : names.test(entry.name) ? [`${under}${entry.name}`] : []));
 }
 
 describe('every committed fixture', () => {
@@ -4173,3 +4174,102 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
   });
 });
 // ── end jr6 ──
+
+// ── jr6 ifix C-4 (SP\jr6\review-i\completeness.md gap 4; INTEGRATION §4 item 7; line W PRIV-4): referral parameters in
+// the committed fixtures ──
+/** Every committed fixture's page, frame, route map and expectation (each holds addresses), by its path under fixtures/. */
+const ADDRESSED_FIXTURES = committedFixtureFiles(undefined, '', /\.(?:html|routes\.json|expect\.json)$/);
+
+/** Each referral parameter (REFERRAL_PARAMS, REFERRAL_PREFIXES) that holds a value other than REDACTED in a text, by
+ *  name, in every form the final check reads (checkedForms: as written, entities decoded, percent-decoded): the
+ *  converter's own needle (referralNeedles), every match of it. Names only: a value is never read out. */
+function referralNamesIn(text: string): string[] {
+  const [needle] = referralNeedles();
+  const every = new RegExp(needle!.pattern.source, 'gi');
+  return checkedForms(text).flatMap((form) => [...form.matchAll(every)]
+    .map(([match]) => match.slice(1, match.indexOf('='))));
+}
+
+/** iCIMS's "Powered by" logo link (div.iCIMS_Logo > a.iCIMS_Logo_Link, "Powered by the ICIMS Talent Platform"), to
+ *  www.icims.com/platform_help with four utm_* tags: the vendor's own tags, the same on every iCIMS page that shows the
+ *  link (main's captures and the ten jr6 iCIMS step pages converted before PRIV-4's rule, 4896eca and ca3c5ec; compared
+ *  by the ICIMS fixer by hash): never where the person came from. Group 1 the link's address, group 2 its query. */
+const ICIMS_HELP_HREF = /\shref="((?:https?:)?\/\/www\.icims\.com\/platform_help)\?([^"]*)"/i;
+
+/** The query of iCIMS's logo link in each of main's iCIMS pages that shows it with its tags' values (the files no jr6
+ *  case is; a page converted since PRIV-4 shows them REDACTED and is left out). */
+function icimsHelpQueries(): string[] {
+  return ADDRESSED_FIXTURES.filter((file) => file.startsWith('icims/') && !isJr6(file) && file.endsWith('.html'))
+    .flatMap((file) => [...readFileSync(join(ROOT, 'fixtures', file), 'utf8').matchAll(/<a\b[^>]*>/gi)]
+      .flatMap(([tag]) => (/\sclass="iCIMS_Logo_Link"/.test(tag) ? [ICIMS_HELP_HREF.exec(tag)?.[2] ?? ''] : [])))
+    .filter((query) => referralNamesIn(`?${query}`).length > 0);
+}
+
+/** A text with the query cut from each iCIMS logo link (a.iCIMS_Logo_Link to www.icims.com/platform_help) whose tags are
+ *  the vendor's (`vendor`: main's query, as written), and how many it cut; any other link, value or place stands. */
+function withoutIcimsHelpTags(text: string, vendor: string): { text: string; cut: number } {
+  let cut = 0;
+  const out = text.replace(/<a\b[^>]*>/gi, (tag) => {
+    const href = ICIMS_HELP_HREF.exec(tag);
+    if (href === null || !/\sclass="iCIMS_Logo_Link"/.test(tag) || href[2] !== vendor) return tag;
+    cut += 1;
+    return tag.replace(href[0], ` href="${href[1]}"`);
+  });
+  return { text: out, cut };
+}
+
+describe('jr6 ifix C-4: referral parameters in the committed fixtures (PRIV-4)', () => {
+  it("main's iCIMS pages carry one constant query on iCIMS's logo link: the vendor's tags", () => {
+    const queries = icimsHelpQueries();
+    expect(queries.length).toBeGreaterThanOrEqual(5);
+    // One query, the same on every page (its words never printed), holding the four utm_* tags.
+    expect(new Set(queries).size).toBe(1);
+    expect([...new Set(referralNamesIn(`<a href="http://www.icims.com/platform_help?${queries[0]!}">`))].sort())
+      .toEqual(['utm_campaign', 'utm_content', 'utm_medium', 'utm_source']);
+  });
+
+  it("every jr6 case's page, frame, route map and expectation: no referral parameter holds a value, but iCIMS's logo link's vendor tags", () => {
+    const [vendor = ''] = icimsHelpQueries();
+    const files = ADDRESSED_FIXTURES.filter(isJr6);
+    expect(files.length).toBeGreaterThan(200);
+    expect(files).toEqual(expect.arrayContaining(['icims/jr6-ars-eeo.html', 'adp/jr6-posting.routes.json',
+      'adp/jr6-consent.expect.json', 'icims/jr6-apply-sentinel-posting.frame-1.html']));
+    const cut: string[] = [];
+    const failing = files.flatMap((file) => {
+      const kept = withoutIcimsHelpTags(readFileSync(join(ROOT, 'fixtures', file), 'utf8'), vendor);
+      if (kept.cut > 0) cut.push(file);
+      return [...new Set(referralNamesIn(kept.text))].map((name) => `${file}: ${name}`);
+    });
+    expect(failing).toEqual([]);
+    // The exemption stands on iCIMS's step pages alone (the ten of the review, or fewer once converted again).
+    expect(cut.every((file) => /^icims\/jr6-(?:ars|sentinel)-[a-z-]+(?:\.frame-1)?\.html$/.test(file)), cut.join(', ')).toBe(true);
+    expect(cut.length).toBeLessThanOrEqual(10);
+  }, 60_000);
+
+  it("every committed fixture: no arrival tag a person's visit adds (iis, iisn, __jvst, __jvsd, gh_src, lever-source) holds a value", () => {
+    // `source` and utm_* also name public share and footer links' constant tags in main's captures (Nextdoor's sharekit,
+    // a Greenhouse sign-in link, Workable's and Dice's footers): the jr6 sweep above reads those in jr6 cases.
+    const arrival = REFERRAL_PARAMS.filter((name) => name !== 'source');
+    expect(arrival).toEqual(['iis', 'iisn', '__jvst', '__jvsd', 'gh_src', 'lever-source']);
+    expect(ADDRESSED_FIXTURES.length).toBeGreaterThan(800);
+    const failing = ADDRESSED_FIXTURES.flatMap((file) => [...new Set(referralNamesIn(readFileSync(join(ROOT, 'fixtures',
+      file), 'utf8')))].filter((name) => arrival.includes(name)).map((name) => `${file}: ${name}`));
+    expect(failing).toEqual([]);
+  }, 60_000);
+
+  it("exempts iCIMS's logo link only with the vendor's own tags: another value, link, host, path or place is a hit", () => {
+    const [vendor = ''] = icimsHelpQueries();
+    const link = (href: string, extra = ' class="iCIMS_Logo_Link"') => `<a href="${href}" target="_blank"${extra}>`;
+    const left = (text: string) => new Set(referralNamesIn(withoutIcimsHelpTags(text, vendor).text)).size;
+    expect(left(link(`http://www.icims.com/platform_help?${vendor}`))).toBe(0);
+    expect(left(link(`https://www.icims.com/platform_help?${vendor}`))).toBe(0);
+    expect(left(link('http://www.icims.com/platform_help?utm_source=FixtureBoard&amp;utm_medium=x'))).toBe(2);
+    expect(left(link(`http://www.icims.com/platform_help?${vendor}&amp;iis=FixtureBoard`))).toBeGreaterThan(0);
+    expect(left(link(`http://www.icims.com/other_help?${vendor}`))).toBe(4);
+    expect(left(link(`https://careers-acme.icims.com/jobs/1/job?${vendor}`))).toBe(4);
+    expect(left(link(`http://www.icims.com/platform_help?${vendor}`, ''))).toBe(4);
+    expect(left(`{"https://careers-acme.icims.com/jobs/1/job?${vendor}":"fixtures/icims/x.html"}`)).toBe(4);
+    expect(left(`<iframe src="http://www.icims.com/platform_help?${vendor}">`)).toBe(4);
+  });
+});
+// ── end jr6 ifix C-4 ──
