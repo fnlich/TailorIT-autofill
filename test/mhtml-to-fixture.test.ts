@@ -4001,7 +4001,7 @@ for (const option of root.querySelectorAll('spl-select-option')) {
     const page = (position: object) => `<div class="body-wrapper" data-position='${JSON.stringify(position)}'><form>`
       + '<label for="n">Name</label><input id="n" type="text"></form></div>';
     const copyOf = (text: string) => JSON.parse((/data-position="([^"]*)"/.exec(text)?.[1] ?? '{}').replace(/&quot;/g, '"')
-      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&'));
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, '\u00a0').replace(/&amp;/g, '&'));
     const listed = { name: 'Senior Jane Roe Engineer', friendly_id: '1-engineer',
       description: '<p>Work beside the team.</p>', company: { name: 'Acme' } };
     const refused = async (caseName: string, position: object) => {
