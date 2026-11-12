@@ -2318,8 +2318,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    * agent's, agentSignIn, as at a wall its entry met before its press); a choice of how to apply (told
    * the worker; the next press answers it); a check or a code, the person's ('blocked'). A new document ends it with
    * this one, quietly; the line P review (revA-4): so does a route to another application (`gone`), before anything is
-   * claimed, pressed or signed in to there. Nothing within the wait: 'nothing-followed'. Answers the person's refusal,
-   * or null (the agent's entry refuses nothing here: its own wait says it).
+   * claimed, pressed or signed in to there. Nothing within the wait: 'nothing-followed' (jr6 ifix B2: a second step
+   * the watch's own look pressed is watched after, never refused in the same moment). Answers the person's refusal, or
+   * null (the agent's entry refuses nothing here: its own wait says it).
    */
   async function afterPress(source: EntrySource, signal: AbortSignal, facts: EntryFacts, gone: () => boolean):
     Promise<EntryRefusal | null> {
@@ -2355,25 +2356,38 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       }
       return null;
     };
+    /** The watch for `capMs`. jr6 ifix B2 (the integration review's behaviour lens): a look that pressed the second step
+     *  (seen() counted a press), its cap's last look included, watches again for what that press brings, as
+     *  pressEntry's follow-up does after a press, never ending 'nothing-followed' in the same moment; the presses stay
+     *  bounded by ENTRY_MAX_PRESSES (seen() presses no more past them), so the watch is armed again at most once. */
+    const watch = (capMs: number): Promise<Seen> => new Promise<Seen>((resolve) => {
+      // jr6 ifix B4: the wait's abort listener goes once it is settled.
+      const settled = new AbortController();
+      const settle = (got: Seen | Promise<Seen>): void => {
+        settled.abort();
+        resolve(got);
+      };
+      const look = (last: boolean): boolean => {
+        const presses = facts.presses;
+        const got = seen();
+        if (got === null && !signal.aborted && !stopped) {
+          // jr6 ifix B2: this look pressed: what the press brings is watched for afresh.
+          if (facts.presses > presses) {
+            settle(watch(capMs));
+            return true;
+          }
+          if (!last) return false;
+        }
+        settle(got);
+        return true;
+      };
+      watchForLateForm(doc, capMs, () => look(false), signal, () => void look(true));
+      signal.addEventListener('abort', () => settle(null), { once: true, signal: settled.signal });
+    });
     let outcome = seen();
     if (outcome === null && !signal.aborted && !stopped) {
       const url = urlOf(readHref());
-      const capMs = Math.max(ENTRY_FORM_WAIT_MS, url === null ? 0 : lateFormMs(adapters(url)));
-      outcome = await new Promise<Seen>((resolve) => {
-        // jr6 ifix B4: the wait's abort listener goes once it is settled.
-        const settled = new AbortController();
-        const settle = (got: Seen): void => {
-          settled.abort();
-          resolve(got);
-        };
-        watchForLateForm(doc, capMs, () => {
-          const got = seen();
-          if (got === null && !signal.aborted && !stopped) return false;
-          settle(got);
-          return true;
-        }, signal, () => settle(seen()));
-        signal.addEventListener('abort', () => settle(null), { once: true, signal: settled.signal });
-      });
+      outcome = await watch(Math.max(ENTRY_FORM_WAIT_MS, url === null ? 0 : lateFormMs(adapters(url))));
     }
     if (stopped || signal.aborted) return null;
     if (outcome === null) return person ? 'nothing-followed' : null;

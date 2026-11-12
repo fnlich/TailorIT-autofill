@@ -428,6 +428,40 @@ describe('jr6 apply F2: the door’s refusals and each reason told (AP-7, C7, AF
       expect(ENTRY_REFUSALS).toContain('elsewhere');
     }, 40_000);
 
+  // jr6 ifix B2 (the integration review's behaviour lens; its probe's `data-state` case): a dialog our Apply shows by an
+  // attribute the watch does not hear, so only the cap's last look sees it and presses its "Apply manually". That press
+  // is watched after, as pressEntry's follow-up is: the form it draws in place is claimed, and nothing is refused.
+  it('the cap’s last look presses a second step: what it brings is watched for, never "nothing-followed" at once (B2)',
+    async () => {
+      const page = lateHtml.replace(/<script>[\s\S]*?<\/script>/, '')
+        .replace('<div id="apply-slot"></div>', `<div id="apply-slot"><a class="postings-btn" id="apply"
+          href="${LATE}/apply">Apply for this job</a></div>`)
+        .replace('</style>', '[data-state="closed"] { display: none; }</style>')
+        .replace('</body>', `<div role="dialog" aria-modal="true" id="choice" data-state="closed"
+          style="position:fixed;top:10%;left:10%;width:320px;padding:16px;background:#fff"><h3>How would you like to
+          apply?</h3><button type="button" id="manually">Apply manually</button></div></body>`);
+      const { doc, clicks } = await openAt(page, LATE);
+      const choice = doc.getElementById('choice')!;
+      doc.getElementById('apply')!.addEventListener('click', () => void deadline(500)
+        .then(() => choice.setAttribute('data-state', 'open')));
+      doc.getElementById('manually')!.addEventListener('click', () => void deadline(300).then(() => {
+        choice.setAttribute('data-state', 'closed');
+        doc.getElementById('form-slot')!.append((doc.getElementById('form-template') as HTMLTemplateElement)
+          .content.cloneNode(true));
+      }));
+      const { worker, runtime } = await runtimeAt(doc, LATE, lever(LATE));
+      runtimes.push(runtime);
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(clicks).toEqual(['apply']), { timeout: 3_000 });
+      // The cap's last look presses "Apply manually"; the form it draws 300 ms later is claimed by Lever's adapter.
+      await vi.waitFor(() => expect(clicks).toEqual(['apply', 'manually']), { timeout: ENTRY_FORM_WAIT_MS + 5_000 });
+      await vi.waitFor(() => expect(helloWithForm(worker)).toBe(true), { timeout: 5_000 });
+      expect(runtime.page?.adapter.id).toBe('lever');
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entering).toBe(false), { timeout: 3_000 });
+      expect(worker.of('entry/pressed')).toHaveLength(2);
+      expect(refusals(worker)).toEqual([]);
+    }, ENTRY_FORM_WAIT_MS + 30_000);
+
   it('says "nothing-followed" when an Apply was pressed and nothing came within the wait', async () => {
     const { doc, clicks } = await openAt(`<!doctype html><body><main><h1>Platform Engineer</h1><a id="apply"
       href="${LATE}/apply">Apply for this job</a></main></body>`, LATE);
