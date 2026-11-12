@@ -72,6 +72,16 @@ export const FIELD_CATEGORIES = [
   'identity.prefix', 'education.graduated', 'address.line3', 'salary.period', 'application.resumeMethod',
   'education.highSchool', 'address.mailing', 'links.facebook', 'links.numbered',
   // jr6 RULES end
+  // jr7 RULES-7 (FIX7PLAN §6.3 R1, UKGR-14): a national id or social security number (UKG Ready's SSN box, labelled
+  // only by its "999-99-9999" placeholder), and the type of one: never filled, never asked of an AI.
+  'identity.nationalId',
+  // jr7 RULES-7 R2 (DF7-11, ICIMS7-14): a job entry's department (or an optional reason for leaving), and a licence or
+  // certification's number or issuing state: no profile value, never an AI's, skipped.
+  'experience.detail', 'skills.certificationDetail',
+  // jr7 RULES-7 R2 (WD7V-02): the language the person prefers to be written to in (their native one).
+  'languages.preferred',
+  // jr7 RULES-7 R2 (RBP7-08): whether the person lives in one of the states a question lists.
+  'location.inListedRegion',
   'unknown',
 ] as const;
 export type FieldCategory = (typeof FIELD_CATEGORIES)[number];
