@@ -600,6 +600,8 @@ describe('classifyByRules: a field handed to the person (needsUser)', () => {
     // The audit of 2026-11-06 (S-4, S-5).
     ['how-made', field('Did you use Claude to complete this application?', 'radio')],
     ['binding-waiver', field('Do you agree to binding arbitration of any employment dispute?', 'radio')],
+    // jr7 RULES-7 (UKGR-14).
+    ['identifier', field('Social Security Number', 'text')],
   ];
 
   it('has a field for every cause', () => {

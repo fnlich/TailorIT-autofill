@@ -92,13 +92,19 @@ export function fieldAgrees(text: string, field: FieldOfStudy | undefined, vocab
   return key !== '' && [field.name, field.userText].some((name) => keyFor(name, 'field') === key);
 }
 
+/** jr7 RULES-7 R2 (UP7-11, UltiPro's "Please select the highest level of education you have attained." with "Bachelor's
+ *  level degree", snapshot7 ultipro2): what the parse leaves as a degree's field but names no field of study ("level",
+ *  "level degree", "or equivalent"): no field conflict. */
+const NO_FIELD = /^(?:level|level\s+degree|degree|or\s+(?:its\s+|an\s+)?equivalent|equivalent)$/;
+
 /** An option the degree rules rule out: another level (not one the type may stand for), types or bracketed types
  *  none of which is in the intended type's class, or a field of study that is not the entry's `field` (any field,
  *  when the entry has none). No stage, the LLM included, may choose it. */
 export function degreeConflict(intent: DegreeIntent, parsed: ParsedDegree | undefined, vocab: Vocab,
   field?: FieldOfStudy): boolean {
   if (!parsed) return false;
-  if (parsed.field !== undefined && !fieldAgrees(parsed.field, field, vocab)) return true;
+  if (parsed.field !== undefined && !NO_FIELD.test(parsed.field.trim().toLowerCase())
+    && !fieldAgrees(parsed.field, field, vocab)) return true;
   if (intent.type !== null && parsed.types.length > 0 && typeFit(intent, parsed, vocab) === 0) return true;
   if (intent.type !== null && parsed.qualifierTypes.length > 0) {
     const wanted = vocab.degrees.classOf(intent.type);

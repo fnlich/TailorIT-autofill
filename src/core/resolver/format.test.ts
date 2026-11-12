@@ -27,10 +27,13 @@ describe('dateText (date.format)', () => {
 
 describe('dateIso', () => {
   it('gives a date control exactly the parts its format takes', () => {
-    expect(dateIso({ y: 2015, m: 8 }, { format: 'month-year' })).toBe('2015-08');
-    expect(dateIso({ y: 2026, m: 12, d: 1 }, {})).toBe('2026-12-01');
-    expect(dateIso({ y: 2015, m: 8 }, {})).toBeNull();
-    expect(dateIso({ y: 2015, m: 8 }, { format: 'year' })).toBe('2015');
+    expect(dateIso({ y: 2015, m: 8 }, { format: 'month-year' })).toEqual({ iso: '2015-08', guessed: false });
+    expect(dateIso({ y: 2026, m: 12, d: 1 }, {})).toEqual({ iso: '2026-12-01', guessed: false });
+    // jr7 RULES-7 (DF7-04, amending docs/design/core.md §8.5): a full-date control given a month-precision date takes
+    // the month's 1st, guessed; a date with no month still gives nothing.
+    expect(dateIso({ y: 2015, m: 8 }, {})).toEqual({ iso: '2015-08-01', guessed: true });
+    expect(dateIso({ y: 2015 }, {})).toBeNull();
+    expect(dateIso({ y: 2015, m: 8 }, { format: 'year' })).toEqual({ iso: '2015', guessed: false });
   });
 });
 
