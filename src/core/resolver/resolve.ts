@@ -780,6 +780,8 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
     && candidate.origin.provenance !== 'submitted-before' && policy !== 'consent'
     // jr6 RULES (U-09, ADP-17): a decline box states the decline its tick gives, the person's own explicit one.
     && rules?.rule !== EEO_DECLINE_BOX_RULE.id
+    // jr7 RULES-7 R2 (DF7-11): Dayforce's "Not Completed" states the in-progress flag its tick gives.
+    && !(rules?.rule === 'label.entry-field' && category === 'education.current')
     && statementPolarity(statementText(spec, rules)) !== 'affirmative') {
     return answer(withoutValue(base, spec, 'statement-not-affirmative', true, true));
   }

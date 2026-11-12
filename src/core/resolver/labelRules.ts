@@ -384,7 +384,10 @@ const TITLE_NOUN = new RegExp(String.raw`^(?:(?:${WHEN}|job|position|role|profes
 // jr7 RULES-7 (ADP7-9, ADP's "How many years of related experience do you have?", snapshot7 adp1): related too.
 const TOTAL_YEARS = /^(?:total\s+)?(?:number\s+of\s+)?years\s+of\s+(?:total\s+|professional\s+|relevant\s+|related\s+|work\s+|working\s+|industry\s+)?experience$|how\s+many\s+(?:total\s+)?years\s+of\s+(?:total\s+|professional\s+|relevant\s+|related\s+|work\s+|working\s+|industry\s+)?experience\s+do\s+you\s+have$/;
 /** Availability to start. Availability for an interview, a shift or a weekend is another question. */
-const START_AVAILABILITY = /when\s+can\s+you\s+start|earliest\s+start|available\s+to\s+start|availability\s+(?:to|for)\s+(?:start|starting|begin|employment)\b|\bstart(?:ing)?\s+availability\b|^availability(?:\s+date)?$|^(?:the\s+)?date\s+(?:you\s+are\s+)?available(?:\s+to\s+(?:start|begin))?$/;
+const START_AVAILABILITY = /when\s+can\s+you\s+start|earliest\s+start|available\s+to\s+start|availability\s+(?:to|for)\s+(?:start|starting|begin|employment)\b|\bstart(?:ing)?\s+availability\b|^availability(?:\s+date)?$/;
+/** jr7 RULES-7 R2 (RBP7-15, BambooHR's "Date Available", snapshot7 bamboohr1 and bamboohr2): the date the person is
+ *  available to start, laid out by its placeholder. */
+const DATE_AVAILABLE = /^(?:the\s+)?date\s+(?:you\s+are\s+)?available(?:\s+to\s+(?:start|begin))?$/;
 /** Pay as a topic rather than the person's pay: "compensation planning", "experience with payroll". */
 const PAY_TOPIC = /\b(?:compensation|salary|salaries|pay|payroll)\s+(?:planning|plans?|strateg(?:y|ies)|benchmark\w*|analysis|analyst|analytics|structures?|philosophy|programs?|committee|management|administration|surveys?|data|consulting|practices|polic(?:y|ies)|reviews?|cycles?|design|tools?|software|systems?|teams?|functions?|benefits|equity|transparency|laws?|regulations?)\b|\b(?:compensation|salary|pay)\s+and\s+benefits\b|\b(?:experience|familiar|familiarity|knowledge|expertise)\s+(?:with|in|of)\s+(?:\w+\s+){0,2}(?:compensation|salary|salaries|payroll)\b/;
 /** Current, previous or historical pay, the time word qualifying the pay itself. */
@@ -423,7 +426,7 @@ const WORK_AUTH_STATUS_RULE = { id: 'label.work-auth-status', strength: 'strong'
 
 /** A legal reading of "eligible", "permitted" or "entitled to work": a place, "legally", "lawfully" or any employer.
  *  Without one it is a question about the job ("eligible to work overtime"). */
-const WORK_AUTH_LEGAL = /authori[sz]ed\s+to\s+work|right\s+to\s+work|entitlement\s+to\s+work|eligible\s+for\s+work\s+in\s+(?:the\s+)?(?!(?:a|an|our|this|shifts?|teams?|person|office|hybrid|remote)\b)\w+|work\s+authori[sz]ation|\b(?:legally|lawfully)\b|(?:eligible|permitted|entitled)\s+to\s+work\s+(?:\w+\s+){0,4}?(?:in|within)\s+(?!(?:a|an|our|shifts?|teams?|person|office|offices|hybrid|remote|remotely|this\s+(?:role|position|job|team|office)|the\s+(?:office|field|evenings?|mornings?|afternoons?|weekends?|days?|nights?|shifts?|role|position|job|team|warehouse|store|lab|clinic))\b)\w+|(?:eligible|permitted|entitled)\s+to\s+work\s+for\s+(?:any|an|all)\s+employers?/;
+const WORK_AUTH_LEGAL = /authori[sz]ed\s+to\s+work|right\s+to\s+work|entitlement\s+to\s+work|eligible\s+for\s+work\s+(?:in|within)\s+(?!(?:a|an|our|shifts?|teams?|person|office|offices|hybrid|remote|remotely|this\s+(?:role|position|job|team|office)|the\s+(?:office|field|evenings?|mornings?|afternoons?|weekends?|days?|nights?|shifts?|role|position|job|team|warehouse|store|lab|clinic))\b)\w+|work\s+authori[sz]ation|\b(?:legally|lawfully)\b|(?:eligible|permitted|entitled)\s+to\s+work\s+(?:\w+\s+){0,4}?(?:in|within)\s+(?!(?:a|an|our|shifts?|teams?|person|office|offices|hybrid|remote|remotely|this\s+(?:role|position|job|team|office)|the\s+(?:office|field|evenings?|mornings?|afternoons?|weekends?|days?|nights?|shifts?|role|position|job|team|warehouse|store|lab|clinic))\b)\w+|(?:eligible|permitted|entitled)\s+to\s+work\s+for\s+(?:any|an|all)\s+employers?/;
 /** Sponsorship in the immigration sense: a visa or work authorization named, or sponsorship required or needed.
  *  Without one it is sponsorship in the business sense ("sponsorship sales"). */
 const VISA_SPONSORSHIP = /\bvisas?\b|\bimmigra\w*|\bh\s?1\s?b\b|\bgreen\s+card\b|\bpermanent\s+residen\w*|\bcitizen\w*|\bwork\s+(?:authori[sz]\w*|permits?|status|eligibility)\b|\bemployment\s+(?:authori[sz]\w*|visas?|status|eligibility|based)\b|\bto\s+work\b|\bfor\s+employment\b|\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,3}?\s+sponsor\w*|\bsponsor\w*\s+(?:\w+\s+){0,2}?(?:required|needed|status)\b|^(?:visa\s+)?sponsorship\b|\bsponsorship\s+(?:now|in\s+the\s+future|to\s+work)\b/;
@@ -888,9 +891,11 @@ const WILLING_CHECK = /^(?!.*\b(?:convicted|convictions?|felon\w*|pleaded|pled|c
  *  preposition ("support from Zip", "work at Zip", "hear about Zip"), never "Zip code" or "Zip+4". */
 const POSTAL_NOT = new RegExp(String.raw`${YES_NO_QUESTION.source}|\b(?:at|for|with|from|about|join(?:ing)?|to|by)\s+zip\b(?!\s*(?:code|postal|\+))`);
 /** RBP7-07, UKGR-18: a name typed as the person's signature. */
-const TYPED_NAME_SIGNATURE = /\btyp(?:e|ing)\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\b|^(?:your\s+)?full\s+(?:legal\s+)?name\s+to\s+(?:confirm|sign)$/;
+const TYPED_NAME_SIGNATURE = /\btyp(?:e|ing)\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\b|\bfull\s+(?:legal\s+)?name\s+to\s+(?:confirm|sign)\b/;
 /** UKGR-16: the single-choice kinds a bare "Referral" is the source on. */
 const CHOICE_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['select', 'radio', 'combobox']);
+/** UKGR-18: a signature's prompt with the name it shows, to its end ("please type your full name to confirm <name>"). */
+const SIGNATURE_PROMPT = /\b(?:please\s+)?typ(?:e|ing)\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\s+to\s+(?:confirm|sign)(?:\s+\w+){0,4}\s*$/;
 /** DF7-V3: the application's own candidate acknowledgement ("I agree to the Candidate Acknowledgement"). */
 const CANDIDATE_ACKNOWLEDGEMENT = /\b(?:candidate|applicant)\s+acknowledge?ments?\b/;
 /** UP7-08: a certification that the information is truthful (and complete, and accurate). */
@@ -1058,7 +1063,9 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
     category: (c) => (PAST_PAY.test(c.label) ? 'unknown' : 'salary.expected'),
     needsUser: (c) => (PAST_PAY.test(c.label) ? 'current-pay' : null) },
   // jr6 RULES R3 (ADP-8, WD-27): "how soon can you start", "when could you start" (START_WHEN).
-  'label.availability': { also: START_WHEN, only: new RegExp(`${START_AVAILABILITY.source}|${START_WHEN.source}`),
+  // jr7 RULES-7 R2 (RBP7-15): "Date Available" (DATE_AVAILABLE).
+  'label.availability': { also: new RegExp(`${START_WHEN.source}|${DATE_AVAILABLE.source}`),
+    only: new RegExp(`${START_AVAILABILITY.source}|${START_WHEN.source}|${DATE_AVAILABLE.source}`),
     ask: true, otherwise: { id: 'label.other-availability', category: 'screening.other', strength: 'normal' } },
   // jr6 RULES (JV-4, fixtures jr6-vhl-step1: "Have you been employed by any United States K-12 School District since
   // 2016 in any capacity?"): a school's own label, never a word in a question.
@@ -1811,7 +1818,11 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
  */
 export function withDescriptionConsent(hit: LabelRuleHit, description: string, kind: FieldKind): LabelRuleHit {
   if (hit.consentKinds === undefined || hit.needsUser !== undefined || description === '') return hit;
-  const extra = consentEntries(description, kind);
+  // jr7 RULES-7 R2 (UKGR-18, UKG Ready's "Please type your full name to confirm: <the name>"): a signature's own prompt,
+  // with the name it shows, names nothing more the person agrees to; the rest of the help text still reads.
+  const read = hit.category === 'consent.signature' ? description.replace(SIGNATURE_PROMPT, ' ').trim() : description;
+  if (read === '') return hit;
+  const extra = consentEntries(read, kind);
   if (extra.length === 0) return hit;
   const own = hit.consentKinds.map((category) => ({ category,
     rule: (category === hit.category ? LABEL_RULES.find((rule) => rule.id === hit.rule) : undefined)

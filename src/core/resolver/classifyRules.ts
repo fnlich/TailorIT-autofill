@@ -310,6 +310,10 @@ const OTHER_PERSON_ID = /(?:^|[_ ])(?<!(?:job|requisition|posting|vacancy)_)(?:r
 /** A section about other people ("references", "emergency-contact"). */
 const OTHER_PERSON_SECTION = /\b(?:references?|referees?|referrers?|referrals?|emergency|kin)\b/;
 
+/** jr7 RULES-7 R2 (DF7-11): a field about the person's supervisor or manager at a job ("Supervisor", "Supervisor's
+ *  Phone", "Manager name"), by its own label. */
+const SUPERVISOR_FIELD = /^(?:(?:your|immediate|direct|reporting)\s+)?(?:supervisor|manager)s?(?:\s+(?:name|first\s+name|last\s+name|phone|telephone|phone\s+number|e\s?mail|title|contact|number))*$/;
+
 /** Which source names another person: the label (or the section), else the name and id attributes; null for none. */
 function otherPersonNamedBy(spec: FieldSpec, label: string): RuleClassifier | null {
   const section = spec.section.id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
@@ -500,6 +504,13 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
     votes = votes.filter((vote) => vote.rule !== 'autocomplete.given-name');
   }
   const otherPerson = otherPersonNamedBy(spec, label);
+  // jr7 RULES-7 R2 (DF7-11, Dayforce's employment record "Supervisor", snapshot7 dayforce1): a field whose own words
+  // name another person and that no source reads is no question of the person's either: nobody's details to give, and
+  // no AI's to invent (plan/answers.ts never answers one).
+  if (otherPerson === 'label-rule' && votes.length === 0 && SUPERVISOR_FIELD.test(label)) {
+    return classification('screening.other', { confidence: LABEL_RULE_CONFIDENCE.normal, classifiedBy: otherPerson,
+      rule: 'label.another-person', reason: 'ok', matchedOn: 'label' });
+  }
   if (otherPerson !== null && votes.some(isOwnDetail)) {
     votes = votes.filter((vote) => !isOwnDetail(vote));
     if (votes.length === 0) {
