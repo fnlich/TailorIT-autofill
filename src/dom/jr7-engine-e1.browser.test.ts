@@ -8,6 +8,7 @@ import { genericAdapter } from '../adapters/generic';
 import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures } from './fixture.testkit';
 import { domGuardBeforeWrite } from './guard';
+import { requiredLeftOf } from '../content/press';
 import { detectPause } from './pause-detect';
 import { scan } from './scan';
 
@@ -112,5 +113,36 @@ describe('item 4 (EFA-3): one-time-code boxes the adapter names no code boxes', 
     const root = doc.getElementById('f')!;
     expect(detectPause(doc, root, eightfold)).toEqual({ kind: 'email-code', evidence: 'one-time-code' });
     expect(scan(root, eightfold, { platform: 'eightfold' }).authFields).toBe(1);
+  });
+});
+
+// ── item 9 (RBP7-V3): a required upload no rule recognises holds Submit ─────────────────────────────────────────────
+describe('item 9 (RBP7-V3): a required upload the scan recognises no control of', () => {
+  /** BambooHR's "Resume*" as its verifier measured it (snapshot7 bamboohr1): a hidden input[type=file] beside a visible
+   *  button no upload rule names (`attrs`: the input's), and a filled name. */
+  const form = (attrs: string) => page(`<div class="upload"><span>Resume*</span>
+      <input type="file" id="resume" name="resume" ${attrs} style="display:none">
+      <button type="button" id="pick">Upload File</button></div>
+    <div><label for="name">Name</label><input id="name" value="Alex"></div>`);
+  const leftOn = async (attrs: string, adapter: Adapter = genericAdapter, file = false) => {
+    const { doc } = await loadFixture(document, form(attrs));
+    if (file) {
+      const data = new DataTransfer();
+      data.items.add(new File(['x'], 'resume.pdf', { type: 'application/pdf' }));
+      (doc.getElementById('resume') as HTMLInputElement).files = data.files;
+    }
+    const scanned = scan(doc.getElementById('f')!, adapter, { platform: 'bamboohr' });
+    removeFixtures(document);
+    return { uploads: scanned.unrecognisedUploads.length, left: requiredLeftOf(scanned) };
+  };
+
+  it("counts it left while it holds no file, by its own required mark or its adapter's", async () => {
+    expect(await leftOn('required')).toEqual({ uploads: 1, left: 1 });
+    expect(await leftOn('aria-required="true"')).toEqual({ uploads: 1, left: 1 });
+    const marks: Adapter = { ...genericAdapter, id: 'generic', requiredFor: (el) => el.id === 'pick' };
+    expect(await leftOn('', marks)).toEqual({ uploads: 1, left: 1 });
+    // Once a file is in, or where nothing marks it required, it holds nothing.
+    expect(await leftOn('required', genericAdapter, true)).toEqual({ uploads: 1, left: 0 });
+    expect(await leftOn('')).toEqual({ uploads: 1, left: 0 });
   });
 });

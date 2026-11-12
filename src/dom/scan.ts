@@ -1102,6 +1102,9 @@ function unrecognisedRows(found: ReadonlyArray<{ input: HTMLInputElement; contro
     const ordinal = taken.get(id) ?? 0;
     taken.set(id, ordinal + 1);
     const parts = { platform, section, labelSlug: slug, ordinal };
-    return { key: fieldKey({ ...parts, optionSetHash: OPTION_SET_NONE }), baseKey: baseKey(parts), label, section };
+    // jr7 ENGINE-7 E1 item 9 (RBP7-V3): a required upload no rule recognises holds Submit until a file is in.
+    const required = isRequired(input) || adapterRequires(input, ctx.adapter) || adapterRequires(control, ctx.adapter);
+    return { key: fieldKey({ ...parts, optionSetHash: OPTION_SET_NONE }), baseKey: baseKey(parts), label, section,
+      requiredEmpty: required && (input.files?.length ?? 0) === 0 };
   });
 }

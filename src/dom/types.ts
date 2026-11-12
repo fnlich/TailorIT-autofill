@@ -261,6 +261,10 @@ export interface UnrecognisedUpload {
   /** The upload control's visible text (at most 300 characters). */
   label: string;
   section: SectionRef;
+  /** jr7 ENGINE-7 E1 item 9 (RBP7-V3: BambooHR's "Resume*", an input[type=file][required] no upload rule recognises,
+   *  snapshot7 bamboohr1 and bamboohr2): its input says required (required, aria-required) or its adapter's required
+   *  rule marks it or its control, and it holds no file yet. Submit holds for it (content/press.ts requiredLeftOf). */
+  requiredEmpty: boolean;
 }
 
 /** One scan of a form root. */
