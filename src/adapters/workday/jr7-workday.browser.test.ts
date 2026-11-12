@@ -1,0 +1,347 @@
+/*
+ * jr7 WORKDAY-7 (FIX7PLAN §6.6): the Workday adapter on the owner's snapshot7 captures (fixtures/workday/jr7-workday{1,
+ * 2,3}-*: aristocrat.wd3, republic.wd5 and unitytech.wd1, each one application from its posting to the page after
+ * submitting, converted with the redaction list). P1 holds what the adapter reads:
+ * - WD7-05: confirmationAfter (the page after submitting by its address, against the address its Submit was armed at)
+ *   and the fourth drawn sign (workdaySignsAt: aristocrat's "Congratulations!" heading, at such an address only);
+ * - WD7-06: the Sign In view's notice after Create Account ("An email has been sent to you. Please verify your
+ *   account.") read as verify-email by accountErrorKind, never one of the adapter's errors.
+ * P2 (after jr7-engine-e2, jr7-rules-r2, jr7-auto-done and jr7-chain-done) adds the shared outcomes FIX7PLAN §6.6
+ * lists: RULES-7's answers on these steps, and WD7-04/WD7-05 through AUTO-7's runtime from -review to -confirmation.
+ * Addresses are the fixtures' own (their headers); the new application's id in them is REDACTED (the redaction list),
+ * which is what the hooks read: whether there is one, never which. No value of the owner's is in a fixture or here.
+ */
+import { afterEach, describe, expect, it } from 'vitest';
+import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.testkit';
+import { deadline } from '../../dom/time';
+import { isUserVisible } from '../../dom/visibility';
+import { signIn, signInDetailOf, type SignInContext } from '../../content/sign-in';
+import type { SignInCredential } from '../../messaging/schemas';
+import { applicationOf } from '../index';
+import { successSignsOf } from '../success';
+import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { accountErrors } from './application';
+import { WORKDAY_CONGRATULATIONS, WORKDAY_SUCCESS, workdayAdapter, workdaySignsAt } from './index';
+
+const RAW = import.meta.glob('../../../fixtures/workday/jr7-workday*.html', { query: '?raw', import: 'default',
+  eager: true }) as Record<string, string>;
+
+/** One captured page: its case name, its markup, the address it was captured at, its folder and step. */
+interface Case { name: string; html: string; source: URL; folder: 'workday1' | 'workday2' | 'workday3'; step: string }
+
+const CASES: readonly Case[] = Object.entries(RAW).filter(([path]) => !path.includes('.third-party-frame'))
+  .map(([path, html]) => {
+    const name = path.split('/').pop()!.replace(/\.html$/, '');
+    const header = /<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(html);
+    const source = new URL((JSON.parse(header![1]!) as { source: string }).source);
+    const [, folder, step] = /^jr7-(workday[123])-(.+)$/.exec(name)!;
+    return { name, html, source, folder: folder as Case['folder'], step: step! };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+const byName = (name: string): Case => {
+  const found = CASES.find((each) => each.name === name);
+  if (found === undefined) throw new Error(`no case ${name}`);
+  return found;
+};
+const FOLDERS = ['workday1', 'workday2', 'workday3'] as const;
+
+afterEach(() => removeFixtures(document));
+
+/** A capture loaded, its entrance animations run to their end (Workday's dialogs fade in for 150 ms). */
+async function load(item: Case): Promise<Fixture> {
+  const fixture = await loadFixture(document, item.html, SNAPSHOT_VIEWPORT);
+  const running = fixture.doc.getAnimations().map((each) => each.finished.catch(() => undefined));
+  await Promise.race([Promise.all(running), deadline(1_500)]);
+  return fixture;
+}
+
+/** `url` with its parts changed. */
+function variant(url: URL, change: (copy: URL) => void): URL {
+  const copy = new URL(url.href);
+  change(copy);
+  return copy;
+}
+
+describe('jr7 WORKDAY-7: the snapshot7 captures', () => {
+  it('holds the 44 captures of the three applications, each at its tenant’s own address', () => {
+    expect(CASES.length).toBe(44);
+    expect(FOLDERS.map((folder) => CASES.filter((each) => each.folder === folder).length)).toEqual([17, 14, 13]);
+    const hosts = FOLDERS.map((folder) => new Set(CASES.filter((each) => each.folder === folder)
+      .map((each) => each.source.host)));
+    expect(hosts.map((each) => each.size)).toEqual([1, 1, 1]);
+    for (const item of CASES) expect(workdayAdapter.matchesUrl(item.source), item.name).toBe(true);
+    // The pages after submitting name the new application by its id, REDACTED in every fixture (D-10).
+    for (const folder of ['workday1', 'workday3'] as const) {
+      expect(byName(`jr7-${folder}-confirmation`).source.searchParams.getAll('Job_Application_ID')).toEqual(['REDACTED']);
+    }
+    // The address reading of jr6: the steps are the posting's application, the pages after submitting no page of it.
+    for (const folder of FOLDERS) {
+      expect(applicationOf(byName(`jr7-${folder}-review`).source)?.page, folder).toBe('application');
+      expect(applicationOf(byName(`jr7-${folder}-confirmation`).source), folder).toBeNull();
+    }
+  });
+});
+
+// ── WD7-05: the page after submitting, by its address ───────────────────────────────────────────────────────────────
+
+describe('jr7 WD7-05: confirmationAfter (the page after submitting, against the armed address)', () => {
+  const after = (armed: URL, here: URL) => workdayAdapter.confirmationAfter!(armed, here);
+
+  it.each(FOLDERS)('%s: the confirmation follows the Review it was submitted from, and every step of the application',
+    (folder) => {
+      const here = byName(`jr7-${folder}-confirmation`).source;
+      expect(after(byName(`jr7-${folder}-review`).source, here)).toBe(true);
+      const steps = CASES.filter((each) => each.folder === folder && applicationOf(each.source)?.page === 'application'
+        && !each.source.pathname.includes('/login'));
+      expect(steps.length).toBeGreaterThan(4);
+      for (const step of steps) expect(after(step.source, here), step.name).toBe(true);
+    });
+
+  it('aristocrat and unity: the site’s job search with one new Job_Application_ID; republic: the completed task', () => {
+    expect(byName('jr7-workday1-confirmation').source.pathname).toMatch(/^\/en-US\/[\w-]+$/);
+    expect(byName('jr7-workday3-confirmation').source.searchParams.has('source')).toBe(true);
+    expect(byName('jr7-workday2-confirmation').source.pathname).toMatch(/^\/en-US\/[\w-]+\/jobTasks\/completed\/application$/);
+    expect(byName('jr7-workday2-confirmation').source.search).toBe('');
+  });
+
+  it('no other captured page of the tenant is the page after submitting, and no tenant’s page follows another’s', () => {
+    for (const folder of FOLDERS) {
+      const review = byName(`jr7-${folder}-review`).source;
+      for (const item of CASES.filter((each) => each.folder === folder && each.step !== 'confirmation')) {
+        expect(after(review, item.source), item.name).toBe(false);
+      }
+      for (const other of FOLDERS.filter((each) => each !== folder)) {
+        expect(after(review, byName(`jr7-${other}-confirmation`).source), `${folder} → ${other}`).toBe(false);
+      }
+    }
+  });
+
+  it('an address armed anywhere but the application never arms it: the posting, its choice, a sign-in page, Candidate Home', () => {
+    for (const folder of FOLDERS) {
+      const here = byName(`jr7-${folder}-confirmation`).source;
+      for (const item of CASES.filter((each) => each.folder === folder && (applicationOf(each.source)?.page !== 'application'
+        || each.source.pathname.includes('/login')))) {
+        expect(after(item.source, here), item.name).toBe(false);
+      }
+    }
+  });
+
+  it('refuses each variant of the address after submitting that is not the armed application’s', () => {
+    const armed = byName('jr7-workday1-review').source;
+    const here = byName('jr7-workday1-confirmation').source;
+    const refused: Array<[string, URL, URL]> = [
+      ['two ids', armed, variant(here, (u) => u.searchParams.append('Job_Application_ID', 'REDACTED'))],
+      ['an empty id', armed, variant(here, (u) => u.searchParams.set('Job_Application_ID', ''))],
+      ['an id of white space', armed, variant(here, (u) => u.searchParams.set('Job_Application_ID', '  '))],
+      ['an id with white space around it', armed, variant(here, (u) => u.searchParams.set('Job_Application_ID', ' x '))],
+      ['no id', armed, variant(here, (u) => { u.search = ''; })],
+      ['another site', armed, variant(here, (u) => { u.pathname = `${u.pathname}x`; })],
+      ['a page under the site', armed, variant(here, (u) => { u.pathname = `${u.pathname}/details`; })],
+      ['the site with no locale', armed, variant(here, (u) => { u.pathname = u.pathname.replace(/^\/en-US/, ''); })],
+      ['another tenant’s host', armed, variant(here, (u) => { u.hostname = `x${u.hostname}`; })],
+      ['http', armed, variant(here, (u) => { u.protocol = 'http:'; })],
+      ['a port', armed, variant(here, (u) => { u.port = '8443'; })],
+      ['a user name', armed, variant(here, (u) => { u.username = 'x'; })],
+      ['an armed address that names an id already', variant(armed, (u) => u.searchParams.set('Job_Application_ID', 'x')), here],
+      ['another way of applying', variant(armed, (u) => { u.pathname = u.pathname.replace(/applyManually$/, 'other'); }), here],
+      ['another task', armed, variant(here, (u) => { u.pathname = `${u.pathname}/jobTasks/completed/other`; u.search = ''; })],
+      ['another kind of task', armed, variant(here, (u) => { u.pathname = `${u.pathname}/jobTasks/open/application`; u.search = ''; })],
+      ['the task under no base', armed, variant(here, (u) => { u.pathname = '/jobTasks/completed/application'; u.search = ''; })],
+      ['not Workday', armed, variant(here, (u) => { u.hostname = 'example.com'; })],
+    ];
+    for (const [name, from, to] of refused) expect(after(from, to), name).toBe(false);
+    // The completed task under the same base, a trailing '/', and any id: taken. Which id never matters (D-10).
+    expect(after(armed, variant(here, (u) => { u.pathname = `${u.pathname}/jobTasks/completed/application`; u.search = ''; })))
+      .toBe(true);
+    expect(after(armed, variant(here, (u) => { u.pathname = `${u.pathname}/`; }))).toBe(true);
+    for (const id of ['a', 'b0c1', 'REDACTED']) {
+      expect(after(armed, variant(here, (u) => u.searchParams.set('Job_Application_ID', id)))).toBe(true);
+    }
+  });
+
+  it('reads myworkdaysite.com’s tenant in its base, and verily’s steps at …/apply (formAtPosting)', () => {
+    const shared = new URL('https://wd5.myworkdaysite.com/en-US/recruiting/acme/External/job/Remote/Engineer_R123/apply/applyManually');
+    expect(after(shared, new URL('https://wd5.myworkdaysite.com/en-US/recruiting/acme/External?Job_Application_ID=x'))).toBe(true);
+    expect(after(shared, new URL('https://wd5.myworkdaysite.com/en-US/recruiting/acme/External/jobTasks/completed/application')))
+      .toBe(true);
+    expect(after(shared, new URL('https://wd5.myworkdaysite.com/en-US/recruiting/other/External?Job_Application_ID=x'))).toBe(false);
+    expect(after(shared, new URL('https://wd5.myworkdaysite.com/en-US/External?Job_Application_ID=x'))).toBe(false);
+    const verily = new URL('https://verily.wd1.myworkdayjobs.com/en-US/verily_careers/job/Dallas-Texas/Engineer_REQ-1/apply');
+    expect(after(verily, new URL('https://verily.wd1.myworkdayjobs.com/en-US/verily_careers?Job_Application_ID=x'))).toBe(true);
+    // The posting itself (no /apply) is no application armed.
+    expect(after(new URL('https://verily.wd1.myworkdayjobs.com/en-US/verily_careers/job/Dallas-Texas/Engineer_REQ-1'),
+      new URL('https://verily.wd1.myworkdayjobs.com/en-US/verily_careers?Job_Application_ID=x'))).toBe(false);
+  });
+});
+
+// ── WD7-05: the fourth drawn sign ───────────────────────────────────────────────────────────────────────────────────
+
+describe('jr7 WD7-05: the fourth drawn sign (aristocrat’s "Congratulations!", at an address after submitting only)', () => {
+  it('aristocrat: none of the three rules reads its page after submitting; the fourth reads its heading', async () => {
+    const item = byName('jr7-workday1-confirmation');
+    const { doc } = await load(item);
+    expect(WORKDAY_SUCCESS.map((rule) => successSignsOf(doc, [rule]).length)).toEqual([0, 0, 0]);
+    const signs = workdaySignsAt(doc, item.source);
+    expect(signs.map((sign) => sign.localName)).toEqual(['h1']);
+    expect(signs[0]!.closest('[data-automation-id="popUpDialog"][role="dialog"]')).not.toBeNull();
+    expect(isUserVisible(signs[0]!)).toBe(true);
+  });
+
+  it('unity: the fourth beside the third rule; republic: its completed task holds none (the first rule reads it)', async () => {
+    const unity = byName('jr7-workday3-confirmation');
+    const unityDoc = (await load(unity)).doc;
+    expect(WORKDAY_SUCCESS.map((rule) => successSignsOf(unityDoc, [rule]).length)).toEqual([0, 0, 1]);
+    expect(workdaySignsAt(unityDoc, unity.source).length).toBe(1);
+    removeFixtures(document);
+    const republic = byName('jr7-workday2-confirmation');
+    const republicDoc = (await load(republic)).doc;
+    expect(successSignsOf(republicDoc, WORKDAY_SUCCESS).length).toBeGreaterThan(0);
+    expect(workdaySignsAt(republicDoc, republic.source)).toEqual([]);
+  });
+
+  it('is taken at an address after submitting only: the same page at the Review’s address, or none, reads nothing', async () => {
+    const item = byName('jr7-workday1-confirmation');
+    const { doc } = await load(item);
+    expect(workdaySignsAt(doc, byName('jr7-workday1-review').source)).toEqual([]);
+    expect(workdaySignsAt(doc, variant(item.source, (u) => { u.search = ''; }))).toEqual([]);
+    expect(workdaySignsAt(doc, null)).toEqual([]);
+    // The fixture's own document is about:srcdoc: the hook reads no address there.
+    expect(workdayAdapter.successSigns!(doc, 'workday:0123456789abcdef')).toEqual([]);
+  });
+
+  it('reads the dialog’s own heading only: the same words drawn outside its account view are no sign', async () => {
+    const item = byName('jr7-workday1-confirmation');
+    const { doc } = await load(item);
+    const dialogHeading = workdaySignsAt(doc, item.source)[0]!;
+    const content = dialogHeading.closest('[data-automation-id="signInContent"]')!;
+    // A heading of the page's own (a posting's or a banner's) saying the same: not taken.
+    const outside = doc.createElement('h1');
+    outside.textContent = 'Congratulations!';
+    doc.body.prepend(outside);
+    expect(isUserVisible(outside)).toBe(true);
+    expect(workdaySignsAt(doc, item.source)).toEqual([dialogHeading]);
+    // The account view outside a dialog (a Sign In page's own): not taken either.
+    const page = doc.createElement('div');
+    page.setAttribute('data-automation-id', 'signInContent');
+    page.append(outside);
+    doc.body.prepend(page);
+    expect(isUserVisible(outside)).toBe(true);
+    expect(workdaySignsAt(doc, item.source)).toEqual([dialogHeading]);
+    // The dialog's heading with other words: not taken.
+    content.querySelector('h1')!.textContent = 'Create Account';
+    expect(workdaySignsAt(doc, item.source)).toEqual([]);
+  });
+
+  it('is absent from every other captured page: no such heading drawn, shown or not, and no address after submitting',
+    async () => {
+      const congratulations = (doc: Document) => Array.from(doc.querySelectorAll(WORKDAY_CONGRATULATIONS.css))
+        .filter((el) => WORKDAY_CONGRATULATIONS.text!.test((el.textContent ?? '').replace(/\s+/g, ' ').trim()));
+      for (const item of CASES.filter((each) => each.step !== 'confirmation')) {
+        const { doc } = await loadFixture(document, item.html, SNAPSHOT_VIEWPORT);
+        expect(congratulations(doc), item.name).toEqual([]);
+        expect(workdaySignsAt(doc, item.source), item.name).toEqual([]);
+        removeFixtures(document);
+      }
+      // Not vacuous: both pages after submitting that draw it hold one each.
+      for (const name of ['jr7-workday1-confirmation', 'jr7-workday3-confirmation']) {
+        const { doc } = await loadFixture(document, byName(name).html, SNAPSHOT_VIEWPORT);
+        expect(congratulations(doc).length, name).toBe(1);
+        removeFixtures(document);
+      }
+    }, 180_000);
+});
+
+// ── WD7-06: the Sign In view's notice after Create Account ─────────────────────────────────────────────────────────
+
+describe('jr7 WD7-06: the notice "verify your account" after Create Account (accountErrorKind, never an error)', () => {
+  /** The account view's shown notice of a capture, and its form. */
+  async function noticeOf(name: string) {
+    const fixture = await load(byName(name));
+    const notices = Array.from(fixture.doc.querySelectorAll('[data-automation-id="alertMessage"]'))
+      .filter((each) => isUserVisible(each));
+    const form = fixture.doc.querySelector('form[data-automation-id="signInFormo"]');
+    return { fixture, notices, form };
+  }
+
+  it.each(FOLDERS)('%s: the notice reads verify-email, and is none of the adapter’s errors', async (folder) => {
+    const { fixture, notices, form } = await noticeOf(`jr7-${folder}-login-verify-sent`);
+    expect(notices.length).toBe(1);
+    const notice = notices[0]!;
+    expect(notice.matches('p[role="alert"]')).toBe(true);
+    expect(notice.closest('[data-automation-id="signInContent"]')).not.toBeNull();
+    expect(form).not.toBeNull();
+    expect(form!.contains(notice)).toBe(false);
+    expect(workdayAdapter.accountErrorKind!(notice)).toBe('verify-email');
+    // Never an error: the page counts none, so nothing refuses a step or calls the page's load an error.
+    expect(accountErrors(fixture.doc.body)).toEqual([]);
+    expect(workdayAdapter.errors!(form!).map((error) => error.el)).not.toContain(notice);
+    expect(workdayAdapter.errors!(fixture.doc.body).map((error) => error.el)).not.toContain(notice);
+    expect(workdayAdapter.authState!(fixture.doc)).toBe('sign-in');
+  });
+
+  it.each(FOLDERS)('%s: the error after it still reads verify-email, as jr6 read it', async (folder) => {
+    const fixture = await load(byName(`jr7-${folder}-login-verify-error`));
+    const errors = accountErrors(fixture.doc.body);
+    expect(errors.length).toBe(1);
+    expect(workdayAdapter.accountErrorKind!(errors[0]!)).toBe('verify-email');
+  });
+
+  it('only the shown notice of the account view, and only its verify-email words', async () => {
+    const { fixture, notices } = await noticeOf('jr7-workday2-login-verify-sent');
+    const notice = notices[0]!;
+    const part = fixture.doc.createElement('span');
+    part.textContent = ' (1)';
+    notice.append(part);
+    expect(workdayAdapter.accountErrorKind!(part)).toBe('verify-email');
+    const wordsBefore = notice.textContent;
+    for (const [words, kind] of [
+      ['An email has been sent to reset your password.', null],
+      ['Wrong email address or password.', null],
+      ['Your account has been created.', null],
+      ['Please verify your email address.', 'verify-email'],
+    ] as const) {
+      notice.textContent = words;
+      expect(workdayAdapter.accountErrorKind!(notice), words).toBe(kind);
+    }
+    notice.textContent = wordsBefore;
+    (notice as HTMLElement).style.display = 'none';
+    expect(workdayAdapter.accountErrorKind!(notice), 'hidden').toBeNull();
+    (notice as HTMLElement).style.display = '';
+    notice.removeAttribute('role');
+    expect(workdayAdapter.accountErrorKind!(notice), 'no role=alert').toBeNull();
+    notice.setAttribute('role', 'alert');
+    const outside = notice.cloneNode(true) as Element;
+    fixture.doc.body.append(outside);
+    expect(workdayAdapter.accountErrorKind!(outside), 'outside the account view').toBeNull();
+    expect(workdayAdapter.accountErrorKind!(fixture.doc.querySelector('input[data-automation-id="email"]')!)).toBeNull();
+  });
+
+  /*
+   * Through SHELL-A (content/sign-in.ts): on arrival, nothing asked, nothing typed, the kind said. It needs
+   * ENGINE-7's edit (SP\jr7\build\WORKDAY-7.md, "Exact edits"): content/sign-in.ts accountErrorShown asks the hook of the
+   * page's shown role=alert notices beside the adapter's errors (today it asks of the errors alone, and the notice is
+   * none of them, as WD7-06 requires). Until that edit lands it fails, so it is held as failing; INT-7 turns `it.fails`
+   * into `it` (the edit was proved against this test in the scratch: the handoff's undo proofs).
+   */
+  it.fails('wd2: through SHELL-A on arrival, nothing asked or typed, verify-email said (with ENGINE-7’s edit)', async () => {
+    const item = byName('jr7-workday2-login-verify-sent');
+    const fixture = await load(item);
+    const form = fixture.doc.querySelector('form[data-automation-id="signInFormo"]');
+    form?.removeAttribute('action');
+    form?.removeAttribute('method');
+    fixture.doc.addEventListener('submit', (event) => event.preventDefault(), true);
+    const asked: unknown[] = [];
+    const credential: SignInCredential = { host: '*', email: 'alex.rivera@example.com', password: 'E2e-Dummy-Password-Not-Real',
+      press: true };
+    const channel = { request: async (message: unknown) => {
+      asked.push(message);
+      return { ok: true, data: credential };
+    } } as unknown as SignInContext['channel'];
+    const outcome = await signIn({ doc: fixture.doc, adapter: workdayAdapter, channel, href: () => item.source.href,
+      isTop: true, signal: new AbortController().signal, settleMs: 600, preludeMs: 800, keptMs: 5_000 });
+    expect(outcome).toBe('unavailable');
+    expect(asked).toEqual([]);
+    const box = (id: string) => fixture.doc.querySelector<HTMLInputElement>(`input[data-automation-id="${id}"]`)?.value ?? '';
+    expect([box('email'), box('password')]).toEqual(['', '']);
+    expect(signInDetailOf(fixture.doc)).toEqual({ account: 'verify-email' });
+  });
+});
