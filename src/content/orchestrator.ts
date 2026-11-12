@@ -2684,7 +2684,8 @@ export class FillRun {
    *  the person and profile entries still to add (the Phase 7a review). */
   private submitFacts(): Pick<StepFacts, 'submitVisible' | 'requiredEmpty' | 'noAi' | 'legalGuess' | 'attentionLeft'
     | 'entriesLeft'> {
-    const buttons = stepButtonsOf({ doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow() });
+    const buttons = stepButtonsOf({ doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow(),
+      facts: chainFactsOf(this.env.doc) }); // jr6 SHELL-B (ICIMS-17): an IForm leaf's portal step facts, else null
     const noAi = this.hiddenPolicy || POSTING_NO_AI.some((code) => this.notices.has(code));
     const legalGuess = this.rows.some((row) => row.reason === 'ai-guess' && policyClassOf(row.category) === 'legal');
     // v4: an attention check the run never answers (the posting's phrase) and left empty: the hard rule's hold.
@@ -3115,7 +3116,8 @@ export class FillRun {
     if (this.ended === null ? this.offered : this.ended !== 'review' && this.ended !== 'waiting') return null;
     let read: NonNullable<ReportHeader['buttons']>;
     try {
-      read = stepButtonsOf({ doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow() });
+      read = stepButtonsOf({ doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow(),
+        facts: chainFactsOf(this.env.doc) }); // jr6 SHELL-B (ICIMS-17): an IForm leaf's portal step facts, else null
     } catch {
       return null;
     }
@@ -3212,7 +3214,8 @@ export class FillRun {
     const signature = this.stepped ? this.signatureNow() : null;
     const handed = this.handed !== null && this.handed.signature === signature ? this.handed.elements : undefined;
     return { doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow(), scan: () => this.scanNow(),
-      leftRequired: () => this.leftRequired(), ...(handed === undefined ? {} : { handed }) };
+      leftRequired: () => this.leftRequired(), ...(handed === undefined ? {} : { handed }),
+      facts: chainFactsOf(this.env.doc) }; // jr6 SHELL-B (ICIMS-17): an IForm leaf's portal step facts, else null
   }
 
   /** A Submit was pressed by this run: the runtime arms it, and the report says it waits for its confirmation. */

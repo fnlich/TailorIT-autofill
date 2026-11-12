@@ -381,13 +381,13 @@ describe('the IForm leaf’s run judges its Submit by the facts the worker hands
       expect(worker.reports.at(-1)?.status).toBe('review');
     });
 
-  // The Submit gates' half (press.ts, F2's and ENGINE's file: SHELL-B's handoff to INT-1, SP\jr6\shellb\press-facts.patch):
-  // the panel's buttons and its press read the step through press.ts, which asks the adapter without the leaf's facts
-  // until that patch is in, so the leaf's final Submit is neither offered nor pressed (unknown: no press). With it, the
-  // final Submit is offered and pressed through clickAdapterSubmit alone, Next never. INT-1: apply the patch and turn
-  // `it.fails.each` into `it.each`. (NYU's offer form is left to the doors' test above: its cover letter is asked of the
-  // AI, whose plan the fake worker never finishes, so its run never comes to rest here.)
-  it.fails.each([['jr6-sentinel-iform-selfid', SELFID]] as const)(
+  // The Submit gates' half (press.ts, F2's and ENGINE's file; SHELL-B's handoff, applied at the jr6 integration): the
+  // panel's buttons and its press read the step through press.ts, which asks the adapter with the leaf's facts
+  // (`PressPage.facts`), so the leaf's final Submit is offered and pressed through clickAdapterSubmit alone, Next never;
+  // without the facts it is neither offered nor pressed (unknown: no press). (NYU's offer form is left to the doors'
+  // test above: its cover letter is asked of the AI, whose plan the fake worker never finishes, so its run never comes
+  // to rest here.)
+  it.each([['jr6-sentinel-iform-selfid', SELFID]] as const)(
     '%s (the last step): the panel offers the final Submit and presses it through the Submit gates, with the facts alone',
     async (name, facts) => {
       // Without facts: neither offered nor pressed.

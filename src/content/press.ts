@@ -53,7 +53,7 @@
  * before every other page (dom/pause-detect.ts): the entry is 'blocked' by it, the choice included (the v3 Phase 6/7b
  * review, S1).
  */
-import type { Adapter } from '../adapters/types';
+import type { Adapter, ChainStepFacts } from '../adapters/types'; // jr6 SHELL-B: ChainStepFacts
 import type { EntryAnswer, EntryBlock, StepTarget, PressAnswer } from '../messaging/schemas';
 import type { FrameReport } from '../shared/report';
 import { accountLeft } from '../dom/account-section';
@@ -87,21 +87,27 @@ export interface PressPage {
   leftRequired?(): readonly string[];
   /** A CAPTCHA the person was handed on this step and solved since does not block (the run's own pause rule). */
   handed?: ReadonlySet<Element>;
+  /** jr6 SHELL-B (ICIMS-17; INTEGRATION.md SHELL-B item 1): an iCIMS IForm leaf's portal step facts
+   *  (content/chain-frame.ts chainFactsOf), which the adapter's isFinalStep, nextButton and submitButton and both doors
+   *  (clickIfAllowed's Next, clickAdapterSubmit, the Submit gates' one door) are asked with; absent or null: none, every
+   *  rule as before. */
+  facts?: ChainStepFacts | null; // jr6 SHELL-B
 }
 
 /** The adapter's finality of the step, 'unknown' when it cannot say or throws. */
-function finalityOf(page: Pick<PressPage, 'doc' | 'adapter'>): 'final' | 'not-final' | 'unknown' {
+function finalityOf(page: Pick<PressPage, 'doc' | 'adapter' | 'facts'>): 'final' | 'not-final' | 'unknown' { // jr6 SHELL-B: facts
   try {
-    return page.adapter.isFinalStep?.(page.doc) ?? 'unknown';
+    return page.adapter.isFinalStep?.(page.doc, page.facts) ?? 'unknown'; // jr6 SHELL-B: facts
   } catch {
     return 'unknown';
   }
 }
 
 /** The adapter's Next or Submit button, or null when it names none (or throws). */
-function buttonOf(page: Pick<PressPage, 'adapter' | 'root'>, target: StepTarget): HTMLElement | null {
+function buttonOf(page: Pick<PressPage, 'adapter' | 'root' | 'facts'>, target: StepTarget): HTMLElement | null { // jr6 SHELL-B: facts
   try {
-    return (target === 'next' ? page.adapter.nextButton?.(page.root) : page.adapter.submitButton?.(page.root)) ?? null;
+    return (target === 'next' ? page.adapter.nextButton?.(page.root, page.facts) // jr6 SHELL-B: facts
+      : page.adapter.submitButton?.(page.root, page.facts)) ?? null; // jr6 SHELL-B: facts
   } catch {
     return null;
   }
@@ -115,7 +121,7 @@ function pressable(button: HTMLElement | null, cache = newScanCache()): button i
 
 /** What the step offers the panel's buttons now (FrameReport.buttons): its finality, and whether its Next and its
  *  Submit can be pressed. Flags only. */
-export function stepButtonsOf(page: Pick<PressPage, 'doc' | 'adapter' | 'root'>): NonNullable<FrameReport['buttons']> {
+export function stepButtonsOf(page: Pick<PressPage, 'doc' | 'adapter' | 'root' | 'facts'>): NonNullable<FrameReport['buttons']> { // jr6 SHELL-B: facts
   const cache = newScanCache();
   return { final: finalityOf(page), next: pressable(buttonOf(page, 'next'), cache),
     submit: pressable(buttonOf(page, 'submit'), cache) };
@@ -211,8 +217,8 @@ export function pressStep(page: PressPage, target: StepTarget, options: { confir
     if (count > 0) return { outcome: 'required-empty', count };
   }
   const { acted, invalid } = invalidDuring(page, () => (target === 'next'
-    ? clickIfAllowed(button, { adapter: page.adapter, root: page.root, allowNext: true })
-    : clickAdapterSubmit(page.adapter, page.root) === button));
+    ? clickIfAllowed(button, { adapter: page.adapter, root: page.root, allowNext: true, facts: page.facts }) // jr6 SHELL-B
+    : clickAdapterSubmit(page.adapter, page.root, page.facts) === button)); // jr6 SHELL-B: facts
   if (!acted) return { outcome: 'refused' };
   return invalid > 0 ? { outcome: 'not-accepted', count: invalid } : { outcome: 'pressed' };
 }
