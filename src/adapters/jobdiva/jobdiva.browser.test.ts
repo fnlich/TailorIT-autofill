@@ -313,6 +313,16 @@ describe('JobDiva (jr7 JDEF-7 P1): the adapter and its registration', () => {
       // Undone (the entry door's exemption): the entry is one of the never-pressed choice buttons, so it is refused.
       expect(pressEntryChoice(choice.doc, recoded(['entryNeverPressed']))).toBe('none');
       expect(clicks).toEqual(['Quick Apply (No Account)']);
+      removeFixtures(document);
+      // Apply Now only while no dialog is open: the test draws the cancel dialog open over the posting (as the portal
+      // shows it after a Cancel), and nothing is offered under it.
+      const posting = await open('jr7-jobdiva1-posting');
+      expect(said(jobDivaAdapter.entryControl!(posting.doc))).toBe('Apply Now');
+      const cancel = posting.doc.querySelector<HTMLElement>('#confirmCancelModal')!;
+      cancel.classList.add('show');
+      cancel.style.display = 'block';
+      cancel.removeAttribute('aria-hidden');
+      expect(jobDivaAdapter.entryControl!(posting.doc)).toBeNull();
     });
 
   it('JDV-7: the agent\'s entry presses Apply Now, then the choice it draws in place offers Quick Apply (No Account)',
