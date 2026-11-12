@@ -15,10 +15,10 @@
  * - neverPress, excluded, errors, busy: the hooks of those names; success: content/submitted.ts, through ATS_CONFIGS;
  * - posting: postingText, entryControl; quirks, autosaves: as named;
  * - code: hooks no rule can say, each naming its snapshot in a comment, spread over the rule-built ones (code wins).
- *   jr7 ENGINE-7 E0 (FIX7PLAN §3.1): the shared contract's new hooks have no rule of their own (chainChildOrigins,
- *   confirmationAfter, successSigns, requiredBlocksLeft, uploadPrompt, editorOpener, notCodeBox, identityHosts, handOver,
- *   tailoritAddress: ../types.ts): a configured platform declares each in `code`, which ./index.ts passes through as
- *   written.
+ *   jr7 ENGINE-7 E0 (FIX7PLAN §3.1): the shared contract's new hooks have no rule of their own
+ *   (chainChildOrigins, confirmationAfter, successSigns, requiredBlocksLeft, uploadPrompt, editorOpener, notCodeBox,
+ *   identityHosts, handOver, tailoritAddress: ../types.ts): a configured platform declares each in `code`, which
+ *   ./index.ts passes through as written.
  */
 import type { Platform } from '../../core/enums';
 import type { ApplicationUrl } from '../application-key';

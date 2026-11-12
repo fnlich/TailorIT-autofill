@@ -35,8 +35,8 @@
  * wherever the host serves anything but candidate pages (HOST_PLATFORMS' `paths`: the platform is null on the host's
  * other paths, so the content script stays dormant there). The paths are the ones the snapshots show and no wider.
  * Paycom waited for its snapshots (no match, only its HR exclusion; matched since jr7, below) and DFIN (a company's
- * own host) stays a career site. Chrome reads a host permission without its path, so the path-scoped hosts' permission covers the whole host,
- * as Oracle's does (docs/PRIVACY.md).
+ * own host) stays a career site. Chrome reads a host permission without its path, so the path-scoped hosts'
+ * permission covers the whole host, as Oracle's does (docs/PRIVACY.md).
  * v5 p2-detect (the engine audit's gap 1a; each from Jobright's site list, read as its behaviour, never its code): the
  * address variants of platforms already here, each read by that platform's own url.ts: a Workday tenant's
  * implementation host (<tenant>[.wd<n>].myworkdayjobs-impl.com); Pinpoint's postings under any locale or none

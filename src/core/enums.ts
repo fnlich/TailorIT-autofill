@@ -22,11 +22,11 @@ export const PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable',
   'site',
   // ── snapshot build 2026-11-06 (oracle-sf-sr): SmartRecruiters ──
   'smartrecruiters',
-  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2; AUTO7-12, UKGR-1, PC7-01, JDEF-1 stage 1, ICIMS7-11): the owner's snapshot7 platforms,
-  // appended in this order: UKG Ready (secure<n>.saashr.com), Paycom (www.paycomonline.net's candidate portal), JobDiva
-  // (www<n>.jobdiva.com/portal/), Eightfold (<company>.eightfold.ai/careers) and Jibe, iCIMS's candidate front
-  // (<customer>.jibeapply.com/jobs/), whose application is on iCIMS. Each is a static ATS match of src/shared/hosts.ts
-  // whose adapter is its package's (a stub that reads nothing until then: src/adapters/<platform>/). ──
+  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2; AUTO7-12, UKGR-1, PC7-01, JDEF-1 stage 1, ICIMS7-11): the owner's snapshot7
+  // platforms, appended in this order: UKG Ready (secure<n>.saashr.com), Paycom (www.paycomonline.net's candidate
+  // portal), JobDiva (www<n>.jobdiva.com/portal/), Eightfold (<company>.eightfold.ai/careers) and Jibe, iCIMS's
+  // candidate front (<customer>.jibeapply.com/jobs/), whose application is on iCIMS. Each is a static ATS match of
+  // src/shared/hosts.ts whose adapter is its package's (until then a stub that reads nothing: src/adapters/<platform>).
   'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe',
   // ── end jr7 ENGINE-7 E0 ──
 ] as const;

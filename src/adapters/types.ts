@@ -234,8 +234,8 @@ export interface SignInForm {
   confirm: HTMLInputElement | null;
   /** The account's required terms boxes still unticked: the form's required ones, or (v3 Phase 7b) the boxes the
    *  adapter declares the account's terms where the page marks none required (Workday's createAccountCheckbox).
-   *  jr7 FIX7PLAN §3.1 (ENGINE-7 E0; UP7-04, UltiPro's Register privacy box, drawn as a span[role=checkbox] with no
-   *  native input, ultipro1 and ultipro2 of snapshot7): also a declared ARIA checkbox (an element with
+   *  jr7 FIX7PLAN §3.1 (ENGINE-7 E0; UP7-04, UltiPro's Register privacy box, a ukg-checkbox[role=checkbox] custom
+   *  element with no native input, ultipro1 of snapshot7): also a declared ARIA checkbox (an element with
    *  role="checkbox", never a native input) inside the declared container, ticked per the Consents mode as other account
    *  terms are (FIX7PLAN §5 D-9). Until ENGINE-7 E1 (FIX7PLAN §6.2 item 8: dom/sign-in-form.ts signInRefusal accepts
    *  it, content/sign-in.ts fill clicks it while aria-checked="false" and reads "true" back) a term that is no native
@@ -598,12 +598,12 @@ export interface Adapter {
   // value the person typed, never a per-person id (FIX7PLAN §5 D-10). ──
   /** jr7 FIX7PLAN §3.1 (ICIMS7-01; implemented by ICIMS-7, read by CHAIN-7 for the worker's key): on a portal frame the
    *  adapter claimed, the origins of the forms frames it shows (iCIMS's `.iCIMS_mainFormFrame iframe#icims_formFrame`,
-   *  whose src is https://<company>.icims.com/forms…: arc-onesolutions' IForm steps in snapshot7 iCIMS1, where
-   *  adapters/chain.ts chainChildOrigin reads none from the portal's host): each an origin alone (`https://<x>.icims.com`),
-   *  taken only from a src whose path is /forms, never www, api, login or an internal- host; [] on any other page. The
-   *  portal's hello carries these origins only, never an address (FIX7PLAN §6.5 item 1). */
+   *  whose src is https://<company>.icims.com/forms…: the IForm steps of snapshot7's iCIMS1, on a portal whose host
+   *  adapters/chain.ts chainChildOrigin reads no forms origin from): each an origin alone
+   *  (`https://<x>.icims.com`), taken only from a src whose path is /forms, never www, api, login or an internal- host;
+   *  [] on any other page. The portal's hello carries these origins only, never an address (FIX7PLAN §6.5 item 1). */
   chainChildOrigins?(doc: Document): readonly string[];
-  /** jr7 FIX7PLAN §3.1 (WD7-05: Workday's page after Submit on aristocrat, snapshot7 workday1; UP7-01: UltiPro's
+  /** jr7 FIX7PLAN §3.1 (WD7-05: Workday's page after Submit, snapshot7 workday1; UP7-01: UltiPro's
    *  …/OpportunityApply/ApplicationSubmitted, ultipro1 and ultipro2; Oracle's my-profile after Submit, oraclecloud1;
    *  implemented by WORKDAY-7, ULTIPRO-7 and ORACLE-7): whether `here`, an address of the same origin on the platform's
    *  own route, is the page after submitting the application whose Submit was armed at `armed`. Read by AUTO-7
@@ -648,12 +648,12 @@ export interface Adapter {
    *  the person's by design ('assessment'), or null. Read by AUTO-7 (FIX7PLAN §6.4 item 14): the agent after its
    *  Submit ends needs-you with its words, never timed_out; the Queue tab's status says so. Nothing in it is pressed. */
   handOver?(doc: Document): HandOverKind | null;
-  /** jr7 FIX7PLAN §3.1 (ICIMS7-11, D-6: the Jibe posting oneblood.jibeapply.com/jobs/<id>, snapshot7 icims2, whose
+  /** jr7 FIX7PLAN §3.1 (ICIMS7-11, D-6: the Jibe posting <customer>.jibeapply.com/jobs/<id>, snapshot7 icims2, whose
    *  a#link-apply leads to the same job's iCIMS gate; implemented by ICIMS-7's Jibe adapter): the posting address to
    *  give TailorIT (lookup, Add job, Applied) instead of `here`, this page's own; null to give `here`. Built from the
    *  parts of a link the page shows, never its query: https://<portal>.icims.com/jobs/<id>/job for the same numeric id.
-   *  AUTO-7 (FIX7PLAN §6.4 item 20) re-checks it in the worker before use (it parses as iCIMS, a posting or its form, the
-   *  same job id, https, no credentials), else gives `here`. */
+   *  AUTO-7 (FIX7PLAN §6.4 item 20) re-checks it in the worker before use (it parses as iCIMS, a posting or its form,
+   *  the same job id, https, no credentials), else gives `here`. */
   tailoritAddress?(doc: Document, here: URL): string | null;
   // ── end jr7 ENGINE-7 E0 ──
   quirks?: {
