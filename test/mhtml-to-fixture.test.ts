@@ -4466,6 +4466,27 @@ describe('jr7 TOOLING-7: the converter (FIX7PLAN §6.1)', () => {
     expect(normaliseNewAts('jobdiva', head).text).toBe(head);
   }, 60_000);
 
+  it("ICIMS7-15: an open searched iCIMS list converts, each result's runs (the bolded query's among them) keeping a REDACTED",
+    async () => {
+      const row = (at: number, before: string, after: string) => `<li class="dropdown-result result-selectable${at === 0
+        ? ' result-focus" aria-selected="true' : ''}" id="result-selectable_-1_PersonProfileFields.School_${at}" role="option"
+  dropdown-index="${at}" title="${before}Roeville${after}" aria-label="${before}Roeville${after}">${before}<b>Roeville</b>${after}</li>`;
+      const { text } = await convertPage(ICIMS_APPLY, 'icims', 'jr7-icims715', `<style>.dropdown-results li b { font-weight: 700; }</style>
+<label for="-1_PersonProfileFields.School">School</label>
+<select id="-1_PersonProfileFields.School" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1"
+  icimsdropdown-selected="7"><option value="7">Roeville State University</option></select>
+<a id="-1_PersonProfileFields.School_icimsDropdown" class="dropdown-select" aria-activedescendant="result-selectable_-1_PersonProfileFields.School_0"><span class="dropdown-text">Roeville State University</span></a>
+<div class="dropdown-container"><input type="text" class="dropdown-search" value="Roeville" aria-controls="-1_PersonProfileFields.School_dropdown-results">
+<ul id="-1_PersonProfileFields.School_dropdown-results" class="dropdown-results" role="listbox">
+${row(0, '', ' State University')}${row(1, 'Old ', ' College')}${row(2, 'North ', '')}</ul></div>`);
+      expect(text).not.toContain('Roeville');
+      expect(text).not.toContain('State University');
+      expect(text.match(/<b>REDACTED<\/b>/g)).toHaveLength(3);
+      // Each run keeps its own REDACTED, the white space around it as written.
+      expect(text).toContain('>REDACTED <b>REDACTED</b> REDACTED</li>');
+      expect(text).toContain('><b>REDACTED</b> REDACTED</li>');
+    }, 60_000);
+
   it("every committed fixture: no widget's shown text spelled in an id (T7-01, spelledIdsIn)", () => {
     const files = committedFixtureFiles();
     expect(files.length).toBeGreaterThan(400);

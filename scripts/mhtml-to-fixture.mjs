@@ -1146,15 +1146,19 @@ export function normaliseTokens(platform, html) {
 export function icimsRedactInPage(redacted) {
   const doc = globalThis.document;
   const counts = { names: 0, files: 0, options: 0, choices: 0, results: 0 };
-  /** Its text nodes' words become one REDACTED, every element inside kept (the visibility check counts them).
-   *  @param {Element} el */
-  const blank = (el) => {
+  /** Its text nodes' words become one REDACTED, every element inside kept (the visibility check counts them). jr7
+   *  TOOLING-7 (ICIMS7-15): with `each`, every text run keeps a REDACTED of its own (the white space around it kept), so
+   *  no element that held words loses its box: a searched list's result bolds the typed query in a <b> of its own
+   *  (snapshot7 iCIMS1's profile saves (4) and (5), an open School search), which an emptied run collapsed, and the
+   *  visibility check refused the page. @param {Element} el @param {boolean} [each] */
+  const blank = (el, each = false) => {
     if ((el.textContent ?? '').trim() === '' || (el.textContent ?? '').trim() === redacted) return false;
     const walker = doc.createTreeWalker(el, 4 /* NodeFilter.SHOW_TEXT */);
     let first = true;
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-      if ((node.nodeValue ?? '').trim() === '') continue;
-      node.nodeValue = first ? redacted : '';
+      const text = node.nodeValue ?? '';
+      if (text.trim() === '') continue;
+      node.nodeValue = each ? text.replace(/\S(?:[\s\S]*\S)?/, redacted) : first ? redacted : '';
       first = false;
     }
     return true;
@@ -1196,7 +1200,8 @@ export function icimsRedactInPage(redacted) {
         counts.choices += 1;
       }
       if (!searched) continue;
-      if (blank(result)) counts.results += 1;
+      // jr7 TOOLING-7 (ICIMS7-15): each run of a result keeps a REDACTED, so a bolded query's box stays.
+      if (blank(result, true)) counts.results += 1;
       for (const attribute of ['title', 'aria-label']) {
         if (result.hasAttribute(attribute)) result.setAttribute(attribute, redacted);
       }
