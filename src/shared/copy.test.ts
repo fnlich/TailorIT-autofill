@@ -155,6 +155,17 @@ describe('the copy', () => {
     expect(first).not.toMatch(/Open Application/);
   });
 
+  // The jr6 integration (RULES revD-01 and revD-04, owner question 435): AI answers' All also guesses a non-compete,
+  // relatives and military training where the profile does not answer, each always marked an AI guess
+  // (GUESS_ONLY_CATEGORIES); a job's essential functions never go to the AI, so the help never names them.
+  it('says what AI answers: All guesses, the guess-only topics marked so, never the essential functions', () => {
+    const { help } = COPY.options.modes.ai;
+    for (const words of ['non-compete', 'relatives', 'military training', 'always marked an AI guess',
+      'only the question and its options are sent']) expect(help).toContain(words);
+    expect(help).not.toMatch(/essential function/i);
+    expect(help).toMatch(SENTENCE);
+  });
+
   // The jr6 review (R3, R10): the job-site sign-in is the one saved in Sign-up Information (this browser) since jr6:
   // no word about signing in sends the person to TailorIT's Settings › Autofill to fix it, or says TailorIT holds one.
   it('sends the person to Sign-up Information, never TailorIT’s settings, for the job-site sign-in', () => {

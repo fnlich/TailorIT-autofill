@@ -1198,7 +1198,9 @@ const OPTIONS = {
       name: 'AI answers',
       all: 'All',
       profile: 'Profile only',
-      help: 'All lets the AI answer work authorization, sponsorship, visa, clearance, age, criminal history, pay and "select PURPLE to show you read this" questions your profile doesn\'t answer, with its best guess unless your resume settles it: only the question and its options are sent. Profile only answers them from your profile, and leaves the rest empty. It acts while "Answer the questions my profile does not" is on.',
+      // jr6 integration (RULES revD-01 and revD-04, owner question 435): a non-compete, relatives and military training
+      // too, always marked an AI guess (GUESS_ONLY_CATEGORIES); never a job's essential functions.
+      help: 'All lets the AI answer work authorization, sponsorship, visa, clearance, age, criminal history, pay, non-compete, relatives, military training and "select PURPLE to show you read this" questions your profile doesn\'t answer, with its best guess unless your resume settles it (always marked an AI guess for a non-compete, relatives or military training): only the question and its options are sent. Profile only answers them from your profile, and leaves the rest empty. It acts while "Answer the questions my profile does not" is on.',
     },
     /** The behaviour review of 2026-11-06 (M2), the owner's setting: a résumé the page already shows. */
     resumeOnPage: {
