@@ -113,6 +113,7 @@ import {
   POSTING_COPY_ATTRIBUTES,
   ROW_ID_WORDS_KEPT,
   // ── jr7 TOOLING-7 ──
+  checkedStyleForms,
   readFrameSrcOption,
   STYLE_ORDER_DEFAULTS,
   OPENED_ROWS,
@@ -4712,5 +4713,58 @@ document.head.appendChild(s);</script></body></html>` });
     expect(files.flatMap((file) => spelledIdsIn(readFileSync(join(ROOT, 'fixtures', file), 'utf8'))
       .map((label) => `${file}: ${label}`))).toEqual([]);
   }, 60_000);
+
+  it('the jr6 leftover (INT-2 §6 item 3): the final check reads the inlined stylesheets for the token and referral needles',
+    async () => {
+      // A content blocker's filter list, as the owner's browser injected it (INT-2 §4: one rule, hundreds of link-matching
+      // selectors, display: none !important), its utm_ tag made up: the whole-text pass redacts it, as in any text.
+      const filter = `<style>a[href^="https://ads.tailorit-fixture.example/"][href*="&utm_source=FixtureAds"], .fixture-ad
+  { display: none !important; visibility: hidden !important; }</style>`;
+      const { text } = await convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr7-styles', `${filter}<h1>Engineer</h1>`);
+      expect(text).toContain('[href*="&utm_source=REDACTED"]');
+      expect(checkedStyleForms(text).some((form) => form.includes('utm_source=redacted'))).toBe(true);
+      // What no pass redacts there is refused now: a per-load token in a selector, a JWT in a content string.
+      await expect(convertPage(GREENHOUSE_JOB, 'greenhouse', 'jr7-styles-token', `<style>a[href*="?bft=0dAFfixture"] { color: red; }
+.x::after { content: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl"; }</style><h1>Engineer</h1>`))
+        .rejects.toThrow(/jr7-styles-token\.html: a per-load token is still in an inlined stylesheet[\s\S]*a JWT is still in an inlined stylesheet/);
+      // Base64 payloads are no text, and a page's text is checkedForms', as before.
+      expect(checkedStyleForms('<style>.a { background: url("data:image/png;base64,ZXlKaGJHY2lPaUpJVXpJMU5pSjk=") }</style><p>x</p>'))
+        .toEqual(['.a { background: url("data:image/png;base64,") }', '.a { background: url("data:image/png;base64,") }']);
+    }, 120_000);
+
+  it("every committed fixture's inlined stylesheets: no token needle; no referral value but inside a content blocker's filter list",
+    () => {
+      const files = committedFixtureFiles(undefined, '', /\.html$/);
+      expect(files.length).toBeGreaterThan(400);
+      /** A content blocker's cosmetic filter list (INT-2 §4): a rule block whose every rule hides with display: none
+       *  !important, a hundred selectors or more; the referral needle reads a stylesheet without it. */
+      const withoutFilterLists = (style: string) => {
+        const rules = [...style.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+        const selectors = rules.reduce((sum, rule) => sum + (rule[1] ?? '').split(',').length, 0);
+        return rules.length > 0 && selectors >= 100 && rules.every((rule) => /display\s*:\s*none\s*!important/i.test(rule[2] ?? ''))
+          ? '' : style;
+      };
+      const token: string[] = [];
+      const referral: string[] = [];
+      let filterLists = 0;
+      for (const file of files) {
+        const text = readFileSync(join(ROOT, 'fixtures', file), 'utf8');
+        const forms = checkedStyleForms(text);
+        for (const { label, pattern } of tokenNeedles()) if (forms.some((form) => pattern.test(form))) token.push(`${file}: ${label}`);
+        const styles = [...text.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((match) => match[1] ?? '');
+        const kept = styles.map(withoutFilterLists);
+        filterLists += kept.filter((style, at) => style !== styles[at]).length;
+        // A jr7 case (converted by this converter) has none anywhere; an older one none outside a filter list.
+        const read = isJr6(file) && /(?:^|\/)jr7-/.test(file) ? styles : kept;
+        const [needle] = referralNeedles();
+        if (checkedStyleForms(read.map((style) => `<style>${style}</style>`).join('')).some((form) => needle!.pattern.test(form))) {
+          referral.push(file);
+        }
+      }
+      expect(token).toEqual([]);
+      expect(referral).toEqual([]);
+      // The filter list the owner's browser injected stands in older captures (INT-2 §4: 21 with a utm_ tag in it).
+      expect(filterLists).toBeGreaterThanOrEqual(21);
+    }, 60_000);
 });
 // ── end jr7 TOOLING-7 ──

@@ -4027,6 +4027,23 @@ export function checkedForms(text) {
   return [masked, entities, decodePercents(entities)].map((form) => form.toLowerCase());
 }
 
+/**
+ * jr7 TOOLING-7 (the jr6 leftover, SP\jr6\build\INT-2.md §6 item 3: "inlined stylesheets are never checked"): the
+ * written file's inlined stylesheets, which checkedForms masks as page assets, as the final check reads them for the
+ * needles no stylesheet may hold either (tokenNeedles: jr_id, another extension's parameter or UI, a per-load token, a
+ * sign-in token, a JWT; referralNeedles: a referral parameter's value): each <style>'s text (a declarative shadow root's
+ * too) with base64 payloads masked, as written and percent-decoded, in lower case. (The listed strings are not read
+ * here: a page's own class names and icon rules may spell a listed word, which leakcount and the leak gate judge.)
+ * redactReferralParams already runs over the whole written text, a stylesheet's included (an injected content blocker's
+ * filter list spells link addresses with their utm_ tags: INT-2 §4), so this check proves it ran.
+ * @param {string} text @returns {string[]}
+ */
+export function checkedStyleForms(text) {
+  const styles = [...text.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)]
+    .map((match) => (match[1] ?? '').replace(/(data:[^,"'\s)]*;base64,)[A-Za-z0-9+/=\s]+/gi, '$1'));
+  return styles.flatMap((style) => [style, decodePercents(style)]).map((form) => form.toLowerCase());
+}
+
 // ── snapshot build 2026-11-06 (core pass Z1, item 38): the token checks, one list for the conversion and the sweep ──
 /**
  * The final check's needles that read no owner's list: Jobright's jr_id anywhere (DESIGN-NEW-ATS §6.4, §6.5); and (the
@@ -4946,6 +4963,13 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       const forms = checkedForms(output.text);
       for (const { label, pattern } of needles) {
         if (forms.some((form) => pattern.test(form))) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
+      }
+      // jr7 TOOLING-7 (the jr6 leftover, INT-2 §6 item 3): and the inlined stylesheets, for the token and referral needles.
+      const styleForms = checkedStyleForms(output.text);
+      for (const { label, pattern } of [...tokenNeedles(), ...referralNeedles()]) {
+        if (styleForms.some((form) => pattern.test(form))) {
+          reasons.push(`${basename(output.path)}: ${label} is still in an inlined stylesheet`);
+        }
       }
       // The security fix of 2026-11-06 (S2): no chosen mark (an answer drawn on a control or a list) is written.
       for (const label of chosenMarksIn(output.text)) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
