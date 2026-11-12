@@ -1,0 +1,39 @@
+{
+  "fixture": "icims/jr6-nyu-iform-offer.frame-2",
+  "source": "https://nyu.icims.com/forms?module=Forms&action=showForm&brandtype=ccc&portalid=85&form=jsf-1793623031081-16462&user=REDACTED&item=REDACTED&token=REDACTED&csrf=REDACTED&isPacket=1&in_iframe=1&step=7&aid=REDACTED",
+  "captured": "2026-11-11T04:27:06.000Z",
+  "note": "jr6 P2: uscareers-nyu's cover-letter form with its Signature, on nyu.icims.com/forms (chained), the application's last step. Its fields as the scan reads them once ENGINE E1 to E3 and RULES R1 to R4 merged (FIXPLAN §6.5 P2); what a run decides on them is held by src/adapters/icims/jr6-icims.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Please copy and paste your cover letter below",
+      "kind": "textarea",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "textarea[id=\"icims_f_OfferText\"]",
+      "note": "jr6 ICIMS-16: labelled by the words its IForm draws before the box's own paragraph (labelFor)."
+    },
+    {
+      "label": "Signature",
+      "kind": "checkbox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"icims_f_signature\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form[name=\"icims_form\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input[name=\"icims_save\"]"
+    ],
+    "pressable": [
+      "input[name=\"icims_submit\"]"
+    ]
+  }
+}

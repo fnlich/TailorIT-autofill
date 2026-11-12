@@ -13,6 +13,8 @@
     "Prefer not to self-identify", "I prefer not to self-identify", "Do not wish to self-identify", "Decline to specify",
     "Prefer not to specify", "Decline to identify", "Choose not to identify", "I do not wish to provide this information",
     "I don't want to disclose", "I do not want to disclose", "I'd prefer not to say", "I would prefer not to answer",
-    "Not specified", "Not disclosed", "Not declared"
+    "Not specified", "Not disclosed", "Not declared",
+    "Opt Out", "Opt-Out", "I opt out", "Opt out of self-identification", "Decline self-identification",
+    "Decline self identification"
   ]
 }

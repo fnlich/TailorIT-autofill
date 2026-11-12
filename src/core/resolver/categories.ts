@@ -52,6 +52,26 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   // s2 core-gh end
   // s2 core-wd
   'identity.suffix': 'profile', 'contact.phoneExtension': 'profile', 'identity.hasPreferredName': 'profile',
+  // jr6 RULES (types/intent.ts): a signature's date is decided as its signature is (consent); the rest are the
+  // profile's, or a rule over the form's own options.
+  'consent.signatureDate': 'consent', 'languages.formLanguage': 'profile', 'identity.employeeId': 'profile',
+  'experience.city': 'profile', 'experience.region': 'profile', 'experience.country': 'profile',
+  'education.city': 'profile', 'education.region': 'profile', 'education.country': 'profile',
+  'address.lookup': 'profile', 'address.county': 'profile', 'location.policyResidence': 'profile',
+  'referral.employeeReferred': 'profile', 'location.residesIn': 'profile',
+  // jr6 RULES R2: OPT or CPT, a legal answer from the work-authorization entry (WD-30).
+  'workAuth.opt': 'legal',
+  // jr6 RULES R3: military training from the sensitive part's service and veteran answers (legal); the rest the
+  // profile's, or a rule over its own values.
+  'screening.militaryTraining': 'legal', 'address.type': 'profile', 'referral.detail': 'profile',
+  'preferences.timeZone': 'profile', 'location.inTimeZone': 'profile', 'experience.yearsIn': 'profile',
+  'skills.experienceWith': 'profile',
+  // jr6 RULES R3 (items 49 to 61): the profile's address, and a name the profile never holds.
+  'location.inCountry': 'profile', 'identity.formerName': 'profile',
+  // jr6 RULES R4 (items 62 to 79): the pay's period is the expected pay's (sensitive); the rest the profile's.
+  'identity.prefix': 'profile', 'education.graduated': 'profile', 'address.line3': 'profile', 'salary.period': 'sensitive',
+  'application.resumeMethod': 'profile', 'education.highSchool': 'profile', 'address.mailing': 'profile',
+  'links.facebook': 'profile', 'links.numbered': 'profile',
   unknown: 'unknown',
 };
 
@@ -107,7 +127,12 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'contact.phoneCountry': ['text', 'select', 'combobox', 'typeahead-remote'],
   'contact.phoneType': CHOICE,
   'address.line1': ['text', 'textarea', 'typeahead-remote'], 'address.line2': LINE, 'address.city': LOOKUP,
-  'address.region': LOOKUP, 'address.postalCode': LINE, 'address.country': LOOKUP, 'location.current': LOOKUP,
+  // jr6 RULES R3 (O2: Oracle's ZIP Code, a cx-select search, fixtures/oracle/hjf-apply-section): a postal code is also
+  // searched for, or chosen from a list.
+  'address.region': LOOKUP, 'address.postalCode': ['text', 'combobox', 'typeahead-remote'], 'address.country': LOOKUP,
+  // jr6 RULES R3 (U-11: UltiPro's "Where are you currently located?" drawn as a box of prose, fixtures/ultipro/
+  // application): a box of prose too, where the label is only that question (labelRules LOCATION_WHOLE).
+  'location.current': [...LOOKUP, 'textarea'],
   // s2 core-gh (decision 9; the gh study's 2a: s2-onestream-related-open question_8152421009, "LinkedIn Profile" drawn as
   // a textarea, was read as free text and asked for an AI essay): a link goes into a line or a box of text.
   'links.linkedin': PROSE, 'links.github': PROSE, 'links.portfolio': PROSE, 'links.website': PROSE,
@@ -116,8 +141,11 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   // future require AHEAD to sponsor you…?"): a Yes/No legal question asked in a text box takes "Yes" or "No" from the
   // profile's explicit answer (policy.ts legal.yes-no-text).
   'workAuth.authorized': YES_NO_TEXT, 'workAuth.sponsorship': YES_NO_TEXT, 'workAuth.sponsorshipNow': YES_NO_TEXT,
-  'workAuth.sponsorshipFuture': YES_NO_TEXT, 'workAuth.status': CHOICE, 'workAuth.visaType': ['text', ...CHOICE],
-  'workAuth.clearance': ['text', ...YES_NO], 'screening.over18': YES_NO,
+  'workAuth.sponsorshipFuture': YES_NO_TEXT,
+  // jr6 RULES (JZ-8): a status asked as yes or no on a lone box too ("I am a U.S. citizen").
+  'workAuth.status': YES_NO, 'workAuth.visaType': ['text', ...CHOICE],
+  // jr6 RULES (ADP-9): which clearances are held, on a list that takes several too.
+  'workAuth.clearance': ['text', ...YES_NO, 'checkbox-group', 'multiselect'], 'screening.over18': YES_NO,
   // Never filled: recognised on any answer widget, so it is never taken for something else.
   'screening.criminalHistory': ['text', 'textarea', ...YES_NO],
   'eeo.gender': EEO, 'eeo.hispanicLatino': EEO, 'eeo.race': EEO, 'eeo.veteran': EEO, 'eeo.disability': EEO,
@@ -142,7 +170,8 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'referral.referrerName': LINE,
   'consent.privacy': CONSENT, 'consent.terms': CONSENT, 'consent.certify': CONSENT, 'consent.dataRetention': CONSENT,
   'consent.marketing': CONSENT, 'consent.sms': CONSENT, 'consent.backgroundCheck': CONSENT,
-  'consent.signature': LINE, 'consent.aiAttestation': CONSENT, 'consent.other': CONSENT,
+  // jr6 RULES R3 (ICIMS-15, iCIMS's IForm Signature box `icims_f_signature`): a signature is also a box to tick.
+  'consent.signature': ['text', 'checkbox'], 'consent.aiAttestation': CONSENT, 'consent.other': CONSENT,
   attentionCheck: ANY,
   'freeText.whyCompany': PROSE, 'freeText.whyRole': PROSE, 'freeText.coverLetter': PROSE,
   'freeText.additionalInfo': PROSE, 'freeText.other': PROSE,
@@ -158,6 +187,34 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   // s2 core-wd: a suffix typed or chosen from a list (Workday's Suffix); an extension typed; "I have a preferred name"
   // ticked, or answered yes or no.
   'identity.suffix': ['text', ...CHOICE], 'contact.phoneExtension': LINE, 'identity.hasPreferredName': YES_NO,
+  // jr6 RULES: a signature's date in a date control or typed (JV-1's Jobvite date, Workday's "Date signed"); a form's
+  // language chosen; an employee number typed; a job's or a school's place as its address parts are; an address
+  // search's "Enter manually", on iCIMS's dropdown (never a remote search: the label contract of FIXPLAN §3.2); a
+  // county typed or chosen; a privacy policy's residence, a place a question asks only of its residents, chosen; a
+  // referral by an employee, yes or no. jr6 fix (RULES-R11): a signature's date drawn in parts takes its month and day
+  // from lists (iCIMS's IForm dates; labelRules reads a list only as one part of the date).
+  'consent.signatureDate': ['text', 'date', 'select', 'combobox'], 'languages.formLanguage': CHOICE,
+  'identity.employeeId': LINE,
+  'experience.city': LOOKUP, 'experience.region': LOOKUP, 'experience.country': LOOKUP, 'education.city': LOOKUP,
+  'education.region': LOOKUP, 'education.country': LOOKUP, 'address.lookup': ['select', 'combobox'],
+  'address.county': ['text', 'select', 'combobox'], 'location.policyResidence': CHOICE,
+  'referral.employeeReferred': YES_NO, 'location.residesIn': CHOICE,
+  // jr6 RULES R2: OPT or CPT, yes or no (WD-30).
+  'workAuth.opt': YES_NO_TEXT,
+  // jr6 RULES R3: yes or no questions; an address's type, a source's detail chosen from a list; a time zone typed or
+  // chosen, jr6 fix (RULES-R48-TZ, IC-R2: ARS's iCIMS "Time Zone", a dropdown with icimsdropdown-search, fixtures
+  // jr6-ars-profile) or searched for.
+  'screening.militaryTraining': YES_NO, 'address.type': CHOICE, 'referral.detail': CHOICE,
+  'preferences.timeZone': ['text', ...CHOICE, 'typeahead-remote'], 'location.inTimeZone': YES_NO,
+  'experience.yearsIn': YES_NO,
+  'skills.experienceWith': YES_NO,
+  // jr6 RULES R3: living or working in a country, yes or no; a former name typed.
+  'location.inCountry': YES_NO, 'identity.formerName': LINE,
+  // jr6 RULES R4: a prefix typed or chosen; yes or no; a line typed; a period, a method chosen; a box of an address or a
+  // link.
+  'identity.prefix': ['text', ...CHOICE], 'education.graduated': YES_NO, 'address.line3': LINE, 'salary.period': CHOICE,
+  'application.resumeMethod': CHOICE, 'education.highSchool': YES_NO, 'address.mailing': PROSE,
+  'links.facebook': PROSE, 'links.numbered': PROSE,
   unknown: ANY,
 };
 
@@ -261,7 +318,26 @@ export const AI_OPENED_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCat
   'salary.currency', 'attentionCheck',
   // s2 core-gh: U.S. government or military service, which the AI answered before it had a category of its own ("Have
   // you ever worked for the US government?"), where the profile holds no answer.
-  'screening.governmentService']);
+  'screening.governmentService',
+  // jr6 RULES (jobvite-new-1, the owner's "absolutely all"): the other yes/no screening questions of snapshot round 2
+  // (Sikich's "Are you currently subject to a non-compete, non-solicitation or any other restrictive employment
+  // agreement?"), where the profile holds no answer; marked "AI guess" unless a fact settles it. jr6 fix (revD-01):
+  // never the essential functions, which ask about a disability or the accommodation it needs (a self-identification's
+  // topic: the profile's explicit answer only, else the person's).
+  'screening.restrictiveAgreement', 'screening.relatives',
+  // jr6 RULES R2 (WD-30): OPT or CPT, where the entry does not settle it.
+  'workAuth.opt',
+  // jr6 RULES R3 (WD-29): military training, where the service and veteran answers do not settle it.
+  'screening.militaryTraining']);
+
+/**
+ * jr6 fix (revD-04): the AI-opened categories no résumé or posting can settle (a contract the person may be bound by,
+ * relatives at the company, military training for this role): TailorIT's answer to one is always written as an "AI
+ * guess" (plan/frame.ts planAnswer), whatever basis it gives, so a legal guess is never shown as a fact and the
+ * auto-apply agent's legal-guess rule (settings.agentSkip.legalGuess) sees it.
+ */
+export const GUESS_ONLY_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>([
+  'screening.restrictiveAgreement', 'screening.relatives', 'screening.militaryTraining']);
 
 /**
  * The profile categories an AI answer may fill when the profile holds no value for them (the owner's amendments): job
@@ -272,4 +348,10 @@ export const ANSWERABLE_PROFILE_CATEGORIES: ReadonlySet<FieldCategory> = new Set
   'preferences.relocation', 'preferences.workArrangement', 'preferences.travel', 'availability.noticePeriod',
   'availability.startDate', 'referral.source', 'experience.totalYears', 'skills.list',
   // s2 core-gh review (C4): certifications the profile does not settle, as the AI answered them before this round.
-  'skills.certifications']);
+  'skills.certifications',
+  // jr6 RULES R3 (JV-16): years in something, experience with something, and a time zone the rules do not settle.
+  'experience.yearsIn', 'skills.experienceWith', 'location.inTimeZone',
+  // jr6 RULES R3 (JZ-11): living or working in a country the address does not settle (a place no country names).
+  'location.inCountry',
+  // jr6 RULES R4 (ICIMS-25, ADP-20): a graduation, a high-school diploma the education entries do not settle.
+  'education.graduated', 'education.highSchool']);

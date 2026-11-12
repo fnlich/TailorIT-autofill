@@ -40,9 +40,17 @@ export interface ChainPage {
 /** SuccessFactors' career sites (successfactors/url.ts HOST). */
 const SF_HOST = /^career\d{0,3}\.successfactors\.(?:com|eu)$/;
 /** An iCIMS portal's host as the IForm snapshots show it, careers-<co>, uscareers-<co> or us-careers-<co>, and the
- *  forms host <co>.icims.com that frames its IForms' own forms. */
-const ICIMS_PORTAL = /^(?:careers|uscareers|us-careers)-([a-z0-9-]+)\.icims\.com$/;
-const ICIMS_FORMS = /^(?!(?:www|api|login|careers-|uscareers-|us-careers-|internal-))([a-z0-9-]+)\.icims\.com$/;
+ *  forms host <co>.icims.com that frames its IForms' own forms. jr6 ICIMS-27: the portal names' whole prefix family a
+ *  forms host is the portal's host without, as Jobright strips it (a fact of ~core/icims-submit-request
+ *  isIcimsPacketLeaf, written here in our own words): careers and careers1 to careers99, jobs, staff, faculty, main,
+ *  uscareers, us-careers, internationalcareers, corporatecareers, securitycareers, external, non-clinical, retail,
+ *  nationalalamo, nationalalamoca, us and pr. A longer name stands before a shorter one it starts with (us-careers
+ *  before us, nationalalamoca before nationalalamo), so a company's name never takes a prefix's part. */
+const ICIMS_PREFIX = `(?:${[/us-careers|uscareers|internationalcareers|corporatecareers|securitycareers/,
+  /careers(?:[1-9]\d?)?|jobs|staff|faculty|main|external|non-clinical|retail|nationalalamoca|nationalalamo|us|pr/]
+  .map((part) => part.source).join('|')})`;
+const ICIMS_PORTAL = new RegExp(`^${ICIMS_PREFIX}-([a-z0-9-]+)\\.icims\\.com$`);
+const ICIMS_FORMS = new RegExp(`^(?!(?:www|api|login|internal-|${ICIMS_PREFIX}-))([a-z0-9-]+)\\.icims\\.com$`);
 
 /** An https address on the default port, with no credentials. */
 function plain(url: URL): boolean {

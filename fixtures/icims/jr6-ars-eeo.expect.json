@@ -1,0 +1,44 @@
+{
+  "fixture": "icims/jr6-ars-eeo",
+  "source": "https://careers-ars.icims.com/jobs/69503/azure-infrastructure-engineer/eeo?back=",
+  "captured": "2026-11-11T04:17:04.000Z",
+  "note": "jr6 P2: careers-ars's EEO, the bar's last step. Its fields as the scan reads them once ENGINE E1 to E3 and RULES R1 to R4 merged (FIXPLAN §6.5 P2); what a run decides on them is held by src/adapters/icims/jr6-icims.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": true,
+      "section": "Voluntary Information",
+      "fillable": true,
+      "options": 4,
+      "control": "select[id=\"CandProfileFields.Gender\"]"
+    },
+    {
+      "label": "Race",
+      "kind": "select",
+      "required": true,
+      "section": "Voluntary Information",
+      "fillable": true,
+      "options": 9,
+      "control": "select[id=\"CandProfileFields.Race\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input#eeop_form_save_i",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Faq_Link",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#eeop_form_submit_i"
+    ]
+  }
+}

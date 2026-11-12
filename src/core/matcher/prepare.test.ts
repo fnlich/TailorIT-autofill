@@ -48,6 +48,19 @@ describe('prepareOptions (§4.0, §4.12)', () => {
     expect(doneMatch(outcomeOf(inputOf(texas, ['Loading more...', 'Ohio', 'Texas'], 'region'))).optionIndex).toBe(2);
   });
 
+  // jr6 fix (AD-R1, ADP:stage1-5): ADP's State / Territory rows read "AL - Alabama" … "TX - Texas"
+  // (fixtures/adp/jr6-personal-us-*).
+  it('reads a region written as its code and name around a dash, either way round, when both halves name it', () => {
+    expect(prepared(['TX - Texas', 'Texas – TX', 'AL - Alabama', 'TX - Oklahoma', 'Texas - Austin'], 'region').list
+      .map((option) => option.entityIds)).toEqual([['usps:TX'], ['usps:TX'], ['usps:AL'], [], []]);
+    const texas = intendedRegion({ code: 'TX', name: 'Texas' }, 'US', 'Texas', vocab);
+    const rows = ['AK - Alaska', 'AL - Alabama', 'TN - Tennessee', 'TX - Texas', 'UT - Utah', 'WY - Wyoming'];
+    expect(doneMatch(outcomeOf(inputOf(texas, rows, 'region'))))
+      .toMatchObject({ optionIndex: 3, stage: 'alias', rule: 'entity-id' });
+    // Elsewhere than the region domain the label is read as before.
+    expect(prepared(['TX - Texas'], 'generic').list[0]!.entityIds).toEqual([]);
+  });
+
   it('reads Other, exclusive and decline options in the answer context, whatever the domain', () => {
     const list = prepared(['My school is not listed', 'None of the above', 'Prefer not to say', 'Other (please specify)',
       'Rice University'], 'institution').list;

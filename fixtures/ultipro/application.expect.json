@@ -133,38 +133,13 @@
       "control": "input#WillingToRelocate"
     },
     {
-      "label": "REDACTED",
-      "kind": "checkbox",
-      "required": false,
-      "section": "Documents",
-      "fillable": true,
-      "control": "div.file.row.hidden-print[data-automation=\"file-row\"] input[data-automation=\"select-document-checkbox\"]"
-    },
-    {
-      "label": "REDACTED Document Type",
-      "kind": "select",
-      "required": false,
-      "section": "Documents",
-      "fillable": true,
-      "options": 4,
-      "control": "div.file.row.hidden-print[data-automation=\"file-row\"] select[data-automation=\"file-type\"]"
-    },
-    {
-      "label": "REDACTED Description",
-      "kind": "text",
-      "required": false,
-      "section": "Documents",
-      "fillable": true,
-      "control": "div.file.row.hidden-print[data-automation=\"file-row\"] input[data-automation=\"file-description\"]"
-    },
-    {
       "label": "Upload a file",
       "kind": "file",
       "required": false,
       "section": "Documents",
       "fillable": true,
       "control": "input#FileUpload_0000000002",
-      "note": "The Documents upload: its label[for][role=button] stands for the hidden input."
+      "note": "jr6 U-12: the uploaded documents' rows (div[data-automation=file-row]) are excluded; the panel's own upload stays a field."
     },
     {
       "label": "How did you hear about this opportunity?",
@@ -185,31 +160,13 @@
       "control": "input[data-automation=\"yes-employee-referral-radio\"]"
     },
     {
-      "label": "When can you start? (MM/DD/YYYY) month",
-      "kind": "text",
+      "label": "When can you start? (MM/DD/YYYY)",
+      "kind": "date",
       "required": true,
       "section": "Questions",
       "fillable": true,
-      "control": "ukg-date-input-text >>> input[data-automation=\"ukg-date-input-text-month\"]",
-      "note": "The start date's month box, in ukg-date-input-text's open shadow root (the selector steps into it with \" >>> \"), labelled by the light label[data-automation=start-date-label] in its form group with \"month\" after it (the adapter's labelFor and labelSuffix); required by its aria-required."
-    },
-    {
-      "label": "When can you start? (MM/DD/YYYY) day",
-      "kind": "text",
-      "required": true,
-      "section": "Questions",
-      "fillable": true,
-      "control": "ukg-date-input-text >>> input[data-automation=\"ukg-date-input-text-day\"]",
-      "note": "The start date's day box, in ukg-date-input-text's open shadow root (the selector steps into it with \" >>> \"), labelled by the light label[data-automation=start-date-label] in its form group with \"day\" after it (the adapter's labelFor and labelSuffix); required by its aria-required."
-    },
-    {
-      "label": "When can you start? (MM/DD/YYYY) year",
-      "kind": "text",
-      "required": true,
-      "section": "Questions",
-      "fillable": true,
-      "control": "ukg-date-input-text >>> input[data-automation=\"ukg-date-input-text-year\"]",
-      "note": "The start date's year box, in ukg-date-input-text's open shadow root (the selector steps into it with \" >>> \"), labelled by the light label[data-automation=start-date-label] in its form group with \"year\" after it (the adapter's labelFor and labelSuffix); required by its aria-required."
+      "control": "ukg-date-input-text[role=\"group\"]",
+      "note": "jr6 U-07: one date drawn in three boxes (dateFor), its boxes its parts, never fields. Its box is the wrapper whose style draws one (controlBox, the jr6 review's REVC-5): in this capture UKG's own scoped style draws it on ukg-item, an inset 1px shadow, so it reads fillable."
     },
     {
       "label": "Are you legally authorized to work in the US?",
@@ -263,12 +220,13 @@
       "control": "select#Gender"
     },
     {
-      "label": "I decline to say",
+      "label": "Gender I decline to say",
       "kind": "checkbox",
       "required": false,
       "section": "Questions",
       "fillable": true,
-      "control": "input[data-automation=\"gender-decline-checkbox\"]"
+      "control": "input[data-automation=\"gender-decline-checkbox\"]",
+      "note": "jr6 U-09: labelled by its list's question first (labelFirst), the label contract with RULES."
     },
     {
       "label": "Ethnic Origin",
@@ -280,12 +238,13 @@
       "control": "select#HispanicOrigin"
     },
     {
-      "label": "I decline to say",
+      "label": "Ethnic Origin I decline to say",
       "kind": "checkbox",
       "required": false,
       "section": "Questions",
       "fillable": true,
-      "control": "input[data-automation=\"ethnic-origin-decline-checkbox\"]"
+      "control": "input[data-automation=\"ethnic-origin-decline-checkbox\"]",
+      "note": "jr6 U-09: labelled by its list's question first (labelFirst), the label contract with RULES."
     },
     {
       "label": "Race",
@@ -297,12 +256,13 @@
       "control": "select#EthnicOrigin"
     },
     {
-      "label": "I decline to say",
+      "label": "Race I decline to say",
       "kind": "checkbox",
       "required": false,
       "section": "Questions",
       "fillable": true,
-      "control": "input[data-automation=\"race-decline-checkbox\"]"
+      "control": "input[data-automation=\"race-decline-checkbox\"]",
+      "note": "jr6 U-09: labelled by its list's question first (labelFirst), the label contract with RULES."
     },
     {
       "label": "Are you a protected veteran?",
@@ -314,12 +274,13 @@
       "control": "select#USFederalContractor"
     },
     {
-      "label": "I decline to say",
+      "label": "Are you a protected veteran? I decline to say",
       "kind": "checkbox",
       "required": false,
       "section": "Questions",
       "fillable": true,
-      "control": "input[data-automation=\"us-federal-contractor-question-decline-checkbox\"]"
+      "control": "input[data-automation=\"us-federal-contractor-question-decline-checkbox\"]",
+      "note": "jr6 U-09: labelled by its list's question first (labelFirst), the label contract with RULES."
     },
     {
       "label": "template",

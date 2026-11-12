@@ -23,6 +23,10 @@ import hjfApplySectionExpect from '../../../fixtures/oracle/hjf-apply-section.ex
 import hjfApplySectionHtml from '../../../fixtures/oracle/hjf-apply-section.html?raw';
 import hjfAfterSubmitExpect from '../../../fixtures/oracle/hjf-after-submit.expect.json';
 import hjfAfterSubmitHtml from '../../../fixtures/oracle/hjf-after-submit.html?raw';
+import caesarsPostingExpect from '../../../fixtures/oracle/jr6-caesars-posting.expect.json';
+import caesarsPostingHtml from '../../../fixtures/oracle/jr6-caesars-posting.html?raw';
+import caesarsGateExpect from '../../../fixtures/oracle/jr6-caesars-email-gate.expect.json';
+import caesarsGateHtml from '../../../fixtures/oracle/jr6-caesars-email-gate.html?raw';
 import { isUserVisible } from '../../dom/visibility';
 // The P2 review (security 1)
 import { oracleCandidateExperienceShown, oracleShellShown } from '../../dom/page-signals';
@@ -43,6 +47,9 @@ const CASES = [
   { name: 'hjf-apply-section', html: hjfApplySectionHtml, json: hjfApplySectionExpect, address: 'https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551/apply/section/1' },
   // ── behaviour review 2026-11-06 (M4): the same flow 12 s after its Submit ──
   { name: 'hjf-after-submit', html: hjfAfterSubmitHtml, json: hjfAfterSubmitExpect, address: 'https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551/apply/section/1' },
+  // ── jr6 ORACLE (FIXPLAN §6.11): the owner's snapshots of a us2 tenant's posting and its email gate ──
+  { name: 'jr6-caesars-posting', html: caesarsPostingHtml, json: caesarsPostingExpect, address: 'https://edmn.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/78569' },
+  { name: 'jr6-caesars-email-gate', html: caesarsGateHtml, json: caesarsGateExpect, address: 'https://edmn.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/78569/apply/email' },
 ] as const;
 
 /** A page's own base address (a srcdoc page's is about:srcdoc), after it loaded: its forms and links resolve there. */
@@ -97,9 +104,11 @@ function faded(doc: Document): void {
 }
 
 /** What the scanner reads differently from hjf-apply-section.expect.json once the image is taken away, and why: the
- *  read-only email box and the phone's number box (borderless inside its composite row) read as camouflaged. */
+ *  read-only email box reads as camouflaged. jr6 O4 (ORACLE P2, with ENGINE E2): the phone's number box, borderless
+ *  inside its composite row, is drawn by the row's bordered group the adapter declares (controlBox), which the
+ *  camouflage check reads, so it reads fillable as the expectation says (jr6-oracle.browser.test.ts, P2 O4). */
 const KNOWN_PLAIN: ReadonlyArray<{ control: string; property: string }> = [
-  { control: 'input#email-22', property: 'fillable' }, { control: 'input.phone-row__input', property: 'fillable' }];
+  { control: 'input#email-22', property: 'fillable' }];
 
 afterEach(() => removeFixtures(document));
 
@@ -152,8 +161,10 @@ describe("a section page on Oracle's government cloud (the owner's snapshot of 2
     expect(result.fields.length).toBeGreaterThan(20);
     const fillable = result.fields.filter((field) => fillabilityOf(field, result.target(field.key)?.widget).fillable);
     // Every row's label is rgb(90, 108, 119), between the veil's darkest (51) and lightest (255): refused. Three are
-    // worded in black (the drop zone's words and the two agreements), which read even on the veil over black.
-    expect(fillable.map((field) => field.label)).toEqual(['Drop Cover Letter Here',
+    // worded in black (the drop zone's words and the two agreements), which read even on the veil over black. jr6 O5,
+    // O1: the phone's country code is labelled by its own sub-label, grey too but drawn inside the phone row's opaque
+    // white group (rgb(255, 255, 255)), which no image shows through, and declared a widget: it reads.
+    expect(fillable.map((field) => field.label)).toEqual(['Country code', 'Drop Cover Letter Here',
       'I agree to receive updates about new job opportunities.', 'I agree to receive marketing communications']);
   });
 
@@ -174,7 +185,8 @@ describe("a section page on Oracle's government cloud (the owner's snapshot of 2
     expect(oracleAdapter.isFinalStep!(fixture.doc)).toBe('final');
     expect(oracleAdapter.submitButton!(fixture.doc.documentElement)).toBe(
       fixture.doc.querySelector('button.apply-flow-pagination__submit-button'));
-    expect(oracleAdapter.nextButton).toBeUndefined();
+    // jr6 O8: a Next is read where a section shows one (jr6-oracle.browser.test.ts); this one-page flow shows none.
+    expect(oracleAdapter.nextButton!(fixture.doc.documentElement)).toBeNull();
     // The behaviour review of 2026-11-06 (O08): a Submit the page hides is no Submit a person sees, so the step is not
     // read as final by it.
     const submit = fixture.doc.querySelector<HTMLElement>('button.apply-flow-pagination__submit-button')!;

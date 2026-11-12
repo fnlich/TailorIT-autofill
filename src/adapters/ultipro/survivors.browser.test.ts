@@ -9,7 +9,7 @@
  * - U6 (errors, application): a field's error span is an error once a person sees it;
  * - U7, U8 (the review state, resume-review): its Next is the primary "Save and continue" in its actions, and the state
  *   holds only while the parsed résumé's contact section shows;
- * - U13 (startDateLabel, application): the start date's boxes take the start-date label alone;
+ * - U13 (startDateLabel, application): the start date (jr6 U-07: its component) takes the start-date label alone;
  * - U15 (root, application): #OpportunityApply is the root only while it holds the Submit host;
  * - U16 (skillsTitle, resume-review): the typeahead takes the Skills panel's heading only inside that panel.
  */
@@ -104,13 +104,15 @@ describe('labels (resume-review, application)', () => {
     expect(ultiproAdapter.labelFor!(typeahead)).toBeNull();
   });
 
-  it("U13: the start date's boxes take the start-date label alone (application)", async () => {
+  it("U13: the start date takes the start-date label alone (application; jr6 U-07: the component, not its boxes)", async () => {
     const fixture = await open(applicationHtml);
+    const host = q(fixture, 'ukg-date-input-text[role="group"]');
     const month = deepAll(fixture.doc, '[data-automation="ukg-date-input-text-month"]')[0]!;
     const label = q(fixture, 'label[data-automation="start-date-label"]');
-    expect(ultiproAdapter.labelFor!(month)).toBe(label);
-    label.removeAttribute('data-automation');
+    expect(ultiproAdapter.labelFor!(host)).toBe(label);
     expect(ultiproAdapter.labelFor!(month)).toBeNull();
+    label.removeAttribute('data-automation');
+    expect(ultiproAdapter.labelFor!(host)).toBeNull();
   });
 });
 

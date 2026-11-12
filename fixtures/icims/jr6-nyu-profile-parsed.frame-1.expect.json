@@ -1,0 +1,691 @@
+{
+  "fixture": "icims/jr6-nyu-profile-parsed.frame-1",
+  "source": "https://uscareers-nyu.icims.com/jobs/16462/continual-service-improvement-manager%2c-global-infrastructure-and-operations/candidate?from=login&csrf=REDACTED&in_iframe=1&hashed=REDACTED&uploadResume=1&uploadResume=1",
+  "captured": "2026-11-11T04:21:46.000Z",
+  "note": "jr6 P2: uscareers-nyu's Candidate Profile after iCIMS read the résumé: four employment blocks, date parts, education dropdowns. Its fields as the scan reads them once ENGINE E1 to E3 and RULES R1 to R4 merged (FIXPLAN §6.5 P2); what a run decides on them is held by src/adapters/icims/jr6-icims.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Upload your resume from a computer file, Google Drive, or via Dropbox. (Max size: 5 MB)",
+      "kind": "file",
+      "required": true,
+      "section": "Resume Provide your resume below to auto-fill your profile. Once your profile has been created, please review and edit the fields to make sure your information is accurate. You can provide a new resume at any time, which will replace the resume you already have on file. If you provide a new resume, please also review and update your profile.",
+      "fillable": true,
+      "control": "input[id=\"PortalProfileFields.Resume_File\"]",
+      "note": "jr6 ICIMS-23: a résumé on record: its upload buttons are hidden beside the current file and \"Replace Resume\"; the input stays the résumé's field, its control the Replace Resume button a person sees (uploadWidgets), holding a file (uploadHeld). The button is never pressed and the input never written while the page holds a file."
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.FirstName\"]"
+    },
+    {
+      "label": "Middle Name",
+      "kind": "text",
+      "required": false,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.MiddleName\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.LastName\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.Email\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "select",
+      "required": true,
+      "section": "Phones (1)",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"-1_PersonProfileFields.PhoneType\"]"
+    },
+    {
+      "label": "Number (Area Code & Number)",
+      "kind": "text",
+      "required": true,
+      "section": "Phones (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.PhoneNumber\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet1\"]"
+    },
+    {
+      "label": "Address 2",
+      "kind": "text",
+      "required": false,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet2\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressCity\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressCountry_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "State/Province",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressState_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "Zip/Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressZip\"]"
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "select",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "options": 6,
+      "control": "select[id=\"rcf3048\"]"
+    },
+    {
+      "label": "Please specify further",
+      "kind": "select",
+      "required": false,
+      "section": "Enter your information",
+      "fillable": true,
+      "options": 1,
+      "control": "select[id=\"rcf3049\"]"
+    },
+    {
+      "label": "School",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.School_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "Enter school name if not in the list above",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "input[id=\"-1_CandProfileFields.Minor\"]"
+    },
+    {
+      "label": "Degree",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.Degree_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "Major",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.Major_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "Did You Graduate?",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 2,
+      "control": "select[id=\"-1_CandProfileFields.IsGraduated\"]"
+    },
+    {
+      "label": "If no degree recieved, number of years completed",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "input[id=\"-1_CandProfileFields.YearsCompleted\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "input[id=\"-1_CandProfileFields.EducationCity\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.EducationCountry_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "State",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.EducationState_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "Employer",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330156_PersonProfileFields.rcf3212\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330156_PersonProfileFields.rcf3216\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-330156_PersonProfileFields.rcf3218_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "State/Province",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-330156_PersonProfileFields.rcf3217_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "Title",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330156_PersonProfileFields.rcf3213\"]"
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) month",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-330156_PersonProfileFields.rcf3214_Month\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) day",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-330156_PersonProfileFields.rcf3214_Date\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) year",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330156_PersonProfileFields.rcf3214_Year\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) month",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-330156_PersonProfileFields.rcf3215_Month\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) day",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-330156_PersonProfileFields.rcf3215_Date\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) year",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330156_PersonProfileFields.rcf3215_Year\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "textarea",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "textarea[id=\"-330156_PersonProfileFields.rcf3268\"]"
+    },
+    {
+      "label": "Employer",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330157_PersonProfileFields.rcf3212\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330157_PersonProfileFields.rcf3216\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-330157_PersonProfileFields.rcf3218_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "State/Province",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-330157_PersonProfileFields.rcf3217_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "Title",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330157_PersonProfileFields.rcf3213\"]"
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) month",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-330157_PersonProfileFields.rcf3214_Month\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) day",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-330157_PersonProfileFields.rcf3214_Date\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) year",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330157_PersonProfileFields.rcf3214_Year\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) month",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-330157_PersonProfileFields.rcf3215_Month\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) day",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-330157_PersonProfileFields.rcf3215_Date\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) year",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330157_PersonProfileFields.rcf3215_Year\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "textarea",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "textarea[id=\"-330157_PersonProfileFields.rcf3268\"]"
+    },
+    {
+      "label": "Employer",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330154_PersonProfileFields.rcf3212\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330154_PersonProfileFields.rcf3216\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-330154_PersonProfileFields.rcf3218_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "State/Province",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-330154_PersonProfileFields.rcf3217_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "Title",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330154_PersonProfileFields.rcf3213\"]"
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) month",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-330154_PersonProfileFields.rcf3214_Month\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) day",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-330154_PersonProfileFields.rcf3214_Date\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) year",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330154_PersonProfileFields.rcf3214_Year\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) month",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-330154_PersonProfileFields.rcf3215_Month\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) day",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-330154_PersonProfileFields.rcf3215_Date\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) year",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330154_PersonProfileFields.rcf3215_Year\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "textarea",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "textarea[id=\"-330154_PersonProfileFields.rcf3268\"]"
+    },
+    {
+      "label": "Employer",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330155_PersonProfileFields.rcf3212\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330155_PersonProfileFields.rcf3216\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-330155_PersonProfileFields.rcf3218_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "State/Province",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-330155_PersonProfileFields.rcf3217_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
+    },
+    {
+      "label": "Title",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330155_PersonProfileFields.rcf3213\"]"
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) month",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-330155_PersonProfileFields.rcf3214_Month\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) day",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-330155_PersonProfileFields.rcf3214_Date\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1) year",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330155_PersonProfileFields.rcf3214_Year\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) month",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-330155_PersonProfileFields.rcf3215_Month\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) day",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-330155_PersonProfileFields.rcf3215_Date\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1) year",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-330155_PersonProfileFields.rcf3215_Year\"]",
+      "note": "jr6 ICIMS-10: a date part, labelled by its date's label with its part (labelFor label_<date>, labelSuffix, labelFirst)."
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "textarea",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "textarea[id=\"-330155_PersonProfileFields.rcf3268\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input[id=\"PersonProfileFields.Login\"]",
+      "password": "input[id=\"PersonProfileFields.Password\"]",
+      "confirm": "input[id=\"PersonProfileFields.Password_Confirm\"]",
+      "terms": [],
+      "button": "input#cp_form_submit_i",
+      "form": "form#profileForm",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "button.icims-social-login",
+      "button.iCIMS_googleDriveButton",
+      "button.iCIMS_dropboxButton",
+      "button.iCIMS_oneDriveButton",
+      "button.iCIMS_DeleteButton",
+      "a.iCIMS_Faq_Link",
+      ".iCIMS_userMenuLink a",
+      "a[href*=\"loginOnly=1\"]",
+      "a.iCIMS_Anchor_Nav",
+      "a.iCIMS_Anchor[id*=\"Button2_\"]"
+    ],
+    "pressable": [
+      "input#cp_form_submit_i"
+    ]
+  }
+}

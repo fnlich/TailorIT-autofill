@@ -65,11 +65,10 @@
       "kind": "combobox",
       "required": true,
       "section": "Enter your information",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a#rcf3553_icimsDropdown",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results; a list read whole once opened, the select saying icimsdropdown-search=\"0\"."
     },
     {
       "label": "Type",
@@ -114,25 +113,23 @@
     },
     {
       "label": "Country",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": true,
       "section": "Addresses (1)",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_PersonProfileFields.AddressCountry_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "State/Province",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": true,
       "section": "Addresses (1)",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a[id=\"-1_PersonProfileFields.AddressState_icimsDropdown\"]",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results and whose search box takes a query; a remote search, the select saying icimsdropdown-search=\"1\" (the server pages its list)."
     },
     {
       "label": "LinkedIn Profile (URL)",
@@ -147,11 +144,10 @@
       "kind": "combobox",
       "required": true,
       "section": "Enter your information",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "a#rcf3339_icimsDropdown",
-      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+      "note": "iCIMS's own dropdown (jr6 ICIMS-01): a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), declared by the adapter (widgetFor): its trigger opens the container beside it, whose ul.dropdown-results holds the results; a list read whole once opened, the select saying icimsdropdown-search=\"0\"."
     },
     {
       "label": "How did you hear about us?",
@@ -182,14 +178,13 @@
       "note": "The hidden select (dropdown-hide) behind iCIMS's dropdown a#rcf3553_icimsDropdown: never a field of its own."
     },
     {
-      "label": "",
+      "label": "Please upload your resume (Max size: 5 MB)",
       "kind": "file",
-      "required": false,
-      "section": "",
-      "fillable": false,
-      "reason": "not-user-visible",
+      "required": true,
+      "section": "Resume",
+      "fillable": true,
       "control": "input[id=\"PortalProfileFields.Resume_File\"]",
-      "note": "A resume was read already (?uploadResume): its upload buttons are hidden (#PortalProfileFields.Resume_UploadButtons.upload-buttons.iCIMS_NoDisplay, the adapter’s excluded part) beside the current file and \"Replace Resume\": no field until the person replaces it."
+      "note": "jr6 ICIMS-23: a resume was read already (?uploadResume): its upload buttons are hidden beside the current file and \"Replace Resume\"; the input stays the resume's field, its control the Replace Resume button a person sees (uploadWidgets), holding a file (uploadHeld). The button is never pressed and the input never written while the page holds a file."
     }
   ],
   "hooks": {

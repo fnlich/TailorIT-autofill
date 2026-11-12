@@ -64,8 +64,11 @@ describe('reading a basis option by its meaning (basisClassOf)', () => {
     // A placeholder and a decline aside.
     expect(readBasisOptions(specOf(LABEL, 'select', { optionLabels: ['Select...', ...BEYONDTRUST, 'Prefer not to say'] }),
       vocab)).not.toBeNull();
-    // Two sentences of one class, an option of none, no permanent one, a yes and a no: no basis set.
-    for (const labels of [[...BEYONDTRUST, 'I am a citizen'], [...BEYONDTRUST, 'I hold a work visa'],
+    // jr6 RULES (SR-12): two sentences of one class are read (the policy chooses among them by the person's status).
+    expect(readBasisOptions(specOf(LABEL, 'select', { optionLabels: [...BEYONDTRUST, 'I am a citizen'] }), vocab)
+      ?.get('permanent')?.map((option) => option.index)).toEqual([0, 3]);
+    // An option of none, no permanent one, a yes and a no: no basis set.
+    for (const labels of [[...BEYONDTRUST, 'I hold a work visa'],
       [BEYONDTRUST[1]!, BEYONDTRUST[2]!], ['Yes', 'No']]) {
       expect(readBasisOptions(specOf(LABEL, 'select', { optionLabels: labels }), vocab), labels.join(' | ')).toBeNull();
     }

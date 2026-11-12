@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { CONSENT_CATEGORIES, FIELD_KINDS } from '../enums';
 import { FIELD_CATEGORIES, POLICY_CLASSES, type FieldCategory, type PolicyClass } from '../types/intent';
 import {
-  CATEGORY_CLASS, CATEGORY_KINDS, CLASS_POLICIES, kindAllowed, OPEN_CLASSES, policyClassOf, USER_ONLY_CATEGORIES,
-  VALUE_SOURCES, type ClassPolicy,
+  AI_OPENED_CATEGORIES, CATEGORY_CLASS, CATEGORY_KINDS, CLASS_POLICIES, GUESS_ONLY_CATEGORIES, kindAllowed, OPEN_CLASSES,
+  policyClassOf, USER_ONLY_CATEGORIES, VALUE_SOURCES, type ClassPolicy,
 } from './categories';
 
 /** §8.2's "Categories" column, read row by row; whatever no row names is profile. */
@@ -12,7 +12,9 @@ const DESIGN_CLASS: Array<[PolicyClass, (category: FieldCategory) => boolean]> =
   // s2 core-gh: the screening answers of snapshot round 2 are the person's own, legal.
   ['legal', (c) => c.startsWith('workAuth.') || c === 'screening.over18' || c === 'screening.criminalHistory'
     || ['screening.restrictiveAgreement', 'screening.governmentService', 'screening.relatives',
-      'screening.essentialFunctions'].includes(c)],
+      'screening.essentialFunctions',
+      // jr6 RULES R3 (WD-29): military training, from the service and veteran answers.
+      'screening.militaryTraining'].includes(c)],
   ['eeo', (c) => c.startsWith('eeo.')],
   ['consent', (c) => c.startsWith('consent.')],
   ['attention', (c) => c === 'attentionCheck'],
@@ -24,7 +26,11 @@ const DESIGN_CLASS: Array<[PolicyClass, (category: FieldCategory) => boolean]> =
  *  skills, referral, relocation, workArrangement, travel, availability. */
 const PROFILE_FAMILIES = ['identity.', 'contact.', 'address.', 'location.', 'links.', 'education.', 'experience.',
   'languages.', 'skills.', 'referral.', 'preferences.relocation', 'preferences.workArrangement', 'preferences.travel',
-  'availability.'];
+  'availability.',
+  // jr6 RULES R3 (ICIMS-26): the person's time zone, from their state.
+  'preferences.timeZone',
+  // jr6 RULES R4 (ADP-18): how the résumé is given, from the run's résumé.
+  'application.'];
 
 describe('CATEGORY_CLASS (§8.2)', () => {
   it('covers exactly the field categories', () => {
@@ -63,7 +69,8 @@ describe('CATEGORY_KINDS (§8.2)', () => {
     }
     expect(CATEGORY_KINDS['contact.email']).toEqual(['text']);
     expect(CATEGORY_KINDS['experience.current']).toEqual(['checkbox']);
-    expect(CATEGORY_KINDS['consent.signature']).toEqual(['text']);
+    // jr6 RULES R3 (ICIMS-15): a signature is also a box to tick (iCIMS's IForm Signature).
+    expect(CATEGORY_KINDS['consent.signature']).toEqual(['text', 'checkbox']);
   });
 
   it('allows an upload only for files and the categories that take any kind', () => {
@@ -72,9 +79,13 @@ describe('CATEGORY_KINDS (§8.2)', () => {
   });
 
   it('allows a consent only on a box or a radio, a signature only as text', () => {
-    for (const category of FIELD_CATEGORIES.filter((c) => c.startsWith('consent.') && c !== 'consent.signature')) {
+    for (const category of FIELD_CATEGORIES.filter((c) => c.startsWith('consent.') && c !== 'consent.signature'
+      && c !== 'consent.signatureDate')) {
       expect(CATEGORY_KINDS[category], category).toEqual(['checkbox', 'radio']);
     }
+    // jr6 RULES (JV-1, JZ-15, workday-new-1): a signature's date is typed or set in a date control; jr6 fix (RULES-R11):
+    // or chosen part by part (iCIMS's IForm dates).
+    expect(CATEGORY_KINDS['consent.signatureDate']).toEqual(['text', 'date', 'select', 'combobox']);
   });
 
   it('never allows typed text for a self-identification or a yes/no legal question', () => {
@@ -174,6 +185,29 @@ describe('USER_ONLY_CATEGORIES', () => {
   it('holds no consent category a person may pre-approve', () => {
     for (const category of CONSENT_CATEGORIES) {
       expect(USER_ONLY_CATEGORIES.has(`consent.${category}` as FieldCategory), category).toBe(false);
+    }
+  });
+});
+
+// jr6 fix (revD-04): the `all` scope's categories are pinned, so any widening is a deliberate change of this list.
+describe('AI_OPENED_CATEGORIES and GUESS_ONLY_CATEGORIES', () => {
+  it('opens exactly the owner’s legal, pay and attention-check questions and jr6’s screening questions', () => {
+    expect([...AI_OPENED_CATEGORIES].sort()).toEqual(['attentionCheck', 'salary.currency', 'salary.expected',
+      'screening.criminalHistory', 'screening.governmentService', 'screening.militaryTraining', 'screening.over18',
+      'screening.relatives', 'screening.restrictiveAgreement', 'workAuth.authorized', 'workAuth.clearance',
+      'workAuth.opt', 'workAuth.sponsorship', 'workAuth.sponsorshipFuture', 'workAuth.sponsorshipNow',
+      'workAuth.status', 'workAuth.visaType']);
+    // jr6 fix (revD-01): never a self-identification's topic (a disability, the accommodation it needs).
+    expect(AI_OPENED_CATEGORIES.has('screening.essentialFunctions')).toBe(false);
+    for (const category of AI_OPENED_CATEGORIES) expect(policyClassOf(category), category).not.toBe('eeo');
+  });
+
+  it('always marks as a guess the opened legal questions no résumé can settle', () => {
+    expect([...GUESS_ONLY_CATEGORIES].sort()).toEqual(['screening.militaryTraining', 'screening.relatives',
+      'screening.restrictiveAgreement']);
+    for (const category of GUESS_ONLY_CATEGORIES) {
+      expect(AI_OPENED_CATEGORIES.has(category), category).toBe(true);
+      expect(policyClassOf(category), category).toBe('legal');
     }
   });
 });

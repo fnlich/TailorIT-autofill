@@ -7,6 +7,7 @@
  * counts as busy, and the state and answer of a dependent option list (awaitOptions). Phase 4 added the ARIA widgets
  * the scanner recognises (WidgetTarget) and what opening one read (WidgetReading).
  */
+import type { WidgetTags } from '../adapters/types';
 import type { BaseKey, FieldDescriptor, FieldKey, OptionSetHash, ReasonCode, SectionRef } from '../core/types';
 import type { StoredListId } from '../shared/learned-lists';
 import type { QueryKey, WidgetKey } from './fillers/events';
@@ -176,15 +177,28 @@ export interface WidgetTarget {
   /** The list's first result carries its mark before anything is chosen (WidgetDecl.highlightIsNoChoice). */
   readonly highlightIsNoChoice?: boolean;
   /** v4 (drop): its results list that no ARIA names, as its adapter declared it (WidgetDecl.results; s2 wd: the list
-   *  found anew on each read where the page draws it only while open, and a result that only opens a sub-list). */
-  readonly results?: { readonly list: Element | (() => Element | null); readonly option: string;
-    readonly choose?: 'mousedown' | 'label'; readonly unchoosable?: string };
+   *  found anew on each read where the page draws it only while open, and a result that only opens a sub-list). jr6
+   *  ENGINE E1 (FIXPLAN §6.2 items 1 and 3): the rows as the page draws them where `option` cannot reach them (slots,
+   *  shadow trees: WidgetResults.options), and the element a choice presses (WidgetResults.pressTarget). */
+  readonly results?: DeclaredResults;
   /** v4 (drop): the declared key sent after each typed query (WidgetDecl.queryKey). */
   readonly queryKey?: QueryKey;
+  // ── jr6 ENGINE E1 ──
+  /** FIXPLAN §6.2 item 3 (SR-2): a query shorter than this is never typed (WidgetDecl.minQueryLength). */
+  readonly minQueryLength?: number;
+  /** FIXPLAN §6.2 item 5 (U-04): a search whose typed text stands when no result matches (WidgetDecl.freeText). */
+  readonly freeText?: true;
+  // ── end jr6 ENGINE E1 ──
+  // ── jr6 ENGINE E3 ──
+  /** FIXPLAN §6.2 item 13 (U-05, WD-18): a box that takes several answers one at a time, each a chip once added
+   *  (WidgetDecl.tags): its field is one of kind 'text', written by the tags filler (widgets/tags.ts). */
+  readonly tags?: WidgetTags;
+  // ── end jr6 ENGINE E3 ──
   // ── s2 lists ──
-  /** The stored whole list the scan gave the field as its options (WidgetDecl.knownOptions, or a list learned on this
-   *  host before: ScanOptions.learnedLists), set only while the field's options are that list, which no reading of the
-   *  run has replaced. Its choice is made at once (widgets/fill.ts chooseKnown). */
+  /** The stored whole list the scan gave the field as its options (WidgetDecl.storedList's, the list the page publishes
+   *  itself: jr6 ENGINE E1, WidgetDecl.knownOptions, or a list learned on this host before: ScanOptions.learnedLists),
+   *  set only while the field's options are that list, which no reading of the run has replaced. Its choice is made at
+   *  once (widgets/fill.ts chooseKnown). */
   readonly knownOptions?: readonly string[];
   /** The id of the stored list its adapter declared (WidgetDecl.storedList), whether or not the scan was given it:
    *  the content script asks the worker for the lists its scans declare (lists/known). */
@@ -192,14 +206,34 @@ export interface WidgetTarget {
   /** The value of the field its list depends on, as its adapter reads it (WidgetDecl.learnContext): part of the key
    *  its learned list is kept under. */
   readonly learnContext?: string;
-  /** Where that list came from: the adapter's declaration, or a list learned on this host. */
-  readonly knownFrom?: 'adapter' | 'learned';
+  /** Where that list came from: the adapter's stored list, the page's own published list (jr6 ENGINE E1: WidgetDecl
+   *  .knownOptions, whose option is found in the open list by its label), or a list learned on this host. */
+  readonly knownFrom?: 'adapter' | 'page' | 'learned';
   /** The page draws its whole list at once (WidgetDecl.drawnWhole): read and shown again without waiting to draw. */
   readonly drawnWhole?: true;
 }
 
 /** The part of a list's option that is its label, or null for the whole option (WidgetDecl.optionLabel). */
 export type OptionLabel = (option: Element) => Element | null;
+
+/** How a list's rows are found where its adapter declared them (WidgetDecl.results): the selector of one row inside the
+ *  list, or (jr6 ENGINE E1, FIXPLAN §6.2 item 3: WidgetResults.options) the hook that lists them as the page draws
+ *  them where no selector reaches them (a slot's assigned elements, another shadow tree), read in place of the
+ *  selector's matches. */
+export interface DeclaredRows {
+  readonly option: string;
+  readonly options?: (list: Element) => readonly Element[];
+}
+
+/** A widget's results list as its adapter declared it (WidgetDecl.results, WidgetTarget.results). */
+export interface DeclaredResults extends DeclaredRows {
+  readonly list: Element | (() => Element | null);
+  readonly choose?: 'mousedown' | 'label';
+  readonly unchoosable?: string;
+  /** jr6 ENGINE E1 (FIXPLAN §6.2 items 1 and 3: WidgetResults.pressTarget): the element a choice of a row presses, where
+   *  a click on the row itself chooses nothing; null: the row itself. */
+  readonly pressTarget?: (option: Element) => HTMLElement | null;
+}
 
 /** One option of a widget's list as it was read: its visible label and whether it can be chosen. */
 export interface WidgetOptionRead {

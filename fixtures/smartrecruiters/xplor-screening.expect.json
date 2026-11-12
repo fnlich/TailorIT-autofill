@@ -9,11 +9,10 @@
       "kind": "combobox",
       "required": true,
       "section": "Preliminary questions",
-      "fillable": false,
-      "reason": "widget-phase-4",
-      "options": "lazy",
+      "fillable": true,
+      "options": 14,
       "control": "spl-autocomplete#question_a0151063-d62b-49e7-9c6f-d17e59b99090 >>> input[role=\"combobox\"]",
-      "note": "spl-autocomplete: its list (div[slot=menu][role=listbox]) is empty until opened, and no snapshot shows it open."
+      "note": "jr6 SR-1: declared on its text box (widgetFor), a combobox whose whole list the page publishes in sr-screening-questions-form's definition (knownOptions, this question's fields[].values[].label, the field's reading at scan time from ENGINE E1 on); its rows (spl-select-option) drawn in the menu its box names by aria-controls (results.list), chosen on their inner .c-spl-dropdown-item (pressTarget)."
     },
     {
       "label": "What is your expected annual base salary?",
@@ -29,11 +28,10 @@
       "kind": "combobox",
       "required": true,
       "section": "Preliminary questions",
-      "fillable": false,
-      "reason": "widget-phase-4",
-      "options": "lazy",
+      "fillable": true,
+      "options": 5,
       "control": "spl-autocomplete#question_562715e2-4960-44f3-9e8d-2750ae765f9a >>> input[role=\"combobox\"]",
-      "note": "spl-autocomplete: its list (div[slot=menu][role=listbox]) is empty until opened, and no snapshot shows it open."
+      "note": "jr6 SR-1: declared on its text box (widgetFor), a combobox whose whole list the page publishes in sr-screening-questions-form's definition (knownOptions, this question's fields[].values[].label, the field's reading at scan time from ENGINE E1 on); its rows (spl-select-option) drawn in the menu its box names by aria-controls (results.list), chosen on their inner .c-spl-dropdown-item (pressTarget)."
     },
     {
       "label": "Have you applied to or been referred to Xplor for another role in the past 12 months?",
@@ -50,11 +48,10 @@
       "kind": "combobox",
       "required": true,
       "section": "Preliminary questions",
-      "fillable": false,
-      "reason": "widget-phase-4",
-      "options": "lazy",
+      "fillable": true,
+      "options": 2,
       "control": "spl-autocomplete#question_9320d6d5-0b22-4e3f-b913-e7076e5e8083 >>> input[role=\"combobox\"]",
-      "note": "spl-autocomplete: its list (div[slot=menu][role=listbox]) is empty until opened, and no snapshot shows it open."
+      "note": "jr6 SR-1: declared on its text box (widgetFor), a combobox whose whole list the page publishes in sr-screening-questions-form's definition (knownOptions, this question's fields[].values[].label, the field's reading at scan time from ENGINE E1 on); its rows (spl-select-option) drawn in the menu its box names by aria-controls (results.list), chosen on their inner .c-spl-dropdown-item (pressTarget)."
     },
     {
       "label": "If you answered 'yes' above, please provide the name of your (former) manager and the part of the business you work(ed) in.",
@@ -142,22 +139,20 @@
       "kind": "combobox",
       "required": true,
       "section": "Preliminary questions",
-      "fillable": false,
-      "reason": "widget-phase-4",
-      "options": "lazy",
+      "fillable": true,
+      "options": 8,
       "control": "spl-autocomplete#question_5d965982-4693-4ca6-91ff-9dde3767755c >>> input[role=\"combobox\"]",
-      "note": "spl-autocomplete: its list (div[slot=menu][role=listbox]) is empty until opened, and no snapshot shows it open."
+      "note": "jr6 SR-1: declared on its text box (widgetFor), a combobox whose whole list the page publishes in sr-screening-questions-form's definition (knownOptions, this question's fields[].values[].label, the field's reading at scan time from ENGINE E1 on); its rows (spl-select-option) drawn in the menu its box names by aria-controls (results.list), chosen on their inner .c-spl-dropdown-item (pressTarget)."
     },
     {
       "label": "What best describes your gender?",
       "kind": "combobox",
       "required": true,
       "section": "Preliminary questions",
-      "fillable": false,
-      "reason": "widget-phase-4",
-      "options": "lazy",
+      "fillable": true,
+      "options": 4,
       "control": "spl-autocomplete#question_d9203a60-8103-4251-8402-eb366923db58 >>> input[role=\"combobox\"]",
-      "note": "spl-autocomplete: its list (div[slot=menu][role=listbox]) is empty until opened, and no snapshot shows it open."
+      "note": "jr6 SR-1: declared on its text box (widgetFor), a combobox whose whole list the page publishes in sr-screening-questions-form's definition (knownOptions, this question's fields[].values[].label, the field's reading at scan time from ENGINE E1 on); its rows (spl-select-option) drawn in the menu its box names by aria-controls (results.list), chosen on their inner .c-spl-dropdown-item (pressTarget)."
     },
     {
       "label": "Are you a protected veteran? (definitions)",

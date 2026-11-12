@@ -48,8 +48,9 @@ test.describe("SmartRecruiters' one-click application (the snapshot build of 202
     const easyApplyFiles = await page.locator('spl-dropzone[data-test="apply-with-resume-container"] input[type="file"]')
       .evaluate((input) => (input as HTMLInputElement).files?.length ?? 0);
     expect(easyApplyFiles).toBe(0);
-    // Nothing was pressed: no button, no Next, no external provider.
-    expect(clicks.filter((what) => what.startsWith('button.'))).toEqual([]);
+    // Nothing was pressed: no button, no Next, no external provider. jr6 SR-6: the phone's country list is a widget the
+    // adapter declares, opened by its own button (button.c-spl-select-field) to be read or chosen: no press.
+    expect(clicks.filter((what) => what.startsWith('button.') && what !== 'button.c-spl-select-field')).toEqual([]);
     expect(page.url()).toBe(FORM);
     expect(routeLog.unexpected).toEqual([]);
     expect(routeLog.submitted).toEqual([]);

@@ -595,7 +595,11 @@ describe('deterministic answers the profile holds (the owner’s amendments)', (
       const spec = specOf(label, 'radio', { optionLabels: ['Yes', 'No'] });
       const out = planOf([spec], { posting: { company: 'Acme' } });
       expect(fieldOf(out, spec).write, label).toBeUndefined();
-      expect(out.ask?.answers?.map((item) => item.key), label).toEqual([spec.key]);
+      // jr6 RULES (workday-new-2): employment by a competitor (a vendor, a supplier, a customer, a subcontractor, an
+      // outside business) is no question of employment by the company, so no rule classifies it: the AI classifies it
+      // first, then answers it.
+      const asked = label.includes('competitor') ? out.ask?.classify : out.ask?.answers;
+      expect(asked?.map((item) => item.key), label).toEqual([spec.key]);
     }
   });
 

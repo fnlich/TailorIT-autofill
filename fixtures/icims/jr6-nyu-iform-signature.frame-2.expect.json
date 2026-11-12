@@ -1,0 +1,30 @@
+{
+  "fixture": "icims/jr6-nyu-iform-signature.frame-2",
+  "source": "https://nyu.icims.com/forms?token=REDACTED&isPacket=1&brandtype=ccc&portalid=85&selected=Reasonable_Accommodation_Notice&in_iframe=1&step=6",
+  "captured": "2026-11-11T04:26:50.000Z",
+  "note": "jr6 P2: uscareers-nyu's signature-only form, on nyu.icims.com/forms (chained). Its fields as the scan reads them once ENGINE E1 to E3 and RULES R1 to R4 merged (FIXPLAN §6.5 P2); what a run decides on them is held by src/adapters/icims/jr6-icims.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Signature",
+      "kind": "checkbox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"icims_f_signature\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form[name=\"icims_form\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input[name=\"icims_save\"]"
+    ],
+    "pressable": [
+      "input[name=\"icims_submit\"]"
+    ]
+  }
+}

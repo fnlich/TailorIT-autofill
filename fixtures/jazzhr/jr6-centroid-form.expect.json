@@ -1,0 +1,114 @@
+{
+  "fixture": "jazzhr/jr6-centroid-form",
+  "source": "https://centroid.applytojob.com/apply/aZuF9VFH2J/Oracle-Linux-Engineer",
+  "captured": "2026-11-11T04:52:49.000Z",
+  "note": "jr6 (the 2026-11-10 capture, the owner's snapshot6\u0007pplytojob; FIXPLAN 6.8): JazzHR's classic \"resumator\" layout, as the adapter's jr6 rules read it (JZ-1 and JZ-5: the question rule and the paste wrapper excluded; JZ-4: the upload rule; Submit: JZ-2). Before them the adapter read the four required identity boxes with no label (no-visible-label), the Resume field not at all, and no Submit. Each question is a div.resumator-field-wrapper outside any div.form-group, titled by its div.resumator-label (\"First name*\": the star is its required mark); the Location wrapper's four boxes are named by their placeholders; Submit is input#resumator-submit-resume (type button) beside input#resumator-cancel-resume. The posting's description (div#resumator-job-description) holds the synthetic text of fixtures/synthetic/jazzhr/centroid-posting-description.txt (--replace-text: the redaction list met a word of it).",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-firstname-value\"]",
+      "note": "Titled by div#resumator-firstname-label (div.resumator-label), a sibling of the box's div.resumator-input: no label element, no for, no aria."
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-lastname-value\"]"
+    },
+    {
+      "label": "Email address",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-email-value\"]",
+      "note": "type=text, not email: its category comes from the label alone."
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-address-value\"]",
+      "note": "The Location wrapper (div#resumator-address, titled \"Location\") holds four boxes, each named by its placeholder; the wrapper's title names none of them."
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-city-value\"]"
+    },
+    {
+      "label": "State",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-state-value\"]"
+    },
+    {
+      "label": "Postal",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-postal-value\"]"
+    },
+    {
+      "label": "Phone number",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-phone-value\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-resume-value\"]",
+      "note": "Hidden until \"Attach resume\" (a#resumator-choose-upload): its wrapper #resumator-resume-upload-wrapper has class none (display none). Qualified through the declared upload control (UploadRule.control, the shown link); the same link is the rule's reveal (JZ-4), pressed once by the upload filler's reveal door alone, never by any other path (neverPress). Jobright 1.25.2 presses it and waits 300 ms before it puts the file in (its JazzHR operations' uploadResume)."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"resumator-resumetext-value\"]",
+      "note": "The resume's paste box, in the hidden #resumator-resume-paste-wrapper (class none) until \"Paste resume\": that wrapper is excluded (JZ-5), so the box is never read as the Resume question's."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"resumator-xml-value\"]",
+      "note": "The page's own hidden XML box (class none)."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"g-recaptcha-response\"]",
+      "note": "reCAPTCHA's own answer box (display none): the \"Human Check\" is the person's."
+    }
+  ]
+}

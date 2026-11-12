@@ -130,15 +130,16 @@
       "label": "Job Title",
       "kind": "text",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
-      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"job-title-textbox\"]"
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"job-title-textbox\"]",
+      "note": "jr6 U-01: each Work Experience block is a block of the repeatable section \"experience\" (block 0 to 2)."
     },
     {
       "label": "Company / Organization",
       "kind": "text",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"company-textbox\"]"
     },
@@ -146,32 +147,34 @@
       "label": "Location",
       "kind": "text",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"location-textbox\"]"
     },
     {
-      "label": "Month",
+      "label": "From Month",
       "kind": "select",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "options": 13,
-      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"from-month-dropdown\"]"
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"from-month-dropdown\"]",
+      "note": "jr6 U-02: its own label[for] is the part word alone, so its group's \"From\" is read first (labelFirst)."
     },
     {
-      "label": "Year (YYYY)",
+      "label": "From Year (YYYY)",
       "kind": "text",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
-      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"from-year-textbox\"]"
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"from-year-textbox\"]",
+      "note": "jr6 U-02: its own label[for] is the part word alone, so its group's \"From\" is read first (labelFirst)."
     },
     {
       "label": "To Month",
       "kind": "select",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "options": 13,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"to-month-dropdown\"]"
@@ -180,7 +183,7 @@
       "label": "To Year (YYYY)",
       "kind": "text",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"to-year-textbox\"]"
     },
@@ -188,7 +191,7 @@
       "label": "Description",
       "kind": "textarea",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"description-textarea\"]"
     },
@@ -196,7 +199,7 @@
       "label": "Job Title",
       "kind": "text",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"job-title-textbox\"]"
     },
@@ -204,7 +207,7 @@
       "label": "Company / Organization",
       "kind": "text",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"company-textbox\"]"
     },
@@ -212,32 +215,34 @@
       "label": "Location",
       "kind": "text",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"location-textbox\"]"
     },
     {
-      "label": "Month",
+      "label": "From Month",
       "kind": "select",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "options": 13,
-      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"from-month-dropdown\"]"
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"from-month-dropdown\"]",
+      "note": "jr6 U-02: its own label[for] is the part word alone, so its group's \"From\" is read first (labelFirst)."
     },
     {
-      "label": "Year (YYYY)",
+      "label": "From Year (YYYY)",
       "kind": "text",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
-      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"from-year-textbox\"]"
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"from-year-textbox\"]",
+      "note": "jr6 U-02: its own label[for] is the part word alone, so its group's \"From\" is read first (labelFirst)."
     },
     {
       "label": "To Month",
       "kind": "select",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "options": 13,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"to-month-dropdown\"]"
@@ -246,7 +251,7 @@
       "label": "To Year (YYYY)",
       "kind": "text",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"to-year-textbox\"]"
     },
@@ -254,7 +259,7 @@
       "label": "Description",
       "kind": "textarea",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"description-textarea\"]"
     },
@@ -262,7 +267,7 @@
       "label": "Job Title",
       "kind": "text",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"job-title-textbox\"]"
     },
@@ -270,7 +275,7 @@
       "label": "Company / Organization",
       "kind": "text",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"company-textbox\"]"
     },
@@ -278,32 +283,34 @@
       "label": "Location",
       "kind": "text",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"location-textbox\"]"
     },
     {
-      "label": "Month",
+      "label": "From Month",
       "kind": "select",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "options": 13,
-      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"from-month-dropdown\"]"
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"from-month-dropdown\"]",
+      "note": "jr6 U-02: its own label[for] is the part word alone, so its group's \"From\" is read first (labelFirst)."
     },
     {
-      "label": "Year (YYYY)",
+      "label": "From Year (YYYY)",
       "kind": "text",
       "required": true,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
-      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"from-year-textbox\"]"
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"from-year-textbox\"]",
+      "note": "jr6 U-02: its own label[for] is the part word alone, so its group's \"From\" is read first (labelFirst)."
     },
     {
       "label": "To Month",
       "kind": "select",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "options": 13,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"to-month-dropdown\"]"
@@ -312,7 +319,7 @@
       "label": "To Year (YYYY)",
       "kind": "text",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"to-year-textbox\"]"
     },
@@ -320,29 +327,29 @@
       "label": "Description",
       "kind": "textarea",
       "required": false,
-      "section": "Work Experience",
+      "section": "experience",
       "fillable": true,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"description-textarea\"]"
     },
     {
       "label": "School Name",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": true,
       "section": "Education",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"school-textbox\"]"
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"school-textbox\"]",
+      "note": "jr6 U-04: a declared typeahead.js search, its results the sibling .tt-dropdown-menu's .tt-suggestion rows; its typed text stands where none matches (freeText)."
     },
     {
       "label": "Level of Education / Degree",
-      "kind": "combobox",
+      "kind": "typeahead-remote",
       "required": true,
       "section": "Education",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"degree-textbox\"]"
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"degree-textbox\"]",
+      "note": "jr6 U-04: a declared typeahead.js search, its results the sibling .tt-dropdown-menu's .tt-suggestion rows; a combobox of the page's own degree list where a script publishes it (none in this capture)."
     },
     {
       "label": "Major",
@@ -350,7 +357,7 @@
       "required": false,
       "section": "Education",
       "fillable": true,
-      "options": 270,
+      "options": 31,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"major-dropdown\"]"
     },
     {
@@ -359,7 +366,7 @@
       "required": false,
       "section": "Education",
       "fillable": true,
-      "options": 270,
+      "options": 31,
       "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"minor-dropdown\"]"
     },
     {
@@ -410,7 +417,8 @@
       "required": true,
       "section": "Skills",
       "fillable": true,
-      "control": "div[data-bind=\"if: isParsingResume()\"] input[data-automation=\"item-typeahead\"]"
+      "control": "div[data-bind=\"if: isParsingResume()\"] input[data-automation=\"item-typeahead\"]",
+      "note": "jr6 U-05: declared a box of several answers (WidgetDecl.tags: its chips, its row's Add); ENGINE E3 scans it as one text field holding its box's text, and the tags filler adds each skill no chip shows through that Add. Was: one comma-joined text in the box, its Add never pressed."
     },
     {
       "label": "REDACTED",

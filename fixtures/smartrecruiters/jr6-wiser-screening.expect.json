@@ -1,0 +1,42 @@
+{
+  "fixture": "smartrecruiters/jr6-wiser-screening",
+  "source": "https://jobs.smartrecruiters.com/oneclick-ui/company/WiserSolutions/publication/1477f9aa-cf19-47a8-93a4-7178574f6b11/screening?dcr_ci=WiserSolutions",
+  "captured": "2026-11-06T15:27:42.000Z",
+  "note": "Wiser Solutions' screening step, answered by the owner (the answer cleared by the converter): one Yes/No question naming two countries, and the privacy consent. Controls are written as shadow-piercing chains, \" >>> \" between steps: the first step is looked for anywhere in the document, each next one anywhere inside the open shadow root of the element before it (smartrecruiters.browser.test.ts deepControl).",
+  "fields": [
+    {
+      "label": "Do you, now or in the future, require sponsorship to maintain employment in the US (if you are located in the US) or Canada (if you are located in Canada)?",
+      "kind": "radio",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 2,
+      "control": "spl-radio-group#spl-form-element_15",
+      "note": "A screening Yes/No question (widgetRoots, widgetFor, labelFor, requiredFor), as on xplor-screening. Its answer from the profile is RULES' (SR-4)."
+    },
+    {
+      "label": "You declare that you have read and understand the privacy notice of Wiser Solutions.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-checkbox#spl-form-element_14 >>> input[type=\"checkbox\"]",
+      "note": "The privacy notice's required consent."
+    }
+  ],
+  "hooks": {
+    "detect": "oc-screening-questions",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "oc-button[data-test=\"footer-back\"] spl-button",
+      ".ot-sdk-show-settings"
+    ],
+    "pressable": [
+      "oc-button[data-test=\"footer-submit\"]"
+    ]
+  }
+}

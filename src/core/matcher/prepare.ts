@@ -54,14 +54,38 @@ export function substantive(option: PreparedOption): boolean {
   return chooseable(option) && !option.other && !option.exclusive && !option.decline;
 }
 
-/** The text of a clean label that is matched: in the country domain, without a dial code. */
+/** jr6 RULES (JZ-6, JazzHR's EEO list: fixtures invaluable-form, nucleussecurity-form): a race option's trailing
+ *  ", not Hispanic or Latino" (", Hispanic or Latino"), which is the same answer to the Hispanic question as a bracket
+ *  ("White (Not Hispanic or Latino)"). */
+const HISPANIC_CLAUSE = /^(.*\S)\s*,\s*((?:(?:not|non)[\s-]*)?(?:hispanic|latin[aoxe])(?:\s*(?:or|and|\/)\s*latin[aoxe])?)\s*\.?$/i;
+
+/** The text of a clean label that is matched: in the country domain, without a dial code; in the race domain, a
+ *  trailing Hispanic clause read as its bracket. */
 function matchedText(clean: string, domain: MatchDomain): string {
+  if (domain === 'eeo.race') return clean.replace(HISPANIC_CLAUSE, '$1 ($2)');
   return domain === 'country' ? withoutDialCode(clean) : clean;
 }
 
 /** The ids of a list of hits, once each, in order. */
 function idsOf(hits: readonly KeyHit[]): string[] {
   return [...new Set(hits.map((hit) => hit.id))];
+}
+
+/** jr6 fix (AD-R1, ADP:stage1-5): "TX - Texas" or "Texas - TX", a region's code and name around a dash (ADP's State /
+ *  Territory rows, fixtures/adp/jr6-personal-us-*), as profile/entities.ts canonicalRegion reads a profile's value. */
+const NAME_AND_CODE = /^(.+?)\s+[-\u2013\u2014]\s+(.+)$/;
+
+/** The region a "code - name" label names: the hits of the half that names it best, when both halves name that one
+ *  region and nothing else in common; none otherwise ("Texas - Austin", two regions). */
+function pairedRegionHits(text: string, context: NormContext, vocab: Vocab): readonly KeyHit[] {
+  const pair = NAME_AND_CODE.exec(text);
+  if (pair === null) return [];
+  const halves = [pair[1]!, pair[2]!].map((half) => vocab.lookup('region', normalize(half, context).key)
+    .filter((hit) => !hit.ambiguous));
+  const shared = idsOf(halves[0]!).filter((id) => halves[1]!.some((hit) => hit.id === id));
+  if (shared.length !== 1) return [];
+  const hits = halves.flat().filter((hit) => hit.id === shared[0]);
+  return [hits.find((hit) => hit.tier === 'primary') ?? hits[0]!];
 }
 
 /** The parts a label joins with slashes: two to four, each of one to four words. */
@@ -108,6 +132,7 @@ export function prepareOptions(options: readonly Option[], domain: MatchDomain, 
           });
         }
       }
+      if (entityHits.length === 0 && domain === 'region') entityHits = pairedRegionHits(text, context, vocab);
     }
     const unusable = placeholder || clean === '';
     return {

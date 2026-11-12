@@ -245,22 +245,30 @@ describe('Workday’s dropdown: a select-only combobox the helpers act on throug
 
 describe('the other step rules, each on its own', () => {
   // s2 wd (snapshot round 2): the prompt's results list is declared (s2-verily-field-of-study-open.html), so the widget
-  // helpers search it; before, no ARIA named it and they refused it (widget-unsupported).
+  // helpers search it; before, no ARIA named it and they refused it (widget-unsupported). jr6 WD-18 (ENGINE E3 item
+  // 13): Skills, the same prompt declared a box of several answers (tags), is one text field searched by the tags filler.
   it('searches a prompt through the results list its adapter declares, read as a search, never opened to be read',
     async () => {
       const scanned = await scanCase(document, resolveExpHtml, sourceOf(resolveExpExpect));
       const root = scanned.root;
-      for (const id of ['skills--skills', 'education-71--fieldOfStudy']) {
+      const targetOf = (id: string) => {
         const input = scanned.doc.getElementById(id)!;
         const field = scanned.result.fields.find((each) => scanned.result.target(each.key)?.control === input)!;
-        const target = scanned.result.target(field.key)!;
-        expect(field.kind).toBe('typeahead-remote');
-        expect(isActionable(target.widget!)).toBe(true);
-        expect(target.widget!.queryKey).toBe('Enter');
-        expect(await readWidget(target, { adapter: workdayAdapter, root })).toEqual({ status: 'read',
-          reading: { kind: 'remote' } });
-        expect((input as HTMLInputElement).value).toBe('');
-      }
+        return { input: input as HTMLInputElement, field, target: scanned.result.target(field.key)! };
+      };
+      const study = targetOf('education-71--fieldOfStudy');
+      expect(study.field.kind).toBe('typeahead-remote');
+      expect(isActionable(study.target.widget!)).toBe(true);
+      expect(study.target.widget!.queryKey).toBe('Enter');
+      expect(await readWidget(study.target, { adapter: workdayAdapter, root })).toEqual({ status: 'read',
+        reading: { kind: 'remote' } });
+      expect(study.input.value).toBe('');
+      const skills = targetOf('skills--skills');
+      expect([skills.field.kind, skills.field.options, skills.field.current]).toEqual(['text', [], { kind: 'empty' }]);
+      expect(isActionable(skills.target.widget!)).toBe(true);
+      expect(skills.target.widget!.queryKey).toBe('Enter');
+      expect(skills.target.widget!.tags?.search).toBe(true);
+      expect(skills.input.value).toBe('');
     });
 
   it('withholds Next while a required date shows no digits, and offers it once every required part shows its own',
@@ -391,13 +399,29 @@ describe('the other step rules, each on its own', () => {
     expect(workdayAdapter.isFinalStep!(info.doc)).toBe('unknown');
   });
 
-  it('gives Self Identify’s questions the disability form’s title as help text, and no other step’s', async () => {
+  // jr6 WD-10 and workday-new-1 (FIXPLAN §6.4 items 1 and 2): the title names the disability boxes alone (it was every
+  // question's help text, which read Name, Employee ID and Date as the disability question); Date and Language read as
+  // the form's own (§3.2's label contract with RULES).
+  it('names Self Identify’s disability boxes by the form’s title, and no other question by it', async () => {
     const scanned = await scanCase(document, selfIdHtml, sourceOf(selfIdExpect));
     const group = scanned.result.fields.find((field) => field.kind === 'checkbox-group')!;
-    expect(group.label).toBe('Please check one of the boxes below');
-    expect(group.description).toBe('Voluntary Self-Identification of Disability');
+    expect(group.label).toBe('Voluntary Self-Identification of Disability');
+    expect(scanned.result.fields.map((field) => [field.label, field.description])).toEqual([
+      ['Language of this form', ''], ['Name', ''], ['Employee ID (if applicable)', ''], ['Date signed', ''],
+      ['Voluntary Self-Identification of Disability', '']]);
     const disclosures = await scanCase(document, disclosuresHtml, sourceOf(disclosuresExpect));
     expect(disclosures.result.fields.every((field) => field.description === '')).toBe(true);
+    expect(disclosures.result.fields.map((field) => field.label)).not.toContain('Voluntary Self-Identification of Disability');
+  });
+
+  it('keeps the legend where the Self Identify page shows no disability title before the boxes', async () => {
+    const fixture = await load(selfIdHtml);
+    const title = Array.from(fixture.doc.querySelectorAll('h3'))
+      .find((heading) => /Disability/.test(heading.textContent ?? ''))!;
+    title.textContent = 'Self-Identification';
+    const group = fixture.doc.querySelector('fieldset[data-automation-id="disabilityStatus-CheckboxGroup"]')!;
+    expect(workdayAdapter.labelFor!(group)?.textContent?.replace(/\s+/g, ' ').trim())
+      .toBe('Please check one of the boxes below:');
   });
 
   it('reads the sign-in’s error above its form, and the loading panel only while a person can see it', async () => {

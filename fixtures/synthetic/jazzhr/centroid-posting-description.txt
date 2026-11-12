@@ -1,0 +1,7 @@
+This posting description is synthetic text standing in for the posting's own words, which the fixture does not keep.
+The role looks after a fleet of Linux servers: installing and patching them, watching their health and keeping them secure.
+Day to day the engineer plans maintenance windows, writes runbooks, automates routine work with shell scripts and answers tickets from other teams.
+The team works across several time zones and shares an on-call rota, with one week on call in every five.
+Candidates should be comfortable with storage, networking and backups, and able to explain a change clearly before it is made.
+Several years of hands-on systems administration are expected; certifications are welcome but not required.
+The position is full time and offers health cover, paid leave and a yearly training budget.

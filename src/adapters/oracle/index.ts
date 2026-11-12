@@ -71,28 +71,62 @@
  *   Experience" and "Add Education", the licences' "Add License" and the links' "Add Another Link".
  * What the scanner reads there, and why most of it is not fillable (the flow's form is a 75% translucent panel over the
  * tenant's cover image, so the trap rules cannot work out its colours), is oracle.browser.test.ts's KNOWN list.
- * Nothing here reads, logs or sends a value.
+ * jr6 (FIXPLAN §6.11, APPLYPLAN E-Oracle; the owner's snapshots of a us2 tenant's posting and gate,
+ * fixtures/oracle/jr6-caesars-posting.html and jr6-caesars-email-gate.html; Jobright 1.25.2 as a behaviour reference,
+ * each rule citing its function; jr6-oracle.browser.test.ts):
+ * - Entry (C8): APPLY NOW only in its "apply now" state, by its modifier apply-now-button--apply-now or its words "Apply
+ *   Now" in any case; the same button in another state is never the entry (it stays never pressed).
+ * - Never pressed (O16): the gate's "Do you want to communicate by phone instead?".
+ * - Labels (O5): the phone's country-code picker by its own sub-label, "Country code", read first (labelFirst).
+ * - The phone's number box (O4): drawn by its bordered phone-row group (controlBox).
+ * - Widgets (O1, O2): every cx-select (input.cx-select-input[role=combobox]) a combobox opened by its toggle, its
+ *   results the rows of the grid its aria-controls names, chosen by their label part; Address Line 1 (Oracle Maps'
+ *   search) and ZIP Code are searches (typeahead-remote), Address Line 1 typed into at once (it has no toggle, and its
+ *   suggestions come from the words typed); the address's dependent lists learn under the Country shown.
+ * - The address's order (O3, dependsOn): Address Line 1 after the Country; ZIP Code, City, State and County after
+ *   Address Line 1 (after the Country where the block has no street search).
+ * - The timeline (oracle-new-2, O7): its open inline editor is a repeatable block of the kind its fields tell (School and
+ *   Degree, or Employer Name and Job Title), only while it shows; no Add is declared (question 1), and the entry it
+ *   holds is read by its School, or its Employer Name and Job Title (prefill.readEntries), so the planner matches it by
+ *   fingerprint and keeps one no profile entry matches.
+ * - Steps (O8; no snapshot of a flow of several sections yet, owner question 23): a section's Next is the pagination's
+ *   button reading "Next" (never its Submit, never on the gate or the code page); a section page (.../apply/section/<n>)
+ *   showing it and no Submit is not the last; each page's step signature is its section number, the progress step
+ *   marked aria-current, its first block title and its blocks' kinds.
+ * - Uploads (O12, uploadState): a document's slot says whether the file Oracle took is done (its filled part naming
+ *   the file) or failed (its errors' list), found by the input or, once Oracle took the input away, by that list.
+ * Nothing here logs or sends a value. The jr6 hooks read three things a box shows, in the frame: the Country an address
+ * block shows (hashed into a learned list's key only), the School, Employer Name and Job Title an open timeline editor
+ * shows (prefill.readEntries: to the worker's plan only, as a field's current value goes), and whether an upload slot
+ * shows the file's name (compared, never kept).
  */
 // The P2 review (security 1)
 import { oracleCandidateExperienceShown } from '../../dom/page-signals';
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { oracleOwnDomain } from '../../shared/hosts';
+import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
-import type { Adapter, SignInForm, SignInWall } from '../types';
-import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl } from './url';
+import type { Adapter, PrefillEntryView, SignInForm, SignInWall, UploadState, WidgetDecl } from '../types';
+import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl, oracleApplySection } from './url';
 
 /** The snapshots the hooks were written from (fixtures/oracle/). */
 export const ORACLE_SNAPSHOTS = ['fixtures/oracle/jpmc-posting.html', 'fixtures/oracle/elhr-email-gate.html',
   // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
   'fixtures/oracle/fortive-email-code.html', 'fixtures/oracle/hjf-apply-section.html',
   // ── behaviour review 2026-11-06 (M4): the same flow 12 s after its Submit ──
-  'fixtures/oracle/hjf-after-submit.html'] as const;
+  'fixtures/oracle/hjf-after-submit.html',
+  // ── jr6 ORACLE (FIXPLAN §6.11): the owner's snapshots of a us2 tenant's posting and its email gate ──
+  'fixtures/oracle/jr6-caesars-posting.html', 'fixtures/oracle/jr6-caesars-email-gate.html'] as const;
 
 /** The longest an Oracle page takes to draw its posting or its gate: the runtime's cap. */
 export const ORACLE_FORM_LATE_MS = 30_000;
 /** How long the agent's entry waits for APPLY NOW (the posting is drawn 5 to 6 s after the address commits). */
 export const ORACLE_ENTRY_WAIT_MS = 15_000;
+/** jr6 O1: how long a cx-select's list may show no result, no busy sign and no change after a query before the query is
+ *  taken to have found nothing (Jobright 1.25.2's operations.fillSelectField polls Oracle's rows up to 14 times, 150 to
+ *  300 ms apart, ignoring a "No results" row: 2.1 to 4.2 s). */
+export const ORACLE_EMPTY_AFTER_MS = 3_000;
 
 /** The first of `elements` a person can see. */
 function shown<T extends Element>(elements: readonly T[], cache: ScanCache = newScanCache()): T | null {
@@ -152,11 +186,26 @@ function unprovenOwnDomain(doc: Document): boolean {
     && !oracleCandidateExperienceShown(doc);
 }
 
-/** APPLY NOW: <div class="job-details__section-apply-button"><button class="... apply-now-button ...">. */
+/** jr6 C8 (APPLYPLAN E-Oracle): the state the posting's button is in when it opens the application. Both postings
+ *  (jpmc-posting.html and jr6-caesars-posting.html) draw it <button data-bind="click: click, enable: isEnable, class:
+ *  buttonStatusC" class="button apply-now-button theme-color-1 apply-now-button--apply-now">Apply Now</button>: its
+ *  binding swaps that modifier for the button's other states, which no snapshot shows. */
+const APPLY_NOW_STATE = 'apply-now-button--apply-now';
+
+/** Whether the button is in its "apply now" state: its modifier, or its own words "Apply Now" in any case (Jobright
+ *  1.25.2's proceedOracleJobDetailToApply takes only a button whose words are exactly "APPLY NOW" or "Apply Now"). Another
+ *  state of the same button ("already applied", a closed posting) is never the entry. */
+function appliesNow(button: HTMLElement): boolean {
+  return button.classList.contains(APPLY_NOW_STATE)
+    || (button.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase() === 'apply now';
+}
+
+/** APPLY NOW: <div class="job-details__section-apply-button"><button class="... apply-now-button ...">, in its "apply
+ *  now" state (appliesNow). */
 function entryControl(doc: Document): HTMLElement | null {
   if (unprovenOwnDomain(doc)) return null;
   return shown(Array.from(doc.querySelectorAll<HTMLElement>(
-    '.job-details__section-apply-button button.apply-now-button')));
+    '.job-details__section-apply-button button.apply-now-button')).filter(appliesNow));
 }
 
 function authState(doc: Document): ReturnType<NonNullable<Adapter['authState']>> {
@@ -192,15 +241,278 @@ function uploadWidgets(root: Element): Array<{ control: Element; input: HTMLInpu
   });
 }
 
+/** jr6 O12: a document's upload slot, hjf-apply-section.html's <cover-letter-upload-button><div> <div
+ *  class="attachment-upload-button attachment-upload-button--waiting"> ... the input ... </div> <div
+ *  id="file-upload-errors-1"> (its errors' list) </div></div>, whose input names that list by its aria-describedby
+ *  ("file-upload-errors-1"). Oracle sends the file to its server once it is put in, and draws the slot again: its
+ *  waiting part, input and all, goes, and the filled part shows the file's name (the resume's slot as captured: <div
+ *  class="attachment-upload-button attachment-upload-button--filled"> ... <div class="attachment-upload-button__filled">
+ *  <button type="button" class="attachment-upload-button__download">(the name)</button><button ...
+ *  class="attachment-upload-button__bottom-button">), while the errors' list stays. So the slot is found by the input
+ *  where it is still in the page, else by that list; null where neither is. */
+function uploadSlotOf(input: HTMLInputElement): { slot: Element; errors: Element | null } | null {
+  if (!input.matches(UPLOAD_INPUT)) return null;
+  const listed = (input.getAttribute('aria-describedby') ?? '').split(/\s+/).find((id) => /^file-upload-errors-\d+$/.test(id));
+  const errors = listed === undefined ? null : input.ownerDocument.getElementById(listed);
+  const slot = (input.isConnected ? input.closest('.attachment-upload-button')?.parentElement : null)
+    ?? errors?.parentElement ?? null;
+  return slot === null ? null : { slot, errors };
+}
+
+/** jr6 O12: what Oracle's slot shows of the upload of `fileName` into `input` (Jobright 1.25.2's operations.uploadResume
+ *  waits up to 10 s for .attachment-upload-button__filled): failed once its errors' list shows words; confirmed once its
+ *  filled part shows, naming the file; pending otherwise; null for an input that is no Oracle upload (the input's own
+ *  files decide). What an upload in progress or a refused file draws is in no snapshot (owner question 23). */
+function uploadState(input: HTMLInputElement, fileName: string): UploadState | null {
+  const found = uploadSlotOf(input);
+  if (found === null) return null;
+  const cache = newScanCache();
+  const { slot, errors } = found;
+  if (errors !== null && wordsOf(errors) !== '' && isUserVisible(errors, cache)) return 'failed';
+  const name = fileName.replace(/\s+/g, ' ').trim().toLowerCase();
+  const filled = Array.from(slot.querySelectorAll('.attachment-upload-button__filled'))
+    .filter((part) => isUserVisible(part, cache));
+  const named = filled.some((part) => Array.from(part.querySelectorAll('button.attachment-upload-button__download'))
+    .some((button) => name !== '' && wordsOf(button).includes(name)));
+  return named ? 'confirmed' : 'pending';
+}
+
+/** jr6 O5: the phone's country-code picker, hjf-apply-section.html's <input name="phoneNumber"
+ *  id="country-codes-dropdownphoneNumber" type="text" role="combobox" aria-haspopup="grid" ... class="cx-select-input">,
+ *  whose row's label[for] names it "Phone Number" (the number box's question) while its own <div
+ *  class="cx-select-container"> draws its words beside it: <span id="inputFieldLabel-country-codes-dropdownphoneNumber"
+ *  class="input-field__label">Country code</span>. Jobright 1.25.2's rules.getRules names it the phone's country code by
+ *  that id or that sub-label. */
+const PHONE_CODE = 'input.cx-select-input[id^="country-codes-dropdown"]';
+
 /** A row-labelled control's question (module header): its row's (<div class="input-row ...">) <form-element-label><label
- *  class="input-row__label ...">; an upload input's, its drop zone's words (UPLOAD_INPUT). */
+ *  class="input-row__label ...">; an upload input's, its drop zone's words (UPLOAD_INPUT); jr6 O5: the phone's
+ *  country-code picker's, its own sub-label (PHONE_CODE). */
 function labelFor(control: Element): Element | null {
   if (control.matches(UPLOAD_INPUT)) {
     return control.closest('.attachment-upload-button')?.querySelector('.attachment-upload-button__drag-and-drop-label')
       ?? null;
   }
+  if (control.matches(PHONE_CODE)) {
+    return control.closest('.cx-select-container')?.querySelector('span.input-field__label') ?? null;
+  }
   if (!control.matches(ROW_LABELLED)) return null;
   return control.closest('.input-row')?.querySelector(':scope > form-element-label > label.input-row__label') ?? null;
+}
+
+/** jr6 O5: the country-code picker's own sub-label is read before the row's label[for] (labelFor), so it reads
+ *  "Country code", the phone's country code, and the planner writes the number beside it without its calling code. */
+function labelFirst(control: Element): boolean {
+  return control.matches(PHONE_CODE);
+}
+
+/** jr6 O4: the phone's number box, hjf-apply-section.html's <input type="tel" class="input-row__control
+ *  phone-row__input" ...>, draws no border or background of its own: its <div class="input-row-composite__inputs
+ *  phone-row" role="group"> draws the bordered box around it and the country-code picker (ENGINE E2's camouflage
+ *  check reads this box as the control's own). Null for every other control. */
+function controlBox(control: Element): Element | null {
+  return control.matches('input.phone-row__input')
+    ? control.closest('.input-row-composite__inputs.phone-row[role="group"]') : null;
+}
+
+// ── jr6 O1, O2: Oracle's cx-select comboboxes ─────────────────────────────────────────────────────────────────────
+
+/** jr6 O1: a cx-select, hjf-apply-section.html's <input autocomplete="none" name="country" id="country-17" type="text"
+ *  role="combobox" aria-autocomplete="list" aria-haspopup="grid" aria-controls="country-17-listbox" aria-expanded="false"
+ *  ... class="cx-select-input"> beside its <button type="button" id="country-17-toggle-button" tabindex="-1"
+ *  aria-label="Open the drop-down list for Country." aria-expanded="false" aria-controls="country-17-listbox"
+ *  class="icon-dropdown-arrow">: the phone's country code, the address's Country, Address Line 1, ZIP Code, City, State
+ *  and County, and (hjf-after-submit.html) the education editor's Degree, School, the dates' Month and Year parts and
+ *  Country. Its list is drawn only while open, at the end of the page under the id its aria-controls names, and no
+ *  snapshot shows one open: what it holds is Jobright 1.25.2's reading (operations.fillSelectField and rules.getRules:
+ *  rows div[role=row] of div[role=gridcell] holding span.cx-select__list-item--content, a "No results" row when
+ *  nothing matches), to be confirmed on a capture of an open list (owner question Q23). */
+const CX_SELECT = 'input.cx-select-input[role="combobox"]';
+
+/** Oracle's own words for an empty list's one row (Jobright 1.25.2's operations reads "no results" and "no results
+ *  found" so): never a result. */
+const NO_RESULTS = /^no results(?: were)?(?: found)?[.!]*$/;
+
+/** The words of an element, white space collapsed, in lower case. */
+const wordsOf = (el: Element) => (el.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/** jr6 O1: a cx-select's results: the rows of its list, Oracle's "No results" row left out. */
+function cxRows(list: Element): readonly Element[] {
+  return Array.from(list.querySelectorAll('[role="row"]')).filter((row) => !NO_RESULTS.test(wordsOf(row)));
+}
+
+/** jr6 O1: the part of a row that is its label: its span.cx-select__list-item--content, else its gridcell (Jobright
+ *  1.25.2's operations reads the one, then the other). */
+function cxRowLabel(row: Element): Element | null {
+  return row.querySelector('.cx-select__list-item--content') ?? row.querySelector('[role="gridcell"]');
+}
+
+/** jr6 O1 (O3's block): the address block a geo-hierarchy cx-select sits in, hjf-apply-section.html's <fieldset
+ *  class="address-form__group"> (legend "Address") whose rows <div class="input-row ... geo-hierarchy-form-element">
+ *  hold Country, Address Line 1, ZIP Code, City, State and County; null for any other control. */
+function addressBlockOf(control: Element): Element | null {
+  const row = control.closest('.input-row.geo-hierarchy-form-element');
+  return row === null ? null : row.closest('fieldset.address-form__group, .apply-flow-block');
+}
+
+/** The address block's visible cx-select of that name (country, addressLine1), or null. */
+function addressPart(block: Element, name: string): HTMLInputElement | null {
+  return shown(Array.from(block.querySelectorAll<HTMLInputElement>(
+    `.input-row.geo-hierarchy-form-element ${CX_SELECT}[name="${name}"]`)));
+}
+
+/** jr6 O2: the searches among the cx-selects, typed into rather than chosen from whole: Oracle Maps' street search,
+ *  hjf-apply-section.html's Address Line 1 <input ... name="addressLine1" ... aria-describedby="oracle-maps-search-hint
+ *  ..." class="cx-select-input cx-select-input--auto-suggest"> (no toggle: Jobright 1.25.2's rules.getRules skips it as
+ *  a remote search by that class), and the address's ZIP Code, <input ... name="postalCode" ...>, whose list is every
+ *  postal code of the country (Jobright's operations types it, then its first three characters). */
+function isSearch(control: HTMLInputElement): boolean {
+  return control.classList.contains('cx-select-input--auto-suggest')
+    || (control.name === 'postalCode' && addressBlockOf(control) !== null);
+}
+
+/** jr6 O1: the Country an address block shows now, for its dependent lists (City, State and County; ZIP Code is a
+ *  search, whose results are never learned): page text, hashed into a learned list's key (dom/widgets/known.ts
+ *  learnedListKey), so another country's lists are never offered for them; null where it shows none. */
+function countryShown(control: Element): string | null {
+  const block = addressBlockOf(control);
+  const country = block === null ? null : addressPart(block, 'country');
+  if (country === null || country === control) return null;
+  const text = country.value.replace(/\s+/g, ' ').trim();
+  return text === '' ? null : text;
+}
+
+/** jr6 O1, O2: the declaration of a cx-select (CX_SELECT): opened by its toggle where it has one, else by the box
+ *  itself, whose aria-expanded says whether it is open; closed by Escape only; its results the rows of the list its
+ *  aria-controls names (cxRows), chosen by a click on the row's label part (cxRowLabel); busy while the list says
+ *  aria-busy; a query that shows no result for ORACLE_EMPTY_AFTER_MS found nothing. Address Line 1 and ZIP Code are
+ *  searches (isSearch). Null for any other control.
+ *  jr6 ORACLE P2: a search with no toggle (Address Line 1) names no element that says it is open (no `expanded`), so a
+ *  search types its query at once instead of clicking its box first: Oracle Maps draws suggestions for the words typed
+ *  (its hint, hjf-apply-section.html's <p id="oracle-maps-search-hint">Enter your street name and other address details
+ *  to see suggestions</p>; the box captured aria-expanded="false"), and Jobright 1.25.2's operations.fillSelectField
+ *  types Address Line 1 before it waits for a list. A box that says "false" would be clicked first, and a click alone
+ *  draws no list there, which reads as needs-your-click (dom/widgets/typeahead.ts searchTypeahead). */
+function widgetFor(control: Element): WidgetDecl | null {
+  // By name, never instanceof: a frame's elements belong to its own window's classes.
+  if (control.localName !== 'input' || !control.matches(CX_SELECT)) return null;
+  const input = control as HTMLInputElement;
+  const doc = input.ownerDocument;
+  const toggle = input.id === '' ? null : doc.getElementById(`${input.id}-toggle-button`);
+  const opener: HTMLElement = toggle !== null && toggle.localName === 'button' ? toggle : input;
+  const listId = input.getAttribute('aria-controls') ?? opener.getAttribute('aria-controls');
+  const context = isSearch(input) ? null : countryShown(input);
+  return {
+    kind: isSearch(input) ? 'typeahead-remote' : 'combobox',
+    opener,
+    ...(opener === input && isSearch(input) ? {} : { expanded: opener }),
+    keys: ['Escape'],
+    results: { list: () => (listId === null || listId === '' ? null : doc.getElementById(listId)), option: '[role="row"]',
+      options: cxRows, choose: 'label' },
+    optionLabel: cxRowLabel,
+    busy: ['[aria-busy="true"]'],
+    emptyAfterMs: ORACLE_EMPTY_AFTER_MS,
+    ...(context === null ? {} : { learnContext: context }),
+    snapshot: input.closest('timeline-form-inline') === null ? 'fixtures/oracle/hjf-apply-section.html'
+      : 'fixtures/oracle/hjf-after-submit.html',
+  };
+}
+
+/** jr6 O3: the address block's order, hjf-apply-section.html's geo-hierarchy rows (addressBlockOf): the Country redraws
+ *  the block, Oracle Maps' Address Line 1 fills ZIP Code, City, State and County from the street it is given. So
+ *  Address Line 1 waits on the Country, and ZIP Code, City, State and County on Address Line 1, or on the Country
+ *  where the block shows no street search (Jobright 1.25.2's prefillCountryBeforeRules writes the Country first and
+ *  waits for its dependents; its resolveOracleAddressDependentRules waits after the street's pick and fills only what
+ *  Oracle left empty). Null for the Country and for any control outside an address block. */
+function dependsOn(control: Element): Element | null {
+  if (control.localName !== 'input' || !control.matches(CX_SELECT)) return null;
+  const block = addressBlockOf(control);
+  const name = (control as HTMLInputElement).name;
+  if (block === null || name === 'country') return null;
+  const country = addressPart(block, 'country');
+  if (name === 'addressLine1') return country;
+  return addressPart(block, 'addressLine1') ?? country;
+}
+
+// ── jr6 oracle-new-2, O7: the Work and Education timeline's open editor ────────────────────────────────────────────
+
+/** jr6 oracle-new-2: the timeline's inline editor, hjf-after-submit.html's <timeline-form-inline><div
+ *  class="standard-apply-flow-timeline-form"><div class="timeline-form-content"><timeline-form-builder
+ *  class="timeline-form-dialog__content"> holding one entry's rows (Degree, Major, School, Start Date and End Date as
+ *  Month and Year parts, Country, City, Average Grade), its footer's Cancel and Save beside it (button.cancel-btn,
+ *  button.save-btn): drawn in place of the timeline's tiles while an entry is opened (the invalid one, after Oracle
+ *  refused the Submit) or added. The tiles themselves hold no field (hjf-apply-section.html). */
+const TIMELINE_EDITOR = 'timeline-form-inline timeline-form-builder.timeline-form-dialog__content';
+
+/** The words of an editor's row labels (label.input-row__label in form-element-label), in lower case. */
+function rowLabelsOf(editor: Element): Set<string> {
+  return new Set(Array.from(editor.querySelectorAll('form-element-label > label.input-row__label')).map(wordsOf));
+}
+
+/** The control of the editor's row whose label reads one of `words` (lower case), or null. */
+function rowControl(editor: Element, words: readonly string[]): HTMLInputElement | null {
+  const label = Array.from(editor.querySelectorAll<HTMLLabelElement>('form-element-label > label.input-row__label'))
+    .find((each) => words.includes(wordsOf(each)));
+  const row = label?.closest('.input-row') ?? null;
+  return row?.querySelector<HTMLInputElement>('input.cx-select-input, input.input-row__control') ?? null;
+}
+
+/** An editor's entry kind, told apart by its fields as Jobright 1.25.2's rules.addAndGetEduRules and addAndGetWorkRules
+ *  read them: School and Degree (hjf-after-submit.html, whose boxes are named educationalEstablishment and
+ *  contentItemId) make an education's; Employer Name and Job Title an experience's (no snapshot shows that editor);
+ *  anything else none. */
+function editorKind(editor: Element): 'education' | 'experience' | null {
+  const labels = rowLabelsOf(editor);
+  const named = (name: string) => editor.querySelector(`input.cx-select-input[name="${name}"]`) !== null;
+  if ((labels.has('school') && labels.has('degree')) || (named('educationalEstablishment') && named('contentItemId'))) {
+    return 'education';
+  }
+  if ((labels.has('employer name') || labels.has('employer')) && (labels.has('job title') || labels.has('title'))) {
+    return 'experience';
+  }
+  return null;
+}
+
+/** jr6 oracle-new-2, O7: the editors of `kind` a person sees in the root, in page order. */
+function openEditors(root: Element, kind: 'education' | 'experience'): Element[] {
+  const cache = newScanCache();
+  return Array.from(root.querySelectorAll(TIMELINE_EDITOR))
+    .filter((editor) => isUserVisible(editor, cache) && editorKind(editor) === kind);
+}
+
+/** jr6 oracle-new-2, O7: the timeline's open editor as a repeatable block of its kind (so its Start Date, End Date,
+ *  City and Country are the entry's, never the person's own, and the planner gives it an entry by fingerprint), only
+ *  while one shows: a section with no editor open declares nothing, so no entry is ever counted missing beside the
+ *  tiles. Its Add buttons (#timeline-add-education-button, #timeline-add-experience-button) stay never pressed until
+ *  the owner answers question 1 (addButton null), and so does its Save (a door of its own, O6: deferred). */
+function repeatables(root: Element): ReturnType<NonNullable<Adapter['repeatables']>> {
+  return (['education', 'experience'] as const).flatMap((kind) => (openEditors(root, kind).length === 0 ? []
+    : [{ kind, blocks: () => openEditors(root, kind), addButton: () => null }]));
+}
+
+/** The words a box shows, white space collapsed (a cx-select shows its chosen option's label in its box). */
+const shownIn = (box: HTMLInputElement | null) => (box?.value ?? '').replace(/\s+/g, ' ').trim();
+
+/** jr6 oracle-new-2, O7: the entry an open editor holds, by the words the planner fingerprints it by (core/steps/blocks.ts
+ *  SHOWN_CATEGORIES): an education's School; an experience's Employer Name and Job Title. So an entry Oracle imported
+ *  is matched to the profile's entry by its words, never by its place, and one no profile entry matches is kept as
+ *  it is. Degree is no category the plan request carries (the planner reads it from the editor's own field). */
+function readEntries(kind: string, blocks: Element[]): PrefillEntryView[] {
+  return blocks.flatMap((block, index): PrefillEntryView[] => {
+    if (editorKind(block) !== kind) return [];
+    const values: PrefillEntryView['values'][number][] = [];
+    if (kind === 'education') {
+      const school = shownIn(block.querySelector<HTMLInputElement>('input.cx-select-input[name="educationalEstablishment"]')
+        ?? rowControl(block, ['school']));
+      if (school !== '') values.push({ category: 'education.school', text: school });
+    } else if (kind === 'experience') {
+      const company = shownIn(rowControl(block, ['employer name', 'employer']));
+      const title = shownIn(rowControl(block, ['job title', 'title']));
+      if (company !== '') values.push({ category: 'experience.company', text: company });
+      if (title !== '') values.push({ category: 'experience.title', text: title });
+    }
+    return values.length === 0 ? [] : [{ block: index, values }];
+  });
 }
 
 /** Whether the page marks a row-labelled control required: its row's label has input-row__label--required (drawn with
@@ -217,9 +529,60 @@ function submitButton(root: Element): HTMLElement | null {
     '.apply-flow-pagination button.apply-flow-pagination__submit-button')));
 }
 
-/** A flow that shows its Submit is on its final step; the gate, the code page and the posting say nothing. */
+/** jr6 O8: a section's Next in a flow of several sections (.../apply/section/<n>), which no snapshot shows: the
+ *  pagination's own button, as the one-page flow draws its Submit (<div class="apply-flow-pagination"> <div
+ *  class="apply-flow-pagination__buttons"> <button type="button" class="button apply-flow-pagination__button ...">)
+ *  and the gate draws its Next (jr6-caesars-email-gate.html and elhr-email-gate.html: <button type="submit" class="button
+ *  apply-flow-pagination__button theme-color-1 focused-tooltip" title="Next" aria-label="Next">Next</button>), whose
+ *  title, aria-label or words read "Next" (Jobright 1.25.2's NextPageButton presses the pagination button that reads
+ *  so); never the Submit (apply-flow-pagination__submit-button). Null on the gate and the code page (theirs is Sign-in
+ *  Auto's, under every Sign-in rule), on an unproven employer domain, and where none or several show. */
+function nextButton(root: Element): HTMLElement | null {
+  const doc = root.ownerDocument;
+  if (unprovenOwnDomain(doc) || authState(doc) !== null) return null;
+  const cache = newScanCache();
+  const next = Array.from(doc.querySelectorAll<HTMLElement>('.apply-flow-pagination button.apply-flow-pagination__button'))
+    .filter((button) => !button.classList.contains('apply-flow-pagination__submit-button')
+      && namesOf(button).includes('next') && isUserVisible(button, cache));
+  return next.length === 1 ? next[0]! : null;
+}
+
+/** A flow that shows its Submit is on its final step; the gate, the code page and the posting say nothing. jr6 O8: a
+ *  section of a flow of several (.../apply/section/<n>) that shows its Next and no Submit is not the last. */
 function isFinalStep(doc: Document): 'final' | 'not-final' | 'unknown' {
-  return flowOf(doc) !== null && submitButton(doc.documentElement) !== null ? 'final' : 'unknown';
+  if (flowOf(doc) === null) return 'unknown';
+  if (submitButton(doc.documentElement) !== null) return 'final';
+  const address = addressOf(doc);
+  return address !== null && oracleApplySection(address) !== null && nextButton(doc.documentElement) !== null
+    ? 'not-final' : 'unknown';
+}
+
+/** jr6 O8: the step a page of the flow shows (Jobright 1.25.2's getOracleCloudStepState reads the section's number from
+ *  the address and its title from the progress step marked aria-current): its address's section/<n> (or the gate's
+ *  email); its progress, the words of the step the flow marks aria-current="step" or "page"; its heading, the first
+ *  block title a person sees (hjf-apply-section.html's <h2 class="apply-flow-block__title">Import your profile</h2>);
+ *  its anchors, the kinds of the blocks it shows (apply-flow-block--<kind>: personal-information-basic,
+ *  disqualification-questions, ...) and the account page it is (the gate and the code page share their address). Page
+ *  text and markup only, never a value. */
+function stepSignature(doc: Document): { heading?: string; progress?: string; urlPart?: string; anchors: string[] } {
+  const flow = flowOf(doc);
+  if (flow === null) return { anchors: [] };
+  const cache = newScanCache();
+  const address = addressOf(doc);
+  const section = address === null ? null : oracleApplySection(address);
+  const urlPart = section !== null ? `section/${section}` : address !== null && isOracleEmailGate(address) ? 'email' : '';
+  // The words a person reads, else (a part the colour rules cannot read over the cover image, as the navigation train's
+  // items are on hjf-apply-section.html) the shown element's own words: a step's identity, hashed, never a label.
+  const read = (el: Element | null) => (el === null ? ''
+    : visibleText(el, { singleLine: true, cache }) || (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 200));
+  const progress = shown(Array.from(doc.querySelectorAll('.apply-flow [aria-current="step"], .apply-flow [aria-current="page"]')),
+    cache);
+  const heading = shown(Array.from(flow.querySelectorAll('.apply-flow-block__title')), cache);
+  const kinds = Array.from(flow.querySelectorAll('.apply-flow-block')).filter((block) => isUserVisible(block, cache))
+    .flatMap((block) => Array.from(block.classList).filter((name) => name.startsWith('apply-flow-block--')));
+  const state = authState(doc);
+  return { heading: read(heading), progress: read(progress), urlPart,
+    anchors: [...new Set(kinds)].concat(state === null ? [] : [state]) };
 }
 
 /** The page's error notification after a Submit it refused (module header, M4): hjf-after-submit.html's <notifications>
@@ -278,7 +641,11 @@ const NEVER_PRESSED = ['.job-details__section-apply-button button.apply-now-butt
   'button.apply-flow-profile-import-again-button', 'button.attachment-upload-button__download',
   'button.attachment-upload-button__bottom-button', 'button.icon-clear', 'button.communication-channel__value-edit',
   'button.app-header__close', '#timeline-add-experience-button', '#timeline-add-education-button',
-  'button.apply-flow-profile-item-tile__new-tile', 'button.candidate-links__add-link'];
+  'button.apply-flow-profile-item-tile__new-tile', 'button.candidate-links__add-link',
+  // ── jr6 O16 ── jr6-caesars-email-gate.html: <button type="button" class="quick-apply-flow-verify-method__button" ...>Do
+  // you want to communicate by phone instead?</button>, inside the gate's form: it switches the gate to a code sent by
+  // text message (Jobright 1.25.2's gate handler never presses it either).
+  'button.quick-apply-flow-verify-method__button'];
 
 function neverPress(root: Element): Element[] {
   return Array.from(root.ownerDocument.querySelectorAll(NEVER_PRESSED.join(', ')));
@@ -305,4 +672,14 @@ export const oracleAdapter: Adapter = {
   entryControl,
   // APPLY NOW is never pressed by a run (neverPress): the entry door presses that element alone.
   entryNeverPressed: true,
+  // ── jr6 ORACLE (FIXPLAN §6.11; module header) ──
+  labelFirst,
+  controlBox,
+  widgetFor,
+  dependsOn,
+  repeatables,
+  prefill: { readEntries },
+  nextButton,
+  stepSignature,
+  uploadState,
 };

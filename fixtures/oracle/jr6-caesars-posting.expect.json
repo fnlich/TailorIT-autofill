@@ -1,0 +1,21 @@
+{
+  "fixture": "oracle/jr6-caesars-posting",
+  "source": "https://edmn.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/78569",
+  "captured": "2026-11-06T16:07:00.000Z",
+  "note": "The owner's snapshot of a us2 tenant's posting (jr6): one APPLY NOW (button.apply-now-button.apply-now-button--apply-now, \"Apply Now\") and no form.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": ".job-details__description-content @0",
+    "entryControl": ".job-details__section-apply-button button.apply-now-button",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      ".job-details__section-apply-button button.apply-now-button",
+      "button.app-dialog__close",
+      ".app-dialog__footer-button"
+    ],
+    "pressable": []
+  }
+}

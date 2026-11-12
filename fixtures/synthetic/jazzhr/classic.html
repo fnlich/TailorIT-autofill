@@ -1,0 +1,175 @@
+<!doctype html>
+<!--
+  Synthetic (jr6 FIXPLAN 6.8, JZ-4): a JazzHR posting and its one-page application in JazzHR's classic "resumator"
+  layout, written by hand in the shapes of the owner's 2026-11-10 capture (fixtures/jazzhr/jr6-centroid-form, read by
+  src/adapters/jazzhr/config.ts): the posting's #resumator-job-description beside form#form_submit_new_resume, each
+  question a div.resumator-field-wrapper titled by a sibling div.resumator-label whose trailing "*" is its required mark,
+  the Location wrapper's four boxes named by their placeholders, the "Apply with Indeed" wrapper, Submit and Cancel as
+  input[type=button], and the résumé behind its two choices: "Attach resume" (a#resumator-choose-upload) and "Paste
+  resume" (a#resumator-choose-paste), each an <a href> to the posting itself, with the file input in
+  #resumator-resume-upload-wrapper and the paste box in #resumator-resume-paste-wrapper, both class "none" (hidden)
+  until chosen. No reCAPTCHA: the "Human Check" is the person's, which the DOM tests hold. Served at
+  https://tailorit-fixture.applytojob.com/apply/0000000B01/Linux-Systems-Engineer.
+  The page's own script stands for JazzHR's résumé toggle, our own code, written from the two layouts' captured states
+  (the classic layout before a choice: the choices shown, both wrappers "none"; the Bootstrap layout after it,
+  jazzhr-0 to -4: the choices hidden, the upload wrapper shown): a click on "Attach resume" (or "attach resume file")
+  shows the upload wrapper and hides the others, a click on "Paste resume" (or "paste resume") the paste wrapper; it
+  cancels each link's default, so the page never navigates, and counts each in window.__jazz.toggled. A click on Submit
+  puts "Submitting...please wait..." in its place (jazzhr-4) and counts it; a click on any other button, link or input
+  button of the page is recorded in window.__jazz.pressed. Each handler is bound as a page's own script binds it, on its
+  element or at the document in the bubble phase, so a listener in the capture phase (the extension's) hears a click
+  first. It posts nothing, dispatches no event, and clicks, focuses or submits nothing itself.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Linux Systems Engineer - Example Systems - Career Page</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 15px/1.45 system-ui, sans-serif; }
+    #resumator-body { display: flex; gap: 24px; max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+    #resumator-content-left { flex: 6; }
+    #resumator-content-right { flex: 5; }
+    .resumator-field-wrapper { margin: 12px 0; }
+    .resumator-label { font-weight: 600; margin-bottom: 4px; }
+    .resumator-field { display: block; width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #888;
+      border-radius: 3px; background: #fff; color: #222; font: inherit; }
+    #resumator-address-field .resumator-field { margin-bottom: 6px; }
+    .none { display: none; }
+    .resumator-resume-action { color: #1a4d8f; }
+    input[type="button"] { padding: 8px 16px; border: 1px solid #555; border-radius: 3px; background: #eee; color: #222;
+      font: inherit; }
+    #tracking-consent-banner { position: fixed; left: 0; right: 0; bottom: 0; padding: 8px 16px; background: #f4f4f4;
+      border-top: 1px solid #555; display: flex; gap: 8px; align-items: center; }
+  </style>
+</head>
+<body id="resumator-jobboard" class="jobboard">
+  <div id="resumator-body">
+    <div id="resumator-content-left">
+      <h2>Linux Systems Engineer</h2>
+      <div id="resumator-job-description" class="resumator-jobs-text">
+        <p>Example Systems looks after a fleet of Linux servers for its customers.</p>
+        <p>The engineer patches and monitors the fleet, writes runbooks and automates routine work.</p>
+        <p>The position is full time, with health cover and a yearly training budget.</p>
+      </div>
+    </div>
+    <div id="resumator-content-right">
+      <div id="resumator-resume-upload" class="resumator-resume-text">
+        <form id="form_submit_new_resume" name="form_submit_new_resume" method="post" enctype="multipart/form-data">
+          <div id="resumator-resumes-title" class="resumator-resume-text">Apply for this position</div>
+          <div class="resumator-field-wrapper resumator-resume-text" id="resumator-message-required">* Required</div>
+          <div id="resumator-apply-with-indeed-wrapper" class="resumator-field-wrapper">
+            <span class="indeed-apply-widget"><a id="indeed-apply-link" href="#indeed">Apply with Indeed</a></span>
+          </div>
+          <div class="resumator-field-wrapper resumator-resume-text" id="resumator-firstname">
+            <div class="resumator-label resumator-resume-text" id="resumator-firstname-label">First name*</div>
+            <div id="resumator-firstname-field" class="resumator-input">
+              <input type="text" id="resumator-firstname-value" name="resumator-firstname-value" class="resumator-field" maxlength="255">
+            </div>
+          </div>
+          <div class="resumator-field-wrapper resumator-resume-text" id="resumator-lastname">
+            <div class="resumator-label resumator-resume-text" id="resumator-lastname-label">Last name*</div>
+            <div id="resumator-lastname-field" class="resumator-input">
+              <input type="text" id="resumator-lastname-value" name="resumator-lastname-value" class="resumator-field" maxlength="255">
+            </div>
+          </div>
+          <div class="resumator-field-wrapper resumator-resume-text" id="resumator-email">
+            <div class="resumator-label resumator-resume-text" id="resumator-email-label">Email address*</div>
+            <div id="resumator-email-field" class="resumator-input">
+              <input type="text" id="resumator-email-value" name="resumator-email-value" class="resumator-field" maxlength="255">
+            </div>
+          </div>
+          <div class="resumator-field-wrapper resumator-resume-text" id="resumator-address">
+            <div class="resumator-label resumator-resume-text" id="resumator-address-label">Location</div>
+            <div id="resumator-address-field" class="resumator-input">
+              <input type="text" id="resumator-address-value" name="resumator-address-value" class="resumator-field" placeholder="Address" maxlength="255">
+              <input type="text" id="resumator-city-value" name="resumator-city-value" class="resumator-field" placeholder="City" maxlength="255">
+              <input type="text" id="resumator-state-value" name="resumator-state-value" class="resumator-field" placeholder="State" maxlength="50">
+              <input type="text" id="resumator-postal-value" name="resumator-postal-value" class="resumator-field" placeholder="Postal" maxlength="50">
+            </div>
+          </div>
+          <div class="resumator-field-wrapper resumator-resume-text" id="resumator-phone">
+            <div class="resumator-label resumator-resume-text" id="resumator-phone-label">Phone number*</div>
+            <div id="resumator-phone-field" class="resumator-input">
+              <input type="text" id="resumator-phone-value" name="resumator-phone-value" class="resumator-field" maxlength="50">
+            </div>
+          </div>
+          <div class="resumator-field-wrapper resumator-resume-text" id="resumator-resume">
+            <div class="resumator-label resumator-resume-text" id="resumator-resume-label">Resume*</div>
+            <div id="resumator-resume-options" class="resumator-resume-text">
+              <p>
+                <a id="resumator-choose-upload" class="resumator-resume-action resumator-resume-text" href="#">Attach resume</a> or
+                <a id="resumator-choose-paste" class="resumator-resume-action resumator-resume-text" href="#">Paste resume</a>
+              </p>
+            </div>
+            <div id="resumator-resume-upload-wrapper" class="resumator-resume-text none">
+              <div class="resumator-resume-text">
+                <p>Attach resume as .pdf, .doc, .docx, .odt, .txt, or .rtf (limit 5MB) or
+                  <a id="resumator-resume-switch-paste" class="resumator-resume-action resumator-resume-text" href="#">paste resume</a></p>
+              </div>
+              <div class="resumator-input" id="resumator-resume-field">
+                <input type="file" id="resumator-resume-value" name="resumator-resume-value">
+              </div>
+            </div>
+            <div id="resumator-resume-paste-wrapper" class="resumator-resume-text none">
+              <div class="resumator-resume-text">
+                <p>Paste your resume here or
+                  <a id="resumator-resume-switch-upload" class="resumator-resume-action resumator-resume-text" href="#">attach resume file</a></p>
+              </div>
+              <div class="resumator-input">
+                <textarea id="resumator-resumetext-value" name="resumator-resumetext-value" class="resumator-field"></textarea>
+              </div>
+            </div>
+          </div>
+          <textarea id="resumator-xml-value" name="resumator-xml-value" class="none"></textarea>
+          <div id="resumator-submit" class="resumator-field-wrapper resumator-resume-text">
+            <input type="button" id="resumator-submit-resume" name="submit_resume" value="Submit Application">
+            <input type="button" id="resumator-cancel-resume" name="cancel_resume" value="Cancel">
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div id="tracking-consent-banner">
+    <span>This website uses cookies.</span>
+    <button class="tracking-consent-button allow" type="button">Allow</button>
+    <button class="tracking-consent-button reject" type="button">Reject All</button>
+  </div>
+  <script>
+    (() => {
+      const log = { pressed: [], toggled: [], submitted: 0 };
+      window.__jazz = log;
+      document.body.dataset.submitted = '0';
+      const byId = (id) => document.getElementById(id);
+      const options = byId('resumator-resume-options');
+      const upload = byId('resumator-resume-upload-wrapper');
+      const paste = byId('resumator-resume-paste-wrapper');
+      const show = (wrapper) => {
+        for (const each of [options, upload, paste]) each.classList.toggle('none', each !== wrapper);
+      };
+      const toggles = { 'resumator-choose-upload': upload, 'resumator-resume-switch-upload': upload,
+        'resumator-choose-paste': paste, 'resumator-resume-switch-paste': paste };
+      for (const [id, wrapper] of Object.entries(toggles)) {
+        byId(id).addEventListener('click', (event) => {
+          event.preventDefault();
+          log.toggled.push(id);
+          show(wrapper);
+        });
+      }
+      const submit = byId('resumator-submit-resume');
+      submit.addEventListener('click', (event) => {
+        event.preventDefault();
+        log.submitted += 1;
+        document.body.dataset.submitted = String(log.submitted);
+        // JazzHR's own: Submit gives way to its in-flight words (jazzhr-4).
+        byId('resumator-submit').textContent = 'Submitting...please wait...';
+      });
+      document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target.closest('a, button, input[type="button"]') : null;
+        if (target === null || target === submit || target.id in toggles) return;
+        event.preventDefault();
+        log.pressed.push(target.id || target.className || target.textContent.trim());
+      });
+    })();
+  </script>
+</body>
+</html>

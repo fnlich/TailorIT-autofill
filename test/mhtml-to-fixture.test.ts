@@ -2344,6 +2344,22 @@ describe('the committed SmartRecruiters fixtures (the snapshot build of 2026-11-
     expect(body.match(/<template shadowrootmode="open"/g)?.length ?? 0).toBe(header.shadowRoots);
     // No form element of SmartRecruiters' keeps a value it was given (redactPlatformInPage).
     expect(markup).not.toMatch(/<spl-(?:input|textarea|number-field|phone-field|select|autocomplete|radio-group|checkbox)(?=[\s>])[^>]*\svalue="[^"]/);
+    // jr6 fixes (PRIV-3, REVC-1; SMARTRECRUITERS): no answer of the person's in a control's marks. No spl-radio or
+    // spl-checkbox keeps checked, no spl-radio its name, no Yes/No group a lone tab stop off its first row (the roving
+    // tabindex 0 stood on the chosen row: an unanswered group, xplor-screening's six, has it on its first), and no
+    // element (a form included) an Angular state class (which boxes were typed into, touched or valid). Every page here
+    // was converted with the converter that clears them (the five form pages again in the jr6 fix round). Counts only,
+    // so a failure never shows the row.
+    const count = (pattern: RegExp) => markup.match(pattern)?.length ?? 0;
+    expect(count(/<spl-(?:radio|checkbox)(?=[\s>])[^>]*\schecked(?:\s*=\s*"(?!false")[^"]*")?(?=[\s/>])/g), 'checked')
+      .toBe(0);
+    expect(count(/<spl-radio(?=[\s>])[^>]*\sname=/g), 'a radio named').toBe(0);
+    const groups = [...markup.matchAll(/<spl-radio-group\b[^>]*>([\s\S]*?)<\/spl-radio-group>/g)]
+      .map(([, group]) => [...(group ?? '').matchAll(/<spl-radio(?=[\s>])[^>]*?\stabindex="(-?\d+)"/g)].map(([, tab]) => tab));
+    expect(groups.filter((tabs) => !tabs.every((tab, at) => tab === (at === 0 ? '0' : '-1'))).length,
+      'Yes/No groups whose tab stop is off their first row').toBe(0);
+    expect(count(/<[a-z][\w-]*\s[^>]*\bclass="[^"]*(?<![\w-])ng-(?:(?:valid|invalid|pending)(?:-[\w-]+)?|not-empty|empty|dirty|pristine|touched|untouched)(?![\w-])/g),
+      'elements with an Angular state class').toBe(0);
   });
 });
 
@@ -2488,20 +2504,14 @@ const CHOSEN_STATE_FIXTURES = [
 
 /**
  * jr6 fixes (PRIV-2, REVC-4): the committed fixtures converted before the converter cleared these marks, which still hold
- * one (a privacy finding, not an exception): ADP's main questions page draws its chosen radio's dot (CHOSEN_DRAWINGS),
- * Oracle's two apply-flow pages keep each answered pill group's tab stop on the chosen pill, and SmartRecruiters' two
- * one-click pages keep Angular's state classes on their components. Each is to be converted again with this converter by
- * its package (ADP, ORACLE, SMARTRECRUITERS: SP\jr6\build\TOOLING.md, round 3), and its entry then goes: each lets
- * through only the marks named here, and only while the file still holds exactly them. (HiBob's form, converted again
- * by the jr6 privacy check, holds none now.)
+ * one (a privacy finding, not an exception). Each was to be converted again with this converter, and its entry then
+ * went: it let through only the marks named here, and only while the file still held exactly them. All are converted
+ * again now, so the map is empty: ADP's main questions page, which drew its chosen radio's dot (the jr6 ADP fixer);
+ * SmartRecruiters' xplor-one-click and xplor-screening (SMARTRECRUITERS); Oracle's hjf-after-submit and
+ * hjf-apply-section, which kept each answered pill group's tab stop on the chosen pill (ORACLE); HiBob's form, which
+ * kept Angular's state classes on its components (the jr6 privacy check).
  */
-const MARKED_FIXTURES: Record<string, string[]> = {
-  'adp/questions.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
-  'oracle/hjf-after-submit.html': [CHOSEN_MARK_LABELS.roving],
-  'oracle/hjf-apply-section.html': [CHOSEN_MARK_LABELS.roving],
-  'smartrecruiters/xplor-one-click.html': [CHOSEN_MARK_LABELS.angularComponent],
-  'smartrecruiters/xplor-screening.html': [CHOSEN_MARK_LABELS.angularComponent],
-};
+const MARKED_FIXTURES: Record<string, string[]> = {};
 
 /**
  * jr6 (jobvite-new-4): the committed fixtures converted before the converter cleared AngularJS's state classes, which
@@ -2510,9 +2520,9 @@ const MARKED_FIXTURES: Record<string, string[]> = {
  * Only that one mark is let through, and only while the file still holds it, so this list shrinks as each is converted
  * again (SP\jr6\build\TOOLING.md, open issues). (Breezy's form, converted again by the jr6 privacy check, holds none now.)
  */
-const ANGULAR_STATE_FIXTURES = ['jobvite/ninjaone-consent-empty.html',
-  'jobvite/ninjaone-consent.html', 'jobvite/ninjaone-step1-resume.html', 'jobvite/ninjaone-step1.html',
-  'jobvite/ninjaone-step2.html', 'jobvite/ninjaone-step3.html'];
+// jr6 JOBVITE (TOOLING's handoff §6): the six NinjaOne pages were converted again with the jr6 converter, so they left
+// this list; Breezy's form left it when the jr6 privacy check converted it again. The list is empty now.
+const ANGULAR_STATE_FIXTURES: string[] = [];
 const ANGULAR_STATE_MARK = 'an AngularJS state class on a control';
 
 describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
@@ -3993,14 +4003,12 @@ for (const option of root.querySelectorAll('spl-select-option')) {
 
 /**
  * jr6 fixes (REVC-4 b): the committed fixtures converted before the converter refused it, which still hold lists where
- * one REDACTED row stands beside public ones (each file's count): UltiPro's two education pages (the field-of-study
- * selects, REVC-2: ULTIPRO converts them again; SP\jr6\leakscan\VERDICTS.md 4.2). A file converted again holds none,
- * and its entry then goes (SeatGeek's site menus went so: the jr6 privacy check gave its menu bar synthetic text).
+ * one REDACTED row stands beside public ones (each file's count). A file converted again holds none, and its entry then
+ * goes; all went, so the map is empty: UltiPro's two education pages, the field-of-study selects of REVC-2, converted
+ * again by ULTIPRO with a synthetic list (9b5ce3d; SP\jr6\leakscan\VERDICTS.md 4.2), and SeatGeek's site menus,
+ * whose menu bar the jr6 privacy check gave synthetic text.
  */
-const ELIMINATED_FIXTURES: Record<string, number> = {
-  'ultipro/application.html': 2,
-  'ultipro/resume-review.html': 2,
-};
+const ELIMINATED_FIXTURES: Record<string, number> = {};
 
 /** jr6 (item 8): every jr6 case's page and frame in a platform's folder (or sites/), outside the frozen lists above. */
 const JR6_FILES = readdirSync(join(ROOT, 'fixtures'), { withFileTypes: true })

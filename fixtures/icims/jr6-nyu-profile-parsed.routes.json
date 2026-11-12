@@ -1,0 +1,5 @@
+{
+  "https://uscareers-nyu.icims.com/jobs/16462/continual-service-improvement-manager%2c-global-infrastructure-and-operations/candidate?from=login&csrf=REDACTED&hashed=REDACTED&uploadResume=1&uploadResume=1": "fixtures/icims/jr6-nyu-profile-parsed.html",
+  "https://uscareers-nyu.icims.com/jobs/16462/continual-service-improvement-manager%2c-global-infrastructure-and-operations/candidate?from=login&csrf=REDACTED&in_iframe=1&hashed=REDACTED&uploadResume=1&uploadResume=1": "fixtures/icims/jr6-nyu-profile-parsed.frame-1.html",
+  "https://newassets.hcaptcha.com/captcha/v1/b7cb55144cfb1f79ab8b18a24ea5786dc178370e/static/hcaptcha.html": "fixtures/icims/jr6-nyu-profile-parsed.third-party-frame.html"
+}
