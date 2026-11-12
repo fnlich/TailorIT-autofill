@@ -591,8 +591,9 @@ describe('the v4 review: a pause restored in the document the person’s answer 
     const begun = run.worker.of('run/begin').length;
     const shown = await run.next();
     await vi.waitFor(() => expect(first(shown.fixture)).not.toBe(''), { timeout: 10_000 });
-    // The restored run, then the one it carried on as (its Continue): the stored RunState's.
-    expect(run.worker.of('run/begin')).toHaveLength(begun + 2);
+    // jr7 ENGINE-7 E2 item 2 (ADP7-7): the restored run goes on by itself past its sign-in pause (machine.ts pastPause),
+    // the application's form shown: one run, no pause shown again and left by a Continue (begun + 2 before).
+    expect(run.worker.of('run/begin')).toHaveLength(begun + 1);
     expect(shown.runtime.ui!.toasts.shown).not.toContain('sign-in');
   });
 

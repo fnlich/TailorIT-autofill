@@ -172,8 +172,9 @@ import {
   type RunContext, type RunEffect, type RunEvent, type StepFacts, type StepNotice, type SubmitSkipRules,
 } from '../core/steps/machine';
 import { stepSignature } from '../core/steps/signature';
-import { labelSlug, sectionKey } from '../core/text/keys';
+import { fieldKey, labelSlug, OPTION_SET_NONE, sectionKey } from '../core/text/keys';
 import type { BaseKey, CurrentValue, FieldKey, FieldSpec } from '../core/types/field';
+import type { Platform } from '../core/enums';
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, type RepeatableKind, type RunState, type RunStatus }
@@ -192,7 +193,9 @@ import { newScanCache } from '../dom/scan-cache';
 import { scan, toFieldSpec } from '../dom/scan';
 import { deadline, monotonicNow, startDeadline } from '../dom/time';
 import type { FieldTarget, ScannedField, ScanResult, WidgetReading } from '../dom/types';
-import { visibleTextWithout } from '../dom/visible-text';
+import { visibleText, visibleTextWithout } from '../dom/visible-text';
+import { openEditors } from '../dom/fillers/editor-opener';
+import { TEXT_CAP_LABEL } from '../dom/thresholds';
 import { isEditingHost } from '../dom/kinds';
 import { editableHidesText } from '../dom/values';
 import type { HeldDialogs } from '../dom/patch-protocol';
@@ -871,6 +874,18 @@ export class FillRun {
   skipField(key: FieldKey): boolean {
     if (this.ended !== null) return false;
     return this.writing.skip(key);
+  }
+
+  /**
+   * jr7 ENGINE-7 (BUILD7's jr6 leftover: INT-2 open item 1, IFIX-CONTENT open item 2): frame/hello's answer, which a
+   * document says again when it comes back from the back/forward cache (the runtime hands it here: AUTO-7's runtime.ts
+   * line, ENGINE-7.md). Only whether a job-site password may be typed is taken from it: one saved while the document was
+   * away ends the paused run's wait for one (waitForPassword) as settings/changed does; one deleted meanwhile is typed
+   * no more. Every other mode stays run/begin's and settings/changed's: a hello says nothing new of them to a run.
+   */
+  helloAnswered(settings: Pick<ContentSettings, 'typeSignIn'>): void {
+    this.signInTypes = settings.typeSignIn === true;
+    if (this.signInTypes) this.passwordArrived?.();
   }
 
   /** settings/changed: the person saved their settings. The Next mode is read from them from now on: a validation, and
@@ -2470,6 +2485,11 @@ export class FillRun {
     // A page that keeps an entry only once its own Save is pressed (Workable's Add, disabled while an editor is open)
     // takes one entry a round: add, fill, save, until the profile's entries are in, never more rounds than entries.
     let rounds = 1;
+    // jr7 ENGINE-7 E2 item 5 (UKGR-9): the single-entry editors the adapter names are opened first, each once per
+    // document (dom/fillers/editor-opener.ts), never in a dry run; the loop then reads the fields they draw.
+    if (!this.request.dryRun && openEditors(adapter, this.env.doc, this.rootNow()) > 0) {
+      await deadline(EDITOR_OPEN_MS, this.controller.signal);
+    }
     for (let round = 0; ; round += 1) {
       // 1. Repeatable sections: the worker's entry counts, then the Add clicks (never in a dry run).
       this.answers.clear();
@@ -2546,7 +2566,9 @@ export class FillRun {
       }
       // The person's confirmations and edits during the fill stand on the rows (Phase 6), and so do the drafts this
       // document wrote (E4).
-      const rowsNow = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)];
+      const rowsNow = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow),
+        // jr7 ENGINE-7 E1 item 10 (jr7-O7): a row for each required block left empty.
+        ...this.requiredBlocksNow().map((block, ordinal) => requiredBlockRow(block, ordinal, this.env.page.app.platform))];
       const macs = await this.draftMacs(after, rowsNow);
       this.alive();
       const marked = this.markedRows(rowsNow, after, loop.carry.lastWriteAt, macs);
@@ -2592,8 +2614,9 @@ export class FillRun {
         // An entry the profile has that no block holds yet stays out of the form (v4, D1: nothing asks the person).
         this.addsLeft = Math.max(this.addsLeft, entriesLeft(this.sections, profile));
       }
-      // v4 (D3): only a required field left empty, or a hard-rule stop, holds auto-Next (report.ts lastFillOf).
-      const counts = lastFillOf(all);
+      // v4 (D3): only a required field left empty, or a hard-rule stop, holds auto-Next (report.ts lastFillOf). jr7
+      // ENGINE-7 E1 item 11 (ICIMS7-V4): left empty as this step's fresh scan reads it (heldIn).
+      const counts = lastFillOf(all.map((row) => heldIn(after, row)));
       return { type: 'FILLED', filledKeys: written, flagged: counts.flagged, blocked: counts.blocked,
         unresolved: counts.unresolved };
     }
@@ -2693,9 +2716,27 @@ export class FillRun {
     // core-x, item 2: an account section's required boxes still empty count as required fields left (they are no rows).
     const account = accountLeft(this.env.page.adapter, this.env.doc, this.rootNow());
     return { submitVisible: buttons.submit,
-      requiredEmpty: requiredLeftOf(this.scanNow(), this.leftRequired()) + account, noAi,
-      legalGuess, attentionLeft, entriesLeft: this.addsLeft };
+      // jr7 ENGINE-7 E1 item 10 (jr7-O7): and each required block the adapter reads empty (Oracle's Skills).
+      requiredEmpty: requiredLeftOf(this.scanNow(), this.leftRequired()) + account + this.requiredBlocksNow().length,
+      noAi, legalGuess, attentionLeft, entriesLeft: this.addsLeft };
   }
+
+  // ── jr7 ENGINE-7 E1 item 10 (jr7-O7) ──
+  /** The required blocks of the form that hold no control and no entry yet, as the adapter reads them now
+   *  (Adapter.requiredBlocksLeft: Oracle's required Skills list with no tile, snapshot7 oraclecloud1), each still in
+   *  the page; none where it declares none, or where its hook throws. Submit mode Auto holds for each
+   *  ('submit-held-required'), the agent ending needs-you required_field_empty before any Submit, and the review shows
+   *  a row for each (requiredBlockRow). */
+  private requiredBlocksNow(): Element[] {
+    const adapter = this.env.page.adapter;
+    if (adapter.requiredBlocksLeft === undefined) return [];
+    try {
+      return adapter.requiredBlocksLeft(this.rootNow()).filter((block) => block.isConnected);
+    } catch {
+      return [];
+    }
+  }
+  // ── end jr7 ENGINE-7 E1 item 10 ──
 
   /** The audit of 2026-11-06: whether the step holds a challenge the person must answer, which holds Next, Submit mode
    *  Auto and the agent as an unsolved CAPTCHA does: one anywhere on the page, not known solved, or a frame that reads
@@ -2712,7 +2753,10 @@ export class FillRun {
 
   /** The keys of the step's rows on required fields still empty (v4: shared/report.ts notFilled, whoever's they are). */
   private leftRequired(): string[] {
-    return this.rows.filter((row) => row.required && notFilled(row)).map((row) => row.key);
+    // jr7 ENGINE-7 E1 item 10 (jr7-O7): a required block's row is no field's: the blocks are counted as the adapter
+    // reads them now (requiredBlocksNow), never by a row of an earlier read.
+    return this.rows.filter((row) => row.required && notFilled(row) && row.section !== REQUIRED_BLOCKS_SECTION_KEY)
+      .map((row) => row.key);
   }
 
   /** The errors one more pass could address: on a field no pass of this step planned (it showed after the loop), or
@@ -3255,6 +3299,10 @@ export class FillRun {
    *  (submit-unconfirmed), and the panel's Submit is offered again. */
   submitUnconfirmed(): void {
     if (!this.submitPending) return;
+    // jr7 ENGINE-7 E2 item 3 (FIX7PLAN §6.2, jr7-O1 part 3): the run rests at an email-code or CAPTCHA pause its own
+    // Submit brought (Oracle's "Verify your email"): the pause is what the page waits on, and the report says nothing
+    // more (no submit-unconfirmed beside it); the Submit stays pressed, its sign still watched quietly.
+    if (this.restsAtSubmitPause()) return;
     this.submitPending = false;
     // v5 (PLAN decision 9): nothing came of a Submit while the page's check is still unticked: the check's (below), only
     // when it was unticked as the Submit was pressed or the site says so (v5 review, F2).
@@ -3264,6 +3312,12 @@ export class FillRun {
     }
     this.notices.add('submit-unconfirmed');
     this.rowsChanged();
+  }
+
+  /** jr7 ENGINE-7 E2 item 3 (jr7-O1 part 3): the run rests at an email-code or CAPTCHA pause (handoff). */
+  private restsAtSubmitPause(): boolean {
+    const pause = this.machine?.pauseReason ?? null;
+    return this.ended === 'paused' && this.machine?.status === 'handoff' && (pause === 'email-code' || pause === 'captcha');
   }
 
   /** The page refused a Submit pressed (the review): its errors, the fields its form marked, its failure message,
@@ -3430,7 +3484,11 @@ export class FillRun {
         this.sent = [...this.carried];
         this.hitsCounted = 0;
       }
-      await this.drive(from?.event ?? { type: 'DETECTED' });
+      // jr7 ENGINE-7 E2 item 2 (ADP7-7): a new document's resume names the application whose form it shows (this run's
+      // page: a run starts only with a form root), so a run paused at an email code or a sign-in wall goes on by itself.
+      const first = from?.event.type === 'RESUMED' && from.event.by === 'load'
+        ? { ...from.event, formOf: page.app.applicationKey } : from?.event;
+      await this.drive(first ?? { type: 'DETECTED' });
       if (this.ended === null) this.end(this.state.status === 'review' ? 'review' : 'stopped');
     } catch (failure) {
       if (failure instanceof Invalidated || failure instanceof RunAborted || this.controller.signal.aborted) {
@@ -3560,3 +3618,58 @@ export class FillRun {
     if (bots > 0) this.notices.add('bot-check', bots);
   }
 }
+
+// ── jr7 ENGINE-7 E1 item 10 (jr7-O7) ──
+/** The section a required block's row is keyed in: the blocks' own, apart from every field's. */
+const REQUIRED_BLOCKS_SECTION = { id: 'required-blocks' } as const;
+/** Its section key, as a row carries it. */
+const REQUIRED_BLOCKS_SECTION_KEY = sectionKey(REQUIRED_BLOCKS_SECTION);
+
+/** A required block's title as the page shows it: its aria-label, else its first heading's text, else its
+ *  visible text, on one line (at most TEXT_CAP_LABEL characters); '' where it shows none. Page text only. */
+function blockTitleOf(block: Element): string {
+  const named = (block.getAttribute('aria-label') ?? '').replace(/\s+/g, ' ').trim();
+  if (named !== '') return named.slice(0, TEXT_CAP_LABEL);
+  const heading = block.querySelector('h1, h2, h3, h4, h5, h6, legend, [role="heading" i]');
+  return visibleText(heading ?? block, { singleLine: true, cap: TEXT_CAP_LABEL }).trim();
+}
+
+/** The review's row for a required block left empty (requiredBlocksNow): flagged, the person's (needs-your-click: the
+ *  run presses no Add), required, labelled "<block>: add at least one" (PAGE_COPY.requiredBlockLeft). */
+function requiredBlockRow(block: Element, ordinal: number, platform: Platform): FillResult {
+  const title = blockTitleOf(block);
+  const slug = labelSlug({ label: title, kind: 'multiselect', nameAttr: '', idAttr: '' });
+  return { key: fieldKey({ platform, section: REQUIRED_BLOCKS_SECTION, labelSlug: slug, ordinal,
+    optionSetHash: OPTION_SET_NONE }), label: PAGE_COPY.requiredBlockLeft(title === '' ? PAGE_COPY.report.untitledSection
+    : title), kind: 'multiselect', category: 'unknown', section: REQUIRED_BLOCKS_SECTION_KEY, required: true,
+  status: 'flagged', provenance: null, matcherStage: 'not-applicable', confidence: 0, reason: 'needs-your-click',
+  wrote: false, verification: 'not-applicable', needsUserAction: true };
+}
+// ── end jr7 ENGINE-7 E1 item 10 ──
+
+// ── jr7 ENGINE-7 E1 item 11 (ICIMS7-V4, as its verifier corrected it) ──
+/** A row the run left open (unfilled by it) whose field holds an answer in `scanned` (the step's fresh scan at FILLED),
+ *  with detail.filledByYou set, as withFilledByYou folds it in at rest: a required field the page answered itself
+ *  (iCIMS's prefilled "Today's Date" month, day and year on arc-onesolutions' IForm, snapshot7 iCIMS1) is no required
+ *  field left empty, so it holds no auto-Next (report.ts lastFillOf). Only a row of HELD_BY_PAGE_REASONS: any other
+ *  row as it is. A flag only: it claims nothing about who filled the field. */
+export function heldIn(scanned: ScanResult, row: FillResult): FillResult {
+  // FIX7PLAN O-3 (the coordinator's note of 2026-11-12): only a row the run could not decide by its own limits
+  // (HELD_BY_PAGE_REASONS). A row whose question it knows and leaves for the person (no-profile-value: iCIMS's salary
+  // Time Frame with no profile pay, its page default "Hr." shown) is never counted filled by the page's default.
+  if (!open(row) || row.detail?.filledByYou === true || !HELD_BY_PAGE_REASONS.has(row.reason)) return row;
+  const field = scanned.fields.find((candidate) => candidate.key === row.key)
+    ?? scanned.fields.find((candidate) => candidate.baseKey === baseKeyOf(row.key));
+  if (field === undefined || !holdsAnswer(field.current)) return row;
+  return { ...row, detail: { ...row.detail, filledByYou: true } };
+}
+/** The reasons of a row the run could not decide by its own limits, whose field the page may answer itself: a question
+ *  it could not tell (unknown-field: iCIMS's "Today's Date" parts as the verifier probed them), or one it knows but
+ *  cannot write in the page's shape (format-unsupported: a date asked as month, day and year lists). Never a question
+ *  the run knows the person must answer (no-profile-value, a consent, a legal or EEO question). */
+const HELD_BY_PAGE_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['unknown-field', 'format-unsupported']);
+// ── end jr7 ENGINE-7 E1 item 11 ──
+
+/** jr7 ENGINE-7 E2 item 5: how long the fill lets an editor it opened draw its fields before the loop's first scan
+ *  (the loop's settle and later scans read the rest). */
+const EDITOR_OPEN_MS = 300;
