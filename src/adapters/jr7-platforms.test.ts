@@ -57,6 +57,13 @@ const STUBS: Array<{ platform: Platform; adapter: Adapter; parse: (url: URL) => 
     other: 'https://acme.jibeapply.com/' },
 ];
 
+// ── jr7 UKGREADY-7 (FIX7PLAN §6.14 items 2 and 3; UKGR-3): the stubs whose packages' parsers read their candidate pages
+// now (src/adapters/ukgready/url.test.ts): UKG Ready's posting (per ShowJob) and its applicant session (an application).
+// Each is read under its platform as its parser says, instead of nothing. INT-7 merges each package's line here (ICIMS-7
+// adds 'jibe'). ──
+const READING: ReadonlySet<Platform> = new Set<Platform>(['ukgready']);
+// ── end jr7 UKGREADY-7 ──
+
 describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
   it('appends their ids in order, each ahead of the contract and named as the panel and the report show it', () => {
     expect(PLATFORMS.slice(-5)).toEqual(STUBS.map((each) => each.platform));
@@ -76,6 +83,16 @@ describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
       for (const url of candidate) {
         expect(adapter.matchesUrl(new URL(url)), url).toBe(true);
         expect(adaptersFor(new URL(url)), url).toEqual([adapter, genericAdapter]);
+        // ── jr7 UKGREADY-7 ──
+        if (READING.has(platform)) {
+          const read = parse(new URL(url)) as { page: string; applicationUrl: string } | null;
+          expect(read, url).not.toBeNull();
+          expect(applicationOf(new URL(url)), url).toMatchObject({ platform, page: read!.page });
+          expect(adapter.canonicalApplicationUrl(new URL(url)), url)
+            .toBe(read!.page === 'application' ? read!.applicationUrl : null);
+          continue;
+        }
+        // ── end jr7 UKGREADY-7 ──
         expect(parse(new URL(url)), url).toBeNull();
         expect(adapter.canonicalApplicationUrl(new URL(url)), url).toBeNull();
         // Its own parser reads it (address.ts URL_PARSERS), so it is no application yet: never the generic rule's

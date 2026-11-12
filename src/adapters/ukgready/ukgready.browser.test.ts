@@ -182,6 +182,15 @@ describe('the steps and the two Submits (UKGR-8, UKGR-V4)', () => {
       expect(copies).toHaveLength(2);
       expect(next.closest('.c-modal-button-group-measurement')).toBeNull();
       expect(ukgReadyAdapter.neverPress!(root)).toContain(copies.find((copy) => copy !== next));
+      // Its own round of the step (the signature's dialog anchor).
+      expect(ukgReadyAdapter.stepSignature!(doc).anchors).toContain('dialog:alert:almost');
+      // Shown and drawn first, the measuring copy is still never the Next (UKGR-V4).
+      const measuring = doc.querySelector<HTMLElement>('#react_modal .c-modal-button-group-measurement')!;
+      measuring.style.cssText = 'display: block; position: static; visibility: visible;';
+      measuring.parentElement!.prepend(measuring);
+      const shownNext = ukgReadyAdapter.nextButton!(root)!;
+      expect(shownNext.closest('.c-modal-button-group-measurement')).toBeNull();
+      expect(words(shownNext)).toBe('Review & Submit Application');
       removeFixtures(document);
       // On the confirmation the progress reads 9/9: no later step.
       expect(declared.laterStep(await open('jr7-saashr-confirmation'))).toBeNull();
@@ -256,6 +265,7 @@ describe('the uploads and the dialogs after them (UKGR-10)', () => {
     const prompt = ukgReadyAdapter.uploadPrompt!(doc)!;
     expect([words(prompt.press), prompt.kind]).toEqual(['Cancel', 'dismiss']);
     expect(prompt.press.closest('.c-modal-button-group-measurement')).toBeNull();
+    expect(ukgReadyAdapter.stepSignature!(doc).anchors).toContain('dialog:alert:upload');
     const root = ukgReadyAdapter.detect(doc)!.formRoot;
     const populate = Array.from(doc.querySelectorAll('#react_modal button')).filter((button) => words(button) === 'Populate');
     expect(populate).toHaveLength(2);
@@ -264,6 +274,7 @@ describe('the uploads and the dialogs after them (UKGR-10)', () => {
     removeFixtures(document);
     const after = await open('jr7-saashr-documents-after');
     expect(ukgReadyAdapter.isBusy!(after)).toBe(true);
+    expect(ukgReadyAdapter.stepSignature!(after).anchors).toContain('dialog:saving');
     expect(ukgReadyAdapter.uploadPrompt!(after)).toBeNull();
     // After the upload the résumé shows its file row (and its input is gone): no résumé widget is left to fill.
     const widgets = ukgReadyAdapter.uploadWidgets!(ukgReadyAdapter.detect(after)!.formRoot);
@@ -338,6 +349,10 @@ describe('what is never filled (UKGR-13, UKGR-14, UKGR-V1)', () => {
   it('leaves out the SSN box, the Security Question, the header and its menus on Contact', async () => {
     const doc = await open('jr7-saashr-contact');
     const result = scanOf(doc);
+    const excluded = ukgReadyAdapter.excluded!(ukgReadyAdapter.detect(doc)!.formRoot);
+    for (const css of ['header#_header', '#mini-header-portal', '#_feedback-button_portal']) {
+      expect(excluded, css).toContain(doc.querySelector(css));
+    }
     for (const css of ['input[name="SSN"]', '.c-security-question-widget-container input[name="question"]',
       '.c-security-question-widget-container input[name="answer"]', 'header#_header input[type="search"]']) {
       expect(doc.querySelector(css), css).not.toBeNull();
@@ -365,6 +380,8 @@ describe('what is never filled (UKGR-13, UKGR-14, UKGR-V1)', () => {
   it("leaves out the review's read-only summary", async () => {
     const doc = await open('jr7-saashr-review');
     expect(doc.querySelectorAll('.c-profile-summary-container input').length).toBeGreaterThan(10);
+    expect(ukgReadyAdapter.excluded!(ukgReadyAdapter.detect(doc)!.formRoot))
+      .toContain(doc.querySelector('.c-profile-summary-container'));
     expect(scanOf(doc).fields).toEqual([]);
   });
 });
