@@ -351,3 +351,47 @@ describe('jr6 leftovers: a school box under a lazy School list that holds neithe
       reason: 'conditional-question' });
   }, 40_000);
 });
+
+// ── jr6 leftover (INT-2 open 1): a paused run's wait for a password hears hello's answer ─────────────────────────────
+describe('jr6 leftover: a run paused at its wall, waiting for a job-site password, hears hello\'s answer', () => {
+  /** A sign-in page (email, password, its button "Sign In") at an application's address. */
+  const PAGE = `<!doctype html><html><head><title>Sign In</title></head><body><main>
+    <form id="sign-in" method="post">
+      <label for="email">Email Address</label><input id="email" type="email" autocomplete="username">
+      <label for="password">Password</label><input id="password" type="password" autocomplete="current-password">
+      <button id="go" type="submit">Sign In</button>
+    </form></main>
+    <script>document.getElementById('sign-in').addEventListener('submit', (event) => event.preventDefault());</script>
+    </body></html>`;
+  const WALL_HREF = 'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/x/Engineer_JR-0000001/apply/applyManually';
+  const SAVED = { ok: true, data: { host: 'acme.wd5.myworkdayjobs.com', email: 'applicant@example.test',
+    password: 'synthetic-password-1', press: true } };
+
+  async function waiting() {
+    testVocab();
+    const fixture = await loadFixture(document, PAGE, { width: 1100, height: 900 });
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'manual' as const } };
+    const worker = createFakeWorker({ settings, script: { 'signin/credential': [{ ok: false, error: 'not_found' },
+      SAVED] } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => WALL_HREF, isTop: true,
+      adapters: () => [genericAdapter], settle: { quietMs: 40 }, signIn: { passwordWaitMs: 60_000 } });
+    runtimes.push(runtime);
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
+    await vi.waitFor(() => expect(runtime.ui!.toasts.shown).toEqual(['no-sign-in']), { timeout: 10_000 });
+    expect(worker.of('signin/credential')).toHaveLength(1);
+    return { worker, runtime };
+  }
+
+  it('a password saved while the page was away (hello says one may be typed): the wall is asked again', async () => {
+    const { worker, runtime } = await waiting();
+    runtime.run!.helloAnswered({ typeSignIn: true });
+    await vi.waitFor(() => expect(worker.of('signin/credential')).toHaveLength(2), { timeout: 10_000 });
+  }, 40_000);
+
+  it('a hello that says none may be typed leaves the wait as it is', async () => {
+    const { worker, runtime } = await waiting();
+    runtime.run!.helloAnswered({ typeSignIn: false });
+    await deadline(800);
+    expect(worker.of('signin/credential')).toHaveLength(1);
+  }, 40_000);
+});

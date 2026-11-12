@@ -876,6 +876,18 @@ export class FillRun {
     return this.writing.skip(key);
   }
 
+  /**
+   * jr7 ENGINE-7 (BUILD7's jr6 leftover: INT-2 open item 1, IFIX-CONTENT open item 2): frame/hello's answer, which a
+   * document says again when it comes back from the back/forward cache (the runtime hands it here: AUTO-7's runtime.ts
+   * line, ENGINE-7.md). Only whether a job-site password may be typed is taken from it: one saved while the document was
+   * away ends the paused run's wait for one (waitForPassword) as settings/changed does; one deleted meanwhile is typed
+   * no more. Every other mode stays run/begin's and settings/changed's: a hello says nothing new of them to a run.
+   */
+  helloAnswered(settings: Pick<ContentSettings, 'typeSignIn'>): void {
+    this.signInTypes = settings.typeSignIn === true;
+    if (this.signInTypes) this.passwordArrived?.();
+  }
+
   /** settings/changed: the person saved their settings. The Next mode is read from them from now on: a validation, and
    *  press-next right before its click, take it as it is (the Phase 5 review, C-S2); so is Autofill after page turn. */
   settingsChanged(settings: ContentSettings): void {
