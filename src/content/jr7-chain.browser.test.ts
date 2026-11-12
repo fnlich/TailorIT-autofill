@@ -176,6 +176,8 @@ describe('jr7 CHAIN-7 ICIMS7-V1: the leaf tells its press, and fresh facts decid
     const leaf = await load('jr6-sentinel-iform-selfid.frame-2');
     const { root, button } = leafOf(leaf.doc);
     root.addEventListener('submit', (event) => event.preventDefault());
+    // A page's own handler that sends the form by script: the click is cancelled, no submit event follows.
+    button.addEventListener('click', (event) => event.preventDefault());
     const controller = new AbortController();
     const send = vi.fn();
     let active = false;
@@ -291,8 +293,12 @@ describe('jr7 CHAIN-7 on the leaf’s runtime (ICIMS7-V1, ICIMS7-V2)', () => {
   }
 
   it('the person’s trusted click on the final Submit arms it, with the facts held, and tells the press once', async () => {
-    const { worker, button, key, leaf } = await leafRuntime();
+    const { worker, button, key, leaf, runtime } = await leafRuntime();
     expect(await worker.platform.deliver({ v: 1, type: 'chain/leafFacts', facts: SELFID })).toEqual(done);
+    // The runtime's adapter is the facts-bound view (ICIMS7-V2).
+    const { root } = leafOf(leaf.doc);
+    expect(runtime.page!.adapter.isFinalStep!(leaf.doc)).toBe('final');
+    expect(runtime.page!.adapter.submitButton!(root)).toBe(button);
     await personClicks(leaf.frame, button);
     await expect.poll(() => worker.of('submit/armed').length).toBe(1);
     expect(worker.of('submit/armed')[0]).toMatchObject({ applicationKey: key, by: 'page' });

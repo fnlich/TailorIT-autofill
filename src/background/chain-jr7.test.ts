@@ -186,6 +186,17 @@ describe('jr7 CHAIN-7 ICIMS7-01 (with AUTO-7 A1, O-1): a portal that declares it
     }
   });
 
+  it('takes no forms origin declared by another platform’s page: it keys no iCIMS leaf and may say no facts', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    answering(worker);
+    const posting = 'https://job-boards.greenhouse.io/acme/jobs/5512345002';
+    const greenhouse = sender(posting, 0, 'doc-gh', posting);
+    await hello(worker, greenhouse, { hasForm: false, childOrigins: [FORMS_ORIGIN] });
+    expect(await worker.deliver({ v: 1, type: 'chain/facts', facts: FIRST }, greenhouse))
+      .toMatchObject({ ok: false, error: 'expired' });
+    expect((await hello(worker, sender(IC_FORMS, 5, 'doc-forms', posting), asLeaf)).data?.chained).toBeUndefined();
+  });
+
   it('refuses a hello whose childOrigins are no origins (the schema), and an address said as one', async () => {
     const worker = await startTestWorker({ token: tokenRecord() });
     for (const childOrigins of [[`${FORMS_ORIGIN}/forms`], ['http://acmeblood.icims.com'], ['x'], new Array(5)
@@ -373,6 +384,13 @@ describe('jr7 CHAIN-7 PC7-03: Paycom’s application takes its posting’s, by t
     await worker.deliver({ v: 1, type: 'entry/pressed' }, top(PC_POSTING, 'doc-posting-2'));
     await settle();
     expect((await hello(worker, top(PC_APPLICATION, 'doc-application-3'))).data?.chained)
+      .toEqual({ applicationKey: posting });
+    // The agent's entry pressed on the posting (agent/entered).
+    await hello(worker, top(PC_POSTING, 'doc-posting-3'), { hasForm: false });
+    worker.clock.now += PAIR_MS + 1;
+    await worker.deliver({ v: 1, type: 'agent/entered' }, top(PC_POSTING, 'doc-posting-3'));
+    await settle();
+    expect((await hello(worker, top(PC_APPLICATION, 'doc-application-4'))).data?.chained)
       .toEqual({ applicationKey: posting });
   });
 
