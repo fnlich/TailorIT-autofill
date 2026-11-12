@@ -85,6 +85,46 @@ const UPLOAD_REVEAL_WRAPPER_RULE = {
   message: "Only src/content/pass.ts calls upload.ts's revealUpload (the pass's write of a file).",
 };
 
+/** jr7 ENGINE-7 E2 item 4 (UKGR-10, EFA-6): the upload-prompt door's press, named nowhere but
+ *  src/dom/fillers/upload-prompt.ts, and its wrapper, answerUploadPrompt, called by src/content/pass.ts alone. */
+const UPLOAD_PROMPT_RULE = {
+  selector: "ImportSpecifier[imported.name='clickUploadPrompt'], ExportSpecifier[local.name='clickUploadPrompt'], "
+    + "MemberExpression[property.name='clickUploadPrompt']",
+  message: "Only src/dom/fillers/upload-prompt.ts presses an upload prompt's control.",
+};
+const UPLOAD_PROMPT_WRAPPER_RULE = {
+  selector: "ImportSpecifier[imported.name='answerUploadPrompt'], ExportSpecifier[local.name='answerUploadPrompt'], "
+    + "MemberExpression[property.name='answerUploadPrompt']",
+  message: "Only src/content/pass.ts calls upload-prompt.ts's answerUploadPrompt (the pass's write of a file).",
+};
+
+/** jr7 ENGINE-7 E2 item 5 (UKGR-9): the editor-opener door's press, named nowhere but
+ *  src/dom/fillers/editor-opener.ts, and its wrapper, openEditors, called by src/content/orchestrator.ts alone. */
+const EDITOR_OPENER_RULE = {
+  selector: "ImportSpecifier[imported.name='clickEditorOpener'], ExportSpecifier[local.name='clickEditorOpener'], "
+    + "MemberExpression[property.name='clickEditorOpener']",
+  message: "Only src/dom/fillers/editor-opener.ts presses an editor's opener.",
+};
+const EDITOR_OPENER_WRAPPER_RULE = {
+  selector: "ImportSpecifier[imported.name='openEditors'], ExportSpecifier[local.name='openEditors'], "
+    + "MemberExpression[property.name='openEditors']",
+  message: "Only src/content/orchestrator.ts calls editor-opener.ts's openEditors (a step's fill).",
+};
+
+/** jr7 ENGINE-7 E2 item 6 (DF7-V4, built off): the block-save door's press, named nowhere but
+ *  src/dom/fillers/block-save.ts, and its wrapper, saveBlockForm, which no module calls until the door is on (then
+ *  src/content/repeatables.ts alone: INT-7's wiring). */
+const BLOCK_SAVE_RULE = {
+  selector: "ImportSpecifier[imported.name='clickBlockSave'], ExportSpecifier[local.name='clickBlockSave'], "
+    + "MemberExpression[property.name='clickBlockSave']",
+  message: "Only src/dom/fillers/block-save.ts presses a block's own Save.",
+};
+const BLOCK_SAVE_WRAPPER_RULE = {
+  selector: "ImportSpecifier[imported.name='saveBlockForm'], ExportSpecifier[local.name='saveBlockForm'], "
+    + "MemberExpression[property.name='saveBlockForm']",
+  message: "Only src/content/repeatables.ts calls block-save.ts's saveBlockForm, once the door is on (Q7-1).",
+};
+
 /** Raw HTML, eval and form submission, banned everywhere in src: nothing may submit, and nothing parses markup. */
 const UNSAFE_SYNTAX = [
   SUBMIT_PRESS_RULE,
@@ -96,6 +136,12 @@ const UNSAFE_SYNTAX = [
   SIGN_IN_WRAPPER_RULE,
   UPLOAD_REVEAL_RULE, // jr6 ENGINE E2 (JZ-4)
   UPLOAD_REVEAL_WRAPPER_RULE, // jr6 revD-05
+  UPLOAD_PROMPT_RULE, // jr7 ENGINE-7 E2 item 4
+  UPLOAD_PROMPT_WRAPPER_RULE, // jr7 ENGINE-7 E2 item 4
+  EDITOR_OPENER_RULE, // jr7 ENGINE-7 E2 item 5
+  EDITOR_OPENER_WRAPPER_RULE, // jr7 ENGINE-7 E2 item 5
+  BLOCK_SAVE_RULE, // jr7 ENGINE-7 E2 item 6
+  BLOCK_SAVE_WRAPPER_RULE, // jr7 ENGINE-7 E2 item 6
   { selector: "AssignmentExpression[left.property.name=/^(innerHTML|outerHTML)$/]", message: 'Build DOM nodes; never assign markup.' },
   { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'Build DOM nodes; never insert markup.' },
   { selector: "CallExpression[callee.object.name='document'][callee.property.name=/^write(ln)?$/]", message: 'No document.write.' },
@@ -274,10 +320,24 @@ export default tseslint.config(
     ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_REVEAL_RULE)] } },
   // jr6 revD-05: the one module that calls the reveal door's wrapper (content/pass.ts, a file's write).
   { files: ['src/content/pass.ts'], rules: { 'no-restricted-syntax': ['error',
-    ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_REVEAL_WRAPPER_RULE)] } },
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_REVEAL_WRAPPER_RULE && rule !== UPLOAD_PROMPT_WRAPPER_RULE)] } },
+  // jr7 ENGINE-7 E2 item 5: the one module that presses an editor's opener, and the one that calls its wrapper.
+  { files: ['src/dom/fillers/editor-opener.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== EDITOR_OPENER_RULE)] } },
+  { files: ['src/content/orchestrator.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== EDITOR_OPENER_WRAPPER_RULE)] } },
+  // jr7 ENGINE-7 E2 item 4: the one module that presses an upload prompt's control (dom/fillers/upload-prompt.ts).
+  { files: ['src/dom/fillers/upload-prompt.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_PROMPT_RULE)] } },
+  // jr7 ENGINE-7 E2 item 6 (built off): the one module that presses a block's own Save, and the one that will call it.
+  { files: ['src/dom/fillers/block-save.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== BLOCK_SAVE_RULE)] } },
+  { files: ['src/content/repeatables.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== BLOCK_SAVE_WRAPPER_RULE)] } },
   // Tests drive the wrappers directly (never the doors).
   { files: ['src/**/*.test.{ts,tsx}'], rules: { 'no-restricted-syntax': ['error',
-    ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, UPLOAD_REVEAL_WRAPPER_RULE].includes(rule))] } },
+    ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, UPLOAD_REVEAL_WRAPPER_RULE,
+      UPLOAD_PROMPT_WRAPPER_RULE, EDITOR_OPENER_WRAPPER_RULE, BLOCK_SAVE_WRAPPER_RULE].includes(rule))] } }, // jr7 ENGINE-7 E2: and the doors' wrappers
   // But for the one test of Sign-in mode Auto's two doors on their own (the v3 Phase 6/7b review, C2).
   { files: ['src/dom/fillers/sign-in-doors.browser.test.ts'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, UPLOAD_REVEAL_WRAPPER_RULE,

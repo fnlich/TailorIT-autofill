@@ -53,7 +53,8 @@ export function domGuardBeforeWrite(last: ScanResult, planned: PlannedField): Do
     : target.picker === true ? []
       : target.widget === undefined ? elements.filter((el) => !isEditingHost(el))
         : target.widget.input === null ? [] : [target.widget.input];
-  if (natives.some((el) => kindOf(el).field === false)) return { ok: false, reason: 'auth-required' };
+  // jr7 ENGINE-7 E1 item 4 (EFA-3): read with the scan's adapter, as the scan read them.
+  if (natives.some((el) => kindOf(el, fresh.adapter).field === false)) return { ok: false, reason: 'auth-required' };
   if (field.labelSource === 'none' || !field.labelVisible) return { ok: false, reason: 'no-visible-label' };
   if (field.camouflaged) return { ok: false, reason: 'not-user-visible' };
   const disabled = target.widget !== undefined || target.dateParts !== undefined ? field.disabled || field.readOnly

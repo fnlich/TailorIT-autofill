@@ -131,7 +131,9 @@ export function detectPause(doc: Document, root: Element | null, adapter: Adapte
     return CONFIRM_PASSWORD.test(label.text) ? { kind: 'create-account', evidence: 'confirm-password' }
       : { kind: 'sign-in', evidence: 'password' };
   }
-  if (inputs.some((input) => input.type !== 'password' && isAuthField(input))) {
+  // jr7 ENGINE-7 E1 item 4 (EFA-3): a one-time-code box the adapter names no code box is no code evidence; a code
+  // label (below) and any other one-time-code box still pause.
+  if (inputs.some((input) => input.type !== 'password' && isAuthField(input, adapter))) {
     return { kind: 'email-code', evidence: 'one-time-code' };
   }
   const textLike = inputs.filter((input) => ['text', 'tel', 'number', 'search', ''].includes(input.type));

@@ -159,8 +159,9 @@ function explicitLabels(control: Element, tied: HTMLLabelElement[], ctx: LabelCo
 }
 
 /** The joined visible text of a list of elements ('' when none of them shows any), leaving out the text of
- *  `excluded` elements inside them. */
-function joinedText(elements: readonly Element[], ctx: LabelContext, excluded: readonly Element[] = []):
+ *  `excluded` elements inside them. jr7 ENGINE-7 E1 item 7: `once`, a control's label[for] elements, each words said
+ *  once. */
+function joinedText(elements: readonly Element[], ctx: LabelContext, excluded: readonly Element[] = [], once = false):
   { text: string; first: Element | null } {
   let first: Element | null = null;
   const parts: string[] = [];
@@ -169,6 +170,11 @@ function joinedText(elements: readonly Element[], ctx: LabelContext, excluded: r
     const text = inside.length === 0 ? textOf(el, ctx)
       : visibleTextWithout(el, inside, { singleLine: true, cap: TEXT_CAP_DESCRIPTION, cache: ctx.cache });
     if (text === '') continue;
+    // jr7 ENGINE-7 E1 item 7 (RBP7-21, as its verifier corrected it: Pinpoint draws its job-preference block twice with
+    // the same ids, snapshot7 pinpointhq1, so the first control of each id takes both label[for] and read "Locations
+    // Locations"): labels of one control that say the same words count once. Its label[for] elements only (`once`):
+    // a wrapping label inside another (Workable's consent box) keeps its own reading (labelOfControl).
+    if (once && parts.some((part) => foldedWords(part) === foldedWords(text))) continue;
     first ??= el;
     parts.push(text);
   }
@@ -224,7 +230,7 @@ export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLab
   const explicit = explicitLabels(control, tied.explicit, ctx);
   const { wrapping } = tied;
   const ownFor = uploadControlsAmong(explicit, ctx);
-  const forLabel = joinedText(explicit.filter((label) => !ownFor.has(label)), ctx);
+  const forLabel = joinedText(explicit.filter((label) => !ownFor.has(label)), ctx, [], true); // jr7 ENGINE-7 E1 item 7
   const byFor = fromText(forLabel.text, 'for', forLabel.first);
   if (byFor) return withoutValidation(byFor, control); // jr6 ENGINE
   const targets = referenced(control, 'aria-labelledby');
@@ -429,9 +435,33 @@ function adapterOptionText(input: HTMLInputElement, ctx: LabelContext): string |
     if (at.localName === 'form' || at.localName === 'body' || at.localName === 'html') break;
     if (containsWords(wordsOf(textOf(at, ctx)), wanted)) return text;
   }
-  return null;
+  return hiddenOwnLabelSays(input, wanted, ctx) ? text : null; // jr7 ENGINE-7 E1 item 5
 }
 // ── end jr6 ENGINE E2 item 8 ──
+
+// ── jr7 ENGINE-7 E1 item 5 (EFA-4, as its verifier corrected it) ──
+/**
+ * Whether the option's words its adapter reads (`wanted`) are painted inside a label[for] of that very input that the
+ * page marks aria-hidden, where a person sees them while the visible-text reading skips them: Eightfold's radio
+ * questions (snapshot7 twillio: each radio at opacity 0, its own label[for] aria-hidden="true" drawing "No" or "Yes",
+ * the input's aria-label "No, <the question>"). Only for an input of a proxy its adapter declares (Adapter.proxyFor
+ * answers one), only where the input's own aria-label starts with those words, and only a label of its own: drawn
+ * (it has a box), naming its id, holding the words whole. Never a label of another control.
+ */
+function hiddenOwnLabelSays(input: HTMLInputElement, wanted: readonly string[], ctx: LabelContext): boolean {
+  if (input.id === '' || ctx.adapter?.proxyFor === undefined) return false;
+  try {
+    if (ctx.adapter.proxyFor(input) === null) return false;
+  } catch {
+    return false;
+  }
+  const own = wordsOf(ariaLabelOf(input));
+  if (wanted.length === 0 || own.length < wanted.length || !wanted.every((word, at) => own[at] === word)) return false;
+  return tiedLabels(input).explicit.some((label) => label.htmlFor === input.id
+    && label.closest('[aria-hidden="true" i]') !== null && label.getClientRects().length > 0
+    && containsWords(wordsOf(label.textContent ?? ''), wanted));
+}
+// ── end jr7 ENGINE-7 E1 item 5 ──
 
 /** Visible help text: the aria-describedby targets a person can see, joined; else the adapter's (descriptionFor). */
 export function descriptionOf(el: Element, ctx: LabelContext): string {
@@ -463,7 +493,7 @@ function soleFieldLegend(control: Element, ctx: LabelContext): ResolvedLabel | n
   if (fieldset === null) return null;
   const legend = legendOf(fieldset);
   if (legend === null) return null;
-  const fields = Array.from(fieldset.querySelectorAll(CONTROL_SELECTOR)).filter((el) => kindOf(el).field);
+  const fields = Array.from(fieldset.querySelectorAll(CONTROL_SELECTOR)).filter((el) => kindOf(el, ctx.adapter).field);
   if (fields.length !== 1 || fields[0] !== control) return null;
   return fromText(textOf(legend, ctx), 'legend', legend);
 }
