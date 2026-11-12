@@ -1,0 +1,1 @@
+Synthetic stand-in for a third-party tracking image Workday draws in its dialog (jr7 WORKDAY-7 fixtures): left out.
