@@ -169,6 +169,10 @@ function joinedText(elements: readonly Element[], ctx: LabelContext, excluded: r
     const text = inside.length === 0 ? textOf(el, ctx)
       : visibleTextWithout(el, inside, { singleLine: true, cap: TEXT_CAP_DESCRIPTION, cache: ctx.cache });
     if (text === '') continue;
+    // jr7 ENGINE-7 E1 item 7 (RBP7-21, as its verifier corrected it: Pinpoint draws its job-preference block twice with
+    // the same ids, snapshot7 pinpointhq1, so the first control of each id takes both label[for] and read "Locations
+    // Locations"): labels of one control that say the same words count once.
+    if (parts.some((part) => foldedWords(part) === foldedWords(text))) continue;
     first ??= el;
     parts.push(text);
   }
