@@ -33,7 +33,7 @@ import type { RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
 import { none, value, type Choice, type ValueResult } from './candidate';
 import { phoneText } from './format';
-import { EMPLOYED_NOW, entryOf, EXPERIENCE_WITH, IN_TIME_ZONE, X_LINK, YEARS_IN } from './labelRules';
+import { EMPLOYED_NOW, entryOf, EXPERIENCE_WITH, IN_TIME_ZONE, NOT_COMPLETED, X_LINK, YEARS_IN } from './labelRules';
 import { nameIdText } from './nameId';
 import { US_TIME_ZONES, ZONE_SPELLINGS, zonesOfState, type UsTimeZone } from './usTimeZones';
 
@@ -487,7 +487,9 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
       // The question's period, currency and scale must be the person's: pay is never converted (the review, CORE-8).
       const question = `${spec.label} ${spec.description}`;
       const asked = payPeriodNamed(question);
-      if (asked !== null && asked !== salary.value.period) return none('format-unsupported');
+      // jr7 RULES-7 R2 (ADP7-8, ADP's "minimum hourly rate" beside a yearly profile figure): never converted; the
+      // question stays open (no-profile-value), which only the `all` scope's AI answers, flagged as its guess.
+      if (asked !== null && asked !== salary.value.period) return none('no-profile-value');
       const currencies = currenciesNamed(question);
       if (currencies.size > 0 && !currencies.has(salary.value.currency)) return none('format-unsupported');
       if (PAY_SCALE.test(question)) return none('format-unsupported');
@@ -971,11 +973,15 @@ function educationValue(category: FieldCategory, ctx: ValueContext): ValueResult
     }
     case 'education.gpa':
       return entry.gpa === undefined ? none('no-profile-value', false) : textValue(String(entry.gpa.value), `${at}.gpa`);
-    case 'education.current':
+    case 'education.current': {
       // "Still Student?" (Ashby's Education block), as "I currently work here" is a job's: ticked for an entry the
-      // person still studies at.
+      // person still studies at. jr7 RULES-7 R2 (DF7-11, Dayforce's "Not Completed"): there, only one with no end date
+      // or a future one.
+      const ended = NOT_COMPLETED.test(normalizeLabel(ctx.spec.label)) && entry.endDate !== undefined
+        && entry.endDate.y * 12 + (entry.endDate.m ?? 12) < ctx.now.y * 12 + ctx.now.m;
       return value({ origin: byRule('education.current-checkbox', `${at}.inProgress`), confidence: VALUE_EXPLICIT,
-        check: entry.inProgress });
+        check: entry.inProgress && !ended });
+    }
     default:
       return none('no-profile-value', false);
   }
@@ -1105,6 +1111,20 @@ function formLanguageValue(spec: FieldSpec, vocab: Vocab): ValueResult {
   return value({ origin: { provenance: 'rule', ruleId: 'form.language' }, confidence: VALUE_TRANSFORM, text: 'English',
     choice: { intended: english ? intendedEntity(vocab, 'language', english, 'English')
       : intendedText('English'), domain: english ? 'language' : 'generic' } });
+}
+
+/** jr7 RULES-7 R2 (WD7V-02, Workday's aristocrat "What is your preferred language for written communications?",
+ *  snapshot7 workday1): the person's native language (their only one, where they list one), chosen where the list offers
+ *  it, as formLanguageValue chooses English; none otherwise (the AI classifies nothing here: a profile category). */
+function preferredLanguageValue(profile: Profile, vocab: Vocab): ValueResult {
+  const native = profile.languages.filter((language) => language.proficiency === 'native');
+  const chosen = native.length === 1 ? native[0] : profile.languages.length === 1 ? profile.languages[0] : undefined;
+  if (chosen === undefined) return none('no-profile-value', false);
+  const at = `languages[${profile.languages.indexOf(chosen)}]`;
+  const entity = chosen.code === undefined ? undefined : vocab.languages.byCode(chosen.code);
+  return value({ origin: fromProfile(at), confidence: VALUE_EXPLICIT, text: chosen.name,
+    choice: { intended: entity ? intendedEntity(vocab, 'language', entity, chosen.name) : intendedText(chosen.name),
+      domain: entity ? 'language' : 'generic' } });
 }
 
 /** ICIMS-08: the other spellings of an address search's "Enter manually" option (Jobright's ./operations picks the
@@ -1324,6 +1344,8 @@ function jr6Value(category: FieldCategory, ctx: ValueContext): ValueResult | und
       return none('no-profile-value', false);
     case 'languages.formLanguage':
       return formLanguageValue(ctx.spec, ctx.vocab);
+    case 'languages.preferred':
+      return preferredLanguageValue(ctx.profile, ctx.vocab);
     case 'experience.city':
     case 'experience.region':
     case 'experience.country':

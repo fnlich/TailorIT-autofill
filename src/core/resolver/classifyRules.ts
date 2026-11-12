@@ -477,6 +477,8 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   if (nationalId !== null) return combine([labelVote(nationalId, 'label')]);
   // jr7 RULES-7 (ICIMS7-06): a list read whole of a Yes and a No.
   if (offersOnlyYesNo(spec)) context.yesNoOptions = true;
+  // jr7 RULES-7 R2 (DF7-11): an optional reason for leaving is an entry detail; a required one stays the AI's (jr6).
+  if (spec.required) context.required = true;
   const autocomplete = autocompleteRule(spec.autocomplete, spec.kind);
   const nameId = nameIdRule(spec.nameAttr, spec.idAttr, spec.kind);
   let votes = [

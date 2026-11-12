@@ -75,6 +75,10 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   // jr7 RULES-7 (UKGR-14): a national id or a social security number, which the profile never holds and nothing else
   // may give (sensitive: no saved answer, no AI, no tiebreak).
   'identity.nationalId': 'sensitive',
+  // jr7 RULES-7 R2 (DF7-11, ICIMS7-14): an entry's detail and a licence's number or state, the profile's (none held).
+  'experience.detail': 'profile', 'skills.certificationDetail': 'profile',
+  // jr7 RULES-7 R2 (WD7V-02): the person's native language.
+  'languages.preferred': 'profile',
   unknown: 'unknown',
 };
 
@@ -227,6 +231,9 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'links.facebook': PROSE, 'links.numbered': PROSE,
   // jr7 RULES-7 (UKGR-14): a national id or social security number typed, or its type chosen; never filled.
   'identity.nationalId': ['text', ...CHOICE],
+  // jr7 RULES-7 R2: an entry's detail typed or chosen; a licence's number typed, its state typed, chosen or searched.
+  'experience.detail': ['text', 'textarea', ...CHOICE], 'skills.certificationDetail': [...LOOKUP],
+  'languages.preferred': ['text', ...CHOICE],
   unknown: ANY,
 };
 
