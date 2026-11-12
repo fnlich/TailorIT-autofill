@@ -806,6 +806,14 @@ export const PROFILE_PLACES = [
   // class="c-user-picture-button" title="<name>" aria-label="<name>">, which names the person whatever the list holds).
   '.c-profile-summary-container .c-one-column-layout__value', '.c-fat-item__body .c-metadata__text',
   'span.c-user-picture__abbr', 'button.c-user-picture-button',
+  // ── jr7 TOOLING-7 (T7-02; SP\jr7\audit\dayforce-paycom.md, snapshot7 dayforce1 captures 5 to 8): Dayforce's Personal
+  // Information read view once Update is pressed, outside any form[test-id$="-record"]: the name (a middle name too),
+  // address, city, state and zip, country, the preferred contact (personal-info-read-listed-items), the phone and the
+  // email, each a [test-id^="personal-info-read-"]; its labels end in "-label" ("Mobile Phone:", "Email:", the question
+  // "How did you hear about this job?") and stay. One "-label" is the answer itself: personal-info-read-candidate-source-
+  // label holds the source the person chose (no colon or question mark, no option of the form's), the fact FIXPLAN §0
+  // protects, so it goes too.
+  '[test-id^="personal-info-read-"]:not([test-id$="-label"])', '[test-id="personal-info-read-candidate-source-label"]',
 ];
 
 /** The controls beside an uploaded file that name it, and link to it: Workable's <a data-action="view" href="<the

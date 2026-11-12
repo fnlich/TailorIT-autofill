@@ -4429,6 +4429,26 @@ describe('jr7 TOOLING-7: the converter (FIX7PLAN §6.1)', () => {
     expect(normaliseNewAts('hibob', page).text).toBe(page);
   });
 
+  it("T7-02: Dayforce's Personal Information read view, its values and the source chosen, its labels kept", async () => {
+    const { text } = await convertPage('https://jobs.dayforcehcm.com/en-US/acme/CANDIDATEPORTAL/jobs/1/apply', 'dayforce',
+      'jr7-t702', `<div test-id="personal-info-read"><h3 test-id="personal-info-read-candidate-name">${JR6_NAME} Q</h3>
+<span test-id="personal-info-read-address1">1 Fixture Way</span><span test-id="personal-info-read-city-state-zip">Fixture Town, OH 00000</span>
+<span test-id="personal-info-read-country">Fixtureland</span>
+<div test-id="personal-info-read-listed-items"><div>Preferred contact</div><div>Text me</div><div>Fixture</div></div>
+<div test-id="personal-info-read-phone-type-label">Mobile Phone:</div><div test-id="personal-info-read-mobile-phone-number">Ext 7</div>
+<div test-id="personal-info-read-email-label">Email:</div><div test-id="personal-info-read-email"><a href="#">avery at example</a></div>
+<span test-id="personal-info-read-candidate-source-statement-label">How did you hear about this job?</span>
+<span test-id="personal-info-read-candidate-source-label">Billboard</span></div>
+<form test-id="workhistory-record"><h3 test-id="workHistory-read-position-title">Staff Engineer</h3></form>`);
+    for (const gone of ['Avery', 'Quill', 'Fixture Way', 'Fixture Town', 'Fixtureland', 'Preferred contact', 'Text me', 'Ext 7',
+      'avery at example', 'Billboard', 'Staff Engineer']) {
+      expect(text, gone).not.toContain(gone);
+    }
+    for (const kept of ['>Mobile Phone:</div>', '>Email:</div>', '>How did you hear about this job?</span>']) {
+      expect(text, kept).toContain(kept);
+    }
+  }, 60_000);
+
   it("every committed fixture: no widget's shown text spelled in an id (T7-01, spelledIdsIn)", () => {
     const files = committedFixtureFiles();
     expect(files.length).toBeGreaterThan(400);
