@@ -4210,7 +4210,12 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
     const header = headerOf(html);
     expect(header).toMatchObject({ fixture: name, captured: expect.any(String) });
     expect(header.chrome).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
-    expect(routes[header.source]).toBe(`fixtures/${name}.html`);
+    // ── jr7 UKGREADY-7: the route map serves a page at its address without the fragment, as a request carries it (the
+    // converter's withoutFragment): UKG Ready's applicant session is captured at …#applicant/profile ──
+    const served = new URL(header.source);
+    served.hash = '';
+    expect(routes[served.href]).toBe(`fixtures/${name}.html`);
+    // ── end jr7 UKGREADY-7 ──
     for (const [url, path] of Object.entries(routes)) {
       expect(new URL(url).hash, url).toBe('');
       expect(path.startsWith(`fixtures/${name.replace(/\.frame-\d+$/, '')}.`) && existsSync(join(ROOT, path)), path).toBe(true);
