@@ -51,8 +51,9 @@
 //     entries shown as text (ENTRY_SUMMARY_PLACES), chosen answers drawn outside a native control (CHOSEN_PLACES), the
 //     account's and the profile's own text (PROFILE_PLACES), the controls that name a file or an entry, a custom
 //     element's value and default-value, data-date-value and data-gtm-form-interact-*, a searchable Ant select's open
-//     list and UltiPro's Race row (drawn open), and (s2 wd) a search's results that list the applicant's answer
-//     (SEARCH_RESULT_PLACES: Greenhouse's and Lever's location results), inside an option too;
+//     list (UltiPro's Race row is drawn open before the measure: jr7 OPENED_ROWS), and (s2 wd) a search's results that
+//     list the applicant's answer (SEARCH_RESULT_PLACES: Greenhouse's and Lever's location results), inside an option
+//     too;
 //   - a tel: or sms: link's number becomes REDACTED whatever its spelling, and so does a per-visitor id a script wrote
 //     into a stylesheet (--sa-uid, Dice's) once the sheet is inlined (transformInPage);
 //   - another extension's parameters (INJECTED_PARAMS: Jobright's jr_id, Simplify's utm_source) leave every address and
@@ -612,10 +613,21 @@ const drawingSelector = ({ host, tag = '', id, className }) => {
 export const VALUE_MIRRORS = [{ tag: 'wfn-radio-button', attribute: 'radio-group-value' }];
 /** What clearChoicesInPage reads beside CHOSEN_MARKS on every conversion: the roving rows and their widgets, the
  *  CHOSEN_DRAWINGS parts and the VALUE_MIRRORS. */
+/** jr7 TOOLING-7 (UP7-14; SP\jr7\audit\ultipro.md, snapshot7 ultipro1 and ultipro2): a row a page opens or closes by
+ *  the person's answer, drawn open (`className` added) by clearChoicesInPage before anything is measured, as before any
+ *  answer, so the row's state tells nothing and the visibility measured is the fixture's. UltiPro's self-identification
+ *  survey opens its Race row unless the Hispanic-origin answer is "No" (<div class="row collapse" data-bind="collapse:
+ *  isHispanic() != 'No'">; Bootstrap's collapse shows it with "in"): open in ultipro-0, closed in ultipro-1 and in all 19
+ *  of snapshot7's application captures, which the converter refused ("visibility changed for 9 elements") while it opened
+ *  the row only after the measure (redactApplicantTextInPage).
+ *  @type {Array<{ selector: string; className: string }>} */
+export const OPENED_ROWS = [{ selector: '.collapse[data-bind*="isHispanic()"]', className: 'in' }];
 export const CLEAR_CHOICE_INPUT = {
   roving: { roles: ROVING_ROLES, tags: ROVING_TAGS, groupRoles: ROVING_GROUP_ROLES, groupTags: ROVING_GROUP_TAGS },
   drawings: CHOSEN_DRAWINGS.map(drawingSelector),
   mirrors: VALUE_MIRRORS,
+  // jr7 TOOLING-7 (UP7-14)
+  opened: OPENED_ROWS,
 };
 // ── end jr6 fixes ──
 
@@ -1755,12 +1767,15 @@ export function stripInjectedInPage(input) {
  *   swapping their tabindex: the stop an unanswered widget draws (ADP's blank lists, SmartRecruiters' and Workable's
  *   unanswered radios), so a page converted again where nothing was chosen stays as it was;
  * - jr7 TOOLING-7 (T7-01): an icon drawn for the chosen state (`icons`: CHOSEN_ICONS) becomes a copy of the page's own
- *   unchosen twin (none in the page: it stays, and the conversion refuses it).
+ *   unchosen twin (none in the page: it stays, and the conversion refuses it);
+ * - jr7 TOOLING-7 (UP7-14): a row a page opens or closes by an answer (`opened`: OPENED_ROWS, UltiPro's Race row) is
+ *   drawn open, as before any answer, so the visibility measured is the fixture's.
  * Returns how many it cleared.
  * @param {{ redacted: string; marks?: Array<{ selector: string; classes?: string[]; patterns?: string[];
  *   attributes?: string[]; aria?: boolean; swap?: Record<string, string> }>; drawings?: string[];
  *   roving?: { roles: string[]; tags: string[]; groupRoles: string[]; groupTags: string[] };
- *   mirrors?: Array<{ tag: string; attribute: string }>; icons?: Array<{ chosen: string; twin: string }> }} input
+ *   mirrors?: Array<{ tag: string; attribute: string }>; icons?: Array<{ chosen: string; twin: string }>;
+ *   opened?: Array<{ selector: string; className: string }> }} input
  * @returns {{ choices: number }}
  */
 export function clearChoicesInPage(input) {
@@ -1815,6 +1830,15 @@ export function clearChoicesInPage(input) {
   for (const part of (input.drawings ?? []).length > 0 ? doc.querySelectorAll((input.drawings ?? []).join(', ')) : []) {
     part.remove();
     choices += 1;
+  }
+  // jr7 TOOLING-7 (UP7-14): a row a page opens or closes by an answer (`opened`: OPENED_ROWS, UltiPro's Race row) is
+  // drawn open, as before any answer.
+  for (const { selector, className } of input.opened ?? []) {
+    for (const row of doc.querySelectorAll(selector)) {
+      if (row.classList.contains(className)) continue;
+      row.classList.add(className);
+      choices += 1;
+    }
   }
   // jr7 TOOLING-7 (T7-01): an icon drawn for the chosen state (`icons`: CHOSEN_ICONS, Paycom's uiLib radios and boxes)
   // becomes a copy of the page's own unchosen twin; with no twin in the page it stays, and the conversion refuses it.
@@ -1946,8 +1970,8 @@ export function clearChoicesInPage(input) {
  *   names are answered, so the reload, the rescan and the written files are checked for them as for a found email;
  * - each entry summary's text becomes REDACTED; each chosen or profile place's text, and its aria-label, title and alt
  *   words, in it and its descendants (an open shadow root's too, where the platform keeps them);
- * - an open searchable Ant select's options' words and titles (dayforce-2), and UltiPro's Race row drawn open (its
- *   state told the Hispanic-origin answer: ultipro-0, -1);
+ * - an open searchable Ant select's options' words and titles (dayforce-2) (UltiPro's Race row, which this pass drew
+ *   open after the measure, is clearChoicesInPage's since jr7 TOOLING-7, UP7-14: OPENED_ROWS);
  * - each file or entry control keeps the words before the name that say what it does (its data-action, or its title,
  *   which names nothing else) in its aria-label and title, the rest REDACTED (jr6: one with neither keeps its label's
  *   words around a file name the page showed, the name REDACTED); its address becomes "#" and its download name
@@ -2054,16 +2078,8 @@ export function redactApplicantTextInPage(input) {
     }
     applicantText += 1;
   }
-  // The new ATSs, builder A: UltiPro's self-identification survey opens its Race row unless the Hispanic origin answer
-  // is "No" (data-bind "collapse: isHispanic() != 'No'"): open in ultipro-0, closed in ultipro-1, where the row sits in
-  // the hidden application. Drawn open in every fixture, as before any answer, so the row's state tells nothing. It is
-  // opened after the measure, so where that would change what a person sees the reload's visibility check refuses the
-  // conversion.
-  for (const row of doc.querySelectorAll('.collapse[data-bind*="isHispanic()"]')) {
-    if (row.classList.contains('in')) continue;
-    row.classList.add('in');
-    applicantText += 1;
-  }
+  // (The new ATSs, builder A: UltiPro's Race row, drawn open in every fixture, as before any answer. jr7 TOOLING-7,
+  // UP7-14: clearChoicesInPage opens it now, before the measure: OPENED_ROWS.)
   for (const control of placesOf(input.links)) {
     for (const element of [control, ...control.querySelectorAll('*')]) {
       // The words before the name that say what the control does ("view", "delete": its data-action; "Edit", "Delete":

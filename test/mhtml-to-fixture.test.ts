@@ -113,6 +113,7 @@ import {
   POSTING_COPY_ATTRIBUTES,
   ROW_ID_WORDS_KEPT,
   // ── jr7 TOOLING-7 ──
+  OPENED_ROWS,
   CHOSEN_ICONS,
   SPELLED_IDS,
   spelledIdsIn,
@@ -4485,6 +4486,20 @@ ${row(0, '', ' State University')}${row(1, 'Old ', ' College')}${row(2, 'North '
       // Each run keeps its own REDACTED, the white space around it as written.
       expect(text).toContain('>REDACTED <b>REDACTED</b> REDACTED</li>');
       expect(text).toContain('><b>REDACTED</b> REDACTED</li>');
+    }, 60_000);
+
+  it("UP7-14: UltiPro's Race row, closed by the capture's answer, is drawn open before the measure, so the page converts",
+    async () => {
+      const { text } = await convertPage('https://recruiting.ultipro.com/ACM1000/JobBoard/0000/OpportunityApply?opportunityId=1',
+        'ultipro', 'jr7-up714', `<style>.collapse { display: none; } .collapse.in { display: block; }</style>
+<div class="form-group"><label for="hisp">Are you Hispanic or Latino?</label>
+  <select id="hisp" data-bind="value: isHispanic"><option>Choose...</option><option>Yes</option><option selected>No</option></select></div>
+<div class="row collapse" data-bind="collapse: isHispanic() != 'No'"><div class="col-md-6"><label for="race">Race</label>
+  <select id="race"><option>Choose...</option><option>Fixture race</option></select></div></div>
+<p>Thank you.</p>`);
+      expect(text).toContain('<div class="row collapse in" data-bind="collapse: isHispanic() != \'No\'">');
+      expect(headerOf(text).cleared.choices).toBeGreaterThanOrEqual(1);
+      expect(OPENED_ROWS).toEqual([{ selector: '.collapse[data-bind*="isHispanic()"]', className: 'in' }]);
     }, 60_000);
 
   it("every committed fixture: no widget's shown text spelled in an id (T7-01, spelledIdsIn)", () => {
