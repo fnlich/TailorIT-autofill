@@ -5,7 +5,7 @@
  * docs/ARCHITECTURE.md, the snapshot build of 2026-11-06, docs/ARCHITECTURE.md, the snapshot build of 2026-11-06), every per-person value a placeholder.
  */
 import { describe, expect, it } from 'vitest';
-import { chainChildOrigin, chainFamilyOf, chainPageOf, hrefHash } from './chain';
+import { chainChildOrigin, chainFamilyOf, chainPageOf, declaredChildOrigin, hrefHash, pairPostingFamilyOf } from './chain'; // jr7 CHAIN-7: the last two
 import { tailoritAddressOf } from './tailorit-address';
 
 const u = (href: string) => new URL(href);
@@ -229,3 +229,98 @@ describe('the address TailorIT is asked with (adapters/tailorit-address.ts, core
   });
   // ── end core pass Z1, item 37 ──
 });
+
+// ── jr7 CHAIN-7 (SP\jr7\FIX7PLAN.md §6.5 items 1, 4 and 5): synthetic addresses with the shapes of the owner's snapshot7
+// captures (secure7.saashr.com, www.paycomonline.net, arc-onesolutions.icims.com): every number, key and session value
+// made up. ──
+const UKG = 'https://secure7.saashr.com/ta/1234567.careers';
+const UKG_POSTING = `${UKG}?lang=en-US&ein_id=111111111&ShowJob=222222222&src=LinkedIn`;
+const UKG_SESSION = `${UKG}?rnd=ABC&Ext=careers&sft=XYZXYZXYZX&ActiveSessionId=33333333333#applicant/profile`;
+const PAYCOM = 'https://www.paycomonline.net/v4/ats/web.php/portal/0123456789ABCDEF0123456789ABCDEF';
+
+describe('jr7 CHAIN-7: UKG Ready’s session, Paycom’s application and iCIMS’s declared forms origin (adapters/chain.ts)', () => {
+  it('UKGR-3: names the posting and the applicant session one family per host and company; the session a top chain page',
+    () => {
+      expect(chainFamilyOf(u(UKG_POSTING))).toBe('ukgready:secure7.saashr.com:1234567');
+      expect(chainFamilyOf(u(UKG_SESSION))).toBe('ukgready:secure7.saashr.com:1234567');
+      expect(chainPageOf(u(UKG_SESSION)))
+        .toEqual({ platform: 'ukgready', role: 'top', family: 'ukgready:secure7.saashr.com:1234567' });
+      // The posting names its job: no chain page. Another company or host: another family.
+      expect(chainPageOf(u(UKG_POSTING))).toBeNull();
+      expect(chainFamilyOf(u('https://secure7.saashr.com/ta/7654321.careers?ShowJob=1'))).toBe('ukgready:secure7.saashr.com:7654321');
+      expect(chainFamilyOf(u('https://secure.saashr.com/ta/1234567.careers?ShowJob=1'))).toBe('ukgready:secure.saashr.com:1234567');
+      // The family holds no session value.
+      expect(JSON.stringify([chainFamilyOf(u(UKG_SESSION)), chainPageOf(u(UKG_SESSION))])).not.toMatch(/3333|XYZ|ABC/);
+    });
+
+  it('UKGR-3: reads no other UKG Ready address as a chain page, nor gives it a family', () => {
+    for (const href of [
+      UKG, // the careers search: neither a posting nor a session
+      `${UKG}?ShowJob=1&ActiveSessionId=33333333333`.replace('ShowJob=1', 'ShowJob=1x'),
+      `${UKG}?ShowJob=1&ShowJob=2`,
+      `${UKG}?ActiveSessionId=`,
+      'https://secure7.saashr.com/ta/1234567.login?ActiveSessionId=33333333333',
+      'https://secure7.saashr.com/ta/1234567.home?ActiveSessionId=33333333333',
+      'https://secure7.saashr.com/ta/12.careers?ActiveSessionId=33333333333',
+      'https://login.saashr.com/ta/1234567.careers?ActiveSessionId=33333333333',
+      'https://secure7.saashr.com.example.com/ta/1234567.careers?ActiveSessionId=33333333333',
+      'http://secure7.saashr.com/ta/1234567.careers?ActiveSessionId=33333333333',
+      'https://secure7.saashr.com:8443/ta/1234567.careers?ActiveSessionId=33333333333',
+    ]) {
+      expect(chainPageOf(u(href)), href).toBeNull();
+    }
+    expect(chainFamilyOf(u(UKG))).toBeNull();
+    expect(chainFamilyOf(u('https://secure7.saashr.com/ta/1234567.login'))).toBeNull();
+    // A session page also holding a ShowJob is the posting's own page (it names its job): no chain page.
+    expect(chainPageOf(u(`${UKG}?ShowJob=222222222&ActiveSessionId=33333333333`))).toBeNull();
+  });
+
+  it('PC7-03: names Paycom’s posting and its application one family per client key; the application a pair page', () => {
+    const family = 'paycom:0123456789abcdef0123456789abcdef';
+    expect(chainFamilyOf(u(`${PAYCOM}/jobs/4321`))).toBe(family);
+    expect(pairPostingFamilyOf(u(`${PAYCOM}/jobs/4321`))).toBe(family);
+    expect(chainPageOf(u(`${PAYCOM}/applications#/applications/98765`)))
+      .toEqual({ platform: 'paycom', role: 'top', family, pair: true });
+    expect(chainPageOf(u(`${PAYCOM}/applications/#/applications/98765/questions`)))
+      .toEqual({ platform: 'paycom', role: 'top', family, pair: true });
+    expect(chainFamilyOf(u(`${PAYCOM}/applications#/applications/98765`))).toBe(family);
+    // The application's number is never in the family or the page.
+    expect(JSON.stringify(chainPageOf(u(`${PAYCOM}/applications#/applications/98765`)))).not.toMatch(/98765/);
+    // The posting is no chain page and the application no pair posting.
+    expect(chainPageOf(u(`${PAYCOM}/jobs/4321`))).toBeNull();
+    expect(pairPostingFamilyOf(u(`${PAYCOM}/applications#/applications/98765`))).toBeNull();
+  });
+
+  it('PC7-03: reads no other Paycom address as one: no route, another path, the employee side, another host', () => {
+    for (const href of [
+      `${PAYCOM}/applications`,
+      `${PAYCOM}/applications#/jobs`,
+      `${PAYCOM}/applications#/applications/x1`,
+      `${PAYCOM}/jobs`,
+      'https://www.paycomonline.net/v4/ats/web.php/portal/0123/applications#/applications/1',
+      'https://www.paycomonline.net/v4/ee/web.php/app/login#/applications/1',
+      'https://www.paycomonline.net/v4/cl/web.php/portal/0123456789ABCDEF0123456789ABCDEF/applications#/applications/1',
+      `${PAYCOM.replace('www.paycomonline.net', 'paycomonline.net')}/applications#/applications/1`,
+      `${PAYCOM.replace('https:', 'http:')}/applications#/applications/1`,
+    ]) {
+      expect(chainPageOf(u(href)), href).toBeNull();
+      expect(pairPostingFamilyOf(u(href)), href).toBeNull();
+    }
+    expect(pairPostingFamilyOf(u(`${PAYCOM.replace('www.', '')}/jobs/1`))).toBeNull();
+  });
+
+  it('ICIMS7-01: takes a declared forms origin only as an https origin whose /forms page is the platform’s chain frame', () => {
+    expect(declaredChildOrigin('https://oneblood.icims.com', 'icims')).toBe(true);
+    expect(declaredChildOrigin('https://edgewaterit.icims.com', 'icims')).toBe(true);
+    for (const origin of [
+      'https://oneblood.icims.com/', 'https://oneblood.icims.com/forms', 'https://oneblood.icims.com?x=1',
+      'http://oneblood.icims.com', 'https://oneblood.icims.com:8443', 'https://user:pw@oneblood.icims.com',
+      'https://www.icims.com', 'https://login.icims.com', 'https://api.icims.com', 'https://internal-acme.icims.com',
+      'https://careers-oneblood.icims.com', 'https://oneblood.icims.com.example.com', 'https://example.com',
+      'https://jobs.smartrecruiters.com', 'oneblood.icims.com', '', 'https://ONEBLOOD.icims.com',
+    ]) expect(declaredChildOrigin(origin, 'icims'), origin).toBe(false);
+    // Another platform's portal may not declare an iCIMS forms host.
+    expect(declaredChildOrigin('https://oneblood.icims.com', 'smartrecruiters')).toBe(false);
+  });
+});
+// ── end jr7 CHAIN-7 ──

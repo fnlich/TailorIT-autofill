@@ -218,11 +218,14 @@ import { dropKeptSignIns, signIn, signInDetailOf, type SignInDetail } from './si
 import { signInFormOf } from '../dom/sign-in-form'; // jr6 SHELL-A
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { chainFactsOf, claimFrameFacts, holdChainFacts, saysChainFacts, watchChainFacts } from './chain-frame'; // jr6 SHELL-B
+import { declaredChildOrigins, leafAdapter, parentOriginOf, watchLeafPress } from './chain-frame'; // jr7 CHAIN-7
 import { createReportLimiter } from './report';
 // v1.3 B
 import { captureStep, createFormCapture, stepNameOf } from './form-capture';
 import type { CapturedPosting } from '../messaging/schemas';
 import { MAX_POSTING_TEXT } from '../messaging/schemas';
+// jr7 ICIMS-7 (merge of jr7-auto-done with jr7-engine-e2): the hand-overs the hello's schema knows.
+import { HAND_OVER_KINDS as HELLO_HAND_OVERS } from '../messaging/schemas';
 import { visibleTextWithout } from '../dom/visible-text';
 import { showField } from './targets';
 import { TouchLog } from './touches';
@@ -690,7 +693,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'chain/leafFacts': // jr6 SHELL-B
         if (!fromWorker(sender)) return refuse('bad_sender'); // jr6 SHELL-B
         return !stopped && holdChainFacts(doc, msg.facts, { isTop, href: readHref(), // jr6 SHELL-B
-          referrer: options.referrer?.() ?? doc.referrer }) ? ok({}) : refuse('expired'); // jr6 SHELL-B
+          referrer: options.referrer?.() ?? doc.referrer, // jr6 SHELL-B
+          parent: parentOriginOf(view) }) ? ok({}) : refuse('expired'); // jr7 CHAIN-7 (ICIMS7-01): its parent's origin
     }
   });
 
@@ -713,7 +717,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // jr7 AUTO-7 (ICIMS7-04, ICIMS7-11): the step that is the person's by design; the address TailorIT is asked with.
     const handOver = handOverNow(at);
     const tailoritAddress = tailoritAddressHere(at);
+    // jr7 CHAIN-7 (ICIMS7-01; chain-frame.ts): the claim frame names the origins of the forms frames its page shows.
+    const childOrigins = declaredChildOrigins(doc, at, adapters, isTop || claimed); // jr7 CHAIN-7
     const answer = await channel.request({ v: 1, type: 'frame/hello', isTop, hasForm, ...(nav === 0 ? {} : { nav }),
+      ...(childOrigins.length === 0 ? {} : { childOrigins }), // jr7 CHAIN-7
       ...(letter ? { letter: true as const } : {}),
       ...(handOver === null ? {} : { handOver }), ...(tailoritAddress === null ? {} : { tailoritAddress }), // jr7 AUTO-7
       // core-x, items 3, 7 and 14 (chain-frame.ts, background/chain.ts).
@@ -1522,7 +1529,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       : claim(at).filter((adapter) => adapter.quirks?.formAtPosting === true));
     const picked = url !== null && app !== null && (app.page === 'application' || atPosting)
       ? pickAdapter(doc, url, atPosting ? postingClaim : claim) : null;
-    page = picked === null || app === null ? null : { app, adapter: picked.adapter, root: picked.root };
+    // jr7 CHAIN-7 (ICIMS7-V2; chain-frame.ts leafAdapter): an IForm leaf's adapter is read with the facts it holds.
+    page = picked === null || app === null ? null
+      : { app, adapter: leafAdapter(picked.adapter, { isTop, href }), root: picked.root }; // jr7 CHAIN-7
     // ── v5 p2-detect, the P2 review (security 1): on an employer's own domain the Oracle adapter claims a page only where
     // the document shows the app's own markup (adapters/index.ts adaptersFor) and its detect found the app's form; only
     // then, once per document, is the worker asked for the page-world submit watcher here (background/sites.ts watch). ──
@@ -2618,12 +2627,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   /** ICIMS7-04: the step this top or claim frame shows that is the person's by design (Adapter.handOver), or null. */
-  function handOverNow(at: URL | null): HandOverKind | null {
+  function handOverNow(at: URL | null): (typeof HELLO_HAND_OVERS)[number] | null {
     if (at === null || (!isTop && !claimed)) return null;
     for (const adapter of adapters(at)) {
       try {
-        const kind = adapter.handOver?.(doc) ?? null;
-        if (kind !== null) return kind;
+        const kind: HandOverKind | null = adapter.handOver?.(doc) ?? null;
+        // jr7 ICIMS-7 (merge): a kind the hello's schema does not know yet (E2's 'documents', UP7-07) is said by none,
+        // until AUTO-7 wires it (AGENT_NOTES, its words): as on both branches before the merge.
+        if (kind !== null) return HELLO_HAND_OVERS.find((known) => known === kind) ?? null;
       } catch {
         // An adapter that throws reads none.
       }
@@ -2738,6 +2749,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         active: () => !stopped && (isTop || claimed) && saysChainFacts(urlOf(readHref()), adapters), // jr6 SHELL-B
         read: () => claimFrameFacts(doc, urlOf(readHref()), adapters, isTop || claimed, page !== null), // jr6 SHELL-B
         send: async (facts) => (await channel.request({ v: 1, type: 'chain/facts', facts })).ok }); // jr6 SHELL-B
+      // jr7 CHAIN-7 (ICIMS7-V1; chain-frame.ts): an IForm leaf the worker keyed tells it when its form's Submit is pressed.
+      if (!isTop && startChain?.role === 'frame') { // jr7 CHAIN-7
+        watchLeafPress({ view, doc, signal: lifetime.signal, active: () => !stopped && chained !== null, // jr7 CHAIN-7
+          send: () => void channel.request({ v: 1, type: 'chain/pressed' }).catch(() => undefined) }); // jr7 CHAIN-7
+      } // jr7 CHAIN-7
       await resumeStored();
       // The platform's page after submitting (v3 Phase 4): the worker takes it only after a Submit this tab armed.
       if (onConfirmationPage()) await detected('confirmation-page');
