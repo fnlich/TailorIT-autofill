@@ -398,7 +398,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     keepAnswers: async () => (await settings.get()).modes.keepAnswers === 'on',
     categoryOf: (spec) => categoryOfSpec(spec, core.vocab()),
     rowsOf: async (tabId, frameId) => (await reports.ofTab(tabId)).find((report) => report.frameId === frameId)?.fields
-      ?? [] });
+      ?? [],
+    // jr7 AUTO-7 A1 (ICIMS7-02): a chained subframe's arm, and the tab's claim frame where its confirmation shows.
+    frameOf: (tabId, frameId) => frameEntry(session, tabId, frameId),
+    claimFrame: async (tabId) => claimFrameOf(await framesOfTab(session, tabId)) });
   submissions = submitted;
   /** The resume a fill of the tab would attach, for the side panel's preview (v3 Phase 3b): the person's choice, else
    *  the card's; read from the account's list, for its file kind and name. None while the tab applies without one. */
@@ -1026,12 +1029,14 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         },
         // v3 Phase 4: a Submit pressed in the frame, and the platform's confirmation after it (submissions.ts).
         'submit/armed': async (message, from) => {
-          const answer = await submitted.armed(message, await tailoritFromNow(from));
+          // jr7 AUTO-7 A1 (AUTOV-01): with the frame's own address, before tailoritFrom swaps in its chain's.
+          const answer = await submitted.armed(message, await tailoritFromNow(from), { url: from.url });
           // v3 Phase 5: the agent's job's one Submit (agent.ts pressed).
           if (answer.ok) await agent.pressed(from.tabId, message.applicationKey, from.documentId).catch(() => undefined);
           return answer;
         },
-        'submit/detected': async (message, from) => submitted.detected(message, await tailoritFromNow(from)),
+        'submit/detected': async (message, from) => submitted.detected(message, await tailoritFromNow(from),
+          { url: from.url }), // jr7 AUTO-7 A1 (AUTOV-01)
         // v1.3 B: the armed Submit's form, held for it in memory only (submissions.ts).
         'submit/form': async (message, from) => submitted.form(message, await tailoritFromNow(from)),
         // v3 Phase 5: Sign-in mode Auto's credential, to the asking top frame alone (sign-in.ts).
