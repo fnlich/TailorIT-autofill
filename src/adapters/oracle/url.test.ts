@@ -4,7 +4,8 @@
  * (docs/FIXTURES.md), and the canonical application URL. src/adapters/url.test.ts holds the shared table.
  */
 import { describe, expect, it } from 'vitest';
-import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl, oracleApplySection, parseOracleUrl } from './url';
+import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl, oracleApplySection, oracleConfirmationAfter, oracleMyProfileSite,
+  parseOracleUrl } from './url';
 
 const at = (address: string) => new URL(address);
 const ELHR = 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience';
@@ -83,3 +84,48 @@ describe('parseOracleUrl', () => {
     }
   });
 });
+
+// ── jr7 ORACLE-7 (FIX7PLAN §6.10 item 2, jr7-O2): the page after submitting, snapshot7 oraclecloud1 ──
+describe('the page after submitting: the site’s my-profile (jr7-O2)', () => {
+  const SITE = 'https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1';
+  const JOB = `${SITE}/job/4285`;
+  const PROFILE = `${SITE}/my-profile`;
+
+  it('reads the my-profile page of a site, and no other page', () => {
+    for (const address of [PROFILE, `${PROFILE}/`, `${PROFILE}?tab=applications`,
+      'https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/fr/sites/cx_1/my-profile']) {
+      expect(oracleMyProfileSite(at(address)), address).toBe('CX_1');
+    }
+    expect(oracleMyProfileSite(at(`${GOV.replace(/\/job\/\d+$/, '')}/my-profile`))).toBe('CX_2001');
+    for (const address of [JOB, `${JOB}/apply/section/1/`, `${PROFILE}/sign-in`, `${PROFILE}/x`, `${SITE}/my-profiles`,
+      `${SITE}/job/4285/my-profile`, 'https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/my-profile',
+      'http://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/my-profile',
+      'https://www.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/my-profile']) {
+      expect(oracleMyProfileSite(at(address)), address).toBeNull();
+    }
+  });
+
+  it('takes the same site’s my-profile, on the same origin, after an application’s Submit; nothing else', () => {
+    for (const armed of [JOB, `${JOB}/apply/section/1/`, `${JOB}/apply/email`, `${JOB}/easy-apply`]) {
+      expect(oracleConfirmationAfter(at(armed), at(PROFILE)), armed).toBe(true);
+      expect(oracleConfirmationAfter(at(armed), at(`${PROFILE}/`)), armed).toBe(true);
+    }
+    // Another language on the same site (the canonical address writes en).
+    expect(oracleConfirmationAfter(at(`${JOB}/apply/section/1/`),
+      at('https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/fr/sites/cx_1/my-profile'))).toBe(true);
+    const refused: ReadonlyArray<[string, string]> = [
+      // another site of the same tenant, another tenant, the same site's other pages
+      [`${JOB}/apply/section/1/`, 'https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2/my-profile'],
+      [`${JOB}/apply/section/1/`, 'https://other.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/my-profile'],
+      [`${JOB}/apply/section/1/`, `${PROFILE}/sign-in`],
+      [`${JOB}/apply/section/1/`, JOB],
+      [`${JOB}/apply/section/1/`, `${SITE}/job/4286`],
+      // an armed address that is no application of the site's
+      [PROFILE, PROFILE],
+      [`${SITE}/requisitions`, PROFILE],
+      ['https://example.com/apply', PROFILE],
+    ];
+    for (const [armed, here] of refused) expect(oracleConfirmationAfter(at(armed), at(here)), `${armed} -> ${here}`).toBe(false);
+  });
+});
+// ── end jr7 ORACLE-7 ──

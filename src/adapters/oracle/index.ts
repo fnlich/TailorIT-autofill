@@ -99,16 +99,36 @@
  * block shows (hashed into a learned list's key only), the School, Employer Name and Job Title an open timeline editor
  * shows (prefill.readEntries: to the worker's plan only, as a field's current value goes), and whether an upload slot
  * shows the file's name (compared, never kept).
+ * jr7 ORACLE-7 (FIX7PLAN §6.10; the owner's snapshot7 oraclecloud1, one application on a tenant of Oracle's ocs cloud
+ * from its posting to the page after submitting: fixtures/oracle/jr7-oraclecloud1-*; Jobright 1.25.2 as a behaviour
+ * reference, each rule citing its function):
+ * - The code at Submit (jr7-O1): this tenant's gate leads straight to the form, and its email is verified after the
+ *   Submit: Oracle's checklist, then a dialog drawn beside the hidden form ("You're almost done": six code boxes, Verify,
+ *   Send New Code). authState reads that dialog 'email-code' (from the flow's main, not flowOf), the step signature
+ *   changes when it shows (its section and the account state), and its Verify is never pressed. The code is the
+ *   person's.
+ * - Success (jr7-O2): the site's my-profile is the page after submitting (confirmationAfter, url.ts
+ *   oracleConfirmationAfter), and its "My Applications" tile naming the armed application, active and with its status
+ *   shown, is the drawn sign (successSigns); never a draft's or a resolved one's, never another application's.
+ * - The tile layout (jr7-O4): the Education and Experience blocks' inline editor is a repeatable block of its kind
+ *   (as the timeline's is), its entry read by its boxes' names; its invalid rows are errors; the tiles' Edit and Delete
+ *   are never pressed. The Skills block's editor is no repeatable (its rows are the person's: owner question Q7-11).
+ * - A required block with nothing to fill (jr7-O7): the Skills block, required, with no tile, no open editor and no
+ *   control, is left for the person (requiredBlocksLeft), so Submit Auto holds until a skill is added.
+ * The jr7 hooks read the page's markup and its own address only: a my-profile tile's link is read into the armed
+ * application's key to be compared, never kept; its words are not read.
  */
 // The P2 review (security 1)
-import { oracleCandidateExperienceShown } from '../../dom/page-signals';
+import { oracleCandidateExperienceShown, oracleShellShown } from '../../dom/page-signals';
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
-import { oracleOwnDomain } from '../../shared/hosts';
+import { oracleOwnDomain, platformOfUrl } from '../../shared/hosts';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
+import { applicationKey } from '../application-key';
 import { genericAdapter } from '../generic';
 import type { Adapter, PrefillEntryView, SignInForm, SignInWall, UploadState, WidgetDecl } from '../types';
-import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl, oracleApplySection } from './url';
+import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl, oracleApplySection, oracleConfirmationAfter,
+  oracleMyProfileSite, parseOracleUrl } from './url';
 
 /** The snapshots the hooks were written from (fixtures/oracle/). */
 export const ORACLE_SNAPSHOTS = ['fixtures/oracle/jpmc-posting.html', 'fixtures/oracle/elhr-email-gate.html',
@@ -208,16 +228,41 @@ function entryControl(doc: Document): HTMLElement | null {
     '.job-details__section-apply-button button.apply-now-button')).filter(appliesNow));
 }
 
+// ── jr7 ORACLE-7 (FIX7PLAN §6.10 item 1, jr7-O1): the code Oracle asks for at Submit ──
+/** jr7-O1: the dialog Oracle draws after the application's Submit when it verifies the email then (snapshot7
+ *  oraclecloud1, fixtures/oracle/jr7-oraclecloud1-submit-code.html): beside the flow's form, which it hides (display
+ *  none, aria-hidden: so flowOf reads none), main#main > section.apply-flow__content-container > div.apply-flow__content
+ *  > ... > <div class="apply-flow-summary-pin-code-required apply-flow__auto-width"> ("You're almost done") holding
+ *  <form class="pin-code-verification">: its six <input class="input-row__control pin-code-input__input ..."
+ *  inputmode="numeric" ... aria-label="Enter verification code digit <n> of six."> (no maxlength), its <button
+ *  type="submit" class="apply-flow-dialog__button apply-flow-dialog__button--primary">Verify</button> and its
+ *  "Send New Code". Jobright 1.25.2's isOraclePinPage needs a "Confirm Your Identity" heading and one-character boxes,
+ *  so it would not read this one either; it leaves the page to the person and keeps its arm (5 minutes), as ours
+ *  does. */
+const SUBMIT_CODE = '.apply-flow-summary-pin-code-required';
+
+/** jr7-O1: whether the flow's main shows the code dialog after Submit (SUBMIT_CODE), by a code box a person can see. */
+function submitCodeShown(doc: Document, cache: ScanCache = newScanCache()): boolean {
+  return Array.from(doc.querySelectorAll(
+    `main[aria-labelledby="apply-flow-main-heading"] ${SUBMIT_CODE} input.pin-code-input__input`))
+    .some((box) => isUserVisible(box, cache));
+}
+// ── end jr7 ORACLE-7 ──
+
 function authState(doc: Document): ReturnType<NonNullable<Adapter['authState']>> {
   const flow = flowOf(doc);
-  if (flow === null) return null;
-  if (gateEmail(doc) !== null) return 'email-gate';
-  // fixtures/oracle/fortive-email-code.html: <div class="apply-flow-pin-code-required ..."> ... <input class="input-row__control
-  // pin-code-input__input" type="text" inputmode="numeric" ... id="pin-code-1" aria-required="true">, six of them.
   const cache = newScanCache();
-  const boxes = Array.from(flow.querySelectorAll<HTMLInputElement>('.apply-flow-pin-code-required input.pin-code-input__input'))
-    .filter((input) => isUserVisible(input, cache));
-  return boxes.length > 0 ? 'email-code' : null;
+  if (flow !== null) {
+    if (gateEmail(doc) !== null) return 'email-gate';
+    // fixtures/oracle/fortive-email-code.html: <div class="apply-flow-pin-code-required ..."> ... <input
+    // class="input-row__control pin-code-input__input" type="text" inputmode="numeric" ... id="pin-code-1"
+    // aria-required="true">, six of them.
+    const boxes = Array.from(flow.querySelectorAll<HTMLInputElement>('.apply-flow-pin-code-required input.pin-code-input__input'))
+      .filter((input) => isUserVisible(input, cache));
+    if (boxes.length > 0) return 'email-code';
+  }
+  // jr7-O1: the code at Submit, drawn beside the hidden form.
+  return submitCodeShown(doc, cache) ? 'email-code' : null;
 }
 
 /** The controls whose label is their row's own label, which names no control by its for: an answer-pill group (<ul
@@ -444,6 +489,28 @@ function dependsOn(control: Element): Element | null {
  *  refused the Submit) or added. The tiles themselves hold no field (hjf-apply-section.html). */
 const TIMELINE_EDITOR = 'timeline-form-inline timeline-form-builder.timeline-form-dialog__content';
 
+// ── jr7 ORACLE-7 (FIX7PLAN §6.10 item 3, jr7-O4): the tile layout's inline editor ──
+/** jr7-O4: the inline editor of Oracle's newer tile layout (snapshot7 oraclecloud1: the Education editor of
+ *  fixtures/oracle/jr7-oraclecloud1-section-filled.html, the Experience editor of -section-editor-a.html): in a <div
+ *  class="apply-flow-block apply-flow-block--tile-profile-items">, its list's <div class="standard-apply-flow-profile-item">
+ *  holds the entries' tiles (<article class="apply-flow-profile-item-tile ...">, one marked
+ *  apply-flow-profile-item-tile--active while it is opened), the block's Add (button.apply-flow-profile-item-tile__new-tile)
+ *  and, while an entry is opened or added, <div class="profile-item-content"><div class="profile-item-content--form">
+ *  <form-builder> holding the entry's rows, beside its footer's Cancel and Save (div.profile-item-footer:
+ *  button.cancel-btn, button.save-btn[data-qa=profileItemInlineSaveButton], both .app-dialog__footer-button, so never
+ *  pressed). The Skills block (apply-flow-block--skill, -section-editor-b.html) draws the same editor for one skill: it
+ *  is no repeatable kind (core/types/run.ts REPEATABLE_KINDS), so it is not read here, and its rows are the person's
+ *  (owner question Q7-11). Jobright 1.25.2's newer-layout helpers find the editor by .profile-item-content >
+ *  .profile-item-content--form in .standard-apply-flow-profile-item, and its footer's save-btn and cancel-btn (helper-app
+ *  L121145-121191), read as its behaviour. */
+const TILE_EDITOR = '.apply-flow-block--tile-profile-items .standard-apply-flow-profile-item > .profile-item-content'
+  + ' > .profile-item-content--form';
+/** jr7-O4: every profile item's open inline editor, the Skills block's included (its invalid rows are errors too). */
+const ITEM_EDITOR = '.standard-apply-flow-profile-item > .profile-item-content > .profile-item-content--form';
+/** The editors a repeatable block is read from: the timeline's (jr6) and the tile layout's (jr7-O4). */
+const EDITORS = `${TIMELINE_EDITOR}, ${TILE_EDITOR}`;
+// ── end jr7 ORACLE-7 ──
+
 /** The words of an editor's row labels (label.input-row__label in form-element-label), in lower case. */
 function rowLabelsOf(editor: Element): Set<string> {
   return new Set(Array.from(editor.querySelectorAll('form-element-label > label.input-row__label')).map(wordsOf));
@@ -460,23 +527,33 @@ function rowControl(editor: Element, words: readonly string[]): HTMLInputElement
 /** An editor's entry kind, told apart by its fields as Jobright 1.25.2's rules.addAndGetEduRules and addAndGetWorkRules
  *  read them: School and Degree (hjf-after-submit.html, whose boxes are named educationalEstablishment and
  *  contentItemId) make an education's; Employer Name and Job Title an experience's (no snapshot shows that editor);
- *  anything else none. */
+ *  anything else none.
+ *  jr7-O4 (the tile layout, as its verifier corrected the fix): its education editor (jr7-oraclecloud1-section-filled)
+ *  names only its Major and its <input name="educationalEstablishment"> ("Education Institution"), its Degree a pill
+ *  group with no box: so an Education Institution box or row, beside a Degree row, makes an education's (Jobright
+ *  1.25.2's rules read educationalEstablishment by its name); its experience editor (-section-editor-a) names its boxes
+ *  employerName and jobTitle, which make an experience's as the labels do. */
 function editorKind(editor: Element): 'education' | 'experience' | null {
   const labels = rowLabelsOf(editor);
   const named = (name: string) => editor.querySelector(`input.cx-select-input[name="${name}"]`) !== null;
+  const boxNamed = (name: string) => editor.querySelector(`input[name="${name}"], textarea[name="${name}"]`) !== null;
   if ((labels.has('school') && labels.has('degree')) || (named('educationalEstablishment') && named('contentItemId'))) {
     return 'education';
   }
+  // ── jr7 ORACLE-7 (jr7-O4) ──
+  if ((named('educationalEstablishment') || labels.has('education institution')) && labels.has('degree')) return 'education';
+  // ── end jr7 ORACLE-7 ──
   if ((labels.has('employer name') || labels.has('employer')) && (labels.has('job title') || labels.has('title'))) {
     return 'experience';
   }
-  return null;
+  return boxNamed('employerName') && boxNamed('jobTitle') ? 'experience' : null; // jr7 ORACLE-7 (jr7-O4)
 }
 
-/** jr6 oracle-new-2, O7: the editors of `kind` a person sees in the root, in page order. */
+/** jr6 oracle-new-2, O7: the editors of `kind` a person sees in the root, in page order (jr7-O4: the tile layout's
+ *  too). */
 function openEditors(root: Element, kind: 'education' | 'experience'): Element[] {
   const cache = newScanCache();
-  return Array.from(root.querySelectorAll(TIMELINE_EDITOR))
+  return Array.from(root.querySelectorAll(EDITORS))
     .filter((editor) => isUserVisible(editor, cache) && editorKind(editor) === kind);
 }
 
@@ -502,12 +579,16 @@ function readEntries(kind: string, blocks: Element[]): PrefillEntryView[] {
     if (editorKind(block) !== kind) return [];
     const values: PrefillEntryView['values'][number][] = [];
     if (kind === 'education') {
+      // jr7-O4: the tile layout's "Education Institution" is the same box, named educationalEstablishment.
       const school = shownIn(block.querySelector<HTMLInputElement>('input.cx-select-input[name="educationalEstablishment"]')
-        ?? rowControl(block, ['school']));
+        ?? rowControl(block, ['school', 'education institution']));
       if (school !== '') values.push({ category: 'education.school', text: school });
     } else if (kind === 'experience') {
-      const company = shownIn(rowControl(block, ['employer name', 'employer']));
-      const title = shownIn(rowControl(block, ['job title', 'title']));
+      // jr7-O4: the tile layout's boxes by their names first (employerName, jobTitle), else by their rows' labels.
+      const company = shownIn(block.querySelector<HTMLInputElement>('input[name="employerName"]')
+        ?? rowControl(block, ['employer name', 'employer']));
+      const title = shownIn(block.querySelector<HTMLInputElement>('input[name="jobTitle"]')
+        ?? rowControl(block, ['job title', 'title']));
       if (company !== '') values.push({ category: 'experience.company', text: company });
       if (title !== '') values.push({ category: 'experience.title', text: title });
     }
@@ -566,11 +647,18 @@ function isFinalStep(doc: Document): 'final' | 'not-final' | 'unknown' {
  *  text and markup only, never a value. */
 function stepSignature(doc: Document): { heading?: string; progress?: string; urlPart?: string; anchors: string[] } {
   const flow = flowOf(doc);
-  if (flow === null) return { anchors: [] };
-  const cache = newScanCache();
   const address = addressOf(doc);
   const section = address === null ? null : oracleApplySection(address);
   const urlPart = section !== null ? `section/${section}` : address !== null && isOracleEmailGate(address) ? 'email' : '';
+  // jr7 ORACLE-7 (jr7-O1): with the form hidden and an account state shown (the code dialog beside the hidden form,
+  // after the Submit's checklist), the step is its address's section and that state, so the code's dialog changes the
+  // signature and the resting run looks again (its pause, email-code). A page that shows neither the flow nor a state
+  // (the checklist, the posting, my-profile) reads as before.
+  if (flow === null) {
+    const state = authState(doc);
+    return state === null ? { anchors: [] } : { urlPart, anchors: [state] };
+  }
+  const cache = newScanCache();
   // The words a person reads, else (a part the colour rules cannot read over the cover image, as the navigation train's
   // items are on hjf-apply-section.html) the shown element's own words: a step's identity, hashed, never a label.
   const read = (el: Element | null) => (el === null ? ''
@@ -602,8 +690,24 @@ function errors(root: Element): Array<{ el: Element; fieldKeyHint?: string }> {
   // ── behaviour review 2026-11-06 (M4) ──
   const notified = Array.from(root.ownerDocument.querySelectorAll(NOTIFIED_ERROR))
     .filter((el) => isUserVisible(el, cache)).map((el) => ({ el }));
-  return [...(genericAdapter.errors?.(root) ?? []), ...marks, ...notified];
+  return [...(genericAdapter.errors?.(root) ?? []), ...marks, ...notified, ...editorRowErrors(root, cache)];
 }
+
+// ── jr7 ORACLE-7 (FIX7PLAN §6.10 item 3, jr7-O4) ──
+/** jr7-O4: an open profile item editor's rows the page marks invalid, each by its message: the tile layout's <div
+ *  class="input-row ... input-row--invalid"> holding <p class="input-row__validation" ...> (the Education editor's Degree
+ *  pills of jr7-oraclecloud1-section-filled.html, "The Degree field is required.", with no aria-invalid anywhere; the
+ *  Skill box of -section-editor-b.html, whose input says aria-invalid="true" and is the standard rule's already, so it
+ *  is not counted twice), each while a person can see its message. */
+function editorRowErrors(root: Element, cache: ScanCache): Array<{ el: Element }> {
+  return Array.from(root.querySelectorAll(`${ITEM_EDITOR} .input-row.input-row--invalid`)).flatMap((row) => {
+    if (row.querySelector('[aria-invalid="true" i]') !== null) return [];
+    const message = Array.from(row.querySelectorAll('.input-row__validation'))
+      .find((el) => wordsOf(el) !== '' && isUserVisible(el, cache));
+    return message === undefined || !isUserVisible(row, cache) ? [] : [{ el: message }];
+  });
+}
+// ── end jr7 ORACLE-7 ──
 
 /** Sign-in Auto's form at the gate (module header): fixtures/oracle/elhr-email-gate.html's <form novalidate=""> (no
  *  method, no action) holding its email, its <button type="button" ... data-qa="emailVerificationCancelButton"
@@ -645,7 +749,96 @@ const NEVER_PRESSED = ['.job-details__section-apply-button button.apply-now-butt
   // ── jr6 O16 ── jr6-caesars-email-gate.html: <button type="button" class="quick-apply-flow-verify-method__button" ...>Do
   // you want to communicate by phone instead?</button>, inside the gate's form: it switches the gate to a code sent by
   // text message (Jobright 1.25.2's gate handler never presses it either).
-  'button.quick-apply-flow-verify-method__button'];
+  'button.quick-apply-flow-verify-method__button',
+  // ── jr7 ORACLE-7 (jr7-O1) ── jr7-oraclecloud1-submit-code.html: the code dialog's <button type="submit"
+  // class="apply-flow-dialog__button apply-flow-dialog__button--primary">Verify</button> in its form.pin-code-verification
+  // (the code is the person's; its "Send New Code" is pressed by no one either, above).
+  `${SUBMIT_CODE} button[type="submit"]`,
+  // ── jr7 ORACLE-7 (jr7-O4) ── the tile layout's <button class="apply-flow-profile-item-tile__edit-item-icon" title="Edit">
+  // and <button class="apply-flow-profile-item-tile__delete-icon" title="Delete"> on each entry's tile (Delete removes
+  // the person's entry; Jobright 1.25.2's operations.cleanEduAndExp presses it, owner question 1 keeps it the person's).
+  'button.apply-flow-profile-item-tile__edit-item-icon', 'button.apply-flow-profile-item-tile__delete-icon'];
+
+// ── jr7 ORACLE-7 (FIX7PLAN §6.10 item 2, jr7-O2): the page after submitting ──
+/** jr7-O2: the "My Applications" tiles' titles at my-profile (snapshot7 oraclecloud1, the page after its Submit and the
+ *  emailed code: fixtures/oracle/jr7-oraclecloud1-confirmation.html): <cs-applications><div class="cs-applications">
+ *  <div class="cs-applications__container cs-applications__container-active"> ... <li class="cs-application-tile"> ... <a
+ *  class="cs-job-info__title cs-button--link" ... href="https://<host>/hcmUI/CandidateExperience/en/sites/<SITE>/job/<id>">
+ *  (the job's title) ... <span title="..." class="cs-job-status__value ...">(its status)</span>, beside the
+ *  -drafts and -resolved containers (empty there). */
+const ACTIVE_TILE_TITLE = '.cs-applications__container-active li.cs-application-tile a.cs-job-info__title[href]';
+
+/** jr7-O2: the application key a tile's title link names (as adapters/index.ts applicationOf keys it: the platform's
+ *  parser, the canonical application URL hashed), on the page's own origin and site (`site`); null for any other
+ *  link. */
+function tileApplicationKey(link: Element, page: URL, site: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(link.getAttribute('href') ?? '', page);
+  } catch {
+    return null;
+  }
+  const parsed = url.origin === page.origin && platformOfUrl(url.href) === 'oracle' ? parseOracleUrl(url) : null;
+  return parsed === null || parsed.board !== site ? null : applicationKey('oracle', parsed.applicationUrl);
+}
+
+/** jr7-O2 (FIX7PLAN §3.1 successSigns, as its verifier corrected the fix): the drawn sign that the application armed
+ *  under `armedKey` was sent: at the site's my-profile alone (url.ts oracleMyProfileSite), the active container's tile
+ *  whose title link names that very application (tileApplicationKey) and whose status a person can see. Never a tile
+ *  under the -drafts or -resolved containers, never another application's tile (a person's other applications are
+ *  listed there too), nothing on an employer's own domain whose page shows none of the app's shell
+ *  (dom/page-signals.ts oracleShellShown). Jobright 1.25.2 reads no drawn sign there (its attribution of Oracle's network
+ *  answers takes <site>/my-profile as the application's page: isOraclecloudSubmissionConfirmationUrl); the tile is
+ *  this capture's. The words of the tile are never read, only that they show. */
+function successSigns(doc: Document, armedKey: string): Element[] {
+  const address = addressOf(doc);
+  const site = address === null ? null : oracleMyProfileSite(address);
+  if (address === null || site === null) return [];
+  if (oracleOwnDomain(address.hostname.toLowerCase(), address.pathname) && !oracleShellShown(doc)) return [];
+  const cache = newScanCache();
+  return Array.from(doc.querySelectorAll(ACTIVE_TILE_TITLE)).flatMap((link) => {
+    const tile = link.closest('li.cs-application-tile');
+    if (tile === null || tile.closest('.cs-applications__container-drafts, .cs-applications__container-resolved') !== null
+      || !isUserVisible(link, cache) || tileApplicationKey(link, address, site) !== armedKey) return [];
+    const status = Array.from(tile.querySelectorAll('.cs-job-status__value'))
+      .some((el) => wordsOf(el) !== '' && isUserVisible(el, cache));
+    return status ? [tile] : [];
+  });
+}
+// ── end jr7 ORACLE-7 ──
+
+// ── jr7 ORACLE-7 (FIX7PLAN §6.10 item 4, jr7-O7): a required block with nothing to fill ──
+/** jr7-O7: what makes a block's list hold something already, or something a run can fill: an entry's tile, an open
+ *  editor (the tile layout's or the timeline's), or any control (an upload's hidden input included). */
+const BLOCK_ENTRY = 'article.apply-flow-profile-item-tile';
+const BLOCK_CONTROL = 'input:not([type="hidden" i]), select, textarea, [contenteditable]:not([contenteditable="false" i]), '
+  + '[role="combobox"], [role="textbox"], [role="radio"], [role="radiogroup"], [role="checkbox"], [role="listbox"], '
+  + '[role="switch"], [role="spinbutton"], [role="slider"]';
+
+/** jr7-O7 (FIX7PLAN §3.1 requiredBlocksLeft; the Oracle verifier's missed finding): the form's required blocks that
+ *  hold nothing yet and nothing to fill: each <div class="apply-flow-block ..."> a person sees whose own title is marked
+ *  required (its header's <h3 class="apply-flow-block__title apply-flow-block__title--required"> shown) and whose <div
+ *  class="apply-flow-block__form-list"> shows no entry's tile and no open editor, and holds no control. On
+ *  jr7-oraclecloud1-section-blank.html that is the Skills block (apply-flow-block--skill: "Skills" with its star, its
+ *  list region "Skills Required" holding only "Add More Skills", never pressed), which Oracle refuses a Submit without:
+ *  so Submit Auto holds and the review shows the block (ENGINE-7 E1, orchestrator.ts requiredBlocksNow, reading the
+ *  block's title). Adding skills waits for owner question Q7-11 (Jobright 1.25.2's operations.fillSkills adds the
+ *  profile's). The block element itself, never its list region. */
+function requiredBlocksLeft(root: Element): Element[] {
+  const cache = newScanCache();
+  return Array.from(root.querySelectorAll('.apply-flow-block')).filter((block) => {
+    if (!isUserVisible(block, cache)) return false;
+    const required = Array.from(block.querySelectorAll(
+      ':scope > .apply-flow-block__header .apply-flow-block__title.apply-flow-block__title--required'))
+      .some((title) => isUserVisible(title, cache));
+    const list = block.querySelector(':scope > .apply-flow-block__form-list');
+    if (!required || list === null) return false;
+    const shows = (css: string) => Array.from(list.querySelectorAll(css)).some((el) => isUserVisible(el, cache));
+    return !shows(BLOCK_ENTRY) && !shows(`${ITEM_EDITOR}, ${TIMELINE_EDITOR}`)
+      && list.querySelector(BLOCK_CONTROL) === null;
+  });
+}
+// ── end jr7 ORACLE-7 ──
 
 function neverPress(root: Element): Element[] {
   return Array.from(root.ownerDocument.querySelectorAll(NEVER_PRESSED.join(', ')));
@@ -682,4 +875,8 @@ export const oracleAdapter: Adapter = {
   nextButton,
   stepSignature,
   uploadState,
+  // ── jr7 ORACLE-7 (FIX7PLAN §6.10; module header) ──
+  confirmationAfter: oracleConfirmationAfter,
+  successSigns,
+  requiredBlocksLeft,
 };
