@@ -21,6 +21,20 @@
  *   context). Only ids, a boolean and counts cross, through the worker; still no message between frames (S4). A leaf
  *   document its portal did not load (its referrer is not a portal of its family: the leaf posted its own form, or
  *   followed a link) holds none, since the portal's counter speaks of the form it framed; no facts, unknown, no press.
+ * - jr7 CHAIN-7 (SP\jr7\FIX7PLAN.md §6.5 items 1 to 3):
+ *   - ICIMS7-01: the tab's claim frame names, in its hello, the origins of the forms frames its page shows
+ *     (declaredChildOrigins: Adapter.chainChildOrigins, origins only), so the worker keys a forms host that is not the
+ *     portal's own name's (snapshot7's arc-onesolutions frames its IForms from oneblood.icims.com). Such a leaf's referrer
+ *     is a portal of another family: loadedByPortal also takes a referrer of its parent frame's origin, a host of the
+ *     leaf's platform on another origin (never the leaf's own address: a leaf that posted its own form still holds
+ *     none).
+ *   - ICIMS7-V1: an IForm leaf tells the worker once, as it happens, that its form's Submit was pressed (watchLeafPress,
+ *     chain/pressed: a click on a submit control of a form, the form's submit, or the document leaving), so the worker
+ *     hands the leaf documents that come after it only the facts its portal says after it.
+ *   - ICIMS7-V2: the leaf's adapter is read through a view bound to the facts it holds (leafAdapter): isFinalStep,
+ *     nextButton, submitButton and stepSubmitNext.laterStep asked with no facts take the document's latest, so every
+ *     caller (the person's Next during a step's wait, the doors' check near the application's buttons, the run's) judges
+ *     the leaf by them.
  */
 import type { ApplicationRef } from '../adapters';
 import { applicationOf } from '../adapters';
@@ -200,8 +214,14 @@ const LEAF_FACTS = new WeakMap<Document, ChainStepFacts>();
 /** Whether this frame's document is an IForm leaf its portal loaded (module header): a chain subframe page (adapters/
  *  chain.ts chainPageOf, role 'frame'), never the top frame, whose referrer (the browser's, read in the isolated world,
  *  which no page script changes) is a portal page of its family that frames chain pages on this very origin
- *  (chainChildOrigin). A leaf that navigated itself (its own form posted, a link of its own) names its own address. */
-export function loadedByPortal(frame: { isTop: boolean; href: string; referrer: string }): boolean {
+ *  (chainChildOrigin). A leaf that navigated itself (its own form posted, a link of its own) names its own address.
+ *  jr7 CHAIN-7 (ICIMS7-01): or, for a portal whose forms host is not its own name's (arc-onesolutions frames oneblood's
+ *  forms), a referrer whose origin is this frame's parent's (`parent`: location.ancestorOrigins[0], Chrome's, which no
+ *  page changes), a host of the leaf's platform (chainFamilyOf), on another origin than the leaf's: its parent frame
+ *  loaded it. Which portal's facts it may hold is the worker's (background/chain.ts: the portal that declared its
+ *  origin, by the leaf's chain link). */
+export function loadedByPortal(frame: { isTop: boolean; href: string; referrer: string; parent?: string | null }):
+  boolean {
   if (frame.isTop || frame.referrer === '') return false;
   let here: URL;
   let from: URL;
@@ -212,15 +232,28 @@ export function loadedByPortal(frame: { isTop: boolean; href: string; referrer: 
     return false;
   }
   const page = chainPageOf(here);
-  return page !== null && page.role === 'frame' && chainFamilyOf(from) === page.family
-    && chainChildOrigin(from) === here.origin;
+  if (page === null || page.role !== 'frame') return false;
+  if (chainFamilyOf(from) === page.family && chainChildOrigin(from) === here.origin) return true;
+  // jr7 CHAIN-7 (ICIMS7-01): loaded by its parent frame, a page of the leaf's platform on another origin.
+  return frame.parent !== undefined && frame.parent !== null && from.origin === frame.parent // jr7 CHAIN-7
+    && from.origin !== here.origin && chainFamilyOf(from)?.split(':')[0] === page.platform; // jr7 CHAIN-7
+}
+
+/** jr7 CHAIN-7 (ICIMS7-01): this frame's parent's origin as Chrome gives it (location.ancestorOrigins), or null. */
+export function parentOriginOf(view: Window | null): string | null {
+  try {
+    const origins = (view?.location as (Location & { ancestorOrigins?: DOMStringList }) | undefined)?.ancestorOrigins;
+    return origins !== undefined && origins.length > 0 ? origins.item(0) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** chain/leafFacts (the worker's alone: content/runtime.ts checks the sender): this document holds `facts` for its step
  *  machine when it is an IForm leaf its portal loaded (loadedByPortal); null, or any other document, holds none. Answers
  *  whether it holds what was handed (null: cleared). */
 export function holdChainFacts(doc: Document, facts: ChainStepFacts | null,
-  frame: { isTop: boolean; href: string; referrer: string }): boolean {
+  frame: { isTop: boolean; href: string; referrer: string; parent?: string | null }): boolean { // jr7 CHAIN-7: parent
   if (facts !== null && loadedByPortal(frame)) {
     LEAF_FACTS.set(doc, { stepId: facts.stepId, lastStep: facts.lastStep, counters: facts.counters,
       packet: facts.packet === null ? null : { n: facts.packet.n, m: facts.packet.m } });
@@ -238,3 +271,105 @@ export function chainFactsOf(doc: Document): ChainStepFacts | null {
   return LEAF_FACTS.get(doc) ?? null;
 }
 // ── end jr6 SHELL-B ──
+
+// ── jr7 CHAIN-7 (module header): ICIMS7-01, ICIMS7-V1, ICIMS7-V2 ──
+/** The origins a hello may name (schemas.ts frame/hello `childOrigins`). */
+export const MAX_DECLARED_ORIGINS = 4;
+const ORIGIN_SHAPE = /^https:\/\/[a-z0-9.-]{1,253}$/;
+
+/** ICIMS7-01: the origins of the forms frames this frame's page shows, as its address's adapters declare them
+ *  (Adapter.chainChildOrigins), said in its hello: only on the tab's claim frame (`claimFrame`: the top frame, or the
+ *  subframe that claims its wrapper's application), only https origins, each once, at most MAX_DECLARED_ORIGINS; none
+ *  where a hook throws. The worker takes only those adapters/chain.ts declaredChildOrigin allows. */
+export function declaredChildOrigins(doc: Document, at: URL | null, adapters: (url: URL) => Adapter[],
+  claimFrame: boolean): string[] {
+  if (!claimFrame || at === null) return [];
+  const said = new Set<string>();
+  for (const adapter of adapters(at)) {
+    if (adapter.chainChildOrigins === undefined) continue;
+    let origins: readonly string[] = [];
+    try {
+      origins = adapter.chainChildOrigins(doc);
+    } catch {
+      return [];
+    }
+    for (const origin of origins) if (typeof origin === 'string' && ORIGIN_SHAPE.test(origin)) said.add(origin);
+  }
+  return [...said].slice(0, MAX_DECLARED_ORIGINS);
+}
+
+/** What watchLeafPress reads of the runtime. */
+export interface LeafPressWatch {
+  view: (Window & typeof globalThis) | null;
+  doc: Document;
+  /** The document's life (the runtime's lifetime). */
+  signal: AbortSignal;
+  /** Whether this frame is a leaf now (a chain subframe page the worker keyed). */
+  active(): boolean;
+  /** chain/pressed to the worker, nothing awaited. */
+  send(): void;
+}
+
+/** ICIMS7-V1: tells the worker, once per document and as it happens, that this IForm leaf's form was sent on: a click
+ *  (trusted or not: the run's press too) on a submit control of a form, a form's submit, or, where neither came, the
+ *  document leaving (pagehide). Listened for in the capture phase on the document, before the page's own handlers. */
+export function watchLeafPress(watch: LeafPressWatch): void {
+  const { view, doc, signal } = watch;
+  if (view === null || signal.aborted) return;
+  let told = false;
+  const tell = () => {
+    if (told || signal.aborted || !watch.active()) return;
+    told = true;
+    watch.send();
+  };
+  const submitControl = (target: EventTarget | null): boolean => {
+    if (!(target instanceof view.Element)) return false;
+    const control = target.closest('button, input');
+    if (control === null) return false;
+    const typed = control as HTMLButtonElement | HTMLInputElement;
+    return (typed.type === 'submit' || typed.type === 'image') && typed.form !== null;
+  };
+  doc.addEventListener('click', (event) => {
+    if (submitControl(event.composedPath()[0] ?? event.target)) tell();
+  }, { capture: true, signal });
+  doc.addEventListener('submit', () => tell(), { capture: true, signal });
+  view.addEventListener('pagehide', () => tell(), { capture: true, signal });
+}
+
+/** ICIMS7-V2: this frame's adapter, read through the step facts its document holds (chainFactsOf), where the frame is an
+ *  IForm leaf (a chain subframe page, never the top frame): isFinalStep, nextButton, submitButton and
+ *  stepSubmitNext.laterStep asked without facts (absent or null) take the latest the document holds; asked with facts,
+ *  those. Any other frame, or an adapter that declares none of them: the adapter itself. */
+export function leafAdapter(adapter: Adapter, frame: { isTop: boolean; href: string }): Adapter {
+  if (frame.isTop) return adapter;
+  let here: URL;
+  try {
+    here = new URL(frame.href);
+  } catch {
+    return adapter;
+  }
+  if (chainPageOf(here)?.role !== 'frame') return adapter;
+  const { isFinalStep, nextButton, submitButton, stepSubmitNext } = adapter;
+  if (isFinalStep === undefined && nextButton === undefined && submitButton === undefined
+    && stepSubmitNext === undefined) return adapter;
+  return {
+    ...adapter,
+    ...(isFinalStep === undefined ? {} : {
+      isFinalStep: (doc: Document, facts?: ChainStepFacts | null) => isFinalStep.call(adapter, doc,
+        facts ?? chainFactsOf(doc)),
+    }),
+    ...(nextButton === undefined ? {} : {
+      nextButton: (root: Element, facts?: ChainStepFacts | null) => nextButton.call(adapter, root,
+        facts ?? chainFactsOf(root.ownerDocument)),
+    }),
+    ...(submitButton === undefined ? {} : {
+      submitButton: (root: Element, facts?: ChainStepFacts | null) => submitButton.call(adapter, root,
+        facts ?? chainFactsOf(root.ownerDocument)),
+    }),
+    ...(stepSubmitNext === undefined ? {} : {
+      stepSubmitNext: { ...stepSubmitNext, laterStep: (doc: Document, facts?: ChainStepFacts | null) =>
+        stepSubmitNext.laterStep.call(stepSubmitNext, doc, facts ?? chainFactsOf(doc)) },
+    }),
+  };
+}
+// ── end jr7 CHAIN-7 ──
