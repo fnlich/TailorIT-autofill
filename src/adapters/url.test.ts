@@ -210,16 +210,13 @@ const AHEAD_OF_CONTRACT = new Set(['https://jobs.smartrecruiters.com/oneclick-ui
   'https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/job/744000159905715/screening',
   'https://acme.wd5.myworkdayjobs-impl.com/en-US/External/job/Remote/Engineer_JR-1/apply/applyManually',
   'https://acme.myworkdayjobs-impl.com/External/job/Remote/Engineer_JR-1',
-  `https://recruiting2.ultipro.com/CAM1010CSII/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`,
-  `https://recruiting.ultipro.ca/ACME1000/JobBoard/${ULTIPRO_BOARD}/OpportunityDetail?opportunityId=${ULTIPRO_ID}`,
-  `https://acme.rec.pro.ukg.net/ACME1000/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`,
+  // jr7 AUTO-7: UltiPro's recruiting2, recruiting.ultipro.ca and rec.pro.ukg.net hosts are TailorIT's since jr7-tailorit-a.
   'https://smith-agency.sfagentjobs.com/jobs/1234567/apps/new', 'https://www.apscareerportal.com/jobs/1234567/apps/new',
   'https://sfagentcareers.com/jobs/1234567/apps/7654321',
   // The owner's word of 2026-11-08: Oracle's Candidate Experience on a company's own domain.
   'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345', 'https://careers.acme-corp.example/hcmUI/CandidateExperience/en/sites/CX_1/job/12345/apply/section/1',
-  // The P2 review (security 2): recruiting2.ultipro.com's account step.
-  `https://recruiting2.ultipro.com/CAM1010CSII/AuthCode/Register?state=returnUrl%3D%2Fcam1010csii%2FJobBoard%2F${ULTIPRO_BOARD}`
-    + `%2FOpportunityApply%3FopportunityId%3D${ULTIPRO_ID}`]);
+  // jr7 AUTO-7: recruiting2.ultipro.com's account step (the P2 review, security 2) is TailorIT's since jr7-tailorit-a.
+  ]);
 // ── end v5 p2-detect ──
 
 const ROWS: Row[] = [
@@ -410,7 +407,11 @@ const ROWS: Row[] = [
   { url: 'https://workforcenow.adp.com/theme/index.html', ours: null },
   { url: 'https://acme.bamboohr.com/home', ours: null },
   { url: 'https://acme.clearcompany.com/blank/page', ours: null },
-  { url: 'https://www.dice.com/job-detail/00000000-0000-4000-8000-000000000001', ours: null },
+  // jr7 AUTO-7: TailorIT reads Dice's job detail as the wizard's posting since jr7-tailorit-a (read only, never queued);
+  // the extension runs on the wizard alone.
+  { url: 'https://www.dice.com/job-detail/00000000-0000-4000-8000-000000000001', ours: null,
+    contract: { kind: 'dice', board: null, externalId: '00000000-0000-4000-8000-000000000001' },
+    why: "TailorIT's lookup reads Dice's job detail as its wizard's posting (jr7-tailorit-a); the extension fills the wizard alone" },
   { url: 'https://acme.applytojob.com/', ours: null },
   { url: 'https://recruiting.paylocity.com/', ours: null },
   { url: 'https://www.paycomonline.net/v4/ats/web.php/portal/x/career-page', ours: null },
@@ -600,16 +601,13 @@ const ROWS: Row[] = [
   { url: 'https://wd5.myworkdayjobs-impl.com/x', ours: null },
   { url: `https://recruiting2.ultipro.com/CAM1010CSII/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`,
     ours: newAts('ultipro', 'cam1010csii', ULTIPRO_ID, 'application',
-      `https://recruiting2.ultipro.com/cam1010csii/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`),
-    contract: null, why: P2_AHEAD },
+      `https://recruiting2.ultipro.com/cam1010csii/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`), }, // jr7 AUTO-7: TailorIT's since jr7-tailorit-a
   { url: `https://recruiting.ultipro.ca/ACME1000/JobBoard/${ULTIPRO_BOARD}/OpportunityDetail?opportunityId=${ULTIPRO_ID}`,
     ours: newAts('ultipro', 'acme1000', ULTIPRO_ID, 'posting', null,
-      `https://recruiting.ultipro.ca/acme1000/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`),
-    contract: null, why: P2_AHEAD },
+      `https://recruiting.ultipro.ca/acme1000/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`), }, // jr7 AUTO-7: TailorIT's since jr7-tailorit-a
   { url: `https://acme.rec.pro.ukg.net/ACME1000/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`,
     ours: newAts('ultipro', 'acme1000', ULTIPRO_ID, 'application',
-      `https://acme.rec.pro.ukg.net/acme1000/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`),
-    contract: null, why: P2_AHEAD },
+      `https://acme.rec.pro.ukg.net/acme1000/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`), }, // jr7 AUTO-7: TailorIT's since jr7-tailorit-a
   // UKG's employee systems on the same domains: no platform's. The P2 review (security 2): an employer's own UKG Pro
   // host (<n>.ultipro.com, <n>.ultipro.ca), whose job boards are for its staff, on a job board's path too.
   { url: 'https://n12.ultipro.com/default.aspx', ours: null },
@@ -620,8 +618,7 @@ const ROWS: Row[] = [
   { url: `https://recruiting2.ultipro.com/CAM1010CSII/AuthCode/Register?state=returnUrl%3D%2Fcam1010csii%2FJobBoard%2F${ULTIPRO_BOARD}`
     + `%2FOpportunityApply%3FopportunityId%3D${ULTIPRO_ID}`,
     ours: newAts('ultipro', 'cam1010csii', ULTIPRO_ID, 'application',
-      `https://recruiting2.ultipro.com/cam1010csii/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`),
-    contract: null, why: P2_AHEAD },
+      `https://recruiting2.ultipro.com/cam1010csii/JobBoard/${ULTIPRO_BOARD}/OpportunityApply?opportunityId=${ULTIPRO_ID}`), }, // jr7 AUTO-7: TailorIT's since jr7-tailorit-a
   { url: 'https://acme.ukg.net/ACME1000/JobBoard/x', ours: null },
   { url: 'https://smith-agency.sfagentjobs.com/jobs/1234567/apps/new',
     ours: newAts('careerplug', 'smith-agency', '1234567', 'application', 'https://smith-agency.sfagentjobs.com/jobs/1234567/apps/new'),
@@ -648,9 +645,9 @@ const ROWS: Row[] = [
     ours: phase6('oracle', 'CX_1001', '12946', 'posting', null, ORACLE_FORM), contract: null, why: P2_SPELLING },
   // Dayforce's posting and its way-to-apply choice (Jobright's isSameDayforceApplicationUrl), under the form's key.
   { url: 'https://jobs.dayforcehcm.com/en-US/savealot/candidateportal/jobs/9234',
-    ours: newAts('dayforce', 'savealot', '9234', 'posting', null, DAYFORCE_FORM), contract: null, why: P2_SPELLING },
+    ours: newAts('dayforce', 'savealot', '9234', 'posting', null, DAYFORCE_FORM) }, // jr7 AUTO-7: TailorIT's since jr7-tailorit-a
   { url: 'https://jobs.dayforcehcm.com/savealot/candidateportal/jobs/9234/apply/',
-    ours: newAts('dayforce', 'savealot', '9234', 'posting', null, DAYFORCE_FORM), contract: null, why: P2_SPELLING },
+    ours: newAts('dayforce', 'savealot', '9234', 'posting', null, DAYFORCE_FORM) }, // jr7 AUTO-7: TailorIT's since jr7-tailorit-a
   { url: 'https://jobs.dayforcehcm.com/en-US/savealot/candidateportal/jobs/9234/other', ours: null },
   // Paycor's posting and its application's later steps (Jobright's site registry), under the form's key.
   { url: `https://recruitingbypaycor.com/career/JobIntroduction.action?clientId=${PAYCOR_CLIENT}&id=${PAYCOR_ID}`,
@@ -927,7 +924,9 @@ describe('applicationKey', () => {
     // ── New ATSs, builder A: each platform's pages of one application, one key ──
     for (const [platform, form] of [['adp', ADP_GUEST], ['dayforce', DAYFORCE_FORM], ['ultipro', ULTIPRO_FORM]] as const) {
       // v5 p2-detect: UKG's other recruiting hosts hold other applications (AHEAD_OF_CONTRACT), each its own key.
-      const pages = ROWS.filter((row) => row.ours?.platform === platform && !AHEAD_OF_CONTRACT.has(row.url))
+      // jr7 AUTO-7: TailorIT reads those hosts since jr7-tailorit-a (no longer ahead): told apart by their host.
+      const pages = ROWS.filter((row) => row.ours?.platform === platform && !AHEAD_OF_CONTRACT.has(row.url)
+        && new URL(row.url).hostname === new URL(form).hostname) // jr7 AUTO-7
         .map((row) => keyOf(row.url));
       expect(pages.length, platform).toBeGreaterThanOrEqual(3);
       expect(new Set(pages), platform).toEqual(new Set([applicationKey(platform, form)]));

@@ -1269,8 +1269,9 @@ describe('the audit of 2026-11-06: outages, the person closing the window, and t
     expect((await runRecord(h))!.heldAt).not.toBeNull();
     h.clock.now += AGENT_CONFIRM_MS;
     await h.agent.tick();
-    // Sent, its confirmation not seen: the person's to look at, never a page error.
-    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'other', aiGuesses: 0 } }]);
+    // Sent, its confirmation not seen: the person's to look at, never a page error. jr7 AUTO-7 (AUTO7-08 a): a page
+    // after the job's Submit whose sign never came is timed_out (TailorIT: "It may have been sent: check the site").
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'timed_out', aiGuesses: 0 } }]);
   });
 
   it('after the job’s Submit, a page that names no posting awaits the confirmation (pressedAt in noPosting)', async () => {
@@ -1454,3 +1455,217 @@ describe('the agent on iCIMS and Pinpoint (TailorIT’s API 6)', () => {
   });
 });
 // ── end contract6 ──
+
+// ── jr7 AUTO-7 (SP\jr7\FIX7PLAN.md §6.4): the agent's entry, waits, holds, kept tabs and hand-overs ──
+describe('jr7 AUTO-7: the agent', () => {
+  /** A posting's hello (no form), at the task's key, in document `documentId`. */
+  const posting = (key: string, documentId: string) =>
+    ({ frameId: 0, documentId, hasForm: false, applicationKey: key, platform: 'greenhouse' as const });
+
+  it('AUTO7-15: starts at most twelve form documents a job (iCIMS shows five and six)', async () => {
+    expect(AGENT_MAX_STARTS).toBe(12);
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    for (let n = 1; n <= 12; n += 1) await h.agent.hello(tabId, form(key, `doc-${n}`));
+    expect(h.sent.filter((sent) => sent.message.type === 'run/start')).toHaveLength(12);
+    expect(h.results).toEqual([]);
+    await h.agent.hello(tabId, form(key, 'doc-13'));
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'other', aiGuesses: 0 } }]);
+  });
+
+  it('AUTO7-03: an entry no adapter declares is unsupported_site; declared and not found, a closed posting', async () => {
+    for (const declared of [false, true]) {
+      const h = harness({ tasks: [task(1)] });
+      h.entry.answer = { outcome: 'not-offered', declared };
+      await on(h);
+      const { tabId, key } = await running(h);
+      await h.agent.hello(tabId, posting(key, 'doc-1'));
+      expect(h.sent.filter((sent) => sent.message.type === 'agent/enter'), String(declared)).toHaveLength(1);
+      h.clock.now += AGENT_FORM_WAIT_MS;
+      await h.agent.tick();
+      expect(h.results, String(declared)).toEqual([{ id: ID(1), body: declared
+        ? { state: 'failed', reason: 'posting_closed', aiGuesses: 0 }
+        : { state: 'needs-you', reason: 'unsupported_site', aiGuesses: 0 } }]);
+    }
+  });
+
+  it('AUTO7-10: the form’s wait counts from the entry’s press and the latest hello, not the window’s opening', async () => {
+    const h = harness({ tasks: [task(1)] });
+    h.entry.answer = 'gone';
+    await on(h);
+    const { tabId, key } = await running(h);
+    h.clock.now += 50_000;
+    // The entry pressed 50 s in (its document went away with the press; agent/entered says it was pressed).
+    await h.agent.hello(tabId, posting(key, 'doc-1'));
+    await h.agent.entered(tabId, 'doc-1');
+    h.clock.now += 20_000;
+    await h.agent.tick();
+    expect(h.results).toEqual([]);
+    // A later hello (a wall drawn, signing in) pushes it on again.
+    await h.agent.hello(tabId, posting(key, 'doc-2'));
+    h.clock.now += AGENT_FORM_WAIT_MS - 1;
+    await h.agent.tick();
+    expect(h.results).toEqual([]);
+    h.clock.now += 1;
+    await h.agent.tick();
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'other', aiGuesses: 0 } }]);
+  });
+
+  it('AUTOV-03: a Stop while the entry signs in at the posting is heard at once (needs-you cancelled)', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    let answer!: (value: unknown) => void;
+    const sendBefore = h.deps.send;
+    h.deps.send = async (tab, message, target) => {
+      if ((message as { type: string }).type !== 'agent/enter') return sendBefore(tab, message, target);
+      h.sent.push({ tabId: tab, message: message as Harness['sent'][number]['message'] });
+      return new Promise((resolve) => {
+        answer = resolve;
+      });
+    };
+    const entering = h.agent.hello(tabId, posting(key, 'doc-1'));
+    await vi.waitFor(() => expect(h.sent.filter((sent) => sent.message.type === 'agent/enter')).toHaveLength(1));
+    // The sign-in has not answered: a tick and the person's Stop are heard meanwhile.
+    h.clock.now += 1_000;
+    await h.agent.tick();
+    await h.agent.stop();
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0 } }]);
+    // Its late answer changes nothing.
+    answer({ ok: true, data: { outcome: 'pressed' } });
+    await entering;
+    expect(h.results).toHaveLength(1);
+  });
+
+  it('AUTO7-05 (b): a begun job whose tab sits on its platform’s identity host is the person’s sign-in', async () => {
+    for (const identity of [true, false]) {
+      const h = harness({ tasks: [task(1)] });
+      h.entry.answer = 'gone';
+      h.deps.hostOf = async () => 'signin.idp.example';
+      h.deps.identityHost = (platform, host) => identity && platform === 'greenhouse' && host === 'signin.idp.example';
+      await on(h);
+      const { tabId, key } = await running(h);
+      await h.agent.hello(tabId, posting(key, 'doc-1'));
+      await h.agent.entered(tabId, 'doc-1');
+      h.clock.now += AGENT_FORM_WAIT_MS;
+      await h.agent.tick();
+      expect(h.results, String(identity)).toEqual([{ id: ID(1), body: { state: 'needs-you',
+        reason: identity ? 'sign_in' : 'other', aiGuesses: 0 } }]);
+      expect((await h.agent.status()).on, String(identity)).toBe(true);
+    }
+  });
+
+  it('AUTO7-08 (a): after the Submit, a page of the job’s platform with no key waits for its sign, then timed_out',
+    async () => {
+      const h = harness({ tasks: [task(1)] });
+      await on(h);
+      const { tabId, key } = await running(h);
+      await h.agent.hello(tabId, form(key, 'doc-1'));
+      await h.agent.pressed(tabId, key, 'doc-1');
+      await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-2', hasForm: false, platform: 'greenhouse' });
+      expect((await runRecord(h))!.heldAt).not.toBeNull();
+      h.clock.now += AGENT_CONFIRM_MS - 1;
+      await h.agent.tick();
+      expect(h.results).toEqual([]);
+      h.clock.now += 1;
+      await h.agent.tick();
+      expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'timed_out', aiGuesses: 0 } }]);
+      // Its sign within the hold records it.
+      const signed = harness({ tasks: [task(1)] });
+      await on(signed);
+      const ran = await running(signed);
+      await signed.agent.hello(ran.tabId, form(ran.key, 'doc-1'));
+      await signed.agent.pressed(ran.tabId, ran.key, 'doc-1');
+      await signed.agent.hello(ran.tabId, { frameId: 0, documentId: 'doc-2', hasForm: false, platform: 'greenhouse' });
+      expect(await signed.agent.submitted(ran.tabId, ran.key)).toBe('recorded');
+    });
+
+  it('AUTO7-08 (b), J7-AG-1: after the Submit, a confirmation of another key on the job’s platform is held, never closed',
+    async () => {
+      const h = harness({ tasks: [task(1)] });
+      await on(h);
+      const { tabId, key } = await running(h);
+      await h.agent.hello(tabId, form(key, 'doc-1'));
+      await h.agent.pressed(tabId, key, 'doc-1');
+      // The page after submitting, its own key (a chained application's publication): no result, the tab open.
+      await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-2', hasForm: false, confirmation: true,
+        applicationKey: 'greenhouse:00000000000000aa', platform: 'greenhouse' });
+      expect(h.results).toEqual([]);
+      expect(h.windows.closedTabs).toEqual([]);
+      // The arm's sign (submissions.ts took it under the task's key) records it.
+      expect(await h.agent.submitted(tabId, key)).toBe('recorded');
+      expect(h.results).toEqual([{ id: ID(1), body: { state: 'submitted', reason: null, aiGuesses: 0 } }]);
+      // Controls: before the Submit, or no confirmation, or another platform's page: another posting, at once.
+      for (const shown of ['before', 'no-confirmation', 'other-platform'] as const) {
+        const c = harness({ tasks: [task(1)] });
+        await on(c);
+        const ran = await running(c);
+        await c.agent.hello(ran.tabId, form(ran.key, 'doc-1'));
+        if (shown !== 'before') await c.agent.pressed(ran.tabId, ran.key, 'doc-1');
+        await c.agent.hello(ran.tabId, { frameId: 0, documentId: 'doc-2', hasForm: false,
+          ...(shown === 'no-confirmation' ? {} : { confirmation: true as const }),
+          applicationKey: 'lever:00000000000000aa', platform: shown === 'other-platform' ? 'lever' : 'greenhouse' });
+        expect(c.results, shown).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'other', aiGuesses: 0 } }]);
+      }
+    });
+
+  it('jr7-O1 part 4: a code or a check after the job’s own Submit keeps its tab, flags its window, and never counts it',
+    async () => {
+      for (const pause of ['email-code', 'captcha'] as const) {
+        const h = harness({ tasks: [task(1), task(2)] });
+        const flagged: number[] = [];
+        const asked: unknown[] = [];
+        h.deps.windows.drawAttention = async (windowId) => void flagged.push(windowId);
+        h.deps.windows.othersOpen = async (except) => {
+          asked.push(except);
+          return true;
+        };
+        await on(h);
+        const { tabId, key } = await running(h);
+        const windowId = (await runRecord(h))!.windowId!;
+        await h.agent.hello(tabId, form(key, 'doc-1'));
+        await h.agent.pressed(tabId, key, 'doc-1');
+        h.reports.set(tabId, [report({ status: 'handoff', pauseReason: pause, updatedAt: 5 })]);
+        await h.agent.reported(tabId);
+        expect(h.results, pause).toEqual([{ id: ID(1), body: { state: 'needs-you',
+          reason: pause === 'email-code' ? 'email_code' : 'captcha', aiGuesses: 0 } }]);
+        expect(h.windows.closedTabs, pause).toEqual([]);
+        expect(h.released, pause).toEqual([tabId]);
+        expect(flagged, pause).toEqual([windowId]);
+        // The next job's look for a window of the person's leaves that one out.
+        h.timers.advance(5_000);
+        await h.agent.tick();
+        expect(asked.at(-1), pause).toEqual([windowId]);
+      }
+      // Before any Submit, a code is the person's as before: the tab closed.
+      const h = harness({ tasks: [task(1)] });
+      await on(h);
+      const { tabId, key } = await running(h);
+      await h.agent.hello(tabId, form(key, 'doc-1'));
+      h.reports.set(tabId, [report({ status: 'handoff', pauseReason: 'email-code', updatedAt: 5 })]);
+      await h.agent.reported(tabId);
+      expect(h.windows.closedTabs).toEqual([tabId]);
+    });
+
+  it('ICIMS7-04 (2): an assessment after the job’s Submit ends needs-you with its words, the tab kept for the person',
+    async () => {
+      const h = harness({ tasks: [task(1)] });
+      await on(h);
+      const { tabId, key } = await running(h);
+      await h.agent.hello(tabId, form(key, 'doc-1'));
+      await h.agent.pressed(tabId, key, 'doc-1');
+      await h.agent.hello(tabId, posting(key, 'doc-2'), { handOver: 'assessment' });
+      expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'other', aiGuesses: 0 } }]);
+      expect(h.windows.closedTabs).toEqual([]);
+      expect((await h.agent.status()).last).toEqual({ state: 'needs-you', reason: 'other', note: 'assessment' });
+      // Before the Submit, a hand-over is no step of the agent's to judge: its entry as any posting's.
+      const before = harness({ tasks: [task(1)] });
+      await on(before);
+      const ran = await running(before);
+      await before.agent.hello(ran.tabId, posting(ran.key, 'doc-1'), { handOver: 'assessment' });
+      expect(before.results).toEqual([]);
+      expect(before.sent.filter((sent) => sent.message.type === 'agent/enter')).toHaveLength(1);
+    });
+});
+// ── end jr7 AUTO-7 ──
