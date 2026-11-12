@@ -1427,6 +1427,8 @@ const AGENT_PAUSE_WORDS = {
 // contract's reasons. Drafts for the owner's review (Q7-15). ──
 const AGENT_NOTE_WORDS = {
   assessment: 'This application continues with an assessment',
+  // jr7 ULTIPRO-7 (integration, UP7-07; a draft for INT-7, whose words these are): UltiPro's documents dialog.
+  documents: 'The site asks whether to save your documents to your profile',
 } as const satisfies Record<AgentNote, string>;
 // ── end jr7 AUTO-7 ──
 

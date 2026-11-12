@@ -345,10 +345,12 @@ export type EntryBlock = (typeof ENTRY_BLOCKS)[number];
 /** Why a job of the agent or the Queue tab rests with the person, in the extension's own words beside the contract's
  *  reason (FIX7PLAN §6.4 item 14, ICIMS7-04): 'assessment', the application went on with an assessment the person takes
  *  (Adapter.handOver). */
-export const AGENT_NOTES = ['assessment'] as const;
+// jr7 ULTIPRO-7 (integration of ENGINE-7 E2 with AUTO-7: E2's HandOverKind gained 'documents', UP7-07: UltiPro's
+// documents dialog after Submit, the person's by owner question Q7-8's default): both lists follow it.
+export const AGENT_NOTES = ['assessment', 'documents'] as const;
 export type AgentNote = (typeof AGENT_NOTES)[number];
 /** The steps that are the person's by design (adapters/types.ts HandOverKind), as a frame's hello says one shows. */
-export const HAND_OVER_KINDS = ['assessment'] as const;
+export const HAND_OVER_KINDS = ['assessment', 'documents'] as const;
 // ── end jr7 AUTO-7 ──
 
 // ── jr6 apply A0 (the contract): Autofill presses the site's own Apply ──
