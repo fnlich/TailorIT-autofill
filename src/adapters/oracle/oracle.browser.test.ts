@@ -328,8 +328,9 @@ describe('the email gate (v3 Phase 7b)', () => {
       .toBe('method');
     expect(signInRefusal(form, new URL(address.replace('https:', 'http:')))).toBe('not-https');
     expect(signInRefusal({ ...form, scriptSubmits: undefined }, new URL(address))).toBe('method');
-    // The colour test's opt-out is the email box's alone, never another box's.
-    expect(signInRefusal({ ...form, colourUnknown: [form.terms[0]!] }, new URL(address))).toBe('shape');
+    // The colour test's opt-out is the email box's alone, never another box's. (jr7 ENGINE-7 E0: SignInForm.terms may
+    // hold an ARIA checkbox since FIX7PLAN §3.1; Oracle's is its native box.)
+    expect(signInRefusal({ ...form, colourUnknown: [form.terms[0] as HTMLInputElement] }, new URL(address))).toBe('shape');
   });
 
   it('never takes its honeypot for the email box', async () => {

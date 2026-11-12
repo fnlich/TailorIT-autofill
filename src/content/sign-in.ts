@@ -397,8 +397,11 @@ function accountErrorShown(ctx: SignInContext, form: SignInForm): AccountErrorKi
 
 /** jr6 SHELL-A (D-d): whether a box the page marks required (its required attribute, or aria-required): a required
  *  consent is ticked in either Consents mode (core/resolver/policy.ts consentValue's consent.required). */
-function markedRequired(box: HTMLInputElement): boolean {
-  return box.required || (box.getAttribute('aria-required') ?? '').trim().toLowerCase() === 'true';
+function markedRequired(box: HTMLElement): boolean {
+  // jr7 ENGINE-7 E0 (FIX7PLAN §3.1): a term may be a declared ARIA checkbox (SignInForm.terms), which has no required
+  // attribute of its own: its aria-required alone, which the same test reads.
+  return (box.localName === 'input' && (box as HTMLInputElement).required)
+    || (box.getAttribute('aria-required') ?? '').trim().toLowerCase() === 'true';
 }
 // ── end jr6 SHELL-A ──
 

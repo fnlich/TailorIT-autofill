@@ -422,8 +422,12 @@ function refusalOf(form: SignInForm, address: URL, cache: ScanCache): SignInRefu
   }
   // The terms, each the form's own checkbox a person can see or reach by its label; a declared form's one at most.
   if (declared && form.terms.length > 1) return 'shape';
-  for (const box of form.terms) {
-    if (box.localName !== 'input' || box.type !== 'checkbox' || box.form !== owner
+  for (const term of form.terms) {
+    // jr7 ENGINE-7 E0 (FIX7PLAN §3.1, UP7-04): a term that is no native input (a declared ARIA checkbox) is refused, as
+    // it always was, until ENGINE-7 E1 item 8 reads one.
+    if (term.localName !== 'input') return 'shape';
+    const box = term as HTMLInputElement;
+    if (box.type !== 'checkbox' || box.form !== owner
       || box.ownerDocument !== doc || (container !== null && !holds(container, box))) return 'shape';
     if (!box.isConnected) return 'hidden';
     if (declared ? !reachableTerms(box, cache) : !shownOrLabelled(box, cache)) return 'hidden';

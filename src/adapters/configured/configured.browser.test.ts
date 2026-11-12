@@ -25,7 +25,7 @@ import type { ScanResult, ScannedField } from '../../dom/types';
 import type { ApplicationUrl } from '../application-key';
 import { configProblems, configuredAdapter, configuredHooks, configuredSuccessSigns } from './index';
 import { ATS_CONFIGS } from './registry';
-import type { AtsConfig } from './types';
+import type { AtsConfig, ConfiguredHooks } from './types';
 
 /** Where every synthetic rule comes from. */
 const FROM = 'fixtures/synthetic/configured-ats';
@@ -399,5 +399,28 @@ describe('the configured adapter: steps, buttons, errors, busy and success', () 
     expect(coded.isFinalStep?.(fixture.doc)).toBe('final');
     expect(coded.labelFor?.(q(fixture, 'input[name="first"]'))).toBeNull();
     expect(adapter.labelFor?.(q(fixture, 'input[name="first"]'))).toBe(q(fixture, '.cf-q .cf-q-title'));
+  });
+
+  // jr7 ENGINE-7 E0 (FIX7PLAN §3.1): the shared contract's new hooks have no rule; a configured platform declares them
+  // in `code`, which passes each through as written, on the whole adapter and on the hooks a full adapter spreads.
+  it('passes the jr7 hooks declared in `code` through as written, and declares none of them without it', async () => {
+    const fixture = await open();
+    const press = q(fixture, 'input[name="first"]');
+    const code = {
+      chainChildOrigins: () => ['https://acme.icims.com'],
+      confirmationAfter: (armed: URL, here: URL) => armed.origin === here.origin,
+      successSigns: () => [press],
+      requiredBlocksLeft: () => [press],
+      uploadPrompt: () => ({ press, kind: 'dismiss' as const }),
+      editorOpener: () => [press],
+      notCodeBox: () => true,
+      identityHosts: [/^login\.example$/],
+      handOver: () => 'assessment' as const,
+      tailoritAddress: () => 'https://acme.icims.com/jobs/1/job',
+    } satisfies Partial<ConfiguredHooks>;
+    for (const built of [configuredAdapter({ ...SYNTHETIC, code }), configuredHooks({ ...SYNTHETIC, code })]) {
+      for (const [name, hook] of Object.entries(code)) expect(built[name as keyof typeof code], name).toBe(hook);
+    }
+    for (const name of Object.keys(code)) expect(name in adapter, name).toBe(false);
   });
 });
