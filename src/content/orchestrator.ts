@@ -172,8 +172,9 @@ import {
   type RunContext, type RunEffect, type RunEvent, type StepFacts, type StepNotice, type SubmitSkipRules,
 } from '../core/steps/machine';
 import { stepSignature } from '../core/steps/signature';
-import { labelSlug, sectionKey } from '../core/text/keys';
+import { fieldKey, labelSlug, OPTION_SET_NONE, sectionKey } from '../core/text/keys';
 import type { BaseKey, CurrentValue, FieldKey, FieldSpec } from '../core/types/field';
+import type { Platform } from '../core/enums';
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, type RepeatableKind, type RunState, type RunStatus }
@@ -192,7 +193,8 @@ import { newScanCache } from '../dom/scan-cache';
 import { scan, toFieldSpec } from '../dom/scan';
 import { deadline, monotonicNow, startDeadline } from '../dom/time';
 import type { FieldTarget, ScannedField, ScanResult, WidgetReading } from '../dom/types';
-import { visibleTextWithout } from '../dom/visible-text';
+import { visibleText, visibleTextWithout } from '../dom/visible-text';
+import { TEXT_CAP_LABEL } from '../dom/thresholds';
 import { isEditingHost } from '../dom/kinds';
 import { editableHidesText } from '../dom/values';
 import type { HeldDialogs } from '../dom/patch-protocol';
@@ -2546,7 +2548,9 @@ export class FillRun {
       }
       // The person's confirmations and edits during the fill stand on the rows (Phase 6), and so do the drafts this
       // document wrote (E4).
-      const rowsNow = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)];
+      const rowsNow = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow),
+        // jr7 ENGINE-7 E1 item 10 (jr7-O7): a row for each required block left empty.
+        ...this.requiredBlocksNow().map((block, ordinal) => requiredBlockRow(block, ordinal, this.env.page.app.platform))];
       const macs = await this.draftMacs(after, rowsNow);
       this.alive();
       const marked = this.markedRows(rowsNow, after, loop.carry.lastWriteAt, macs);
@@ -2693,9 +2697,27 @@ export class FillRun {
     // core-x, item 2: an account section's required boxes still empty count as required fields left (they are no rows).
     const account = accountLeft(this.env.page.adapter, this.env.doc, this.rootNow());
     return { submitVisible: buttons.submit,
-      requiredEmpty: requiredLeftOf(this.scanNow(), this.leftRequired()) + account, noAi,
-      legalGuess, attentionLeft, entriesLeft: this.addsLeft };
+      // jr7 ENGINE-7 E1 item 10 (jr7-O7): and each required block the adapter reads empty (Oracle's Skills).
+      requiredEmpty: requiredLeftOf(this.scanNow(), this.leftRequired()) + account + this.requiredBlocksNow().length,
+      noAi, legalGuess, attentionLeft, entriesLeft: this.addsLeft };
   }
+
+  // ── jr7 ENGINE-7 E1 item 10 (jr7-O7) ──
+  /** The required blocks of the form that hold no control and no entry yet, as the adapter reads them now
+   *  (Adapter.requiredBlocksLeft: Oracle's required Skills list with no tile, snapshot7 oraclecloud1), each still in
+   *  the page; none where it declares none, or where its hook throws. Submit mode Auto holds for each
+   *  ('submit-held-required'), the agent ending needs-you required_field_empty before any Submit, and the review shows
+   *  a row for each (requiredBlockRow). */
+  private requiredBlocksNow(): Element[] {
+    const adapter = this.env.page.adapter;
+    if (adapter.requiredBlocksLeft === undefined) return [];
+    try {
+      return adapter.requiredBlocksLeft(this.rootNow()).filter((block) => block.isConnected);
+    } catch {
+      return [];
+    }
+  }
+  // ── end jr7 ENGINE-7 E1 item 10 ──
 
   /** The audit of 2026-11-06: whether the step holds a challenge the person must answer, which holds Next, Submit mode
    *  Auto and the agent as an unsolved CAPTCHA does: one anywhere on the page, not known solved, or a frame that reads
@@ -2712,7 +2734,10 @@ export class FillRun {
 
   /** The keys of the step's rows on required fields still empty (v4: shared/report.ts notFilled, whoever's they are). */
   private leftRequired(): string[] {
-    return this.rows.filter((row) => row.required && notFilled(row)).map((row) => row.key);
+    // jr7 ENGINE-7 E1 item 10 (jr7-O7): a required block's row is no field's: the blocks are counted as the adapter
+    // reads them now (requiredBlocksNow), never by a row of an earlier read.
+    return this.rows.filter((row) => row.required && notFilled(row) && row.section !== REQUIRED_BLOCKS_SECTION_KEY)
+      .map((row) => row.key);
   }
 
   /** The errors one more pass could address: on a field no pass of this step planned (it showed after the loop), or
@@ -3560,3 +3585,31 @@ export class FillRun {
     if (bots > 0) this.notices.add('bot-check', bots);
   }
 }
+
+// ── jr7 ENGINE-7 E1 item 10 (jr7-O7) ──
+/** The section a required block's row is keyed in: the blocks' own, apart from every field's. */
+const REQUIRED_BLOCKS_SECTION = { id: 'required-blocks' } as const;
+/** Its section key, as a row carries it. */
+const REQUIRED_BLOCKS_SECTION_KEY = sectionKey(REQUIRED_BLOCKS_SECTION);
+
+/** A required block's title as the page shows it: its aria-label, else its first heading's text, else its
+ *  visible text, on one line (at most TEXT_CAP_LABEL characters); '' where it shows none. Page text only. */
+function blockTitleOf(block: Element): string {
+  const named = (block.getAttribute('aria-label') ?? '').replace(/\s+/g, ' ').trim();
+  if (named !== '') return named.slice(0, TEXT_CAP_LABEL);
+  const heading = block.querySelector('h1, h2, h3, h4, h5, h6, legend, [role="heading" i]');
+  return visibleText(heading ?? block, { singleLine: true, cap: TEXT_CAP_LABEL }).trim();
+}
+
+/** The review's row for a required block left empty (requiredBlocksNow): flagged, the person's (needs-your-click: the
+ *  run presses no Add), required, labelled "<block>: add at least one" (PAGE_COPY.requiredBlockLeft). */
+function requiredBlockRow(block: Element, ordinal: number, platform: Platform): FillResult {
+  const title = blockTitleOf(block);
+  const slug = labelSlug({ label: title, kind: 'multiselect', nameAttr: '', idAttr: '' });
+  return { key: fieldKey({ platform, section: REQUIRED_BLOCKS_SECTION, labelSlug: slug, ordinal,
+    optionSetHash: OPTION_SET_NONE }), label: PAGE_COPY.requiredBlockLeft(title === '' ? PAGE_COPY.report.untitledSection
+    : title), kind: 'multiselect', category: 'unknown', section: REQUIRED_BLOCKS_SECTION_KEY, required: true,
+  status: 'flagged', provenance: null, matcherStage: 'not-applicable', confidence: 0, reason: 'needs-your-click',
+  wrote: false, verification: 'not-applicable', needsUserAction: true };
+}
+// ── end jr7 ENGINE-7 E1 item 10 ──

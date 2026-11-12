@@ -1,16 +1,22 @@
 /*
- * jr7 ENGINE-7 E1 (FIX7PLAN §6.2), the content half: item 8 (UP7-04, as its verifier corrected it). A declared sign-in
+ * jr7 ENGINE-7 E1 (FIX7PLAN §6.2), the content half. Item 10 (jr7-O7) at the end. Item 8 (UP7-04, as its verifier
+ * corrected it). A declared sign-in
  * container's account term may be a declared ARIA checkbox (UltiPro's Register privacy box, a ukg-checkbox[role=checkbox]
  * with no native input, snapshot7 ultipro1): signInRefusal takes it inside the container, Sign-in Auto clicks it while
  * it says aria-checked="false" (in container mode, an email gate, only where the page marks it required: any other is
  * the run's plan's, per the Consents mode) and reads "true" back before the press. A synthetic page of the framework's
  * own markup; every value synthetic.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { genericAdapter } from '../adapters/generic';
+import { greenhouseAdapter } from '../adapters/greenhouse';
 import type { Adapter } from '../adapters/types';
+import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
 import { signInContainerOf, signInRefusal } from '../dom/sign-in-form';
+import { deadline } from '../dom/time';
+import { createFakeWorker, testVocab } from './content.testkit';
+import { startContentRuntime, type ContentRuntime } from './runtime';
 import { signIn, type SignInContext } from './sign-in';
 
 afterEach(() => removeFixtures(document));
@@ -105,5 +111,69 @@ describe('item 8 (UP7-04): a declared ARIA checkbox among a sign-in container\'s
     const fixture = await loadFixture(document, registerPage(), { width: 1100, height: 900 });
     const declared = signInContainerOf(register, fixture.doc)!;
     expect(signInRefusal({ ...declared, container: undefined }, new URL(HREF))).toBe('shape');
+  });
+});
+
+// ── item 10 (jr7-O7): a required block with no entry holds Submit Auto, and the review shows its row ────────────────
+describe('item 10 (jr7-O7): a required block the adapter reads empty', () => {
+  const GREENHOUSE = 'https://job-boards.greenhouse.io/tailoritfixture/jobs/4401';
+  /** A final step (its names, which the profile fills, and its Submit) with a required Skills block as Oracle draws it
+   *  (snapshot7 oraclecloud1): a heading, no control, only an Add button no run presses; `tiles` entries in it. */
+  const page = (tiles: number) => `<!doctype html><html><head><title>Apply</title></head><body><main>
+    <form id="application-form">
+      <div><label for="first_name">First Name</label><input id="first_name" name="first_name" type="text" required></div>
+      <div><label for="last_name">Last Name</label><input id="last_name" name="last_name" type="text" required></div>
+      <section class="skills-block"><h3>Skills</h3><div class="list">${'<article class="tile">A skill</article>'.repeat(tiles)}</div>
+        <button type="button" class="add-skill">Add More Skills</button></section>
+      <button id="submit" type="submit">Submit application</button>
+    </form></main>
+    <script>
+      window.submitted = 0;
+      document.getElementById('application-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        window.submitted += 1;
+      });
+    </script></body></html>`;
+  /** The adapter ORACLE-7 declares, on a page Greenhouse's adapter reads: each shown Skills block with no entry. */
+  const adapter: Adapter = { ...greenhouseAdapter,
+    detect: (doc) => {
+      const formRoot = doc.getElementById('application-form');
+      return formRoot === null ? null : { formRoot };
+    },
+    submitButton: (root) => root.ownerDocument.getElementById('submit'),
+    isFinalStep: () => 'final',
+    neverPress: (root) => [...root.ownerDocument.querySelectorAll('.add-skill')],
+    requiredBlocksLeft: (root) => [...root.querySelectorAll('.skills-block')].filter((block) => block.querySelector('.tile') === null) };
+  const auto = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, submit: 'auto' as const } };
+  const runtimes: ContentRuntime[] = [];
+  afterEach(() => {
+    for (const runtime of runtimes.splice(0)) runtime.stop();
+  });
+  async function start(tiles: number, href: string) {
+    const fixture = await loadFixture(document, page(tiles), { width: 1100, height: 1200 });
+    const worker = createFakeWorker({ settings: auto });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => href, isTop: true,
+      adapters: () => [adapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    return { fixture, worker, runtime };
+  }
+  const submitted = (fixture: Fixture) => (fixture.view as unknown as { submitted?: number }).submitted ?? 0;
+
+  it('holds Submit Auto and shows "<block>: add at least one"; with an entry in it, Submit is pressed', async () => {
+    testVocab();
+    const held = await start(0, GREENHOUSE);
+    expect(await held.runtime.fill()).toBe('review');
+    await deadline(300);
+    expect(submitted(held.fixture)).toBe(0);
+    const report = held.worker.reports.at(-1)!;
+    expect(report.notices).toContainEqual({ code: 'submit-held-required', count: 1 });
+    expect(report.fields.filter((row) => row.label === 'Skills: add at least one')
+      .map((row) => [row.status, row.required, row.needsUserAction])).toEqual([['flagged', true, true]]);
+    expect(held.worker.of('submit/armed')).toEqual([]);
+    removeFixtures(document);
+    const done = await start(1, `${GREENHOUSE}2`);
+    expect(await done.runtime.fill()).toBe('review');
+    await vi.waitFor(() => expect(submitted(done.fixture)).toBe(1));
+    expect(done.worker.reports.at(-1)!.fields.some((row) => row.label.endsWith(': add at least one'))).toBe(false);
   });
 });
