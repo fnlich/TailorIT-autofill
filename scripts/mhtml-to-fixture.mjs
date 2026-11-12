@@ -188,7 +188,7 @@
 // @<attribute> names a posting copy's attribute (POSTING_COPY_ATTRIBUTES) on those elements; any other is refused.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, URLSearchParams } from 'node:url';
 import { TextDecoder } from 'node:util';
 import { chromium } from 'playwright';
 import { paint } from './proc.mjs';
@@ -2559,7 +2559,8 @@ export function redactWorkdayInPage(input) {
  *   redact: string[]; email: string; notEmail: string; phone: string;
  *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; redacted: string;
  *   postingPlaces?: string; respelled?: Array<{ index: number; source: string }>; listRows?: string;
- *   postingCopies?: Array<{ attribute: string; title: string[]; description: string[] }> }} input
+ *   postingCopies?: Array<{ attribute: string; title: string[]; description: string[] }>;
+ *   frameSrc?: Array<{ selector: string; url: string }> }} input
  */
 export function transformInPage(input) {
   const doc = globalThis.document;
@@ -2756,24 +2757,56 @@ export function transformInPage(input) {
   // address the archive lacks stays, and the final check refuses the request it makes.
   /** @type {string[]} */
   const linkedFrames = [];
+  // jr7 TOOLING-7 (RBP7-V2 a): --frame-src gives a frame the capture saved unloaded (no web address) the public vendor
+  // address its selector names, served by the third-party stand-in; one that names a frame with an address of its own
+  // changes nothing and is counted, so the conversion refuses it. `given[n]`, `refused[n]`: per entry.
+  const frameSrc = input.frameSrc ?? [];
+  const given = frameSrc.map(() => 0);
+  const refused = frameSrc.map(() => 0);
+  /** The --frame-src entry a frame matches, by position, or -1. @param {Element} frame */
+  const entryOf = (frame) => frameSrc.findIndex(({ selector }) => {
+    try {
+      return frame.matches(selector);
+    } catch {
+      return false;
+    }
+  });
+  /** Gives an unloaded frame its entry's address; answers whether it did. @param {Element} frame */
+  const giveAddress = (frame) => {
+    const at = entryOf(frame);
+    const url = frameSrc[at]?.url;
+    if (url === undefined) return false;
+    frame.setAttribute('src', url);
+    linkedFrames.push(url);
+    given[at] = (given[at] ?? 0) + 1;
+    return true;
+  };
   for (const frame of doc.querySelectorAll('iframe[src], frame[src]')) {
     const src = frame.getAttribute('src') ?? '';
     if (!src.startsWith('cid:')) {
       if (!/^https?:/i.test(src.trim())) {
+        if (giveAddress(frame)) continue;
         frame.removeAttribute('src');
         counts.framesDropped += 1;
+      } else if (entryOf(frame) >= 0) {
+        refused[entryOf(frame)] = (refused[entryOf(frame)] ?? 0) + 1;
       }
       continue;
     }
     const url = frameUrls[src] ?? null;
     if (url) {
+      if (entryOf(frame) >= 0) refused[entryOf(frame)] = (refused[entryOf(frame)] ?? 0) + 1;
       frame.setAttribute('src', url);
       linkedFrames.push(url);
       counts.frames += 1;
-    } else {
+    } else if (!giveAddress(frame)) {
       frame.removeAttribute('src');
       counts.framesDropped += 1;
     }
+  }
+  // jr7 TOOLING-7 (RBP7-V2 a): a frame saved with no address at all.
+  for (const frame of frameSrc.length > 0 ? doc.querySelectorAll('iframe:not([src]), frame:not([src])') : []) {
+    giveAddress(frame);
   }
 
   // Forms never reach the site: the e2e harness records any request to /__submitted as a failure.
@@ -3084,7 +3117,7 @@ export function transformInPage(input) {
   }
 
   return { counts, found: [...found], tokens: [...tokens].map(([token, where]) => ({ token, where })), notes,
-    linkedFrames };
+    linkedFrames, frameSrc: { given, refused } };
 }
 
 /**
@@ -4488,16 +4521,23 @@ const commentJson = (value) => JSON.stringify(value).replace(/--/g, '-\\u002d');
  * jr7 TOOLING-7 (JDEF-V1): `styleOrder` (--style-order archive|live; default STYLE_ORDER_DEFAULTS[platform], else
  * archive): with live, the cid: sheets Blink hoisted go after the head's own linked sheets before anything is measured
  * (liveStyleOrderInPage); the header records styleOrder and the sheets moved.
+ * jr7 TOOLING-7 (RBP7-V2 a): `frameSrc` (--frame-src <css>=<https address>, repeatable) gives each frame the capture
+ * saved unloaded (no web address) that the selector names the public vendor address, served by the third-party
+ * stand-in (readFrameSrcOption checks the address: https, a third party's, no credentials, no site key); an entry that
+ * names no such frame, or names a frame with an address of its own, is refused.
  * @param {{ file: string; platform: string; caseName: string; redact?: string[]; outDir?: string; folderName?: string;
- *   replaceText?: Array<{ selector: string; text: string }>; keepApplication?: string; styleOrder?: string }} options
+ *   replaceText?: Array<{ selector: string; text: string }>; keepApplication?: string; styleOrder?: string;
+ *   frameSrc?: Array<{ selector: string; url: string }> }} options
  * @returns {Promise<Conversion>}
  */
 export async function convertMhtml({ file, platform, caseName, redact = [], outDir = join(ROOT, 'fixtures'),
-  folderName = platform, replaceText = [], keepApplication, styleOrder: styleOrderOption }) {
+  folderName = platform, replaceText = [], keepApplication, styleOrder: styleOrderOption, frameSrc = [] }) {
   if (!FIXTURE_PLATFORMS.includes(platform)) fail(`--platform must be one of ${FIXTURE_PLATFORMS.join(', ')}`);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(caseName)) fail('--case must be lower-case words joined by hyphens');
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(folderName)) fail('--folder must be lower-case words joined by hyphens');
   if (!/\.mht(?:ml)?$/i.test(file)) fail('the capture must be an .mhtml file');
+  // jr7 TOOLING-7 (RBP7-V2 a): each --frame-src entry's address is a third party's public one.
+  for (const [index, { selector, url }] of frameSrc.entries()) readFrameSrcOption(`${selector}=${url}`, index + 1);
   // jr7 TOOLING-7 (JDEF-V1): the style order kept, given or the platform's default.
   const styleOrder = styleOrderOption
     ?? /** @type {Record<string, string>} */ (STYLE_ORDER_DEFAULTS)[platform] ?? 'archive';
@@ -4619,6 +4659,11 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     // jr7 TOOLING-7 (T7-01): each frame's canvases stood in by the box they draw with scripting on (standInCanvasesInPage).
     /** @type {number[]} */
     const canvases = [];
+    // jr7 TOOLING-7 (RBP7-V2 a): the frames each --frame-src entry gave an address, and those it would not.
+    /** @type {number[]} */
+    const framesGiven = frameSrc.map(() => 0);
+    /** @type {number[]} */
+    const framesRefused = frameSrc.map(() => 0);
     // jr7 TOOLING-7 (JDEF-V1): the cid: sheets each frame's live style order moved (liveStyleOrderInPage).
     /** @type {number[]} */
     const restyled = [];
@@ -4680,7 +4725,12 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, ownArg) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
         ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', '), respelled, listRows: LIST_ROWS.join(', '),
-        postingCopies: POSTING_COPY_ATTRIBUTES });
+        postingCopies: POSTING_COPY_ATTRIBUTES, frameSrc });
+      // jr7 TOOLING-7 (RBP7-V2 a): what each --frame-src entry did in this frame.
+      for (const [at] of frameSrc.entries()) {
+        framesGiven[at] = (framesGiven[at] ?? 0) + (outcome.frameSrc.given[at] ?? 0);
+        framesRefused[at] = (framesRefused[at] ?? 0) + (outcome.frameSrc.refused[at] ?? 0);
+      }
       const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, ownArg) : null;
       const ownCounts = ownBefore ?? ownAfter;
       // jr6 round 2: a typed query's results lose their words, and every row whose words went loses what names it.
@@ -4787,7 +4837,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         inlined: { stylesheets: counts.stylesheets, images: counts.images, placeholders: counts.placeholders,
           missing: counts.missing },
         ...(pruned === null ? {} : { pruned: { rulesKept: pruned.kept, rulesDropped: pruned.dropped } }),
-        frames: { linked: counts.frames, blanked: counts.framesDropped },
+        frames: { linked: counts.frames, blanked: counts.framesDropped,
+          // jr7 TOOLING-7 (RBP7-V2 a): the unloaded frames --frame-src gave their public address.
+          ...(outcome.frameSrc.given.some((count) => count > 0)
+            ? { given: outcome.frameSrc.given.reduce((sum, count) => sum + count, 0) } : {}) },
         forms: counts.forms,
         ...(normalised === null ? {} : { normalised: { renderIds: normalised.renderIds.length, nonces: normalised.nonces } }),
         // The open shadow roots kept, written as declarative ones (SHADOW_ROOT_PLATFORMS).
@@ -4898,6 +4951,11 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         reasons.push(`${basename(output.path)}: ${label}`);
       }
     }
+    // jr7 TOOLING-7 (RBP7-V2 a): each --frame-src entry gave a frame the capture saved unloaded, and no other.
+    for (const [at] of frameSrc.entries()) {
+      if ((framesRefused[at] ?? 0) > 0) reasons.push(`--frame-src #${at + 1} names a frame with an address of its own`);
+      else if ((framesGiven[at] ?? 0) === 0) reasons.push(`--frame-src #${at + 1} names no frame the capture saved unloaded`);
+    }
     // jr7 TOOLING-7 (jr7-O5): --keep-application must name a tile the page shows.
     if (keepApplication !== undefined && !Object.values(result.counts).some((each) => (each.keptApplications ?? 0) > 0)) {
       reasons.push('--keep-application names no My Applications tile of the page (a.cs-job-info__title to /job/<id>)');
@@ -4949,6 +5007,34 @@ export function readReplaceOption(value, position) {
   return { selector, file };
 }
 
+/**
+ * jr7 TOOLING-7 (RBP7-V2 a): a --frame-src value, <css>=<https address>, split where its address starts (the last
+ * "=https://"; a selector and an address may both hold "="). The address must be an absolute https one on no host the
+ * extension runs on (a third party's: reCAPTCHA's anchor, say), with no credentials and no site key (k=, sitekey=,
+ * render=): a public vendor path only, as a live page's frame element names it before it loads.
+ * @param {string} value @param {number} position @returns {{ selector: string; url: string }}
+ */
+export function readFrameSrcOption(value, position) {
+  const at = value.lastIndexOf('=https://');
+  const selector = at < 0 ? '' : value.slice(0, at).trim();
+  const url = at < 0 ? '' : value.slice(at + 1).trim();
+  if (selector === '' || url === '') fail(`--frame-src #${position} must be <css>=<https address>`);
+  /** @type {URL} */
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return fail(`--frame-src #${position} is no address`);
+  }
+  if (parsed.username !== '' || parsed.password !== '') fail(`--frame-src #${position} holds credentials`);
+  if (onAtsHost(url)) fail(`--frame-src #${position} names a host the extension runs on, not a third party's`);
+  if ([...parsed.searchParams.keys(), ...new URLSearchParams(parsed.hash.slice(1)).keys()]
+    .some((key) => ['k', 'sitekey', 'render'].includes(key.toLowerCase()))) {
+    fail(`--frame-src #${position} holds a site key (k=, sitekey=, render=)`);
+  }
+  return { selector, url };
+}
+
 /** @param {string[]} argv */
 function parseArgs(argv) {
   /** @type {Record<string, string>} */
@@ -4957,13 +5043,16 @@ function parseArgs(argv) {
   const positional = [];
   /** @type {Array<{ selector: string; file: string }>} */
   const replaceText = [];
+  /** @type {Array<{ selector: string; url: string }>} */
+  const frameSrc = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? '';
-    if (['--platform', '--case', '--redact', '--out', '--folder', '--replace-text', '--keep-application', '--style-order']
-      .includes(arg)) {
+    if (['--platform', '--case', '--redact', '--out', '--folder', '--replace-text', '--keep-application', '--style-order',
+      '--frame-src'].includes(arg)) {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) fail(`${arg} needs a value`);
       if (arg === '--replace-text') replaceText.push(readReplaceOption(value, replaceText.length + 1));
+      else if (arg === '--frame-src') frameSrc.push(readFrameSrcOption(value, frameSrc.length + 1));
       else options[arg.slice(2)] = value;
       index += 1;
     } else if (arg.startsWith('--')) {
@@ -4977,13 +5066,13 @@ function parseArgs(argv) {
   }
   return { file: positional[0] ?? '', platform: options.platform, caseName: options.case, redactFile: options.redact,
     outDir: options.out ? resolve(options.out) : join(ROOT, 'fixtures'), folderName: options.folder ?? options.platform,
-    replaceText, keepApplication: options['keep-application'], styleOrder: options['style-order'] };
+    replaceText, keepApplication: options['keep-application'], styleOrder: options['style-order'], frameSrc };
 }
 
 async function main() {
   try {
     const { file, platform, caseName, redactFile, outDir, folderName, replaceText: replaceFiles, keepApplication,
-      styleOrder } = parseArgs(process.argv.slice(2));
+      styleOrder, frameSrc } = parseArgs(process.argv.slice(2));
     if (!existsSync(file)) fail(`${file} does not exist`);
     if (redactFile !== undefined && !existsSync(redactFile)) fail(`${redactFile} does not exist`);
     const redact = redactFile === undefined ? [] : readRedactList(readFileSync(redactFile, 'utf8'));
@@ -4992,7 +5081,7 @@ async function main() {
       return { selector, text: readFileSync(textFile, 'utf8') };
     });
     const conversion = await convertMhtml({ file, platform, caseName, redact, outDir, folderName, replaceText,
-      keepApplication, styleOrder });
+      keepApplication, styleOrder, frameSrc });
     const written = writeConversion(conversion, join(outDir, folderName), caseName);
     console.log(paint('green', `✓ ${basename(file)} -> ${platform}/${caseName} (Chromium ${conversion.chrome})`));
     for (const path of written) {

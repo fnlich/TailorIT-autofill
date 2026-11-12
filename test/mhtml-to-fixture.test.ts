@@ -113,6 +113,7 @@ import {
   POSTING_COPY_ATTRIBUTES,
   ROW_ID_WORDS_KEPT,
   // ── jr7 TOOLING-7 ──
+  readFrameSrcOption,
   STYLE_ORDER_DEFAULTS,
   OPENED_ROWS,
   CHOSEN_ICONS,
@@ -4623,6 +4624,49 @@ document.head.appendChild(s);</script></body></html>` });
       await expect(convertMhtml({ file, platform: 'jobdiva', caseName: 'jr7-jdefv1-bad', outDir: work, styleOrder: 'page' }))
         .rejects.toThrow('--style-order must be one of archive, live');
       expect(STYLE_ORDER_DEFAULTS).toEqual({ jobdiva: 'live' });
+    }, 120_000);
+
+  it("RBP7-V2(a): --frame-src gives a frame the capture saved unloaded its public vendor address, a third party's stand-in",
+    async () => {
+      // bamboohr1-blank's shape (SP\jr7\audit\rippling-bamboohr-pinpoint-verify.md RBP7-V2): the reCAPTCHA anchor's part
+      // has no Content-Location and an empty document, so the fixture's frame has no address.
+      const page = 'https://acme.bamboohr.com/careers/1';
+      const anchor = 'https://www.google.com/recaptcha/api2/anchor?ar=1&hl=en&size=normal&cb=fixture';
+      const other = 'https://www.google.com/recaptcha/api2/bframe?hl=en';
+      const file = join(work, 'jr7-v2a.mhtml');
+      writeFileSync(file, mhtml(page, [
+        { type: 'text/html', id: 'frame-MAIN@mhtml.blink', location: page, body: `<!DOCTYPE html><html><head><title>Apply</title></head>
+<body><form><label for="first">First name</label><input id="first">
+<div class="g-recaptcha"><iframe title="reCAPTCHA" src="cid:frame-ANCHOR@mhtml.blink" width="304" height="78"></iframe>
+<textarea name="g-recaptcha-response" style="display: none"></textarea></div>
+<iframe title="recaptcha challenge" src="cid:frame-CHALLENGE@mhtml.blink" width="10" height="10"></iframe></form></body></html>` },
+        { type: 'text/html', id: 'frame-ANCHOR@mhtml.blink', body: '<html><head></head><body></body></html>' },
+        { type: 'text/html', id: 'frame-CHALLENGE@mhtml.blink', location: other, body: '<html><body>A challenge</body></html>' },
+      ]));
+      const plain = await convertMhtml({ file, platform: 'bamboohr', caseName: 'jr7-v2a', outDir: work });
+      expect(plain.files[0]?.text).toContain('<iframe title="reCAPTCHA" width="304" height="78"></iframe>');
+      expect(headerOf(plain.files[0]?.text ?? '').frames).toEqual({ linked: 1, blanked: 1 });
+      const given = await convertMhtml({ file, platform: 'bamboohr', caseName: 'jr7-v2a', outDir: work,
+        frameSrc: [readFrameSrcOption(`iframe[title="reCAPTCHA"]=${anchor}`, 1)] });
+      const text = given.files[0]?.text ?? '';
+      expect(text).toContain(`<iframe title="reCAPTCHA" src="${anchor.replace(/&/g, '&amp;')}" width="304" height="78"></iframe>`);
+      expect(headerOf(text).frames).toEqual({ linked: 1, blanked: 0, given: 1 });
+      // The route map answers it with the third-party stand-in, as the captured challenge frame's.
+      const standIn = given.files.find((output) => output.path.endsWith('jr7-v2a.third-party-frame.html'))?.path.split('\\').join('/');
+      expect(given.routes[anchor]).toBe(standIn);
+      expect(given.routes[other]).toBe(standIn);
+      // Refused: an entry that names no unloaded frame, or a frame with an address of its own; an address that is no
+      // third party's public one.
+      await expect(convertMhtml({ file, platform: 'bamboohr', caseName: 'jr7-v2a', outDir: work,
+        frameSrc: [{ selector: 'iframe[title="Nothing"]', url: anchor }] }))
+        .rejects.toThrow('--frame-src #1 names no frame the capture saved unloaded');
+      await expect(convertMhtml({ file, platform: 'bamboohr', caseName: 'jr7-v2a', outDir: work,
+        frameSrc: [{ selector: 'iframe', url: anchor }] })).rejects.toThrow('--frame-src #1 names a frame with an address of its own');
+      expect(() => readFrameSrcOption(`iframe=${anchor}&k=6LcFixtureKey`, 2)).toThrow('--frame-src #2 holds a site key');
+      expect(() => readFrameSrcOption('iframe=https://acme.bamboohr.com/careers/2', 1)).toThrow('names a host the extension runs on');
+      expect(() => readFrameSrcOption('iframe=https://user:pw@www.google.com/recaptcha/api2/anchor', 1)).toThrow('holds credentials');
+      expect(() => readFrameSrcOption('iframe=http://www.google.com/recaptcha/api2/anchor', 1)).toThrow('must be <css>=<https address>');
+      expect(readFrameSrcOption(`iframe[title="reCAPTCHA"]=${anchor}`, 1)).toEqual({ selector: 'iframe[title="reCAPTCHA"]', url: anchor });
     }, 120_000);
 
   it("every committed fixture: no widget's shown text spelled in an id (T7-01, spelledIdsIn)", () => {
