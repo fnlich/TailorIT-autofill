@@ -3186,13 +3186,16 @@ export function serializeDeepInPage() {
 /**
  * The per-platform redactions (see the header), after transformInPage: each named element's text becomes REDACTED (its
  * box kept), and a chosen answer the page draws on a button or a custom element is unchosen. Answers counts (never
- * values) to add to the frame's own.
- * @param {{ platform: string; redacted: string }} input
- * @returns {{ widgetText: number; checked: number; typedValues: number; placeholders: number }}
+ * values) to add to the frame's own. jr7 TOOLING-7 (jr7-O5): Oracle's profile tiles and its My Applications tiles
+ * (`keepApplication`: the captured posting's job id, whose tile stays), counted in `applications` (tiles redacted) and
+ * `keptApplications`.
+ * @param {{ platform: string; redacted: string; keepApplication?: string }} input
+ * @returns {{ widgetText: number; checked: number; typedValues: number; placeholders: number; applications: number;
+ *   keptApplications: number }}
  */
 export function redactPlatformInPage(input) {
   const doc = globalThis.document;
-  const counts = { widgetText: 0, checked: 0, typedValues: 0, placeholders: 0 };
+  const counts = { widgetText: 0, checked: 0, typedValues: 0, placeholders: 0, applications: 0, keptApplications: 0 };
   /** Every non-blank text node inside `element` becomes REDACTED. @param {Element} element */
   const redactText = (element) => {
     const walker = doc.createTreeWalker(element, 4 /* NodeFilter.SHOW_TEXT */);
@@ -3223,6 +3226,53 @@ export function redactPlatformInPage(input) {
       }
       pill.setAttribute('aria-checked', 'false');
       pill.classList.remove('cx-select-pill-section--selected');
+    }
+    // jr7 TOOLING-7 (jr7-O5; SP\jr7\audit\oracle.md, snapshot7 oraclecloud1's step 1 filled, captures 4 to 8): the newer
+    // layout's profile tiles, <article class="apply-flow-profile-item-tile"><div class="apply-flow-profile-item-tile__summary"
+    // aria-label="<the entry's words>"><div class="...__summary-content"><div class="...__summary-title"><span>TITLE</span>
+    // </div><div class="...__summary-subtitle">...</div><div class="...__summary-validation">...</div></div>, each an
+    // education or work entry or a skill of the person's: the summary's and its parts' text runs and the aria-label and
+    // title of each element in them, but the tile's actions (<div class="...__actions-container">: its Edit and Delete
+    // buttons, named generically), which stay.
+    const actions = '[class*="apply-flow-profile-item-tile__actions"]';
+    for (const summary of doc.querySelectorAll('[class*="apply-flow-profile-item-tile__summary"]')) {
+      let changed = false;
+      const walker = doc.createTreeWalker(summary, 4 /* NodeFilter.SHOW_TEXT */);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.nodeValue?.trim() || node.nodeValue === input.redacted || node.parentElement?.closest(actions)) continue;
+        node.nodeValue = input.redacted;
+        changed = true;
+      }
+      for (const element of [summary, ...summary.querySelectorAll('*')]) {
+        if (element.closest(actions)) continue;
+        for (const name of ['aria-label', 'title']) {
+          if ((element.getAttribute(name) ?? '').trim() === '' || element.getAttribute(name) === input.redacted) continue;
+          element.setAttribute(name, input.redacted);
+          changed = true;
+        }
+      }
+      if (changed) counts.widgetText += 1;
+    }
+    // jr7 TOOLING-7 (jr7-O5, the verifier's addition; oraclecloud1's confirmation at <site>/my-profile): "My Applications"
+    // lists every application the person has, in its active, drafts and resolved containers (<li class="cs-application-tile">,
+    // its <a class="cs-job-info__title" href="<site>/job/<id>">): their job-search history. Every tile but the captured
+    // posting's (`keepApplication`, --keep-application <job id>: the one its title link names /job/<id>) loses its words,
+    // its labels and its links' addresses; with no job named, every tile does.
+    for (const tile of doc.querySelectorAll('.cs-application-tile')) {
+      const named = input.keepApplication === undefined ? false : [...tile.querySelectorAll('a.cs-job-info__title[href]')]
+        .some((link) => new RegExp(`/job/${input.keepApplication}(?:[/?#]|$)`).test(link.getAttribute('href') ?? ''));
+      if (named) {
+        counts.keptApplications += 1;
+        continue;
+      }
+      redactText(tile);
+      for (const element of [tile, ...tile.querySelectorAll('*')]) {
+        for (const name of ['aria-label', 'title', 'alt']) {
+          if ((element.getAttribute(name) ?? '').trim() !== '') element.setAttribute(name, input.redacted);
+        }
+        if (element.hasAttribute('href')) element.setAttribute('href', '#');
+      }
+      counts.applications += 1;
     }
   } else if (input.platform === 'smartrecruiters') {
     // [jobs.smartrecruiters.com] the one-click application: its form elements carry what was typed or chosen in their
@@ -4385,16 +4435,23 @@ const commentJson = (value) => JSON.stringify(value).replace(/--/g, '-\\u002d');
  * visibility changed. jr6: `replaceText` (--replace-text) gives each element its selector names synthetic text before
  * anything is measured (replaceTextInPage); a listed string met in the page's own text where it tells its value by
  * elimination (listedPlacesInPage), or choice rows that differ after clearing (unevenChoiceRowsInPage), are refused.
+ * jr7 TOOLING-7 (jr7-O5): `keepApplication` (--keep-application <job id>, Oracle only) names the captured posting, whose
+ * My Applications tile a my-profile page keeps (redactPlatformInPage); a page whose tiles name none of it is refused.
  * @param {{ file: string; platform: string; caseName: string; redact?: string[]; outDir?: string; folderName?: string;
- *   replaceText?: Array<{ selector: string; text: string }> }} options
+ *   replaceText?: Array<{ selector: string; text: string }>; keepApplication?: string }} options
  * @returns {Promise<Conversion>}
  */
 export async function convertMhtml({ file, platform, caseName, redact = [], outDir = join(ROOT, 'fixtures'),
-  folderName = platform, replaceText = [] }) {
+  folderName = platform, replaceText = [], keepApplication }) {
   if (!FIXTURE_PLATFORMS.includes(platform)) fail(`--platform must be one of ${FIXTURE_PLATFORMS.join(', ')}`);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(caseName)) fail('--case must be lower-case words joined by hyphens');
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(folderName)) fail('--folder must be lower-case words joined by hyphens');
   if (!/\.mht(?:ml)?$/i.test(file)) fail('the capture must be an .mhtml file');
+  // jr7 TOOLING-7 (jr7-O5): the captured posting's job id, whose My Applications tile stays (Oracle's my-profile).
+  if (keepApplication !== undefined) {
+    if (platform !== 'oracle') fail('--keep-application is for --platform oracle (its My Applications tiles) alone');
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(keepApplication)) fail('--keep-application must be a job id (letters, digits, - or _)');
+  }
   // jr6 (jobvite-new-2): each replacement names an element and the synthetic text it takes; named by position, never by
   // its selector or text, in what is printed.
   for (const [index, { selector, text }] of replaceText.entries()) {
@@ -4551,11 +4608,14 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         links: [...FILE_LINK_PLACES, ...ENTRY_SUMMARY_CONTROLS], results: SEARCH_RESULT_PLACES, redacted: REDACTED,
         spelled: SPELLED_IDS });
       for (const name of applicant.names) fileNames.add(name);
-      const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, own.arg(platform)) : null;
+      // jr7 TOOLING-7 (jr7-O5): Oracle's own pass also takes the captured posting's job id (--keep-application).
+      const ownArg = own === undefined ? null : platform === 'oracle' && keepApplication !== undefined
+        ? { .../** @type {object} */ (own.arg(platform)), keepApplication } : own.arg(platform);
+      const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, ownArg) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
         ...patterns, postingPlaces: POSTING_TEXT_PLACES.join(', '), respelled, listRows: LIST_ROWS.join(', '),
         postingCopies: POSTING_COPY_ATTRIBUTES });
-      const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, own.arg(platform)) : null;
+      const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, ownArg) : null;
       const ownCounts = ownBefore ?? ownAfter;
       // jr6 round 2: a typed query's results lose their words, and every row whose words went loses what names it.
       const rowNames = await frame.evaluate(redactListRowsInPage, { redacted: REDACTED, fixed: FIXED_ROWS,
@@ -4563,7 +4623,9 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         idData: ROW_ID_DATA_SOURCE, references: ID_REFERENCES, wordsKept: ROW_ID_WORDS_KEPT });
       if (own?.counts === 'frame' && ownCounts !== null) {
         for (const [key, count] of Object.entries(ownCounts)) {
-          outcome.counts[/** @type {keyof typeof outcome.counts} */ (key)] += count;
+          // jr7 TOOLING-7 (jr7-O5): a count of the platform's own (Oracle's applications) starts at 0.
+          const counted = /** @type {Record<string, number>} */ (outcome.counts);
+          counted[key] = (counted[key] ?? 0) + count;
         }
       }
       // jr6 (jobvite-new-2): a listed string met in the page's own text where a REDACTED tells it by elimination; (JV-10)
@@ -4646,7 +4708,13 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
           ...(signInTokens.length > 0 ? { signInTokens: signInTokens.length } : {}),
           // jr6 fixes (PRIV-4): the referral parameters' values redacted in the frame's text (only when there was one).
           ...(referred.count > 0 ? { referral: referred.count } : {}),
-          ...(own?.counts === 'header' && ownCounts !== null ? { [platform]: ownCounts } : {}) },
+          ...(own?.counts === 'header' && ownCounts !== null ? { [platform]: ownCounts } : {}),
+          // jr7 TOOLING-7 (jr7-O5): Oracle's My Applications tiles redacted, and the captured posting's kept (each only
+          // when there was one).
+          ...(((/** @type {Record<string, number>} */ (counts)).applications ?? 0) > 0
+            ? { applications: /** @type {Record<string, number>} */ (counts).applications } : {}),
+          ...(((/** @type {Record<string, number>} */ (counts)).keptApplications ?? 0) > 0
+            ? { keptApplications: /** @type {Record<string, number>} */ (counts).keptApplications } : {}) },
         removed: { scripts: counts.scripts, eventHandlers: counts.eventHandlers, javascriptUrls: counts.javascriptUrls,
           bases: counts.bases, metaRefresh: counts.metaRefresh, metaHttpEquiv: counts.metaHttpEquiv,
           embeds: counts.embeds, links: counts.links, srcdoc: counts.srcdoc, ...(jrIds > 0 ? { jrIds } : {}) },
@@ -4762,6 +4830,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         reasons.push(`${basename(output.path)}: ${label}`);
       }
     }
+    // jr7 TOOLING-7 (jr7-O5): --keep-application must name a tile the page shows.
+    if (keepApplication !== undefined && !Object.values(result.counts).some((each) => (each.keptApplications ?? 0) > 0)) {
+      reasons.push('--keep-application names no My Applications tile of the page (a.cs-job-info__title to /job/<id>)');
+    }
     if (reasons.length > 0) throw new ConversionError(reasons);
     return result;
   } finally {
@@ -4819,7 +4891,7 @@ function parseArgs(argv) {
   const replaceText = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? '';
-    if (['--platform', '--case', '--redact', '--out', '--folder', '--replace-text'].includes(arg)) {
+    if (['--platform', '--case', '--redact', '--out', '--folder', '--replace-text', '--keep-application'].includes(arg)) {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) fail(`${arg} needs a value`);
       if (arg === '--replace-text') replaceText.push(readReplaceOption(value, replaceText.length + 1));
@@ -4836,12 +4908,12 @@ function parseArgs(argv) {
   }
   return { file: positional[0] ?? '', platform: options.platform, caseName: options.case, redactFile: options.redact,
     outDir: options.out ? resolve(options.out) : join(ROOT, 'fixtures'), folderName: options.folder ?? options.platform,
-    replaceText };
+    replaceText, keepApplication: options['keep-application'] };
 }
 
 async function main() {
   try {
-    const { file, platform, caseName, redactFile, outDir, folderName, replaceText: replaceFiles } =
+    const { file, platform, caseName, redactFile, outDir, folderName, replaceText: replaceFiles, keepApplication } =
       parseArgs(process.argv.slice(2));
     if (!existsSync(file)) fail(`${file} does not exist`);
     if (redactFile !== undefined && !existsSync(redactFile)) fail(`${redactFile} does not exist`);
@@ -4850,7 +4922,8 @@ async function main() {
       if (!existsSync(textFile)) fail(`--replace-text #${index + 1}: its file does not exist`);
       return { selector, text: readFileSync(textFile, 'utf8') };
     });
-    const conversion = await convertMhtml({ file, platform, caseName, redact, outDir, folderName, replaceText });
+    const conversion = await convertMhtml({ file, platform, caseName, redact, outDir, folderName, replaceText,
+      keepApplication });
     const written = writeConversion(conversion, join(outDir, folderName), caseName);
     console.log(paint('green', `✓ ${basename(file)} -> ${platform}/${caseName} (Chromium ${conversion.chrome})`));
     for (const path of written) {

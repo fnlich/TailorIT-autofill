@@ -4502,6 +4502,67 @@ ${row(0, '', ' State University')}${row(1, 'Old ', ' College')}${row(2, 'North '
       expect(OPENED_ROWS).toEqual([{ selector: '.collapse[data-bind*="isHispanic()"]', className: 'in' }]);
     }, 60_000);
 
+  it("jr7-O5: Oracle's profile tile summaries, their words and labels, the tile's own Edit and Delete kept", async () => {
+    const tile = (title: string, subtitle: string) => `<article class="apply-flow-profile-item-tile" data-qa="tile">
+<div class="apply-flow-profile-item-tile__summary" data-profile-item-tile="" role="button" tabindex="0" aria-label="${title}, ${subtitle}">
+<div class="apply-flow-profile-item-tile__summary-content"><div class="apply-flow-profile-item-tile__summary-title"><span>${title}</span></div>
+<div class="apply-flow-profile-item-tile__summary-subtitle text-color-secondary">${subtitle}</div>
+<div class="apply-flow-profile-item-tile__summary-validation"><span title="${title} is complete">Complete</span></div></div>
+<div class="apply-flow-profile-item-tile__actions-container"><button class="apply-flow-profile-item-tile__edit-item-icon" title="Edit" aria-label="Edit"></button>
+<button class="apply-flow-profile-item-tile__delete-icon" title="Delete" aria-label="Delete"></button></div></div></article>`;
+    const { text } = await convertPage(ORACLE_APPLY, 'oracle', 'jr7-o5-tiles', `<div class="apply-flow-block apply-flow-block--skill">
+<h3 class="apply-flow-block__title">Experience</h3>${tile('Staff Engineer', 'Initech, 2019 - 2024')}${tile('Kubernetes', 'Expert')}</div>`);
+    for (const gone of ['Staff Engineer', 'Initech', '2019 - 2024', 'Kubernetes', 'Expert', 'is complete', '>Complete<']) {
+      expect(text, gone).not.toContain(gone);
+    }
+    expect(text.match(/class="apply-flow-profile-item-tile__summary"[^>]*aria-label="REDACTED"/g)).toHaveLength(2);
+    expect(text.match(/class="apply-flow-profile-item-tile__edit-item-icon" title="Edit" aria-label="Edit"/g)).toHaveLength(2);
+    expect(text.match(/class="apply-flow-profile-item-tile__delete-icon" title="Delete" aria-label="Delete"/g)).toHaveLength(2);
+    expect(text).toContain('>Experience</h3>');
+  }, 60_000);
+
+  it("jr7-O5: Oracle's My Applications keep the captured posting's tile (--keep-application) and redact the person's others",
+    async () => {
+      const site = 'https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX';
+      const tile = (job: string, title: string, status: string) => `<li class="cs-application-tile"><div class="cs-application-tile__column cs-job-info">
+<div class="cs-job-info__title-container"><a class="cs-job-info__title cs-button--link" aria-haspopup="false" href="${site}/job/${job}">${title}</a></div>
+<span class="cs-job-info__location text-color-secondary"><span>Fixture Town</span></span></div>
+<div class="cs-job-status"><span class="cs-job-status__label">Status</span><span class="cs-job-status__value" title="${status}">${status}</span></div>
+<div class="cs-job-info__metadata"><span>Submitted Date</span><span>11/11/2026</span></div></li>`;
+      const page = `<div class="cs-applications__container cs-applications__container-active"><h2 class="cs-header">Active Job Applications</h2>
+<ul class="cs-applications__list" role="list">${tile('41', 'Platform Engineer', 'Under Consideration')}${tile('42', 'Data Engineer', 'Under Consideration')}</ul></div>
+<div class="cs-applications__container cs-applications__container-drafts"><ul class="cs-applications__list">${tile('43', 'Site Engineer', 'Draft')}</ul></div>
+<div class="cs-applications__container cs-applications__container-resolved"><ul class="cs-applications__list">${tile('44', 'Cloud Engineer', 'Not Selected')}</ul></div>`;
+      const file = join(work, 'jr7-o5-profile.mhtml');
+      writeFileSync(file, mhtml(`${site}/my-profile`, [{ type: 'text/html', id: 'frame-MAIN@mhtml.blink',
+        location: `${site}/my-profile`, body: `<!DOCTYPE html><html><head><title>My Applications</title></head><body>${page}</body></html>` }]));
+      const kept = (await convertMhtml({ file, platform: 'oracle', caseName: 'jr7-o5-profile', redact: LISTED, outDir: work,
+        keepApplication: '41' })).files[0]?.text ?? '';
+      // The captured posting's tile stays whole: its link (the success sign ORACLE-7 reads), title and status.
+      expect(kept).toContain(`href="${site}/job/41">Platform Engineer</a>`);
+      expect(kept).toContain('title="Under Consideration">Under Consideration</span>');
+      // The others are the person's history: every word, label and address gone.
+      for (const gone of ['/job/42', '/job/43', '/job/44', 'Data Engineer', 'Site Engineer', 'Cloud Engineer', 'Not Selected',
+        '>Draft<']) {
+        expect(kept, gone).not.toContain(gone);
+      }
+      expect(kept.match(/<a class="cs-job-info__title cs-button--link" aria-haspopup="false" href="#">REDACTED<\/a>/g)).toHaveLength(3);
+      expect(headerOf(kept).redacted).toMatchObject({ applications: 3, keptApplications: 1 });
+      expect(kept).toContain('>Active Job Applications</h2>');
+      // With no job named, every tile goes.
+      const none = (await convertMhtml({ file, platform: 'oracle', caseName: 'jr7-o5-profile', redact: LISTED, outDir: work }))
+        .files[0]?.text ?? '';
+      expect(none).not.toContain('/job/4');
+      expect(headerOf(none).redacted.applications).toBe(4);
+      // A job id that names no tile, an id that is no id, another platform: refused.
+      await expect(convertMhtml({ file, platform: 'oracle', caseName: 'jr7-o5-profile', redact: LISTED, outDir: work,
+        keepApplication: '9' })).rejects.toThrow('--keep-application names no My Applications tile');
+      await expect(convertMhtml({ file, platform: 'oracle', caseName: 'jr7-o5-profile', outDir: work,
+        keepApplication: '4.*' })).rejects.toThrow('--keep-application must be a job id');
+      await expect(convertMhtml({ file, platform: 'workday', caseName: 'jr7-o5-profile', outDir: work,
+        keepApplication: '41' })).rejects.toThrow('--keep-application is for --platform oracle');
+    }, 120_000);
+
   it("every committed fixture: no widget's shown text spelled in an id (T7-01, spelledIdsIn)", () => {
     const files = committedFixtureFiles();
     expect(files.length).toBeGreaterThan(400);
