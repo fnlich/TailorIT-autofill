@@ -186,3 +186,30 @@ describe('the upload-prompt door (jr7 ENGINE-7)', () => {
     expect(readFileSync(join(SRC, 'content/pass.ts'), 'utf8').match(/answerUploadPrompt\(/g)).toHaveLength(1);
   });
 });
+
+// jr7 ENGINE-7 E2 item 5 (UKGR-9): the editor-opener door, held as the other doors are: defined once in not-submit.ts,
+// named by editor-opener.ts alone (which calls it once), not exported by fillers/index.ts; its wrapper, openEditors,
+// imported by content/orchestrator.ts alone. // jr7 ENGINE-7
+describe('the editor-opener door (jr7 ENGINE-7)', () => {
+  it('is named by editor-opener.ts alone, beside not-submit.ts where it is defined', () => {
+    const naming = sources(SRC).map(nameOf).filter((name) => !isTest(name))
+      .filter((name) => /\bclickEditorOpener\b/.test(readFileSync(join(SRC, name), 'utf8')));
+    expect(naming.sort()).toEqual(['dom/fillers/editor-opener.ts', 'dom/fillers/not-submit.ts']);
+    expect(readFileSync(join(SRC, 'dom/fillers/editor-opener.ts'), 'utf8').match(/clickEditorOpener\(/g)).toHaveLength(1);
+    const notSubmit = readFileSync(join(SRC, 'dom/fillers/not-submit.ts'), 'utf8');
+    expect(notSubmit.match(/\bclickEditorOpener\(/g)).toHaveLength(1);
+    expect(notSubmit).toMatch(/export function clickEditorOpener\(/);
+    expect(readFileSync(join(SRC, 'dom/fillers/index.ts'), 'utf8')).not.toMatch(/clickEditorOpener|openEditors/);
+  });
+
+  it('has its wrapper, openEditors, imported by content/orchestrator.ts alone', () => {
+    const importing = sources(SRC).map(nameOf).filter((each) => !isTest(each)).filter((each) => {
+      const text = readFileSync(join(SRC, each), 'utf8');
+      return [...text.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g)]
+        .some(([, isType, names, source]) => isType === undefined && /(^|\/)editor-opener$/.test(source!)
+          && names!.split(',').some((name) => name.trim().split(/\s+as\s+/)[0] === 'openEditors'));
+    });
+    expect(importing).toEqual(['content/orchestrator.ts']);
+    expect(readFileSync(join(SRC, 'content/orchestrator.ts'), 'utf8').match(/openEditors\(/g)).toHaveLength(1);
+  });
+});

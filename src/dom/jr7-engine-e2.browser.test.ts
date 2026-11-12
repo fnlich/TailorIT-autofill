@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { genericAdapter } from '../adapters/generic';
 import type { Adapter, UploadPromptKind } from '../adapters/types';
+import { openEditors } from './fillers/editor-opener';
 import { answerUploadPrompt } from './fillers/upload-prompt';
 import { loadFixture, removeFixtures } from './fixture.testkit';
 import { scan } from './scan';
@@ -105,5 +106,38 @@ describe('item 4 (UKGR-10, EFA-6): the upload-prompt door', () => {
   it("never presses the application's Submit, and answers none where no prompt shows", async () => {
     expect(await answer('complete', prompting('submit', 'dismiss'))).toEqual({ outcome: 'refused', pressed: {} });
     expect(await answer('complete', prompting('nowhere', 'dismiss'), false, 300)).toEqual({ outcome: 'none', pressed: {} });
+  });
+});
+
+// ── item 5 (UKGR-9): the editor-opener door ────────────────────────────────────────────────────────────────────────
+describe('item 5 (UKGR-9): the editor-opener door', () => {
+  /** UKG Ready's Contact summary (snapshot7 secure7.saashr): "Missing Information" and its Edit, which draws the
+   *  editor; beside it a Delete, and the step's Submit. Each button counts its presses. */
+  const PAGE = `<!doctype html><html><body><form id="f">
+    <section id="contact"><h3>Contact</h3><p>Missing Information</p>
+      <button type="button" id="edit">Edit</button><button type="button" id="delete">Delete</button>
+      <button type="button" id="hidden-edit" style="display:none">Edit</button></section>
+    <button type="submit" id="submit">Sign &amp; submit application</button></form>
+    <script>
+      window.presses = {};
+      for (const button of document.querySelectorAll('button')) {
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          window.presses[button.id] = (window.presses[button.id] || 0) + 1;
+        });
+      }
+    </script></body></html>`;
+  const opening = (ids: string[]): Adapter => ({ ...genericAdapter, id: 'generic',
+    detect: (doc) => ({ formRoot: doc.getElementById('f')! }),
+    submitButton: (root) => root.ownerDocument.getElementById('submit'),
+    editorOpener: (root) => ids.map((id) => root.ownerDocument.getElementById(id)!) });
+
+  it('presses each declared opener once per document, and never a Delete, a hidden one or Submit', async () => {
+    const { doc } = await loadFixture(document, PAGE);
+    const root = doc.getElementById('f')!;
+    const adapter = opening(['edit', 'delete', 'hidden-edit', 'submit']);
+    expect(openEditors(adapter, doc, root)).toBe(1);
+    expect(openEditors(adapter, doc, root)).toBe(0);
+    expect((doc.defaultView as unknown as { presses: Record<string, number> }).presses).toEqual({ edit: 1 });
   });
 });

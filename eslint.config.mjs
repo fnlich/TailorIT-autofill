@@ -98,6 +98,19 @@ const UPLOAD_PROMPT_WRAPPER_RULE = {
   message: "Only src/content/pass.ts calls upload-prompt.ts's answerUploadPrompt (the pass's write of a file).",
 };
 
+/** jr7 ENGINE-7 E2 item 5 (UKGR-9): the editor-opener door's press, named nowhere but
+ *  src/dom/fillers/editor-opener.ts, and its wrapper, openEditors, called by src/content/orchestrator.ts alone. */
+const EDITOR_OPENER_RULE = {
+  selector: "ImportSpecifier[imported.name='clickEditorOpener'], ExportSpecifier[local.name='clickEditorOpener'], "
+    + "MemberExpression[property.name='clickEditorOpener']",
+  message: "Only src/dom/fillers/editor-opener.ts presses an editor's opener.",
+};
+const EDITOR_OPENER_WRAPPER_RULE = {
+  selector: "ImportSpecifier[imported.name='openEditors'], ExportSpecifier[local.name='openEditors'], "
+    + "MemberExpression[property.name='openEditors']",
+  message: "Only src/content/orchestrator.ts calls editor-opener.ts's openEditors (a step's fill).",
+};
+
 /** Raw HTML, eval and form submission, banned everywhere in src: nothing may submit, and nothing parses markup. */
 const UNSAFE_SYNTAX = [
   SUBMIT_PRESS_RULE,
@@ -111,6 +124,8 @@ const UNSAFE_SYNTAX = [
   UPLOAD_REVEAL_WRAPPER_RULE, // jr6 revD-05
   UPLOAD_PROMPT_RULE, // jr7 ENGINE-7 E2 item 4
   UPLOAD_PROMPT_WRAPPER_RULE, // jr7 ENGINE-7 E2 item 4
+  EDITOR_OPENER_RULE, // jr7 ENGINE-7 E2 item 5
+  EDITOR_OPENER_WRAPPER_RULE, // jr7 ENGINE-7 E2 item 5
   { selector: "AssignmentExpression[left.property.name=/^(innerHTML|outerHTML)$/]", message: 'Build DOM nodes; never assign markup.' },
   { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'Build DOM nodes; never insert markup.' },
   { selector: "CallExpression[callee.object.name='document'][callee.property.name=/^write(ln)?$/]", message: 'No document.write.' },
@@ -290,13 +305,18 @@ export default tseslint.config(
   // jr6 revD-05: the one module that calls the reveal door's wrapper (content/pass.ts, a file's write).
   { files: ['src/content/pass.ts'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_REVEAL_WRAPPER_RULE && rule !== UPLOAD_PROMPT_WRAPPER_RULE)] } },
+  // jr7 ENGINE-7 E2 item 5: the one module that presses an editor's opener, and the one that calls its wrapper.
+  { files: ['src/dom/fillers/editor-opener.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== EDITOR_OPENER_RULE)] } },
+  { files: ['src/content/orchestrator.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== EDITOR_OPENER_WRAPPER_RULE)] } },
   // jr7 ENGINE-7 E2 item 4: the one module that presses an upload prompt's control (dom/fillers/upload-prompt.ts).
   { files: ['src/dom/fillers/upload-prompt.ts'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => rule !== UPLOAD_PROMPT_RULE)] } },
   // Tests drive the wrappers directly (never the doors).
   { files: ['src/**/*.test.{ts,tsx}'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, UPLOAD_REVEAL_WRAPPER_RULE,
-      UPLOAD_PROMPT_WRAPPER_RULE].includes(rule))] } }, // jr7 ENGINE-7 E2: and the upload prompt's wrapper
+      UPLOAD_PROMPT_WRAPPER_RULE, EDITOR_OPENER_WRAPPER_RULE].includes(rule))] } }, // jr7 ENGINE-7 E2: and the doors' wrappers
   // But for the one test of Sign-in mode Auto's two doors on their own (the v3 Phase 6/7b review, C2).
   { files: ['src/dom/fillers/sign-in-doors.browser.test.ts'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, UPLOAD_REVEAL_WRAPPER_RULE,

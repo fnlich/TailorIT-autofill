@@ -686,6 +686,55 @@ export function clickUploadPrompt(adapter: Adapter, doc: Document, prompt: Uploa
 const PROMPTED = new WeakSet<Element>();
 // ── end jr7 ENGINE-7 E2 item 4 ──
 
+// ── jr7 ENGINE-7 E2 item 5 (UKGR-9): the editor-opener door ──
+/** The words of a control the editor-opener door never presses: one that removes, gives up or sends. */
+const EDITOR_NEVER_WORDS = /\b(?:delete|remove|cancel|discard|submit|apply)\b/i;
+
+/**
+ * jr7 ENGINE-7: the press of a control that opens a single-entry editor the run must fill (Adapter.editorOpener: UKG
+ * Ready's Contact Edit while its summary says "Missing Information", snapshot7 secure7.saashr), with an untrusted
+ * click(). At most once per control, and only while it is connected, in the document, shown, pressable now and
+ * assertNotSubmit allows it with the control itself left out of the adapter's never-pressed list (the application's
+ * Submit and Next, a submit word, a control that submits a form, every other never-pressed control around or inside it,
+ * all refuse); never one whose words say it removes, gives up or sends (EDITOR_NEVER_WORDS). Answers the element
+ * clicked, or null. Only src/dom/fillers/editor-opener.ts may call it (test/allow-submit.test.ts); it is not exported
+ * from fillers/index.ts. A hook that throws refuses.
+ */
+export function clickEditorOpener(adapter: Adapter, doc: Document, control: HTMLElement): HTMLElement | null {
+  if (OPENED.has(control) || control.ownerDocument !== doc || !control.isConnected || !pressableNow(control)) return null;
+  if (EDITOR_NEVER_WORDS.test(`${control.textContent ?? ''} ${control.getAttribute('aria-label') ?? ''}`)) return null;
+  let root: Element | null = null;
+  let never: Element[] = [];
+  try {
+    root = adapter.detect(doc)?.formRoot ?? null;
+    never = adapter.neverPress?.(doc.documentElement) ?? [];
+  } catch {
+    return null;
+  }
+  if (never.some((other) => other !== control && control.contains(other))) return null;
+  const others: Adapter = { ...adapter,
+    neverPress: (scope) => (adapter.neverPress?.(scope) ?? []).filter((other) => other !== control) };
+  let allowed: boolean;
+  try {
+    allowed = assertNotSubmit(control, { adapter: others, root }).ok;
+  } catch {
+    return null;
+  }
+  if (!allowed) return null;
+  OPENED.add(control);
+  const stop = cancelLinkOnce(control);
+  try {
+    control.click();
+  } finally {
+    stop();
+  }
+  return control;
+}
+
+/** The editor openers the door pressed: never a second time (a control lives in one document). */
+const OPENED = new WeakSet<Element>();
+// ── end jr7 ENGINE-7 E2 item 5 ──
+
 /** jr6 ENGINE: for a link (or an element inside one), a click listener on its window for the door's one press, in the
  *  capture phase, so it runs before anything the page listens with: it cancels the default of a click on the link or
  *  inside it (clickUploadReveal). It is no one-shot: a click the page's own handler makes meanwhile (its label's, its

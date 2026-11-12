@@ -194,6 +194,7 @@ import { scan, toFieldSpec } from '../dom/scan';
 import { deadline, monotonicNow, startDeadline } from '../dom/time';
 import type { FieldTarget, ScannedField, ScanResult, WidgetReading } from '../dom/types';
 import { visibleText, visibleTextWithout } from '../dom/visible-text';
+import { openEditors } from '../dom/fillers/editor-opener';
 import { TEXT_CAP_LABEL } from '../dom/thresholds';
 import { isEditingHost } from '../dom/kinds';
 import { editableHidesText } from '../dom/values';
@@ -2472,6 +2473,11 @@ export class FillRun {
     // A page that keeps an entry only once its own Save is pressed (Workable's Add, disabled while an editor is open)
     // takes one entry a round: add, fill, save, until the profile's entries are in, never more rounds than entries.
     let rounds = 1;
+    // jr7 ENGINE-7 E2 item 5 (UKGR-9): the single-entry editors the adapter names are opened first, each once per
+    // document (dom/fillers/editor-opener.ts), never in a dry run; the loop then reads the fields they draw.
+    if (!this.request.dryRun && openEditors(adapter, this.env.doc, this.rootNow()) > 0) {
+      await deadline(EDITOR_OPEN_MS, this.controller.signal);
+    }
     for (let round = 0; ; round += 1) {
       // 1. Repeatable sections: the worker's entry counts, then the Add clicks (never in a dry run).
       this.answers.clear();
@@ -3629,3 +3635,7 @@ export function heldIn(scanned: ScanResult, row: FillResult): FillResult {
   return { ...row, detail: { ...row.detail, filledByYou: true } };
 }
 // ── end jr7 ENGINE-7 E1 item 11 ──
+
+/** jr7 ENGINE-7 E2 item 5: how long the fill lets an editor it opened draw its fields before the loop's first scan
+ *  (the loop's settle and later scans read the rest). */
+const EDITOR_OPEN_MS = 300;
