@@ -132,7 +132,8 @@ describe('jr7 RBP-7 RBP7-02 (= AUTO7-14): the one-page form is the final step', 
     expect(buttons).toMatchObject({ final: 'final', next: false, submit: filled });
   });
 
-  it.each([['rippling1 posting', r1Posting], ['rippling2 posting', r2Posting], ...CONFIRMATIONS])(
+  it.each<readonly [string, string]>([['rippling1 posting', r1Posting], ['rippling2 posting', r2Posting],
+    ...CONFIRMATIONS])(
     '%s: no form, so no step: unknown', async (_name, html) => {
       const page = await open(html);
       expect(page.root).toBeNull();
