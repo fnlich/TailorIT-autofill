@@ -1,5 +1,5 @@
 {
-  "https://careers-githubinc.icims.com/jobs/6961/senior-software-engineer%2c-compute-platform/candidate?from=login&csrf=REDACTED&hashed=REDACTED&uploadResume=1&uploadResume=1": "fixtures/icims/githubinc-profile.html",
-  "https://careers-githubinc.icims.com/jobs/6961/senior-software-engineer%2c-compute-platform/candidate?from=login&csrf=REDACTED&in_iframe=1&hashed=REDACTED&uploadResume=1&uploadResume=1": "fixtures/icims/githubinc-profile.frame-1.html",
+  "https://careers-githubinc.icims.com/jobs/6961/senior-REDACTED%2c-compute-platform/candidate?from=login&csrf=REDACTED&hashed=REDACTED&uploadResume=1&uploadResume=1": "fixtures/icims/githubinc-profile.html",
+  "https://careers-githubinc.icims.com/jobs/6961/senior-REDACTED%2c-compute-platform/candidate?from=login&csrf=REDACTED&in_iframe=1&hashed=REDACTED&uploadResume=1&uploadResume=1": "fixtures/icims/githubinc-profile.frame-1.html",
   "https://newassets.hcaptcha.com/captcha/v1/58a2633848099317cef7deac21e607b1a41a5b9d/static/hcaptcha.html": "fixtures/icims/githubinc-profile.third-party-frame.html"
 }

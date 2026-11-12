@@ -1,0 +1,42 @@
+{
+  "fixture": "icims/githubinc-job-questions-error.frame-1",
+  "source": "https://careers-githubinc.icims.com/jobs/6961/senior-REDACTED%2c-compute-platform/questions?back=&global=&csrf=REDACTED&in_iframe=1&hashed=REDACTED",
+  "captured": "2026-11-06T15:15:09.000Z",
+  "fields": [
+    {
+      "label": "Do you have 5+ years experience in synthetic systems work? This question is synthetic text standing in for the employer's own, in made-up words only.",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Q6595"
+    },
+    {
+      "label": "Do you have 2+ years experience with large-scale Kubernetes fleet operations, cluster lifecycle management, capacity management, or workload migration?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Q6596"
+    }
+  ],
+  "hooks": {
+    "detect": "form#questions",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input#quesp_form_save_i",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Faq_Link",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#quesp_form_submit_i"
+    ]
+  }
+}
