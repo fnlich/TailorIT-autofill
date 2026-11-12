@@ -1,0 +1,5 @@
+{
+  "https://jobs.dayforcehcm.com/en-US/imgacademy/NCSACorporateCareers/jobs/10501/apply/manualApplication?source=REDACTED&applicationSource=Manual": "fixtures/dayforce/jr7-dayforce1-apply-5.html",
+  "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LefHBYnAAAAADeXPZsiYH6oWbixfkQ2Te8pkJt7&co=aHR0cHM6Ly9qb2JzLmRheWZvcmNlaGNtLmNvbTo0NDM.&hl=en&type=image&v=0lEGiwO4Qwx5R9ArxUy0mBpf&theme=light&size=invisible&badge=bottomright&anchor-ms=20000&execute-ms=30000&ovv=CADq00gF&cb=i50cwmte0jc": "fixtures/dayforce/jr7-dayforce1-apply-5.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/bframe?hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&k=6LefHBYnAAAAADeXPZsiYH6oWbixfkQ2Te8pkJt7&bft=REDACTED": "fixtures/dayforce/jr7-dayforce1-apply-5.third-party-frame.html"
+}
