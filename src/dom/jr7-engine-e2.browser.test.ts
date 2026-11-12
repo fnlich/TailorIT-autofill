@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { genericAdapter } from '../adapters/generic';
 import type { Adapter, UploadPromptKind } from '../adapters/types';
+import { BLOCK_SAVE_DOOR_ON, saveBlockForm } from './fillers/block-save';
 import { openEditors } from './fillers/editor-opener';
 import { answerUploadPrompt } from './fillers/upload-prompt';
 import { loadFixture, removeFixtures } from './fixture.testkit';
@@ -262,4 +263,65 @@ describe('item 5 (UKGR-9): the editor-opener door', () => {
       expect(openEditors(guarded('contact'), doc, root)).toBe(0);
       expect((doc.defaultView as unknown as { presses: Record<string, number> }).presses).toEqual({});
     });
+});
+
+// ── item 6 (DF7-V4, built off until Q7-1): the block-save door ─────────────────────────────────────────────────────
+describe('item 6 (DF7-V4, built off): a block\'s own Save that submits the block\'s own form', () => {
+  /** Dayforce's record editor (snapshot7 dayforce) as a synthetic page: the application form's Next and Submit outside;
+   *  an Education block that is its own <form id="edu-0">, its School box and its Save (a submit button). `extra`
+   *  goes into the block; `outside` goes after it. Each form counts its submits (never sent). */
+  const page = (o: { extra?: string; outside?: string; save?: string } = {}) => `<!doctype html><html><body>
+    <div id="app"><h2>Education</h2>
+      <form id="edu-0"><label for="school-0">School</label><input id="school-0" type="text">
+        ${o.extra ?? ''}<button type="submit" id="save" ${o.save ?? ''}>Save</button></form>
+      ${o.outside ?? ''}
+      <button type="button" id="next">Next</button><button type="button" id="submit">Submit application</button></div>
+    <script>
+      window.submits = 0;
+      for (const form of document.forms) form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        window.submits += 1;
+      });
+    </script></body></html>`;
+  const dayforce = (never: string[] = []): Adapter => ({ ...genericAdapter, id: 'generic',
+    detect: (doc) => ({ formRoot: doc.getElementById('app')! }),
+    nextButton: (root) => root.ownerDocument.getElementById('next'),
+    submitButton: (root) => root.ownerDocument.getElementById('submit'),
+    neverPress: (root) => never.map((id) => root.ownerDocument.getElementById(id)!).filter((el) => el !== null) });
+  const press = async (html: string, adapter: Adapter, on?: boolean) => {
+    const { doc, view } = await loadFixture(document, html);
+    const root = doc.getElementById('app')!;
+    const block = doc.getElementById('edu-0')!;
+    const button = doc.getElementById('save')!;
+    const first = saveBlockForm(adapter, root, block, button, ...(on === undefined ? [] : [on]));
+    const again = saveBlockForm(adapter, root, block, button, ...(on === undefined ? [] : [on]));
+    const submits = (view as unknown as { submits: number }).submits;
+    removeFixtures(document);
+    return { first, again, submits };
+  };
+
+  it('is off: nothing is pressed while the switch is off', async () => {
+    expect(BLOCK_SAVE_DOOR_ON).toBe(false);
+    expect(await press(page(), dayforce())).toEqual({ first: false, again: false, submits: 0 });
+  });
+
+  it('on, presses the Save once where the block is its own form and holds nothing of the application\'s', async () => {
+    expect(await press(page(), dayforce(), true)).toEqual({ first: true, again: false, submits: 1 });
+  });
+
+  it('on, refuses a form holding Next, Submit or a never-pressed control, a field outside the block, another form, a '
+    + 'second address, or a Delete', async () => {
+    const refused = { first: false, again: false, submits: 0 };
+    expect(await press(page({ extra: '<button type="button" id="next-inner">Next</button>' }),
+      { ...dayforce(), nextButton: (root) => root.ownerDocument.getElementById('next-inner') }, true)).toEqual(refused);
+    expect(await press(page({ extra: '<button type="button" id="remove">Remove entry</button>' }), dayforce(['remove']),
+      true)).toEqual(refused);
+    expect(await press(page(), dayforce(['save']), true)).toEqual(refused);
+    expect(await press(page({ outside: '<input id="stray" form="edu-0" type="text">' }), dayforce(), true))
+      .toEqual(refused);
+    expect(await press(page({ save: 'form="other-form"', outside: '<form id="other-form"></form>' }), dayforce(), true))
+      .toEqual(refused);
+    expect(await press(page({ save: 'formaction="/elsewhere"' }), dayforce(), true)).toEqual(refused);
+    expect(await press(page({ save: 'aria-label="Delete entry"' }), dayforce(), true)).toEqual(refused);
+  });
 });

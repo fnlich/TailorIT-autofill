@@ -190,6 +190,34 @@ describe('the upload-prompt door (jr7 ENGINE-7)', () => {
 // jr7 ENGINE-7 E2 item 5 (UKGR-9): the editor-opener door, held as the other doors are: defined once in not-submit.ts,
 // named by editor-opener.ts alone (which calls it once), not exported by fillers/index.ts; its wrapper, openEditors,
 // imported by content/orchestrator.ts alone. // jr7 ENGINE-7
+// jr7 ENGINE-7 E2 item 6 (DF7-V4, built off until Q7-1): the block-save door, held as the other doors are: defined once
+// in not-submit.ts, named by block-save.ts alone (which calls it once), not exported by fillers/index.ts; its switch
+// off, and its wrapper, saveBlockForm, imported by no module yet (content/repeatables.ts alone once on). // jr7 ENGINE-7
+describe('the block-save door (jr7 ENGINE-7, built off)', () => {
+  it('is named by block-save.ts alone, beside not-submit.ts where it is defined', () => {
+    const naming = sources(SRC).map(nameOf).filter((name) => !isTest(name))
+      .filter((name) => /\bclickBlockSave\b/.test(readFileSync(join(SRC, name), 'utf8')));
+    expect(naming.sort()).toEqual(['dom/fillers/block-save.ts', 'dom/fillers/not-submit.ts']);
+    expect(readFileSync(join(SRC, 'dom/fillers/block-save.ts'), 'utf8').match(/clickBlockSave\(/g)).toHaveLength(1);
+    const notSubmit = readFileSync(join(SRC, 'dom/fillers/not-submit.ts'), 'utf8');
+    expect(notSubmit.match(/\bclickBlockSave\(/g)).toHaveLength(1);
+    expect(notSubmit).toMatch(/export function clickBlockSave\(/);
+    expect(readFileSync(join(SRC, 'dom/fillers/index.ts'), 'utf8')).not.toMatch(/clickBlockSave|saveBlockForm/);
+  });
+
+  it('is off, and its wrapper, saveBlockForm, is imported by no module until it is on', () => {
+    expect(readFileSync(join(SRC, 'dom/fillers/block-save.ts'), 'utf8'))
+      .toMatch(/export const BLOCK_SAVE_DOOR_ON = false;/);
+    const importing = sources(SRC).map(nameOf).filter((each) => !isTest(each)).filter((each) => {
+      const text = readFileSync(join(SRC, each), 'utf8');
+      return [...text.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g)]
+        .some(([, isType, names, source]) => isType === undefined && /(^|\/)block-save$/.test(source!)
+          && names!.split(',').some((name) => name.trim().split(/\s+as\s+/)[0] === 'saveBlockForm'));
+    });
+    expect(importing).toEqual([]);
+  });
+});
+
 describe('the editor-opener door (jr7 ENGINE-7)', () => {
   it('is named by editor-opener.ts alone, beside not-submit.ts where it is defined', () => {
     const naming = sources(SRC).map(nameOf).filter((name) => !isTest(name))
