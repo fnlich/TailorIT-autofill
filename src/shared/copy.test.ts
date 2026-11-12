@@ -1,16 +1,50 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CONSENT_CATEGORIES, FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES } from '../core/enums';
+import { AI_OPENED_CATEGORIES } from '../core/resolver/categories';
 import { TELEMETRY_FIELDS } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
 import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
 import { SAVE_ANSWER_OUTCOMES } from '../messaging/schemas';
 import { SIGNUP_COPY } from '../ui/page/signup-copy';
-import { CAPTURE_COPY, COPY } from './copy';
+import { CAPTURE_COPY, COPY, PAGE_COPY } from './copy';
 import { NOTICE_CODES } from './report';
+import { DISCLOSURE_VERSION } from './stored';
 
 /** A sentence a person reads: it starts with a capital or a quote, ends with a full stop, and is not a placeholder. */
 const SENTENCE = /^["A-Z(].*[.]$/s;
+
+/**
+ * The jr6 integration fixes (the completeness review's gap 2): each version of the first-run disclosure, with the
+ * sha256 of its words (JSON of the four paragraphs and the consent line, as `disclosureHash` reads them). A connected
+ * browser that acknowledged an older version is asked again (stored.ts DISCLOSURE_VERSION), so new words need a new
+ * version: changing them without a row here fails, and so does a version with no row. Versions before 14 predate this
+ * table. 15 (jr6) had reached no one when the jr6 integration fixes reworded it (the button's name as it reads, and what
+ * a download Apply is told), so it kept its number.
+ */
+const DISCLOSURE_HASHES: readonly { version: number; sha256: string }[] = [
+  { version: 14, sha256: 'ad97b204db52277072884bbc2168b5f85d7d2edad738e7a10885428ad03f0532' }, // v1.5 part 2
+  { version: 15, sha256: '3383e740883fcc6c5fe8048c3c0d6df52db758235fbe6b33d69433fd14da3e1d' }, // jr6
+];
+
+/** The disclosure's words as DISCLOSURE_HASHES pins them. */
+function disclosureHash(): string {
+  const { disclosure, consentLine } = COPY.options.connection;
+  return createHash('sha256').update(JSON.stringify([...disclosure, consentLine])).digest('hex');
+}
+
+/** Every string a COPY tree holds (a function's own source too, for the words it builds). */
+function stringsOf(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (typeof value === 'function') return [String(value)];
+  if (value !== null && typeof value === 'object') return Object.values(value).flatMap(stringsOf);
+  return [];
+}
+
+/** The disclosure's sentences, as a person reads them. */
+const disclosureSentences = () => COPY.options.connection.disclosure
+  .flatMap((paragraph) => paragraph.split(/(?<=\.)\s+(?=["A-Z])/));
 
 describe('the copy', () => {
   it('has a plain sentence for every reason code, and nothing for a code that does not exist', () => {
@@ -127,6 +161,18 @@ describe('the copy', () => {
     }
   });
 
+  // The jr6 integration fixes (the completeness review's gap 2; the password review's sec-4/R4): the disclosure's words
+  // and its version change together.
+  it('pins the disclosure to its version: new words need a new DISCLOSURE_VERSION and a row of their own', () => {
+    const versions = DISCLOSURE_HASHES.map((row) => row.version);
+    expect(versions, 'one row per version, in order').toEqual([...new Set(versions)].sort((a, b) => a - b));
+    expect(new Set(DISCLOSURE_HASHES.map((row) => row.sha256)).size, 'each version its own words').toBe(versions.length);
+    const last = DISCLOSURE_HASHES.at(-1)!;
+    expect(DISCLOSURE_VERSION, 'DISCLOSURE_VERSION is the last row\'s').toBe(last.version);
+    expect(disclosureHash(), `the words of version ${last.version} changed: raise DISCLOSURE_VERSION and add a row`)
+      .toBe(last.sha256);
+  });
+
   // The jr6 review (C3): where a site asks for the email first, Autofill goes on only on Sign-in Auto or with Sign up &
   // Autofill. Version 14 said it in the sentence that names Sign-in on Auto. Since jr6 SHELL-A (BUILD D-d) a declared
   // email gate's email is typed in either Sign-in mode (content/orchestrator.ts gateFilling, runtime.ts wallStep), its
@@ -155,6 +201,33 @@ describe('the copy', () => {
     expect(first).not.toMatch(/Open Application/);
   });
 
+  // The jr6 integration fixes (SEC-5): the door refuses an Apply that downloads a file, and the runtime says it as the
+  // refusal 'none' (content/runtime.ts: `result.refusal === 'download' ? 'none'`), whose words are the "no form" line's.
+  // So the notice says that, never that it tells you why.
+  it('says what a download Apply is told: that there is no Apply Autofill could press', () => {
+    const holding = disclosureSentences().filter((sentence) => sentence.includes('download a file'));
+    expect(holding, 'one sentence names the download (reworded? update this test)').toHaveLength(1);
+    const clause = holding[0]!.split(';').find((part) => part.includes('download a file'))!;
+    expect(clause, clause).not.toMatch(/tells you why/);
+    expect(clause, clause).toContain('no Apply it could press');
+    expect(COPY.mainView.entryRefused.none).toContain('no Apply that Autofill could press');
+  });
+
+  // The jr6 integration fixes (DOC-11): the panel's button reads Sign Up & Autofill (mainView.signUpFill). Every word of
+  // ours that names it, the notice and docs/PRIVACY.md included, names it so, and the no-password toast never asks for
+  // it "again": Sign-in Auto shows that toast too, where the person never chose the button.
+  it('names Sign Up & Autofill as its button reads, wherever the copy, the notice or PRIVACY.md names it', () => {
+    const button = COPY.mainView.signUpFill;
+    const privacy = readFileSync(new URL('../../docs/PRIVACY.md', import.meta.url), 'utf8');
+    const named = [...stringsOf(COPY), ...stringsOf(PAGE_COPY), ...stringsOf(SIGNUP_COPY), privacy]
+      .flatMap((words) => words.match(/sign[ -]?up & autofill/gi) ?? []);
+    expect(named.length).toBeGreaterThan(10);
+    expect([...new Set(named)]).toEqual([button]);
+    expect(disclosureSentences().filter((sentence) => sentence.includes(button))).toHaveLength(2);
+    expect(COPY.toasts.noSignIn).toContain(button);
+    expect(COPY.toasts.noSignIn).not.toMatch(/\bagain\b/);
+  });
+
   // The jr6 integration (RULES revD-01 and revD-04, owner question 435): AI answers' All also guesses a non-compete,
   // relatives and military training where the profile does not answer, each always marked an AI guess
   // (GUESS_ONLY_CATEGORIES); a job's essential functions never go to the AI, so the help never names them.
@@ -164,6 +237,32 @@ describe('the copy', () => {
       'only the question and its options are sent']) expect(help).toContain(words);
     expect(help).not.toMatch(/essential function/i);
     expect(help).toMatch(SENTENCE);
+  });
+
+  // The jr6 integration fixes (DOC-1): while a job's essential functions stay out of AI_OPENED_CATEGORIES (RULES
+  // revD-01), docs/PRIVACY.md, the store listing's source, never says they go to the AI: each clause naming them that
+  // says something goes, or gets a guess, says "never".
+  it.skipIf(AI_OPENED_CATEGORIES.has('screening.essentialFunctions'))(
+    'never says in docs/PRIVACY.md that a job’s essential functions go to the AI', () => {
+      const privacy = readFileSync(new URL('../../docs/PRIVACY.md', import.meta.url), 'utf8');
+      const clauses = privacy.split(/[;:()\n]|(?<=\.)\s+/).filter((clause) => /essential function/i.test(clause));
+      expect(clauses.length).toBeGreaterThan(2);
+      const saysTheyGo = clauses.filter((clause) => /\b(?:do|does|now|also) go\b|\bgo(?:es)? to (?:the )?(?:AI|Claude)\b|\bbest guess\b/i
+        .test(clause) && !/\bnever\b/i.test(clause));
+      expect(saysTheyGo).toEqual([]);
+    });
+
+  // The jr6 integration fixes (SEC-3, the coordinator's choice (b): keep the fetch, fix the words): an email gate with no
+  // Sign-up Information email takes the profile's (background/index.ts profileEmail: profileCache.get()), which fetches
+  // the profile when the worker has dropped it. PRIVACY.md and ARCHITECTURE.md say so, never that nothing is fetched.
+  it('says an email gate’s profile email is read as any Autofill run reads the profile, fetched when not held', () => {
+    const privacy = readFileSync(new URL('../../docs/PRIVACY.md', import.meta.url), 'utf8');
+    const gates = privacy.slice(privacy.indexOf('## Email gates'), privacy.indexOf('## What reaches an AI model'));
+    expect(gates).toContain('as any Autofill run reads the profile');
+    expect(gates).toMatch(/GET \/profile/);
+    expect(gates).not.toMatch(/nothing new is fetched/);
+    const architecture = readFileSync(new URL('../../docs/ARCHITECTURE.md', import.meta.url), 'utf8');
+    expect(architecture).not.toMatch(/the profile cache the fill already read, no new request/);
   });
 
   // The jr6 review (R3, R10): the job-site sign-in is the one saved in Sign-up Information (this browser) since jr6:
@@ -216,6 +315,19 @@ describe('the copy', () => {
     expect(account['reset-password']).toMatch(/Forgot password/);
     expect(account['reset-password']).toContain('Sign-up Information');
     expect(account['wrong-credentials']).toMatch(/didn't accept/);
+  });
+
+  // The jr6 integration fixes (DOC-12, owner question 436): Sign-up Information keeps one password for every job site
+  // (owner question 384), so the toasts for a reset or a refused password never send the person to change it there
+  // without saying that it is every job site's.
+  it('says the saved password is every job site’s wherever an account error points at Sign-up Information', () => {
+    const { account } = COPY.toasts;
+    for (const kind of ['reset-password', 'wrong-credentials'] as const) {
+      expect(account[kind], kind).toContain('Sign-up Information');
+      expect(account[kind], kind).toMatch(/\bevery job site\b/);
+      expect(account[kind], kind).toMatch(SENTENCE);
+    }
+    expect(account['reset-password']).not.toMatch(/then save the new one/);
   });
 
   it('says an email gate’s Next is the person’s, never asks for a password there, and that the run waits for one to be '

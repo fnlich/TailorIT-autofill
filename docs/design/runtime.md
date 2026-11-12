@@ -663,7 +663,7 @@ The descriptor records `proxy: 'label'|'adapter'`, and highlights point at the p
 - A value present before our first write is "prefilled" (a resume parse, browser autofill, or Workday's "Use My Last Application"). Prefilled values are reconciled, not overwritten (§8.7).
 
 ### 5.11 Pause detection (`pause-detect.ts`)
-- **Sign-in and accounts.** A visible `input[type=password]` means sign-in; two of them, or a "confirm password" label, means account creation. `autocomplete="one-time-code"` or visible code-entry text means an email code. `adapter.authState(doc)` adds platform knowledge from snapshots. On an auth step nothing is filled, not even the email. (Since jr6 a box the job-site password was typed into stays an auth field whatever the page later makes it, `dom/secret-boxes.ts`.)
+- **Sign-in and accounts.** A visible `input[type=password]` means sign-in; two of them, or a "confirm password" label, means account creation. `autocomplete="one-time-code"` or visible code-entry text means an email code. `adapter.authState(doc)` adds platform knowledge from snapshots. On an auth step nothing is filled, not even the email (since jr6 an email gate the adapter declares is filled as a step: its email, iCIMS's phone and country code, its consent boxes; never a password: docs/ARCHITECTURE.md "The email-gate step"). (Since jr6 a box the job-site password was typed into stays an auth field whatever the page later makes it, `dom/secret-boxes.ts`.)
 - **CAPTCHA.**
   - A visible challenge iframe from google.com/recaptcha, recaptcha.net, hcaptcha.com, challenges.cloudflare.com or arkoselabs pauses the run.
   - So does a visible vendor container (`.g-recaptcha`, `.h-captcha`, `.cf-turnstile`, `[data-sitekey]`) over or inside the form.

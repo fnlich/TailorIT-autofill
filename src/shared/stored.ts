@@ -80,12 +80,14 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  its window shows it; Run auto-apply and the queue never at once); 15, jr6 (the owner's words of 2026-11-10: the
  *  job-site email and password set under Sign-up Information kept in this browser, the password encrypted and never
  *  sent to TailorIT, what the encryption does not keep it from; typed only into job sites' own sign-in and new-account
- *  forms, pressed only on Auto or with Sign up & Autofill, on Manual typed for the person's press in a tab they see and
+ *  forms, pressed only on Auto or with Sign Up & Autofill, on Manual typed for the person's press in a tab they see and
  *  never in the auto-apply window; Import from TailorIT; an email-first step's email typed in either Sign-in mode, on
- *  iCIMS with the phone and country code, its Next Auto's or Sign up & Autofill's alone; ADP's and ClearCompany's path
+ *  iCIMS with the phone and country code, its Next Auto's or Sign Up & Autofill's alone; ADP's and ClearCompany's path
  *  no longer sent; on a page with no form Autofill pressing the site's Apply and the steps on the way, consents among
  *  them, filling in the same tab and site, refusing a new tab, another site or a download; military training, a
- *  non-compete and relatives among the AI's guesses). Raise it whenever the disclosure's substance changes. */
+ *  non-compete and relatives among the AI's guesses; its words refined before it reached anyone, by the jr6 integration
+ *  fixes: the button named as it reads, a download Apply told there is no Apply to press). Raise it whenever the
+ *  disclosure's substance changes; copy.test.ts pins each version's words (DISCLOSURE_HASHES). */
 export const DISCLOSURE_VERSION = 15;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 

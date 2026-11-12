@@ -41,7 +41,7 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 | GET | `/cover-letters/:id`, `/cover-letters/:id/file` | token (`letters:write`) | v2 (Phase G) | where a letter stands (polled, 120 a minute); its PDF with `X-TailorIT-File-Kind: pdf`, `X-TailorIT-Sha256` and a Content-Disposition name (409 until ready, 413 over 10 MiB) |
 | GET | `/cover-letters/:id/text` | token (`letters:write`) | v3 | a ready letter's words as plain text, for a text box (409 until ready) |
 | GET, POST | `/agent/next`, `/agent/:id/result` | token (`agent:run`) | v3 | take the next auto-apply job; report how it went (v3 Phase 5: `background/agent.ts`, while Run auto-apply is on) |
-| GET | `/credentials?host=` | token (`credentials:read`) | v3 | the job-site sign-in for that host (`no-store`, 30 an hour; v3 Phase 5: `background/sign-in.ts`, for Sign-in mode Auto, the host Chrome reports for the frame) |
+| GET | `/credentials?host=` | token (`credentials:read`) | v3 | the job-site sign-in for that host (`no-store`, 30 an hour; v3 Phase 5: `background/sign-in.ts`, for Sign-in mode Auto, the host Chrome reports for the frame; since jr6 only Import from TailorIT reads it, on the person's click, `background/signup.ts` with `host=import.myworkdayjobs.com`, and Sign-in uses the password saved in the extension) |
 | GET, POST, PUT, DELETE | `/site-requests` (GET), `/agent/queue`, `/agent/queue/:id`, `/agent/queue/clear-finished`, `/agent/settings`, `/sign-ins`, `/sign-ins/:id` | session | v3 | TailorIT's own pages: the site requests, the auto-apply queue and its rule, the job-site sign-ins |
 
 ## How the extension calls it (`src/background/server-client.ts`, Phase 2)
