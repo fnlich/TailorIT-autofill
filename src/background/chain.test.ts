@@ -61,3 +61,17 @@ describe('a top frame’s chain (minor 17: C5, C14)', () => {
     expect(await chains.inheritTop(TAB, { url: POST_BACK, documentId: 'doc-form' }, hrefHash(ACCOUNT)!)).toBeNull();
   });
 });
+
+// ── jr7 CHAIN-7 (PC7-03): a pair page is never keyed by its referrer, whatever the tab's top records hold ──
+describe('jr7 CHAIN-7: a pair page and the top chain', () => {
+  it('inheritTop refuses Paycom’s application by its posting’s referrer; inheritPair alone keys it', async () => {
+    const session = memorySession();
+    const chains = createChains({ session, now: () => 1_000 });
+    const portal = 'https://www.paycomonline.net/v4/ats/web.php/portal/0123456789ABCDEF0123456789ABCDEF';
+    const posting = `${portal}/jobs/4321`;
+    const key = 'paycom:00000000000000aa';
+    await chains.noteTop(TAB, { url: posting, documentId: 'doc-posting', applicationKey: key, applicationUrl: posting });
+    expect(await chains.inheritTop(TAB, { url: `${portal}/applications#/applications/1`, documentId: 'doc-app' },
+      hrefHash(posting)!)).toBeNull();
+  });
+});
