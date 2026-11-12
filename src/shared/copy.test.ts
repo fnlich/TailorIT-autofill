@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CONSENT_CATEGORIES, FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES } from '../core/enums';
@@ -8,9 +9,29 @@ import { SAVE_ANSWER_OUTCOMES } from '../messaging/schemas';
 import { SIGNUP_COPY } from '../ui/page/signup-copy';
 import { CAPTURE_COPY, COPY } from './copy';
 import { NOTICE_CODES } from './report';
+import { DISCLOSURE_VERSION } from './stored';
 
 /** A sentence a person reads: it starts with a capital or a quote, ends with a full stop, and is not a placeholder. */
 const SENTENCE = /^["A-Z(].*[.]$/s;
+
+/**
+ * The jr6 integration fixes (the completeness review's gap 2): each version of the first-run disclosure, with the
+ * sha256 of its words (JSON of the four paragraphs and the consent line, as `disclosureHash` reads them). A connected
+ * browser that acknowledged an older version is asked again (stored.ts DISCLOSURE_VERSION), so new words need a new
+ * version: changing them without a row here fails, and so does a version with no row. Versions before 14 predate this
+ * table. 15 (jr6) had reached no one when the jr6 integration fixes reworded it (the button's name as it reads, and what
+ * a download Apply is told), so it kept its number.
+ */
+const DISCLOSURE_HASHES: readonly { version: number; sha256: string }[] = [
+  { version: 14, sha256: 'ad97b204db52277072884bbc2168b5f85d7d2edad738e7a10885428ad03f0532' }, // v1.5 part 2
+  { version: 15, sha256: '72e36c2db89b2e0904132d9d3d4bab32e0c42b82229fda5b14a611133cdbbbc6' }, // jr6
+];
+
+/** The disclosure's words as DISCLOSURE_HASHES pins them. */
+function disclosureHash(): string {
+  const { disclosure, consentLine } = COPY.options.connection;
+  return createHash('sha256').update(JSON.stringify([...disclosure, consentLine])).digest('hex');
+}
 
 describe('the copy', () => {
   it('has a plain sentence for every reason code, and nothing for a code that does not exist', () => {
@@ -125,6 +146,18 @@ describe('the copy', () => {
     for (const paragraph of [...COPY.options.connection.disclosure, COPY.options.connection.consentLine]) {
       expect(privacy, paragraph.slice(0, 40)).toContain(paragraph);
     }
+  });
+
+  // The jr6 integration fixes (the completeness review's gap 2; the password review's sec-4/R4): the disclosure's words
+  // and its version change together.
+  it('pins the disclosure to its version: new words need a new DISCLOSURE_VERSION and a row of their own', () => {
+    const versions = DISCLOSURE_HASHES.map((row) => row.version);
+    expect(versions, 'one row per version, in order').toEqual([...new Set(versions)].sort((a, b) => a - b));
+    expect(new Set(DISCLOSURE_HASHES.map((row) => row.sha256)).size, 'each version its own words').toBe(versions.length);
+    const last = DISCLOSURE_HASHES.at(-1)!;
+    expect(DISCLOSURE_VERSION, 'DISCLOSURE_VERSION is the last row\'s').toBe(last.version);
+    expect(disclosureHash(), `the words of version ${last.version} changed: raise DISCLOSURE_VERSION and add a row`)
+      .toBe(last.sha256);
   });
 
   // The jr6 review (C3): where a site asks for the email first, Autofill goes on only on Sign-in Auto or with Sign up &
