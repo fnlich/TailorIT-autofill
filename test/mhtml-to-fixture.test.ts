@@ -1435,8 +1435,9 @@ describe('mhtml-to-fixture, snapshot build: boards', () => {
     expect(PER_LOAD_PARAMS).toEqual(['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp', 'ActiveSessionId', 'sft',
       'rnd', 'ticket']);
     // Greenhouse's, Ashby's and Workable's (boards), Workday's upload preview, the new ATSs' eleven and (jr6) ADP's
-    // résumé row and SmartRecruiters' drop zone list (the generic applicant-text pass, redactApplicantTextInPage).
-    expect(FILE_NAME_PLACES).toHaveLength(17);
+    // résumé row and SmartRecruiters' drop zone list (the generic applicant-text pass, redactApplicantTextInPage); jr7
+    // TOOLING-7 (JDEF-16): and JobDiva's file card.
+    expect(FILE_NAME_PLACES).toHaveLength(18);
     // Workable's file menu and (jr6) ADP's résumé Remove.
     expect(FILE_LINK_PLACES).toHaveLength(2);
     expect(ENTRY_SUMMARY_PLACES).toHaveLength(2);
@@ -4447,6 +4448,22 @@ describe('jr7 TOOLING-7: the converter (FIX7PLAN §6.1)', () => {
     for (const kept of ['>Mobile Phone:</div>', '>Email:</div>', '>How did you hear about this job?</span>']) {
       expect(text, kept).toContain(kept);
     }
+  }, 60_000);
+
+  it("JDEF-16: JobDiva's file card, wherever the page repeats the name, and Eightfold's per-session CSRF token", async () => {
+    const { text } = await convertPage('https://www1.jobdiva.com/portal/?a=fixture#/jobs/1', 'jobdiva', 'jr7-jdef16', `
+<div class="jd-dropzone"><div class="jd-dropzone-filecard"><span>${JR6_FILE}</span><span><svg width="16" height="16"
+  viewBox="0 0 16 16"><path d="M4 4l8 8"></path></svg></span></div></div>
+<p class="jd-note">Uploaded: ${JR6_FILE}</p><button type="button" aria-label="Remove ${JR6_FILE}">x</button>`);
+    for (const gone of ['cv final', 'cv%20final']) expect(text, gone).not.toContain(gone);
+    expect(text).toContain('<div class="jd-dropzone-filecard"><span>REDACTED</span>');
+    expect(text).toContain('aria-label="Remove REDACTED"');
+    expect(headerOf(text).source).toBe('https://www1.jobdiva.com/portal/?a=fixture#/jobs/1');
+    const head = '<meta name="_csrf_header" content="X-CSRF-TOKEN"><meta name="_csrf" content="0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0">';
+    const eightfold = normaliseNewAts('eightfold', head);
+    expect(eightfold.text).toBe('<meta name="_csrf_header" content="X-CSRF-TOKEN"><meta name="_csrf" content="REDACTED">');
+    expect(eightfold.renderIds).toEqual(['0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0']);
+    expect(normaliseNewAts('jobdiva', head).text).toBe(head);
   }, 60_000);
 
   it("every committed fixture: no widget's shown text spelled in an id (T7-01, spelledIdsIn)", () => {

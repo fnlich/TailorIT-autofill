@@ -396,6 +396,10 @@ export const FILE_NAME_PLACES = ['.file-upload__filename', '.ashby-application-f
   // one-click page: <span class="c-spl-file-list-item-name">NAME</span>, its delete spl-button's splarialabel repeating
   // the name).
   '.c-spl-file-list-item-name',
+  // jr7 TOOLING-7 (JDEF-16; SP\jr7\audit\jobdiva-eightfold.md, snapshot7 jobdiva2's Quick Apply): JobDiva's drop zone
+  // shows the attached résumé as <div class="jd-dropzone-filecard"><span>NAME</span><span><svg/></span></div> (its
+  // remove icon beside it), a name the redaction list only caught by chance.
+  '.jd-dropzone-filecard > span:first-child',
 ];
 /** Chosen answers drawn outside a native control (a select's shown value, a chip; the new ATSs, DESIGN-NEW-ATS §6.4):
  *  cleared, their words (aria-label, title, alt) and all, a list's own options kept (redactApplicantTextInPage). */
@@ -1324,6 +1328,9 @@ const NEW_ATS_ADDRESS_VALUES = {
   pinpoint: [SESSION_METAS, /(\/applications\/thanks\?(?:[^"'\s<>#]*?(?:&amp;|&))?token=|[?&;]cache_key=|\bX-Amz-(?:Credential|Signature)=)([A-Za-z0-9_%-]+)()/g],
   // Builder C: CareerPlug's session metas.
   careerplug: [SESSION_METAS],
+  // jr7 TOOLING-7 (JDEF-16; snapshot7 twillio, twilio.eightfold.ai): Eightfold's per-session CSRF token in its head,
+  // <meta name="_csrf" content="<token>"> (its _csrf_header names the header and stays).
+  eightfold: [/(<meta\b[^>]*?\bname="_csrf"[^>]*?\bcontent=")([^"]+)(")/g],
 };
 
 /** The new ATSs' per-session values (NEW_ATS_ADDRESS_VALUES) REDACTED in a page or an address; the values replaced go
