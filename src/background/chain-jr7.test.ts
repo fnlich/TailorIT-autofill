@@ -10,59 +10,18 @@
  * - PC7-03: Paycom's /applications page (a new document) takes the application of the tab's posting whose press came
  *   within PAIR_MS, once per press;
  * - UKGR-3: UKG Ready's applicant session takes its posting's application by the referrer.
- * UKG Ready's and Paycom's own parsers are their packages' (UKGREADY-7, DFPC-7; E0 ships them as stubs that read
- * nothing): here stand-ins read the two addresses as FIX7PLAN §6.14 item 2 and §6.11 Paycom item 2 specify them (the
- * posting keyed per job; the session or the application an application page whose number is never read).
+ * UKG Ready's and Paycom's addresses are read by their packages' own parsers (UKGREADY-7, DFPC-7): the posting keyed
+ * per job; the session or the application an application page whose number is never read (FIX7PLAN §6.14 item 2,
+ * §6.11 Paycom item 2). jr7 INT-7: the stand-ins this file held until those parsers merged are gone.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { applicationOf } from '../adapters';
 import { hrefHash } from '../adapters/chain';
-import type { ApplicationUrl } from '../adapters/application-key';
 import type { ChainStepFacts } from '../adapters/types';
 import { CHAIN_FACTS_PREFIX, CHAIN_MS, CHAIN_PAIR_PREFIX, PAIR_MS } from './chain';
 import { contentSender, goldens, startTestWorker, tokenRecord, typeOfSent, type TestWorker } from './worker.testkit';
 import type { TabMessage } from '../platform/fake';
-
-// ── The stand-in parsers (module header) ──
-vi.mock('../adapters/paycom/url', () => {
-  const PATH = /^\/v4\/ats\/web\.php\/portal\/([A-Fa-f0-9]{32})\/(?:jobs\/(\d+)|applications)\/?$/;
-  function parsePaycomUrl(url: URL): ApplicationUrl | null {
-    const parts = url.protocol === 'https:' && url.hostname === 'www.paycomonline.net' ? PATH.exec(url.pathname) : null;
-    if (parts === null) return null;
-    const portal = `https://www.paycomonline.net/v4/ats/web.php/portal/${parts[1]}`;
-    if (parts[2] !== undefined) {
-      return { platform: 'paycom', board: parts[1]!, jobId: parts[2], page: 'posting',
-        applicationUrl: `${portal}/jobs/${parts[2]}` };
-    }
-    return /^#\/applications\/\d+/.test(url.hash)
-      ? { platform: 'paycom', board: parts[1]!, jobId: '', page: 'application', applicationUrl: `${portal}/applications` }
-      : null;
-  }
-  return { parsePaycomUrl, canonicalApplicationUrl: (url: URL) => {
-    const parsed = parsePaycomUrl(url);
-    return parsed?.page === 'application' ? parsed.applicationUrl : null;
-  } };
-});
-vi.mock('../adapters/ukgready/url', () => {
-  function parseUkgReadyUrl(url: URL): ApplicationUrl | null {
-    const company = url.protocol === 'https:' && /^secure\d{0,2}\.saashr\.com$/.test(url.hostname)
-      ? /^\/ta\/(\d{3,10})\.careers$/.exec(url.pathname) : null;
-    if (company === null) return null;
-    const base = `${url.origin}/ta/${company[1]}.careers`;
-    const job = url.searchParams.get('ShowJob');
-    if (job !== null) {
-      return /^\d{1,15}$/.test(job) ? { platform: 'ukgready', board: company[1]!, jobId: job, page: 'posting',
-        applicationUrl: `${base}?ShowJob=${job}` } : null;
-    }
-    return url.searchParams.has('ActiveSessionId')
-      ? { platform: 'ukgready', board: company[1]!, jobId: '', page: 'application', applicationUrl: base } : null;
-  }
-  return { parseUkgReadyUrl, canonicalApplicationUrl: (url: URL) => {
-    const parsed = parseUkgReadyUrl(url);
-    return parsed?.page === 'application' ? parsed.applicationUrl : null;
-  } };
-});
 
 let logs: MockInstance;
 beforeEach(() => {
