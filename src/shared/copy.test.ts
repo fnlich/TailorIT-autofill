@@ -9,6 +9,7 @@ import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
 import { SAVE_ANSWER_OUTCOMES } from '../messaging/schemas';
 import { SIGNUP_COPY } from '../ui/page/signup-copy';
 import { CAPTURE_COPY, COPY, PAGE_COPY } from './copy';
+import { QUEUE_SUBMIT_PLATFORMS } from './queue-submit';
 import { NOTICE_CODES } from './report';
 import { DISCLOSURE_VERSION } from './stored';
 
@@ -26,6 +27,7 @@ const SENTENCE = /^["A-Z(].*[.]$/s;
 const DISCLOSURE_HASHES: readonly { version: number; sha256: string }[] = [
   { version: 14, sha256: 'ad97b204db52277072884bbc2168b5f85d7d2edad738e7a10885428ad03f0532' }, // v1.5 part 2
   { version: 15, sha256: '3383e740883fcc6c5fe8048c3c0d6df52db758235fbe6b33d69433fd14da3e1d' }, // jr6
+  { version: 16, sha256: '5be8fdc5bd3506b9b058e786cebf3aa508ac6cd3126bb14067ffd78e6f9f5fb6' }, // jr7 (INT-7 round 2)
 ];
 
 /** The disclosure's words as DISCLOSURE_HASHES pins them. */
@@ -376,6 +378,30 @@ describe('the copy', () => {
     expect(PAGE_COPY.requiredBlockLeft('Skills')).toBe('Skills: required, still empty');
     expect(PAGE_COPY.requiredBlockLeft('Signature')).toBe('Signature: required, still empty');
     expect(PAGE_COPY.requiredBlockLeft('Signature')).not.toMatch(/add at least one/);
+  });
+
+  // Round 2: disclosure 16 (FIX7PLAN §12 item 4, Q7-15's drafts in TailorIT's own words).
+  it('says in disclosure 16 where Run auto-apply and the Queue tab go, in TailorIT’s words, and the Jibe address', () => {
+    const [first, second] = COPY.options.connection.disclosure;
+    for (const name of ['UKG Ready', 'Paycom', 'JobDiva', 'Eightfold']) {
+      expect(first, name).toContain(name);
+      expect(COPY.options.sites.intro, name).toContain(name);
+    }
+    expect(first).toContain("UKG Ready's saashr.com, Paycom, JobDiva, Eightfold and others), it runs only on the job pages");
+    // Run auto-apply's rule (D-3) and the Queue tab (D-4), as TailorIT labels them.
+    expect(first).toContain('never a site that shows a check that you are human or sends you a code');
+    expect(first).toContain('Queue tab only');
+    expect(first).toContain('waits for the Queue tab');
+    expect(first).toContain('it leaves that tab open for you and tells your TailorIT the job needs you');
+    expect(first).toContain('it leaves Submit to you in that tab, whatever Submit is set to');
+    expect(second).toContain("On an iCIMS Jibe job page it tells your TailorIT the job's iCIMS address");
+  });
+
+  it('names in Record applications I submit myself the sites whose confirmation it reads, from their one list', () => {
+    const help = COPY.options.modes.recordOwn.help;
+    for (const platform of QUEUE_SUBMIT_PLATFORMS) expect(help, platform).toContain(COPY.platforms[platform]);
+    for (const name of ['Breezy HR', 'Dayforce', 'Taleo', 'Dice']) expect(help, name).not.toContain(name);
+    expect(help).toContain('JobDiva and Eightfold), your TailorIT tracker');
   });
   // ── end jr7 INT-7 ──
 });

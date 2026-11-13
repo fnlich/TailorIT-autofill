@@ -26,9 +26,9 @@ import {
   migrateSettingsV6, migrateSettingsV7, migrateSettingsV8, migrateSettingsV9, migrateSettingsV10, SETTINGS_VERSION,
   type Settings,
 } from '../core/types/settings';
-import type { Platform } from '../core/enums';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
+import { QUEUE_SUBMIT_PLATFORMS } from '../shared/queue-submit'; // jr7 INT-7
 import { SETTINGS_KEY, SettingsSchema, type ContentSettings } from '../shared/settings';
 import {
   SettingsV1Schema, SettingsV2Schema, SettingsV3Schema, SettingsV4Schema, SettingsV5Schema, SettingsV6Schema,
@@ -67,18 +67,10 @@ export interface ContentHolds {
   queueSubmitHeld?: boolean;
 }
 
-// ── jr7 AUTO-7 (AUTO7-01, FIX7PLAN D-4 and §8; the constant INT-7 finalises from §8's readiness verdicts, O-9) ──
-/** The platforms whose success sign a capture of the page after submitting shows, and a test asserts it read: in the
- *  Queue tab only these submit as the person's Submit mode says (Auto included). Any other platform's queued tab keeps
- *  Submit on Manual: an application sent there could not be recorded, and a re-queue would send it twice. Set by jr7
- *  INT-7's readiness verdict (SP jr7 build INT-7.md §3): each platform here reads its sign on the page after Submit
- *  and on no other page of its captures (the package tests and src/adapters/jr7-readiness.browser.test.ts); Lever's
- *  (its address after submitting) and Workable's (Jobright's panel) rest on their adapters' tests, as both are in Run
- *  auto-apply already. Not in it: Dayforce (no capture after Submit; its sign synthetic only), Taleo, SuccessFactors,
- *  Breezy HR, CareerPlug, Paycor, HiBob, Paylocity, ClearCompany, Dice, a company's own site. */
-export const QUEUE_SUBMIT_PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workable', 'icims', 'pinpoint', 'jobvite',
-  'workday', 'smartrecruiters', 'jazzhr', 'bamboohr', 'adp', 'oracle', 'ultipro', 'rippling', 'ukgready', 'paycom',
-  'jobdiva', 'eightfold'] as const satisfies readonly Platform[];
+// ── jr7 AUTO-7 (AUTO7-01, FIX7PLAN D-4 and §8) ──
+/** The platforms whose success sign is seen (src/shared/queue-submit.ts, where INT-7 moved it for the options' copy;
+ *  re-exported here for the worker and its tests). */
+export { QUEUE_SUBMIT_PLATFORMS };
 
 /** Whether the Queue tab leaves the Submit of the application `applicationKey` (`${platform}:${hex16}`) to the person
  *  (its platform is not in QUEUE_SUBMIT_PLATFORMS). */

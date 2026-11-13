@@ -86,9 +86,15 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  no longer sent; on a page with no form Autofill pressing the site's Apply and the steps on the way, consents among
  *  them, filling in the same tab and site, refusing a new tab, another site or a download; military training, a
  *  non-compete and relatives among the AI's guesses; its words refined before it reached anyone, by the jr6 integration
- *  fixes: the button named as it reads, a download Apply told there is no Apply to press). Raise it whenever the
+ *  fixes: the button named as it reads, a download Apply told there is no Apply to press); 16, jr7 (the owner's words
+ *  of 2026-11-11 on auto-apply everywhere: UKG Ready, Paycom, JobDiva and Eightfold among the sites, their staff pages
+ *  never; Run auto-apply taking only the sites whose application it walks to the end and whose confirmation it reads,
+ *  never a site with a human check or a code, the others Queue tab only; a tab with a code or a check after its Submit
+ *  left open and TailorIT told the job needs the person; the Queue tab opening every site it fills, pressing a job
+ *  page's Apply first and leaving Submit to the person where it cannot read the confirmation; a privacy notice before a
+ *  resume upload agreed under Consent boxes; a Jibe job page's iCIMS address told to TailorIT). Raise it whenever the
  *  disclosure's substance changes; copy.test.ts pins each version's words (DISCLOSURE_HASHES). */
-export const DISCLOSURE_VERSION = 15;
+export const DISCLOSURE_VERSION = 16;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */
