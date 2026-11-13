@@ -1210,14 +1210,34 @@ function listAboveOf(control: Element): Element | null {
   }
   const row = control.closest('.iCIMS_TableRow');
   if (row === null) return null;
-  const label = control.ownerDocument.getElementById(`label_${control.id}`)
+  const doc = control.ownerDocument;
+  const label = doc.getElementById(`label_${control.id}`)
     ?? Array.from(row.querySelectorAll('label[for]')).find((each) => each.getAttribute('for') === control.id) ?? null;
-  if (label === null || !LIST_LACKS.test((label.textContent ?? '').replace(/\s+/g, ' '))) return null;
+  const words = (label?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const lacks = label !== null && LIST_LACKS.test(words);
+  // jr7 ICIMS-7 (ENGINE-7 E2's L1): or an "Other <the list's own words>" box under that list (OTHER_OF).
+  const other = label === null || lacks ? null : OTHER_OF.exec(words)?.[1] ?? null;
+  if (!lacks && other === null) return null;
   const before = row.previousElementSibling;
   const select = before?.matches('.iCIMS_TableRow') === true ? before.querySelector('select') : null;
-  return select !== null && select !== undefined && blockPrefix(select.id) === blockPrefix(control.id)
-    ? controlOfSelect(select) : null;
+  if (select === null || select === undefined || blockPrefix(select.id) !== blockPrefix(control.id)) return null;
+  if (other !== null) {
+    const listLabel = doc.getElementById(`label_${select.id}`) ?? before?.querySelector('.iCIMS_InfoField label') ?? null;
+    const named = (listLabel?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (named === '' || named.toLowerCase() !== other.toLowerCase()) return null;
+  }
+  return controlOfSelect(select);
 }
+
+/** jr7 ICIMS-7 (ENGINE-7 E2's L1, FIX7PLAN §6.7 P2, on snapshot7's jr7-icims1-profile.frame-1.html, arc-onesolutions'
+ *  education block): the School dropdown (select#-1_CandProfileFields.School under its row's
+ *  label_-1_CandProfileFields.School, "School") and, in the next row of the same block, <label
+ *  id="label_-1_CandProfileFields.OtherSchool" ...><span class="iCIMS_LabelText" ...>Other School</span></label> over
+ *  input#-1_CandProfileFields.OtherSchool: a companion box named "Other" and the list's own words, answered by what the
+ *  list ends with (RULES-7's ICIMS7-14: skipped once the list holds the school), so it stands under that list as NYU's
+ *  "Enter school name if not in the list above" does (LIST_LACKS), and a School search that settles no match plans it
+ *  again (ENGINE-7 L1). The words after "Other", compared whole with the list's own label (case aside). */
+const OTHER_OF = /^other\s+(\S(?:.*\S)?)$/i;
 
 /**
  * The control whose write resets this one (Adapter.dependsOn):
@@ -1232,7 +1252,7 @@ function listAboveOf(control: Element): Element | null {
  *   disabled until a source is chosen: jr6-ars-profile.html; enabled with its list: jr6-ars-profile-filled.html), under
  *   the source list in the row before it, "How did you hear about us?" (select#rcf3048), in every snapshot that shows it.
  * - jr6 ifix C-3 (ICIMS-24): a companion text box under the list above it (listAboveOf: NYU's "Enter school name if not
- *   in the list above" under its School list).
+ *   in the list above" under its School list); jr7 ICIMS-7: arc-onesolutions' "Other School" under its "School" (OTHER_OF).
  * Each answer is the control a person sees for the parent (a dropdown's trigger, or a select); null for any other.
  */
 function dependsOn(control: Element): Element | null {
