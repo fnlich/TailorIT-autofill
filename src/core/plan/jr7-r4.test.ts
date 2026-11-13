@@ -75,3 +75,31 @@ describe('R4 (UKGREADY-7 P2): a second email and a work phone are no repeats of 
     expect(written(contact('Work Phone'), atWork)).toBeDefined();
   });
 });
+
+describe('R5 (E4-2): a month-precision date into a text date box whose pattern holds a day', () => {
+  const SCHOOL = { id: 'education', block: 0 };
+  const box = (pattern: string) => specOf('Start date', 'text', { section: SCHOOL, platform: 'ukgready',
+    constraints: { pattern, format: 'date' } });
+  it('writes the month’s 1st, flagged as a guess in the row, as DF7-04 does for a date control', () => {
+    const spec = box('MM/DD/YYYY');
+    const { write, row } = fieldOf(planOf([spec]), spec);
+    expect(write?.value).toEqual({ kind: 'text', text: '08/01/2015' });
+    expect(row).toMatchObject({ reason: 'filled-low-confidence', status: 'flagged' });
+    // The same row as DF7-04's native date control gives.
+    const native = specOf('Start date', 'date', { section: SCHOOL, platform: 'ukgready', constraints: { format: 'date' } });
+    expect(fieldOf(planOf([native]), native).row).toMatchObject({ reason: row.reason, status: row.status });
+  });
+  it('keeps a full date as it is, and refuses a year-only date', () => {
+    const spec = box('MM/DD/YYYY');
+    const exact: Profile = { ...golden, education: [{ ...golden.education[0]!, startDate: { y: 2015, m: 8 } }] };
+    expect(fieldOf(planOf([spec], { profile: exact }), spec).write?.value).toEqual({ kind: 'text', text: '08/01/2015' });
+    const yearOnly: Profile = { ...golden, education: [{ ...golden.education[0]!, startDate: { y: 2015 } }] };
+    expect(fieldOf(planOf([spec], { profile: yearOnly }), spec)).toMatchObject({ write: undefined,
+      row: { reason: 'format-unsupported' } });
+    const start: Profile = { ...golden, preferences: { ...golden.preferences,
+      startDate: { kind: 'date', date: { y: 2026, m: 12, d: 9 } } } };
+    const available = specOf('Date Available', 'text', { platform: 'bamboohr', constraints: { pattern: 'MM/DD/YYYY' } });
+    expect(fieldOf(planOf([available], { profile: start }), available)).toMatchObject({
+      write: { value: { kind: 'text', text: '12/09/2026' } }, row: { reason: 'ok' } });
+  });
+});
