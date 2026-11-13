@@ -1,0 +1,29 @@
+{
+  "fixture": "oracle/jr7-oraclecloud1-section-ready",
+  "source": "https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/4285/apply/section/1/",
+  "captured": "2026-11-11T12:24:30.000Z",
+  "note": "The Submit's checklist (\"Creating candidate info\" done, \"Saving job application info\" in progress): a modal that makes div.app aria-hidden, so no form root a person sees.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.icon-clear",
+      "button.communication-channel__value-edit",
+      "button.app-header__close",
+      "button.apply-flow-profile-item-tile__new-tile",
+      "button.candidate-links__add-link",
+      "button.app-dialog__close",
+      ".app-dialog__footer-button",
+      "button.attachment-upload-button__download",
+      "button.attachment-upload-button__bottom-button",
+      "button.apply-flow-profile-item-tile__edit-item-icon",
+      "button.apply-flow-profile-item-tile__delete-icon"
+    ],
+    "pressable": []
+  }
+}

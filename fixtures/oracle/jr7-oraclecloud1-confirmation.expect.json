@@ -1,0 +1,23 @@
+{
+  "fixture": "oracle/jr7-oraclecloud1-confirmation",
+  "source": "https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/my-profile",
+  "captured": "2026-11-11T12:26:56.000Z",
+  "note": "The site's my-profile after the code (\"My Applications\", jr7-O2): the captured posting's active tile (--keep-application 4285; every other tile would be blanked), its status shown: the drawn success sign for that application. Its menu and \"Withdraw Application\" are never pressed.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      ".cs-application-tile button.cx-menu-button",
+      ".cs-application-tile a.cx-menu-button__link",
+      "button.app-header__close",
+      "button.app-dialog__close",
+      ".app-dialog__footer-button"
+    ],
+    "pressable": []
+  }
+}

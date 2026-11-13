@@ -1,0 +1,21 @@
+{
+  "fixture": "oracle/jr7-oraclecloud1-posting",
+  "source": "https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/4285",
+  "captured": "2026-11-11T12:17:25.000Z",
+  "note": "The posting (snapshot7 oraclecloud1; ORACLE-7): APPLY NOW in its apply-now state, a route in place to .../apply/email. Its description and og:description are synthetic (--replace-text: the posting text met a listed word).",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": ".job-details__description-content @0",
+    "entryControl": ".job-details__section-apply-button button.apply-now-button",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      ".job-details__section-apply-button button.apply-now-button",
+      "button.app-dialog__close",
+      ".app-dialog__footer-button"
+    ],
+    "pressable": []
+  }
+}

@@ -1,0 +1,313 @@
+{
+  "fixture": "oracle/jr7-oraclecloud1-section-filled",
+  "source": "https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/4285/apply/section/1/",
+  "captured": "2026-11-11T12:22:35.000Z",
+  "note": "The same page filled (Jobright's pass and the person's), the tile layout's Education editor open beside its active tile (jr7-O4: a repeatable block of its kind), its Degree row marked invalid. The resume's slot shows the attached file (no input); the tiles' summaries are blanked by the converter.",
+  "fields": [
+    {
+      "label": "Drop Cover Letter Here",
+      "kind": "file",
+      "required": false,
+      "section": "Supporting Documents and URLs",
+      "fillable": true,
+      "control": "input#attachment-upload-0",
+      "note": "Hidden behind its \"Upload Cover Letter\" label[for] (uploadWidgets), labelled by its drop zone's words; the drop zone fades in over 0.4 s (read once it shows)."
+    },
+    {
+      "label": "Link 1",
+      "kind": "text",
+      "required": false,
+      "section": "Supporting Documents and URLs",
+      "fillable": true,
+      "control": "input#siteLink-1-2"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#lastName-11"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#firstName-12"
+    },
+    {
+      "label": "Title",
+      "kind": "radio",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 6,
+      "control": "ul.cx-select-pills-container[aria-label=\"Title\"]",
+      "note": "Oracle's answer pills: button[role=radio] in ul[role=radiogroup]; its question is its row's label (labelFor), whose for names no control."
+    },
+    {
+      "label": "Middle Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#middleNames-14"
+    },
+    {
+      "label": "Preferred First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#knownAs-15"
+    },
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#email-16",
+      "note": "readonly=\"readonly\": the email the gate took, changed only through \"Edit email address\" (never pressed). The scanner reads it camouflaged (oracle.browser.test.ts KNOWN), as hjf-apply-section's."
+    },
+    {
+      "label": "Country code",
+      "kind": "combobox",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#country-codes-dropdownphoneNumber",
+      "note": "The phone's country code, a declared cx-select (jr6 O1, O5); its list is drawn only when opened."
+    },
+    {
+      "label": "Phone Number",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input.input-row__control[aria-label=\"Phone Number\"]",
+      "note": "Drawn by its bordered phone-row group (controlBox, jr6 O4)."
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Address Please enter your home address. For Massachusetts-based applicants: It is unlawful in Massachusetts to require or administer a lie detector test as a condition of employment or continued employment. An employer who violates this law shall be subject to criminal penalties and civil liability.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#country-10",
+      "note": "A declared cx-select (jr6 O1); the address block's parent (jr6 O3)."
+    },
+    {
+      "label": "Address Line 1",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Address Please enter your home address. For Massachusetts-based applicants: It is unlawful in Massachusetts to require or administer a lie detector test as a condition of employment or continued employment. An employer who violates this law shall be subject to criminal penalties and civil liability.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#addressLine1-18",
+      "note": "Oracle Maps' street search (jr6 O2: typeahead-remote, typed into at once)."
+    },
+    {
+      "label": "Address Line 2",
+      "kind": "text",
+      "required": false,
+      "section": "Address Please enter your home address. For Massachusetts-based applicants: It is unlawful in Massachusetts to require or administer a lie detector test as a condition of employment or continued employment. An employer who violates this law shall be subject to criminal penalties and civil liability.",
+      "fillable": true,
+      "control": "input#addressLine2-19"
+    },
+    {
+      "label": "ZIP Code",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Address Please enter your home address. For Massachusetts-based applicants: It is unlawful in Massachusetts to require or administer a lie detector test as a condition of employment or continued employment. An employer who violates this law shall be subject to criminal penalties and civil liability.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#postalCode-20",
+      "note": "A search of the country's postal codes (jr6 O2)."
+    },
+    {
+      "label": "City",
+      "kind": "combobox",
+      "required": true,
+      "section": "Address Please enter your home address. For Massachusetts-based applicants: It is unlawful in Massachusetts to require or administer a lie detector test as a condition of employment or continued employment. An employer who violates this law shall be subject to criminal penalties and civil liability.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#city-21"
+    },
+    {
+      "label": "State",
+      "kind": "combobox",
+      "required": true,
+      "section": "Address Please enter your home address. For Massachusetts-based applicants: It is unlawful in Massachusetts to require or administer a lie detector test as a condition of employment or continued employment. An employer who violates this law shall be subject to criminal penalties and civil liability.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#region2-22"
+    },
+    {
+      "label": "County",
+      "kind": "combobox",
+      "required": true,
+      "section": "Address Please enter your home address. For Massachusetts-based applicants: It is unlawful in Massachusetts to require or administer a lie detector test as a condition of employment or continued employment. An employer who violates this law shall be subject to criminal penalties and civil liability.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#region1-23",
+      "note": "Required; no profile value: filled only where Oracle Maps fills it after the street's pick (jr6 Q13)."
+    },
+    {
+      "label": "Please share any potential conflicts of interest or outside activities that could affect—or appear to affect— your work at Akamai.",
+      "kind": "textarea",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "control": "textarea[name=\"300000758119061\"]"
+    },
+    {
+      "label": "Do you now, or will you in the future, require immigration sponsorship? (I.e. H1B Transfer, L1, F1 OPT etc.)?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "ul.cx-select-pills-container[aria-label=\"Do you now, or will you in the future, require immigration sponsorship? (I.e. H1B Transfer, L1, F1 OPT etc.)?\"]"
+    },
+    {
+      "label": "This position may require access to or disclosure of technologies or materials controlled by relevant United States laws and regulations including the Export Administration Regulations (EAR). Are you a citizen or permanent resident of any country or region subject to an embargo/sanctions order from ",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "ul.cx-select-pills-container[aria-label=\"This position may require access to or disclosure of technologies or materials controlled by relevant United States laws and regulations including the Export Administration Regulations (EAR). Are you a citizen or permanent resident of any country or region subject to an embargo/sanctions order from the United States Office of Foreign Assets Control (OFAC) (including Cuba, Iran, North Korea, Sudan, Syria or Crimea)?\"]"
+    },
+    {
+      "label": "Are you currently or have you ever been an employee, temporary worker, or contingent worker at Akamai Technologies?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 5,
+      "control": "ul.cx-select-pills-container[aria-label=\"Are you currently or have you ever been an employee, temporary worker, or contingent worker at Akamai Technologies?\"]"
+    },
+    {
+      "label": "Degree",
+      "kind": "radio",
+      "required": true,
+      "section": "Education",
+      "fillable": true,
+      "options": 7,
+      "control": "ul.cx-select-pills-container[aria-label=\"Degree\"]",
+      "note": "jr7-O4: the tile layout's Education editor, its Degree a pill group (no box); with \"Education Institution\" it makes the editor an education's (editorKind)."
+    },
+    {
+      "label": "Major",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#major-25"
+    },
+    {
+      "label": "Education Institution",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#educationalEstablishment-26",
+      "note": "jr7-O4: <input name=\"educationalEstablishment\">, the entry's school (readEntries)."
+    },
+    {
+      "label": "Hispanic or Latino",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Voluntary Self-ID",
+      "fillable": true,
+      "control": "input#dq-option-4",
+      "note": "A lone box under \"Ethnicity\", a hidden native box behind its visible label (jr7-O6: RULES-7)."
+    },
+    {
+      "label": "Select the races you identify with.",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Voluntary Self-ID",
+      "fillable": true,
+      "options": 5,
+      "control": "input#dq-option-7"
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "combobox",
+      "required": false,
+      "section": "Veteran Information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#US-STANDARD-ORA_VETERAN_STATUS-STANDARD-5"
+    },
+    {
+      "label": "I agree to receive updates about new job opportunities.",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Veteran Information",
+      "fillable": true,
+      "control": "input#job-alerts-checkbox",
+      "note": "A hidden native box behind its visible label; the agreements block has no heading of its own."
+    },
+    {
+      "label": "I agree to receive marketing communications",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Veteran Information",
+      "fillable": true,
+      "control": "#opt-in-checkbox-label > input",
+      "note": "Its label's \"marketing communications\" opens the agreement's dialog."
+    },
+    {
+      "label": "Full Name",
+      "kind": "text",
+      "required": true,
+      "section": "E-Signature",
+      "fillable": true,
+      "control": "input#fullName-1"
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "textarea.input-row__control--helper",
+      "note": "Oracle's auto-height mirrors of each answer box: aria-hidden, out of the tab order."
+    }
+  ],
+  "hooks": {
+    "detect": "form.apply-flow__content-form",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.icon-clear",
+      "button.communication-channel__value-edit",
+      "button.app-header__close",
+      "button.apply-flow-profile-item-tile__new-tile",
+      "button.candidate-links__add-link",
+      "button.app-dialog__close",
+      ".app-dialog__footer-button",
+      "button.attachment-upload-button__download",
+      "button.attachment-upload-button__bottom-button",
+      "button.apply-flow-profile-item-tile__edit-item-icon",
+      "button.apply-flow-profile-item-tile__delete-icon"
+    ],
+    "pressable": [
+      ".apply-flow-pagination button.apply-flow-pagination__submit-button"
+    ]
+  }
+}

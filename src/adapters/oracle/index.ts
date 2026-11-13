@@ -109,7 +109,8 @@
  *   person's.
  * - Success (jr7-O2): the site's my-profile is the page after submitting (confirmationAfter, url.ts
  *   oracleConfirmationAfter), and its "My Applications" tile naming the armed application, active and with its status
- *   shown, is the drawn sign (successSigns); never a draft's or a resolved one's, never another application's.
+ *   shown, is the drawn sign (successSigns); never a draft's or a resolved one's, never another application's. The
+ *   tile's menu (its status button and "Withdraw Application") is never pressed.
  * - The tile layout (jr7-O4): the Education and Experience blocks' inline editor is a repeatable block of its kind
  *   (as the timeline's is), its entry read by its boxes' names; its invalid rows are errors; the tiles' Edit and Delete
  *   are never pressed. The Skills block's editor is no repeatable (its rows are the person's: owner question Q7-11).
@@ -137,7 +138,13 @@ export const ORACLE_SNAPSHOTS = ['fixtures/oracle/jpmc-posting.html', 'fixtures/
   // ── behaviour review 2026-11-06 (M4): the same flow 12 s after its Submit ──
   'fixtures/oracle/hjf-after-submit.html',
   // ── jr6 ORACLE (FIXPLAN §6.11): the owner's snapshots of a us2 tenant's posting and its email gate ──
-  'fixtures/oracle/jr6-caesars-posting.html', 'fixtures/oracle/jr6-caesars-email-gate.html'] as const;
+  'fixtures/oracle/jr6-caesars-posting.html', 'fixtures/oracle/jr6-caesars-email-gate.html',
+  // ── jr7 ORACLE-7 (FIX7PLAN §6.10): the owner's snapshot7 oraclecloud1, from the posting to my-profile ──
+  'fixtures/oracle/jr7-oraclecloud1-posting.html', 'fixtures/oracle/jr7-oraclecloud1-email-gate.html',
+  'fixtures/oracle/jr7-oraclecloud1-section-blank.html', 'fixtures/oracle/jr7-oraclecloud1-section-filled.html',
+  'fixtures/oracle/jr7-oraclecloud1-section-editor-a.html', 'fixtures/oracle/jr7-oraclecloud1-section-editor-b.html',
+  'fixtures/oracle/jr7-oraclecloud1-section-ready.html', 'fixtures/oracle/jr7-oraclecloud1-submit-code.html',
+  'fixtures/oracle/jr7-oraclecloud1-confirmation.html'] as const;
 
 /** The longest an Oracle page takes to draw its posting or its gate: the runtime's cap. */
 export const ORACLE_FORM_LATE_MS = 30_000;
@@ -757,7 +764,12 @@ const NEVER_PRESSED = ['.job-details__section-apply-button button.apply-now-butt
   // ── jr7 ORACLE-7 (jr7-O4) ── the tile layout's <button class="apply-flow-profile-item-tile__edit-item-icon" title="Edit">
   // and <button class="apply-flow-profile-item-tile__delete-icon" title="Delete"> on each entry's tile (Delete removes
   // the person's entry; Jobright 1.25.2's operations.cleanEduAndExp presses it, owner question 1 keeps it the person's).
-  'button.apply-flow-profile-item-tile__edit-item-icon', 'button.apply-flow-profile-item-tile__delete-icon'];
+  'button.apply-flow-profile-item-tile__edit-item-icon', 'button.apply-flow-profile-item-tile__delete-icon',
+  // ── jr7 ORACLE-7 P2 (jr7-O2) ── jr7-oraclecloud1-confirmation.html, my-profile's application tile: its menu's <button
+  // id="cs-application-tile-menu-button" type="button" aria-haspopup="true" class="cx-menu-button "> (it holds the
+  // tile's status, the success sign's words) and the menu's <a role="menuitem" class="cx-menu-button__link ">Withdraw
+  // Application</a> (it withdraws the person's application, after its dialog, whose footer buttons are listed above).
+  '.cs-application-tile button.cx-menu-button', '.cs-application-tile a.cx-menu-button__link'];
 
 // ── jr7 ORACLE-7 (FIX7PLAN §6.10 item 2, jr7-O2): the page after submitting ──
 /** jr7-O2: the "My Applications" tiles' titles at my-profile (snapshot7 oraclecloud1, the page after its Submit and the
