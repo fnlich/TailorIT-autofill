@@ -179,6 +179,15 @@ const GOLDEN_TASK = example('AutofillPickTask');
 /** The golden "Alex Rivera" profile, the bare AutofillProfile and AutofillSensitive. */
 const PROFILE_FILE = join(ROOT, 'fixtures', 'profiles', 'alex-rivera.profile.json');
 const SENSITIVE_FILE = join(ROOT, 'fixtures', 'profiles', 'alex-rivera.sensitive.json');
+/** The two synthetic jobs the profile-four-jobs scenario adds after the golden two (jr8), in the profile's shape. */
+const FOUR_JOBS_MORE = Object.freeze([
+  { id: 'exp-larkspur', company: 'Larkspur Analytics', title: 'Platform Engineer',
+    location: { city: '', region: '', country: null }, startDate: '2017-03', endDate: '2019-06', current: false,
+    description: 'Kept the Larkspur reporting pipeline running.' },
+  { id: 'exp-tidewater', company: 'Tidewater Works', title: 'Junior Developer',
+    location: { city: '', region: '', country: null }, startDate: '2015-06', endDate: '2017-02', current: false,
+    description: 'Wrote the Tidewater intranet tools.' },
+]);
 
 const CONNECT_PAGE = readFileSync(join(HERE, 'connect-page.html'), 'utf8');
 const RESUME_BYTES = readFileSync(join(HERE, 'golden-resume.pdf'));
@@ -292,6 +301,9 @@ export const MOCK_SCENARIOS = Object.freeze({
     + '7946 0958", its country the United Kingdom), at the next revision.',
   'profile-start-date': 'GET /profile answers the golden profile with an earliest start date (2027-01-04), at the next '
     + 'revision (the Phase 7a review: a date the date box takes in the layout it shows).',
+  'profile-four-jobs': 'GET /profile answers the golden profile with two more jobs after its two (Larkspur Analytics, '
+    + '2017-03 to 2019-06, and Tidewater Works, 2015-06 to 2017-02: four, newest first), at the next revision (jr8: '
+    + 'Workable adds, fills and keeps one entry a round).',
   'profile-unavailable': 'GET /profile gets 500.',
   'lookup-slow': "POST /lookup answers after delayMs (default 30 s, past the worker's 25 s timeout).",
   'lookup-fails': 'POST /lookup gets 500.',
@@ -726,7 +738,7 @@ export function createMock() {
 
   /** The scenarios that change what a profile route answers, which name the next revision. */
   const REVISED = /** @type {const} */ (['sensitive-not-authorized', 'sensitive-us-citizen', 'profile-phone-no-code',
-    'profile-canada', 'profile-uk', 'profile-start-date']);
+    'profile-canada', 'profile-uk', 'profile-start-date', 'profile-four-jobs']);
 
   /** The revision an envelope carries: the contract example's, or the next one under a scenario that changes a profile
    *  route's answer (REVISED), so that both profile routes agree. @param {{ revision: number }} envelope */
@@ -746,6 +758,7 @@ export function createMock() {
       contact.address = { ...contact.address, city: 'London', region: '', postalCode: 'SW1A 1AA', country: 'GB' };
     }
     if (isOn('profile-start-date')) profile.preferences = { ...profile.preferences, earliestStartDate: '2027-01-04' };
+    if (isOn('profile-four-jobs')) profile.experience = [...profile.experience, ...FOUR_JOBS_MORE];
     const saved = state.savedProfile;
     if (saved !== null) return { ...envelope, revision: saved.revision, profile: saved.profile,
       anythingElseFlaggedLines: flaggedLinesOf(saved.profile) };

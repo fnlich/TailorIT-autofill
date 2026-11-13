@@ -163,6 +163,7 @@ The worker's own tests use the same answers (`src/background/worker.testkit.ts`,
 | `ai-answer {value}` (v2) | `POST /ai/answer` answers every item: a choice its first option, a text `CLEAN_ANSWER` within its cap, with the basis in `value` (default `guess`) |
 | `ai-answer-amount` (v3 Phase 7a) | as `ai-answer`, but every text is `$85,000`, a sum with its sign and separators: an item asked in a layout (version 4) gets it as `invalid`, as TailorIT answers it |
 | `profile-start-date` (v3 Phase 7a) | `GET /profile` answers the golden profile with an earliest start date (2027-01-04), at the next revision |
+| `profile-four-jobs` (jr8) | `GET /profile` answers the golden profile with two synthetic jobs after its two (Larkspur Analytics, Tidewater Works: four, newest first), at the next revision |
 | `resume-slow` | the file answers after `delayMs` (default 8 s) |
 | `resume-fails` | the file gets 500 |
 | `resume-hash-mismatch` | the file's `X-TailorIT-Sha256` is not its bytes' digest |

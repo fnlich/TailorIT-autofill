@@ -32,7 +32,8 @@
  * profile's start date as MM/DD/YYYY; an entry the page's draft restored (.../0000000A06/) is matched by its summary
  * and never added again. The auto-apply agent takes a queued Workable job (API 4) and submits it. jr8 (the owner's live
  * run of 2026-11-13, snapshot9): the page draws each new editor at the top of its list and the saved entries
- * newest-added first, as live Workable does.
+ * newest-added first, as live Workable does, and a profile of four jobs (the mock's profile-four-jobs) has all four
+ * added, filled and kept, one a round.
  */
 import type { Page } from '@playwright/test';
 import { COPY } from '../../src/shared/copy';
@@ -370,5 +371,38 @@ test.describe("Workable's application form", () => {
       expect.objectContaining({ company: 'Quillfeather Labs', title: 'Senior Software Engineer', current: true })]);
     expect(report.notices.map((notice) => notice.code)).not.toContain('needs-click');
     expect(log.pressed).toEqual([]);
+  });
+
+  test('four jobs, one a round: each added, filled and kept with the editor drawn at the top of its list (jr8)', async ({ extContext, connected: ext, routeLog }) => {
+    test.setTimeout(240_000);
+    routeLog.serve(routes);
+    // The golden profile with two synthetic jobs after its two (the owner's live run of 2026-11-13 kept two of four).
+    await mock.scenario('profile-four-jobs');
+    const page = await extContext.newPage();
+    await openForm(ext, page, WORKABLE_WIDGETS.now);
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId, { timeout: 180_000 });
+    const log = await pageValue<Log>(page, '__workable');
+    // One Add for the school, four for the jobs: each round adds, fills and keeps one, as the page draws the new editor
+    // at the top of its list, where the entry kept the round before was.
+    expect(log.adds).toBe(5);
+    expect(log.entries.experience).toEqual([
+      expect.objectContaining({ title: 'Senior Software Engineer', company: 'Quillfeather Labs', start_date: '06/2021',
+        current: true }),
+      expect.objectContaining({ title: 'Software Engineer', company: 'Marrowgate Systems', start_date: '07/2019',
+        end_date: '05/2021' }),
+      expect.objectContaining({ title: 'Platform Engineer', company: 'Larkspur Analytics', start_date: '03/2017',
+        end_date: '06/2019' }),
+      expect.objectContaining({ title: 'Junior Developer', company: 'Tidewater Works', start_date: '06/2015',
+        end_date: '02/2017' })]);
+    expect(log.entries.experience![0]).not.toHaveProperty('end_date');
+    await expect(page.locator('[data-ui="experience"] [data-ui="editor"]')).toHaveCount(0);
+    await expect(page.locator('[data-ui="experience"] dd[data-ui="company"]')).toHaveText(['Tidewater Works',
+      'Larkspur Analytics', 'Marrowgate Systems', 'Quillfeather Labs']);
+    expect(report.repeatables).toEqual(expect.arrayContaining([{ kind: 'experience', added: 4, of: 4 }]));
+    expect(report.notices.map((notice) => notice.code)).not.toContain('needs-click');
+    expect(report.fields.filter((field) => field.reason === 'value-oscillated')).toEqual([]);
+    expect(log.pressed).toEqual([]);
+    expect(log.submitted).toBe(0);
   });
 });

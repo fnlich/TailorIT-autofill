@@ -498,6 +498,24 @@ describe('the scripted answers', () => {
     }
   });
 
+  it('profile-four-jobs: the golden profile with two synthetic jobs after its two, at the next revision until the reset (jr8)', async () => {
+    const read = async (path: string) => (await call(path, { headers: asToken() })).json() as Promise<{ revision: number;
+      profile?: { experience: Array<Record<string, unknown>> } & Record<string, unknown> }>;
+    const golden = await read('/api/autofill/profile');
+    await scenario('profile-four-jobs', { times: 1 });
+    for (let round = 0; round < 2; round += 1) {
+      const profile = await read('/api/autofill/profile');
+      expect(AUTOFILL_CONTRACT_SCHEMAS.AutofillProfileEnvelope.safeParse(profile).success).toBe(true);
+      expect(profile.revision).toBe(golden.revision + 1);
+      expect(profile.profile!.experience.slice(0, 2)).toEqual(golden.profile!.experience);
+      expect(profile.profile!.experience.slice(2).map((job) => [job.company, job.startDate, job.endDate, job.current]))
+        .toEqual([['Larkspur Analytics', '2017-03', '2019-06', false], ['Tidewater Works', '2015-06', '2017-02', false]]);
+      expect({ ...profile.profile, experience: null }).toEqual({ ...golden.profile, experience: null });
+    }
+    await mock.reset();
+    expect(await read('/api/autofill/profile')).toEqual(golden);
+  });
+
   it('lookup-slow waits before the golden answer; lookup-fails gets 500; times counts requests', async () => {
     await scenario('lookup-slow', { times: 1, delayMs: 300 });
     const lookup = () => call('/api/autofill/lookup', { method: 'POST', headers: asToken(), json: example('AutofillLookupRequest') });
