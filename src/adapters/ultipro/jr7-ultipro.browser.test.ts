@@ -18,6 +18,7 @@
  * - UP7-13 (jr6 REVC-5, asserted): the start date fillable once a wrapper draws its box, counted only while empty.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import successHtml from '../../../fixtures/synthetic/jr7-ultipro/success.html?raw';
 import { openAt, runtimeAt, servedAdapter, sourceOf, wallsOf } from '../../content/apply.testkit';
 import { createFakeWorker, goldenProfile, NOW, testVocab } from '../../content/content.testkit';
@@ -381,6 +382,43 @@ describe('jr7 UP7-07: the documents dialog after Submit (owner question Q7-8: th
       .map((adapter) => (adapter.id === 'generic' ? adapter : servedAdapter(adapter, address))));
     try {
       await vi.waitFor(() => expect(worker.of('frame/hello').at(-1)?.handOver).toBe('documents'), { timeout: 10_000 });
+    } finally {
+      runtime.stop();
+    }
+  }, 60_000);
+
+  // jr7-auto-r3 (AUTO-7, UP7-07): drawn in the same document after an armed Submit, the hand-over is said once.
+  it('drawn after the person\'s Submit on the application (the same document), one hello names it (jr7-auto-r3)',
+    async () => {
+    // jr7-ultipro1-apply-11 with its dialog taken out before the run starts (the page's own markup and style kept: the
+    // converter keeps only the style rules a captured element uses), then drawn again after the person's Submit.
+    const address = addressOf('jr7-ultipro1-apply-11');
+    const { doc, fixture } = await openAt(page('jr7-ultipro1-apply-11').html, address);
+    const dialog = doc.getElementById('AttachmentsChangedModal')!;
+    const backdrop = doc.querySelector('.modal-backdrop')!;
+    dialog.remove();
+    backdrop.remove();
+    const { worker, runtime } = await runtimeAt(doc, address, (url) => adaptersFor(url, doc)
+      .map((adapter) => (adapter.id === 'generic' ? adapter : servedAdapter(adapter, address))));
+    try {
+      await vi.waitFor(() => expect(worker.of('frame/hello').length).toBeGreaterThan(0), { timeout: 10_000 });
+      const hellos = () => worker.of('frame/hello').filter((hello) => hello.handOver !== undefined);
+      // Before any Submit, no hand-over is said.
+      expect(hellos()).toEqual([]);
+      // The person's own trusted click on Submit (the btn-submit host): armed.
+      const submit = doc.querySelector<HTMLElement>('#OpportunityApply ukg-button[data-automation="btn-submit"]')!;
+      submit.scrollIntoView({ block: 'center' });
+      const at = submit.getBoundingClientRect();
+      await userEvent.click(fixture.frame, { position: { x: at.left + at.width / 2, y: at.top + at.height / 2 } });
+      await vi.waitFor(() => expect(worker.of('submit/armed')).toHaveLength(1), { timeout: 10_000 });
+      // UltiPro's dialog drawn over the form, as the capture shows it.
+      doc.body.append(dialog, backdrop);
+      await vi.waitFor(() => expect(hellos()).toEqual([expect.objectContaining({ handOver: 'documents', isTop: true })]),
+        { timeout: 10_000 });
+      // The page goes on changing while it shows: no second hello.
+      dialog.querySelector('.modal-body')!.append(doc.createElement('p'));
+      await deadline(1_000);
+      expect(hellos()).toHaveLength(1);
     } finally {
       runtime.stop();
     }
