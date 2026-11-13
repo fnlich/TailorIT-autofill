@@ -6,14 +6,22 @@ describe('dateText (date.format)', () => {
     expect(dateText({ y: 2015, m: 8 }, { pattern: 'MM/YYYY' })).toEqual({ text: '08/2015', guessed: false });
     expect(dateText({ y: 2015, m: 8 }, { pattern: 'yyyy-mm' })).toEqual({ text: '2015-08', guessed: false });
     expect(dateText({ y: 2026, m: 12, d: 1 }, { pattern: 'MM/DD/YYYY' })).toEqual({ text: '12/01/2026', guessed: false });
-    expect(dateText({ y: 2015, m: 8 }, { pattern: 'MM/DD/YYYY' })).toBeNull();
+    // jr7 RULES-7 R5 (E4-2, amending docs/design/core.md §8.5 as DF7-04 did): a pattern with a day given a
+    // month-precision date takes the month's 1st, guessed; a date with no month is still refused.
+    expect(dateText({ y: 2015, m: 8 }, { pattern: 'MM/DD/YYYY' })).toEqual({ text: '08/01/2015', guessed: true });
+    expect(dateText({ y: 2015, m: 8 }, { pattern: 'dd.mm.yyyy' })).toEqual({ text: '01.08.2015', guessed: true });
+    expect(dateText({ y: 2015 }, { pattern: 'MM/DD/YYYY' })).toBeNull();
+    expect(dateText({ y: 2015 }, { pattern: 'DD/YYYY' })).toBeNull();
     expect(dateText({ y: 2015 }, { pattern: 'MM/YYYY' })).toBeNull();
   });
 
   it('follows the field’s format, else guesses the usual layout and says so', () => {
     expect(dateText({ y: 2015, m: 8 }, { format: 'year' })).toEqual({ text: '2015', guessed: false });
     expect(dateText({ y: 2015, m: 8 }, { format: 'month-year' })).toEqual({ text: '08/2015', guessed: false });
-    expect(dateText({ y: 2015, m: 8 }, { format: 'date' })).toBeNull();
+    // jr7 RULES-7 R5 (E4-2): the month's 1st, guessed; no month, nothing.
+    expect(dateText({ y: 2015, m: 8 }, { format: 'date' })).toEqual({ text: '08/01/2015', guessed: true });
+    expect(dateText({ y: 2015 }, { format: 'date' })).toBeNull();
+    expect(dateText({ y: 2026, m: 12, d: 1 }, { format: 'date' })).toEqual({ text: '12/01/2026', guessed: false });
     expect(dateText({ y: 2015, m: 8 }, {})).toEqual({ text: '08/2015', guessed: true });
     expect(dateText({ y: 2015 }, {})).toEqual({ text: '2015', guessed: true });
     expect(dateText({ y: 2026, m: 12, d: 1 }, {})).toEqual({ text: '12/01/2026', guessed: true });

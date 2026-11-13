@@ -26,19 +26,24 @@ const pad = (value: number, width = 2) => String(value).padStart(width, '0');
 /** The date tokens a pattern may hold, longest first, and the separators between them. */
 const DATE_PATTERN = /^(?:YYYY|YY|MM|DD|[\s/.-])+$/;
 
-/** A date laid out by a pattern such as "MM/YYYY" or "YYYY-MM-DD"; null when the pattern is no date pattern or needs a
- *  part the date lacks. */
-function byPattern(date: DateParts, pattern: string): string | null {
+/** A date laid out by a pattern such as "MM/YYYY" or "YYYY-MM-DD", and whether a part was guessed; null when the
+ *  pattern is no date pattern or needs a part the date lacks. jr7 RULES-7 R5 (E4-2, from ENGINE-7: UKG Ready's work
+ *  "Start date" and Ashby's date box, MM/DD/YYYY): a pattern with a day given a month-precision date takes the month's
+ *  1st, guessed, as DF7-04 does for a date control (docs/design/core.md §8.5 as amended); a date with no month gives
+ *  nothing. */
+function byPattern(date: DateParts, pattern: string): Laid | null {
   const upper = pattern.trim().toUpperCase();
   if (!DATE_PATTERN.test(upper)) return null;
   if (upper.includes('MM') && date.m === undefined) return null;
-  if (upper.includes('DD') && date.d === undefined) return null;
-  return upper.replace(/YYYY|YY|MM|DD/g, (token) => {
+  if (upper.includes('DD') && date.d === undefined && date.m === undefined) return null;
+  const guessed = upper.includes('DD') && date.d === undefined;
+  const text = upper.replace(/YYYY|YY|MM|DD/g, (token) => {
     if (token === 'YYYY') return String(date.y);
     if (token === 'YY') return pad(date.y % 100);
     if (token === 'MM') return pad(date.m!);
-    return pad(date.d!);
+    return pad(date.d ?? 1);
   });
+  return { text, guessed };
 }
 
 /** A date as text for a text field (§8.5, date.format): by the field's pattern, else its format, else month and year
@@ -46,8 +51,7 @@ function byPattern(date: DateParts, pattern: string): string | null {
  *  the date lacks. */
 export function dateText(date: DateParts, constraints: Constraints): Laid | null {
   if (constraints.pattern !== undefined && DATE_PATTERN.test(constraints.pattern.trim().toUpperCase())) {
-    const text = byPattern(date, constraints.pattern);
-    return text === null ? null : { text, guessed: false };
+    return byPattern(date, constraints.pattern);
   }
   switch (constraints.format) {
     case 'year':
@@ -55,8 +59,9 @@ export function dateText(date: DateParts, constraints: Constraints): Laid | null
     case 'month-year':
       return date.m === undefined ? null : { text: `${pad(date.m)}/${date.y}`, guessed: false };
     case 'date':
-      return date.m === undefined || date.d === undefined ? null
-        : { text: `${pad(date.m)}/${pad(date.d)}/${date.y}`, guessed: false };
+      // jr7 RULES-7 R5 (E4-2): a month-precision date takes the month's 1st, guessed.
+      return date.m === undefined ? null
+        : { text: `${pad(date.m)}/${pad(date.d ?? 1)}/${date.y}`, guessed: date.d === undefined };
     default:
       if (date.m === undefined) return { text: String(date.y), guessed: true };
       if (date.d === undefined) return { text: `${pad(date.m)}/${date.y}`, guessed: true };
