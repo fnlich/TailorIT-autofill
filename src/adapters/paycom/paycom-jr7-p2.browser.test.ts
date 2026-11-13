@@ -71,8 +71,11 @@ describe('jr7 DFPC-7 P2: Paycom\'s fields fill, after ENGINE-7\'s two edits', ()
     async () => {
       const { result } = await planned(apply2);
       expect(result.fields.length).toBe(101);
-      const unfillable = result.fields.map((field) => ({ field, fill: fillabilityOf(field,
-        result.target(field.key)?.widget ?? undefined) })).filter(({ fill }) => !fill.fillable);
+      // jr7 INT-7: the reason read where the union is narrowed (tsc: a filter's callback does not narrow it).
+      const unfillable = result.fields.flatMap((field) => {
+        const fill = fillabilityOf(field, result.target(field.key)?.widget ?? undefined);
+        return fill.fillable ? [] : [{ field, fill }];
+      });
       expect(result.fields.length - unfillable.length).toBe(94);
       expect(unfillable.map(({ field, fill }) => `${field.label}: ${fill.reason}`).sort()).toEqual([
         'Country: widget-phase-4', 'Country: widget-phase-4', 'Country: widget-phase-4', 'Country: widget-phase-4',
@@ -135,10 +138,9 @@ describe('jr7 DFPC-7 P2: Paycom\'s fields fill, after ENGINE-7\'s two edits', ()
     expect(radios.map((radio) => radio.getAttribute('aria-label')?.trim())).toEqual(['Yes 1 of 2.', 'No 2 of 2.']);
   });
 
-  // ENGINE-7 (exact edit 5 in SP\jr7\build\DFPC-7.md): E1 item 5's hiddenOwnLabelSays takes a radio's own label only
-  // where the label itself is aria-hidden (Eightfold's); Paycom's label is shown and holds its words in an aria-hidden
-  // <p>, so the options read none and the question waits for options. INT-7 flips this once the edit lands.
-  it.fails('PC7-04 (needs ENGINE-7): the pre-screen\'s options read "Yes" and "No", and work authorization plans "Yes"',
+  // ENGINE-7 E3-1 (DFPC-7's edit 5, jr7-engine-e3): hiddenOwnLabelSays also reads an aria-hidden part of the radio's
+  // own shown label (Paycom's aria-hidden <p>), so the options read their words. Flipped by INT-7 once e3 merged.
+  it('PC7-04 (ENGINE-7 E3-1): the pre-screen\'s options read "Yes" and "No", and work authorization plans "Yes"',
     async () => {
       const { at } = await planned(prescreen);
       const question = at('input.uiLibRadioInput');
@@ -148,9 +150,9 @@ describe('jr7 DFPC-7 P2: Paycom\'s fields fill, after ENGINE-7\'s two edits', ()
       expect(optionOf(question.write)).toBe('Yes');
     });
 
-  // RULES-7 (exact edit 6 in SP\jr7\build\DFPC-7.md): "Employer Phone Number" in an Employment block reads as
-  // contact.phone, so the person's own phone is planned into each employer's phone box. INT-7 flips this once fixed.
-  it.fails('PC7-04 (needs RULES-7): an employer\'s phone is never written with the person\'s own phone', async () => {
+  // RULES-7 R3-1 (DFPC-7's edit 6, jr7-rules-r3): a job's or school's block never takes contact.phone, so the
+  // person's own phone is never planned into an employer's phone box. Flipped by INT-7 once r3 merged.
+  it('PC7-04 (RULES-7 R3-1): an employer\'s phone is never written with the person\'s own phone', async () => {
     const { at } = await planned(apply2);
     const phone = at('#employment-employer-phone-number-field-2');
     expect(phone.field.section).toMatchObject({ id: 'experience', block: 0 });
