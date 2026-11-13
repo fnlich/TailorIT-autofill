@@ -6,14 +6,13 @@
  *   and the fourth drawn sign (workdaySignsAt: aristocrat's "Congratulations!" heading, at such an address only);
  * - WD7-06: the Sign In view's notice after Create Account ("An email has been sent to you. Please verify your
  *   account.") read as verify-email by accountErrorKind, never one of the adapter's errors.
- * P2 (after jr7-engine-e2, jr7-rules-r2, jr7-auto-done and jr7-chain-done) adds the shared outcomes FIX7PLAN §6.6
- * lists: RULES-7's answers on these steps, and WD7-04/WD7-05 through AUTO-7's runtime from -review to -confirmation.
+ * P2's shared outcomes (RULES-7's answers on these steps, WD7-04/WD7-05 through AUTO-7's runtime and worker) are in
+ * jr7-workday-p2.browser.test.ts; the cases are jr7-workday.testkit.ts's.
  * Addresses are the fixtures' own (their headers); the new application's id in them is REDACTED (the redaction list),
  * which is what the hooks read: whether there is one, never which. No value of the owner's is in a fixture or here.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.testkit';
-import { deadline } from '../../dom/time';
+import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { isUserVisible } from '../../dom/visibility';
 import { signIn, signInDetailOf, type SignInContext } from '../../content/sign-in';
 import { parseAtsUrl } from '../../contract/tailorit/lookup';
@@ -23,44 +22,9 @@ import { successSignsOf } from '../success';
 import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { accountErrors } from './application';
 import { WORKDAY_CONGRATULATIONS, WORKDAY_SUCCESS, workdayAdapter, workdaySignsAt } from './index';
-
-const RAW = import.meta.glob('../../../fixtures/workday/jr7-workday*.html', { query: '?raw', import: 'default',
-  eager: true }) as Record<string, string>;
-
-/** One captured page: its case name, its markup, the address it was captured at, its folder and step. */
-interface Case { name: string; html: string; source: URL; folder: 'workday1' | 'workday2' | 'workday3'; step: string }
-
-const CASES: readonly Case[] = Object.entries(RAW).filter(([path]) => !path.includes('.third-party-frame'))
-  .map(([path, html]) => {
-    const name = path.split('/').pop()!.replace(/\.html$/, '');
-    const header = /<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(html);
-    const source = new URL((JSON.parse(header![1]!) as { source: string }).source);
-    const [, folder, step] = /^jr7-(workday[123])-(.+)$/.exec(name)!;
-    return { name, html, source, folder: folder as Case['folder'], step: step! };
-  }).sort((a, b) => a.name.localeCompare(b.name));
-const byName = (name: string): Case => {
-  const found = CASES.find((each) => each.name === name);
-  if (found === undefined) throw new Error(`no case ${name}`);
-  return found;
-};
-const FOLDERS = ['workday1', 'workday2', 'workday3'] as const;
+import { byName, CASES, FOLDERS, load, variant } from './jr7-workday.testkit';
 
 afterEach(() => removeFixtures(document));
-
-/** A capture loaded, its entrance animations run to their end (Workday's dialogs fade in for 150 ms). */
-async function load(item: Case): Promise<Fixture> {
-  const fixture = await loadFixture(document, item.html, SNAPSHOT_VIEWPORT);
-  const running = fixture.doc.getAnimations().map((each) => each.finished.catch(() => undefined));
-  await Promise.race([Promise.all(running), deadline(1_500)]);
-  return fixture;
-}
-
-/** `url` with its parts changed. */
-function variant(url: URL, change: (copy: URL) => void): URL {
-  const copy = new URL(url.href);
-  change(copy);
-  return copy;
-}
 
 describe('jr7 WORKDAY-7: the snapshot7 captures', () => {
   it('holds the 44 captures of the three applications, each at its tenant’s own address', () => {
@@ -364,13 +328,11 @@ describe('jr7 WD7-06: the notice "verify your account" after Create Account (acc
   });
 
   /*
-   * Through SHELL-A (content/sign-in.ts): on arrival, nothing asked, nothing typed, the kind said. It needs
-   * ENGINE-7's edit (SP\jr7\build\WORKDAY-7.md, "Exact edits"): content/sign-in.ts accountErrorShown asks the hook of the
-   * page's shown role=alert notices beside the adapter's errors (today it asks of the errors alone, and the notice is
-   * none of them, as WD7-06 requires). Until that edit lands it fails, so it is held as failing; INT-7 turns `it.fails`
-   * into `it` (the edit was proved against this test in the scratch: the handoff's undo proofs).
+   * Through SHELL-A (content/sign-in.ts): on arrival, nothing asked, nothing typed, the kind said. With ENGINE-7's
+   * edit from WORKDAY-7's handoff (c1b29d5): accountErrorShown asks the hook of the page's shown role=alert notices
+   * after the adapter's errors, and the notice is none of those errors, as WD7-06 requires.
    */
-  it.fails('wd2: through SHELL-A on arrival, nothing asked or typed, verify-email said (with ENGINE-7’s edit)', async () => {
+  it('wd2: through SHELL-A on arrival, nothing asked or typed, verify-email said (ENGINE-7’s edit, c1b29d5)', async () => {
     const item = byName('jr7-workday2-login-verify-sent');
     const fixture = await load(item);
     const form = fixture.doc.querySelector('form[data-automation-id="signInFormo"]');
