@@ -1,0 +1,38 @@
+{
+  "fixture": "workday/jr7-workday2-review",
+  "source": "https://republic.wd5.myworkdayjobs.com/en-US/republic/job/Remote---USA/Supervisor-Digital-Solutions_R-188238/apply/autofillWithResume",
+  "captured": "2026-11-11T15:20:40.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"utilityMenuButton\"]",
+      "[data-automation-id=\"hammyMenuIcon\"]",
+      "[data-automation-id=\"logoLink\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Review",
+      "progress": "current step 7 of 7",
+      "anchors": [
+        "applyFlowReviewPage"
+      ]
+    },
+    "final": "final",
+    "next": null,
+    "submit": "[data-automation-id=\"pageFooterNextButton\"]",
+    "widgets": [],
+    "repeatables": []
+  }
+}

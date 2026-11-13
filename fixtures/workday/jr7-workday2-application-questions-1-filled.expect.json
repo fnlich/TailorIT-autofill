@@ -1,0 +1,133 @@
+{
+  "fixture": "workday/jr7-workday2-application-questions-1-filled",
+  "source": "https://republic.wd5.myworkdayjobs.com/en-US/republic/job/Remote---USA/Supervisor-Digital-Solutions_R-188238/apply/autofillWithResume",
+  "captured": "2026-11-11T15:19:47.000Z",
+  "fields": [
+    {
+      "label": "Are you at least eighteen (18) years of age?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-1-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--650ac5ea118d1002034bc7be2f5d0000\"]"
+    },
+    {
+      "label": "Are you legally authorized to work in the United States?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-1-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--650ac5ea118d1002034bc8f1b1cc0000\"]"
+    },
+    {
+      "label": "Will you now or in the future require employment-based immigration sponsorship to work for our company (for example, H-1B, TN, L-1, E-3, O-1, Adjustment of Status portability, etc.)? Note: Individuals working pursuant to F-1 OPT/STEM OPT/CPT and planning to ask for employment sponsorship in the futu",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-1-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--214e3c62de81100203de5906f0920000\"]"
+    },
+    {
+      "label": "Have you worked for Republic Services previously or any of our subsidiary companies?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-1-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--650ac5ea118d1002034bc98b747b0000\"]"
+    },
+    {
+      "label": "If hired, when can you begin work?",
+      "kind": "date",
+      "required": false,
+      "section": "application-questions-1-of-2",
+      "fillable": true,
+      "control": "div[id=\"primaryQuestionnaire--650ac5ea118d1002034bc98b747b0004\"]",
+      "note": "s2 wd: Workday's date input, one date field (Adapter.dateFor), written part by part"
+    },
+    {
+      "label": "Desired Salary",
+      "kind": "text",
+      "required": false,
+      "section": "application-questions-1-of-2",
+      "fillable": true,
+      "control": "input[id=\"primaryQuestionnaire--650ac5ea118d1002034bc98b747b0005\"]"
+    },
+    {
+      "label": "Please list any job related military experience or skills",
+      "kind": "textarea",
+      "required": false,
+      "section": "application-questions-1-of-2",
+      "fillable": true,
+      "control": "textarea[id=\"primaryQuestionnaire--650ac5ea118d1002034bc98b747b0006\"]"
+    },
+    {
+      "label": "a dropdown's mirror",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "button[aria-haspopup=\"listbox\"] + input",
+      "note": "The hidden text box beside each dropdown's button, which mirrors its answer: the button is the widget."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"utilityMenuButton\"]",
+      "[data-automation-id=\"dateIcon\"]",
+      "[data-automation-id=\"hammyMenuIcon\"]",
+      "[data-automation-id=\"logoLink\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Application Questions 1 of 2",
+      "progress": "current step 4 of 7",
+      "anchors": [
+        "applyFlowPrimaryQuestionsPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "button[id=\"primaryQuestionnaire--650ac5ea118d1002034bc7be2f5d0000\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--650ac5ea118d1002034bc8f1b1cc0000\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--214e3c62de81100203de5906f0920000\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--650ac5ea118d1002034bc98b747b0000\"]",
+        "kind": "combobox",
+        "answered": true
+      }
+    ],
+    "repeatables": []
+  }
+}

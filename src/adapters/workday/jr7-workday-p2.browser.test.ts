@@ -33,9 +33,18 @@ import { deadline } from '../../dom/time';
 import type { WidgetReading } from '../../dom/types';
 import { applicationOf } from '../index';
 import { successSignsOf } from '../success';
-import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { compareWithExpectation, readExpectation, scanCase, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { compareHooks, readHooks } from '../test/hooks.testkit';
 import { WORKDAY_SUCCESS, workdayAdapter } from './index';
 import { byName, COMPANY, FOLDERS, type Case } from './jr7-workday.testkit';
+import wd1QuestionsExpect from '../../../fixtures/workday/jr7-workday1-application-questions-blank.expect.json';
+import wd1ReviewExpect from '../../../fixtures/workday/jr7-workday1-review.expect.json';
+import wd2Questions1Expect from '../../../fixtures/workday/jr7-workday2-application-questions-1-filled.expect.json';
+import wd2Questions2Expect from '../../../fixtures/workday/jr7-workday2-application-questions-2-filled.expect.json';
+import wd2ReviewExpect from '../../../fixtures/workday/jr7-workday2-review.expect.json';
+import wd3InformationExpect from '../../../fixtures/workday/jr7-workday3-my-information-blank.expect.json';
+import wd3QuestionsExpect from '../../../fixtures/workday/jr7-workday3-application-questions-filled.expect.json';
+import wd3ReviewExpect from '../../../fixtures/workday/jr7-workday3-review.expect.json';
 
 let logs: MockInstance;
 beforeAll(() => {
@@ -300,5 +309,74 @@ describe('jr7 WORKDAY-7 P2: the worker reads the page after submitting with the 
     for (const other of FOLDERS.filter((each) => each !== folder)) {
       expect(confirmationAfterOf('workday', armed, byName(`jr7-${other}-confirmation`).source), other).toBe(false);
     }
+  });
+});
+
+// ── The expectations (<case>.expect.json: written from the page's own rendering, never from the scanner) ───────────
+
+/** A step case's `steps` entry (as workday-steps.browser.test.ts reads it). */
+interface ExpectedSteps {
+  signature: { heading: string; progress: string; anchors: string[] };
+  final: 'final' | 'not-final' | 'unknown';
+  next: string | null;
+  submit: string | null;
+  widgets: Array<{ control: string; kind: string; answered: boolean }>;
+  repeatables: Array<{ kind: string; blocks: number; add: string | null }>;
+}
+
+/** The snapshot7 pages the P2 asserts read, each with its expectation: the questions and the information RULES-7's
+ *  items were found on, and each tenant's Review (final, its Submit). */
+const EXPECTED = [
+  ['jr7-workday1-application-questions-blank', wd1QuestionsExpect],
+  ['jr7-workday2-application-questions-1-filled', wd2Questions1Expect],
+  ['jr7-workday2-application-questions-2-filled', wd2Questions2Expect],
+  ['jr7-workday3-application-questions-filled', wd3QuestionsExpect],
+  ['jr7-workday3-my-information-blank', wd3InformationExpect],
+  ['jr7-workday1-review', wd1ReviewExpect],
+  ['jr7-workday2-review', wd2ReviewExpect],
+  ['jr7-workday3-review', wd3ReviewExpect],
+] as const;
+
+/** The one element `selector` names, or a failure. */
+function one(doc: Document, selector: string): Element {
+  const found = Array.from(doc.querySelectorAll(selector));
+  expect(found, selector).toHaveLength(1);
+  return found[0]!;
+}
+
+describe('jr7 WORKDAY-7 P2: the snapshot7 step pages are their expectations', () => {
+  it.each(EXPECTED)('%s: its header names the fixture and its address', (name, json) => {
+    const expectation = readExpectation(json);
+    expect(expectation.fixture).toBe(`workday/${name}`);
+    expect(expectation.source).toBe(byName(name).source.href);
+  });
+
+  it.each(EXPECTED)('%s: every hook answers what the page shows', async (name, json) => {
+    const { doc } = await loadFixture(document, byName(name).html, SNAPSHOT_VIEWPORT);
+    expect(compareHooks(doc, workdayAdapter, readHooks(json))).toEqual([]);
+  });
+
+  it.each(EXPECTED)('%s: the scan of the flow page is the expectation', async (name, json) => {
+    const scanned = await scanCase(document, byName(name).html, byName(name).source.href);
+    expect(scanned.adapter).toBe(workdayAdapter);
+    expect(compareWithExpectation(scanned.doc, scanned.result, readExpectation(json))).toEqual([]);
+  });
+
+  it.each(EXPECTED)('%s: its signature, finality, Next and Submit, widgets and repeatable sections', async (name, json) => {
+    const steps = (json as unknown as { steps: ExpectedSteps }).steps;
+    const scanned = await scanCase(document, byName(name).html, byName(name).source.href);
+    const doc = scanned.doc;
+    expect(workdayAdapter.stepSignature!(doc)).toEqual(steps.signature);
+    expect(workdayAdapter.isFinalStep!(doc)).toBe(steps.final);
+    expect(workdayAdapter.nextButton!(scanned.root)).toBe(steps.next === null ? null : one(doc, steps.next));
+    expect(workdayAdapter.submitButton!(scanned.root)).toBe(steps.submit === null ? null : one(doc, steps.submit));
+    for (const widget of steps.widgets) {
+      const control = one(doc, widget.control);
+      const field = scanned.result.fields.find((each) => scanned.result.target(each.key)?.widget?.element === control);
+      expect(field?.kind, widget.control).toBe(widget.kind);
+      expect(field?.current.kind, widget.control).toBe(widget.answered ? 'selected' : 'empty');
+    }
+    expect(workdayAdapter.repeatables!(scanned.root).map((section) => ({ kind: section.kind,
+      blocks: section.blocks().length, add: section.addButton()?.textContent?.trim() ?? null }))).toEqual(steps.repeatables);
   });
 });
