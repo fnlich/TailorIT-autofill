@@ -39,8 +39,9 @@
 // - The snapshot build of 2026-11-06 (the owner's captures, taken signed in and filled in, with other extensions
 //   active; docs/FIXTURES.md, the owner's snapshots of 2026-11-06), on every platform, in this order:
 //   - before anything is measured: what is not the site's page goes (stripInjectedInPage): other extensions' UI
-//     (INJECTED_UI), an overlay's shadow host on <body> that holds no control where the platform does not keep shadow
-//     roots, and the per-load values of PER_LOAD_PARAMS (REDACTED); and the choices a page mirrors are cleared
+//     (INJECTED_UI), the marks a panel at the window's edge leaves on the site's elements (jr8: INJECTED_MARKS), an
+//     overlay's shadow host on <body> that holds no control where the platform does not keep shadow roots, and the
+//     per-load values of PER_LOAD_PARAMS (REDACTED); and the choices a page mirrors are cleared
 //     (clearChoicesInPage: aria-checked, aria-pressed and data-checked, a chosen phone country's flag and button, and
 //     the chosen marks of the new ATSs' drawn controls and lists, CHOSEN_MARKS, with (s2 wd) any aria-activedescendant
 //     that names an option it unselected);
@@ -335,6 +336,14 @@ export const INJECTED_UI = ['plasmo-csui#jobright-helper-plugin', '#swooped-exte
   // "Edit with AI" hosts, <div class="jr-edit-ai-host"> each with its open shadow root, drawn beside the page's text
   // areas inside the form.
   '.jr-edit-ai-host'];
+/** jr8 ICIMS (snapshot11, the iCIMS portals' wrappers, captured with Jobright's helper panel and TailorIT's sidebar open):
+ *  the marks a panel docked at the window's edge leaves on the site's own elements, never the site's: data-<mark>-*
+ *  attributes (Jobright's data-jobright-helper-panel-open on <html> and <body>, its data-jobright-helper-page-* on the
+ *  fixed elements it moves; TailorIT's data-tailorit-sidebar and data-tailorit-push, content/ui/push.ts), --<mark>-*
+ *  custom properties in a style attribute (Jobright's --jobright-helper-panel-width on <html>), and a <style> whose
+ *  rules select [data-<mark>-*] (Jobright's page push). stripInjectedInPage drops them before anything is measured, so
+ *  a fixture's page is laid out as the site lays it out, and holds none of another extension's CSS. */
+export const INJECTED_MARKS = ['jobright', 'tailorit'];
 /** Query parameters an extension added to a page's address and its links: Jobright's jr_id (a per-person tracking
  *  value; [job-boards.greenhouse.io] ... Cloud Administrator at Nuvem.mht holds it in the page's own address and in
  *  its links, [jobs.ashbyhq.com] Security Operations Engineer @ Critical Loop.mht likewise; Workday's links repeat it,
@@ -1761,14 +1770,44 @@ export function respelledSpans(text, source) {
  *   [pureinsurance.wd5.myworkdayjobs.com] captures); and, where overlays go (`dropOverlays`), a closed shadow host on
  *   <body>, where the HTML parser puts what was drawn after it;
  * - the PER_LOAD_PARAMS' values (REDACTED) in every attribute that holds them (`perLoad`: PER_LOAD_SOURCE).
+ * - jr8 ICIMS (`marks`: INJECTED_MARKS): what a panel docked at the window's edge marks on the site's own elements.
  * Another extension's parameters (INJECTED_PARAMS) go from the frame's written text by the one rule, stripInjectedParams.
- * Returns how many of each it took (never what they held).
- * @param {{ selectors: string[]; perLoad: string; dropOverlays: boolean; redacted: string; closedMark?: string }} input
- * @returns {{ injected: number; shadowOverlays: number; injectedParams: number }}
+ * Returns how many of each it took (never what they held); `marks` only where it took any.
+ * @param {{ selectors: string[]; perLoad: string; dropOverlays: boolean; redacted: string; closedMark?: string;
+ *   marks?: string[] }} input
+ * @returns {{ injected: number; shadowOverlays: number; injectedParams: number; marks?: number }}
  */
 export function stripInjectedInPage(input) {
   const doc = globalThis.document;
   const counts = { injected: 0, shadowOverlays: 0, injectedParams: 0 };
+  // jr8 ICIMS (INJECTED_MARKS): every attribute data-<mark>-*, every custom property --<mark>-* in a style attribute and
+  // every <style> whose rules select [data-<mark>-*] go, before anything is measured.
+  let marks = 0;
+  if (input.marks !== undefined && input.marks.length > 0) {
+    const words = input.marks.join('|');
+    const named = new RegExp(`^data-(?:${words})-`);
+    const custom = new RegExp(String.raw`--(?:${words})-[\w-]*\s*:[^;]*;?\s*`, 'g');
+    const selected = new RegExp(String.raw`\[data-(?:${words})-`);
+    for (const element of doc.querySelectorAll('*')) {
+      for (const attribute of [...element.attributes]) {
+        if (!named.test(attribute.name)) continue;
+        element.removeAttribute(attribute.name);
+        marks += 1;
+      }
+      const style = element.getAttribute('style');
+      if (style === null) continue;
+      const kept = style.replace(custom, '').trim();
+      if (kept === style.trim()) continue;
+      if (kept === '') element.removeAttribute('style');
+      else element.setAttribute('style', kept);
+      marks += 1;
+    }
+    for (const sheet of doc.querySelectorAll('style')) {
+      if (!selected.test(sheet.textContent ?? '')) continue;
+      sheet.remove();
+      marks += 1;
+    }
+  }
   for (const element of doc.querySelectorAll(input.selectors.join(', '))) {
     element.remove();
     counts.injected += 1;
@@ -1806,7 +1845,7 @@ export function stripInjectedInPage(input) {
       counts.injectedParams += 1;
     }
   }
-  return counts;
+  return marks > 0 ? { ...counts, marks } : counts; // jr8 ICIMS
 }
 
 /**
@@ -4789,7 +4828,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     for (const { frame } of converted) {
       if (deep) await frame.evaluate(deepenInPage);
       stripped.push({ ...await frame.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: PER_LOAD_SOURCE,
-        dropOverlays: !deep, redacted: REDACTED, closedMark: CLOSED_ROOT_MARK }),
+        dropOverlays: !deep, redacted: REDACTED, closedMark: CLOSED_ROOT_MARK, marks: INJECTED_MARKS }), // jr8 ICIMS
         ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
         marks: CHOSEN_MARKS, ...CLEAR_CHOICE_INPUT, icons: CHOSEN_ICONS }) });
       canvases.push(await frame.evaluate(standInCanvasesInPage));
