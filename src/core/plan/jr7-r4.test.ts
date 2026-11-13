@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { classifyByRules } from '../resolver/classifyRules';
+import type { Profile } from '../types/profile';
 import { fieldOf, goldenProfile, planOf, specOf } from './plan.testkit';
 
 const golden = goldenProfile();
@@ -46,5 +47,31 @@ describe('R4 (RBP7-07): a typed-name signature asked late in a long help text', 
     const plain = specOf('Attestation', 'text', { description: `${certifies} Please type your full name.` });
     const rules = classifyByRules(plain);
     expect(rules?.category ?? rules?.asks).not.toBe('consent.signature');
+  });
+});
+
+describe('R4 (UKGREADY-7 P2): a second email and a work phone are no repeats of the person’s one', () => {
+  const contact = (label: string, kind: 'text' = 'text', extra: { nameAttr?: string; ordinal?: number } = {}) =>
+    specOf(label, kind, { platform: 'ukgready', section: { id: 'contact' }, ordinal: extra.ordinal ?? 0,
+      ...(extra.nameAttr ? { nameAttr: extra.nameAttr } : {}) });
+  const written = (spec: ReturnType<typeof contact>, profile = golden) => {
+    const value = fieldOf(planOf([spec], { profile }), spec).write?.value;
+    return value?.kind === 'text' ? value.text : value?.kind;
+  };
+  it('(a) leaves a secondary or alternate email, by its label or its name, and fills the primary', () => {
+    for (const spec of [contact('Secondary Email'), contact('Alternate Email'), contact('Email', 'text',
+      { nameAttr: 'secondaryEmail' })]) {
+      expect(written(spec), spec.label).toBeUndefined();
+    }
+    expect(written(contact('Email'))).toBe(golden.contact.email);
+  });
+  it('(b) leaves a work phone unless the profile’s phone is a work phone; home, cell and mobile keep it', () => {
+    expect(written(contact('Work Phone'))).toBeUndefined();
+    expect(written(contact('Phone', 'text', { nameAttr: 'workPhone' }))).toBeUndefined();
+    for (const label of ['Home Phone', 'Cell Phone', 'Mobile Phone', 'Phone']) {
+      expect(written(contact(label)), label).toBeDefined();
+    }
+    const atWork: Profile = { ...golden, contact: { ...golden.contact, phone: { ...golden.contact.phone!, type: 'work' } } };
+    expect(written(contact('Work Phone'), atWork)).toBeDefined();
   });
 });

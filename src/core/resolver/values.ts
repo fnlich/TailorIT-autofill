@@ -334,10 +334,18 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
       return textValue(pronouns.value, 'identity.pronouns');
     }
     case 'contact.email':
+      // jr7 RULES-7 R4 (UKGREADY-7 P2: UKG Ready's "Secondary Email", snapshot7 secure7.saashr): a second email is no
+      // repeat of the first; the profile holds one.
+      if (secondContact(spec, SECOND_EMAIL_LABEL, SECOND_EMAIL_ID)) return none('no-profile-value', false);
       return textValue(contact.email, 'contact.email');
     case 'contact.phone': {
       const phone = contact.phone;
       if (phone === undefined) return none('no-profile-value', false);
+      // jr7 RULES-7 R4 (UKGREADY-7 P2: UKG Ready's Home, Work and Cell phones): a work phone only where the profile's
+      // one phone is marked a work phone; a home, cell or mobile phone keeps the person's own number.
+      if (phone.type !== 'work' && secondContact(spec, WORK_PHONE_LABEL, WORK_PHONE_ID)) {
+        return none('no-profile-value', false);
+      }
       const text = phoneText(phone, spec.constraints, ctx.separatePhoneCountry);
       return text === phone.text ? textValue(text, 'contact.phone')
         : textValue(text, 'contact.phone', VALUE_TRANSFORM, 'phone.format');
@@ -1051,6 +1059,20 @@ function currentEndDate(ctx: ValueContext, at: string): ValueResult {
 }
 
 // ── jr6 RULES (FIXPLAN §6.3 R1): the values of the eight platform audits' categories ─────────────────────────────
+
+/** jr7 RULES-7 R4: a second email ("Secondary Email", "Alternate email address", "Email 2"), by its label or its name
+ *  or id, which the profile's one email never fills. */
+const SECOND_EMAIL_LABEL = /\b(?:secondary|alternate|alternative|alt|additional|second|2nd|backup|another|other)\s+(?:e\s?mail|email)\b|\be\s?mail\s+(?:address\s+)?(?:2|two)\b/;
+const SECOND_EMAIL_ID = /secondary_?e_?mail|alternat\w*_?e_?mail|alt_?e_?mail|e_?mail_?2(?:[_ ]|$)|other_?e_?mail|additional_?e_?mail|backup_?e_?mail/;
+/** jr7 RULES-7 R4: a work phone ("Work Phone", "Business phone number", "Office telephone"), by its label or its name or
+ *  id. */
+const WORK_PHONE_LABEL = /\b(?:work|business|office)\s+(?:tele)?phone\b|\bphone\s+(?:number\s+)?\(?(?:work|business|office)\)?$/;
+const WORK_PHONE_ID = /(?:^|[_ ])(?:work|business|office)_?(?:tele)?phone(?:[_ ]|$)/;
+
+/** jr7 RULES-7 R4: whether a contact field's own label (normalized) or its name and id name it so. */
+function secondContact(spec: FieldSpec, label: RegExp, id: RegExp): boolean {
+  return label.test(normalizeLabel(spec.label)) || id.test(nameIdText(spec.nameAttr, spec.idAttr));
+}
 
 /** ICIMS-09, O7: the home address's categories, which a job's or a school's own block never takes (labelRules
  *  entryOf): ClearCompany's and iCIMS's employer blocks hold an Address and a City of the employer's. */
