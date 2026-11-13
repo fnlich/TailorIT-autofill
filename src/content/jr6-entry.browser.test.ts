@@ -34,6 +34,8 @@ import ultiproHtml from '../../fixtures/ultipro/application.html?raw';
 import ultiproRoutes from '../../fixtures/ultipro/application.routes.json';
 import salvoHtml from '../../fixtures/workable/jobs-salvo-apply.html?raw';
 import salvoRoutes from '../../fixtures/workable/jobs-salvo-apply.routes.json';
+import labellaHtml from '../../fixtures/workable/labella-closed.html?raw';
+import labellaRoutes from '../../fixtures/workable/labella-closed.routes.json';
 import choiceHtml from '../../fixtures/workday/jr6-apply-resolvetech-choice.html?raw';
 import resolvetechHtml from '../../fixtures/workday/jr6-apply-resolvetech-posting.html?raw';
 import resolvetechRoutes from '../../fixtures/workday/jr6-apply-resolvetech-posting.routes.json';
@@ -750,17 +752,20 @@ describe('jr6 apply F2: forms drawn in place, late or at the posting’s address
 
   it('an application’s page that offers no Apply, its form drawn after the Apply wait: the rest of the late window is waited for (P-2, Workable, UltiPro)',
     async () => {
-      const SALVO = Object.keys(salvoRoutes)[0]!;
+      // jr8 (the owner's snapshot12): the job site's "Apply now" is Workable's entry now, so its posting (jobs-salvo-apply
+      // with its dialog taken away) offers an Apply; the Workable case reads apply.workable.com's form page instead,
+      // whose /apply/ address offers none.
+      const LABELLA = Object.keys(labellaRoutes)[0]!;
       const ULTIPRO = addressOf(ultiproRoutes, 'fixtures/ultipro/application.html');
-      // Each declares an Apply hook (Workable's for its postings alone; UltiPro's, the configured layer's, with no
-      // posting entry yet) that its application's page never answers. The form is back 10 s after Autofill (the Apply
-      // wait is 8 s, the stubs' late window 12 s), or never.
+      // Each declares an Apply hook (Workable's for its postings and its job site's posting alone; UltiPro's, the
+      // configured layer's, with no posting entry yet) that its application's page never answers. The form is back 10 s
+      // after Autofill (the Apply wait is 8 s, the stubs' late window 12 s), or never.
       const cases = [['workable', 10_000], ['workable', null], ['ultipro', 10_000]] as const;
       for (const [name, backAt] of cases) {
         const label = `${name}, ${backAt === null ? 'never' : `at ${backAt} ms`}`;
-        const address = name === 'workable' ? SALVO : ULTIPRO;
-        const { doc } = await openAt(name === 'workable' ? salvoHtml : ultiproHtml, address);
-        const root = doc.querySelector(name === 'workable' ? '[data-role="modal-wrapper"]' : '#OpportunityApply')!;
+        const address = name === 'workable' ? LABELLA : ULTIPRO;
+        const { doc } = await openAt(name === 'workable' ? labellaHtml : ultiproHtml, address);
+        const root = doc.querySelector(name === 'workable' ? 'form[data-ui="application-form"]' : '#OpportunityApply')!;
         const parent = root.parentNode!;
         const next = root.nextSibling;
         root.remove();

@@ -30,7 +30,8 @@ const SKIP = /\/fixtures\/(?:traps|sites|synthetic|smoke|profiles)\/|\.frame-\d+
  *  Workforce Now shows a job's details at its guest page's own address, and its header's Apply is the declared entry
  *  there (ADP_CONFIG.posting.entry). No other page may offer one.
  *  jr7 JDEF-7 (FIX7PLAN §6.15, JDV-7): JobDiva's job page, whose posting and Quick Apply share one address (the dialogs
- *  open in place), offers its declared Apply Now there (jobDivaAdapter.entryControl). */
+ *  open in place), offers its declared Apply Now there (jobDivaAdapter.entryControl). jr8: Workable's job site's
+ *  posting (its Apply now opens the form in a dialog at the same address). */
 const EXPECTED_OFFERS: ReadonlySet<string> = new Set<string>(['adp/jr6-posting.html',
   // ── jr7 ADP-7 (FIX7PLAN §6.9) ──
   // snapshot7 adp1's job details (both captures, at the guest page's address, as jr6-posting), and ADP7-10's signed-in
@@ -38,6 +39,9 @@ const EXPECTED_OFFERS: ReadonlySet<string> = new Set<string>(['adp/jr6-posting.h
   'adp/jr7-adp1-posting.html', 'adp/jr7-adp1-posting-2.html', 'adp/jr6-landing.html',
   // ── end jr7 ADP-7 ──
   'jobdiva/jr7-jobdiva1-posting.html', 'jobdiva/jr7-jobdiva2-posting.html', // jr7 JDEF-7
+  // jr8 (the owner's snapshot12): Workable's job site before its dialog opens, at the posting's own address (read as
+  // the application), whose "Apply now" is the Workable adapter's declared entry (jobsSiteApply).
+  'workable/jobs-tyk-posting.html',
 ]);
 
 const runtimes: ContentRuntime[] = [];

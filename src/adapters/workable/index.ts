@@ -91,8 +91,7 @@
  *   reads it as it is; Submit is the form's own, and the dialog's own Cancel and Submit beside the title, the page's
  *   "Apply now" (overview-apply-now, sticky-apply-now), "Share job" and "Search for jobs" are never pressed. The
  *   posting (postingText) is its job breakdown: [data-ui=job-breakdown-description-parsed-html] and
- *   [data-ui=job-breakdown-requirements-parsed-html], side by side. No entryControl there: TailorIT's agent does not
- *   queue Workable, and no capture shows what "Apply now" does but the dialog already open.
+ *   [data-ui=job-breakdown-requirements-parsed-html], side by side. Its "Apply now" is the entry since jr8 (below).
  * The owner's capture of 2026-11-13 (F:\Develop\Refer\snapshot9, read for its structure only; jr8: a profile of four
  * jobs, of which a live fill kept two) adds, of Education and Experience:
  * - Live Workable draws each new entry, and the open editor, at the TOP of its list: the editor first, then the saved
@@ -107,6 +106,20 @@
  *   that round holds (content/orchestrator.ts fillStep). In page order the editor was block 0 every round, the key of
  *   the entry saved in round 1, so its empty fields read as our value reset by the page, and round 3's passed
  *   MAX_VALUE_FLIPS (core/loop/bookkeeping.ts): value-oscillated, never written, the entry never kept.
+ * The owner's captures of 2026-11-13 (F:\Develop\Refer\snapshot12, read for their structure only; jr8: "Apply Now
+ * button is not working to show the form"; fixtures/workable/jobs-tyk-posting.html) add, of jobs.workable.com:
+ * - The posting before "Apply now" shows no form and no dialog: <button data-ui="overview-apply-now">Apply now</button>
+ *   beside "Share job" (data-ui="share-now"), and the sticky bar's <button data-ui="sticky-apply-now">Apply now</button>
+ *   (not shown at the page's top), each a button with no type, no href and no form; after the press the same address
+ *   shows <div data-role="modal-wrapper"><dialog role="dialog" aria-modal="true" open ...> holding the title, the
+ *   dialog's own Cancel and Submit and form[data-ui=application-form] (the captures' "(1)": 34 and 23 fields), as
+ *   jobs-salvo-apply.html shows it.
+ * - So that Apply now is the page's entry (entryControl: jobsSiteApply): the person's Autofill (and the agent's entry)
+ *   presses it once through the entry door (dom/fillers/not-submit.ts: entryNeverPressed lets that one
+ *   element through, both buttons staying in neverPress for every other door), and the run fills the form the dialog
+ *   draws. It is never answered while the application's dialog or form shows, so a press never comes while the dialog
+ *   is open, loading or not. The dialog's own Cancel and Submit, "Share job" and "Search for jobs" stay never pressed;
+ *   the form's Submit is Submit mode's alone.
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
@@ -483,6 +496,33 @@ function jobsSitePosting(doc: Document): Element | null {
   return description;
 }
 
+/** jobs.workable.com's application dialog (jobs-salvo-apply.html, snapshot12's "(1)" captures): a dialog that holds the
+ *  application's title or form. */
+const JOBS_DIALOG = 'dialog, [role="dialog" i], [data-role="modal-wrapper"]';
+/** The job site's Apply now buttons, the posting's first (snapshot12, see the header). */
+const JOBS_APPLY = ['button[data-ui="overview-apply-now"]', 'button[data-ui="sticky-apply-now"]'] as const;
+
+/** jobs.workable.com's entry (see the header): the posting's Apply now, else its sticky bar's, the first a person can
+ *  see; null while the application's form or its dialog shows (open, loading or not), and on every other page. */
+function jobsSiteApply(doc: Document): HTMLElement | null {
+  // The owner's capture of 2026-11-13 (jobs-tyk-posting.html): <div><button class="..." data-ui="overview-apply-now">
+  // Apply now</button></div> beside <button ... data-ui="share-now">Share job</button>; the sticky bar's <button ...
+  // data-ui="sticky-apply-now">Apply now</button>, not shown at the page's top. After it (jobs-salvo-apply.html):
+  // <div data-role="modal-wrapper" ...><dialog ... aria-modal="true" role="dialog" open=""> ... <h2
+  // data-ui="application-form-title"> ... <form data-ui="application-form"> ...
+  const cache = newScanCache();
+  const shown = (el: Element | null): el is HTMLElement => el !== null && isUserVisible(el, cache);
+  if (shown(doc.querySelector(FORM))) return null;
+  const open = Array.from(doc.querySelectorAll(JOBS_DIALOG)).some((dialog) =>
+    dialog.querySelector(`[data-ui="application-form-title"], ${FORM}`) !== null && shown(dialog));
+  if (open) return null;
+  for (const selector of JOBS_APPLY) {
+    const button = doc.querySelector<HTMLElement>(selector);
+    if (shown(button)) return button;
+  }
+  return null;
+}
+
 /** The never-pressed buttons and links (see the header). */
 function neverPress(root: Element): Element[] {
   const doc = root.ownerDocument;
@@ -503,7 +543,7 @@ function neverPress(root: Element): Element[] {
     '[data-ui="update-cookie-preferences"]', 'a[data-ui="role-overview-tab"]', 'a[data-ui="application-form-tab"]',
     'a[data-ui="company-logo"]', 'a[data-ui="view-jobs-url"]', 'a[data-ui="apply-button"]',
     // jobs.workable.com (jobs-salvo-apply.html, see the header): the dialog's own Cancel and Submit beside its title,
-    // and the posting page's buttons behind it.
+    // and the posting page's buttons behind it (its Apply now pressed by the entry door alone: jobsSiteApply).
     '[data-ui="application-form-cancel"]', '[data-ui="application-form-submit"]', '[data-ui="overview-apply-now"]',
     '[data-ui="sticky-apply-now"]', '[data-ui="share-now"]', '[data-ui="search-for-jobs-button"]'].join(', ')));
   return [...new Set([...autofillBoxes(root), ...inForm, ...around])];
@@ -626,9 +666,11 @@ export const workableAdapter: Adapter = {
   // v3 Phase 5, the agent's entry on the overview: fixtures/workable/huggingface-overview.html's <a tabindex="0"
   // role="button" ... data-ui="apply-button" href=".../apply/">Apply for this job</a>, and the tab <a
   // data-ui="application-form-tab" href=".../apply/">, read by the address each opens (adapters/entry.ts). TailorIT's
-  // agent does not queue Workable yet (its address reading comes with the contract's next version).
-  entryControl: (doc) => applicationLinkOf(doc, parseWorkableUrl,
+  // agent does not queue Workable yet (its address reading comes with the contract's next version). jr8 (snapshot12):
+  // on jobs.workable.com, the posting's Apply now while no application dialog shows (jobsSiteApply).
+  entryControl: (doc) => jobsSiteApply(doc) ?? applicationLinkOf(doc, parseWorkableUrl,
     'a[data-ui="apply-button"][href], a[data-ui="application-form-tab"][href]'),
-  // Those links are never pressed by a run (neverPress): the entry door presses that element alone, for the agent.
+  // Those links and buttons are never pressed by a run (neverPress): the entry door presses that element alone, for the
+  // agent and the person's Autofill.
   entryNeverPressed: true,
 };
