@@ -38,7 +38,7 @@ import { CONTROL_SELECTOR, kindOf } from './kinds';
 import type { ScanCache } from './scan-cache';
 import { MIN_ARIA_LABEL_CHARS, TEXT_CAP_DESCRIPTION, TEXT_CAP_LABEL } from './thresholds';
 import { heldPlaceholder, readSelectOptions, visiblePlaceholder, visibleText, visibleTextWithout } from './visible-text';
-import { isUserVisible } from './visibility';
+import { isUserVisible, opacityOf } from './visibility';
 
 /** What the scanner reads labels with. */
 export interface LabelContext {
@@ -447,6 +447,11 @@ function adapterOptionText(input: HTMLInputElement, ctx: LabelContext): string |
  * the input's aria-label "No, <the question>"). Only for an input of a proxy its adapter declares (Adapter.proxyFor
  * answers one), only where the input's own aria-label starts with those words, and only a label of its own: drawn
  * (it has a box), naming its id, holding the words whole. Never a label of another control.
+ * jr7 ENGINE-7 E3-1 (DFPC-7's edit 5, PC7-04): or the input's own label (label[for] naming its id, or the label
+ * wrapping it) that a person sees, whose words sit in an aria-hidden part of it (Paycom's radio, snapshot7
+ * paycomonline1 prescreen: label > p[aria-hidden="true"] "Yes", the input's aria-label "Yes 1 of 2."): only a part
+ * drawn (a box, visibility visible, not transparent), holding no control, holding the words whole. A label that is
+ * hidden itself (display none, visibility hidden, a hidden ancestor) reads nothing so, nor does any sibling's label.
  */
 function hiddenOwnLabelSays(input: HTMLInputElement, wanted: readonly string[], ctx: LabelContext): boolean {
   if (input.id === '' || ctx.adapter?.proxyFor === undefined) return false;
@@ -457,9 +462,24 @@ function hiddenOwnLabelSays(input: HTMLInputElement, wanted: readonly string[], 
   }
   const own = wordsOf(ariaLabelOf(input));
   if (wanted.length === 0 || own.length < wanted.length || !wanted.every((word, at) => own[at] === word)) return false;
-  return tiedLabels(input).explicit.some((label) => label.htmlFor === input.id
+  const tied = tiedLabels(input);
+  if (tied.explicit.some((label) => label.htmlFor === input.id
     && label.closest('[aria-hidden="true" i]') !== null && label.getClientRects().length > 0
-    && containsWords(wordsOf(label.textContent ?? ''), wanted));
+    && containsWords(wordsOf(label.textContent ?? ''), wanted))) return true;
+  // jr7 ENGINE-7 E3-1: the words in an aria-hidden part of the input's own shown label.
+  const labelsOwn = [...tied.explicit.filter((label) => label.htmlFor === input.id),
+    ...tied.wrapping.filter((label) => label.contains(input))];
+  return labelsOwn.some((label) => isUserVisible(label, ctx.cache)
+    && Array.from(label.querySelectorAll('[aria-hidden="true" i]')).some((part) => hiddenPartDrawn(part, ctx)
+      && containsWords(wordsOf(part.textContent ?? ''), wanted)));
+}
+
+/** jr7 ENGINE-7 E3-1: an aria-hidden part of a shown label that a person sees drawn: it has a box, its visibility is
+ *  'visible', it is not transparent, and it holds no control. */
+function hiddenPartDrawn(part: Element, ctx: LabelContext): boolean {
+  if (part.getClientRects().length === 0 || part.querySelector(`${CONTROL_SELECTOR}, button`) !== null) return false;
+  const style = part.ownerDocument.defaultView?.getComputedStyle(part) ?? null;
+  return style !== null && style.visibility === 'visible' && opacityOf(part, ctx.cache) > 0;
 }
 // ── end jr7 ENGINE-7 E1 item 5 ──
 
