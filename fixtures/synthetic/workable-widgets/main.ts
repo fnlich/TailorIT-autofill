@@ -8,6 +8,8 @@
  * application in a dialog (app.ts JobsPage), its uploads named by the view's id.
  */
 import { DESCRIPTION, mountWorkablePage, newLog, watchCookies, type Uploader } from './app';
+// INT-8: the golden profile's jobs (its earlier one's title is the restored entry's), never a literal of its words.
+import { experience as GOLDEN_JOBS } from '../../profiles/alex-rivera.profile.json';
 
 /** When each posting draws its view, in ms after the page loads. */
 const POSTINGS: Record<string, number> = { '0000000A01': 1500, '0000000A02': 0, '0000000A03': 0, '0000000A04': 1500,
@@ -17,9 +19,10 @@ const UPLOAD_ADDRESS = 'https://workable-application-form.s3.us-east-1.amazonaws
 
 /** The posting whose overview asks applicants not to use AI. */
 const NO_AI = '0000000A04';
-/** The posting whose draft restored a saved Experience entry: the golden profile's earlier job, typed as the person
- *  would. */
-const RESTORED = { '0000000A06': { experience: [{ title: 'Software Engineer', company: 'Marrowgate Systems',
+/** The posting whose draft restored a saved Experience entry: the golden profile's earlier job (its title read from the
+ *  profile itself, fixtures/profiles/alex-rivera.profile.json), typed as the person would. */
+const EARLIER_JOB = GOLDEN_JOBS[1]!;
+const RESTORED = { '0000000A06': { experience: [{ title: EARLIER_JOB.title, company: 'Marrowgate Systems',
   start_date: '07/2019', end_date: '05/2021' }] } } as const satisfies Record<string, object>;
 
 const log = newLog();

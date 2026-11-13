@@ -712,7 +712,7 @@ function JobsPage(props: { log: WorkableLog; upload: Uploader; crash: () => void
   };
   return h(Fragment, null,
     h('main', { role: 'main' },
-      h('h1', { 'data-ui': 'overview-title' }, 'Software Engineer'),
+      h('h1', { 'data-ui': 'overview-title' }, 'Site Reliability Engineer'),
       h('div', { className: 'wk-jobs-actions' },
         h('button', { 'data-ui': 'share-now', onClick: () => props.log.pressed.push('Share job') }, 'Share job'),
         h('button', { 'data-ui': 'overview-apply-now', onClick: apply }, 'Apply now')),
@@ -724,7 +724,7 @@ function JobsPage(props: { log: WorkableLog; upload: Uploader; crash: () => void
         h('button', { 'data-ui': 'sticky-apply-now', onClick: apply }, 'Apply now'))),
     open ? h('div', { 'data-role': 'modal-wrapper' }, h('dialog', { role: 'dialog', 'aria-modal': 'true', open: true,
       'aria-labelledby': 'wk-apply-title', className: 'wk-jobs-dialog' },
-    h('div', { id: 'wk-apply-title' }, h('h2', { 'data-ui': 'application-form-title' }, 'Apply for Software Engineer')),
+    h('div', { id: 'wk-apply-title' }, h('h2', { 'data-ui': 'application-form-title' }, 'Apply for Site Reliability Engineer')),
     h('div', { 'data-ui': 'application-form-actions' },
       h('button', { 'data-ui': 'application-form-cancel', type: 'button', onClick: () => {
         props.log.pressed.push('Cancel');

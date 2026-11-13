@@ -580,7 +580,7 @@ function EducationBlock(props: { page: Page; index: number; schoolSearch: (text:
           htmlFor: `${base}-school` }, 'School'),
         h(Combobox, { page: props.page, path: key('school'), placeholder: 'Search schools...', search: props.schoolSearch })),
       h('div', { className: '_stack_b7xpf_1 _horizontal_b7xpf_7' }, text('degree', 'Degree', 'e.g. Bachelor of Science'),
-        text('major', 'Field of Study', 'e.g. Computer Science')),
+        text('major', 'Field of Study', 'e.g. Economics')),
       h('div', { className: '_stack_b7xpf_1 _horizontal_b7xpf_7' }, dates('startDate', start, setStart,
         // The start's years end at the end year once one is chosen, as on the live form.
         end.y === '' ? YEARS : YEARS.filter((year) => year <= end.y)),
