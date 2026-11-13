@@ -1390,6 +1390,11 @@ const ADDRESS_IF_DIFFERENT = /\b(?:mailing|postal|address)\b(?:\s+\w+){0,4}?\s+i
  *  box; Jobright keeps only a facebook.com address there (cited). */
 const FACEBOOK = /^(?:your\s+)?facebook(?:\s+(?:profile|page|url|link|username|user\s+name|handle|account))*$/;
 
+/** jr8 ICIMS (snapshot11, careers-healthedge's Candidate Profile: a required text box "Email Verification", rcf2020,
+ *  beside its Email; SmartRecruiters' "Confirm your email", SuccessFactors' "Retype Email Address" alike): the email
+ *  typed again, anchored, so a code sent to the email ("Email verification code") is never it. */
+const EMAIL_AGAIN = /^(?:please\s+)?(?:confirm|verify|re\s?enter|re\s?type|repeat)\s+(?:your\s+)?e\s?mail(?:\s+address)?(?:\s+again)?$|^e\s?mail(?:\s+address)?\s+(?:verification|confirmation|again)$/;
+
 /** A jr6 label rule: its pattern, the category (or none, for a section or kind it does not fit). */
 interface Jr6Rule {
   id: string;
@@ -1450,6 +1455,8 @@ const JR6_RULES: readonly Jr6Rule[] = [
     && asksDiplomaAlone(c.label) ? 'education.highSchool' : null), strength: 'normal' },
   { id: 'label.address-if-different', re: ADDRESS_IF_DIFFERENT, category: 'address.mailing', strength: 'normal' },
   { id: 'label.facebook', re: FACEBOOK, category: 'links.facebook', strength: 'strong' },
+  // jr8 ICIMS: the email typed again is the email, never the AI's.
+  { id: 'label.email-again', re: EMAIL_AGAIN, category: 'contact.email', strength: 'strong' },
 ];
 
 /** The first jr6 rule that reads `text` on a field of this kind, or null. */

@@ -148,6 +148,19 @@ describe('jr8 ICIMS R1: the frame that claims an iCIMS wrapper is seen by the wr
     expect(firstName(shown.inner).value).toBe('');
   }, 60_000);
 
+  // jr8 ICIMS (src/core/resolver/labelRules.ts EMAIL_AGAIN): the profile's required "Email Verification" (rcf2020) is
+  // the email typed again, from the profile, never an AI guess.
+  it('fills careers-healthedge’s "Email Verification" with the email, as the profile gives it', async () => {
+    const shown = await portal('healthedge');
+    await autofill(shown, true);
+    const again = shown.inner.getElementById('rcf2020') as HTMLInputElement;
+    const email = shown.inner.getElementById('PersonProfileFields.Email') as HTMLInputElement;
+    await expect.poll(() => again.value, { timeout: 20_000 }).not.toBe('');
+    expect(again.value).toBe(email.value);
+    await expect.poll(() => shown.worker.reports.at(-1)?.fields.find((row) => row.label === 'Email Verification'),
+      { timeout: 20_000 }).toMatchObject({ status: 'verified', reason: 'ok', wrote: true });
+  }, 60_000);
+
   it('reads no wrapper it cannot reach (null), so the launcher decides', () => {
     expect(claimFrameSeen(null)).toBeNull();
     expect(claimFrameSeen({ doc: document, frame: null })).toBeNull();
