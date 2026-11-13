@@ -11,8 +11,12 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import step1bHtml from '../../../fixtures/jobvite/jr7-jobvite1-step1-b.html?raw';
 import filledHtml from '../../../fixtures/jobvite/jr7-jobvite1-step1-filled.html?raw';
+import confirmationHtml from '../../../fixtures/jobvite/jr7-jobvite1-confirmation.html?raw';
+import postingHtml from '../../../fixtures/jobvite/jr7-jobvite1-posting.html?raw';
+import step2Html from '../../../fixtures/jobvite/jr7-jobvite1-step2-filled.html?raw';
 import step1Html from '../../../fixtures/jobvite/jr7-jobvite1-step1.html?raw';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { signsOf } from '../../content/submitted';
 import { planFrame } from '../../core/plan/frame';
 import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
@@ -89,4 +93,26 @@ describe('J7V-JV-1: the résumé read by its own question whatever its popover s
       expect(read.files[0]).toEqual([...READ[0]!.slice(0, 4), planned]);
       expect(read.files[1]!.slice(0, 3)).toEqual(READ[1]!.slice(0, 3));
     });
+});
+
+describe('jr7 Jobvite (P2): the snapshot7 run\'s steps as the run reads them', () => {
+  it('the posting\'s Apply, step 1 (Next), step 2 (Send Application, final), the confirmation\'s sign', async () => {
+    const posting = await loadFixture(document, postingHtml, SNAPSHOT_VIEWPORT);
+    expect(jobviteAdapter.detect(posting.doc)).toBeNull();
+    expect(jobviteAdapter.entryControl!(posting.doc)?.matches('a.jv-button.jv-button-apply')).toBe(true);
+    removeFixtures(document);
+    const step1 = await loadFixture(document, step1Html, SNAPSHOT_VIEWPORT);
+    const root1 = jobviteAdapter.detect(step1.doc)!.formRoot;
+    expect([jobviteAdapter.isFinalStep!(step1.doc), jobviteAdapter.nextButton!(root1)?.getAttribute('aria-label')])
+      .toEqual(['not-final', 'Next']);
+    removeFixtures(document);
+    const step2 = await loadFixture(document, step2Html, SNAPSHOT_VIEWPORT);
+    const root2 = jobviteAdapter.detect(step2.doc)!.formRoot;
+    expect([jobviteAdapter.isFinalStep!(step2.doc), jobviteAdapter.submitButton!(root2)?.getAttribute('aria-label')])
+      .toEqual(['final', 'Send Application']);
+    expect(signsOf(step2.doc, 'jobvite')).toEqual([]);
+    removeFixtures(document);
+    const done = await loadFixture(document, confirmationHtml, SNAPSHOT_VIEWPORT);
+    expect(signsOf(done.doc, 'jobvite')).toHaveLength(1);
+  });
 });

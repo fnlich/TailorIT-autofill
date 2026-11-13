@@ -28,6 +28,7 @@ import xplorOneClickHtml from '../../../fixtures/smartrecruiters/xplor-one-click
 import xplorPostingHtml from '../../../fixtures/smartrecruiters/xplor-posting.html?raw';
 import xplorScreeningHtml from '../../../fixtures/smartrecruiters/xplor-screening.html?raw';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { newSuccessSign, signsOf } from '../../content/submitted';
 import { planFrame } from '../../core/plan/frame';
 import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
@@ -223,4 +224,43 @@ describe('J7-SR-4: "Application submitted!" after an armed Submit (successSigns)
     const fixture = await load(html, sourceOf(html));
     expect(smartRecruitersAdapter.successSigns!(fixture.doc, ARM)).toEqual([]);
   });
+});
+
+describe('J7-SR-4 through AUTO-7\'s watch (P2: content/submitted.ts signsOf and newSuccessSign, D-1 item 2)', () => {
+  const POSTING_KEY = applicationKey('smartrecruiters', sourceOf(jr7PostingHtml));
+  const armed = { adapter: smartRecruitersAdapter, applicationKey: POSTING_KEY };
+
+  /** The screening capture with its Submit armed under the posting's key (the chained run's arm: the signs at the
+   *  press), then the app's route to /success in the same document: the screening root goes and the success page's
+   *  own <oc-success-page> (from jr7-smartrecruiter1-success) is drawn in its place. */
+  async function routedToSuccess() {
+    const fixture = await load(jr7ScreeningHtml, sourceOf(jr7ScreeningHtml));
+    const { doc } = fixture;
+    const root = smartRecruitersAdapter.detect(doc)!.formRoot;
+    const before = new Set(signsOf(doc, 'smartrecruiters', armed));
+    const success = new DOMParser().parseFromString(jr7SuccessHtml, 'text/html').querySelector('oc-success-page')!;
+    root.parentElement!.append(doc.importNode(success, true));
+    root.remove();
+    return { doc, root, before };
+  }
+
+  it('none at the press on the screening step; after the route, the drawn sign under the arm\'s key', async () => {
+    const { doc, root, before } = await routedToSuccess();
+    expect(before.size).toBe(0);
+    const sign = doc.querySelector('oc-success-page h2[data-test="success-page-confirmation"]');
+    expect(sign).not.toBeNull();
+    expect(newSuccessSign(doc, 'smartrecruiters', { before, root, adapter: smartRecruitersAdapter,
+      applicationKey: POSTING_KEY })).toBe(sign);
+    expect(signsOf(doc, 'smartrecruiters', armed)).toEqual([sign]);
+  });
+
+  it('none without the arm\'s key, and none from an adapter without the hook (SmartRecruiters has no rule of its own)',
+    async () => {
+      const { doc, root, before } = await routedToSuccess();
+      expect(signsOf(doc, 'smartrecruiters')).toEqual([]);
+      expect(newSuccessSign(doc, 'smartrecruiters', { before, root, adapter: smartRecruitersAdapter })).toBeNull();
+      const withoutHook = { ...smartRecruitersAdapter, successSigns: undefined };
+      expect(newSuccessSign(doc, 'smartrecruiters', { before, root, adapter: withoutHook, applicationKey: POSTING_KEY }))
+        .toBeNull();
+    });
 });

@@ -19,6 +19,7 @@ import formHtml from '../../../fixtures/jazzhr/jr7-applytojob1-form.html?raw';
 import nucleusHtml from '../../../fixtures/jazzhr/nucleussecurity-form.html?raw';
 import panoptHtml from '../../../fixtures/jazzhr/panoptimization-form.html?raw';
 import wellhiveHtml from '../../../fixtures/jazzhr/wellhive-submitting.html?raw';
+import { signsOf } from '../../content/submitted';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { scan } from '../../dom/scan';
 import { applicationKey } from '../application-key';
@@ -113,5 +114,14 @@ describe('J7-JZ-2: the page after submitting draws a second sign', () => {
   ])('%s: none before the press', async (_name, html) => {
     const fixture = await loadFixture(document, html, SNAPSHOT_VIEWPORT);
     expect(jazzhrAdapter.successSigns!(fixture.doc, ARM)).toEqual([]);
+  });
+});
+
+describe('J7-JZ-2 through AUTO-7\'s reading (P2: content/submitted.ts signsOf with the armed application)', () => {
+  it('jr7-applytojob1-confirmation: the platform\'s rules find none, the armed reading the section', async () => {
+    const fixture = await loadFixture(document, confirmationHtml, SNAPSHOT_VIEWPORT);
+    const section = fixture.doc.querySelector('section.submit_success');
+    expect(signsOf(fixture.doc, 'jazzhr')).toEqual([]);
+    expect(signsOf(fixture.doc, 'jazzhr', { adapter: jazzhrAdapter, applicationKey: ARM })).toEqual([section]);
   });
 });
