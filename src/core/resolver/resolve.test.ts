@@ -105,11 +105,17 @@ describe('confidence and actions (§8.6)', () => {
     const start = specOf('Start date', 'text', { section: { id: 'education', block: 0 } });
     expect(resolveField(start, ctx())).toMatchObject({ shaped: { shape: 'text', text: '08/2015' },
       resolution: { action: 'fill-and-flag', reason: 'filled-low-confidence' } });
+    // jr7 RULES-7 (DF7-04, amending docs/design/core.md §8.5): a full-date control takes the month's 1st, flagged.
     const control = specOf('Start date', 'date', { section: { id: 'education', block: 0 }, constraints: { format: 'date' } });
-    expect(resolveField(control, ctx())).toMatchObject({ shaped: null,
-      resolution: { action: 'leave-blank', reason: 'format-unsupported' } });
+    expect(resolveField(control, ctx())).toMatchObject({ shaped: { shape: 'date', iso: '2015-08-01' },
+      resolution: { action: 'fill-and-flag', reason: 'filled-low-confidence' } });
     const month = { ...control, constraints: { format: 'month-year' as const } };
     expect(resolveField(month, ctx()).shaped).toEqual({ shape: 'date', iso: '2015-08' });
+    // A date with no month still has no layout in a date control (a profile year alone).
+    const golden = goldenProfile();
+    const yearOnly = { ...golden, education: [{ ...golden.education[0]!, startDate: { y: 2015 } }] };
+    expect(resolveField(control, ctx({ profile: yearOnly }))).toMatchObject({ shaped: null,
+      resolution: { action: 'leave-blank', reason: 'format-unsupported' } });
   });
 
   it('flags a classification another source contradicts', () => {

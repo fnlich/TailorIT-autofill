@@ -29,7 +29,9 @@ import { autocompleteRule } from './autocomplete';
 import { kindAllowed, policyClassOf } from './categories';
 import { FOLD_MAX_CODE_POINTS } from '../text/fold';
 import {
-  affirmativeOption, attestsNoAiUse, consentChoiceHit, entryOf, matchLabelRules, noAiStatementHit, sectionKindOf,
+  affirmativeOption, asksNameTypedAsSignature, attestsNoAiUse, consentChoiceHit, entryOf, matchLabelRules, nationalIdHit,
+  noAiStatementHit,
+  sectionKindOf,
   unlabelledTextarea, unrecognisedField, withDescriptionConsent, type LabelContext, type LabelRuleHit,
   type NeedsUserCause,
 } from './labelRules';
@@ -270,7 +272,17 @@ function labelRuleVote(spec: FieldSpec, label: string, context: LabelContext): R
   const both = label === '' ? description : `${label} ${description}`;
   // The label's question sentences are the label's alone: the text with the description is read whole.
   const { questions: _questions, ...withDescription } = context;
-  const onBoth = matchLabelRules(both, section, spec.kind, withDescription);
+  // jr7 RULES-7 R4 (RBP7-07, from RBP-7's measured patch; snapshot7 rippling1's "Truth Certification/Attestation
+  // Clause": 536 characters of help that certify the "resume, cover letters and online profiles" submitted, then ask
+  // "Please acknowledge this by typing your full name in the text field", past the 500 characters normalization reads
+  // at once): a sentence of the help that asks for the name typed as a signature (labelRules asksNameTypedAsSignature)
+  // is read on its own first, on a kind a signature takes, so the signature wins over the documents the help names. A
+  // help that only mentions a name ("name the file with your full name") asks no signature.
+  const signed = kindAllowed('consent.signature', spec.kind) ? sentencesOf(spec.description)
+    .map((sentence) => ruleText(normalizeLabel(sentence))).filter(asksNameTypedAsSignature)
+    .map((sentence) => matchLabelRules(sentence, section, spec.kind, withDescription))
+    .find((hit) => hit?.category === 'consent.signature' && hit.needsUser === undefined) ?? null : null;
+  const onBoth = signed ?? matchLabelRules(both, section, spec.kind, withDescription);
   if (onBoth === null) return null;
   // jr6 RULES R3 (smartrecruiters-new-2): help text alone never makes an upload the résumé's ("Additional attachments",
   // "Portfolio", "Writing sample" over SmartRecruiters' restriction text), unless it is a résumé's heading itself
@@ -308,6 +320,10 @@ const OTHER_PERSON_LABEL = /\b(?:referr?ers?|referees?|reference\s+\d+|(?<!\b(?:
 const OTHER_PERSON_ID = /(?:^|[_ ])(?<!(?:job|requisition|posting|vacancy)_)(?:referr?er\w*|referee\w*|references?\d*|emergency\w*|spouse\w*|guardian\w*|manager\w*|supervisor\w*|recruiter\w*)(?![_ ](?:number|no|num|code|id)(?:[_ ]|$))(?=[_ \d]|$)/;
 /** A section about other people ("references", "emergency-contact"). */
 const OTHER_PERSON_SECTION = /\b(?:references?|referees?|referrers?|referrals?|emergency|kin)\b/;
+
+/** jr7 RULES-7 R2 (DF7-11): a field about the person's supervisor or manager at a job ("Supervisor", "Supervisor's
+ *  Phone", "Manager name"), by its own label. */
+const SUPERVISOR_FIELD = /^(?:(?:your|immediate|direct|reporting)\s+)?(?:supervisor|manager)s?(?:\s+(?:name|first\s+name|last\s+name|phone|telephone|phone\s+number|e\s?mail|title|contact|number))*$/;
 
 /** Which source names another person: the label (or the section), else the name and id attributes; null for none. */
 function otherPersonNamedBy(spec: FieldSpec, label: string): RuleClassifier | null {
@@ -439,6 +455,17 @@ function optionsRule(spec: FieldSpec, label: string, rules: RuleClassification |
 
 // jr6 RULES end
 
+/** jr7 RULES-7 (ICIMS7-06): whether a list, a combobox or a radio group read whole offers exactly a Yes and a No (its
+ *  options normalized, a placeholder aside): a yes-or-no question, never a skills list. */
+function offersOnlyYesNo(spec: FieldSpec): boolean {
+  if (!OPTION_RULE_KINDS.has(spec.kind) || spec.options === 'lazy' || spec.optionsPartial === true) return false;
+  const options = spec.options.map((option) => normalizeLabel(option.label))
+    .filter((text) => text !== '' && !PLACEHOLDER_OPTION.test(text));
+  return options.length === 2 && options.includes('yes') && options.includes('no');
+}
+/** An option that only asks to choose ("Make a Selection", "Select…", "Please select", "Choose one"). */
+const PLACEHOLDER_OPTION = /^(?:please\s+)?(?:make\s+a\s+selection|select(?:\s+(?:one|an?\s+option))?|choose(?:\s+(?:one|an?\s+option))?|none\s+selected)$/;
+
 /**
  * What the deterministic rules say `spec` is: the autocomplete, name/id and label votes combined (§8.1), each checked
  * against the field's kind (CATEGORY_KINDS), so a mismatch is no vote. A field about another person keeps none of the
@@ -459,6 +486,14 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   if (entry !== null) context.entry = entry;
   const questions = questionsOf(spec.label);
   if (questions !== undefined) context.questions = questions;
+  // jr7 RULES-7 (UKGR-14): a national id or a social security number, by its label, its mask or its name, before any
+  // other source (the "999-99-9999" placeholder reads as a phone's mask).
+  const nationalId = nationalIdHit(label, spec.label, spec.constraints.pattern, nameIdText(spec.nameAttr, spec.idAttr));
+  if (nationalId !== null) return combine([labelVote(nationalId, 'label')]);
+  // jr7 RULES-7 (ICIMS7-06): a list read whole of a Yes and a No.
+  if (offersOnlyYesNo(spec)) context.yesNoOptions = true;
+  // jr7 RULES-7 R2 (DF7-11): an optional reason for leaving is an entry detail; a required one stays the AI's (jr6).
+  if (spec.required) context.required = true;
   const autocomplete = autocompleteRule(spec.autocomplete, spec.kind);
   const nameId = nameIdRule(spec.nameAttr, spec.idAttr, spec.kind);
   let votes = [
@@ -480,6 +515,13 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
     votes = votes.filter((vote) => vote.rule !== 'autocomplete.given-name');
   }
   const otherPerson = otherPersonNamedBy(spec, label);
+  // jr7 RULES-7 R2 (DF7-11, Dayforce's employment record "Supervisor", snapshot7 dayforce1): a field whose own words
+  // name another person and that no source reads is no question of the person's either: nobody's details to give, and
+  // no AI's to invent (plan/answers.ts never answers one).
+  if (otherPerson === 'label-rule' && votes.length === 0 && SUPERVISOR_FIELD.test(label)) {
+    return classification('screening.other', { confidence: LABEL_RULE_CONFIDENCE.normal, classifiedBy: otherPerson,
+      rule: 'label.another-person', reason: 'ok', matchedOn: 'label' });
+  }
   if (otherPerson !== null && votes.some(isOwnDetail)) {
     votes = votes.filter((vote) => !isOwnDetail(vote));
     if (votes.length === 0) {

@@ -65,16 +65,21 @@ export function dateText(date: DateParts, constraints: Constraints): Laid | null
 }
 
 /** A date for a native date control: ISO text of exactly the parts its format takes ("2015-08" for a month control,
- *  "2026-12-01" for a date control). Null when the control needs a part the date lacks. */
-export function dateIso(date: DateParts, constraints: Constraints): string | null {
+ *  "2026-12-01" for a date control), and whether a part was guessed. Null when the control needs a part the date lacks.
+ *  jr7 RULES-7 (DF7-04, Dayforce's required Start Dates, `input[type=date]`, snapshot7 dayforce1; Jobright's
+ *  fillDayforceDateField writes the month's first day: cited): a date control given a month-precision date takes the
+ *  1st of that month, guessed (filled and flagged for a look). This amends docs/design/core.md §8.5 ("a layout needing a
+ *  part the profile lacks gives nothing") for a full-date control. A date with no month still gives nothing. */
+export function dateIso(date: DateParts, constraints: Constraints): { iso: string; guessed: boolean } | null {
   const year = pad(date.y, 4);
   switch (constraints.format) {
     case 'year':
-      return year;
+      return { iso: year, guessed: false };
     case 'month-year':
-      return date.m === undefined ? null : `${year}-${pad(date.m)}`;
+      return date.m === undefined ? null : { iso: `${year}-${pad(date.m)}`, guessed: false };
     default:
-      return date.m === undefined || date.d === undefined ? null : `${year}-${pad(date.m)}-${pad(date.d)}`;
+      if (date.m === undefined) return null;
+      return { iso: `${year}-${pad(date.m)}-${pad(date.d ?? 1)}`, guessed: date.d === undefined };
   }
 }
 

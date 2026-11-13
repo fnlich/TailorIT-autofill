@@ -82,6 +82,11 @@ export interface LabelContext {
   questions?: string;
   /** jr6 RULES: the entry the field's section is (entryOf), when it is one. */
   entry?: EntryKind;
+  /** jr7 RULES-7 (ICIMS7-06): the field is a list read whole whose options are exactly a Yes and a No: a skills list it
+   *  never is. */
+  yesNoOptions?: true;
+  /** jr7 RULES-7 R2 (DF7-11): the field is required. */
+  required?: true;
 }
 
 /** One label rule. `^…$` in a pattern means the whole label must match. */
@@ -123,6 +128,9 @@ export const NEEDS_USER_CAUSES = [
   /** A binding waiver or covenant (arbitration, a jury-trial or class-action waiver, a non-compete or non-solicitation)
    *  asked on anything but a lone checkbox (the audit of 2026-11-06, S-5): the person's, never an AI's. */
   'binding-waiver',
+  /** jr7 RULES-7 (UKGR-14): a national id or a social security number, or its type: only the person types one, never a
+   *  profile value, a saved or earlier answer, nor an AI. */
+  'identifier',
 ] as const;
 export type NeedsUserCause = (typeof NEEDS_USER_CAUSES)[number];
 
@@ -358,7 +366,9 @@ const PHONE_NOUN = /^(?:(?:primary|main|daytime|day|evening|home|work|business|c
 /** A phone number whose label also names its country code: the number, not the code. */
 const PHONE_WITH_CODE = /\b(?:phone|mobile|telephone)\s+(?:number\s+)?(?:with|including|incl|include)\s+(?:the\s+)?country\s+code\b/;
 /** Address line 2's own label ("Apt / Suite", "Unit"); not "business unit", not "Office Suite". */
-const ADDRESS2_NOUN = /address\s+line\s*2|^address\s+2$|^(?:apt|apartment|suite|ste|unit|floor|fl|building|bldg|room)(?:\s+(?:apt|apartment|suite|ste|unit|floor|fl|building|bldg|room|number|no|or|and|etc))*$/;
+// jr7 RULES-7 R3 (DFPC-7 P2, Paycom's "Apt / Suite / Other", snapshot7 paycomonline1): "other" after the line's own
+// nouns too, never alone.
+const ADDRESS2_NOUN = /address\s+line\s*2|^address\s+2$|^(?:apt|apartment|suite|ste|unit|floor|fl|building|bldg|room)(?:\s+(?:apt|apartment|suite|ste|unit|floor|fl|building|bldg|room|number|no|or|and|etc|other))*$/;
 /** A portfolio link's own label; not "What size portfolio have you managed?" */
 const PORTFOLIO_NOUN = /^(?:(?:online|personal|design|work|professional|your)\s+)*portfolio(?:\s+(?:url|link|website|site|web\s+site|address|or\s+website))*$|\b(?:link|url)\s+to\s+(?:your\s+|a\s+|an\s+)?(?:online\s+)?portfolio\b|\bportfolio\s+(?:url|link|website|site)\b/;
 /** A field of study: the design's longer wordings anywhere, but "major" and "discipline" only as the label's own noun
@@ -373,19 +383,31 @@ const TITLE_WORD = String.raw`(?:title|position|role)`;
  *  question about a role, and not "title" inside a word ("entitled"). */
 const TITLE_NOUN = new RegExp(String.raw`^(?:(?:${WHEN}|job|position|role|professional|work)\s+)*${TITLE_WORD}(?:\s+(?:or\s+|and\s+)?${TITLE_WORD})*(?:\s+(?:name|held))?$|^title\s+of\s+(?:${WHEN}\s+)*(?:position|role|job)$`);
 /** Total experience. Years with a skill or in a role ("years of experience with Python") are another question. */
-const TOTAL_YEARS = /^(?:total\s+)?(?:number\s+of\s+)?years\s+of\s+(?:total\s+|professional\s+|relevant\s+|work\s+|working\s+|industry\s+)?experience$|how\s+many\s+(?:total\s+)?years\s+of\s+(?:total\s+|professional\s+|relevant\s+|work\s+|working\s+|industry\s+)?experience\s+do\s+you\s+have$/;
+// jr7 RULES-7 (ADP7-9, ADP's "How many years of related experience do you have?", snapshot7 adp1): related too.
+const TOTAL_YEARS = /^(?:total\s+)?(?:number\s+of\s+)?years\s+of\s+(?:total\s+|professional\s+|relevant\s+|related\s+|work\s+|working\s+|industry\s+)?experience$|how\s+many\s+(?:total\s+)?years\s+of\s+(?:total\s+|professional\s+|relevant\s+|related\s+|work\s+|working\s+|industry\s+)?experience\s+do\s+you\s+have$/;
 /** Availability to start. Availability for an interview, a shift or a weekend is another question. */
 const START_AVAILABILITY = /when\s+can\s+you\s+start|earliest\s+start|available\s+to\s+start|availability\s+(?:to|for)\s+(?:start|starting|begin|employment)\b|\bstart(?:ing)?\s+availability\b|^availability(?:\s+date)?$/;
+/** jr7 RULES-7 R2 (RBP7-15, BambooHR's "Date Available", snapshot7 bamboohr1 and bamboohr2): the date the person is
+ *  available to start, laid out by its placeholder. */
+const DATE_AVAILABLE = /^(?:the\s+)?date\s+(?:you\s+are\s+)?available(?:\s+to\s+(?:start|begin))?$/;
 /** Pay as a topic rather than the person's pay: "compensation planning", "experience with payroll". */
 const PAY_TOPIC = /\b(?:compensation|salary|salaries|pay|payroll)\s+(?:planning|plans?|strateg(?:y|ies)|benchmark\w*|analysis|analyst|analytics|structures?|philosophy|programs?|committee|management|administration|surveys?|data|consulting|practices|polic(?:y|ies)|reviews?|cycles?|design|tools?|software|systems?|teams?|functions?|benefits|equity|transparency|laws?|regulations?)\b|\b(?:compensation|salary|pay)\s+and\s+benefits\b|\b(?:experience|familiar|familiarity|knowledge|expertise)\s+(?:with|in|of)\s+(?:\w+\s+){0,2}(?:compensation|salary|salaries|payroll)\b/;
 /** Current, previous or historical pay, the time word qualifying the pay itself. */
 const PAST_PAY = /\b(?:current|currently|previous|prior|last|present|most\s+recent|existing|former)\s+(?:\w+\s+){0,2}?(?:salary|salaries|compensation|pay|wages?|remuneration|ctc|earnings|income|base)\b|\b(?:salary|pay|compensation)\s+history\b|\bhow\s+much\s+(?:do|did)\s+you\s+(?:currently\s+)?(?:make|earn)\b/;
 /** Expected-pay wordings §8.3's rule misses. An hourly or day rate is not among them: the value is a yearly figure. */
 const PAY_EXPECTATION = /\bpay\s+range\b|\bbase\s+pay\b|\b(?:desired|expected|target|requested)\s+(?:(?:annual|yearly|base|total)\s+)*(?:pay|compensation|salary)\b|\btotal\s+compensation\b/;
+/** jr7 RULES-7 (ADP7-8, ADP's "What is the minimum hourly rate you would consider for this position?", snapshot7 adp1):
+ *  the lowest, desired or expected hourly or daily rate asked for: the expected pay in its own period (values.ts never
+ *  converts it). */
+const PAY_RATE_EXPECTATION = /\b(?:minimum|lowest|desired|expected|target|requested)\s+(?:hourly|daily)\s+(?:pay\s+)?rate\b/;
 /** Language names, for a proficiency question about a language rather than a tool ("Excel proficiency"). */
 const LANGUAGE_PROFICIENCY = /\b(?:languages?|english|spanish|french|german|italian|portuguese|dutch|polish|russian|ukrainian|turkish|arabic|hebrew|persian|farsi|hindi|urdu|bengali|punjabi|tamil|telugu|marathi|gujarati|mandarin|cantonese|chinese|japanese|korean|vietnamese|thai|indonesian|malay|tagalog|filipino|swahili|greek|swedish|norwegian|danish|finnish|czech|slovak|hungarian|romanian|bulgarian|serbian|croatian|catalan|irish|welsh|afrikaans|amharic|nepali|sign\s+language)\b|^(?:proficiency|fluency)(?:\s+level)?$|^level\s+of\s+(?:proficiency|fluency)$/;
 /** More wordings of work authorization: "entitled to work", "(legally) eligible to be employed". */
-const WORK_AUTH_WIDE = /\bentitled\s+to\s+work\b|\b(?:eligible|authori[sz]ed|permitted|entitled)\s+to\s+be\s+(?:employed|hired)\b|\beligible\s+for\s+employment\b/;
+// jr7 RULES-7 (WD7-09, Workday's aristocrat "Do you currently have the right/entitlement to work in the country where the
+// job is located?", snapshot7 workday1; UKGR-16, UKG Ready's required box "Eligible For Work in the USA", snapshot7
+// secure7.saashr): a right or an entitlement to work, and eligible for work in a place. In the refinement, never in
+// §8.3's own pattern (the design-verbatim test).
+const WORK_AUTH_WIDE = /\bentitled\s+to\s+work\b|\b(?:eligible|authori[sz]ed|permitted|entitled)\s+to\s+be\s+(?:employed|hired)\b|\beligible\s+for\s+employment\b|\bright\s+(?:(?:or|and)\s+)?entitlement\s+to\s+work\b|\bentitlement\s+to\s+work\b|\beligible\s+for\s+work\s+in\b/;
 /** A question about which work authorization status the applicant holds (Workable's "Work Authorization Status",
  *  "Which best describes your work authorization status?"): which status, never yes or no. */
 const WORK_AUTH_STATUS = /\bauthori[sz]ation\s+status\b|\bwork\s+(?:authori[sz]ation\s+)?status\b/;
@@ -397,13 +419,16 @@ const WORK_AUTH_TYPE = /\bauthori[sz]ation\s+type\b|\btype\s+of\s+(?:work\s+|emp
  *  Experience "Summary"). s2 core-wd: or the role's, the job's or the position's ("Role Description", Workday's
  *  formField-roleDescription in fixtures/workday/s2-exelixis-my-experience; the wd study §4). Any longer wording is left
  *  to the LLM's classification, as before. */
-const EXPERIENCE_DESCRIPTION = /^(?:(?:role|job|position)\s+)?(?:summary|description)$/;
+// jr7 RULES-7 (ICIMS7-08, arc-onesolutions' required "Duties" in every employment block, snapshot7 iCIMS1; DF7-11,
+// Dayforce's "Duties and Responsibilities", snapshot7 dayforce1; jr7-O4, Oracle's tile editor "Responsibilities",
+// snapshot7 oraclecloud1): the role's duties or responsibilities.
+const EXPERIENCE_DESCRIPTION = /^(?:(?:role|job|position)\s+)?(?:summary|description)$|^(?:(?:job|role|position|main|key|primary)\s+)?(?:duties|responsibilities)(?:\s+(?:and|or)\s+(?:duties|responsibilities))?$/;
 const EXPERIENCE_DESCRIPTION_RULE = { id: 'label.experience-description', strength: 'normal' } as const;
 const WORK_AUTH_STATUS_RULE = { id: 'label.work-auth-status', strength: 'strong' } as const;
 
 /** A legal reading of "eligible", "permitted" or "entitled to work": a place, "legally", "lawfully" or any employer.
  *  Without one it is a question about the job ("eligible to work overtime"). */
-const WORK_AUTH_LEGAL = /authori[sz]ed\s+to\s+work|right\s+to\s+work|work\s+authori[sz]ation|\b(?:legally|lawfully)\b|(?:eligible|permitted|entitled)\s+to\s+work\s+(?:\w+\s+){0,4}?(?:in|within)\s+(?!(?:a|an|our|shifts?|teams?|person|office|offices|hybrid|remote|remotely|this\s+(?:role|position|job|team|office)|the\s+(?:office|field|evenings?|mornings?|afternoons?|weekends?|days?|nights?|shifts?|role|position|job|team|warehouse|store|lab|clinic))\b)\w+|(?:eligible|permitted|entitled)\s+to\s+work\s+for\s+(?:any|an|all)\s+employers?/;
+const WORK_AUTH_LEGAL = /authori[sz]ed\s+to\s+work|right\s+to\s+work|entitlement\s+to\s+work|eligible\s+for\s+work\s+(?:in|within)\s+(?!(?:a|an|our|shifts?|teams?|person|office|offices|hybrid|remote|remotely|this\s+(?:role|position|job|team|office)|the\s+(?:office|field|evenings?|mornings?|afternoons?|weekends?|days?|nights?|shifts?|role|position|job|team|warehouse|store|lab|clinic))\b)\w+|work\s+authori[sz]ation|\b(?:legally|lawfully)\b|(?:eligible|permitted|entitled)\s+to\s+work\s+(?:\w+\s+){0,4}?(?:in|within)\s+(?!(?:a|an|our|shifts?|teams?|person|office|offices|hybrid|remote|remotely|this\s+(?:role|position|job|team|office)|the\s+(?:office|field|evenings?|mornings?|afternoons?|weekends?|days?|nights?|shifts?|role|position|job|team|warehouse|store|lab|clinic))\b)\w+|(?:eligible|permitted|entitled)\s+to\s+work\s+for\s+(?:any|an|all)\s+employers?/;
 /** Sponsorship in the immigration sense: a visa or work authorization named, or sponsorship required or needed.
  *  Without one it is sponsorship in the business sense ("sponsorship sales"). */
 const VISA_SPONSORSHIP = /\bvisas?\b|\bimmigra\w*|\bh\s?1\s?b\b|\bgreen\s+card\b|\bpermanent\s+residen\w*|\bcitizen\w*|\bwork\s+(?:authori[sz]\w*|permits?|status|eligibility)\b|\bemployment\s+(?:authori[sz]\w*|visas?|status|eligibility|based)\b|\bto\s+work\b|\bfor\s+employment\b|\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,3}?\s+sponsor\w*|\bsponsor\w*\s+(?:\w+\s+){0,2}?(?:required|needed|status)\b|^(?:visa\s+)?sponsorship\b|\bsponsorship\s+(?:now|in\s+the\s+future|to\s+work)\b/;
@@ -421,7 +446,10 @@ const SPONSORED_NEED = /\b(?:require|requires|required|requiring|need|needs|need
 // country/province you are applying for?"): a need for the employer to sponsor, a few words on, is sponsorship, whatever
 // "work authorization" the sentence names after it. §8.3's authorization rule, read first, took it for authorization
 // and answered a person who needs no sponsorship "Yes".
-const NEED_TO_SPONSOR = /\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,4}?\s+sponsor\w*/;
+// jr7 RULES-7 (WD7-01, Workday's aristocrat "Will you now, or in the future, require any immigration filing or visa
+// sponsorship by Aristocrat to maintain work authorization (…)?", snapshot7 workday1): five words between the need and
+// the sponsorship, the narrowest width that reads it (the verifier's trial of {0,4} to {0,8}).
+const NEED_TO_SPONSOR = /\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,5}?\s+sponsor\w*/;
 // s2 core-gh end
 
 // Self-identification wordings: a topic word without one ("experience supporting individuals with disabilities") is a
@@ -443,12 +471,15 @@ const RACE_SELF = /^(?:race|races|ethnicity|ethnicities|racial|ethnic)\b|\b(?:yo
 // believe you belong to any of the categories of protected veterans listed below, …": fixtures
 // danafarber-voluntary-disclosures, jr6-web-voluntary-disclosures): a gender asked to be selected, chosen, indicated or
 // provided (never "gender neutral"); veterans in the plural, and the categories of protected veterans one belongs to.
-const GENDER_WIDE = /^(?!.*\b(?:transgender|cisgender|assigned\s+at\s+birth|sexual\s+orientation)\b)(?:.*\b(?:your|my)\s+(?:gender|sex)\b|.*\b(?:which|what)\s+gender\b|.*\bgender\s+(?:do\s+you|you)\s+(?:\w+\s+)?identify\b|^(?:gender|sex)\s+(?:identity|identification|self\s+identification)$|.*\b(?:select|choose|indicate|provide|specify)\s+(?:a|your)\s+gender\b(?!\s+neutral))/;
+// jr7 RULES-7 (EFA-10, Eightfold's twilio "Voluntary Self-Identification of Gender", snapshot7 twillio): the
+// self-identification of a gender or a sex, its noun after.
+const GENDER_WIDE = /^(?!.*\b(?:transgender|cisgender|assigned\s+at\s+birth|sexual\s+orientation)\b)(?:.*\b(?:your|my)\s+(?:gender|sex)\b|.*\b(?:which|what)\s+gender\b|.*\bgender\s+(?:do\s+you|you)\s+(?:\w+\s+)?identify\b|^(?:gender|sex)\s+(?:identity|identification|self\s+identification)$|.*\b(?:select|choose|indicate|provide|specify)\s+(?:a|your)\s+gender\b(?!\s+neutral)|^(?:voluntary\s+)?self\s+identification\s+(?:of\s+)?(?:gender|sex)(?:\s+identity)?$)/;
 const VETERAN_WIDE = /\b(?:have|did)\s+you\s+(?:ever\s+)?serve[d]?\s+in\s+the\s+(?:us\s+|u\s+s\s+|united\s+states\s+)?(?:military|armed\s+forces|army|navy|air\s+force|marines?|marine\s+corps|coast\s+guard|national\s+guard|reserves?|space\s+force)\b|\bmilitary\s+status\b|\bveterans\b/;
 const VETERAN_SELF = /^(?:(?:protected|military|us|u\s+s|armed\s+forces)\s+(?:and\s+|or\s+)?)*(?:veterans?|military)(?:\s+(?:and\s+|or\s+)?(?:veterans?|military|protected))*(?:\s+(?:status|self\s+identification|classification|information|service))*$|\b(?:are\s+you|i\s+am|you\s+are)\s+(?:not\s+)?(?:a\s+|an\s+)?(?:(?:protected|military|us|u\s+s|armed\s+forces|disabled|recently\s+separated)\s+)*veteran\b|\bidentify\s+as\s+(?:a\s+|one\s+or\s+more\s+of\s+the\s+classifications\s+of\s+)?(?:protected\s+)?veteran\b|\b(?:veterans?|military)\s+status\b|\bprotected\s+veterans?\b|\b(?:have|did)\s+you\s+(?:ever\s+)?serve[d]?\s+in\s+the\b|\b(?:your|my)\s+(?:veteran|military)\s+(?:status|service)\b|\bbelongs?\s+to\s+(?:any\s+of\s+|one\s+or\s+more\s+of\s+)?the\s+(?:categories|classifications)\s+of\s+protected\s+veterans\b/;
 const DISABILITY_SELF = /^(?:voluntary\s+)?(?:self\s+identification\s+(?:of\s+)?)?disabilit(?:y|ies)(?:\s+(?:status|self\s+identification|disclosure|information|inclusion))*$|\bdisability\s+status\b|\b(?:do|did)\s+you\s+(?:currently\s+)?(?:identify|consider\s+yourself)\s+(?:as\s+|to\s+be\s+)?(?:a\s+)?disabled\b|\b(?:do|did)\s+you\s+(?:currently\s+)?(?:have|consider\s+yourself\s+to\s+have|identify\s+as\s+(?:having|a\s+person\s+with|an?\s+individual\s+with))\s+(?:a\s+|any\s+)?disabilit|\b(?:are\s+you|i\s+am)\s+(?:a\s+|an\s+)?(?:person|individual)\s+with\s+(?:a\s+)?disabilit|\bi\s+(?:have|do\s+not\s+have|dont\s+have)\s+(?:a\s+)?disabilit|\b(?:have\s+you\s+ever\s+had|history\s+of)\s+(?:a\s+)?disabilit|\bself\s+identif\w*(?:\s+\w+){0,4}\s+disabilit|\bdisabilit\w*(?:\s+\w+){0,4}\s+self\s+identif/;
 const ORIENTATION_WIDE = /\blgbt\w*|\bqueer\b/;
-const ORIENTATION_SELF = /^(?:your\s+)?sexual\s+orientation\b|\b(?:your|my)\s+sexual\s+orientation\b|\bsexual\s+orientation\s+(?:do\s+you|you)\s+(?:most\s+)?identify\b|\bidentify\b(?:\s+\w+){0,4}\s+sexual\s+orientation\b|\b(?:do\s+you\s+identify\s+as|are\s+you|i\s+am|i\s+identify\s+as|i\s+consider\s+myself|do\s+you\s+consider\s+yourself)\b(?:\s+\w+){0,4}?\s+(?:lgbt\w*|queer|gay|lesbian|bisexual)\b|^(?:lgbt\w*\+?|queer)(?:\s+(?:status|identity|community|community\s+member))?$/;
+// jr7 RULES-7 (EFA-10, Eightfold's twilio "Voluntary Self-Identification of Sexual Orientation", snapshot7 twillio).
+const ORIENTATION_SELF = /^(?:voluntary\s+)?self\s+identification\s+(?:of\s+)?sexual\s+orientation$|^(?:your\s+)?sexual\s+orientation\b|\b(?:your|my)\s+sexual\s+orientation\b|\bsexual\s+orientation\s+(?:do\s+you|you)\s+(?:most\s+)?identify\b|\bidentify\b(?:\s+\w+){0,4}\s+sexual\s+orientation\b|\b(?:do\s+you\s+identify\s+as|are\s+you|i\s+am|i\s+identify\s+as|i\s+consider\s+myself|do\s+you\s+consider\s+yourself)\b(?:\s+\w+){0,4}?\s+(?:lgbt\w*|queer|gay|lesbian|bisexual)\b|^(?:lgbt\w*\+?|queer)(?:\s+(?:status|identity|community|community\s+member))?$/;
 const TRANSGENDER_WIDE = /\bassigned\s+at\s+birth\b|\bcisgender\b/;
 const TRANSGENDER_SELF = /^transgender(?:\s+(?:status|identity|experience|history))?$|\b(?:do\s+you\s+identify\s+as|are\s+you|i\s+am|i\s+identify\s+as|do\s+you\s+consider\s+yourself|i\s+consider\s+myself)\s+(?:to\s+be\s+)?(?:a\s+)?(?:trans|transgender|cisgender|cis)\b|\bassigned\s+at\s+birth\b|\bcisgender\b|\btransgender\s+(?:experience|history|status|identity)\b/;
 /** Over-18 wordings §8.3's rule misses ("over the age of 18", "18 or older"). "Under 18" is not among them: its yes
@@ -820,7 +851,7 @@ const SCHOOL_WORD = String.raw`(?:school|schools|university|universities|college
  *  institution", "Enter school name if not in the list above"), or which one the person attended. jr6 fix
  *  (RULES-R14-SCHOOL-ONLY-TOO-NARROW): also "Select your school", "Search for your school", "Name of the school you
  *  attended" and "Highest Level School Attended", which main read as the school. */
-const SCHOOL_NOUN = new RegExp(String.raw`^(?:name\s+of\s+(?:the\s+|your\s+)?)?(?:(?:current|most\s+recent|recent|last|previous|prior|high|graduate|undergraduate|secondary|post\s+secondary|educational|academic|your|the)\s+)*${SCHOOL_WORD}(?:\s+(?:(?:or|and)\s+)?${SCHOOL_WORD})*(?:\s+(?:name|attended|of\s+study))*(?:\s+if\s+not\s+in\s+the\s+list(?:\s+above)?)?$|^(?:which|what)\s+${SCHOOL_WORD}\s+(?:did|do)\s+you\s+(?:attend|graduate\s+from|study\s+at)\b|^(?:select|choose|search\s+for|find|enter)\s+(?:your|the|a)\s+${SCHOOL_WORD}(?:\s+name)?$|^name\s+of\s+(?:the\s+)?${SCHOOL_WORD}\s+(?:you\s+)?(?:attended|graduated\s+from)$|^highest\s+(?:level\s+(?:of\s+)?)?${SCHOOL_WORD}\s+attended$`);
+const SCHOOL_NOUN = new RegExp(String.raw`^(?:name\s+of\s+(?:the\s+|your\s+)?)?(?:(?:current|most\s+recent|recent|last|previous|prior|high|graduate|undergraduate|secondary|post\s+secondary|educational|education|academic|other|your|the)\s+)*${SCHOOL_WORD}(?:\s+(?:(?:or|and)\s+)?${SCHOOL_WORD})*(?:\s+(?:name|attended|of\s+study))*(?:\s+if\s+not\s+in\s+the\s+list(?:\s+above)?)?$|^(?:which|what)\s+${SCHOOL_WORD}\s+(?:did|do)\s+you\s+(?:attend|graduate\s+from|study\s+at)\b|^(?:select|choose|search\s+for|find|enter)\s+(?:your|the|a)\s+${SCHOOL_WORD}(?:\s+name)?$|^name\s+of\s+(?:the\s+)?${SCHOOL_WORD}\s+(?:you\s+)?(?:attended|graduated\s+from)$|^highest\s+(?:level\s+(?:of\s+)?)?${SCHOOL_WORD}\s+attended$`);
 /** JV-14: a company asking to text the person ("Can NinjaOne text you about your application?"), to contact them by
  *  text, or to send them texts; never "the text you entered". */
 const SMS_WIDE = /\b(?:can|may|could|will|would|to|we|us|they)\s+(?:\w+\s+){0,2}?text\s+(?:you|me)\b|\bcontact\s+(?:you|me)\s+(?:by|via|through)\s+text\b|\bsend\s+(?:you|me)\s+(?:a\s+)?texts?\b/;
@@ -837,7 +868,8 @@ const CHOSEN_FIRST_NAME = /^chosen\s+(?:first\s+)?name$/;
 const REGION_TERRITORY = /^(?:(?:state|province)\s+(?:or\s+)?)*territory$/;
 /** ADP-8 (ADP's "If an offer is presented, how soon can you start?"), WD-27 (Workday's Parsons "When could you
  *  start?"): when the person could start, asked so. */
-const START_WHEN = /\bhow\s+soon\s+(?:can|could|would|will)\s+you\s+(?:be\s+(?:able|available)\s+to\s+)?start\b|\bwhen\s+(?:could|can|would|will)\s+you\s+(?:be\s+(?:able|available)\s+to\s+)?start\b/;
+// jr7 RULES-7 (WD7-12, Workday's republic "If hired, when can you begin work?", snapshot7 workday2): or begin.
+const START_WHEN = /\bhow\s+soon\s+(?:can|could|would|will)\s+you\s+(?:be\s+(?:able|available)\s+to\s+)?(?:start|begin)\b|\bwhen\s+(?:could|can|would|will)\s+you\s+(?:be\s+(?:able|available)\s+to\s+)?(?:start|begin)\b/;
 /** SR-7 (Xplor's SmartRecruiters "How did you first hear about this opportunity?", fixtures/smartrecruiters/
  *  xplor-screening): how the person first, initially or originally heard. */
 const REFERRAL_FIRST = /how\s+did\s+you\s+(?:first|initially|originally)\s+(?:hear|find|learn)/;
@@ -845,6 +877,126 @@ const REFERRAL_FIRST = /how\s+did\s+you\s+(?:first|initially|originally)\s+(?:he
  *  only the whole question of where the person is. */
 const LOCATION_WHOLE = /^(?:(?:what\s+is\s+)?your\s+)?(?:current\s+)?location$|^where\s+are\s+you\s+(?:currently\s+|presently\s+)?(?:located|based)(?:\s+(?:now|today|currently))?$|^where\s+do\s+you\s+(?:currently\s+)?(?:live|reside)$/;
 // jr6 RULES end
+
+// ── jr7 RULES-7 (FIX7PLAN §6.3 R1): the refinements' own wordings, each from the owner's snapshot7 ──────────────────
+
+/** ICIMS7-06: an attestation's words, which a skills list never holds (label.consent-certify's: "I (hereby) certify",
+ *  "true and complete/accurate", "to the best of my knowledge", "attest"). */
+// jr7 RULES-7 R2 (WD7-11, Workday's republic "Please list any job related military experience or skills", snapshot7
+// workday2): nor a military, veteran or armed-forces question.
+const SKILLS_NOT = /\bi\s+(?:hereby\s+)?certify\b|\btrue\s+and\s+(?:complete|accurate)\b|\bto\s+the\s+best\s+of\s+my\s+knowledge\b|\battest\b|\bmilitary\b|\bveterans?\b|\barmed\s+forces\b/;
+/** ICIMS7-07 (careers-quartzbenefits' Q47 "… contingent upon successful completion of a pre-employment criminal
+ *  background check. Are you willing to submit to a pre-employment background check if offered a position?", snapshot7
+ *  icims3): a willingness or a consent to undergo a (criminal) background check, with no conviction asked about. */
+const WILLING_CHECK = /^(?!.*\b(?:convicted|convictions?|felon\w*|pleaded|pled|charged|arrest\w*|guilty|misdemeanou?rs?|offen[cs]es?)\b).*\b(?:willing|consent\w*|agree\w*|authori[sz]\w*)\b(?:\s+\w+){0,8}?\s+(?:criminal\s+)?background\s+(?:checks?|screenings?|investigations?)\b/;
+/** J7-GH-1: "zip" that is no postal code: inside a yes-or-no question, or the name of an organisation after a
+ *  preposition ("support from Zip", "work at Zip", "hear about Zip"), never "Zip code" or "Zip+4". */
+const POSTAL_NOT = new RegExp(String.raw`${YES_NO_QUESTION.source}|\b(?:at|for|with|from|about|join(?:ing)?|to|by)\s+zip\b(?!\s*(?:code|postal|\+))`);
+/** RBP7-07, UKGR-18: a name typed as the person's signature: by typing it (to acknowledge), typed to confirm, sign,
+ *  acknowledge or certify, or typed as a signature. A bare "Please type your full name." stays a name box (ADP's
+ *  e-signature is one only by its "electronic signature" suffix: adapters/adp adp-4). */
+const TYPED_NAME_SIGNATURE = /\btyping\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\b|\btype\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\s+(?:to\s+(?:confirm|sign|acknowledge|certify|attest|agree)|as\s+(?:your\s+)?(?:electronic\s+)?signature|below\s+to\s+(?:confirm|sign|acknowledge|certify|attest|agree))\b|\bfull\s+(?:legal\s+)?name\s+to\s+(?:confirm|sign)\b/;
+/** UKGR-16: the single-choice kinds a bare "Referral" is the source on. */
+const CHOICE_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['select', 'radio', 'combobox']);
+/** UKGR-18: a signature's prompt with the name it shows, to its end ("please type your full name to confirm <name>"). */
+const SIGNATURE_PROMPT = /\b(?:please\s+)?typ(?:e|ing)\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\s+to\s+(?:confirm|sign)(?:\s+\w+){0,4}\s*$/;
+/** jr7 RULES-7 R4 (RBP7-07): whether normalized text asks for the person's name typed as their signature
+ *  (TYPED_NAME_SIGNATURE: by typing it, typed to confirm or sign, or as a signature), never a bare mention of a name. */
+export function asksNameTypedAsSignature(text: string): boolean {
+  return TYPED_NAME_SIGNATURE.test(text);
+}
+/** DF7-V3: the application's own candidate acknowledgement ("I agree to the Candidate Acknowledgement"). */
+const CANDIDATE_ACKNOWLEDGEMENT = /\b(?:candidate|applicant)\s+acknowledge?ments?\b/;
+/** UP7-08: a certification that the information is truthful (and complete, and accurate). */
+const CERTIFY_WIDE = /\btruthful\s+(?:and\s+)?(?:complete|accurate|correct)\b|\b(?:complete|accurate|correct)\s+and\s+truthful\b|\btrue\s+(?:complete|correct)\s+and\s+(?:accurate|complete|correct)\b/;
+/** UP7-08 (UltiPro's "If offered employment by <employer>, would you be legally eligible in the United States to begin
+ *  employment immediately?", snapshot7 ultipro1): legally eligible to begin, start or take up employment. */
+const ELIGIBLE_TO_BEGIN = /\b(?:legally|lawfully)\s+eligible\b(?:\s+\w+){0,5}?\s+to\s+(?:begin|start|commence|take\s+up|accept)\s+(?:employment|work)\b/;
+
+/** jr7 RULES-7 R3: a box that states the person has no middle name. */
+const NO_MIDDLE_NAME = /^i\s+(?:do\s+not|dont|have\s+no)\s+(?:have\s+)?(?:a\s+)?(?:legal\s+)?middle\s+(?:name|initial)$|^no\s+(?:legal\s+)?middle\s+(?:name|initial)$/;
+const NO_MIDDLE_NAME_RULE = { id: 'label.no-middle-name', strength: 'strong' } as const;
+
+// jr7 RULES-7 R2: the fields of a job's or a school's entry the rules missed.
+/** jr7-O4 (Oracle's tile editor "Employer City", "Employer Country", snapshot7 oraclecloud1): the employer's place, the
+ *  entry's, never the home address. */
+const EMPLOYER_PLACE = /^(?:employer|company|job|work)\s+(city|state|region|province|country)$/;
+/** UKGR-15 (UKG Ready's work editor "Job title #1", snapshot7 secure7.saashr): a job title numbered by its entry. */
+const NUMBERED_TITLE = /^(?:job\s+|position\s+)?title\s+\d{1,2}$/;
+/** UKGR-15 (UKG Ready's work editor "Present"): the entry is the current job. */
+const PRESENT_JOB = /^(?:present|current|to\s+present|until\s+present|still\s+(?:employed|working)(?:\s+here)?)$/;
+/** DF7-11 (Dayforce's education record "Not Completed", snapshot7 dayforce1; Jobright reads `input[id*="notCompleted"]`
+ *  as the education's isCurrent: cited): the school entry is not finished yet. */
+export const NOT_COMPLETED = /^(?:not\s+(?:yet\s+)?(?:completed|complete|finished)|incomplete|in\s+progress|still\s+in\s+progress)$/;
+/** DF7-11 (Dayforce's employment record "Division / Dept.", "Reason For Leaving?"): an entry's department and, when
+ *  optional, why the person left: no profile answer, and no AI's to invent. */
+const ENTRY_DEPARTMENT = /^(?:division|department|dept|business\s+unit)(?:\s+(?:or\s+|and\s+)?(?:division|department|dept))*(?:\s+name)?$/;
+const REASON_FOR_LEAVING = /^(?:reasons?\s+for\s+leaving|why\s+did\s+you\s+leave)$/;
+const ENTRY_FIELD_RULE = { id: 'label.entry-field', strength: 'normal' } as const;
+
+/**
+ * jr7 RULES-7 R2 (jr7-O4, UKGR-15, DF7-11, ICIMS7-08): an entry's own field: the employer's city or country (any
+ * section); in a job's entry (its block, or a section the adapter names "experience") its duties as its description, a
+ * numbered job title, "Present" as its current flag, and its department or an optional reason for leaving as an
+ * entry detail no profile value or AI fills (`experience.detail`); in a school's entry "Not Completed" as its
+ * in-progress flag. Null for any other field.
+ */
+function entryFieldHit(text: string, section: SectionKind, kind: FieldKind, context: LabelContext): LabelRuleHit | null {
+  const place = EMPLOYER_PLACE.exec(text)?.[1];
+  if (place !== undefined) {
+    const category: FieldCategory = place === 'city' ? 'experience.city'
+      : place === 'country' ? 'experience.country' : 'experience.region';
+    return kindAllowed(category, kind) ? hitOf(ENTRY_FIELD_RULE, category) : null;
+  }
+  const job = section === 'experience' && (context.block !== undefined || context.entry === 'experience');
+  const school = section === 'education' && (context.block !== undefined || context.entry === 'education');
+  const hits: Array<[boolean, FieldCategory]> = [
+    [job && EXPERIENCE_DESCRIPTION.test(text), 'experience.description'],
+    [job && NUMBERED_TITLE.test(text), 'experience.title'],
+    [job && kind === 'checkbox' && PRESENT_JOB.test(text), 'experience.current'],
+    [job && (ENTRY_DEPARTMENT.test(text) || (REASON_FOR_LEAVING.test(text) && context.required !== true)),
+      'experience.detail'],
+    [school && kind === 'checkbox' && NOT_COMPLETED.test(text), 'education.current'],
+  ];
+  const found = hits.find(([matched, category]) => matched && kindAllowed(category, kind));
+  if (found !== undefined) return hitOf(ENTRY_FIELD_RULE, found[1]);
+  // ICIMS7-14 (arc-onesolutions' optional "License/Certification Name/Type", "… Number", "… State", snapshot7 iCIMS1):
+  // the name or type is a certification the profile may hold; its number or state none (skipped, never an AI's).
+  if (LICENCE_NAME.test(text) && kindAllowed('skills.certifications', kind)) {
+    return hitOf(LICENCE_RULE, 'skills.certifications');
+  }
+  if (LICENCE_DETAIL.test(text) && kindAllowed('skills.certificationDetail', kind)) {
+    return hitOf(LICENCE_RULE, 'skills.certificationDetail');
+  }
+  return null;
+}
+const LICENCE_WORD = String.raw`(?:(?:professional\s+)?licen[cs]e(?:\s+(?:or\s+|and\s+)?certification)?|certification(?:\s+(?:or\s+|and\s+)?licen[cs]e)?)`;
+const LICENCE_NAME = new RegExp(String.raw`^${LICENCE_WORD}\s+(?:name|type|title)(?:\s+(?:or\s+|and\s+)?(?:name|type|title))*$`);
+const LICENCE_DETAIL = new RegExp(String.raw`^${LICENCE_WORD}\s+(?:number|no|num|id|state|issuing\s+(?:state|authority|body)|country|expiration(?:\s+date)?|expiry(?:\s+date)?|issue\s+date|date\s+(?:issued|obtained))$`);
+const LICENCE_RULE = { id: 'label.licence', strength: 'normal' } as const;
+
+/** UKGR-14 (UKG Ready's "Primary National ID" list and its SSN box, snapshot7 secure7.saashr): a national id's or a
+ *  social security number's own label, or the type of one. */
+const NATIONAL_ID_LABEL = /^(?:(?:your|primary|secondary)\s+)*(?:ssn|social\s+security(?:\s+(?:number|no|num|card))?|social\s+insurance\s+(?:number|no)|national\s+(?:id|identification|identity|insurance)(?:\s+(?:number|no|num|card|type))?|(?:type\s+of\s+)?national\s+id|tax\s+(?:id|identification)\s+(?:number|no))$|\blast\s+(?:4|four)\s+(?:digits\s+)?of\s+(?:your\s+)?(?:ssn|social\s+security(?:\s+number)?)\b/;
+/** UKGR-14: a social security number's mask ("999-99-9999", "###-##-####"), as a placeholder or the label it gave. */
+const SSN_MASK = /^[9#Xx0]{3}-[9#Xx0]{2}-[9#Xx0]{4}$/;
+/** UKGR-14: a national id or social security number by the control's name or id ("SSN", "social_security_number"). */
+const NATIONAL_ID_NAME = /(?:^|[_ ])(?:ssn|social_?security(?:_?(?:number|no|num))?|social_?insurance_?number|national_?id(?:_?number)?)(?=[_ \d]|$)/;
+const NATIONAL_ID_RULE = { id: 'label.national-id', strength: 'strong' } as const;
+
+/**
+ * jr7 RULES-7 (UKGR-14, the safety line: UKG Ready's SSN box, labelled only by its "999-99-9999" placeholder, was read as
+ * the phone and planned with the person's number): whether a field asks for a national id or a social security number
+ * (or its type) by its label, its mask (the label or the pattern a placeholder gave) or its name or id. Such a field is
+ * `identity.nationalId`, handed to the person (`identifier`): never filled, never asked of an AI, never a phone.
+ */
+export function nationalIdHit(label: string, rawLabel: string, pattern: string | undefined, nameId: string):
+  LabelRuleHit | null {
+  if (!NATIONAL_ID_LABEL.test(label) && !SSN_MASK.test(rawLabel.trim()) && !SSN_MASK.test((pattern ?? '').trim())
+    && !NATIONAL_ID_NAME.test(nameId)) return null;
+  return { ...hitOf(NATIONAL_ID_RULE, 'identity.nationalId'), needsUser: 'identifier' };
+}
+// jr7 RULES-7 end
 
 /** A self-identification topic without a self-identification wording: a question about the job, the person's own. */
 const SENSITIVE_TOPIC = { id: 'label.sensitive-topic', category: 'screening.other', strength: 'normal',
@@ -856,11 +1008,20 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.preferred-name': { also: new RegExp(String.raw`name\s+you(?:d|\s+would)?\s+(?:prefer|like)\s+(?:us\s+)?to\s+(?:use|call\s+you)|\bname\s+you\s+prefer\b|${CHOSEN_FIRST_NAME.source}`) },
   // jr6 RULES R3 (icims-new-3): a preferred or chosen last name (PREFERRED_LAST_NAME).
   'label.last-name': { also: PREFERRED_LAST_NAME },
+  // jr7 RULES-7 R3 (DFPC-7 P2, Paycom's required "Legal Middle Name", snapshot7 paycomonline1): a legal middle name.
+  'label.middle-name': { also: /^legal\s+middle\s+(?:name|initial)$/ },
   // s2 core-wd: Workday's "Country Phone Code" (formField-countryPhoneCode, fixtures/workday/s2-exelixis-state-open), and
   // a "Phone country" alone.
   'label.phone-country': { also: /\bcountry\s+phone\s+code\b|\bphone\s+country(?:\s+code)?\b/, unless: PHONE_WITH_CODE },
   'label.phone': { only: PHONE_NOUN, ask: true },
   'label.address2': { only: ADDRESS2_NOUN },
+  // jr7 RULES-7 (UKGR-16, UKG Ready's required Address "Street", snapshot7 secure7.saashr): the street alone.
+  'label.address1': { also: /^(?:street|street\s+name|street\s+and\s+number)$/ },
+  // jr7 RULES-7 (J7-GH-1, Greenhouse's "Do you now or will you in the future require any form of immigration sponsorship
+  // or work authorization support from Zip to legally work in the United States …?", snapshot7 greenhouse): "zip" is the
+  // postal code only as the label's own noun, never inside a yes-or-no question nor right after a preposition naming
+  // an organisation (POSTAL_NOT); the next rule is tried.
+  'label.postal': { unless: POSTAL_NOT },
   // jr6 RULES (ICIMS-09, O7): a City, a State/Region or a Country in a job's or a school's block is that entry's
   // (fixtures/icims/nyu-profile.frame-1's employer and school blocks; Oracle's education editor), never the home
   // address.
@@ -889,12 +1050,15 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // s2 core-gh (decision 13): a need for the employer to sponsor is sponsorship too (NEED_TO_SPONSOR).
   // s2 core-gh review (C1): read in the question alone, so a disclaimer after it ("Are you authorized to work in the
   // US? Candidates requiring sponsorship are not eligible.") leaves the authorization question authorization.
-  'label.work-auth': { also: WORK_AUTH_WIDE, only: WORK_AUTH_LEGAL,
+  // jr7 RULES-7 (UP7-08): legally eligible to begin employment (ELIGIBLE_TO_BEGIN).
+  'label.work-auth': { also: new RegExp(`${WORK_AUTH_WIDE.source}|${ELIGIBLE_TO_BEGIN.source}`), only: WORK_AUTH_LEGAL,
     unless: new RegExp(`${SPONSORED_NEED.source}|${NEED_TO_SPONSOR.source}`), unlessQuestionsOnly: true },
   'label.sponsorship': { also: SPONSORED_NEED, only: VISA_SPONSORSHIP, readsQualifiers: true,
     needsUser: (c) => (sponsorshipTime(c.label) === 'unclear' ? 'unclear-time' : null) },
   'label.over18': { also: OVER18_WIDE },
-  'label.criminal': { also: CRIMINAL_WIDE },
+  // jr7 RULES-7 (ICIMS7-07): a willingness to undergo a (criminal) background check is no claim about a record
+  // (WILLING_CHECK): label.consent-background then decides it.
+  'label.criminal': { also: CRIMINAL_WIDE, unless: WILLING_CHECK },
   'label.hispanic': { only: HISPANIC_SELF, otherwise: SENSITIVE_TOPIC },
   'label.race': { also: RACE_WIDE, only: RACE_SELF, otherwise: SENSITIVE_TOPIC },
   'label.gender': { also: GENDER_WIDE },
@@ -909,11 +1073,14 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.title': { only: TITLE_NOUN, ask: true },
   'label.years': { only: TOTAL_YEARS,
     otherwise: { id: 'label.skill-years', category: 'screening.other', strength: 'normal' } },
-  'label.salary': { also: PAY_EXPECTATION, unless: PAY_TOPIC,
+  // jr7 RULES-7 (ADP7-8): or an hourly or daily rate asked so (PAY_RATE_EXPECTATION).
+  'label.salary': { also: new RegExp(`${PAY_EXPECTATION.source}|${PAY_RATE_EXPECTATION.source}`), unless: PAY_TOPIC,
     category: (c) => (PAST_PAY.test(c.label) ? 'unknown' : 'salary.expected'),
     needsUser: (c) => (PAST_PAY.test(c.label) ? 'current-pay' : null) },
   // jr6 RULES R3 (ADP-8, WD-27): "how soon can you start", "when could you start" (START_WHEN).
-  'label.availability': { also: START_WHEN, only: new RegExp(`${START_AVAILABILITY.source}|${START_WHEN.source}`),
+  // jr7 RULES-7 R2 (RBP7-15): "Date Available" (DATE_AVAILABLE).
+  'label.availability': { also: new RegExp(`${START_WHEN.source}|${DATE_AVAILABLE.source}`),
+    only: new RegExp(`${START_AVAILABILITY.source}|${START_WHEN.source}|${DATE_AVAILABLE.source}`),
     ask: true, otherwise: { id: 'label.other-availability', category: 'screening.other', strength: 'normal' } },
   // jr6 RULES (JV-4, fixtures jr6-vhl-step1: "Have you been employed by any United States K-12 School District since
   // 2016 in any capacity?"): a school's own label, never a word in a question.
@@ -922,7 +1089,7 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // "Have you worked here before?" (docs/SPEC-AMENDMENTS.md §8), which §8.3's rule misses. The rule's value is taken
   // only for a question that names the posting's company or points at it (values.ts, the Phase E review, M3).
   // s2 core-gh: employed or appointed before, and employed now (EMPLOYED_BEFORE, EMPLOYED_NOW).
-  'label.previously-employed': { also: new RegExp(String.raw`\bworked\s+(?:here|for\s+us|with\s+us)\b|\bemployed\s+(?:here|by\s+us)\b|\bworked\s+(?:at|for)\s+(?:\w+\s+){1,4}?(?:previously|before|in\s+the\s+past|in\s+any\s+capacity)\b|\b(?:been\s+)?an?\s+(?:independent\s+)?contractor\s+(?:at|for|with)\b|\bex\s+employees?\b|\bformer\s+employees?\b|`
+  'label.previously-employed': { also: new RegExp(String.raw`\bworked\s+(?:here|for\s+us|with\s+us)\b|\bemployed\s+(?:here|by\s+us)\b|\bworked\s+(?:at|for)\s+(?:\w+\s+){1,4}?(?:previously|before|in\s+the\s+past|in\s+any\s+capacity)\b|\b(?:been\s+)?an?\s+(?:independent\s+)?contractor\s+(?:at|for|with)\b|\bex\s+employees?\b|\bformer\s+employees?\b|\b(?:previous|prior|past)\s+(?:\w+\s+){0,3}?(?:employee|worker|contractor)s?\b|`
     + `${EMPLOYED_BEFORE.source}|${EMPLOYED_NOW.source}`),
     // jr6 RULES (workday-new-2, fixtures jr6-parsons-application-questions: "Are you currently the owner or employee
     // of any outside company that is currently …"): working for an outside business, for one doing business with the
@@ -934,7 +1101,11 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // jr6 RULES R4 (WD-28, Workday's Dana-Farber "Have you ever, or are you currently participating in a student training
   // program …", fixtures jr6-danafarber-application-questions-1): skills never on a yes or no question (a list that takes
   // several answers aside: "Do you have any of these skills?" over the skills themselves).
-  'label.skills': { onlyFor: (kind) => (kind === 'checkbox-group' || kind === 'multiselect' ? undefined : NOT_YES_NO) },
+  // jr7 RULES-7 (ICIMS7-06, careers-quartzbenefits' required "I certify that the information provided in this
+  // application … I confirm that all statements regarding my skills, qualifications, and experiences, are my own. …",
+  // an iCIMS dropdown, snapshot7 icims3): never an attestation (SKILLS_NOT), whose consent reading then decides it.
+  'label.skills': { onlyFor: (kind) => (kind === 'checkbox-group' || kind === 'multiselect' ? undefined : NOT_YES_NO),
+    unless: SKILLS_NOT },
   'label.travel': { unless: /\btravel\s+(?:restrictions?|limitations?|constraints?|bans?|reimbursements?|expenses?|polic(?:y|ies)|documents?|history)\b|\brestrictions?\s+on\s+(?:your\s+)?travel\b/ },
   // "Which languages do you speak?" (Phase 2): §8.3's rule takes "languages you speak" with nothing between. Only
   // "speak": "What programming languages do you know?" asks about skills.
@@ -951,11 +1122,26 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   // jr6 RULES (JV-14, fixtures ninjaone-step1: "Can NinjaOne text you about your application?").
   'label.consent-sms': { also: SMS_WIDE },
   'label.consent-generic': { also: CONSENT_WIDE },
+  // jr7 RULES-7 (UP7-08, UltiPro's "I confirm that the information provided within this application is truthful,
+  // complete, and accurate…", snapshot7 ultipro1): a certification by "truthful" (CERTIFY_WIDE).
+  'label.consent-certify': { also: CERTIFY_WIDE },
+  // jr7 RULES-7 R2 (RBP7-07, Rippling's attestation help "… acknowledge this by typing your full name in the text field",
+  // snapshot7 rippling1; UKGR-18, UKG Ready's "Please type your full name to confirm: …", "Full name to confirm" by the
+  // label contract of FIX7PLAN §3.3, snapshot7 secure7.saashr): a typed name asked for, a signature.
+  'label.consent-signature': { also: TYPED_NAME_SIGNATURE },
+  // jr7 RULES-7 (DF7-V3, Dayforce's Submit step "I agree to the Candidate Acknowledgement", fixtures/dayforce/
+  // submit-challenge; Jobright's agreeCheckbox rule treats it as the application's required terms: cited): the
+  // application's terms, decided by the Consents mode.
+  'label.consent-terms': { also: CANDIDATE_ACKNOWLEDGEMENT },
   // jr6 RULES (JV-15, JV-22, ADP-19, U-11): the name of whoever referred the person ("Referral Name", "If yes, please
   // provide their name or enter N/A if you were not referred.").
   'label.referrer': { also: REFERRER_WIDE },
   // jr6 RULES R3 (SR-7): how the person first heard (REFERRAL_FIRST).
-  'label.referral-source': { also: REFERRAL_FIRST },
+  // jr7 RULES-7 R2 (UKGR-16, UKG Ready's "Referral" select, snapshot7 secure7.saashr): "Referral" on a list (never a
+  // box, where it may name the referrer).
+  'label.referral-source': { also: REFERRAL_FIRST,
+    alsoFor: (kind) => (CHOICE_KINDS.has(kind) ? new RegExp(`${REFERRAL_FIRST.source}|^referral(?:\\s+type)?$`)
+      : REFERRAL_FIRST) },
 };
 
 /** "Why Acme?" as the page wrote it: a why-question naming the company with its own capitals, never "Why not?" or
@@ -990,7 +1176,12 @@ export const PRE_RULES: ReadonlyArray<PreRule> = [
     questionsOnly: true, category: 'workAuth.authorized', strength: 'strong', needsUser: 'authorization-and-sponsorship' },
   { id: 'label.work-permit', re: /\b(?:work|working|residence|residency)\s+permits?\b|\bblue\s+card\b|\bpermit\s+to\s+work\b/,
     unless: /\bsponsor/, category: 'workAuth.authorized', strength: 'strong', needsUser: 'work-permit' },
-  { id: 'label.nationality', re: /\bnationalit(?:y|ies)\b|\bnational\s+origin\b|\bcountr(?:y|ies)\s+of\s+(?:citizenship|nationality|birth|origin)\b|\bcountr(?:y|ies)\b(?:\s+\w+){0,6}?\s+citizen\w*|\bcitizen\w*(?:\s+\w+){0,4}?\s+countr(?:y|ies)\b|\bpassport\s+(?:country|nationality)\b|\bplace\s+of\s+birth\b|\bbirth\s*place\b/,
+  // jr7 RULES-7 (EFA-10, Eightfold's twilio "Please indicate whether you are either a citizen or resident of any of
+  // the following countries: Cuba, Iran, North Korea, Syria or Crimea Region of Ukraine.", snapshot7 twillio; and
+  // WD7-07's export-control "… a citizen or permanent resident of any of the following countries/regions?"): a citizen
+  // or resident of any listed country asks a citizenship whose No the profile never states: the person's (owner Q7-3,
+  // default theirs).
+  { id: 'label.nationality', re: /\bcitizens?\s+(?:or|and|and\s+or)\s+(?:a\s+)?(?:permanent\s+)?residents?\s+of\s+any\s+of\s+the\s+(?:following|listed|below|these)\b|\bresidents?\s+(?:or|and)\s+(?:a\s+)?citizens?\s+of\s+any\s+of\s+the\s+(?:following|listed|below|these)\b|\bnationalit(?:y|ies)\b|\bnational\s+origin\b|\bcountr(?:y|ies)\s+of\s+(?:citizenship|nationality|birth|origin)\b|\bcountr(?:y|ies)\b(?:\s+\w+){0,6}?\s+citizen\w*|\bcitizen\w*(?:\s+\w+){0,4}?\s+countr(?:y|ies)\b|\bpassport\s+(?:country|nationality)\b|\bplace\s+of\s+birth\b|\bbirth\s*place\b/,
     readsQualifiers: true, category: 'workAuth.status', strength: 'normal', needsUser: 'nationality' },
   // An age, a date of birth, or an age line other than 18 ("under 18" inverts the over-18 answer; 21 is another line).
   { id: 'label.age', re: /^(?:what\s+is\s+)?(?:your\s+)?(?:current\s+)?age(?:\s+(?:range|group|bracket|in\s+years))?$|\bdate\s+of\s+birth\b|\bbirth\s*date\b|\bbirthday\b|\bdob\b|\bhow\s+old\s+are\s+you\b|\byear\s+of\s+birth\b|\bbirth\s+year\b|\byour\s+age\b|\b(?:under|younger\s+than|below)\s+(?:the\s+age\s+of\s+)?(?:18|eighteen|21|twenty\s+one)\b|\b(?:21|twenty\s+one)\s+(?:years\s+)?(?:of\s+age\s+)?(?:old\s+)?(?:or|and)\s+(?:older|over|above)\b|\b(?:over|at\s+least|older\s+than)\s+(?:the\s+age\s+of\s+)?(?:21|twenty\s+one)\b/,
@@ -1016,7 +1207,8 @@ interface InfoRule {
 const WORKDAY_INFO_RULES: readonly InfoRule[] = [
   { id: 'label.phone-type', re: /^(?:phone|telephone|mobile)\s+(?:device\s+|number\s+)?type$|^type\s+of\s+(?:phone|telephone)(?:\s+number)?$|^phone\s+device$/,
     category: 'contact.phoneType', strength: 'strong' },
-  { id: 'label.suffix', re: /^(?:name\s+)?suffix$|^suffix\s+name$/, category: 'identity.suffix', strength: 'strong' },
+  // jr7 RULES-7 R3 (DFPC-7 P2, Paycom's "Legal Suffix"): a legal (name's) suffix too.
+  { id: 'label.suffix', re: /^(?:legal\s+)?(?:name\s+)?suffix$|^suffix\s+name$/, category: 'identity.suffix', strength: 'strong' },
   { id: 'label.phone-extension', re: /^(?:phone\s+|telephone\s+)?(?:extension|ext)(?:\s+number)?$/,
     category: 'contact.phoneExtension', strength: 'strong' },
   // jr6 RULES R4 (adp-new-3: ADP's "I have a preferred or chosen name", fixtures/adp/personal): or a chosen one.
@@ -1067,6 +1259,9 @@ const SIGNATURE_DATE = /^(?:todays?\s+date|current\s+date|date\s+signed|signatur
 /** workday-new-1 (Workday's disability form "Language", "Language of this form" by the label contract): the language
  *  the form itself is in, never the person's languages. */
 const FORM_LANGUAGE = /^(?:the\s+)?language\s+of\s+(?:this|the)\s+(?:form|document|survey|questionnaire)$|^(?:form|document)\s+language$/;
+/** jr7 RULES-7 R2 (WD7V-02, Workday's aristocrat required "What is your preferred language for written
+ *  communications?", snapshot7 workday1): the language the person prefers to be written to in. */
+const PREFERRED_LANGUAGE = /^(?:what\s+is\s+)?(?:your\s+)?preferred\s+language(?:\s+(?:for|of)\s+(?:written\s+)?(?:communications?|correspondences?|contact))?$/;
 /** workday-new-1 (Workday's Self Identify "Employee ID (if applicable)"): an employer's own number for the person,
  *  which the profile never holds. */
 const EMPLOYEE_ID = /^(?:your\s+)?(?:current\s+)?employee\s+(?:id|identification|number|no|num)(?:\s+(?:number|no))?$/;
@@ -1099,7 +1294,8 @@ export const MILITARY_TRAINING = /\bmilitary\s+(?:training|certifications?|quali
 /** jr6 RULES R3 (ICIMS-21: Sentinel's "What state are you physically located in today?", fixtures
  *  jr6-sentinel-job-questions; JV-8: NinjaOne's "In which state do you currently live?", fixtures/jobvite/ninjaone-step3;
  *  JZ-9: "What state do you live in?", "state of residence"): the state the person lives in. */
-const RESIDENCE_STATE = /^(?:in\s+)?(?:which|what)\s+state\s+(?:do|are)\s+you\s+(?:(?:currently|physically|presently|now)\s+)*(?:live|reside|located|based|living|residing)(?:\s+in)?(?:\s+(?:today|now|currently|at\s+present))?$|^(?:your\s+|current\s+|present\s+)*state\s+of\s+(?:current\s+)?residen(?:ce|cy)$/;
+// jr7 RULES-7 (J7-GH-2, Greenhouse's "What US state do you reside in?", snapshot7 greenhouse): a country's state.
+const RESIDENCE_STATE = /^(?:in\s+)?(?:which|what)\s+(?:(?:u\s?s|united\s+states|american)\s+)?state\s+(?:do|are)\s+you\s+(?:(?:currently|physically|presently|now)\s+)*(?:live|reside|located|based|living|residing)(?:\s+in)?(?:\s+(?:today|now|currently|at\s+present))?$|^(?:your\s+|current\s+|present\s+)*state\s+of\s+(?:current\s+)?residen(?:ce|cy)$/;
 /** jr6 RULES R3 (JZ-9: WellHive's "From which state will you be working?", fixtures/jazzhr/wellhive-submitting): the
  *  state the person will work from, read as the one they live in (an inference: flagged, resolve.ts). */
 const WORK_STATE = /^(?:from\s+)?(?:which|what)\s+state\s+will\s+you\s+be\s+working(?:\s+from)?$|^(?:which|what)\s+state\s+(?:do|will)\s+you\s+(?:plan\s+to\s+)?work\s+(?:from|in)$/;
@@ -1135,6 +1331,10 @@ const CURRENCY_ALONE = /^(?:(?:select|choose|enter|your|the|preferred|desired|ex
  *  inCountryValue reads it), asked yes or no; never a county, a city, an area or a state ("Do you currently reside in Los
  *  Angeles County?", "in the Denver Metro area?": the AI's, as before). */
 export const IN_COUNTRY = /^(?:will|would|do|are|can|could)\s+you\s+(?:\w+\s+){0,4}?(?:(?:live|living|reside|residing|located|based)\b(?:\s+\w+){0,5}?\s+(?:inside|within|in)|(?:work|working)\b(?:\s+\w+){0,4}?\s+(?:inside|within|from\s+(?:\w+\s+){0,3}?(?:inside|within|in)))\s+(?:the\s+)?(?!(?:a|an|any|one|this|that|our|your|which|what)\b)(?!(?:\w+\s+){0,3}?(?:county|counties|area|metro|metropolitan|city|town|region|district|borough|parish|state|province|office|campus)\b)(\w+(?:\s+\w+){0,3})$/;
+/** jr7 RULES-7 R2 (RBP7-08, Rippling's required "<employer> can only hire candidates with a primary residence in the
+ *  following States: AZ, CA, … TX, …", snapshot7 rippling1; BambooHR's "Do you currently reside in one of the states
+ *  where <employer> is au…", snapshot7 bamboohr2): whether the person lives in one of the states a question lists. */
+const IN_LISTED_REGIONS = /\b(?:residen(?:ce|cy|t|ts)|resides?|reside|live|lives|located|based)\b(?:\s+\w+){0,4}?\s+in\s+(?:one\s+of\s+)?the\s+(?:following|listed|below)\s+(?:states|provinces|regions)\b|\b(?:reside|live|located|based)\s+in\s+one\s+of\s+the\s+(?:states|provinces)\s+(?:where|in\s+which|listed|below)\b/;
 /** jr6 RULES R3 (JZ-11): never a preference, a move, a commute or travel ("Are you willing to relocate to the United
  *  States?"), and never the right to work there (work authorization's own question). */
 const IN_COUNTRY_NOT = /\b(?:willing|open|prepared|happy|want|wish|like|prefer|plan|planning|intend|intending|relocat\w*|move|moving|commut\w*|travel\w*|authori[sz]\w*|eligib\w*|permit\w*|entitled|right|legal\w*|lawful\w*|citizen\w*|visas?|sponsor\w*|resident|residency|remote\s+role)\b/;
@@ -1155,7 +1355,9 @@ const ADDRESS_LINE3 = /^(?:street\s+)?address\s+(?:line\s*)?3$/;
  *  of FIXPLAN §3.2): the period the pay is asked in. jr6 fix (RULES-R68-PAY-BASIS-NEAR-MISS): only a label that ends
  *  with it ("… pay basis", "Desired Salary period"); a pay frequency asked for ("Please indicate your preferred pay
  *  frequency", how often payroll pays) is no period of the expected pay. */
-const PAY_BASIS = /\b(?:pay|salary|compensation|wage|rate)\s+(?:basis|period)$/;
+// jr7 RULES-7 (ICIMS7-V3, iCIMS's arc-onesolutions "Desired Salary" Time Frame select, "Desired Salary time frame" by the
+// label contract of FIX7PLAN §3.3, snapshot7 iCIMS1): or its time frame.
+const PAY_BASIS = /\b(?:pay|salary|compensation|wage|rate)\s+(?:basis|period|time\s*frame)$/;
 /** jr6 RULES R4 (ADP-18: ADP's "How would you like to provide the candidate's resume?", Upload File | Enter Professional
  *  Details, fixtures jr6-resume-choice): how the résumé is given, chosen; never a consent. */
 const RESUME_METHOD = /\bhow\s+(?:would|do|will|can)\s+you\s+(?:like\s+to\s+|want\s+to\s+|prefer\s+to\s+)?(?:provide|submit|share|send|add|give|attach|upload)\s+(?:the\s+candidates?\s+|your\s+|a\s+|the\s+)?(?:resume|cv)\b/;
@@ -1203,6 +1405,8 @@ const JR6_RULES: readonly Jr6Rule[] = [
   { id: 'label.signature-date', re: SIGNATURE_DATE, strength: 'strong', category: (c, found) => ((c.kind === 'select'
     || c.kind === 'combobox') && (found[1] ?? found[2]) === undefined ? null : 'consent.signatureDate') },
   { id: 'label.form-language', re: FORM_LANGUAGE, category: 'languages.formLanguage', strength: 'strong' },
+  // jr7 RULES-7 R2 (WD7V-02).
+  { id: 'label.preferred-language', re: PREFERRED_LANGUAGE, category: 'languages.preferred', strength: 'normal' },
   { id: 'label.employee-id', re: EMPLOYEE_ID, category: 'identity.employeeId', strength: 'strong' },
   { id: 'label.county', re: COUNTY, unless: YES_NO_QUESTION, category: 'address.county', strength: 'normal' },
   { id: 'label.policy-residence', re: POLICY_RESIDENCE, category: 'location.policyResidence', strength: 'strong' },
@@ -1232,6 +1436,8 @@ const JR6_RULES: readonly Jr6Rule[] = [
     category: (c) => (c.kind === 'text' && !CURRENCY_ALONE.test(c.label) ? null : 'salary.currency'),
     strength: 'normal' },
   { id: 'label.in-country', re: IN_COUNTRY, unless: IN_COUNTRY_NOT, category: 'location.inCountry', strength: 'normal' },
+  // jr7 RULES-7 R2 (RBP7-08).
+  { id: 'label.in-listed-regions', re: IN_LISTED_REGIONS, category: 'location.inListedRegion', strength: 'normal' },
   { id: 'label.former-name', re: FORMER_NAME, category: 'identity.formerName', strength: 'strong' },
   // jr6 RULES R4 (WD-25, ICIMS-25, ADP-14, ADP-16, ADP-18, ADP-20, JV-19, SR-13).
   { id: 'label.prefix', re: PREFIX, category: 'identity.prefix', strength: 'strong' },
@@ -1494,6 +1700,15 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
     && kindAllowed('experience.description', kind)) {
     return hitOf(EXPERIENCE_DESCRIPTION_RULE, 'experience.description');
   }
+  // jr7 RULES-7 R3 (DFPC-7 P2, Paycom's "I do not have a middle name", snapshot7 paycomonline1): a statement the
+  // profile never makes (an absent middle name is no proof there is none), so the box is the person's: never ticked,
+  // not even as a required consent. Jobright ticks it for a profile with none (fillPaycomMissingMiddleName: cited).
+  if (kind === 'checkbox' && NO_MIDDLE_NAME.test(text)) {
+    return { ...hitOf(NO_MIDDLE_NAME_RULE, 'identity.middleName'), needsUser: 'kind-mismatch' };
+  }
+  // jr7 RULES-7 R2: an entry's own fields (entryFieldHit).
+  const entryField = entryFieldHit(text, section, kind, context);
+  if (entryField !== null) return entryField;
   // s2 core-gh (decision 11): a nationality asked by country takes the person's citizenships, before the pre-rule that
   // hands every nationality question over.
   const withQualifiers = ctx.qualifiers === '' ? text : `${text} ${ctx.qualifiers}`;
@@ -1520,6 +1735,13 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   if (RESTRICTIVE_TOPIC.test(withQualifiers) && RESTRICTIVE_FACT.test(text)
     && kindAllowed('screening.restrictiveAgreement', kind)) {
     return hitOf(RESTRICTIVE_RULE, 'screening.restrictiveAgreement');
+  }
+  // jr7 RULES-7 (UP7-08, UltiPro's required textarea "Are you currently subject to any non-competition,
+  // non-solicitation …?", snapshot7 ultipro1): asked as a fact in a box of prose it is still the restrictive agreement,
+  // before the waiver rule claims it: a legal question on a kind that cannot hold its Yes or No (kind-mismatch), which
+  // stays the person's (legal-not-in-profile) unless TailorIT's AI answers it, marked an AI guess (GUESS_ONLY).
+  if (RESTRICTIVE_TOPIC.test(withQualifiers) && RESTRICTIVE_FACT.test(text) && (kind === 'text' || kind === 'textarea')) {
+    return { ...hitOf(RESTRICTIVE_RULE, 'screening.restrictiveAgreement'), needsUser: 'kind-mismatch' };
   }
   if (kind !== 'checkbox' && namesBindingWaiver(text)) {
     return { ...hitOf(BINDING_WAIVER_RULE, 'consent.other'), consentKinds: ['consent.other'],
@@ -1569,6 +1791,8 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   if (jr6 !== null) return jr6;
   for (const rule of LABEL_RULES) {
     if (DATE_RULES.has(rule.id) && section === 'other' && context.block !== undefined) continue;
+    // jr7 RULES-7 (ICIMS7-06): a list of a Yes and a No is never the skills list.
+    if (rule.id === 'label.skills' && context.yesNoOptions === true) continue;
     const verdict = refinedMatch(rule, text, context.questions, kind);
     if (verdict === null) continue;
     const refinement = REFINEMENTS[rule.id];
@@ -1616,7 +1840,11 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
  */
 export function withDescriptionConsent(hit: LabelRuleHit, description: string, kind: FieldKind): LabelRuleHit {
   if (hit.consentKinds === undefined || hit.needsUser !== undefined || description === '') return hit;
-  const extra = consentEntries(description, kind);
+  // jr7 RULES-7 R2 (UKGR-18, UKG Ready's "Please type your full name to confirm: <the name>"): a signature's own prompt,
+  // with the name it shows, names nothing more the person agrees to; the rest of the help text still reads.
+  const read = hit.category === 'consent.signature' ? description.replace(SIGNATURE_PROMPT, ' ').trim() : description;
+  if (read === '') return hit;
+  const extra = consentEntries(read, kind);
   if (extra.length === 0) return hit;
   const own = hit.consentKinds.map((category) => ({ category,
     rule: (category === hit.category ? LABEL_RULES.find((rule) => rule.id === hit.rule) : undefined)
