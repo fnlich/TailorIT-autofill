@@ -845,6 +845,10 @@ And, the same day:
 - A fill never crosses to another site or a new tab by itself (owner questions 391 and 392): Jibe's Apply stays the person's (Q7-13).
 - docs/SPEC.md is unchanged, and every hard rule below stands, as its bullets now read.
 
+## 21. jr8: every work-experience entry on Workable (the owner's report of 2026-11-13)
+
+- **The fill step's rounds** (amending the Phase 5 review's C-S3, a later attempt on a step starting from the earlier one's books, for the rounds of add, fill and save): the next round starts without the books of the repeatable blocks the round saved, so a field drawn at a saved block's key afterwards is another entry's, planned and written as new, never our value reset (`MAX_VALUE_FLIPS` unchanged); a saved block's row stands for its key, and is left out of the read-back at rest, only while the page shows no field there. Workable's blocks are its saved entries first, then the open editor, which live Workable draws at the top of its list (snapshot9; docs/ARCHITECTURE.md "jr8").
+
 ## The hard rules that stay
 
 None of the amendments changes these, but as §11 notes in each:
