@@ -29,14 +29,17 @@ import quForm from '../../../fixtures/rippling/qu-careers-form.html?raw';
 import quPosting from '../../../fixtures/rippling/qu-careers-posting.html?raw';
 import smartForm from '../../../fixtures/rippling/smartsuite-uploaded.html?raw';
 import { openAt, runtimeAt, servedAdapter, sourceOf, wallsOf } from '../../content/apply.testkit';
-import { testVocab } from '../../content/content.testkit';
+import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { stepButtonsOf } from '../../content/press';
 import type { ContentRuntime } from '../../content/runtime';
 import { newSuccessSign, shownSignsOf, signsOf } from '../../content/submitted';
+import { planFrame } from '../../core/plan/frame';
+import type { PlanOutput } from '../../core/plan/types';
 import type { BaseKey } from '../../core/types/field';
+import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
-import { scan } from '../../dom/scan';
-import type { FieldTarget, WidgetReading } from '../../dom/types';
+import { scan, toFieldSpec } from '../../dom/scan';
+import type { FieldTarget, ScanResult, WidgetReading } from '../../dom/types';
 import { fillWidget, isActionable, readWidget, searchTypeahead, type TypeaheadHooks } from '../../dom/widgets';
 import { configuredAdapter } from '../configured';
 import { adaptersFor, applicationOf } from '../index';
@@ -376,4 +379,78 @@ describe('jr7 RBP-7 RBP7-07 (the adapter half; FIX7PLAN §3.3): a custom questio
       const bare = scan(page.root!, noHelp, { platform: 'rippling' });
       expect(bare.fields.find((field) => field.label === attestation.label)?.description).toBe('');
     });
+});
+
+// ── jr7 RBP-7 P2 (FIX7PLAN §6.12): the shared outcomes on the forms, with jr7-engine-e2 and jr7-rules-r2 merged ──
+
+/** The golden synthetic profile's plan of a scan, with the default settings. */
+function planOf(result: ScanResult): PlanOutput {
+  return planFrame({ specs: result.fields.map(toFieldSpec), canaries: [], profile: goldenProfile(),
+    sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW });
+}
+
+describe('jr7 RBP-7 P2 RBP7-08 (RULES-7): rippling1\'s residence in listed states', () => {
+  it('reads the question as residence in a listed region and answers Yes from the profile\'s state once its list is '
+    + 'read (the list stood in for)', async () => {
+    const page = await open(r1Blank);
+    const doc = page.doc;
+    const asks = /can only hire candidates with a primary residence in the following States: .*\bTX\b/;
+    const readings = new Map<BaseKey, WidgetReading>();
+    const scanned = () => scan(page.root!, ripplingAdapter, { platform: 'rippling', widgetReadings: readings });
+    const fieldOf = (result: ScanResult) => result.fields.find((field) => asks.test(field.label))!;
+    const before = scanned();
+    expect(planOf(before).results.find((row) => row.key === fieldOf(before).key))
+      .toMatchObject({ category: 'location.inListedRegion', reason: 'waiting-for-options' });
+    const combobox = doc.getElementById(fieldOf(before).idAttr!)!;
+    // RBP7-V2 b: the page shows its placeholder, never the converter's REDACTED.
+    combobox.querySelector('p')!.textContent = 'Select';
+    let holder: HTMLElement | null = null;
+    doc.addEventListener('click', (event) => {
+      if (!combobox.contains(event.target as Element)) return;
+      if (holder === null) {
+        holder = popperList(doc, ['Yes', 'No']);
+        doc.body.append(holder);
+      } else {
+        holder.remove();
+        holder = null;
+      }
+    }, true);
+    const target = (): FieldTarget => {
+      const result = scanned();
+      return result.target(fieldOf(result).key)!;
+    };
+    expect(await readWidget(target(), { adapter: ripplingAdapter, root: page.root!, readings }))
+      .toMatchObject({ status: 'read' });
+    const after = scanned();
+    const write = planOf(after).writes.find((each) => each.key === fieldOf(after).key);
+    expect(write?.value).toMatchObject({ kind: 'option', cleanLabel: 'Yes' });
+  });
+});
+
+describe('jr7 RBP-7 P2 RBP7-07 (with jr7-rules-r2): rippling1\'s typed-name attestation', () => {
+  // RULES-7's rule reads "typing your full name" from a description. rippling1's help is 536 characters: normalization
+  // reads the first 500 at once (FOLD_MAX_CODE_POINTS), which end before the ask, and they name "resume" and "cover
+  // letters" among the materials certified, so label.resume (on a text box: unknown) is met first and the field stays
+  // unknown-field. The exact edit is RULES-7's (SP\jr7\rbp7\rules-rbp7-07.patch, in SP\jr7\build\RBP-7.md): measured,
+  // the field then plans the golden full name as the signature and the core suite passes. Flip to `it` when it lands.
+  it.fails('plans the golden profile\'s full name as the signature, read from the help text', async () => {
+    const page = await open(r1Blank);
+    const result = scan(page.root!, ripplingAdapter, { platform: 'rippling' });
+    const out = planOf(result);
+    const field = result.fields.find((each) => each.label === 'Truth Certification/Attestation Clause')!;
+    expect(out.results.find((row) => row.key === field.key)?.category).toBe('consent.signature');
+    expect(out.writes.find((each) => each.key === field.key)?.value)
+      .toEqual({ kind: 'text', text: goldenProfile().identity.fullName });
+  });
+
+  it('until then: its help is read (the adapter half), and it stays unknown-field, never written', async () => {
+    const page = await open(r1Blank);
+    const result = scan(page.root!, ripplingAdapter, { platform: 'rippling' });
+    const out = planOf(result);
+    const field = result.fields.find((each) => each.label === 'Truth Certification/Attestation Clause')!;
+    expect(field.description).toMatch(/\btyping your full name\b/);
+    expect(out.results.find((row) => row.key === field.key)).toMatchObject({ category: 'unknown',
+      reason: 'unknown-field' });
+    expect(out.writes.some((each) => each.key === field.key)).toBe(false);
+  });
 });

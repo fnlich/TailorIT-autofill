@@ -29,15 +29,18 @@ import swyfftForm from '../../../fixtures/bamboohr/swyfft-form.html?raw';
 import syntheticSuccess from '../../../fixtures/synthetic/success/bamboohr.html?raw';
 import { openAt, runtimeAt, servedAdapter, sourceOf, wallsOf } from '../../content/apply.testkit';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { requiredLeftOf } from '../../content/press';
 import type { ContentRuntime } from '../../content/runtime';
 import { newSuccessSign, shownSignsOf, signsOf } from '../../content/submitted';
 import { planFrame } from '../../core/plan/frame';
+import type { PlanOutput } from '../../core/plan/types';
 import type { BaseKey } from '../../core/types/field';
+import type { Profile } from '../../core/types/profile';
 import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { deadline } from '../../dom/time';
 import { scan, toFieldSpec } from '../../dom/scan';
-import type { FieldTarget, WidgetReading } from '../../dom/types';
+import type { FieldTarget, ScanResult, WidgetReading } from '../../dom/types';
 import { fillWidget, isActionable, readWidget } from '../../dom/widgets';
 import { configuredAdapter } from '../configured';
 import { adaptersFor, applicationOf } from '../index';
@@ -336,5 +339,79 @@ describe('jr7 RBP-7 RBP7-14: a Fabric dropdown\'s menu, tied by data-menu-id, is
       expect(outcome).toMatchObject({ wrote: true, verification: 'verified' });
       expect(presses).toEqual(['toggle', 'Texas']);
       expect(shown.textContent).toBe('Texas');
+    });
+});
+
+// ── jr7 RBP-7 P2 (FIX7PLAN §6.12): the shared outcomes on the forms, with jr7-engine-e2 and jr7-rules-r2 merged ──
+
+/** A profile's plan of a scan, with the default settings (the golden synthetic profile unless given). */
+function planOf(result: ScanResult, profile: Profile = goldenProfile()): PlanOutput {
+  return planFrame({ specs: result.fields.map(toFieldSpec), canaries: [], profile, sensitiveState: 'loaded',
+    savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW });
+}
+
+/** RBP7-V2 b: a converted form whose Fabric toggles show the page's placeholder again, never the converter's REDACTED. */
+function asDrawn(doc: Document): void {
+  for (const placeholder of Array.from(doc.querySelectorAll('.fab-SelectToggle__placeholder'))) {
+    placeholder.textContent = '-Select-';
+  }
+}
+
+describe('jr7 RBP-7 P2 RBP7-15 (RULES-7): "Date Available"', () => {
+  it('bamboohr1 blank (required): the start date, left for the AI with the golden profile (it holds none); a profile '
+    + 'start date laid out by the placeholder', async () => {
+    const page = await open(b1Blank);
+    const result = scan(page.root!, bambooHrAdapter, { platform: 'bamboohr' });
+    const field = result.fields.find((each) => each.label === 'Date Available')!;
+    expect([field.kind, field.required]).toEqual(['text', true]);
+    expect(planOf(result).results.find((row) => row.key === field.key))
+      .toMatchObject({ category: 'availability.startDate', reason: 'no-profile-value' });
+    const golden = goldenProfile();
+    const starting: Profile = { ...golden, preferences: { ...golden.preferences,
+      startDate: { kind: 'date', date: { y: 2026, m: 12, d: 1 } } } };
+    expect(planOf(result, starting).writes.find((each) => each.key === field.key)?.value)
+      .toEqual({ kind: 'text', text: '12/01/2026' });
+  });
+
+  it('bamboohr2 blank (optional): the same category, skipped with no profile value', async () => {
+    const page = await open(b2Blank);
+    const result = scan(page.root!, bambooHrAdapter, { platform: 'bamboohr' });
+    const field = result.fields.find((each) => each.label === 'Date Available')!;
+    expect(field.required).toBe(false);
+    expect(planOf(result).results.find((row) => row.key === field.key))
+      .toMatchObject({ category: 'availability.startDate', status: 'skipped', reason: 'no-profile-value' });
+  });
+});
+
+describe('jr7 RBP-7 P2 RBP7-08 (RULES-7): bamboohr2\'s residence question', () => {
+  it('reads it as residence in a listed region; with no state listed in its words it is left (optional)', async () => {
+    const page = await open(b2Blank);
+    const result = scan(page.root!, bambooHrAdapter, { platform: 'bamboohr' });
+    const field = result.fields.find((each) => /^Do you currently reside in one of the states where /.test(each.label))!;
+    expect([field.kind, field.required]).toEqual(['radio', false]);
+    const out = planOf(result);
+    expect(out.results.find((row) => row.key === field.key)).toMatchObject({ category: 'location.inListedRegion' });
+    expect(out.writes.some((each) => each.key === field.key)).toBe(false);
+  });
+});
+
+describe('jr7 RBP-7 P2 RBP7-V3 (ENGINE-7 E1 item 9): Submit never goes without the required résumé', () => {
+  it.each([['bamboohr1 blank', b1Blank], ['bamboohr2 blank', b2Blank]] as const)(
+    '%s: the required résumé counts among the required fields left, recognised or not', async (_name, html) => {
+      const page = await open(html);
+      asDrawn(page.doc);
+      const { uploads: _uploads, ...rest } = BAMBOOHR_CONFIG;
+      const unrecognising = configuredAdapter(rest);
+      const recognised = scan(page.root!, bambooHrAdapter, { platform: 'bamboohr' });
+      const unrecognised = scan(page.root!, unrecognising, { platform: 'bamboohr' });
+      // With RBP7-13's rule it is the field "Resume"; without, an upload the scan cannot recognise, required and empty.
+      expect(recognised.fields.some((field) => field.kind === 'file' && field.required)).toBe(true);
+      expect(unrecognised.unrecognisedUploads).toHaveLength(1);
+      expect(unrecognised.unrecognisedUploads[0]).toMatchObject({ requiredEmpty: true });
+      // Either way the résumé is one of the required fields left, so Submit Auto holds.
+      expect(requiredLeftOf(unrecognised)).toBe(requiredLeftOf(recognised));
+      page.doc.querySelector('div[data-fabric-component="FileUpload"] input[type="file"]')!.removeAttribute('required');
+      const optional = scan(page.root!, unrecognising, { platform: 'bamboohr' });
+      expect(requiredLeftOf(optional)).toBe(requiredLeftOf(unrecognised) - 1);
     });
 });

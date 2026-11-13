@@ -3,8 +3,10 @@
  * entrance animation finished (Pinpoint's panels fade in over 1 s, as a person sees them a second after load):
  * - RBP7-20 (the adapter half): the EEO questions' react-selects that take no search draw react-select's DummyInput
  *   (input[role=combobox][aria-readonly=true][inputmode=none]); the widened widget rule declares each a combobox for the
- *   react-select bridge, its box the control, so each is a field (it was none). Whether it is fillable rests on ENGINE-7
- *   E1 item 6 (a declared react-select's DummyInput is not read-only by its aria-readonly): asserted in P2, once merged;
+ *   react-select bridge, its box the control, so each is a field (it was none). P2: fillable, with ENGINE-7 E1 item 6 (a
+ *   declared react-select's DummyInput is not read-only by its aria-readonly) merged;
+ * - P2: RBP7-19 (RULES-7: the required "How did you hear about this job?" textarea takes the profile's source) and
+ *   RBP7-21 (ENGINE-7 E1 item 7: a control two labels of the same words name reads them once);
  * - what still holds on snapshot7 (no finding): the posting's entry, the form's root, final step and Submit, and the
  *   thanks page's sign (1 there, none before the press).
  * Golden synthetic profile only; no value of the owner's.
@@ -23,7 +25,7 @@ import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { scan, toFieldSpec } from '../../dom/scan';
 import { configuredAdapter } from '../configured';
 import { applicationOf } from '../index';
-import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { PINPOINT_CONFIG, pinpointAdapter } from './index';
 
 /** The three EEO selects' DummyInputs (fieldset#diversity-and-inclusion-form). */
@@ -109,5 +111,47 @@ describe('jr7 RBP-7: Pinpoint on snapshot7, what still holds', () => {
     removeFixtures(document);
     const posting = await open(pPosting);
     expect(signsOf(posting.doc, 'pinpoint')).toEqual([]);
+  });
+});
+
+// ── jr7 RBP-7 P2 (FIX7PLAN §6.12): the shared outcomes on the form, with jr7-engine-e2 and jr7-rules-r2 merged ──
+
+describe('jr7 RBP-7 P2: pinpointhq1\'s form', () => {
+  async function planned() {
+    const page = await open(pForm);
+    const result = scan(page.root!, pinpointAdapter, { platform: 'pinpoint' });
+    const out = planFrame({ specs: result.fields.map(toFieldSpec), canaries: [], profile: goldenProfile(),
+      sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW });
+    return { page, result, out };
+  }
+
+  it('RBP7-20 (ENGINE-7 E1 item 6): the EEO DummyInputs are fillable, each planned as its EEO question', async () => {
+    const { result, out } = await planned();
+    for (const id of EEO) {
+      const field = result.fields.find((each) => each.idAttr === id)!;
+      expect([field.readOnly, field.disabled], id).toEqual([false, false]);
+      expect(fillabilityOf(field, result.target(field.key)?.widget), id).toEqual({ fillable: true });
+      expect(out.results.find((row) => row.key === field.key)?.category, id).toMatch(/^eeo\./);
+    }
+  });
+
+  it('RBP7-19 (RULES-7): the required "How did you hear about this job?" textarea takes the profile\'s source', async () => {
+    const { result, out } = await planned();
+    const field = result.fields.find((each) => each.label === 'How did you hear about this job?')!;
+    expect([field.kind, field.required]).toEqual(['textarea', true]);
+    expect(out.results.find((row) => row.key === field.key))
+      .toMatchObject({ category: 'referral.source', status: 'verified' });
+    expect(out.writes.find((each) => each.key === field.key)?.value).toEqual({ kind: 'text', text: 'LinkedIn' });
+  });
+
+  it('RBP7-21 (ENGINE-7 E1 item 7): the job preferences read "Locations" and "Job Title" once, never twice', async () => {
+    const { page, result } = await planned();
+    const ids = ['application_form[application][job_preferences_attributes]_location',
+      'application_form[application][job_preferences_attributes]_job'];
+    // The block is drawn twice with the same ids, each id named by two label[for] of the same words.
+    for (const id of ids) expect(page.doc.querySelectorAll(`label[for="${id}"]`), id).toHaveLength(2);
+    const labels = result.fields.filter((field) => ids.includes(field.idAttr ?? '')).map((field) => field.label);
+    expect(labels.sort()).toEqual(['Job Title', 'Job Title', 'Locations', 'Locations']);
+    expect(result.fields.filter((field) => /^(.+) \1$/.test(field.label))).toEqual([]);
   });
 });
