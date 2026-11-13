@@ -2855,6 +2855,10 @@ export class FillRun {
     await this.flushReport();
     this.launcher({ state: 'review', action: 'open-review', ...this.progressNow() });
     this.end('waiting');
+    // jr7 ENGINE-7 E5 (ULTIPRO-7's P2: UltiPro's Register reads not-final with no Next, so the run rests here, never at
+    // review): Sign-in mode Auto presses the step's declared sign-in container now it rests, as at review
+    // (signInContainerNow's guards: Auto, no dry run, once per step, no error, check or required field left).
+    void this.signInContainerNow().catch(() => undefined);
     if (this.request.dryRun) return null;
     return this.watchStep(from, null, true);
   }
