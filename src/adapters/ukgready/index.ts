@@ -1,16 +1,17 @@
 /*
- * The UKG Ready adapter (jr7 FIX7PLAN §3.2 item 4, ENGINE-7 E0): a stub, registered so the registry compiles with the
- * platform id. It reads nothing: no form root, no address (./url.ts), so a UKG Ready page gets no run until UKGREADY-7
- * builds the adapter (FIX7PLAN §6.14). UKGREADY-7 owns this folder from the tag jr7-engine-e0 on.
+ * The UKG Ready adapter (jr7 FIX7PLAN §6.14, UKGREADY-7): its configured rules and code hooks (./config.ts, every rule
+ * naming the snapshot7 case it was read from) turned into an Adapter by the configured layer; its addresses read by
+ * ./url.ts. Registered under the same export name E0's stub had (adapters/index.ts, adapters/address.ts), its config in
+ * configured/registry.ts ATS_CONFIGS (its success sign).
  */
-import { platformOfUrl } from '../../shared/hosts';
+import { configuredAdapter } from '../configured';
 import type { Adapter } from '../types';
-import { canonicalApplicationUrl } from './url';
+import { UKGREADY_CASES, UKGREADY_CONFIG } from './config';
 
-export const ukgReadyAdapter: Adapter = {
-  id: 'ukgready',
-  /** Its candidate paths, as src/shared/hosts.ts names them. */
-  matchesUrl: (url) => platformOfUrl(url.href) === 'ukgready',
-  canonicalApplicationUrl,
-  detect: () => null,
-};
+export { UKGREADY_CONFIG } from './config';
+
+/** The fixtures the config was read from (fixtures/ukgready/<case>.html). */
+export const UKGREADY_SNAPSHOTS = UKGREADY_CASES.map((name) => `fixtures/ukgready/${name}.html`);
+
+/** The UKG Ready adapter. */
+export const ukgReadyAdapter: Adapter = configuredAdapter(UKGREADY_CONFIG);

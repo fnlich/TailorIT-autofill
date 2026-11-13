@@ -31,6 +31,9 @@ import { ULTIPRO_CONFIG } from '../ultipro';
 // ── jr7 DFPC-7 ──
 import { PAYCOM_CONFIG } from '../paycom/config';
 // ── end jr7 DFPC-7 ──
+// ── jr7 UKGREADY-7 ──
+import { UKGREADY_CONFIG } from '../ukgready/config';
+// ── end jr7 UKGREADY-7 ──
 
 /** Every configured platform's config. */
 export const ATS_CONFIGS: Partial<Record<Platform, AtsConfig>> = {
@@ -57,4 +60,7 @@ export const ATS_CONFIGS: Partial<Record<Platform, AtsConfig>> = {
   // ── jr7 DFPC-7 ──
   paycom: PAYCOM_CONFIG,
   // ── end jr7 DFPC-7 ──
+  // ── jr7 UKGREADY-7 ──
+  ukgready: UKGREADY_CONFIG,
+  // ── end jr7 UKGREADY-7 ──
 };

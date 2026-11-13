@@ -4223,9 +4223,13 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
     const header = headerOf(html);
     expect(header).toMatchObject({ fixture: name, captured: expect.any(String) });
     expect(header.chrome).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
-    // jr7 DFPC-7 (as jr7 JDEF-7's): the header keeps a fragment (Paycom's /applications#/applications/<m>); the route map
-    // never serves one.
-    expect(routes[header.source.split('#')[0]!]).toBe(`fixtures/${name}.html`); // jr7 DFPC-7
+    // ── jr7 UKGREADY-7, DFPC-7, JDEF-7 (one copy, joined by INT-7): the route map serves a page at its address without
+    // the fragment, as a request carries it (the converter's withoutFragment): UKG Ready's applicant session is captured
+    // at …#applicant/profile, Paycom's application at /applications#/applications/<m> ──
+    const served = new URL(header.source);
+    served.hash = '';
+    expect(routes[served.href]).toBe(`fixtures/${name}.html`);
+    // ── end jr7 UKGREADY-7, DFPC-7, JDEF-7 ──
     for (const [url, path] of Object.entries(routes)) {
       expect(new URL(url).hash, url).toBe('');
       expect(path.startsWith(`fixtures/${name.replace(/\.frame-\d+$/, '')}.`) && existsSync(join(ROOT, path)), path).toBe(true);
@@ -4294,9 +4298,8 @@ const JOBVITE_SHARE_CHANNELS = ['linkedin', 'twitter', 'facebook', 'email'];
 const SRC_REFERRAL_FIXTURES = ['careerplug/cloudscouts-form.html', 'careerplug/eitacies-uploaded.html',
   // jr7 RBP-7 (P2): rippling/qu-careers-form and qu-careers-posting converted again with jr7-tooling-r3: off the list.
   // jr7 ORACLE-7 (P2): oracle/fortive-email-code converted again with jr7-tooling-r3: off the list.
-  'ukgready/jr7-saashr-choice.html', 'ukgready/jr7-saashr-choice.routes.json', 'ukgready/jr7-saashr-posting.html',
-  'ukgready/jr7-saashr-posting.routes.json', 'ukgready/jr7-saashr-start-filled.html',
-  'ukgready/jr7-saashr-start-filled.routes.json'];
+  // jr7 UKGREADY-7 (P2): UKG Ready's three jr7 cases converted again with jr7-tooling-r3: their six entries went.
+];
 
 /** Each referral parameter (REFERRAL_PARAMS, REFERRAL_PREFIXES) that holds a value other than REDACTED in a text, by
  *  name, in every form the final check reads (checkedForms: as written, entities decoded, percent-decoded): the
