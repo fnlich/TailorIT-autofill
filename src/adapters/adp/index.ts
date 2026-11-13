@@ -549,8 +549,35 @@ function formatFor(control: Element): { format: FieldFormat; pattern?: string } 
  *  Each is reset by the Country's write (<input class="MDFSelectBox__input" id="PersonalAddress_country" ...>). */
 const RESET_BY_COUNTRY: ReadonlySet<string> = new Set(['PersonalAddress_state', 'PersonalAddress_address_line1']);
 
+/** jr7 ADP-7 P2 (ENGINE-7 E2's jr6 leftover L2: a lazy list's first read re-plans its dependent): the Voluntary Self-ID
+ *  step's decline box, decided by what its lists offer (RULES' eeoDeclineBox: ticked only where the lists offer no
+ *  decline; while they are unread it is left, conditional-question), follows the later of its lists a person can choose
+ *  in (self-id, jr6-self-id-blank, jr6-self-id-filled: <input id="checkbox_..." type="checkbox"
+ *  name="enthinicityAndRaceId" aria-required="false"><label for="checkbox_...">I decline to identify my race and
+ *  ethnicity</label>, before <input class="MDFSelectBox__input" id="vsidEthinicity" ...> and <input
+ *  class="MDFSelectBox__input" id="vsidRace" ...>; on jr6-self-id-blank Race is drawn disabled, <div
+ *  class="MDFSelectBox__control MDFSelectBox__control--is-disabled ..." aria-disabled="true"> around <input ...
+ *  disabled="" id="vsidRace">, so the box follows Ethnicity there until Race opens): it is decided again once that list
+ *  is first read, or written. */
+const RACE_DECLINE_BOX = 'input[type="checkbox" i][name="enthinicityAndRaceId"]';
+const DECLINE_BOX_LISTS = ['vsidRace', 'vsidEthinicity'] as const;
+
+/** The later of the decline box's lists a person can choose in (its react-select's box drawn, not disabled), or null. */
+function declineBoxList(doc: Document): Element | null {
+  const cache = newScanCache();
+  for (const id of DECLINE_BOX_LISTS) {
+    const input = doc.getElementById(id);
+    if (input === null || (input as HTMLInputElement).disabled) continue;
+    const box = input.closest('.MDFSelectBox__control');
+    if (box?.matches('.MDFSelectBox__control--is-disabled, [aria-disabled="true" i]') === true) continue;
+    if (isUserVisible(box ?? input, cache)) return input;
+  }
+  return null;
+}
+
 function dependsOn(control: Element): Element | null {
-  return RESET_BY_COUNTRY.has(control.id) ? control.ownerDocument.getElementById('PersonalAddress_country') : null;
+  if (RESET_BY_COUNTRY.has(control.id)) return control.ownerDocument.getElementById('PersonalAddress_country');
+  return control.matches(RACE_DECLINE_BOX) ? declineBoxList(control.ownerDocument) : null; // jr7 ADP-7 P2
 }
 
 /** The upload rule each file input was found under, kept for the input ADP takes out of the page (uploadState). */
