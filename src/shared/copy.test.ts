@@ -25,12 +25,14 @@ const SENTENCE = /^["A-Z(].*[.]$/s;
  * browser that acknowledged an older version is asked again (stored.ts DISCLOSURE_VERSION), so new words need a new
  * version: changing them without a row here fails, and so does a version with no row. Versions before 14 predate this
  * table. 15 (jr6) had reached no one when the jr6 integration fixes reworded it (the button's name as it reads, and what
- * a download Apply is told), so it kept its number.
+ * a download Apply is told), so it kept its number. 16 (jr7) had reached no one (the extension's main is at 15) when
+ * the jr7 review fixes reworded it (C-1, A-6: who joins Run auto-apply as built, the sites already in that may email a
+ * code, the step that is the person's, Workday's jobs whatever the tenant asks), so it kept its number too.
  */
 const DISCLOSURE_HASHES: readonly { version: number; sha256: string }[] = [
   { version: 14, sha256: 'ad97b204db52277072884bbc2168b5f85d7d2edad738e7a10885428ad03f0532' }, // v1.5 part 2
   { version: 15, sha256: '3383e740883fcc6c5fe8048c3c0d6df52db758235fbe6b33d69433fd14da3e1d' }, // jr6
-  { version: 16, sha256: '5be8fdc5bd3506b9b058e786cebf3aa508ac6cd3126bb14067ffd78e6f9f5fb6' }, // jr7 (INT-7 round 2)
+  { version: 16, sha256: '222243720efa8f64d2618bd36d5049720c18c1e8638242981d2d1426797c1e4f' }, // jr7 (its review fixes)
 ];
 
 /** The disclosure's words as DISCLOSURE_HASHES pins them. */
@@ -405,8 +407,17 @@ describe('the copy', () => {
       expect(COPY.options.sites.intro, name).toContain(name);
     }
     expect(first).toContain("UKG Ready's saashr.com, Paycom, JobDiva, Eightfold and others), it runs only on the job pages");
-    // Run auto-apply's rule (D-3) and the Queue tab (D-4), as TailorIT labels them.
-    expect(first).toContain('never a site that shows a check that you are human or sends you a code');
+    // Run auto-apply's rule (D-3) and the Queue tab (D-4), as TailorIT labels them. The jr7 review (C-1, A-6): as
+    // built, a new site joins only when its tested applications showed no check and no code, the sites already in stay
+    // (Greenhouse's and iCIMS's emailed code or link), and Workday's jobs are taken whatever the tenant asks.
+    expect(first).not.toContain('never a site that shows a check that you are human or sends you a code');
+    expect(first).toContain('A site joins Run auto-apply only when none of the applications it was tested on there '
+      + 'showed a check that you are human or asked for a code, but a site it already took stays');
+    expect(first).toContain('may still email you a code or a link (Greenhouse, iCIMS)');
+    expect(first).toContain('or the application goes on to a step that is yours (an assessment, say), it leaves that tab open');
+    expect(first).toContain('On Workday it takes any job TailorIT can add, also where the employer asks you to sign in or make an account there: with Sign-in on Auto it signs in, or makes the account Workday asks for, with your job-site email and password');
+    expect(first).toContain('and on Manual it stops there and tells your TailorIT the job needs you');
+    expect(first).not.toMatch(/guest tenant/);
     expect(first).toContain('Queue tab only');
     expect(first).toContain('waits for the Queue tab');
     expect(first).toContain('it leaves that tab open for you and tells your TailorIT the job needs you');
