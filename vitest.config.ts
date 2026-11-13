@@ -4,7 +4,8 @@ import { WxtVitest } from 'wxt/testing/vitest-plugin';
 import { PROJECT_FILES } from './vitest.projects.ts';
 
 // WxtVitest does not apply wxt.config.ts's vite() block, so every project defines the build constants itself.
-const define = { __E2E__: 'false', __TAILORIT_ORIGIN__: JSON.stringify('http://localhost:3100') };
+// jr7 INT-7: __PROVENANCE__ true here alone, so the configured rules' provenance is read by the tests (configProblems).
+const define = { __E2E__: 'false', __TAILORIT_ORIGIN__: JSON.stringify('http://localhost:3100'), __PROVENANCE__: 'true' };
 
 export default defineConfig({
   test: {

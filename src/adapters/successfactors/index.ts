@@ -101,7 +101,7 @@ function submitButton(root: Element): HTMLElement | null {
 export const SUCCESSFACTORS_SUCCESS: readonly SuccessRule[] = [
   { css: '#jobAppPageTitle > #success_message', text: /^Your application has been sent\. Thank you!$/,
     companion: { css: 'button#fbja_jobsApplied', text: /\S/, scope: '#jobAppPageTitle' },
-    from: "Jobright 1.25.2 ats-submission-rules 'successfactors-application-sent'" },
+    ...(__PROVENANCE__ && { from: "Jobright 1.25.2 ats-submission-rules 'successfactors-application-sent'" }) },
 ];
 // ── end v5 p2-detect ──
 

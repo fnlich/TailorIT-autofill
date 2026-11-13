@@ -390,29 +390,32 @@ function uploadPrompt(doc: Document): UploadPrompt | null {
 /** The rules, each naming its snapshot (fixture case) in `from`. */
 const RULES: AtsConfig = {
   platform: 'ukgready',
-  snapshots: UKGREADY_CASES,
+  ...(__PROVENANCE__ && { snapshots: UKGREADY_CASES }),
   parse: parseUkgReadyUrl,
   // Every session case and the start form (see APP, START_FORM, STEP_BODY); detect is the code's (rootOf), this rule
   // tells the posting's entry where no form shows yet.
-  root: { css: APP, holds: `${START_FORM}, ${STEP_BODY}`, from: 'jr7-saashr-start-filled, jr7-saashr-contact' },
+  root: { css: APP, holds: `${START_FORM}, ${STEP_BODY}`,
+    ...(__PROVENANCE__ && { from: 'jr7-saashr-start-filled, jr7-saashr-contact' }) },
   states: [
     // jr7-saashr-choice: <div class="c-full-apply-resume-view"> ... <button class="c-button m-rounded" ...
     // aria-label="Type it in myself" data-tracking-id="8740c691-...">Type it in myself</button>; never "Use my resume"
     // or "Log in" (UKGR-11, UKGR-21).
     { name: 'entry-choice', when: CHOICE, auth: 'entry-choice',
-      entry: `${CHOICE} button[aria-label="Type it in myself" i]`, from: 'jr7-saashr-choice' },
+      entry: `${CHOICE} button[aria-label="Type it in myself" i]`,
+        ...(__PROVENANCE__ && { from: 'jr7-saashr-choice' }) },
   ],
   questions: [
     // jr7-saashr-questionnaire: <li class="c-questionnaire-wrapper__question-list-item ..." id="<qid>"><h3
     // class="title ques-required">1. ...</h3> ... a checkbox group's boxes named only by that title.
     { container: 'li.c-questionnaire-wrapper__question-list-item', title: 'h3.title', group: true,
-      from: 'jr7-saashr-questionnaire' },
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-questionnaire' }) },
   ],
   required: [
     // jr7-saashr-contact: <span ... class="c-form-control m-full-width--ht0CvY m-rounded m-required--9nk+qc">.
-    { is: '.c-form-control[class*="m-required"]', from: 'jr7-saashr-contact, jr7-saashr-contact-address-filled' },
+    { is: '.c-form-control[class*="m-required"]',
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-contact, jr7-saashr-contact-address-filled' }) },
     // jr7-saashr-questionnaire: <h3 class="title ques-required">.
-    { is: 'h3.title.ques-required', from: 'jr7-saashr-questionnaire' },
+    { is: 'h3.title.ques-required', ...(__PROVENANCE__ && { from: 'jr7-saashr-questionnaire' }) },
   ],
   uploads: [
     // jr7-saashr-documents: <div class="c-resume-widget-container"><div class="c-document-upload-widget-container"> ...
@@ -424,70 +427,77 @@ const RULES: AtsConfig = {
       control: 'button.file-info[aria-label="Upload File" i]',
       area: '.c-resume-widget-container .c-document-upload-widget-container',
       done: '.uploaded-file-container .uploaded-file', name: '.document-info__link-wrapper .c-link__label',
-      from: 'jr7-saashr-documents, jr7-saashr-documents-after' },
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-documents, jr7-saashr-documents-after' }) },
     // jr7-saashr-documents: the same under <div class="c-cover-letter-widget-container">, no file put in.
     { input: '.c-cover-letter-widget-container input.upload-file-input[type="file" i]',
       control: 'button.file-info[aria-label="Upload File" i]',
       area: '.c-cover-letter-widget-container .c-document-upload-widget-container',
       done: '.uploaded-file-container .uploaded-file', name: '.document-info__link-wrapper .c-link__label',
-      from: 'jr7-saashr-documents' },
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-documents' }) },
   ],
   // jr7-saashr-review: <button class="c-button m-rounded m-primary" data-tracking-id="085b9254-...">Sign &amp; submit
   // application</button> (the code's submitButton reads it by its words too).
-  submit: { css: `button[data-tracking-id="${SIGN_ID}"]`, from: 'jr7-saashr-review' },
+  submit: { css: `button[data-tracking-id="${SIGN_ID}"]`, ...(__PROVENANCE__ && { from: 'jr7-saashr-review' }) },
   neverPress: [
     // Back: the header's (d8ee3e8b-...), the start form's (a77bbd41-...) and the header's back arrow (aria-label="back").
     { css: 'button[data-tracking-id="d8ee3e8b-e20f-4d27-9c84-1838d25aefcc"], button[data-tracking-id="a77bbd41-59b9-4ef9-a18e-aa8679893573"], button[aria-label="back" i]',
-      from: 'jr7-saashr-start-filled, jr7-saashr-contact' },
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-start-filled, jr7-saashr-contact' }) },
     // Close: an editor's footer Close (35daaf9e-...) and its corner (data-tracking-id="undefined_close" aria-label="Close").
     { css: 'button[data-tracking-id="35daaf9e-031e-4949-901d-2292ef8730b2"], button[data-tracking-id="undefined_close"], .c-popup button[aria-label="Close" i]',
-      from: 'jr7-saashr-contact, jr7-saashr-review-sign' },
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-contact, jr7-saashr-review-sign' }) },
     // The consent's Cancel (e3619e49-...).
-    { css: 'button[data-tracking-id="e3619e49-50a4-4c4c-9fd4-de376b9ba44a"]', from: 'jr7-saashr-review-sign' },
+    { css: 'button[data-tracking-id="e3619e49-50a4-4c4c-9fd4-de376b9ba44a"]',
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-review-sign' }) },
     // "Show more" (.c-show-more__control), "Show All Jobs" beside Apply, "Use my resume" (9c20bce9-...), "Log in"
     // (be2276ce-...), "Go to my portal" (3a15e7c6-...).
-    { css: '.c-show-more__control button', from: 'jr7-saashr-documents' },
-    { css: '.c-career-search-details-view__title-buttons-view button.c-button:not([title="Apply"])', from: 'jr7-saashr-posting' },
+    { css: '.c-show-more__control button', ...(__PROVENANCE__ && { from: 'jr7-saashr-documents' }) },
+    { css: '.c-career-search-details-view__title-buttons-view button.c-button:not([title="Apply"])',
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-posting' }) },
     { css: 'button[data-tracking-id="9c20bce9-e91b-49e0-942e-dfc43dab98bd"], button[data-tracking-id="be2276ce-9f04-4e17-83c0-19674bb80367"]',
-      from: 'jr7-saashr-choice' },
-    { css: 'button[data-tracking-id="3a15e7c6-49cf-4f6d-8fe5-41e5d47ccb9e"]', from: 'jr7-saashr-confirmation' },
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-choice' }) },
+    { css: 'button[data-tracking-id="3a15e7c6-49cf-4f6d-8fe5-41e5d47ccb9e"]',
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-confirmation' }) },
     // The review's accordion buttons (dc78edbe-... and the expanders) and its pager.
-    { css: '.c-profile-summary-container button', from: 'jr7-saashr-review' },
+    { css: '.c-profile-summary-container button', ...(__PROVENANCE__ && { from: 'jr7-saashr-review' }) },
     // The header, its menus and the feedback button.
-    { css: 'header#_header button, #mini-header-portal button, #_feedback-button_portal button', from: 'jr7-saashr-contact' },
+    { css: 'header#_header button, #mini-header-portal button, #_feedback-button_portal button',
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-contact' }) },
     // "Type or paste it myself" (804a0d7d-...) and "Add Another Document".
     { css: 'button.c-document-upload-widget-container__toggle, button[title="Add Another Document"]',
-      from: 'jr7-saashr-documents' },
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-documents' }) },
     // Every alert's measuring copy of its buttons (UKGR-V4).
-    { css: '.c-modal-button-group-measurement button', from: 'jr7-saashr-documents-populate, jr7-saashr-questionnaire-filled' },
+    { css: '.c-modal-button-group-measurement button',
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-documents-populate, jr7-saashr-questionnaire-filled' }) },
   ],
   excluded: [
     // The header with its global search and menus, the sticky mini header, the feedback button (every session case).
-    { css: 'header#_header, #mini-header-portal, #_feedback-button_portal', from: 'jr7-saashr-contact' },
+    { css: 'header#_header, #mini-header-portal, #_feedback-button_portal',
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-contact' }) },
     // jr7-saashr-contact: <div class="c-security-question-widget-container"> "Security Question (Optional)": never filled.
-    { css: '.c-security-question-widget-container', from: 'jr7-saashr-contact' },
+    { css: '.c-security-question-widget-container', ...(__PROVENANCE__ && { from: 'jr7-saashr-contact' }) },
     // jr7-saashr-contact: the box labelled only by its placeholder 999-99-9999 (UKGR-14): <input ... placeholder=
     // "999-99-9999" name="SSN">, never written.
-    { css: '.c-form-control:has(input[name="SSN" i])', from: 'jr7-saashr-contact' },
+    { css: '.c-form-control:has(input[name="SSN" i])', ...(__PROVENANCE__ && { from: 'jr7-saashr-contact' }) },
     // jr7-saashr-reference-entry: the reference editor (UKGR-13): references are not in the profile.
-    { css: '#react_popup div.c-popup:has(input[name="refCompany" i])', from: 'jr7-saashr-reference-entry' },
+    { css: '#react_popup div.c-popup:has(input[name="refCompany" i])',
+      ...(__PROVENANCE__ && { from: 'jr7-saashr-reference-entry' }) },
     // jr7-saashr-review: <div class="c-profile-summary-container"> the review's read-only copy of the answers.
-    { css: '.c-profile-summary-container', from: 'jr7-saashr-review' },
+    { css: '.c-profile-summary-container', ...(__PROVENANCE__ && { from: 'jr7-saashr-review' }) },
   ],
   // jr7-saashr-documents-after: "Saving".
-  busy: [{ css: SAVING, from: 'jr7-saashr-documents-after' }],
+  busy: [{ css: SAVING, ...(__PROVENANCE__ && { from: 'jr7-saashr-documents-after' }) }],
   // jr7-saashr-confirmation: <div class="c-success-screen"> ... <div class="c-success-screen__title">We got it!</div><div
   // class="c-success-screen__content">Thanks for taking the time to apply</div> (UKGR-12).
   success: { css: `${SUCCESS_SCREEN} .c-success-screen__title`, text: /^we got it!?$/i,
     companion: { css: '.c-success-screen__content', text: /^thanks for taking the time to apply\.?$/i, scope: SUCCESS_SCREEN },
-    from: 'jr7-saashr-confirmation' },
+    ...(__PROVENANCE__ && { from: 'jr7-saashr-confirmation' }) },
   posting: {
     // jr7-saashr-posting: <div class="c-career-search-details-view__details"> (Description, Requirements, Summary).
     text: '.c-career-search-details-view__details',
     // jr7-saashr-posting: <div class="c-career-search-details-view__title-buttons-view"> ... <button class="c-button
     // m-rounded m-primary" title="Apply" type="button">Apply</button> (UKGR-11).
     entry: '.c-career-search-details-view__title-buttons-view button.c-button[title="Apply"]',
-    from: 'jr7-saashr-posting',
+    ...(__PROVENANCE__ && { from: 'jr7-saashr-posting' }),
   },
   // The steps and dialogs change in place at one address; the start form is drawn at the posting's (module header).
   quirks: { formLateMs: 30_000, formInPlace: true, formAtPosting: true, entryPresses: 2 },

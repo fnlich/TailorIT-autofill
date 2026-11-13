@@ -64,7 +64,7 @@ const COVER_LETTER_HEADING = 'div.jv-additional-files > h3.jv-step-header';
 /** The rules, each naming its snapshot. */
 const RULES: AtsConfig = {
   platform: 'jobvite',
-  snapshots: [...JOBVITE_SNAPSHOTS, ...JOBVITE_JR6_SNAPSHOTS],
+  ...(__PROVENANCE__ && { snapshots: [...JOBVITE_SNAPSHOTS, ...JOBVITE_JR6_SNAPSHOTS] }),
   parse: parseJobviteUrl,
   states: [
     // The gate once a residence is chosen: the policy and its "I Accept" (a submit button that posts the gate) show.
@@ -75,14 +75,16 @@ const RULES: AtsConfig = {
       // (ninjaone-consent: <form name="consentForm" method="post"> with <select id="jv-country-select"
       // ng-model="consentPolicyId"> and <button type="submit">; "Cancel" and "I Decline" are links).
       entrySubmits: { form: 'form[name="consentForm"]', selects: 'select#jv-country-select' },
-      from: 'ninjaone-consent' },
+      ...(__PROVENANCE__ && { from: 'ninjaone-consent' }) },
     // The gate before a residence is chosen: its one select ("Location of Residence and Language:") is filled like a
     // step; nothing is pressed there (choosing it shows the policy, the state above).
     { name: 'residence', when: 'body.jv-page-consentform form[name="consentForm"]',
-      root: 'body.jv-page-consentform form[name="consentForm"]', from: 'ninjaone-consent-empty' },
+      root: 'body.jv-page-consentform form[name="consentForm"]',
+        ...(__PROVENANCE__ && { from: 'ninjaone-consent-empty' }) },
   ],
   // The page body, not the form: both file inputs sit in body-level popovers outside form[name="scopeData.applyForm"].
-  root: { css: 'body.jv-page-apply', holds: 'form[name="scopeData.applyForm"]', from: 'ninjaone-step1, ninjaone-step3' },
+  root: { css: 'body.jv-page-apply', holds: 'form[name="scopeData.applyForm"]',
+    ...(__PROVENANCE__ && { from: 'ninjaone-step1, ninjaone-step3' }) },
   uploads: [
     // The opener while no resume is in; once one is, its wrapper is ng-hide and the file's row stands for the upload.
     { input: RESUME_INPUT, area: 'body.jv-page-apply',
@@ -92,9 +94,10 @@ const RULES: AtsConfig = {
       // ng-hide" ...></span><span ... ng-click="editOrPreviewResume()" ...>(the file's name)</span><a ...>remove</a>.
       // The area stays the page: the input sits in a body-level popover; the signs are #attachResume's alone.
       name: 'span[ng-click="editOrPreviewResume()"]',
-      from: 'ninjaone-step1, ninjaone-step1-resume' },
+      ...(__PROVENANCE__ && { from: 'ninjaone-step1, ninjaone-step1-resume' }) },
     // The cover letter's row once a file is in is not shown in any snapshot: no sign is declared.
-    { input: COVER_LETTER_INPUT, area: 'body.jv-page-apply', control: COVER_LETTER_OPENER, from: 'ninjaone-step1' },
+    { input: COVER_LETTER_INPUT, area: 'body.jv-page-apply', control: COVER_LETTER_OPENER,
+      ...(__PROVENANCE__ && { from: 'ninjaone-step1' }) },
   ],
   steps: {
     // The one rendered step (ng-if="showStep(<n>)"), named by its ng-form alone. jr6 JV-23: no heading. After a
@@ -103,33 +106,38 @@ const RULES: AtsConfig = {
     // Information" and the same step read as a new one; its ng-form (scopeData.step1..3) names it whatever shows.
     anchors: [{ css: 'form[name="scopeData.applyForm"] > div.jv-apply-step[ng-form]', attr: 'ng-form' }],
     next: 'div.jv-apply-form-actions > button[type="button"][aria-label="Next"]',
-    from: 'ninjaone-step1, ninjaone-step2, ninjaone-step3, jr6-sikich-step1, jr6-sikich-step1-invalid',
+    ...(__PROVENANCE__ && { from: 'ninjaone-step1, ninjaone-step2, ninjaone-step3, jr6-sikich-step1, jr6-sikich-step1-invalid' }),
   },
   // On every step, ng-hide but on the last (ninjaone-step3, where Next is ng-hide instead).
-  submit: { css: 'div.jv-apply-form-actions > button[type="submit"][aria-label="Send Application"]', from: 'ninjaone-step3' },
+  submit: { css: 'div.jv-apply-form-actions > button[type="submit"][aria-label="Send Application"]',
+    ...(__PROVENANCE__ && { from: 'ninjaone-step3' }) },
   neverPress: [
-    { css: 'form[name="consentForm"] a.jv-button', from: 'ninjaone-consent, ninjaone-consent-empty' },
-    { css: 'div.jv-current-openings a', from: 'ninjaone-step1' },
-    { css: 'div.jv-apply-error a', from: 'ninjaone-step1' },
+    { css: 'form[name="consentForm"] a.jv-button',
+      ...(__PROVENANCE__ && { from: 'ninjaone-consent, ninjaone-consent-empty' }) },
+    { css: 'div.jv-current-openings a', ...(__PROVENANCE__ && { from: 'ninjaone-step1' }) },
+    { css: 'div.jv-apply-error a', ...(__PROVENANCE__ && { from: 'ninjaone-step1' }) },
     // Each popover's "Dropbox" and "Type or Paste ..." (its "File" is the input's own label[for]).
-    { css: 'div.jv-add-attachment[role="dialog"] > div.jv-add-attachment-item > span[role="button"]', from: 'ninjaone-step1' },
-    { css: 'div.jv-add-attachment[role="dialog"] a.jv-close', from: 'ninjaone-step1' },
-    { css: 'ul.jv-file-list span.jv-text-link, ul.jv-file-list a.jv-text-action', from: 'ninjaone-step1-resume' },
-    { css: 'a.jv-button-apply-later', from: 'ninjaone-posting' },
-    { css: 'div.jv-job-detail-share a', from: 'ninjaone-posting' },
+    { css: 'div.jv-add-attachment[role="dialog"] > div.jv-add-attachment-item > span[role="button"]',
+      ...(__PROVENANCE__ && { from: 'ninjaone-step1' }) },
+    { css: 'div.jv-add-attachment[role="dialog"] a.jv-close', ...(__PROVENANCE__ && { from: 'ninjaone-step1' }) },
+    { css: 'ul.jv-file-list span.jv-text-link, ul.jv-file-list a.jv-text-action',
+      ...(__PROVENANCE__ && { from: 'ninjaone-step1-resume' }) },
+    { css: 'a.jv-button-apply-later', ...(__PROVENANCE__ && { from: 'ninjaone-posting' }) },
+    { css: 'div.jv-job-detail-share a', ...(__PROVENANCE__ && { from: 'ninjaone-posting' }) },
   ],
   // The paste boxes: the resume editor in the form and each popover's paste form (ng-hide while closed).
-  excluded: [{ css: 'div.jv-add-attachment-paste', from: 'ninjaone-step1' }],
+  excluded: [{ css: 'div.jv-add-attachment-paste', ...(__PROVENANCE__ && { from: 'ninjaone-step1' }) }],
   // The templates every step holds, ng-hide until a Next or Send Application finds a required field empty.
-  errors: { css: 'div.jv-apply-error p[role="alert"]', from: 'ninjaone-step1' },
+  errors: { css: 'div.jv-apply-error p[role="alert"]', ...(__PROVENANCE__ && { from: 'ninjaone-step1' }) },
   // "Sending Application" with its spinner (span[ng-show="submitting"], ng-hide until the application is sent).
-  busy: [{ css: 'button[aria-label="Send Application"] > span[ng-show="submitting"]', from: 'ninjaone-step3' },
+  busy: [{ css: 'button[aria-label="Send Application"] > span[ng-show="submitting"]',
+    ...(__PROVENANCE__ && { from: 'ninjaone-step3' }) },
     // jr6 JV-18: the resume row's spinner (<span class="jv-spinner ng-hide" ng-show="resumeLoading"> in its
     // div.jv-file), shown while Jobvite takes the file and reads it into the name, email and phone (those stay
     // ng-pristine in the captures: the page's parse, not a person's typing), so the parse wait (dom/resume-parse.ts)
     // and the step's settle hold until it hides.
     { css: '#attachResume ul.jv-file-list span.jv-spinner',
-      from: 'ninjaone-step1-resume, jr6-vhl-step1-filled, jr6-sikich-step1-resume' }],
+      ...(__PROVENANCE__ && { from: 'ninjaone-step1-resume, jr6-vhl-step1-filled, jr6-sikich-step1-resume' }) }],
   // jr6 JV-24: the page after Send Application (/applyConfirmation, which the address already reads as the
   // confirmation): its message's header beside the success icon. The selector and the words are Jobright 1.25.2's
   // facts for Jobvite (its ats-submission-rules, the jobvite rule: the header under .jv-page-message:has(
@@ -137,9 +145,9 @@ const RULES: AtsConfig = {
   // end, as Sikich's header reads "Well Done, Application Sent!" (jr6-sikich-confirmation) where VHL's reads
   // "Application Sent!" (jr6-vhl-confirmation).
   success: { css: 'article.jv-page-body[role="main"] .jv-page-message:has(i.jv-icon-success) > h2.jv-page-message-header',
-    text: /Application Sent!$/, from: 'jr6-vhl-confirmation, jr6-sikich-confirmation' },
+    text: /Application Sent!$/, ...(__PROVENANCE__ && { from: 'jr6-vhl-confirmation, jr6-sikich-confirmation' }) },
   posting: { text: 'div.jv-job-detail-description', entry: 'a.jv-button.jv-button-apply',
-    from: 'ninjaone-posting, jr6-vhl-posting, jr6-sikich-posting' },
+    ...(__PROVENANCE__ && { from: 'ninjaone-posting, jr6-vhl-posting, jr6-sikich-posting' }) },
   // jr6 JV-18 (FIXPLAN §6.7 item 4): Jobvite reads the resume put into #file-input-0 and fills the name, email and
   // phone from it (jr6-vhl-step1-filled, ninjaone-step1-resume: those hold a value, ng-pristine, once the file row
   // shows), so a pass writes the resume before every other field and waits for the parse (the resume row's spinner

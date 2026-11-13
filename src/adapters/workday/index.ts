@@ -371,12 +371,14 @@ function neverPress(root: Element): Element[] {
  *  (fixtures/synthetic/success/workday.html). The finalize answered is its network sign (page/submit-watch.ts). */
 export const WORKDAY_SUCCESS: readonly SuccessRule[] = [
   { css: '[data-automation-id="candidateHomeTaskModal"][role="dialog"]:has(button[data-automation-id="returnToHome"]) h2',
-    text: /^Application Submitted$/, from: "Jobright 1.25.2 ats-submission-rules 'myworkday-task-submitted-title'" },
+    text: /^Application Submitted$/,
+      ...(__PROVENANCE__ && { from: "Jobright 1.25.2 ats-submission-rules 'myworkday-task-submitted-title'" }) },
   { css: '[data-automation-id="candidateHomeTaskModal"][role="dialog"]',
     text: /^(?:Application Submitted|Congratulations!?)\s*Your application has (?:been submitted successfully|successfully been submitted)\./,
-    from: "Jobright 1.25.2 ats-submission-rules 'myworkday-task-application-submitted'" },
+    ...(__PROVENANCE__ && { from: "Jobright 1.25.2 ats-submission-rules 'myworkday-task-application-submitted'" }) },
   { css: '[data-automation-id="signInContent"] h1 + div', text: /^Your application has successfully been submitted\.$/,
-    companion: { css: 'h1', text: /^Congratulations!?$/ }, from: "Jobright 1.25.2 ats-submission-rules 'myworkday-submitted'" },
+    companion: { css: 'h1', text: /^Congratulations!?$/ },
+      ...(__PROVENANCE__ && { from: "Jobright 1.25.2 ats-submission-rules 'myworkday-submitted'" }) },
 ];
 // ── end v5 p2-detect ──
 
@@ -476,8 +478,8 @@ function afterSubmitAddress(here: URL): boolean {
 export const WORKDAY_CONGRATULATIONS: SuccessRule = {
   css: '[data-automation-id="popUpDialog"][role="dialog"] [data-automation-id="signInContent"] h1',
   text: /^Congratulations!?$/,
-  from: 'Jobright 1.25.2 ~hooks/useShowSubmitted (module lxTxV): an h1 saying Congratulations; '
-    + 'snapshot7 workday1 and workday3 (fixtures/workday/jr7-workday{1,3}-confirmation.html)',
+  ...(__PROVENANCE__ && { from: 'Jobright 1.25.2 ~hooks/useShowSubmitted (module lxTxV): an h1 saying Congratulations; '
+    + 'snapshot7 workday1 and workday3 (fixtures/workday/jr7-workday{1,3}-confirmation.html)' }),
 };
 
 /** The drawn signs of the page after submitting that `doc` shows at `here` (its own address): the fourth rule's, at an

@@ -37,31 +37,36 @@ export const BREEZY_SNAPSHOTS = ['concurrent-form'] as const;
 
 export const BREEZY_CONFIG: AtsConfig = {
   platform: 'breezy',
-  snapshots: BREEZY_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: BREEZY_SNAPSHOTS }),
   parse: parseBreezyUrl,
-  root: { css: 'form[name="form"]', from: 'breezy-0, breezy-1' },
+  root: { css: 'form[name="form"]', ...(__PROVENANCE__ && { from: 'breezy-0, breezy-1' }) },
   sections: [
-    { container: 'div.section', heading: 'div.section-header > h2, div.section-header > h3', from: 'breezy-0' },
-    { container: 'div.eeoc-form-container', heading: 'div.section-header > h2', from: 'breezy-0' },
+    { container: 'div.section', heading: 'div.section-header > h2, div.section-header > h3',
+      ...(__PROVENANCE__ && { from: 'breezy-0' }) },
+    { container: 'div.eeoc-form-container', heading: 'div.section-header > h2',
+      ...(__PROVENANCE__ && { from: 'breezy-0' }) },
   ],
   questions: [
     // <div class="desired-salary"><h3><span class="polygot">Desired Salary</span></h3><span ng-if="currencies.length > 1">
     // <select name="salaryCurrency" ng-model="candidate.salary.currency"></span><input name="cSalary"><select name=""
     // ng-model="candidate.salary.period">
-    { container: 'div.desired-salary', title: 'h3', from: 'breezy-0' },
+    { container: 'div.desired-salary', title: 'h3', ...(__PROVENANCE__ && { from: 'breezy-0' }) },
     // <li class="option consent-form"><input type="checkbox" name="smsConsent"><span ng-bind="getSmsConsentText()">…
-    { container: 'li.consent-form', title: 'span[ng-bind="getSmsConsentText()"]', from: 'breezy-0' },
+    { container: 'li.consent-form', title: 'span[ng-bind="getSmsConsentText()"]',
+      ...(__PROVENANCE__ && { from: 'breezy-0' }) },
     // <li class="question"><div class="multiplechoice"><h3 class="polygot">Gender</h3><ul class="options">…
-    { container: 'div.multiplechoice', title: 'h3', from: 'breezy-0' },
+    { container: 'div.multiplechoice', title: 'h3', ...(__PROVENANCE__ && { from: 'breezy-0' }) },
     // <h3 class="polygot">Veteran status</h3><p>…</p><ul class="unordered">…</ul><p>…</p><p>…</p><p>Please check one of
     // the boxes below:</p><ul><li><input type="radio" name="eeoc.veteran_status">…
-    { container: 'div.section.questions > ul:has(> li > input[type="radio"])', titleBefore: 'h3', from: 'breezy-0' },
+    { container: 'div.section.questions > ul:has(> li > input[type="radio"])', titleBefore: 'h3',
+      ...(__PROVENANCE__ && { from: 'breezy-0' }) },
     // <h3><span class="polygot">Full Name</span><span class="required" title="Required">*</span></h3><input name="cName">;
     // <div class="section-header"><h3><span class="polygot">Cover Letter</span></h3></div><textarea name="cCoverLetter">
     { container: 'div.section > input:not([type="checkbox"]):not([type="radio"]), div.section > textarea',
-      titleBefore: 'h3, div.section-header', from: 'breezy-0' },
+      titleBefore: 'h3, div.section-header', ...(__PROVENANCE__ && { from: 'breezy-0' }) },
   ],
-  required: [{ is: 'input[type="radio"][ng-required^="!eeoc."]', from: 'breezy-0, breezy-1' }],
+  required: [{ is: 'input[type="radio"][ng-required^="!eeoc."]',
+    ...(__PROVENANCE__ && { from: 'breezy-0, breezy-1' }) }],
   // The behaviour review of 2026-11-06 (M2): the résumé's own area, the input's div.file-input-container (div.section-header
   // > div.file-input-container > a.bzyLinkColor[ng-if="candidate.resume.file_name"] + input#main-attachment), whose
   // file link shows the file's name (its words: the paperclip icon, a space, the name); the opener, in another branch of
@@ -69,17 +74,20 @@ export const BREEZY_CONFIG: AtsConfig = {
   uploads: [{ input: 'input#main-attachment[name="cResume"]', control: 'ul.apply-buttons a.button.resume',
     area: 'div.file-input-container:has(> input#main-attachment)',
     done: 'a.bzyLinkColor[ng-if="candidate.resume.file_name"]', name: 'a.bzyLinkColor[ng-if="candidate.resume.file_name"]',
-    from: 'breezy-0, breezy-1' }],
-  submit: { css: 'form[name="form"] button[type="submit"].bzyButtonColor', from: 'breezy-0' },
+    ...(__PROVENANCE__ && { from: 'breezy-0, breezy-1' }) }],
+  submit: { css: 'form[name="form"] button[type="submit"].bzyButtonColor',
+    ...(__PROVENANCE__ && { from: 'breezy-0' }) },
   neverPress: [
-    { css: 'a.button.indeed', from: 'breezy-0' },
-    { css: 'a.button.linkedin', from: 'breezy-0' },
-    { css: 'ul.apply-buttons a.button.resume, a.bzyLinkColor[ng-if="candidate.resume.file_name"]', from: 'breezy-0' },
-    { css: 'ul.breadcrumbs a', from: 'breezy-0' },
-    { css: 'a.brand', from: 'breezy-0' },
+    { css: 'a.button.indeed', ...(__PROVENANCE__ && { from: 'breezy-0' }) },
+    { css: 'a.button.linkedin', ...(__PROVENANCE__ && { from: 'breezy-0' }) },
+    { css: 'ul.apply-buttons a.button.resume, a.bzyLinkColor[ng-if="candidate.resume.file_name"]',
+      ...(__PROVENANCE__ && { from: 'breezy-0' }) },
+    { css: 'ul.breadcrumbs a', ...(__PROVENANCE__ && { from: 'breezy-0' }) },
+    { css: 'a.brand', ...(__PROVENANCE__ && { from: 'breezy-0' }) },
   ],
-  errors: { css: 'div.error-container:not(.ng-hide) span.error:not(.ng-hide)', from: 'breezy-0' },
-  success: { css: 'div.confirmation-container .application-confirmed', from: 'breezy-0' },
+  errors: { css: 'div.error-container:not(.ng-hide) span.error:not(.ng-hide)',
+    ...(__PROVENANCE__ && { from: 'breezy-0' }) },
+  success: { css: 'div.confirmation-container .application-confirmed', ...(__PROVENANCE__ && { from: 'breezy-0' }) },
   code: {
     // breezy-0: Desired Salary's two selects, by the ng-model words of each (candidate.salary.currency, .period).
     labelSuffix(control) {

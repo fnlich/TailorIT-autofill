@@ -28,30 +28,35 @@ export const HIBOB_SNAPSHOTS = ['mplc-form'] as const;
 
 export const HIBOB_CONFIG: AtsConfig = {
   platform: 'hibob',
-  snapshots: HIBOB_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: HIBOB_SNAPSHOTS }),
   parse: parseHiBobUrl,
-  root: { css: 'careers-ui-job-ad-application-form', from: 'hibob-0' },
+  root: { css: 'careers-ui-job-ad-application-form', ...(__PROVENANCE__ && { from: 'hibob-0' }) },
   questions: [
     // <careers-ui-yes-no-question-control><div class="mrg-b-16 label required">Are you based in the United States?</div>
     // <b-radio-button><div role="radiogroup" id="bfe-<x>-14"><div class="flx min-w-0 selected"><input type="radio"
     // class="brd-input" tabindex="-1"><label class="brd-label selected" for="…">…Yes…
-    { container: 'careers-ui-yes-no-question-control', title: 'div.label', from: 'hibob-0' },
+    { container: 'careers-ui-yes-no-question-control', title: 'div.label', ...(__PROVENANCE__ && { from: 'hibob-0' }) },
   ],
-  required: [{ is: 'b-single-select[required]', from: 'hibob-0' }, { is: 'div.label.required', from: 'hibob-0' }],
+  required: [{ is: 'b-single-select[required]', ...(__PROVENANCE__ && { from: 'hibob-0' }) }, { is: 'div.label.required',
+    ...(__PROVENANCE__ && { from: 'hibob-0' }) }],
   widgets: [{ match: 'b-single-select div[role="button"][aria-haspopup="true"]', root: true, kind: 'combobox',
-    expanded: 'div[role="button"][aria-haspopup="true"]', from: 'hibob-0' }],
+    expanded: 'div[role="button"][aria-haspopup="true"]', ...(__PROVENANCE__ && { from: 'hibob-0' }) }],
   checked: [
-    { input: 'input.brd-input[type="radio"]', holder: 'div:has(> input.brd-input)', chosen: '.selected', from: 'hibob-0' },
-    { input: 'input.bchk-input[type="checkbox"]', holder: 'input.bchk-input', chosen: '[aria-checked="true"]', from: 'hibob-0' },
+    { input: 'input.brd-input[type="radio"]', holder: 'div:has(> input.brd-input)', chosen: '.selected',
+      ...(__PROVENANCE__ && { from: 'hibob-0' }) },
+    { input: 'input.bchk-input[type="checkbox"]', holder: 'input.bchk-input', chosen: '[aria-checked="true"]',
+      ...(__PROVENANCE__ && { from: 'hibob-0' }) },
   ],
-  submit: { css: 'button#apply-to-job-btn[data-testid="apply-to-job-btn"]', from: 'hibob-0' },
+  submit: { css: 'button#apply-to-job-btn[data-testid="apply-to-job-btn"]',
+    ...(__PROVENANCE__ && { from: 'hibob-0' }) },
   neverPress: [
-    { css: 'b-back-button button', from: 'hibob-0' },
-    { css: 'a[role="tab"].overview', from: 'hibob-0' },
-    { css: 'b-round-button.menu-button button', from: 'hibob-0' },
-    { css: 'button#bf-delete-btn', from: 'hibob-0' },
-    { css: 'b-chip [role="button"].remove-button', from: 'hibob-0' },
-    { css: 'careers-ui-experience-display-item button[aria-label="Menu"], button[data-testid="addButton"]', from: 'hibob-0' },
-    { css: 'careers-ui-privacy-policy a', from: 'hibob-0' },
+    { css: 'b-back-button button', ...(__PROVENANCE__ && { from: 'hibob-0' }) },
+    { css: 'a[role="tab"].overview', ...(__PROVENANCE__ && { from: 'hibob-0' }) },
+    { css: 'b-round-button.menu-button button', ...(__PROVENANCE__ && { from: 'hibob-0' }) },
+    { css: 'button#bf-delete-btn', ...(__PROVENANCE__ && { from: 'hibob-0' }) },
+    { css: 'b-chip [role="button"].remove-button', ...(__PROVENANCE__ && { from: 'hibob-0' }) },
+    { css: 'careers-ui-experience-display-item button[aria-label="Menu"], button[data-testid="addButton"]',
+      ...(__PROVENANCE__ && { from: 'hibob-0' }) },
+    { css: 'careers-ui-privacy-policy a', ...(__PROVENANCE__ && { from: 'hibob-0' }) },
   ],
 };

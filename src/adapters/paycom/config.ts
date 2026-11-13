@@ -100,7 +100,7 @@ function buttonsByWords(doc: Document, css: string, words: RegExp): HTMLElement[
 /** The rules, each naming its case (the header). */
 const RULES: AtsConfig = {
   platform: 'paycom',
-  snapshots: PAYCOM_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: PAYCOM_SNAPSHOTS }),
   parse: parsePaycomUrl,
   // No matchesUrl of its own: the configured layer's default, src/shared/hosts.ts's candidate paths (platformOfUrl), so
   // the host's employee pages (/v4/ee/, /v4/cl/) are never Paycom's (the HR host rule; url.ts's matchesUrl is the
@@ -109,48 +109,56 @@ const RULES: AtsConfig = {
     // PC7-05, apply-1: the Start Application dialog; its entry is "Apply Manually" (code: entryControl, by its words);
     // both its buttons are the entry door's alone (never a run's).
     { name: 'start-choice', when: START_DIALOG, auth: 'entry-choice',
-      entry: `${START_DIALOG} button[data-testid="undefined-loadingbutton"]`, from: 'jr7-paycomonline1-apply-1' },
+      entry: `${START_DIALOG} button[data-testid="undefined-loadingbutton"]`,
+        ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-1' }) },
     // PC7-05 (the verifier's correction), account: the contact dialog, filled like a step; its Continue To Application
     // makes the account: Sign-in Auto's (signInContainer), never Next.
     { name: 'contact', when: CONTACT_DIALOG, root: CONTACT_DIALOG,
-      signInContainer: { container: CONTACT_DIALOG, button: CONTINUE }, from: 'jr7-paycomonline1-account' },
+      signInContainer: { container: CONTACT_DIALOG, button: CONTINUE },
+        ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-account' }) },
   ],
   // PC7-01, prescreen and apply-1 to -3: <div id="ats-portal"> holding <div id="personal-information-section"> … or
   // <div id="questions-98573-field">; confirmation: the same root, no section, no question.
   root: { css: PORTAL, holds: '[id$="-section"], div[id^="questions-"][id$="-field"]',
-    from: 'jr7-paycomonline1-prescreen, jr7-paycomonline1-apply-2, jr7-paycomonline1-confirmation' },
+    ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-prescreen, jr7-paycomonline1-apply-2, jr7-paycomonline1-confirmation' }) },
   sections: [
     // apply-2: <div id="education-section"> … <h1><span …>Education</span></h1>; employment-section "Employment"; the
     // others named by their own h1 (Personal Information, Questions, Voluntary Information, Authorization).
-    { container: '#education-section', heading: 'h1', kind: 'education', from: 'jr7-paycomonline1-apply-2' },
-    { container: '#employment-section', heading: 'h1', kind: 'experience', from: 'jr7-paycomonline1-apply-2' },
+    { container: '#education-section', heading: 'h1', kind: 'education',
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
+    { container: '#employment-section', heading: 'h1', kind: 'experience',
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
     { container: '#personal-information-section, #questions-section, #voluntaryInformation-section, #authorization-section',
-      heading: 'h1', from: 'jr7-paycomonline1-apply-2' },
+      heading: 'h1', ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
   ],
   required: [
     // prescreen, apply-2: the title's star, <span style="color: rgb(211, 47, 47);">*</span>; a text box's label
     // <label …>Legal First Name<span class="… css-1j28w4o"> *</span></label> (MUI's asterisk).
-    { mark: 'span[style*="211, 47, 47"]', from: 'jr7-paycomonline1-prescreen' },
-    { mark: 'label > span.MuiFormLabel-asterisk, label > span[class*="css-1j28w4o"]', from: 'jr7-paycomonline1-apply-2' },
+    { mark: 'span[style*="211, 47, 47"]', ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-prescreen' }) },
+    { mark: 'label > span.MuiFormLabel-asterisk, label > span[class*="css-1j28w4o"]',
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
   ],
   widgets: [
     // apply-2: <div class="uiLibCountryList …" aria-label="Country combo box"><label …>Country</label> … <button
     // data-testid="button" aria-label="Country combo box, … selected.">: a list no capture shows open.
-    { match: 'div.uiLibCountryList', root: true, kind: 'combobox', opener: 'button', from: 'jr7-paycomonline1-apply-2' },
+    { match: 'div.uiLibCountryList', root: true, kind: 'combobox', opener: 'button',
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
   ],
   checked: [
     // prescreen: <div class="uiLibRadio ui-radio-lg"> (chosen: ui-radio-checked, T7-01's mark) around the radio.
-    { input: 'input.uiLibRadioInput', holder: '.uiLibRadio', chosen: '.ui-radio-checked', from: 'jr7-paycomonline1-prescreen' },
+    { input: 'input.uiLibRadioInput', holder: '.uiLibRadio', chosen: '.ui-radio-checked',
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-prescreen' }) },
   ],
   proxies: [
     // prescreen: <label class="uiLibRadioLabel …" for="<radio id>"> around the radio (opacity 0) and its drawn words.
-    { input: 'input.uiLibRadioInput', proxy: 'label.uiLibRadioLabel', scope: '.uiLibRadio', from: 'jr7-paycomonline1-prescreen' },
+    { input: 'input.uiLibRadioInput', proxy: 'label.uiLibRadioLabel', scope: '.uiLibRadio',
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-prescreen' }) },
     // apply-2: <label class="uiLibCheckbox …" for="i-do-not-have-a-middle-name"> … <button id="CheckboxOuterID-…"
     // class="uiLibCheckboxButton …" role="checkbox" aria-label="I do not have a middle name" aria-checked="false"> …
     // <input id="i-do-not-have-a-middle-name" class="uiLibCheckboxInput" type="checkbox" aria-hidden="true"
     // style="display: none;">.
     { input: 'input.uiLibCheckboxInput', proxy: 'button.uiLibCheckboxButton[role="checkbox"]', scope: 'label.uiLibCheckbox',
-      from: 'jr7-paycomonline1-apply-2' },
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
   ],
   uploads: [
     // apply-1: the résumé,
@@ -159,45 +167,49 @@ const RULES: AtsConfig = {
     // accept=".pdf,.doc,.docx,.txt,.ppt,.pptx">.
     { input: '#personal-information-resume-field input[type="file" i]',
       control: '.uiLibFileUploadCloudDropzone [role="button"]', area: '#personal-information-resume-field',
-      from: 'jr7-paycomonline1-apply-1' },
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-1' }) },
   ],
   steps: {
     // apply-2: the first section's <h1><span …>Personal Information</span></h1>; prescreen: "Let's Get Started!".
     heading: `${PORTAL} h1`,
     next: NEXT,
-    from: 'jr7-paycomonline1-prescreen, jr7-paycomonline1-apply-2',
+    ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-prescreen, jr7-paycomonline1-apply-2' }),
   },
   // apply-2: the portal's loading buttons; Submit by its words (code).
-  submit: { css: PORTAL_LOADING, from: 'jr7-paycomonline1-apply-2' },
+  submit: { css: PORTAL_LOADING, ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
   neverPress: [
     // prescreen: the BottomButtonLayout's <button data-testid="button">Cancel</button>.
-    { css: `${PORTAL} div[data-testid="BottomButtonLayout"] button[data-testid="button"]`, from: 'jr7-paycomonline1-prescreen' },
+    { css: `${PORTAL} div[data-testid="BottomButtonLayout"] button[data-testid="button"]`,
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-prescreen' }) },
     // apply-2: the side-nav's <button data-testid="sideNavMainItemButton">, the header's My Account
     // (<button data-testid="iconbutton">My Account</button>) and Careers.
-    { css: 'button[data-testid="sideNavMainItemButton"]', from: 'jr7-paycomonline1-apply-2' },
+    { css: 'button[data-testid="sideNavMainItemButton"]',
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
     // posting, account: "Sign In" and "Create Account" in the header and the dialog (<div role="link"
     // data-testid="signInClickableTextClickableText">, createAccountClickableTextClickableText).
     { css: '[data-testid="signInClickableTextClickableText"], [data-testid="createAccountClickableTextClickableText"]',
-      from: 'jr7-paycomonline1-account' },
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-account' }) },
     // apply-2: the uploaded résumé's menu, <div data-testid="dropdown"> <button data-testid="iconbutton">, in the
     // Document Upload; every date's "… Date Picker" button.
     { css: '#personal-information-section [data-testid="dropdown"] button[data-testid="iconbutton"]',
-      from: 'jr7-paycomonline1-apply-2' },
-    { css: 'button[aria-label$="Date Picker"]', from: 'jr7-paycomonline1-apply-2' },
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
+    { css: 'button[aria-label$="Date Picker"]', ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
     // signature: the pad's Draw, Type and Clear (PC7-07: the person's until Q7-10).
-    { css: `${SIGNATURE} button`, from: 'jr7-paycomonline1-signature' },
+    { css: `${SIGNATURE} button`, ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-signature' }) },
     // apply-2: Show More, <button data-testid="authorization-legalese-text-region">.
-    { css: 'button[data-testid="authorization-legalese-text-region"]', from: 'jr7-paycomonline1-apply-2' },
+    { css: 'button[data-testid="authorization-legalese-text-region"]',
+      ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-apply-2' }) },
   ],
   // PC7-06, confirmation: <h1><span …>Application Submitted!</span></h1> in the portal, beside "Set Up Password" and
   // "Export Application" (<button data-testid="button">); Jobright 1.25.2's m/ats-rules.js paycom-portal-application-
   // submitted names the h1 too, its companion paragraph absent on this tenant (measured 0).
   success: { css: `${PORTAL} h1`, text: /^Application Submitted!?$/,
     companion: { css: `${PORTAL} button`, text: /^(?:Export Application|Set Up Password)$/, scope: PORTAL },
-    from: 'jr7-paycomonline1-confirmation' },
+    ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-confirmation' }) },
   // posting: <button data-testid="Apply-loadingbutton">Apply</button> (two copies, one shown): Jobright's
   // createPaycomEntryAdapter presses the shown one reading "Apply" while no dialog shows.
-  posting: { entry: 'button[data-testid="Apply-loadingbutton"]', from: 'jr7-paycomonline1-posting' },
+  posting: { entry: 'button[data-testid="Apply-loadingbutton"]',
+    ...(__PROVENANCE__ && { from: 'jr7-paycomonline1-posting' }) },
   // account: the contact dialog is drawn at the posting's own address.
   quirks: { formAtPosting: true },
 };

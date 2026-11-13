@@ -38,7 +38,7 @@ const SUBMIT = `${FORM} button[type="submit"].submit-button[data-localized-key="
 /** The rules, each naming its snapshot. */
 const RULES: AtsConfig = {
   platform: 'clearcompany',
-  snapshots: CLEARCOMPANY_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: CLEARCOMPANY_SNAPSHOTS }),
   parse: parseClearCompanyUrl,
   states: [
     // The account step: Continue creates the account ("Creating your account, this could take up to 60 seconds.",
@@ -51,13 +51,13 @@ const RULES: AtsConfig = {
     // holding the names, both emails, the mobile number, the two Yes/No groups and Continue), so the run finds the page
     // and pauses there as an account's creation; nothing is filled from the profile on a paused step.
     { name: 'account', when: 'form#personal-info-form', auth: 'create-account', root: 'form#personal-info-form',
-      from: 'vafb-account',
+      ...(__PROVENANCE__ && { from: 'vafb-account' }),
       signIn: { form: 'form#personal-info-form', email: 'input[type="email"].email',
         confirmEmail: 'input[type="email"].email-confirm',
         button: 'button[type="submit"].submit-button[data-localized-key="forms.application.continue"]',
         personPresses: true } },
   ],
-  root: { css: FORM, from: 'vafb-uploads, vafb-page2, vafb-page3, ferrilli-page2' },
+  root: { css: FORM, ...(__PROVENANCE__ && { from: 'vafb-uploads, vafb-page2, vafb-page3, ferrilli-page2' }) },
   // A question's title is the div.form-field's own .field-title: a label[for] (text, select, date), a span (radio and
   // checkbox groups, which have no fieldset or legend) or a div (uploads). In a repeated row it is that row's own:
   // every row reuses the first row's ids, so a later row's label[for] names the first row's control. The title's star
@@ -69,15 +69,16 @@ const RULES: AtsConfig = {
     // type="email" class="form-control email" ...>, and each Yes/No group's <div class="form-group radio-group ...">
     // <label class="l10n radio-label ...">(its question)</label>: labels that name no control. First, as their inputs sit
     // in a div.form-field too.
-    { container: 'form#personal-info-form div.form-group', title: ':scope > label', from: 'vafb-account' },
+    { container: 'form#personal-info-form div.form-group', title: ':scope > label',
+      ...(__PROVENANCE__ && { from: 'vafb-account' }) },
     { container: 'div.form-field', title: ':scope > .field-title', help: ':scope div.file-description',
-      from: 'vafb-uploads, vafb-page3, ferrilli-page2' },
+      ...(__PROVENANCE__ && { from: 'vafb-uploads, vafb-page3, ferrilli-page2' }) },
   ],
   // A checkbox question's box ("I Agree"): the site clips every checkbox to 1 px and draws it as the background image
   // of the span after it (html:not(.ie8) .checkbox label input[type=checkbox] + span), whose text's colour therefore
   // cannot be read against the image: its wrapping label, which a person sees and clicks, stands for it.
   proxies: [{ input: 'div.qa-checkbox-field div.checkbox > label > input[type="checkbox"]', proxy: 'div.checkbox > label',
-    from: 'vafb-page3' }],
+    ...(__PROVENANCE__ && { from: 'vafb-page3' }) }],
   uploads: [
     // The input sits in the closed "Upload" menu (li.fileinput-button, opacity 0); its row once the page has the file.
     { input: 'div.form-field.qa-resume-upload input[type="file"][name="files[]"]', area: 'div.form-field.qa-resume-upload',
@@ -85,7 +86,8 @@ const RULES: AtsConfig = {
       // The behaviour review of 2026-11-06 (M2), atlas-uploads-saving: <tr class="file-row" ...><td class="col-sm-8
       // file-name">(the file's name)</td><td class="col-sm-2 file-created-date">...</td>...<a ... js-remove-button
       // ...>Remove</a>, under the column "File name".
-      name: 'td.file-name', from: 'vafb-uploads, vafb-uploads-menu-open, atlas-uploads-saving' },
+      name: 'td.file-name',
+        ...(__PROVENANCE__ && { from: 'vafb-uploads, vafb-uploads-menu-open, atlas-uploads-saving' }) },
   ],
   steps: {
     // The pages have no names and one address: the active breadcrumb (page-<n>) and the breadcrumb's pages.
@@ -94,25 +96,27 @@ const RULES: AtsConfig = {
     heading: `${FORM} div.fieldItem > h3.control-label`,
     next: CONTINUE,
     back: `${FORM} button.back-button[data-localized-key="forms.application.back"]`,
-    from: 'vafb-uploads, vafb-page2, vafb-page3, ferrilli-page2',
+    ...(__PROVENANCE__ && { from: 'vafb-uploads, vafb-page2, vafb-page3, ferrilli-page2' }),
   },
-  submit: { css: SUBMIT, from: 'vafb-page3, ferrilli-page2' },
+  submit: { css: SUBMIT, ...(__PROVENANCE__ && { from: 'vafb-page3, ferrilli-page2' }) },
   neverPress: [
-    { css: 'button.cancel-button[data-localized-key="forms.application.finish-later"]', from: 'vafb-uploads' },
-    { css: 'button.have-account-button', from: 'vafb-account' },
-    { css: 'li.js-dropbox a, li.js-google-drive a', from: 'vafb-uploads' },
-    { css: 'div.custom-handler-linkedin-v2', from: 'vafb-uploads' },
-    { css: 'a.authenticate-button', from: 'vafb-account, vafb-uploads' },
-    { css: 'li.breadcrumbs-page-link', from: 'vafb-page2' },
-    { css: 'a.remove-row-button', from: 'ferrilli-page2' },
-    { css: 'tr.file-row a.remove-button', from: 'atlas-uploads-saving' },
+    { css: 'button.cancel-button[data-localized-key="forms.application.finish-later"]',
+      ...(__PROVENANCE__ && { from: 'vafb-uploads' }) },
+    { css: 'button.have-account-button', ...(__PROVENANCE__ && { from: 'vafb-account' }) },
+    { css: 'li.js-dropbox a, li.js-google-drive a', ...(__PROVENANCE__ && { from: 'vafb-uploads' }) },
+    { css: 'div.custom-handler-linkedin-v2', ...(__PROVENANCE__ && { from: 'vafb-uploads' }) },
+    { css: 'a.authenticate-button', ...(__PROVENANCE__ && { from: 'vafb-account, vafb-uploads' }) },
+    { css: 'li.breadcrumbs-page-link', ...(__PROVENANCE__ && { from: 'vafb-page2' }) },
+    { css: 'a.remove-row-button', ...(__PROVENANCE__ && { from: 'ferrilli-page2' }) },
+    { css: 'tr.file-row a.remove-button', ...(__PROVENANCE__ && { from: 'atlas-uploads-saving' }) },
   ],
   busy: [
     // Loading (atlas-loading) and saving (atlas-uploads-saving): the page's spinner, its "Saving..." and its notice.
     { css: 'div.form-view.loading-small.spinner, div.form-view-readonly.loading-small.spinner',
-      from: 'atlas-loading, atlas-uploads-saving' },
-    { css: `${FORM} div.loading`, from: 'atlas-uploads-saving' },
-    { css: 'button.submit-button span.glyphicon-refresh-animate', from: 'atlas-uploads-saving' },
+      ...(__PROVENANCE__ && { from: 'atlas-loading, atlas-uploads-saving' }) },
+    { css: `${FORM} div.loading`, ...(__PROVENANCE__ && { from: 'atlas-uploads-saving' }) },
+    { css: 'button.submit-button span.glyphicon-refresh-animate',
+      ...(__PROVENANCE__ && { from: 'atlas-uploads-saving' }) },
   ],
   // The behaviour review of 2026-11-06 (minor 4): the page's own notice says its save takes "up to 60 seconds"
   // (atlas-uploads-saving: "Creating your account, this could take up to 60 seconds."): the settle waits as long as

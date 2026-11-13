@@ -131,8 +131,8 @@ const SIGNATURE = 'input#electronicSignature';
 /** The rules the configured layer builds hooks from, each naming its snapshot. */
 export const ADP_CONFIG: AtsConfig = {
   platform: 'adp',
-  snapshots: ['guest', 'code-dialog', 'personal', 'questions', 'self-id', 'self-attest',
-    ...[...ADP_JR6_SNAPSHOTS, ...ADP_JR7_SNAPSHOTS].map((path) => path.replace(/^fixtures\/adp\/|\.html$/g, ''))],
+  ...(__PROVENANCE__ && { snapshots: ['guest', 'code-dialog', 'personal', 'questions', 'self-id', 'self-attest',
+    ...[...ADP_JR6_SNAPSHOTS, ...ADP_JR7_SNAPSHOTS].map((path) => path.replace(/^fixtures\/adp\/|\.html$/g, ''))] }),
   parse: parseAdpUrl,
   matchesUrl,
   states: [
@@ -141,7 +141,8 @@ export const ADP_CONFIG: AtsConfig = {
     // aria-label="Enter the Verification Code" aria-required="true" ... type="text">: the dialog's content is the
     // state's root, so this adapter (not the generic one) holds the page, and its pause is the person's.
     { name: 'code', when: 'sdf-focus-pane#login_view_show_opt_dialog input#oneTimePassWord', auth: 'email-code',
-      root: 'sdf-focus-pane#login_view_show_opt_dialog div.otpDialogContent', from: 'adp-0' },
+      root: 'sdf-focus-pane#login_view_show_opt_dialog div.otpDialogContent',
+        ...(__PROVENANCE__ && { from: 'adp-0' }) },
     // jr6 ADP-11 (minimum) and apply-path B7, jr6-guest-send-code: <sdf-focus-pane id="login_view_identifier_dialog"
     // heading="Get your verification code" data-sdf-modal=""> ... <label class="otpInstructionText ...">Where would you
     // like to receive a verification code?</label> ... <wfn-radio-button id="phoneIdentifierId" value="CELL_PHONE">,
@@ -149,7 +150,8 @@ export const ADP_CONFIG: AtsConfig = {
     // aria-label="Send">: where the code goes and its Send are the person's (a code is sent), so the page is the
     // person's 'email-code' pause: nothing is filled or pressed. While it shows, the guest page behind it is hidden by
     // the pane's focus trap, so the guest state below never reads under it.
-    { name: 'code-choice', when: CODE_CHOICE_PANE, auth: 'email-code', from: 'jr6-guest-send-code' },
+    { name: 'code-choice', when: CODE_CHOICE_PANE, auth: 'email-code',
+      ...(__PROVENANCE__ && { from: 'jr6-guest-send-code' }) },
     // jr6 apply-path B3 (APPLYPLAN OQ2, default yes; BUILD.md §4), jr6-consent: <sdf-focus-pane id="jdv_privacy_dailog"
     // heading="Privacy Policy" data-sdf-modal=""> ... <div slot="custom-buttons"><sdf-button id="undefined" ...
     // slot="custom-buttons" emphasis="primary" aria-label="Consent & Continue">, <sdf-button id="undefined" ...
@@ -158,7 +160,7 @@ export const ADP_CONFIG: AtsConfig = {
     // its words, since both buttons share one id; "Decline & Close" is never pressed (neverPress).
     { name: 'consent', when: PRIVACY_PANE, auth: 'entry-choice',
       entry: `${PRIVACY_PANE} sdf-button[slot="custom-buttons"][emphasis="primary"][aria-label="Consent & Continue" i]`,
-      from: 'jr6-consent' },
+      ...(__PROVENANCE__ && { from: 'jr6-consent' }) },
     // adp-6: <div class="guest-login-container"><div class="banner">Tell us about yourself.</div> ... <div
     // class="login-form-container" data-isguestapply="true" ...> (behind the dialog's aria-hidden in adp-0).
     { name: 'guest', when: 'div.guest-login-container', root: 'div.guest-login-container',
@@ -168,15 +170,17 @@ export const ADP_CONFIG: AtsConfig = {
       // nothing there: the names, the email and the mobile number are the step's own fields, filled from the profile.
       signInContainer: { container: 'div.guest-login-container',
         button: 'div.guest-login-container sdf-button#recruitment_login_recaptcha[role="button" i]' },
-      from: 'adp-6' },
+      ...(__PROVENANCE__ && { from: 'adp-6' }) },
   ],
   // adp-1 to adp-5: <div id="jobApplicationSubmit" class="job-application-submit"> ... <div
   // class="mdf-custom-wizard-steps"><div class="mdf-custom-wizard-step"> ... <div class="mdf-custom-wizard-footer">.
-  root: { css: '#jobApplicationSubmit', holds: 'div.mdf-custom-wizard-step', from: 'adp-1, adp-2, adp-3, adp-4' },
+  root: { css: '#jobApplicationSubmit', holds: 'div.mdf-custom-wizard-step',
+    ...(__PROVENANCE__ && { from: 'adp-1, adp-2, adp-3, adp-4' }) },
   proxies: [
     // adp-1: <div class="vdl-checkbox" id="usePreferredName" ...><input id="checkbox_..." type="checkbox"
     // name="usePreferredName" ...><label for="checkbox_..." class=""></label></div>: an empty label drawn as the box.
-    { input: 'div.vdl-checkbox > input[type="checkbox" i]', proxy: 'label', scope: 'div.vdl-checkbox', from: 'adp-1' },
+    { input: 'div.vdl-checkbox > input[type="checkbox" i]', proxy: 'label', scope: 'div.vdl-checkbox',
+      ...(__PROVENANCE__ && { from: 'adp-1' }) },
   ],
   steps: {
     // adp-1: <div class="mdf-segmented-wizard-header-item mdf-segmented-wizard-header-visited-item ..."
@@ -192,45 +196,47 @@ export const ADP_CONFIG: AtsConfig = {
     next: 'button#ja_sv_cw_next_footer_btn',
     // adp-2: <button id="ja_sv_cw_prev_footer_btn" type="button" ...>Previous</button>.
     back: 'button#ja_sv_cw_prev_footer_btn',
-    from: 'adp-1, adp-2, adp-3, adp-4',
+    ...(__PROVENANCE__ && { from: 'adp-1, adp-2, adp-3, adp-4' }),
   },
   // adp-4, adp-5: <button id="submitApplication" type="button" class="... wizard-submit-button ...">Submit</button>.
-  submit: { css: 'button#submitApplication', from: 'adp-4' },
+  submit: { css: 'button#submitApplication', ...(__PROVENANCE__ && { from: 'adp-4' }) },
   neverPress: [
     // adp-6, adp-0: the social sign-ins and Join Our Talent Community. Continue (it mails the code) is the guest state's
     // sign-in container's button (core pass Z1, item 24), pressed by Sign-in Auto's door alone.
     { css: 'sdf-button#recruitment_login_signInWithLinkedIn, sdf-button#recruitment_login_signInWithGoogle, '
-      + 'sdf-button#recruitment_login_signInWithFaceBook', from: 'adp-6' },
-    { css: 'sdf-button#recruitment_header_joinTalentCommunity', from: 'adp-6' },
+      + 'sdf-button#recruitment_login_signInWithFaceBook', ...(__PROVENANCE__ && { from: 'adp-6' }) },
+    { css: 'sdf-button#recruitment_header_joinTalentCommunity', ...(__PROVENANCE__ && { from: 'adp-6' }) },
     // The left nav's host, whose shadow root holds Sign In, Career Center and Current Openings (adp-6).
-    { css: 'sfc-shell-left-nav-flat#recruitmentLeftNav', from: 'adp-6' },
+    { css: 'sfc-shell-left-nav-flat#recruitmentLeftNav', ...(__PROVENANCE__ && { from: 'adp-6' }) },
     // adp-0: <button id="recruitment_login_verifyOTP" ...>Verify</button>, <button id="recruitment_login_resendOTP"
     // ...>Resend Code</button>.
-    { css: 'button#recruitment_login_verifyOTP, button#recruitment_login_resendOTP', from: 'adp-0' },
+    { css: 'button#recruitment_login_verifyOTP, button#recruitment_login_resendOTP',
+      ...(__PROVENANCE__ && { from: 'adp-0' }) },
     // adp-2: <button id="finishLaterApplication" ...>Finish later </button>; adp-1: <div class="job-application-exit-button"
     // id="ja_sv_exit_btn">; the header items (role=listitem), clickable from adp-3 on.
-    { css: 'button#finishLaterApplication', from: 'adp-2' },
-    { css: '#ja_sv_exit_btn', from: 'adp-1' },
-    { css: '.mdf-segmented-wizard-header-item', from: 'adp-3' },
+    { css: 'button#finishLaterApplication', ...(__PROVENANCE__ && { from: 'adp-2' }) },
+    { css: '#ja_sv_exit_btn', ...(__PROVENANCE__ && { from: 'adp-1' }) },
+    { css: '.mdf-segmented-wizard-header-item', ...(__PROVENANCE__ && { from: 'adp-3' }) },
     // adp-6: the cookie banner's settings button and its preference centre's buttons.
     { css: 'sdf-button#ot-sdk-btn, button#accept-recommended-btn-handler, button.save-preference-btn-handler',
-      from: 'adp-6' },
+      ...(__PROVENANCE__ && { from: 'adp-6' }) },
     // adp-4: "...More" (the acknowledgement); adp-3: "Why are we asking?", "What Is A Protected Veteran?", the help icons.
-    { css: '#selfReviewView .more-label button', from: 'adp-4' },
+    { css: '#selfReviewView .more-label button', ...(__PROVENANCE__ && { from: 'adp-4' }) },
     { css: 'sdf-button#vsidWhy, sdf-button#vsidWhyAreWe, sdf-button#vsidVet, sdf-icon-button[label="Help Information"], '
-      + '.raceHelp-icon [role="button"]', from: 'adp-3' },
+      + '.raceHelp-icon [role="button"]', ...(__PROVENANCE__ && { from: 'adp-3' }) },
     // ── jr6 ADP P1 (BUILD.md §4 E-ADP neverPress) ──
     // jr6-guest-blank: OneTrust's vendor filter, <section id="ot-fltr-modal"> ... <button id="filter-apply-handler">Apply
     // </button> (hidden): its "Apply" is never the posting's entry, and never pressed.
-    { css: 'button#filter-apply-handler, section#ot-fltr-modal', from: 'jr6-guest-blank' },
+    { css: 'button#filter-apply-handler, section#ot-fltr-modal', ...(__PROVENANCE__ && { from: 'jr6-guest-blank' }) },
     // jr6-consent: the Privacy Policy pane's "Decline & Close" (see the consent state).
-    { css: `${PRIVACY_PANE} sdf-button[slot="custom-buttons"][emphasis="secondary"]`, from: 'jr6-consent' },
+    { css: `${PRIVACY_PANE} sdf-button[slot="custom-buttons"][emphasis="secondary"]`,
+      ...(__PROVENANCE__ && { from: 'jr6-consent' }) },
     // jr6-guest-send-code: the code-choice pane's Send (see the code-choice state); its Close sits in the pane's shadow
     // root, out of a selector's reach, and is added by the adapter's neverPress below.
-    { css: 'sdf-button#recruitment_login_guestLogin', from: 'jr6-guest-send-code' },
+    { css: 'sdf-button#recruitment_login_guestLogin', ...(__PROVENANCE__ && { from: 'jr6-guest-send-code' }) },
     // jr6-posting: <button id="recruitment_jobDescription_back" type="button" class="job-description-apply vdl-button
     // vdl-button--secondary">, Back beside the details' entry.
-    { css: 'button#recruitment_jobDescription_back', from: 'jr6-posting' },
+    { css: 'button#recruitment_jobDescription_back', ...(__PROVENANCE__ && { from: 'jr6-posting' }) },
     // ── end jr6 ADP P1 ──
   ],
   // ── jr6 ADP-1 (high): the Resume step (jr6-resume-blank, jr6-resume-choice, jr6-resume-uploaded) ──
@@ -247,14 +253,14 @@ export const ADP_CONFIG: AtsConfig = {
     { input: '#resumeUploadContainer input[type="file" i][name="file"]',
       control: '#resumeUploadContainer sdf-button[id^="fileUpload-"]', area: '#resumeUploadContainer',
       done: '.fileDetails .fileName, button[id^="recruitment_afterResumeUpload_remove_"]', name: '.fileDetails .fileName',
-      from: 'jr6-resume-blank, jr6-resume-uploaded' },
+      ...(__PROVENANCE__ && { from: 'jr6-resume-blank, jr6-resume-uploaded' }) },
     // jr6-resume-blank: <div class="additional-documents-container mt-2"><h3>Attachments</h3> ... <sdf-button
     // id="fileUpload-<uuid>" ...>Upload attachments</sdf-button> ... <input type="file" name="file" style="display:
     // none;">; its done row (Jobright's getCoverLetterUploadDom) once a document is added.
     { input: '.additional-documents-container input[type="file" i][name="file"]',
       control: '.additional-documents-container sdf-button[id^="fileUpload-"]', area: '.additional-documents-container',
       done: '.additional-document-result .fileName, button[id^="recruitment_afterAdditionalDocumentsUpload_remove_"]',
-      from: 'jr6-resume-blank' },
+      ...(__PROVENANCE__ && { from: 'jr6-resume-blank' }) },
   ],
   // adp-2: <label class="vdl-validation-error error-color" role="alert"> after an aria-invalid box; adp-6: <wfn-text
   // id="firstNameErrLbl" role="alert" class="experience-vdl-error-label hydrated">; adp-2, adp-3: <div
@@ -267,9 +273,9 @@ export const ADP_CONFIG: AtsConfig = {
   errors: { css: 'label.vdl-validation-error, .experience-vdl-error-label[role="alert" i], '
     + '[id^="sdf-radio-group-"][id$="-errorMessage"], div.self-review-signature-required, '
     + 'h4#addressErrorMessage[role="alert" i], label.mdf-label-error, wfn-dropdown-list.vdl-validation-error',
-  from: 'adp-2, jr6-personal-us-errors' },
+  ...(__PROVENANCE__ && { from: 'adp-2, jr6-personal-us-errors' }) },
   // adp-6: <div id="recPageLoadWaitingIndicator" ... style="display: none">, the page's busy overlay.
-  busy: [{ css: '#recPageLoadWaitingIndicator', from: 'adp-6' }],
+  busy: [{ css: '#recPageLoadWaitingIndicator', ...(__PROVENANCE__ && { from: 'adp-6' }) }],
   // ── jr6 ADP-6 (medium): the page after Submit ──
   // Jobright's ats-submission-rules entry adp-workforcenow (its sign, its words and its "Thank You!" companion), seen
   // on jr6-confirmation and jr6-confirmation-2: <div id="vdlContainerFluid" class="vdl-container-fluid success-card">
@@ -281,7 +287,7 @@ export const ADP_CONFIG: AtsConfig = {
     text: /^(?:Thank You! )?We have received your application\.?$/i,
     companion: { css: '.success-message-container span.message-header', text: /^Thank You!?$/i },
     underModal: 'sdf-focus-pane[data-sdf-modal]',
-    from: 'jr6-confirmation, jr6-confirmation-2; Jobright ats-submission-rules adp-workforcenow' },
+    ...(__PROVENANCE__ && { from: 'jr6-confirmation, jr6-confirmation-2; Jobright ats-submission-rules adp-workforcenow' }) },
   // ── jr6 ADP-10 (adapter part) and E-ADP (BUILD.md §4; apply-path B2): the job details ──
   // jr6-posting: <div class="job-description-data"> (the description; Jobright's job-card rule ADP2 reads its
   // div.job-description-data-item) and, in the details' header, <button id="recruitment_jobDescription_apply"
@@ -297,7 +303,7 @@ export const ADP_CONFIG: AtsConfig = {
   posting: { text: 'div.job-description-data',
     entry: 'button#recruitment_jobDescription_apply, button#recruitment_jobDescription_candidateApply, '
       + 'button#recruitment_jobDescription_complete',
-    from: 'jr6-posting, jr6-landing' },
+    ...(__PROVENANCE__ && { from: 'jr6-posting, jr6-landing' }) },
   // jr6 E-ADP (BUILD.md §4; apply-path B2, B3, B4): Apply draws the Privacy Policy pane in place, whose Consent &
   // Continue is the second entry press; the guest view is then drawn in place at the same address, up to 20 s later,
   // at any time the person presses them too (formInPlace).

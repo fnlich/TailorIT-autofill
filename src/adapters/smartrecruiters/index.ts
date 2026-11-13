@@ -586,7 +586,7 @@ function errors(root: Element): Array<{ el: Element; fieldKeyHint?: string }> {
  *  they say. */
 export const SMARTRECRUITERS_SUCCESS: SuccessRule = {
   css: 'oc-success-page [data-test="success-page"] h2[data-test="success-page-confirmation"]',
-  from: "jr7-smartrecruiter1-success; Jobright 1.25.2 ats-submission-rules 'smartrecruiters-application-success'",
+  ...(__PROVENANCE__ && { from: "jr7-smartrecruiter1-success; Jobright 1.25.2 ats-submission-rules 'smartrecruiters-application-success'" }),
 };
 
 /** The drawn sign of the application armed under `armedKey` (Adapter.successSigns), read only after an armed Submit

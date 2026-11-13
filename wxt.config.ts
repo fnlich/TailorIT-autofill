@@ -32,7 +32,9 @@ export default defineConfig({
   imports: false,
   vite: () => ({
     plugins: [react()],
-    define: { __E2E__: JSON.stringify(E2E), __TAILORIT_ORIGIN__: JSON.stringify(TAILORIT_ORIGIN) },
+    // jr7 INT-7: every build (chrome, edge, e2e) drops the configured rules' provenance (src/adapters/configured/types.ts;
+    // scripts/check-build.mjs PROVENANCE_NEEDLES); only Vitest keeps it (vitest.config.ts).
+    define: { __E2E__: JSON.stringify(E2E), __TAILORIT_ORIGIN__: JSON.stringify(TAILORIT_ORIGIN), __PROVENANCE__: 'false' },
   }),
   manifest: ({ mode }) => ({
     name: 'TailorIT Autofill',

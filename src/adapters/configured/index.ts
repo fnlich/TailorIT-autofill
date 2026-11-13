@@ -152,7 +152,7 @@ function labelsOf(control: Element): Element[] {
 function declOf(rule: WidgetRule, match: Element): WidgetDecl | null {
   const opener = rule.opener === undefined ? match : near(match, rule.opener);
   if (opener === null) return null;
-  const decl: WidgetDecl = { kind: rule.kind, opener: opener as HTMLElement, snapshot: rule.from };
+  const decl: WidgetDecl = { kind: rule.kind, opener: opener as HTMLElement, snapshot: rule.from ?? '' }; // jr7 INT-7
   if (rule.expanded !== undefined) {
     const expanded = near(match, rule.expanded);
     if (expanded !== null) decl.expanded = expanded;
@@ -549,8 +549,8 @@ export function configProblems(config: AtsConfig): string[] {
     if (from === undefined || from.trim() === '') problems.push(`${where}: no snapshot named (from)`);
   };
   need(config.root.from, 'root');
-  if (config.snapshots.length === 0) problems.push('snapshots: none named');
-  const lists: Array<[string, ReadonlyArray<{ from: string }> | undefined]> = [['states', config.states],
+  if ((config.snapshots ?? []).length === 0) problems.push('snapshots: none named'); // jr7 INT-7: provenance
+  const lists: Array<[string, ReadonlyArray<{ from?: string }> | undefined]> = [['states', config.states],
     ['questions', config.questions], ['required', config.required], ['sections', config.sections],
     ['widgets', config.widgets], ['checked', config.checked], ['proxies', config.proxies], ['uploads', config.uploads],
     ['repeatables', config.repeatables], ['neverPress', config.neverPress], ['excluded', config.excluded],

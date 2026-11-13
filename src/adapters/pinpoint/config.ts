@@ -41,9 +41,9 @@ export const PINPOINT_SNAPSHOTS = ['prophetx-form', 'prophetx-posting', 'prophet
 
 export const PINPOINT_CONFIG: AtsConfig = {
   platform: 'pinpoint',
-  snapshots: PINPOINT_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: PINPOINT_SNAPSHOTS }),
   parse: parsePinpointUrl,
-  root: { css: 'form#application-form', from: 'pinpoint-0' },
+  root: { css: 'form#application-form', ...(__PROVENANCE__ && { from: 'pinpoint-0' }) },
   questions: [
     // <div id="Shared::Form::Questions::Boolean-react-component-<uuid>"><div class="pad-v-3"><label class=
     // "external-form__label" for="…_0_boolean_answer"><span class="external-form__label--title
@@ -51,29 +51,32 @@ export const PINPOINT_CONFIG: AtsConfig = {
     // id="…_0_boolean_answer_true" aria-labelledby="answer-label-0-true">
     // Its radios are one group (groupOf), not the whole fieldset#application-fieldset-questions around every question.
     { container: 'div[id^="Shared::Form::Questions::"] > div.pad-v-3',
-      title: 'label.external-form__label > span.external-form__label--title', group: true, from: 'pinpoint-0' },
+      title: 'label.external-form__label > span.external-form__label--title', group: true,
+        ...(__PROVENANCE__ && { from: 'pinpoint-0' }) },
     // <div class="col-md-1-1"><div class="external-form__label"><div class="external-form__label--required">Résumé / CV
     // </div><span>Accepted file formats are .pdf and .docx</span></div><div id="Shared::Form::Filefield-react-component-…">
     { container: 'div.col-md-1-1:has(> div.external-form__label)', title: 'div.external-form__label > div',
-      help: 'div.external-form__label > span', from: 'pinpoint-0' },
+      help: 'div.external-form__label > span', ...(__PROVENANCE__ && { from: 'pinpoint-0' }) },
   ],
-  required: [{ is: '.external-form__label--required', from: 'pinpoint-0' }],
+  required: [{ is: '.external-form__label--required', ...(__PROVENANCE__ && { from: 'pinpoint-0' }) }],
   // jr7 RBP-7 (RBP7-20): <div class="… react-select …"><div class="react-select__control …">…<input
   // id="application_form_equality_monitoring_gender" inputmode="none" aria-readonly="true" role="combobox"
   // aria-expanded="false" class="…-dummyInput"> (jr7-pinpointhq1-form), beside the searchable input.react-select__input.
   widgets: [{ match: 'div.react-select input[role="combobox"]', kind: 'combobox',
     expanded: 'input[role="combobox"]', box: 'div.react-select__control', bridge: 'react-select',
-    from: 'pinpoint-0, jr7-pinpointhq1-form' }],
-  uploads: [{ input: 'input.file-field__input[type="file"]', control: 'label.file-field__label', from: 'pinpoint-0' }],
-  submit: { css: 'form#application-form button[type="submit"][name="button"]', from: 'pinpoint-0' },
+    ...(__PROVENANCE__ && { from: 'pinpoint-0, jr7-pinpointhq1-form' }) }],
+  uploads: [{ input: 'input.file-field__input[type="file"]', control: 'label.file-field__label',
+    ...(__PROVENANCE__ && { from: 'pinpoint-0' }) }],
+  submit: { css: 'form#application-form button[type="submit"][name="button"]',
+    ...(__PROVENANCE__ && { from: 'pinpoint-0' }) },
   neverPress: [
-    { css: 'a.external-button--linkedin', from: 'pinpoint-0' },
-    { css: 'button#application-save-later-link', from: 'pinpoint-0' },
-    { css: 'a[href*="/register-your-interest/"]', from: 'pinpoint-1' },
-    { css: 'a.external-panel__back-link', from: 'pinpoint-0' },
-    { css: 'button.cm__btn, button.pm__btn, a[data-cc]', from: 'pinpoint-1, pinpoint-2' },
+    { css: 'a.external-button--linkedin', ...(__PROVENANCE__ && { from: 'pinpoint-0' }) },
+    { css: 'button#application-save-later-link', ...(__PROVENANCE__ && { from: 'pinpoint-0' }) },
+    { css: 'a[href*="/register-your-interest/"]', ...(__PROVENANCE__ && { from: 'pinpoint-1' }) },
+    { css: 'a.external-panel__back-link', ...(__PROVENANCE__ && { from: 'pinpoint-0' }) },
+    { css: 'button.cm__btn, button.pm__btn, a[data-cc]', ...(__PROVENANCE__ && { from: 'pinpoint-1, pinpoint-2' }) },
   ],
-  success: { css: 'section#application-thanks', from: 'pinpoint-2' },
+  success: { css: 'section#application-thanks', ...(__PROVENANCE__ && { from: 'pinpoint-2' }) },
   posting: { text: '#external-jobs-show-description', entry: '#external-jobs-show-apply-now a.external-button',
-    from: 'pinpoint-1' },
+    ...(__PROVENANCE__ && { from: 'pinpoint-1' }) },
 };

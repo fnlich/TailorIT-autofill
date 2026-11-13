@@ -4,6 +4,11 @@
  * compose (configuredHooks). Pure types: nothing here runs. Every rule carries `from`, the snapshot id or fixture case
  * it was read from (`jazzhr-0`), so a selector always names the markup it relies on; a rule no snapshot shows is left
  * out, never guessed. Every selector is static code: no rule is ever fetched or changed at run time.
+ * jr7 INT-7 (the content script's budget): `from` and AtsConfig.snapshots are provenance, written as
+ * `...(__PROVENANCE__ && { from: '…' })`. Vitest defines __PROVENANCE__ true, so configProblems and every test read
+ * them all; every extension build (chrome, edge, e2e) defines it false, so the bundles hold none of them, which
+ * scripts/check-build.mjs asserts. Nothing at run time reads them. Optional in the types for that reason alone: a rule
+ * without its `from` is still a configProblems failure.
  *
  * What each rule becomes (./index.ts says how, hook by hook):
  * - parse: matchesUrl, canonicalApplicationUrl (the platform's own url.ts, also adapters/address.ts URL_PARSERS);
@@ -27,7 +32,8 @@ import type { Adapter, WidgetDecl } from '../types';
 
 /** A CSS selector, read from a snapshot. */
 export type Css = string;
-/** The snapshot id(s) a rule was read from (`jazzhr-0`, `adp-4, adp-5`), or the fixture case. Required on every rule. */
+/** The snapshot id(s) a rule was read from (`jazzhr-0`, `adp-4, adp-5`), or the fixture case. Required on every rule
+ *  (configProblems); provenance, so absent from the builds (the header). */
 export type From = string;
 
 /** The hooks a config builds: an Adapter without its identity and address reading. */
@@ -38,8 +44,8 @@ export interface AtsConfig {
    *  jr7's new ones (ukgready, paycom, jobdiva, eightfold), ahead of the contract until its API 7
    *  (PLATFORMS_AHEAD_OF_CONTRACT). */
   readonly platform: Platform;
-  /** The fixture cases the config was read from (fixtures/<platform>/<case>.html). */
-  readonly snapshots: readonly string[];
+  /** The fixture cases the config was read from (fixtures/<platform>/<case>.html). Provenance (the header). */
+  readonly snapshots?: readonly string[];
   /** The platform's pure address reading (its url.ts): posting, application or confirmation, and the canonical
    *  application URL the key is hashed from; null for any other page of the host (the content script stays dormant). */
   readonly parse: (url: URL) => ApplicationUrl | null;
@@ -53,7 +59,7 @@ export interface AtsConfig {
   /** The application's form root: the first element (document-wide) a person can see that matches `css` and holds
    *  `holds`, when given. An element, not necessarily a <form> (ADP, Paylocity, UltiPro, HiBob, Dayforce have no single
    *  form). Waited for up to quirks.formLateMs. */
-  readonly root: { readonly css: Css; readonly holds?: Css; readonly from: From };
+  readonly root: { readonly css: Css; readonly holds?: Css; readonly from?: From };
   /** Questions the page does not tie to their control. The first rule whose container holds the control wins. */
   readonly questions?: readonly QuestionRule[];
   /** Required where no attribute says it: a mark inside the question's title or container, or a class on them. */
@@ -65,24 +71,24 @@ export interface AtsConfig {
   /** Hidden native radios or checkboxes a visible element stands for, where no tied label qualifies (proxyFor): the
    *  first `proxy` inside the input's nearest `scope` ancestor (absent: the input's nearest `proxy` ancestor, else one
    *  inside its parent). */
-  readonly proxies?: readonly { readonly input: Css; readonly proxy: Css; readonly scope?: Css; readonly from: From }[];
+  readonly proxies?: readonly { readonly input: Css; readonly proxy: Css; readonly scope?: Css; readonly from?: From }[];
   readonly uploads?: readonly UploadRule[];
   readonly repeatables?: readonly RepeatableRule[];
   /** Absent: a one-page form, final when Submit shows. */
   readonly steps?: StepRule;
   /** The Submit control, document-wide (BambooHR's and Dayforce's sit outside their roots). Identified so the fill
    *  never presses it; pressed only through the existing gates (the panel's Submit door, the modes, a challenge check). */
-  readonly submit?: { readonly css: Css; readonly from: From };
+  readonly submit?: { readonly css: Css; readonly from?: From };
   /** Document-wide never-press controls (résumé parsers, Apply with LinkedIn/Indeed, Finish later, cookie buttons).
    *  Every entry control (posting.entry, a state's entry) and steps.back are never pressed by a run either, without
    *  being listed here. */
-  readonly neverPress?: readonly { readonly css: Css; readonly from: From }[];
+  readonly neverPress?: readonly { readonly css: Css; readonly from?: From }[];
   /** Parts of the root that hold no question (Adapter.excluded): résumé parsers, paste editors, review summaries. */
-  readonly excluded?: readonly { readonly css: Css; readonly from: From }[];
+  readonly excluded?: readonly { readonly css: Css; readonly from?: From }[];
   /** Field errors shown by the page inside the root (besides aria-invalid, which the generic reading keeps). */
-  readonly errors?: { readonly css: Css; readonly from: From };
+  readonly errors?: { readonly css: Css; readonly from?: From };
   /** The page's own busy signs (Adapter.isBusy): ClearCompany's "Saving...", Dayforce's loading Next. */
-  readonly busy?: readonly { readonly css: Css; readonly from: From }[];
+  readonly busy?: readonly { readonly css: Css; readonly from?: From }[];
   /** What the page shows once an application was sent, drawn in the form's place (a confirmation page the parse reads
    *  as 'confirmation' needs no sign). Read only after a Submit was pressed (content/submitted.ts, unchanged rules:
    *  new, shown where the form was, never inside the posting text). v5 p2-detect: a SuccessRule (adapters/success.ts),
@@ -90,7 +96,7 @@ export interface AtsConfig {
   readonly success?: SuccessRule;
   /** The posting's own text (postingText) and, on a posting page with no form, the one control that opens the
    *  application (entryControl), pressed only by the agent's entry door, never by a run (entryNeverPressed). */
-  readonly posting?: { readonly text?: Css; readonly entry?: Css; readonly from: From };
+  readonly posting?: { readonly text?: Css; readonly entry?: Css; readonly from?: From };
   /** The page saves each change before Submit (Adapter.autosaves). */
   readonly autosaves?: boolean;
   readonly quirks?: Adapter['quirks'];
@@ -134,7 +140,7 @@ export interface PageState {
    *  follows Sign-in mode (Adapter.signInContainer; ADP's guest Continue, UltiPro's Create account). */
   readonly signInContainer?: SignInContainerRule;
   // ── end core pass Z1, items 24 and 27 ──
-  readonly from: From;
+  readonly from?: From;
 }
 
 /** Core pass Z1, item 24: a state's sign-in container (SignInForm.container), each slot a selector: `container` and
@@ -181,7 +187,7 @@ export interface QuestionRule {
   readonly help?: Css;
   /** The container is one question's checkbox (or nameless radio) group: Adapter.groupOf. */
   readonly group?: true;
-  readonly from: From;
+  readonly from?: From;
 }
 
 export interface RequiredRule {
@@ -191,7 +197,7 @@ export interface RequiredRule {
   /** The question's title or container, the control's own labels, or an ancestor of the control, itself says required
    *  (`label.Mui-required`, `div.form-group.form-required`). */
   readonly is?: Css;
-  readonly from: From;
+  readonly from?: From;
 }
 
 export interface SectionRule {
@@ -199,7 +205,7 @@ export interface SectionRule {
   /** Its heading: the first match inside the container that is no nested container's. */
   readonly heading: Css;
   readonly kind?: 'experience' | 'education' | 'language';
-  readonly from: From;
+  readonly from?: From;
 }
 
 /** A widget the scanner does not find by standard ARIA, or finds without what it needs. Maps to WidgetDecl. Every
@@ -233,7 +239,7 @@ export interface WidgetRule {
   readonly hidesFormWhileOpen?: boolean;
   readonly emptyAfterMs?: number;
   readonly bridge?: WidgetDecl['bridge'];
-  readonly from: From;
+  readonly from?: From;
 }
 
 export interface CheckedRule {
@@ -242,7 +248,7 @@ export interface CheckedRule {
    *  (`label.ant-radio-wrapper` / `.ant-radio-wrapper-checked`; `label.brd-label` / `.selected`). */
   readonly holder: Css;
   readonly chosen: Css;
-  readonly from: From;
+  readonly from?: From;
 }
 
 export interface UploadRule {
@@ -271,7 +277,7 @@ export interface UploadRule {
    *  by ENGINE's reveal door alone (dom/fillers/not-submit.ts, FIXPLAN §6.2 item 9), while the input is hidden and the
    *  link shows inside the rule's area; it stays in neverPress for every other path. Types only until ENGINE E2. */
   readonly reveal?: Css;
-  readonly from: From;
+  readonly from?: From;
 }
 
 export interface RepeatableRule {
@@ -284,7 +290,7 @@ export interface RepeatableRule {
   /** A block's own Save, where the page keeps an entry only once it is pressed. */
   readonly save?: Css;
   readonly currentlyHere?: Css;
-  readonly from: From;
+  readonly from?: From;
 }
 
 export interface StepRule {
@@ -300,5 +306,5 @@ export interface StepRule {
   readonly next: Css;
   /** Back: never pressed. */
   readonly back?: Css;
-  readonly from: From;
+  readonly from?: From;
 }

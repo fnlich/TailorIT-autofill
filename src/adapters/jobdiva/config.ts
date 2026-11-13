@@ -54,28 +54,29 @@ export const JOBDIVA_PHONE_PATTERN = '##########';
 /** The rules, each naming its snapshot. */
 const RULES: AtsConfig = {
   platform: 'jobdiva',
-  snapshots: JOBDIVA_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: JOBDIVA_SNAPSHOTS }),
   parse: parseJobDivaUrl,
   states: [
     // JDV-7: the choice of how to apply, while Quick Apply's dialog is not open; its entry (Quick Apply (No Account),
     // by its words) is the code's entryControl, pressed by the agent's entry door alone.
     { name: 'entry-choice', when: `body:not(:has(${QUICK_APPLY})) ${CHOICE}`, auth: 'entry-choice',
-      from: 'jr7-jobdiva1-choice, jr7-jobdiva2-choice' },
+      ...(__PROVENANCE__ && { from: 'jr7-jobdiva1-choice, jr7-jobdiva2-choice' }) },
   ],
   // JDV-3: the dialog's body while it holds the form or an EEO step (div.job-app-main); none on the posting, the
   // choice and the confirmation, whose body holds the "Thank you!" row instead.
   root: { css: `${QUICK_APPLY} .modal-body-main`, holds: '.job-app-main',
-    from: 'jr7-jobdiva1-quick-apply, jr7-jobdiva2-quick-apply, jr7-jobdiva2-eeo, jr7-jobdiva2-veteran' },
+    ...(__PROVENANCE__ && { from: 'jr7-jobdiva1-quick-apply, jr7-jobdiva2-quick-apply, jr7-jobdiva2-eeo, jr7-jobdiva2-veteran' }) },
   questions: [
     // JDV-4: <div class="jd-form-layout"><label class="jd-label">First Name<span class="jd-text-red ml-1">*</span>
     // </label><input class="form-control jd-form" type="text" required> (no for, no id); the Phone's and the résumé's
     // the same (Jobright's ~contents/sites/jobdiva/rules extractRules reads the layout's label so).
-    { container: '.jd-form-layout', title: ':scope > label.jd-label', from: 'jr7-jobdiva2-quick-apply' },
+    { container: '.jd-form-layout', title: ':scope > label.jd-label',
+      ...(__PROVENANCE__ && { from: 'jr7-jobdiva2-quick-apply' }) },
     // JDV-9: <div class="radio-buttons-div"><div class="eeo-label">Sex<span class="eeo-label-mandatory">*</span>
     // </div><div class="radio-button"><input type="radio" name="gender"><span class="radio-buttons-label">Female
     // </span></div>…: the title names the group alone (code labelFor), the option's words are its span.
     { container: '.radio-buttons-div', title: ':scope > .eeo-label', group: true,
-      from: 'jr7-jobdiva2-eeo, jr7-jobdiva2-veteran' },
+      ...(__PROVENANCE__ && { from: 'jr7-jobdiva2-eeo, jr7-jobdiva2-veteran' }) },
   ],
   // No required rule: each title's own star (span.jd-text-red, span.eeo-label-mandatory: "*") ends the title's words,
   // which the label reading takes as the required mark (dom/labels.ts cleanLabel), the résumé's and the EEO groups'
@@ -86,7 +87,7 @@ const RULES: AtsConfig = {
   // operations uploadResume).
   uploads: [{ input: '.jd-dropzone input[type="file"]', control: '.jd-dropzone', area: '.jd-form-layout',
     done: '.jd-dropzone-filecard', name: '.jd-dropzone-filecard > span:first-child',
-    from: 'jr7-jobdiva2-quick-apply, jr7-jobdiva2-quick-apply-filled' }],
+    ...(__PROVENANCE__ && { from: 'jr7-jobdiva2-quick-apply, jr7-jobdiva2-quick-apply-filled' }) }],
   steps: {
     // JDV-8 with JDV-V2: both EEO steps' heading reads "EEO Form" and no progress shows, so the radios' own name
     // (gender on the first, veteran on the second) tells them apart; Jobright keys its JobDiva page by the dialog's
@@ -96,39 +97,45 @@ const RULES: AtsConfig = {
     // Next and Save (button.btn.jd-btn); never Back or Cancel (button.jd-btn-outline, open or not).
     next: `${STEP_BUTTONS} button.btn.jd-btn`,
     back: '#quickApplyModal .job-app-btns button.jd-btn-outline',
-    from: 'jr7-jobdiva2-quick-apply, jr7-jobdiva2-eeo, jr7-jobdiva2-veteran',
+    ...(__PROVENANCE__ && { from: 'jr7-jobdiva2-quick-apply, jr7-jobdiva2-eeo, jr7-jobdiva2-veteran' }),
   },
   // JDV-7: Submit Application (button.jd-btn-mobile, as Jobright's ats-submission rule "jobdiva" names it), read with
   // its words by the code below. The EEO steps follow it in place (JDV-8).
-  submit: { css: `${STEP_BUTTONS} button.jd-btn-mobile`, from: 'jr7-jobdiva2-quick-apply, jr7-jobdiva2-quick-apply-filled' },
+  submit: { css: `${STEP_BUTTONS} button.jd-btn-mobile`,
+    ...(__PROVENANCE__ && { from: 'jr7-jobdiva2-quick-apply, jr7-jobdiva2-quick-apply-filled' }) },
   neverPress: [
     // JDV-14: the cancel dialog ("Yes, cancel application" is a button.jd-btn-mobile, as Submit is; "No, keep going").
-    { css: '#confirmCancelModal button', from: 'jr7-jobdiva1-posting' },
+    { css: '#confirmCancelModal button', ...(__PROVENANCE__ && { from: 'jr7-jobdiva1-posting' }) },
     // The choice's buttons: its account choices and Cancel. Its Quick Apply (No Account) is the entry door's alone
     // (entryNeverPressed: that one element).
-    { css: '#applyOptionsModal button', from: 'jr7-jobdiva1-choice, jr7-jobdiva2-choice' },
+    { css: '#applyOptionsModal button', ...(__PROVENANCE__ && { from: 'jr7-jobdiva1-choice, jr7-jobdiva2-choice' }) },
     // Apply Now, the entry door's alone; the header's Search Jobs, Sign In and Register With Us; Job List.
-    { css: APPLY_NOW, from: 'jr7-jobdiva1-posting, jr7-jobdiva2-posting' },
-    { css: 'a.jd-nav-label, .jd-jobnav a, .jd-jobnav button', from: 'jr7-jobdiva2-posting' },
+    { css: APPLY_NOW, ...(__PROVENANCE__ && { from: 'jr7-jobdiva1-posting, jr7-jobdiva2-posting' }) },
+    { css: 'a.jd-nav-label, .jd-jobnav a, .jd-jobnav button', ...(__PROVENANCE__ && { from: 'jr7-jobdiva2-posting' }) },
     // The confirmation's Return to Open Jobs, the success sign's companion.
-    { css: '#quickApplyModal .modal-body-main .container-fluid > .row button', from: 'jr7-jobdiva2-confirmation' },
+    { css: '#quickApplyModal .modal-body-main .container-fluid > .row button',
+      ...(__PROVENANCE__ && { from: 'jr7-jobdiva2-confirmation' }) },
     // The résumé card's second span (its remove).
-    { css: '.jd-dropzone-filecard > span:not(:first-child)', from: 'jr7-jobdiva2-quick-apply-filled' },
+    { css: '.jd-dropzone-filecard > span:not(:first-child)',
+      ...(__PROVENANCE__ && { from: 'jr7-jobdiva2-quick-apply-filled' }) },
     // The hidden "Security check" dialog's own controls (JDV-13: a challenge; never pressed for the person).
-    { css: '[role="dialog"][aria-label="Security check"] button', from: 'jr7-jobdiva1-posting' },
+    { css: '[role="dialog"][aria-label="Security check"] button',
+      ...(__PROVENANCE__ && { from: 'jr7-jobdiva1-posting' }) },
   ],
   // JDV-V3: a section of the form still loading draws a spinner in the dialog (jr7-jobdiva1-quick-apply: <div
   // class="spinner-border spinner-border-sm" role="status"><span class="sr-only">Loading...</span>; gone 3.5 minutes
   // later, jr7-jobdiva1-quick-apply-later).
-  busy: [{ css: `${QUICK_APPLY} .spinner-border[role="status"]`, from: 'jr7-jobdiva1-quick-apply' }],
+  busy: [{ css: `${QUICK_APPLY} .spinner-border[role="status"]`,
+    ...(__PROVENANCE__ && { from: 'jr7-jobdiva1-quick-apply' }) }],
   // JDV-10 (the verifier's correction): the confirmation's cell, its words the agency's own ("Thank you!" here;
   // Jobright's rule "jobdiva" reads "You've applied! Good luck!", which this agency's misses), beside its Return to
   // Open Jobs, in the open Quick Apply dialog; read only after the run's own Submit (content/submitted.ts).
   success: { css: `${QUICK_APPLY} .modal-body-main .container-fluid > .row > .col-12.text-center.font-weight-bold`,
     text: /\S/, companion: { css: 'button.jd-btn-outline', text: /^Return to Open Jobs$/i },
-    from: 'jr7-jobdiva2-confirmation; Jobright 1.25.2 ats-submission rule jobdiva (its selector)' },
+    ...(__PROVENANCE__ && { from: 'jr7-jobdiva2-confirmation; Jobright 1.25.2 ats-submission rule jobdiva (its selector)' }) },
   // The posting's text: the column after its description's title (jr7-jobdiva{1,2}-posting: one match each).
-  posting: { text: '.col-12:has(> .jd-desc-title) + .col-12.notranslate', from: 'jr7-jobdiva1-posting, jr7-jobdiva2-posting' },
+  posting: { text: '.col-12:has(> .jd-desc-title) + .col-12.notranslate',
+    ...(__PROVENANCE__ && { from: 'jr7-jobdiva1-posting, jr7-jobdiva2-posting' }) },
   // JDV-7: Apply Now draws the choice in place, whose Quick Apply draws the form in place (two presses, one address);
   // the dialog's form may come late (a section loading: JDV-V3).
   quirks: { entryPresses: 2, formInPlace: true, formLateMs: 20_000 },

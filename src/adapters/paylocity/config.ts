@@ -30,41 +30,46 @@ const INPUT_SELECT = 'div.pcty-input-select-full-container[aria-haspopup="listbo
 /** The rules, each naming its snapshot. */
 const RULES: AtsConfig = {
   platform: 'paylocity',
-  snapshots: PAYLOCITY_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: PAYLOCITY_SNAPSHOTS }),
   parse: parsePaylocityUrl,
   // No <form>: #app holds the step (#appDetailDiv) and the footer (#appFooterDiv), where the last step's questions, its
   // acknowledgement and every step's buttons sit.
   root: { css: '#app', holds: 'p.progress-header',
-    from: 'sourcepass-step2-eeo, sourcepass-step3-identity, sourcepass-step4-review' },
+    ...(__PROVENANCE__ && { from: 'sourcepass-step2-eeo, sourcepass-step3-identity, sourcepass-step4-review' }) },
   questions: [
     // A DropdownList's question is a sibling <label> with no for, in the same div.form-group.
-    { container: 'div.form-group', title: ':scope > label', from: 'sourcepass-step2-eeo, sourcepass-step4-review' },
+    { container: 'div.form-group', title: ':scope > label',
+      ...(__PROVENANCE__ && { from: 'sourcepass-step2-eeo, sourcepass-step4-review' }) },
     // An input-select's question: inside its wrapper, the label's own span (that label[for] wraps the whole widget, its
     // chosen value too), else the sibling <label> before the wrapper; its help, "Select from the provided list or add
     // your own".
     { container: 'div[type="dropdown-wrapper"][data-automation-id$="-wrapper"]',
       title: 'span[data-automation-id$="-label-span"]', titleBefore: 'label', help: 'span[data-automation-id$="-footnote"]',
-      from: 'sourcepass-step3-identity' },
+      ...(__PROVENANCE__ && { from: 'sourcepass-step3-identity' }) },
   ],
   widgets: [
     // react-widgets' DropdownList: a role=combobox div that owns its listbox (aria-owns), rendered once it is opened and
     // then kept hidden in the widget (sourcepass-step3-identity, -step4-review; absent before, sourcepass-step2-eeo); it
     // shows its answer in div.rw-input ("--" for none). Declared, so the widget helpers open it and choose from it.
     { match: 'div.rw-dropdownlist[role="combobox"]', kind: 'combobox', expanded: 'div.rw-dropdownlist[role="combobox"]',
-      from: 'sourcepass-step2-eeo, sourcepass-step3-identity, sourcepass-step4-review' },
+      ...(__PROVENANCE__ && { from: 'sourcepass-step2-eeo, sourcepass-step3-identity, sourcepass-step4-review' }) },
     // Paylocity's input-select; its own text box is the widget's part, never a field of its own.
-    { match: INPUT_SELECT, root: true, kind: 'combobox', parts: 'input', from: 'sourcepass-step3-identity' },
+    { match: INPUT_SELECT, root: true, kind: 'combobox', parts: 'input',
+      ...(__PROVENANCE__ && { from: 'sourcepass-step3-identity' }) },
   ],
   sections: [
     // Each step page's h2 ("Equal Employment Opportunity", "Optional Identity Questions", "My Information"), and on
     // the EEO step each of its three blocks' h2 (the veteran and the disability forms): without them a question falls
     // under the nearest h3 before it, one of the forms' explanations ("How Do You Know if You Are a Veteran Protected by
     // VEVRAA?", "Sensitive Data Message").
-    { container: '#appDetailDiv [id^="pcty-wr-"]', heading: 'h2', from: 'sourcepass-step2-eeo, sourcepass-step3-identity' },
-    { container: '#pcty-wr-eeopage > div > span', heading: 'h2', from: 'sourcepass-step2-eeo' },
+    { container: '#appDetailDiv [id^="pcty-wr-"]', heading: 'h2',
+      ...(__PROVENANCE__ && { from: 'sourcepass-step2-eeo, sourcepass-step3-identity' }) },
+    { container: '#pcty-wr-eeopage > div > span', heading: 'h2',
+      ...(__PROVENANCE__ && { from: 'sourcepass-step2-eeo' }) },
     // The last step's footer sections, div.section-heading, which no heading rule reads ("Work Authorization",
     // "Acknowledgement").
-    { container: '#appFooterDiv span:has(div.section-heading)', heading: 'div.section-heading', from: 'sourcepass-step4-review' },
+    { container: '#appFooterDiv span:has(div.section-heading)', heading: 'div.section-heading',
+      ...(__PROVENANCE__ && { from: 'sourcepass-step4-review' }) },
   ],
   steps: {
     progress: 'p.progress-header span.type-bold',
@@ -75,18 +80,21 @@ const RULES: AtsConfig = {
     // Next and Submit share the id btn-submit: their data-automation-id tells them apart.
     next: '#appFooterDiv button[data-automation-id="btnNext"]',
     back: '#appFooterDiv button#btn-previous',
-    from: 'sourcepass-step2-eeo, sourcepass-step3-identity, sourcepass-step4-review',
+    ...(__PROVENANCE__ && { from: 'sourcepass-step2-eeo, sourcepass-step3-identity, sourcepass-step4-review' }),
   },
-  submit: { css: '#appFooterDiv button[data-automation-id="btnSubmit"]', from: 'sourcepass-step4-review' },
+  submit: { css: '#appFooterDiv button[data-automation-id="btnSubmit"]',
+    ...(__PROVENANCE__ && { from: 'sourcepass-step4-review' }) },
   neverPress: [
     // The résumé parser ("Apply with resume", in a hidden modal outside #app).
-    { css: 'button[data-automation-id="btn-forceResume"]', from: 'sourcepass-step2-eeo' },
+    { css: 'button[data-automation-id="btn-forceResume"]', ...(__PROVENANCE__ && { from: 'sourcepass-step2-eeo' }) },
     // The review's Edit buttons and its "Edit Application".
     { css: '[data-automation-id="information-section"] div.button.form-button, '
-      + '[data-automation-id="eeo-section"] div.button.form-button', from: 'sourcepass-step4-review' },
-    { css: '#appFooterDiv a:has(> i.icon-edit)', from: 'sourcepass-step4-review' },
-    { css: 'button.react-share__ShareButton', from: 'sourcepass-step2-eeo' },
-    { css: '#onetrust-accept-btn-handler, #onetrust-pc-btn-handler, .onetrust-close-btn-handler', from: 'sourcepass-step2-eeo' },
+      + '[data-automation-id="eeo-section"] div.button.form-button',
+        ...(__PROVENANCE__ && { from: 'sourcepass-step4-review' }) },
+    { css: '#appFooterDiv a:has(> i.icon-edit)', ...(__PROVENANCE__ && { from: 'sourcepass-step4-review' }) },
+    { css: 'button.react-share__ShareButton', ...(__PROVENANCE__ && { from: 'sourcepass-step2-eeo' }) },
+    { css: '#onetrust-accept-btn-handler, #onetrust-pc-btn-handler, .onetrust-close-btn-handler',
+      ...(__PROVENANCE__ && { from: 'sourcepass-step2-eeo' }) },
   ],
 };
 

@@ -96,10 +96,10 @@ const DOCUMENTS_DIALOG_CSS = 'div#AttachmentsChangedModal[role="dialog" i]';
 /** The rules the configured layer builds hooks from, each naming its snapshot. */
 export const ULTIPRO_CONFIG: AtsConfig = {
   platform: 'ultipro',
-  snapshots: ['register', 'resume-review', 'application',
+  ...(__PROVENANCE__ && { snapshots: ['register', 'resume-review', 'application',
     // jr7 ULTIPRO-7: snapshot7's (fixtures/ultipro/jr7-ultipro{1,2}-*).
     'jr7-ultipro1-posting', 'jr7-ultipro2-posting', 'jr7-ultipro1-register', 'jr7-ultipro2-register', 'jr7-ultipro1-apply-1',
-    'jr7-ultipro2-apply-1', 'jr7-ultipro1-apply-11', 'jr7-ultipro1-submitted', 'jr7-ultipro2-submitted'],
+    'jr7-ultipro2-apply-1', 'jr7-ultipro1-apply-11', 'jr7-ultipro1-submitted', 'jr7-ultipro2-submitted'] }),
   parse: parseUltiproAddress, // jr7 ULTIPRO-7 (UP7-01): with the page after submitting
   matchesUrl,
   states: [
@@ -110,55 +110,64 @@ export const ULTIPRO_CONFIG: AtsConfig = {
     // (neverPress below). The application is not sent until it is answered. No root and no Next: while it shows,
     // nothing is filled and nothing pressed (final 'unknown'); the person answers it. Jobright has no rule for it (no
     // AttachmentsChanged reference in its bundles).
-    { name: 'documents-dialog', when: DOCUMENTS_DIALOG_CSS, from: 'jr7-ultipro1-apply-11' },
+    { name: 'documents-dialog', when: DOCUMENTS_DIALOG_CSS, ...(__PROVENANCE__ && { from: 'jr7-ultipro1-apply-11' }) },
     // ── end jr7 ULTIPRO-7 (UP7-07) ──
     // ultipro-2: <body class="authcode-controller candidate-layout white-background"> ... <form method="post"
     // id="registrationDetailsForm" ...> with three <ukg-field>s.
     { name: 'register', when: 'body.authcode-controller form#registrationDetailsForm',
-      root: 'body.authcode-controller form#registrationDetailsForm', from: 'ultipro-2' },
+      root: 'body.authcode-controller form#registrationDetailsForm', ...(__PROVENANCE__ && { from: 'ultipro-2' }) },
     // ultipro-1: the review, its Contact Information first.
     { name: 'review', when: `#OpportunityApply ${REVIEW} [data-automation="contact-information-section"]`,
       root: `#OpportunityApply ${REVIEW}`,
       // ultipro-1: <div class="actions"><button data-bind="click: save, ..." class="btn btn-primary"
       // data-automation="save-button">Save and continue</button><button ... type="button" class="btn btn-link"
       // data-automation="cancel-button">Cancel</button></div>.
-      next: `#OpportunityApply ${REVIEW} .actions > button.btn-primary[data-automation="save-button"]`, from: 'ultipro-1' },
+      next: `#OpportunityApply ${REVIEW} .actions > button.btn-primary[data-automation="save-button"]`,
+        ...(__PROVENANCE__ && { from: 'ultipro-1' }) },
   ],
   // ultipro-0: <div id="OpportunityApply" ...> holding every panel and <ukg-button data-automation="btn-submit" ...>.
-  root: { css: '#OpportunityApply', holds: 'ukg-button[data-automation="btn-submit"]', from: 'ultipro-0' },
+  root: { css: '#OpportunityApply', holds: 'ukg-button[data-automation="btn-submit"]',
+    ...(__PROVENANCE__ && { from: 'ultipro-0' }) },
   // ultipro-0, -1: <label for="FirstName" class="control-label required" ...>; <label for="Country" class="control-label
   // required" ...> over <select ... id="Country"> with no required attribute.
-  required: [{ is: 'label.control-label.required', from: 'ultipro-0, ultipro-1' }],
+  required: [{ is: 'label.control-label.required', ...(__PROVENANCE__ && { from: 'ultipro-0, ultipro-1' }) }],
   sections: [
     // ultipro-0: <div role="region" ... class="panel panel-transparent" aria-label="Contact Information"> ... <h2
     // class="collapsible-panel-title" data-automation="panel-title" ...>Contact Information</h2>; <div role="region"
     // id="AppDocuments" data-automation="application-documents" ...> ... <h2>Documents</h2>; <div role="region"
     // data-automation="questions-panel" ...> ... <h2 class="clickable-header">Questions</h2>.
-    { container: '#OpportunityApply div[role="region" i]', heading: 'h2', from: 'ultipro-0, ultipro-1' },
+    { container: '#OpportunityApply div[role="region" i]', heading: 'h2',
+      ...(__PROVENANCE__ && { from: 'ultipro-0, ultipro-1' }) },
   ],
   // ultipro-0: <ukg-button data-automation="btn-submit" data-bind="text: submitButtonText, click: save, ...">Submit
   // </ukg-button>, its shadow root's <button aria-label="Submit" class="ukg-button-native" ... type="button">.
-  submit: { css: '#OpportunityApply ukg-button[data-automation="btn-submit"]', from: 'ultipro-0' },
+  submit: { css: '#OpportunityApply ukg-button[data-automation="btn-submit"]',
+    ...(__PROVENANCE__ && { from: 'ultipro-0' }) },
   neverPress: [
     // ultipro-0: <a class="btn btn-link" data-automation="btn-cancel" href=".../OpportunityDetail?...">Cancel</a>;
     // ultipro-1: the review's Cancel; every panel editor's Cancel.
-    { css: 'a[data-automation="btn-cancel"], button[data-automation="cancel-button"]', from: 'ultipro-0, ultipro-1' },
+    { css: 'a[data-automation="btn-cancel"], button[data-automation="cancel-button"]',
+      ...(__PROVENANCE__ && { from: 'ultipro-0, ultipro-1' }) },
     // ultipro-0: <button type="button" class="btn-link p-0" data-automation="application-incorrect-name-text-signout-link">.
-    { css: '[data-automation="application-incorrect-name-text-signout-link"]', from: 'ultipro-0' },
+    { css: '[data-automation="application-incorrect-name-text-signout-link"]',
+      ...(__PROVENANCE__ && { from: 'ultipro-0' }) },
     // ultipro-0, -1: a skill's <button ... data-automation="remove-button" aria-label="Remove ...">, a review item's
     // "Delete Work Experience <N>"; a document's <a ... data-automation="delete-file-link" role="button" ...>.
-    { css: 'button[data-automation="remove-button"], a[data-automation="delete-file-link"]', from: 'ultipro-0, ultipro-1' },
+    { css: 'button[data-automation="remove-button"], a[data-automation="delete-file-link"]',
+      ...(__PROVENANCE__ && { from: 'ultipro-0, ultipro-1' }) },
     // The résumé parser (ultipro-0, -1, hidden in both): <div id="ResumeParsingUploader"
     // data-automation="resumeparsinguploader-container"> holds its upload (<upload-button params="... uploadUrl:
     // '.../Documents/UploadResume?...'"><form ...><input type="file" ...><label role="button" ...
     // data-automation="upload-file-btn" ...>) and <select data-automation="existing-resume-selector">, and also the
     // review the parse leads to (ultipro-1), so its upload and its choice alone are never pressed, not the container.
-    { css: '#ResumeParsingUploader upload-button, [data-automation="existing-resume-selector"]', from: 'ultipro-0, ultipro-1' },
+    { css: '#ResumeParsingUploader upload-button, [data-automation="existing-resume-selector"]',
+      ...(__PROVENANCE__ && { from: 'ultipro-0, ultipro-1' }) },
     // The navigation (ultipro-0 to -2) and the accessibility banner.
     { css: '#OpportunitiesMenuButton, #CandidatePresenceMenuButton, #profile-button-menu, #language-picker-link, #SignInButton',
-      from: 'ultipro-0, ultipro-2' },
-    { css: '[data-automation="accessibility-banner-link"], [data-automation="accessibility-banner-dismiss"]', from: 'ultipro-0' },
-    { css: '#EEOCModalLink', from: 'ultipro-0' },
+      ...(__PROVENANCE__ && { from: 'ultipro-0, ultipro-2' }) },
+    { css: '[data-automation="accessibility-banner-link"], [data-automation="accessibility-banner-dismiss"]',
+      ...(__PROVENANCE__ && { from: 'ultipro-0' }) },
+    { css: '#EEOCModalLink', ...(__PROVENANCE__ && { from: 'ultipro-0' }) },
     // ultipro-2's Create account is the register state's sign-in container's button (core pass Z1, item 24:
     // registerContainer), pressed by Sign-in Auto's door alone.
     // ── jr7 ULTIPRO-7 ──
@@ -166,19 +175,19 @@ export const ULTIPRO_CONFIG: AtsConfig = {
     // btn-primary" data-automation="attachments-modal-yes" data-bind="... click: willUpdateCandidateDocuments">, <button
     // class="btn btn-default" data-automation="attachments-modal-no" ... willNotUpdateCandidateDocuments>): the person's.
     { css: 'button[data-automation="attachments-modal-yes"], button[data-automation="attachments-modal-no"]',
-      from: 'jr7-ultipro1-apply-11' },
+      ...(__PROVENANCE__ && { from: 'jr7-ultipro1-apply-11' }) },
     // UP7-09: the posting's Apply menu (Jobright's createUltiproEntryAdapter leaves #apply-menu-button out of its entry)
     // and LinkedIn's apply widget (jr7-ultipro1-posting, -2-posting: <div class="linkedIn-container"
     // data-automation="awli-widget-container">).
     { css: '#apply-menu-button, [data-automation="awli-widget-container"]',
-      from: 'jr7-ultipro1-posting, jr7-ultipro2-posting' },
+      ...(__PROVENANCE__ && { from: 'jr7-ultipro1-posting, jr7-ultipro2-posting' }) },
     // ── end jr7 ULTIPRO-7 ──
   ],
   // ultipro-0: <div data-automation="application-errors" aria-live="polite"><div class="validation-summary-errors"
   // role="alert" data-automation="error-messages" style="display: none;">; a field's <span class="help-block"
   // id="FirstNameError" data-automation="firstName-error" ...>, hidden while it holds none.
   errors: { css: 'div.validation-summary-errors[data-automation="error-messages"], span.help-block[id$="Error"]',
-    from: 'ultipro-0' },
+    ...(__PROVENANCE__ && { from: 'ultipro-0' }) },
   // ── jr6 ULTIPRO P1 (FIXPLAN §6.10) ──
   excluded: [
     // U-06, now part (Decision 16; owner question Q3 decides whether a run ever uses the parser): the résumé parser's
@@ -187,15 +196,16 @@ export const ULTIPRO_CONFIG: AtsConfig = {
     // data-automation="upload-file-input"> and <select data-automation="existing-resume-selector">, and <div
     // data-bind="if: isParsingResume()">, the review). Every child but the review: the review is the review state's
     // own root, never excluded (a root's ancestor is never one of its parts either).
-    { css: '#ResumeParsingUploader > :not([data-bind="if: isParsingResume()"])', from: 'ultipro-0, ultipro-1' },
+    { css: '#ResumeParsingUploader > :not([data-bind="if: isParsingResume()"])',
+      ...(__PROVENANCE__ && { from: 'ultipro-0, ultipro-1' }) },
     // The parser's list of résumés already uploaded, wherever a page draws it (ultipro-0: <select
     // data-automation="existing-resume-selector"> under "Choose a file that you have already uploaded.").
-    { css: 'select[data-automation="existing-resume-selector"]', from: 'ultipro-0' },
+    { css: 'select[data-automation="existing-resume-selector"]', ...(__PROVENANCE__ && { from: 'ultipro-0' }) },
     // U-12: each uploaded document's row in Documents (ultipro-0: <div id="Documents" data-bind="with: { application:
     // ... }"> ... <div class="file row hidden-print" data-automation="file-row"> with its select-document-checkbox,
     // file-type select and file-description box, each labelled by the file's name): the person's own files, kept as
     // they are. The panel's "Upload a file" input stays a field.
-    { css: '#Documents div[data-automation="file-row"]', from: 'ultipro-0' },
+    { css: '#Documents div[data-automation="file-row"]', ...(__PROVENANCE__ && { from: 'ultipro-0' }) },
   ],
   // Apply-path C3 (SP\jr6\audit\apply-c.md; APPLYPLAN D5, BUILD §4 ULTIPRO): #OpportunityApply is drawn after UKG's
   // sign-in round trip (its account step's returnUrl), later than the content script starts: its root is looked for
@@ -211,13 +221,15 @@ export const ULTIPRO_CONFIG: AtsConfig = {
   // the visible, enabled apply-now-button host, never #apply-menu-button), a disabled host left out. Its press arms the
   // person's grant that carries across UKG's sign-in to the Register and the application (the verifier's measure).
   posting: { entry: '.apply-btns-container ukg-button[data-automation="apply-now-button"]:not(#apply-menu-button)'
-    + ':not([disabled]):not([aria-disabled="true" i])', from: 'jr7-ultipro1-posting, jr7-ultipro2-posting' },
+    + ':not([disabled]):not([aria-disabled="true" i])',
+      ...(__PROVENANCE__ && { from: 'jr7-ultipro1-posting, jr7-ultipro2-posting' }) },
   // UP7-01, UP7-V2: the page after submitting (url.ts confirmationAfter reads its address; jr7-ultipro1-submitted,
   // -2-submitted): <div id="ApplicationSubmitted"><div class="row"><!-- ko ifnot: application.HasAssessment() --> its
   // h1[data-automation="header"] and subheader <!-- /ko --><!-- ko if: application.HasAssessment() --><!-- /ko -->.
   // The sign is the view itself shown, not its words: an application with an assessment draws the other branch, whose
   // words neither capture shows. Jobright never confirms an UltiPro application (its ats-rules: ultipro, success: []).
-  success: { css: '#ApplicationSubmitted', from: 'jr7-ultipro1-submitted, jr7-ultipro2-submitted' },
+  success: { css: '#ApplicationSubmitted',
+    ...(__PROVENANCE__ && { from: 'jr7-ultipro1-submitted, jr7-ultipro2-submitted' }) },
   // ── end jr7 ULTIPRO-7 ──
 };
 

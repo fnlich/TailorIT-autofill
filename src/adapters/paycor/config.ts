@@ -30,36 +30,39 @@ export const PAYCOR_SNAPSHOTS = ['regard-form'] as const;
 
 export const PAYCOR_CONFIG: AtsConfig = {
   platform: 'paycor',
-  snapshots: PAYCOR_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: PAYCOR_SNAPSHOTS }),
   parse: parsePaycorUrl,
-  root: { css: 'div.gnewtonSubmitResume', holds: 'form#gnewtonForm', from: 'paycor-0' },
+  root: { css: 'div.gnewtonSubmitResume', holds: 'form#gnewtonForm', ...(__PROVENANCE__ && { from: 'paycor-0' }) },
   questions: [
     // <form id="uploadResume" class="gnewtonSectionClass"><input id="uploadResumeInput" type="file" style="position:
     // absolute;left:-1000000em;"><dl><dt class="gnewtonSectionTitleClass"><span class="gnewtonStar …"><img alt="*">
     // </span>Apply with a Resume</dt>…
-    { container: 'form#uploadResume', title: 'dt.gnewtonSectionTitleClass', from: 'paycor-0' },
+    { container: 'form#uploadResume', title: 'dt.gnewtonSectionTitleClass',
+      ...(__PROVENANCE__ && { from: 'paycor-0' }) },
     // <dl><dt class="gnewtonSectionTitleClass">Comments</dt><dd><div class="gnewtonQuestionInputClass"><textarea
     // id="originalComments">; <dd><div class="gnewtonFieldClass">By checking this box, …</div><div
     // class="gnewtonQuestionLabelClass"><span class="gnewtonStar">…</span><label>Acceptance</label></div><div
     // class="gnewtonQuestionInputClass"><div><input type="checkbox" name="ccpaDisclaimerAgree"> I have read and agree …
     { container: 'dd:has(> div.gnewtonQuestionInputClass)', title: 'div.gnewtonQuestionLabelClass > label',
-      titleBefore: 'dt.gnewtonSectionTitleClass', help: 'div.gnewtonFieldClass', from: 'paycor-0' },
+      titleBefore: 'dt.gnewtonSectionTitleClass', help: 'div.gnewtonFieldClass',
+        ...(__PROVENANCE__ && { from: 'paycor-0' }) },
   ],
-  required: [{ mark: 'span.gnewtonStar', from: 'paycor-0' }],
+  required: [{ mark: 'span.gnewtonStar', ...(__PROVENANCE__ && { from: 'paycor-0' }) }],
   uploads: [{ input: 'input#uploadResumeInput[type="file"]', control: 'label#resumeDropLocalFile',
     area: 'div#gnewtonCareerBody', done: '#resumeDropped', pending: '#resumeDropping', failed: '#fileUploadErrorMessage',
     // The behaviour review of 2026-11-06 (M2), paycor-0: <div id="resumeDropped"><div class="bar"><span
     // class="filename">(the file's name)</span><a class="closeBtn" ...>remove</a>. The area stays div#gnewtonCareerBody:
     // the failure message, div#fileUploadErrorMessage, is its child beside the upload's own form#uploadResume.
-    name: 'span.filename', from: 'paycor-0' }],
-  submit: { css: 'button[ns-qa="submitBtn"]', from: 'paycor-0' },
-  busy: [{ css: '#submitSpinner', from: 'paycor-0' }, { css: '#resumeDropping', from: 'paycor-0' }],
+    name: 'span.filename', ...(__PROVENANCE__ && { from: 'paycor-0' }) }],
+  submit: { css: 'button[ns-qa="submitBtn"]', ...(__PROVENANCE__ && { from: 'paycor-0' }) },
+  busy: [{ css: '#submitSpinner', ...(__PROVENANCE__ && { from: 'paycor-0' }) }, { css: '#resumeDropping',
+    ...(__PROVENANCE__ && { from: 'paycor-0' }) }],
   neverPress: [
-    { css: 'div.button.newtonStoreReset', from: 'paycor-0' },
-    { css: '#google_drive_button, #dropbox_button', from: 'paycor-0' },
-    { css: '#resumeDropped a.closeBtn', from: 'paycor-0' },
-    { css: '#gnewtonBackToHome a', from: 'paycor-0' },
-    { css: '.ns-popover-go-to-job, .ns-popover-cancel-button', from: 'paycor-0' },
-    { css: '#gnewtonLogo a', from: 'paycor-0' },
+    { css: 'div.button.newtonStoreReset', ...(__PROVENANCE__ && { from: 'paycor-0' }) },
+    { css: '#google_drive_button, #dropbox_button', ...(__PROVENANCE__ && { from: 'paycor-0' }) },
+    { css: '#resumeDropped a.closeBtn', ...(__PROVENANCE__ && { from: 'paycor-0' }) },
+    { css: '#gnewtonBackToHome a', ...(__PROVENANCE__ && { from: 'paycor-0' }) },
+    { css: '.ns-popover-go-to-job, .ns-popover-cancel-button', ...(__PROVENANCE__ && { from: 'paycor-0' }) },
+    { css: '#gnewtonLogo a', ...(__PROVENANCE__ && { from: 'paycor-0' }) },
   ],
 };

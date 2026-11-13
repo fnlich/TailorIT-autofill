@@ -54,16 +54,16 @@ const PHONE_CODE = '[data-testid="phone_number-code"]';
 /** The rules alone: every hook the configured layer builds from them, for `code` below to extend (as JazzHR's). */
 const RULES: AtsConfig = {
   platform: 'rippling',
-  snapshots: RIPPLING_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: RIPPLING_SNAPSHOTS }),
   parse: parseRipplingUrl,
-  root: { css: 'main#main-content form', from: 'rippling-0 to -3' },
+  root: { css: 'main#main-content form', ...(__PROVENANCE__ && { from: 'rippling-0 to -3' }) },
   questions: [
     // The phone field holds the code's own nested field (no label) and the number; its span#field-35-label is the
     // question for both: <div data-testid="field"><div><span id="field-35-label">Phone number</span><span>*</span>
     // </div><div>…<div data-testid="field">…<div data-testid="phone_number-code">…<input role="combobox" aria-label=
     // "Search">…<input aria-labelledby="field-35-label" data-testid="input-phone_number">
     { container: `${FIELD}:has(> div > span[id$="-label"]):has(${PHONE_CODE})`, title: 'span[id$="-label"]',
-      from: 'rippling-0, rippling-2' },
+      ...(__PROVENANCE__ && { from: 'rippling-0, rippling-2' }) },
     // <div class="marginY--36"><div class="paddingX--16"><div class="marginBottom--4"><p>What are your Salary
     // Expectations for the role?<div class="css-18yxg8r"></div></p>…<div data-testid="field">…<input aria-required="true">
     // jr7 RBP-7 (RBP7-07, the adapter half; FIX7PLAN §3.3's label contract; snapshot7 rippling1's "Truth
@@ -71,41 +71,45 @@ const RULES: AtsConfig = {
     // class="marginBottom--4"><div>I certify that … Please acknowledge this by typing your full name in the text
     // field.</div></div>, is the question's description, from which RULES-7 (jr7-rules-r2) reads a typed-name signature.
     { container: 'div.marginY--36', title: 'div.marginBottom--4 > p', help: 'div.marginBottom--4 + div',
-      from: 'rippling-2; jr7-rippling1-apply-blank' },
+      ...(__PROVENANCE__ && { from: 'rippling-2; jr7-rippling1-apply-blank' }) },
     // <div class="paddingX--16"><p>Check <strong>Yes</strong> or <strong>No</strong> to indicate …</p>
     // <div data-testid="field">…<div role="radiogroup" data-testid="sms_opt_in">
-    { container: `${FIELD}:has([data-testid="sms_opt_in"])`, titleBefore: 'p', from: 'rippling-0 to -3' },
+    { container: `${FIELD}:has([data-testid="sms_opt_in"])`, titleBefore: 'p',
+      ...(__PROVENANCE__ && { from: 'rippling-0 to -3' }) },
     // <div data-testid="field"><div><span id="field-8-label">Résumé</span><span>*</span></div><div>…
     // <label data-testid="resume" aria-labelledby="file-input-10 field-8-label"><input type="File" data-testid=
     // "input-resume"><button data-testid="test_button">Drop or select (.doc / .docx / .pdf)</button></label>
-    { container: `${FIELD}:has(input[type="file" i])`, title: 'span[id$="-label"]', from: 'rippling-0, rippling-2' },
+    { container: `${FIELD}:has(input[type="file" i])`, title: 'span[id$="-label"]',
+      ...(__PROVENANCE__ && { from: 'rippling-0, rippling-2' }) },
   ],
   // The star a person sees after a field's label span (rippling-0, -2: <span class="css-1av554z eun831x2">*</span>),
   // the only mark on the résumé, whose input says nothing.
-  required: [{ mark: 'span[id$="-label"] + span', from: 'rippling-0, rippling-2' }],
+  required: [{ mark: 'span[id$="-label"] + span', ...(__PROVENANCE__ && { from: 'rippling-0, rippling-2' }) }],
   widgets: [{ match: 'div[role="radiogroup"][data-testid="sms_opt_in"]', root: true, kind: 'radio',
-    members: 'div[role="radio"]', parts: 'input[type="radio"]', from: 'rippling-0 to -3' }],
+    members: 'div[role="radio"]', parts: 'input[type="radio"]', ...(__PROVENANCE__ && { from: 'rippling-0 to -3' }) }],
   uploads: [{ input: 'input[type="file" i][data-testid="input-resume"], input[type="file" i][data-testid="input-cover_letter"]',
     control: 'label[data-testid="resume"], label[data-testid="cover_letter"]', area: FIELD,
     done: '[data-testid="chip"]',
     // The behaviour review of 2026-11-06 (M2), rippling-2 (smartsuite-uploaded): the chip's <div id="chip-<n>-content"
     // ...><div ...>(the file's name)</div></div>, the same words as its "Preview file : <name>" button's aria-label.
-    name: 'div[id^="chip-"][id$="-content"]', from: 'rippling-0, rippling-2' }],
-  submit: { css: 'form button[type="submit"][data-testid="Apply"]', from: 'rippling-0 to -3' },
+    name: 'div[id^="chip-"][id$="-content"]', ...(__PROVENANCE__ && { from: 'rippling-0, rippling-2' }) }],
+  submit: { css: 'form button[type="submit"][data-testid="Apply"]',
+    ...(__PROVENANCE__ && { from: 'rippling-0 to -3' }) },
   neverPress: [
-    { css: 'button[data-testid="Exit to job board"]', from: 'rippling-0 to -3' },
-    { css: 'main#main-content form a[href*="/apply?"]', from: 'rippling-2, rippling-3' },
-    { css: 'a[href^="https://app.rippling.com/legal/"]', from: 'rippling-0 to -3' },
-    { css: '[data-testid="chip"] [role="button"]', from: 'rippling-0' },
-    { css: 'a[role="link"][data-testid^="/"]', from: 'rippling-4' },
-    { css: 'span[role="button"][aria-label^="Share on"]', from: 'rippling-4' },
+    { css: 'button[data-testid="Exit to job board"]', ...(__PROVENANCE__ && { from: 'rippling-0 to -3' }) },
+    { css: 'main#main-content form a[href*="/apply?"]', ...(__PROVENANCE__ && { from: 'rippling-2, rippling-3' }) },
+    { css: 'a[href^="https://app.rippling.com/legal/"]', ...(__PROVENANCE__ && { from: 'rippling-0 to -3' }) },
+    { css: '[data-testid="chip"] [role="button"]', ...(__PROVENANCE__ && { from: 'rippling-0' }) },
+    { css: 'a[role="link"][data-testid^="/"]', ...(__PROVENANCE__ && { from: 'rippling-4' }) },
+    { css: 'span[role="button"][aria-label^="Share on"]', ...(__PROVENANCE__ && { from: 'rippling-4' }) },
   ],
-  posting: { text: 'div.ATS_htmlPreview', entry: 'button[data-testid="Apply now"]', from: 'rippling-4' },
+  posting: { text: 'div.ATS_htmlPreview', entry: 'button[data-testid="Apply now"]',
+    ...(__PROVENANCE__ && { from: 'rippling-4' }) },
   // jr7 RBP-7 (RBP7-04; snapshot7 rippling1, rippling2: fixtures/rippling/jr7-rippling{1,2}-confirmation): <main
   // id="main-content">…<div data-testid="action-card">…<h5>You have successfully applied for <title></h5> ("to" on
   // rippling2). Read only after an armed Apply (content/submitted.ts); the address is the first sign (url.ts).
   success: { css: 'main#main-content [data-testid="action-card"] h5', text: /^You have successfully applied (?:to|for)\s+\S/,
-    from: 'jr7-rippling1-confirmation, jr7-rippling2-confirmation' },
+    ...(__PROVENANCE__ && { from: 'jr7-rippling1-confirmation, jr7-rippling2-confirmation' }) },
   // v5 p2-fill: rippling-0 and -2 (smartsuite-uploaded, qu-careers-form): the résumé's help, "The résumé will be parsed
   // to fill in the application details".
   quirks: { resumeParse: true },

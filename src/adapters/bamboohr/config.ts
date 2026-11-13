@@ -50,29 +50,31 @@ const FILE_UPLOAD = 'div[data-fabric-component="FileUpload"]';
 /** The rules alone: every hook the configured layer builds from them, for `code` below to extend (as JazzHR's). */
 const RULES: AtsConfig = {
   platform: 'bamboohr',
-  snapshots: BAMBOOHR_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: BAMBOOHR_SNAPSHOTS }),
   parse: parseBambooHrUrl,
-  root: { css: 'form#job-application-form', from: 'bamboohr-0 to -2' },
+  root: { css: 'form#job-application-form', ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
   questions: [
     // <div data-fabric-component="SelectField InputWrapper"><div class="…SelectField-label-labelWrapper"><label class="…
     // Mui-required …" for="fab-select<n>">State<span aria-hidden="true" class="MuiFormLabel-asterisk"> *</span></label>
     // …<div class="fab-Select" data-fabric-component="Select">…<button class="fab-SelectToggle" data-menu-id="fab-menu66">
-    { container: SELECT_FIELD, title: 'label', from: 'bamboohr-0 to -2' },
+    { container: SELECT_FIELD, title: 'label', ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
     // jr7 RBP-7 (RBP7-13): <div data-fabric-component="Flex"><p data-fabric-component="BodyText">Resume*</p><div
     // data-fabric-component="FileUpload">…<button type="button">…<span>Choose File*</span></button>…<p
     // data-fabric-component="BodyText">No file selected</p>…<input type="file" aria-label="file-input" required="">
     { container: `div[data-fabric-component="Flex"]:has(> ${FILE_UPLOAD})`, title: 'p[data-fabric-component="BodyText"]',
-      from: 'jr7-bamboohr1-form-blank, jr7-bamboohr2-form-blank' },
+      ...(__PROVENANCE__ && { from: 'jr7-bamboohr1-form-blank, jr7-bamboohr2-form-blank' }) },
   ],
-  required: [{ is: 'label.Mui-required', from: 'bamboohr-0 to -2' }],
+  required: [{ is: 'label.Mui-required', ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) }],
   widgets: [{ match: `${SELECT_FIELD} div.fab-Select`, root: true, kind: 'combobox', opener: 'button.fab-SelectToggle',
-    expanded: 'button.fab-SelectToggle', parts: 'select.chzn-ignore', from: 'bamboohr-0 to -2' }],
+    expanded: 'button.fab-SelectToggle', parts: 'select.chzn-ignore',
+      ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) }],
   // jr7 RBP-7 (RBP7-13): the résumé's hidden input, its "Choose File*" toggle (never pressed by a run), and the page's
   // list of the file it holds (<div data-fabric-component="FileUploadList">, bamboohr2's filled capture).
   uploads: [{ input: `${FILE_UPLOAD} input[type="file"]`, control: 'div[data-fabric-component="FileUploadToggle"] button',
     area: FILE_UPLOAD, done: '[data-fabric-component="FileUploadList"]',
-    from: 'jr7-bamboohr1-form-blank, jr7-bamboohr2-form-blank, jr7-bamboohr2-form-filled' }],
-  submit: { css: 'button[type="submit"][form="job-application-form"]', from: 'bamboohr-0 to -2' },
+    ...(__PROVENANCE__ && { from: 'jr7-bamboohr1-form-blank, jr7-bamboohr2-form-blank, jr7-bamboohr2-form-filled' }) }],
+  submit: { css: 'button[type="submit"][form="job-application-form"]',
+    ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
   // v5 p2-detect: Jobright 1.25.2's rule 'bamboohr-confirmation' (its ats-submission-rules), read as its behaviour: a
   // paragraph saying the application was submitted beside a "Thank You" heading in the same block, drawn where the form
   // was (fixtures/synthetic/success/bamboohr.html). jr7 RBP-7 (RBP7-10 = AUTO7-07): snapshot7 bamboohr1 and bamboohr2
@@ -81,21 +83,24 @@ const RULES: AtsConfig = {
   // rule (an h3) misses too, so the companion is either heading.
   success: { css: 'p', text: /^Your application was submitted successfully[.!]?$/,
     companion: { css: 'h2, h3', text: /^Thank You$/ },
-    from: "Jobright 1.25.2 ats-submission-rules 'bamboohr-confirmation'; jr7-bamboohr1-confirmation, jr7-bamboohr2-confirmation" },
+    ...(__PROVENANCE__ && { from: "Jobright 1.25.2 ats-submission-rules 'bamboohr-confirmation'; jr7-bamboohr1-confirmation, jr7-bamboohr2-confirmation" }) },
   neverPress: [
-    { css: '[data-fabric-component="ActionFooter"] button[data-fabric-component="TextButton"]', from: 'bamboohr-0 to -2' },
-    { css: 'button[data-bi-id="careers-site-view-description-button"]', from: 'bamboohr-0 to -2' },
-    { css: 'button[aria-label^="Share "]', from: 'bamboohr-0 to -2' },
-    { css: 'button[aria-label="Dismiss slidedown"]', from: 'bamboohr-0 to -2' },
-    { css: 'button[aria-label="remove file"]', from: 'bamboohr-0 to -2' },
-    { css: 'button[aria-label="Clear Selection"]', from: 'bamboohr-0 to -2' },
-    { css: '[data-fabric-component="DatePicker"] button[aria-haspopup="dialog"]', from: 'bamboohr-0 to -2' },
-    { css: 'a[data-fabric-component="TextButton"]', from: 'bamboohr-0 to -2' },
+    { css: '[data-fabric-component="ActionFooter"] button[data-fabric-component="TextButton"]',
+      ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
+    { css: 'button[data-bi-id="careers-site-view-description-button"]',
+      ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
+    { css: 'button[aria-label^="Share "]', ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
+    { css: 'button[aria-label="Dismiss slidedown"]', ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
+    { css: 'button[aria-label="remove file"]', ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
+    { css: 'button[aria-label="Clear Selection"]', ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
+    { css: '[data-fabric-component="DatePicker"] button[aria-haspopup="dialog"]',
+      ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
+    { css: 'a[data-fabric-component="TextButton"]', ...(__PROVENANCE__ && { from: 'bamboohr-0 to -2' }) },
   ],
   // jr7 RBP-7 (RBP7-11): <div class="BambooRichText">…</div> and <button type="button"
   // data-bi-id="careers-site-apply-button" data-fabric-component="Button"><span>Apply for This Job</span></button>.
   posting: { text: 'div.BambooRichText', entry: 'button[data-bi-id="careers-site-apply-button"]',
-    from: 'jr7-bamboohr1-posting, jr7-bamboohr2-posting' },
+    ...(__PROVENANCE__ && { from: 'jr7-bamboohr1-posting, jr7-bamboohr2-posting' }) },
   // jr7 RBP-7 (RBP7-12): the form drawn in place at the posting's address (module header).
   quirks: { formInPlace: true },
 };

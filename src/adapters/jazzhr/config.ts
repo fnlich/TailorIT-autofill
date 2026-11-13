@@ -76,58 +76,66 @@ const LABEL_ERROR = '.resumator_label_error';
 
 const RULES: AtsConfig = {
   platform: 'jazzhr',
-  snapshots: [...JAZZHR_SNAPSHOTS, ...JAZZHR_JR7_SNAPSHOTS],
+  ...(__PROVENANCE__ && { snapshots: [...JAZZHR_SNAPSHOTS, ...JAZZHR_JR7_SNAPSHOTS] }),
   parse: parseJazzhrUrl,
-  root: { css: 'form#form_submit_new_resume', from: 'jazzhr-0 to -4, jr6-centroid-form' },
+  root: { css: 'form#form_submit_new_resume', ...(__PROVENANCE__ && { from: 'jazzhr-0 to -4, jr6-centroid-form' }) },
   questions: [
     // <div class="form-group"><label id="resumator-questionnaire-q<q>-label" for="resumator-questionnaire-q<q>"
     // class="control-label">…<i class="asterisk">*</i></label><label class="checkbox" for="resumator-checkbox-<q>-1">
     // <input type="checkbox" name="resumator-checkbox-<q>-1" class="resumator-questionnaire-checkbox">Yes</label>…
     { container: 'div.form-group:has(input.resumator-questionnaire-checkbox)', title: 'label.control-label', group: true,
-      from: 'jazzhr-3, jazzhr-4' },
+      ...(__PROVENANCE__ && { from: 'jazzhr-3, jazzhr-4' }) },
     // jr7 BOARDS-7 (J7-JZ-3): the classic layout's checkbox question, one question of its boxes (each its own name):
     // <div id="resumator-q<q>" class="resumator-field-wrapper resumator-resume-text"><div class="resumator-label ...">
     // <question></div><div id="resumator-q<q>-field" class="resumator-input"><label class="checkbox" for=
     // "resumator-checkbox-<q>-<n>"><input type="checkbox" class="resumator-questionnaire-checkbox" ...>…</label>…
     // (jr7-applytojob1-form, -form-b: nine boxes), before JZ-1's rule, which would title each box alone.
     { container: 'div.resumator-field-wrapper:has(input.resumator-questionnaire-checkbox):not(.form-group *)',
-      title: 'div.resumator-label', group: true, from: 'jr7-applytojob1-form, jr7-applytojob1-form-b' },
+      title: 'div.resumator-label', group: true,
+        ...(__PROVENANCE__ && { from: 'jr7-applytojob1-form, jr7-applytojob1-form-b' }) },
     // jr6 JZ-1, JZ-5: <div class="resumator-field-wrapper resumator-resume-text" id="resumator-firstname"><div
     // class="resumator-label resumator-resume-text" id="resumator-firstname-label">First name*</div><div
     // id="resumator-firstname-field" class="resumator-input"><input type="text" id="resumator-firstname-value" …>.
     { container: 'div.resumator-field-wrapper:not(.form-group *):not(#resumator-address):not(#resumator-recaptcha)',
-      title: 'div.resumator-label', from: 'jr6-centroid-form' },
+      title: 'div.resumator-label', ...(__PROVENANCE__ && { from: 'jr6-centroid-form' }) },
   ],
   // jr6 JZ-4 (see the header): the reveal is FIXPLAN §3.1 item 19, read by ENGINE's reveal door (E2).
   uploads: [{ input: '#resumator-resume-value', control: '#resumator-choose-upload', area: '#resumator-resume',
-    reveal: '#resumator-choose-upload', from: 'jr6-centroid-form; Jobright 1.25.2 JazzHR operations uploadResume' }],
+    reveal: '#resumator-choose-upload',
+      ...(__PROVENANCE__ && { from: 'jr6-centroid-form; Jobright 1.25.2 JazzHR operations uploadResume' }) }],
   submit: { css: 'form#form_submit_new_resume :is(#resumator-submit-resume, #resumator-submit-resume-button)',
-    from: 'jazzhr-0 to -3, jr6-centroid-form; Jobright 1.25.2 JazzHR submission rule' },
+    ...(__PROVENANCE__ && { from: 'jazzhr-0 to -3, jr6-centroid-form; Jobright 1.25.2 JazzHR submission rule' }) },
   // v5 p2-detect: the page after submitting, in no snapshot (jazzhr/url.ts reads its address, /apply/confirm/<code>):
   // Jobright 1.25.2's rule 'jazzhr-application-received' (its ats-submission-rules), read as its behaviour: a centred
   // heading or the page's title saying the application was received (fixtures/synthetic/success/jazzhr.html).
   success: { css: 'h1.text-center, h2.page-title', text: /^Your application has been received\.$/,
-    from: "Jobright 1.25.2 ats-submission-rules 'jazzhr-application-received'" },
+    ...(__PROVENANCE__ && { from: "Jobright 1.25.2 ats-submission-rules 'jazzhr-application-received'" }) },
   // v5 p1-rules (PLAN decision 9): JazzHR's CAPTCHA-required error, from Jobright 1.25.2's reading (module header).
-  errors: { css: '#recaptcha-required-error', from: 'Jobright 1.25.2 submission rules (not seen live)' },
-  busy: [{ css: 'div#resumator-submit:not(:has(#resumator-submit-resume))', from: 'jazzhr-4' }],
+  errors: { css: '#recaptcha-required-error',
+    ...(__PROVENANCE__ && { from: 'Jobright 1.25.2 submission rules (not seen live)' }) },
+  busy: [{ css: 'div#resumator-submit:not(:has(#resumator-submit-resume))',
+    ...(__PROVENANCE__ && { from: 'jazzhr-4' }) }],
   neverPress: [
-    { css: '#resumator-mobile-apply-button', from: 'jazzhr-0 to -4' },
-    { css: 'a[data-test="job-board-responsive-share"]', from: 'jazzhr-0 to -4' },
-    { css: '#resumator-back-button', from: 'jazzhr-0 to -4' },
-    { css: '#resumator-resume-switch-paste, #resumator-resume-switch-upload', from: 'jazzhr-0 to -4' },
+    { css: '#resumator-mobile-apply-button', ...(__PROVENANCE__ && { from: 'jazzhr-0 to -4' }) },
+    { css: 'a[data-test="job-board-responsive-share"]', ...(__PROVENANCE__ && { from: 'jazzhr-0 to -4' }) },
+    { css: '#resumator-back-button', ...(__PROVENANCE__ && { from: 'jazzhr-0 to -4' }) },
+    { css: '#resumator-resume-switch-paste, #resumator-resume-switch-upload',
+      ...(__PROVENANCE__ && { from: 'jazzhr-0 to -4' }) },
     // jr6 JZ-4: "Attach resume" is also the upload's reveal, pressed by the reveal door alone (uploads above).
-    { css: '#resumator-choose-upload, #resumator-choose-paste, #resumator-two-stage-change-resume', from: 'jazzhr-0 to -4' },
-    { css: '#tracking-consent-banner button', from: 'jazzhr-0 to -4' },
-    { css: '#resumator-logo', from: 'jazzhr-0 to -4' },
+    { css: '#resumator-choose-upload, #resumator-choose-paste, #resumator-two-stage-change-resume',
+      ...(__PROVENANCE__ && { from: 'jazzhr-0 to -4' }) },
+    { css: '#tracking-consent-banner button', ...(__PROVENANCE__ && { from: 'jazzhr-0 to -4' }) },
+    { css: '#resumator-logo', ...(__PROVENANCE__ && { from: 'jazzhr-0 to -4' }) },
     // jr6 JZ-13 (header).
-    { css: '#resumator-cancel-resume', from: 'jr6-centroid-form' },
-    { css: '#resumator-apply-with-indeed-wrapper', from: 'jr6-centroid-form' },
+    { css: '#resumator-cancel-resume', ...(__PROVENANCE__ && { from: 'jr6-centroid-form' }) },
+    { css: '#resumator-apply-with-indeed-wrapper', ...(__PROVENANCE__ && { from: 'jr6-centroid-form' }) },
   ],
   // jr6 JZ-5: "Paste resume"'s box, hidden until chosen (both layouts), is no question of the form.
-  excluded: [{ css: '#resumator-resume-paste-wrapper', from: 'jazzhr-0 to -4, jr6-centroid-form' }],
+  excluded: [{ css: '#resumator-resume-paste-wrapper',
+    ...(__PROVENANCE__ && { from: 'jazzhr-0 to -4, jr6-centroid-form' }) }],
   // jr6 JZ-12: the classic layout's description is div#resumator-job-description (jr6-centroid-form).
-  posting: { text: '#job-description, #resumator-job-description', from: 'jazzhr-0 to -4, jr6-centroid-form' },
+  posting: { text: '#job-description, #resumator-job-description',
+    ...(__PROVENANCE__ && { from: 'jazzhr-0 to -4, jr6-centroid-form' }) },
 };
 
 /** The hooks the rules build, for the code below to extend. */
@@ -142,7 +150,7 @@ const ruled = configuredHooks(RULES);
 export const JAZZHR_RECEIVED: SuccessRule = {
   css: 'body#resumator-jobboard-screen section.submit_success',
   companion: { css: 'p', text: /\breceived your application\b/i, scope: 'section.submit_success' },
-  from: 'jr7-applytojob1-confirmation',
+  ...(__PROVENANCE__ && { from: 'jr7-applytojob1-confirmation' }),
 };
 // ── end jr7 BOARDS-7 ──
 

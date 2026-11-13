@@ -32,28 +32,30 @@ const UPLOAD_QUESTION = 'div.form-group:has(> fieldset)';
 
 export const CAREERPLUG_CONFIG: AtsConfig = {
   platform: 'careerplug',
-  snapshots: CAREERPLUG_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: CAREERPLUG_SNAPSHOTS }),
   parse: parseCareerPlugUrl,
-  root: { css: 'form#new_app', from: 'careerplug-0, careerplug-1' },
-  sections: [{ container: 'div.eeoc-area', heading: 'p.eeoc-title', from: 'careerplug-0' }],
+  root: { css: 'form#new_app', ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) },
+  sections: [{ container: 'div.eeoc-area', heading: 'p.eeoc-title', ...(__PROVENANCE__ && { from: 'careerplug-0' }) }],
   questions: [
     // <div class="form-group"><label class="form-label control-label">Resume/CV *</label><fieldset class="resume-area">
     // <div class="file-area collapse in" data-name="Resume">…<label for="app_has_attachments_attributes_0_attachment">
     // <div class="file-area__text">Upload File</div></label>…<input type="file" id="app_has_attachments_attributes_0_…">
-    { container: UPLOAD_QUESTION, title: 'label.form-label', from: 'careerplug-0, careerplug-1' },
+    { container: UPLOAD_QUESTION, title: 'label.form-label',
+      ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) },
   ],
   uploads: [{ input: 'input[type="file"][id^="app_has_attachments_attributes_"]',
     control: 'label[for^="app_has_attachments_attributes_"][for$="_attachment"]', area: UPLOAD_QUESTION,
-    done: 'div.file-result-area.in', from: 'careerplug-0, careerplug-1' }],
-  excluded: [{ css: 'div.file-area__paste-content', from: 'careerplug-0, careerplug-1' }],
-  submit: { css: 'form#new_app input[type="submit"][name="commit"]', from: 'careerplug-0, careerplug-1' },
+    done: 'div.file-result-area.in', ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) }],
+  excluded: [{ css: 'div.file-area__paste-content', ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) }],
+  submit: { css: 'form#new_app input[type="submit"][name="commit"]',
+    ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) },
   neverPress: [
-    { css: 'div.indeed-apply-widget, .ia-btn-div', from: 'careerplug-0, careerplug-1' },
-    { css: 'a[href*="?loc=es"]', from: 'careerplug-0, careerplug-1' },
-    { css: 'a[aria-label^="Share"]', from: 'careerplug-0, careerplug-1' },
-    { css: 'a[href$="/account"]', from: 'careerplug-0, careerplug-1' },
-    { css: 'a.remove[aria-label="Remove file"]', from: 'careerplug-0, careerplug-1' },
-    { css: 'a.paste-link', from: 'careerplug-0, careerplug-1' },
+    { css: 'div.indeed-apply-widget, .ia-btn-div', ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) },
+    { css: 'a[href*="?loc=es"]', ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) },
+    { css: 'a[aria-label^="Share"]', ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) },
+    { css: 'a[href$="/account"]', ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) },
+    { css: 'a.remove[aria-label="Remove file"]', ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) },
+    { css: 'a.paste-link', ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) },
   ],
-  posting: { text: 'div.job-description-container', from: 'careerplug-0, careerplug-1' },
+  posting: { text: 'div.job-description-container', ...(__PROVENANCE__ && { from: 'careerplug-0, careerplug-1' }) },
 };

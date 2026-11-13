@@ -30,8 +30,9 @@ export interface SuccessRule {
    *  hiding ancestor carries data-old-aria-hidden) counts as shown; every other kind of hiding still hides, and the
    *  rule's words and companion are still required. Types only until ENGINE E2 (FIXPLAN §6.2 item 10). */
   readonly underModal?: string;
-  /** Where the rule was read: Jobright's rule (its id, in its ats-submission-rules), a snapshot or a fixture. */
-  readonly from: string;
+  /** Where the rule was read: Jobright's rule (its id, in its ats-submission-rules), a snapshot or a fixture.
+   *  Provenance: written `...(__PROVENANCE__ && { from: '…' })`, absent from the builds (configured/types.ts). */
+  readonly from?: string;
 }
 
 // ── jr6 ENGINE E2 (FIXPLAN §6.2 item 10, ADP-6) ──

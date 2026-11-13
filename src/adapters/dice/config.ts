@@ -41,42 +41,46 @@ const CARD_TITLE = ':scope > div.mb-2 > span.inline.font-medium';
 /** The rules, each naming its snapshot. */
 const RULES: AtsConfig = {
   platform: 'dice',
-  snapshots: DICE_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: DICE_SNAPSHOTS }),
   parse: parseDiceUrl,
-  root: { css: WIZARD, from: 'a-step2, b-step1, d-review' },
+  root: { css: WIZARD, ...(__PROVENANCE__ && { from: 'a-step2, b-step1, d-review' }) },
   // The select's question is a span[slot=label] (its star the required mark); its trigger is labelled by its chosen
   // value and that span together, so the question is read from its group instead.
-  questions: [{ container: SELECT_GROUP, title: 'span[slot="label"]', from: 'a-step2' }],
+  questions: [{ container: SELECT_GROUP, title: 'span[slot="label"]', ...(__PROVENANCE__ && { from: 'a-step2' }) }],
   // The step's h2 ("Resume & Cover Letter", "Additional Information", "Review your application"): without it a field
   // falls under the nearest heading before it, the "Learn more" disclosure's h3 for the city (a-step2).
-  sections: [{ container: WIZARD, heading: 'h2', from: 'a-step2, b-step1, d-review' }],
+  sections: [{ container: WIZARD, heading: 'h2', ...(__PROVENANCE__ && { from: 'a-step2, b-step1, d-review' }) }],
   widgets: [
     { match: SELECT_GROUP, root: true, kind: 'combobox', opener: 'button[aria-haspopup="listbox"]',
-      expanded: 'button[aria-haspopup="listbox"]', parts: 'select', from: 'a-step2' },
+      expanded: 'button[aria-haspopup="listbox"]', parts: 'select', ...(__PROVENANCE__ && { from: 'a-step2' }) },
     // The city: a text combobox whose suggestions come from a search as it is typed (aria-autocomplete="list", a
     // "Powered by Google" template; its live region read "0 options available." then "4 options available.").
-    { match: 'input[role="combobox"][name="candidateLocation"]', kind: 'typeahead-remote', from: 'a-step2' },
+    { match: 'input[role="combobox"][name="candidateLocation"]', kind: 'typeahead-remote',
+      ...(__PROVENANCE__ && { from: 'a-step2' }) },
   ],
   uploads: [
     // The cover letter's sr-only input, after its card, whose dashed button is what a person presses.
     { input: `${WIZARD} > form > input[type="file"]`, area: 'form', control: `${CARD}:has(+ input[type="file"]) > button[type="button"]`,
-      from: 'b-step1, d-step1-menu' },
+      ...(__PROVENANCE__ && { from: 'b-step1, d-step1-menu' }) },
   ],
   steps: {
     anchors: [{ css: METER, attr: 'aria-valuenow' }, { css: METER, attr: 'aria-valuemax' }],
     heading: `${WIZARD} h2`,
     next: `${WIZARD} > form button[type="submit"]`,
-    from: 'a-step2, b-step1, d-review',
+    ...(__PROVENANCE__ && { from: 'a-step2, b-step1, d-review' }),
   },
   neverPress: [
-    { css: 'button[aria-label^="Set application wizard to step "]', from: 'a-review, d-review' },
-    { css: 'button[aria-label="File options"]', from: 'b-step1, d-step1-menu' },
+    { css: 'button[aria-label^="Set application wizard to step "]',
+      ...(__PROVENANCE__ && { from: 'a-review, d-review' }) },
+    { css: 'button[aria-label="File options"]', ...(__PROVENANCE__ && { from: 'b-step1, d-step1-menu' }) },
     { css: '[role="menu"] [role="menuitem"][data-key="replace"], [role="menu"] [role="menuitem"][data-key="delete"]',
-      from: 'd-step1-menu' },
-    { css: 'button[data-testid="disclosure-trigger"]', from: 'a-step2' },
-    { css: 'div[data-testid="job-data"] a', from: 'a-step2' },
-    { css: 'nav[aria-label="Account"] button, nav[aria-label="Account"] [role="menuitem"]', from: 'a-step2' },
-    { css: '[data-testid="apply-button"], [data-testid="job-detail-save-btn"]', from: 'a-step2' },
+      ...(__PROVENANCE__ && { from: 'd-step1-menu' }) },
+    { css: 'button[data-testid="disclosure-trigger"]', ...(__PROVENANCE__ && { from: 'a-step2' }) },
+    { css: 'div[data-testid="job-data"] a', ...(__PROVENANCE__ && { from: 'a-step2' }) },
+    { css: 'nav[aria-label="Account"] button, nav[aria-label="Account"] [role="menuitem"]',
+      ...(__PROVENANCE__ && { from: 'a-step2' }) },
+    { css: '[data-testid="apply-button"], [data-testid="job-detail-save-btn"]',
+      ...(__PROVENANCE__ && { from: 'a-step2' }) },
   ],
 };
 

@@ -91,7 +91,7 @@ const HISTORY = [
 /** The rules, each naming its snapshot (see the header). */
 const RULES: AtsConfig = {
   platform: 'dayforce',
-  snapshots: ['candidate-info', 'questionnaire', 'submit-challenge', ...DAYFORCE_JR7_CASES],
+  ...(__PROVENANCE__ && { snapshots: ['candidate-info', 'questionnaire', 'submit-challenge', ...DAYFORCE_JR7_CASES] }),
   parse: parseDayforceUrl,
   matchesUrl,
   // ── jr7 DFPC-7 DF7-02 ──
@@ -101,12 +101,13 @@ const RULES: AtsConfig = {
     // test-id="logged-out-content-signin-button">Sign In</button> … <a test-id="logged-out-content-register">Create one
     // now.</a>: the way to apply, its entry the guest application (createDayforceEntryAdapter presses the same one).
     { name: 'apply-choice', when: '[test-id="flow-selection-page"]', auth: 'entry-choice',
-      entry: 'button[test-id="apply-without-account"]', from: 'jr7-dayforce1-choice' },
+      entry: 'button[test-id="apply-without-account"]', ...(__PROVENANCE__ && { from: 'jr7-dayforce1-choice' }) },
   ],
   // ── end jr7 DFPC-7 DF7-02 ──
   // dayforce-0 to -2: <div id="jobPostingApplication" class="ant-form ant-form-vertical css-59ygyz"><div class="mt-5"
   // test-id="application-step-...">.
-  root: { css: 'div#jobPostingApplication', holds: '[test-id^="application-step-"]', from: 'dayforce-0, dayforce-1, dayforce-2' },
+  root: { css: 'div#jobPostingApplication', holds: '[test-id^="application-step-"]',
+    ...(__PROVENANCE__ && { from: 'dayforce-0, dayforce-1, dayforce-2' }) },
   questions: [
     // dayforce-0: <li test-id="question-item"><fieldset aria-labelledby=":r3m:"><div class="ant-col ..."><legend
     // id=":r3m:" ...><span class="ant-typography absolute -left-[9999] overflow-hidden h-0 ...">(the question)</span>
@@ -114,11 +115,12 @@ const RULES: AtsConfig = {
     // class="ant-col ant-form-item-label ..."><label for="jobPostingApplication_sections_0_questionnaire_questions_0_
     // selectedOption" class="" title=""><div class="sanitized-html w-full">(the question)</div></label></div> ... <div
     // class="ant-radio-group ..." id="..._selectedOption">.
-    { container: 'li[test-id="question-item"] fieldset', title: '.ant-form-item-label > label', from: 'dayforce-0' },
+    { container: 'li[test-id="question-item"] fieldset', title: '.ant-form-item-label > label',
+      ...(__PROVENANCE__ && { from: 'dayforce-0' }) },
   ],
   // dayforce-2: <label for="jobPostingApplication_personalInfo_firstName" class="ant-form-item-required" title="First
   // Name">First Name</label>.
-  required: [{ is: 'label.ant-form-item-required', from: 'dayforce-2' }],
+  required: [{ is: 'label.ant-form-item-required', ...(__PROVENANCE__ && { from: 'dayforce-2' }) }],
   widgets: [
     // dayforce-2: <div class="ant-select ant-select-in-form-item css-59ygyz ant-select-single ant-select-show-arrow"
     // test-id="personal-info-prefixid-dropdown"><div class="ant-select-selector"><span
@@ -127,10 +129,12 @@ const RULES: AtsConfig = {
     // aria-controls="jobPostingApplication_personalInfo_prefixId_list" readonly="" value="" style="opacity: 0;"></span>
     // ...: a select-only list, its box drawn by .ant-select-selector.
     { match: 'div.ant-select input.ant-select-selection-search-input[role="combobox" i][readonly]', kind: 'combobox',
-      opener: '.ant-select-selector', expanded: 'input', box: '.ant-select-selector', readOnlyBox: true, from: 'dayforce-2' },
+      opener: '.ant-select-selector', expanded: 'input', box: '.ant-select-selector', readOnlyBox: true,
+        ...(__PROVENANCE__ && { from: 'dayforce-2' }) },
     // dayforce-2: Country, State/Province and the dial codes (.ant-select-show-search): the same, typeable.
     { match: 'div.ant-select input.ant-select-selection-search-input[role="combobox" i]:not([readonly])', kind: 'combobox',
-      opener: '.ant-select-selector', expanded: 'input', box: '.ant-select-selector', from: 'dayforce-2' },
+      opener: '.ant-select-selector', expanded: 'input', box: '.ant-select-selector',
+        ...(__PROVENANCE__ && { from: 'dayforce-2' }) },
   ],
   checked: [
     // dayforce-0: <label class="ant-radio-wrapper ant-radio-wrapper-in-form-item css-59ygyz"><span class="ant-radio
@@ -138,13 +142,13 @@ const RULES: AtsConfig = {
     // class="ant-radio-input" type="radio" value="41"><span class="ant-radio-inner"></span></span><span>Yes</span>
     // </label>; chosen, the label's ant-radio-wrapper-checked.
     { input: 'label.ant-radio-wrapper input.ant-radio-input', holder: 'label.ant-radio-wrapper',
-      chosen: '.ant-radio-wrapper-checked', from: 'dayforce-0' },
+      chosen: '.ant-radio-wrapper-checked', ...(__PROVENANCE__ && { from: 'dayforce-0' }) },
     // dayforce-1: <label class="ant-checkbox-wrapper ..."><span class="ant-checkbox ..."><input
     // id="jobPostingApplication_userAcknowledged" class="ant-checkbox-input" type="checkbox"
     // test-id="user-acknowledged-checkbox"></span><span>I agree to the Candidate Acknowledgement</span></label>; ticked,
     // ant-checkbox-wrapper-checked.
     { input: 'label.ant-checkbox-wrapper input.ant-checkbox-input', holder: 'label.ant-checkbox-wrapper',
-      chosen: '.ant-checkbox-wrapper-checked', from: 'dayforce-1' },
+      chosen: '.ant-checkbox-wrapper-checked', ...(__PROVENANCE__ && { from: 'dayforce-1' }) },
   ],
   uploads: [
     // dayforce-2: <section test-id="resume-upload-section"> ... <input id="jobPostingApplication_files_resume"
@@ -156,16 +160,16 @@ const RULES: AtsConfig = {
       area: 'section[test-id="resume-upload-section"]', done: '.ant-upload-list-item-done',
       // The behaviour review of 2026-11-06 (M2), dayforce-2: <span class="ant-upload-list-item-name" title="(the file's
       // name)">(the file's name)</span> in the done item.
-      name: 'span.ant-upload-list-item-name', from: 'dayforce-2' },
+      name: 'span.ant-upload-list-item-name', ...(__PROVENANCE__ && { from: 'dayforce-2' }) },
     // dayforce-2: <section test-id="cover-letter-upload-section"> ... <input id="jobPostingApplication_files_coverLetter"
     // type="file" ...><button ... test-id="cover-letter-upload-button" ...>Add Cover Letter</button>; and
     // additional-documents-upload-section's "Add Additional Documents". No file was put in either.
     { input: 'section[test-id="cover-letter-upload-section"] input[type="file" i]',
       control: 'button[test-id="cover-letter-upload-button"]', area: 'section[test-id="cover-letter-upload-section"]',
-      from: 'dayforce-2' },
+      ...(__PROVENANCE__ && { from: 'dayforce-2' }) },
     { input: 'section[test-id="additional-documents-upload-section"] input[type="file" i]',
       control: 'button[test-id="additional-documents-upload-button"]',
-      area: 'section[test-id="additional-documents-upload-section"]', from: 'dayforce-2' },
+      area: 'section[test-id="additional-documents-upload-section"]', ...(__PROVENANCE__ && { from: 'dayforce-2' }) },
   ],
   steps: {
     // dayforce-2: <h1 ... test-id="application-step-title">Candidate Info</h1>; dayforce-0: <span ...
@@ -179,55 +183,62 @@ const RULES: AtsConfig = {
     next: 'button[test-id="application-next-step"]',
     // dayforce-0, -1: <button test-id="application-previous-step" type="button" ...>.
     back: 'button[test-id="application-previous-step"]',
-    from: 'dayforce-0, dayforce-1, dayforce-2',
+    ...(__PROVENANCE__ && { from: 'dayforce-0, dayforce-1, dayforce-2' }),
   },
   // dayforce-1: <button test-id="application-submit" type="button" class="ant-btn ...">, in Next's place.
-  submit: { css: 'button[test-id="application-submit"]', from: 'dayforce-1' },
+  submit: { css: 'button[test-id="application-submit"]', ...(__PROVENANCE__ && { from: 'dayforce-1' }) },
   neverPress: [
-    { css: 'button[test-id="application-cancel"]', from: 'dayforce-0, dayforce-1, dayforce-2' },
+    { css: 'button[test-id="application-cancel"]',
+      ...(__PROVENANCE__ && { from: 'dayforce-0, dayforce-1, dayforce-2' }) },
     // The résumé parser: <button tabindex="0" role="presentation" test-id="import-resume-section-button" ...>.
-    { css: 'button[test-id="import-resume-section-button"]', from: 'dayforce-2' },
+    { css: 'button[test-id="import-resume-section-button"]', ...(__PROVENANCE__ && { from: 'dayforce-2' }) },
     // Personal Information's own <button ... test-id="personal-info-update-button" type="submit">Update</button> and
     // <button ... test-id="personal-info-cancel-button" type="reset">Cancel</button>.
-    { css: 'button[test-id="personal-info-update-button"], button[test-id="personal-info-cancel-button"]', from: 'dayforce-2' },
+    { css: 'button[test-id="personal-info-update-button"], button[test-id="personal-info-cancel-button"]',
+      ...(__PROVENANCE__ && { from: 'dayforce-2' }) },
     // A record's <button aria-label="Edit Employment History record" test-id="workHistory-edit-button" ...> and
     // "Delete ..." (education's educationHistory-*), and an upload's <button title="Remove file" ...>.
-    { css: 'button[test-id$="History-edit-button"], button[test-id$="History-delete-button"]', from: 'dayforce-2' },
-    { css: '.ant-upload-list-item-actions button[title="Remove file"]', from: 'dayforce-2' },
+    { css: 'button[test-id$="History-edit-button"], button[test-id$="History-delete-button"]',
+      ...(__PROVENANCE__ && { from: 'dayforce-2' }) },
+    { css: '.ant-upload-list-item-actions button[title="Remove file"]', ...(__PROVENANCE__ && { from: 'dayforce-2' }) },
     // The header's <div test-id="header-sign-in"><a href="...#">Sign In</a></div>, the footer's <a
     // test-id="cookie-prefs-link">, and the steps bar's items (<div class="ant-steps-item-container" role="button">).
-    { css: 'div[test-id="header-sign-in"] a, a[test-id="cookie-prefs-link"]', from: 'dayforce-2' },
-    { css: '.ant-steps-item-container[role="button" i]', from: 'dayforce-0' },
+    { css: 'div[test-id="header-sign-in"] a, a[test-id="cookie-prefs-link"]',
+      ...(__PROVENANCE__ && { from: 'dayforce-2' }) },
+    { css: '.ant-steps-item-container[role="button" i]', ...(__PROVENANCE__ && { from: 'dayforce-0' }) },
     // ── jr7 DFPC-7 ──
     // DF7-02, jr7-dayforce1-choice: the choice's Sign In and "Create one now." (an account at dfid.dayforcehcm.com).
     { css: 'button[test-id="logged-out-content-signin-button"], a[test-id="logged-out-content-register"]',
-      from: 'jr7-dayforce1-choice' },
+      ...(__PROVENANCE__ && { from: 'jr7-dayforce1-choice' }) },
     // DF7-05, jr7-dayforce1-apply-1 to -6: a record's Add (<button test-id="add-educationhistory-record">,
     // add-workhistory-record, add-reference-record), an editor's Cancel (<button test-id="educationHistory-cancel-button"
     // type="reset">, workHistory-, reference-), the Reference editor's Update, and the read view's <button
     // test-id="personal-info-edit-button">: no record is added, edited or dropped by a run (Decision 16, Q7-11).
     { css: 'button[test-id="add-educationhistory-record"], button[test-id="add-workhistory-record"], '
-      + 'button[test-id="add-reference-record"]', from: 'jr7-dayforce1-apply-1' },
+      + 'button[test-id="add-reference-record"]', ...(__PROVENANCE__ && { from: 'jr7-dayforce1-apply-1' }) },
     { css: 'button[test-id="educationHistory-cancel-button"], button[test-id="workHistory-cancel-button"], '
-      + 'button[test-id="reference-cancel-button"], button[test-id="reference-update-button"]', from: 'jr7-dayforce1-apply-1' },
-    { css: 'button[test-id="personal-info-edit-button"]', from: 'jr7-dayforce1-apply-3' },
+      + 'button[test-id="reference-cancel-button"], button[test-id="reference-update-button"]',
+        ...(__PROVENANCE__ && { from: 'jr7-dayforce1-apply-1' }) },
+    { css: 'button[test-id="personal-info-edit-button"]', ...(__PROVENANCE__ && { from: 'jr7-dayforce1-apply-3' }) },
     // ── end jr7 DFPC-7 ──
   ],
   // dayforce-2: <div test-id="import-resume-section" ...> (Import Resume, its file input and its list).
-  excluded: [{ css: 'div[test-id="import-resume-section"]', from: 'dayforce-2' }],
+  excluded: [{ css: 'div[test-id="import-resume-section"]', ...(__PROVENANCE__ && { from: 'dayforce-2' }) }],
   // dayforce-0: <button test-id="application-next-step" type="button" class="ant-btn ... ant-btn-loading">.
-  busy: [{ css: 'button[test-id="application-next-step"].ant-btn-loading', from: 'dayforce-0' }],
+  busy: [{ css: 'button[test-id="application-next-step"].ant-btn-loading',
+    ...(__PROVENANCE__ && { from: 'dayforce-0' }) }],
   // ── jr7 DFPC-7 ──
   // DF7-01, jr7-dayforce1-posting (…/jobs/<id>): <button … test-id="apply-button" aria-label="Apply for …">Apply</button>,
   // the one entry (createDayforceEntryAdapter: the one shown, enabled apply-button); the posting's own text <div
   // test-id="job-detail-body">.
-  posting: { entry: 'button[test-id="apply-button"]', text: '[test-id="job-detail-body"]', from: 'jr7-dayforce1-posting' },
+  posting: { entry: 'button[test-id="apply-button"]', text: '[test-id="job-detail-body"]',
+    ...(__PROVENANCE__ && { from: 'jr7-dayforce1-posting' }) },
   // DF7-03: Jobright 1.25.2's m/ats-rules.js `dayforce` rule (dayforce-application-submitted, read as its behaviour):
   // either message, with any words, drawn after Submit (its route, …/apply/success, ./url.ts reads as the
   // confirmation). No capture shows it (owner question Q7-1): dayforce-jr7.browser.test.ts holds it on a page of our own.
   success: { css: '[test-id="application-successfullsubmission-message"], '
     + '[test-id="application-successfullsubmission-message-with-confirmation-number"]', text: /\S/,
-  from: 'Jobright 1.25.2 m/ats-rules.js dayforce-application-submitted' },
+  ...(__PROVENANCE__ && { from: 'Jobright 1.25.2 m/ats-rules.js dayforce-application-submitted' }) },
   // DF7-02: Apply, then the choice it routes to in the same document (createDayforceEntryAdapter); DF7-V2: the résumé
   // first, its import waited for (Jobright's uploadResumeBeforeRegularFields), jr7-dayforce1-apply-1 → -apply-2.
   quirks: { entryPresses: 2, resumeParse: true },

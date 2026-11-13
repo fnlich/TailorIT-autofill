@@ -52,39 +52,40 @@ const SAME_TAB_LINK = 'a[href]:not([download]):not([target]), a[href][target=""]
 /** The rules, each naming its snapshot. */
 const RULES: AtsConfig = {
   platform: 'eightfold',
-  snapshots: EIGHTFOLD_SNAPSHOTS,
+  ...(__PROVENANCE__ && { snapshots: EIGHTFOLD_SNAPSHOTS }),
   parse: parseEightfoldUrl,
-  root: { css: FORM, from: 'jr7-twillio-apply, jr7-twillio-apply-2' },
+  root: { css: FORM, ...(__PROVENANCE__ && { from: 'jr7-twillio-apply, jr7-twillio-apply-2' }) },
   questions: [
     // <div class="… field-3Ez-x"><label id="Contact_Information_email_label" class="label-385LH required-3upJY"
     // for="Contact_Information_email">…; a group's title is its legend#<id>_legend (Phone, a checkbox group) or a
     // label[for] naming the radiogroup's div (whose aria-labelledby names a _legend the page never draws).
     { container: FIELD, title: 'label[id$="_label"], legend[id$="_legend"]', help: '[class*="help-"]',
-      from: 'jr7-twillio-apply' },
+      ...(__PROVENANCE__ && { from: 'jr7-twillio-apply' }) },
   ],
   // EFA-11: the title's class required-<hash> is the only mark the résumé carries (no aria-required on its input).
-  required: [{ is: '[class*="required-"]', from: 'jr7-twillio-apply' }],
+  required: [{ is: '[class*="required-"]', ...(__PROVENANCE__ && { from: 'jr7-twillio-apply' }) }],
   // EFA-4: the radios are drawn at opacity 0, their own label[for] aria-hidden="true": the selector wrapper stands
   // for each (<div class="radio-module_selector__… " data-test-id="…-No"><input type="radio" aria-label="No, <the
   // question>"><label for aria-hidden="true">…<span class="radio-module_selector-label__…">No</span>).
   proxies: [{ input: '[role="radiogroup"] input[type="radio"]', proxy: '[class*="radio-module_selector__"]',
-    from: 'jr7-twillio-apply' }],
+    ...(__PROVENANCE__ && { from: 'jr7-twillio-apply' }) }],
   // The résumé's drop zone: its file input display:none inside span.upload-resume-dropzone, its "Select file" button.
   // No capture shows the zone after an upload (Jobright waits for a "Replace" button there: ~contents/sites/eightfold/
   // operations waitForUploadComplete), so no done sign is declared: the input's own files decide.
   uploads: [{ input: '.upload-resume-dropzone input[type="file"]', control: 'button[aria-label^="Select file"]',
-    area: FIELD, from: 'jr7-twillio-apply' }],
+    area: FIELD, ...(__PROVENANCE__ && { from: 'jr7-twillio-apply' }) }],
   // EFA-7: one page, final while Submit shows (no steps: the stepper only scrolls).
-  submit: { css: SUBMIT, from: 'jr7-twillio-apply' },
+  submit: { css: SUBMIT, ...(__PROVENANCE__ && { from: 'jr7-twillio-apply' }) },
   neverPress: [
     // EFA-7: Cancel, Clear form, the stepper's steps.
     { css: '[data-test-id="cancelApplicationButton"], [data-test-id="clear-form-button"], [data-test-id^="step-"]',
-      from: 'jr7-twillio-apply' },
+      ...(__PROVENANCE__ && { from: 'jr7-twillio-apply' }) },
     // EFA-6: the Data Privacy Agreement's Cancel (its I Agree is the upload-prompt door's alone: uploadPrompt).
-    { css: PRIVACY_CANCEL, from: 'jr7-twillio-apply-2' },
+    { css: PRIVACY_CANCEL, ...(__PROVENANCE__ && { from: 'jr7-twillio-apply-2' }) },
     // The posting's Add to cart; the success page's Browse Jobs and Track your application.
-    { css: '[data-test-id^="add-to-cart-"]', from: 'jr7-twillio-posting' },
-    { css: '[data-test-id="browse-more-jobs-button"], [class*="ctaButtonContainer-"] button', from: 'jr7-twillio-success' },
+    { css: '[data-test-id^="add-to-cart-"]', ...(__PROVENANCE__ && { from: 'jr7-twillio-posting' }) },
+    { css: '[data-test-id="browse-more-jobs-button"], [class*="ctaButtonContainer-"] button',
+      ...(__PROVENANCE__ && { from: 'jr7-twillio-success' }) },
   ],
   // EFA-8: Jobright's rule "eightfold" (its ats-submission rule: the empty card holding the success picture, its
   // words "Thank you for your application" read as a prefix only, so the first name after them is never read into
@@ -92,8 +93,8 @@ const RULES: AtsConfig = {
   success: { css: '[class*="emptyCardContainer-"] [class*="emptyCard-"]:has([data-test-id="success-page-svg"])',
     text: /^Thank you for your application(?:,|!|\.|\s|$)/,
     companion: { css: '[data-test-id="browse-more-jobs-button"]', text: /^Browse\b/i },
-    from: 'jr7-twillio-success; Jobright 1.25.2 ats-submission rule eightfold' },
-  posting: { text: '#job-description-container', from: 'jr7-twillio-posting' },
+    ...(__PROVENANCE__ && { from: 'jr7-twillio-success; Jobright 1.25.2 ats-submission rule eightfold' }) },
+  posting: { text: '#job-description-container', ...(__PROVENANCE__ && { from: 'jr7-twillio-posting' }) },
   // EFA-V6: PCSX draws the form by script after the page loads (a direct open, or the in-app route from Apply Now).
   quirks: { formLateMs: 30_000 },
 };
