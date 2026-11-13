@@ -392,7 +392,9 @@ export const WORKDAY_SUCCESS: readonly SuccessRule[] = [
  *   signInContent] > h1): unity's own words then read WORKDAY_SUCCESS's third rule, aristocrat's ("We've Received Your
  *   Application! ...") read none;
  * - or the candidate home's completed task, /[<locale>/]<site>/jobTasks/completed/application (republic.wd5, signed in),
- *   with its "Application Submitted" task dialog (WORKDAY_SUCCESS's first rule).
+ *   with its "Application Submitted" task dialog (WORKDAY_SUCCESS's first rule). The worker records nothing by this
+ *   route alone (background/submissions.ts routeWaitsForSign, the jr7 review's A-5): its dialog, or Workday's finalize
+ *   answered, does.
  * The application's base is its address before /job/<location>/<slug>_<reqId>[/apply[/<way>]] (url.ts reads the rest):
  * /[<locale>/]<site>, or /[<locale>/]recruiting/<tenant>/<site> on myworkdaysite.com; two bases are one site when they
  * name it alike once the locale is set aside and the case folded (url.ts: the site loads in any case and with any
