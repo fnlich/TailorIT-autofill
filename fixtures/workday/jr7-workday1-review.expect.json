@@ -1,0 +1,40 @@
+{
+  "fixture": "workday/jr7-workday1-review",
+  "source": "https://aristocrat.wd3.myworkdayjobs.com/en-US/aristocratexternalcareerssite/job/Las-Vegas%2C-NV%2C-US/Infrastructure-Engineer-III_R0023173/apply/applyManually",
+  "captured": "2026-11-11T12:52:41.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"utilityMenuButton\"]",
+      "[data-automation-id=\"utilityButtonSignIn\"]",
+      "[data-automation-id=\"hammyMenuIcon\"]",
+      "[data-automation-id=\"utilityButtonBarLanguageMenu\"]",
+      "[data-automation-id=\"logoLink\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Review",
+      "progress": "current step 5 of 5",
+      "anchors": [
+        "applyFlowReviewPage"
+      ]
+    },
+    "final": "final",
+    "next": null,
+    "submit": "[data-automation-id=\"pageFooterNextButton\"]",
+    "widgets": [],
+    "repeatables": []
+  }
+}

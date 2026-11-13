@@ -1,0 +1,79 @@
+{
+  "fixture": "workday/jr7-workday2-application-questions-2-filled",
+  "source": "https://republic.wd5.myworkdayjobs.com/en-US/republic/job/Remote---USA/Supervisor-Digital-Solutions_R-188238/apply/autofillWithResume",
+  "captured": "2026-11-11T15:19:59.000Z",
+  "fields": [
+    {
+      "label": "Do you have 4 years of experience with ITSM processes and toolsets and supporting enterprise-level applications in a virtual support environment?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-2-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"secondaryQuestionnaire--69a8491be2bc10015237c9718b9b0000\"]"
+    },
+    {
+      "label": "Do you have 2 years of experience with problem identification techniques and analyzing reports to support service delivery?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-2-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"secondaryQuestionnaire--69a8491be2bc10015237caa578660000\"]"
+    },
+    {
+      "label": "a dropdown's mirror",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "button[aria-haspopup=\"listbox\"] + input",
+      "note": "The hidden text box beside each dropdown's button, which mirrors its answer: the button is the widget."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"utilityMenuButton\"]",
+      "[data-automation-id=\"hammyMenuIcon\"]",
+      "[data-automation-id=\"logoLink\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Application Questions 2 of 2",
+      "progress": "current step 5 of 7",
+      "anchors": [
+        "applyFlowSecondaryQuestionsPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "button[id=\"secondaryQuestionnaire--69a8491be2bc10015237c9718b9b0000\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"secondaryQuestionnaire--69a8491be2bc10015237caa578660000\"]",
+        "kind": "combobox",
+        "answered": true
+      }
+    ],
+    "repeatables": []
+  }
+}

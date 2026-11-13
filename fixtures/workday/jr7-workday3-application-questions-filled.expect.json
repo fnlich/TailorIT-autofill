@@ -1,0 +1,137 @@
+{
+  "fixture": "workday/jr7-workday3-application-questions-filled",
+  "source": "https://unitytech.wd1.myworkdayjobs.com/en-US/Unity/job/Mountain-View%2C-CA%2C-USA/Staff-Engineer--Data-Platform_JOBREQ-2616349/apply/applyManually?source=REDACTED",
+  "captured": "2026-11-11T15:48:57.000Z",
+  "fields": [
+    {
+      "label": "Are you legally eligible to work in the country in which this position is located?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeebd0cf030000\"]"
+    },
+    {
+      "label": "Will you now or in the future require Work Visa Sponsorship to work for Unity in the country where this position is located?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeec6ae1520001\"]"
+    },
+    {
+      "label": "For the purpose of determining if an export control license may be required, are you currently a citizen or permanent resident of any of the following countries/regions? If you are not, please select “Not Applicable.”",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeec6ae1520004\"]"
+    },
+    {
+      "label": "Have you previously worked at Unity, and if so, in what capacity?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeed9f88b20001\"]"
+    },
+    {
+      "label": "Global Data Privacy Notice to Applicants - For more information on how Unity handles the personal data of job applicants, please read our Global Data Privacy Notice to Applicants.",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeee3988fb0001\"]"
+    },
+    {
+      "label": "Do you consent to the use of AI to create written transcripts and summaries of your interviews?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeee3988fb0004\"]"
+    },
+    {
+      "label": "a dropdown's mirror",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "button[aria-haspopup=\"listbox\"] + input",
+      "note": "The hidden text box beside each dropdown's button, which mirrors its answer: the button is the widget."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"utilityMenuButton\"]",
+      "[data-automation-id=\"utilityButtonSignIn\"]",
+      "[data-automation-id=\"hammyMenuIcon\"]",
+      "[data-automation-id=\"utilityButtonBarLanguageMenu\"]",
+      "[data-automation-id=\"logoLink\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Application Questions",
+      "progress": "current step 3 of 6",
+      "anchors": [
+        "applyFlowPrimaryQuestionsPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeebd0cf030000\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeec6ae1520001\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeec6ae1520004\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeed9f88b20001\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeee3988fb0001\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--d2a3d96cf9b310019fdeee3988fb0004\"]",
+        "kind": "combobox",
+        "answered": true
+      }
+    ],
+    "repeatables": []
+  }
+}

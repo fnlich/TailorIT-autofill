@@ -1,0 +1,181 @@
+{
+  "fixture": "workday/jr7-workday1-application-questions-blank",
+  "source": "https://aristocrat.wd3.myworkdayjobs.com/en-US/aristocratexternalcareerssite/job/Las-Vegas%2C-NV%2C-US/Infrastructure-Engineer-III_R0023173/apply/applyManually",
+  "captured": "2026-11-11T12:50:48.000Z",
+  "fields": [
+    {
+      "label": "Do you currently have the right/entitlement to work in the country where the job is located?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c70b90a310000\"]"
+    },
+    {
+      "label": "Will you now, or in the future, require any immigration filing or visa sponsorship by Aristocrat to maintain work authorization (renewal/extension of open work permit, permanent residency, etc.)?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c71ec6f950001\"]"
+    },
+    {
+      "label": "Do you have any relatives currently employed by Aristocrat or one of our affiliated entities/subsidiaries?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c7286651d0002\"]"
+    },
+    {
+      "label": "Are you currently subject to any non-compete or non-solicitation agreements from current or former employers that would prevent you from working with us?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c731ff8960001\"]"
+    },
+    {
+      "label": "What is your preferred language for written communications?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c731ff8960004\"]"
+    },
+    {
+      "label": "Would you like to receive interview scheduling assistance and application updates via digital messaging, in addition to email? If “Yes,” you consent to receive messages through SMS or WhatsApp, depending on Aristocrat’s setup in your country. You can opt out at any time. For more information on your",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c745c0a5a0003\"]"
+    },
+    {
+      "label": "Do you consent to Aristocrat retaining your application data and using it to contact you regarding future job opportunities that may align with your skills and experience?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001f0354e0fa9000000\"]"
+    },
+    {
+      "label": "What is your notice period in weeks, if applicable?",
+      "kind": "textarea",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "control": "textarea[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c74f67cef0002\"]"
+    },
+    {
+      "label": "Would you consider relocating for this role?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c74f67cef0003\"]"
+    },
+    {
+      "label": "What are your base salary expectations?",
+      "kind": "text",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "control": "input[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c75907be00003\"]"
+    },
+    {
+      "label": "a dropdown's mirror",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "button[aria-haspopup=\"listbox\"] + input",
+      "note": "The hidden text box beside each dropdown's button, which mirrors its answer: the button is the widget."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"utilityMenuButton\"]",
+      "[data-automation-id=\"utilityButtonSignIn\"]",
+      "[data-automation-id=\"hammyMenuIcon\"]",
+      "[data-automation-id=\"utilityButtonBarLanguageMenu\"]",
+      "[data-automation-id=\"logoLink\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Application Questions",
+      "progress": "current step 3 of 5",
+      "anchors": [
+        "applyFlowPrimaryQuestionsPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c70b90a310000\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c71ec6f950001\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c7286651d0002\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c731ff8960001\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c731ff8960004\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c745c0a5a0003\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001f0354e0fa9000000\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--8ffc3bf540421001ef8c74f67cef0003\"]",
+        "kind": "combobox",
+        "answered": false
+      }
+    ],
+    "repeatables": []
+  }
+}

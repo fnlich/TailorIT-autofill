@@ -52,7 +52,7 @@
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
-import type { SuccessRule } from '../success';
+import { successSignsOf, type SuccessRule } from '../success';
 import type { AccountErrorKind, Adapter, PagePasswordClass, PagePasswordRules, SignInForm, SignInWall } from '../types';
 import {
   accountErrors, dateFor, descriptionFor, fieldAlerts, isBusy, isFinalStep, labelFirst, labelFor, labelSuffix,
@@ -304,11 +304,38 @@ const ACCOUNT_ERROR_KINDS: ReadonlyArray<readonly [AccountErrorKind, RegExp]> = 
  */
 function accountErrorKind(el: Element): AccountErrorKind | null {
   const alert = el.closest('[data-automation-id="errorMessage"]');
-  if (alert === null || alert.closest('[data-automation-id="signInContent"]') === null) return null;
+  // ── jr7 WORKDAY-7 (WD7-06) ──
+  if (alert === null) return accountNoticeKind(el);
+  // ── end jr7 WORKDAY-7 ──
+  if (alert.closest('[data-automation-id="signInContent"]') === null) return null;
   const words = (alert.textContent ?? '').replace(/\s+/g, ' ').trim();
   return ACCOUNT_ERROR_KINDS.find(([, pattern]) => pattern.test(words))?.[0] ?? null;
 }
 // ── end jr6 WORKDAY P1 ──
+
+// ── jr7 WORKDAY-7 (FIX7PLAN §6.6 item 2, WD7-06; the Workday verifier's corrected fix) ──
+/**
+ * jr7 WD7-06: the kind of the account notice `el` shows, `el` inside the account view's notice: the Sign In view Workday
+ * draws after Create Account, fixtures/workday/jr7-workday{1,2,3}-login-verify-sent.html's <div
+ * data-automation-id="signInContent"> ... <p role="alert" data-automation-id="alertMessage">An email has been sent to
+ * you. Please verify your account.</p> (snapshot7 workday1, workday2 and workday3, every tenant after Create Account),
+ * beside its form, not inside it. A notice is no error: never one of this adapter's errors (index.ts errors,
+ * application.ts accountErrors), so it never counts as a page error (content/press.ts refusalNow) nor as the agent's
+ * errors on load; it is read only for the one kind that says the account waits for its email to be verified
+ * ('verify-email', by ACCOUNT_ERROR_KINDS' own words), while a person can see it. Any other notice (a reset email sent)
+ * names no kind: it refuses nothing. Jobright 1.25.2 reads the same alert only in its forgot-password flow
+ * (FORGOT_PASSWORD_ALERT_CSS); the reading here is ours.
+ */
+function accountNoticeKind(el: Element): AccountErrorKind | null {
+  const notice = el.closest('[data-automation-id="alertMessage"][role="alert" i]');
+  if (notice === null || notice.closest('[data-automation-id="signInContent"]') === null || !isUserVisible(notice)) {
+    return null;
+  }
+  const words = (notice.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const verify = ACCOUNT_ERROR_KINDS.find(([kind]) => kind === 'verify-email')![1];
+  return verify.test(words) ? 'verify-email' : null;
+}
+// ── end jr7 WORKDAY-7 (WD7-06) ──
 
 /** The automation ids of the controls never pressed (module header). */
 const NEVER_PRESSED_IDS =['utilityButtonSignIn', 'utilityMenuButton', 'utilityButtonBarLanguageMenu', 'hammyMenuIcon',
@@ -353,6 +380,130 @@ export const WORKDAY_SUCCESS: readonly SuccessRule[] = [
 ];
 // ── end v5 p2-detect ──
 
+// ── jr7 WORKDAY-7 (FIX7PLAN §6.6 item 1, WD7-05; the Workday audit and its verifier) ──
+/*
+ * The page after submitting, captured for the first time (snapshot7; fixtures/workday/jr7-workday{1,2,3}-review.html,
+ * then -confirmation.html): Workday routes the application's own document, with no new load, to
+ * - the site's job search with the new application's id, /[<locale>/]<site>?Job_Application_ID=<id> (aristocrat.wd3 and
+ *   unitytech.wd1, guest applications; unity's address keeps its ?source=), over which it draws a "Congratulations!"
+ *   dialog offering Create Account (div[data-automation-id=popUpDialog][role=dialog] > div[data-automation-id=
+ *   signInContent] > h1): unity's own words then read WORKDAY_SUCCESS's third rule, aristocrat's ("We've Received Your
+ *   Application! ...") read none;
+ * - or the candidate home's completed task, /[<locale>/]<site>/jobTasks/completed/application (republic.wd5, signed in),
+ *   with its "Application Submitted" task dialog (WORKDAY_SUCCESS's first rule).
+ * The application's base is its address before /job/<location>/<slug>_<reqId>[/apply[/<way>]] (url.ts reads the rest):
+ * /[<locale>/]<site>, or /[<locale>/]recruiting/<tenant>/<site> on myworkdaysite.com; two bases are one site when they
+ * name it alike once the locale is set aside and the case folded (url.ts: the site loads in any case and with any
+ * locale, and the application key folds both). So the hook reads alike the two addresses AUTO-7 arms with: the
+ * content runtime's, the form's own address at the press (/en-US/<Site>/job/<loc>/<slug>/apply/applyManually), and the
+ * worker's, the arm's canonical posting address (TailorIT's parseAtsUrl canonical[0],
+ * https://<host>/<Site>/job/<loc>/<slug>: no locale, no /apply), or the canonical application URL (url.ts, lower
+ * case). Facts cited from Jobright 1.25.2:
+ * its isAtsSubmissionConfirmationUrl('myworkday', from, to) reads `to` as the page after the application armed at `from`
+ * when `to`'s path is that base with exactly one Job_Application_ID, non-empty, with no white space around it, `from`
+ * holding none, or the base's /jobTasks/completed/application (where it also asks its own jr_id, which is not ours); and its
+ * ~hooks/useShowSubmitted (module lxTxV) calls a Workday page submitted when an h1 says "Congratulations". The code is
+ * ours. No id of the page after submitting is ever read into a key, an address or a log (FIX7PLAN §5 D-10): only
+ * whether there is one. Here and never in url.ts (FIX7PLAN §0.11: the page-world bridge bundles url.ts).
+ */
+/** A posting's or its application's own address after its base (url.ts PATH): /job/<location>/<slug>_<reqId>, then
+ *  /apply[/<way>] where given. */
+const APPLY_TAIL = /\/job\/[^/]+\/[^/]+(?:\/apply(?:\/[^/]+)?)?$/;
+/** The candidate home's completed application task, after the base. */
+const COMPLETED_TASK = '/jobTasks/completed/application';
+/** A base by its shape alone: a locale (as url.ts reads one) where given, myworkdaysite.com's /recruiting/<tenant>
+ *  where given, then the site. */
+const BASE_SHAPE = /^(?:\/[a-zA-Z]{2,3}(?:-[a-zA-Z\d]{2,4})?)?(?:\/recruiting\/[\w-]+)?\/[\w-]+$/;
+/** The new application's id, as the page after submitting names it in its address. */
+const APPLICATION_ID = 'Job_Application_ID';
+
+/** An address's path with one trailing '/' set aside. */
+const pathOf = (url: URL) => url.pathname.replace(/\/$/, '');
+/** A base's site as one site is named whatever its address's locale and case (above): a first segment shaped as a
+ *  locale (url.ts) set aside where more follows, the rest in lower case. */
+const siteOf = (base: string) => base.replace(/^\/[a-zA-Z]{2,3}(?:-[a-zA-Z\d]{2,4})?(?=\/)/, '').toLowerCase();
+
+/** The base of the application armed at `armed` (above): its path before the posting's own part, where the address
+ *  reads as a posting or its application (url.ts: the form at …/apply/<way>, verily's steps at …/apply, or the
+ *  posting the worker's arm keeps), else null (a sign-in page, Candidate Home, a search). */
+function applicationBase(armed: URL): string | null {
+  if (parseWorkdayUrl(armed) === null) return null;
+  const path = pathOf(armed);
+  const tail = APPLY_TAIL.exec(path);
+  return tail === null ? null : path.slice(0, tail.index);
+}
+
+/** Whether `here` names one new application, as the page after submitting does: one Job_Application_ID, not empty,
+ *  with no white space around it. Whether, never which. */
+function namesNewApplication(here: URL): boolean {
+  const ids = here.searchParams.getAll(APPLICATION_ID);
+  return ids.length === 1 && ids[0]!.trim() !== '' && ids[0] === ids[0]!.trim();
+}
+
+/**
+ * jr7 WD7-05 (Adapter.confirmationAfter): whether `here` is the page after submitting the application whose Submit was
+ * armed at `armed` (above): both Workday candidate addresses of one origin (https, no port, no credentials), `armed` the
+ * posting's or its application's own address (the form's at the press, the posting's canonical one the worker keeps,
+ * or the canonical application URL) naming no Job_Application_ID, and `here` a base of the same site (siteOf) with one
+ * new Job_Application_ID, or that base's /jobTasks/completed/application. Any other address, another site, tenant or
+ * host, a second or an empty id, an `armed` sign-in page, Candidate Home's /userHome or a search: no. Pure.
+ */
+function confirmationAfter(armed: URL, here: URL): boolean {
+  if (!matchesUrl(armed) || !matchesUrl(here) || armed.origin !== here.origin || armed.searchParams.has(APPLICATION_ID)) {
+    return false;
+  }
+  const base = applicationBase(armed);
+  if (base === null) return false;
+  const path = pathOf(here);
+  const task = path.endsWith(COMPLETED_TASK);
+  const shown = task ? path.slice(0, -COMPLETED_TASK.length) : path;
+  return siteOf(shown) === siteOf(base) && (task || namesNewApplication(here));
+}
+
+/** Whether `here` is shaped as a Workday page after submitting (above), whatever application it follows: a base with
+ *  one new Job_Application_ID, or a base's completed task. */
+function afterSubmitAddress(here: URL): boolean {
+  if (!matchesUrl(here)) return false;
+  const path = pathOf(here);
+  if (path.endsWith(COMPLETED_TASK)) return BASE_SHAPE.test(path.slice(0, -COMPLETED_TASK.length));
+  return BASE_SHAPE.test(path) && namesNewApplication(here);
+}
+
+/** The fourth drawn rule (WD7-05): the "Congratulations!" heading of the dialog drawn over the site's job search after
+ *  submitting, in the tenant's own words below it (aristocrat's, which no WORKDAY_SUCCESS rule reads). Taken only at an
+ *  address after submitting (workdaySignsAt), and like every drawn sign only after an armed Submit, new since the press,
+ *  with the form gone (content/submitted.ts newSuccessSign). */
+export const WORKDAY_CONGRATULATIONS: SuccessRule = {
+  css: '[data-automation-id="popUpDialog"][role="dialog"] [data-automation-id="signInContent"] h1',
+  text: /^Congratulations!?$/,
+  from: 'Jobright 1.25.2 ~hooks/useShowSubmitted (module lxTxV): an h1 saying Congratulations; '
+    + 'snapshot7 workday1 and workday3 (fixtures/workday/jr7-workday{1,3}-confirmation.html)',
+};
+
+/** The drawn signs of the page after submitting that `doc` shows at `here` (its own address): the fourth rule's, at an
+ *  address after submitting only; [] at any other address (none: a page whose address does not read). */
+export function workdaySignsAt(doc: Document, here: URL | null): Element[] {
+  return here !== null && afterSubmitAddress(here) ? successSignsOf(doc, [WORKDAY_CONGRATULATIONS]) : [];
+}
+
+/** A document's own address, or null (a fixture's about:srcdoc page reads none here). */
+function addressOf(doc: Document): URL | null {
+  try {
+    const here = new URL(doc.location.href);
+    return here.protocol === 'https:' ? here : null;
+  } catch {
+    return null;
+  }
+}
+
+/** jr7 WD7-05 (Adapter.successSigns): the fourth rule's sign where the document's own address is a page after
+ *  submitting (workdaySignsAt). A Workday page after submitting shows one application, the one its document armed, so
+ *  the armed key is not compared: it is never read into anything either. */
+function successSigns(doc: Document, _armedKey: string): Element[] {
+  return workdaySignsAt(doc, addressOf(doc));
+}
+// ── end jr7 WORKDAY-7 (WD7-05) ──
+
 export const workdayAdapter: Adapter = {
   id: 'workday',
   matchesUrl,
@@ -366,6 +517,10 @@ export const workdayAdapter: Adapter = {
   passwordRules,
   createAccountSwitch,
   accountErrorKind,
+  // jr7 WD7-05 (FIX7PLAN §6.6 item 1): the page after submitting, by its address and by its drawn heading, read by
+  // AUTO-7 (content/runtime.ts onAddress, background/submissions.ts confirmedArm, content/submitted.ts signsOf).
+  confirmationAfter,
+  successSigns,
   neverPress,
   // The generic aria-invalid errors, and on the account view the sign-in's error above its form (./application.ts).
   errors: (root) => [...(genericAdapter.errors?.(root) ?? []), ...accountErrors(root).map((el) => ({ el })),
