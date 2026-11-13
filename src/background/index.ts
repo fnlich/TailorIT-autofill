@@ -274,6 +274,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     changed: (tabId) => void reports.pageChanged(tabId).catch(() => undefined) });
   /** jr6 apply F3a: entry/pressed's limit, per tab (APPLYPLAN F3a item 3). */
   const entryLimit = createRateLimit(ENTRY_PRESSED_LIMIT.count, ENTRY_PRESSED_LIMIT.windowMs, now);
+  /** jr8 ICIMS (R2): per tab, the subframe document whose hello said it claims the application and holds a form while
+   *  no claim frame could be named (the top's registered document wrapped nothing yet), until the top's next document
+   *  says hello. Memory only: ids, never an address. */
+  const claimsWaiting = new Map<number, { frameId: number; documentId: string | null }>();
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId),
     // v4: Sign up & Autofill grants the tab Sign-in Auto for one run, for its application frame's site (the v4 review,
     // M1); its frames hear the settings as they act then.
@@ -960,7 +964,29 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
                 dryRun: false, ...(take.signIn ? { signIn: true as const } : {}) }, frameTarget(entry)))
                 .catch(() => log('frame.unreachable'));
             }
+          } else if (entry.hasForm && entry.frameId !== 0 && entry.claimed === true // jr8 ICIMS (R2)
+            && (newDocument || previous?.hasForm !== true)) {
+            claimsWaiting.set(from.tabId, { frameId: entry.frameId, documentId: entry.documentId }); // jr8 ICIMS (R2)
           }
+          // jr8 ICIMS (R2): a company wrapper's document that says hello after its claim frame did (iCIMS's /login reloads
+          // itself with its layout parameters after Apply, so the gate's frame may speak while the top's registered
+          // document wraps nothing, and no claim frame could be named): that frame's form is offered the grant now, once,
+          // as the agent's hello does. Only the frame document that waited so, and only until the top's next document.
+          if (from.frameId === 0 && newDocument) {
+            const waiting = claimsWaiting.get(from.tabId);
+            claimsWaiting.delete(from.tabId);
+            const claim = waiting === undefined || entry.wraps !== true ? null
+              : claimFrameOf(await framesOfTab(session, from.tabId));
+            if (claim !== null && claim.frameId === waiting?.frameId && claim.documentId === waiting.documentId
+              && claim.hasForm) {
+              const take = signUps.takeFill(from.tabId, claim);
+              if (take !== null) {
+                void Promise.resolve().then(() => platform.tabs.sendToFrame(from.tabId, { v: 1, type: 'run/start',
+                  dryRun: false, ...(take.signIn ? { signIn: true as const } : {}) }, frameTarget(claim)))
+                  .catch(() => log('frame.unreachable'));
+              }
+            }
+          } // ── end jr8 ICIMS ──
           const connected = await auth.connected();
           // v3 Phase 3: a recognised job page (an application form of ours) is looked up as it loads, so the side
           // panel's card and match show at once; the card's own path, with its merge, rate limit and token checks.

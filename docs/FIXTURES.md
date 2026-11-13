@@ -793,6 +793,33 @@ Run at `5fbb1e8` over every fixture jr7 adds or changes (`git diff --name-only -
 ## jr8: the owner's snapshot13 of 2026-11-13 (Workday, aristocrat.wd3)
 Five captures of one application ("Infrastructure Engineer III"), taken 11:25-11:46: the four steps as the run left them and the owner's own correct Application Questions, read only (`F:\Develop\Refer\snapshot13-workday-for-fix`, never committed), each converted once by `scripts/mhtml-to-fixture.mjs --platform workday` with the owner's list (369 entries): `fixtures/workday/jr8-aristocrat-my-information-after`, `-my-experience-after`, `-application-questions-after`, `-voluntary-disclosures-after` and `-application-questions-correct` (`.html` and `.routes.json`, ten files). Leak-checked before the commit: 0 listed strings, 0 emails, 0 phone-like numbers; the leak gate (`--base c90debb`) 0 hits. They have no `.expect.json` (Workday needs none: jr6's rule); `src/adapters/workday/jr8-workday.browser.test.ts` and `src/content/required-left.browser.test.ts` read them, each prompt's pill taken away first where a test answers it, and the converter test reads them as `jr6-*` cases (`isJr6`).
 
+## jr8: the owner's snapshot11 of 2026-11-13 (iCIMS portals)
+
+Seven captures (`F:\Develop\Refer\snapshot11`: careers-ars's, careers-empowerai's and careers-mrocorp's postings;
+careers-healthedge's and careers-fedwriters's postings and Candidate Profiles), each a company wrapper with its
+`iframe#icims_content_iframe`, taken with Jobright's helper panel and TailorIT's sidebar open. Four are committed:
+
+| Case | Files | Read by |
+|---|---|---|
+| `icims/jr8-healthedge-profile`, `jr8-fedwriters-profile` (the Candidate Profile in its wrapper, `.frame-1`, an hCaptcha stand-in) | 7 | `src/content/jr8-icims-seen.browser.test.ts` (the wrapper and its frame nested as the portal draws them, the real runtime in the frame), e2e 71 |
+| `icims/jr8-ars-posting`, `jr8-healthedge-posting` (the posting in its wrapper, `.frame-1`, whose Apply is `…/job?mode=apply&apply=yes&in_iframe=1&hashed=REDACTED`) | 6 | e2e 71 (careers-ars's Apply) |
+
+- **Converted** with `mhtml-to-fixture --platform icims --redact <owner-redact.txt>` (driver `SP\jr8\icims8\convert-all.sh`);
+  the postings with `--replace-text` `.iCIMS_Expandable_Text`, `.iCIMS_JobHeaderGroup dd.iCIMS_JobHeaderData` and the
+  page's description metas (`meta[name="description" i], meta[property="og:description" i], meta[name="twitter:description" i],
+  meta[property="twitter:description" i]`), each `fixtures/synthetic/jr7-icims/posting-description.txt` or `posting-header.txt`.
+  careers-fedwriters's posting has no `dd.iCIMS_JobHeaderData`; careers-mrocorp's title names a listed word
+  (`.iCIMS_JobsTable h1.iCIMS_Header` replaced too). Those three postings were probed, not committed.
+- **The converter's new rule** (`INJECTED_MARKS`): the panels' marks on the site's elements (`data-jobright-*`,
+  `data-tailorit-*`, `--jobright-*` custom properties, Jobright's page-push `<style>`) go before anything is measured,
+  so each wrapper is laid out as the site lays it out (`test/mhtml-to-fixture.test.ts`).
+- **Privacy:** `leakcount.py` 0 hits over the 14 files; emails 0, phone-like numbers 0, `jr_id` 0, panel marks 0;
+  `fixture-leak-gate.mjs --base c90debb` exit 0 (entries 369, files read 14, hits 0). No `.expect.json` (a wrapper
+  is never a root; the frames are read by the runtime tests above).
+- **e2e 71** (`e2e/specs/71-icims-portal.spec.ts`): R1 the healthedge profile under the open sidebar; R2 careers-ars's
+  Apply, iCIMS's `/login` reloading itself (its first document a stand-in page, 300 ms), the gate from
+  `icims/jr7-icims1-login` (snapshot7's arc gate, the same portal markup) served at careers-ars's addresses.
+
 ## Serving fixtures
 In e2e runs every request goes through `e2e/routes.ts`: a URL in the route map is answered from its fixture, the mock TailorIT and the extension's own files pass through, a form post to `/__submitted` is recorded (any hit fails the test), and everything else is aborted and recorded. Fixtures are served at their real ATS addresses: Phase 0 proved that Chromium injects the content script into such routed pages.
 - A converted case's `<case>.routes.json` is that map for its page and its frames (URL without fragment to repo-relative file), in the shape `installRoutes` takes.

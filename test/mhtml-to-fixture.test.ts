@@ -88,6 +88,7 @@ import {
   imageSize,
   INJECTED_PARAMS,
   INJECTED_UI,
+  INJECTED_MARKS, // jr8 ICIMS
   PER_LOAD_PARAMS,
   withoutInjectedParams,
   stripInjectedParams,
@@ -2219,6 +2220,36 @@ describe("snapshot5: other extensions' hosts, TailorIT's own, and Workday's erro
     expect(await page.evaluate(() => ['jr', 'page-host', 'closed-on-body', 'open-on-body', 'own']
       .map((id) => document.getElementById(id) !== null))).toEqual([false, true, false, true, false]);
     expect(counts).toMatchObject({ injected: 1, shadowOverlays: 2 });
+    await context.close();
+  }, 30_000);
+
+  // jr8 ICIMS (snapshot11's iCIMS wrappers, captured with Jobright's helper panel and TailorIT's sidebar open): their
+  // marks on the site's own elements go, and Jobright's page push with them; the page's own styles and attributes stay.
+  it("takes out the marks a panel at the window's edge leaves on the page, and its push stylesheet (jr8)", async () => {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html data-tailorit-sidebar="" lang="en"
+      style="--jobright-helper-panel-width: 384px; --jobright-helper-panel-gap: 0px; color: black"
+      data-jobright-helper-panel-open="true"><head><style id="page">#content { min-width: 300px; }</style>
+      <style id="push">html[data-jobright-helper-panel-open="true"] body { padding-right: 384px !important; }</style></head>
+      <body data-jobright-helper-panel-open="true" data-page="kept"><div id="bar" data-jobright-helper-page-fixed="1"
+      data-tailorit-push="span" style="position: fixed; top: 0">Bar</div><div id="content">Page</div></body></html>`);
+    const counts = await page.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: 'x^', dropOverlays: true,
+      redacted: 'REDACTED', closedMark: CLOSED_ROOT_MARK, marks: INJECTED_MARKS });
+    expect(await page.evaluate(() => [...document.querySelectorAll('*')].flatMap((element) => [...element.attributes]
+      .map((attribute) => attribute.name)).filter((name) => /^data-(?:jobright|tailorit)-/.test(name)))).toEqual([]);
+    expect(await page.evaluate(() => ({ html: document.documentElement.getAttribute('style'),
+      lang: document.documentElement.lang, page: document.body.dataset.page,
+      bar: document.getElementById('bar')!.getAttribute('style'),
+      sheets: [...document.querySelectorAll('style')].map((sheet) => sheet.id),
+      padding: getComputedStyle(document.body).paddingRight })))
+      .toEqual({ html: 'color: black', lang: 'en', page: 'kept', bar: 'position: fixed; top: 0', sheets: ['page'],
+        padding: '0px' });
+    expect(counts).toMatchObject({ injected: 0, marks: 7 });
+    // Without marks to take, the counts are as they were.
+    expect(await page.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: 'x^', dropOverlays: true,
+      redacted: 'REDACTED', closedMark: CLOSED_ROOT_MARK, marks: INJECTED_MARKS }))
+      .toEqual({ injected: 0, shadowOverlays: 0, injectedParams: 0 });
     await context.close();
   }, 30_000);
 

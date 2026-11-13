@@ -1,0 +1,5 @@
+{
+  "https://careers-fedwriters.icims.com/jobs/2459/cloud-computing-architecture-advisor-%28subject-matter-expert-i%29/candidate?from=login&csrf=REDACTED&hashed=REDACTED": "fixtures/icims/jr8-fedwriters-profile.html",
+  "https://careers-fedwriters.icims.com/jobs/2459/cloud-computing-architecture-advisor-%28subject-matter-expert-i%29/candidate?from=login&csrf=REDACTED&in_iframe=1&hashed=REDACTED": "fixtures/icims/jr8-fedwriters-profile.frame-1.html",
+  "https://newassets.hcaptcha.com/captcha/v1/221126bfaff10f69f5e2c60a7ff42e4b9f16aed7/static/hcaptcha.html": "fixtures/icims/jr8-fedwriters-profile.third-party-frame.html"
+}
