@@ -1,0 +1,1 @@
+A synthetic posting summary written for a test fixture.
