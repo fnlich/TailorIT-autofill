@@ -818,7 +818,10 @@ careers-healthedge's and careers-fedwriters's postings and Candidate Profiles), 
   is never a root; the frames are read by the runtime tests above).
 - **e2e 71** (`e2e/specs/71-icims-portal.spec.ts`): R1 the healthedge profile under the open sidebar; R2 careers-ars's
   Apply, iCIMS's `/login` reloading itself (its first document a stand-in page, 300 ms), the gate from
-  `icims/jr7-icims1-login` (snapshot7's arc gate, the same portal markup) served at careers-ars's addresses.
+  `icims/jr7-icims1-login` (snapshot7's arc gate, the same portal markup) served at careers-ars's addresses; R4 (r2)
+  `icims/jr6-nyu-iform-signature` (wrapper, portal, the IForm's own frame) scrolled past the form's top (a 480 px
+  window) or under the open sidebar (the served wrapper pins its frame at min-width 1100px, as careers-healthedge pins
+  its content). `src/content/jr8-icims-iform.browser.test.ts` nests the same three files for the runtime tests.
 
 ## Serving fixtures
 In e2e runs every request goes through `e2e/routes.ts`: a URL in the route map is answered from its fixture, the mock TailorIT and the extension's own files pass through, a form post to `/__submitted` is recorded (any hit fails the test), and everything else is aborted and recorded. Fixtures are served at their real ATS addresses: Phase 0 proved that Chromium injects the content script into such routed pages.

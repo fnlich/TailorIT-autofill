@@ -12,6 +12,10 @@
  *   frame and loads the next 300 ms later), and draws the gate in the reloaded wrapper's frame (snapshot7's arc gate,
  *   the same portal markup, served at careers-ars's addresses). The gate's run starts (background/index.ts claimsWaiting):
  *   the email typed on Manual, Next never pressed. It used to start nothing there.
+ * - R4 (r2): uscareers-nyu's IForm (fixtures/icims/jr6-nyu-iform-signature: the wrapper, the portal, the form's own
+ *   frame on nyu.icims.com), scrolled past the form's top, or under the open sidebar: the portal says beside its step
+ *   facts that it shows the forms frame (content/claim-seen.ts formsFrameShown), and the IForm's run fills; it used to
+ *   end "Stopped" with form-hidden.
  * Sign-in stays on Manual; nothing is submitted (routes.ts fails a test that reaches /__submitted).
  */
 import { readFileSync } from 'node:fs';
@@ -157,4 +161,63 @@ test.describe('iCIMS portals: Apply to the gate, and the Candidate Profile under
     expect(routeLog.unexpected).toEqual([]);
     expect(routeLog.submitted).toEqual([]);
   });
+
+  // jr8 ICIMS r2: an IForm's own frame (uscareers-nyu's signature form on nyu.icims.com) inside its portal page inside the
+  // wrapper, as served at their own addresses; the portal says, beside its step facts, that it shows the forms frame.
+  for (const how of ['scrolled past its top', 'under the open sidebar'] as const) {
+    test(`R4: uscareers-nyu’s IForm, its frame ${how}, fills; its run never ends Stopped`, async ({ extContext, connected: ext, routeLog }) => {
+      if (how === 'under the open sidebar') await ext.data({ v: 1, type: 'settings/save', settings: PRODUCT_SETTINGS });
+      const routes = routesFile('fixtures/icims/jr6-nyu-iform-signature.routes.json');
+      const TOP = Object.entries(routes).find(([, path]) => path === 'fixtures/icims/jr6-nyu-iform-signature.html')![0];
+      const LEAF = Object.entries(routes).find(([, path]) => path === 'fixtures/icims/jr6-nyu-iform-signature.frame-2.html')![0];
+      // Under the sidebar: the wrapper pins its frame wider than the page push leaves it (as careers-healthedge pins its
+      // content at min-width 980px), so the portal and the IForm's corner stay under the sidebar.
+      const wrapper = readFileSync('fixtures/icims/jr6-nyu-iform-signature.html', 'utf8');
+      const at = wrapper.lastIndexOf('</body>');
+      routeLog.serve({ ...routes, ...(how === 'under the open sidebar' ? { [TOP]: { body: `${wrapper.slice(0, at)}<style>
+        iframe#icims_content_iframe { min-width: 1100px; }</style>${wrapper.slice(at)}`, contentType: HTML } } : {}) });
+      const page = await extContext.newPage();
+      // Scrolled: a window short enough for the person to scroll the IForm's top out of view.
+      if (how === 'scrolled past its top') await page.setViewportSize({ width: 1280, height: 480 });
+      await page.goto(TOP);
+      await page.bringToFront();
+      const tabId = await ext.tabIdOf(page);
+      const leafId = await formFrameOf(ext, tabId);
+      // The portal's word, kept by the worker beside its step facts: its forms frame is shown.
+      await expect.poll(async () => Object.entries(await ext.session()).filter(([key]) => key.startsWith(`chainfacts:${tabId}:`))
+        .map(([, record]) => (record as { facts?: { shown?: boolean } | null }).facts?.shown ?? null), { timeout: 20_000 })
+        .toEqual([true]);
+      const portal = page.frames().find((each) => each.url().includes('/form?') && each.url().includes('in_iframe=1'))!;
+      const leafTop = async () => (await page.evaluate(() => document.querySelector('iframe#icims_content_iframe')!
+        .getBoundingClientRect().top)) + (await portal.evaluate(() => document.querySelector(
+        '.iCIMS_mainFormFrame iframe#icims_formFrame')!.getBoundingClientRect().top));
+      if (how === 'scrolled past its top') {
+        await page.evaluate((by) => scrollBy(0, by), (await leafTop()) + 200);
+        expect(await leafTop()).toBeLessThan(-100);
+        const panel = await ext.reportPage(tabId);
+        const button = panel.locator('button.tia-cta[data-main-action="fill"]');
+        await expect(button).toBeEnabled({ timeout: 20_000 });
+        await button.click();
+        await page.bringToFront();
+      } else {
+        const ui = await PageUi.of(page);
+        await expect.poll(async () => (await ui.elements('[data-sidebar] button[data-main-action="fill"]'))[0]
+          ?.attributes.disabled === undefined, { timeout: 20_000, message: 'no Autofill in the sidebar' }).toBe(true);
+        // The portal stays under the sidebar, over the IForm's top-right corner where its frame's launcher sits.
+        const right = await page.evaluate(() => document.querySelector('iframe#icims_content_iframe')!
+          .getBoundingClientRect().right);
+        expect(right).toBeGreaterThan(await page.evaluate(() => document.documentElement.clientWidth) - SIDEBAR_WIDTH_PX);
+        await page.waitForTimeout(1_500);
+        const [main] = await ui.elements('[data-sidebar] button[data-main-action="fill"]');
+        await ui.click(main!);
+      }
+      const report = await rested(ext, tabId, leafId);
+      expect(report.status).not.toBe('stopped');
+      expect(report.notices.map((notice) => notice.code)).not.toContain('form-hidden');
+      expect(report.fields.length).toBeGreaterThan(0);
+      expect(page.frames().some((each) => each.url() === LEAF)).toBe(true);
+      expect(routeLog.unexpected).toEqual([]);
+      expect(routeLog.submitted).toEqual([]);
+    });
+  }
 });

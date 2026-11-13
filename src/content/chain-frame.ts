@@ -104,7 +104,8 @@ export const CHAIN_FACTS_TRIES = 3;
 function sameFacts(a: ChainStepFacts | null, b: ChainStepFacts | null): boolean {
   if (a === null || b === null) return a === b;
   return a.stepId === b.stepId && a.lastStep === b.lastStep && a.counters === b.counters
-    && (a.packet?.n ?? null) === (b.packet?.n ?? null) && (a.packet?.m ?? null) === (b.packet?.m ?? null);
+    && (a.packet?.n ?? null) === (b.packet?.n ?? null) && (a.packet?.m ?? null) === (b.packet?.m ?? null)
+    && (a.shown ?? null) === (b.shown ?? null); // jr8 ICIMS (r2)
 }
 
 /** Whether an address's adapters say step facts at all (one of them declares Adapter.chainStepFacts: iCIMS's). */
@@ -150,6 +151,8 @@ export interface ChainFactsWatch {
   read(): ChainStepFacts | null;
   /** chain/facts to the worker; answers whether the worker took them. */
   send(facts: ChainStepFacts | null): Promise<boolean>;
+  /** jr8 ICIMS (r2): the wrapper's document, watched too (its changes may hide the claim frame: ChainStepFacts.shown). */
+  wrapper?: Document | null;
 }
 
 /** Tells the worker the claim frame's step facts for the document's life (module header): read once it said hello and
@@ -204,6 +207,10 @@ export function watchChainFacts(watch: ChainFactsWatch): void {
   const observer = new view.MutationObserver(() => soon());
   observer.observe(doc.documentElement, { childList: true, subtree: true, characterData: true, attributes: true,
     attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'title'] });
+  // jr8 ICIMS (r2): the wrapper's own changes (its frame hidden, moved or removed) are read again too.
+  const outer = watch.wrapper?.documentElement ?? null; // jr8 ICIMS (r2)
+  if (outer !== null) observer.observe(outer, { childList: true, subtree: true, attributes: true, // jr8 ICIMS (r2)
+    attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'] }); // jr8 ICIMS (r2)
   signal.addEventListener('abort', () => observer.disconnect(), { once: true });
   void look();
 }
@@ -256,7 +263,8 @@ export function holdChainFacts(doc: Document, facts: ChainStepFacts | null,
   frame: { isTop: boolean; href: string; referrer: string; parent?: string | null }): boolean { // jr7 CHAIN-7: parent
   if (facts !== null && loadedByPortal(frame)) {
     LEAF_FACTS.set(doc, { stepId: facts.stepId, lastStep: facts.lastStep, counters: facts.counters,
-      packet: facts.packet === null ? null : { n: facts.packet.n, m: facts.packet.m } });
+      packet: facts.packet === null ? null : { n: facts.packet.n, m: facts.packet.m },
+      ...(typeof facts.shown === 'boolean' ? { shown: facts.shown } : {}) }); // jr8 ICIMS (r2)
     log('content.chained', { facts: true, held: true });
     return true;
   }

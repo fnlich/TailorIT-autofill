@@ -248,7 +248,8 @@ describe('the claim frame says its step facts (jr6 SHELL-B, chain/facts)', () =>
     await expect.poll(() => worker.of('chain/facts').length).toBe(1);
     const types = worker.messages.map((message) => message.type);
     expect(types.indexOf('frame/hello')).toBeLessThan(types.indexOf('chain/facts'));
-    expect(worker.of('chain/facts')[0]).toEqual({ v: 1, type: 'chain/facts', facts: SIGNATURE });
+    // jr8 ICIMS r2: beside them, that the top frame's page shows its one forms frame (claim-seen.ts formsFrameShown).
+    expect(worker.of('chain/facts')[0]).toEqual({ v: 1, type: 'chain/facts', facts: { ...SIGNATURE, shown: true } });
     // A change that leaves them as they were says nothing.
     portal.doc.body.append(portal.doc.createElement('p'));
     await deadline(600);

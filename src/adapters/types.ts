@@ -323,6 +323,11 @@ export interface ChainStepFacts {
   packet: { n: number; m: number } | null;
   /** How many packet counters the page shows (more than one: the facts cannot say which form is the leaf's). */
   counters: number;
+  /** jr8 ICIMS (r2): the claim frame's page shows the one forms frame it frames, and its wrapper shows the claim frame,
+   *  by the fields' visibility rules (content/claim-seen.ts formsFrameShown): the leaf's run frame check (S1) reads it.
+   *  Absent where the claim frame cannot say (no forms frame, several, or no wrapper to read). Said by the content
+   *  script, never by an adapter. */
+  shown?: boolean;
 }
 // ── end jr6 ENGINE E0 ──
 

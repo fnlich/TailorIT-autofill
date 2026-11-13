@@ -29,3 +29,45 @@ export function claimFrameSeen(wrapper: { doc: Document; frame: Element | null }
     return null;
   }
 }
+
+// ── jr8 ICIMS r2 (the coordinator's word on open item 1): an IForm's own frame ──
+/*
+ * An iCIMS IForm's form is framed a level deeper, on <co>.icims.com/forms, by the claim frame's page (the portal page
+ * at /form): a chain frame on another origin, which can read neither its portal nor the wrapper around it, so its run
+ * kept the launcher rule, and its launcher, at the form's top-right corner, was hidden by the same scroll or sidebar.
+ * The claim frame reads both: its one forms frame (the iframe whose address is on an origin its adapter declares,
+ * chain-frame.ts declaredChildOrigins) shown on its page, and itself shown on the wrapper's page (claimFrameSeen),
+ * each by the fields' rules, and says it as ChainStepFacts.shown beside its step facts; the worker hands it to the leaf
+ * with them (background/chain.ts, unchanged), and the leaf's frame check reads it (runtime.ts frameShown). One forms
+ * frame only: with several the claim frame cannot say which is the leaf's. Booleans only.
+ */
+
+/** Whether `doc`'s page shows its one forms frame (an iframe on an origin of `origins`) and, where this frame sits in
+ *  a wrapper (`wrapper`: 'top' for the top frame, which no page holds), the wrapper shows this frame; null where it
+ *  cannot say (no such frame, several, or a wrapper it cannot read). */
+export function formsFrameShown(doc: Document, origins: readonly string[],
+  wrapper: { doc: Document; frame: Element | null } | null | 'top'): boolean | null {
+  if (origins.length === 0) return null;
+  const frames = Array.from(doc.querySelectorAll('iframe[src]')).filter((frame) => {
+    try {
+      return origins.includes(new URL(frame.getAttribute('src') ?? '', doc.baseURI).origin);
+    } catch {
+      return false;
+    }
+  });
+  if (frames.length !== 1) return null;
+  const outer = wrapper === 'top' ? true : claimFrameSeen(wrapper);
+  if (outer === null) return null;
+  try {
+    return outer && isUserVisible(frames[0]!);
+  } catch {
+    return null;
+  }
+}
+
+/** `facts` with `shown` as the content script reads it (none where it cannot say; an adapter's own never kept). */
+export function withFormsShown<T extends { shown?: boolean }>(facts: T | null, shown: boolean | null): T | null {
+  if (facts === null) return null;
+  const { shown: _said, ...rest } = facts;
+  return (shown === null ? rest : { ...rest, shown }) as T;
+}
