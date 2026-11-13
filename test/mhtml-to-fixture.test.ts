@@ -4300,10 +4300,9 @@ const JOBVITE_SHARE_CHANNELS = ['linkedin', 'twitter', 'facebook', 'email'];
 const SRC_REFERRAL_FIXTURES = ['careerplug/cloudscouts-form.html', 'careerplug/eitacies-uploaded.html',
   'oracle/fortive-email-code.expect.json', 'oracle/fortive-email-code.html', 'oracle/fortive-email-code.routes.json',
   'rippling/qu-careers-form.expect.json', 'rippling/qu-careers-form.html', 'rippling/qu-careers-form.routes.json',
-  'rippling/qu-careers-posting.html', 'rippling/qu-careers-posting.routes.json',
-  'ukgready/jr7-saashr-choice.html', 'ukgready/jr7-saashr-choice.routes.json', 'ukgready/jr7-saashr-posting.html',
-  'ukgready/jr7-saashr-posting.routes.json', 'ukgready/jr7-saashr-start-filled.html',
-  'ukgready/jr7-saashr-start-filled.routes.json'];
+  'rippling/qu-careers-posting.html', 'rippling/qu-careers-posting.routes.json'];
+// jr7 UKGREADY-7 (P2): UKG Ready's three jr7 cases are converted again with r3's converter (their src= REDACTED): their
+// six entries went from the list above.
 
 /** Each referral parameter (REFERRAL_PARAMS, REFERRAL_PREFIXES) that holds a value other than REDACTED in a text, by
  *  name, in every form the final check reads (checkedForms: as written, entities decoded, percent-decoded): the
