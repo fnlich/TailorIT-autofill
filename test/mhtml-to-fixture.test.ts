@@ -1497,8 +1497,9 @@ interface Expectation {
 /** jr6 (FIXPLAN 6.1 item 8): a case of the jr6 build (2026-11-10: the owner's snapshot6 and the Apply audits' pages),
  *  named jr6-*. The frozen counts and lists below leave them out; every jr6 file still goes through the per-file checks
  *  (its platform's, and those of every jr6 case: JR6_FILES). jr7 TOOLING-7: and a case of the jr7 build (2026-11-11: the
- *  owner's snapshot7, FIX7PLAN §11), named jr7-*, alike: out of the frozen lists, through every per-file check. */
-const isJr6 = (name: string): boolean => /(?:^|\/)jr[67]-/.test(name);
+ *  owner's snapshot7, FIX7PLAN §11), named jr7-*, alike: out of the frozen lists, through every per-file check. jr8 ICIMS:
+ *  and the jr8 cases (2026-11-13: the owner's snapshot11), named jr8-*, alike. */
+const isJr6 = (name: string): boolean => /(?:^|\/)jr[678]-/.test(name);
 
 /** The reasons a control is not fillable (docs/FIXTURES.md). */
 const NOT_FILLABLE = ['widget-phase-4', 'not-user-visible'];
