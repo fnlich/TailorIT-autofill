@@ -73,7 +73,6 @@ import {
   type QueueListAnswer, type QueueStatus, type QueueStop,
 } from '../messaging/page-schemas';
 import { AGENT_NOTES, type AgentNote } from '../messaging/schemas';
-import type { HandOverKind } from '../adapters/types'; // jr7 UKGREADY-7
 import type { AgentAlarms, AtsPage, QueueTabs, StorageArea } from '../platform/types';
 import { log } from '../shared/log';
 import type { FrameReport } from '../shared/report';
@@ -817,7 +816,7 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
     /** A frame of a queued tab said hello (`acts`: the tab's top frame, or the frame that claims its application, as
      *  index.ts reads the registry): the job's page is open; at the job's own application its job and resume are
      *  named, and with Automatically its first form gets its run, once. */
-    hello: (tabId: number, frame: QueueFrame, acts: boolean, said: { handOver?: HandOverKind | undefined } = {}) =>
+    hello: (tabId: number, frame: QueueFrame, acts: boolean, said: { handOver?: AgentNote | undefined } = {}) =>
       onItem(tabId, async (_run, item) => {
       let changed = false;
       const now = deps.now();
@@ -829,11 +828,7 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       deps.assign(tabId, item.applicationKey, { jobId: item.jobId, resumeId: item.resumeId });
       // jr7 AUTO-7 (ICIMS7-04): a step that is the person's by design: Ready for you, with its words; nothing pressed.
       if (said.handOver !== undefined) {
-        // ── jr7 UKGREADY-7 (the merge of jr7-engine-e2 and jr7-auto-done): held alike for a hand-over with no
-        // AGENT_NOTES word yet (E2's 'documents', UP7-07), with no note until INT-7 writes its words ──
-        const note = (AGENT_NOTES as readonly string[]).includes(said.handOver) ? said.handOver as AgentNote : null;
-        Object.assign(item, { status: 'ready', note, entryAt: null, quietAt: null });
-        // ── end jr7 UKGREADY-7 ──
+        Object.assign(item, { status: 'ready', note: said.handOver, entryAt: null, quietAt: null });
         log('queue.held', { handOver: true });
         return true;
       }

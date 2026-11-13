@@ -1054,11 +1054,7 @@ export function createAgent(deps: AgentDeps) {
     deps.assign(tabId, run.applicationKey, { jobId: run.jobId, resumeId: run.resumeId });
     // jr7 AUTO-7 (ICIMS7-04 (2)): never timed_out after ten minutes; the person takes the assessment in this tab.
     if (handOver !== null && run.pressedAt !== null) {
-      // ── jr7 UKGREADY-7 (the merge of jr7-engine-e2 and jr7-auto-done): a hand-over with no AGENT_NOTES word yet
-      // (E2's 'documents', UP7-07) ends the job alike, with no note, until INT-7 writes its words ──
-      const note = (AGENT_NOTES as readonly string[]).includes(handOver) ? { note: handOver as AgentNote } : {};
-      await finishRun(heard, 'needs-you', 'other', { keepTab: true, ...note });
-      // ── end jr7 UKGREADY-7 ──
+      await finishRun(heard, 'needs-you', 'other', { keepTab: true, note: handOver });
       return null;
     }
     if (entry.hasForm) {

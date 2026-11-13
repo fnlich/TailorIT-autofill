@@ -348,11 +348,7 @@ export type EntryBlock = (typeof ENTRY_BLOCKS)[number];
 export const AGENT_NOTES = ['assessment'] as const;
 export type AgentNote = (typeof AGENT_NOTES)[number];
 /** The steps that are the person's by design (adapters/types.ts HandOverKind), as a frame's hello says one shows. */
-// ── jr7 UKGREADY-7 (the merge of jr7-engine-e2 and jr7-auto-done): E2's HandOverKind holds 'documents' too (UP7-07,
-// UltiPro's documents dialog after Submit), so a frame's hello may say it; it is no AGENT_NOTES word until INT-7 writes
-// its words ──
-export const HAND_OVER_KINDS = ['assessment', 'documents'] as const;
-// ── end jr7 UKGREADY-7 ──
+export const HAND_OVER_KINDS = ['assessment'] as const;
 // ── end jr7 AUTO-7 ──
 
 // ── jr6 apply A0 (the contract): Autofill presses the site's own Apply ──
