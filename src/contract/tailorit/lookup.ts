@@ -686,12 +686,16 @@ function workableJobsSitePosting(url: UrlLike): ParsedAtsUrl | null {
   return { kind: 'workable', board: null, externalId: id, canonical: [`https://${WORKABLE_JOBS_HOST}/view/${id}`] };
 }
 
-/** A company's own careers page that embeds a Greenhouse form names the posting in ?gh_jid=. */
+/**
+ * A company's own careers page that embeds a Greenhouse form names the posting in ?gh_jid=. Its canonical address is
+ * the page's scheme, host, port and path with `gh_jid` alone (jr7 review A-2): never the page's other parameters (a
+ * session's, a token's, an email's), nor its user name and password, nor its fragment.
+ */
 function greenhouseOnCompanyPage(url: UrlLike): ParsedAtsUrl | null {
   const id = queryValue(url, 'gh_jid');
   if (id === null || !GREENHOUSE_JOB_ID.test(id)) return null;
-  const fragment = url.href.indexOf('#');
-  const page = fragment < 0 ? url.href : url.href.slice(0, fragment);
+  const port = url.port === '' ? '' : `:${url.port}`;
+  const page = `${url.protocol}//${url.hostname}${port}${url.pathname}?gh_jid=${id}`;
   return { kind: 'greenhouse', board: null, externalId: id, canonical: [page] };
 }
 
