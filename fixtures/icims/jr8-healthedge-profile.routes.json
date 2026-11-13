@@ -1,0 +1,5 @@
+{
+  "https://careers-healthedge.icims.com/jobs/8188/senior-platform-engineer/candidate?from=login&eem=REDACTED&code=REDACTED&ga=REDACTED&accept_gdpr=1": "fixtures/icims/jr8-healthedge-profile.html",
+  "https://careers-healthedge.icims.com/jobs/8188/senior-platform-engineer/candidate?from=login&eem=REDACTED&code=REDACTED&ga=REDACTED&accept_gdpr=1&in_iframe=1": "fixtures/icims/jr8-healthedge-profile.frame-1.html",
+  "https://newassets.hcaptcha.com/captcha/v1/221126bfaff10f69f5e2c60a7ff42e4b9f16aed7/static/hcaptcha.html": "fixtures/icims/jr8-healthedge-profile.third-party-frame.html"
+}
