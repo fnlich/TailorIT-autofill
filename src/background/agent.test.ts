@@ -872,6 +872,24 @@ describe('the agent', () => {
     expect(await fresh.agent.ownsTab(151)).toBe(true);
   });
 
+  // jr7 INT-7 round 3 (the review's B-2 rule on adopt, the background fixer's open item). Undo proof: adopt's
+  // `run.pressedAt !== null ? 'timed_out' : 'cancelled'` back to 'cancelled' and this fails.
+  it('a job of another browser session whose Submit was pressed is timed_out (it may have been sent), never cancelled', async () => {
+    const local = memoryArea();
+    const queue = queueOf([task(1), task(2)]);
+    const first = harness({ local, queue });
+    await on(first);
+    const { tabId, key } = await running(first);
+    await first.agent.hello(tabId, form(key, 'doc-1'));
+    await first.agent.pressed(tabId, key, 'doc-1');
+    expect((await runRecord(first))!.pressedAt).not.toBeNull();
+    // The browser restarted: storage.session is empty; the run is adopted as another session's.
+    const fresh = harness({ local, session: memoryArea(), queue, firstWindow: 50 });
+    await fresh.agent.start();
+    expect(fresh.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'timed_out', aiGuesses: 0 } }]);
+    expect(fresh.windows.closedTabs).toEqual([]);
+  });
+
   it('opens a job claimed but never opened from the row TailorIT gives back, and drops one TailorIT no longer runs', async () => {
     const now = Date.UTC(2026, 10, 2, 12);
     const keyOf = (url: string) => applicationOf(new URL(agentApplicationUrl(url)!))!.applicationKey;

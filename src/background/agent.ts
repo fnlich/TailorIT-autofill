@@ -720,11 +720,14 @@ export function createAgent(deps: AgentDeps) {
   }
 
   /** A record of another browser session: its tab and window ids name nothing of the agent's now (a browser restart).
-   *  The job is the person's; nothing is closed. Answers the run as it stands after. */
+   *  The job is the person's; nothing is closed. Answers the run as it stands after. jr7 INT-7 round 3 (the review's
+   *  B-2 rule, the background fixer's open item): once the job's Submit was pressed it may have been sent, so it is
+   *  told needs-you timed_out (TailorIT's "check the site"), never cancelled. */
   async function adopt(run: AgentRun | null): Promise<AgentRun | null> {
     if (run === null || run.result !== null || run.tabId === null || (await ofThisSession(run))) return run;
     log('agent.finished', { stale: true });
-    await finishRun({ ...run, tabId: null, windowId: null, session: null }, 'needs-you', 'cancelled');
+    await finishRun({ ...run, tabId: null, windowId: null, session: null }, 'needs-you',
+      run.pressedAt !== null ? 'timed_out' : 'cancelled');
     return runOf();
   }
 
