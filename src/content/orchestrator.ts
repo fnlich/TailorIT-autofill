@@ -212,8 +212,8 @@ import { log } from '../shared/log';
 import { leftForPerson, notFilled, progressOf, unfilledByRun } from '../shared/report';
 import type { ContentSettings } from '../shared/settings';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
-import { AI_POLL_MS, AI_WAIT_CAP_MS, AiWake, CurrentWrite, runLoop, type LoopCarry, type LoopResult, type OptionsTimings,
-  type SettleTimings } from './loop';
+import { AI_POLL_MS, AI_WAIT_CAP_MS, AiWake, carryWithout, CurrentWrite, runLoop, type LoopCarry, type LoopResult,
+  type OptionsTimings, type SettleTimings } from './loop';
 import { RunAborted, writeField, type PassEnv, type PlanAnswer } from './pass';
 import { frameHitsOf, hiddenPolicyHits, policyGateOf, POSTING_READ_MIN, type PolicyView } from './policy';
 import {
@@ -701,7 +701,8 @@ export class FillRun {
   /** Sections whose entries are left for the person to add. */
   private addsLeft = 0;
   /** The repeatable blocks this step saved (saveBlocks: their section keys): the page folded their fields away after
-   *  our own Save, so what the run wrote there is no longer read back at rest (lookBeforeLeaving). */
+   *  our own Save, so what the run wrote there is no longer read back at rest (lookBeforeLeaving), unless (jr8) the page
+   *  shows a field at that key again: a live block's, read back as any other. */
   private savedBlocks: ReadonlySet<string> = new Set();
   private settledStep = true;
   private lastErrors = 0;
@@ -1390,11 +1391,13 @@ export class FillRun {
     return (async () => {
       try {
         const macs = await hasher.macsOf(fields);
+        const shown = new Set(fresh.fields.map((field) => field.baseKey));
         const changed = this.rows.flatMap((row) => {
           const baseKey = baseKeyOf(row.key);
-          // A block the step saved (saveBlocks) holds its entry in the page's own summary now, its fields folded away.
+          // A block the step saved (saveBlocks) holds its entry in the page's own summary now, its fields folded away
+          // (jr8: a field the page shows at its key is a live block's, read again as any other).
           if (!row.wrote || row.verification !== 'verified' || row.provenance === 'llm-draft' || !books.has(baseKey)
-            || this.savedBlocks.has(row.section)) {
+            || (this.savedBlocks.has(row.section) && !shown.has(baseKey))) {
             return [];
           }
           const mac = macs.get(baseKey);
@@ -2483,7 +2486,8 @@ export class FillRun {
 
     this.sections = sectionsOf(adapter, this.rootNow());
     // The editors the step began with that held nothing: their Save is the run's to press as much as the ones it opens
-    // (repeatables.ts saveBlocks). The rows of the blocks a round saved stand for them in the rounds after it.
+    // (repeatables.ts saveBlocks). The rows of the blocks a round saved stand for them in the rounds after it, and
+    // (jr8) their books are dropped before the next round.
     const emptyAtStart = new Set<Element>();
     const opened = new Set<Element>();
     const savedRows = new Map<FieldKey, FillResult>();
@@ -2551,9 +2555,12 @@ export class FillRun {
       if (signature !== null && !this.request.dryRun) this.carries.set(signature, loop.carry);
       written.push(...loop.written.map((entry) => entry.key).filter((key) => !written.includes(key)));
       const last = loop.scan;
-      // A block an earlier round saved folded its fields away: its rows are the ones that round left.
-      let rows = new Map(loop.rows.map((row) => [row.key, savedRows.get(row.key) ?? row]));
-      for (const [key, row] of savedRows) if (!rows.has(key)) rows.set(key, row);
+      // A block an earlier round saved folded its fields away: its rows are the ones that round left, while the latest
+      // scan shows no field of theirs (jr8: a field it shows at that key is a live block's, whose own row stands).
+      const shown = new Set(last.fields.map((field) => field.baseKey));
+      const savedRow = (key: FieldKey) => (shown.has(baseKeyOf(key)) ? undefined : savedRows.get(key));
+      let rows = new Map(loop.rows.map((row) => [row.key, savedRow(row.key) ?? row]));
+      for (const [key, row] of savedRows) if (!rows.has(key) && savedRow(key) !== undefined) rows.set(key, row);
       for (const section of this.sections) rows = currentJobRows(rows, last, section, this.answers.get(section.kind));
       // The drafts the person confirmed earlier in the run read back as confirmed (Phase 6).
       const confirmedDrafts = new Set([...rows.keys()].filter((key) => this.confirmedDrafts.has(baseKeyOf(key))));
@@ -2614,6 +2621,13 @@ export class FillRun {
         if (saves.saved.length > 0 && saves.left === 0 && round + 1 < rounds && moreToAdd(this.sections, profile)) {
           // The next round counts again what is left for the person.
           this.notices.forget(['needs-click']);
+          // jr8: the saved blocks' fields are gone, so what the page draws at their keys from now on is another entry's:
+          // the next round's loop starts those keys afresh (carryWithout), never reading a new editor's empty fields as
+          // our value reset (MAX_VALUE_FLIPS).
+          const carry = signature === null ? undefined : this.carries.get(signature);
+          if (signature !== null && carry !== undefined) {
+            this.carries.set(signature, carryWithout(carry, new Set(saves.saved)));
+          }
           continue;
         }
         if (saves.left > 0) this.addsLeft += saves.left;

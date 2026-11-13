@@ -70,7 +70,10 @@
  * the earlier attempt's books (LoopEnv.carry, LoopResult.carry: the Phase 5 review, C-S3 and C-S5): the fields we wrote
  * keep their value hashes under the run's one key (LoopEnv.hasher), what was written (for the final Guard) and when, so
  * a value still ours keeps our verified row and is not written again, a value the person changed since is theirs
- * (changed-by-you, never written), and one the page reset is written again. Its passes add to the earlier ones'.
+ * (changed-by-you, never written), and one the page reset is written again. Its passes add to the earlier ones'. jr8:
+ * the next round of the fill step's add, fill and save (content/orchestrator.ts fillStep) starts from them without the
+ * books of the repeatable blocks the round saved (carryWithout): their fields are gone, folded into the entry's summary,
+ * and a field drawn at their key later is another entry's, never our value reset.
  * v3 Phase 3: the loop tells its run how far it is (LoopEnv.progress: the rows known now, the keys the pass still
  * writes, the one it writes now), so the side panel spins the current row and counts only what is done; and the write
  * being made can be given up at the person's Skip (CurrentWrite): that one write's waits end at once, its field is
@@ -291,6 +294,18 @@ export interface LoopCarry {
   /** The fields the person skipped (v3 Phase 3), with their skipped-by-you row (null: the write stood). Optional, so an
    *  older carry reads as none skipped. */
   skipped?: ReadonlyMap<BaseKey, FillResult | null>;
+}
+
+/** The section key of a base key (core/text/keys.ts baseKey: `${platform}|${sectionKey}|${labelSlug}|${ordinal}`). */
+const sectionOfBaseKey = (baseKey: BaseKey) => baseKey.split('|')[1] ?? '';
+
+/** jr8: a carry without the books of the given sections (section keys: a repeatable block a round saved, whose fields
+ *  the page folded away), so whatever the page draws at those keys later is planned and written as a new field. */
+export function carryWithout(carry: LoopCarry, sections: ReadonlySet<string>): LoopCarry {
+  const kept = <T>(map: ReadonlyMap<BaseKey, T>) => new Map([...map].filter(([baseKey]) =>
+    !sections.has(sectionOfBaseKey(baseKey))));
+  return { ...carry, fields: carry.fields.filter((field) => !sections.has(field.section)), written: kept(carry.written),
+    lastWriteAt: kept(carry.lastWriteAt), ...(carry.skipped === undefined ? {} : { skipped: kept(carry.skipped) }) };
 }
 
 /** What the loop leaves for the final Guard and the report. Memory only: `written` holds values. */
