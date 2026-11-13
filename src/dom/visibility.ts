@@ -131,6 +131,28 @@ function trapHidden(el: Element): boolean {
 }
 // ── end jr6 ENGINE E2 item 10 ──
 
+// ── jr7 FIX-content A-1: what aria-hidden alone hides ──
+/** The caches whose judgments lift every aria-hidden="true" (ariaHiddenLifted), each paired with one scan's cache. */
+const ARIA_LIFTED = new WeakMap<ScanCache, ScanCache>();
+const LIFTED = new WeakSet<ScanCache>();
+
+/**
+ * A cache for `cache`'s scan whose judgments (visibilityOf, visibleText) are the usual ones with only the aria-hidden
+ * rule lifted: every other rule stands (the hidden and inert attributes, display, visibility, opacity, size, place,
+ * clipping, tiny fonts, and visibleText's ink against what is behind it), so it reads what a person sees drawn of
+ * words a page hides from assistive technology. Only labels.ts hiddenOwnLabelSays asks it.
+ */
+export function ariaHiddenLifted(cache: ScanCache): ScanCache {
+  let lifted = ARIA_LIFTED.get(cache);
+  if (lifted === undefined) {
+    lifted = newScanCache();
+    LIFTED.add(lifted);
+    ARIA_LIFTED.set(cache, lifted);
+  }
+  return lifted;
+}
+// ── end jr7 FIX-content A-1 ──
+
 /** isUserVisible with the rule that decided. */
 export function visibilityOf(el: Element, cache: ScanCache = newScanCache()): VisibilityVerdict {
   return cache.memo('visibility', el, () => judgeElement(el, cache));
@@ -246,7 +268,7 @@ function factsOf(el: Element, cache: ScanCache): Facts {
     const style = styleOf(el, cache);
     const opacity = (inherited?.opacity ?? 1) * opacityValue(style?.opacity) * filterOpacity(style?.filter);
     const own = ownHidingRule(el, style, parent, parent === null ? null : styleOf(parent, cache),
-      TRAP_LIFTED.has(cache)); // jr6 ENGINE
+      TRAP_LIFTED.has(cache), LIFTED.has(cache)); // jr6 ENGINE; jr7 FIX-content A-1
     const hiddenBy = inherited?.contentHiddenBy ?? own ?? (opacity < MIN_OPACITY ? 'opacity' : null);
     const contentHiddenBy = hiddenBy ?? (style?.contentVisibility === 'hidden' ? 'content-visibility' : null);
     const inModal = (inherited?.inModal ?? false) || isOpenModal(el);
@@ -255,11 +277,13 @@ function factsOf(el: Element, cache: ScanCache): Facts {
 }
 
 function ownHidingRule(el: Element, style: CSSStyleDeclaration | null, parent: Element | null,
-  parentStyle: CSSStyleDeclaration | null, trapLifted = false): VisibilityRule | null {
+  parentStyle: CSSStyleDeclaration | null, trapLifted = false, ariaLifted = false): VisibilityRule | null {
   if (el.hasAttribute('hidden')) return 'hidden-attribute';
   if (el.hasAttribute('inert')) return 'inert';
   // jr6 ENGINE E2 (item 10): a focus trap's aria-hidden is lifted for visibleBesideFocusTrap's judgment alone.
-  if ((el.getAttribute('aria-hidden') ?? '').trim().toLowerCase() === 'true' && !(trapLifted && trapHidden(el))) {
+  // jr7 FIX-content A-1: every aria-hidden is lifted for ariaHiddenLifted's judgments alone.
+  if (!ariaLifted && (el.getAttribute('aria-hidden') ?? '').trim().toLowerCase() === 'true'
+    && !(trapLifted && trapHidden(el))) {
     return 'aria-hidden';
   }
   if (style === null || style.display === 'none') return 'display-none';
