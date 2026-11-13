@@ -47,7 +47,8 @@ function levelOnly(parsed: ParsedDegree): boolean {
 
 /** How the usable options offer degrees (§4.9), by the shares in confidence.ts. */
 export function detectDegreeGranularity(options: readonly PreparedOption[]): DegreeGranularity {
-  const list = degreeOptions(options);
+  // jr7 RULES-7 R5 (UP7-11): an attainment short of a degree takes no part in the shares.
+  const list = degreeOptions(options).filter((option) => option.attainment !== true);
   const total = list.length;
   if (total === 0) return 'unknown';
   const typed = list.filter((option) => option.degree.types.length > 0).length;
@@ -95,7 +96,8 @@ export function fieldAgrees(text: string, field: FieldOfStudy | undefined, vocab
 /** jr7 RULES-7 R2 (UP7-11, UltiPro's "Please select the highest level of education you have attained." with "Bachelor's
  *  level degree", snapshot7 ultipro2): what the parse leaves as a degree's field but names no field of study ("level",
  *  "level degree", "or equivalent"): no field conflict. */
-const NO_FIELD = /^(?:level|level\s+degree|degree|or\s+(?:its\s+|an\s+)?equivalent|equivalent)$/;
+// jr7 RULES-7 R5 (UP7-11): nor the "college" of "2 year college degree".
+const NO_FIELD = /^(?:level|level\s+degree|degree|or\s+(?:its\s+|an\s+)?equivalent|equivalent|college|university)$/;
 
 /** An option the degree rules rule out: another level (not one the type may stand for), types or bracketed types
  *  none of which is in the intended type's class, or a field of study that is not the entry's `field` (any field,

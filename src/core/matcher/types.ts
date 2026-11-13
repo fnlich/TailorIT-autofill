@@ -57,6 +57,10 @@ export interface PreparedOption {
   other: boolean;
   /** In the degree domain: what the clean label names as a degree. */
   degree?: ParsedDegree;
+  /** jr7 RULES-7 R5 (UP7-11): in the degree domain, an attainment short of a degree ("Some college", "Less than HS
+   *  Graduate", "Technical School", "Some graduate school"): it names no degree, and a list's share of degree levels is
+   *  read without it. */
+  attainment?: true;
   /** Another usable option has the same main key with other brackets ("Chinese (Mandarin)" beside "Chinese
    *  (Cantonese)"): the brackets are what tell them apart, so none of them is ever redundant. */
   bracketSiblings: boolean;

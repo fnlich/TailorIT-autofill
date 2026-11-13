@@ -101,6 +101,25 @@ function slashPartsOf(clean: string, domain: MatchDomain, context: NormContext):
   return [...new Set(parts.map((part) => normalize(matchedText(part, domain), context).key).filter((key) => key !== ''))];
 }
 
+/** jr7 RULES-7 R5 (UP7-11, UltiPro's eleven attainment levels "Less than HS Graduate, HS Graduate or equivalent, Some
+ *  college, Technical School, 2 year college degree, Bachelor's level degree, Some graduate school, …", snapshot7
+ *  ultipro2): an attainment short of a degree, by its own words. */
+const ATTAINMENT = /^(?:less\s+than|some|no|incomplete|partial(?:ly)?|without|attended|attending|currently\s+(?:in|enrolled))\b|\b(?:technical|vocational|trade)\s+(?:school|training|program|certificate)\b/i;
+/** jr7 RULES-7 R5 (UP7-11): a high-school graduate written "HS". */
+const HS_GRADUATE = /^h\.?\s?s\.?\s+(?:graduate|grad|diploma)\b/i;
+
+/** In the degree domain: what an option names as a degree. jr7 RULES-7 R5 (UP7-11): an attainment short of a degree is
+ *  marked so (its words left over from a level, "Less than", "Some", read as a field no entry has, already rule it out
+ *  of every level: degree.ts degreeConflict); "HS Graduate" is the high-school level. */
+function degreeOf(clean: string, vocab: Vocab): Pick<PreparedOption, 'degree' | 'attainment'> {
+  const parsed = parseDegree(clean, vocab);
+  if (ATTAINMENT.test(clean.trim())) return { degree: parsed, attainment: true };
+  if (parsed.level === undefined && parsed.types.length === 0 && HS_GRADUATE.test(clean.trim())) {
+    return { degree: { ...parsed, level: 'highSchool' } };
+  }
+  return { degree: parsed };
+}
+
 /** jr7 RULES-7 R2 (ICIMS7-13): an Other's qualifier that restricts it to what it is not ("Non Internet", "not listed
  *  online", "except job boards", "excluding"). "Other (please specify)" and "Other (Internet)" stay catch-alls. */
 const restrictsOther = (qualifier: { tokens: readonly string[] }) =>
@@ -160,7 +179,7 @@ export function prepareOptions(options: readonly Option[], domain: MatchDomain, 
       // jr7 RULES-7 R2 (ICIMS7-13, arc-onesolutions' "How did you hear about us?" offering "Other (Non Internet)",
       // snapshot7 iCIMS1): an Other whose qualifier restricts it ("non …", "not …", "except …") is no catch-all.
       other: !unusable && other.has(answerKey) && !norm.qualifiers.some(restrictsOther),
-      ...(domain === 'degree' && !unusable ? { degree: parseDegree(clean, vocab) } : {}),
+      ...(domain === 'degree' && !unusable ? degreeOf(clean, vocab) : {}),
       bracketSiblings: false,
       slashParts: unusable ? [] : slashPartsOf(clean, domain, context),
     };

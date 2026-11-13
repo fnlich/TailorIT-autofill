@@ -103,3 +103,57 @@ describe('R5 (E4-2): a month-precision date into a text date box whose pattern h
       write: { value: { kind: 'text', text: '12/09/2026' } }, row: { reason: 'ok' } });
   });
 });
+
+describe('R5 (UP7-11): the degree level among an attainment list of eleven', () => {
+  // UltiPro's options as its list labels them (public list words, written here synthetically).
+  const OPTIONS = ['Less than HS Graduate', 'HS Graduate or equivalent', 'Some college', 'Technical School',
+    '2 year college degree', 'Bachelor\'s level degree', 'Some graduate school', 'Master\'s level degree',
+    'Doctorate Academic', 'Doctorate Professional', 'Post doctorate'];
+  const spec = specOf('Please select the highest level of education you have attained.', 'radio', { required: true,
+    platform: 'ultipro', optionLabels: OPTIONS });
+  const entry = golden.education[0]!;
+  const holding = (degree: Partial<typeof entry.degree>): Profile => ({ ...golden,
+    education: [{ ...entry, degree: { ...entry.degree, ...degree } }] });
+  const chosen = (profile: Profile) => {
+    const value = fieldOf(planOf([spec], { profile }), spec).write?.value;
+    return value?.kind === 'option' ? value.cleanLabel : undefined;
+  };
+  it.each<[string, Profile, string]>([
+    ['the golden bachelor', golden, 'Bachelor\'s level degree'],
+    ['a master', holding({ level: 'master', type: 'MS' }), 'Master\'s level degree'],
+    ['an associate', holding({ level: 'associate', type: 'AS' }), '2 year college degree'],
+    ['a high-school graduate', holding({ level: 'highSchool', type: 'HSD' }), 'HS Graduate or equivalent'],
+  ])('chooses %s’s own level', (_who, profile, label) => {
+    expect(chosen(profile)).toBe(label);
+  });
+  it('never chooses an attainment short of a degree', () => {
+    const shortOf = new Set(['Less than HS Graduate', 'Some college', 'Technical School', 'Some graduate school']);
+    for (const level of ['highSchool', 'associate', 'bachelor', 'master'] as const) {
+      const label = chosen(holding({ level }));
+      expect(label === undefined || !shortOf.has(label), `${level}: ${label}`).toBe(true);
+    }
+  });
+});
+
+describe('R5 (UP7-11): attainments short of a degree, in other lists', () => {
+  const entry = golden.education[0]!;
+  const highSchool: Profile = { ...golden, education: [{ ...entry, degree: { ...entry.degree, level: 'highSchool',
+    type: 'HSD' } }] };
+  const chosen = (options: string[], profile: Profile = golden) => {
+    const spec = specOf('Highest level of education completed', 'radio', { required: true, optionLabels: options });
+    const value = fieldOf(planOf([spec], { profile }), spec).write?.value;
+    return value?.kind === 'option' ? value.cleanLabel : undefined;
+  };
+  it('reads the degree levels of a list where most options are attainments short of one', () => {
+    expect(chosen(['Less than HS Graduate', 'Some high school', 'Some college', 'Some college, no degree',
+      'Technical School', 'Vocational training', 'Some graduate school', 'Bachelor\'s level degree',
+      'Master\'s level degree', 'Doctorate'])).toBe('Bachelor\'s level degree');
+  });
+  it('never takes "Less than High School" for a high-school graduate, nor some coursework for a degree', () => {
+    // "Some Bachelor's" names a level and no field, so only its own words say it is short of the degree.
+    const options = ['Less than High School', 'High School Diploma or GED', 'Some Bachelor\'s', 'Bachelor\'s Degree',
+      'Master\'s Degree'];
+    expect(chosen(options, highSchool)).toBe('High School Diploma or GED');
+    expect(chosen(options)).toBe('Bachelor\'s Degree');
+  });
+});
