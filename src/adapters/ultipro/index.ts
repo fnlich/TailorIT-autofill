@@ -52,6 +52,18 @@
  *   - apply-path C3: the application is drawn after its sign-in round trip: quirks.formLateMs 30 s.
  * Turnstile (the account step and the application, ultipro-0 to -2) is drawn in a closed shadow root: the extension
  * cannot read it (dom/pause-detect.ts's known limit), and Submit and Create account are the page's to enable.
+ * jr7 ULTIPRO-7 (FIX7PLAN §6.8; the owner's snapshot7 ultipro1, recruiting2.ultipro.com, and ultipro2,
+ * recruiting.ultipro.com, both through UKG's sign-in at signin-us.ultipro.com; fixtures/ultipro/jr7-ultipro{1,2}-*):
+ * - UP7-01, UP7-V2: the page after submitting (url.ts confirmationAfter: same host, tenant and board as the armed form);
+ *   its sign is div#ApplicationSubmitted shown, whatever words its HasAssessment() branch draws (success);
+ * - UP7-02: UKG's sign-in hosts (identityHosts), where nothing of ours runs (owner question Q7-9: no password typed);
+ * - UP7-03: an EEO list whose own "I decline to say" box is ticked holds no question while it is (excluded);
+ * - UP7-04, UP7-V1: the account step's three boxes, drawn by their ukg-field's shadow container (controlBox), and its
+ *   privacy box, an ARIA checkbox, the sign-in container's term; Create account enabled once filled;
+ * - UP7-07 (owner question Q7-8): the documents dialog after Submit is the person's: a state with nothing filled or
+ *   pressed, both its buttons never pressed;
+ * - UP7-09: the posting's Apply now (posting.entry), the Apply menu and LinkedIn's widget never pressed;
+ * - UP7-12: the data-use consent radios labelled by their question.
  * Nothing here reads, logs or sends a value.
  */
 import { parseColor } from '../../dom/color';
@@ -62,23 +74,44 @@ import { isUserVisible } from '../../dom/visibility';
 import { configuredHooks } from '../configured';
 import type { AtsConfig } from '../configured/types';
 import type { Adapter, DatePartsDecl, SignInForm, WidgetDecl } from '../types';
-import { canonicalApplicationUrl, matchesUrl, parseUltiproUrl } from './url';
+import { canonicalApplicationUrl, confirmationAfter, matchesUrl, parseUltiproAddress } from './url';
 
 /** The fixtures the adapter was read from (fixtures/ultipro/<case>.html). */
 export const ULTIPRO_SNAPSHOTS = ['fixtures/ultipro/register.html', 'fixtures/ultipro/resume-review.html',
-  'fixtures/ultipro/application.html'] as const;
+  'fixtures/ultipro/application.html',
+  // ── jr7 ULTIPRO-7 P2: the owner's snapshot7 ultipro1 and ultipro2 (the pages with an expectation file) ──
+  'fixtures/ultipro/jr7-ultipro1-posting.html', 'fixtures/ultipro/jr7-ultipro2-posting.html',
+  'fixtures/ultipro/jr7-ultipro1-register.html', 'fixtures/ultipro/jr7-ultipro2-register.html',
+  'fixtures/ultipro/jr7-ultipro1-apply-1.html', 'fixtures/ultipro/jr7-ultipro2-apply-1.html',
+  'fixtures/ultipro/jr7-ultipro1-apply-11.html', 'fixtures/ultipro/jr7-ultipro1-submitted.html',
+  'fixtures/ultipro/jr7-ultipro2-submitted.html'] as const;
 
 /** The résumé review's container (ultipro-1: <div data-bind="if: isParsingResume()"><div data-bind="with:
  *  contactInfoViewModel" data-automation="contact-information-section"> ...; empty in ultipro-0). */
 const REVIEW = 'div[data-bind="if: isParsingResume()"]';
 
+/** jr7 ULTIPRO-7 (UP7-07): UltiPro's documents dialog after Submit (jr7-ultipro1-apply-11). */
+const DOCUMENTS_DIALOG_CSS = 'div#AttachmentsChangedModal[role="dialog" i]';
+
 /** The rules the configured layer builds hooks from, each naming its snapshot. */
 export const ULTIPRO_CONFIG: AtsConfig = {
   platform: 'ultipro',
-  snapshots: ['register', 'resume-review', 'application'],
-  parse: parseUltiproUrl,
+  snapshots: ['register', 'resume-review', 'application',
+    // jr7 ULTIPRO-7: snapshot7's (fixtures/ultipro/jr7-ultipro{1,2}-*).
+    'jr7-ultipro1-posting', 'jr7-ultipro2-posting', 'jr7-ultipro1-register', 'jr7-ultipro2-register', 'jr7-ultipro1-apply-1',
+    'jr7-ultipro2-apply-1', 'jr7-ultipro1-apply-11', 'jr7-ultipro1-submitted', 'jr7-ultipro2-submitted'],
+  parse: parseUltiproAddress, // jr7 ULTIPRO-7 (UP7-01): with the page after submitting
   matchesUrl,
   states: [
+    // ── jr7 ULTIPRO-7 (FIX7PLAN §6.8 item 5, UP7-07; owner question Q7-8, default: the person's) ──
+    // snapshot7 ultipro1, after Submit with the session's documents changed (jr7-ultipro1-apply-11): <div
+    // id="AttachmentsChangedModal" class="modal fade in" tabindex="-1" role="dialog" style="display: block;"> ... <p
+    // data-automation="attachments-modal-text"> (would you like to save these changes to your profile?), Yes and No
+    // (neverPress below). The application is not sent until it is answered. No root and no Next: while it shows,
+    // nothing is filled and nothing pressed (final 'unknown'); the person answers it. Jobright has no rule for it (no
+    // AttachmentsChanged reference in its bundles).
+    { name: 'documents-dialog', when: DOCUMENTS_DIALOG_CSS, from: 'jr7-ultipro1-apply-11' },
+    // ── end jr7 ULTIPRO-7 (UP7-07) ──
     // ultipro-2: <body class="authcode-controller candidate-layout white-background"> ... <form method="post"
     // id="registrationDetailsForm" ...> with three <ukg-field>s.
     { name: 'register', when: 'body.authcode-controller form#registrationDetailsForm',
@@ -128,6 +161,18 @@ export const ULTIPRO_CONFIG: AtsConfig = {
     { css: '#EEOCModalLink', from: 'ultipro-0' },
     // ultipro-2's Create account is the register state's sign-in container's button (core pass Z1, item 24:
     // registerContainer), pressed by Sign-in Auto's door alone.
+    // ── jr7 ULTIPRO-7 ──
+    // UP7-07 (owner question Q7-8): the documents dialog's Yes and No (jr7-ultipro1-apply-11: <button class="btn
+    // btn-primary" data-automation="attachments-modal-yes" data-bind="... click: willUpdateCandidateDocuments">, <button
+    // class="btn btn-default" data-automation="attachments-modal-no" ... willNotUpdateCandidateDocuments>): the person's.
+    { css: 'button[data-automation="attachments-modal-yes"], button[data-automation="attachments-modal-no"]',
+      from: 'jr7-ultipro1-apply-11' },
+    // UP7-09: the posting's Apply menu (Jobright's createUltiproEntryAdapter leaves #apply-menu-button out of its entry)
+    // and LinkedIn's apply widget (jr7-ultipro1-posting, -2-posting: <div class="linkedIn-container"
+    // data-automation="awli-widget-container">).
+    { css: '#apply-menu-button, [data-automation="awli-widget-container"]',
+      from: 'jr7-ultipro1-posting, jr7-ultipro2-posting' },
+    // ── end jr7 ULTIPRO-7 ──
   ],
   // ultipro-0: <div data-automation="application-errors" aria-live="polite"><div class="validation-summary-errors"
   // role="alert" data-automation="error-messages" style="display: none;">; a field's <span class="help-block"
@@ -158,6 +203,22 @@ export const ULTIPRO_CONFIG: AtsConfig = {
   // editable control under #OpportunityApply (UltiPro entry-preflow, createUltiproEntryAdapter).
   quirks: { formLateMs: 30_000 },
   // ── end jr6 ULTIPRO P1 ──
+  // ── jr7 ULTIPRO-7 ──
+  // UP7-09 (APPLYPLAN E-UltiPro C2, waiting since jr6 for this capture): the posting's Apply now, pressed by the
+  // agent's entry door alone, never by a run (entryNeverPressed). jr7-ultipro1-posting, -2-posting: <div
+  // class="apply-btns-container"><ukg-button class="apply-now-button ..." data-automation="apply-now-button" ...>; one
+  // shown and enabled on each. The selector is Jobright 1.25.2's (its UltiPro entry-preflow, createUltiproEntryAdapter:
+  // the visible, enabled apply-now-button host, never #apply-menu-button), a disabled host left out. Its press arms the
+  // person's grant that carries across UKG's sign-in to the Register and the application (the verifier's measure).
+  posting: { entry: '.apply-btns-container ukg-button[data-automation="apply-now-button"]:not(#apply-menu-button)'
+    + ':not([disabled]):not([aria-disabled="true" i])', from: 'jr7-ultipro1-posting, jr7-ultipro2-posting' },
+  // UP7-01, UP7-V2: the page after submitting (url.ts confirmationAfter reads its address; jr7-ultipro1-submitted,
+  // -2-submitted): <div id="ApplicationSubmitted"><div class="row"><!-- ko ifnot: application.HasAssessment() --> its
+  // h1[data-automation="header"] and subheader <!-- /ko --><!-- ko if: application.HasAssessment() --><!-- /ko -->.
+  // The sign is the view itself shown, not its words: an application with an assessment draws the other branch, whose
+  // words neither capture shows. Jobright never confirms an UltiPro application (its ats-rules: ultipro, success: []).
+  success: { css: '#ApplicationSubmitted', from: 'jr7-ultipro1-submitted, jr7-ultipro2-submitted' },
+  // ── end jr7 ULTIPRO-7 ──
 };
 
 // ── jr6 ULTIPRO P1: the start date as one date (FIXPLAN §6.10 item 6, U-07) ──
@@ -496,9 +557,75 @@ function registerContainer(doc: Document): SignInForm | null {
   const host = doc.querySelector(CREATE_ACCOUNT);
   const button = host?.shadowRoot?.querySelector<HTMLElement>('button.ukg-button-native[type="submit"]') ?? null;
   if (button === null || !isUserVisible(button, cache)) return null;
-  return { email: null, password: null, confirm: null, terms: [], button, container };
+  // jr7 ULTIPRO-7 (FIX7PLAN §6.8 item 4, UP7-04, after UP7-V1 as O-6 orders it; with ENGINE-7 E1 item 8): the privacy
+  // box, the account's one term, ticked per the Consents mode as other account terms are (FIX7PLAN §5 D-9); and Create
+  // account, disabled on both tenants' captures with the step empty, enabled by the page once the step is filled.
+  const privacy = container.querySelector<HTMLElement>(PRIVACY_BOX);
+  return { email: null, password: null, confirm: null, terms: privacy === null ? [] : [privacy], button, container,
+    enablesWhenFilled: true };
 }
 // ── end core pass Z1, item 24 ──
+
+// ── jr7 ULTIPRO-7 (FIX7PLAN §6.8) ──
+/** UP7-04: the account step's privacy box (snapshot7 ultipro1's tenant, jr7-ultipro1-register: <div
+ *  class="register-privacy-consent"><ukg-checkbox data-automation="registrationDetails-privacy-checkbox"
+ *  aria-checked="false" class="reg-consent-checkbox ..." tabindex="0" role="checkbox"> with no native input, beside
+ *  <span data-automation="quick-apply-terms-conditions"> (by checking this box, I have read and agree to the Privacy
+ *  Policy); ultipro2's tenant draws none). An ARIA checkbox no plan writes: SignInForm.terms takes it inside the
+ *  declared container (ENGINE-7 E1 item 8). */
+const PRIVACY_BOX = 'ukg-checkbox[data-automation="registrationDetails-privacy-checkbox"][role="checkbox" i]';
+
+/** UP7-V1: the account step's boxes (jr7-ultipro1-register, -2-register; the 2026-11-06 register.html): each native
+ *  <input class="ukg-native-input" ...> sits in a scoped <ukg-input slot="input"> > div.input-inner-container, slotted
+ *  into a <ukg-field data-automation="registrationDetails-<name>-field">, whose open shadow root draws the field:
+ *  <div class="ukg-field-container"> with its slots. */
+const REGISTER_INPUT = 'form#registrationDetailsForm input.ukg-native-input';
+
+/** UP7-V1 (the verifier's measure): the element that draws an account-step box (Adapter.controlBox): its ukg-field's
+ *  shadow .ukg-field-container, where UKG's field component draws the box (the captures keep none of its adopted
+ *  styles, so in them it draws none and the box stays camouflaged: fail-closed); null for any other control.
+ *  dom/camouflage.ts drawnByWrapper walks the light parents alone and never reaches it. */
+function registerBoxOf(control: Element): Element | null {
+  if (!control.matches(REGISTER_INPUT)) return null;
+  return control.closest('ukg-field')?.shadowRoot?.querySelector('.ukg-field-container') ?? null;
+}
+
+/** UP7-03: the EEO lists (jr7-ultipro1-apply-1, -2-apply-1: #CountryQuestions' <div class="form-group"> holding <label
+ *  class="control-label required" for="Gender">, <select id="Gender" ... required=""> and <div class="checkbox"><label>
+ *  <input type="checkbox" data-automation="gender-decline-checkbox" ...>; Ethnic Origin, Race and the veteran list the
+ *  same) whose own group's decline box is ticked now: read at each scan, so a list holds no question while its box is
+ *  ticked, and Submit Auto's required count leaves it (the select keeps required="" and has no disable binding). The
+ *  decline boxes stay fields (U-09). As Jobright answers a declined list: its box ticked and the list left empty (its
+ *  UltiPro operations, fillMultiSelectField). */
+function declinedLists(root: Element): Element[] {
+  return Array.from(root.querySelectorAll<HTMLSelectElement>('#CountryQuestions div.form-group > select'))
+    .filter((select) => select.parentElement?.querySelector<HTMLInputElement>(
+      ':scope > div.checkbox input[type="checkbox" i][data-automation$="-decline-checkbox"]')?.checked === true);
+}
+
+/** UP7-12: the data-use consent's radios (jr7-ultipro2-apply-1: <div class="form-group col-xs-24"
+ *  data-automation="copy-applicants-consent-question"><label id="CopyApplicantsConsentQuestion"
+ *  data-automation="copy-applicants-consent-label" class="control-label"> with no for, then <div class="radio"><label>
+ *  <input type="radio" name="copyApplicantsConsent" ...><span>Yes</span>, No the same): their question, or null. */
+function consentQuestionOf(control: Element): Element | null {
+  if (!control.matches('[data-automation="copy-applicants-consent-question"] input[type="radio" i]')) return null;
+  return control.closest('[data-automation="copy-applicants-consent-question"]')
+    ?.querySelector(':scope > label.control-label') ?? null;
+}
+
+/** UP7-02 (minimum; owner question Q7-9, default: the person signs in): UKG's candidate sign-in, where both tenants'
+ *  Apply leads before the Register (signin-us.ultipro.com /u/login and /u/signup in snapshot7 ultipro1 and ultipro2),
+ *  and another region's signin-<x>.ultipro.com. Nothing of ours runs there (shared/hosts.ts: an HR host, no static
+ *  match); AUTO-7 reads these hosts (FIX7PLAN §6.4 item 6). */
+export const ULTIPRO_IDENTITY_HOSTS: readonly RegExp[] = [/^signin(?:-[a-z0-9]+)?\.ultipro\.com$/];
+
+/** UP7-07 (P2): whether the documents dialog after Submit shows (the documents-dialog state's own `when`:
+ *  jr7-ultipro1-apply-11's div#AttachmentsChangedModal[role=dialog], display: block). */
+function documentsDialogShown(doc: Document): boolean {
+  const cache = newScanCache();
+  return Array.from(doc.querySelectorAll(DOCUMENTS_DIALOG_CSS)).some((dialog) => isUserVisible(dialog, cache));
+}
+// ── end jr7 ULTIPRO-7 ──
 
 /** The UltiPro adapter. */
 export const ultiproAdapter: Adapter = {
@@ -512,7 +639,7 @@ export const ultiproAdapter: Adapter = {
   // is Sign-in mode's (signInContainer), never Next's: the state names no Next.
   isFinalStep: (doc) => (registerContainer(doc) !== null ? 'not-final' : hooks.isFinalStep?.(doc) ?? 'unknown'),
   labelFor: (control) => startDateLabel(control) ?? periodLabels(control)?.group ?? declineLabels(control)?.question
-    ?? skillsTitle(control) ?? hooks.labelFor?.(control) ?? null,
+    ?? skillsTitle(control) ?? consentQuestionOf(control) ?? hooks.labelFor?.(control) ?? null,
   labelSuffix(control) {
     const part = periodLabels(control)?.part ?? declineLabels(control)?.own ?? null;
     if (part === null) return null;
@@ -526,11 +653,21 @@ export const ultiproAdapter: Adapter = {
   widgetFor: (control) => educationSearch(control) ?? skillsBox(control) ?? hooks.widgetFor?.(control) ?? null,
   // jr6 U-07.
   dateFor: (control) => datePartsOf(control) ?? hooks.dateFor?.(control) ?? null,
-  controlBox: (control) => dateBoxOf(control) ?? hooks.controlBox?.(control) ?? null,
-  excluded: (root) => [...(hooks.excluded?.(root) ?? []), ...datePartBoxes(root)],
+  // jr7 ULTIPRO-7: UP7-V1's account-step boxes; UP7-03's declined lists.
+  controlBox: (control) => dateBoxOf(control) ?? registerBoxOf(control) ?? hooks.controlBox?.(control) ?? null,
+  excluded: (root) => [...(hooks.excluded?.(root) ?? []), ...datePartBoxes(root), ...declinedLists(root)],
   // jr6 U-01.
   repeatables: (root) => [...(hooks.repeatables?.(root) ?? []), ...reviewRepeatables(root)],
   // jr6 U-16.
   formatFor: (control) => (control.matches(PHONE_BOXES) ? { format: 'tel', pattern: ULTIPRO_PHONE_PATTERN }
     : hooks.formatFor?.(control) ?? null),
+  // ── jr7 ULTIPRO-7 (FIX7PLAN §3.1 hooks) ──
+  // UP7-01: the page after submitting the armed application (url.ts).
+  confirmationAfter,
+  // UP7-02: UKG's sign-in hosts.
+  identityHosts: ULTIPRO_IDENTITY_HOSTS,
+  // UP7-07 (P2; E2's HandOverKind 'documents'; owner question Q7-8's default): the documents dialog after Submit is the
+  // person's: the agent and the Queue tab leave it to them, and the arm waits for the confirmation it leads to.
+  handOver: (doc) => (documentsDialogShown(doc) ? 'documents' : null),
+  // ── end jr7 ULTIPRO-7 ──
 };

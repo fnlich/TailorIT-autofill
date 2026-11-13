@@ -1,0 +1,308 @@
+{
+  "fixture": "ultipro/jr7-ultipro1-apply-1",
+  "source": "https://recruiting2.ultipro.com/mil1017/JobBoard/f54234e9-dfde-b183-fd20-4fbdb19cba7a/OpportunityApply?opportunityId=390a84c7-9e64-4b8d-b973-fa3aaebf20fd",
+  "captured": "2026-11-11T13:56:21.000Z",
+  "note": "The one-page application, blank (recruiting2.ultipro.com): every panel, no entry, no chip, no document; Submit the btn-submit host.",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#FirstName"
+    },
+    {
+      "label": "Preferred Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#PreferredName"
+    },
+    {
+      "label": "Middle",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#MiddleName"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#FamilyName"
+    },
+    {
+      "label": "Suffix",
+      "kind": "select",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 10,
+      "control": "select#Suffix"
+    },
+    {
+      "label": "Former Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#FormerName"
+    },
+    {
+      "label": "Primary Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#Phone"
+    },
+    {
+      "label": "Secondary Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#SecondaryPhone"
+    },
+    {
+      "label": "Country",
+      "kind": "select",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 42,
+      "control": "select#Country"
+    },
+    {
+      "label": "Address 1",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#AddressLine1"
+    },
+    {
+      "label": "Address 2",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#AddressLine2"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#City"
+    },
+    {
+      "label": "Zip / Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#PostalCode"
+    },
+    {
+      "label": "Willing to relocate",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#WillingToRelocate"
+    },
+    {
+      "label": "Upload a file",
+      "kind": "file",
+      "required": false,
+      "section": "Documents",
+      "fillable": true,
+      "control": "input#FileUpload_0000000002"
+    },
+    {
+      "label": "How did you hear about this opportunity?",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 26,
+      "control": "select#ApplicantSource"
+    },
+    {
+      "label": "Were you referred by a current employee?",
+      "kind": "radio",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"employeereferral\"]"
+    },
+    {
+      "label": "When can you start? (MM/DD/YYYY)",
+      "kind": "date",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "ukg-date-input-text[role=\"group\"]",
+      "note": "jr6 U-07: one date drawn in three boxes (dateFor); its box drawn by a wrapper (dateBoxOf, REVC-5): fillable as captured (UP7-13)."
+    },
+    {
+      "label": "Do you have at least 12 years of software engineering experience?",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse0\"]"
+    },
+    {
+      "label": "Are you currently subject to any non-competition, non-solicitation, confidentiality, or other restrictive covenant obligations that may limit your ability to accept employment with Milliman or perform the essential duties of the position for which you are applying? If yes, please describe any restri",
+      "kind": "textarea",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "textarea#TextResponse1"
+    },
+    {
+      "label": "Are you related to any current Milliman employee or married to any current Milliman employee?",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse2\"]"
+    },
+    {
+      "label": "In order to comply with Federal law, Milliman will be required to verify each employee’s right to work in the United States. To assist us with this obligation, please answer the following question: Are you a U.S. Citizen or lawful permanent resident (green card holder), or have you been granted asyl",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse3\"]"
+    },
+    {
+      "label": "If offered employment by Milliman, would you be legally eligible in the United States to begin employment immediately?",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse4\"]"
+    },
+    {
+      "label": "I confirm that the information provided within this application is truthful, complete, and accurate. If any information included in the application is found to be false or misleading, Milliman reserves the right to not offer employment or to take disciplinary action with employees of Milliman, up to",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse5\"]"
+    },
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Gender",
+      "note": "UP7-03: no field while its own \"I decline to say\" box is ticked (excluded, read at each scan)."
+    },
+    {
+      "label": "Gender I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"gender-decline-checkbox\"]"
+    },
+    {
+      "label": "Ethnic Origin",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "select#HispanicOrigin",
+      "note": "UP7-03: no field while its own \"I decline to say\" box is ticked (excluded, read at each scan)."
+    },
+    {
+      "label": "Ethnic Origin I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"ethnic-origin-decline-checkbox\"]"
+    },
+    {
+      "label": "Race",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 7,
+      "control": "select#EthnicOrigin",
+      "note": "UP7-03: no field while its own \"I decline to say\" box is ticked (excluded, read at each scan)."
+    },
+    {
+      "label": "Race I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"race-decline-checkbox\"]"
+    },
+    {
+      "label": "Are you a protected veteran?",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "select#USFederalContractor",
+      "note": "UP7-03: no field while its own \"I decline to say\" box is ticked (excluded, read at each scan)."
+    },
+    {
+      "label": "Are you a protected veteran? I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"us-federal-contractor-question-decline-checkbox\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "#OpportunityApply",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a[data-automation=\"btn-cancel\"]",
+      "[data-automation=\"application-incorrect-name-text-signout-link\"]",
+      "#ResumeParsingUploader upload-button",
+      "[data-automation=\"existing-resume-selector\"]",
+      "#OpportunitiesMenuButton",
+      "#CandidatePresenceMenuButton",
+      "#profile-button-menu",
+      "#language-picker-link",
+      "#EEOCModalLink"
+    ],
+    "pressable": [
+      "ukg-button[data-automation=\"btn-submit\"]"
+    ]
+  }
+}

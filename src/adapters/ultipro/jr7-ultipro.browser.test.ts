@@ -1,0 +1,579 @@
+/*
+ * jr7 ULTIPRO-7 P1 (FIX7PLAN §6.8): the UltiPro adapter on the owner's snapshot7 captures (ultipro1: recruiting2.ultipro.com
+ * through UKG's sign-in on signin-us.ultipro.com; ultipro2: recruiting.ultipro.com, the same sign-in), converted as
+ * fixtures/ultipro/jr7-ultipro{1,2}-*.html, each page loaded as captured (its header names its address), and a synthetic
+ * page of our own for the confirmation's other branch (fixtures/synthetic/jr7-ultipro/success.html). Each rule is held
+ * against the page read without it (src/adapters/ultipro/jr7 undo proofs, SP\jr7\up7\undo-*.json). Outcomes come from
+ * the pages' own markup and the golden synthetic profile's rules; nothing here prints or holds a value of a page.
+ * - UP7-01, UP7-V2: the page after submitting: its address read as the board's confirmation, the Submit armed on its
+ *   form confirmed by it (confirmationAfter), its sign #ApplicationSubmitted shown whatever words it draws, and no sign
+ *   on any other UltiPro page;
+ * - UP7-02: UKG's sign-in hosts (identityHosts), where no adapter of ours runs;
+ * - UP7-03: the declined EEO lists leave the scan and Submit Auto's required count while their box is ticked;
+ * - UP7-04, UP7-V1: the account step's boxes, drawn by their ukg-field's shadow container, and its privacy box, the
+ *   sign-in container's term; Create account enabled once filled;
+ * - UP7-07: the documents dialog after Submit: nothing filled, nothing pressed, its buttons never pressed;
+ * - UP7-09: the posting's Apply now, the agent's entry door's alone, pressed once by Autofill;
+ * - UP7-12: the data-use consent radios labelled by their question;
+ * - UP7-13 (jr6 REVC-5, asserted): the start date fillable once a wrapper draws its box, counted only while empty.
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
+import successHtml from '../../../fixtures/synthetic/jr7-ultipro/success.html?raw';
+import { openAt, runtimeAt, servedAdapter, sourceOf, wallsOf } from '../../content/apply.testkit';
+import { createFakeWorker, goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { requiredLeftOf } from '../../content/press';
+import { startContentRuntime } from '../../content/runtime';
+import { signIn, type SignInContext } from '../../content/sign-in';
+import { signsOf } from '../../content/submitted';
+import { planFrame } from '../../core/plan/frame';
+import type { PlanOutput } from '../../core/plan/types';
+import { DEFAULT_SETTINGS } from '../../core/types/settings';
+import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
+import { detectPause } from '../../dom/pause-detect';
+import { deadline } from '../../dom/time';
+import { scan, toFieldSpec } from '../../dom/scan';
+import { signInContainerOf, signInRefusal } from '../../dom/sign-in-form';
+import type { ScanResult, ScannedField } from '../../dom/types';
+import { visibleText } from '../../dom/visible-text';
+import { isHrHost, onAtsMatch, platformOfUrl } from '../../shared/hosts';
+import { adaptersFor, applicationOf } from '../index';
+import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import type { Adapter } from '../types';
+import { ULTIPRO_CONFIG, ULTIPRO_IDENTITY_HOSTS, ultiproAdapter } from './index';
+import { parseUltiproAddress, parseUltiproUrl } from './url';
+
+const HTML = import.meta.glob('../../../fixtures/ultipro/*.html', { query: '?raw', import: 'default', eager: true }) as
+  Record<string, string>;
+/** Every UltiPro page captured (not its frames), by case name, with the address its header names. */
+const PAGES = Object.entries(HTML).filter(([path]) => !/\.(?:frame-\d+|third-party-frame)\.html$/.test(path))
+  .map(([path, html]) => ({ name: /ultipro\/(.+)\.html$/.exec(path)![1]!, html, address: sourceOf(html) }));
+const page = (name: string) => {
+  const found = PAGES.find((each) => each.name === name);
+  if (found === undefined) throw new Error(`no fixture ${name}`);
+  return found;
+};
+const addressOf = (name: string) => page(name).address!;
+const JR7 = PAGES.filter((each) => each.name.startsWith('jr7-'));
+const SUBMITTED = ['jr7-ultipro1-submitted', 'jr7-ultipro2-submitted'];
+const APPLY_BLANK = ['jr7-ultipro1-apply-1', 'jr7-ultipro2-apply-1'];
+
+afterEach(() => removeFixtures(document));
+
+async function open(name: string) {
+  return (await loadFixture(document, page(name).html, SNAPSHOT_VIEWPORT)).doc;
+}
+
+function scanOf(doc: Document, adapter: Adapter = ultiproAdapter): ScanResult {
+  return scan(adapter.detect(doc)!.formRoot, adapter, { platform: 'ultipro' });
+}
+
+/** The field whose control (or a member of its group) matches `css`. */
+function fieldOf(result: ScanResult, css: string): ScannedField | undefined {
+  return result.fields.find((field) => {
+    const target = result.target(field.key);
+    return target !== null && (target.control.matches(css) || target.members.some((member) => member.matches(css)));
+  });
+}
+
+describe('jr7 UP7-01, UP7-V2: the page after submitting', () => {
+  it('reads both captures as their board\'s confirmation, confirming the Submit armed on that board\'s form alone', () => {
+    for (const [form, done] of [['jr7-ultipro1-apply-11', SUBMITTED[0]!], ['jr7-ultipro2-apply-8', SUBMITTED[1]!]] as const) {
+      const here = new URL(addressOf(done));
+      const read = parseUltiproAddress(here)!;
+      expect(read).toMatchObject({ platform: 'ultipro', jobId: '', page: 'confirmation' });
+      // No per-person id is held: no query, and the key is the board's page, the same for every application of it.
+      expect(read.applicationUrl).not.toContain('?');
+      expect(applicationOf(here)).toMatchObject({ page: 'confirmation' });
+      expect(ultiproAdapter.confirmationAfter!(new URL(addressOf(form)), here)).toBe(true);
+    }
+    // Another tenant's form (the other capture) is not confirmed by it.
+    expect(ultiproAdapter.confirmationAfter!(new URL(addressOf('jr7-ultipro1-apply-11')), new URL(addressOf(SUBMITTED[1]!))))
+      .toBe(false);
+    expect(ultiproAdapter.confirmationAfter!(new URL(addressOf('jr7-ultipro2-apply-8')), new URL(addressOf(SUBMITTED[0]!))))
+      .toBe(false);
+  });
+
+  it('confirms by either armed address AUTO-7 passes: the address at the press, or the arm\'s canonical posting', () => {
+    for (const [form, posting, done] of [['jr7-ultipro1-apply-11', 'jr7-ultipro1-posting', SUBMITTED[0]!],
+      ['jr7-ultipro2-apply-8', 'jr7-ultipro2-posting', SUBMITTED[1]!]] as const) {
+      const here = new URL(addressOf(done));
+      const press = new URL(addressOf(form));
+      // The worker's: the canonical posting address (OpportunityDetail, tenant and ids in lower case), as the contract
+      // writes it; and the captured posting's own address.
+      const canonical = parseUltiproUrl(press)!.applicationUrl.replace('/OpportunityApply?', '/OpportunityDetail?');
+      for (const armed of [press, new URL(canonical), new URL(addressOf(posting))]) {
+        expect(ultiproAdapter.confirmationAfter!(armed, here), `${form} ${armed.pathname.split('/').at(-1)}`).toBe(true);
+      }
+      // The tenant written in upper case at the press (as the account step's returnUrl writes it) still reads.
+      const upper = new URL(press.href.replace(press.pathname.split('/')[1]!, press.pathname.split('/')[1]!.toUpperCase()));
+      expect(ultiproAdapter.confirmationAfter!(upper, here)).toBe(true);
+    }
+  });
+
+  it.each(SUBMITTED)('%s: its sign is #ApplicationSubmitted shown; no form there', async (name) => {
+    const doc = await open(name);
+    expect(signsOf(doc, 'ultipro').map((sign) => sign.id)).toEqual(['ApplicationSubmitted']);
+    expect(ultiproAdapter.detect(doc)).toBeNull();
+    // Hidden, it is none.
+    doc.getElementById('ApplicationSubmitted')!.style.display = 'none';
+    expect(signsOf(doc, 'ultipro')).toEqual([]);
+  });
+
+  it('shows no sign on any other UltiPro page (the 27 other snapshot7 pages and the 2026-11-06 ones)', async () => {
+    const others = PAGES.filter((each) => !SUBMITTED.includes(each.name));
+    expect(others.length).toBe(30);
+    for (const other of others) {
+      const doc = await open(other.name);
+      expect(signsOf(doc, 'ultipro'), other.name).toEqual([]);
+      removeFixtures(document);
+    }
+  }, 240_000);
+
+  it("reads the assessment branch's view by the view, whatever words it draws (UP7-V2; synthetic)", async () => {
+    const { doc } = await loadFixture(document, successHtml, SNAPSHOT_VIEWPORT);
+    expect(signsOf(doc, 'ultipro').map((sign) => sign.id)).toEqual(['ApplicationSubmitted']);
+    // Its words are no sign: the same words outside the view, with the view gone, are none.
+    doc.getElementById('ApplicationSubmitted')!.remove();
+    expect(doc.getElementById('decoy-words')).not.toBeNull();
+    expect(signsOf(doc, 'ultipro')).toEqual([]);
+  });
+});
+
+describe('jr7 UP7-02: UKG\'s sign-in hosts', () => {
+  const SIGN_IN = ['jr7-ultipro1-signin', 'jr7-ultipro1-signup', 'jr7-ultipro2-signin', 'jr7-ultipro2-signup'];
+
+  it('names the host both tenants\' sign-in and sign-up pages were on, where nothing of ours runs', () => {
+    expect(ultiproAdapter.identityHosts).toBe(ULTIPRO_IDENTITY_HOSTS);
+    for (const name of SIGN_IN) {
+      const url = new URL(addressOf(name));
+      expect(ULTIPRO_IDENTITY_HOSTS.some((host) => host.test(url.hostname)), name).toBe(true);
+      // No adapter of ours, no static content script, no application read there; an HR host (no sentinel either).
+      expect([platformOfUrl(url.href), onAtsMatch(url.href), applicationOf(url), isHrHost(url.hostname)])
+        .toEqual([null, false, null, true]);
+    }
+  });
+
+  it('names no other host: the candidate hosts, another UKG host, a look-alike', () => {
+    const named = (host: string) => ULTIPRO_IDENTITY_HOSTS.some((pattern) => pattern.test(host));
+    expect(named('signin-eu.ultipro.com')).toBe(true);
+    expect(named('signin.ultipro.com')).toBe(true);
+    for (const host of ['recruiting.ultipro.com', 'recruiting2.ultipro.com', 'n12.ultipro.com', 'signin-us.ultipro.com.example',
+      'xsignin-us.ultipro.com', 'signin-us.ultipro.ca', 'signin-us-ultipro.com']) {
+      expect(named(host), host).toBe(false);
+    }
+  });
+});
+
+describe('jr7 UP7-03: a declined EEO list holds no question while its box is ticked', () => {
+  const BOXES = '#CountryQuestions input[type="checkbox"][data-automation$="-decline-checkbox"]';
+  const EEO = /^(?:Gender|Ethnic Origin|Race)$/;
+
+  it.each(APPLY_BLANK)('%s', async (name) => {
+    const doc = await open(name);
+    const eeo = (result: ScanResult) => result.fields.filter((field) => field.kind === 'select' && EEO.test(field.label));
+    const declines = (result: ScanResult) => result.fields.filter((field) => / I decline to say$/.test(field.label));
+    const before = scanOf(doc);
+    expect(eeo(before)).toHaveLength(3);
+    expect(requiredLeftOf({ ...before, fields: eeo(before) })).toBe(3);
+    const boxes = Array.from(doc.querySelectorAll<HTMLInputElement>(BOXES))
+      .filter((box) => !/us-federal-contractor/.test(box.getAttribute('data-automation') ?? ''));
+    expect(boxes).toHaveLength(3);
+    for (const box of boxes) box.checked = true;
+    const after = scanOf(doc);
+    // Ticked: the three lists leave the scan, so Submit Auto counts none of them; every decline box stays a field.
+    expect(eeo(after)).toEqual([]);
+    expect(requiredLeftOf(after)).toBe(requiredLeftOf(before) - 3);
+    expect(declines(after)).toHaveLength(declines(before).length);
+    expect(declines(after).length).toBeGreaterThanOrEqual(3);
+    // Unticked again, read at the next scan: the lists are back.
+    for (const box of boxes) box.checked = false;
+    expect(eeo(scanOf(doc))).toHaveLength(3);
+  });
+});
+
+describe('jr7 UP7-V1, UP7-04: the account step', () => {
+  const FIELDS = 'form#registrationDetailsForm ukg-field';
+  /** Every account-step box's reading, with a 1 px border staged on `where` of each field. */
+  async function boxes(name: string, where: 'none' | 'shadow' | 'light', adapter: Adapter = ultiproAdapter) {
+    const doc = await open(name);
+    for (const field of Array.from(doc.querySelectorAll(FIELDS))) {
+      const target = where === 'shadow' ? field.shadowRoot?.querySelector<HTMLElement>('.ukg-field-container')
+        : where === 'light' ? field.querySelector<HTMLElement>('div.input-inner-container') : null;
+      if (target) target.style.border = '1px solid rgb(120, 120, 120)';
+    }
+    const result = scanOf(doc, adapter);
+    removeFixtures(document);
+    return result.fields.map((field) => ({ camouflaged: field.camouflaged, fillable: fillabilityOf(field).fillable }));
+  }
+
+  it.each(['jr7-ultipro1-register', 'jr7-ultipro2-register', 'register'])(
+    '%s: its boxes are fillable once their ukg-field draws the box, camouflaged while nothing does', async (name) => {
+      const drawn = await boxes(name, 'shadow');
+      expect(drawn).toHaveLength(3);
+      expect(drawn).toEqual(drawn.map(() => ({ camouflaged: false, fillable: true })));
+      // Fail-closed: the captures keep none of UKG's component styles, so as captured nothing draws them.
+      expect(await boxes(name, 'none')).toEqual(drawn.map(() => ({ camouflaged: true, fillable: false })));
+    }, 60_000);
+
+  it('declares the privacy box the account\'s term where the tenant draws one, and Create account enabled once filled',
+    async () => {
+      const doc = await open('jr7-ultipro1-register');
+      const privacy = doc.querySelector('ukg-checkbox[data-automation="registrationDetails-privacy-checkbox"]')!;
+      expect([privacy.getAttribute('role'), privacy.getAttribute('aria-checked')]).toEqual(['checkbox', 'false']);
+      // Disabled with the step empty, as captured; no native input inside the box.
+      const host = doc.querySelector('ukg-button[data-automation="registrationDetails-submit-button"]')!;
+      expect(host.hasAttribute('disabled')).toBe(true);
+      expect(privacy.querySelector('input')).toBeNull();
+      const form = signInContainerOf(ultiproAdapter, doc)!;
+      expect(form.terms).toEqual([privacy]);
+      expect(form.enablesWhenFilled).toBe(true);
+      expect(form.container).toBe(doc.querySelector('form#registrationDetailsForm'));
+      expect(form.container!.contains(privacy)).toBe(true);
+      // It is no field of the step (no plan writes it): the step's fields are its three boxes.
+      expect(scanOf(doc).fields).toHaveLength(3);
+      removeFixtures(document);
+      const other = await open('jr7-ultipro2-register');
+      expect(other.querySelector('ukg-checkbox')).toBeNull();
+      expect(signInContainerOf(ultiproAdapter, other)).toMatchObject({ terms: [], enablesWhenFilled: true });
+    });
+});
+
+describe('jr7 P2 UP7-04: the Register\'s sign-in path (ENGINE-7 E1 item 8, E2: an ARIA term per the Consents mode)', () => {
+  const CREATE = 'ukg-button[data-automation="registrationDetails-submit-button"]';
+  const PRIVACY = 'ukg-checkbox[data-automation="registrationDetails-privacy-checkbox"]';
+  /** A Register page read at its own address, with a stand-in for UKG's components, whose scripts no capture keeps: a
+   *  click on the privacy box ticks it a moment later (aria-checked), and Create account is enabled once the box is
+   *  ticked, or at once on a tenant that draws no box. Every click is recorded and held (nothing is sent). */
+  async function register(name: string) {
+    const doc = await open(name);
+    const address = addressOf(name);
+    const base = doc.createElement('base');
+    base.href = address;
+    doc.head.prepend(base);
+    const host = doc.querySelector<HTMLElement>(CREATE)!;
+    const native = host.shadowRoot!.querySelector<HTMLButtonElement>('button.ukg-button-native')!;
+    const enable = () => {
+      host.removeAttribute('disabled');
+      native.disabled = false;
+    };
+    const privacy = doc.querySelector<HTMLElement>(PRIVACY);
+    if (privacy === null) enable();
+    // The page's own timer (the fixture's window), as its component draws its state a moment after the click.
+    privacy?.addEventListener('click', () => doc.defaultView!.setTimeout(() => {
+      privacy.setAttribute('aria-checked', 'true');
+      enable();
+    }, 60));
+    const clicks: Element[] = [];
+    doc.addEventListener('click', (event) => {
+      clicks.push(event.composedPath()[0] as Element);
+      event.preventDefault();
+    }, true);
+    return { doc, address, privacy, native, clicks };
+  }
+  const press = (page: Awaited<ReturnType<typeof register>>, consents?: SignInContext['consents']) => signIn({
+    doc: page.doc, adapter: ultiproAdapter, href: () => page.address, isTop: true, container: true,
+    channel: { request: async () => ({ ok: true, data: { host: new URL(page.address).hostname, email: 'guest@example.com',
+      press: true } }) } as unknown as SignInContext['channel'],
+    signal: new AbortController().signal, settleMs: 300, ...(consents === undefined ? {} : { consents }) });
+
+  it('jr7-ultipro1-register: refused by nothing; with Consents All its box is ticked, read back, then Create account '
+    + 'pressed once', async () => {
+    const page = await register('jr7-ultipro1-register');
+    expect(signInRefusal(signInContainerOf(ultiproAdapter, page.doc)!, new URL(page.address))).toBeNull();
+    await press(page, { mode: 'all', preapproved: [] });
+    expect(page.privacy!.getAttribute('aria-checked')).toBe('true');
+    expect(page.clicks).toEqual([page.privacy, page.native]);
+  }, 30_000);
+
+  it('jr7-ultipro1-register: without the Consents mode, or Required only with nothing pre-approved, the box is left '
+    + 'and nothing pressed', async () => {
+    for (const consents of [undefined, { mode: 'required' as const, preapproved: [] }]) {
+      const page = await register('jr7-ultipro1-register');
+      await press(page, consents);
+      expect(page.privacy!.getAttribute('aria-checked'), JSON.stringify(consents ?? null)).toBe('false');
+      expect(page.clicks).toEqual([]);
+      removeFixtures(document);
+    }
+  }, 60_000);
+
+  it('jr7-ultipro2-register (no box): refused by nothing, Create account pressed once', async () => {
+    const page = await register('jr7-ultipro2-register');
+    expect(signInRefusal(signInContainerOf(ultiproAdapter, page.doc)!, new URL(page.address))).toBeNull();
+    await press(page, { mode: 'all', preapproved: [] });
+    expect(page.clicks).toEqual([page.native]);
+  }, 30_000);
+
+  // jr7-auto-r2 (AUTO-7: the Consents mode carried to every sign-in step): the person's Autofill on the Register, with
+  // Sign-in Auto and Consents All, the worker saying the mode or not (an older worker). Each box drawn by its ukg-field's
+  // shadow container (UP7-V1), as a live page draws it.
+  const runtimes: Array<{ stop(): void }> = [];
+  afterEach(() => {
+    for (const runtime of runtimes.splice(0)) runtime.stop();
+  });
+  async function autofill(consentModes: boolean) {
+    const page = await register('jr7-ultipro1-register');
+    for (const field of Array.from(page.doc.querySelectorAll('form#registrationDetailsForm ukg-field'))) {
+      field.shadowRoot!.querySelector<HTMLElement>('.ukg-field-container')!.style.border = '1px solid rgb(120, 120, 120)';
+    }
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const,
+      consents: 'all' as const } };
+    const credential = { ok: true, data: { host: new URL(page.address).hostname, email: 'guest@example.com', press: true } };
+    const worker = createFakeWorker({ settings, ...(consentModes ? { consentModes: true as const } : {}),
+      script: { 'signin/credential': [credential, credential] } as never });
+    const runtime = await startContentRuntime(worker.platform, page.doc, { href: () => page.address, isTop: true,
+      adapters: () => [ultiproAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    await runtime.fill();
+    return { page, worker };
+  }
+
+  // Held: the Register is not-final with no Next (the behaviour review of 2026-11-06, minor 2), so the run rests in
+  // wait-transition (orchestrator.ts awaitStep), and signInContainerNow is called only at a 'review' rest: Sign-in Auto
+  // never presses Create account through the runtime. ENGINE-7 / INT-7's edit (ULTIPRO-7 handoff): in awaitStep, after
+  // `this.end('waiting');`, `void this.signInContainerNow().catch(() => undefined);` (measured: this test then passes).
+  it.fails('jr7-ultipro1-register through the runtime: Consents All said, the step filled, the box ticked, Create '
+    + 'account pressed once', async () => {
+    const { page, worker } = await autofill(true);
+    await vi.waitFor(() => expect(page.clicks.at(-1)).toBe(page.native), { timeout: 15_000 });
+    expect(page.privacy!.getAttribute('aria-checked')).toBe('true');
+    expect(page.clicks.filter((el) => el === page.native)).toHaveLength(1);
+    // The step's own boxes were the run's (the golden profile's names and phone), before the press.
+    expect((page.doc.querySelector('input[name="firstName"]') as HTMLInputElement).value).not.toBe('');
+    expect(worker.of('run/begin')).toHaveLength(1);
+  }, 45_000);
+
+  it('jr7-ultipro1-register through the runtime: no mode said (an older worker), the box left and nothing pressed',
+    async () => {
+    const { page } = await autofill(false);
+    await vi.waitFor(() => expect((page.doc.querySelector('input[name="firstName"]') as HTMLInputElement).value)
+      .not.toBe(''), { timeout: 15_000 });
+    await deadline(2_500);
+    expect(page.privacy!.getAttribute('aria-checked')).toBe('false');
+    expect(page.clicks.filter((el) => el === page.native || el === page.privacy)).toEqual([]);
+  }, 45_000);
+});
+
+describe('jr7 UP7-07: the documents dialog after Submit (owner question Q7-8: the person\'s)', () => {
+  it('fills nothing and presses nothing while it shows; its Yes and No are never pressed', async () => {
+    const doc = await open('jr7-ultipro1-apply-11');
+    const dialog = doc.getElementById('AttachmentsChangedModal')!;
+    expect(dialog.checkVisibility()).toBe(true);
+    expect(ultiproAdapter.detect(doc)).toBeNull();
+    expect(ultiproAdapter.isFinalStep?.(doc)).toBe('unknown');
+    expect(ultiproAdapter.stepSignature?.(doc)).toEqual({ anchors: ['state:documents-dialog'] });
+    const never = ultiproAdapter.neverPress?.(doc.body) ?? [];
+    for (const answer of ['attachments-modal-yes', 'attachments-modal-no']) {
+      const button = doc.querySelector(`button[data-automation="${answer}"]`)!;
+      expect(never.some((el) => el.contains(button)), answer).toBe(true);
+    }
+    // P2 (E2's HandOverKind): the step is the person's by design.
+    expect(ultiproAdapter.handOver?.(doc)).toBe('documents');
+    // Answered (gone), the application is the page again, its Submit the same host; no hand-over.
+    dialog.remove();
+    expect(ultiproAdapter.detect(doc)?.formRoot).toBe(doc.getElementById('OpportunityApply'));
+    expect(ultiproAdapter.handOver?.(doc)).toBeNull();
+  });
+
+  it("is said in the top frame's hello (the runtime), the agent and the Queue tab leave it", async () => {
+    const address = addressOf('jr7-ultipro1-apply-11');
+    const { doc } = await openAt(page('jr7-ultipro1-apply-11').html, address);
+    const { worker, runtime } = await runtimeAt(doc, address, (url) => adaptersFor(url, doc)
+      .map((adapter) => (adapter.id === 'generic' ? adapter : servedAdapter(adapter, address))));
+    try {
+      await vi.waitFor(() => expect(worker.of('frame/hello').at(-1)?.handOver).toBe('documents'), { timeout: 10_000 });
+    } finally {
+      runtime.stop();
+    }
+  }, 60_000);
+
+  // jr7-auto-r3 (AUTO-7, UP7-07): drawn in the same document after an armed Submit, the hand-over is said once.
+  it('drawn after the person\'s Submit on the application (the same document), one hello names it (jr7-auto-r3)',
+    async () => {
+    // jr7-ultipro1-apply-11 with its dialog taken out before the run starts (the page's own markup and style kept: the
+    // converter keeps only the style rules a captured element uses), then drawn again after the person's Submit.
+    const address = addressOf('jr7-ultipro1-apply-11');
+    const { doc, fixture } = await openAt(page('jr7-ultipro1-apply-11').html, address);
+    const dialog = doc.getElementById('AttachmentsChangedModal')!;
+    const backdrop = doc.querySelector('.modal-backdrop')!;
+    dialog.remove();
+    backdrop.remove();
+    const { worker, runtime } = await runtimeAt(doc, address, (url) => adaptersFor(url, doc)
+      .map((adapter) => (adapter.id === 'generic' ? adapter : servedAdapter(adapter, address))));
+    try {
+      await vi.waitFor(() => expect(worker.of('frame/hello').length).toBeGreaterThan(0), { timeout: 10_000 });
+      const hellos = () => worker.of('frame/hello').filter((hello) => hello.handOver !== undefined);
+      // Before any Submit, no hand-over is said.
+      expect(hellos()).toEqual([]);
+      // The person's own trusted click on Submit (the btn-submit host): armed.
+      const submit = doc.querySelector<HTMLElement>('#OpportunityApply ukg-button[data-automation="btn-submit"]')!;
+      submit.scrollIntoView({ block: 'center' });
+      const at = submit.getBoundingClientRect();
+      await userEvent.click(fixture.frame, { position: { x: at.left + at.width / 2, y: at.top + at.height / 2 } });
+      await vi.waitFor(() => expect(worker.of('submit/armed')).toHaveLength(1), { timeout: 10_000 });
+      // UltiPro's dialog drawn over the form, as the capture shows it.
+      doc.body.append(dialog, backdrop);
+      await vi.waitFor(() => expect(hellos()).toEqual([expect.objectContaining({ handOver: 'documents', isTop: true })]),
+        { timeout: 10_000 });
+      // The page goes on changing while it shows: no second hello.
+      dialog.querySelector('.modal-body')!.append(doc.createElement('p'));
+      await deadline(1_000);
+      expect(hellos()).toHaveLength(1);
+    } finally {
+      runtime.stop();
+    }
+  }, 60_000);
+
+  it('is no state on any other application capture', async () => {
+    for (const each of JR7.filter((one) => /-apply-\d+$/.test(one.name) && one.name !== 'jr7-ultipro1-apply-11')) {
+      const doc = await open(each.name);
+      expect(ultiproAdapter.detect(doc)?.formRoot.id, each.name).toBe('OpportunityApply');
+      expect(ultiproAdapter.handOver?.(doc) ?? null, each.name).toBeNull();
+      removeFixtures(document);
+    }
+  }, 240_000);
+});
+
+describe('jr7 UP7-09: the posting\'s Apply now', () => {
+  const POSTINGS = ['jr7-ultipro1-posting', 'jr7-ultipro2-posting'];
+
+  it.each(POSTINGS)('%s: the one entry control, the agent\'s door\'s alone; LinkedIn\'s widget never pressed', async (name) => {
+    const doc = await open(name);
+    const hosts = Array.from(doc.querySelectorAll('ukg-button[data-automation="apply-now-button"]'));
+    expect(hosts).toHaveLength(1);
+    expect(ultiproAdapter.entryControl?.(doc)).toBe(hosts[0]);
+    expect(ultiproAdapter.entryNeverPressed).toBe(true);
+    expect(ultiproAdapter.detect(doc)).toBeNull();
+    // Never pressed by a run (its entry, as every declared entry is), nor LinkedIn's widget.
+    const never = ultiproAdapter.neverPress?.(doc.body) ?? [];
+    expect(never).toContain(doc.querySelector('[data-automation="awli-widget-container"]'));
+    expect(never.some((el) => el.contains(hosts[0]!))).toBe(true);
+    // A disabled host is none.
+    hosts[0]!.setAttribute('disabled', '');
+    expect(ultiproAdapter.entryControl?.(doc) ?? null).toBeNull();
+    hosts[0]!.removeAttribute('disabled');
+    hosts[0]!.setAttribute('aria-disabled', 'true');
+    expect(ultiproAdapter.entryControl?.(doc) ?? null).toBeNull();
+  });
+
+  it.each(POSTINGS)('%s: Autofill presses it once (the runtime)', async (name) => {
+    const address = addressOf(name);
+    const { doc, clicks } = await openAt(page(name).html, address);
+    const host = doc.querySelector('ukg-button[data-automation="apply-now-button"]')!;
+    const pressed: boolean[] = [];
+    doc.addEventListener('click', (event) => pressed.push(event.composedPath().includes(host)), true);
+    const { worker, runtime } = await runtimeAt(doc, address, (url) => adaptersFor(url, doc)
+      .map((adapter) => (adapter.id === 'generic' ? adapter : servedAdapter(adapter, address))));
+    try {
+      await vi.waitFor(() => expect(wallsOf(worker).at(-1)?.entry).toBe(true), { timeout: 10_000 });
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(worker.of('entry/pressed')).toHaveLength(1), { timeout: 15_000 });
+      expect(clicks).toHaveLength(1);
+      expect(pressed).toEqual([true]);
+    } finally {
+      runtime.stop();
+    }
+  }, 60_000);
+});
+
+describe('jr7 UP7-12: the data-use consent radios', () => {
+  it('reads their question as their label (jr7-ultipro2-apply-1)', async () => {
+    const doc = await open('jr7-ultipro2-apply-1');
+    const question = doc.getElementById('CopyApplicantsConsentQuestion')!;
+    const field = fieldOf(scanOf(doc), 'input[name="copyApplicantsConsent"]')!;
+    expect(field.kind).toBe('radio');
+    expect(field.label).toBe(visibleText(question, { singleLine: true }).trim());
+    expect(field.label.length).toBeGreaterThan(20);
+    expect(field.labelVisible).toBe(true);
+    expect(field.options).toHaveLength(2);
+  });
+});
+
+describe('jr7 UP7-13 (jr6 REVC-5, asserted): the start date on both blank applications', () => {
+  it.each(APPLY_BLANK)('%s: fillable as captured (its box drawn by a wrapper), counted by Submit Auto only while empty',
+    async (name) => {
+    const doc = await open(name);
+    const date = (result: ScanResult) => result.fields.find((field) => field.kind === 'date')!;
+    // As captured: required, its box drawn by the wrapper jr6's dateBoxOf finds (ukg-item's scoped style), fillable.
+    const drawn = scanOf(doc);
+    expect([date(drawn).required, date(drawn).camouflaged]).toEqual([true, false]);
+    expect(fillabilityOf(date(drawn)).fillable).toBe(true);
+    expect(requiredLeftOf({ ...drawn, fields: [date(drawn)] })).toBe(1);
+    // Its three boxes written: no longer counted.
+    const shadow = doc.querySelector('ukg-date-input-text')!.shadowRoot!;
+    for (const [part, text] of [['month', '07'], ['day', '15'], ['year', '2027']] as const) {
+      shadow.querySelector<HTMLInputElement>(`input[data-automation="ukg-date-input-text-${part}"]`)!.value = text;
+    }
+    const written = scanOf(doc);
+    expect(requiredLeftOf({ ...written, fields: [date(written)] })).toBe(0);
+  });
+});
+
+describe('jr7 P2: UP7-08 and UP7-11 (RULES-7) on both blank applications, with the golden profile', () => {
+  /** The scan and the plan of a blank application, as a run plans its one page (DEFAULT_SETTINGS: AI on 'all'). */
+  async function planned(name: string): Promise<{ result: ScanResult; plan: PlanOutput }> {
+    const result = scanOf(await open(name));
+    const plan = planFrame({ specs: result.fields.map(toFieldSpec), canaries: [], profile: goldenProfile(),
+      sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+      posting: { company: 'Example Employer', location: 'Remote, US' },
+      repeatables: [{ kind: 'experience', entries: null }, { kind: 'education', entries: null }] });
+    return { result, plan };
+  }
+  /** The one field whose question (page text) the pattern names, its row and its write. */
+  function question({ result, plan }: { result: ScanResult; plan: PlanOutput }, words: RegExp) {
+    const fields = result.fields.filter((field) => words.test(field.label));
+    expect(fields).toHaveLength(1);
+    const field = fields[0]!;
+    const write = plan.writes.find((each) => each.key === field.key);
+    return { field, row: plan.results.find((each) => each.key === field.key)!, write,
+      chosen: write?.value.kind === 'option' ? write.value.cleanLabel : undefined,
+      asked: plan.awaiting.includes(field.key) };
+  }
+
+  it('jr7-ultipro1-apply-1: eligible to begin employment Yes, the truthful certification I Confirm, the restrictive '
+    + 'covenant never from the profile', async () => {
+    const page = await planned('jr7-ultipro1-apply-1');
+    const eligible = question(page, /legally eligible .* to begin employment/i);
+    expect([eligible.field.required, eligible.row.category, eligible.chosen]).toEqual([true, 'workAuth.authorized', 'Yes']);
+    const truthful = question(page, /truthful, complete, and accurate/i);
+    expect([truthful.field.required, truthful.chosen]).toEqual([true, 'I Confirm']);
+    // A legal fact the profile does not hold (owner question Q7-5): no write from the profile; with AI on 'all' (the
+    // default, SPEC-AMENDMENTS §11) TailorIT's AI is asked, its answer marked an AI guess (labelRules.ts GUESS_ONLY).
+    const restrictive = question(page, /restrictive covenant/i);
+    expect([restrictive.field.kind, restrictive.row.category, restrictive.row.reason, restrictive.write])
+      .toEqual(['textarea', 'screening.restrictiveAgreement', 'legal-not-in-profile', undefined]);
+    expect(restrictive.asked).toBe(true);
+  }, 60_000);
+
+  it('jr7-ultipro2-apply-1: the restrictive agreement and the screening willingness are left for the person (Q7-5)',
+    async () => {
+    const page = await planned('jr7-ultipro2-apply-1');
+    const bound = question(page, /bound to any Employment/i);
+    expect([bound.row.category, bound.row.reason, bound.write, bound.row.needsUserAction])
+      .toEqual(['screening.restrictiveAgreement', 'legal-not-in-profile', undefined, true]);
+    const screening = question(page, /drug screen|background check/i);
+    expect([screening.row.reason, screening.write, screening.row.needsUserAction])
+      .toEqual(['llm-disabled-for-category', undefined, true]);
+  }, 60_000);
+
+  // Held: RULES-7's R2 fix (matcher/degree.ts NO_FIELD) chooses "Bachelor's level degree" among its own five options,
+  // but among this capture's eleven the cascade still ends 'distinctive-token-mismatch' (src/core/matcher/fuzzy.ts
+  // scoreOptions; any one of "Less than HS Graduate", "HS Graduate or equivalent", "Some college", "Technical School" or
+  // "Some graduate school" taken away, it chooses it). Flip once RULES-7 fixes it (ULTIPRO-7 handoff, for RULES-7).
+  it.fails('jr7-ultipro2-apply-1 (UP7-11): the highest education, the bachelor\'s level for the golden bachelor',
+    async () => {
+    const page = await planned('jr7-ultipro2-apply-1');
+    const highest = question(page, /highest level of education/i);
+    expect(highest.row.category).toBe('education.highestLevel');
+    expect(highest.chosen).toBe("Bachelor's level degree");
+  }, 60_000);
+});
+
+describe('jr7 ULTIPRO-7: the config stays sound', () => {
+  it('names each new rule\'s capture', () => {
+    expect(ULTIPRO_CONFIG.success?.from).toContain('jr7-ultipro1-submitted');
+    expect(ULTIPRO_CONFIG.posting?.from).toContain('jr7-ultipro1-posting');
+    expect(ULTIPRO_CONFIG.states?.[0]?.name).toBe('documents-dialog');
+    expect(detectPause(document, null, ultiproAdapter)).toBeNull();
+  });
+});

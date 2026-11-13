@@ -47,7 +47,7 @@ import { parseWorkdayUrl } from './workday/url';
 // ── New ATSs, builder A (DESIGN-NEW-ATS §5) ──
 import { parseAdpUrl } from './adp/url';
 import { parseDayforceUrl } from './dayforce/url';
-import { parseUltiproUrl } from './ultipro/url';
+import { parseUltiproAddress } from './ultipro/url'; // jr7 ULTIPRO-7 (UP7-01): was parseUltiproUrl
 // ── end New ATSs, builder A ──
 // ── New ATSs, builder B (DESIGN-NEW-ATS §5) ──
 import { parseClearCompanyUrl } from './clearcompany/url';
@@ -71,7 +71,12 @@ const URL_PARSERS: Partial<Record<Platform, (url: URL) => ApplicationUrl | null>
   // ── snapshot build 2026-11-06 (oracle-sf-sr): SmartRecruiters ──
   smartrecruiters: parseSmartRecruitersUrl,
   // ── New ATSs, builder A (DESIGN-NEW-ATS §5) ──
-  adp: parseAdpUrl, dayforce: parseDayforceUrl, ultipro: parseUltiproUrl,
+  adp: parseAdpUrl, dayforce: parseDayforceUrl,
+  // ── jr7 ULTIPRO-7 (FIX7PLAN §6.8 item 1, UP7-01): UltiPro's reading with its page after submitting
+  // (ultipro/url.ts parseUltiproAddress); the page-world scripts keep parseUltiproUrl (bridge-address.ts), which reads
+  // the same posting, form and account step and no confirmation. ──
+  ultipro: parseUltiproAddress,
+  // ── end jr7 ULTIPRO-7 ──
   // ── end New ATSs, builder A ──
   // ── New ATSs, builder B (DESIGN-NEW-ATS §5) ──
   jobvite: parseJobviteUrl, dice: parseDiceUrl, clearcompany: parseClearCompanyUrl, paylocity: parsePaylocityUrl,

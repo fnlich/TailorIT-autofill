@@ -1,0 +1,23 @@
+{
+  "fixture": "ultipro/jr7-ultipro1-posting",
+  "source": "https://recruiting2.ultipro.com/mil1017/JobBoard/f54234e9-dfde-b183-fd20-4fbdb19cba7a/OpportunityDetail?opportunityId=390a84c7-9e64-4b8d-b973-fa3aaebf20fd",
+  "captured": "2026-11-11T13:55:03.000Z",
+  "note": "The posting (OpportunityDetail), signed out: no form. Its Apply now is the entry (UP7-09: Jobright's apply-now-button selector), the agent's entry door's alone; LinkedIn's apply widget is never pressed.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": ".apply-btns-container ukg-button[data-automation=\"apply-now-button\"]",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "#OpportunitiesMenuButton",
+      "#language-picker-link",
+      "#SignInButton",
+      "[data-automation=\"awli-widget-container\"]",
+      "ukg-button[data-automation=\"apply-now-button\"]"
+    ],
+    "pressable": []
+  }
+}

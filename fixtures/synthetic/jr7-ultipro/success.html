@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  Synthetic (jr7 ULTIPRO-7, FIX7PLAN §6.8 items 1 and UP7-V2): UltiPro's page after submitting,
+  …/OpportunityApply/ApplicationSubmitted, as its server view draws it for an application with an assessment: the
+  HasAssessment() branch, which snapshot7's two captures (fixtures/ultipro/jr7-ultipro{1,2}-submitted.html) hold empty,
+  so its words here are made up. The sign is the view, div#ApplicationSubmitted, shown (src/adapters/ultipro/index.ts
+  ULTIPRO_CONFIG.success); #decoy-words holds the other branch's words outside the view, which are no sign. Nothing here
+  is any person's.
+-->
+<html lang="en">
+<head><meta charset="utf-8"><title>Application - Confirmed</title>
+<style>body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; }</style></head>
+<body>
+  <main>
+    <div id="Successbanner" data-automation="quick-apply-success-banner"></div>
+    <div id="ApplicationSubmitted"><div class="row">
+      <!-- ko ifnot: application.HasAssessment() --><!-- /ko -->
+      <!-- ko if: application.HasAssessment() -->
+      <div class="col-md-16 col-md-offset-4">
+        <h1 class="h3" data-automation="assessment-header">One more step: a short assessment</h1>
+        <p data-automation="assessment-instructions">Your answers were saved. Take the assessment to finish.</p>
+        <a href="#assessment" data-automation="assessment-link">Start the assessment</a>
+      </div>
+      <!-- /ko -->
+    </div></div>
+    <p id="decoy-words"><span data-automation="header">You applied for Synthetic Engineer</span>
+      <span data-automation="subheader">Thank you! Your application was submitted.</span></p>
+  </main>
+</body>
+</html>
