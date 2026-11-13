@@ -87,7 +87,7 @@ export function StepDock({ reports, onPress, actionsFrameId, submitted = false, 
 
   const press = async (confirmed: boolean) => {
     // Decided at the click, on what this render shows: a meaning not shown long enough is never acted on.
-    if (!seen || dock.held !== undefined) return; // jr8 WORKDAY: a held Continue presses nothing
+    if (!seen) return;
     setBusy(true);
     setSaid(null);
     const answer = await onPress(dock.frameId, dock.target, confirmed);

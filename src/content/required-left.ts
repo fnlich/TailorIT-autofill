@@ -11,6 +11,9 @@
  *   iCIMS's "Hr." beside an annual amount is the page's, not an answer) that neither the run wrote nor the person
  *   touched: it is filled only for a row the run could not decide by its own limits (ICIMS7-V4's HELD_BY_PAGE_REASONS:
  *   a question it could not tell, one it cannot write in the page's shape), whose page answer stands;
+ * - nor by what a field shows where the run wrote nothing because the page did not keep its choice as planned (a row's
+ *   verify-mismatch, unexpected-selection or value-rejected-by-site, unwritten: a Workday prompt's own choice the worker
+ *   did not take) until the person touched it;
  * - each of the run's required rows left for the person whose field no scan reads answered (an upload the fill
  *   attached nothing to, a widget the scan cannot read), and each required upload the scan recognises no control of.
  * Pure over a scan and the rows; nothing here reads or keeps a value beyond whether one shows.
@@ -24,6 +27,13 @@ import { notFilled, unfilledByRun } from '../shared/report';
 /** The reasons of a row the run could not decide by its own limits, whose field the page may answer itself (ICIMS7-V4:
  *  content/orchestrator.ts heldIn). Never a question the run knows the person must answer. */
 export const HELD_BY_PAGE_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['unknown-field', 'format-unsupported']);
+
+/** The reasons of a row the run left unwritten because the page did not keep its choice as planned (a Workday prompt's
+ *  own choice on the query that the worker did not take, typeahead.ts): what it shows is no answer of the run's, so the
+ *  field waits for the person (their own touch makes it theirs). A row the run wrote is filled (shared/report.ts
+ *  isReady), as before. */
+const MISMATCH_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['verify-mismatch', 'unexpected-selection',
+  'value-rejected-by-site']);
 
 /** The visibilities a person answers a field in (content/press.ts requiredLeftOf's). */
 const ANSWERABLE: ReadonlySet<ScannedField['visibility']> = new Set(['visible', 'hidden-file-with-visible-control',
@@ -72,8 +82,10 @@ export function filledAsShown(scanned: ScanResult, field: ScannedField, row: Fil
   const tags = target?.widget?.tags;
   if (tags !== undefined && tagsShowChip(tags)) return true;
   if (emptyNow(field.current)) return false;
+  const theirs = target !== null && [target.control, ...target.members].some(touched);
+  if (row !== undefined && unfilledByRun(row) && MISMATCH_REASONS.has(row.reason)) return theirs;
   if (target === null || !nativeDefault(target) || row?.wrote === true) return true;
-  if ([target.control, ...target.members].some(touched)) return true;
+  if (theirs) return true;
   return row !== undefined && unfilledByRun(row) && HELD_BY_PAGE_REASONS.has(row.reason);
 }
 

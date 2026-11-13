@@ -14,6 +14,7 @@
  * Every value here is made up; the fixtures hold none (the converter's --redact).
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import infoAfterHtml from '../../../fixtures/workday/jr8-aristocrat-my-information-after.html?raw';
 import expAfterHtml from '../../../fixtures/workday/jr8-aristocrat-my-experience-after.html?raw';
 import questionsAfterHtml from '../../../fixtures/workday/jr8-aristocrat-application-questions-after.html?raw';
@@ -368,7 +369,8 @@ describe('jr8: every block added on aristocrat’s My Experience (snapshot13: on
 const STEPS_HREF = 'https://tailoritfixture.wd5.myworkdayjobs.com/en-US/careers/job/x/Fixture-Steps_JR-0000002/apply/applyManually';
 
 /** What the synthetic steps page recorded (its header). */
-interface StepsRecord { step: number; next: Array<{ step: number; trusted: boolean }>; values: Record<number, Record<string, unknown>> }
+interface StepsRecord { step: number; next: Array<{ step: number; trusted: boolean }>; submit: unknown[];
+  values: Record<number, Record<string, unknown>> }
 
 /** The synthetic Workday steps page (fixtures/synthetic/workday/steps.html) with Workday's date script stood in for
  *  (a part's digits drawn a microtask after its input event) and, with `loadMs`, each step after the first drawn as a
@@ -497,6 +499,36 @@ describe('jr8: the owner’s rule: never Next past a required field the step sho
     expect(page.record().next).toEqual([]);
     expect(logged('content.next-withheld')).toBe(1);
   }, 90_000);
+
+  it('tells the panel how many required fields are left at rest, and refuses its Continue until they are filled',
+    async () => {
+      // Next on Manual: the run fills and rests for the person. A required question the profile cannot answer shows.
+      const fixture = await loadFixture(document, stepsHtml, { width: 1100, height: 1000 });
+      lateQuestion(fixture.doc);
+      const worker = createFakeWorker({ settings: DEFAULT_SETTINGS });
+      const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => STEPS_HREF, isTop: true,
+        adapters: () => [workdayAdapter], settle: { quietMs: 40 } });
+      runtimes.push(runtime);
+      await runtime.fill();
+      await vi.waitFor(() => expect(worker.reports.at(-1)?.buttons).toMatchObject({ final: 'not-final',
+        requiredLeft: 1 }), { timeout: 30_000 });
+      const record = () => (fixture.view as unknown as { __wd: StepsRecord }).__wd;
+      expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'next', confirmed: false }))
+        .toEqual({ ok: true, data: { outcome: 'required-empty', count: 1 } });
+      expect(record().next).toEqual([]);
+      // The person fills it: the next report counts none left, and Continue presses the page's Next (never Submit).
+      const late = fixture.doc.getElementById('late--late') as HTMLInputElement;
+      late.scrollIntoView({ block: 'center' });
+      const box = late.getBoundingClientRect();
+      await userEvent.click(fixture.frame, { position: { x: box.left + box.width / 2, y: box.top + box.height / 2 } });
+      await userEvent.keyboard('42');
+      await vi.waitFor(async () => {
+        expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'next', confirmed: false }))
+          .toEqual({ ok: true, data: { outcome: 'pressed' } });
+      }, { timeout: 10_000 });
+      expect(record().next).toEqual([{ step: 1, trusted: false }]);
+      expect(record().submit).toEqual([]);
+    }, 90_000);
 
   it('presses Next where every required field the step shows is filled (the rule holds nothing more)', async () => {
     const page = await stepsPage(null);

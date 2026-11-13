@@ -100,6 +100,20 @@ describe('jr8: a required question is filled as the page shows it (required-left
     expect(requiredUnfilledOf(scanned, rows, nobody)).toBe(3);
   });
 
+  it('never reads what a field shows where the page did not keep the run’s choice (nothing written), until the person’s touch',
+    async () => {
+      const page = await step();
+      (page.doc.getElementById('city') as HTMLInputElement).value = 'Another City';
+      const scanned = page.scan();
+      const city = page.doc.getElementById('city')!;
+      for (const reason of ['verify-mismatch', 'unexpected-selection', 'value-rejected-by-site'] as const) {
+        const rows = rowsOf(scanned, 'unknown-field').map((row) => (row.label === 'City'
+          ? { ...row, reason } as FillResult : row));
+        expect(labelsLeft(scanned, rows), reason).toEqual(['Badge number', 'City']);
+        expect(labelsLeft(scanned, rows, (el) => el === city), reason).toEqual(['Badge number']);
+      }
+    });
+
   it('reads a row the run marked the page’s (an Ashby Yes/No pressed, detail.filledByYou) as filled', async () => {
     const page = await step();
     const scanned = page.scan();
