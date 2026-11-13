@@ -20,6 +20,15 @@ import xplorPostingExpect from '../../../fixtures/smartrecruiters/xplor-posting.
 import xplorPostingHtml from '../../../fixtures/smartrecruiters/xplor-posting.html?raw';
 import xplorScreeningExpect from '../../../fixtures/smartrecruiters/xplor-screening.expect.json';
 import xplorScreeningHtml from '../../../fixtures/smartrecruiters/xplor-screening.html?raw';
+// jr7 BOARDS-7 (FIX7PLAN §6.13): the owner's snapshot7 smartrecruiter1 pages.
+import jr7OneClickExpect from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-oneclick-filled.expect.json';
+import jr7OneClickHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-oneclick-filled.html?raw';
+import jr7PostingExpect from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-posting.expect.json';
+import jr7PostingHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-posting.html?raw';
+import jr7ScreeningExpect from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-screening-filled.expect.json';
+import jr7ScreeningHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-screening-filled.html?raw';
+import jr7SuccessExpect from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-success.expect.json';
+import jr7SuccessHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-success.html?raw';
 import { pressEntry } from '../../content/press';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { scan } from '../../dom/scan';
@@ -29,7 +38,8 @@ import { adaptersFor } from '../index';
 import { fillabilityOf, readExpectation, sectionIdOf, SNAPSHOT_VIEWPORT, type Expectation } from '../test/expectations.testkit';
 import { compareHooks, readHooks } from '../test/hooks.testkit';
 import type { Adapter } from '../types';
-import { SMARTRECRUITERS_JR6_SNAPSHOTS, SMARTRECRUITERS_SNAPSHOTS, smartRecruitersAdapter } from './index';
+import { SMARTRECRUITERS_JR6_SNAPSHOTS, SMARTRECRUITERS_JR7_SNAPSHOTS, SMARTRECRUITERS_SNAPSHOTS,
+  smartRecruitersAdapter } from './index';
 
 const FORM = 'https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/publication/189a97ff-58b4-4671-bd81-6ed11d3bcfd1';
 const CASES = [
@@ -45,6 +55,16 @@ const JR6_CASES = [
   { name: 'jr6-wiser-one-click', html: wiserOneClickHtml, json: wiserOneClickExpect, address: `${WISER}?dcr_ci=WiserSolutions` },
   { name: 'jr6-wiser-screening', html: wiserScreeningHtml, json: wiserScreeningExpect,
     address: `${WISER}/screening?dcr_ci=WiserSolutions` },
+] as const;
+/** jr7 BOARDS-7 (FIX7PLAN §6.13): the owner's snapshot7 application, each page at the address its capture names. */
+const sourceOf = (html: string): string => /"source":"([^"]+)"/.exec(html)![1]!;
+const JR7_CASES = [
+  { name: 'jr7-smartrecruiter1-posting', html: jr7PostingHtml, json: jr7PostingExpect, address: sourceOf(jr7PostingHtml) },
+  { name: 'jr7-smartrecruiter1-oneclick-filled', html: jr7OneClickHtml, json: jr7OneClickExpect,
+    address: sourceOf(jr7OneClickHtml) },
+  { name: 'jr7-smartrecruiter1-screening-filled', html: jr7ScreeningHtml, json: jr7ScreeningExpect,
+    address: sourceOf(jr7ScreeningHtml) },
+  { name: 'jr7-smartrecruiter1-success', html: jr7SuccessHtml, json: jr7SuccessExpect, address: sourceOf(jr7SuccessHtml) },
 ] as const;
 
 /** A page's own base address (a srcdoc page's is about:srcdoc), after it loaded: its links resolve there. */
@@ -185,6 +205,25 @@ describe('the SmartRecruiters adapter: its hooks on the snapshots', () => {
   });
 
   it.each(JR6_CASES)('$name: the scan of its root is the expectation', async ({ html, json, address }) => {
+    const fixture = await load(html, address);
+    const root = smartRecruitersAdapter.detect(fixture.doc)!.formRoot;
+    const result = scan(root, smartRecruitersAdapter, { platform: 'smartrecruiters' });
+    expect(compareDeep(fixture.doc, result, readExpectation(json))).toEqual([]);
+  });
+
+  // jr7 BOARDS-7 (FIX7PLAN §6.13): the snapshot7 cases, their hooks and the first page's scan held against their
+  // expectations, as the owner's earlier ones (the posting's entry at its lower-case address is J7-SR-1's).
+  it('names each jr7 snapshot it reads', () => {
+    expect(JR7_CASES.map((each) => `fixtures/smartrecruiters/${each.name}.html`)).toEqual([...SMARTRECRUITERS_JR7_SNAPSHOTS]);
+    for (const { address } of JR7_CASES) expect(adaptersFor(new URL(address))[0]).toBe(smartRecruitersAdapter);
+  });
+
+  it.each(JR7_CASES)('$name: every hook answers what the page shows', async ({ html, json, address }) => {
+    const fixture = await load(html, address);
+    expect(compareHooks(fixture.doc, smartRecruitersAdapter, readHooks(json))).toEqual([]);
+  });
+
+  it.each([JR7_CASES[1], JR7_CASES[2]])('$name: the scan of its root is the expectation', async ({ html, json, address }) => {
     const fixture = await load(html, address);
     const root = smartRecruitersAdapter.detect(fixture.doc)!.formRoot;
     const result = scan(root, smartRecruitersAdapter, { platform: 'smartrecruiters' });

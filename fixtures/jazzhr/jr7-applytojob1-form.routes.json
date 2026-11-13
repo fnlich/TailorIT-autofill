@@ -1,0 +1,5 @@
+{
+  "https://protagona.applytojob.com/apply/AckyEfpw7c/AWS-Senior-Cloud-Engineer?source=REDACTED": "fixtures/jazzhr/jr7-applytojob1-form.html",
+  "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LeCbWYsAAAAALW1NxDRq4uvy3jv81sqB16i0gDm&co=aHR0cHM6Ly9wcm90YWdvbmEuYXBwbHl0b2pvYi5jb206NDQz&hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&size=normal&anchor-ms=20000&execute-ms=30000&ovv=CADq00gF&cb=b45euepdhfia": "fixtures/jazzhr/jr7-applytojob1-form.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/bframe?hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&k=6LeCbWYsAAAAALW1NxDRq4uvy3jv81sqB16i0gDm&bft=REDACTED": "fixtures/jazzhr/jr7-applytojob1-form.third-party-frame.html"
+}

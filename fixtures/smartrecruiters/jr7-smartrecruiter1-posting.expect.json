@@ -1,0 +1,23 @@
+{
+  "fixture": "smartrecruiters/jr7-smartrecruiter1-posting",
+  "source": "https://jobs.smartrecruiters.com/citystateentertainmentllc/744000155059749",
+  "captured": "2026-11-11T13:38:14.000Z",
+  "note": "The posting, captured at its address with the company in lower case, while its \"I'm interested\" links (bottom, aside, and an aria-hidden header copy) name the one-click application of the company as it spells itself: jr7 J7-SR-1, the entry compares the two in lower case.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": "main.jobad-main .job-sections",
+    "entryControl": "a.js-oneclick[data-sr-track-position=\"bottom\"]",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.js-oneclick",
+      "a.js-smartr-oneclick",
+      "a#st-refer",
+      "a.social-link",
+      ".ot-sdk-show-settings"
+    ],
+    "pressable": []
+  }
+}

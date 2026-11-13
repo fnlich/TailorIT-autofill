@@ -46,16 +46,26 @@
  * the form, which the run reads as the check's (dom/pause-detect.ts isCaptchaError: a CAPTCHA pause, carried on once the
  * person ticked it), never a field's. jr6 JZ-10: JazzHR's field errors, a label marked .resumator_label_error (the same
  * submission rules' errors; no snapshot shows one), are read as their question's container (`code.errors` below).
+ * jr7 BOARDS-7 (FIX7PLAN §6.13; the owner's snapshot7 applytojob1, JAZZHR_JR7_SNAPSHOTS): the classic layout's checkbox
+ * question is one question of its boxes (J7-JZ-3), and the page after submitting draws a second sign beside its
+ * address (J7-JZ-2, `code.successSigns`). Its Human Check stays the person's: JazzHR is the Queue tab's, never Run
+ * auto-apply's (J7-JZ-1, FIX7PLAN §5 D-5).
  */
 import { newScanCache } from '../../dom/scan-cache';
 import { isUserVisible } from '../../dom/visibility';
 import { configuredHooks } from '../configured';
 import type { AtsConfig, ConfiguredHooks } from '../configured/types';
+import { successSignsOf, type SuccessRule } from '../success';
 import { parseJazzhrUrl } from './url';
 
 /** The fixture cases the rules were read from (fixtures/jazzhr/<case>.html), in snapshot order. */
 export const JAZZHR_SNAPSHOTS = ['invaluable-form', 'nucleussecurity-form', 'panoptimization-form', 'wellhive-submitting',
   'jr6-centroid-form'] as const;
+
+/** jr7 BOARDS-7 (FIX7PLAN §6.13): the owner's snapshot7 applytojob1 (protagona.applytojob.com, the classic layout on
+ *  its screen body, body#resumator-jobboard-screen): the posting with its form in two loads, and the page after
+ *  submitting (/apply/confirm/<code>). */
+export const JAZZHR_JR7_SNAPSHOTS = ['jr7-applytojob1-form', 'jr7-applytojob1-form-b', 'jr7-applytojob1-confirmation'] as const;
 
 /** jr6 JZ-10: a question's container on either layout (Bootstrap's div.form-group, the classic
  *  div.resumator-field-wrapper; the nearest, so a Bootstrap EEO row's wrapper inside its form-group). */
@@ -66,7 +76,7 @@ const LABEL_ERROR = '.resumator_label_error';
 
 const RULES: AtsConfig = {
   platform: 'jazzhr',
-  snapshots: JAZZHR_SNAPSHOTS,
+  snapshots: [...JAZZHR_SNAPSHOTS, ...JAZZHR_JR7_SNAPSHOTS],
   parse: parseJazzhrUrl,
   root: { css: 'form#form_submit_new_resume', from: 'jazzhr-0 to -4, jr6-centroid-form' },
   questions: [
@@ -75,6 +85,13 @@ const RULES: AtsConfig = {
     // <input type="checkbox" name="resumator-checkbox-<q>-1" class="resumator-questionnaire-checkbox">Yes</label>…
     { container: 'div.form-group:has(input.resumator-questionnaire-checkbox)', title: 'label.control-label', group: true,
       from: 'jazzhr-3, jazzhr-4' },
+    // jr7 BOARDS-7 (J7-JZ-3): the classic layout's checkbox question, one question of its boxes (each its own name):
+    // <div id="resumator-q<q>" class="resumator-field-wrapper resumator-resume-text"><div class="resumator-label ...">
+    // <question></div><div id="resumator-q<q>-field" class="resumator-input"><label class="checkbox" for=
+    // "resumator-checkbox-<q>-<n>"><input type="checkbox" class="resumator-questionnaire-checkbox" ...>…</label>…
+    // (jr7-applytojob1-form, -form-b: nine boxes), before JZ-1's rule, which would title each box alone.
+    { container: 'div.resumator-field-wrapper:has(input.resumator-questionnaire-checkbox):not(.form-group *)',
+      title: 'div.resumator-label', group: true, from: 'jr7-applytojob1-form, jr7-applytojob1-form-b' },
     // jr6 JZ-1, JZ-5: <div class="resumator-field-wrapper resumator-resume-text" id="resumator-firstname"><div
     // class="resumator-label resumator-resume-text" id="resumator-firstname-label">First name*</div><div
     // id="resumator-firstname-field" class="resumator-input"><input type="text" id="resumator-firstname-value" …>.
@@ -116,6 +133,19 @@ const RULES: AtsConfig = {
 /** The hooks the rules build, for the code below to extend. */
 const ruled = configuredHooks(RULES);
 
+// ── jr7 BOARDS-7 (J7-JZ-2; SP\jr7\audit\boards.md, boards-verify.md) ──
+/** A second drawn sign of the page after submitting, as jr7-applytojob1-confirmation (/apply/confirm/<code>, its
+ *  address the main sign: jazzhr/url.ts) draws it on this tenant's screen layout: <body id="resumator-jobboard-screen">
+ *  … <section class="submit_success"> <img> <h4>Woo hoo!</h4> <p>We've received your application!</p>, where
+ *  the `success` rule (Jobright's) finds no heading. One tenant's evidence: the section beside a paragraph of its own
+ *  saying the application was received. */
+export const JAZZHR_RECEIVED: SuccessRule = {
+  css: 'body#resumator-jobboard-screen section.submit_success',
+  companion: { css: 'p', text: /\breceived your application\b/i, scope: 'section.submit_success' },
+  from: 'jr7-applytojob1-confirmation',
+};
+// ── end jr7 BOARDS-7 ──
+
 /** The hooks no rule can say. */
 const code: Partial<ConfiguredHooks> = {
   /** jr6 JZ-10: the rules' errors (the generic aria-invalid ones and #recaptcha-required-error), and each label JazzHR
@@ -136,6 +166,10 @@ const code: Partial<ConfiguredHooks> = {
     }
     return [...own, ...marked];
   },
+  /** jr7 BOARDS-7 (J7-JZ-2): the second drawn sign (JAZZHR_RECEIVED), for an armed Submit of JazzHR's
+   *  (Adapter.successSigns, which AUTO-7's content/submitted.ts signsOf reads beside the rule's `success`); the page
+   *  shows one application's confirmation. */
+  successSigns: (doc, armedKey) => (armedKey.startsWith('jazzhr:') ? successSignsOf(doc, [JAZZHR_RECEIVED]) : []),
 };
 
 /** JazzHR's config: the rules, and the code they cannot say. */

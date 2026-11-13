@@ -18,6 +18,8 @@
  * textarea (jr6-vhl-step1) and an EEO step whose fields are all required (jr6-sikich-step2) are read by the scanner's
  * own rules. Still unseen: a rendered field error's text, a currency question, the cover letter's row once a file is
  * in, and a Work History or References section (JV-25).
+ * jr7 BOARDS-7 (FIX7PLAN §6.13; the owner's snapshot7 jobvite1, fixtures/jobvite/jr7-jobvite1-*): the two file inputs
+ * read their own question first, whatever their attachment popover shows (J7V-JV-1, `code.labelFirst`).
  *
  * Read by the scanner's own rules, so no rule here: every text, select and date control's label[for] with its
  * trailing star (span.jv-required-label) and required attribute; each radio group's legend; the sub-section a field
@@ -186,7 +188,13 @@ const code: Partial<ConfiguredHooks> = {
   // The self-identification form's closing name and date (see the header): read as its signature, before their own
   // label[for] alone.
   labelSuffix: (control) => (signatureLabel(control) !== null ? 'signature' : ruled.labelSuffix?.(control) ?? null),
-  labelFirst: (control) => signatureLabel(control) !== null,
+  // jr7 BOARDS-7 (J7V-JV-1; SP\jr7\audit\boards-verify.md): the two file inputs are labelled by their own question
+  // (above) whatever their popover shows: while the person has the résumé's popover open (jr7-jobvite1-step1-b:
+  // div#attachmentDropdown[role=dialog], aria-hidden="false", beside "Add Resume"), its own label[for] "File" shows, and
+  // read first it made the required résumé an optional "File" of no category, never uploaded. The heading's star keeps
+  // it required; the cover letter reads "Add Cover Letter" alike.
+  labelFirst: (control) => control.matches(RESUME_INPUT) || control.matches(COVER_LETTER_INPUT)
+    || signatureLabel(control) !== null,
   // A popover's input belongs to its opener's section, not to the last heading before the popover at the end of the
   // body ("Additional Files (optional)" for both).
   sections: (root) => [...(ruled.sections?.(root) ?? []), ...popoverSections(root)],

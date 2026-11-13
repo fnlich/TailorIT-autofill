@@ -1,0 +1,6 @@
+{
+  "https://www.dice.com/job-applications/f34e4c57-874a-4946-ae9f-2afe3a4ad988/wizard": "fixtures/dice/jr7-dice1-review.html",
+  "https://cdn.consentmanager.net/delivery/crossdomain.html": "fixtures/dice/jr7-dice1-review.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/aframe": "fixtures/dice/jr7-dice1-review.third-party-frame.html",
+  "https://cm.g.doubleclick.net/partnerpixels?url=https%3A%2F%2Fwww.dice.com%2Fjob-detail%2Ff34e4c57-874a-4946-ae9f-2afe3a4ad988": "fixtures/dice/jr7-dice1-review.third-party-frame.html"
+}

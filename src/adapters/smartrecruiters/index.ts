@@ -60,18 +60,29 @@
  *   for the personal-information box).
  * - Steps (nextButton, submitButton, isFinalStep, stepSignature): the first page's Next (oc-button[data-test=
  *   footer-next], its spl-button's own button), the screening step's Submit (oc-button[data-test=footer-submit]); a page
- *   that shows Submit is final, one that shows Next is not. No snapshot shows the page after Submit.
+ *   that shows Submit is final, one that shows Next is not. The page after Submit: jr7 J7-SR-4 (below).
  * - Errors: each oc-validation-summary's ul[data-test=validation-summary] once it holds words, besides the standard
  *   ones (no snapshot shows one filled).
  * - Never pressed: the posting's SmartR button, "Refer a friend", its share links and cookie settings; the one-click
  *   page's Apply with Indeed and SEEK (and the LinkedIn widget's frame), the Experience and Education "Add" buttons, the
  *   screening step's Back and every page's "Cookie Settings".
+ * jr7 BOARDS-7 (FIX7PLAN §6.13; SP\jr7\audit\boards.md and boards-verify.md; the owner's snapshot7 smartrecruiter1,
+ * converted as the jr7 cases of SMARTRECRUITERS_JR7_SNAPSHOTS):
+ * - J7-SR-1: the entry compares the posting's company and the link's in lower case: the posting's address may spell the
+ *   company otherwise than its links do (jr7-smartrecruiter1-posting: /<company in lower case>/<id>, its "I'm interested"
+ *   naming /oneclick-ui/company/<Company>/...). No key changes (url.ts keeps the company as written).
+ * - J7-SR-3: a screening list's id names its question's UUID and, for a question of several fields, the field
+ *   (question_<question id>_gender, question_<question id>_ethnicity) or a repeated row's field
+ *   (question_<question id>-0-level): its list is that field's own (publishedOptions).
+ * - J7-SR-4: the page after Submit draws "Application submitted!" (successSigns), read for an armed Submit of
+ *   SmartRecruiters (AUTO-7's content/submitted.ts signsOf).
  * Nothing here logs or sends a value. A page's own value is read only in the frame and only to compare it: the phone
  * select's chosen country code (shownAnswer) and the names a drop zone shows (uploadHeldNames, uploadState).
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
+import { successSignsOf, type SuccessRule } from '../success';
 import type { Adapter, UploadState, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, matchesUrl, parseSmartRecruitersUrl } from './url';
 
@@ -85,6 +96,14 @@ export const SMARTRECRUITERS_SNAPSHOTS = ['fixtures/smartrecruiters/xplor-postin
  *  results drawn open; Wiser Solutions' screening step, answered). */
 export const SMARTRECRUITERS_JR6_SNAPSHOTS = ['fixtures/smartrecruiters/jr6-xplor-one-click-filled.html',
   'fixtures/smartrecruiters/jr6-wiser-one-click.html', 'fixtures/smartrecruiters/jr6-wiser-screening.html'] as const;
+
+/** jr7 BOARDS-7 (FIX7PLAN §6.13, §11): the owner's snapshot7 application (smartrecruiter1) converted with the jr7
+ *  converter: the posting at its lower-case address, the first page filled (manual location mode), the screening step
+ *  answered (converted since TOOLING-7's r2: a chosen list row's marks), and the page after Submit. */
+export const SMARTRECRUITERS_JR7_SNAPSHOTS = ['fixtures/smartrecruiters/jr7-smartrecruiter1-posting.html',
+  'fixtures/smartrecruiters/jr7-smartrecruiter1-oneclick-filled.html',
+  'fixtures/smartrecruiters/jr7-smartrecruiter1-screening-filled.html',
+  'fixtures/smartrecruiters/jr7-smartrecruiter1-success.html'] as const;
 
 /** Every element under `scope` matching `selector`, in its open shadow roots too (each root's after its tree's own). */
 function deepAll<T extends Element>(scope: Document | Element | ShadowRoot, selector: string): T[] {
@@ -135,10 +154,17 @@ function addressOf(doc: Document): URL | null {
   }
 }
 
+/** jr7 BOARDS-7 (J7-SR-1): a company as compared between a posting and its one-click link, in lower case (the
+ *  posting's address and its links may spell it apart: jr7-smartrecruiter1-posting; adapters/chain.ts chainFamilyOf
+ *  folds it the same way). Null stays null. */
+const companyOf = (board: string | null): string | null => board?.toLowerCase() ?? null;
+
 /** "I'm interested": xplor-posting.html's <a class="button button--primary button--huge js-oneclick job-button"
  *  data-sr-track="apply" data-sr-track-position="bottom" href="https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/
  *  publication/<uuid>?dcr_ci=Xplor"> (and its "aside" copy, id="st-apply"; its "header" copy is aria-hidden), whose
- *  address is the one-click application of the posting's own company. */
+ *  address is the one-click application of the posting's own company, the company compared in lower case (J7-SR-1:
+ *  jr7-smartrecruiter1-posting's address writes it in lower case, its links as the company spells it). Jobright's
+ *  entry (smartRecruitersEntryAdapter) compares the two exactly, so it misses that posting. */
 function entryControl(doc: Document): HTMLElement | null {
   const address = addressOf(doc);
   const here = address === null ? null : parseSmartRecruitersUrl(address);
@@ -147,7 +173,7 @@ function entryControl(doc: Document): HTMLElement | null {
     if (link.closest('[aria-hidden="true"]') !== null) return false;
     try {
       const target = parseSmartRecruitersUrl(new URL(link.getAttribute('href') ?? '', doc.baseURI));
-      return target !== null && target.page === 'application' && target.board === here.board;
+      return target !== null && target.page === 'application' && companyOf(target.board) === companyOf(here.board);
     } catch {
       return false;
     }
@@ -238,10 +264,11 @@ function composedClosest(el: Element, selector: string): Element | null {
   return null;
 }
 
-/** A question of sr-screening-questions-form's definition, as far as its options go. */
+/** A question of sr-screening-questions-form's definition, as far as its options go: each field's own id (jr7
+ *  J7-SR-3: "gender" and "ethnicity" of one question, "lang" and "level" of another). */
 interface DefinedQuestion {
   id?: unknown;
-  fields?: ReadonlyArray<{ multipleChoice?: unknown; values?: ReadonlyArray<{ label?: unknown }> }>;
+  fields?: ReadonlyArray<{ id?: unknown; multipleChoice?: unknown; values?: ReadonlyArray<{ label?: unknown }> }>;
 }
 /** Each form's definition read once, by the attribute's text. */
 const definitions = new WeakMap<Element, { text: string; questions: ReadonlyMap<string, DefinedQuestion> }>();
@@ -268,15 +295,25 @@ function definedQuestions(form: Element): ReadonlyMap<string, DefinedQuestion> {
   return questions;
 }
 
+/** jr7 BOARDS-7 (J7-SR-3; boards-verify.md's narrowed fix): a screening list's id. Its question's id is a UUID
+ *  (xplor-screening.html's id="question_<question id>"), after it, for one field of a question of several, "_<field>"
+ *  (jr7-smartrecruiter1's screening step: question_<question id>_gender, question_<question id>_ethnicity) or, for a
+ *  field of a repeated row, "-<row>-<field>" (question_<question id>-0-level, a language's level). Anchored to the UUID,
+ *  so its own hyphens never split it. Groups: 1 the question, 2 the field ("_" form), 3 the row, 4 the field (row form). */
+const QUESTION_LIST_ID =
+  /^question_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:_([A-Za-z]\w*)|-(\d+)-([A-Za-z]\w*))?$/i;
+
 /** A screening question's whole list as its page publishes it (module header), every option's label in the page's
- *  order: the question its spl-autocomplete's id names (id="question_<question id>"), read from the definition of the
- *  sr-screening-questions-form above it. 'several' for a question that takes several answers; null where the page
- *  publishes no list for it. */
+ *  order: the question its spl-autocomplete's id names (QUESTION_LIST_ID), read from the definition of the
+ *  sr-screening-questions-form above it; where the id names one of its fields (jr7 J7-SR-3), that field's alone
+ *  (fields[].id). 'several' for a field that takes several answers; null where the page publishes no list for it. */
 function publishedOptions(autocomplete: Element): readonly string[] | 'several' | null {
-  const id = /^question_(.+)$/.exec(autocomplete.id)?.[1];
+  const id = QUESTION_LIST_ID.exec(autocomplete.id);
   const form = composedClosest(autocomplete, 'sr-screening-questions-form[definition]');
-  if (id === undefined || form === null) return null;
-  const fields = definedQuestions(form).get(id)?.fields ?? [];
+  if (id === null || form === null) return null;
+  const named = id[2] ?? id[4];
+  const all = definedQuestions(form).get(id[1]!)?.fields ?? [];
+  const fields = named === undefined ? all : all.filter((field) => field.id === named);
   if (fields.some((field) => field.multipleChoice === true)) return 'several';
   const labels = fields.flatMap((field) => field.values ?? [])
     .map((value) => (typeof value?.label === 'string' ? words(value.label) : '')).filter((label) => label !== '');
@@ -541,6 +578,26 @@ function errors(root: Element): Array<{ el: Element; fieldKeyHint?: string }> {
   return [...(genericAdapter.errors?.(root) ?? []), ...summaries];
 }
 
+// ── jr7 BOARDS-7 (J7-SR-4; FIX7PLAN §5 D-1 item 2, raised to high by boards-verify.md) ──
+/** The page after Submit (jr7-smartrecruiter1-success.html, …/publication/<uuid>/success): <oc-success-page> › <div
+ *  data-test="success-page"> › <h2 data-test="success-page-confirmation">Application submitted!</h2>, in the document's
+ *  own tree (no shadow root). The selector is Jobright's fact (its ats-submission-rules, the rule
+ *  'smartrecruiters-application-success', read as its behaviour, never its code), shown and with words, whatever
+ *  they say. */
+export const SMARTRECRUITERS_SUCCESS: SuccessRule = {
+  css: 'oc-success-page [data-test="success-page"] h2[data-test="success-page-confirmation"]',
+  from: "jr7-smartrecruiter1-success; Jobright 1.25.2 ats-submission-rules 'smartrecruiters-application-success'",
+};
+
+/** The drawn sign of the application armed under `armedKey` (Adapter.successSigns), read only after an armed Submit
+ *  (AUTO-7: content/submitted.ts signsOf, newSuccessSign). The page shows one application's confirmation and names no
+ *  posting, so it is read for an arm of SmartRecruiters' alone: the chained run's arm carries the posting's key
+ *  (FIX7PLAN §5 D-1), and its watch, in the same document the app routes to /success, reports under that key. */
+function successSigns(doc: Document, armedKey: string): Element[] {
+  return armedKey.startsWith('smartrecruiters:') ? successSignsOf(doc, [SMARTRECRUITERS_SUCCESS]) : [];
+}
+// ── end jr7 BOARDS-7 ──
+
 /** The controls never pressed (module header). */
 const NEVER_PRESSED = [
   // xplor-posting.html: "I'm interested" (the entry door's alone), with SmartR, "Refer a friend", the share links,
@@ -598,6 +655,8 @@ export const smartRecruitersAdapter: Adapter = {
   stepSignature,
   errors,
   neverPress,
+  // jr7 BOARDS-7 (J7-SR-4): "Application submitted!" after an armed Submit.
+  successSigns,
   // jr6 C3 (module header): the one-click form is drawn late by the page's own app.
   quirks: { formLateMs: SMARTRECRUITERS_FORM_LATE_MS },
 };
