@@ -22,6 +22,7 @@ import successHtml from '../../../fixtures/synthetic/jr7-ultipro/success.html?ra
 import { openAt, runtimeAt, servedAdapter, sourceOf, wallsOf } from '../../content/apply.testkit';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { requiredLeftOf } from '../../content/press';
+import { signIn, type SignInContext } from '../../content/sign-in';
 import { signsOf } from '../../content/submitted';
 import { planFrame } from '../../core/plan/frame';
 import type { PlanOutput } from '../../core/plan/types';
@@ -29,7 +30,7 @@ import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { detectPause } from '../../dom/pause-detect';
 import { scan, toFieldSpec } from '../../dom/scan';
-import { signInContainerOf } from '../../dom/sign-in-form';
+import { signInContainerOf, signInRefusal } from '../../dom/sign-in-form';
 import type { ScanResult, ScannedField } from '../../dom/types';
 import { visibleText } from '../../dom/visible-text';
 import { isHrHost, onAtsMatch, platformOfUrl } from '../../shared/hosts';
@@ -233,6 +234,72 @@ describe('jr7 UP7-V1, UP7-04: the account step', () => {
       expect(other.querySelector('ukg-checkbox')).toBeNull();
       expect(signInContainerOf(ultiproAdapter, other)).toMatchObject({ terms: [], enablesWhenFilled: true });
     });
+});
+
+describe('jr7 P2 UP7-04: the Register\'s sign-in path (ENGINE-7 E1 item 8, E2: an ARIA term per the Consents mode)', () => {
+  const CREATE = 'ukg-button[data-automation="registrationDetails-submit-button"]';
+  const PRIVACY = 'ukg-checkbox[data-automation="registrationDetails-privacy-checkbox"]';
+  /** A Register page read at its own address, with a stand-in for UKG's components, whose scripts no capture keeps: a
+   *  click on the privacy box ticks it a moment later (aria-checked), and Create account is enabled once the box is
+   *  ticked, or at once on a tenant that draws no box. Every click is recorded and held (nothing is sent). */
+  async function register(name: string) {
+    const doc = await open(name);
+    const address = addressOf(name);
+    const base = doc.createElement('base');
+    base.href = address;
+    doc.head.prepend(base);
+    const host = doc.querySelector<HTMLElement>(CREATE)!;
+    const native = host.shadowRoot!.querySelector<HTMLButtonElement>('button.ukg-button-native')!;
+    const enable = () => {
+      host.removeAttribute('disabled');
+      native.disabled = false;
+    };
+    const privacy = doc.querySelector<HTMLElement>(PRIVACY);
+    if (privacy === null) enable();
+    // The page's own timer (the fixture's window), as its component draws its state a moment after the click.
+    privacy?.addEventListener('click', () => doc.defaultView!.setTimeout(() => {
+      privacy.setAttribute('aria-checked', 'true');
+      enable();
+    }, 60));
+    const clicks: Element[] = [];
+    doc.addEventListener('click', (event) => {
+      clicks.push(event.composedPath()[0] as Element);
+      event.preventDefault();
+    }, true);
+    return { doc, address, privacy, native, clicks };
+  }
+  const press = (page: Awaited<ReturnType<typeof register>>, consents?: SignInContext['consents']) => signIn({
+    doc: page.doc, adapter: ultiproAdapter, href: () => page.address, isTop: true, container: true,
+    channel: { request: async () => ({ ok: true, data: { host: new URL(page.address).hostname, email: 'guest@example.com',
+      press: true } }) } as unknown as SignInContext['channel'],
+    signal: new AbortController().signal, settleMs: 300, ...(consents === undefined ? {} : { consents }) });
+
+  it('jr7-ultipro1-register: refused by nothing; with Consents All its box is ticked, read back, then Create account '
+    + 'pressed once', async () => {
+    const page = await register('jr7-ultipro1-register');
+    expect(signInRefusal(signInContainerOf(ultiproAdapter, page.doc)!, new URL(page.address))).toBeNull();
+    await press(page, { mode: 'all', preapproved: [] });
+    expect(page.privacy!.getAttribute('aria-checked')).toBe('true');
+    expect(page.clicks).toEqual([page.privacy, page.native]);
+  }, 30_000);
+
+  it('jr7-ultipro1-register: without the Consents mode, or Required only with nothing pre-approved, the box is left '
+    + 'and nothing pressed', async () => {
+    for (const consents of [undefined, { mode: 'required' as const, preapproved: [] }]) {
+      const page = await register('jr7-ultipro1-register');
+      await press(page, consents);
+      expect(page.privacy!.getAttribute('aria-checked'), JSON.stringify(consents ?? null)).toBe('false');
+      expect(page.clicks).toEqual([]);
+      removeFixtures(document);
+    }
+  }, 60_000);
+
+  it('jr7-ultipro2-register (no box): refused by nothing, Create account pressed once', async () => {
+    const page = await register('jr7-ultipro2-register');
+    expect(signInRefusal(signInContainerOf(ultiproAdapter, page.doc)!, new URL(page.address))).toBeNull();
+    await press(page, { mode: 'all', preapproved: [] });
+    expect(page.clicks).toEqual([page.native]);
+  }, 30_000);
 });
 
 describe('jr7 UP7-07: the documents dialog after Submit (owner question Q7-8: the person\'s)', () => {
