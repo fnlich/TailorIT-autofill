@@ -41,10 +41,10 @@
       "kind": "combobox",
       "required": false,
       "section": "application-devops-engineer-remote",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "[id=\"field-24\"]"
+      "control": "[id=\"field-24\"]",
+      "note": "Declared with its list as Jobright's Rippling lookup finds it once open (aria-controls, its id and \"-list\", the one shown popper listbox; jr7 RBP-7, RBP7-06, rippling/widgets.ts): the widget helpers act on it; no capture shows it open (a live check)."
     },
     {
       "label": "Current company",
@@ -59,10 +59,10 @@
       "kind": "combobox",
       "required": true,
       "section": "application-devops-engineer-remote",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "[id=\"field-38\"]"
+      "control": "[id=\"field-38\"]",
+      "note": "Declared with its list as Jobright's Rippling lookup finds it once open (aria-controls, its id and \"-list\", the one shown popper listbox; jr7 RBP-7, RBP7-06, rippling/widgets.ts): the widget helpers act on it; no capture shows it open (a live check)."
     },
     {
       "label": "Phone number",
@@ -74,12 +74,12 @@
     },
     {
       "label": "Location",
-      "kind": "text",
+      "kind": "typeahead-remote",
       "required": true,
       "section": "application-devops-engineer-remote",
       "fillable": true,
       "control": "[id=\"field-46\"]",
-      "note": "Rippling draws the box on the input's wrapper (div.css-1mlcsw inside div[data-testid=<key>], a 1 px border and 16 px padding, 17 px beyond the input's sides), which holds the input and nothing else but decoration: its content box hugs them, so it is the input's box (dom/camouflage.ts drawnByWrapper, core pass Z2 of 2026-11-06; read camouflaged until then). (Location's search icon also sits in that wrapper.)"
+      "note": "jr7 RBP-7 (RBP7-05, rippling/widgets.ts): declared a remote search over places, its suggestions the list aria-controls names, else the one shown popper listbox; the suggestion matching the profile's place is chosen, never a free text. Rippling draws the box on the input's wrapper (div.css-1mlcsw inside div[data-testid=<key>], a 1 px border and 16 px padding, 17 px beyond the input's sides), which holds the input and nothing else but decoration: its content box hugs them, so it is the input's box (dom/camouflage.ts drawnByWrapper, core pass Z2 of 2026-11-06; read camouflaged until then). (Location's search icon also sits in that wrapper.)"
     },
     {
       "label": "Cover letter",
@@ -94,40 +94,40 @@
       "kind": "combobox",
       "required": false,
       "section": "application-devops-engineer-remote",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "[id=\"field-59\"]"
+      "control": "[id=\"field-59\"]",
+      "note": "Declared with its list as Jobright's Rippling lookup finds it once open (aria-controls, its id and \"-list\", the one shown popper listbox; jr7 RBP-7, RBP7-06, rippling/widgets.ts): the widget helpers act on it; no capture shows it open (a live check)."
     },
     {
       "label": "Please identify your race",
       "kind": "combobox",
       "required": false,
       "section": "application-devops-engineer-remote",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "[id=\"field-65\"]"
+      "control": "[id=\"field-65\"]",
+      "note": "Declared with its list as Jobright's Rippling lookup finds it once open (aria-controls, its id and \"-list\", the one shown popper listbox; jr7 RBP-7, RBP7-06, rippling/widgets.ts): the widget helpers act on it; no capture shows it open (a live check)."
     },
     {
       "label": "Are you Hispanic/Latino?",
       "kind": "combobox",
       "required": false,
       "section": "application-devops-engineer-remote",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "[id=\"field-72\"]"
+      "control": "[id=\"field-72\"]",
+      "note": "Declared with its list as Jobright's Rippling lookup finds it once open (aria-controls, its id and \"-list\", the one shown popper listbox; jr7 RBP-7, RBP7-06, rippling/widgets.ts): the widget helpers act on it; no capture shows it open (a live check)."
     },
     {
       "label": "Veteran Status",
       "kind": "combobox",
       "required": false,
       "section": "application-devops-engineer-remote",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
-      "control": "[id=\"field-78\"]"
+      "control": "[id=\"field-78\"]",
+      "note": "Declared with its list as Jobright's Rippling lookup finds it once open (aria-controls, its id and \"-list\", the one shown popper listbox; jr7 RBP-7, RBP7-06, rippling/widgets.ts): the widget helpers act on it; no capture shows it open (a live check)."
     },
     {
       "label": "Check Yes or No to indicate your agreement to receive text message updates from SmartSuite regarding your job application. Frequency may vary. Message and data rates may apply. Reply HELP for assistance. Reply STOP to opt out of future messaging.",

@@ -1,0 +1,5 @@
+{
+  "https://alkira.bamboohr.com/careers/274?source=REDACTED": "fixtures/bamboohr/jr7-bamboohr1-form-filled.html",
+  "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LfZ4KEsAAAAAP7osErua7mOIzcdDjnUdaZfp08m&co=aHR0cHM6Ly9hbGtpcmEuYmFtYm9vaHIuY29tOjQ0Mw..&hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&size=normal&anchor-ms=20000&execute-ms=30000&ovv=CADq00gF&cb=p64tzyr8dcan": "fixtures/bamboohr/jr7-bamboohr1-form-filled.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/bframe?hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&k=6LfZ4KEsAAAAAP7osErua7mOIzcdDjnUdaZfp08m&bft=REDACTED": "fixtures/bamboohr/jr7-bamboohr1-form-filled.third-party-frame.html"
+}

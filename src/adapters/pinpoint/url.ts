@@ -11,6 +11,10 @@
  * The canonical application URL is the form's address: https, the tenant's host, /en/postings/<uuid>/applications/new,
  * no query and no fragment; the posting and the confirmation name it too, whatever their locale.
  * TailorIT's parseAtsUrl reads the same since its API 6 (src/adapters/url.test.ts).
+ * jr7 RBP-7 (RBP7-22; snapshot7 pinpointhq1's form, whose form#application-form posts to .../applications): a refused
+ * submission comes back at .../applications, the form drawn again, so that address is the application page too, under
+ * the form's key (Jobright 1.25.2's ats-submission-rules 'pinpointhq-application-thanks' reads the form's path with or
+ * without /new, read as its behaviour). TailorIT's contract reads it since jr7-tailorit-a (TAILORIT-7's twin).
  */
 import type { ApplicationPage, ApplicationUrl } from '../application-key';
 
@@ -18,7 +22,7 @@ import type { ApplicationPage, ApplicationUrl } from '../application-key';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** What follows the uuid, and the page it makes. */
 const PAGES: ReadonlyMap<string, ApplicationPage> = new Map([['', 'posting'], ['applications/new', 'application'],
-  ['applications/thanks', 'confirmation']]);
+  ['applications/thanks', 'confirmation'], ['applications', 'application']]);
 
 /** A Pinpoint tenant's host, as src/shared/hosts.ts HOST_PLATFORMS lists it. */
 const HOST_PATTERN = /^(?!app\.)[a-z0-9-]+\.pinpointhq\.com$/;

@@ -1,0 +1,170 @@
+{
+  "fixture": "pinpoint/jr7-pinpointhq1-form",
+  "source": "https://astrolab.pinpointhq.com/en/postings/6c17c22f-2715-4e82-91d9-a3f0d6d9648c/applications/new",
+  "captured": "2026-11-11T12:55:53.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "1.Personal Details We'll need these details in order to be able to contact you. Apply with LinkedIn",
+      "fillable": true,
+      "control": "[id=\"application_form_application_first_name\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "1.Personal Details We'll need these details in order to be able to contact you. Apply with LinkedIn",
+      "fillable": true,
+      "control": "[id=\"application_form_application_last_name\"]"
+    },
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "1.Personal Details We'll need these details in order to be able to contact you. Apply with LinkedIn",
+      "fillable": true,
+      "control": "[id=\"application_form_application_email\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "1.Personal Details We'll need these details in order to be able to contact you. Apply with LinkedIn",
+      "fillable": true,
+      "control": "[id=\"application_form_application_phone\"]"
+    },
+    {
+      "label": "LinkedIn URL",
+      "kind": "text",
+      "required": false,
+      "section": "1.Personal Details We'll need these details in order to be able to contact you. Apply with LinkedIn",
+      "fillable": true,
+      "control": "[id=\"application_form_application_linkedin_url\"]"
+    },
+    {
+      "label": "Résumé / CV",
+      "kind": "file",
+      "required": true,
+      "section": "2. Profile",
+      "fillable": true,
+      "control": "[id=\"application_form[application][cv]\"]"
+    },
+    {
+      "label": "Personal Summary This section is optional. Use it to tell us a little more about yourself.",
+      "kind": "textarea",
+      "required": false,
+      "section": "2. Profile",
+      "fillable": true,
+      "control": "[id=\"personal-summary\"]"
+    },
+    {
+      "label": "Are you legally authorized to work in the United States of America?",
+      "kind": "radio",
+      "required": true,
+      "section": "3.Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "[id=\"application_form_application_answers_attributes_0_boolean_answer_true\"]"
+    },
+    {
+      "label": "Will you now or in the future require immigration sponsorship in order to be employed in the United States?",
+      "kind": "radio",
+      "required": true,
+      "section": "3.Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "[id=\"application_form_application_answers_attributes_1_boolean_answer_true\"]"
+    },
+    {
+      "label": "What are your compensation expectations?",
+      "kind": "textarea",
+      "required": false,
+      "section": "3.Questions",
+      "fillable": true,
+      "control": "[id=\"application_form_application_answers_attributes_2_text_answer\"]"
+    },
+    {
+      "label": "How did you hear about this job?",
+      "kind": "textarea",
+      "required": true,
+      "section": "3.Questions",
+      "fillable": true,
+      "control": "[id=\"application_form_application_answers_attributes_3_text_answer\"]"
+    },
+    {
+      "label": "Locations",
+      "kind": "combobox",
+      "required": false,
+      "section": "4. Other job preferences The job you are applying for is considered your first choice, you can optionally select two other roles that you would be interested in being considered for.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"Shared::Form::Jobpreferences-react-component-6ba2a272-bfe9-42a7-a75f-127af3e531d7\"] > div:nth-child(1) > div:nth-child(2) > div:nth-child(2) > div:nth-child(3) > div:nth-child(1) > div:nth-child(2) > input:nth-child(1)",
+      "note": "RBP7-21: the job-preference block is drawn twice with the same ids; each id named by two label[for] of the same words reads them once (ENGINE-7 E1 item 7)."
+    },
+    {
+      "label": "Job Title",
+      "kind": "combobox",
+      "required": false,
+      "section": "4. Other job preferences The job you are applying for is considered your first choice, you can optionally select two other roles that you would be interested in being considered for.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"Shared::Form::Jobpreferences-react-component-6ba2a272-bfe9-42a7-a75f-127af3e531d7\"] > div:nth-child(1) > div:nth-child(3) > div:nth-child(2) > div:nth-child(3) > div:nth-child(1) > div:nth-child(2) > input:nth-child(1)"
+    },
+    {
+      "label": "Locations",
+      "kind": "combobox",
+      "required": false,
+      "section": "4. Other job preferences The job you are applying for is considered your first choice, you can optionally select two other roles that you would be interested in being considered for.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"Shared::Form::Jobpreferences-react-component-f33d3603-026f-44e5-97da-05228eab6ab4\"] > div:nth-child(1) > div:nth-child(2) > div:nth-child(2) > div:nth-child(3) > div:nth-child(1) > div:nth-child(2) > input:nth-child(1)"
+    },
+    {
+      "label": "Job Title",
+      "kind": "combobox",
+      "required": false,
+      "section": "4. Other job preferences The job you are applying for is considered your first choice, you can optionally select two other roles that you would be interested in being considered for.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"Shared::Form::Jobpreferences-react-component-f33d3603-026f-44e5-97da-05228eab6ab4\"] > div:nth-child(1) > div:nth-child(3) > div:nth-child(2) > div:nth-child(3) > div:nth-child(1) > div:nth-child(2) > input:nth-child(1)"
+    },
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": false,
+      "section": "Equal Employment Opportunity Astrolab is an equal employment opportunity employer. As a federal contractor or subcontractor, Astrolab encourages qualified veterans and individuals with disabilities to apply to be considered for open positions. Information gathered through the Voluntary Self-Identification question below are used periodically with various government agencies for statistical reporting and to measure the effectiveness of our EEO outreach efforts. Completion of this data is voluntary and will not affect your opportunity for employment or terms or conditions of employment. Information is used for reporting purposes only and is kept strictly confidential and separate from all other personnel records. Self-Identification of Disability Form If you want to learn more about the law or these forms, visit the U.S. Department of Labor’s Office of Federal Contract Compliance Programs (OFCCP) website at www.dol.gov/ofccp.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"application_form_equality_monitoring_gender\"]",
+      "note": "RBP7-20: react-select's DummyInput (aria-readonly, inputmode none) declared for the bridge, its box the control; fillable with ENGINE-7 E1 item 6."
+    },
+    {
+      "label": "Ethnicity/Race",
+      "kind": "combobox",
+      "required": false,
+      "section": "Equal Employment Opportunity Astrolab is an equal employment opportunity employer. As a federal contractor or subcontractor, Astrolab encourages qualified veterans and individuals with disabilities to apply to be considered for open positions. Information gathered through the Voluntary Self-Identification question below are used periodically with various government agencies for statistical reporting and to measure the effectiveness of our EEO outreach efforts. Completion of this data is voluntary and will not affect your opportunity for employment or terms or conditions of employment. Information is used for reporting purposes only and is kept strictly confidential and separate from all other personnel records. Self-Identification of Disability Form If you want to learn more about the law or these forms, visit the U.S. Department of Labor’s Office of Federal Contract Compliance Programs (OFCCP) website at www.dol.gov/ofccp.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"application_form_equality_monitoring_ethnicity_race\"]"
+    },
+    {
+      "label": "Voluntary Self-Identification of Disability",
+      "kind": "combobox",
+      "required": false,
+      "section": "Equal Employment Opportunity Astrolab is an equal employment opportunity employer. As a federal contractor or subcontractor, Astrolab encourages qualified veterans and individuals with disabilities to apply to be considered for open positions. Information gathered through the Voluntary Self-Identification question below are used periodically with various government agencies for statistical reporting and to measure the effectiveness of our EEO outreach efforts. Completion of this data is voluntary and will not affect your opportunity for employment or terms or conditions of employment. Information is used for reporting purposes only and is kept strictly confidential and separate from all other personnel records. Self-Identification of Disability Form If you want to learn more about the law or these forms, visit the U.S. Department of Labor’s Office of Federal Contract Compliance Programs (OFCCP) website at www.dol.gov/ofccp.",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"application_form_equality_monitoring_voluntary_self_identification_of_disability\"]"
+    },
+    {
+      "label": "(Required) Allow us to process your personal information.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "3rd preference",
+      "fillable": true,
+      "control": "[id=\"application_process_information\"]"
+    }
+  ]
+}

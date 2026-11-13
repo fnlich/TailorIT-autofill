@@ -1,0 +1,4 @@
+About the role: a synthetic posting text written for a test fixture.
+You will build and run example services with a small team.
+What you bring: several years of example experience; clear writing.
+Benefits: a placeholder list of benefits for the fixture.

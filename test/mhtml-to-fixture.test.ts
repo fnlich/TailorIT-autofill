@@ -4295,8 +4295,8 @@ const JOBVITE_SHARE_CHANNELS = ['linkedin', 'twitter', 'facebook', 'email'];
  *  fortive-email-code (ORACLE-7's P2), CareerPlug's two forms (a Facebook link's src=; no jr7 package: INT-7) and UKG
  *  Ready's three jr7 cases committed on jr7-ukgready before r3 (UKGREADY-7's P2; absent from other branches). */
 const SRC_REFERRAL_FIXTURES = ['careerplug/cloudscouts-form.html', 'careerplug/eitacies-uploaded.html',
-  'rippling/qu-careers-form.expect.json', 'rippling/qu-careers-form.html', 'rippling/qu-careers-form.routes.json',
-  'rippling/qu-careers-posting.html', 'rippling/qu-careers-posting.routes.json',
+  // jr7 RBP-7 (P2): rippling/qu-careers-form and qu-careers-posting converted again with jr7-tooling-r3: off the list.
+  // jr7 ORACLE-7 (P2): oracle/fortive-email-code converted again with jr7-tooling-r3: off the list.
   'ukgready/jr7-saashr-choice.html', 'ukgready/jr7-saashr-choice.routes.json', 'ukgready/jr7-saashr-posting.html',
   'ukgready/jr7-saashr-posting.routes.json', 'ukgready/jr7-saashr-start-filled.html',
   'ukgready/jr7-saashr-start-filled.routes.json'];
@@ -4394,7 +4394,8 @@ describe('jr6 ifix C-4: referral parameters in the committed fixtures (PRIV-4)',
       .every((each) => ADDRESSED_FIXTURES.includes(each))).toBe(true);
     // The rule itself: a src= value anywhere else is a hit, a listed file's own let through, a REDACTED one none.
     expect(hits('lever/fixture.html', '<a href="/jobs/1?src=FixtureBoard">')).toEqual(['lever/fixture.html: src']);
-    expect(hits('rippling/qu-careers-form.html', '<a href="/jobs/1?src=FixtureBoard">')).toEqual([]);
+    // jr7 RBP-7 (P2): a file still on the list (rippling/qu-careers-form.html left it, converted again).
+    expect(hits('careerplug/cloudscouts-form.html', '<a href="/jobs/1?src=FixtureBoard">')).toEqual([]);
     expect(hits('lever/fixture.html', '<a href="/jobs/1?src=REDACTED"><img src="/a.png">')).toEqual([]);
     // jr7 TOOLING-7: the share-button exemption is narrow: each listed file holds a __jvsc that only it excuses, and a
     // __jvsc naming no share network is a hit there too.

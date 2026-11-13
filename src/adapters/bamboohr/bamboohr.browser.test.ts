@@ -24,7 +24,10 @@ const EXPECTATION = readExpectation(formExpect);
 /** The same config with one of its rules undone. */
 function without(key: Exclude<keyof AtsConfig, 'platform' | 'snapshots' | 'parse' | 'root'>) {
   const { [key]: _undone, ...rest } = BAMBOOHR_CONFIG;
-  return configuredAdapter(rest);
+  // jr7 RBP-7: the widgets' rule undone takes the code's widget hook with it (the rules' dropdowns with their menu).
+  if (key !== 'widgets') return configuredAdapter(rest);
+  const { widgetFor: _declared, ...code } = BAMBOOHR_CONFIG.code!;
+  return configuredAdapter({ ...rest, code });
 }
 
 async function open() {
@@ -70,7 +73,7 @@ describe('the BambooHR adapter: each rule, and the page read without it', () => 
     expect(bambooHrAdapter.widgetFor?.(state)).toMatchObject({ kind: 'combobox',
       opener: q(page.doc, 'button.fab-SelectToggle[data-menu-id="fab-menu66"]'),
       expanded: q(page.doc, 'button.fab-SelectToggle[data-menu-id="fab-menu66"]'),
-      parts: [q(page.doc, 'select[name="state.value"]')], snapshot: 'bamboohr-0 to -2' });
+      parts: [q(page.doc, 'select[name="state.value"]')], snapshot: 'bamboohr-0 to -2; jr7-bamboohr1-form-filled' });
     const fields = (adapter: typeof bambooHrAdapter) => scan(page.root, adapter, { platform: 'bamboohr' }).fields
       .filter((field) => field.kind === 'combobox').map((field) => [field.label, field.required, field.options]);
     expect(fields(bambooHrAdapter)).toEqual([['State', true, 'lazy'], ['Country', true, 'lazy'],

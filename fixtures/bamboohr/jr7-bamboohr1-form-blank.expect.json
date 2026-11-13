@@ -1,0 +1,141 @@
+{
+  "fixture": "bamboohr/jr7-bamboohr1-form-blank",
+  "source": "https://alkira.bamboohr.com/careers/274?source=REDACTED",
+  "captured": "2026-11-11T12:27:22.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"firstName\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"lastName\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"email\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"phone\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-1\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-2\"]"
+    },
+    {
+      "label": "State",
+      "kind": "combobox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": "lazy",
+      "control": "div.fab-Select:has(> select[name=\"state.value\"])",
+      "note": "RBP7-14 (bamboohr/widgets.ts): a Fabric dropdown whose menu, drawn at the body's end once opened, is named by its toggle's data-menu-id: its declared list. Its shown text is REDACTED by the converter."
+    },
+    {
+      "label": "ZIP",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-3\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": "lazy",
+      "control": "div.fab-Select:has(> select[name=\"countryId.value\"])"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "div[data-fabric-component=\"FileUpload\"] input[type=\"file\"]",
+      "note": "RBP7-13: the hidden input[type=file][required] behind its \"Choose File*\" toggle (the upload control), titled by the \"Resume*\" paragraph above div[data-fabric-component=\"FileUpload\"]."
+    },
+    {
+      "label": "Date Available",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-4\"]"
+    },
+    {
+      "label": "Desired Pay",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"desiredPay\"]"
+    },
+    {
+      "label": "Website, Blog or Portfolio",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"websiteUrl\"]"
+    },
+    {
+      "label": "LinkedIn URL",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"linkedinUrl\"]"
+    },
+    {
+      "label": "Are you legally authorized to work in the United States of America?",
+      "kind": "radio",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"customQuestionAnswers.yes_no_72\"]"
+    },
+    {
+      "label": "Do you now or will you in the future require sponsorship for employment visa status (examples: H-1B, L1, OPT, F-1, TN, etc.)?",
+      "kind": "radio",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"customQuestionAnswers.yes_no_73\"]"
+    }
+  ]
+}
