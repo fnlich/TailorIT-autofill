@@ -14,6 +14,8 @@
  *   person left it so; `person` where they typed or changed it; none known otherwise);
  * - the posting the page showed (its title's names and its visible text) only for a job TailorIT has no id of;
  * - nothing that does not fit the contract: a question whose label normalizes to nothing is left out, with its answer;
+ * - jr7 FIX-background (the review's A-7): never a national id (identity.nationalId: a social security or national
+ *   insurance number the person typed), question or answer, as the capture never takes a password or a one-time code;
  *   a body the contract would refuse is never sent (null: POST /applied records the application instead).
  * In (submittedAnswersOf): POST /api/autofill/forms/known's earlier answers become the resolver's SubmittedAnswer list
  * (core/resolver/submitted.ts) for the run, in memory only: a question read from Greenhouse's board API has its key and
@@ -61,10 +63,17 @@ function oneLine(text: string, max: number): string {
   return (last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut).trim();
 }
 
+// ── jr7 FIX-background (the review's A-7) ──
+/** The classifications whose question and answer never go to TailorIT (module header): a national id the person typed
+ *  (core/resolver/labelRules.ts nationalIdHit), which the extension never fills either. */
+export const NEVER_SENT: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['identity.nationalId']);
+// ── end jr7 FIX-background ──
+
 /** TailorIT's category for a question (the contract's AUTOFILL_FIELD_CATEGORIES): a self-identification, legal or pay
  *  question by its class, a consent, an attention check or free text as such, else the classification's own name, or
  *  null when TailorIT names none for it. */
 export function formCategoryOf(category: FieldCategory): AutofillFieldCategory | null {
+  if (NEVER_SENT.has(category)) return null; // jr7 FIX-background (A-7): no self-identification label
   switch (policyClassOf(category)) {
     case 'eeo':
       return 'sensitive_eeo';
@@ -164,6 +173,11 @@ export function submissionBodyOf(form: Pick<HeldForm, 'fields' | 'posting'>, ctx
     if (optionCount + options.length > AUTOFILL_FORM_LIMITS.optionsTotal) options = [];
     optionCount += options.length;
     const category = ctx.categoryOf(spec);
+    // jr7 FIX-background (A-7): a national id is never sent, question or answer.
+    if (category !== null && NEVER_SENT.has(category)) {
+      optionCount -= options.length;
+      continue;
+    }
     // Each question as the contract takes it, or it is left out with its answer.
     const question = AutofillFormQuestionSchema.safeParse({ ref, questionKey, label, kind: spec.kind, options,
       optionSetHash: options.length > 0 ? spec.optionSetHash : '',

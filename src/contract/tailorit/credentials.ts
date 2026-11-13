@@ -15,8 +15,9 @@ export const AUTOFILL_ANY_HOST = '*';
 /**
  * The applicant-tracking sites the every-site sign-in (`*`) is used on, by their domain: Workday's two (`myworkdayjobs`,
  * `myworkdaysite`), iCIMS, Taleo, SuccessFactors in both regions, Oracle Recruiting Cloud (and, version 6, its
- * government cloud), SmartRecruiters and (version 6) UltiPro, ClearCompany and ADP Workforce Now, the ones whose own
- * sign-in and create-account pages Sign-in mode Auto fills or presses. A domain alone is not enough: signInHostCovered
+ * government cloud), SmartRecruiters, (version 6) UltiPro, ClearCompany and ADP Workforce Now, and (version 7) Paycom,
+ * the ones whose own sign-in and create-account pages Sign-in mode Auto fills or presses. A domain alone is not enough:
+ * signInHostCovered
  * holds each to the hosts that serve the candidate's sign-in (see there), never the bare domain, its www, an API or a
  * storage host where anyone's uploads are served (Oracle Object Storage is under oraclecloud.com), and on a host that
  * also serves an employer's employee pages, to its candidate paths alone. Any other site gets a sign-in only when the
@@ -37,6 +38,8 @@ export const AUTOFILL_SIGN_IN_HOST_SUFFIXES: readonly string[] = [
   'ultipro.ca',
   'clearcompany.com',
   'adp.com',
+  // jr7 (version 7): www.paycomonline.net's candidate portal pages alone.
+  'paycomonline.net',
 ];
 
 /**
@@ -80,11 +83,21 @@ const SIGN_IN_HOSTS: readonly RegExp[] = [
  * - ADP Workforce Now: `workforcenow.adp.com` under `/mascsr/default/mdf/recruitment/` (the guest page, whose Continue
  *   mails the code) and `/mascsr/applicant/mdf/recruitment/` (the application's steps);
  * - ClearCompany: a tenant's host, `<tenant>.clearcompany.com`, never its `cc-` file hosts or `www`, under `/careers/`
- *   (the application's account step).
+ *   (the application's account step);
+ * - (jr7, version 7) Paycom: `www.paycomonline.net`, whose employee pages (/v4/ee/, /v4/cl/) share the host, at its
+ *   candidate portal's two pages alone, matched whole (`pattern`, anchored): a posting,
+ *   /v4/ats/web.php/portal/<client key: 32 hexadecimal digits>/jobs/<n>, where Apply opens the contact dialog whose
+ *   "Continue To Application" makes the candidate's account (pressed on Sign-in Auto alone), and the application page,
+ *   …/portal/<client key>/applications; one trailing slash allowed, as the extension's host list reads them.
  */
-const SIGN_IN_PATH_HOSTS: ReadonlyArray<{ host: RegExp; paths: readonly string[] }> = [
+const SIGN_IN_PATH_HOSTS: ReadonlyArray<{ host: RegExp; paths: readonly string[]; pattern?: RegExp }> = [
   { host: /^workforcenow\.adp\.com$/, paths: ['/mascsr/default/mdf/recruitment/', '/mascsr/applicant/mdf/recruitment/'] },
   { host: /^(?!(?:cc-|www\.))[a-z0-9-]+\.clearcompany\.com$/, paths: ['/careers/'] },
+  {
+    host: /^www\.paycomonline\.net$/,
+    paths: [],
+    pattern: /^\/v4\/ats\/web\.php\/portal\/[A-Fa-f0-9]{32}\/(?:jobs\/\d{1,15}|applications)\/?$/,
+  },
 ];
 
 /** The longest page path a credential request names (version 6). */
@@ -104,15 +117,16 @@ function plainPath(path: string): boolean {
 /**
  * True when the every-site sign-in covers a page on `host` (a host name, compared in lower case): a candidate sign-in
  * host of one of AUTOFILL_SIGN_IN_HOST_SUFFIXES' domains, by SIGN_IN_HOSTS' patterns; or (version 6) one of
- * SIGN_IN_PATH_HOSTS whose candidate paths `path` (the page's path: its pathname alone) is under. Such a host is never
- * covered without a path, nor for a path that is not plain (plainPath): no employee page is ever covered.
+ * SIGN_IN_PATH_HOSTS whose candidate paths `path` (the page's path: its pathname alone) is under, or (version 7,
+ * Paycom) whose candidate page pattern it matches whole. Such a host is never covered without a path, nor for a path
+ * that is not plain (plainPath): no employee page is ever covered.
  */
 export function signInHostCovered(host: string, path?: string): boolean {
   const name = host.toLowerCase();
   if (SIGN_IN_HOSTS.some((pattern) => pattern.test(name))) return true;
   const scoped = SIGN_IN_PATH_HOSTS.find((rule) => rule.host.test(name));
   if (scoped === undefined || path === undefined || !plainPath(path)) return false;
-  return scoped.paths.some((prefix) => path.startsWith(prefix));
+  return scoped.paths.some((prefix) => path.startsWith(prefix)) || (scoped.pattern?.test(path) ?? false);
 }
 
 /** Caps: the email, the password, and the sign-ins an account may save. */

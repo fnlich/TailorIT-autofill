@@ -830,9 +830,11 @@ export function createAgent(deps: AgentDeps) {
       return;
     }
     if (!(await deps.windows.tabExists(run.tabId))) {
-      // Closed (by the person): their Stop (m14), and nothing of it to close.
+      // Closed (by the person): their Stop (m14), and nothing of it to close. jr7 FIX-background (B-2): as tabRemoved,
+      // after the job's Submit it may have been sent (timed_out).
       await pause('window-closed');
-      await finishRun({ ...run, tabId: null, windowId: null }, 'needs-you', 'cancelled');
+      await finishRun({ ...run, tabId: null, windowId: null }, 'needs-you',
+        run.pressedAt !== null ? 'timed_out' : 'cancelled');
       return;
     }
     if (now - run.claimedAt >= AGENT_JOB_MAX_MS) {
@@ -1285,13 +1287,16 @@ export function createAgent(deps: AgentDeps) {
     },
 
     /** A tab closed: the agent's, closed by the person (its tab or its window), is their Stop (the audit's m14): its job
-     *  is left for them (nothing left to close), and the agent pauses until they turn Run auto-apply on again. */
+     *  is left for them (nothing left to close), and the agent pauses until they turn Run auto-apply on again.
+     *  jr7 FIX-background (the review's B-2; AUTO7-01's rule, as the Queue's tabRemoved): once the job's Submit was
+     *  pressed it is never told cancelled: it may have been sent (needs-you timed_out, TailorIT's "check the site"). */
     async tabRemoved(tabId: number): Promise<void> {
       await serial(async () => {
         const run = await runOf();
         if (run === null || run.result !== null || run.tabId !== tabId || !(await ofThisSession(run))) return;
         await pause('window-closed');
-        await finishRun({ ...run, tabId: null, windowId: null }, 'needs-you', 'cancelled');
+        await finishRun({ ...run, tabId: null, windowId: null }, 'needs-you',
+          run.pressedAt !== null ? 'timed_out' : 'cancelled');
       });
     },
 

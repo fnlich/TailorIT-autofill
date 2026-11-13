@@ -5,14 +5,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import { AutofillSubmissionRequestSchema, type AutofillFormsKnownResponse } from '../contract/tailorit';
-import { optionsOf } from '../core/plan/plan.testkit';
+import { optionsOf, specOf, vocab } from '../core/plan/plan.testkit';
 import type { AnswerItem, AnswerVerdict } from '../core/plan/answers';
 import { optionSetHash } from '../core/text/keys';
 import type { FieldKey, FieldSpec } from '../core/types/field';
 import type { CapturedField } from '../messaging/schemas';
 import { capFits, claimedVerdict, signatureOf } from './ai-tasks';
 import { knownSpecsOf } from './known-forms';
-import { formCategoryOf, provenanceOf, submissionBodyOf, submittedAnswersOf, type BodyContext } from './submitted-forms';
+import {
+  categoryOfSpec, formCategoryOf, provenanceOf, submissionBodyOf, submittedAnswersOf, type BodyContext,
+} from './submitted-forms';
 import { fieldSpec } from './worker.testkit';
 
 const field = (index: number, extra: Partial<FieldSpec>, answer?: CapturedField['answer'], step = 0): CapturedField =>
@@ -81,6 +83,26 @@ describe('submissionBodyOf: POST /submissions\' body', () => {
     expect(provenanceOf({ ...row, reason: 'changed-by-you' })).toBe('person');
     expect(provenanceOf({ ...row, wrote: false, provenance: null })).toBe('person');
     expect(provenanceOf({ ...row, provenance: 'submitted-before' })).toBe('submitted-before');
+  });
+
+  // jr7 FIX-background (the review's A-7). Undo proof: drop submissionBodyOf's NEVER_SENT skip and this fails (the
+  // question goes with its answer, filed sensitive_eeo). A synthetic number that is never issued.
+  it('never sends a national id the person typed, question or answer, and never files it as self-identification', () => {
+    const ssn = field(6, { label: 'Social Security Number' }, { kind: 'text', text: '000-12-3456' });
+    const withId = { ...FORM, fields: [...FORM.fields, ssn] };
+    // The extension's own classification of that label (labelRules nationalIdHit), as the worker asks it.
+    expect(categoryOfSpec(specOf('Social Security Number', 'text'), vocab)).toBe('identity.nationalId');
+    const categoryOf: BodyContext['categoryOf'] = (spec) => (spec.label === 'Social Security Number'
+      ? categoryOfSpec(specOf(spec.label, 'text'), vocab) : spec.label === 'Gender' ? 'eeo.gender' : null);
+    for (const keepAnswers of [true, false]) {
+      const body = submissionBodyOf(withId, ctx({ keepAnswers, categoryOf }))!;
+      expect(body.questions.map((question) => question.ref)).not.toContain(ssn.spec.key);
+      expect(body.questions).toHaveLength(5);
+      expect(JSON.stringify(body)).not.toContain('000-12-3456');
+      expect(JSON.stringify(body)).not.toContain('Social Security');
+      if (keepAnswers) expect(body.answers?.map((answer) => answer.ref)).not.toContain(ssn.spec.key);
+    }
+    expect(formCategoryOf('identity.nationalId')).toBeNull();
   });
 
   it('names categories as TailorIT does: sensitive ones by their class', () => {

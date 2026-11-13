@@ -1320,5 +1320,44 @@ describe('jr7 AUTO-7: the Queue tab on every platform the extension fills', () =
     expect(h.sent).toEqual([]);
     expect(h.results).toEqual([]);
   });
+
+  // ── jr7 FIX-background ──
+  // The review's B-2. Undo proof: sweep's gone branch back to `reason: 'cancelled'` and this fails.
+  it('B-2: a tab found gone by the sweep after the job’s Submit was armed is timed_out; before it, cancelled', async () => {
+    for (const pressed of [true, false]) {
+      const h = await started([URL_OF(1)]);
+      const tabId = h.tabs[0]!.tabId;
+      const key = await KEY_OF(h, 1);
+      await h.runner.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: true, applicationKey: key }, true);
+      if (pressed) await h.runner.pressed(tabId, key);
+      // Closed with no tabs.onRemoved heard (a worker that slept): the next tick's sweep finds it gone.
+      h.open.delete(tabId);
+      await h.advance(1_000);
+      expect(h.results, String(pressed)).toEqual([{ id: ID(1), body: { state: 'needs-you',
+        reason: pressed ? 'timed_out' : 'cancelled', aiGuesses: 0 } }]);
+      const page = await h.runner.list(0);
+      expect(page.ok && page.data.items[0], String(pressed)).toMatchObject({ status: 'skipped', tab: false });
+    }
+  });
+
+  // The review's B-3. Undo proof: finish() keeps `item.note` and this fails ({ status: 'submitted', note: ... }).
+  it('B-3: a hand-over’s note (documents, assessment) goes once the job is recorded submitted', async () => {
+    for (const handOver of ['documents', 'assessment'] as const) {
+      const h = await started([URL_OF(1)]);
+      const tabId = h.tabs[0]!.tabId;
+      const key = await KEY_OF(h, 1);
+      if (handOver === 'documents') await h.runner.pressed(tabId, key);
+      await h.runner.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, applicationKey: key }, true,
+        { handOver });
+      const ready = await h.runner.list(0);
+      expect(ready.ok && ready.data.items[0], handOver).toMatchObject({ status: 'ready', note: handOver });
+      // The person finished; the platform's sign recorded it.
+      expect(await h.runner.submitted(tabId, key), handOver).toBe('recorded');
+      const done = await h.runner.list(0);
+      expect(done.ok && done.data.items[0], handOver).toMatchObject({ status: 'submitted' });
+      expect(done.ok && done.data.items[0], handOver).not.toHaveProperty('note');
+    }
+  });
+  // ── end jr7 FIX-background ──
 });
 // ── end jr7 AUTO-7 ──
