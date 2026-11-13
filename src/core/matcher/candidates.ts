@@ -34,8 +34,9 @@
  * - a referral source ("How did you hear about us?"): full, the person's text, then the source's name ("LinkedIn");
  *   short, its other spellings ("LinkedIn Jobs"); reduced, the kind of source it is ("Job board": the profile's
  *   referralSource.category, else the vocabulary's first parent, SearchExtras.kind);
- * - any other entity (a region, a language, an answer): full, the person's text, the name, without "The"; short, the
- *   other spellings, acronyms first; reduced, the weighty words;
+ * - any other entity (a region, a language, an answer): full, the person's text, the name, without "The"; short, a
+ *   region's code first (two letters: jr8, the owner's snapshot10, Ashby's state of residence lists only the states'
+ *   codes and filters "Texas" to nothing), then the other spellings, acronyms first; reduced, the weighty words;
  * - a place (the current location, a job's: Choice.place): full, the profile's text ("Austin, TX"); short, its city with
  *   its region's code ("Austin, TX"), its region's name ("Austin, Texas"), its country's name ("Austin, United
  *   States"); reduced, the city alone ("Austin"): a geocoder spells a region out, and a list that shows only the results
@@ -228,7 +229,8 @@ function kindName(kind: string | undefined, vocab: Vocab): string {
   return entity?.kind === 'referral' ? entity.name : '';
 }
 
-/** Any other entity's candidates (see the header): a referral source's kind is its reduced form. */
+/** Any other entity's candidates (see the header): a referral source's kind is its reduced form, a region's code
+ *  (jr8) its first short one. */
 function entityCandidates(intended: EntityValue, vocab: Vocab, extras: SearchExtras): Candidate[] {
   const name = intended.display.trim();
   const { acronyms, curated, flagship, rest } = aliasesOf(intended);
@@ -236,8 +238,9 @@ function entityCandidates(intended: EntityValue, vocab: Vocab, extras: SearchExt
   const kind = intended.domain === 'referral' ? kindName(extras.kind, vocab) : '';
   const reduceds = [kind, weightyWords(name, intended.domain, vocab)];
   const own = ownText(intended.surfaces);
+  const entity = intended.id === null ? undefined : vocab.entity(intended.id);
   return [{ text: own, style: ownStyle(own, shorts, reduceds) }, full(name), full(withoutThe(name)),
-    ...shorts.map(short), ...reduceds.map(reduced)];
+    code(entity?.kind === 'region' ? entity.code : '', 'short'), ...shorts.map(short), ...reduceds.map(reduced)];
 }
 
 /** A degree's candidates (see the header). */

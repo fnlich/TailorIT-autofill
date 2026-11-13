@@ -1295,7 +1295,10 @@ export const MILITARY_TRAINING = /\bmilitary\s+(?:training|certifications?|quali
  *  jr6-sentinel-job-questions; JV-8: NinjaOne's "In which state do you currently live?", fixtures/jobvite/ninjaone-step3;
  *  JZ-9: "What state do you live in?", "state of residence"): the state the person lives in. */
 // jr7 RULES-7 (J7-GH-2, Greenhouse's "What US state do you reside in?", snapshot7 greenhouse): a country's state.
-const RESIDENCE_STATE = /^(?:in\s+)?(?:which|what)\s+(?:(?:u\s?s|united\s+states|american)\s+)?state\s+(?:do|are)\s+you\s+(?:(?:currently|physically|presently|now)\s+)*(?:live|reside|located|based|living|residing)(?:\s+in)?(?:\s+(?:today|now|currently|at\s+present))?$|^(?:your\s+|current\s+|present\s+)*state\s+of\s+(?:current\s+)?residen(?:ce|cy)$/;
+// jr8 (the owner's snapshot10, Ashby's Honeydew form: "What is your primary state of residence?", a list of two-letter
+// codes): the state of residence asked as a question, and the person's primary one, read by the rules: the AI's
+// screen reads a list of the states' codes as naming the TN visa (classify.ts SENSITIVE_ACRONYMS), so it never asks.
+const RESIDENCE_STATE = /^(?:in\s+)?(?:which|what)\s+(?:(?:u\s?s|united\s+states|american)\s+)?state\s+(?:do|are)\s+you\s+(?:(?:currently|physically|presently|now)\s+)*(?:live|reside|located|based|living|residing)(?:\s+in)?(?:\s+(?:today|now|currently|at\s+present))?$|^(?:(?:what|which)\s+is\s+)?(?:your\s+|current\s+|present\s+|primary\s+)*state\s+of\s+(?:current\s+|primary\s+)?residen(?:ce|cy)$/;
 /** jr6 RULES R3 (JZ-9: WellHive's "From which state will you be working?", fixtures/jazzhr/wellhive-submitting): the
  *  state the person will work from, read as the one they live in (an inference: flagged, resolve.ts). */
 const WORK_STATE = /^(?:from\s+)?(?:which|what)\s+state\s+will\s+you\s+be\s+working(?:\s+from)?$|^(?:which|what)\s+state\s+(?:do|will)\s+you\s+(?:plan\s+to\s+)?work\s+(?:from|in)$/;
