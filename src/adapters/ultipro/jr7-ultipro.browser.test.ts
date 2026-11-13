@@ -20,8 +20,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import successHtml from '../../../fixtures/synthetic/jr7-ultipro/success.html?raw';
 import { openAt, runtimeAt, servedAdapter, sourceOf, wallsOf } from '../../content/apply.testkit';
-import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { createFakeWorker, goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { requiredLeftOf } from '../../content/press';
+import { startContentRuntime } from '../../content/runtime';
 import { signIn, type SignInContext } from '../../content/sign-in';
 import { signsOf } from '../../content/submitted';
 import { planFrame } from '../../core/plan/frame';
@@ -29,6 +30,7 @@ import type { PlanOutput } from '../../core/plan/types';
 import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { detectPause } from '../../dom/pause-detect';
+import { deadline } from '../../dom/time';
 import { scan, toFieldSpec } from '../../dom/scan';
 import { signInContainerOf, signInRefusal } from '../../dom/sign-in-form';
 import type { ScanResult, ScannedField } from '../../dom/types';
@@ -300,6 +302,55 @@ describe('jr7 P2 UP7-04: the Register\'s sign-in path (ENGINE-7 E1 item 8, E2: a
     await press(page, { mode: 'all', preapproved: [] });
     expect(page.clicks).toEqual([page.native]);
   }, 30_000);
+
+  // jr7-auto-r2 (AUTO-7: the Consents mode carried to every sign-in step): the person's Autofill on the Register, with
+  // Sign-in Auto and Consents All, the worker saying the mode or not (an older worker). Each box drawn by its ukg-field's
+  // shadow container (UP7-V1), as a live page draws it.
+  const runtimes: Array<{ stop(): void }> = [];
+  afterEach(() => {
+    for (const runtime of runtimes.splice(0)) runtime.stop();
+  });
+  async function autofill(consentModes: boolean) {
+    const page = await register('jr7-ultipro1-register');
+    for (const field of Array.from(page.doc.querySelectorAll('form#registrationDetailsForm ukg-field'))) {
+      field.shadowRoot!.querySelector<HTMLElement>('.ukg-field-container')!.style.border = '1px solid rgb(120, 120, 120)';
+    }
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const,
+      consents: 'all' as const } };
+    const credential = { ok: true, data: { host: new URL(page.address).hostname, email: 'guest@example.com', press: true } };
+    const worker = createFakeWorker({ settings, ...(consentModes ? { consentModes: true as const } : {}),
+      script: { 'signin/credential': [credential, credential] } as never });
+    const runtime = await startContentRuntime(worker.platform, page.doc, { href: () => page.address, isTop: true,
+      adapters: () => [ultiproAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    await runtime.fill();
+    return { page, worker };
+  }
+
+  // Held: the Register is not-final with no Next (the behaviour review of 2026-11-06, minor 2), so the run rests in
+  // wait-transition (orchestrator.ts awaitStep), and signInContainerNow is called only at a 'review' rest: Sign-in Auto
+  // never presses Create account through the runtime. ENGINE-7 / INT-7's edit (ULTIPRO-7 handoff): in awaitStep, after
+  // `this.end('waiting');`, `void this.signInContainerNow().catch(() => undefined);` (measured: this test then passes).
+  it.fails('jr7-ultipro1-register through the runtime: Consents All said, the step filled, the box ticked, Create '
+    + 'account pressed once', async () => {
+    const { page, worker } = await autofill(true);
+    await vi.waitFor(() => expect(page.clicks.at(-1)).toBe(page.native), { timeout: 15_000 });
+    expect(page.privacy!.getAttribute('aria-checked')).toBe('true');
+    expect(page.clicks.filter((el) => el === page.native)).toHaveLength(1);
+    // The step's own boxes were the run's (the golden profile's names and phone), before the press.
+    expect((page.doc.querySelector('input[name="firstName"]') as HTMLInputElement).value).not.toBe('');
+    expect(worker.of('run/begin')).toHaveLength(1);
+  }, 45_000);
+
+  it('jr7-ultipro1-register through the runtime: no mode said (an older worker), the box left and nothing pressed',
+    async () => {
+    const { page } = await autofill(false);
+    await vi.waitFor(() => expect((page.doc.querySelector('input[name="firstName"]') as HTMLInputElement).value)
+      .not.toBe(''), { timeout: 15_000 });
+    await deadline(2_500);
+    expect(page.privacy!.getAttribute('aria-checked')).toBe('false');
+    expect(page.clicks.filter((el) => el === page.native || el === page.privacy)).toEqual([]);
+  }, 45_000);
 });
 
 describe('jr7 UP7-07: the documents dialog after Submit (owner question Q7-8: the person\'s)', () => {
