@@ -4226,7 +4226,9 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
     const header = headerOf(html);
     expect(header).toMatchObject({ fixture: name, captured: expect.any(String) });
     expect(header.chrome).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
-    expect(routes[header.source]).toBe(`fixtures/${name}.html`);
+    // jr7 DFPC-7 (as jr7 JDEF-7's): the header keeps a fragment (Paycom's /applications#/applications/<m>); the route map
+    // never serves one.
+    expect(routes[header.source.split('#')[0]!]).toBe(`fixtures/${name}.html`); // jr7 DFPC-7
     for (const [url, path] of Object.entries(routes)) {
       expect(new URL(url).hash, url).toBe('');
       expect(path.startsWith(`fixtures/${name.replace(/\.frame-\d+$/, '')}.`) && existsSync(join(ROOT, path)), path).toBe(true);

@@ -6,7 +6,7 @@ import { configuredAdapter } from '../configured';
 import type { Adapter } from '../types';
 import { DAYFORCE_CONFIG } from './config';
 
-export { DAYFORCE_CONFIG } from './config';
+export { DAYFORCE_CONFIG, DAYFORCE_JR7_CASES } from './config'; // jr7 DFPC-7: DAYFORCE_JR7_CASES
 
 /** The fixtures the config was read from (fixtures/dayforce/<case>.html). */
 export const DAYFORCE_SNAPSHOTS = ['fixtures/dayforce/candidate-info.html', 'fixtures/dayforce/questionnaire.html',

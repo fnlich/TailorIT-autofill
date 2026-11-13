@@ -57,11 +57,13 @@ const STUBS: Array<{ platform: Platform; adapter: Adapter; parse: (url: URL) => 
     other: 'https://acme.jibeapply.com/' },
 ];
 
-// ── jr7 ICIMS-7 (FIX7PLAN §6.7 item 4; ICIMS7-11, D-6): the stubs whose packages' parsers read their candidate pages
-// now (src/adapters/jibe/url.test.ts, jr7-jibe.browser.test.ts): Jibe's postings, each a posting alone, never an
-// application form. INT-7 merges each package's line here. ──
-const READING: ReadonlySet<Platform> = new Set<Platform>(['jibe']);
-// ── end jr7 ICIMS-7 ──
+// ── jr7 INT-7: the stubs whose packages' parsers read their candidate pages now, one set joined from each package's
+// line: ICIMS-7 ('jibe': src/adapters/jibe/url.test.ts, jr7-jibe.browser.test.ts), DFPC-7 ('paycom':
+// src/adapters/paycom/url.test.ts), UKGREADY-7 ('ukgready': src/adapters/ukgready/url.test.ts) and JDEF-7 ('jobdiva',
+// 'eightfold': src/adapters/{jobdiva,eightfold}/url.test.ts). Each is read under its platform as its parser says,
+// instead of nothing. ──
+const READING: ReadonlySet<Platform> = new Set<Platform>(['ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe']);
+// ── end jr7 INT-7 ──
 
 describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
   it('appends their ids in order, each ahead of the contract and named as the panel and the report show it', () => {
@@ -82,13 +84,29 @@ describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
       for (const url of candidate) {
         expect(adapter.matchesUrl(new URL(url)), url).toBe(true);
         expect(adaptersFor(new URL(url)), url).toEqual([adapter, genericAdapter]);
-        // ── jr7 ICIMS-7 ──
+        // ── jr7 INT-7 (joined: JDEF-7's and UKGREADY-7's check holds for every reading parser; ICIMS-7's and
+        // DFPC-7's rows add their platform's own) ──
         if (READING.has(platform)) {
-          expect(adapter.canonicalApplicationUrl(new URL(url)), url).toBeNull();
-          expect(applicationOf(new URL(url))?.page, url).toBe('posting');
+          // jr7 JDEF-7 / UKGREADY-7: a reading parser's page is its application's, keyed by its own reading.
+          const read = parse(new URL(url)) as { page: string; applicationUrl: string } | null;
+          expect(read, url).not.toBeNull();
+          expect(applicationOf(new URL(url)), url).toMatchObject({ platform, page: read!.page,
+            applicationUrl: read!.applicationUrl });
+          expect(adapter.canonicalApplicationUrl(new URL(url)), url)
+            .toBe(read!.page === 'application' ? read!.applicationUrl : null);
+          // jr7 ICIMS-7: Jibe's postings, each a posting alone, never an application form.
+          if (platform === 'jibe') {
+            expect(adapter.canonicalApplicationUrl(new URL(url)), url).toBeNull();
+            expect(applicationOf(new URL(url))?.page, url).toBe('posting');
+          }
+          // jr7 DFPC-7: Paycom's posting, and its tenant's application page, never by the application's number.
+          if (platform === 'paycom') {
+            expect(read!.page, url).toBe(url.includes('/applications') ? 'application' : 'posting');
+            expect(JSON.stringify(applicationOf(new URL(url))), url).not.toContain('7654321');
+          }
           continue;
         }
-        // ── end jr7 ICIMS-7 ──
+        // ── end jr7 INT-7 ──
         expect(parse(new URL(url)), url).toBeNull();
         expect(adapter.canonicalApplicationUrl(new URL(url)), url).toBeNull();
         // Its own parser reads it (address.ts URL_PARSERS), so it is no application yet: never the generic rule's
