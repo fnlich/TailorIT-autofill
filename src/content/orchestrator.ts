@@ -3651,7 +3651,7 @@ function blockTitleOf(block: Element): string {
 }
 
 /** The review's row for a required block left empty (requiredBlocksNow): flagged, the person's (needs-your-click: the
- *  run presses no Add), required, labelled "<block>: add at least one" (PAGE_COPY.requiredBlockLeft). */
+ *  run presses no Add), required, labelled "<block>: required, still empty" (PAGE_COPY.requiredBlockLeft). */
 function requiredBlockRow(block: Element, ordinal: number, platform: Platform): FillResult {
   const title = blockTitleOf(block);
   const slug = labelSlug({ label: title, kind: 'multiselect', nameAttr: '', idAttr: '' });
