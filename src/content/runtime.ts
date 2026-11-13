@@ -224,8 +224,6 @@ import { createReportLimiter } from './report';
 import { captureStep, createFormCapture, stepNameOf } from './form-capture';
 import type { CapturedPosting } from '../messaging/schemas';
 import { MAX_POSTING_TEXT } from '../messaging/schemas';
-// jr7 ICIMS-7 (merge of jr7-auto-done with jr7-engine-e2): the hand-overs the hello's schema knows.
-import { HAND_OVER_KINDS as HELLO_HAND_OVERS } from '../messaging/schemas';
 import { visibleTextWithout } from '../dom/visible-text';
 import { showField } from './targets';
 import { TouchLog } from './touches';
@@ -2627,14 +2625,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   /** ICIMS7-04: the step this top or claim frame shows that is the person's by design (Adapter.handOver), or null. */
-  function handOverNow(at: URL | null): (typeof HELLO_HAND_OVERS)[number] | null {
+  function handOverNow(at: URL | null): HandOverKind | null {
     if (at === null || (!isTop && !claimed)) return null;
     for (const adapter of adapters(at)) {
       try {
-        const kind: HandOverKind | null = adapter.handOver?.(doc) ?? null;
-        // jr7 ICIMS-7 (merge): a kind the hello's schema does not know yet (E2's 'documents', UP7-07) is said by none,
-        // until AUTO-7 wires it (AGENT_NOTES, its words): as on both branches before the merge.
-        if (kind !== null) return HELLO_HAND_OVERS.find((known) => known === kind) ?? null;
+        const kind = adapter.handOver?.(doc) ?? null;
+        if (kind !== null) return kind;
       } catch {
         // An adapter that throws reads none.
       }

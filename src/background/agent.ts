@@ -77,9 +77,7 @@ import { AGENT_PAUSES } from '../messaging/page-schemas';
 import type { AgentAlarms, AgentWindows, AtsPage, StorageArea } from '../platform/types';
 import { staticPlatformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
-// jr7 ICIMS-7 (merge of jr7-auto-done with jr7-engine-e2): the hand-overs the hello's schema says (AGENT_NOTES' kinds),
-// not adapters/types.ts HandOverKind, which E2 widened ('documents', not wired yet).
-type HandOverKind = AgentNote;
+import type { HandOverKind } from '../adapters/types';
 import type { FrameReport } from '../shared/report';
 import type { FrameEntry } from './frames';
 import { createKeyedQueue } from './locks';
