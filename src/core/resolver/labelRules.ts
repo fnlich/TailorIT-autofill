@@ -366,7 +366,9 @@ const PHONE_NOUN = /^(?:(?:primary|main|daytime|day|evening|home|work|business|c
 /** A phone number whose label also names its country code: the number, not the code. */
 const PHONE_WITH_CODE = /\b(?:phone|mobile|telephone)\s+(?:number\s+)?(?:with|including|incl|include)\s+(?:the\s+)?country\s+code\b/;
 /** Address line 2's own label ("Apt / Suite", "Unit"); not "business unit", not "Office Suite". */
-const ADDRESS2_NOUN = /address\s+line\s*2|^address\s+2$|^(?:apt|apartment|suite|ste|unit|floor|fl|building|bldg|room)(?:\s+(?:apt|apartment|suite|ste|unit|floor|fl|building|bldg|room|number|no|or|and|etc))*$/;
+// jr7 RULES-7 R3 (DFPC-7 P2, Paycom's "Apt / Suite / Other", snapshot7 paycomonline1): "other" after the line's own
+// nouns too, never alone.
+const ADDRESS2_NOUN = /address\s+line\s*2|^address\s+2$|^(?:apt|apartment|suite|ste|unit|floor|fl|building|bldg|room)(?:\s+(?:apt|apartment|suite|ste|unit|floor|fl|building|bldg|room|number|no|or|and|etc|other))*$/;
 /** A portfolio link's own label; not "What size portfolio have you managed?" */
 const PORTFOLIO_NOUN = /^(?:(?:online|personal|design|work|professional|your)\s+)*portfolio(?:\s+(?:url|link|website|site|web\s+site|address|or\s+website))*$|\b(?:link|url)\s+to\s+(?:your\s+|a\s+|an\s+)?(?:online\s+)?portfolio\b|\bportfolio\s+(?:url|link|website|site)\b/;
 /** A field of study: the design's longer wordings anywhere, but "major" and "discipline" only as the label's own noun
@@ -906,6 +908,10 @@ const CERTIFY_WIDE = /\btruthful\s+(?:and\s+)?(?:complete|accurate|correct)\b|\b
  *  employment immediately?", snapshot7 ultipro1): legally eligible to begin, start or take up employment. */
 const ELIGIBLE_TO_BEGIN = /\b(?:legally|lawfully)\s+eligible\b(?:\s+\w+){0,5}?\s+to\s+(?:begin|start|commence|take\s+up|accept)\s+(?:employment|work)\b/;
 
+/** jr7 RULES-7 R3: a box that states the person has no middle name. */
+const NO_MIDDLE_NAME = /^i\s+(?:do\s+not|dont|have\s+no)\s+(?:have\s+)?(?:a\s+)?(?:legal\s+)?middle\s+(?:name|initial)$|^no\s+(?:legal\s+)?middle\s+(?:name|initial)$/;
+const NO_MIDDLE_NAME_RULE = { id: 'label.no-middle-name', strength: 'strong' } as const;
+
 // jr7 RULES-7 R2: the fields of a job's or a school's entry the rules missed.
 /** jr7-O4 (Oracle's tile editor "Employer City", "Employer Country", snapshot7 oraclecloud1): the employer's place, the
  *  entry's, never the home address. */
@@ -997,6 +1003,8 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.preferred-name': { also: new RegExp(String.raw`name\s+you(?:d|\s+would)?\s+(?:prefer|like)\s+(?:us\s+)?to\s+(?:use|call\s+you)|\bname\s+you\s+prefer\b|${CHOSEN_FIRST_NAME.source}`) },
   // jr6 RULES R3 (icims-new-3): a preferred or chosen last name (PREFERRED_LAST_NAME).
   'label.last-name': { also: PREFERRED_LAST_NAME },
+  // jr7 RULES-7 R3 (DFPC-7 P2, Paycom's required "Legal Middle Name", snapshot7 paycomonline1): a legal middle name.
+  'label.middle-name': { also: /^legal\s+middle\s+(?:name|initial)$/ },
   // s2 core-wd: Workday's "Country Phone Code" (formField-countryPhoneCode, fixtures/workday/s2-exelixis-state-open), and
   // a "Phone country" alone.
   'label.phone-country': { also: /\bcountry\s+phone\s+code\b|\bphone\s+country(?:\s+code)?\b/, unless: PHONE_WITH_CODE },
@@ -1194,7 +1202,8 @@ interface InfoRule {
 const WORKDAY_INFO_RULES: readonly InfoRule[] = [
   { id: 'label.phone-type', re: /^(?:phone|telephone|mobile)\s+(?:device\s+|number\s+)?type$|^type\s+of\s+(?:phone|telephone)(?:\s+number)?$|^phone\s+device$/,
     category: 'contact.phoneType', strength: 'strong' },
-  { id: 'label.suffix', re: /^(?:name\s+)?suffix$|^suffix\s+name$/, category: 'identity.suffix', strength: 'strong' },
+  // jr7 RULES-7 R3 (DFPC-7 P2, Paycom's "Legal Suffix"): a legal (name's) suffix too.
+  { id: 'label.suffix', re: /^(?:legal\s+)?(?:name\s+)?suffix$|^suffix\s+name$/, category: 'identity.suffix', strength: 'strong' },
   { id: 'label.phone-extension', re: /^(?:phone\s+|telephone\s+)?(?:extension|ext)(?:\s+number)?$/,
     category: 'contact.phoneExtension', strength: 'strong' },
   // jr6 RULES R4 (adp-new-3: ADP's "I have a preferred or chosen name", fixtures/adp/personal): or a chosen one.
@@ -1685,6 +1694,12 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   if (section === 'experience' && context.block !== undefined && EXPERIENCE_DESCRIPTION.test(text)
     && kindAllowed('experience.description', kind)) {
     return hitOf(EXPERIENCE_DESCRIPTION_RULE, 'experience.description');
+  }
+  // jr7 RULES-7 R3 (DFPC-7 P2, Paycom's "I do not have a middle name", snapshot7 paycomonline1): a statement the
+  // profile never makes (an absent middle name is no proof there is none), so the box is the person's: never ticked,
+  // not even as a required consent. Jobright ticks it for a profile with none (fillPaycomMissingMiddleName: cited).
+  if (kind === 'checkbox' && NO_MIDDLE_NAME.test(text)) {
+    return { ...hitOf(NO_MIDDLE_NAME_RULE, 'identity.middleName'), needsUser: 'kind-mismatch' };
   }
   // jr7 RULES-7 R2: an entry's own fields (entryFieldHit).
   const entryField = entryFieldHit(text, section, kind, context);

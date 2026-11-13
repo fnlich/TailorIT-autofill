@@ -304,8 +304,11 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
   const { spec, profile, vocab, now } = ctx;
   const { identity, contact, links } = profile;
   const address = profile.address;
-  // jr6 RULES (ICIMS-09, O7): a job's or a school's own block never takes the home address.
-  if (HOME_PLACE_CATEGORIES.has(category) && entryOf(spec.section) !== null) return none('no-profile-value', false);
+  // jr6 RULES (ICIMS-09, O7): a job's or a school's own block never takes the home address. jr7 RULES-7 R3: nor the
+  // person's own phone or email (OWN_CONTACT_CATEGORIES).
+  if ((HOME_PLACE_CATEGORIES.has(category) || OWN_CONTACT_CATEGORIES.has(category)) && entryOf(spec.section) !== null) {
+    return none('no-profile-value', false);
+  }
   const jr6 = jr6Value(category, ctx);
   if (jr6 !== undefined) return jr6;
   switch (category) {
@@ -1054,6 +1057,11 @@ function currentEndDate(ctx: ValueContext, at: string): ValueResult {
 const HOME_PLACE_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['address.line1', 'address.line2',
   'address.city', 'address.region', 'address.postalCode', 'address.country', 'address.full', 'address.county',
   'address.lookup', 'location.current']);
+/** jr7 RULES-7 R3 (safety; DFPC-7 P2, Dayforce's "Employer Phone Number" in each Employment block, snapshot7
+ *  dayforce1): the person's own phone, its country code and email, which a job's or a school's own block never takes:
+ *  there they are the employer's or the school's, the person's (or an AI's where the posting allows) to give. */
+const OWN_CONTACT_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['contact.phone',
+  'contact.phoneCountry', 'contact.email']);
 
 /** A region as a place part: typed by its code (else its name), chosen in its country's list. */
 function regionValue(region: { code?: string; name: string } | undefined, country: string | undefined, at: string,
