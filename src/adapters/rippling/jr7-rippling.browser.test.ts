@@ -440,30 +440,20 @@ describe('jr7 RBP-7 P2 RBP7-08 (RULES-7): rippling1\'s residence in listed state
   });
 });
 
-describe('jr7 RBP-7 P2 RBP7-07 (with jr7-rules-r2): rippling1\'s typed-name attestation', () => {
-  // RULES-7's rule reads "typing your full name" from a description. rippling1's help is 536 characters: normalization
-  // reads the first 500 at once (FOLD_MAX_CODE_POINTS), which end before the ask, and they name "resume" and "cover
-  // letters" among the materials certified, so label.resume (on a text box: unknown) is met first and the field stays
-  // unknown-field. The exact edit is RULES-7's (SP\jr7\rbp7\rules-rbp7-07.patch, in SP\jr7\build\RBP-7.md): measured,
-  // the field then plans the golden full name as the signature and the core suite passes. Flip to `it` when it lands.
-  it.fails('plans the golden profile\'s full name as the signature, read from the help text', async () => {
-    const page = await open(r1Blank);
-    const result = scan(page.root!, ripplingAdapter, { platform: 'rippling' });
-    const out = planOf(result);
-    const field = result.fields.find((each) => each.label === 'Truth Certification/Attestation Clause')!;
-    expect(out.results.find((row) => row.key === field.key)?.category).toBe('consent.signature');
-    expect(out.writes.find((each) => each.key === field.key)?.value)
-      .toEqual({ kind: 'text', text: goldenProfile().identity.fullName });
-  });
-
-  it('until then: its help is read (the adapter half), and it stays unknown-field, never written', async () => {
+describe('jr7 RBP-7 P2 RBP7-07 (with jr7-rules-r4): rippling1\'s typed-name attestation', () => {
+  // RULES-7's rule reads "typing your full name" from a description. rippling1's help is 536 characters, past the
+  // first 500 normalization reads at once (FOLD_MAX_CODE_POINTS), and names "resume" and "cover letters" among the
+  // materials certified. RULES-7 R4 (jr7-rules-r4) reads the sentence asking for the typed name first, so the field
+  // plans the golden full name as the signature (flipped by INT-7 once r4 merged; the "until then" row dropped, its
+  // adapter-half check kept here).
+  it('plans the golden profile\'s full name as the signature, read from the help text', async () => {
     const page = await open(r1Blank);
     const result = scan(page.root!, ripplingAdapter, { platform: 'rippling' });
     const out = planOf(result);
     const field = result.fields.find((each) => each.label === 'Truth Certification/Attestation Clause')!;
     expect(field.description).toMatch(/\btyping your full name\b/);
-    expect(out.results.find((row) => row.key === field.key)).toMatchObject({ category: 'unknown',
-      reason: 'unknown-field' });
-    expect(out.writes.some((each) => each.key === field.key)).toBe(false);
+    expect(out.results.find((row) => row.key === field.key)?.category).toBe('consent.signature');
+    expect(out.writes.find((each) => each.key === field.key)?.value)
+      .toEqual({ kind: 'text', text: goldenProfile().identity.fullName });
   });
 });
