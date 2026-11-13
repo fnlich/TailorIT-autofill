@@ -53,8 +53,10 @@ async function open(html: string, address: string) {
 
 const keyOf = (address: string) => applicationOf(new URL(address))?.applicationKey ?? null;
 
-it('TailorIT’s API 6 lists iCIMS and Pinpoint among the agent’s platforms', () => {
-  expect(AUTOFILL_AGENT_ATS).toEqual(['greenhouse', 'lever', 'ashby', 'workable', 'icims', 'pinpoint']);
+// jr7 INT-7 round 2: TailorIT's API 7 (7b) keeps them and adds Jobvite, Workday and SmartRecruiters.
+it('TailorIT’s API 6 lists iCIMS and Pinpoint among the agent’s platforms (API 7 keeps them, beside its three joiners)', () => {
+  expect(AUTOFILL_AGENT_ATS).toEqual(['greenhouse', 'lever', 'ashby', 'workable', 'icims', 'pinpoint', 'jobvite', 'workday',
+    'smartrecruiters']);
 });
 
 describe('iCIMS (the agent opens the posting; its entry, then the gate)', () => {
