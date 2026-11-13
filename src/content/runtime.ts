@@ -721,6 +721,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const at = urlOf(readHref());
     // jr7 AUTO-7 (ICIMS7-04, ICIMS7-11): the step that is the person's by design; the address TailorIT is asked with.
     const handOver = handOverNow(at);
+    if (handOver !== null) handOversSaid.add(handOver); // jr7 AUTO-7 r3: said once
     const tailoritAddress = tailoritAddressHere(at);
     const answer = await channel.request({ v: 1, type: 'frame/hello', isTop, hasForm, ...(nav === 0 ? {} : { nav }),
       ...(letter ? { letter: true as const } : {}),
@@ -891,6 +892,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** jr7 AUTO-7 (UP7-01, item 16): the worker took this keyless document as the page after a Submit this frame armed
    *  (submit/after): it says hello, so the worker holds the frame. */
   let afterSeen = false;
+  /** jr7 AUTO-7 r3 (UP7-07; the coordinator's request of 2026-11-13): the hand-overs this document's hellos named
+   *  (handOverNow), each once: a step drawn in place after an armed Submit (UltiPro's documents dialog, a later in-page
+   *  assessment) is told the worker by one more hello, never twice. */
+  const handOversSaid = new Set<HandOverKind>();
   /** The worker's answer to the latest submit/armed: a sign seen at once waits for it, so the worker holds the arm
    *  before it hears the sign. */
   let armedHeard: Promise<unknown> = Promise.resolve();
@@ -969,6 +974,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // ── end v5 p2-detect ──
     const check = () => {
       if (armed !== record || stopped) return record.stopWatch();
+      // jr7 AUTO-7 r3 (UP7-07): a step that is the person's by design, drawn in this document after the press (UltiPro's
+      // documents dialog), is said once in a hello of its own, so the agent and the Queue tab hear it.
+      sayHandOverOnce();
       if (ownOracle) netConfirmed();
       if (armed !== record) return;
       if (newSuccessSign(doc, record.platform, record) === null) return;
@@ -2631,6 +2639,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     log('content.submit-detected', { page: true, after: true });
     afterSeen = true;
     await hello();
+  }
+
+  /** jr7 AUTO-7 r3 (UP7-07): while a Submit is armed, the first time this document shows a hand-over of a kind no hello
+   *  of it named, one hello says it (hello() names it and keeps it said); a kind said already, or none, says nothing. */
+  function sayHandOverOnce(): void {
+    const kind = handOverNow(urlOf(readHref()));
+    if (kind === null || handOversSaid.has(kind)) return;
+    handOversSaid.add(kind);
+    log('content.hand-over', { said: true });
+    void hello().catch(() => undefined);
   }
 
   /** ICIMS7-04: the step this top or claim frame shows that is the person's by design (Adapter.handOver), or null. */
