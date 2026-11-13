@@ -100,7 +100,19 @@ describe('UKG Ready: what a run fills (UKGR-5, UKGR-6, RULES-7)', () => {
     expect(codes.map((each) => [each.label, each.kind, each.fillable, each.category]))
       .toEqual(['Home Phone', 'Work Phone', 'Cell Phone'].map((phone) => [`${phone} country code`, 'select', true,
         'contact.phoneCountry']));
-    expect(codes.every((each) => each.status === 'verified' && each.plan !== null)).toBe(true);
+    // jr7 FIX-content D-8 (R4(b) on its source capture; this row moved from "all three codes planned" because a code is
+    // its phone's dependent): the golden profile's one phone is no work phone, so the Work Phone is left and so is its
+    // own code; Home and Cell are planned, each with its code.
+    const phone = (label: string) => outcomes.find((each) => each.label === label);
+    for (const label of ['Home Phone', 'Cell Phone']) {
+      expect(phone(label), label).toMatchObject({ category: 'contact.phone', status: 'verified' });
+      expect(phone(label)?.plan, label).not.toBeNull();
+      expect(phone(`${label} country code`), label).toMatchObject({ status: 'verified' });
+      expect(phone(`${label} country code`)?.plan, label).not.toBeNull();
+    }
+    expect(phone('Work Phone')).toMatchObject({ category: 'contact.phone', reason: 'no-profile-value', plan: null });
+    expect(phone('Work Phone country code')).toMatchObject({ category: 'contact.phoneCountry',
+      reason: 'no-profile-value', plan: null });
     // "Primary National ID" is an identifier, never filled (UKGR-14); the SSN box is no field at all.
     const nationalId = outcomes.find((each) => each.label === 'Primary National ID');
     expect(nationalId).toMatchObject({ category: 'identity.nationalId', plan: null });

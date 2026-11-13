@@ -74,18 +74,21 @@ export function dateText(date: DateParts, constraints: Constraints): Laid | null
  *  jr7 RULES-7 (DF7-04, Dayforce's required Start Dates, `input[type=date]`, snapshot7 dayforce1; Jobright's
  *  fillDayforceDateField writes the month's first day: cited): a date control given a month-precision date takes the
  *  1st of that month, guessed (filled and flagged for a look). This amends docs/design/core.md §8.5 ("a layout needing a
- *  part the profile lacks gives nothing") for a full-date control. A date with no month still gives nothing. */
+ *  part the profile lacks gives nothing") for a full-date control. A date with no month still gives nothing, nor does a
+ *  date outside the control's min/max (jr7 FIX-content D-4). */
 export function dateIso(date: DateParts, constraints: Constraints): { iso: string; guessed: boolean } | null {
   const year = pad(date.y, 4);
-  switch (constraints.format) {
-    case 'year':
-      return { iso: year, guessed: false };
-    case 'month-year':
-      return date.m === undefined ? null : { iso: `${year}-${pad(date.m)}`, guessed: false };
-    default:
-      if (date.m === undefined) return null;
-      return { iso: `${year}-${pad(date.m)}-${pad(date.d ?? 1)}`, guessed: date.d === undefined };
+  if (constraints.format === 'year') return { iso: year, guessed: false };
+  if (date.m === undefined) return null;
+  const iso = constraints.format === 'month-year' ? `${year}-${pad(date.m)}` : `${year}-${pad(date.m)}-${pad(date.d ?? 1)}`;
+  // jr7 FIX-content D-4 (DF7-04: "only when the field's min/max allow it"): a value outside the control's bounds (read
+  // as its value without dashes, dom/constraints.ts), the month's 1st included, gives nothing, so the field is flagged
+  // for the person rather than refused by the page.
+  const at = Number(iso.replace(/-/g, ''));
+  if ((constraints.min !== undefined && at < constraints.min) || (constraints.max !== undefined && at > constraints.max)) {
+    return null;
   }
+  return { iso, guessed: constraints.format !== 'month-year' && date.d === undefined };
 }
 
 /** The slots a phone pattern holds: '#', '9', 'X' or 'x', each one digit ("(###) ###-####"). */

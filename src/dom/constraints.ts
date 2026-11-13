@@ -1,9 +1,9 @@
 /*
  * What a field allows, from its attributes (docs/design/runtime.md §5.8): maxlength, the format its type or inputmode
- * gives, min and max on numbers, accept on file inputs, and a display pattern read from a visible placeholder
- * ("MM/YYYY"), which shapes formatting and never supplies a value. Selection hints in the label text ("choose up to 2",
- * "select all that apply") are the pure core's to parse (multiselect hints), from the label and description the
- * FieldSpec already carries, so they are not read here.
+ * gives, min and max on numbers (and on date and month controls: jr7 FIX-content D-4), accept on file inputs, and a
+ * display pattern read from a visible placeholder ("MM/YYYY"), which shapes formatting and never supplies a value.
+ * Selection hints in the label text ("choose up to 2", "select all that apply") are the pure core's to parse
+ * (multiselect hints), from the label and description the FieldSpec already carries, so they are not read here.
  */
 import type { FieldFormat } from '../core/enums';
 import type { Constraints } from '../core/types/field';
@@ -46,6 +46,14 @@ export function constraintsOf(el: Element, format: FieldFormat | undefined, plac
       if (Number.isFinite(max)) constraints.max = max;
       if (input.step !== '' && input.step !== 'any' && Number.isInteger(Number(input.step))
         && constraints.format === 'number') constraints.format = 'integer';
+    }
+    // jr7 FIX-content D-4 (DF7-04): a date or month control's bounds, as its value reads with its dashes taken out
+    // (min="2021-03-15" is 20210315, a month's "2021-03" 202103), so the resolver writes nothing outside them.
+    const shape = input.type === 'date' ? /^\d{4}-\d{2}-\d{2}$/ : input.type === 'month' ? /^\d{4}-\d{2}$/ : null;
+    if (shape !== null) {
+      for (const side of ['min', 'max'] as const) {
+        if (shape.test(input[side])) constraints[side] = Number(input[side].replace(/-/g, ''));
+      }
     }
     if (input.type === 'file') {
       const accept = input.accept.split(',').map((token) => token.trim().toLowerCase()).filter((token) => token !== '')

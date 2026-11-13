@@ -899,7 +899,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   let afterSeen = false;
   /** jr7 AUTO-7 r3 (UP7-07; the coordinator's request of 2026-11-13): the hand-overs this document's hellos named
    *  (handOverNow), each once: a step drawn in place after an armed Submit (UltiPro's documents dialog, a later in-page
-   *  assessment) is told the worker by one more hello, never twice. */
+   *  assessment) is told the worker by one more hello, never twice. jr7 FIX-content B-1: per armed Submit (arm()
+   *  clears it). */
   const handOversSaid = new Set<HandOverKind>();
   /** The worker's answer to the latest submit/armed: a sign seen at once waits for it, so the worker holds the arm
    *  before it hears the sign. */
@@ -944,6 +945,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const resume = runId !== undefined && current !== null && current.begunAs === runId && current.resumeAttached();
     armedHeard = channel.request({ v: 1, type: 'submit/armed', applicationKey: at.applicationKey, by,
       ...(runId === undefined ? {} : { runId }), ...(resume ? { resume: true as const } : {}) }).catch(() => undefined);
+    // jr7 FIX-content B-1: a new arm keeps no hand-over (the worker's replaces the last), so each is said again.
+    handOversSaid.clear();
     // v1.3 B: the form's questions and answers go with the arm (the worker sends them only once it is confirmed).
     sendForm(at.applicationKey);
     if (armed !== null) endArm(armed, 'replaced');
@@ -2649,13 +2652,15 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   /** jr7 AUTO-7 r3 (UP7-07): while a Submit is armed, the first time this document shows a hand-over of a kind no hello
-   *  of it named, one hello says it (hello() names it and keeps it said); a kind said already, or none, says nothing. */
+   *  of it named since that Submit was armed (arm() forgets them: jr7 FIX-content B-1), one hello says it, once the
+   *  worker has answered the arm (armedHeard), so it holds the arm the hand-over is kept on; a kind said already, or
+   *  none, says nothing. */
   function sayHandOverOnce(): void {
     const kind = handOverNow(urlOf(readHref()));
     if (kind === null || handOversSaid.has(kind)) return;
     handOversSaid.add(kind);
     log('content.hand-over', { said: true });
-    void hello().catch(() => undefined);
+    void armedHeard.then(() => (stopped ? null : hello())).catch(() => undefined);
   }
 
   /** ICIMS7-04: the step this top or claim frame shows that is the person's by design (Adapter.handOver), or null. */

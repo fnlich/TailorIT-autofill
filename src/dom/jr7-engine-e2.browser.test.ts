@@ -214,6 +214,18 @@ describe('item 4 (UKGR-10, EFA-6): the upload-prompt door', () => {
     expect(await answer('privacy', guarded('i-agree', 'consent'), true)).toEqual({ outcome: 'refused', pressed: {} });
   });
 
+  // jr7 FIX-content A-3 (review A): where the adapter finds no form root (a prompt drawn outside the form), the
+  // assertNotSubmit refusal reads no never-press list, so the door's own line is the only guard.
+  it('never presses a never-pressed prompt control where the adapter finds no form root', async () => {
+    const rootless = (pick: string, kind: UploadPromptKind): Adapter => ({ ...prompting(pick, kind), detect: () => null,
+      neverPress: (root) => [root.ownerDocument.getElementById(pick)].filter((el): el is HTMLElement => el !== null) });
+    expect(await answer('complete', rootless('cancel', 'dismiss'))).toEqual({ outcome: 'refused', pressed: {} });
+    expect(await answer('privacy', rootless('i-agree', 'consent'), true)).toEqual({ outcome: 'refused', pressed: {} });
+    // Not named never-pressed, the same rootless prompt is answered.
+    expect(await answer('complete', { ...prompting('cancel', 'dismiss'), detect: () => null }))
+      .toEqual({ outcome: 'pressed', pressed: { cancel: 1 } });
+  });
+
   it("never presses the application's Submit, and answers none where no prompt shows", async () => {
     expect(await answer('complete', prompting('submit', 'dismiss'))).toEqual({ outcome: 'refused', pressed: {} });
     expect(await answer('complete', prompting('nowhere', 'dismiss'), false, 300)).toEqual({ outcome: 'none', pressed: {} });
@@ -263,6 +275,20 @@ describe('item 5 (UKGR-9): the editor-opener door', () => {
       expect(openEditors(guarded('contact'), doc, root)).toBe(0);
       expect((doc.defaultView as unknown as { presses: Record<string, number> }).presses).toEqual({});
     });
+
+  // jr7 FIX-content A-3 (review A): where the adapter finds no form root, the door's own never-press line is the only
+  // guard (assertNotSubmit reads no never-press list without one).
+  it('never presses a never-pressed opener, nor one inside one, where the adapter finds no form root', async () => {
+    const { doc } = await loadFixture(document, PAGE);
+    const rootless = (never: string | null): Adapter => ({ ...opening(['edit']), detect: () => null,
+      ...(never === null ? {} : { neverPress: (scope: Element) => [scope.ownerDocument.getElementById(never)!] }) });
+    expect(openEditors(rootless('edit'), doc, doc.body)).toBe(0);
+    expect(openEditors(rootless('contact'), doc, doc.body)).toBe(0);
+    expect((doc.defaultView as unknown as { presses: Record<string, number> }).presses).toEqual({});
+    // Not named never-pressed, the same opener is pressed.
+    expect(openEditors(rootless(null), doc, doc.body)).toBe(1);
+    expect((doc.defaultView as unknown as { presses: Record<string, number> }).presses).toEqual({ edit: 1 });
+  });
 });
 
 // ── item 6 (DF7-V4, built off until Q7-1): the block-save door ─────────────────────────────────────────────────────

@@ -38,7 +38,7 @@ import { CONTROL_SELECTOR, kindOf } from './kinds';
 import type { ScanCache } from './scan-cache';
 import { MIN_ARIA_LABEL_CHARS, TEXT_CAP_DESCRIPTION, TEXT_CAP_LABEL } from './thresholds';
 import { heldPlaceholder, readSelectOptions, visiblePlaceholder, visibleText, visibleTextWithout } from './visible-text';
-import { isUserVisible, opacityOf } from './visibility';
+import { ariaHiddenLifted, isUserVisible } from './visibility';
 
 /** What the scanner reads labels with. */
 export interface LabelContext {
@@ -433,11 +433,31 @@ function adapterOptionText(input: HTMLInputElement, ctx: LabelContext): string |
   let depth = 0;
   for (let at = input.parentElement; at !== null && depth < OPTION_TEXT_DEPTH; at = at.parentElement, depth += 1) {
     if (at.localName === 'form' || at.localName === 'body' || at.localName === 'html') break;
-    if (containsWords(wordsOf(textOf(at, ctx)), wanted)) return text;
+    if (containsWords(wordsOf(textBesideOption(at, input, ctx)), wanted)) return text; // jr7 FIX-content A-1
   }
   return hiddenOwnLabelSays(input, wanted, ctx) ? text : null; // jr7 ENGINE-7 E1 item 5
 }
 // ── end jr6 ENGINE E2 item 8 ──
+
+/** jr7 FIX-content A-1 (review A): an ancestor's visible text (textOf) without the proxies its adapter declares
+ *  (Adapter.proxyFor) for the other radios and checkboxes inside it, whose drawn words name those options, never this
+ *  one (a page drawing "Yes" beside the radio its hidden words call "No"). */
+function textBesideOption(at: Element, input: HTMLInputElement, ctx: LabelContext): string {
+  const others: Element[] = [];
+  if (ctx.adapter?.proxyFor !== undefined) {
+    for (const other of Array.from(at.querySelectorAll<HTMLInputElement>('input[type="radio"], input[type="checkbox"]'))) {
+      let proxy: Element | null = null;
+      try {
+        proxy = other === input ? null : ctx.adapter.proxyFor(other);
+      } catch {
+        // a hook that throws declares nothing
+      }
+      if (proxy !== null && !proxy.contains(input)) others.push(proxy);
+    }
+  }
+  return others.length === 0 ? textOf(at, ctx)
+    : visibleTextWithout(at, others, { singleLine: true, cap: TEXT_CAP_DESCRIPTION, cache: ctx.cache });
+}
 
 // ── jr7 ENGINE-7 E1 item 5 (EFA-4, as its verifier corrected it) ──
 /**
@@ -445,13 +465,16 @@ function adapterOptionText(input: HTMLInputElement, ctx: LabelContext): string |
  * page marks aria-hidden, where a person sees them while the visible-text reading skips them: Eightfold's radio
  * questions (snapshot7 twillio: each radio at opacity 0, its own label[for] aria-hidden="true" drawing "No" or "Yes",
  * the input's aria-label "No, <the question>"). Only for an input of a proxy its adapter declares (Adapter.proxyFor
- * answers one), only where the input's own aria-label starts with those words, and only a label of its own: drawn
- * (it has a box), naming its id, holding the words whole. Never a label of another control.
+ * answers one), only where the input's own aria-label starts with those words, and only a label of its own: naming its
+ * id, its words drawn whole (drawnWords). Never a label of another control.
  * jr7 ENGINE-7 E3-1 (DFPC-7's edit 5, PC7-04): or the input's own label (label[for] naming its id, or the label
  * wrapping it) that a person sees, whose words sit in an aria-hidden part of it (Paycom's radio, snapshot7
  * paycomonline1 prescreen: label > p[aria-hidden="true"] "Yes", the input's aria-label "Yes 1 of 2."): only a part
- * drawn (a box, visibility visible, not transparent), holding no control, holding the words whole. A label that is
- * hidden itself (display none, visibility hidden, a hidden ancestor) reads nothing so, nor does any sibling's label.
+ * holding no control, its words drawn whole (drawnWords). A label that is hidden itself (display none, visibility
+ * hidden, a hidden ancestor) reads nothing so, nor does any sibling's label.
+ * jr7 FIX-content A-1 (review A): in both branches the words count only where a person sees them drawn, so a page can
+ * never name an option with words it hides some other way (visibility hidden, opacity 0, transparent or camouflaged
+ * ink, off screen, font size 0).
  */
 function hiddenOwnLabelSays(input: HTMLInputElement, wanted: readonly string[], ctx: LabelContext): boolean {
   if (input.id === '' || ctx.adapter?.proxyFor === undefined) return false;
@@ -464,22 +487,20 @@ function hiddenOwnLabelSays(input: HTMLInputElement, wanted: readonly string[], 
   if (wanted.length === 0 || own.length < wanted.length || !wanted.every((word, at) => own[at] === word)) return false;
   const tied = tiedLabels(input);
   if (tied.explicit.some((label) => label.htmlFor === input.id
-    && label.closest('[aria-hidden="true" i]') !== null && label.getClientRects().length > 0
-    && containsWords(wordsOf(label.textContent ?? ''), wanted))) return true;
+    && label.closest('[aria-hidden="true" i]') !== null && containsWords(drawnWords(label, ctx), wanted))) return true;
   // jr7 ENGINE-7 E3-1: the words in an aria-hidden part of the input's own shown label.
   const labelsOwn = [...tied.explicit.filter((label) => label.htmlFor === input.id),
     ...tied.wrapping.filter((label) => label.contains(input))];
   return labelsOwn.some((label) => isUserVisible(label, ctx.cache)
-    && Array.from(label.querySelectorAll('[aria-hidden="true" i]')).some((part) => hiddenPartDrawn(part, ctx)
-      && containsWords(wordsOf(part.textContent ?? ''), wanted)));
+    && Array.from(label.querySelectorAll('[aria-hidden="true" i]')).some((part) =>
+      part.querySelector(`${CONTROL_SELECTOR}, button`) === null && containsWords(drawnWords(part, ctx), wanted)));
 }
 
-/** jr7 ENGINE-7 E3-1: an aria-hidden part of a shown label that a person sees drawn: it has a box, its visibility is
- *  'visible', it is not transparent, and it holds no control. */
-function hiddenPartDrawn(part: Element, ctx: LabelContext): boolean {
-  if (part.getClientRects().length === 0 || part.querySelector(`${CONTROL_SELECTOR}, button`) !== null) return false;
-  const style = part.ownerDocument.defaultView?.getComputedStyle(part) ?? null;
-  return style !== null && style.visibility === 'visible' && opacityOf(part, ctx.cache) > 0;
+/** jr7 FIX-content A-1: the words a person sees drawn in `el`, read as visibleText reads any page text (each text
+ *  node's glyph boxes by isUserVisible's rules, its ink against what is behind it by camouflage.ts) with only the
+ *  aria-hidden rule lifted (ariaHiddenLifted). */
+function drawnWords(el: Element, ctx: LabelContext): string[] {
+  return wordsOf(visibleText(el, { singleLine: true, cap: TEXT_CAP_DESCRIPTION, cache: ariaHiddenLifted(ctx.cache) }));
 }
 // ── end jr7 ENGINE-7 E1 item 5 ──
 
