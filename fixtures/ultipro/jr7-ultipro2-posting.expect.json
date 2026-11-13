@@ -1,0 +1,25 @@
+{
+  "fixture": "ultipro/jr7-ultipro2-posting",
+  "source": "https://recruiting.ultipro.com/pre1019prsd/JobBoard/4c05f321-903e-43d5-a4c0-5d9dd55dc34d/OpportunityDetail?opportunityId=4d20739d-b2f5-4343-8f02-4a1fb28b5cc2",
+  "captured": "2026-11-11T14:54:02.000Z",
+  "note": "The posting (OpportunityDetail), signed out, with the accessibility banner: no form. Its Apply now is the entry (UP7-09); LinkedIn's apply widget is never pressed.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": ".apply-btns-container ukg-button[data-automation=\"apply-now-button\"]",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "#OpportunitiesMenuButton",
+      "#language-picker-link",
+      "#SignInButton",
+      "[data-automation=\"accessibility-banner-link\"]",
+      "[data-automation=\"accessibility-banner-dismiss\"]",
+      "[data-automation=\"awli-widget-container\"]",
+      "ukg-button[data-automation=\"apply-now-button\"]"
+    ],
+    "pressable": []
+  }
+}

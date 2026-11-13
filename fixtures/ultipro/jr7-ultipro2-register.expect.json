@@ -1,0 +1,53 @@
+{
+  "fixture": "ultipro/jr7-ultipro2-register",
+  "source": "https://recruiting.ultipro.com/PRE1019PRSD/AuthCode/Register?state=returnUrl%3D%2Fpre1019prsd%2FJobBoard%2F4c05f321-903e-43d5-a4c0-5d9dd55dc34d%2FOpportunityApply%3FopportunityId%3D4d20739d-b2f5-4343-8f02-4a1fb28b5cc2%7Cta%3DPRE1019PRSD",
+  "captured": "2026-11-11T14:55:24.000Z",
+  "note": "The tenant's account step after UKG's sign-up: First name, Last name, Phone number, no privacy box; Create account disabled while the step is empty (enablesWhenFilled).",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[name=\"firstName\"]",
+      "note": "Labelled by the ukg-label its aria-labelledby names; drawn by its ukg-field's shadow .ukg-field-container (UP7-V1, controlBox). The capture keeps none of UKG's component styles, so it reads camouflaged here (the test's KNOWN list)."
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[name=\"lastName\"]",
+      "note": "Labelled by the ukg-label its aria-labelledby names; drawn by its ukg-field's shadow .ukg-field-container (UP7-V1, controlBox). The capture keeps none of UKG's component styles, so it reads camouflaged here (the test's KNOWN list)."
+    },
+    {
+      "label": "Phone number",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[name=\"phoneNumber\"]",
+      "note": "Labelled by the ukg-label its aria-labelledby names; drawn by its ukg-field's shadow .ukg-field-container (UP7-V1, controlBox). The capture keeps none of UKG's component styles, so it reads camouflaged here (the test's KNOWN list)."
+    }
+  ],
+  "hooks": {
+    "detect": "form#registrationDetailsForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "#OpportunitiesMenuButton",
+      "#language-picker-link",
+      "#SignInButton",
+      "[data-automation=\"accessibility-banner-link\"]",
+      "[data-automation=\"accessibility-banner-dismiss\"]"
+    ],
+    "pressable": [
+      "[data-automation=\"registrationDetails-submit-button\"]"
+    ]
+  }
+}

@@ -14,6 +14,27 @@ import registerExpect from '../../../fixtures/ultipro/register.expect.json';
 import registerHtml from '../../../fixtures/ultipro/register.html?raw';
 import resumeReviewExpect from '../../../fixtures/ultipro/resume-review.expect.json';
 import resumeReviewHtml from '../../../fixtures/ultipro/resume-review.html?raw';
+// ── jr7 ULTIPRO-7 P2: the owner's snapshot7 ultipro1 and ultipro2, nine of their pages ──
+import jr7U1PostingExpect from '../../../fixtures/ultipro/jr7-ultipro1-posting.expect.json';
+import jr7U1PostingHtml from '../../../fixtures/ultipro/jr7-ultipro1-posting.html?raw';
+import jr7U2PostingExpect from '../../../fixtures/ultipro/jr7-ultipro2-posting.expect.json';
+import jr7U2PostingHtml from '../../../fixtures/ultipro/jr7-ultipro2-posting.html?raw';
+import jr7U1RegisterExpect from '../../../fixtures/ultipro/jr7-ultipro1-register.expect.json';
+import jr7U1RegisterHtml from '../../../fixtures/ultipro/jr7-ultipro1-register.html?raw';
+import jr7U2RegisterExpect from '../../../fixtures/ultipro/jr7-ultipro2-register.expect.json';
+import jr7U2RegisterHtml from '../../../fixtures/ultipro/jr7-ultipro2-register.html?raw';
+import jr7U1Apply1Expect from '../../../fixtures/ultipro/jr7-ultipro1-apply-1.expect.json';
+import jr7U1Apply1Html from '../../../fixtures/ultipro/jr7-ultipro1-apply-1.html?raw';
+import jr7U2Apply1Expect from '../../../fixtures/ultipro/jr7-ultipro2-apply-1.expect.json';
+import jr7U2Apply1Html from '../../../fixtures/ultipro/jr7-ultipro2-apply-1.html?raw';
+import jr7U1Apply11Expect from '../../../fixtures/ultipro/jr7-ultipro1-apply-11.expect.json';
+import jr7U1Apply11Html from '../../../fixtures/ultipro/jr7-ultipro1-apply-11.html?raw';
+import jr7U1SubmittedExpect from '../../../fixtures/ultipro/jr7-ultipro1-submitted.expect.json';
+import jr7U1SubmittedHtml from '../../../fixtures/ultipro/jr7-ultipro1-submitted.html?raw';
+import jr7U2SubmittedExpect from '../../../fixtures/ultipro/jr7-ultipro2-submitted.expect.json';
+import jr7U2SubmittedHtml from '../../../fixtures/ultipro/jr7-ultipro2-submitted.html?raw';
+// ── end jr7 ULTIPRO-7 P2 ──
+import { sourceOf } from '../../content/apply.testkit';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { signIn, type SignInContext } from '../../content/sign-in';
 import { scan } from '../../dom/scan';
@@ -32,6 +53,17 @@ const CASES = [
   { name: 'register', html: registerHtml, json: registerExpect, address: REGISTER },
   { name: 'resume-review', html: resumeReviewHtml, json: resumeReviewExpect, address: APPLY },
   { name: 'application', html: applicationHtml, json: applicationExpect, address: APPLY },
+  // ── jr7 ULTIPRO-7 P2: each page at the address its header names ──
+  { name: 'jr7-ultipro1-posting', html: jr7U1PostingHtml, json: jr7U1PostingExpect, address: sourceOf(jr7U1PostingHtml)! },
+  { name: 'jr7-ultipro2-posting', html: jr7U2PostingHtml, json: jr7U2PostingExpect, address: sourceOf(jr7U2PostingHtml)! },
+  { name: 'jr7-ultipro1-register', html: jr7U1RegisterHtml, json: jr7U1RegisterExpect, address: sourceOf(jr7U1RegisterHtml)! },
+  { name: 'jr7-ultipro2-register', html: jr7U2RegisterHtml, json: jr7U2RegisterExpect, address: sourceOf(jr7U2RegisterHtml)! },
+  { name: 'jr7-ultipro1-apply-1', html: jr7U1Apply1Html, json: jr7U1Apply1Expect, address: sourceOf(jr7U1Apply1Html)! },
+  { name: 'jr7-ultipro2-apply-1', html: jr7U2Apply1Html, json: jr7U2Apply1Expect, address: sourceOf(jr7U2Apply1Html)! },
+  { name: 'jr7-ultipro1-apply-11', html: jr7U1Apply11Html, json: jr7U1Apply11Expect, address: sourceOf(jr7U1Apply11Html)! },
+  { name: 'jr7-ultipro1-submitted', html: jr7U1SubmittedHtml, json: jr7U1SubmittedExpect, address: sourceOf(jr7U1SubmittedHtml)! },
+  { name: 'jr7-ultipro2-submitted', html: jr7U2SubmittedHtml, json: jr7U2SubmittedExpect, address: sourceOf(jr7U2SubmittedHtml)! },
+  // ── end jr7 ULTIPRO-7 P2 ──
 ] as const;
 
 type CaseName = (typeof CASES)[number]['name'];
@@ -51,6 +83,10 @@ type CaseName = (typeof CASES)[number]['name'];
 const KNOWN: Record<string, ReadonlyArray<{ control: string; property: string }>> = {
   register: ['firstName', 'lastName', 'phoneNumber'].map((name) => ({ control: `input[name="${name}"]`,
     property: 'fillable' })),
+  // jr7 ULTIPRO-7 P2: snapshot7's two account steps, as the 2026-11-06 one (above): the boxes UP7-V1's controlBox reads
+  // drawn once their ukg-field's shadow container draws a box, which no capture keeps the style of.
+  ...Object.fromEntries(['jr7-ultipro1-register', 'jr7-ultipro2-register'].map((name) => [name,
+    ['firstName', 'lastName', 'phoneNumber'].map((box) => ({ control: `input[name="${box}"]`, property: 'fillable' }))])),
 };
 
 afterEach(() => removeFixtures(document));
@@ -89,7 +125,10 @@ describe('the UltiPro adapter: its hooks and scans on the snapshots', () => {
     expect(compareHooks(fixture.doc, ultiproAdapter, readHooks(json))).toEqual([]);
   });
 
-  it.each(CASES)('$name: the scan of its root is the expectation', async ({ name, html, json, address }) => {
+  // jr7 ULTIPRO-7 P2: a page with no form (a posting, the page after submitting, the documents dialog's state) has no
+  // root to scan: its hooks say so (detect null) and it lists no field.
+  it.each(CASES.filter((each) => readHooks(each.json).detect !== null))('$name: the scan of its root is the expectation',
+    async ({ name, html, json, address }) => {
     const scanned = await scanCase(document, html, address);
     expect(scanned.adapter).toBe(ultiproAdapter);
     // The start date is one date (jr6 U-07), its row's control the ukg-date-input-text component; an entry may still

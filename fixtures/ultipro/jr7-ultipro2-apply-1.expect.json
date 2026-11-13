@@ -1,0 +1,399 @@
+{
+  "fixture": "ultipro/jr7-ultipro2-apply-1",
+  "source": "https://recruiting.ultipro.com/pre1019prsd/JobBoard/4c05f321-903e-43d5-a4c0-5d9dd55dc34d/OpportunityApply?opportunityId=4d20739d-b2f5-4343-8f02-4a1fb28b5cc2",
+  "captured": "2026-11-11T14:55:37.000Z",
+  "note": "The one-page application, blank (recruiting.ultipro.com): every panel, its Questions longer; Submit the btn-submit host.",
+  "fields": [
+    {
+      "label": "Title",
+      "kind": "select",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 6,
+      "control": "select#Prefix"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#FirstName"
+    },
+    {
+      "label": "Preferred Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#PreferredName"
+    },
+    {
+      "label": "Middle",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#MiddleName"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#FamilyName"
+    },
+    {
+      "label": "Suffix",
+      "kind": "select",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 11,
+      "control": "select#Suffix"
+    },
+    {
+      "label": "Former Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#FormerName"
+    },
+    {
+      "label": "Primary Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#Phone"
+    },
+    {
+      "label": "Secondary Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#SecondaryPhone"
+    },
+    {
+      "label": "Country",
+      "kind": "select",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 18,
+      "control": "select#Country"
+    },
+    {
+      "label": "Address 1",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#AddressLine1"
+    },
+    {
+      "label": "Address 2",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#AddressLine2"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#City"
+    },
+    {
+      "label": "Zip / Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#PostalCode"
+    },
+    {
+      "label": "Willing to relocate",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#WillingToRelocate"
+    },
+    {
+      "label": "Upload a file",
+      "kind": "file",
+      "required": false,
+      "section": "Documents",
+      "fillable": true,
+      "control": "input#FileUpload_0000000002"
+    },
+    {
+      "label": "How did you hear about this opportunity?",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 40,
+      "control": "select#ApplicantSource"
+    },
+    {
+      "label": "Were you referred by a current employee?",
+      "kind": "radio",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"employeereferral\"]"
+    },
+    {
+      "label": "When can you start? (MM/DD/YYYY)",
+      "kind": "date",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "ukg-date-input-text[role=\"group\"]",
+      "note": "jr6 U-07: one date drawn in three boxes (dateFor); its box drawn by a wrapper (dateBoxOf, REVC-5): fillable as captured (UP7-13)."
+    },
+    {
+      "label": "Do you consent to the data you provide in this application being used by the company to consider you for other opportunities as they become available?",
+      "kind": "radio",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"copyApplicantsConsent\"]",
+      "note": "UP7-12: its question is the label.control-label the group holds, whose for names nothing (labelFor)."
+    },
+    {
+      "label": "How do you pronounce your name?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "textarea#TextResponse0"
+    },
+    {
+      "label": "The way we work has changed drastically over the past few years. When it comes to work location type, you are...",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 5,
+      "control": "input[name=\"MultipleChoiceResponse1\"]"
+    },
+    {
+      "label": "Do you have any deadlines or timeline consideration we should be aware of?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "textarea#TextResponse2"
+    },
+    {
+      "label": "Please select the highest level of education you have attained.",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 11,
+      "control": "input[name=\"MultipleChoiceResponse3\"]"
+    },
+    {
+      "label": "What are your total annual compensation expectations for the role in which you are applying?",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 13,
+      "control": "input[name=\"MultipleChoiceResponse4\"]"
+    },
+    {
+      "label": "Do you have any friends, relatives, or acquaintances working for Presidio? If yes, state name and relationship. If no, then please enter NA.",
+      "kind": "textarea",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "textarea#TextResponse5"
+    },
+    {
+      "label": "Are you legally authorized to work in the United States?",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse6\"]"
+    },
+    {
+      "label": "For purposes of the following question “sponsorship or support for an immigration-related employment benefit” means “an H-1B visa petition, an O-1 visa petition, an E-3 visa petition, F-1 OPT STEM application, TN status and ‘job flexibility benefits’ (also known as I-140 portability or Adjustment of",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse7\"]"
+    },
+    {
+      "label": "Do you have U.S. Government Security Clearance? If so, please select the level of clearance.",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 4,
+      "control": "input[name=\"MultipleChoiceResponse8\"]"
+    },
+    {
+      "label": "Are you currently bound to any Employment and/ or Company Agreement with your current or past employer (non-competition, non-solicitation, confidentiality)?",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"MultipleChoiceResponse9\"]"
+    },
+    {
+      "label": "Are you currently or have you ever been employed by Presidio, any of our legacy companies, a Vendor or at a Partner?",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 6,
+      "control": "input[name=\"MultipleChoiceResponse10\"]"
+    },
+    {
+      "label": "Presidio's interview process may consist of a phone/video/digital interviews, manager interviews, pre-employment drug screen, background check, reference checks, and potential skill assessment. Are you willing to fully participate in this process?",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse11\"]"
+    },
+    {
+      "label": "AT WILL EMPLOYMENT: It is my understanding that this employment application, or the granting of an interview, does not represent a contract of employment or a promise of future benefits by Presidio. I understand and agree that, if hired, my employment with Presidio will be at-will in nature and may ",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse12\"]"
+    },
+    {
+      "label": "I certify that all of the information I have provided to Presidio in support of my application for employment is true and accurate. I understand that any misrepresentation of this material may result in the termination of my application or employment.",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse13\"]"
+    },
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Gender",
+      "note": "UP7-03: no field while its own \"I decline to say\" box is ticked (excluded, read at each scan)."
+    },
+    {
+      "label": "Gender I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"gender-decline-checkbox\"]"
+    },
+    {
+      "label": "Ethnic Origin",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "select#HispanicOrigin",
+      "note": "UP7-03: no field while its own \"I decline to say\" box is ticked (excluded, read at each scan)."
+    },
+    {
+      "label": "Ethnic Origin I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"ethnic-origin-decline-checkbox\"]"
+    },
+    {
+      "label": "Race",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 7,
+      "control": "select#EthnicOrigin",
+      "note": "UP7-03: no field while its own \"I decline to say\" box is ticked (excluded, read at each scan)."
+    },
+    {
+      "label": "Race I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"race-decline-checkbox\"]"
+    },
+    {
+      "label": "Are you a protected veteran?",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "select#USFederalContractor",
+      "note": "UP7-03: no field while its own \"I decline to say\" box is ticked (excluded, read at each scan)."
+    },
+    {
+      "label": "Are you a protected veteran? I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"us-federal-contractor-question-decline-checkbox\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "#OpportunityApply",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a[data-automation=\"btn-cancel\"]",
+      "[data-automation=\"application-incorrect-name-text-signout-link\"]",
+      "#ResumeParsingUploader upload-button",
+      "[data-automation=\"existing-resume-selector\"]",
+      "#OpportunitiesMenuButton",
+      "#CandidatePresenceMenuButton",
+      "#profile-button-menu",
+      "#language-picker-link",
+      "#EEOCModalLink",
+      "[data-automation=\"accessibility-banner-link\"]",
+      "[data-automation=\"accessibility-banner-dismiss\"]"
+    ],
+    "pressable": [
+      "ukg-button[data-automation=\"btn-submit\"]"
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "fixture": "ultipro/jr7-ultipro2-submitted",
+  "source": "https://recruiting.ultipro.com/pre1019prsd/JobBoard/4c05f321-903e-43d5-a4c0-5d9dd55dc34d/OpportunityApply/ApplicationSubmitted?applicationId=REDACTED",
+  "captured": "2026-11-11T15:01:31.000Z",
+  "note": "The page after submitting (ApplicationSubmitted, UP7-01): no form; its sign is #ApplicationSubmitted shown (UP7-V2).",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "#OpportunitiesMenuButton",
+      "#CandidatePresenceMenuButton",
+      "#profile-button-menu",
+      "#language-picker-link",
+      "[data-automation=\"accessibility-banner-link\"]",
+      "[data-automation=\"accessibility-banner-dismiss\"]",
+      "[data-automation=\"awli-widget-container\"]"
+    ],
+    "pressable": []
+  }
+}

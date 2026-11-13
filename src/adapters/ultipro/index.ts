@@ -78,7 +78,13 @@ import { canonicalApplicationUrl, confirmationAfter, matchesUrl, parseUltiproAdd
 
 /** The fixtures the adapter was read from (fixtures/ultipro/<case>.html). */
 export const ULTIPRO_SNAPSHOTS = ['fixtures/ultipro/register.html', 'fixtures/ultipro/resume-review.html',
-  'fixtures/ultipro/application.html'] as const;
+  'fixtures/ultipro/application.html',
+  // ── jr7 ULTIPRO-7 P2: the owner's snapshot7 ultipro1 and ultipro2 (the pages with an expectation file) ──
+  'fixtures/ultipro/jr7-ultipro1-posting.html', 'fixtures/ultipro/jr7-ultipro2-posting.html',
+  'fixtures/ultipro/jr7-ultipro1-register.html', 'fixtures/ultipro/jr7-ultipro2-register.html',
+  'fixtures/ultipro/jr7-ultipro1-apply-1.html', 'fixtures/ultipro/jr7-ultipro2-apply-1.html',
+  'fixtures/ultipro/jr7-ultipro1-apply-11.html', 'fixtures/ultipro/jr7-ultipro1-submitted.html',
+  'fixtures/ultipro/jr7-ultipro2-submitted.html'] as const;
 
 /** The résumé review's container (ultipro-1: <div data-bind="if: isParsingResume()"><div data-bind="with:
  *  contactInfoViewModel" data-automation="contact-information-section"> ...; empty in ultipro-0). */
@@ -90,7 +96,10 @@ const DOCUMENTS_DIALOG_CSS = 'div#AttachmentsChangedModal[role="dialog" i]';
 /** The rules the configured layer builds hooks from, each naming its snapshot. */
 export const ULTIPRO_CONFIG: AtsConfig = {
   platform: 'ultipro',
-  snapshots: ['register', 'resume-review', 'application'],
+  snapshots: ['register', 'resume-review', 'application',
+    // jr7 ULTIPRO-7: snapshot7's (fixtures/ultipro/jr7-ultipro{1,2}-*).
+    'jr7-ultipro1-posting', 'jr7-ultipro2-posting', 'jr7-ultipro1-register', 'jr7-ultipro2-register', 'jr7-ultipro1-apply-1',
+    'jr7-ultipro2-apply-1', 'jr7-ultipro1-apply-11', 'jr7-ultipro1-submitted', 'jr7-ultipro2-submitted'],
   parse: parseUltiproAddress, // jr7 ULTIPRO-7 (UP7-01): with the page after submitting
   matchesUrl,
   states: [
