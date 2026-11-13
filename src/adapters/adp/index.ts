@@ -71,8 +71,17 @@
  * - The page after Submit (ADP-6, jr6-confirmation, jr6-confirmation-2): Jobright's ats-submission-rules entry
  *   adp-workforcenow, read while the BrightJump promo's focus trap hides the page (SuccessRule.underModal).
  * - The start-date picker's layout (ADP-8) and the desired salary's pay basis group's label (ADP-16).
+ * jr7 (FIX7PLAN §6.9; the owner's snapshot7 adp1 of 2026-11-11, one application from its posting to its confirmation,
+ * converted as fixtures/adp/jr7-adp1-*.html, ADP_JR7_SNAPSHOTS) adds:
+ * - ADP7-2 (adapter half): Address Line 1, read-only while ADP's address lookup starts, is decided again after the
+ *   Country's write (dependsOn), as the State is.
+ * - ADP7-10 (owner question Q7-14, default yes): the signed-in landing's "Complete Your Application" is an entry, one
+ *   press, which resumes the person's own unfinished application.
+ * - ADP7-13: a question's number and sum boxes are laid out as one number (formatFor).
+ * ADP stays out of Run auto-apply (ADP7-1): every guest application needs a one-time code the person receives.
  * Nothing here reads, logs or sends a value.
  */
+import type { FieldFormat } from '../../core/enums';
 import { newScanCache } from '../../dom/scan-cache';
 import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
@@ -96,6 +105,12 @@ export const ADP_JR6_SNAPSHOTS = ['jr6-posting', 'jr6-consent', 'jr6-guest-blank
   'jr6-self-attest-blank', 'jr6-self-attest-signed', 'jr6-confirmation', 'jr6-confirmation-2']
   .map((name) => `fixtures/adp/${name}.html`);
 
+/** jr7: the owner's captures of 2026-11-11 (snapshot7 adp1), as fixtures/adp/<case>.html, in the order they were taken
+ *  (the module header). */
+export const ADP_JR7_SNAPSHOTS = ['posting', 'posting-2', 'consent', 'guest', 'code-choice', 'code-choice-2', 'code',
+  'personal-blank', 'personal-filled', 'resume', 'questions-filled', 'review', 'self-attest-blank', 'self-attest-ticked',
+  'self-attest-signed', 'confirmation'].map((step) => `fixtures/adp/jr7-adp1-${step}.html`);
+
 // ── jr6 ADP P1 (FIXPLAN §6.6, BUILD.md §4 E-ADP) ──
 /** jr6-consent: the "Privacy Policy" pane after Apply. */
 const PRIVACY_PANE = 'sdf-focus-pane#jdv_privacy_dailog';
@@ -117,7 +132,7 @@ const SIGNATURE = 'input#electronicSignature';
 export const ADP_CONFIG: AtsConfig = {
   platform: 'adp',
   snapshots: ['guest', 'code-dialog', 'personal', 'questions', 'self-id', 'self-attest',
-    ...ADP_JR6_SNAPSHOTS.map((path) => path.replace(/^fixtures\/adp\/|\.html$/g, ''))],
+    ...[...ADP_JR6_SNAPSHOTS, ...ADP_JR7_SNAPSHOTS].map((path) => path.replace(/^fixtures\/adp\/|\.html$/g, ''))],
   parse: parseAdpUrl,
   matchesUrl,
   states: [
@@ -272,8 +287,16 @@ export const ADP_CONFIG: AtsConfig = {
   // div.job-description-data-item) and, in the details' header, <button id="recruitment_jobDescription_apply"
   // type="button" class="job-description-apply-item vdl-button vdl-button--primary">Apply</button> (the bottom bar's
   // button#recruitment_jobDescription_candidateApply where a page draws it). Named by id, never by the word "Apply".
+  // jr7 ADP7-10 (FIX7PLAN §6.9 item 3; owner question Q7-14, default yes; jr6 ADP open issue 1): the signed-in landing
+  // a person reaches when they resume their own unfinished application to the same posting (jr6-landing, at
+  // postLogin.html, the same cid and jobId as that application's 2026-11-06 captures; snapshot7's new application goes
+  // straight from the code to Personal Information): <button id="recruitment_jobDescription_complete" type="button"
+  // class="job-description-apply vdl-button vdl-button--primary"><span class="vdl-button__container">Complete Your
+  // Application</span></button>, beside Back. One press, no consent pane after it, by id. Jobright has no code for it
+  // (jr6 J-ADP-8).
   posting: { text: 'div.job-description-data',
-    entry: 'button#recruitment_jobDescription_apply, button#recruitment_jobDescription_candidateApply',
+    entry: 'button#recruitment_jobDescription_apply, button#recruitment_jobDescription_candidateApply, '
+      + 'button#recruitment_jobDescription_complete',
     from: 'jr6-posting, jr6-landing' },
   // jr6 E-ADP (BUILD.md §4; apply-path B2, B3, B4): Apply draws the Privacy Policy pane in place, whose Consent &
   // Continue is the second entry press; the guest view is then drawn in place at the same address, up to 20 s later,
@@ -490,17 +513,71 @@ function selectHosts(root: Element): Element[] {
 // ── jr6 ADP-8, ADP-2 (dependsOn), ADP-1 (uploadState), adp-new-1 (errors), E-ADP (neverPress) ──
 /** jr6 ADP-8 (jr6-questions2-blank): "If an offer is presented, how soon can you start?", <div
  *  class="vdl-date-time-picker ..."><input id="question_8" class="vdl-date-time-picker__input ..." type="text"
- *  aria-required="true" placeholder="MM/DM/YYYY">: ADP's date picker reads MM/DD/YYYY (its placeholder misspells it). */
-function formatFor(control: Element): { format: 'date'; pattern: string } | null {
-  return control.matches('input.vdl-date-time-picker__input') ? { format: 'date', pattern: 'MM/DD/YYYY' } : null;
+ *  aria-required="true" placeholder="MM/DM/YYYY">: ADP's date picker reads MM/DD/YYYY (its placeholder misspells it).
+ *  jr7 ADP7-13 (FIX7PLAN §6.9 item 4; the ADP verifier's missed finding): a question's own box ADP marks as a number or a
+ *  sum, each a plain type="text" in its div.qMainDiv, laid out as one number (the AI's answer asked as one, and only one
+ *  number of its text written: plan/answers.ts answerText), a profile value typed as before:
+ *  - jr7-adp1-questions-filled, "How many years of related experience do you have?": <input id="question_0"
+ *    aria-required="true" class="question__number  vdl-textbox" type="text">;
+ *  - jr7-adp1-questions-filled, "What is the minimum hourly rate you would consider for this position?": <input
+ *    id="question_1" aria-required="true" class="currency  vdl-textbox" type="text"> beside its div.currencySelectDiv;
+ *    questions (the 2026-11-06 employer), question_8: the same currency box.
+ *  Jobright's ADP rules send NUMBER by the label's words alone (salary, compensation, pay; ./rules L()), never by these
+ *  classes. */
+function formatFor(control: Element): { format: FieldFormat; pattern?: string } | null {
+  if (control.matches('input.vdl-date-time-picker__input')) return { format: 'date', pattern: 'MM/DD/YYYY' };
+  // ── jr7 ADP7-13 ──
+  if (control.matches('div.qMainDiv input.question__number')) return { format: 'number' };
+  if (control.matches('div.qMainDiv input.currency.vdl-textbox')) return { format: 'currency' };
+  // ── end jr7 ADP7-13 ──
+  return null;
 }
 
-/** jr6 ADP-2 (FIXPLAN §3.1 item 10; jr6-personal-blank, jr6-personal-us-state): the State, a text box until Country is
- *  chosen (<input id="PersonalAddress_state" ...>) and then ADP's own list under the same id (<wfn-dropdown-list
- *  id="PersonalAddress_state" ...>), is reset by the Country's write (<input class="MDFSelectBox__input"
- *  id="PersonalAddress_country" ...>). */
+/** The controls a write of the Country resets (dependsOn), by id:
+ *  - jr6 ADP-2 (FIXPLAN §3.1 item 10; jr6-personal-blank, jr6-personal-us-state): the State, a text box until Country is
+ *    chosen (<input id="PersonalAddress_state" ...>) and then ADP's own list under the same id (<wfn-dropdown-list
+ *    id="PersonalAddress_state" ...>);
+ *  - jr7 ADP7-2 (adapter half; FIX7PLAN §6.9 item 1, the ADP verifier's corrected fix part 2): Address Line 1, ADP's
+ *    per-country Places lookup, read-only while that lookup starts (jr7-adp1-personal-blank, as loaded: <input
+ *    id="PersonalAddress_address_line1" aria-required="true" class="vdl-textbox" placeholder="Initializing..."
+ *    readonly="" type="text">) and writable with its suggestions once a country is chosen (jr7-adp1-personal-filled:
+ *    class "vdl-textbox pac-target-input", placeholder "Enter a location"): decided again after the Country's write
+ *    (bookkeeping's 'parent-written'), so a box skipped read-only before it is written once it opens. Jobright fills the
+ *    Country first and reads its rules again after the country commits (~contents/sites/adp-workforcenow doFillForm,
+ *    prefillCountry). No page-level busy sign is declared for the box: the verifier measured that one cuts the loop
+ *    when the lookup never starts. ENGINE-7 E2 item 1 holds a required, empty, read-only box as waiting (its half).
+ *  Each is reset by the Country's write (<input class="MDFSelectBox__input" id="PersonalAddress_country" ...>). */
+const RESET_BY_COUNTRY: ReadonlySet<string> = new Set(['PersonalAddress_state', 'PersonalAddress_address_line1']);
+
+/** jr7 ADP-7 P2 (ENGINE-7 E2's jr6 leftover L2: a lazy list's first read re-plans its dependent): the Voluntary Self-ID
+ *  step's decline box, decided by what its lists offer (RULES' eeoDeclineBox: ticked only where the lists offer no
+ *  decline; while they are unread it is left, conditional-question), follows the later of its lists a person can choose
+ *  in (self-id, jr6-self-id-blank, jr6-self-id-filled: <input id="checkbox_..." type="checkbox"
+ *  name="enthinicityAndRaceId" aria-required="false"><label for="checkbox_...">I decline to identify my race and
+ *  ethnicity</label>, before <input class="MDFSelectBox__input" id="vsidEthinicity" ...> and <input
+ *  class="MDFSelectBox__input" id="vsidRace" ...>; on jr6-self-id-blank Race is drawn disabled, <div
+ *  class="MDFSelectBox__control MDFSelectBox__control--is-disabled ..." aria-disabled="true"> around <input ...
+ *  disabled="" id="vsidRace">, so the box follows Ethnicity there until Race opens): it is decided again once that list
+ *  is first read, or written. */
+const RACE_DECLINE_BOX = 'input[type="checkbox" i][name="enthinicityAndRaceId"]';
+const DECLINE_BOX_LISTS = ['vsidRace', 'vsidEthinicity'] as const;
+
+/** The later of the decline box's lists a person can choose in (its react-select's box drawn, not disabled), or null. */
+function declineBoxList(doc: Document): Element | null {
+  const cache = newScanCache();
+  for (const id of DECLINE_BOX_LISTS) {
+    const input = doc.getElementById(id);
+    if (input === null || (input as HTMLInputElement).disabled) continue;
+    const box = input.closest('.MDFSelectBox__control');
+    if (box?.matches('.MDFSelectBox__control--is-disabled, [aria-disabled="true" i]') === true) continue;
+    if (isUserVisible(box ?? input, cache)) return input;
+  }
+  return null;
+}
+
 function dependsOn(control: Element): Element | null {
-  return control.id === 'PersonalAddress_state' ? control.ownerDocument.getElementById('PersonalAddress_country') : null;
+  if (RESET_BY_COUNTRY.has(control.id)) return control.ownerDocument.getElementById('PersonalAddress_country');
+  return control.matches(RACE_DECLINE_BOX) ? declineBoxList(control.ownerDocument) : null; // jr7 ADP-7 P2
 }
 
 /** The upload rule each file input was found under, kept for the input ADP takes out of the page (uploadState). */
