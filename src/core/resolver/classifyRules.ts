@@ -466,6 +466,25 @@ function offersOnlyYesNo(spec: FieldSpec): boolean {
 /** An option that only asks to choose ("Make a Selection", "Select…", "Please select", "Choose one"). */
 const PLACEHOLDER_OPTION = /^(?:please\s+)?(?:make\s+a\s+selection|select(?:\s+(?:one|an?\s+option))?|choose(?:\s+(?:one|an?\s+option))?|none\s+selected)$/;
 
+/** jr7 FIX-content D-5: a box asking for the person's name alone ("Full Name", "Name", "Your Legal Name"). */
+const NAME_ALONE = /^(?:your\s+)?(?:full\s+)?(?:legal\s+)?name$/;
+/** jr7 FIX-content D-5: a section whose own words name a voluntary self-identification form. */
+const SELF_ID_SECTION = /\bvoluntary\s+information\b|\bself\s+identification\b/;
+
+/**
+ * jr7 FIX-content D-5 (Decision 16, docs/SPEC-AMENDMENTS.md: a self-identification form's closing name is a signature,
+ * typed only under the signature pre-approval, as Jobvite's): a box asking for the name alone in a section whose own
+ * words name a voluntary self-identification form (Paycom's "Voluntary Information" section, its disability form's
+ * "Full Name" beside its "Date": fixtures/paycom/jr7-paycomonline1-apply-2 and -3) reads as that form's signature, as
+ * label.consent-signature reads "<name> signature", before any other source (its name and id say a full name too).
+ */
+function selfIdSignature(spec: FieldSpec, label: string, context: LabelContext): LabelRuleHit | null {
+  const section = spec.section.id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  if (!NAME_ALONE.test(label) || !SELF_ID_SECTION.test(section)) return null;
+  const hit = matchLabelRules(`${label} signature`, sectionKindOf(spec.section.id), spec.kind, context);
+  return hit?.category === 'consent.signature' ? hit : null;
+}
+
 /**
  * What the deterministic rules say `spec` is: the autocomplete, name/id and label votes combined (§8.1), each checked
  * against the field's kind (CATEGORY_KINDS), so a mismatch is no vote. A field about another person keeps none of the
@@ -490,6 +509,8 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   // other source (the "999-99-9999" placeholder reads as a phone's mask).
   const nationalId = nationalIdHit(label, spec.label, spec.constraints.pattern, nameIdText(spec.nameAttr, spec.idAttr));
   if (nationalId !== null) return combine([labelVote(nationalId, 'label')]);
+  const signed = selfIdSignature(spec, label, context); // jr7 FIX-content D-5
+  if (signed !== null) return combine([labelVote(signed, 'label')]);
   // jr7 RULES-7 (ICIMS7-06): a list read whole of a Yes and a No.
   if (offersOnlyYesNo(spec)) context.yesNoOptions = true;
   // jr7 RULES-7 R2 (DF7-11): an optional reason for leaving is an entry detail; a required one stays the AI's (jr6).
