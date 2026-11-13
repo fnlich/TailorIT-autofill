@@ -438,6 +438,13 @@ const contentMessages = [
      *  only once its own check passes (an iCIMS posting of the same job id, https, no credentials, no query). */
     tailoritAddress: z.string().url().max(2000).optional(),
     // ── end jr7 AUTO-7 ──
+    // ── jr7 CHAIN-7 (FIX7PLAN §6.5 item 1, ICIMS7-01) ──
+    /** The tab's claim frame, a portal page, names the origins of the forms frames it shows (Adapter.chainChildOrigins:
+     *  iCIMS's .iCIMS_mainFormFrame iframe#icims_formFrame, https://<x>.icims.com): origins only, never an address. The
+     *  worker keeps those adapters/chain.ts declaredChildOrigin takes, for the frame's document (background/chain.ts
+     *  notePortal), and keys a chain subframe on that origin (inheritFrame). */
+    childOrigins: z.array(z.string().regex(/^https:\/\/[a-z0-9.-]{1,253}$/)).max(4).optional(),
+    // ── end jr7 CHAIN-7 ──
   }),
   /** Answers a run id and the content settings; never the profile. */
   z.strictObject({ v, type: z.literal('run/begin'), applicationKey: z.string().max(80),
@@ -649,6 +656,13 @@ const contentMessages = [
    *  (background/chain.ts factsSaid, chain/leafFacts); from any other frame: `expired`. */
   z.strictObject({ v, type: z.literal('chain/facts'), facts: ChainStepFactsSchema.nullable() }),
   // ── end jr6 SHELL-B ──
+  // ── jr7 CHAIN-7 (FIX7PLAN §6.5 item 2, ICIMS7-V1) ──
+  /** An IForm leaf frame (a chain subframe page) pressed its form's Submit (its Next or the final Submit; the run's or
+   *  the person's), once per document (content/chain-frame.ts watchLeafPress): the worker counts its portal's facts so
+   *  far as said before the press, so a leaf document chained after it hears only facts said after it
+   *  (background/chain.ts leafPressed). Nothing else: no value, no address. From any other frame: `expired`. */
+  z.strictObject({ v, type: z.literal('chain/pressed') }),
+  // ── end jr7 CHAIN-7 ──
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -1054,6 +1068,7 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'preview/openTab': DoneAnswerSchema,
   'edit/confirmed': DoneAnswerSchema,
   'chain/facts': DoneAnswerSchema, // jr6 SHELL-B
+  'chain/pressed': DoneAnswerSchema, // jr7 CHAIN-7
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of a frame's answer to each message the worker sends it. */
