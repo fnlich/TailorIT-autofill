@@ -228,15 +228,27 @@ const DEV_ONLY = ['tailorit-dev-capture', 'saveAsMHTML', 'capture.html'];
 /** Pages only a development build has: the capture page (wxt.config.ts skips it in every other mode). */
 const DEV_ONLY_PAGES = ['capture.html'];
 /**
- * jr7 INT-7 (the content script's budget): the configured rules' provenance, their `from` and each AtsConfig's
- * `snapshots`, is written `...(__PROVENANCE__ && { … })` and every build (chrome, edge, e2e) defines __PROVENANCE__
- * false, so no bundle holds it (src/adapters/configured/types.ts). A bundle that does fails: one of these known
- * provenance values (a rule's `from` or a snapshot list's case, of five platforms), or any `from` key whose value is a
- * capture's or a snapshot's name (jr6-…, jr7-…, <platform>-<n>).
+ * jr7 INT-7 (the content script's budget) and the jr7 review (A-4): the adapters' provenance (the configured rules'
+ * `from`, each AtsConfig's `snapshots`, each widget or date declaration's `snapshot`) is written
+ * `...(__PROVENANCE__ && { … })` and every build (chrome, edge, e2e) defines __PROVENANCE__ false, so no bundle holds it
+ * (src/adapters/configured/types.ts). A bundle that does fails, judged against the exact list of every provenance value
+ * the sources hold (PROVENANCE_LIST: scripts/provenance.mjs writes it, test/provenance.test.ts keeps it current):
+ * - a value holding a digit, a slash, a dot or a space (a capture's numbered name, a fixture's path, a note) fails
+ *   wherever it stands (PROVENANCE_ANYWHERE);
+ * - any value, a plain hyphenated case name too (`vafb-account`, or `guest`, a word the code may also use as its own),
+ *   fails as the value of a `from`, `snapshot` or `snapshots` key: the whole value, one of its comma- or
+ *   semicolon-separated parts, or an element of its list;
+ * - and, for a value the list has not met yet, such a key whose value starts like a capture's name or a fixture's path
+ *   (jr6-…, jr7-…, <platform>-<n>, fixtures/…).
+ * A missing or unreadable list fails every check.
  */
-const PROVENANCE_NEEDLES = ['jr7-paycomonline1-signature', 'jr7-saashr-confirmation', 'jr7-jobdiva2-confirmation',
-  'jr7-twillio-success', 'jr7-ultipro1-submitted', 'jr7-dayforce1-posting'];
-const PROVENANCE_FROM = /\bfrom:\s*[`'"](?:jr[67]-|[a-z][a-z0-9]*-\d)/;
+const PROVENANCE_LIST = 'scripts/provenance-values.json';
+/** A provenance key and its value's start: `from:`, `snapshot:`, `snapshots:`, the key bare or quoted. */
+const PROVENANCE_KEY = /(?<![\w$])(["']?)(from|snapshots?)\1\s*:\s*/g;
+/** A string literal at the start of the rest (its content in group 1, 2 or 3). */
+const LITERAL = /^(?:"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\]|\\.)*)`)/s;
+/** The start of a capture's name or a fixture's path, for a value the list has not met yet. */
+const CAPTURE_SHAPE = /^(?:jr\d+-|[a-z][a-z0-9]*-\d|fixtures\/)/;
 
 /** The manifest's icon sizes; the toolbar's action uses the two smallest. */
 const ICON_SIZES = ['16', '32', '48', '128'];
@@ -247,6 +259,83 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 const failures = [];
 const fail = (build, message) => failures.push(`${build.dir}: ${message}`);
 const sameSet = (a, b) => a.length === b.length && [...a].sort().join('\n') === [...b].sort().join('\n');
+
+/** The provenance list's values (PROVENANCE_LIST); none, and a failure, where it is missing or unreadable. */
+function provenanceValues() {
+  try {
+    const { values } = JSON.parse(readFileSync(join(ROOT, PROVENANCE_LIST), 'utf8'));
+    if (Array.isArray(values) && values.length > 0
+      && values.every((value) => typeof value === 'string' && value.length > 0)) return values;
+  } catch {
+    // Reported below.
+  }
+  failures.push(`${PROVENANCE_LIST} is missing or unreadable: no build's provenance can be checked`);
+  return [];
+}
+const PROVENANCE_VALUES = new Set(provenanceValues());
+/** The values that fail wherever they stand in a bundle (PROVENANCE_LIST's header). */
+const PROVENANCE_ANYWHERE = [...PROVENANCE_VALUES].filter((value) => /[\d/.\s]/.test(value));
+
+/** A literal's content with its escapes read (\x, \u, \u{…}, \n, \t, and a quoted character). */
+const unescape = (text) => text.replace(/\\(?:x([0-9a-fA-F]{2})|u\{([0-9a-fA-F]+)\}|u([0-9a-fA-F]{4})|([\s\S]))/g,
+  (_, x, braced, u, other) => {
+    const hex = x ?? u;
+    if (hex !== undefined) return String.fromCharCode(parseInt(hex, 16));
+    if (braced !== undefined) return String.fromCodePoint(parseInt(braced, 16));
+    return other === 'n' ? '\n' : other === 't' ? '\t' : other;
+  });
+
+/** The string values a provenance key's value holds at `at` in `text`: one literal, or each literal of a list of them
+ *  (a template's `${…}` read as a separator); none for any other value (a name, a call, a number). */
+function keyValues(text, at) {
+  const rest = text.slice(at, at + 8192);
+  const literalAt = (index) => {
+    const match = LITERAL.exec(rest.slice(index));
+    if (match === null) return null;
+    const raw = match[1] ?? match[2] ?? (match[3] ?? '').replace(/\$\{[^}]*\}/g, ',');
+    return { value: unescape(raw), end: index + match[0].length };
+  };
+  if (!rest.startsWith('[')) {
+    const one = literalAt(0);
+    return one === null ? [] : [one.value];
+  }
+  const values = [];
+  let index = 1;
+  for (;;) {
+    index += rest.slice(index).length - rest.slice(index).trimStart().length;
+    const next = literalAt(index);
+    if (next === null) return values;
+    values.push(next.value);
+    index = next.end + (rest.slice(next.end).match(/^\s*,?/)?.[0].length ?? 0);
+  }
+}
+
+/** Why `text` (one bundle file's) holds provenance (PROVENANCE_LIST's header), each reason once; none where it holds
+ *  none. */
+function provenanceIn(text) {
+  const found = new Set();
+  let decoded = null;
+  for (const value of PROVENANCE_ANYWHERE) {
+    if (text.includes(value)) {
+      found.add(`("${value}")`);
+    } else if (/[^\x20-\x7e]|["'`\\]/.test(value)) {
+      // A value a minifier may have escaped: read the bundle's escapes too.
+      decoded ??= unescape(text);
+      if (decoded.includes(value)) found.add(`("${value}")`);
+    }
+  }
+  for (const match of text.matchAll(PROVENANCE_KEY)) {
+    const key = match[2];
+    for (const value of keyValues(text, match.index + match[0].length)) {
+      const parts = [value, ...value.split(/[,;]/)].map((part) => part.trim()).filter((part) => part !== '');
+      for (const part of parts) {
+        if (PROVENANCE_VALUES.has(part)) found.add(`(${key}: "${part}")`);
+        else if (CAPTURE_SHAPE.test(part)) found.add(`(a "${key}" naming a capture)`);
+      }
+    }
+  }
+  return [...found];
+}
 
 /** The manifest's content scripts: ours, with no world key (the isolated world), and the page-world bridge, the one
  *  whose world is MAIN; v5 p2-detect: and the page-world submit watcher, also MAIN, the one script of that world whose
@@ -871,9 +960,8 @@ for (const build of BUILDS) {
   for (const file of all) {
     const text = readFileSync(file, 'utf8');
     for (const needle of DEV_ONLY) if (text.includes(needle)) fail(build, `${relative(dir, file)} contains the development-only "${needle}"`);
-    // jr7 INT-7: no configured rule's provenance in any bundle (PROVENANCE_NEEDLES).
-    for (const needle of PROVENANCE_NEEDLES) if (text.includes(needle)) fail(build, `${relative(dir, file)} holds rule provenance ("${needle}")`);
-    if (PROVENANCE_FROM.test(text)) fail(build, `${relative(dir, file)} holds rule provenance (a "from" naming a capture)`);
+    // jr7 INT-7, jr7 review A-4: no adapter's provenance in any bundle (PROVENANCE_LIST).
+    for (const why of provenanceIn(text)) fail(build, `${relative(dir, file)} holds rule provenance ${why}`);
     const own = new URL(build.origin).host;
     for (const host of ORIGIN_HOSTS.filter((other) => other !== own && !(build.production && E2E_ONLY.includes(other)))) {
       if (namesHost(text, host)) fail(build, `${relative(dir, file)} holds another build's TailorIT, "${host}"`);

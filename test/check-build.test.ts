@@ -130,7 +130,7 @@ function project(change: (write: (path: string, text: string | Uint8Array) => vo
     writeFileSync(join(root, path), text);
   };
   for (const path of ['scripts/check-build.mjs', 'scripts/proc.mjs', 'scripts/tailorit-origin.mjs', 'src/shared/hosts.ts',
-    'src/shared/sidebar.ts', 'keys/manifest-key.txt']) {
+    'src/shared/sidebar.ts', 'keys/manifest-key.txt', 'scripts/provenance-values.json']) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     copyFileSync(join(ROOT, path), join(root, path));
   }
@@ -199,6 +199,58 @@ describe("check-build's development-only assertions", () => {
     const clean = checkBuild(project((write) => write(`${BUILDS.chrome}/content-script.js`,
       'var r={from:"2020-01",to:"2021-02"},m={from:e.frameId,chain:{from:"0123456789abcdef"}};')));
     expect(clean.output).not.toContain('rule provenance');
+  });
+
+  // jr7 review A-4: the guard compares with the exact list of the sources' provenance (scripts/provenance-values.json,
+  // test/provenance.test.ts), whatever a value's shape, and reads `snapshot` and `snapshots` keys as well as `from`.
+  it("fail a bundle holding any value of the provenance list, whatever its shape, as a key's value or in the text", () => {
+    // The values the cases name are the sources' own (none is made up for the test).
+    const { values } = JSON.parse(readFileSync(join(ROOT, 'scripts', 'provenance-values.json'), 'utf8')) as {
+      values: string[] };
+    expect(values).toEqual(expect.arrayContaining(['vafb-account', 'jr7-paycomonline1-apply-2', 'jr7-bamboohr1-form-filled',
+      'jr7-rippling1-apply-blank, jr7-rippling2-apply-blank', 'guest', 'code-dialog', 'personal', 'vafb-uploads',
+      "Jobright 1.25.2 ats-submission-rules 'myworkday-submitted'"]));
+    expect(values).not.toContain('fixtures/acme/new-case.html');
+    for (const [script, said] of [
+      // A bare `from` of a case name no capture shape matches (ClearCompany's), as the review's mutation wrote it.
+      ['var c=[{css:"#account",from:"vafb-account"}];', '(from: "vafb-account")'],
+      // A widget's snapshot, as Paycom's date wrote it before the gate.
+      ['function d(e){return{parts:e,snapshot:"jr7-paycomonline1-apply-2"}}', '("jr7-paycomonline1-apply-2")'],
+      ['function d(e){return{parts:e,snapshot:"jr7-paycomonline1-apply-2"}}', '(snapshot: "jr7-paycomonline1-apply-2")'],
+      // A capture constant used through a name, as BambooHR's and Rippling's were: the value alone, anywhere.
+      ['var R=`jr7-bamboohr1-form-filled`;function w(d){return{...d,snapshot:`${d.snapshot}; ${R}`}}',
+        '("jr7-bamboohr1-form-filled")'],
+      ['var J=`jr7-rippling1-apply-blank, jr7-rippling2-apply-blank`;',
+        '("jr7-rippling1-apply-blank, jr7-rippling2-apply-blank")'],
+      // A config's snapshot list of plain case names (ADP's), each a word the code may also use: as the key's list.
+      ['var a={platform:`adp`,snapshots:[`guest`,\'code-dialog\',"personal"]};', '(snapshots: "guest")'],
+      ['var a={platform:`adp`,snapshots:[`guest`,\'code-dialog\',"personal"]};', '(snapshots: "personal")'],
+      // One part of a list written in one string.
+      ['var r={css:"form",from:"vafb-uploads, vafb-page3"};', '(from: "vafb-uploads")'],
+      // A note, with its escaped quotes read.
+      [String.raw`var s=[{from:'Jobright 1.25.2 ats-submission-rules \'myworkday-submitted\''}];`,
+        `("Jobright 1.25.2 ats-submission-rules 'myworkday-submitted'")`],
+      // A fixture's path the list has not met yet: its shape.
+      ['var w={snapshot:"fixtures/acme/new-case.html"};', '(a "snapshot" naming a capture)'],
+    ] as const) {
+      const { status, output } = checkBuild(project((write) => write(`${BUILDS.e2e}/content-script.js`, script)));
+      expect(output, script).toContain(`.output-e2e/chrome-mv3: content-script.js holds rule provenance ${said}`);
+      expect(status, script).toBe(1);
+    }
+    // The same plain words outside a provenance key are the code's own, and a date range's `from` is no provenance.
+    const clean = checkBuild(project((write) => write(`${BUILDS.chrome}/content-script.js`,
+      'var s={step:`guest`,kind:"personal",page:`code-dialog`},r={from:"2020-01",to:"2021-02"};')));
+    expect(clean.output).not.toContain('rule provenance');
+    expect(clean.status).toBe(0);
+  });
+
+  it('fail every check when the provenance list is missing', () => {
+    const root = project();
+    rmSync(join(root, 'scripts', 'provenance-values.json'));
+    const { status, output } = checkBuild(root);
+    expect(output).toContain(
+      "scripts/provenance-values.json is missing or unreadable: no build's provenance can be checked");
+    expect(status).toBe(1);
   });
 
   it("fail any build, the e2e one included, whose bundles hold the hotkeys' marker", () => {
