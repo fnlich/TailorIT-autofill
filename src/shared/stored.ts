@@ -96,8 +96,9 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  on Sign-in Auto, the job left to the person there on Manual; the Queue tab opening every site it fills, pressing a
  *  job page's Apply first and leaving Submit to the person where it cannot read the confirmation; a privacy notice
  *  before a resume upload agreed under Consent boxes; a Jibe job page's iCIMS address told to TailorIT; its words
- *  corrected before it reached anyone, by the jr7 review fixes, C-1 and A-6). Raise it whenever the disclosure's
- *  substance changes; copy.test.ts pins each version's words (DISCLOSURE_HASHES). */
+ *  corrected before it reached anyone, by the jr7 review fixes, C-1 and A-6, and a typed national identity number named
+ *  among what is never sent, A-7). Raise it whenever the disclosure's substance changes; copy.test.ts pins each
+ *  version's words (DISCLOSURE_HASHES). */
 export const DISCLOSURE_VERSION = 16;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 

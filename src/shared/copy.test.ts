@@ -27,12 +27,13 @@ const SENTENCE = /^["A-Z(].*[.]$/s;
  * table. 15 (jr6) had reached no one when the jr6 integration fixes reworded it (the button's name as it reads, and what
  * a download Apply is told), so it kept its number. 16 (jr7) had reached no one (the extension's main is at 15) when
  * the jr7 review fixes reworded it (C-1, A-6: who joins Run auto-apply as built, the sites already in that may email a
- * code, the step that is the person's, Workday's jobs whatever the tenant asks), so it kept its number too.
+ * code, the step that is the person's, Workday's jobs whatever the tenant asks; A-7: a national id never sent), so it
+ * kept its number too.
  */
 const DISCLOSURE_HASHES: readonly { version: number; sha256: string }[] = [
   { version: 14, sha256: 'ad97b204db52277072884bbc2168b5f85d7d2edad738e7a10885428ad03f0532' }, // v1.5 part 2
   { version: 15, sha256: '3383e740883fcc6c5fe8048c3c0d6df52db758235fbe6b33d69433fd14da3e1d' }, // jr6
-  { version: 16, sha256: '222243720efa8f64d2618bd36d5049720c18c1e8638242981d2d1426797c1e4f' }, // jr7 (its review fixes)
+  { version: 16, sha256: 'db3f71fc98b8c79f5449044fb2d4f6335c4002bab7b7be1f536d152506c08e88' }, // jr7 (its review fixes)
 ];
 
 /** The disclosure's words as DISCLOSURE_HASHES pins them. */
@@ -430,6 +431,15 @@ describe('the copy', () => {
   // adapters (read only): a configured success rule, a drawn sign of the platform's own (content/submitted.ts
   // platformSignsOf), an adapter's successSigns or confirmationAfter, a network sign, or an address its url.ts reads as
   // the page after submitting.
+  // The jr7 review fixes (A-7, the background fixer's): a national id the person typed is never sent with a submitted
+  // application, question or answer (background/submitted-forms.ts NEVER_SENT), as passwords and codes are not; the
+  // disclosure and Keep my submitted answers say so.
+  it('says a national identity number is never sent with the submitted answers, in the disclosure and the setting', () => {
+    const third = COPY.options.connection.disclosure[2]!;
+    expect(third).toContain('Passwords, checks that you are human, a national identity number you type (a Social Security number, say), hidden fields and what your files contain are never sent');
+    expect(COPY.options.modes.keepAnswers.help).toContain('Never sent: passwords, CAPTCHAs, a national identity number such as a Social Security number (its question too)');
+  });
+
   it('names in Record applications I submit myself every site where it reads that an application went through', () => {
     const help = COPY.options.modes.recordOwn.help;
     const source = (path: string) => {
