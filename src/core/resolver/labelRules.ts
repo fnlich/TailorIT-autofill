@@ -900,6 +900,11 @@ const TYPED_NAME_SIGNATURE = /\btyping\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s
 const CHOICE_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['select', 'radio', 'combobox']);
 /** UKGR-18: a signature's prompt with the name it shows, to its end ("please type your full name to confirm <name>"). */
 const SIGNATURE_PROMPT = /\b(?:please\s+)?typ(?:e|ing)\s+(?:in\s+)?your\s+(?:full\s+)?(?:legal\s+)?name\s+to\s+(?:confirm|sign)(?:\s+\w+){0,4}\s*$/;
+/** jr7 RULES-7 R4 (RBP7-07): whether normalized text asks for the person's name typed as their signature
+ *  (TYPED_NAME_SIGNATURE: by typing it, typed to confirm or sign, or as a signature), never a bare mention of a name. */
+export function asksNameTypedAsSignature(text: string): boolean {
+  return TYPED_NAME_SIGNATURE.test(text);
+}
 /** DF7-V3: the application's own candidate acknowledgement ("I agree to the Candidate Acknowledgement"). */
 const CANDIDATE_ACKNOWLEDGEMENT = /\b(?:candidate|applicant)\s+acknowledge?ments?\b/;
 /** UP7-08: a certification that the information is truthful (and complete, and accurate). */

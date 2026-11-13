@@ -29,7 +29,8 @@ import { autocompleteRule } from './autocomplete';
 import { kindAllowed, policyClassOf } from './categories';
 import { FOLD_MAX_CODE_POINTS } from '../text/fold';
 import {
-  affirmativeOption, attestsNoAiUse, consentChoiceHit, entryOf, matchLabelRules, nationalIdHit, noAiStatementHit,
+  affirmativeOption, asksNameTypedAsSignature, attestsNoAiUse, consentChoiceHit, entryOf, matchLabelRules, nationalIdHit,
+  noAiStatementHit,
   sectionKindOf,
   unlabelledTextarea, unrecognisedField, withDescriptionConsent, type LabelContext, type LabelRuleHit,
   type NeedsUserCause,
@@ -271,7 +272,17 @@ function labelRuleVote(spec: FieldSpec, label: string, context: LabelContext): R
   const both = label === '' ? description : `${label} ${description}`;
   // The label's question sentences are the label's alone: the text with the description is read whole.
   const { questions: _questions, ...withDescription } = context;
-  const onBoth = matchLabelRules(both, section, spec.kind, withDescription);
+  // jr7 RULES-7 R4 (RBP7-07, from RBP-7's measured patch; snapshot7 rippling1's "Truth Certification/Attestation
+  // Clause": 536 characters of help that certify the "resume, cover letters and online profiles" submitted, then ask
+  // "Please acknowledge this by typing your full name in the text field", past the 500 characters normalization reads
+  // at once): a sentence of the help that asks for the name typed as a signature (labelRules asksNameTypedAsSignature)
+  // is read on its own first, on a kind a signature takes, so the signature wins over the documents the help names. A
+  // help that only mentions a name ("name the file with your full name") asks no signature.
+  const signed = kindAllowed('consent.signature', spec.kind) ? sentencesOf(spec.description)
+    .map((sentence) => ruleText(normalizeLabel(sentence))).filter(asksNameTypedAsSignature)
+    .map((sentence) => matchLabelRules(sentence, section, spec.kind, withDescription))
+    .find((hit) => hit?.category === 'consent.signature' && hit.needsUser === undefined) ?? null : null;
+  const onBoth = signed ?? matchLabelRules(both, section, spec.kind, withDescription);
   if (onBoth === null) return null;
   // jr6 RULES R3 (smartrecruiters-new-2): help text alone never makes an upload the résumé's ("Additional attachments",
   // "Portfolio", "Writing sample" over SmartRecruiters' restriction text), unless it is a résumé's heading itself
