@@ -364,7 +364,21 @@ describe('the copy', () => {
     expect(words).not.toMatch(/\.$/); // read inside "Needs you (…)", as the assessment's note is
     expect(COPY.queue.notes.assessment).not.toMatch(/\.$/);
     expect(COPY.agent.line({ phase: 'off', job: null, doneToday: 0,
-      last: { state: 'needs-you', reason: 'other', note: 'documents' } })).toContain(`(${words})`);
+      last: { state: 'needs-you', reason: 'other', note: 'documents' } }))
+      .toContain('(this site asks whether to save your documents to your profile there)');
+  });
+
+  // jr7 review C-5: a note read inside the agent's "Needs you (…)" starts in lower case, as the reasons there do; the
+  // Queue tab's row shows it alone, as written.
+  it('lower-cases a hand-over note inside the agent’s status line, and keeps it as written on its own', () => {
+    const line = (note: 'assessment' | 'documents') => COPY.agent.line({ phase: 'off', job: null, doneToday: 0,
+      last: { state: 'needs-you', reason: 'other', note } });
+    expect(line('assessment')).toContain('Needs you (this application continues with an assessment)');
+    expect(line('documents')).toContain('Needs you (this site asks whether to save your documents');
+    for (const note of ['assessment', 'documents'] as const) {
+      expect(line(note), note).not.toContain(`(${COPY.queue.notes[note]})`);
+      expect(COPY.queue.notes[note], note).toMatch(/^[A-Z]/);
+    }
   });
 
   it('says a field the page kept locked was not filled, and what the person can do, never only that it is locked', () => {

@@ -1473,8 +1473,11 @@ const AGENT = {
       ? `paused because ${AGENT_PAUSE_WORDS[status.paused]}; turn Run auto-apply on to go on` : null;
     const phase = status.phase === 'running' ? (job === '' ? 'running' : `running ${job}`)
       : status.phase === 'waiting' ? 'waiting for a job' : status.phase === 'blocked' ? 'paused' : paused ?? 'off';
-    // jr7 AUTO-7 (ICIMS7-04): the extension's own words, where the result has them, in place of the reason's.
-    const why = status.last?.note !== undefined ? AGENT_NOTE_WORDS[status.last.note]
+    // jr7 AUTO-7 (ICIMS7-04): the extension's own words, where the result has them, in place of the reason's. jr7
+    // review C-5: inside "Needs you (…)" they start in lower case, as the reasons do (the Queue tab's row shows them
+    // alone, capitalised).
+    const note = status.last?.note === undefined ? null : AGENT_NOTE_WORDS[status.last.note];
+    const why = note !== null ? `${note.charAt(0).toLowerCase()}${note.slice(1)}`
       : status.last?.reason == null ? null : AGENT_REASONS[status.last.reason];
     const last = status.last === null ? '' : ` · last: ${AGENT_STATES[status.last.state]}${why === null ? '' : ` (${why})`}`;
     const pending = status.pending === true ? ' · a result not yet told TailorIT' : '';
