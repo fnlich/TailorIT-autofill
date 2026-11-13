@@ -209,7 +209,7 @@ import {
 import type { ContentPlatform } from '../platform/types';
 import { PAGE_COPY } from '../shared/copy';
 import { log } from '../shared/log';
-import { leftForPerson, notFilled, progressOf, unfilledByRun } from '../shared/report';
+import { leftForPerson, needsPerson, notFilled, progressOf, unfilledByRun } from '../shared/report';
 import type { ContentSettings } from '../shared/settings';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
 import { AI_POLL_MS, AI_WAIT_CAP_MS, AiWake, CurrentWrite, runLoop, type LoopCarry, type LoopResult, type OptionsTimings,
@@ -2584,9 +2584,10 @@ export class FillRun {
       this.noticesFromRows(all);
       this.counters = { passes: loop.passes, hiddenControlsIgnored: last.counters.hiddenControlsIgnored,
         deferredFields: last.counters.deferredFields };
-      this.rows = all;
+      // jr8: a Yes/No the page shows answered reads filled in the lists (pressedIn); auto-Next's counts read `all`.
+      this.rows = this.request.dryRun ? all : all.map((row) => pressedIn(after, row));
       this.settledStep = !busy;
-      env.onRows(all);
+      env.onRows(this.rows);
       this.drawAiEdits();
       this.recordFindings(loop);
 
@@ -3685,6 +3686,25 @@ export function heldIn(scanned: ScanResult, row: FillResult): FillResult {
  *  the run knows the person must answer (no-profile-value, a consent, a legal or EEO question). */
 const HELD_BY_PAGE_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['unknown-field', 'format-unsupported']);
 // ── end jr7 ENGINE-7 E1 item 11 ──
+
+// ── jr8 (the owner's snapshot10, Ashby's Honeydew form): a Yes/No the page shows answered ──
+/** A row the run left open (unfilled by it) whose field is a group of toggle buttons, a Yes/No (its members say
+ *  aria-pressed: Ashby's), that shows one pressed in `scanned`, with detail.filledByYou set, as withFilledByYou sets it
+ *  after the person's next input: the answer the person or the page gave (Ashby draws the answers saved before), which
+ *  the plan leaves as theirs (answers.ts choiceOptions), is no question left empty in the lists. A toggle button has no
+ *  default of the page's own, so this never reads a select's or a radio's default (FIX7PLAN O-3: heldIn's rule); never
+ *  a row a trap or a hard rule holds (blocked rows are not open; needsPerson) nor an attention check. A flag only, which
+ *  claims nothing about who answered; auto-Next's counts (lastFillOf over heldIn) never read it. */
+export function pressedIn(scanned: ScanResult, row: FillResult): FillResult {
+  if (!open(row) || needsPerson(row) || row.reason === 'attention-check' || row.detail?.filledByYou === true) return row;
+  const field = scanned.fields.find((candidate) => candidate.key === row.key)
+    ?? scanned.fields.find((candidate) => candidate.baseKey === baseKeyOf(row.key));
+  const members = field === undefined ? [] : scanned.target(field.key)?.widget?.members ?? [];
+  if (field?.kind !== 'radio' || !holdsAnswer(field.current)
+    || !members.some((member) => member.getAttribute('aria-pressed')?.trim().toLowerCase() === 'true')) return row;
+  return { ...row, detail: { ...row.detail, filledByYou: true } };
+}
+// ── end jr8 ──
 
 /** jr7 ENGINE-7 E2 item 5: how long the fill lets an editor it opened draw its fields before the loop's first scan
  *  (the loop's settle and later scans read the rest). */
