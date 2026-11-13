@@ -1728,8 +1728,9 @@ describe('jr7 AUTO-7: the agent', () => {
     expect(h.windows.closedTabs).toEqual([]);
     expect(h.sent.slice(sentBefore).filter((sent) => sent.message.type !== 'run/cancel')).toEqual([]);
     expect((await h.agent.status()).last).toEqual({ state: 'needs-you', reason: 'other', note: 'documents' });
+    // jr7 review C-5 (the ui-docs fixer's): inside "Needs you (…)" the note starts in lower case.
     expect(COPY.agent.line({ phase: 'waiting', job: null, doneToday: 1, last: (await h.agent.status()).last }))
-      .toContain(COPY.queue.notes.documents);
+      .toContain(`Needs you (${COPY.queue.notes.documents.replace(/^T/, 't')})`);
   });
 });
 // ── end jr7 AUTO-7 ──
