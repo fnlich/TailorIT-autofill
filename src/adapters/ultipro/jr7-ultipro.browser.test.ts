@@ -20,11 +20,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import successHtml from '../../../fixtures/synthetic/jr7-ultipro/success.html?raw';
 import { openAt, runtimeAt, servedAdapter, sourceOf, wallsOf } from '../../content/apply.testkit';
+import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { requiredLeftOf } from '../../content/press';
 import { signsOf } from '../../content/submitted';
+import { planFrame } from '../../core/plan/frame';
+import type { PlanOutput } from '../../core/plan/types';
+import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { detectPause } from '../../dom/pause-detect';
-import { scan } from '../../dom/scan';
+import { scan, toFieldSpec } from '../../dom/scan';
 import { signInContainerOf } from '../../dom/sign-in-form';
 import type { ScanResult, ScannedField } from '../../dom/types';
 import { visibleText } from '../../dom/visible-text';
@@ -347,6 +351,66 @@ describe('jr7 UP7-13 (jr6 REVC-5, asserted): the start date on both blank applic
     const written = scanOf(doc);
     expect(requiredLeftOf({ ...written, fields: [date(written)] })).toBe(0);
   });
+});
+
+describe('jr7 P2: UP7-08 and UP7-11 (RULES-7) on both blank applications, with the golden profile', () => {
+  /** The scan and the plan of a blank application, as a run plans its one page (DEFAULT_SETTINGS: AI on 'all'). */
+  async function planned(name: string): Promise<{ result: ScanResult; plan: PlanOutput }> {
+    const result = scanOf(await open(name));
+    const plan = planFrame({ specs: result.fields.map(toFieldSpec), canaries: [], profile: goldenProfile(),
+      sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+      posting: { company: 'Example Employer', location: 'Remote, US' },
+      repeatables: [{ kind: 'experience', entries: null }, { kind: 'education', entries: null }] });
+    return { result, plan };
+  }
+  /** The one field whose question (page text) the pattern names, its row and its write. */
+  function question({ result, plan }: { result: ScanResult; plan: PlanOutput }, words: RegExp) {
+    const fields = result.fields.filter((field) => words.test(field.label));
+    expect(fields).toHaveLength(1);
+    const field = fields[0]!;
+    const write = plan.writes.find((each) => each.key === field.key);
+    return { field, row: plan.results.find((each) => each.key === field.key)!, write,
+      chosen: write?.value.kind === 'option' ? write.value.cleanLabel : undefined,
+      asked: plan.awaiting.includes(field.key) };
+  }
+
+  it('jr7-ultipro1-apply-1: eligible to begin employment Yes, the truthful certification I Confirm, the restrictive '
+    + 'covenant never from the profile', async () => {
+    const page = await planned('jr7-ultipro1-apply-1');
+    const eligible = question(page, /legally eligible .* to begin employment/i);
+    expect([eligible.field.required, eligible.row.category, eligible.chosen]).toEqual([true, 'workAuth.authorized', 'Yes']);
+    const truthful = question(page, /truthful, complete, and accurate/i);
+    expect([truthful.field.required, truthful.chosen]).toEqual([true, 'I Confirm']);
+    // A legal fact the profile does not hold (owner question Q7-5): no write from the profile; with AI on 'all' (the
+    // default, SPEC-AMENDMENTS §11) TailorIT's AI is asked, its answer marked an AI guess (labelRules.ts GUESS_ONLY).
+    const restrictive = question(page, /restrictive covenant/i);
+    expect([restrictive.field.kind, restrictive.row.category, restrictive.row.reason, restrictive.write])
+      .toEqual(['textarea', 'screening.restrictiveAgreement', 'legal-not-in-profile', undefined]);
+    expect(restrictive.asked).toBe(true);
+  }, 60_000);
+
+  it('jr7-ultipro2-apply-1: the restrictive agreement and the screening willingness are left for the person (Q7-5)',
+    async () => {
+    const page = await planned('jr7-ultipro2-apply-1');
+    const bound = question(page, /bound to any Employment/i);
+    expect([bound.row.category, bound.row.reason, bound.write, bound.row.needsUserAction])
+      .toEqual(['screening.restrictiveAgreement', 'legal-not-in-profile', undefined, true]);
+    const screening = question(page, /drug screen|background check/i);
+    expect([screening.row.reason, screening.write, screening.row.needsUserAction])
+      .toEqual(['llm-disabled-for-category', undefined, true]);
+  }, 60_000);
+
+  // Held: RULES-7's R2 fix (matcher/degree.ts NO_FIELD) chooses "Bachelor's level degree" among its own five options,
+  // but among this capture's eleven the cascade still ends 'distinctive-token-mismatch' (src/core/matcher/fuzzy.ts
+  // scoreOptions; any one of "Less than HS Graduate", "HS Graduate or equivalent", "Some college", "Technical School" or
+  // "Some graduate school" taken away, it chooses it). Flip once RULES-7 fixes it (ULTIPRO-7 handoff, for RULES-7).
+  it.fails('jr7-ultipro2-apply-1 (UP7-11): the highest education, the bachelor\'s level for the golden bachelor',
+    async () => {
+    const page = await planned('jr7-ultipro2-apply-1');
+    const highest = question(page, /highest level of education/i);
+    expect(highest.row.category).toBe('education.highestLevel');
+    expect(highest.chosen).toBe("Bachelor's level degree");
+  }, 60_000);
 });
 
 describe('jr7 ULTIPRO-7: the config stays sound', () => {
