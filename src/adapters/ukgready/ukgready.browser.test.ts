@@ -13,6 +13,8 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
+import { openEditors } from '../../dom/fillers/editor-opener';
+import { answerUploadPrompt } from '../../dom/fillers/upload-prompt';
 import { scan } from '../../dom/scan';
 import { deadline } from '../../dom/time';
 import type { ScanResult } from '../../dom/types';
@@ -283,6 +285,24 @@ describe('the uploads and the dialogs after them (UKGR-10)', () => {
   });
 });
 
+describe('the upload-prompt door on "Upload Complete" (UKGR-10, ENGINE-7 E2)', () => {
+  it('presses its Cancel once, never Populate, and nothing while no prompt shows', async () => {
+    const doc = await open('jr7-saashr-documents-populate');
+    const clicked: string[] = [];
+    for (const button of Array.from(doc.querySelectorAll<HTMLElement>('#react_modal button'))) {
+      button.addEventListener('click', () => clicked.push(`${words(button)}${button.closest('.c-modal-button-group-measurement') ? ' (copy)' : ''}`));
+    }
+    expect(await answerUploadPrompt(ukgReadyAdapter, doc, { consents: true, capMs: 1_000 })).toBe('pressed');
+    expect(clicked).toEqual(['Cancel']);
+    // Once: the same prompt is never answered twice.
+    expect(await answerUploadPrompt(ukgReadyAdapter, doc, { consents: true, capMs: 200 })).not.toBe('pressed');
+    expect(clicked).toEqual(['Cancel']);
+    removeFixtures(document);
+    const plain = await open('jr7-saashr-documents');
+    expect(await answerUploadPrompt(ukgReadyAdapter, plain, { consents: true, capMs: 200 })).toBe('none');
+  });
+});
+
 describe('the entries in editor dialogs (UKGR-9, UKGR-V1, UKGR-15)', () => {
   it('reads Work Experience\'s saved entries, its Add and the open editor as one more block with its Save', async () => {
     const history = await open('jr7-saashr-work-history');
@@ -323,25 +343,59 @@ describe('the entries in editor dialogs (UKGR-9, UKGR-V1, UKGR-15)', () => {
       .toEqual({ label: 'School Name', kind: 'text', section: 'education', block: 1 });
   });
 
-  it("opens Contact's Address while it says Missing Information and Personal Information while it shows no phone", async () => {
+  it("opens Contact's Address while it says Missing Information (an Add-type opener), never an existing entry's Edit",
+    async () => {
+      const doc = await open('jr7-saashr-contact');
+      const root = ukgReadyAdapter.detect(doc)!.formRoot;
+      // An editor is open: none (one editor shows at a time).
+      expect(ukgReadyAdapter.editorOpener!(root)).toEqual([]);
+      doc.querySelector('#react_popup')!.classList.remove('visible');
+      const address = doc.querySelector<HTMLElement>('.c-address-widget-container .c-fat-item__actions button[aria-label="Edit"]')!;
+      const personal = doc.querySelector<HTMLElement>('.c-contact-info-widget-container .c-fat-item__actions button[aria-label="Edit"]')!;
+      expect(ukgReadyAdapter.editorOpener!(root)).toEqual([address]);
+      // The opener is no never-pressed control (E2's door presses none); Personal Information's Edit, an existing
+      // entry's (the start form saved its name and email), is one.
+      const never = ukgReadyAdapter.neverPress!(root);
+      expect(never).not.toContain(address);
+      expect(never).toContain(personal);
+      // Saved, the Address is an existing entry: its Edit is never pressed again, and no opener is named.
+      doc.querySelector('.c-address-widget-container .c-fat-item__tag')!.remove();
+      expect(ukgReadyAdapter.editorOpener!(root)).toEqual([]);
+      expect(ukgReadyAdapter.neverPress!(root)).toContain(address);
+      removeFixtures(document);
+      const history = await open('jr7-saashr-work-history');
+      const historyRoot = ukgReadyAdapter.detect(history)!.formRoot;
+      expect(ukgReadyAdapter.editorOpener!(historyRoot)).toEqual([]);
+      // Every saved work entry's Edit and delete icon is never pressed (5 of them: 3 Edit, 2 delete).
+      expect(ukgReadyAdapter.neverPress!(historyRoot).filter((el) => el.closest('.c-fat-item__actions') !== null))
+        .toHaveLength(5);
+    });
+
+  it("the editor-opener door presses the Address's opener once, and nothing else (ENGINE-7 E2)", async () => {
     const doc = await open('jr7-saashr-contact');
     const root = ukgReadyAdapter.detect(doc)!.formRoot;
-    // An editor is open: none.
-    expect(ukgReadyAdapter.editorOpener!(root)).toEqual([]);
     doc.querySelector('#react_popup')!.classList.remove('visible');
-    const openers = ukgReadyAdapter.editorOpener!(root);
-    expect(openers.map((button) => [button.getAttribute('aria-label'),
-      button.closest('.c-address-widget-container, .c-contact-info-widget-container')?.className])).toEqual([
-      ['Edit', 'c-address-widget-container'], ['Edit', 'c-contact-info-widget-container']]);
-    // Saved, neither is opened again: the Address's tag gone, a phone shown beside the email.
-    doc.querySelector('.c-address-widget-container .c-fat-item__tag')!.remove();
-    const phone = doc.createElement('li');
-    phone.className = 'c-metadata__item';
-    doc.querySelector('.c-contact-info-widget-container ul.c-metadata')!.append(phone);
-    expect(ukgReadyAdapter.editorOpener!(root)).toEqual([]);
-    removeFixtures(document);
-    const history = await open('jr7-saashr-work-history');
-    expect(ukgReadyAdapter.editorOpener!(ukgReadyAdapter.detect(history)!.formRoot)).toEqual([]);
+    const clicked: string[] = [];
+    for (const button of Array.from(doc.querySelectorAll<HTMLElement>('button'))) {
+      button.addEventListener('click', () => clicked.push(button.closest('.c-address-widget-container') === null
+        ? `other:${button.getAttribute('aria-label') ?? ''}` : 'address-edit'));
+    }
+    expect(openEditors(ukgReadyAdapter, doc, root)).toBe(1);
+    expect(clicked).toEqual(['address-edit']);
+    // Once per document: a second pass presses nothing.
+    expect(openEditors(ukgReadyAdapter, doc, root)).toBe(0);
+    expect(clicked).toEqual(['address-edit']);
+  });
+
+  it("the door refuses Personal Information's Edit, a never-pressed control, were the hook to name it", async () => {
+    const doc = await open('jr7-saashr-contact');
+    const root = ukgReadyAdapter.detect(doc)!.formRoot;
+    doc.querySelector('#react_popup')!.classList.remove('visible');
+    const personal = doc.querySelector<HTMLElement>('.c-contact-info-widget-container .c-fat-item__actions button[aria-label="Edit"]')!;
+    let clicks = 0;
+    personal.addEventListener('click', () => { clicks += 1; });
+    expect(openEditors(variant({ editorOpener: () => [personal] }), doc, root)).toBe(0);
+    expect(clicks).toBe(0);
   });
 });
 

@@ -30,9 +30,9 @@
  *   pressed.
  * - Work Experience and Education (UKGR-9, V1): repeatables whose blocks are the saved entries (.c-widget-fat-item:
  *   Company name over the job title; the school's name) and the open editor of that kind; Add "Add work" / "Add
- *   education"; the editor's Save. Contact's single editors are opened by the editor-opener door (ENGINE-7 E2): the
- *   Address while its summary says "Missing Information", Personal Information while its summary shows nothing but the
- *   email (no phone).
+ *   education"; the editor's Save. Contact's Address editor is opened by the editor-opener door (ENGINE-7 E2) while
+ *   its summary says "Missing Information" (an "Add"-type opener); Personal Information's Edit, an existing entry's, is
+ *   never pressed (the coordinator's rule of 2026-11-12), so a run adds no phone there.
  * - Uploads (UKGR-10): the résumé's and the cover letter's hidden input behind "Choose"; the résumé's done sign is the
  *   uploaded file's row. "Upload Complete" is answered Cancel (D-9: never Populate, no site-parsed entries) by the
  *   upload-prompt door (ENGINE-7 E2); "Saving" is busy.
@@ -347,31 +347,32 @@ function readEntries(kind: string, blocks: Element[]): PrefillEntryView[] {
   });
 }
 
-/** Contact's single editors to open (UKGR-9; ENGINE-7 E2's door presses each at most once per document): the Address
- *  while it says "Missing Information", Personal Information while its summary shows nothing but the email. None while a
- *  dialog is open. */
+/** The controls that open an editor for an entry the page does not hold yet (an "Add"-type opener: the coordinator's
+ *  rule of 2026-11-12 for ENGINE-7 E2's door, which never presses a never-pressed control nor an existing entry's Edit):
+ *  Contact's Address while its summary says "Missing Information" (jr7-saashr-contact: <div
+ *  class="c-address-widget-container"><div class="c-widget-fat-item"> ... <h3 class="c-fat-item__title">Add Address</h3>
+ *  <div class="c-fat-item__tag"><div class="... c-tag">Missing Information</div></div> ... <button aria-label="Edit"
+ *  ...>: the one Edit there opens the empty Address editor). Personal Information's Edit edits the entry the start form
+ *  saved (the name and the email): an existing entry's, never opened by a run. */
+function addTypeOpeners(doc: Document, cache: ScanCache): HTMLElement[] {
+  const body = stepBodyOf(doc, cache);
+  const address = body?.querySelector(`.c-address-widget-container ${SAVED_ENTRY}`) ?? null;
+  if (address === null) return [];
+  const missing = shownAll<Element>(address, '.c-fat-item__tag .c-tag', cache)
+    .some((tag) => /^missing information$/i.test(words(tag)));
+  const edit = missing ? firstShown(address, '.c-fat-item__actions button[aria-label="Edit" i]', cache) : null;
+  return edit === null ? [] : [edit];
+}
+
+/** Contact's single editor to open (UKGR-9; ENGINE-7 E2's door presses each at most once per document): the Address's
+ *  "Add"-type opener (addTypeOpeners). None while a dialog is open: one editor shows at a time. */
 function editorOpener(root: Element): HTMLElement[] {
   const doc = root.ownerDocument;
   const cache = newScanCache();
   if (editorOf(doc, cache) !== null || consentOf(doc, cache) !== null || alertOf(doc, cache) !== null) return [];
   const body = stepBodyOf(doc, cache);
   if (body === null || !root.contains(body)) return [];
-  const editOf = (entry: Element | null) => (entry === null ? null
-    : firstShown(entry, '.c-fat-item__actions button[aria-label="Edit" i]', cache));
-  // jr7-saashr-contact: <div class="c-address-widget-container"><div class="c-widget-fat-item"> ... <h3
-  // class="c-fat-item__title">Add Address</h3><div class="c-fat-item__tag"><div class="... c-tag">Missing
-  // Information</div></div> ... <button aria-label="Edit" ...>.
-  const address = body.querySelector(`.c-address-widget-container ${SAVED_ENTRY}`);
-  const missing = address !== null && shownAll<Element>(address, '.c-fat-item__tag .c-tag', cache)
-    .some((tag) => /^missing information$/i.test(words(tag)));
-  // jr7-saashr-contact: <div class="c-contact-info-widget-container"><div class="c-widget-fat-item"> ... <ul
-  // class="c-metadata"><li class="c-metadata__item"><i class="c-icon icon-email" ...></i><span ...>(the email)</span>
-  // </li></ul>: no phone item.
-  const contact = body.querySelector(`.c-contact-info-widget-container ${SAVED_ENTRY}`);
-  const emailOnly = contact !== null && all(contact, '.c-metadata__item')
-    .every((item) => item.querySelector('i.icon-email') !== null);
-  return [missing ? editOf(address) : null, emailOnly ? editOf(contact) : null]
-    .filter((button): button is HTMLElement => button !== null);
+  return addTypeOpeners(doc, cache);
 }
 
 /** "Upload Complete" after the run's own upload (UKGR-10, D-9): its Cancel, which keeps the file without UKG's parse;
@@ -443,8 +444,6 @@ const RULES: AtsConfig = {
       from: 'jr7-saashr-contact, jr7-saashr-review-sign' },
     // The consent's Cancel (e3619e49-...).
     { css: 'button[data-tracking-id="e3619e49-50a4-4c4c-9fd4-de376b9ba44a"]', from: 'jr7-saashr-review-sign' },
-    // A saved entry's Edit and delete icons (Contact's Edit is the editor-opener door's alone).
-    { css: '.c-fat-item__actions button', from: 'jr7-saashr-contact, jr7-saashr-work-history' },
     // "Show more" (.c-show-more__control), "Show All Jobs" beside Apply, "Use my resume" (9c20bce9-...), "Log in"
     // (be2276ce-...), "Go to my portal" (3a15e7c6-...).
     { css: '.c-show-more__control button', from: 'jr7-saashr-documents' },
@@ -595,12 +594,17 @@ function sections(root: Element): ReturnType<NonNullable<Adapter['sections']>> {
   return out;
 }
 
-/** Never pressed (UKGR-V4, item 15): the rules' list and, in "Upload Complete", every button but its Cancel
- *  (Populate: D-9). */
+/** Never pressed (UKGR-V4, item 15): the rules' list; in "Upload Complete", every button but its Cancel (Populate:
+ *  D-9); and every saved entry's Edit and delete icons (jr7-saashr-contact, -work-history: <div
+ *  class="c-fat-item__actions"> <button aria-label="Edit" ...>, <button aria-label="delete" ...>) but an "Add"-type
+ *  opener (addTypeOpeners), which the editor-opener door presses (it never presses a never-pressed control). */
 function neverPress(root: Element): Element[] {
   const doc = root.ownerDocument;
+  const cache = newScanCache();
   const populate = all(doc, `${ALERT} button`).filter((button) => /^populate$/i.test(words(button)));
-  return [...new Set([...(ruled.neverPress?.(root) ?? []), ...populate])];
+  const add = new Set<Element>(addTypeOpeners(doc, cache));
+  const entries = all(doc, '.c-fat-item__actions button').filter((button) => !add.has(button));
+  return [...new Set([...(ruled.neverPress?.(root) ?? []), ...populate, ...entries])];
 }
 
 /** UKG Ready's config: the rules, and the hooks no rule can say. */
