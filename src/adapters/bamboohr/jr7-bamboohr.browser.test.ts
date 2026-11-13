@@ -25,6 +25,8 @@ import b2Confirm from '../../../fixtures/bamboohr/jr7-bamboohr2-confirmation.htm
 import b2Blank from '../../../fixtures/bamboohr/jr7-bamboohr2-form-blank.html?raw';
 import b2Filled from '../../../fixtures/bamboohr/jr7-bamboohr2-form-filled.html?raw';
 import b2Posting from '../../../fixtures/bamboohr/jr7-bamboohr2-posting.html?raw';
+import b1BlankExpect from '../../../fixtures/bamboohr/jr7-bamboohr1-form-blank.expect.json';
+import b2BlankExpect from '../../../fixtures/bamboohr/jr7-bamboohr2-form-blank.expect.json';
 import swyfftForm from '../../../fixtures/bamboohr/swyfft-form.html?raw';
 import syntheticSuccess from '../../../fixtures/synthetic/success/bamboohr.html?raw';
 import { openAt, runtimeAt, servedAdapter, sourceOf, wallsOf } from '../../content/apply.testkit';
@@ -45,7 +47,8 @@ import { fillWidget, isActionable, readWidget } from '../../dom/widgets';
 import { configuredAdapter } from '../configured';
 import { adaptersFor, applicationOf } from '../index';
 import { successSignsOf } from '../success';
-import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { compareWithExpectation, fillabilityOf, readExpectation, scanCase, SNAPSHOT_VIEWPORT }
+  from '../test/expectations.testkit';
 import { BAMBOOHR_CONFIG, bambooHrAdapter } from './index';
 
 const POSTINGS = [['bamboohr1', b1Posting], ['bamboohr2', b2Posting]] as const;
@@ -356,6 +359,16 @@ function asDrawn(doc: Document): void {
     placeholder.textContent = '-Select-';
   }
 }
+
+describe('jr7 RBP-7 P2: the blank forms against their hand-written expectations', () => {
+  it.each([['bamboohr1', b1Blank, b1BlankExpect], ['bamboohr2', b2Blank, b2BlankExpect]] as const)(
+    '%s blank: the scan matches its hand-written expectations', async (_name, html, json) => {
+      const expectation = readExpectation(json);
+      const scanned = await scanCase(document, html, expectation.source);
+      expect(scanned.adapter.id).toBe('bamboohr');
+      expect(compareWithExpectation(scanned.doc, scanned.result, expectation)).toEqual([]);
+    });
+});
 
 describe('jr7 RBP-7 P2 RBP7-15 (RULES-7): "Date Available"', () => {
   it('bamboohr1 blank (required): the start date, left for the AI with the golden profile (it holds none); a profile '

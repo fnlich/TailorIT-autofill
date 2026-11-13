@@ -1,0 +1,150 @@
+{
+  "fixture": "bamboohr/jr7-bamboohr2-form-blank",
+  "source": "https://mosai.bamboohr.com/careers/322?source=REDACTED",
+  "captured": "2026-11-11T14:09:10.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"firstName\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"lastName\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"email\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"phone\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-1\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-2\"]"
+    },
+    {
+      "label": "State",
+      "kind": "combobox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": "lazy",
+      "control": "div.fab-Select:has(> select[name=\"state.value\"])",
+      "note": "RBP7-14 (bamboohr/widgets.ts): a Fabric dropdown whose menu, drawn at the body's end once opened, is named by its toggle's data-menu-id: its declared list. Its shown text is REDACTED by the converter."
+    },
+    {
+      "label": "ZIP",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-3\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": "lazy",
+      "control": "div.fab-Select:has(> select[name=\"countryId.value\"])"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "div[data-fabric-component=\"FileUpload\"] input[type=\"file\"]",
+      "note": "RBP7-13: the hidden input[type=file][required] behind its \"Choose File*\" toggle (the upload control), titled by the \"Resume*\" paragraph above div[data-fabric-component=\"FileUpload\"]."
+    },
+    {
+      "label": "Date Available",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-4\"]"
+    },
+    {
+      "label": "Desired Pay",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"desiredPay\"]"
+    },
+    {
+      "label": "Website, Blog or Portfolio",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"websiteUrl\"]"
+    },
+    {
+      "label": "LinkedIn URL",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"linkedinUrl\"]"
+    },
+    {
+      "label": "Are you authorized to work lawfully in the United States for Mosai?",
+      "kind": "radio",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"customQuestionAnswers.yes_no_872\"]"
+    },
+    {
+      "label": "Will you now or in the future require Mosai to commence (\"sponsor\") an immigration case in order to employ you (for example, H-1B or other employment-based immigration case) This is sometimes called \"sponsorship\" for an employment-based visa status.",
+      "kind": "radio",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"customQuestionAnswers.yes_no_873\"]"
+    },
+    {
+      "label": "Do you currently reside in one of the states where Mosai is authorized to hire (TX, GA, FL, TN, SC, NC, PA, IN, IA, AR, MO, LA, or KY)?",
+      "kind": "radio",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"customQuestionAnswers.yes_no_874\"]"
+    }
+  ]
+}

@@ -25,6 +25,8 @@ import r2Blank from '../../../fixtures/rippling/jr7-rippling2-apply-blank.html?r
 import r2Filled from '../../../fixtures/rippling/jr7-rippling2-apply-filled.html?raw';
 import r2Confirm from '../../../fixtures/rippling/jr7-rippling2-confirmation.html?raw';
 import r2Posting from '../../../fixtures/rippling/jr7-rippling2-posting.html?raw';
+import r1BlankExpect from '../../../fixtures/rippling/jr7-rippling1-apply-blank.expect.json';
+import r2BlankExpect from '../../../fixtures/rippling/jr7-rippling2-apply-blank.expect.json';
 import quForm from '../../../fixtures/rippling/qu-careers-form.html?raw';
 import quPosting from '../../../fixtures/rippling/qu-careers-posting.html?raw';
 import smartForm from '../../../fixtures/rippling/smartsuite-uploaded.html?raw';
@@ -44,7 +46,8 @@ import { fillWidget, isActionable, readWidget, searchTypeahead, type TypeaheadHo
 import { configuredAdapter } from '../configured';
 import { adaptersFor, applicationOf } from '../index';
 import { successSignsOf } from '../success';
-import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { compareWithExpectation, fillabilityOf, readExpectation, scanCase, SNAPSHOT_VIEWPORT }
+  from '../test/expectations.testkit';
 import { RIPPLING_CONFIG, ripplingAdapter } from './index';
 
 const FORMS = [['rippling1 blank', r1Blank, false], ['rippling1 part-filled', r1Resume, false],
@@ -388,6 +391,16 @@ function planOf(result: ScanResult): PlanOutput {
   return planFrame({ specs: result.fields.map(toFieldSpec), canaries: [], profile: goldenProfile(),
     sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW });
 }
+
+describe('jr7 RBP-7 P2: the blank forms against their hand-written expectations', () => {
+  it.each([['rippling1', r1Blank, r1BlankExpect], ['rippling2', r2Blank, r2BlankExpect]] as const)(
+    '%s blank: the scan matches its hand-written expectations', async (_name, html, json) => {
+      const expectation = readExpectation(json);
+      const scanned = await scanCase(document, html, expectation.source);
+      expect(scanned.adapter.id).toBe('rippling');
+      expect(compareWithExpectation(scanned.doc, scanned.result, expectation)).toEqual([]);
+    });
+});
 
 describe('jr7 RBP-7 P2 RBP7-08 (RULES-7): rippling1\'s residence in listed states', () => {
   it('reads the question as residence in a listed region and answers Yes from the profile\'s state once its list is '

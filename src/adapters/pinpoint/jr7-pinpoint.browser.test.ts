@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import pForm from '../../../fixtures/pinpoint/jr7-pinpointhq1-form.html?raw';
 import pPosting from '../../../fixtures/pinpoint/jr7-pinpointhq1-posting.html?raw';
 import pThanks from '../../../fixtures/pinpoint/jr7-pinpointhq1-thanks.html?raw';
+import pFormExpect from '../../../fixtures/pinpoint/jr7-pinpointhq1-form.expect.json';
 import { sourceOf } from '../../content/apply.testkit';
 import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
 import { stepButtonsOf } from '../../content/press';
@@ -25,7 +26,7 @@ import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { scan, toFieldSpec } from '../../dom/scan';
 import { configuredAdapter } from '../configured';
 import { applicationOf } from '../index';
-import { fillabilityOf, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { compareWithExpectation, fillabilityOf, readExpectation, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { PINPOINT_CONFIG, pinpointAdapter } from './index';
 
 /** The three EEO selects' DummyInputs (fieldset#diversity-and-inclusion-form). */
@@ -115,6 +116,14 @@ describe('jr7 RBP-7: Pinpoint on snapshot7, what still holds', () => {
 });
 
 // ── jr7 RBP-7 P2 (FIX7PLAN §6.12): the shared outcomes on the form, with jr7-engine-e2 and jr7-rules-r2 merged ──
+
+describe('jr7 RBP-7 P2: pinpointhq1\'s form against its hand-written expectations', () => {
+  it('the scan, its panels shown, matches fixtures/pinpoint/jr7-pinpointhq1-form.expect.json', async () => {
+    const page = await open(pForm);
+    const result = scan(page.root!, pinpointAdapter, { platform: 'pinpoint' });
+    expect(compareWithExpectation(page.doc, result, readExpectation(pFormExpect))).toEqual([]);
+  });
+});
 
 describe('jr7 RBP-7 P2: pinpointhq1\'s form', () => {
   async function planned() {

@@ -1,0 +1,197 @@
+{
+  "fixture": "rippling/jr7-rippling1-apply-blank",
+  "source": "https://ats.rippling.com/en-GB/skillable-careers/jobs/0c9fe065-5a98-40ad-8e4e-48abc8b00e4c/apply?jobSite=LinkedIn&jobBoardSlug=skillable-careers&jobId=0c9fe065-5a98-40ad-8e4e-48abc8b00e4c&step=application",
+  "captured": "2026-11-11T15:33:27.000Z",
+  "fields": [
+    {
+      "label": "CV",
+      "kind": "file",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[data-testid=\"input-resume\"]"
+    },
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[id=\"field-12\"]"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[id=\"field-16\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[id=\"field-20\"]"
+    },
+    {
+      "label": "Phone number country code",
+      "kind": "combobox",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"field-27\"]",
+      "note": "RBP7-06 (rippling/widgets.ts): a select controller combobox declared with its list as Jobright's W() finds it once open (aria-controls, its id and \"-list\", the one shown popper listbox); its shown text is REDACTED by the converter (RBP7-V2 b)."
+    },
+    {
+      "label": "Phone number",
+      "kind": "text",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[id=\"field-24\"]"
+    },
+    {
+      "label": "Location",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"field-35\"]",
+      "note": "RBP7-05 (rippling/widgets.ts): a remote search over places; its suggestions the list aria-controls names, else the one shown popper listbox (a live check, Q7-1)."
+    },
+    {
+      "label": "LinkedIn Link",
+      "kind": "text",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[id=\"field-44\"]"
+    },
+    {
+      "label": "Website link",
+      "kind": "text",
+      "required": false,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[id=\"field-48\"]"
+    },
+    {
+      "label": "Cover letter",
+      "kind": "file",
+      "required": false,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[data-testid=\"input-cover_letter\"]"
+    },
+    {
+      "label": "All Skillable positions are remote positions. Are you able to meet the working conditions of a private workspace as described in the job description?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"field-56\"]"
+    },
+    {
+      "label": "Skillable can only hire candidates with a primary residence in the following States: AZ, CA, CO, FL, GA, ID, IN, KY, MA, ME, MI, MO, NC, ND, NE, NH, NV, NY, OH, OK, SC, TN, TX, UT, WA, WI",
+      "kind": "combobox",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"field-62\"]"
+    },
+    {
+      "label": "Will you now or in the future require sponsorship to legally work in the U.S.?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"field-68\"]"
+    },
+    {
+      "label": "Are you legally authorized to work in the U.S.?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"field-74\"]"
+    },
+    {
+      "label": "Compensation Expectations",
+      "kind": "text",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[id=\"field-80\"]"
+    },
+    {
+      "label": "Who were you referred by (if applicable?)",
+      "kind": "text",
+      "required": false,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[id=\"field-84\"]"
+    },
+    {
+      "label": "Truth Certification/Attestation Clause",
+      "kind": "text",
+      "required": true,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "control": "[id=\"field-88\"]",
+      "note": "RBP7-07: its help (div.marginBottom--4 + div, 536 characters) is its description; the typed-name signature RULES-7 reads from it waits for SP\\jr7\\rbp7\\rules-rbp7-07.patch (the jr7 test's it.fails)."
+    },
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": false,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"field-92\"]"
+    },
+    {
+      "label": "Please identify your race",
+      "kind": "combobox",
+      "required": false,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"field-98\"]"
+    },
+    {
+      "label": "Are you Hispanic/Latino?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"field-105\"]"
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "combobox",
+      "required": false,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"field-111\"]"
+    },
+    {
+      "label": "Tick Yes or No to indicate your agreement to receive text message updates from Skillable regarding your job application. Frequency may vary. Message and data rates may apply. Reply HELP for assistance. Reply STOP to opt out of future messaging.",
+      "kind": "radio",
+      "required": false,
+      "section": "Application: Forward Deployed Engineer",
+      "fillable": true,
+      "options": 2,
+      "control": "[id=\"field-117\"]"
+    }
+  ]
+}
