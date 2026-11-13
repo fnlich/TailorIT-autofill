@@ -103,6 +103,15 @@
  *   facts (chainStepFacts and the facts parameter, ICIMS-17), its "Submit" then the step's Next or the final Submit;
  * - a résumé on record is the résumé's field, "Replace Resume" the control a person sees for it, never pressed
  *   (ICIMS-23); a parsed block's Delete is declared (removeButton, ICIMS-22), never pressed.
+ * jr7 (FIX7PLAN §6.7; the owner's snapshot7 of 2026-11-11: arc-onesolutions, whose IForms are framed from
+ * oneblood.icims.com, its Jibe front oneblood.jibeapply.com, and careers-quartzbenefits, converted as
+ * fixtures/icims/jr7-*.html), each hook naming its finding:
+ * - a portal frame that frames an IForm declares the forms frame's origin (chainChildOrigins, ICIMS7-01), so the worker
+ *   keys the leaf by the portal that shows it, whatever the two hosts' names (CHAIN-7);
+ * - the Assessments step after the last form (/assessment, ICIMS7-04): the person's (handOver 'assessment'), its
+ *   "Continue" never pressed (owner question Q7-6);
+ * - "Desired Salary"'s currency, amount and time frame each read as their part (labelSuffix, ICIMS7-V3);
+ * - iCIMS's own sign-in, login.icims.com, is where the portal's "Log back in" leaves to (identityHosts, AUTO-7).
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
@@ -110,8 +119,8 @@ import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
-import type { Adapter, ChainStepFacts, PagePasswordClass, PagePasswordRules, SignInForm, SignInWall, WidgetDecl }
-  from '../types';
+import type { Adapter, ChainStepFacts, HandOverKind, PagePasswordClass, PagePasswordRules, SignInForm, SignInWall,
+  WidgetDecl } from '../types';
 import { canonicalApplicationUrl, matchesUrl, parseIcimsUrl } from './url';
 
 /** The snapshots the hooks were written from (fixtures/icims/). */
@@ -135,7 +144,21 @@ export const ICIMS_SNAPSHOTS = ['fixtures/icims/eastwestbank-posting.html',
   'fixtures/icims/jr6-ars-profile.html', 'fixtures/icims/jr6-ars-profile-address.html',
   'fixtures/icims/jr6-ars-profile-filled.html', 'fixtures/icims/jr6-ars-eeo.html',
   'fixtures/icims/jr6-nyu-profile-parsed.html', 'fixtures/icims/jr6-nyu-profile-filled.html',
-  'fixtures/icims/jr6-nyu-iform-signature.html', 'fixtures/icims/jr6-nyu-iform-offer.html'] as const;
+  'fixtures/icims/jr6-nyu-iform-signature.html', 'fixtures/icims/jr6-nyu-iform-offer.html',
+  // jr7 (FIX7PLAN §6.7, §11): the owner's snapshot7 of 2026-11-11 (F:\Develop\Refer\snapshot7\iCIMS1, icims2, icims3:
+  // arc-onesolutions, the same job reached from its Jibe page, careers-quartzbenefits), converted as
+  // fixtures/icims/jr7-*.html (jr7-icims.browser.test.ts holds them).
+  'fixtures/icims/jr7-icims1-posting.html', 'fixtures/icims/jr7-icims1-login.html',
+  'fixtures/icims/jr7-icims1-profile.html', 'fixtures/icims/jr7-icims1-profile-1.html',
+  'fixtures/icims/jr7-icims1-profile-2.html', 'fixtures/icims/jr7-icims1-profile-3.html',
+  'fixtures/icims/jr7-icims1-profile-4.html', 'fixtures/icims/jr7-icims1-profile-5.html',
+  'fixtures/icims/jr7-icims1-eeo.html', 'fixtures/icims/jr7-icims1-iform-1.html',
+  'fixtures/icims/jr7-icims1-iform-2.html', 'fixtures/icims/jr7-icims1-confirmation.html',
+  'fixtures/icims/jr7-icims2-login.html',
+  'fixtures/icims/jr7-icims3-posting.html', 'fixtures/icims/jr7-icims3-login.html',
+  'fixtures/icims/jr7-icims3-profile.html', 'fixtures/icims/jr7-icims3-questions.html',
+  'fixtures/icims/jr7-icims3-eeo.html', 'fixtures/icims/jr7-icims3-iform.html',
+  'fixtures/icims/jr7-icims3-assessment.html', 'fixtures/icims/jr7-icims3-confirmation.html'] as const;
 
 /** The first of `elements` a person can see. */
 function shown<T extends Element>(elements: readonly T[], cache: ScanCache = newScanCache()): T | null {
@@ -392,6 +415,44 @@ function chainStepFacts(doc: Document): ChainStepFacts | null {
     packet: counters.length === 1 && first !== undefined ? { n: Number(first[1]), m: Number(first[2]) } : null };
 }
 
+// ── jr7 ICIMS-7 (ICIMS7-01; FIX7PLAN §3.1, §6.7 item 1): the origin of the forms frame a portal page shows ──
+/** The forms frame of an IForm step (chainStepFacts' frame): jr7-icims1-iform-1.frame-1.html's <div
+ *  class="iCIMS_mainFormFrame ..."> ... <iframe id="icims_formFrame" name="icims_formFrame" ...
+ *  src="https://oneblood.icims.com/forms?module=Forms&action=showForm&...">, every IForm portal frame of the owner's
+ *  snapshots alike (edgewater-self-id-veteran, nyu-self-id-disability, jr6-nyu-iform-offer, jr6-nyu-iform-signature,
+ *  jr6-sentinel-iform-selfid, jr7-icims1-iform-1 and -2, jr7-icims3-iform: their .frame-1). */
+const FORMS_FRAME = '.iCIMS_mainFormFrame iframe#icims_formFrame';
+
+/** A forms frame's origin, read from its src: an iCIMS company host's (url.ts matchesUrl: https, the default port, no
+ *  credentials, never www, api, login or an internal- host) whose path is /forms; null for any other address. The origin
+ *  alone: nothing of its path's query (the person's user, item, token and csrf) is kept. */
+function formsOriginOf(src: string | null, doc: Document): string | null {
+  if (src === null) return null;
+  let url: URL;
+  try {
+    url = new URL(src, doc.baseURI);
+  } catch {
+    return null;
+  }
+  return matchesUrl(url) && url.pathname === '/forms' ? url.origin : null;
+}
+
+/** The origins of the IForms' forms frames a portal page shows (Adapter.chainChildOrigins; ICIMS7-01): on a page with no
+ *  step form of its own (chainStepFacts' pages), each FORMS_FRAME's origin (formsOriginOf), once. arc-onesolutions frames
+ *  its IForms from oneblood.icims.com, a host adapters/chain.ts chainChildOrigin cannot derive from the portal's name
+ *  (snapshot7 iCIMS1); careers-quartzbenefits from quartzbenefits.icims.com, the name's own (icims3). [] on any other
+ *  page. Read by CHAIN-7: the claimed portal frame's hello carries these origins, never an address. */
+function chainChildOrigins(doc: Document): readonly string[] {
+  if (stepOf(doc) !== null) return [];
+  const origins = new Set<string>();
+  for (const frame of Array.from(doc.querySelectorAll(FORMS_FRAME))) {
+    const origin = formsOriginOf(frame.getAttribute('src'), doc);
+    if (origin !== null) origins.add(origin);
+  }
+  return [...origins];
+}
+// ── end jr7 ICIMS-7 (ICIMS7-01) ──
+
 /** The step's Submit on the last step (module header): the application's Submit, never clicked but by its door. jr6
  *  ICIMS-17: an IForm's own "Submit" where its portal's facts say the last form of the last step; the contract's
  *  submitButton takes no facts yet (ENGINE: the ICIMS handoff), so until a caller passes them this answers as before. */
@@ -614,6 +675,29 @@ function authState(doc: Document): ReturnType<NonNullable<Adapter['authState']>>
   if (gateOf(doc) !== null) return 'email-gate';
   return verifyEmailShown(doc) ? 'email-code' : null;
 }
+
+// ── jr7 ICIMS-7 (ICIMS7-04 (2); FIX7PLAN §3.1, §6.7 item 2): the Assessments step, the person's ──
+/** The Assessments step's recovery link, "Continue" after "The request issued to the external vendor timed out."
+ *  (jr7-icims3-assessment.frame-1.html: <div class="iCIMS_InfoMsg iCIMS_InfoMsg_Assessment assessmentLink"> <div
+ *  class="iCIMS_Message iCIMS_ErrorMessage iCIMS_InfoMsg_Assessment">...</div> <a id="assessmentLink0"
+ *  data-href=".../assessment?i=1" class="iCIMS_Anchor iCIMS_Assessment_Recovery">Continue</a>, no href): never pressed
+ *  (neverPress) until the owner's Q7-6. */
+const ASSESSMENT_RECOVERY = 'a.iCIMS_Assessment_Recovery, a[id^="assessmentLink"]';
+
+/** The step the document shows that is the person's by design (Adapter.handOver; ICIMS7-04 (2)): 'assessment' on the
+ *  Assessments step, which follows the last form's Submit (careers-quartzbenefits, snapshot7 icims3:
+ *  jr7-icims3-assessment.frame-1.html, its page .iCIMS_MainWrapper.iCIMS_AssessmentPage under a bar whose current step
+ *  is li#Step_assessmentsStep, "Step 5 of 5"), read where the page shows no step form of its own and either its bar,
+ *  read with certainty (certainBarOf), says that step is the current one, or a person sees its recovery link
+ *  (ASSESSMENT_RECOVERY). Jobright presses nothing there either (~contents/sites/icims ./final-submission
+ *  getIcimsWizardNavigationState: null on the Assessments step). Null on every other page (the wrapper around it, whose
+ *  frame shows the step, included). Page structure only, never a value. */
+function handOver(doc: Document): HandOverKind | null {
+  if (stepOf(doc) !== null) return null;
+  if (certainBarOf(doc)?.current.id === ASSESSMENTS_STEP) return 'assessment';
+  return shown(Array.from(doc.querySelectorAll(ASSESSMENT_RECOVERY))) !== null ? 'assessment' : null;
+}
+// ── end jr7 ICIMS-7 (ICIMS7-04 (2)) ──
 
 /** The profile's "Create a login" (module header): githubinc-profile.frame-1.html's <h2 class="iCIMS_SubHeader
  *  iCIMS_SubHeader_Candidate">Create a login to access your application</h2> ... <input type="text"
@@ -984,7 +1068,8 @@ function optionTextFor(input: HTMLInputElement): string | null {
  *    <label for="countryCode">Phone Country Code</label>);
  *  - a date part (ICIMS-10): its date's label (label_<base id>), else the words an IForm draws before the date;
  *  - an IForm's text box (ICIMS-16): the words drawn before it;
- *  - an IForm radio group's element (groupOf; ICIMS-14): its self-identification form's title.
+ *  - an IForm radio group's element (groupOf; ICIMS-14): its self-identification form's title;
+ *  - jr7 ICIMS-7 (ICIMS7-V3): a salary part (salaryPartOf): its row's label (label_<base id>, "Desired Salary").
  *  Null for any other control. */
 function labelFor(control: Element): Element | null {
   const doc = control.ownerDocument;
@@ -1000,6 +1085,10 @@ function labelFor(control: Element): Element | null {
       return named !== null && code.container.contains(named);
     }) ?? null;
   }
+  // ── jr7 ICIMS-7 (ICIMS7-V3) ──
+  const salary = salaryPartOf(control);
+  if (salary !== null) return doc.getElementById(`label_${salary.base}`);
+  // ── end jr7 ICIMS-7 ──
   const form = control.closest(IFORM);
   const part = datePartOf(control);
   if (part !== null) {
@@ -1027,18 +1116,53 @@ function bareSignatureDate(control: Element, part: { base: string; date: Element
   return /^\s*date\s*:?\s*$/i.test(own);
 }
 
+// ── jr7 ICIMS-7 (ICIMS7-V3; FIX7PLAN §3.3, §6.7 item 3): "Desired Salary"'s three parts ──
+/** A salary field's box: jr7-icims1-profile.frame-1.html's row "Desired Salary" (<label class="iCIMS_LabelText"
+ *  id="label_CandProfileFields.Salary">) holds <div id="CandProfileFields.Salary_SPAN" class="... iCIMS_Forms_SalaryField
+ *  iCIMS_Forms_RequiredField"> with three cells: <select id="CandProfileFields.Salary_Currency" aria-labelledby=
+ *  "label_CandProfileFields.Salary label_CandProfileFields.Salary_Currency">, <input type="text"
+ *  id="CandProfileFields.Salary" ...> and <select id="CandProfileFields.Salary_Timeframe" ...> ("Hr.", "Da.", "Wk.",
+ *  "Mo.", "Yr."), each named by a screen reader's label of its own (label.iCIMS_508_Label "Currency", "Amount (Numbers
+ *  only)", "Time Frame") that a person does not see, so all three read "Desired Salary" alone (the verifier's
+ *  ICIMS7-V3). Jobright fills them apart (~contents/sites/icims, its iCIMS rule constants: the Salary_Currency and
+ *  Salary_Timeframe selects, cited as facts). */
+const SALARY_FIELD = '.iCIMS_Forms_SalaryField[id$="_SPAN"]';
+/** Each part: its control's tag, its id after the field's base id, and the words its label takes (FIX7PLAN §3.3:
+ *  RULES-7 reads "<label> currency" as salary.currency, "amount" as salary.expected, "time frame" as salary.period). */
+const SALARY_PARTS: ReadonlyArray<{ part: string; tag: 'select' | 'input'; suffix: string }> = [
+  { part: 'currency', tag: 'select', suffix: '_Currency' },
+  { part: 'amount', tag: 'input', suffix: '' },
+  { part: 'time frame', tag: 'select', suffix: '_Timeframe' },
+];
+
+/** A salary part (SALARY_FIELD's controls): its words and its field's base id (the box's id without _SPAN); null for any
+ *  other control. */
+function salaryPartOf(control: Element): { part: string; base: string } | null {
+  const box = control.closest(SALARY_FIELD);
+  const base = box === null ? '' : box.id.slice(0, -'_SPAN'.length);
+  if (base === '') return null;
+  const found = SALARY_PARTS.find(({ tag, suffix }) => control.localName === tag && control.id === `${base}${suffix}`);
+  if (found === undefined || (found.tag === 'input' && (control as HTMLInputElement).type !== 'text')) return null;
+  return { part: found.part, base };
+}
+// ── end jr7 ICIMS-7 (ICIMS7-V3) ──
+
 /** A date part's word after its date's label (Adapter.labelSuffix; ICIMS-10): month, day or year; an IForm's bare
- *  signature date's "signature month", "signature day" or "signature year" (jr6 RULES fix IC-R1). */
+ *  signature date's "signature month", "signature day" or "signature year" (jr6 RULES fix IC-R1). jr7 ICIMS-7
+ *  (ICIMS7-V3): a salary part's "currency", "amount" or "time frame". */
 function labelSuffix(control: Element): string | null {
+  const salary = salaryPartOf(control); // jr7 ICIMS-7 (ICIMS7-V3)
+  if (salary !== null) return salary.part;
   const part = datePartOf(control);
   if (part === null) return null;
   return bareSignatureDate(control, part) ? `signature ${part.part}` : part.part;
 }
 
 /** A date part's label is its date's, read before the part's own (Adapter.labelFirst; ICIMS-10): its own label[for]
- *  ("Month", "Day", "Year", a screen reader's alone) and its aria-labelledby name the date without the part. */
+ *  ("Month", "Day", "Year", a screen reader's alone) and its aria-labelledby name the date without the part. jr7
+ *  ICIMS-7 (ICIMS7-V3): a salary part's too (its aria-labelledby reads the row's label alone, its own label unseen). */
 function labelFirst(control: Element): boolean {
-  return datePartOf(control) !== null;
+  return datePartOf(control) !== null || salaryPartOf(control) !== null;
 }
 
 /** A dropdown is required where its select says so (Adapter.requiredFor; ICIMS-03): <select ... i_required="true"> or
@@ -1086,14 +1210,34 @@ function listAboveOf(control: Element): Element | null {
   }
   const row = control.closest('.iCIMS_TableRow');
   if (row === null) return null;
-  const label = control.ownerDocument.getElementById(`label_${control.id}`)
+  const doc = control.ownerDocument;
+  const label = doc.getElementById(`label_${control.id}`)
     ?? Array.from(row.querySelectorAll('label[for]')).find((each) => each.getAttribute('for') === control.id) ?? null;
-  if (label === null || !LIST_LACKS.test((label.textContent ?? '').replace(/\s+/g, ' '))) return null;
+  const words = (label?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const lacks = label !== null && LIST_LACKS.test(words);
+  // jr7 ICIMS-7 (ENGINE-7 E2's L1): or an "Other <the list's own words>" box under that list (OTHER_OF).
+  const other = label === null || lacks ? null : OTHER_OF.exec(words)?.[1] ?? null;
+  if (!lacks && other === null) return null;
   const before = row.previousElementSibling;
   const select = before?.matches('.iCIMS_TableRow') === true ? before.querySelector('select') : null;
-  return select !== null && select !== undefined && blockPrefix(select.id) === blockPrefix(control.id)
-    ? controlOfSelect(select) : null;
+  if (select === null || select === undefined || blockPrefix(select.id) !== blockPrefix(control.id)) return null;
+  if (other !== null) {
+    const listLabel = doc.getElementById(`label_${select.id}`) ?? before?.querySelector('.iCIMS_InfoField label') ?? null;
+    const named = (listLabel?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (named === '' || named.toLowerCase() !== other.toLowerCase()) return null;
+  }
+  return controlOfSelect(select);
 }
+
+/** jr7 ICIMS-7 (ENGINE-7 E2's L1, FIX7PLAN §6.7 P2, on snapshot7's jr7-icims1-profile.frame-1.html, arc-onesolutions'
+ *  education block): the School dropdown (select#-1_CandProfileFields.School under its row's
+ *  label_-1_CandProfileFields.School, "School") and, in the next row of the same block, <label
+ *  id="label_-1_CandProfileFields.OtherSchool" ...><span class="iCIMS_LabelText" ...>Other School</span></label> over
+ *  input#-1_CandProfileFields.OtherSchool: a companion box named "Other" and the list's own words, answered by what the
+ *  list ends with (RULES-7's ICIMS7-14: skipped once the list holds the school), so it stands under that list as NYU's
+ *  "Enter school name if not in the list above" does (LIST_LACKS), and a School search that settles no match plans it
+ *  again (ENGINE-7 L1). The words after "Other", compared whole with the list's own label (case aside). */
+const OTHER_OF = /^other\s+(\S(?:.*\S)?)$/i;
 
 /**
  * The control whose write resets this one (Adapter.dependsOn):
@@ -1108,7 +1252,7 @@ function listAboveOf(control: Element): Element | null {
  *   disabled until a source is chosen: jr6-ars-profile.html; enabled with its list: jr6-ars-profile-filled.html), under
  *   the source list in the row before it, "How did you hear about us?" (select#rcf3048), in every snapshot that shows it.
  * - jr6 ifix C-3 (ICIMS-24): a companion text box under the list above it (listAboveOf: NYU's "Enter school name if not
- *   in the list above" under its School list).
+ *   in the list above" under its School list); jr7 ICIMS-7: arc-onesolutions' "Other School" under its "School" (OTHER_OF).
  * Each answer is the control a person sees for the parent (a dropdown's trigger, or a select); null for any other.
  */
 function dependsOn(control: Element): Element | null {
@@ -1197,6 +1341,9 @@ const NEVER_PRESSED = [
   // The header (nyu-submitted.frame-1): "Welcome page" (a.iCIMS_Anchor_Nav), "Dashboard | Logout"
   // (.iCIMS_userMenuLink a).
   'a.iCIMS_Anchor_Nav', '.iCIMS_userMenuLink a',
+  // jr7 ICIMS-7 (ICIMS7-04): the Assessments step's "Continue" (jr7-icims3-assessment.frame-1: ASSESSMENT_RECOVERY),
+  // the person's until the owner's Q7-6.
+  ASSESSMENT_RECOVERY,
 ];
 
 function neverPress(root: Element): Element[] {
@@ -1285,4 +1432,12 @@ export const icimsAdapter: Adapter = {
   // Existing data in the form will be replaced", and "Parsing resume, please wait..."): the résumé is written first and
   // its parse waited for (isBusy shows it), so the run's answers go over the parse, never under it.
   quirks: { resumeParse: true },
+  // ── jr7 ICIMS-7 (FIX7PLAN §3.1, §6.7) ──
+  chainChildOrigins,
+  handOver,
+  // iCIMS's own sign-in (url.ts: "Log back in", .../login?loginOnly=1, sends the top to login.icims.com, iCIMS's Auth0
+  // sign-in, which names the company but no job; fixtures/icims' login.icims.com row in src/adapters/url.test.ts): the
+  // host the portal's sign-in leaves to (AUTO-7, AUTO7-05: a job there ends needs-you sign_in).
+  identityHosts: [/^login\.icims\.com$/],
+  // ── end jr7 ICIMS-7 ──
 };

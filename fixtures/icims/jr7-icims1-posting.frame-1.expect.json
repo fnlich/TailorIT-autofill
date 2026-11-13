@@ -1,0 +1,25 @@
+{
+  "fixture": "icims/jr7-icims1-posting.frame-1",
+  "source": "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/job?in_iframe=1&mobile=false&width=1728&height=500&bga=true&needsRedirect=false&jan1offset=-420&jun1offset=-360",
+  "captured": "2026-11-11T12:33:05.000Z",
+  "note": "Hooks only (jr7 P2): arc-onesolutions' posting: its text and its Apply. No root.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": "div.iCIMS_JobContent",
+    "entryControl": "a.iCIMS_Anchor.iCIMS_Action_Button.iCIMS_ApplyOnlineButton.iCIMS_PrimaryButton",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_ApplyOnlineButton",
+      "a.iCIMS_JobShareButton",
+      "a[href*=\"/referral\"]",
+      ".icimsSD_widget",
+      "a[href*=\"loginOnly=1\"]",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": []
+  }
+}

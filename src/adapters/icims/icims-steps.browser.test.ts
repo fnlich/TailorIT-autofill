@@ -74,9 +74,9 @@ afterEach(() => removeFixtures(document));
 
 describe('the iCIMS adapter on the owner’s snapshots of 2026-11-06', () => {
   it('names each snapshot it was written from, and every case has its expectations', () => {
-    // jr6: the snapshot6 cases are jr6-icims.browser.test.ts's.
+    // jr6: the snapshot6 cases are jr6-icims.browser.test.ts's; jr7: snapshot7's are jr7-icims.browser.test.ts's.
     expect(OWNER_CASES.map((name) => `fixtures/icims/${name}.html`).sort())
-      .toEqual([...ICIMS_SNAPSHOTS].filter((path) => !/\/(?:eastwestbank|gdms|jr6)-/.test(path)).sort());
+      .toEqual([...ICIMS_SNAPSHOTS].filter((path) => !/\/(?:eastwestbank|gdms|jr6|jr7)-/.test(path)).sort());
     expect(CASES.length).toBe(15);
     for (const each of CASES) expect(each.html.length > 0 && each.address !== '', each.name).toBe(true);
   });

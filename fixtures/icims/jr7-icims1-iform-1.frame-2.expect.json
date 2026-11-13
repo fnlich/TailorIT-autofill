@@ -1,0 +1,21 @@
+{
+  "fixture": "icims/jr7-icims1-iform-1.frame-2",
+  "source": "https://oneblood.icims.com/forms?module=Forms&action=showForm&brandtype=ccc&portalid=112885&form=PreOffer_OFCCP&user=REDACTED&item=REDACTED&token=REDACTED&csrf=REDACTED&isPacket=1&in_iframe=1&step=6&aid=REDACTED",
+  "captured": "2026-11-11T12:43:09.000Z",
+  "note": "Hooks only (jr7 P2): arc-onesolutions' veteran self-ID IForm (1/2), on oneblood.icims.com/forms (chained by the declared origin). Its fields are not listed: its Name box (input#icims_f_Name, which iCIMS prefills) has no label a person sees beside it (no-visible-label, which no expectation entry can hold), as edgewater-self-id-veteran.frame-2's; src/adapters/icims/jr7-icims-p2.browser.test.ts holds what the scan and the plan read on its fields.",
+  "fields": [],
+  "hooks": {
+    "detect": "form[name=\"icims_form\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input[type=\"submit\" i][name=\"icims_save\"]"
+    ],
+    "pressable": [
+      "input[name=\"icims_submit\"]"
+    ]
+  }
+}

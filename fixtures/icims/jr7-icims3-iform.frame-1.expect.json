@@ -1,0 +1,23 @@
+{
+  "fixture": "icims/jr7-icims3-iform.frame-1",
+  "source": "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/form?form=Voluntary_Self_Identification_Forms&step=6&isPacket=1&type=4&hashed=REDACTED&in_iframe=1",
+  "captured": "2026-11-11T15:08:36.000Z",
+  "note": "Hooks only (jr7 P2): careers-quartzbenefits' Portal Specific Forms, the portal page: the last step before Assessments. No root.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_Faq_Link",
+      "a[href*=\"icims.com/platform_help\"]",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": []
+  }
+}

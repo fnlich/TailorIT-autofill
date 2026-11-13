@@ -1,0 +1,43 @@
+{
+  "fixture": "icims/jr7-icims1-eeo.frame-1",
+  "source": "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/eeo?back=&in_iframe=1",
+  "captured": "2026-11-11T12:42:50.000Z",
+  "note": "jr7 P2: arc-onesolutions' EEO (step 2 of 3). Its fields as the scan reads them once ENGINE-7 E2 and RULES-7 R2 merged (FIX7PLAN §6.7 P2); what a run decides on them is held by src/adapters/icims/jr7-icims-p2.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": true,
+      "section": "voluntary-information",
+      "fillable": true,
+      "options": 4,
+      "control": "select[id=\"CandProfileFields.Gender\"]"
+    },
+    {
+      "label": "Race",
+      "kind": "select",
+      "required": true,
+      "section": "voluntary-information",
+      "fillable": true,
+      "options": 9,
+      "control": "select[id=\"CandProfileFields.Race\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input[type=\"submit\" i][name=\"save\"]",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#eeop_form_submit_i"
+    ]
+  }
+}

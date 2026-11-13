@@ -1,0 +1,6 @@
+{
+  "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/form?form=Voluntary_Self_Identification_Forms&step=6&isPacket=1&type=4&hashed=REDACTED": "fixtures/icims/jr7-icims3-iform.html",
+  "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/form?form=Voluntary_Self_Identification_Forms&step=6&isPacket=1&type=4&hashed=REDACTED&in_iframe=1": "fixtures/icims/jr7-icims3-iform.frame-1.html",
+  "https://quartzbenefits.icims.com/forms?module=Forms&action=showForm&brandtype=ccc&portalid=17&form=Voluntary_Self_Identification_Forms&user=REDACTED&item=REDACTED&token=REDACTED&csrf=REDACTED&isPacket=1&in_iframe=1&step=6&aid=REDACTED": "fixtures/icims/jr7-icims3-iform.frame-2.html",
+  "https://assets.textrecruit.com/jc2/prd/index.html": "fixtures/icims/jr7-icims3-iform.third-party-frame.html"
+}

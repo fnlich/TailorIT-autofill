@@ -1,0 +1,6 @@
+{
+  "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/login": "fixtures/icims/jr7-icims3-login.html",
+  "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/login?in_iframe=1": "fixtures/icims/jr7-icims3-login.frame-1.html",
+  "https://newassets.hcaptcha.com/captcha/v1/b7cb55144cfb1f79ab8b18a24ea5786dc178370e/static/hcaptcha.html": "fixtures/icims/jr7-icims3-login.third-party-frame.html",
+  "https://assets.textrecruit.com/jc2/prd/index.html": "fixtures/icims/jr7-icims3-login.third-party-frame.html"
+}

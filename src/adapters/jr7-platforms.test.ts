@@ -57,6 +57,12 @@ const STUBS: Array<{ platform: Platform; adapter: Adapter; parse: (url: URL) => 
     other: 'https://acme.jibeapply.com/' },
 ];
 
+// ── jr7 ICIMS-7 (FIX7PLAN §6.7 item 4; ICIMS7-11, D-6): the stubs whose packages' parsers read their candidate pages
+// now (src/adapters/jibe/url.test.ts, jr7-jibe.browser.test.ts): Jibe's postings, each a posting alone, never an
+// application form. INT-7 merges each package's line here. ──
+const READING: ReadonlySet<Platform> = new Set<Platform>(['jibe']);
+// ── end jr7 ICIMS-7 ──
+
 describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
   it('appends their ids in order, each ahead of the contract and named as the panel and the report show it', () => {
     expect(PLATFORMS.slice(-5)).toEqual(STUBS.map((each) => each.platform));
@@ -76,6 +82,13 @@ describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
       for (const url of candidate) {
         expect(adapter.matchesUrl(new URL(url)), url).toBe(true);
         expect(adaptersFor(new URL(url)), url).toEqual([adapter, genericAdapter]);
+        // ── jr7 ICIMS-7 ──
+        if (READING.has(platform)) {
+          expect(adapter.canonicalApplicationUrl(new URL(url)), url).toBeNull();
+          expect(applicationOf(new URL(url))?.page, url).toBe('posting');
+          continue;
+        }
+        // ── end jr7 ICIMS-7 ──
         expect(parse(new URL(url)), url).toBeNull();
         expect(adapter.canonicalApplicationUrl(new URL(url)), url).toBeNull();
         // Its own parser reads it (address.ts URL_PARSERS), so it is no application yet: never the generic rule's

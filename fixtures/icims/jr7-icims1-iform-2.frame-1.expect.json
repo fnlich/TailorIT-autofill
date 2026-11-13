@@ -1,0 +1,21 @@
+{
+  "fixture": "icims/jr7-icims1-iform-2.frame-1",
+  "source": "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/form?form=PreOffer_OFCCP&step=6&isPacket=1&type=4&hashed=REDACTED&in_iframe=1",
+  "captured": "2026-11-11T12:43:28.000Z",
+  "note": "Hooks only (jr7 P2): arc-onesolutions' Portal Specific Forms (2/2), the portal page (as -1's). No root.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input#keepMeAliveButton",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": []
+  }
+}

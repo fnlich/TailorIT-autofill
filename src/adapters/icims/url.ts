@@ -27,6 +27,10 @@
  *   posting (no job id: item and aid are not the posting's number, and user is the person's), and iCIMS's Forms module
  *   is not only the applicant's, so it is read as no application here (one path segment, not under /jobs): its form
  *   waits for a way to key it by the portal page that frames it (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06);
+ * - jr7 ICIMS-7 (ICIMS7-04 (1); snapshot7 icims3, careers-quartzbenefits): /assessment, the Assessments step after the
+ *   last form's Submit ("The request issued to the external vendor timed out." and its "Continue"), a page of the
+ *   application whose success page (/job?mode=submit_apply&from=assessment) follows it, so it keeps the application's
+ *   key (TailorIT's ICIMS_PAGES reads it from TAILORIT-7's 7a on: url-jr7.test.ts holds it ahead of the contract);
  * - every other page under /jobs/<id>/ (the posting's "Email this job to a friend", .../referral) is no application.
  * The key is the host and the posting's id: the slug and the query (in_iframe, hashed, csrf, eem, code, the wrapper's
  * layout) are dropped, so the wrapper, its frame, the gate and every page after it share one. The canonical application
@@ -40,8 +44,11 @@ import type { ApplicationUrl } from '../application-key';
 const HOST = /^(?!(?:www|api|login)\.)(?!internal-)[a-z0-9-]+\.icims\.com$/;
 const POSTING_ID = /^\d{1,12}$/;
 /** The words under /jobs/<id>/[<slug>/] read as the posting's application (module header): the gate, and (the owner's
- *  snapshots of 2026-11-06) the Candidate Profile, the Candidate and Job Specific Questions, EEO and the IForm page. */
-const APPLICATION_WORDS: ReadonlySet<string> = new Set(['login', 'candidate', 'questions', 'eeo', 'form']);
+ *  snapshots of 2026-11-06) the Candidate Profile, the Candidate and Job Specific Questions, EEO and the IForm page;
+ *  jr7 ICIMS-7 (ICIMS7-04 (1), snapshot7 icims3): the Assessments step. */
+const APPLICATION_WORDS: ReadonlySet<string> = new Set(['login', 'candidate', 'questions', 'eeo', 'form',
+  // ── jr7 ICIMS-7 (ICIMS7-04 (1)) ──
+  'assessment']);
 /** /job?mode=submit_apply: the posting again after the last step's Submit, with its success message (module header). */
 const SUBMITTED_MODE = 'submit_apply';
 

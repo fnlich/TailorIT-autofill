@@ -1,0 +1,38 @@
+{
+  "fixture": "icims/jr7-icims1-login.frame-1",
+  "source": "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/login?in_iframe=1&mobile=false&width=1715&height=1742&bga=true&needsRedirect=false&jan1offset=-420&jun1offset=-360",
+  "captured": "2026-11-11T12:33:29.000Z",
+  "note": "jr7 P2: arc-onesolutions' email gate (Enter Your Information). Its fields as the scan reads them once ENGINE-7 E2 and RULES-7 R2 merged (FIX7PLAN §6.7 P2); what a run decides on them is held by src/adapters/icims/jr7-icims-p2.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"email\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#enterEmailForm",
+    "authState": "email-gate",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "email-gate",
+      "email": "input#email",
+      "password": null,
+      "confirm": null,
+      "terms": [],
+      "button": "input#enterEmailSubmitButton",
+      "form": "form#enterEmailForm"
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_Anchor_Nav"
+    ],
+    "pressable": [
+      "input#enterEmailSubmitButton"
+    ]
+  }
+}

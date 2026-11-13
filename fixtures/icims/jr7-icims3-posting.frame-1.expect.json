@@ -1,0 +1,27 @@
+{
+  "fixture": "icims/jr7-icims3-posting.frame-1",
+  "source": "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/job?in_iframe=1&mobile=false&width=1574&height=500&bga=true&needsRedirect=false&jan1offset=-420&jun1offset=-360",
+  "captured": "2026-11-11T15:04:53.000Z",
+  "note": "Hooks only (jr7 P2): careers-quartzbenefits' posting: its text and its Apply. No root.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": "div.iCIMS_JobContent",
+    "entryControl": "a.iCIMS_Anchor.iCIMS_Action_Button.iCIMS_ApplyOnlineButton.iCIMS_PrimaryButton",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_ApplyOnlineButton",
+      "a.iCIMS_JobShareButton",
+      "a[href*=\"/referral\"]",
+      ".icimsSD_widget",
+      "a[href*=\"loginOnly=1\"]",
+      "a.iCIMS_Faq_Link",
+      "a[href*=\"icims.com/platform_help\"]",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": []
+  }
+}
