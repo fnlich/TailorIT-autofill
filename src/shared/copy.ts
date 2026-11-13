@@ -1812,6 +1812,10 @@ const MAIN_VIEW = {
     'nothing-followed': 'Autofill pressed Apply, but no application opened. Press Apply on the page yourself, then press Autofill.',
   } satisfies Record<EntryRefusal, string>,
   // ── end jr6 apply F1 ──
+  // jr7 INT-7 (ICIMS-7's item; FIX7PLAN D-6, ICIMS7-11): the 'elsewhere' line on a Jibe job page, whose Apply leads to
+  // the job's iCIMS application (the cross-origin press stays refused, OQ4 / Q7-13): it names iCIMS instead of "another
+  // site", and claims no press and no move, as entryRefused.elsewhere does.
+  elsewhereIcims: "This job's application continues on iCIMS. Press Apply on the page, then press Autofill there.",
   resume: 'Résumé:',
   noResume: 'none',
   withoutResume: 'none, by your choice',

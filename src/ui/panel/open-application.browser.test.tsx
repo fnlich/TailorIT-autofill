@@ -242,6 +242,30 @@ describe('Autofill on a page with no form presses the site\'s Apply (jr6 apply F
     expect(COPY.modals.errors['no-form']).toBe(COPY.mainView.entryRefused.none);
   });
 
+  // jr7 INT-7 (ICIMS-7's item; FIX7PLAN D-6, ICIMS7-11): a Jibe job page's Apply leads to the job's iCIMS application,
+  // which the cross-origin press never follows: its 'elsewhere' line names iCIMS; every other platform's says another site.
+  it('says on a Jibe job page that the application continues on iCIMS, in place of "another site"', async () => {
+    const worker = createFakeWorker();
+    const jibe: PageState = { support: 'no-form', platform: 'jibe', formKey: '0:doc', posting: true };
+    worker.script.pages.set(5, { ...jibe, entry: true });
+    const root = await open(worker);
+    await showPage(worker, 5, { ...jibe, entry: true, entryRefused: true, refusal: 'elsewhere' });
+    expect([refusalLine(root)?.dataset.reason, refusalLine(root)?.textContent]).toEqual(['elsewhere',
+      COPY.mainView.elsewhereIcims]);
+    expect(modalOf(root)).toBeNull();
+    // Only 'elsewhere' names iCIMS: another reason on the same page keeps its own words.
+    await showPage(worker, 5, { ...jibe, entry: true, entryRefused: true, refusal: 'ambiguous' });
+    expect(refusalLine(root)?.textContent).toBe(COPY.mainView.entryRefused.ambiguous);
+    // Another platform's 'elsewhere' keeps the general line.
+    await showPage(worker, 5, { ...posting, entry: true, entryRefused: true, refusal: 'elsewhere' });
+    expect(refusalLine(root)?.textContent).toBe(COPY.mainView.entryRefused.elsewhere);
+    // The words, as entryRefused.elsewhere's: no press and no move claimed; iCIMS named; Autofill named.
+    expect(COPY.mainView.elsewhereIcims).not.toMatch(/\b(took|pressed|moved|went)\b/i);
+    expect(COPY.mainView.elsewhereIcims).toMatch(/\biCIMS\b/);
+    expect(COPY.mainView.elsewhereIcims).toMatch(/Autofill/);
+    expect(COPY.mainView.elsewhereIcims).not.toMatch(/open application/i);
+  });
+
   it('opens the "no form" modal for a \'none\' that answers this panel\'s own Autofill within 30 s, with Try Again', async () => {
     const worker = createFakeWorker();
     worker.script.pages.set(5, posting);

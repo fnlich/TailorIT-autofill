@@ -681,6 +681,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   // jr6 apply F1: why the site's Apply was not pressed or followed, in words (not under the "no form" modal, which says
   // it after this panel's own click); the F1 fixer (C4): while the frame presses or waits with no run working.
   const said = tabId === null || refusal === null || (refusal === 'none' && shownModal !== null) ? null
+    // jr7 INT-7 (ICIMS-7's item, D-6): a Jibe job page's Apply leads to its iCIMS application; the line names iCIMS.
+    : refusal === 'elsewhere' && page?.platform === 'jibe' ? COPY.mainView.elsewhereIcims
     : COPY.mainView.entryRefused[refusal];
   const pressing = offersFill && tabId !== null && entering && !working;
   // v5 p2-fill review (L5), jr6 apply F1 (AF-12): that one line (under the main button; above the sites Autofill works
