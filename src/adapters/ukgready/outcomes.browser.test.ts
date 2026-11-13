@@ -4,10 +4,10 @@
  * scroller, UKGR-7) and RULES-7 R1/R2 (UKGR-13, 14, 15, 16, 18, V2) are merged, with the golden synthetic profile
  * (fixtures/profiles/alex-rivera.*): which fields a run fills, under which category, and which it never fills. The
  * editors are planned with the repeatable request the orchestrator sends (the saved summaries' words: readEntries).
- * UKGR-7 is held as an expected failure: on these captures html and body are overflow hidden and the page scrolls inside
- * div.l-page-layout-content, below div#_layout's overflow: hidden, a clip dom/visibility.ts scrolledWithin lifts only
- * for a scroller fixed to the viewport, so every box below about 900 px (the required "Eligible For Work in the USA",
- * the questionnaire's questions 3 to 10) is no field yet: ENGINE-7's (the handoff names the one-line change).
+ * UKGR-7: on these captures html and body are overflow hidden and the page scrolls inside div.l-page-layout-content,
+ * below div#_layout's overflow: hidden. ENGINE-7 E4-1 (jr7-engine-e4) lifts that clip for a scroller in a page that
+ * never scrolls itself, so the boxes below about 900 px (the required "Eligible For Work in the USA", the
+ * questionnaire's questions 3 to 10) are fields (flipped by INT-7 once e4 merged).
  * Facts only: the fixtures' personal text is REDACTED; every planned value is the golden profile's.
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -175,8 +175,8 @@ describe('UKG Ready: what a run fills (UKGR-5, UKGR-6, RULES-7)', () => {
   });
 });
 
-describe('UKG Ready: below the inner scroller (UKGR-7, ENGINE-7: an expected failure until its fix)', () => {
-  it.fails('the required "Eligible For Work in the USA" and the custom questions of Resume & Cover Letter are fields',
+describe('UKG Ready: below the inner scroller (UKGR-7, ENGINE-7 E4-1)', () => {
+  it('the required "Eligible For Work in the USA" and the custom questions of Resume & Cover Letter are fields',
     async () => {
       const { at, outcomes } = await planned('jr7-saashr-documents');
       expect(at('input[name="usaWorkEligibility"]')).toMatchObject({ kind: 'checkbox', fillable: true,
@@ -184,15 +184,8 @@ describe('UKG Ready: below the inner scroller (UKGR-7, ENGINE-7: an expected fai
       expect(outcomes.map((each) => each.label)).toEqual(expect.arrayContaining(['Required salary', 'Summary']));
     });
 
-  it.fails('every question of the questionnaire is a field, its salary box at the bottom too', async () => {
+  it('every question of the questionnaire is a field, its salary box at the bottom too', async () => {
     const { outcomes } = await planned('jr7-saashr-questionnaire');
     expect(outcomes).toHaveLength(11);
-  });
-
-  it('today: above about 900 px only (the capture\'s viewport), which the expected failures above name', async () => {
-    const { outcomes, at } = await planned('jr7-saashr-documents');
-    expect(at('input[name="usaWorkEligibility"]')).toBeUndefined();
-    expect(outcomes.map((each) => each.label)).toEqual(['Resume Upload', 'Cover Letter & Upload Documents',
-      'Available Start Date', 'Referral']);
   });
 });
