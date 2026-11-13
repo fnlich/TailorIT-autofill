@@ -24,7 +24,7 @@ import type {
 } from '../messaging/schemas';
 import type { TailorFailure, TailorKind } from '../messaging/page-schemas'; // v1.4 F
 import type { QueueBlock, QueueItemStatus, QueuePhase, QueueStop } from '../messaging/page-schemas'; // v1.5 QX
-import { QUEUE_SUBMIT_PLATFORMS } from './queue-submit'; // jr7 INT-7
+import { RECORDED_SUBMIT_PLATFORMS } from './queue-submit'; // jr7 INT-7; the jr7 review's C-2
 import type { FrameReport } from './report';
 
 /** A report notice's code. */
@@ -1201,8 +1201,9 @@ const OPTIONS = {
       on: 'On',
       off: 'Off',
       // jr7 INT-7: the sites named from the platforms whose confirmation it reads (shared/queue-submit.ts); one pure
-      // call, so a bundle that never shows the options' words (the content script) drops it and the list.
-      help: /* @__PURE__ */ recordOwnHelp(QUEUE_SUBMIT_PLATFORMS),
+      // call, so a bundle that never shows the options' words (the content script) drops it and the list. The jr7
+      // review (C-2): every platform where it reads a sign, not only the Queue tab's (copy.test.ts derives them).
+      help: /* @__PURE__ */ recordOwnHelp(RECORDED_SUBMIT_PLATFORMS),
     },
     // v1.3 B (settings version 9): the answers of an application the person submits, kept in their own TailorIT.
     keepAnswers: {

@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CONSENT_CATEGORIES, FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES } from '../core/enums';
+import { platformAdapter } from '../adapters'; // the jr7 review's C-2: read only
+import { ATS_CONFIGS } from '../adapters/configured/registry'; // the jr7 review's C-2: read only
+import { CONSENT_CATEGORIES, FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES, type Platform } from '../core/enums';
+import { isNetPlatform } from '../dom/submit-net-protocol'; // the jr7 review's C-2: read only
 import { AI_OPENED_CATEGORIES } from '../core/resolver/categories';
 import { TELEMETRY_FIELDS } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
@@ -9,7 +12,7 @@ import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
 import { SAVE_ANSWER_OUTCOMES } from '../messaging/schemas';
 import { SIGNUP_COPY } from '../ui/page/signup-copy';
 import { CAPTURE_COPY, COPY, PAGE_COPY } from './copy';
-import { QUEUE_SUBMIT_PLATFORMS } from './queue-submit';
+import { QUEUE_SUBMIT_PLATFORMS, RECORDED_SUBMIT_PLATFORMS } from './queue-submit';
 import { NOTICE_CODES } from './report';
 import { DISCLOSURE_VERSION } from './stored';
 
@@ -411,11 +414,40 @@ describe('the copy', () => {
     expect(second).toContain("On an iCIMS Jibe job page it tells your TailorIT the job's iCIMS address");
   });
 
-  it('names in Record applications I submit myself the sites whose confirmation it reads, from their one list', () => {
+  // The jr7 review (C-2): the person's own Submit is armed on any platform (content/runtime.ts personSubmitted) and
+  // recorded wherever the extension reads a sign after it, so the help names every such platform, derived here from the
+  // adapters (read only): a configured success rule, a drawn sign of the platform's own (content/submitted.ts
+  // platformSignsOf), an adapter's successSigns or confirmationAfter, a network sign, or an address its url.ts reads as
+  // the page after submitting.
+  it('names in Record applications I submit myself every site where it reads that an application went through', () => {
     const help = COPY.options.modes.recordOwn.help;
-    for (const platform of QUEUE_SUBMIT_PLATFORMS) expect(help, platform).toContain(COPY.platforms[platform]);
-    for (const name of ['Breezy HR', 'Dayforce', 'Taleo', 'Dice']) expect(help, name).not.toContain(name);
-    expect(help).toContain('JobDiva and Eightfold), your TailorIT tracker');
+    const source = (path: string) => {
+      try {
+        return readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
+      } catch {
+        return '';
+      }
+    };
+    const drawn = source('../content/submitted.ts').split('function platformSignsOf(')[1]!.split('\n}\n')[0]!;
+    const readsSign = (platform: Platform) => {
+      const adapter = platformAdapter(platform);
+      return ATS_CONFIGS[platform]?.success !== undefined || isNetPlatform(platform)
+        || adapter?.successSigns !== undefined || adapter?.confirmationAfter !== undefined
+        || drawn.includes(`platform === '${platform}'`)
+        || /\bpage: [^,;]*'confirmation'|\['[^']*', 'confirmation'\]|\? 'confirmation'/
+          .test(source(`../adapters/${platform}/url.ts`));
+    };
+    const reading = PLATFORMS.filter(readsSign);
+    expect(new Set(reading), 'the list is the platforms that read a sign').toEqual(new Set(RECORDED_SUBMIT_PLATFORMS));
+    for (const platform of QUEUE_SUBMIT_PLATFORMS) expect(reading, platform).toContain(platform);
+    for (const platform of PLATFORMS) {
+      if (reading.includes(platform)) expect(help, platform).toContain(COPY.platforms[platform]);
+      else expect(help, platform).not.toContain(COPY.platforms[platform]);
+    }
+    for (const name of ['Breezy HR', 'Dayforce', 'CareerPlug', 'Paycor', 'Paylocity', 'SuccessFactors', 'ClearCompany']) {
+      expect(help, name).toContain(name);
+    }
+    expect(help).toContain('SuccessFactors and ClearCompany), your TailorIT tracker');
   });
   // ── end jr7 INT-7 ──
 });
