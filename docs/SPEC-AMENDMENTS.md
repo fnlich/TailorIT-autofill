@@ -845,9 +845,10 @@ And, the same day:
 - A fill never crosses to another site or a new tab by itself (owner questions 391 and 392): Jibe's Apply stays the person's (Q7-13).
 - docs/SPEC.md is unchanged, and every hard rule below stands, as its bullets now read.
 
-## 21. jr8: every work-experience entry on Workable (the owner's report of 2026-11-13)
+## 21. jr8: every work-experience entry on Workable, and its job site's Apply now (the owner's reports of 2026-11-13)
 
 - **The fill step's rounds** (amending the Phase 5 review's C-S3, a later attempt on a step starting from the earlier one's books, for the rounds of add, fill and save): the next round starts without the books of the repeatable blocks the round saved, so a field drawn at a saved block's key afterwards is another entry's, planned and written as new, never our value reset (`MAX_VALUE_FLIPS` unchanged); a saved block's row stands for its key, and is left out of the read-back at rest, only while the page shows no field there. Workable's blocks are its saved entries first, then the open editor, which live Workable draws at the top of its list (snapshot9; docs/ARCHITECTURE.md "jr8").
+- **Workable's job site's "Apply now"** (the owner's second report of that day, snapshot12: "Apply Now button is not working to show the form"): §19's "Autofill presses the site's Apply" now covers jobs.workable.com, whose posting's Apply now (until then never pressed) is the Workable adapter's declared entry, pressed once by the entry door alone and never while the application's dialog shows; every other door still never presses it, and the dialog's own Cancel and Submit stay never pressed.
 
 ## The hard rules that stay
 
