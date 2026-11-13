@@ -556,11 +556,10 @@ describe('jr7 P2: UP7-08 and UP7-11 (RULES-7) on both blank applications, with t
       .toEqual(['llm-disabled-for-category', undefined, true]);
   }, 60_000);
 
-  // Held: RULES-7's R2 fix (matcher/degree.ts NO_FIELD) chooses "Bachelor's level degree" among its own five options,
-  // but among this capture's eleven the cascade still ends 'distinctive-token-mismatch' (src/core/matcher/fuzzy.ts
-  // scoreOptions; any one of "Less than HS Graduate", "HS Graduate or equivalent", "Some college", "Technical School" or
-  // "Some graduate school" taken away, it chooses it). Flip once RULES-7 fixes it (ULTIPRO-7 handoff, for RULES-7).
-  it.fails('jr7-ultipro2-apply-1 (UP7-11): the highest education, the bachelor\'s level for the golden bachelor',
+  // RULES-7's R2 fix (matcher/degree.ts NO_FIELD) chose "Bachelor's level degree" among its own five options; among
+  // this capture's eleven (rich in attainments: "Less than HS Graduate", "Some college", ...) RULES-7 R5 (jr7-rules-r5)
+  // picks the profile's own level too (flipped by INT-7 once r5 merged).
+  it('jr7-ultipro2-apply-1 (UP7-11): the highest education, the bachelor\'s level for the golden bachelor',
     async () => {
     const page = await planned('jr7-ultipro2-apply-1');
     const highest = question(page, /highest level of education/i);
