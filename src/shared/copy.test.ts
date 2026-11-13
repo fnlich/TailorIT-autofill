@@ -352,4 +352,30 @@ describe('the copy', () => {
     expect(COPY.mainView.signingIn).not.toBe(COPY.mainView.entering);
   });
   // ── end jr6 SHELL-A ──
+
+  // ── jr7 INT-7: the words the packages left to the integration (INT7-NOTES) ──
+  it('names the documents hand-over plainly, for any site, as the assessment\'s note reads', () => {
+    const words = COPY.queue.notes.documents;
+    expect(words).not.toMatch(/your answer|:/); // the placeholder's shape is gone
+    expect(words).toMatch(/^This site asks whether to save your documents/);
+    expect(words).not.toMatch(/UltiPro|UKG/); // any adapter's 'documents' hand-over
+    expect(words).not.toMatch(/\.$/); // read inside "Needs you (…)", as the assessment's note is
+    expect(COPY.queue.notes.assessment).not.toMatch(/\.$/);
+    expect(COPY.agent.line({ phase: 'off', job: null, doneToday: 0,
+      last: { state: 'needs-you', reason: 'other', note: 'documents' } })).toContain(`(${words})`);
+  });
+
+  it('says a field the page kept locked was not filled, and what the person can do, never only that it is locked', () => {
+    const words = COPY.reasons['disabled-or-readonly'];
+    expect(words).toMatch(SENTENCE);
+    expect(words).toMatch(/not filled/);
+    expect(words).toMatch(/yourself/);
+  });
+
+  it('names a required block left empty in words that fit a list of entries and a signature pad alike', () => {
+    expect(PAGE_COPY.requiredBlockLeft('Skills')).toBe('Skills: required, still empty');
+    expect(PAGE_COPY.requiredBlockLeft('Signature')).toBe('Signature: required, still empty');
+    expect(PAGE_COPY.requiredBlockLeft('Signature')).not.toMatch(/add at least one/);
+  });
+  // ── end jr7 INT-7 ──
 });

@@ -172,7 +172,10 @@ const REASONS = {
   'needs-your-click': "This control takes only a person's own click, so it was not filled.",
   'unexpected-selection': 'This holds a selection your profile would not make, and it was left as the page has it.',
   'element-not-found': 'The field was gone before it could be filled.',
-  'disabled-or-readonly': 'The field cannot be changed: it is disabled or read-only.',
+  // jr7 INT-7: also a required, empty field the page kept locked past the run's wait (ENGINE-7 E2 item 1, ADP7-2:
+  // ADP's Address Line 1 until a Country is chosen), so the words say what the person can do, and hold for a field
+  // that never opens.
+  'disabled-or-readonly': 'The page kept this field locked, so it was not filled. If it opens after another answer, fill it in yourself.',
   'value-rejected-by-site': 'The site did not accept the answer.',
   'format-unsupported': 'The field asks for a format your answer cannot be written in.',
   'maxlength-exceeded': 'Your answer is longer than this field allows and was not cut short, so it was not filled.',
@@ -1427,9 +1430,10 @@ const AGENT_PAUSE_WORDS = {
 // contract's reasons. Drafts for the owner's review (Q7-15). ──
 const AGENT_NOTE_WORDS = {
   assessment: 'This application continues with an assessment',
-  // jr7 AUTO-7: INT-7 words (UP7-07, gated Q7-8: a site's documents dialog after the Submit, UltiPro's the first; the
-  // note is any adapter's 'documents' hand-over, so generic; the coordinator's wording, from ULTIPRO-7 and ORACLE-7).
-  documents: 'This site asks about your documents: your answer',
+  // jr7 INT-7's words (UP7-07, gated Q7-8): a site's dialog after the Submit asking whether to save the application's
+  // documents to the person's profile on that site (UltiPro's the first; any adapter's 'documents' hand-over, so the
+  // site is not named). Read after "Needs you (" in the agent's line and as a queued job's note.
+  documents: 'This site asks whether to save your documents to your profile there',
 } as const satisfies Record<AgentNote, string>;
 // ── end jr7 AUTO-7 ──
 
@@ -1553,8 +1557,9 @@ export const PAGE_COPY = {
   panelTitle: 'Review',
   panelEmpty: 'Nothing to review yet. Open a job application and choose Autofill.',
   // jr7 ENGINE-7 E1 item 10 (jr7-O7): the review's row for a required block that holds no entry yet (Oracle's Skills),
-  // `block` its title as the page shows it.
-  requiredBlockLeft: (block: string) => `${block}: add at least one`,
+  // `block` its title as the page shows it. jr7 INT-7's words: they hold for a block of entries (Oracle's Skills) and for
+  // a required pad the person draws in (Paycom's Signature), where "add at least one" read oddly.
+  requiredBlockLeft: (block: string) => `${block}: required, still empty`,
   optionsTitle: 'TailorIT Autofill settings',
   tripwire: NOTICES.tripwire,
   notices: NOTICES,

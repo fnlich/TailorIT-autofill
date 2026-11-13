@@ -17,6 +17,7 @@ import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testki
 import { signInContainerOf, signInRefusal } from '../dom/sign-in-form';
 import { scan } from '../dom/scan';
 import { deadline } from '../dom/time';
+import { PAGE_COPY } from '../shared/copy';
 import { createFakeWorker, testVocab } from './content.testkit';
 import { heldIn } from './orchestrator';
 import { lastFillOf } from './report';
@@ -163,7 +164,7 @@ describe('item 10 (jr7-O7): a required block the adapter reads empty', () => {
   }
   const submitted = (fixture: Fixture) => (fixture.view as unknown as { submitted?: number }).submitted ?? 0;
 
-  it('holds Submit Auto and shows "<block>: add at least one"; with an entry in it, Submit is pressed', async () => {
+  it('holds Submit Auto and shows "<block>: required, still empty"; with an entry in it, Submit is pressed', async () => {
     testVocab();
     const held = await start(0, GREENHOUSE);
     expect(await held.runtime.fill()).toBe('review');
@@ -171,14 +172,14 @@ describe('item 10 (jr7-O7): a required block the adapter reads empty', () => {
     expect(submitted(held.fixture)).toBe(0);
     const report = held.worker.reports.at(-1)!;
     expect(report.notices).toContainEqual({ code: 'submit-held-required', count: 1 });
-    expect(report.fields.filter((row) => row.label === 'Skills: add at least one')
+    expect(report.fields.filter((row) => row.label === PAGE_COPY.requiredBlockLeft('Skills')) // jr7 INT-7: the words
       .map((row) => [row.status, row.required, row.needsUserAction])).toEqual([['flagged', true, true]]);
     expect(held.worker.of('submit/armed')).toEqual([]);
     removeFixtures(document);
     const done = await start(1, `${GREENHOUSE}2`);
     expect(await done.runtime.fill()).toBe('review');
     await vi.waitFor(() => expect(submitted(done.fixture)).toBe(1));
-    expect(done.worker.reports.at(-1)!.fields.some((row) => row.label.endsWith(': add at least one'))).toBe(false);
+    expect(done.worker.reports.at(-1)!.fields.some((row) => row.label.endsWith(': required, still empty'))).toBe(false);
   });
 });
 
