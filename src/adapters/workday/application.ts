@@ -45,7 +45,9 @@
  *     (a category, which opens a list of its own), its words its promptOption. So the prompt declares its results list
  *     (results: the hook promptListOf finds it anew each time, the row selector, its label part, a click there
  *     chooses, and a category row is no answer to choose), and Enter after each typed query (queryKey: its box says
- *     enterkeyhint="search"). snapshot4 (the owner's captures of 2026-11-07, 19:20 and 19:47): opened with nothing
+ *     enterkeyhint="search"). jr8 (snapshot13): a prompt commits its search's one match on Enter by itself, its pill
+ *     drawn and no list left open (choosesOnQuery: the search ends there, never a second query or "Other").
+ *     snapshot4 (the owner's captures of 2026-11-07, 19:20 and 19:47): opened with nothing
  *     typed, School's list shows one row of its own, "No Items." (s2-verily-school-no-items.html: id="menuItem-", its
  *     promptLeafNode of type 2, no radio), no answer to choose; typed, a "Search Results (17)" header
  *     (div[data-automation-id=multiSelectHeader] > div[data-automation-id=promptTitle][title="Search Results"]) above a
@@ -94,7 +96,8 @@
  *   above the form ("[verily.wd1.myworkdayjobs.com] Sign In (1)": "Verify your account before you sign in or request a
  *   verification email."): errors names it, so Sign-in Auto reads a failed sign-in at once. The busy sign is
  *   [data-automation-id=wd-LoadingPanel] in a glass panel ([data-automation-id=glassPanel], data-automation-hidden=
- *   "true" while idle, the same snapshot): isBusy while a person can see it.
+ *   "true" while idle, the same snapshot): isBusy while a person can see it. jr8 (snapshot13): and a skeleton Workday
+ *   draws where a step's questions or an Add's block still load (skeletonBusy), for WORKDAY_SKELETON_BUSY_MS at most.
  * - Never pressed (neverPressedOnSteps): Back, the cookie notice's Accept and Decline (legalNotice), "Resend Account
  *   Verification" (informationalBlurbButton), an upload's Delete (delete-file) and "Select files", a pill's remove
  *   (DELETE_charm), a block's Delete, the date's calendar (dateIcon) and the phone's "Terms and Conditions" link.
@@ -104,6 +107,7 @@
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { TEXT_CAP_LABEL } from '../../dom/thresholds';
+import { monotonicNow } from '../../dom/time';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import type { Adapter, DatePartsDecl, UploadState, WidgetDecl, WidgetTags } from '../types';
@@ -542,6 +546,10 @@ export function widgetFor(control: Element): WidgetDecl | null {
     return { kind: 'typeahead-remote', opener: control as HTMLElement, box, shownAnswer: promptAnswer(container),
       results: { list: () => promptListOf(container), option: PROMPT_ROW, choose: 'label', unchoosable: UNCHOOSABLE_ROW },
       optionLabel: (row) => byId(row, 'promptOption'), queryKey: 'Enter',
+      // jr8 WORKDAY (snapshot13: "How Did You Hear About Us?" and Field of Study chosen yet read as not filled, after
+      // three queries and "Other"): a prompt commits its search's one match on Enter by itself, its pill drawn with no
+      // list left open, as Jobright 1.25.2's myworkday fillSearchBoxInputField reads it ('committed-during-search').
+      choosesOnQuery: true,
       ...(fieldNameOf(container) === 'skills' ? { tags: skillsTags(container) } : {}),
       ...(__PROVENANCE__ && { snapshot: 'fixtures/workday/s2-verily-field-of-study-open.html' }) };
   }
@@ -813,11 +821,55 @@ export function fieldAlerts(root: Element): Element[] {
     .filter((alert) => fieldOf(alert) !== null && wordsOf(alert) !== '' && isUserVisible(alert, cache));
 }
 
-/** Workday's loading panel, while a person can see it (module header). */
+/** Workday's loading panel, while a person can see it (module header); jr8: and a step's skeleton (skeletonBusy). */
 export function isBusy(doc: Document): boolean {
   const cache = newScanCache();
-  return allById(doc, 'wd-LoadingPanel').some((panel) => isUserVisible(panel, cache));
+  return allById(doc, 'wd-LoadingPanel').some((panel) => isUserVisible(panel, cache)) || skeletonBusy(doc, cache);
 }
+
+// ── jr8 WORKDAY (snapshot13: the owner's aristocrat run of 2026-11-13) ──
+/** How long one skeleton counts as busy from the first look that found it: within the settle's cap (dom/thresholds.ts
+ *  SETTLE_CAP_MS, 8 s), so a skeleton that never clears ends no wait as page-busy; the run then reads the step as it is
+ *  (Jobright 1.25.2 waits at most 8 s for its "loading" text to clear: its myworkday waitPageClean, then goes on). */
+export const WORKDAY_SKELETON_BUSY_MS = 6_000;
+/** When each skeleton was first found (busy only within WORKDAY_SKELETON_BUSY_MS of it). */
+const skeletonFirstSeen = new WeakMap<Element, number>();
+
+/**
+ * Whether the flow page shows a skeleton a person sees while Workday loads what goes there: fixtures/workday/
+ * jr6-brookfield-voluntary-disclosures.html (a step page drawn before its questions: each section's <h4>, then <div
+ * class="...">Loading</div><div aria-hidden="true"> ... the grey shapes of the questions to come</div>, and no
+ * formField at all). Its "Loading" is drawn for screen readers only (clipped to 1 px), its shapes (aria-hidden, 704 by
+ * 132 px there) are what a person sees. Workday draws the same while a step's questions load after Next and while a
+ * block Add drew loads its fields (Jobright 1.25.2's myworkday waitPageClean and its Add, which wait for the page's
+ * "loading" text to clear: isLoadingCleared, then the field count). A skeleton is a busy sign for the settle (dom/
+ * settle.ts adapterSaysBusy), so the run scans a step, counts an Add's block and verifies its writes only once Workday
+ * drew the fields there, each skeleton for WORKDAY_SKELETON_BUSY_MS at most. Page markup only, never a value.
+ */
+function skeletonBusy(doc: Document, cache: ScanCache): boolean {
+  const flow = flowOf(doc, cache);
+  if (flow === null) return false;
+  const now = monotonicNow();
+  return Array.from(flow.querySelectorAll('div + div[aria-hidden="true" i]')).some((shapes) => {
+    const label = shapes.previousElementSibling;
+    if (label === null || label.childElementCount > 0 || !/^loading\b\W*$/i.test(wordsOf(label)) || !drawn(shapes)) {
+      return false;
+    }
+    const first = skeletonFirstSeen.get(shapes) ?? now;
+    skeletonFirstSeen.set(shapes, first);
+    return now - first < WORKDAY_SKELETON_BUSY_MS;
+  });
+}
+
+/** Whether an aria-hidden element is drawn for a person: displayed, visible, not transparent, with a box (the
+ *  visibility rule reads aria-hidden as hidden, as starDrawn's abbr). */
+function drawn(el: Element): boolean {
+  if (el.parentElement === null || !isUserVisible(el.parentElement)) return false;
+  const style = el.ownerDocument.defaultView?.getComputedStyle(el) ?? null;
+  return style !== null && style.display !== 'none' && style.visibility === 'visible' && Number(style.opacity) > 0
+    && Array.from(el.getClientRects()).some((rect) => rect.width > 0 && rect.height > 0);
+}
+// ── end jr8 WORKDAY ──
 
 /** The automation ids of the steps' controls never pressed (module header). */
 const NEVER_PRESSED_ON_STEPS = ['pageFooterBackButton', 'legalNoticeAcceptButton', 'legalNoticeDeclineButton',

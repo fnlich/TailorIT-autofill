@@ -12,6 +12,11 @@
  * nothing more (Jobright's "Submitted!"). The dock stays at the bottom of the panel's view (sticky). Nothing here is a
  * page's: a page can neither draw nor press it.
  *
+ * jr8 WORKDAY (the owner's request of 2026-11-13): "Continue to the next page" shows on every step the adapter says is
+ * not the last, whether or not it can be pressed now: enabled only when the page's own Next is there to press and no
+ * required field of the step is empty (FrameReport.buttons.requiredLeft, the run's one reading with Next mode Auto:
+ * content/required-left.ts), else disabled with why as its tooltip. It presses Next alone, never Submit.
+ *
  * v5 p1-panel (the Phase 1 review, S2): what the dock's button means follows the page (Continue on a step not final,
  * Submit on the last, "Submit Anyway" once the frame said required fields are empty), so whenever that meaning changes
  * (its frame, its target, or the question) its button is disabled until the new words have been shown CONTROL_SEEN_MS
@@ -31,7 +36,7 @@ export type PressAction = (frameId: number, target: StepTarget, confirmed: boole
 
 /** The frame and button the dock offers now, or null. */
 export function dockOf(reports: readonly FrameReport[], actionsFrameId?: number):
-  { frameId: number; target: StepTarget; pressed: boolean } | null {
+  { frameId: number; target: StepTarget; pressed: boolean; held?: string } | null {
   if (reports.some(isWorking)) return null;
   for (const report of [...reports].sort((a, b) => a.frameId - b.frameId)) {
     if (actionsFrameId !== undefined && report.frameId !== actionsFrameId) continue;
@@ -41,7 +46,13 @@ export function dockOf(reports: readonly FrameReport[], actionsFrameId?: number)
     if (buttons.final === 'final' && (buttons.submit || buttons.pressed === 'submit')) {
       return { frameId: report.frameId, target: 'submit', pressed: buttons.pressed === 'submit' };
     }
-    if (buttons.final === 'not-final' && buttons.next) return { frameId: report.frameId, target: 'next', pressed: false };
+    // jr8 WORKDAY: on every step before the last, held (with why) while it may not be pressed.
+    if (buttons.final === 'not-final') {
+      const left = buttons.requiredLeft ?? 0;
+      const held = left > 0 ? PAGE_COPY.panel.step.nextHeld(left) : buttons.next ? undefined
+        : PAGE_COPY.panel.step.nextUnready;
+      return { frameId: report.frameId, target: 'next', pressed: false, ...(held === undefined ? {} : { held }) };
+    }
   }
   return null;
 }
@@ -52,6 +63,7 @@ export function StepDock({ reports, onPress, actionsFrameId, submitted = false, 
   clock?: SeenClock }) {
   const dock = dockOf(reports, actionsFrameId);
   const questionId = useId();
+  const heldId = useId(); // jr8 WORKDAY
   const [busy, setBusy] = useState(false);
   /** The required fields still empty, when the frame asked for the person's word (null: not asked). */
   const [confirming, setConfirming] = useState<{ frameId: number; count: number } | null>(null);
@@ -84,7 +96,8 @@ export function StepDock({ reports, onPress, actionsFrameId, submitted = false, 
       setSaid(PAGE_COPY.panel.failed);
       return;
     }
-    if (answer.outcome === 'required-empty' && !confirmed) {
+    // jr8 WORKDAY: only a Submit asks to go on anyway; a Continue the frame held says why.
+    if (answer.outcome === 'required-empty' && !confirmed && dock.target === 'submit') {
       setConfirming({ frameId: dock.frameId, count: answer.count ?? 1 });
       return;
     }
@@ -109,12 +122,18 @@ export function StepDock({ reports, onPress, actionsFrameId, submitted = false, 
           </div>
         </div>
       ) : (
-        <button type="button" className="tia-dock__button" disabled={busy || waiting || !seen}
-          data-step-action={dock.target} aria-busy={busy || waiting ? 'true' : undefined} onClick={() => void press(false)}>
-          {(busy || waiting) && <Icon name="spinner" size={18} className="tia-icon tia-spin" />}
-          {waiting ? PAGE_COPY.panel.step.submitting : submit ? PAGE_COPY.panel.step.submit : PAGE_COPY.panel.step.next}
-          {!submit && !busy && <Icon name="chevron-right" size={18} className="tia-icon" />}
-        </button>
+        // jr8 WORKDAY: a Continue held says why on hover (its title, on the wrapper: a disabled button takes no pointer)
+        // and to a screen reader (aria-describedby).
+        <span className="tia-dock__hold" title={dock.held} data-step-held={dock.held === undefined ? undefined : ''}>
+          <button type="button" className="tia-dock__button" disabled={busy || waiting || !seen || dock.held !== undefined}
+            data-step-action={dock.target} aria-busy={busy || waiting ? 'true' : undefined}
+            aria-describedby={dock.held === undefined ? undefined : heldId} onClick={() => void press(false)}>
+            {(busy || waiting) && <Icon name="spinner" size={18} className="tia-icon tia-spin" />}
+            {waiting ? PAGE_COPY.panel.step.submitting : submit ? PAGE_COPY.panel.step.submit : PAGE_COPY.panel.step.next}
+            {!submit && !busy && <Icon name="chevron-right" size={18} className="tia-icon" />}
+          </button>
+          {dock.held !== undefined && <span className="tia-visually-hidden" id={heldId}>{dock.held}</span>}
+        </span>
       )}
       {said !== null && <p className="tia-dock__said" role="status" data-step-said="">{said}</p>}
     </section>

@@ -167,6 +167,7 @@ ${NOTICE_TONES}
 .tia-dock__button:hover { background: var(--tia-brand-hover); }
 .tia-dock__button:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
 .tia-dock__button:disabled { opacity: 0.6; cursor: default; }
+.tia-dock__hold { display: block; }
 .tia-dock__button:disabled:hover { background: var(--tia-brand); }
 .tia-dock__button--done, .tia-dock__button--done:disabled { opacity: 1; background: var(--tia-tone-success-bg);
   color: var(--tia-tone-success-fg); }

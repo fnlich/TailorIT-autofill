@@ -117,7 +117,10 @@ export const FrameReportSchema = z.strictObject({
    *  its Next and its Submit show (visible and enabled), and a Submit the panel or Submit mode Auto pressed that waits
    *  for the platform's confirmation (`pressed`). Flags only. */
   buttons: z.strictObject({ final: z.enum(STEP_FINALITIES), next: z.boolean(), submit: z.boolean(),
-    pressed: z.literal('submit').optional() }).optional(),
+    pressed: z.literal('submit').optional(),
+    // jr8 WORKDAY: on a step before the last, the required fields still empty as the page shows them (absent: none),
+    // which keep the panel's "Continue to the next page" disabled. A count only.
+    requiredLeft: z.number().int().positive().max(500).optional() }).optional(),
   notices: z.array(z.strictObject({ code: z.enum(NOTICE_CODES), count: z.number().int().positive().optional() })).max(20),
   counters: z.strictObject({
     passes: z.number().int().nonnegative(),

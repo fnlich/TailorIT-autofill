@@ -439,7 +439,9 @@ export interface ListWait {
  * after a busy sign count as ready.
  */
 export async function awaitList(widget: WidgetTarget, ctx: WidgetContext,
-  options: { prevHash: OptionSetHash | null; capMs: number; emptyAfterMs?: number }): Promise<ListWait> {
+  options: { prevHash: OptionSetHash | null; capMs: number; emptyAfterMs?: number;
+    /** jr8 WORKDAY: the page answered the query another way (a search's match it chose itself): the wait ends. */
+    answered?: () => boolean }): Promise<ListWait> {
   const view = windowOf(ctx.root);
   const started = monotonicNow();
   let mutated = false;
@@ -447,6 +449,7 @@ export async function awaitList(widget: WidgetTarget, ctx: WidgetContext,
   const wait: QuietWait<ListWait['status']> = quietWait<ListWait['status']>({
     view, quietMs: WIDGET_QUIET_MS, capMs: options.capMs, signal: ctx.signal, aborted: 'aborted',
     atQuiet: (): ListWait['status'] | null => {
+      if (options.answered?.() === true) return 'ready'; // jr8 WORKDAY
       const listbox = widgetListOf(widget);
       if (watchList(wait, widget, listbox, ctx.root)) return null;
       // The widget's own busy sign counts while its list is hidden too: a search often hides it while it runs.

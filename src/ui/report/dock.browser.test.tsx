@@ -148,3 +148,73 @@ describe('the step dock’s hold (v5)', () => {
     expect(asked).toEqual([[0, 'submit', false], [0, 'submit', true]]);
   });
 });
+
+// ── jr8 WORKDAY (the owner's request of 2026-11-13): "continue to next page button should be shown on all step pages
+// except last page (submit page). If all required fields are filled, it will be enabled, and if not, it will be
+// disabled" ──
+describe('the step dock’s Continue on every step before the last (jr8)', () => {
+  const step = (buttons: { next: boolean; requiredLeft?: number }) => [frameReport(0, { status: 'review',
+    buttons: { final: 'not-final', submit: false, ...buttons } })];
+  const dock = (root: ParentNode) => root.querySelector<HTMLButtonElement>('button[data-step-action]');
+  const why = (root: ParentNode) => {
+    const held = dock(root)!.getAttribute('aria-describedby');
+    return { title: root.querySelector('[data-step-held]')?.getAttribute('title') ?? null,
+      described: held === null ? null : root.querySelector(`[id="${held}"]`)?.textContent ?? null };
+  };
+
+  it('shows, disabled with why, while required fields of the step are empty, and presses nothing', async () => {
+    const { asked, onPress } = presses([]);
+    for (const [left, said] of [[1, COPY.panel.step.nextHeld(1)], [3, COPY.panel.step.nextHeld(3)]] as const) {
+      const root = await mount(<Report reports={step({ next: true, requiredLeft: left })} onPress={onPress}
+        clock={SEEN_AT_ONCE} />);
+      expect(dock(root)?.dataset.stepAction).toBe('next');
+      expect(dock(root)?.textContent).toContain(COPY.panel.step.next);
+      expect(dock(root)?.disabled).toBe(true);
+      expect(why(root)).toEqual({ title: said, described: said });
+      await click(dock(root));
+      expect(asked).toEqual([]);
+      unmountAll();
+    }
+    expect(COPY.panel.step.nextHeld(1)).toBe('Fill the 1 required field left on this page first.');
+    expect(COPY.panel.step.nextHeld(3)).toBe('Fill the 3 required fields left on this page first.');
+  });
+
+  it('shows, disabled with why, where the page’s own Next cannot be pressed yet', async () => {
+    const { asked, onPress } = presses([]);
+    const root = await mount(<Report reports={step({ next: false })} onPress={onPress} clock={SEEN_AT_ONCE} />);
+    expect(dock(root)?.dataset.stepAction).toBe('next');
+    expect(dock(root)?.disabled).toBe(true);
+    expect(why(root)).toEqual({ title: COPY.panel.step.nextUnready, described: COPY.panel.step.nextUnready });
+    await click(dock(root));
+    expect(asked).toEqual([]);
+  });
+
+  it('is enabled once every required field is filled, with no why, and presses Next, never Submit', async () => {
+    const { asked, onPress } = presses([{ outcome: 'pressed' }]);
+    const root = await mount(<Report reports={step({ next: true })} onPress={onPress} clock={SEEN_AT_ONCE} />);
+    expect(dock(root)?.disabled).toBe(false);
+    expect(why(root)).toEqual({ title: null, described: null });
+    await click(dock(root));
+    expect(asked).toEqual([[0, 'next', false]]);
+  });
+
+  it('says why when the frame answers that required fields are still empty, and never asks to go on anyway',
+    async () => {
+      const { asked, onPress } = presses([{ outcome: 'required-empty', count: 2 }]);
+      const root = await mount(<Report reports={step({ next: true })} onPress={onPress} clock={SEEN_AT_ONCE} />);
+      await click(dock(root));
+      expect(asked).toEqual([[0, 'next', false]]);
+      expect(root.querySelector('[data-step-confirm]')).toBeNull();
+      expect(root.querySelector('[data-step-said]')?.textContent).toBe(COPY.panel.step.outcomes['required-empty']);
+    });
+
+  it('is no Continue on the last step, nor on one the adapter cannot tell', () => {
+    expect(dockOf([frameReport(0, { status: 'review', buttons: { final: 'final', next: false, submit: true,
+      requiredLeft: 2 } })])).toMatchObject({ target: 'submit' });
+    expect(dockOf([frameReport(0, { status: 'review', buttons: { final: 'unknown', next: true, submit: false,
+      requiredLeft: 2 } })])).toBeNull();
+    expect(dockOf([frameReport(0, { status: 'review', buttons: { final: 'not-final', next: false, submit: false } })]))
+      .toMatchObject({ target: 'next', held: COPY.panel.step.nextUnready });
+  });
+});
+// ── end jr8 WORKDAY ──

@@ -845,10 +845,21 @@ And, the same day:
 - A fill never crosses to another site or a new tab by itself (owner questions 391 and 392): Jibe's Apply stays the person's (Q7-13).
 - docs/SPEC.md is unchanged, and every hard rule below stands, as its bullets now read.
 
-## 21. jr8: every work-experience entry on Workable, and its job site's Apply now (the owner's reports of 2026-11-13)
+## 21. jr8 (the owner's reports, 2026-11-13)
+
+Five reports of one day, each fixed on a branch of its own and merged together. The fixes for Ashby (snapshot10: a Yes/No the page shows answered, a state of residence on two-letter codes) and iCIMS (snapshot11: Apply to the form, and the embedded form's "Stopped") amend no rule here; docs/ARCHITECTURE.md's jr8 sections hold them.
+
+### Workable: every work-experience entry, and its job site's Apply now
 
 - **The fill step's rounds** (amending the Phase 5 review's C-S3, a later attempt on a step starting from the earlier one's books, for the rounds of add, fill and save): the next round starts without the books of the repeatable blocks the round saved, so a field drawn at a saved block's key afterwards is another entry's, planned and written as new, never our value reset (`MAX_VALUE_FLIPS` unchanged); a saved block's row stands for its key, and is left out of the read-back at rest, only while the page shows no field there. Workable's blocks are its saved entries first, then the open editor, which live Workable draws at the top of its list (snapshot9; docs/ARCHITECTURE.md "jr8").
 - **Workable's job site's "Apply now"** (the owner's second report of that day, snapshot12: "Apply Now button is not working to show the form"): §19's "Autofill presses the site's Apply" now covers jobs.workable.com, whose posting's Apply now (until then never pressed) is the Workable adapter's declared entry, pressed once by the entry door alone and never while the application's dialog shows; every other door still never presses it, and the dialog's own Cancel and Submit stay never pressed.
+
+### Workday: Next on Auto, and the panel's "Continue to the next page"
+
+**The owner's words (verbatim, from the Workday report):** "after all required field is filled, click `Next` automatically. If there is unfilled required field, can't continue To the next page." and "Extension UI/UX(`continue to next page` button should be shown on all step pages except last page(submit page. If all required fields are filled, it will be enabled, and if not, it will be disabled)".
+
+- **Next mode Auto** presses a step's Next only once the fill has ended and every required field the step shows is filled as the page shows it (whoever filled it; a native select's or radio's own default is no answer unless the run wrote it, the person chose it, or the run could not decide the question), read at the validation and again right before the click; with one left, the run rests for the person. This adds to §12 Decision 6's checks and replaces none.
+- **The panel's "Continue to the next page"** shows on every step before the last (the step whose final action is Submit has Submit instead), enabled only when the page's own Next is there and every required field is filled by the same reading, otherwise disabled with its reason as a tooltip. Its press presses Next alone, never Submit, and is refused while a required field is empty (no "anyway", unlike Submit's).
 
 ## The hard rules that stay
 

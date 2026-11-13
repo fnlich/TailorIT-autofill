@@ -789,6 +789,7 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null,
       // (WidgetResults.options) and the element a choice presses (WidgetResults.pressTarget).
       ...(declared.results !== undefined ? { results: declared.results } : {}),
       ...(declared.queryKey !== undefined ? { queryKey: declared.queryKey } : {}),
+      ...(declared.choosesOnQuery === true && kind === 'typeahead-remote' ? { choosesOnQuery: true as const } : {}), // jr8 WORKDAY
       // jr6 ENGINE E1 (FIXPLAN §6.2 items 3 and 5): the page's shortest query, and a search whose typed text stands.
       ...(Number.isInteger(declared.minQueryLength) && declared.minQueryLength! > 0
         ? { minQueryLength: declared.minQueryLength! } : {}),

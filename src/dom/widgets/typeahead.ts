@@ -77,6 +77,12 @@
  * its toggling second click (iCIMS's search, whose container neither the box's blur nor any declared key shuts): a
  * search never leaves open a popup it opened. And (ENG-REV-3) a search for a box of several answers (the tags filler:
  * SearchOptions.keepChosen) never chooses a result its list marks chosen already, since there a choice takes it away.
+ * jr8 WORKDAY (snapshot13): a widget whose page may choose its search's match itself on the query (WidgetDecl
+ * .choosesOnQuery: Workday's prompt commits its one match on Enter, its pill drawn, no list left open) ends the search
+ * there: the answer it shows that it did not show before the query (the wait for its list ends as soon as it does) is
+ * matched by the worker as the one result, taken and read back where the worker chooses it, else nothing is chosen
+ * (verify-mismatch); never a second query, an "Other" or a click over the page's choice. Not for a box of several
+ * answers.
  */
 import { searchedOption } from '../../core/matcher/listSearch';
 import { MAX_SEARCH_QUERIES } from '../../core/matcher/searchLimits';
@@ -208,6 +214,18 @@ function pageChose(widget: NonNullable<FieldTarget['widget']>, option: Element, 
 const sameLabels = (a: readonly string[], b: readonly string[]) => a.length === b.length
   && a.every((label, at) => label === b[at]);
 
+/** jr8 WORKDAY: whether a search reads the page's own choice on its query (WidgetDecl.choosesOnQuery), which a box of
+ *  several answers (the tags filler's keepChosen: each search adds a chip) never does. */
+function choosesHere(widget: NonNullable<FieldTarget['widget']>, options: SearchOptions): boolean {
+  return widget.choosesOnQuery === true && options.keepChosen !== true && widget.tags === undefined;
+}
+
+/** jr8 WORKDAY: the answer the widget shows now that it did not show before the query (`before`), or null. */
+function choseOnQuery(widget: NonNullable<FieldTarget['widget']>, before: readonly string[]): string | null {
+  const now = chosenLabels(widget, []);
+  return now.length > 0 && !sameLabels(now, before) ? now[0]! : null;
+}
+
 /** Puts back what the text box held before our first query, with the text filler's events, if it holds another text.
  *  `leave` false: no focusout or blur follows (keepsListOpen). */
 function restore(input: HTMLInputElement | HTMLTextAreaElement, text: string, leave = true): void {
@@ -295,6 +313,25 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     return { chosen: null, verified, reason: verified ? 'ok' : 'verify-mismatch', blocked: false, typed, freeText: text };
   };
 
+  // jr8 WORKDAY (WidgetDecl.choosesOnQuery): the answer the page chose on our query, matched by the worker as the one
+  // result there is: taken (read back as the widget shows it) where the worker chooses it, else nothing chosen
+  // (verify-mismatch, or the Guard's refusal), with no click and no further query over the page's choice.
+  const pageChoseOnQuery = async (label: string): Promise<TypeaheadResult> => {
+    const widget = current.widget!;
+    const results: WidgetOptionRead[] = [{ label, disabled: false }];
+    const verdict = await hooks.match(results, current, true);
+    if (ctx.signal?.aborted) return ended();
+    if (verdict.choose === null || verdict.choose.index !== 0) {
+      return giveUp(verdict.choose === null && verdict.blocked ? verdict.reason : 'verify-mismatch',
+        verdict.choose === null && verdict.blocked);
+    }
+    const choice = verdict.choose;
+    await closeList(widget, closingContext(ctx), { activated: openedHere });
+    const verified = chosenLabels(widget, [label]).some((shown) => sameOptionLabel(shown, choice.cleanLabel));
+    return { chosen: { ...choice, results }, verified, reason: verified ? 'ok' : 'verify-mismatch', blocked: false,
+      typed };
+  };
+
   for (const [at, query] of queries.slice(0, MAX_SEARCH_QUERIES).entries()) {
     if (ctx.signal?.aborted) return ended();
     // v4 (drop): the field's time budget, checked before each query after the first.
@@ -331,6 +368,8 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     // Never typed into a box beside the widget that a person cannot see, or that takes no text.
     if (beside && !boxTakes(box)) return giveUp('needs-your-click');
     const prevHash = shownHash(widget);
+    // jr8 WORKDAY: what the widget shows chosen before this query, so a choice the page makes on it is told apart.
+    const shownBefore = choosesHere(widget, options) ? chosenLabels(widget, []) : null;
     // v4 (drop): a search that starts on a keydown gets its declared key (WidgetDecl.queryKey: Lever's), once the page
     // has answered typed text itself (this query, at once, or an earlier one): a page that ignores the input event gets
     // no key, and the search stops there as below.
@@ -344,8 +383,13 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     // A search its adapter says answers "nothing" sooner than the cap (WidgetDecl.emptyAfterMs: Ashby's "No results")
     // ends there.
     const wait = await awaitList(widget, ctx, { prevHash, capMs: TYPEAHEAD_QUERY_CAP_MS,
-      ...(widget.emptyAfterMs === undefined ? {} : { emptyAfterMs: widget.emptyAfterMs }) });
+      ...(widget.emptyAfterMs === undefined ? {} : { emptyAfterMs: widget.emptyAfterMs }),
+      ...(shownBefore === null ? {} : { answered: () => choseOnQuery(widget, shownBefore) !== null }) }); // jr8 WORKDAY
     if (wait.status === 'aborted') return ended();
+    // jr8 WORKDAY: the page chose a match of the query itself (WidgetDecl.choosesOnQuery: Workday's prompt commits its
+    // search's one match on Enter, its pill drawn, no list left to choose from): that answer ends the search.
+    const chosenByPage = shownBefore === null ? null : choseOnQuery(widget, shownBefore);
+    if (chosenByPage !== null) return pageChoseOnQuery(chosenByPage);
     // A page that does not react at all to a query ignores untrusted input: it is never tried another way. A list the
     // page filters at once, inside our input event, has changed before the wait watched it: that is an answer too. jr6
     // ENGINE E1: a free-text search keeps what was typed there (nothing matched it).
