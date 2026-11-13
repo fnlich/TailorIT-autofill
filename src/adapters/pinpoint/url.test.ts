@@ -2,9 +2,9 @@
  * Pinpoint's URL parser on its own, jr7 RBP-7 (RBP7-22; snapshot7 pinpointhq1's form posts to .../applications, where a
  * refused submission draws the form again): that address is the application page, under the form's key, and is named to
  * TailorIT by the form's canonical address. Tenants and ids here are made up. src/adapters/url.test.ts holds the shared
- * table. TailorIT's contract reads .../applications since jr7-tailorit-a (TAILORIT-7's twin), pulled by AUTO-7: until
- * then its direct reading is none, so it is held to "none or the same posting", and TailorIT's reading of the address
- * the extension asks it with (tailoritAddressOf) to the same posting strictly.
+ * table. TailorIT's contract reads .../applications since jr7-tailorit-a (TAILORIT-7's twin), pulled by AUTO-7, so its
+ * direct reading is held to the same posting strictly (jr7 INT-7: no longer "none or the same"), as TailorIT's reading
+ * of the address the extension asks it with (tailoritAddressOf) is.
  */
 import { describe, expect, it } from 'vitest';
 import { parseAtsUrl } from '../../contract/tailorit/lookup';
@@ -45,6 +45,6 @@ describe('parsePinpointUrl: the form drawn again where it posts (RBP7-22)', () =
     expect(tailoritAddressOf(address)).toBe(FORM);
     expect(parseAtsUrl(tailoritAddressOf(address))).toMatchObject(same);
     const direct = parseAtsUrl(address);
-    if (direct !== null) expect(direct).toMatchObject(same);
+    expect(direct).toMatchObject(same);
   });
 });

@@ -4,9 +4,9 @@
  * board is dropped, never the board itself (the verifier's guard: `jobs` second), and every spelling of one posting is
  * one application under one key, its canonical addresses locale-free. Boards and ids here are made up.
  * src/adapters/url.test.ts holds the shared table. TailorIT's contract reads the locale since jr7-tailorit-a (its
- * RIPPLING_LOCALE, TAILORIT-7's twin), pulled by AUTO-7: until then its direct reading of a locale page is none, so the
- * rows below hold it to "none or the same posting", and hold TailorIT's reading of the address the extension asks it
- * with (tailoritAddressOf: the locale-free canonical address) to the same posting strictly.
+ * RIPPLING_LOCALE, TAILORIT-7's twin), pulled by AUTO-7, so the rows below hold its direct reading of a locale page to
+ * the same posting strictly (jr7 INT-7: no longer "none or the same"), as they hold TailorIT's reading of the address
+ * the extension asks it with (tailoritAddressOf: the locale-free canonical address).
  */
 import { describe, expect, it } from 'vitest';
 import { parseAtsUrl } from '../../contract/tailorit/lookup';
@@ -64,7 +64,7 @@ describe('parseRipplingUrl: a board under a locale (RBP7-01)', () => {
   });
 
   it("names a locale page to TailorIT by the locale-free canonical address, which TailorIT's parseAtsUrl reads as the "
-    + 'same posting (its own reading of the locale address: none before jr7-tailorit-a, else the same)', () => {
+    + 'same posting, as it reads the locale address itself (since jr7-tailorit-a)', () => {
     const same = { kind: 'rippling', board: BOARD, externalId: ID };
     for (const address of [`${HOST}/en-GB/${BOARD}/jobs/${ID}?jobSite=LinkedIn`,
       `${HOST}/en-GB/${BOARD}/jobs/${ID}/apply${query('application')}`]) {
@@ -72,7 +72,7 @@ describe('parseRipplingUrl: a board under a locale (RBP7-01)', () => {
       expect(new URL(asked).pathname.startsWith('/en-GB/'), address).toBe(false);
       expect(parseAtsUrl(asked), address).toMatchObject(same);
       const direct = parseAtsUrl(address);
-      if (direct !== null) expect(direct, address).toMatchObject(same);
+      expect(direct, address).toMatchObject(same);
     }
   });
 });
