@@ -242,7 +242,7 @@ describe("check-build's development-only assertions", () => {
       'var s={step:`guest`,kind:"personal",page:`code-dialog`},r={from:"2020-01",to:"2021-02"};')));
     expect(clean.output).not.toContain('rule provenance');
     expect(clean.status).toBe(0);
-  });
+  }, 60_000); // Eleven runs of the script: as the file's other many-build cases (a loaded machine takes over 5 s).
 
   it('fail every check when the provenance list is missing', () => {
     const root = project();
