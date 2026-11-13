@@ -220,6 +220,7 @@ import { signInFormOf } from '../dom/sign-in-form'; // jr6 SHELL-A
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { chainFactsOf, claimFrameFacts, holdChainFacts, saysChainFacts, watchChainFacts } from './chain-frame'; // jr6 SHELL-B
 import { declaredChildOrigins, leafAdapter, parentOriginOf, watchLeafPress } from './chain-frame'; // jr7 CHAIN-7
+import { claimFrameSeen } from './claim-seen'; // jr8 ICIMS
 import { createReportLimiter } from './report';
 // v1.3 B
 import { captureStep, createFormCapture, stepNameOf } from './form-capture';
@@ -1286,7 +1287,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       firstInDocument: runsBegun === 0,
       // Without its launcher (the UI failed, or the page removed it for good) a frame cannot show it is seen: it fills
       // nothing inside another page.
-      frameShown: (signal, fresh) => (ui === null ? Promise.resolve(false) : ui.launcherShown(signal, fresh)),
+      frameShown: (signal, fresh) => {
+        // jr8 ICIMS: a claim frame is seen when its wrapper's page shows its frame element (claim-seen.ts).
+        const seen = claimed ? claimFrameSeen(options.wrapper !== undefined ? options.wrapper() : wrapperOf(view)) : null;
+        if (seen !== null) return Promise.resolve(seen); // jr8 ICIMS
+        return ui === null ? Promise.resolve(false) : ui.launcherShown(signal, fresh);
+      },
       page: on,
       now: () => platform.now(),
       options,
