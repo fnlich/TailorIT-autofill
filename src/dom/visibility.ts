@@ -640,9 +640,16 @@ function contentClipsOf(el: Element, cache: ScanCache): ClientRect[] {
  * vertically (its top at or above the part's top and its bottom at or below the part's bottom, half a pixel either
  * way). A clip that shows only a slit of it (an overflow: hidden band 4 px tall over a 290 px scroller) shows a person
  * only that slit however far the content scrolls, so it still cuts the content where it is.
+ * jr7 ENGINE-7 E4-1 (UKGR-7, UKGREADY-7's P2): or inside a page that never scrolls itself (html or body overflow-y hidden
+ * or clip: pageClipped), whose scrollers stay put as a fixed box's do (UKG Ready's div.l-page-layout-content under
+ * div#_layout, both viewport-tall, html and body overflow: hidden). Still only a scroller a person can scroll down
+ * (scrollsDown: overflow-y auto or scroll on itself, content taller than it), only vertically, only a clip showing its
+ * whole visible part (S1); what scrolls into reach is rule 5's (onScreen: scrollIn, within the scroll range).
  */
 function scrolledWithin(el: Element, clips: ClientRect[], cache: ScanCache): ClientRect[] {
-  if (clips.length === 0 || !scrollsDown(el, cache) || !fixedToViewport(el, cache)) return clips;
+  if (clips.length === 0 || !scrollsDown(el, cache)
+    || !(fixedToViewport(el, cache) || cache.memo('page-clipped', el.ownerDocument, () => pageClipped(el.ownerDocument,
+      cache)))) return clips;
   const r = el.getBoundingClientRect();
   const top = r.top + el.clientTop;
   const bottom = top + el.clientHeight;
