@@ -83,4 +83,30 @@ describe('Paycom addresses (paycom/url.ts)', () => {
       expect(read(href), href).toBeNull();
     }
   });
+
+  // jr7 DFPC-7 P2: CHAIN-7's worker tests (src/background/chain-jr7.test.ts) stand in for this parser; their reading,
+  // restated here, is this parser's on their addresses (and their 20 tests pass with the real parser in its place).
+  it('reads CHAIN-7\'s addresses as its worker tests\' stand-in does', () => {
+    const standIn = (href: string) => {
+      const url = new URL(href);
+      const parts = url.protocol === 'https:' && url.hostname === 'www.paycomonline.net'
+        ? /^\/v4\/ats\/web\.php\/portal\/([A-Fa-f0-9]{32})\/(?:jobs\/(\d+)|applications)\/?$/.exec(url.pathname) : null;
+      if (parts === null) return null;
+      const portal = `https://www.paycomonline.net/v4/ats/web.php/portal/${parts[1]}`;
+      if (parts[2] !== undefined) {
+        return { platform: 'paycom', board: parts[1], jobId: parts[2], page: 'posting',
+          applicationUrl: `${portal}/jobs/${parts[2]}` };
+      }
+      return /^#\/applications\/\d+/.test(url.hash)
+        ? { platform: 'paycom', board: parts[1], jobId: '', page: 'application', applicationUrl: `${portal}/applications` }
+        : null;
+    };
+    const other = 'FEDCBA9876543210FEDCBA9876543210';
+    for (const href of [`${PORTAL}/jobs/4321`, `${PORTAL}/applications#/applications/98765`,
+      `${PORTAL}/applications#/applications/98765/questions`,
+      `https://www.paycomonline.net/v4/ats/web.php/portal/${other}/applications#/applications/98765`,
+      `${PORTAL}/applications`, `${PORTAL}/career-page`]) {
+      expect(read(href), href).toEqual(standIn(href));
+    }
+  });
 });

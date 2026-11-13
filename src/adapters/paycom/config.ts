@@ -233,6 +233,10 @@ function titleColumnOf(field: Element): Element | null {
     if (Array.from(at.querySelectorAll('input, select, textarea')).some((el) => !own.has(el) && reachable(el))) return null;
     for (let before = at.previousElementSibling; before !== null; before = before.previousElementSibling) {
       if (Array.from(before.querySelectorAll('input, select, textarea')).some(reachable)) return null;
+      // A decoration no person reads is no title (apply-2's Ethnicity, a native select whose <label for=""> names no
+      // id: MUI's notched outline, <fieldset aria-hidden="true"> repeating the label's words at opacity 0, stands
+      // between the select and its <label class="uiLibNativeSelectLabel …"><span …>Ethnicity</span></label>).
+      if (before.closest('[aria-hidden="true"]') !== null) continue;
       const words = wordsOf(before);
       // Words a person reads: a letter or a digit (MUI's notched outline's legend holds a zero-width space alone).
       if (/[\p{L}\p{N}]/u.test(words) && before.querySelector('button') === null) return before;
@@ -275,12 +279,30 @@ function labelFor(control: Element): Element | null {
   return ruled.labelFor?.(control) ?? null;
 }
 
-/** Required: the rules' marks, or the star in a question's title column (the header). */
+/** A drawn radio's words (prescreen: <label class="uiLibRadioLabel …" for="<radio id>"> … <p data-testid="typography"
+ *  aria-hidden="true" …>Yes</p>, the radio's aria-label "Yes 1 of 2."): its own label's drawn <p>; null for any other
+ *  control. ENGINE-7 E1 item 5 (labels.ts hiddenOwnLabelSays) decides whether a person sees them. */
+function optionTextFor(input: HTMLInputElement): string | null {
+  if (!input.matches('input.uiLibRadioInput') || input.id === '') return null;
+  const label = input.ownerDocument.querySelector(`label.uiLibRadioLabel[for="${CSS.escape(input.id)}"]`);
+  const drawn = label?.querySelector('p[data-testid="typography"]') ?? null;
+  return drawn === null || wordsOf(drawn) === '' ? null : wordsOf(drawn);
+}
+
+/** A star a person sees (signature, apply-2: <span style="color: rgb(211, 47, 47);">*</span>) inside `place`. */
+const starIn = (place: Element | null | undefined) => place !== null && place !== undefined
+  && Array.from(place.querySelectorAll('span[style*="211, 47, 47"]')).some((star) => wordsOf(star) === '*'
+    && isUserVisible(star));
+
+/** Required: the rules' marks; a box's star drawn just after its label (apply-2: the Authorization's acknowledgement,
+ *  <label class="uiLibCheckbox …" for="authorization-acknowledge-disclosure-field"> … </label><span style="margin-left:
+ *  -16px;"><span style="color: rgb(211, 47, 47);">*</span></span>); or the star in a question's title column. */
 function requiredFor(control: Element): boolean {
   if (ruled.requiredFor?.(control) === true) return true;
-  const title = titleColumnOf(fieldOf(control));
-  return title !== null && Array.from(title.querySelectorAll('span[style*="211, 47, 47"]'))
-    .some((star) => wordsOf(star) === '*' && isUserVisible(star));
+  if (control.matches('input.uiLibCheckboxInput') && starIn(control.closest('label.uiLibCheckbox')?.nextElementSibling)) {
+    return true;
+  }
+  return starIn(titleColumnOf(fieldOf(control)));
 }
 
 // ── Boxes and dates ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -447,5 +469,6 @@ function requiredBlocksLeft(root: Element): Element[] {
 }
 
 /** Paycom's config: the rules, and the hooks no rule can say. */
-export const PAYCOM_CONFIG: AtsConfig = { ...RULES, code: { labelFor, requiredFor, controlBox, dateFor, widgetRoots, excluded,
-  submitButton, nextButton, isFinalStep, entryControl, neverPress, repeatables, requiredBlocksLeft } };
+export const PAYCOM_CONFIG: AtsConfig = { ...RULES, code: { labelFor, optionTextFor, requiredFor, controlBox, dateFor,
+  widgetRoots, excluded, submitButton, nextButton, isFinalStep, entryControl, neverPress, repeatables,
+  requiredBlocksLeft } };
