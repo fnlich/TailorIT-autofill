@@ -625,6 +625,11 @@ const PANEL = {
     confirmEmpty: (count: number) => (count === 1 ? '1 required field is still empty. Submit anyway?'
       : `${count} required fields are still empty. Submit anyway?`),
     submitAnyway: 'Submit Anyway', // v5 p1-panel
+    // jr8 WORKDAY: why "Continue To The Next Page" is off (its tooltip): required fields still empty, or the page's own
+    // Next not there to press yet.
+    nextHeld: (count: number) => (count === 1 ? 'Fill the 1 required field left on this page first.'
+      : `Fill the ${count} required fields left on this page first.`),
+    nextUnready: "This page's own Next button can't be pressed yet.",
     keepEditing: 'Not Yet', // v5 p1-panel
     outcomes: {
       pressed: 'Pressed on the page.',
