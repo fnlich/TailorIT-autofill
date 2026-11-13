@@ -19,7 +19,9 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { readableAncestors, submitWatchInstallsAt } from '../adapters/bridge-address';
 import { isNetPlatform } from '../dom/submit-net-protocol';
 import { installSubmitWatch } from '../page/submit-watch';
-import { platformOfUrl, SUBMIT_WATCH_MATCHES } from '../shared/hosts';
+// jr7 ENGINE-7 E0: the page-world scripts' host lookup (adapters/bridge-address.ts, module header); every platform
+// the watcher installs on is one it reads.
+import { bridgePlatformOfUrl, SUBMIT_WATCH_MATCHES } from '../shared/hosts';
 
 export default defineContentScript({
   matches: [...SUBMIT_WATCH_MATCHES],
@@ -28,7 +30,7 @@ export default defineContentScript({
   runAt: 'document_start',
   main() {
     const href = String(document.location?.href ?? '');
-    const platform = platformOfUrl(href);
+    const platform = bridgePlatformOfUrl(href);
     if (platform === null || !isNetPlatform(platform)
       || !submitWatchInstallsAt(href, platform, readableAncestors(document.defaultView))) return;
     installSubmitWatch(window, platform);

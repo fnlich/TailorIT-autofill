@@ -286,12 +286,12 @@ describe('the repeated rows (ferrilli-page2)', () => {
     const firstRow = fixture.doc.querySelector<HTMLInputElement>('[id="87977d19-cf17-123c-4ac9-4e73751925f3"][data-group="0"]')!;
     expect(firstRow.labels).toHaveLength(4);
     // Undone: with no repeatables the four rows share one section and are told apart by order alone, and the label[for]
-    // is read as the browser ties it: the first row's four times, the other rows' controls none (their question rule's
-    // title instead).
+    // is read as the browser ties it: the first row's four labels (jr7 ENGINE-7 E1 item 7, RBP7-21: saying the same
+    // words, they count once), the other rows' controls none (their question rule's title instead).
     const flat = fieldsOf(fixture, without({ code: undefined })).filter((field) => field.label.startsWith('Company Name'));
     expect(new Set(flat.map((field) => field.section.id))).toEqual(new Set(['employment-history']));
     expect(flat.map((field) => [field.label, field.labelSource])).toEqual([
-      ['Company Name Company Name Company Name Company Name', 'for'], ['Company Name', 'adapter'],
+      ['Company Name', 'for'], ['Company Name', 'adapter'],
       ['Company Name', 'adapter'], ['Company Name', 'adapter']]);
   });
 });

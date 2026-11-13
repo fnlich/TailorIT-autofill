@@ -29,7 +29,9 @@
  *   (the behaviour review of 2026-11-06, M2): an upload rule's `done` sign shown in its area (naming a file, where the
  *   rule reads names), and uploadState confirms only the written file's name where the rule reads names; uploadReveal
  *   (jr6 ENGINE E2, JZ-4): an upload rule's `reveal` link inside its area.
- * - `code` is spread last: it wins over every rule-built hook.
+ * - `code` is spread last: it wins over every rule-built hook. jr7 ENGINE-7 E0 (FIX7PLAN §3.1): the shared contract's
+ *   new hooks (chainChildOrigins, confirmationAfter, successSigns, requiredBlocksLeft, uploadPrompt, editorOpener,
+ *   notCodeBox, identityHosts, handOver, tailoritAddress) are built from no rule: `code` passes each through as written.
  * configProblems(config) lists the contradictions a config may hold (every rule's `from`, an entry-choice state with a
  * root, an entry or a signIn its auth does not allow); its tests run it over ATS_CONFIGS.
  * Nothing here reads, logs or sends a value: only page markup and text.

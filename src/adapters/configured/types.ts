@@ -15,6 +15,10 @@
  * - neverPress, excluded, errors, busy: the hooks of those names; success: content/submitted.ts, through ATS_CONFIGS;
  * - posting: postingText, entryControl; quirks, autosaves: as named;
  * - code: hooks no rule can say, each naming its snapshot in a comment, spread over the rule-built ones (code wins).
+ *   jr7 ENGINE-7 E0 (FIX7PLAN §3.1): the shared contract's new hooks have no rule of their own
+ *   (chainChildOrigins, confirmationAfter, successSigns, requiredBlocksLeft, uploadPrompt, editorOpener, notCodeBox,
+ *   identityHosts, handOver, tailoritAddress: ../types.ts): a configured platform declares each in `code`, which
+ *   ./index.ts passes through as written.
  */
 import type { Platform } from '../../core/enums';
 import type { ApplicationUrl } from '../application-key';
@@ -30,7 +34,9 @@ export type From = string;
 export type ConfiguredHooks = Omit<Adapter, 'id' | 'matchesUrl' | 'canonicalApplicationUrl'>;
 
 export interface AtsConfig {
-  /** core/enums.ts PLATFORMS; listed in TailorIT's ATS_KINDS (every configured platform is, since its API 6). */
+  /** core/enums.ts PLATFORMS; listed in TailorIT's ATS_KINDS (every configured platform is, since its API 6), except
+   *  jr7's new ones (ukgready, paycom, jobdiva, eightfold), ahead of the contract until its API 7
+   *  (PLATFORMS_AHEAD_OF_CONTRACT). */
   readonly platform: Platform;
   /** The fixture cases the config was read from (fixtures/<platform>/<case>.html). */
   readonly snapshots: readonly string[];
@@ -88,7 +94,8 @@ export interface AtsConfig {
   /** The page saves each change before Submit (Adapter.autosaves). */
   readonly autosaves?: boolean;
   readonly quirks?: Adapter['quirks'];
-  /** Hooks no rule can say, each naming its snapshot in a comment; spread over the hooks the rules build. */
+  /** Hooks no rule can say, each naming its snapshot in a comment; spread over the hooks the rules build. jr7 ENGINE-7
+   *  E0: every hook of FIX7PLAN §3.1 (the module header's list) is declared here. */
   readonly code?: Partial<ConfiguredHooks>;
 }
 

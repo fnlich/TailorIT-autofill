@@ -233,8 +233,14 @@ export interface SignInForm {
   /** On a create-account page, the password typed again; null when the page asks for it once. */
   confirm: HTMLInputElement | null;
   /** The account's required terms boxes still unticked: the form's required ones, or (v3 Phase 7b) the boxes the
-   *  adapter declares the account's terms where the page marks none required (Workday's createAccountCheckbox). */
-  terms: HTMLInputElement[];
+   *  adapter declares the account's terms where the page marks none required (Workday's createAccountCheckbox).
+   *  jr7 FIX7PLAN §3.1 (ENGINE-7 E0; UP7-04, UltiPro's Register privacy box, a ukg-checkbox[role=checkbox] custom
+   *  element with no native input, ultipro1 of snapshot7): also a declared ARIA checkbox (an element with
+   *  role="checkbox", never a native input) inside the declared container, ticked per the Consents mode as other account
+   *  terms are (FIX7PLAN §5 D-9). Until ENGINE-7 E1 (FIX7PLAN §6.2 item 8: dom/sign-in-form.ts signInRefusal accepts
+   *  it, content/sign-in.ts fill clicks it while aria-checked="false" and reads "true" back) a term that is no native
+   *  checkbox refuses the form ('shape'), as it always did. */
+  terms: Array<HTMLInputElement | HTMLElement>;
   /** Sign in, Create account or Next: the one control pressed. A declared form's is named by an identity of its own
    *  in the snapshot (an id, its data-automation-id, its title or its words), never as "the form's one submit button";
    *  it may be the visible face the page draws over its own button (Workday's div[role=button] over an aria-hidden
@@ -312,6 +318,34 @@ export interface ChainStepFacts {
   counters: number;
 }
 // ── end jr6 ENGINE E0 ──
+
+// ── jr7 ENGINE-7 E0 (FIX7PLAN §3.1): the shared contract's types; the platform packages implement the hooks ──
+/** jr7 FIX7PLAN §3.1 (UKGR-10: UKG Ready's "Upload Complete" alert after a résumé upload, offering Populate or Cancel,
+ *  snapshot7 secure7.saashr; EFA-6: Eightfold's Data Privacy Agreement dialog before its upload goes through, I Agree or
+ *  Cancel, snapshot7 twillio): what a dialog the site draws right after the run's own file write asks of the run.
+ *  'dismiss': its control closes it and keeps the file without the site's parse (UKG Ready's Cancel; never Populate:
+ *  Decision 16, no site-parsed entries, FIX7PLAN §5 D-9). 'consent': its control accepts a privacy agreement the upload
+ *  needs (Eightfold's I Agree), pressed only where the Consents mode ticks such a box (D-9 EFA-6); otherwise the upload
+ *  is the person's. */
+export type UploadPromptKind = 'dismiss' | 'consent';
+
+/** jr7 FIX7PLAN §3.1 (UKGR-10, EFA-6; UploadPromptKind names their snapshots): a dialog the site draws after the run's
+ *  own upload (Adapter.uploadPrompt), and the one control ENGINE-7's upload-prompt door may press in it (FIX7PLAN §6.2
+ *  E2 item 4): once per upload, never "Populate", never a Cancel on a consent. */
+export interface UploadPrompt {
+  /** The one control the door presses: UKG Ready's Cancel ('dismiss'), Eightfold's I Agree ('consent'). */
+  press: HTMLElement;
+  kind: UploadPromptKind;
+}
+
+/** jr7 FIX7PLAN §3.1 (ICIMS7-04: iCIMS's Assessments step after the final Submit, a#assessmentLink0
+ *  .iCIMS_Assessment_Recovery, snapshot7 icims3): a step that is the person's by design, which no run fills or presses
+ *  (Adapter.handOver). 'assessment': the application goes on with an assessment the person takes. 'documents' (jr7
+ *  ENGINE-7 E2, ULTIPRO-7's UP7-07, gated Q7-8): the site asks after the Submit whether to save the application's
+ *  documents to the person's profile (UltiPro's div#AttachmentsChangedModal[role=dialog]): their answer. */
+export const HAND_OVER_KINDS = ['assessment', 'documents'] as const;
+export type HandOverKind = (typeof HAND_OVER_KINDS)[number];
+// ── end jr7 ENGINE-7 E0 ──
 
 export interface Adapter {
   id: AdapterId;
@@ -561,6 +595,70 @@ export interface Adapter {
    *  held), Manual leaves it to the person. Null on any other page. */
   signInContainer?(doc: Document): SignInForm | null;
   // ── end core pass Z1, items 24 and 27 ──
+  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.1): declared by the platform packages, read by ENGINE-7, AUTO-7 and CHAIN-7; types
+  // only (no caller reads one until its reader's package builds it). A configured adapter declares any of them in its
+  // config's `code` (configured/types.ts). Each answers from page markup and the page's own address alone: never a
+  // value the person typed, never a per-person id (FIX7PLAN §5 D-10). ──
+  /** jr7 FIX7PLAN §3.1 (ICIMS7-01; implemented by ICIMS-7, read by CHAIN-7 for the worker's key): on a portal frame the
+   *  adapter claimed, the origins of the forms frames it shows (iCIMS's `.iCIMS_mainFormFrame iframe#icims_formFrame`,
+   *  whose src is https://<company>.icims.com/forms…: the IForm steps of snapshot7's iCIMS1, on a portal whose host
+   *  adapters/chain.ts chainChildOrigin reads no forms origin from): each an origin alone
+   *  (`https://<x>.icims.com`), taken only from a src whose path is /forms, never www, api, login or an internal- host;
+   *  [] on any other page. The portal's hello carries these origins only, never an address (FIX7PLAN §6.5 item 1). */
+  chainChildOrigins?(doc: Document): readonly string[];
+  /** jr7 FIX7PLAN §3.1 (WD7-05: Workday's page after Submit, snapshot7 workday1; UP7-01: UltiPro's
+   *  …/OpportunityApply/ApplicationSubmitted, ultipro1 and ultipro2; Oracle's my-profile after Submit, oraclecloud1;
+   *  implemented by WORKDAY-7, ULTIPRO-7 and ORACLE-7): whether `here`, an address of the same origin on the platform's
+   *  own route, is the page after submitting the application whose Submit was armed at `armed`. Read by AUTO-7
+   *  (content/runtime.ts onAddress while a Submit is armed in the document, also where applicationOf(here) is null, and
+   *  background/submissions.ts confirmedArm). Pure: no per-person id of `here` (UltiPro's applicationId, Paycom's
+   *  application number) is ever read into a key or an address (D-10). */
+  confirmationAfter?(armed: URL, here: URL): boolean;
+  /** jr7 FIX7PLAN §3.1 (jr7-O2: Oracle's my-profile application tiles after Submit, oraclecloud1; J7-SR-4:
+   *  SmartRecruiters' drawn confirmation, smartrecruiter1; implemented by ORACLE-7 and BOARDS-7): the success signs the
+   *  page draws for the application armed under `armedKey` (its application key, `${platform}:${hex16}`), read only
+   *  after an armed Submit (AUTO-7: content/submitted.ts signsOf and newSuccessSign). Where the page lists several
+   *  applications, only the one tied to the armed key, never "any active tile" (D-10); [] where none shows. */
+  successSigns?(doc: Document, armedKey: string): Element[];
+  /** jr7 FIX7PLAN §3.1 (jr7-O7: Oracle's required "Skills" list with no tile and no control to type into,
+   *  oraclecloud1; implemented by ORACLE-7): the required blocks of the form that hold no control and no entry yet, each
+   *  the block's element; [] where none is left. ENGINE-7 E1 (FIX7PLAN §6.2 item 10) adds them to
+   *  orchestrator.ts submitFacts' requiredEmpty, so Submit Auto holds ('submit-held-required') and the review shows one
+   *  row per block. */
+  requiredBlocksLeft?(root: Element): Element[];
+  /** jr7 FIX7PLAN §3.1 (UploadPrompt names its snapshots; implemented by UKGREADY-7 and JDEF-7): the dialog the site
+   *  draws after the run's own file write, and the one control the upload-prompt door may press in it; null while none
+   *  shows. Read once after each upload by ENGINE-7 E2's door (src/dom/fillers/upload-prompt.ts, FIX7PLAN §6.2 E2
+   *  item 4), lint-held as every door is. */
+  uploadPrompt?(doc: Document): UploadPrompt | null;
+  /** jr7 FIX7PLAN §3.1 (UKGR-9: UKG Ready's Contact summary, whose single-entry editor opens on its Edit, secure7.saashr
+   *  of snapshot7; implemented by UKGREADY-7): the controls that open a single-entry editor the run must fill, each
+   *  pressed at most once per document by ENGINE-7 E2's editor-opener door (FIX7PLAN §6.2 E2 item 5), nothing else;
+   *  [] where none shows. */
+  editorOpener?(root: Element): HTMLElement[];
+  /** jr7 FIX7PLAN §3.1 (EFA-3: Eightfold's apply form, whose Contact Information and Position Specific Questions boxes
+   *  say autocomplete="one-time-code", snapshot7 twillio; implemented by JDEF-7): whether `input`, a box marked
+   *  autocomplete="one-time-code", is no code box. ENGINE-7 E1 (FIX7PLAN §6.2 item 4) then reads it as neither an auth
+   *  field (dom/kinds.ts) nor code evidence (dom/pause-detect.ts); a box this does not name still pauses. */
+  notCodeBox?(input: HTMLInputElement): boolean;
+  /** jr7 FIX7PLAN §3.1 (UP7-02, AUTO7-05: UKG's sign-in, signin-us.ultipro.com in ultipro1 and ultipro2; Dayforce's
+   *  dfid.dayforcehcm.com; iCIMS's login.icims.com; declared by ULTIPRO-7, DFPC-7 and ICIMS-7): the hosts the platform's
+   *  own sign-in leaves to, each a whole-host pattern (^…$) tested against the lower-case host name. Read by AUTO-7
+   *  (FIX7PLAN §6.4 item 6): after a job began, a tab on such a host ends the agent's job needs-you sign_in, never
+   *  'other', and keeps a Queue item ready. A list of patterns, never a page read. */
+  identityHosts?: readonly RegExp[];
+  /** jr7 FIX7PLAN §3.1 (HandOverKind names its snapshot; implemented by ICIMS-7): the step the document shows that is
+   *  the person's by design ('assessment', 'documents'), or null. Read by AUTO-7 (FIX7PLAN §6.4 item 14): the agent after its
+   *  Submit ends needs-you with its words, never timed_out; the Queue tab's status says so. Nothing in it is pressed. */
+  handOver?(doc: Document): HandOverKind | null;
+  /** jr7 FIX7PLAN §3.1 (ICIMS7-11, D-6: the Jibe posting <customer>.jibeapply.com/jobs/<id>, snapshot7 icims2, whose
+   *  a#link-apply leads to the same job's iCIMS gate; implemented by ICIMS-7's Jibe adapter): the posting address to
+   *  give TailorIT (lookup, Add job, Applied) instead of `here`, this page's own; null to give `here`. Built from the
+   *  parts of a link the page shows, never its query: https://<portal>.icims.com/jobs/<id>/job for the same numeric id.
+   *  AUTO-7 (FIX7PLAN §6.4 item 20) re-checks it in the worker before use (it parses as iCIMS, a posting or its form,
+   *  the same job id, https, no credentials), else gives `here`. */
+  tailoritAddress?(doc: Document, here: URL): string | null;
+  // ── end jr7 ENGINE-7 E0 ──
   quirks?: {
     settleCapMs?: number;
     transitionCapMs?: number;

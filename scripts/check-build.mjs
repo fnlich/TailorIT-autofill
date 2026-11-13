@@ -84,8 +84,13 @@ const SIDEBAR_APP_BUDGET = 800 * 1024;
  *  host outside the public job hosts (sixteen), so it is 20,921 bytes, under a budget of 24 KiB. v5 p2-detect: 26 KiB,
  *  for the address variants and the pages after submitting its parsers now read (UltiPro's parser joined them for UKG's
  *  other recruiting hosts; Oracle's reads its Candidate Experience on a company's own domain, which platformOfUrl names
- *  with the HR and LinkedIn hosts it keeps off): 20,939 bytes on main 019f489, 26,507 with them (983c81e). */
-const BRIDGE_BUDGET = 26 * 1024;
+ *  with the HR and LinkedIn hosts it keeps off): 20,939 bytes on main 019f489, 26,507 with them (983c81e).
+ *  jr7 ENGINE-7 E0 (the coordinator's decision of 2026-11-11): 28 KiB, for jr7's five new platforms (UKG Ready, Paycom,
+ *  JobDiva, Eightfold, Jibe: FIX7PLAN §3.2), whose static matches the bridge's manifest matches must equal (ATS_MATCHES:
+ *  182 bytes), with their HR and refused domains, which its reading of Oracle on a company's own domain holds. Their
+ *  host table is left out of the bridge (shared/hosts.ts bridgePlatformOfUrl: it installs on none of their hosts), so
+ *  the bridge is 26,952 bytes at jr7-engine-e0 (26,515 at jr6-done c90debb; 27,292 with their host table). */
+const BRIDGE_BUDGET = 28 * 1024;
 // ── v5 p2-detect: the page-world submit watcher (src/entrypoints/submit-watch.content.ts) ──
 /** The submit watcher's file, as WXT writes it (the page-world bridge is the manifest's other world MAIN script). */
 const SUBMIT_WATCH_FILE = 'content-scripts/submit-watch.js';
@@ -173,8 +178,10 @@ const BRIDGE_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage'];
  *  CAPTCHA and anti-bot vendors' pages isCompanySiteUrl refuses too (isCaptchaVendorUrl): 17,194 bytes on main 9ac709e,
  *  17,529 with them. v5 p2-detect: 19 KiB, for the address variants' patterns it rules out and Oracle's Candidate
  *  Experience on a company's own domain it recognises by its address (shared/hosts.ts oracleOwnDomain): 18,657 bytes
- *  (983c81e). */
-const SENTINEL_BUDGET = 19 * 1024;
+ *  (983c81e). jr7 ENGINE-7 E0 (the coordinator's decision of 2026-11-11): 20 KiB, for jr7's new hosts and HR lists
+ *  (FIX7PLAN §3.2: the five platforms' static matches, the HR and refused domains isCompanySiteUrl and oracleOwnDomain
+ *  read), which jr7's wave 1 grows further: 19,386 bytes at jr7-engine-e0 (19,112 at jr6-done c90debb). */
+const SENTINEL_BUDGET = 20 * 1024;
 /** What the sentinel's bundle may never name: React and zod (it renders and parses nothing), any DOM write, and window
  *  messaging. It reads the page and sends the worker one message. */
 const SENTINEL_NEVER_NAMES = ['react.', '__REACT', 'ZodError', '$ZodType', 'zod', 'createElement', 'appendChild', 'insertBefore',
@@ -699,7 +706,9 @@ const LINKEDIN_EXCLUDED = ['https://*.linkedin.com/*', 'https://*.linkedin.cn/*'
 const LINKEDIN_ADDRESSES = ['https://www.linkedin.com/jobs/view/4012345678/', 'https://linkedin.com/jobs/view/4012345678/',
   'https://uk.linkedin.com/jobs/search/?currentJobId=4012345678', 'https://lnkd.in/abc', 'https://media.licdn.com/x.js'];
 /** The employee HR systems' hosts (the Phase 8 review, B4), which the registration must exclude too, and addresses on
- *  them it must never reach: a system where a person works for their employer never gets the sentinel. */
+ *  them it must never reach: a system where a person works for their employer never gets the sentinel. A second lock
+ *  on shared/hosts.ts HR_HOST_MATCHES: test/check-build.test.ts holds the two lists to the same patterns, and every
+ *  pattern here to an address of HR_ADDRESSES it covers. */
 const HR_EXCLUDED = ['https://*.oraclecloud.com/*', 'https://*.myworkday.com/*', 'https://*.sapsf.com/*', 'https://*.sapsf.eu/*',
   // ── snapshot build 2026-11-06 (oracle-sf-sr): Oracle's government cloud ──
   'https://*.oraclegovcloud.com/*',
@@ -710,7 +719,9 @@ const HR_EXCLUDED = ['https://*.oraclecloud.com/*', 'https://*.myworkday.com/*',
   'https://*.paycor.com/*', 'https://*.rippling.com/*', 'https://*.hibob.com/*', 'https://*.adp.com/*',
   'https://app.careerplug.com/*',
   // The P2 review (security 2): UKG Pro Canada's employee hosts.
-  'https://*.ultipro.ca/*'];
+  'https://*.ultipro.ca/*',
+  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3): UKG Ready's, JobDiva's and Eightfold's domains (Paycom's host above) ──
+  'https://*.saashr.com/*', 'https://*.jobdiva.com/*', 'https://*.eightfold.ai/*'];
 const HR_ADDRESSES = ['https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'https://objectstorage.us-ashburn-1.oraclecloud.com/n/x',
   'https://wd5.myworkday.com/acme/d/home.htmld', 'https://performancemanager4.sapsf.com/sf/home', 'https://hcm.sapsf.eu/sf/home',
   // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
@@ -724,7 +735,12 @@ const HR_ADDRESSES = ['https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelc
   'https://app.hibob.com/home', 'https://my.adp.com/', 'https://app.careerplug.com/jobs/1',
   // The P2 review (security 2): an employer's own UKG Pro hosts' job boards, for its staff (internal postings).
   'https://n12.ultipro.com/ACME1000/JobBoard/0d3f6a2e-1111-2222-3333-444455556666/OpportunityDetail?opportunityId=1',
-  'https://n12.ultipro.ca/ACME1000/JobBoard/0d3f6a2e-1111-2222-3333-444455556666/'];
+  'https://n12.ultipro.ca/ACME1000/JobBoard/0d3f6a2e-1111-2222-3333-444455556666/',
+  // ── jr7 ENGINE-7 E0: UKG Ready's employee sign-in and home, Paycom's clients' system, JobDiva's employers' sign-in,
+  // Eightfold's recruiters' app and a company's employees' careerhub (made-up ids) ──
+  'https://secure7.saashr.com/ta/1234567.login', 'https://secure7.saashr.com/ta/1234567.home',
+  'https://www.paycomonline.net/v4/cl/web.php/app/login', 'https://www1.jobdiva.com/employers/login.jsp',
+  'https://app.eightfold.ai/', 'https://acme.eightfold.ai/careerhub/explore'];
 
 /** v5 p1-rules (PLAN decision 9): addresses of the CAPTCHA and anti-bot vendors' own frames (reCAPTCHA's anchor,
  *  challenge and enterprise frames on google.com and recaptcha.net, hCaptcha's, Turnstile's, Arkose's, DataDome's,

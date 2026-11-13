@@ -380,6 +380,13 @@ const PLATFORM_NAMES = {
   site: 'Company site',
   // ── snapshot build 2026-11-06 (oracle-sf-sr): the new platform's name, as the report and the panel show it ──
   smartrecruiters: 'SmartRecruiters',
+  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 2): the snapshot7 platforms' names ──
+  ukgready: 'UKG Ready',
+  paycom: 'Paycom',
+  jobdiva: 'JobDiva',
+  eightfold: 'Eightfold',
+  jibe: 'Jibe',
+  // ── end jr7 ENGINE-7 E0 ──
 } as const satisfies Record<Platform, string>;
 
 /** The report's own words (src/ui/report), shared by the side panel and the in-page panel. */
@@ -663,8 +670,9 @@ const STRIP = {
   // no frame of ours is on) promises no Apply; a posting (`posting`) says Autofill presses its Apply first.
   noForm: `${NO_FORM_HERE}. ${OPEN_A_JOB}`,
   posting: `${NO_FORM_HERE} yet. Autofill presses the site's Apply first.`, // jr6 apply F1
-  // DESIGN-NEW-ATS Phase 0: the new ATSs too.
-  none: 'Open a job application on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany or ADP Workforce Now to use Autofill.',
+  // DESIGN-NEW-ATS Phase 0: the new ATSs too. jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 2): and the four ATSs of snapshot7
+  // (Jibe is iCIMS's front, whose application is on iCIMS).
+  none: 'Open a job application on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now, UKG Ready, Paycom, JobDiva or Eightfold to use Autofill.',
 } as const;
 
 /** "Posted 2 days ago", from whole days since it was posted. */
@@ -1526,6 +1534,9 @@ export const PAGE_COPY = {
   brand: { name: ['Tailor', 'IT'], product: 'Autofill', settings: 'Autofill settings' },
   panelTitle: 'Review',
   panelEmpty: 'Nothing to review yet. Open a job application and choose Autofill.',
+  // jr7 ENGINE-7 E1 item 10 (jr7-O7): the review's row for a required block that holds no entry yet (Oracle's Skills),
+  // `block` its title as the page shows it.
+  requiredBlockLeft: (block: string) => `${block}: add at least one`,
   optionsTitle: 'TailorIT Autofill settings',
   tripwire: NOTICES.tripwire,
   notices: NOTICES,

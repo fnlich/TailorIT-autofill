@@ -422,8 +422,16 @@ function refusalOf(form: SignInForm, address: URL, cache: ScanCache): SignInRefu
   }
   // The terms, each the form's own checkbox a person can see or reach by its label; a declared form's one at most.
   if (declared && form.terms.length > 1) return 'shape';
-  for (const box of form.terms) {
-    if (box.localName !== 'input' || box.type !== 'checkbox' || box.form !== owner
+  for (const term of form.terms) {
+    // jr7 ENGINE-7 E1 item 8 (UP7-04): a term that is no native input is taken only as a declared ARIA checkbox inside
+    // the adapter's declared container (ariaTermRefusal); anywhere else it refuses the form, as it always did.
+    if (term.localName !== 'input') {
+      const refusal = ariaTermRefusal(term, declared ? container : null, doc, cache);
+      if (refusal !== null) return refusal;
+      continue;
+    }
+    const box = term as HTMLInputElement;
+    if (box.type !== 'checkbox' || box.form !== owner
       || box.ownerDocument !== doc || (container !== null && !holds(container, box))) return 'shape';
     if (!box.isConnected) return 'hidden';
     if (declared ? !reachableTerms(box, cache) : !shownOrLabelled(box, cache)) return 'hidden';
@@ -466,6 +474,34 @@ function refusalOf(form: SignInForm, address: URL, cache: ScanCache): SignInRefu
     : !holds(owner, button))) return 'shape';
   return null;
 }
+
+// ── jr7 ENGINE-7 E1 item 8 (UP7-04, as its verifier corrected it) ──
+/** Whether `el` says it is an ARIA checkbox and what it shows: role="checkbox" with aria-checked "true" or "false". */
+export function ariaCheckboxState(el: Element): 'true' | 'false' | null {
+  if ((el.getAttribute('role') ?? '').trim().toLowerCase() !== 'checkbox') return null;
+  const checked = (el.getAttribute('aria-checked') ?? '').trim().toLowerCase();
+  return checked === 'true' || checked === 'false' ? checked : null;
+}
+
+/**
+ * Why a term that is no native input refuses the form, or null where it is taken: a declared ARIA checkbox (UltiPro's
+ * Register privacy box, a ukg-checkbox[role=checkbox] custom element with no native input, snapshot7 ultipro1), only on
+ * a declared sign-in container (`container`: Adapter.signInContainer), inside it, in its document, saying role=checkbox
+ * and aria-checked "true" or "false" ('shape' otherwise); connected and shown ('hidden'); not aria-disabled
+ * ('disabled'); not under aria-hidden ('honeypot'). content/sign-in.ts ticks it by a click while it says "false" and
+ * reads "true" back before the press.
+ */
+function ariaTermRefusal(term: Element, container: Element | null, doc: Document, cache: ScanCache):
+  SignInRefusal | null {
+  if (container === null || ariaCheckboxState(term) === null || term.ownerDocument !== doc || !holds(container, term)) {
+    return 'shape';
+  }
+  if (!term.isConnected || !isUserVisible(term, cache)) return 'hidden';
+  if ((term.getAttribute('aria-disabled') ?? '').trim().toLowerCase() === 'true') return 'disabled';
+  if (term.closest('[aria-hidden="true" i]') !== null) return 'honeypot';
+  return null;
+}
+// ── end jr7 ENGINE-7 E1 item 8 ──
 
 // ── snapshot build 2026-11-06 (core pass Z1, item 24) ──
 /**

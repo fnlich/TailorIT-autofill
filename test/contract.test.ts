@@ -234,7 +234,10 @@ describe('the value lists the two sides share', () => {
     // SmartRecruiters since its API 6, which leaves `site` alone, a company's own page, which is no ATS).
     expect(ATS_KINDS).toEqual(PLATFORMS.filter((platform) => !PLATFORMS_AHEAD_OF_CONTRACT.includes(platform)));
     expect(PLATFORMS_AHEAD_OF_CONTRACT.some((platform) => (ATS_KINDS as readonly string[]).includes(platform))).toBe(false);
-    expect(PLATFORMS_AHEAD_OF_CONTRACT).toEqual(['site']);
+    // jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 1): the snapshot7 platforms, ahead until TailorIT's API 7 (INT-7 then puts
+    // the list back to site and jibe, which TailorIT keeps as the iCIMS job its Apply leads to: FIX7PLAN §5 D-6).
+    expect(PLATFORMS_AHEAD_OF_CONTRACT).toEqual(['site', 'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe']);
+    expect(PLATFORMS.slice(-5)).toEqual(['ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe']);
     // Each ATS's name, as TailorIT's pages write it (its ATS_NAMES, version 6), is the one the panel and the report show.
     expect(ATS_KINDS.filter((kind) => ATS_NAMES[kind] !== COPY.platforms[kind])).toEqual([]);
     expect(CONTRACT_DEGREE_LEVELS).toEqual(DEGREE_LEVELS);

@@ -149,7 +149,8 @@ describe('the ATS host list', () => {
       for (const url of inside) expect(platformOfUrl(url), url).toBe(platform);
       for (const url of outside) expect(platformOfUrl(url), url).toBeNull();
     }
-    // Paycom waits for its snapshots and DFIN stays a company's own host: neither is an ATS host.
+    // A Paycom portal page that is no posting and no application (jr7: Paycom's candidate pages are its own since
+    // snapshot7) and DFIN, a company's own host, are no ATS platform's.
     expect(platformOfUrl('https://www.paycomonline.net/v4/ats/web.php/portal/x/career-page')).toBeNull();
     expect(platformOfUrl('https://jobs.dfinsolutions.com/job/x/1/')).toBeNull();
     // A path-scoped host's path is compared as written, as Chrome's match pattern compares it.
@@ -237,13 +238,15 @@ describe('the company career sites (v3 Phase 8)', () => {
         'https://app.careerplug.com/*',
         // The P2 review (security 2): UKG Pro Canada's employee hosts.
         'https://*.ultipro.ca/*',
+        // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3): UKG Ready's, JobDiva's and Eightfold's domains ──
+        'https://*.saashr.com/*', 'https://*.jobdiva.com/*', 'https://*.eightfold.ai/*',
         // ── v5 p1-rules (PLAN decision 9): the CAPTCHA and anti-bot vendors' own pages ──
         '*://*.google.com/recaptcha/*', '*://*.recaptcha.net/*', '*://*.hcaptcha.com/*', '*://challenges.cloudflare.com/*',
         '*://*.arkoselabs.com/*', '*://*.funcaptcha.com/*', '*://*.captcha-delivery.com/*', '*://*.protechts.net/*',
         '*://*.geetest.com/*'], allFrames: false, runAt: 'document_idle', persistAcrossSessions: true,
       world: 'ISOLATED' }]);
-    // The P2 review (security 2): UKG Pro Canada's employee hosts, the 19th.
-    expect(HR_HOST_MATCHES).toHaveLength(19);
+    // The P2 review (security 2): UKG Pro Canada's employee hosts, the 19th; jr7 ENGINE-7 E0: three more.
+    expect(HR_HOST_MATCHES).toHaveLength(22);
   });
 
   // Every address the registration reaches is one isCompanySiteUrl takes, and the other way round.
@@ -311,14 +314,19 @@ describe('the company career sites (v3 Phase 8)', () => {
       // ── The security fix of 2026-11-06 (S5) ──
       'www.dayforcehcm.com', 'jobs.dayforcehcm.com', 'n12.ultipro.com', 'recruiting.ultipro.com', 'acme.ukg.net',
       'access.paylocity.com', 'secure.paycor.com', 'app.rippling.com', 'ats.rippling.com', 'app.hibob.com', 'my.adp.com',
-      'x.workforcenow.adp.com', 'online.adp.com', 'adp.com', 'app.careerplug.com', 'APP.CareerPlug.com.']) {
+      'x.workforcenow.adp.com', 'online.adp.com', 'adp.com', 'app.careerplug.com', 'APP.CareerPlug.com.',
+      // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3) ──
+      'secure7.saashr.com', 'saashr.com', 'www2.jobdiva.com', 'jobdiva.com', 'app.eightfold.ai', 'acme.eightfold.ai',
+      'Eightfold.AI.']) {
       expect(isHrHost(host), host).toBe(true);
     }
     for (const host of ['acme.wd5.myworkdayjobs.com', 'sapsf.com.evil.example', 'notoraclecloud.com', 'careers.acme.example',
       'notoraclegovcloud.com',
       // HR_HOST_MATCHES names these hosts alone, never one under or beside them.
       'paycomonline.net', 'x.www.paycomonline.net', 'x.app.careerplug.com', 'acme.careerplug.com', 'careerplug.com',
-      'bamboohr.com.evil.example', 'jobs.jobvite.com', 'adp.com.evil.example', 'notrippling.com']) {
+      'bamboohr.com.evil.example', 'jobs.jobvite.com', 'adp.com.evil.example', 'notrippling.com',
+      // jr7 ENGINE-7 E0: another domain ending in their names, and Jibe, iCIMS's candidate front (no employee system).
+      'notsaashr.com', 'saashr.com.evil.example', 'myjobdiva.com', 'eightfold.ai.evil.example', 'acme.jibeapply.com']) {
       expect(isHrHost(host), host).toBe(false);
     }
   });
@@ -479,7 +487,9 @@ describe("Oracle's Candidate Experience on a company's own domain (v5 p2-detect)
   it('never on LinkedIn, an employee HR system, a CAPTCHA vendor or Oracle\'s own domains\' other hosts', () => {
     for (const host of ['www.linkedin.com', 'acme.paylocity.com', 'n12.ultipro.com', 'acme.bamboohr.com', 'wd5.myworkday.com',
       'www.google.com', 'challenges.cloudflare.com', 'objectstorage.us-ashburn-1.oraclecloud.com', 'www.oraclegovcloud.com',
-      'workforcenow.adp.com', 'www.paycomonline.net', 'app.careerplug.com', 'newassets.hcaptcha.com']) {
+      'workforcenow.adp.com', 'www.paycomonline.net', 'app.careerplug.com', 'newassets.hcaptcha.com',
+      // jr7 ENGINE-7 E0: the snapshot7 HR domains.
+      'secure7.saashr.com', 'www2.jobdiva.com', 'acme.eightfold.ai', 'app.eightfold.ai']) {
       const url = `https://${host}/hcmUI/CandidateExperience/en/sites/CX_1/job/12345`;
       expect(platformOfUrl(url), url).not.toBe('oracle');
       expect(oracleOwnDomain(host, '/hcmUI/CandidateExperience/en/sites/CX_1/job/12345'), host).toBe(false);
@@ -496,3 +506,128 @@ describe("Oracle's Candidate Experience on a company's own domain (v5 p2-detect)
   });
 });
 // ── end v5 p2-detect ──
+
+// ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 3): the snapshot7 platforms' hosts ──
+describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
+  /** A Paycom client key's shape (32 hex digits; made up). */
+  const KEY = '0123456789abcdef'.repeat(2);
+  /** Each platform's addresses, made-up ids in the shapes the audits measured: its candidate pages (its platform's);
+   *  pages its static match takes that are no candidate page (the content script dormant there: no platform); and its
+   *  host's or domain's other pages (employees', recruiters', or for Jibe a page off its postings), which no static
+   *  script reaches. */
+  const JR7: Array<{ platform: string; candidate: string[]; dormant: string[]; other: string[] }> = [
+    { platform: 'ukgready',
+      // UKGR-2: the careers page's posting and its application session; secure<n> with up to two digits, or none.
+      candidate: ['https://secure7.saashr.com/ta/1234567.careers?ShowJob=987654321',
+        'https://secure7.saashr.com/ta/1234567.careers?ActiveSessionId=1&lang=en-US', 'https://secure.saashr.com/ta/123.careers',
+        'https://secure12.saashr.com/ta/1234567890.careers'],
+      dormant: ['https://secure7.saashr.com/ta/acme.careers', 'https://secure7.saashr.com/ta/1234567.careers/x',
+        'https://www.saashr.com/ta/1234567.careers', 'https://secure123.saashr.com/ta/1234567.careers'],
+      // The employee system: its sign-in and its home, the host's root.
+      other: ['https://secure7.saashr.com/ta/1234567.login', 'https://secure7.saashr.com/ta/1234567.login?rnd=1',
+        'https://secure7.saashr.com/ta/1234567.home', 'https://secure7.saashr.com/', 'https://saashr.com/'] },
+    { platform: 'paycom',
+      // PC7-02: the posting and the application under the client key.
+      candidate: [`https://www.paycomonline.net/v4/ats/web.php/portal/${KEY}/jobs/123456`,
+        `https://www.paycomonline.net/v4/ats/web.php/portal/${KEY}/jobs/123456/`,
+        `https://www.paycomonline.net/v4/ats/web.php/portal/${KEY}/applications`,
+        `https://www.paycomonline.net/v4/ats/web.php/portal/${KEY}/applications#/applications/7654321`],
+      dormant: [`https://www.paycomonline.net/v4/ats/web.php/portal/${KEY}/career-page`,
+        `https://www.paycomonline.net/v4/ats/web.php/portal/${KEY}/jobs/x`,
+        'https://www.paycomonline.net/v4/ats/web.php/portal/0123/jobs/123456'],
+      // The employees' and the clients' systems, and the host's root.
+      other: ['https://www.paycomonline.net/v4/ee/web.php/app/login', 'https://www.paycomonline.net/v4/cl/web.php/app/login',
+        'https://www.paycomonline.net/'] },
+    { platform: 'jobdiva',
+      // JDEF-12: the candidate portal on www, www1 and www2.
+      candidate: ['https://www2.jobdiva.com/portal/?a=abcdefghij0123456789#/jobs/12345',
+        'https://www1.jobdiva.com/portal/?a=abcdefghij0123456789', 'https://www.jobdiva.com/portal/'],
+      dormant: ['https://app.jobdiva.com/portal/?a=x', 'https://www123.jobdiva.com/portal/'],
+      // Another JobDiva path (the legacy job page, the employers' sign-in), and the domain's root.
+      other: ['https://www2.jobdiva.com/candidates/myjobs/openjob.jsp?a=x&id=1', 'https://www1.jobdiva.com/employers/login.jsp',
+        'https://www.jobdiva.com/', 'https://jobdiva.com/portal'] },
+    { platform: 'eightfold',
+      // JDEF-12: a company's careers site, its form and its success page.
+      candidate: ['https://acme.eightfold.ai/careers?pid=123456789&domain=acme.example',
+        'https://acme.eightfold.ai/careers/apply?pid=123456789', 'https://acme.eightfold.ai/careers/apply/success?pid=123456789',
+        'https://acme.eightfold.ai/careers/job/123456789'],
+      // The domain pattern takes app. and www. too (hosts with no platform, as every domain pattern's other hosts).
+      dormant: ['https://app.eightfold.ai/careers?domain=acme.example', 'https://www.eightfold.ai/careers'],
+      // The recruiters' app.eightfold.ai, the employees' /careerhub/ (internal mobility) on a company's host.
+      other: ['https://app.eightfold.ai/', 'https://app.eightfold.ai/login', 'https://acme.eightfold.ai/careerhub/explore',
+        'https://acme.eightfold.ai/careerhub', 'https://acme.eightfold.ai/', 'https://eightfold.ai/'] },
+    { platform: 'jibe',
+      // ICIMS7-11: a customer's posting.
+      candidate: ['https://acme.jibeapply.com/jobs/12345', 'https://acme.jibeapply.com/jobs/12345?lang=en-us'],
+      dormant: ['https://a.b.jibeapply.com/jobs/12345'],
+      // Its pages off the postings (the job search, the root).
+      other: ['https://acme.jibeapply.com/', 'https://acme.jibeapply.com/jobs', 'https://acme.jibeapply.com/search?q=x'] },
+  ];
+  const patterns = ATS_MATCHES.map((p) => new MatchPattern(p));
+  const [sentinel] = registrationsFor({ sites: true });
+  /** Whether the sentinel's registration reaches an address, as Chrome reads its matches and exclusions. */
+  const sentinelReaches = (url: string) => sentinel!.matches.some((p) => new MatchPattern(p).includes(url))
+    && !(sentinel!.excludeMatches ?? []).some((p) => new MatchPattern(p).includes(url));
+
+  it('names each candidate page its platform, a static match the sentinel never reaches', () => {
+    for (const { platform, candidate } of JR7) {
+      for (const url of candidate) {
+        expect(platformOfUrl(url), url).toBe(platform);
+        expect(staticPlatformOfUrl(url), url).toBe(platform);
+        expect(patterns.some((p) => p.includes(url)), url).toBe(true);
+        expect(onAtsMatch(url), url).toBe(true);
+        expect(isCompanySiteUrl(url), url).toBe(false);
+        expect(sentinelReaches(url), url).toBe(false);
+      }
+    }
+  });
+
+  it("leaves the static match's other pages dormant: no platform, no company page", () => {
+    for (const { dormant } of JR7) {
+      for (const url of dormant) {
+        expect(platformOfUrl(url), url).toBeNull();
+        expect(patterns.some((p) => p.includes(url)), url).toBe(true);
+        expect(onAtsMatch(url), url).toBe(true);
+        expect(isCompanySiteUrl(url), url).toBe(false);
+        expect(sentinelReaches(url), url).toBe(false);
+      }
+    }
+  });
+
+  it('keeps the employee pages of UKG Ready, Paycom, JobDiva and Eightfold out: neither the script nor the sentinel', () => {
+    for (const { platform, other } of JR7.filter((each) => each.platform !== 'jibe')) {
+      for (const url of other) {
+        expect(platformOfUrl(url), url).toBeNull();
+        expect(patterns.some((p) => p.includes(url)), url).toBe(false);
+        expect(onAtsMatch(url), url).toBe(false);
+        // An employee HR system's (HR_HOST_MATCHES and isHrHost): no sentinel, and never a company page the worker
+        // injects into, nor one a single-page app's route from a candidate page makes the site adapter's.
+        expect(isHrHost(new URL(url).hostname), `${platform} ${url}`).toBe(true);
+        expect(isCompanySiteUrl(url), url).toBe(false);
+        expect(sentinelReaches(url), url).toBe(false);
+      }
+    }
+  });
+
+  it("keeps Jibe's pages off its postings no platform's and no static match: company pages, Jibe being no HR system", () => {
+    for (const url of JR7.find((each) => each.platform === 'jibe')!.other) {
+      expect(platformOfUrl(url), url).toBeNull();
+      expect(patterns.some((p) => p.includes(url)), url).toBe(false);
+      expect(onAtsMatch(url), url).toBe(false);
+      expect(isHrHost(new URL(url).hostname), url).toBe(false);
+      expect(isCompanySiteUrl(url), url).toBe(true);
+    }
+  });
+
+  it('reads no candidate path over http, on a port spelled out, or on a look-alike host', () => {
+    for (const url of ['http://secure7.saashr.com/ta/1234567.careers', `http://www.paycomonline.net/v4/ats/web.php/portal/${KEY}/jobs/1`,
+      'http://www2.jobdiva.com/portal/', 'http://acme.eightfold.ai/careers', 'http://acme.jibeapply.com/jobs/1',
+      'https://secure7.saashr.com.evil.example/ta/1234567.careers', 'https://www2.jobdiva.com.evil.example/portal/',
+      'https://acme.eightfold.ai.evil.example/careers', 'https://acme.jibeapply.com.evil.example/jobs/1',
+      'https://secure7.saashr.com:8443/ta/1234567.careers']) {
+      expect(platformOfUrl(url), url).toBeNull();
+      expect(onAtsMatch(url), url).toBe(false);
+    }
+  });
+});
+// ── end jr7 ENGINE-7 E0 ──

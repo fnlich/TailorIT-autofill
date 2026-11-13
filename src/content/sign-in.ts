@@ -139,9 +139,11 @@
  */
 import { signInHostCovered } from '../contract/tailorit/credentials';
 import type { AccountErrorKind, Adapter, PagePasswordClass, PagePasswordRules, SignInForm } from '../adapters/types';
+import type { ConsentCategory } from '../core/enums';
 import { clickIfAllowed } from '../dom/fillers';
 import { fireChange, fireInput, fireLeave, setValue } from '../dom/fillers/events';
 import { accountFormOf } from '../dom/account-section';
+import { ariaCheckboxState } from '../dom/sign-in-form';
 import { clickAdapterSignIn, clickAdapterSignInPrelude } from '../dom/fillers/not-submit';
 import {
   captchaErrorsShown, checkboxCaptchasUnsolved, detectPause, pageChallenged, vendorFramesShown,
@@ -216,6 +218,26 @@ export interface SignInContext {
   /** The jr6 review (sec-1): aborted when the document goes (the runtime's lifetime), which `signal` also ends with: a
    *  password typed into a form whose press is the person's stays guarded until then. Absent: `signal`. */
   page?: AbortSignal;
+  /** jr7 ENGINE-7 E2 (ULTIPRO-7's UP7-04; FIX7PLAN D-9): the person's Consents mode, as the run's settings hold it. At an
+   *  email gate, a declared ARIA term the page does not mark required (UltiPro's Register privacy box), which no plan
+   *  can write, is ticked only where it says so (ticksAccountTerms). Absent: such a term is left for the person. */
+  consents?: AccountConsents;
+}
+
+/** jr7 ENGINE-7 E2 (UP7-04): the Consents mode and the optional consents it pre-approves (Settings.modes.consents,
+ *  Settings.preapprovedConsent), as SignInContext.consents carries them. */
+export interface AccountConsents {
+  mode: 'all' | 'required';
+  preapproved: readonly ConsentCategory[];
+}
+
+/** jr7 ENGINE-7 E2 (UP7-04; D-9: account terms are ticked per the Consents mode): whether an account's optional terms
+ *  (its privacy policy and terms of use) are ticked: Consents All, or Required only with both pre-approved (as the
+ *  policy ticks an optional consent: core/resolver/policy.ts consentValue). */
+export function ticksAccountTerms(consents: AccountConsents | undefined): boolean {
+  if (consents === undefined) return false;
+  return consents.mode === 'all'
+    || (consents.preapproved.includes('privacy') && consents.preapproved.includes('terms'));
 }
 
 function urlOf(href: string): URL | null {
@@ -369,8 +391,9 @@ function brokenRule(adapter: Adapter, form: SignInForm, password: string, login:
 }
 
 /** jr6 SHELL-A (FIXPLAN §6.12 item 4; WD-05): the kind of the account error the page shows about `form` now (the
- *  adapter's errors on the form's own <form>, each a person can see, read by Adapter.accountErrorKind), the first that
- *  names one; null otherwise (no hook, none shown, a hook that throws). Nothing of the error's words is kept or logged. */
+ *  adapter's errors on the form's own <form>, then (jr7 WD7-06) the document's other alerts, each a person can see, read
+ *  by Adapter.accountErrorKind), the first that names one; null otherwise (no hook, none shown, a hook that throws).
+ *  Nothing of the error's words is kept or logged. */
 function accountErrorShown(ctx: SignInContext, form: SignInForm): AccountErrorKind | null {
   const kindOf = ctx.adapter.accountErrorKind;
   const owner = anchorOf(form)?.form ?? form.form ?? null;
@@ -382,7 +405,11 @@ function accountErrorShown(ctx: SignInContext, form: SignInForm): AccountErrorKi
   } catch {
     return null;
   }
-  for (const el of errors) {
+  // jr7 WORKDAY-7 (WD7-06): and the page's shown notices (role=alert) that are none of its errors, after them: Workday's
+  // "An email has been sent to you. Please verify your account." beside its Sign In form after Create Account, which
+  // the adapter reads as verify-email and never counts as an error (adapters/workday accountErrorKind).
+  const notices = Array.from(ctx.doc.querySelectorAll('[role="alert" i]')).filter((el) => !errors.includes(el));
+  for (const el of [...errors, ...notices]) {
     if (!el.isConnected || !isUserVisible(el, cache)) continue;
     let kind: AccountErrorKind | null = null;
     try {
@@ -397,8 +424,11 @@ function accountErrorShown(ctx: SignInContext, form: SignInForm): AccountErrorKi
 
 /** jr6 SHELL-A (D-d): whether a box the page marks required (its required attribute, or aria-required): a required
  *  consent is ticked in either Consents mode (core/resolver/policy.ts consentValue's consent.required). */
-function markedRequired(box: HTMLInputElement): boolean {
-  return box.required || (box.getAttribute('aria-required') ?? '').trim().toLowerCase() === 'true';
+function markedRequired(box: HTMLElement): boolean {
+  // jr7 ENGINE-7 E0 (FIX7PLAN §3.1): a term may be a declared ARIA checkbox (SignInForm.terms), which has no required
+  // attribute of its own: its aria-required alone, which the same test reads.
+  return (box.localName === 'input' && (box as HTMLInputElement).required)
+    || (box.getAttribute('aria-required') ?? '').trim().toLowerCase() === 'true';
 }
 // ── end jr6 SHELL-A ──
 
@@ -464,7 +494,7 @@ function sameForm(form: SignInForm, held: SignInForm): boolean {
  * boxes the password went into are added to `secret`. Answers 'typed', or why not.
  */
 function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm, credential: SignInCredential,
-  secret: HTMLInputElement[]): 'typed' | 'unavailable' | 'challenged' | 'failed' {
+  secret: HTMLInputElement[], ariaTicked: HTMLElement[] = []): 'typed' | 'unavailable' | 'challenged' | 'failed' {
   const now = samePage(ctx, asked);
   if (now === null) {
     log('content.sign-in-refused', { moved: true });
@@ -530,13 +560,28 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
     return 'failed';
   }
   // jr6 SHELL-A (D-d): at an email gate, only the terms the page marks required (ticked in either Consents mode); any
-  // other is the run's plan's, which decided it per the Consents mode as it filled the gate (module header).
+  // other is the run's plan's, which decided it per the Consents mode as it filled the gate (module header). jr7
+  // ENGINE-7 E2 (ULTIPRO-7's UP7-04): but a declared ARIA term, which no plan can write, is ticked as an account's
+  // terms are, per the Consents mode (SignInContext.consents: ticksAccountTerms); without the mode, left.
   for (const box of form.terms) {
-    if (wall === 'email-gate' && !markedRequired(box)) continue;
+    if (wall === 'email-gate' && !markedRequired(box)
+      && (box.localName === 'input' || !ticksAccountTerms(ctx.consents))) continue;
+    // jr7 ENGINE-7 E1 item 8 (UP7-04): a declared ARIA checkbox (signInRefusal took it) is clicked only while it says
+    // aria-checked="false", once; press reads "true" back before the form's button is pressed.
+    if (box.localName !== 'input') {
+      if (ariaCheckboxState(box) !== 'false') continue;
+      clickIfAllowed(box, { adapter: ctx.adapter, root: null });
+      ariaTicked.push(box);
+      continue;
+    }
     clickIfAllowed(box, { adapter: ctx.adapter, root: null });
   }
   return 'typed';
 }
+
+/** jr7 ENGINE-7 E1 item 8 (UP7-04): how long the press waits for a ticked ARIA term to say aria-checked="true" (a
+ *  custom element may draw its state a frame later), at most. */
+export const ARIA_TERM_MS = 1_500;
 
 /** signInRefusal, but (core-x, item 2) in an account section, whose button is never pressed here (its declared form's
  *  press is the person's), the button's own state is no reason to refuse the boxes: the page may disable "Submit
@@ -555,8 +600,8 @@ function enabledNow(button: HTMLElement): boolean {
 
 /** Presses the form's own button through the sign-in door (module header, 3): at once, or, on a declared form whose page
  *  enables it once filled, once it is enabled (SIGN_IN_ENABLE_MS at most), with the page read again first. */
-async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm):
-  Promise<'pressed' | 'unavailable' | 'challenged' | 'failed' | 'left'> {
+async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm,
+  ariaTicked: readonly HTMLElement[] = []): Promise<'pressed' | 'unavailable' | 'challenged' | 'failed' | 'left'> {
   const current = () => {
     try {
       return formNow(ctx, wall);
@@ -564,6 +609,18 @@ async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: Sig
       return null;
     }
   };
+  // jr7 ENGINE-7 E1 item 8 (UP7-04): each ARIA term fill clicked reads aria-checked="true" back first, ARIA_TERM_MS at
+  // most; one that does not refuses the press ('failed': the page took no tick, so its button is not pressed).
+  if (ariaTicked.length > 0) {
+    const until = monotonicNow() + ARIA_TERM_MS;
+    while (!ariaTicked.every((term) => term.isConnected && ariaCheckboxState(term) === 'true')) {
+      if (monotonicNow() >= until) {
+        log('content.sign-in', { terms: false });
+        return 'failed';
+      }
+      if ((await deadline(ENABLE_LOOK_MS, ctx.signal)) === 'aborted') return 'left';
+    }
+  }
   if (held.declared === true && held.enablesWhenFilled === true) {
     const until = monotonicNow() + SIGN_IN_ENABLE_MS;
     for (;;) {
@@ -771,13 +828,15 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
     watching.abort();
   };
   const secret: HTMLInputElement[] = [];
+  /** jr7 ENGINE-7 E1 item 8: the declared ARIA terms fill clicked, read back by press. */
+  const ariaTicked: HTMLElement[] = [];
   let outcome: SignInOutcome = 'failed';
   /** What ends the guard, when not this function: the keep (`keep`), or the document's end (`page`). */
   let handedTo: 'keep' | 'page' | null = null;
   try {
     // The answer is held in this frame only for the writes below (module header, 2).
     const credential = answer.data as SignInCredential;
-    const typed = fill(ctx, wall, asked, form, credential, secret);
+    const typed = fill(ctx, wall, asked, form, credential, secret, ariaTicked);
     // A form whose press is the person's (SignInForm.personPresses): typed, and handed over (module header).
     if (typed === 'typed' && form.personPresses === true) {
       log('content.sign-in', { pressed: false, person: true });
@@ -800,7 +859,7 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
       keepForPerson(ctx, secret, false, release);
       return outcome;
     }
-    const pressed = typed === 'typed' ? await press(ctx, wall, asked, form) : typed;
+    const pressed = typed === 'typed' ? await press(ctx, wall, asked, form, ariaTicked) : typed;
     log('content.sign-in', { pressed: pressed === 'pressed' });
     outcome = pressed === 'pressed' ? await outcomeAfter(ctx, form) : pressed;
     // jr6 SHELL-A (FIXPLAN §6.12 item 4; WD-05): a press the site refused says why where the page names a kind.

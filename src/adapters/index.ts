@@ -66,6 +66,13 @@ import { diceAdapter } from './dice';
 import { jobviteAdapter } from './jobvite';
 import { paylocityAdapter } from './paylocity';
 // ── end New ATSs, builder B ──
+// ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 4): the snapshot7 platforms' stubs, each its package's from jr7-engine-e0 ──
+import { eightfoldAdapter } from './eightfold';
+import { jibeAdapter } from './jibe';
+import { jobDivaAdapter } from './jobdiva';
+import { paycomAdapter } from './paycom';
+import { ukgReadyAdapter } from './ukgready';
+// ── end jr7 ENGINE-7 E0 ──
 
 export { FIXTURE_BOARD } from './address';
 
@@ -92,6 +99,11 @@ const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = {
   paycor: paycorAdapter,
   hibob: hiBobAdapter,
   // ── end New ATSs, builder C ──
+  // ── jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 4): stubs that read nothing until their packages build them (UKGREADY-7,
+  // DFPC-7, JDEF-7, ICIMS-7) ──
+  ukgready: ukgReadyAdapter, paycom: paycomAdapter, jobdiva: jobDivaAdapter, eightfold: eightfoldAdapter,
+  jibe: jibeAdapter,
+  // ── end jr7 ENGINE-7 E0 ──
 };
 
 /** The adapters that may handle a frame at `url`, in the order the content runtime tries their detect(). A company's

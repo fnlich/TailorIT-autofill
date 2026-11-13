@@ -17,7 +17,9 @@
  * budget. WXT's main-world wrapper is an anonymous function: the bridge adds no global to the page.
  */
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from '../adapters/bridge-address';
+// jr7 ENGINE-7 E0: the page-world scripts' own reading of a frame below its ancestors (bridge-address.ts, module
+// header), whose host lookup leaves out the platforms the bridge installs on none of the hosts of.
+import { bridgeFramedByEmployerPage, bridgeInstallsAt, readableAncestors } from '../adapters/bridge-address';
 import { installBridge } from '../page/bridge';
 import { ATS_MATCHES } from '../shared/hosts';
 
@@ -28,7 +30,7 @@ export default defineContentScript({
   runAt: 'document_start',
   main() {
     const href = String(document.location?.href ?? '');
-    if (bridgeInstallsAt(href) && !framedByEmployerPage(href, readableAncestors(document.defaultView))) {
+    if (bridgeInstallsAt(href) && !bridgeFramedByEmployerPage(href, readableAncestors(document.defaultView))) {
       installBridge(document);
     }
   },

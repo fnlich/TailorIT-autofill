@@ -9,8 +9,10 @@
  * A password field or a one-time-code field is never a field: it means the step is a sign-in, an account creation or
  * an email code, and nothing on such a step is filled, not even the email (pause-detect.ts). The jr6 review (sec-5):
  * nor is a box the job-site password was typed into, whatever type the page gives it since (a "Show password" makes it
- * a text box: dom/secret-boxes.ts).
+ * a text box: dom/secret-boxes.ts). jr7 ENGINE-7 E1 item 4 (EFA-3): a one-time-code box its adapter names no code
+ * box (Adapter.notCodeBox) is read as the field its type makes it.
  */
+import type { Adapter } from '../adapters/types';
 import type { FieldFormat } from '../core/enums';
 import { isSecretBox } from './secret-boxes';
 
@@ -36,9 +38,28 @@ const INPUTMODE_FORMATS: Readonly<Record<string, FieldFormat>> = {
   email: 'email', tel: 'tel', url: 'url', decimal: 'number',
 };
 
-/** The kind of a native control. */
-export function kindOf(el: Element): ControlKind {
-  if (isAuthField(el) || holdsPassword(el)) return { field: false, auth: true };
+// ── jr7 ENGINE-7 E1 item 4 (EFA-3) ──
+/** What kindOf and isAuthField ask of an adapter: whether a one-time-code box is no code box (Adapter.notCodeBox). */
+export type CodeBoxReader = Pick<Adapter, 'notCodeBox'> | null | undefined;
+
+/** Whether the adapter names `el`, a box marked autocomplete="one-time-code", no code box (Eightfold's Phone Number,
+ *  City and Position Specific Questions boxes, which say one-time-code to keep the browser's own autofill off, as other
+ *  sites say new-password: snapshot7 twillio). A hook that throws names none. */
+function declaredNoCodeBox(el: Element, adapter: CodeBoxReader): boolean {
+  if (adapter?.notCodeBox === undefined || el.localName !== 'input') return false;
+  try {
+    return adapter.notCodeBox(el as HTMLInputElement) === true;
+  } catch {
+    return false;
+  }
+}
+// ── end jr7 ENGINE-7 E1 item 4 ──
+
+/** The kind of a native control. jr7 ENGINE-7 E1 item 4: `adapter`, the one the control is read with, where its
+ *  notCodeBox may name a one-time-code box no code box. */
+export function kindOf(el: Element, adapter?: CodeBoxReader): ControlKind {
+  // jr6-password (D-f2): a box the job-site password was typed into stays no field. jr7 ENGINE-7: the adapter's word.
+  if (isAuthField(el, adapter) || holdsPassword(el)) return { field: false, auth: true };
   const tag = el.localName;
   if (tag === 'textarea') return { field: true, kind: 'textarea' };
   if (tag === 'select') return { field: true, kind: (el as HTMLSelectElement).multiple ? 'multiselect' : 'select' };
@@ -73,12 +94,13 @@ export function inputModeFormatOf(el: Element): FieldFormat | undefined {
   return INPUTMODE_FORMATS[(el.getAttribute('inputmode') ?? '').trim().toLowerCase()];
 }
 
-/** A password or one-time-code control: the step needs the person (a sign-in, an account, an email code). */
-export function isAuthField(el: Element): boolean {
+/** A password or one-time-code control: the step needs the person (a sign-in, an account, an email code). jr7
+ *  ENGINE-7 E1 item 4 (EFA-3): never a one-time-code box `adapter` names no code box; a password box always. */
+export function isAuthField(el: Element, adapter?: CodeBoxReader): boolean {
   if (el.localName !== 'input') return false;
   const input = el as HTMLInputElement;
   if (input.type === 'password') return true;
-  return autocompleteTokens(el).includes('one-time-code');
+  return autocompleteTokens(el).includes('one-time-code') && !declaredNoCodeBox(el, adapter);
 }
 
 /** The jr6 review (sec-5): a box the job-site password was typed into, whatever its type now (module header,

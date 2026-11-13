@@ -50,7 +50,8 @@ export const ORACLE_REFUSED_DOMAINS: readonly string[] = ['oraclecloud.com', 'or
   // The P2 review (security 2)
   'ultipro.ca',
   'paycomonline.net', 'careerplug.com', 'google.com', 'recaptcha.net', 'hcaptcha.com', 'cloudflare.com', 'arkoselabs.com',
-  'funcaptcha.com', 'captcha-delivery.com', 'protechts.net', 'geetest.com'];
+  'funcaptcha.com', 'captcha-delivery.com', 'protechts.net', 'geetest.com', 'saashr.com', 'jobdiva.com', 'eightfold.ai',
+  'jibeapply.com'];
 const ORACLE_DOMAINS = new RegExp(`(?:^|\\.)(?:${ORACLE_REFUSED_DOMAINS.map((domain) => domain.replace(/\./g, '\\.'))
   .join('|')})$`);
 
