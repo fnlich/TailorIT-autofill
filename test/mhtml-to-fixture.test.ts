@@ -4225,7 +4225,8 @@ describe('every jr6 case (FIXPLAN 6.1 item 8)', () => {
     expect(header.chrome).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
     // ── jr7 UKGREADY-7, DFPC-7, JDEF-7 (one copy, joined by INT-7): the route map serves a page at its address without
     // the fragment, as a request carries it (the converter's withoutFragment): UKG Ready's applicant session is captured
-    // at …#applicant/profile, Paycom's application at /applications#/applications/<m> ──
+    // at …#applicant/profile, Paycom's application at /applications#/applications/<m>, JobDiva's
+    // single-page portal at #/jobs/<id> ──
     const served = new URL(header.source);
     served.hash = '';
     expect(routes[served.href]).toBe(`fixtures/${name}.html`);

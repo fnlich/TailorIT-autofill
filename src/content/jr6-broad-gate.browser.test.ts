@@ -28,13 +28,16 @@ const SKIP = /\/fixtures\/(?:traps|sites|synthetic|smoke|profiles)\/|\.frame-\d+
 /** The pages at an application address whose own adapter offers its declared entry there by design (APPLYPLAN D6).
  *  jr6 CHAINS (integration, BUILD.md 4b): ADP's job details (line W's E-ADP, fixtures/adp/jr6-posting.html): ADP
  *  Workforce Now shows a job's details at its guest page's own address, and its header's Apply is the declared entry
- *  there (ADP_CONFIG.posting.entry). No other page may offer one. */
+ *  there (ADP_CONFIG.posting.entry). No other page may offer one.
+ *  jr7 JDEF-7 (FIX7PLAN §6.15, JDV-7): JobDiva's job page, whose posting and Quick Apply share one address (the dialogs
+ *  open in place), offers its declared Apply Now there (jobDivaAdapter.entryControl). */
 const EXPECTED_OFFERS: ReadonlySet<string> = new Set<string>(['adp/jr6-posting.html',
   // ── jr7 ADP-7 (FIX7PLAN §6.9) ──
   // snapshot7 adp1's job details (both captures, at the guest page's address, as jr6-posting), and ADP7-10's signed-in
   // landing, whose "Complete Your Application" is its entry (owner question Q7-14, default yes).
   'adp/jr7-adp1-posting.html', 'adp/jr7-adp1-posting-2.html', 'adp/jr6-landing.html',
   // ── end jr7 ADP-7 ──
+  'jobdiva/jr7-jobdiva1-posting.html', 'jobdiva/jr7-jobdiva2-posting.html', // jr7 JDEF-7
 ]);
 
 const runtimes: ContentRuntime[] = [];

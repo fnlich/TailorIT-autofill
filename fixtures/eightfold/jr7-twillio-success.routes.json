@@ -1,0 +1,5 @@
+{
+  "https://twilio.eightfold.ai/careers/apply/success?domain=twilio.com&pid=1099552857643": "fixtures/eightfold/jr7-twillio-success.html",
+  "https://twilio.eightfold.ai/survey/embed/pcs_apply_thank_you_page?domain=twilio.com&pids=1099552857643": "fixtures/eightfold/jr7-twillio-success.third-party-frame.html",
+  "https://www.recaptcha.net/recaptcha/api2/anchor?ar=1&k=6LfwboYUAAAAAJb6QcVuRXi7R9pTqgGKF6TnNzia&co=aHR0cHM6Ly90d2lsaW8uZWlnaHRmb2xkLmFpOjQ0Mw..&hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&size=invisible&anchor-ms=20000&execute-ms=30000&ovv=CADq00gF&cb=7ejxk7uuy5dz": "fixtures/eightfold/jr7-twillio-success.third-party-frame.html"
+}

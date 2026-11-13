@@ -34,6 +34,10 @@ import { PAYCOM_CONFIG } from '../paycom/config';
 // ── jr7 UKGREADY-7 ──
 import { UKGREADY_CONFIG } from '../ukgready/config';
 // ── end jr7 UKGREADY-7 ──
+// ── jr7 JDEF-7 ──
+import { EIGHTFOLD_CONFIG } from '../eightfold/config';
+import { JOBDIVA_CONFIG } from '../jobdiva/config';
+// ── end jr7 JDEF-7 ──
 
 /** Every configured platform's config. */
 export const ATS_CONFIGS: Partial<Record<Platform, AtsConfig>> = {
@@ -63,4 +67,8 @@ export const ATS_CONFIGS: Partial<Record<Platform, AtsConfig>> = {
   // ── jr7 UKGREADY-7 ──
   ukgready: UKGREADY_CONFIG,
   // ── end jr7 UKGREADY-7 ──
+  // ── jr7 JDEF-7 ──
+  jobdiva: JOBDIVA_CONFIG,
+  eightfold: EIGHTFOLD_CONFIG,
+  // ── end jr7 JDEF-7 ──
 };
