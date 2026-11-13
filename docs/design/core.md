@@ -2109,7 +2109,7 @@ The entry a field is about: its block's in a repeatable section (none past the p
 | file.coverLetter, file.other | none: flagged (attaching a cover letter is a Later item) | — |
 | freeText.* | a saved answer for this company only; drafts are Phase 6 (`free-text-requires-user`) | `saved` |
 | unknown, screening.previouslyEmployed, screening.other | a saved answer only (`unknown-field`) | `saved` |
-| dates as text | by `constraints.pattern` ("MM/YYYY", "YYYY-MM-DD"), else `constraints.format`, else "MM/YYYY", "YYYY" or "MM/DD/YYYY" flagged as a guess (`filled-low-confidence`); a layout needing a part the profile lacks (a day) gives nothing | the date's own origin |
+| dates as text | by `constraints.pattern` ("MM/YYYY", "YYYY-MM-DD"), else `constraints.format`, else "MM/YYYY", "YYYY" or "MM/DD/YYYY" flagged as a guess (`filled-low-confidence`). Amended in jr7 (docs/SPEC-AMENDMENTS.md §20; RULES-7 DF7-04 and R5, `resolver/format.ts`, `resolve.ts`): a date layout needing a day (a date control, or a text box whose pattern or format holds a day) given a month-precision date takes the month's 1st, filled and flagged as a guess; a date with no month still gives nothing | the date's own origin |
 
 Values a profile does not hold (a middle name, a twitter link, the phone type, a referrer's name, travel) are `no-profile-value`: skipped, or flagged when the field is required.
 
