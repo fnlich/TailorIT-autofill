@@ -845,6 +845,13 @@ And, the same day:
 - A fill never crosses to another site or a new tab by itself (owner questions 391 and 392): Jibe's Apply stays the person's (Q7-13).
 - docs/SPEC.md is unchanged, and every hard rule below stands, as its bullets now read.
 
+## 21. jr8: Next on Auto, and the panel's "Continue to the next page" (the owner, 2026-11-13)
+
+**The owner's words (verbatim, from the Workday report):** "after all required field is filled, click `Next` automatically. If there is unfilled required field, can't continue To the next page." and "Extension UI/UX(`continue to next page` button should be shown on all step pages except last page(submit page. If all required fields are filled, it will be enabled, and if not, it will be disabled)".
+
+- **Next mode Auto** presses a step's Next only once the fill has ended and every required field the step shows is filled as the page shows it (whoever filled it; a native select's or radio's own default is no answer unless the run wrote it, the person chose it, or the run could not decide the question), read at the validation and again right before the click; with one left, the run rests for the person. This adds to §12 Decision 6's checks and replaces none.
+- **The panel's "Continue to the next page"** shows on every step before the last (the step whose final action is Submit has Submit instead), enabled only when the page's own Next is there and every required field is filled by the same reading, otherwise disabled with its reason as a tooltip. Its press presses Next alone, never Submit, and is refused while a required field is empty (no "anyway", unlike Submit's).
+
 ## The hard rules that stay
 
 None of the amendments changes these, but as §11 notes in each:
