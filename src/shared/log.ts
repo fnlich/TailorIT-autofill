@@ -377,6 +377,8 @@ export const LOG_CODES = [
   'queue.held',
   'queue.pressed',
   'tailorit.address-refused',
+  // r3 (UP7-07): a hand-over drawn after an armed Submit, said once in a hello of its own.
+  'content.hand-over',
   // ── end jr7 AUTO-7 ──
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
