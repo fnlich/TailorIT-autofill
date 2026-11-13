@@ -102,7 +102,7 @@ describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
           // jr7 DFPC-7: Paycom's posting, and its tenant's application page, never by the application's number.
           if (platform === 'paycom') {
             expect(read!.page, url).toBe(url.includes('/applications') ? 'application' : 'posting');
-            expect(JSON.stringify(applicationOf(new URL(url))), url).not.toContain('7654321');
+            expect(JSON.stringify(read), url).not.toContain('7654321');
           }
           continue;
         }
