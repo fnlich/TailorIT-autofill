@@ -56,3 +56,27 @@ describe("D-5: a voluntary self-identification form's closing name is its signat
       .toEqual({ kind: 'text', text: golden.identity.fullName });
   });
 });
+
+describe('D-8: a work phone R4(b) leaves takes its own country code with it', () => {
+  const contact = (label: string, nameAttr = '') => specOf(label, 'text', { platform: 'ukgready',
+    section: { id: 'contact' }, ...(nameAttr === '' ? {} : { nameAttr }) });
+  const written = (spec: ReturnType<typeof contact>, profile = golden) => {
+    const value = fieldOf(planOf([spec], { profile }), spec).write?.value;
+    return value?.kind === 'text' ? value.text : value?.kind;
+  };
+
+  it("leaves a work phone's code, by its label or its name, and keeps a home, cell or mobile phone's", () => {
+    for (const spec of [contact('Work Phone country code'), contact('Business phone country code'),
+      contact('Country code', 'work-phone-country-code')]) {
+      expect(fieldOf(planOf([spec]), spec).row.category, spec.label).toBe('contact.phoneCountry');
+      expect(written(spec), spec.label).toBeUndefined();
+    }
+    for (const label of ['Home Phone country code', 'Cell Phone country code', 'Mobile Phone country code',
+      'Phone country code']) {
+      expect(written(contact(label)), label).toBe(`+${golden.contact.phone!.countryCallingCode}`);
+    }
+    // The profile's one phone marked a work phone: the work phone's code is the person's again.
+    const atWork = { ...golden, contact: { ...golden.contact, phone: { ...golden.contact.phone!, type: 'work' as const } } };
+    expect(written(contact('Work Phone country code'), atWork)).toBe(`+${golden.contact.phone!.countryCallingCode}`);
+  });
+});

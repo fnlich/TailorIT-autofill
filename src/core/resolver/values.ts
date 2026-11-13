@@ -353,6 +353,11 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
     case 'contact.phoneCountry': {
       const phone = contact.phone;
       if (phone?.country === undefined && phone?.countryCallingCode === undefined) return none('no-profile-value', false);
+      // jr7 FIX-content D-8 (R4's work phone, UKG Ready's "Work Phone country code", fixtures/ukgready/jr7-saashr-contact):
+      // the code of a work phone left above is left with it; a home, cell or mobile phone's code keeps the person's.
+      if (phone.type !== 'work' && secondContact(spec, WORK_PHONE_LABEL, WORK_PHONE_ID)) {
+        return none('no-profile-value', false);
+      }
       const choice = phone.country !== undefined
         ? { intended: intendedCountry(phone.country, phone.country, vocab), domain: 'country' as const } : undefined;
       return value({ origin: fromProfile('contact.phone'), confidence: VALUE_EXPLICIT,
