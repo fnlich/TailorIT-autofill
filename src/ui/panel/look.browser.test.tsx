@@ -111,11 +111,12 @@ describe('the side panel in TailorIT’s look', () => {
     // Workable is listed since v3 Phase 7a; Workday, iCIMS, Taleo, SuccessFactors and Oracle since v3 Phases 6 and 7b.
     // Since the owner's snapshots of 2026-11-06 Workday's, iCIMS's and Oracle's application forms are read, each note
     // saying what is left to the person, while Taleo's and SuccessFactors' still say their forms are to come;
-    // SmartRecruiters follows them, then the new ATSs of DESIGN-NEW-ATS (Phase 0).
+    // SmartRecruiters follows them, then the new ATSs of DESIGN-NEW-ATS (Phase 0), then jr7's four (INT-7).
     expect([...section.querySelectorAll('.tia-unsupported__name')].map((name) => name.textContent))
       .toEqual(['Greenhouse', 'Lever', 'Ashby', 'Workable', 'Workday', 'iCIMS', 'Taleo', 'SuccessFactors',
         'Oracle Recruiting Cloud', 'SmartRecruiters', 'Jobvite', 'JazzHR', 'BambooHR', 'Rippling', 'Breezy HR', 'CareerPlug',
-        'Pinpoint', 'Paycor', 'HiBob', 'UltiPro (UKG Pro)', 'Dayforce', 'Paylocity', 'Dice', 'ClearCompany', 'ADP Workforce Now']);
+        'Pinpoint', 'Paycor', 'HiBob', 'UltiPro (UKG Pro)', 'Dayforce', 'Paylocity', 'Dice', 'ClearCompany', 'ADP Workforce Now',
+        'UKG Ready', 'Paycom', 'JobDiva', 'Eightfold']);
     // Each site's note as the copy writes it. The new ATSs (DESIGN-NEW-ATS §5): every one's adapter has landed (builders
     // A, B and C), so none carries Phase 0's standard-rules draft note; nor does SmartRecruiters.
     const notes = COPY.panel.unsupported.sites.map((site) => site.note);
@@ -123,7 +124,7 @@ describe('the side panel in TailorIT’s look', () => {
       ?.textContent ?? null)).toEqual(notes);
     const [workday, icims, taleo, successFactors, oracle] = notes.slice(4, 9);
     expect(notes.slice(0, 4)).toEqual([null, null, null, null]);
-    expect(notes.slice(9)).toEqual(Array(16).fill(null));
+    expect(notes.slice(9)).toEqual(Array(20).fill(null));
     // Workday's, iCIMS's and Oracle's application forms are no longer "coming" (core-x, item 9, and the docs pass), and
     // each says something of its own; Taleo's and SuccessFactors' share the note that they are.
     for (const note of [workday, icims, oracle]) expect(note).not.toMatch(/coming/);

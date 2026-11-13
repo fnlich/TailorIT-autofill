@@ -574,6 +574,13 @@ const PANEL = {
       { name: 'ClearCompany', hosts: '<company>.clearcompany.com/careers', note: null },
       { name: 'ADP Workforce Now', hosts: 'workforcenow.adp.com (its recruitment pages)', note: null },
       // ── end New ATSs ──
+      // ── jr7 INT-7 (BUILD7: the coordinator's decision; ENGINE-7 E0's platforms, as src/shared/hosts.ts matches their
+      // candidate pages). Jibe is iCIMS's front: its application is on iCIMS, so it is not listed (as COPY.strip.none). ──
+      { name: 'UKG Ready', hosts: 'secure<n>.saashr.com (its careers pages)', note: null },
+      { name: 'Paycom', hosts: 'www.paycomonline.net (its job portal)', note: null },
+      { name: 'JobDiva', hosts: 'www<n>.jobdiva.com/portal', note: null },
+      { name: 'Eightfold', hosts: '<company>.eightfold.ai/careers', note: null },
+      // ── end jr7 INT-7 ──
     ],
     embedded: 'A company page that shows one of these forms inside it works too.',
     /** v3 Phase 8 review (B10): the company career sites, off or not reaching this page. v5 p1-rules (PLAN decision 10):
@@ -1321,7 +1328,7 @@ const OPTIONS = {
     optIn: 'Keep anonymous counters',
     optInHelp: 'Each field the extension fills, or leaves for you, adds one to a count of these five things, and nothing else:',
     fields: {
-      platform: 'the site: Greenhouse, Lever, Ashby, Workday, Workable, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now or a company\'s own careers site;',
+      platform: 'the site: Greenhouse, Lever, Ashby, Workday, Workable, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now, UKG Ready, Paycom, JobDiva, Eightfold or a company\'s own careers site;',
       fieldKind: 'the kind of field: a text box, a list, a checkbox and so on;',
       matcherStage: 'how its answer was matched: exactly, by a known alias, by a close match and so on;',
       outcome: 'whether it was filled or left for you;',
@@ -1345,7 +1352,7 @@ const OPTIONS = {
   /** v3 Phase 8: Options › "Where Autofill works". Drafts for the owner's review. */
   sites: {
     heading: 'Where Autofill works',
-    intro: "Autofill always works on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany and ADP Workforce Now. With this on, as it is unless you turn it off, it works on employers' own careers sites too. Chrome gave it the permission when you installed it.",
+    intro: "Autofill always works on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now, UKG Ready, Paycom, JobDiva and Eightfold. With this on, as it is unless you turn it off, it works on employers' own careers sites too. Chrome gave it the permission when you installed it.",
     // v5 p1-rules (PLAN decision 10): the intro above, on by default with the permission held from install.
     toggle: 'Company career sites',
     hint: "On employers' own careers pages, Autofill recognises an application form (a resume upload, or your name, email and phone on a job page) and fills it as it fills any form. Chrome calls this reading your data on all websites: the extension's watcher reads each https page you open, and says and does nothing until it recognises one. It never runs on LinkedIn or on an employer's HR system (Workday, SAP SuccessFactors, Oracle, and the employee pages of ADP Workforce Now, BambooHR, Paycom and ClearCompany).",
