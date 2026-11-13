@@ -92,6 +92,9 @@ export const SettingsSchema = z.strictObject({
  *  and AI answers, the planner's) stay in the worker. */
 export const ContentModesSchema = ModesSchema.pick({ next: true, afterPageTurn: true, submit: true, agentSkip: true,
   signIn: true }).extend({
+  // jr7 AUTO-7 (ENGINE-7 E2's edit 1: UP7-04, EFA-6, FIX7PLAN D-9): the Consents mode, for the account terms and the upload
+  // prompts the content ticks or presses per it. A message without it (a test's, an older worker's) reads none: left.
+  consents: z.enum(MODE_CHOICES.consents).optional(),
   // Version 7: the worker always sends both; a message without them (a test's, an older worker's) reads their defaults.
   noMatch: z.enum(NO_MATCH_MODES).default('other'),
   notifications: z.enum(NOTIFICATION_TIMES).default('until-closed'),
@@ -106,5 +109,7 @@ export const ContentModesSchema = ModesSchema.pick({ next: true, afterPageTurn: 
  *  the password typed and its button left to the person (a message without it reads false: nothing typed). */
 export const ContentSettingsSchema = SettingsSchema.pick({ panel: true, llm: true, offerToSaveAnswers: true })
   .extend({ modes: ContentModesSchema, view: z.enum(PANEL_VIEWS).default('expanded'),
-    typeSignIn: z.boolean().default(false) });
+    typeSignIn: z.boolean().default(false),
+    // jr7 AUTO-7 (ENGINE-7 E2's edit 1): the optional consents the person pre-approved (Settings.preapprovedConsent).
+    preapprovedConsent: Consents.optional() });
 export type ContentSettings = z.infer<typeof ContentSettingsSchema>;

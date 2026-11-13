@@ -8,6 +8,7 @@
  * draft/confirm, panel/saveAnswer, answer/save and answer/read.
  */
 import { z } from 'zod';
+import { HAND_OVER_KINDS as ADAPTER_HAND_OVER_KINDS } from '../adapters/types'; // jr7 AUTO-7
 import { AUTOFILL_AI_LIMITS } from '../contract/tailorit/ai';
 import { AutofillSignInHostSchema, AUTOFILL_SIGN_IN_LIMITS } from '../contract/tailorit/credentials';
 import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_STAGES,
@@ -342,15 +343,13 @@ export const ENTRY_BLOCKS = ['sign-in', 'sign-in-failed', 'email-code', 'captcha
 export type EntryBlock = (typeof ENTRY_BLOCKS)[number];
 
 // ── jr7 AUTO-7 ──
+/** The steps that are the person's by design, as a frame's hello says one shows: the E0 contract's own list
+ *  (adapters/types.ts HAND_OVER_KINDS: iCIMS's 'assessment', ICIMS7-04; UltiPro's 'documents' dialog, UP7-07). */
+export const HAND_OVER_KINDS = ADAPTER_HAND_OVER_KINDS;
 /** Why a job of the agent or the Queue tab rests with the person, in the extension's own words beside the contract's
- *  reason (FIX7PLAN §6.4 item 14, ICIMS7-04): 'assessment', the application went on with an assessment the person takes
- *  (Adapter.handOver). */
-// jr7 ULTIPRO-7 (integration of ENGINE-7 E2 with AUTO-7: E2's HandOverKind gained 'documents', UP7-07: UltiPro's
-// documents dialog after Submit, the person's by owner question Q7-8's default): both lists follow it.
-export const AGENT_NOTES = ['assessment', 'documents'] as const;
+ *  reason (FIX7PLAN §6.4 item 14): the hand-over its adapter read (Adapter.handOver). */
+export const AGENT_NOTES = ADAPTER_HAND_OVER_KINDS;
 export type AgentNote = (typeof AGENT_NOTES)[number];
-/** The steps that are the person's by design (adapters/types.ts HandOverKind), as a frame's hello says one shows. */
-export const HAND_OVER_KINDS = ['assessment', 'documents'] as const;
 // ── end jr7 AUTO-7 ──
 
 // ── jr6 apply A0 (the contract): Autofill presses the site's own Apply ──

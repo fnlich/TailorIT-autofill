@@ -25,10 +25,13 @@ const CONTENT_SETTINGS = { panel: DEFAULT_SETTINGS.panel, view: DEFAULT_SETTINGS
   modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn,
     submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip,
     signIn: DEFAULT_SETTINGS.modes.signIn, noMatch: DEFAULT_SETTINGS.modes.noMatch,
-    notifications: DEFAULT_SETTINGS.modes.notifications },
+    notifications: DEFAULT_SETTINGS.modes.notifications,
+    // jr7 AUTO-7 (ENGINE-7 E2's edit 1: UP7-04, EFA-6): the Consents mode reaches the content.
+    consents: DEFAULT_SETTINGS.modes.consents },
   offerToSaveAnswers: DEFAULT_SETTINGS.offerToSaveAnswers,
   // jr6: no job-site password saved in this browser: nothing is typed at a sign-in.
-  typeSignIn: false };
+  typeSignIn: false,
+  preapprovedConsent: [...DEFAULT_SETTINGS.preapprovedConsent] }; // jr7 AUTO-7 (ENGINE-7 E2's edit 1)
 const withPosting = (postingText: string) => ({ json: { ...goldens.lookup, job: { ...goldens.lookup.job, postingText } } });
 
 describe('run/begin', () => {

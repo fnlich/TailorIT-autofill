@@ -76,9 +76,15 @@ describe('the page channel\'s additions', () => {
       llm: { tiebreak: true, classify: true, drafts: false, answers: true, whenForbidden: 'profile-only' },
       offerToSaveAnswers: true } };
     expect(WorkerToContentSchema.safeParse(changed).success).toBe(true);
+    // jr7 AUTO-7 (ENGINE-7 E2's edit 1: UP7-04's account terms, EFA-6's upload prompt): the Consents mode and the
+    // pre-approved consents reach the content now, for the sign-in steps and the upload prompts it answers per them.
+    expect(WorkerToContentSchema.safeParse({ ...changed, settings: { ...changed.settings, preapprovedConsent: ['privacy'],
+      modes: { ...changed.settings.modes, consents: 'required' } } }).success).toBe(true);
     // Never the rest of the settings, never anything else.
-    expect(WorkerToContentSchema.safeParse({ ...changed, settings: { ...changed.settings, preapprovedConsent: [] } }).success)
-      .toBe(false);
+    expect(WorkerToContentSchema.safeParse({ ...changed, settings: { ...changed.settings, telemetry: { optIn: true } } })
+      .success).toBe(false);
+    expect(WorkerToContentSchema.safeParse({ ...changed, settings: { ...changed.settings,
+      preapprovedConsent: ['not-a-consent'] } }).success).toBe(false);
     expect(WorkerToContentSchema.safeParse({ ...changed, tabId: 7 }).success).toBe(false);
     // Only the modes a frame acts on (v3 Phase 3 review): never Consent boxes, AI answers or Record my own (Sign-in, v3
     // Phase 5, as it acts).

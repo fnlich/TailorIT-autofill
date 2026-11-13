@@ -101,9 +101,12 @@ export function contentSettingsOf(settings: Settings, options: ContentHolds = {}
     agentSkip: { ...settings.modes.agentSkip },
     signIn: options.holdSignIn === true ? 'manual' : options.signUp === true ? 'auto' : settings.modes.signIn,
     // Version 7 (s2 profile): the person's own, everywhere (the agent's window too).
-    noMatch: settings.modes.noMatch, notifications: settings.modes.notifications },
+    noMatch: settings.modes.noMatch, notifications: settings.modes.notifications,
+    // jr7 AUTO-7 (ENGINE-7 E2's edit 1; FIX7PLAN D-9): the person's Consents mode, everywhere (the agent's window too).
+    consents: settings.modes.consents },
     llm: { ...settings.llm },
     offerToSaveAnswers: settings.offerToSaveAnswers,
+    preapprovedConsent: [...settings.preapprovedConsent], // jr7 AUTO-7 (ENGINE-7 E2's edit 1)
     // jr6: never where Sign-in is held (no password saved, or the disclosure not acknowledged); the jr6 review (sec-3):
     // never in the auto-apply agent's window, where nobody is there to press what Manual types (its Sign-in on Auto
     // still signs in).
