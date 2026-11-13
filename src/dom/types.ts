@@ -183,6 +183,8 @@ export interface WidgetTarget {
   readonly results?: DeclaredResults;
   /** v4 (drop): the declared key sent after each typed query (WidgetDecl.queryKey). */
   readonly queryKey?: QueryKey;
+  /** jr8 WORKDAY: the page may choose its search's match itself on the query (WidgetDecl.choosesOnQuery). */
+  readonly choosesOnQuery?: true;
   // ── jr6 ENGINE E1 ──
   /** FIXPLAN §6.2 item 3 (SR-2): a query shorter than this is never typed (WidgetDecl.minQueryLength). */
   readonly minQueryLength?: number;

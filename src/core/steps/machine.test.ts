@@ -706,6 +706,8 @@ describe('auto-advance', () => {
     ['attempts', at('validate', { lastFill: CLEAN }, MAX_STEP_ATTEMPTS), ok, true],
     // core-x, item 2: the form's account section still has a required box empty.
     ['account-left', ready, { ...ok, step: facts({ accountLeft: 2 }) }, true],
+    // jr8 WORKDAY (the owner's rule of 2026-11-13): a required field the step shows empty, row or none.
+    ['required-empty', ready, { ...ok, step: facts({ requiredEmpty: 1 }) }, true],
   ] as const)('refuses with %s', (refusal, state, check, autoAdvance) => {
     expect(autoAdvanceVerdict(state, check, { autoAdvance })).toEqual({ advance: false, refusal });
     // The reducer never presses Next when the verdict refuses.
@@ -716,9 +718,31 @@ describe('auto-advance', () => {
 
   it('lists every refusal it can give', () => {
     expect([...ADVANCE_REFUSALS]).toEqual(['setting-off', 'final', 'final-unknown', 'no-next', 'errors', 'not-filled',
-      'account-left', 'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'captcha-unsolved', 'not-settled',
-      'attempts']);
+      'account-left', 'flagged', 'blocked', 'unresolved', 'required-empty', 'unconfirmed-draft', 'captcha-unsolved',
+      'not-settled', 'attempts']);
   });
+
+  // ── jr8 WORKDAY (the owner's rule of 2026-11-13: "after all required field is filled, click Next automatically. If
+  // there is unfilled required field, can't continue to the next page") ──
+  it('never presses Next while a required field the step shows is empty, though every row is clean (jr8)', () => {
+    // The fill's rows left nothing (a question Workday drew after the fill has no row), the page shows one empty.
+    for (const requiredEmpty of [1, 7]) {
+      expect(autoAdvanceVerdict(ready, { errors: 0, step: facts({ requiredEmpty }) }, { autoAdvance: true }))
+        .toEqual({ advance: false, refusal: 'required-empty' });
+      const held = reduceRun(ready, validated(0, 0, { requiredEmpty }), { autoAdvance: true, now: T0 + 1 });
+      // The run rests for the person, silently, its Next awaited with no timer.
+      expect(held.state.status).toBe('wait-transition');
+      expect(held.effects.at(-1)).toEqual({ type: 'await-transition', from: S1, capMs: null });
+      expect(types(held.effects)).not.toContain('press-next');
+      expect(types(held.effects)).not.toContain('notify');
+    }
+    // Every required field filled (0, or not read: absent): Next as before.
+    for (const step of [facts({ requiredEmpty: 0 }), facts()]) {
+      expect(autoAdvanceVerdict(ready, { errors: 0, step }, { autoAdvance: true })).toEqual({ advance: true });
+    }
+  });
+
+  // ── end jr8 WORKDAY ──
 
   // core-x, item 2: an account section with a required box empty holds Next (a required field left empty), and an
   // empty count (or none) holds nothing. v4 (D9): silently, its notice gone.

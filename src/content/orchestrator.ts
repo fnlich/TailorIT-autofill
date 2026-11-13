@@ -227,6 +227,7 @@ import {
 import { postingNamesOf } from './job-relay';
 import { chainFactsOf } from './chain-frame'; // jr6 SHELL-B (ICIMS-17)
 import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
+import { countedAsShown, requiredUnfilledOf, type Touched } from './required-left'; // jr8 WORKDAY
 import {
   accountConsentsOf, signInChallenged, signInDetailOf, signInHandedOver, signInRefusalWaits, ticksUploadConsent,
   type AccountConsents, type SignInDetail, type SignInOutcome,
@@ -2622,7 +2623,7 @@ export class FillRun {
       }
       // v4 (D3): only a required field left empty, or a hard-rule stop, holds auto-Next (report.ts lastFillOf). jr7
       // ENGINE-7 E1 item 11 (ICIMS7-V4): left empty as this step's fresh scan reads it (heldIn).
-      const counts = lastFillOf(all.map((row) => heldIn(after, row)));
+      const counts = lastFillOf(countedAsShown(after, all, this.touchedEver)); // jr8 WORKDAY: one predicate
       return { type: 'FILLED', filledKeys: written, flagged: counts.flagged, blocked: counts.blocked,
         unresolved: counts.unresolved };
     }
@@ -2700,7 +2701,12 @@ export class FillRun {
     const submitFacts = finality === 'final' && this.autoSubmitOn && !this.request.dryRun ? this.submitFacts() : {};
     // core-x, item 2: the form's account section's required boxes still empty (dom/account-section.ts).
     const accountLeftNow = accountLeft(adapter, env.doc, root);
+    // jr8 WORKDAY (the owner's rule of 2026-11-13): on a step before the last, the required fields the page shows empty
+    // hold auto-Next ('required-empty'), rows or none.
+    const advanceFacts = finality === 'not-final' && !this.request.dryRun
+      ? { requiredEmpty: this.requiredLeftIn(this.scanNow()) } : {};
     return { type: 'VALIDATED', errors: errors.length, fixable: this.fixable(errors), step: { finality, nextVisible,
+      ...advanceFacts, // jr8 WORKDAY
       settled: this.settledStep,
       unconfirmedDrafts: this.rows.filter((row) => row.provenance === 'llm-draft' && row.needsUserAction).length,
       captchaUnsolved: this.challengedNow(cache), ...submitFacts,
@@ -2764,6 +2770,19 @@ export class FillRun {
     return this.rows.filter((row) => row.required && notFilled(row) && row.section !== REQUIRED_BLOCKS_SECTION_KEY)
       .map((row) => row.key);
   }
+
+  // ── jr8 WORKDAY (the owner's rule of 2026-11-13) ──
+  /** The required questions the step leaves unanswered as `scanned` reads it (required-left.ts requiredUnfilledOf, the
+   *  run's own required rows left for the person among them) and the required blocks the adapter reads empty. */
+  private requiredLeftIn(scanned: ScanResult): number {
+    return requiredUnfilledOf(scanned, this.rows, this.touchedEver,
+      (row) => row.section === REQUIRED_BLOCKS_SECTION_KEY) + this.requiredBlocksNow().length;
+  }
+
+  /** Whether the person ever touched an element in this document (the touch log): their own choice, never a default. */
+  private readonly touchedEver: Touched = (el) => this.env.touches.touchedSince(el, Number.NEGATIVE_INFINITY);
+
+  // ── end jr8 WORKDAY ──
 
   /** The errors one more pass could address: on a field no pass of this step planned (it showed after the loop), or
    *  on one the page emptied after our write. An error on a field the person must answer, that holds our value, or
@@ -2841,6 +2860,11 @@ export class FillRun {
     }
     // v4 (D7): no Next to press, or a click the page refused: no hand-off, the run rests for the person's own Next.
     if (next === null || !isUserVisible(next, newScanCache())) return { type: 'NEXT_WITHHELD', reason: 'not-pressable' };
+    // jr8 WORKDAY (the owner's rule of 2026-11-13): a required field the step shows empty now holds Next too.
+    if (this.requiredLeftIn(this.scanNow()) > 0) {
+      log('content.next-withheld');
+      return { type: 'NEXT_WITHHELD', reason: 'not-pressable' };
+    }
     // v1.3 B: the step's questions and answers, read before it is left.
     this.env.stepLeaving?.();
     if (!clickIfAllowed(next, { adapter, root, allowNext: true, facts })) { // jr6 SHELL-B: facts
@@ -3175,6 +3199,9 @@ export class FillRun {
     } catch {
       return null;
     }
+    // jr8 WORKDAY: on a step before the last, the required fields still empty, which keep the panel's Continue off.
+    const left = read.final === 'not-final' ? this.requiredLeftIn(this.scanNow()) : 0;
+    if (left > 0) read = { ...read, requiredLeft: Math.min(left, 500) };
     return { buttons: this.submitPending ? { ...read, pressed: 'submit' } : read };
   }
 
@@ -3194,6 +3221,14 @@ export class FillRun {
     const page = this.pressPage();
     const before = target === 'submit' ? this.env.beforePress?.() : undefined;
     if (target === 'submit') this.noteCheckAtSubmit(page.root);
+    // jr8 WORKDAY (the owner's rule of 2026-11-13): never to the next page past a required field still empty.
+    if (target === 'next') {
+      const left = this.requiredLeftIn(this.scanNow());
+      if (left > 0) {
+        log('content.step-press-refused', { submit: false, confirmed });
+        return { outcome: 'required-empty', count: left };
+      }
+    }
     // v1.3 B: a Next leaves the step: its questions and answers are read first (a Submit's are, as it is armed).
     if (target === 'next') this.env.stepLeaving?.();
     const answer = pressStep(page, target, { confirmed });
@@ -3669,21 +3704,16 @@ function requiredBlockRow(block: Element, ordinal: number, platform: Platform): 
  *  (iCIMS's prefilled "Today's Date" month, day and year on arc-onesolutions' IForm, snapshot7 iCIMS1) is no required
  *  field left empty, so it holds no auto-Next (report.ts lastFillOf). Only a row of HELD_BY_PAGE_REASONS: any other
  *  row as it is. A flag only: it claims nothing about who filled the field. */
-export function heldIn(scanned: ScanResult, row: FillResult): FillResult {
-  // FIX7PLAN O-3 (the coordinator's note of 2026-11-12): only a row the run could not decide by its own limits
-  // (HELD_BY_PAGE_REASONS). A row whose question it knows and leaves for the person (no-profile-value: iCIMS's salary
-  // Time Frame with no profile pay, its page default "Hr." shown) is never counted filled by the page's default.
-  if (!open(row) || row.detail?.filledByYou === true || !HELD_BY_PAGE_REASONS.has(row.reason)) return row;
-  const field = scanned.fields.find((candidate) => candidate.key === row.key)
-    ?? scanned.fields.find((candidate) => candidate.baseKey === baseKeyOf(row.key));
-  if (field === undefined || !holdsAnswer(field.current)) return row;
-  return { ...row, detail: { ...row.detail, filledByYou: true } };
+export function heldIn(scanned: ScanResult, row: FillResult, touched: Touched = () => false): FillResult {
+  // FIX7PLAN O-3 (the coordinator's note of 2026-11-12): a page default counts only for a row the run could not decide
+  // by its own limits (required-left.ts HELD_BY_PAGE_REASONS: a question it could not tell, iCIMS's "Today's Date" parts
+  // as the verifier probed them; one it cannot write in the page's shape). A row whose question it knows and leaves
+  // for the person (no-profile-value: iCIMS's salary Time Frame with no profile pay, its page default "Hr." shown) is
+  // never counted filled by the page's default. jr8 WORKDAY (the owner's rule of 2026-11-13, the coordinator's note):
+  // any other answer the page shows is filled whoever gave it (required-left.ts filledAsShown), one predicate for Next
+  // mode Auto and the panel's "Continue to the next page".
+  return row.required ? countedAsShown(scanned, [row], touched)[0]! : row;
 }
-/** The reasons of a row the run could not decide by its own limits, whose field the page may answer itself: a question
- *  it could not tell (unknown-field: iCIMS's "Today's Date" parts as the verifier probed them), or one it knows but
- *  cannot write in the page's shape (format-unsupported: a date asked as month, day and year lists). Never a question
- *  the run knows the person must answer (no-profile-value, a consent, a legal or EEO question). */
-const HELD_BY_PAGE_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['unknown-field', 'format-unsupported']);
 // ── end jr7 ENGINE-7 E1 item 11 ──
 
 /** jr7 ENGINE-7 E2 item 5: how long the fill lets an editor it opened draw its fields before the loop's first scan

@@ -19,7 +19,9 @@
  * - Auto-advance (off by default) presses the adapter's Next only when the setting is on, the step is declared not
  *   final, Next is visible, nothing on the step is flagged, blocked or unresolved, no draft is unconfirmed, no error
  *   shows, no CAPTCHA widget on it is unsolved (as far as can be known: an Arkose widget never is), the step has
- *   settled and it has had fewer than two attempts (autoAdvanceVerdict). A final step goes to
+ *   settled and it has had fewer than two attempts (autoAdvanceVerdict). jr8 WORKDAY (the owner's rule of 2026-11-13):
+ *   and no required field the step shows is empty, as the page shows it (StepFacts.requiredEmpty, read at the
+ *   validation and again right before the click), whether or not the fill has a row for it. A final step goes to
  *   review (the person presses Submit), and a step whose finality is unknown is treated as final: nothing is pressed
  *   ("I can't tell whether this is the last step, so I won't press anything"). Auto-advance
  *   never presses the final Submit: no event leads from a final or unknown step to press-next (Submit mode Auto's
@@ -109,7 +111,8 @@ export interface StepFacts {
   captchaUnsolved: boolean;
   /** v3 Phase 4, for Submit mode Auto: the adapter's Submit is there, visible and enabled (absent: no). */
   submitVisible?: boolean;
-  /** Required fields the step leaves empty for the person (absent: 0). */
+  /** Required fields the step leaves empty for the person (absent: 0). jr8 WORKDAY: read on a step before the last
+   *  too, where auto-advance holds Next for them ('required-empty'). */
   requiredEmpty?: number;
   /** The run fills from the profile only because the posting forbids AI (absent: no). */
   noAi?: boolean;
@@ -295,7 +298,11 @@ export const ADVANCE_REFUSALS = ['setting-off', 'final', 'final-unknown', 'no-ne
   // core-x, item 2: a required box of the form's account section is still empty (StepFacts.accountLeft): checked before
   // the rows, which never show it, so its notice says why Next is the person's whatever else the step left.
   'account-left',
-  'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'captcha-unsolved', 'not-settled', 'attempts'] as const;
+  'flagged', 'blocked', 'unresolved',
+  // jr8 WORKDAY (the owner's rule of 2026-11-13): a required field the step shows empty (StepFacts.requiredEmpty), as the
+  // page shows it, whether or not the fill has a row for it.
+  'required-empty',
+  'unconfirmed-draft', 'captcha-unsolved', 'not-settled', 'attempts'] as const;
 export type AdvanceRefusal = (typeof ADVANCE_REFUSALS)[number];
 export type AdvanceVerdict = { advance: true } | { advance: false; refusal: AdvanceRefusal };
 
@@ -402,6 +409,8 @@ export function autoAdvanceVerdict(state: RunState, check: { errors: number; ste
   if (fill.flagged > 0) return refuse('flagged');
   if (fill.blocked > 0) return refuse('blocked');
   if (fill.unresolved > 0) return refuse('unresolved');
+  // jr8 WORKDAY: never past a required field the page shows empty (a question drawn after the fill, one the page reset).
+  if ((step.requiredEmpty ?? 0) > 0) return refuse('required-empty');
   if (step.unconfirmedDrafts > 0) return refuse('unconfirmed-draft');
   if (step.captchaUnsolved) return refuse('captcha-unsolved');
   if (!step.settled) return refuse('not-settled');

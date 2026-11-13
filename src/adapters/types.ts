@@ -91,6 +91,11 @@ export interface WidgetDecl {
   /** A declared key sent, as a keydown and a keyup, to the text box after each typed query, for a search that starts
    *  on a keydown and never on the input event (Lever's location search: any key but its arrows and Enter starts it). */
   queryKey?: QueryKey;
+  /** jr8 WORKDAY: the page may choose its search's match itself on the query (Workday's prompts commit a search's one
+   *  match on Enter, its pill drawn with no click, as Jobright 1.25.2's myworkday fillSearchBoxInputField reads it:
+   *  'committed-during-search'): an answer the widget shows after a query that it did not show before ends the search
+   *  as the page's choice, matched by the worker as a result, and no later query or click is made over it. */
+  choosesOnQuery?: true;
   // ── s2 lists (snapshot round 2, decision 1: stored lists, chosen at once) ──
   /** The id of the combobox's whole list as the extension stores it from the snapshots (shared/learned-lists.ts
    *  STORED_LIST_IDS; the labels live in the worker, background/stored-lists.ts, never in the content script): every
