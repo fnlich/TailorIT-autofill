@@ -5,8 +5,9 @@
  * the live page draws it seconds after), .../j/0000000A02/apply/ and .../j/0000000A03/apply/ at once; a posting's
  * address without /apply/ draws its overview, .../j/0000000A04/'s asking applicants not to use AI. A file put in is
  * POSTed to Workable's S3 bucket's address, answered here: 204, or 403 for .../j/0000000A05/apply/ (whose page then
- * falls over, as the live page did); .../j/0000000A06/apply/'s draft restored a saved Experience entry. The page sends
- * nothing else anywhere (its draft and what it saw are
+ * falls over, as the live page did); .../j/0000000A06/apply/'s draft restored a saved Experience entry; jr8: at
+ * jobs.workable.com/view/<id>/<slug> it draws the job site's posting, whose "Apply now" opens the form in a dialog.
+ * The page sends nothing else anywhere (its draft and what it saw are
  * window.__workable). Nothing is written to disk; the page's relative
  * asset paths (base './') resolve beside its address, where these routes answer them.
  */
@@ -37,6 +38,8 @@ export const WORKABLE_WIDGETS = {
   uploadFails: at('0000000A05'),
   /** Its form drawn at once, its draft having restored a saved Experience entry (the profile's earlier job). */
   restored: at('0000000A06'),
+  /** jr8: Workable's job site, a posting whose "Apply now" opens the application in a dialog (app.ts JobsPage). */
+  jobs: 'https://jobs.workable.com/view/TailoritFixtureView000001/software-engineer-at-tailorit-fixture',
 } as const;
 
 /** The page's hand-written expectations: its labels, which are the only labels its report may show. */
@@ -66,10 +69,11 @@ export async function workableWidgetRoutes(): Promise<RouteMap> {
     }
   }
   if (routes[WORKABLE_WIDGETS.now] === undefined) throw new Error('the Workable widgets fixture built no index.html');
-  // The S3 bucket a file goes to (main.ts UPLOAD_ADDRESS), read by the page across origins.
-  const cors = { 'Access-Control-Allow-Origin': 'https://apply.workable.com' };
+  // The S3 bucket a file goes to (main.ts UPLOAD_ADDRESS), read by the page across origins (jr8: the job site's too,
+  // its posting named by its view id).
   for (const url of Object.values(WORKABLE_WIDGETS)) {
-    const code = /\/j\/([0-9A-F]{10})\//.exec(url)?.[1] ?? '';
+    const code = /\/j\/([0-9A-F]{10})\//.exec(url)?.[1] ?? /\/view\/([A-Za-z0-9]+)\//.exec(url)?.[1] ?? '';
+    const cors = { 'Access-Control-Allow-Origin': new URL(url).origin };
     routes[`${UPLOAD_ADDRESS}?posting=${code}`] = { body: '', contentType: 'text/plain', headers: cors,
       status: url === WORKABLE_WIDGETS.uploadFails ? 403 : 204 };
   }

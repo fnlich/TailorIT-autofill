@@ -4,6 +4,8 @@
  * the tabs link the posting's two pages, as Workable's do. A file put in is POSTed to Workable's S3 bucket's address
  * (UPLOAD_ADDRESS, the posting named in its query), which the e2e routes answer: 204, or 403 for .../0000000A05/.
  * .../0000000A06/'s draft restored one Experience entry (RESTORED), as the live page puts back its hour-old draft.
+ * jr8: on Workable's job site (jobs.workable.com/view/<id>/<slug>) it draws the posting whose "Apply now" opens the
+ * application in a dialog (app.ts JobsPage), its uploads named by the view's id.
  */
 import { DESCRIPTION, mountWorkablePage, newLog, watchCookies, type Uploader } from './app';
 
@@ -24,11 +26,12 @@ const log = newLog();
 (window as unknown as { __workable: unknown }).__workable = log;
 watchCookies(document, log);
 const match = /^\/([^/]+)\/j\/([0-9A-F]{10})\/(apply\/?)?$/.exec(location.pathname);
-const code = match?.[2] ?? '';
+const jobsSite = location.hostname === 'jobs.workable.com';
+const code = jobsSite ? /^\/view\/([A-Za-z0-9]+)/.exec(location.pathname)?.[1] ?? '' : match?.[2] ?? '';
 const base = match === null ? location.pathname : `/${match[1]}/j/${code}/`;
 document.querySelector('a[data-ui="role-overview-tab"]')?.setAttribute('href', base);
 document.querySelector('a[data-ui="application-form-tab"]')?.setAttribute('href', `${base}apply/`);
-const view = match?.[3] === undefined ? 'overview' : 'application';
+const view = jobsSite ? 'jobs' : match?.[3] === undefined ? 'overview' : 'application';
 const upload: Uploader = async (field, file) => {
   const body = new FormData();
   body.append('key', field);

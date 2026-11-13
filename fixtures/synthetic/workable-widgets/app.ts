@@ -49,6 +49,9 @@
  *   the saved entries follow it newest-added first (jr8: the page drew them oldest first, the editor last, before).
  * - The buttons the extension must never press record every press (log.pressed): "Import resume from", each section's
  *   Clear, "Choose file", an editor's Cancel, a saved entry's Edit and Delete, the cookie banner's buttons.
+ * - jr8 (MountOptions.view 'jobs'): Workable's job site, jobs.workable.com/view/<id>/<slug>, as the owner's captures of
+ *   2026-11-13 (snapshot12) draw it: the posting's "Apply now" (overview-apply-now; the sticky bar's sticky-apply-now
+ *   not shown) opens the application in a dialog at the same address, its form drawn a moment later (JobsPage).
  * - Submit (button[data-ui=apply-button][type=submit], disabled until the first change): refuses an application with a
  *   required answer missing or the GDPR consent unticked (log.refused), else shows Workable's
  *   [data-ui=successful-submit] in the form's place (log.submitted, document.body.dataset.submitted).
@@ -89,13 +92,15 @@ export interface WorkableLog {
   submitted: number;
   /** When the view was drawn (performance.now()), or null before. */
   drawnAt: number | null;
+  /** jr8: the job site's "Apply now" presses (overview-apply-now and sticky-apply-now together). */
+  applyNow: number;
 }
 
 /** A log with nothing in it yet. */
 export function newLog(): WorkableLog {
   return { values: {}, pressed: [], opened: {}, calendars: 0, typedCalendars: 0, calendarOpen: false, enters: 0,
     refusedWrites: 0, files: [], uploads: [], crashed: false, adds: 0, entries: {}, refused: [], submitted: 0,
-    drawnAt: null };
+    drawnAt: null, applyNow: 0 };
 }
 
 /** Sends a file put into an upload, as the live page sends it to its S3 bucket: whether it got there. */
@@ -575,8 +580,13 @@ export interface MountOptions {
   log: WorkableLog;
   /** How long after mounting the view is drawn, in ms. */
   drawAfterMs?: number;
-  /** Which view: the application form, or the posting's overview. */
-  view?: 'application' | 'overview';
+  /** Which view: the application form, the posting's overview, or (jr8) the job site's posting whose "Apply now" opens
+   *  the application in a dialog (JobsPage). */
+  view?: 'application' | 'overview' | 'jobs';
+  /** The job site's dialog: how long after it opens its form is drawn (300 ms by default), and whether it is open when
+   *  the page is drawn. */
+  formAfterMs?: number;
+  jobsOpen?: boolean;
   /** The posting's description paragraphs (the overview). */
   description?: readonly string[];
   /** How a file put into an upload is sent (see the header); by default it gets there 60 ms later. */
@@ -676,9 +686,59 @@ function Overview({ description }: { description: readonly string[] }): ReactEle
     h('div', null, h('a', { tabIndex: 0, role: 'button', 'data-ui': 'apply-button', href: 'apply/' }, 'Apply for this job')));
 }
 
+/** jr8: Workable's job site (jobs.workable.com/view/<id>/<slug>), as the owner's captures of 2026-11-13 (snapshot12)
+ *  draw it: the posting with no form and no dialog, its "Apply now" (button[data-ui=overview-apply-now] beside "Share
+ *  job", and the sticky bar's sticky-apply-now, not shown at the page's top: each a button with no type and no href);
+ *  a click() on either opens the application in a dialog at the same address (div[data-role=modal-wrapper] >
+ *  dialog[role=dialog][aria-modal=true][open], as jobs-salvo-apply.html shows it): its title, its own Cancel (which
+ *  closes it) and Submit, and the form drawn `formAfterMs` later, as the live dialog loads it. Each Apply now press is
+ *  counted (log.applyNow), and the dialog leaves the posting's buttons where they are (an open attribute, no modal), so
+ *  a press of them while it is open would land. */
+function JobsPage(props: { log: WorkableLog; upload: Uploader; crash: () => void; description: readonly string[];
+  formAfterMs: number; open: boolean }): ReactElement {
+  const [open, setOpen] = useState(props.open);
+  const [formShown, setFormShown] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setFormShown(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setFormShown(true), props.formAfterMs);
+    return () => clearTimeout(timer);
+  }, [open, props.formAfterMs]);
+  const apply = () => {
+    props.log.applyNow += 1;
+    setOpen(true);
+  };
+  return h(Fragment, null,
+    h('main', { role: 'main' },
+      h('h1', { 'data-ui': 'overview-title' }, 'Software Engineer'),
+      h('div', { className: 'wk-jobs-actions' },
+        h('button', { 'data-ui': 'share-now', onClick: () => props.log.pressed.push('Share job') }, 'Share job'),
+        h('button', { 'data-ui': 'overview-apply-now', onClick: apply }, 'Apply now')),
+      h('section', null, h('h3', null, 'Description'), h('div', { 'data-ui': 'job-breakdown-description-parsed-html' },
+        ...props.description.map((text) => h('p', { key: text }, text)))),
+      h('section', null, h('h3', null, 'Requirements'), h('div', { 'data-ui': 'job-breakdown-requirements-parsed-html' },
+        h('p', null, 'Five years of building web services.'))),
+      h('div', { className: 'wk-sticky', style: { display: 'none' } },
+        h('button', { 'data-ui': 'sticky-apply-now', onClick: apply }, 'Apply now'))),
+    open ? h('div', { 'data-role': 'modal-wrapper' }, h('dialog', { role: 'dialog', 'aria-modal': 'true', open: true,
+      'aria-labelledby': 'wk-apply-title', className: 'wk-jobs-dialog' },
+    h('div', { id: 'wk-apply-title' }, h('h2', { 'data-ui': 'application-form-title' }, 'Apply for Software Engineer')),
+    h('div', { 'data-ui': 'application-form-actions' },
+      h('button', { 'data-ui': 'application-form-cancel', type: 'button', onClick: () => {
+        props.log.pressed.push('Cancel');
+        setOpen(false);
+      } }, 'Cancel'),
+      h('button', { 'data-ui': 'application-form-submit', type: 'button',
+        onClick: () => props.log.pressed.push('Submit application') }, 'Submit application')),
+    formShown ? h(ApplicationForm, { log: props.log, upload: props.upload, crash: props.crash, restored: {} })
+      : h('p', { className: 'wk-loading' }, 'Loading…'))) : null);
+}
+
 /** The view after `drawAfterMs` (see the header). */
 function Page(props: Required<Pick<MountOptions, 'log' | 'drawAfterMs' | 'view' | 'description' | 'upload'
-  | 'restored'>>): ReactElement {
+  | 'restored' | 'formAfterMs' | 'jobsOpen'>>): ReactElement {
   const [drawn, setDrawn] = useState(props.drawAfterMs <= 0);
   const [crashed, setCrashed] = useState(false);
   useEffect(() => {
@@ -698,6 +758,10 @@ function Page(props: Required<Pick<MountOptions, 'log' | 'drawAfterMs' | 'view' 
     props.log.crashed = true;
     setCrashed(true);
   };
+  if (props.view === 'jobs') {
+    return h(JobsPage, { log: props.log, upload: props.upload, crash, description: props.description,
+      formAfterMs: props.formAfterMs, open: props.jobsOpen });
+  }
   return props.view === 'overview' ? h(Overview, { description: props.description })
     : h(ApplicationForm, { log: props.log, upload: props.upload, crash, restored: props.restored });
 }
@@ -707,7 +771,7 @@ export function mountWorkablePage(container: Element, options: MountOptions): { 
   const root = createRoot(container);
   root.render(h(Page, { log: options.log, drawAfterMs: options.drawAfterMs ?? 0, view: options.view ?? 'application',
     description: options.description ?? DESCRIPTION, upload: options.upload ?? UPLOADED,
-    restored: options.restored ?? {} }));
+    restored: options.restored ?? {}, formAfterMs: options.formAfterMs ?? 300, jobsOpen: options.jobsOpen === true }));
   return { unmount: () => root.unmount() };
 }
 

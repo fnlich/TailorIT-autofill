@@ -33,7 +33,8 @@
  * and never added again. The auto-apply agent takes a queued Workable job (API 4) and submits it. jr8 (the owner's live
  * run of 2026-11-13, snapshot9): the page draws each new editor at the top of its list and the saved entries
  * newest-added first, as live Workable does, and a profile of four jobs (the mock's profile-four-jobs) has all four
- * added, filled and kept, one a round.
+ * added, filled and kept, one a round. jr8 (snapshot12): on Workable's job site (jobs.workable.com/view/<id>/<slug>),
+ * the panel's Autofill presses the posting's "Apply now" once, and the form its dialog draws is filled.
  */
 import type { Page } from '@playwright/test';
 import { COPY } from '../../src/shared/copy';
@@ -73,6 +74,7 @@ interface Log {
   refused: string[][];
   submitted: number;
   drawnAt: number | null;
+  applyNow: number;
 }
 
 let routes: RouteMap;
@@ -404,5 +406,35 @@ test.describe("Workable's application form", () => {
     expect(report.fields.filter((field) => field.reason === 'value-oscillated')).toEqual([]);
     expect(log.pressed).toEqual([]);
     expect(log.submitted).toBe(0);
+  });
+
+  test("the job site: Autofill presses Apply now once, and the form its dialog draws is filled (jr8)", async ({ extContext, connected: ext, routeLog }) => {
+    test.setTimeout(180_000);
+    routeLog.serve(routes);
+    const page = await extContext.newPage();
+    await page.goto(WORKABLE_WIDGETS.jobs);
+    await expect(page.locator('[data-ui="overview-apply-now"]')).toBeVisible();
+    expect(await page.locator('form[data-ui="application-form"]').count()).toBe(0);
+    // The page offers its own Apply: the panel's main button presses it (the owner's snapshot12: "Apply Now button is
+    // not working to show the form").
+    const tabId = await ext.tabIdOf(page);
+    const panel = await ext.reportPage(tabId);
+    const button = panel.locator('button.tia-cta[data-main-action="open"]');
+    await expect(button).toBeEnabled({ timeout: 20_000 });
+    await button.click();
+    await page.bringToFront();
+    await expect(page.locator('dialog[open] form[data-ui="application-form"]')).toBeVisible({ timeout: 15_000 });
+    // The worker's grant starts the run on the dialog's form, at the posting's own address.
+    const report = await ext.settled(tabId, { timeout: 120_000 });
+    const verified = { status: 'verified', wrote: true, verification: 'verified' };
+    for (const label of ['First name', 'Last name', 'Email']) expect(row(report, label), label).toMatchObject(verified);
+    const log = await pageValue<Log>(page, '__workable');
+    expect(log.values.firstname).toBe(GOLDEN.first);
+    // Apply now pressed once; nothing else (the dialog's Cancel and Submit, Share job); nothing submitted.
+    expect(log.applyNow).toBe(1);
+    expect(log.pressed).toEqual([]);
+    expect(log.submitted).toBe(0);
+    expect(page.url()).toBe(WORKABLE_WIDGETS.jobs);
+    expect(routeLog.submitted).toEqual([]);
   });
 });
