@@ -34,9 +34,17 @@
  * agent's platforms, and the every-site sign-in on Oracle's government cloud, UltiPro, and ADP's and ClearCompany's
  * candidate paths (GET /api/autofill/credentials' optional `path`). Add job is unchanged: none of the new ATSs has a
  * public posting API TailorIT may read. It adds no scope: an extension updated to 6 keeps its connection, and one still
- * speaking 5 gets 409 `conflict` on every token request until it is updated.
+ * speaking 5 gets 409 `conflict` on every token request until it is updated. Within 6, additive (jr7 step 7a): the
+ * Queue tab's platforms (AUTOFILL_QUEUE_ATS, queueApplicationUrl, queueCanOpen, a queue row's `runs`) and wider readers
+ * of platforms 6 knew. 7 (jr7, the owner's snapshot7 of 2026-11-11): the platforms `ukgready`, `paycom`, `jobdiva` and
+ * `eightfold`, after `smartrecruiters` in ATS_KINDS in the extension's order (new values in the lookup's `ats.kind`, the
+ * page's `employer.kind` and a saved answer's `platform` and `scope`; migration 0819 lets the saved answers keep them),
+ * with their addresses in parseAtsUrl and the Queue tab's list, and Jobvite, Workday and SmartRecruiters among the
+ * agent's platforms (AUTOFILL_AGENT_ATS, by the integration's readiness tests). Add job is unchanged. It adds no scope:
+ * an extension updated to 7 keeps its connection, and one still speaking 6 gets 409 `conflict` on every token request
+ * until it is updated.
  */
-export const AUTOFILL_API_VERSION = 6;
+export const AUTOFILL_API_VERSION = 7;
 
 /**
  * Sent by the extension on every request, and by the server on every answer to a request that presents a tia_ bearer,

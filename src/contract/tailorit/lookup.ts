@@ -22,9 +22,14 @@ import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from './resumes';
 // and SmartRecruiters, read exactly as the extension's adapters read them; Oracle Recruiting Cloud on Oracle's
 // government cloud; Workable's job-search site; and iCIMS's application steps after its email gate.
 
+// Version 7 (jr7, the owner's snapshot7 of 2026-11-11): UKG Ready (secure<n>.saashr.com), Paycom (www.paycomonline.net's
+// candidate portal), JobDiva (www<n>.jobdiva.com/portal/) and Eightfold (<company>.eightfold.ai/careers), read exactly
+// as the extension's adapters read them (src/adapters/{ukgready,paycom,jobdiva,eightfold}/url.ts).
+
 /**
  * The applicant-tracking systems the extension fills. Equals the extension's PLATFORMS, in its order, without `site` (a
- * company's own careers page, which is no ATS).
+ * company's own careers page, which is no ATS) and (version 7) `jibe`, iCIMS's candidate front, whose jobs TailorIT
+ * keeps as the iCIMS postings their Apply leads to.
  */
 export const ATS_KINDS = [
   'greenhouse',
@@ -52,6 +57,11 @@ export const ATS_KINDS = [
   'clearcompany',
   'adp',
   'smartrecruiters',
+  // Version 7.
+  'ukgready',
+  'paycom',
+  'jobdiva',
+  'eightfold',
 ] as const;
 export type AtsKind = (typeof ATS_KINDS)[number];
 
@@ -82,6 +92,10 @@ export const ATS_NAMES: Readonly<Record<AtsKind, string>> = {
   clearcompany: 'ClearCompany',
   adp: 'ADP Workforce Now',
   smartrecruiters: 'SmartRecruiters',
+  ukgready: 'UKG Ready',
+  paycom: 'Paycom',
+  jobdiva: 'JobDiva',
+  eightfold: 'Eightfold',
 };
 
 /** The longest page address a lookup takes. */
@@ -427,8 +441,9 @@ export interface ParsedAtsUrl {
    * company as written, or the Oracle Recruiting Cloud site in capitals; (version 6) the Jobvite company, the Rippling
    * board, the Dayforce client namespace and the SmartRecruiters company as written, the tenant's host label on JazzHR,
    * BambooHR, Breezy, CareerPlug, Pinpoint, HiBob and ClearCompany, the Paycor client id, the UltiPro tenant in lower
-   * case and the ADP client id (cid) in lower case; as the extension's adapters read them. Null when the address does
-   * not name it (a Workable link naming no account, Workable's job-search site, Paylocity, Dice).
+   * case and the ADP client id (cid) in lower case; (version 7) UKG Ready's company number, the Paycom client key and the
+   * JobDiva portal key as written, and the Eightfold company's host label; as the extension's adapters read them. Null
+   * when the address does not name it (a Workable link naming no account, Workable's job-search site, Paylocity, Dice).
    */
   board: string | null;
   /**
@@ -1368,6 +1383,120 @@ function smartRecruitersPosting(url: UrlLike): ParsedAtsUrl | null {
   return { kind: 'smartrecruiters', board, externalId, canonical };
 }
 
+// Version 7: the platforms of the owner's snapshot7 (2026-11-11), read exactly as the extension's adapters read them
+// (its src/adapters/{ukgready,paycom,jobdiva,eightfold}/url.ts): the same hosts, pages, board and id. A page that names
+// no job (UKG Ready's applicant session, Paycom's application page, whose number is the person's) is none here: the
+// extension names those by the posting the tab came from.
+
+/** UKG Ready: its candidate hosts, secure<n>.saashr.com. */
+const UKGREADY_HOST = /^secure\d{0,2}\.saashr\.com$/;
+/** Its careers page, the company's number in its path. */
+const UKGREADY_PATH = /^\/ta\/(\d{3,10})\.careers$/;
+/** A posting's ShowJob and the employer's ein_id: digits. */
+const UKGREADY_ID = /^\d{1,15}$/;
+
+/**
+ * UKG Ready (version 7): /ta/<company>.careers with exactly one ShowJob=<digits>, a posting whose choice ("Apply for
+ * Job") and start form are drawn in place at that address. The board is the company's number, the id the ShowJob. The
+ * canonical addresses are the posting by ShowJob alone (the extension's key: every spelling of one posting is one),
+ * then, when the address names exactly one ein_id (the employer's id, public), the same with it (UKGR-V3: the address
+ * a run opens keeps it). The applicant session after the start form (an ActiveSessionId, no ShowJob) names no job, nor
+ * does any other page of the host (its employee pages, /ta/<n>.login and the rest).
+ */
+function ukgReadyPosting(url: UrlLike): ParsedAtsUrl | null {
+  const company = UKGREADY_PATH.exec(url.pathname)?.[1];
+  const jobs = exactQueryValues(url, 'ShowJob');
+  if (company === undefined || jobs.length !== 1 || !UKGREADY_ID.test(jobs[0]!)) return null;
+  const posting = `https://${url.hostname}/ta/${company}.careers?ShowJob=${jobs[0]!}`;
+  const employers = exactQueryValues(url, 'ein_id');
+  const withEmployer = employers.length === 1 && UKGREADY_ID.test(employers[0]!) ? [`${posting}&ein_id=${employers[0]!}`] : [];
+  return { kind: 'ukgready', board: company, externalId: jobs[0]!, canonical: [posting, ...withEmployer] };
+}
+
+/** Paycom: its candidate host, and a posting's path on the client's portal (the client key, 32 hexadecimal digits). */
+const PAYCOM_HOST = 'www.paycomonline.net';
+const PAYCOM_POSTING = /^\/v4\/ats\/web\.php\/portal\/([A-Fa-f0-9]{32})\/jobs\/(\d{1,15})\/?$/;
+
+/**
+ * Paycom (version 7): /v4/ats/web.php/portal/<client key>/jobs/<n>, a posting (its Apply opens the contact dialog in
+ * place). The board is the client key as written, the id the posting's number. The application page,
+ * …/portal/<client key>/applications#/applications/<m>, names the person's own application, never the posting: none
+ * here; so is every other path (the employee pages under /v4/ee/ and /v4/cl/).
+ */
+function paycomPosting(url: UrlLike): ParsedAtsUrl | null {
+  const match = PAYCOM_POSTING.exec(url.pathname);
+  if (match === null) return null;
+  const [, key, id] = match as unknown as [string, string, string];
+  return { kind: 'paycom', board: key, externalId: id, canonical: [`https://${PAYCOM_HOST}/v4/ats/web.php/portal/${key}/jobs/${id}`] };
+}
+
+/** JobDiva: its candidate hosts (www, www1, www2 …). */
+const JOBDIVA_HOST = /^www\d{0,2}\.jobdiva\.com$/;
+/** An agency's portal key (64 letters and digits in the captures), and a job's id. */
+const JOBDIVA_KEY = /^[0-9A-Za-z]{16,128}$/;
+const JOBDIVA_JOB = /^\d{1,12}$/;
+/** The portal's job route in the fragment: #/jobs/<id>, a later number and a query of its own allowed. */
+const JOBDIVA_ROUTE = /^#\/jobs\/(\d{1,12})(?:\/\d{1,12})?\/?(?:\?.*)?$/;
+/** The legacy job page. */
+const JOBDIVA_LEGACY = '/candidates/myjobs/openjob.jsp';
+
+/** An address's fragment as its text writes it (the URL reader's href keeps it); '' for none or an empty one. */
+function fragmentOf(url: UrlLike): string {
+  const at = url.href.indexOf('#');
+  return at < 0 || at === url.href.length - 1 ? '' : url.href.slice(at);
+}
+
+/**
+ * JobDiva (version 7): an agency's portal, /portal/?a=<key>#/jobs/<id>, one job's posting and its application (the
+ * choice, Quick Apply, the EEO steps and the "Thank you!" are dialogs drawn at that one address); the job is in the
+ * address's fragment. With no fragment at all, the query's `id` names the job (an older link's), and the legacy page
+ * /candidates/myjobs/openjob.jsp?a=<key>&id=<id> names that job too. A fragment routing elsewhere (the job list, the
+ * sign-in) names none. The board is the portal key as written (exactly one `a`), the id the job's. The canonical
+ * addresses are the portal's job (the extension's, the fragment kept: the job lives only there), then the legacy page.
+ */
+function jobDivaPosting(url: UrlLike): ParsedAtsUrl | null {
+  const portal = url.pathname === '/portal/' || url.pathname === '/portal';
+  if (!portal && url.pathname !== JOBDIVA_LEGACY) return null;
+  const keys = exactQueryValues(url, 'a');
+  if (keys.length !== 1 || !JOBDIVA_KEY.test(keys[0]!)) return null;
+  const fragment = portal ? fragmentOf(url) : '';
+  const ids = exactQueryValues(url, 'id');
+  const id = fragment !== '' ? (JOBDIVA_ROUTE.exec(fragment)?.[1] ?? null) : ids.length === 1 ? ids[0]! : null;
+  if (id === null || !JOBDIVA_JOB.test(id)) return null;
+  const key = keys[0]!;
+  const canonical = [`https://${url.hostname}/portal/?a=${key}#/jobs/${id}`, `https://${url.hostname}${JOBDIVA_LEGACY}?a=${key}&id=${id}`];
+  return { kind: 'jobdiva', board: key, externalId: id, canonical };
+}
+
+/** Eightfold: a company's host (never its recruiters' app. nor www.), and a posting's id (pid: digits). */
+const EIGHTFOLD_HOST = /^(?!(?:app|www)\.)[a-z0-9-]+\.eightfold\.ai$/;
+const EIGHTFOLD_PID = /^\d{1,20}$/;
+/** The pages that name their posting in one `pid`: the job list's details pane, the form and the page after submitting. */
+const EIGHTFOLD_PAGES: ReadonlySet<string> = new Set(['/careers', '/careers/apply', '/careers/apply/success']);
+/** A posting's own page by its path (Jobright's site list; no capture shows it). */
+const EIGHTFOLD_JOB = /^\/careers\/job\/(\d{1,20})$/;
+
+/**
+ * Eightfold (version 7): /careers?…pid=<id> (the job list with the posting's details, whose Apply Now leads to the
+ * form), /careers/apply?pid=<id> (the form, one page), /careers/apply/success?…pid=<id> (the page after submitting)
+ * and /careers/job/<id>, one posting, named by exactly one numeric pid. The board is the company's host label. The
+ * canonical addresses are the form's (the extension's: it opens directly), then the posting's two.
+ */
+function eightfoldPosting(url: UrlLike): ParsedAtsUrl | null {
+  const path = url.pathname.length > 1 && url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+  let pid: string | null = null;
+  if (EIGHTFOLD_PAGES.has(path)) {
+    const pids = exactQueryValues(url, 'pid');
+    pid = pids.length === 1 ? pids[0]! : null;
+  } else {
+    pid = EIGHTFOLD_JOB.exec(path)?.[1] ?? null;
+  }
+  if (pid === null || !EIGHTFOLD_PID.test(pid)) return null;
+  const careers = `https://${url.hostname}/careers`;
+  const board = url.hostname.slice(0, -'.eightfold.ai'.length);
+  return { kind: 'eightfold', board, externalId: pid, canonical: [`${careers}/apply?pid=${pid}`, `${careers}?pid=${pid}`, `${careers}/job/${pid}`] };
+}
+
 /**
  * The ATS posting an application page's address names, or null. Greenhouse: its boards and job boards (and their
  * .eu. twins) at /{board}/jobs/{id}, the embedded form at /embed/job_app?for={board}&token={id}, and a company page
@@ -1383,9 +1512,9 @@ function smartRecruitersPosting(url: UrlLike): ParsedAtsUrl | null {
  * SmartRecruiters, Oracle's government cloud, Workable's job-search site and iCIMS's steps after its gate, likewise.
  * jr7 7a (additive within version 6, the owner's snapshot7 of 2026-11-11): Dayforce's posting and its way-to-apply
  * choice, Rippling's boards under a locale, UltiPro's other recruiting hosts, Pinpoint's .../applications, iCIMS's
- * Assessments step and Dice's posting page, each read as the posting the platform's other pages name. Hosts are
- * compared in lower case, and the query parameter names of Greenhouse, Lever, Ashby and Workable too; the fragment
- * never matters.
+ * Assessments step and Dice's posting page, each read as the posting the platform's other pages name. Version 7: UKG
+ * Ready, Paycom, JobDiva and Eightfold. Hosts are compared in lower case, and the query parameter names of Greenhouse,
+ * Lever, Ashby and Workable too; the fragment never matters but on JobDiva's portal, whose job lives only there.
  */
 export function parseAtsUrl(address: string): ParsedAtsUrl | null {
   const url = webUrl(address);
@@ -1439,6 +1568,11 @@ const HOST_READERS: ReadonlyArray<readonly [RegExp | string, (url: UrlLike) => P
   [CLEARCOMPANY_HOST, clearCompanyPosting],
   [ADP_HOST, adpPosting],
   [SMARTRECRUITERS_HOST, smartRecruitersPosting],
+  // Version 7.
+  [UKGREADY_HOST, ukgReadyPosting],
+  [PAYCOM_HOST, paycomPosting],
+  [JOBDIVA_HOST, jobDivaPosting],
+  [EIGHTFOLD_HOST, eightfoldPosting],
 ];
 
 /** A LinkedIn job, as parseLinkedInJobUrl reads its address. */

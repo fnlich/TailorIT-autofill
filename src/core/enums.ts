@@ -40,10 +40,10 @@ export type Platform = (typeof PLATFORMS)[number];
  *  platform) and no saved answer keeps it. test/contract.test.ts holds ATS_KINDS to PLATFORMS without these, and fails
  *  once the contract lists one, so a platform the extension adds ahead of TailorIT goes here until it does. */
 export const PLATFORMS_AHEAD_OF_CONTRACT: readonly Platform[] = ['site',
-  // jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 1): the snapshot7 platforms, until TailorIT's API 7 lists them (TAILORIT-7 7b,
-  // pulled by INT-7, which puts this list back to ['site', 'jibe']). `jibe` stays for good: TailorIT keeps a Jibe
-  // job as the iCIMS job its Apply leads to (FIX7PLAN §5 D-6).
-  'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe'];
+  // jr7: TailorIT's API 7 (TAILORIT-7 7b, jr7-tailorit-b, pulled by INT-7 round 2) lists UKG Ready, Paycom, JobDiva
+  // and Eightfold, so they left this list. `jibe` stays for good: TailorIT keeps a Jibe job as the iCIMS job its Apply
+  // leads to (FIX7PLAN §5 D-6).
+  'jibe'];
 
 /** The spec's field kinds plus one 'checkbox' (a lone box: consent, "I currently work here"). Equals TailorIT's list. */
 export const FIELD_KINDS = ['text', 'textarea', 'select', 'radio', 'checkbox', 'checkbox-group', 'combobox',

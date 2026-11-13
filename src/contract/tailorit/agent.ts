@@ -75,6 +75,32 @@ export const AUTOFILL_AGENT_RUN_TIMEOUT_MS = 30 * 60_000;
  * SuccessFactors, Oracle Recruiting Cloud and SmartRecruiters (no page after submitting seen, so no success sign), Breezy
  * HR (its confirmation is in the form's markup, hidden in both snapshots: never seen shown), and the other new ATSs (no
  * confirmation in any snapshot). The extension's Queue tab, which the person watches, opens more (AUTOFILL_QUEUE_ATS).
+ *
+ * Version 7 (jr7, the owner's snapshot7 of 2026-11-11 and the integration's readiness tests): a platform joins when a
+ * capture of the page after its Submit shows a success sign its adapter reads, the same sign is absent on every other
+ * capture of the platform, and no capture shows a CAPTCHA, a human check or a code on the way. Three join:
+ * - Jobvite (`jobvite`): /applyConfirmation and "Application Sent!" on jobvite1's confirmation
+ *   (fixtures/jobvite/jr7-jobvite1-confirmation), none on its posting and steps; Apply, the steps' Next and Send
+ *   Application walked to a recorded submission; no CAPTCHA, check or code in any of its captures.
+ * - Workday (`workday`), its guest tenants: the page after submitting on all three tenants of snapshot7
+ *   (fixtures/workday/jr7-workday{1,2,3}-confirmation: the address, the drawn sign after its fade, and Workday's own
+ *   finalize answer), none on the 41 pages before them; Apply, Apply Manually, each step's Next and Submit. An account
+ *   tenant's run ends needing the person at its Create Account or its email verification (Workday's design).
+ * - SmartRecruiters (`smartrecruiters`): /success and its confirmation heading on smartrecruiter1's page after
+ *   submitting (fixtures/smartrecruiters/jr7-smartrecruiter1-success), none on its other pages; the posting's "I'm
+ *   interested", its one-click application and screening step, recorded once under the posting.
+ * Never, for D-5's reasons (the person's step on every application):
+ * - ADP Workforce Now (`adp`) never joins: every guest application sends the person a one-time verification code by
+ *   text or email before its first step (snapshot6 adp1 and adp2, snapshot7 adp1), which an unattended run never
+ *   requests or types; the Queue tab opens its job details (`queueApplicationUrl`) and the person types the code there.
+ * - Oracle Recruiting Cloud (`oracle`): a code at Submit (snapshot7 oraclecloud1) or at the email gate on other
+ *   tenants.
+ * - JazzHR (`jazzhr`) and BambooHR (`bamboohr`): a checkbox reCAPTCHA on every form.
+ * - UltiPro (`ultipro`): UKG's candidate sign-in on every new tenant.
+ * - Dayforce (`dayforce`): an image check at Submit, and no capture of its page after submitting.
+ * Out until the owner's live checks (Q7-1, Q7-2) clear their invisible or empty check widgets and open lists: Rippling
+ * (`rippling`), UKG Ready (`ukgready`), Paycom (`paycom`), JobDiva (`jobdiva`) and Eightfold (`eightfold`). The
+ * Queue tab opens all of these.
  */
 export const AUTOFILL_AGENT_ATS = [
   'greenhouse',
@@ -83,6 +109,10 @@ export const AUTOFILL_AGENT_ATS = [
   'workable',
   'icims',
   'pinpoint',
+  // Version 7.
+  'jobvite',
+  'workday',
+  'smartrecruiters',
 ] as const satisfies readonly AtsKind[];
 
 /** The longest application address the agent opens. */
@@ -100,8 +130,12 @@ export const AUTOFILL_AGENT_URL_MAX = 2048;
  * from a /j/{shortcode} link that names no account, nor from Workable's job-search site. Version 6: iCIMS, the
  * posting's own page, https://<portal>/jobs/<id>/job (its entry opens the email gate), from the posting, its gate or
  * any step after it; Pinpoint, the form, https://<tenant>.pinpointhq.com/en/postings/<uuid>/applications/new, from the
- * posting, the form or the page after submitting. Read with parseAtsUrl, so the extension and TailorIT agree: the
- * answer reads as itself again.
+ * posting, the form or the page after submitting. Version 7: Jobvite, the application, …/job/<id>/apply (its consent
+ * gate and steps at that address); Workday, the posting's own page without its locale (its Apply, then Apply
+ * Manually), only when its location and posting segments are ones TailorIT puts into an address of its own
+ * (addablePosting's check); SmartRecruiters, the posting, https://jobs.smartrecruiters.com/<Company>/<number> (its "I'm
+ * interested" opens the one-click application), never a one-click application's own address. Read with parseAtsUrl, so
+ * the extension and TailorIT agree: the answer reads as itself again.
  */
 export function agentApplicationUrl(url: string): string | null {
   const read = url.length <= AUTOFILL_AGENT_URL_MAX ? parseAtsUrl(url) : null;
@@ -112,7 +146,8 @@ export function agentApplicationUrl(url: string): string | null {
 }
 
 /** The application form's address of a posting on a platform the agent fills, when its board is known; else null. */
-function formAddress({ kind, board, externalId, canonical }: ParsedAtsUrl): string | null {
+function formAddress(posting: ParsedAtsUrl): string | null {
+  const { kind, board, externalId, canonical } = posting;
   if (board === null) return null;
   switch (kind) {
     case 'greenhouse': {
@@ -129,8 +164,18 @@ function formAddress({ kind, board, externalId, canonical }: ParsedAtsUrl): stri
       return `https://apply.workable.com/${board}/j/${externalId}/apply/`;
     case 'icims':
     case 'pinpoint':
-      // The posting's own page (iCIMS) or its form (Pinpoint), as parseAtsUrl builds it from the host and the id alone.
+    case 'jobvite':
+      // The posting's own page (iCIMS) or its form (Pinpoint; version 7: Jobvite's …/job/<id>/apply), as parseAtsUrl
+      // builds it from the host and the id alone.
       return canonical[0] ?? null;
+    case 'workday':
+      // Version 7: the posting (its first canonical address, without its locale), only when its location and posting
+      // segments are ones TailorIT puts into an address of its own (addablePosting's check: no dot segment, no encoded
+      // '/'), so both runs open the same address.
+      return addablePosting(posting) !== null ? (canonical[0] ?? null) : null;
+    case 'smartrecruiters':
+      // Version 7: the posting by its number; a one-click application's own address names no posting to open.
+      return canonical[0] !== undefined && !canonical[0].includes('/oneclick-ui/') ? canonical[0] : null;
     default:
       return null;
   }
@@ -149,8 +194,12 @@ export function agentCanApply(url: string): boolean {
  * submitting captured, and its posting is outside the pages the extension runs on). The Queue tab is attended: the
  * person is at the browser, so a CAPTCHA, a code or a sign-in a platform asks for (JazzHR's and BambooHR's reCAPTCHA,
  * ADP's and Oracle's codes, UKG's sign-in for UltiPro, Dayforce's image check) is theirs there, in that tab. Run
- * auto-apply, unattended, still takes only AUTOFILL_AGENT_ATS. Provisional in jr7's step 7a, for the extension's
- * development and tests; jr7's step 7b sets the released list from the integration's readiness tests.
+ * auto-apply, unattended, still takes only AUTOFILL_AGENT_ATS. Version 7 (the integration's readiness verdict): every
+ * kind of ATS_KINDS but Dice, the four new ones too (UKG Ready, Paycom, JobDiva and Eightfold: each keeps one
+ * application from its posting to its page after submitting, Eightfold by one key, Paycom and UKG Ready by the
+ * extension's chain from the posting the tab opened). Where the extension reads no success sign in a capture after
+ * Submit (Dayforce, Taleo, SuccessFactors, Breezy HR, CareerPlug, Paycor, HiBob, Paylocity, ClearCompany), the Queue tab
+ * leaves Submit to the person whatever Submit is set to (the extension's QUEUE_SUBMIT_PLATFORMS).
  */
 export const AUTOFILL_QUEUE_ATS = [
   'greenhouse',
@@ -177,19 +226,26 @@ export const AUTOFILL_QUEUE_ATS = [
   'clearcompany',
   'adp',
   'smartrecruiters',
+  // Version 7.
+  'ukgready',
+  'paycom',
+  'jobdiva',
+  'eightfold',
 ] as const satisfies readonly AtsKind[];
 
 /**
  * The address the Queue tab opens for a posting at `url`, or null when neither run can open it: the agent's
- * (agentApplicationUrl) when it has one, else, on a platform of AUTOFILL_QUEUE_ATS the agent does not take, an address
- * built from the posting's board and id alone (parseAtsUrl's canonical addresses) that says hello before any redirect:
- * the posting, whose own Apply the extension presses (Workday, Oracle Recruiting Cloud, SmartRecruiters' posting, never
- * its one-click application; Dayforce's posting, before its way-to-apply choice; UltiPro's OpportunityDetail, never
- * OpportunityApply, which sends a new visitor to UKG's sign-in first), or the application form where the platform has
+ * (agentApplicationUrl) when it has one (version 7: Workday's posting, SmartRecruiters' posting and Jobvite's …/apply
+ * among them), else, on a platform of AUTOFILL_QUEUE_ATS the agent does not take, an address built from the posting's
+ * board and id alone (parseAtsUrl's canonical addresses) that says hello before any redirect: the posting, whose own
+ * Apply the extension presses (Oracle Recruiting Cloud; Dayforce's posting, before its way-to-apply choice; UltiPro's
+ * OpportunityDetail, never OpportunityApply, which sends a new visitor to UKG's sign-in first; version 7: UKG Ready's
+ * posting, with its employer's ein_id when the address names one; Paycom's posting; JobDiva's portal job,
+ * …/portal/?a=<key>#/jobs/<id>, whose Apply Now leads to Quick Apply), or the application form where the platform has
  * one address for it (ADP's guest page, which opens the posting's details; BambooHR's /careers/<id>; JazzHR's page;
- * Rippling's form; Jobvite's …/apply; Taleo, SuccessFactors, Breezy HR, CareerPlug, Paycor, HiBob, Paylocity and
- * ClearCompany as parseAtsUrl names them first). The answer reads as itself again, at most AUTOFILL_AGENT_URL_MAX
- * characters.
+ * Rippling's form; version 7: Eightfold's /careers/apply?pid=<id>; Taleo, SuccessFactors, Breezy HR, CareerPlug,
+ * Paycor, HiBob, Paylocity and ClearCompany as parseAtsUrl names them first). The answer reads as itself again, at most
+ * AUTOFILL_AGENT_URL_MAX characters.
  */
 export function queueApplicationUrl(url: string): string | null {
   const agent = agentApplicationUrl(url);
@@ -200,25 +256,22 @@ export function queueApplicationUrl(url: string): string | null {
 }
 
 /** The address the Queue tab opens on a platform it alone takes (queueApplicationUrl); null on any other. */
-function queueFormAddress(posting: ParsedAtsUrl): string | null {
-  const { kind, canonical } = posting;
+function queueFormAddress({ kind, canonical }: ParsedAtsUrl): string | null {
   if (!(AUTOFILL_QUEUE_ATS as readonly AtsKind[]).includes(kind)) return null;
-  // The agent's platforms open at the agent's address, or not at all (an EU Greenhouse board, a link naming no account).
+  // The agent's platforms open at the agent's address, or not at all (an EU Greenhouse board, a link naming no account,
+  // version 7: a Workday location that would change the path, a SmartRecruiters one-click application).
   if ((AUTOFILL_AGENT_ATS as readonly AtsKind[]).includes(kind)) return null;
   switch (kind) {
-    case 'workday':
-      // The posting (its first canonical address, without its locale), only when its location and posting segments
-      // are ones TailorIT puts into an address of its own (addablePosting's check: no dot segment, no encoded '/').
-      return addablePosting(posting) !== null ? (canonical[0] ?? null) : null;
     case 'ultipro':
       // [OpportunityApply, OpportunityDetail]: the posting, on the page's own host.
       return canonical.find((address) => address.includes('/OpportunityDetail?')) ?? null;
     case 'dayforce':
       // [step 1 of the guest application, the posting]: the posting, whose Apply leads to the choice.
       return canonical[1] ?? null;
-    case 'smartrecruiters':
-      // The posting by its number; a one-click application names no posting to open.
-      return canonical[0] !== undefined && !canonical[0].includes('/oneclick-ui/') ? canonical[0] : null;
+    case 'ukgready':
+      // Version 7, UKGR-V3: [the posting by ShowJob, the same with its ein_id when the address names one]: the latter
+      // when there is one (the employer's id, public), else the former.
+      return canonical.find((address) => address.includes('&ein_id=')) ?? canonical[0] ?? null;
     default:
       return canonical[0] ?? null;
   }
@@ -242,9 +295,10 @@ export const AutofillAgentIdSchema = z
 /**
  * The job the agent applies to now: open `url`, the application form's address (agentApplicationUrl: Greenhouse's job
  * page on job-boards.greenhouse.io, Lever's `…/apply`, Ashby's `…/application`, Workable's `…/apply/`, and since
- * version 6 iCIMS's posting page `…/jobs/<id>/job` and Pinpoint's `…/applications/new`), and attach `resumeId` when
- * set. jr7 7a: the Queue tab's task (POST …/agent/:id/opened) carries queueApplicationUrl's address instead, which is
- * the agent's on the agent's platforms.
+ * version 6 iCIMS's posting page `…/jobs/<id>/job` and Pinpoint's `…/applications/new`; version 7 Jobvite's
+ * `…/job/<id>/apply`, Workday's posting page and SmartRecruiters' posting), and attach `resumeId` when set. jr7 7a: the
+ * Queue tab's task (POST …/agent/:id/opened) carries queueApplicationUrl's address instead, which is the agent's on the
+ * agent's platforms.
  */
 export const AutofillAgentTaskSchema = z.object({
   id: AutofillAgentIdSchema,

@@ -170,7 +170,7 @@ describe('the server client', () => {
     it('report a matching version again once the header agrees', async () => {
       const tailorit = createFakeTailorIT();
       const { server, versions } = client({}, tailorit);
-      tailorit.reply('GET /api/autofill/profile', { status: 409, json: errorBody('conflict'), headers: { 'X-TailorIT-Autofill-Api': '7' } });
+      tailorit.reply('GET /api/autofill/profile', { status: 409, json: errorBody('conflict'), headers: { 'X-TailorIT-Autofill-Api': String(AUTOFILL_API_VERSION + 1) } });
       await server.profile();
       tailorit.reply('GET /api/autofill/profile', { json: goldens.profile });
       await server.profile();

@@ -1,11 +1,11 @@
 {
   "repository": "TailorIT",
   "branch": "jr7-auto-apply",
-  "commit": "a4db439509ef1a9f9be3b04941744188c3118816",
+  "commit": "a37ccae623cbadbbd31e5acc2b9c81b9867be9b0",
   "folders": [
     "packages/shared/src/autofill",
     "packages/shared/contract/autofill/v1"
   ],
-  "apiVersion": 6,
+  "apiVersion": 7,
   "zod": "4.6.7"
 }

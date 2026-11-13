@@ -33,7 +33,7 @@ import type { FrameReport } from '../shared/report';
 import {
   AGENT_ALARM, AGENT_BACKOFF_MS, AGENT_CONFIRM_MS, AGENT_FORM_WAIT_MS, AGENT_JOB_MAX_MS, AGENT_JOB_TIMEOUT_MS,
   AGENT_LOAD_SETTLE_MS, AGENT_MAX_PAGE_ERRORS, AGENT_MAX_STARTS, AGENT_RUN_KEY, AGENT_SETTLE_MS,
-  AGENT_SIGN_IN_WAIT_MS, AGENT_SWITCH_KEY, agentVerdict, createAgent,
+  AGENT_SIGN_IN_WAIT_MS, AGENT_SWITCH_KEY, agentAddressOf, agentVerdict, createAgent, queueAddressOf,
   type AgentDeps,
   type AgentTask,
 } from './agent';
@@ -1387,7 +1387,9 @@ describe('the agent on iCIMS and Pinpoint (TailorIT’s API 6)', () => {
 
   it('accepts their tasks from any page of the application, opening the address TailorIT’s agentApplicationUrl gives',
     async () => {
-      expect(AUTOFILL_AGENT_ATS).toEqual(['greenhouse', 'lever', 'ashby', 'workable', 'icims', 'pinpoint']);
+      // jr7 INT-7 round 2: API 7 (7b) adds Jobvite, Workday and SmartRecruiters (INT-7's readiness verdict).
+      expect(AUTOFILL_AGENT_ATS).toEqual(['greenhouse', 'lever', 'ashby', 'workable', 'icims', 'pinpoint', 'jobvite',
+        'workday', 'smartrecruiters']);
       for (const [pages, opened, platform] of [[ICIMS_PAGES, ICIMS, 'icims'], [PIN_PAGES, PIN_FORM, 'pinpoint']] as const) {
         const key = applicationOf(new URL(opened))!.applicationKey;
         expect(key.startsWith(`${platform}:`)).toBe(true);
@@ -1438,8 +1440,10 @@ describe('the agent on iCIMS and Pinpoint (TailorIT’s API 6)', () => {
     expect(h.results).toEqual([{ id: ID(1), body: { state: 'submitted', reason: null, aiGuesses: 0 } }]);
   });
 
-  it('still claims nothing on the ATSs API 6 did not add to the agent (failed, unsupported_site)', async () => {
-    const others = ['https://jobs.jobvite.com/ninjaone/job/o5b1AfwB/apply',
+  // jr7 INT-7 round 2 (API 7): Jobvite joined the agent, so a queue-only platform's posting (Dayforce) stands in its
+  // place; SmartRecruiters' one-click address stays refused (the agent opens its posting), Breezy HR is no agent site.
+  it('still claims nothing on the ATSs API 7 leaves out of the agent, nor a SmartRecruiters one-click address (failed, unsupported_site)', async () => {
+    const others = ['https://jobs.dayforcehcm.com/en-US/savealot/CANDIDATEPORTAL/jobs/9234',
       'https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/publication/189a97ff-58b4-4671-bd81-6ed11d3bcfd1',
       'https://concurrent-technologies-corporation.breezy.hr/p/4362758f2795-senior-software-engineer-specialist/apply'];
     for (const url of others) expect(agentApplicationUrl(url), url).toBeNull();
@@ -1453,6 +1457,48 @@ describe('the agent on iCIMS and Pinpoint (TailorIT’s API 6)', () => {
     expect(h.results).toEqual(others.map((_, n) => ({ id: ID(n + 1), body: { state: 'failed', reason: 'unsupported_site',
       aiGuesses: 0 } })));
   });
+
+  // jr7 INT-7 round 2 (API 7, TAILORIT-7 7b): the three joiners' agent addresses as TailorIT gives them, and the four
+  // new kinds' queue addresses, each one the extension's own runs open and recognise: an address on a host its
+  // manifest's script runs on, keyed by the application the run fills (the Queue runner matches a frame by that key;
+  // UKG Ready's session and Paycom's /applications take their posting's key by CHAIN-7's chain, chain-jr7.test.ts).
+  it('opens the joiners at TailorIT’s agent addresses, and the four new kinds at its queue addresses, each under its application’s key',
+    async () => {
+      const KEY = '0123456789abcdef'.repeat(2);
+      const agentCases = [
+        ['https://jobs.jobvite.com/ninjaone/job/o5b1AfwB', 'https://jobs.jobvite.com/ninjaone/job/o5b1AfwB/apply'],
+        ['https://acme.wd5.myworkdayjobs.com/en-US/External/job/Austin-TX/Engineer_JR-1',
+          'https://acme.wd5.myworkdayjobs.com/External/job/Austin-TX/Engineer_JR-1'],
+        ['https://jobs.smartrecruiters.com/Xplor/744000159905715-engineer', 'https://jobs.smartrecruiters.com/Xplor/744000159905715'],
+      ] as const;
+      for (const [posting, opened] of agentCases) {
+        expect(agentAddressOf(posting), posting).toEqual({ address: opened,
+          applicationKey: applicationOf(new URL(opened))!.applicationKey });
+        const h = harness({ tasks: [task(1, posting)] });
+        await on(h);
+        expect(h.windows.opened, posting).toEqual([opened]);
+        expect((await running(h)).key, posting).toBe(applicationOf(new URL(opened))!.applicationKey);
+      }
+      const queueCases = [
+        // UKG Ready: its posting, keeping ein_id (UKGR-V3), the same job's key as the ShowJob alone.
+        ['https://secure7.saashr.com/ta/1234567.careers?ShowJob=987654321&ein_id=42',
+          'https://secure7.saashr.com/ta/1234567.careers?ShowJob=987654321&ein_id=42',
+          'https://secure7.saashr.com/ta/1234567.careers?ShowJob=987654321'],
+        [`https://www.paycomonline.net/v4/ats/web.php/portal/${KEY}/jobs/123456`,
+          `https://www.paycomonline.net/v4/ats/web.php/portal/${KEY}/jobs/123456`,
+          `https://www.paycomonline.net/v4/ats/web.php/portal/${KEY}/jobs/123456`],
+        ['https://www2.jobdiva.com/portal/?a=abcdefghij0123456789#/jobs/12345',
+          'https://www2.jobdiva.com/portal/?a=abcdefghij0123456789#/jobs/12345',
+          'https://www2.jobdiva.com/portal/?a=abcdefghij0123456789#/jobs/12345'],
+        ['https://acme.eightfold.ai/careers?pid=123456789', 'https://acme.eightfold.ai/careers/apply?pid=123456789',
+          'https://acme.eightfold.ai/careers?pid=123456789'],
+      ] as const;
+      for (const [url, opened, same] of queueCases) {
+        expect(agentAddressOf(url), url).toBeNull();
+        expect(queueAddressOf(url), url).toEqual({ address: opened,
+          applicationKey: applicationOf(new URL(same))!.applicationKey });
+      }
+    });
 });
 // ── end contract6 ──
 

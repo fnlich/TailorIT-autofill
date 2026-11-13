@@ -123,8 +123,8 @@ export function example(schema, name = 'golden') {
   return readJson(join(CONTRACT, 'fixtures', schema, 'valid', `${name}.json`));
 }
 
-/** The API version TailorIT speaks, as the contract's version.ts names it. */
-export const MOCK_API_VERSION = 6;
+/** The API version TailorIT speaks, as the contract's version.ts names it (7 since jr7's 7b, pulled by INT-7 round 2). */
+export const MOCK_API_VERSION = 7;
 /** The header TailorIT names its version in, on every answer to a request that presents a `tia_` bearer. */
 export const API_HEADER = 'X-TailorIT-Autofill-Api';
 const FILE_KIND_HEADER = 'X-TailorIT-File-Kind';

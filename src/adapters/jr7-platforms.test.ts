@@ -16,6 +16,7 @@ import { PLATFORMS, PLATFORMS_AHEAD_OF_CONTRACT, type Platform } from '../core/e
 import type { ClassifyItem } from '../core/resolver/classify';
 import type { FieldKey } from '../core/types/field';
 import type { UntrustedText } from '../core/types/text';
+import { parseAtsUrl } from '../contract/tailorit/lookup';
 import { COPY } from '../shared/copy';
 import { eightfoldAdapter } from './eightfold';
 import { parseEightfoldUrl } from './eightfold/url';
@@ -66,10 +67,12 @@ const READING: ReadonlySet<Platform> = new Set<Platform>(['ukgready', 'paycom', 
 // ── end jr7 INT-7 ──
 
 describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
-  it('appends their ids in order, each ahead of the contract and named as the panel and the report show it', () => {
+  it('appends their ids in order, the four ATSs in TailorIT’s contract since its API 7, Jibe ahead of it for good, each named as the panel and the report show it', () => {
     expect(PLATFORMS.slice(-5)).toEqual(STUBS.map((each) => each.platform));
     for (const { platform, name } of STUBS) {
-      expect(PLATFORMS_AHEAD_OF_CONTRACT, platform).toContain(platform);
+      // jr7 INT-7 round 2: TailorIT's API 7 (7b) lists UKG Ready, Paycom, JobDiva and Eightfold; Jibe stays ahead (D-6).
+      if (platform === 'jibe') expect(PLATFORMS_AHEAD_OF_CONTRACT, platform).toContain(platform);
+      else expect(PLATFORMS_AHEAD_OF_CONTRACT, platform).not.toContain(platform);
       expect(COPY.platforms[platform], platform).toBe(name);
     }
     // The panel's list of sites names the four ATSs; Jibe is iCIMS's front, its application on iCIMS.
@@ -129,14 +132,43 @@ describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
     }
   });
 
-  it("never asks TailorIT's AI to classify their fields, as a company page's are not (ahead of the contract)", () => {
+  // jr7 INT-7 round 2: since TailorIT's API 7 the four ATSs' fields are classified as any ATS's; a Jibe page's never
+  // (ahead of the contract for good, as a company page is).
+  it("asks TailorIT's AI to classify the four ATSs' fields since its API 7, never a Jibe page's (ahead of the contract)", () => {
     const item = (key: string, platform: Platform): ClassifyItem => ({ key: key as FieldKey, platform, kind: 'text',
       label: 'Where do you work today?' as UntrustedText, hint: '' as UntrustedText, section: '' as UntrustedText,
       options: [] });
     const { batches, withheld } = classifyBatches([item('k-lever', 'lever'),
       ...STUBS.map(({ platform }) => item(`k-${platform}`, platform))]);
-    expect(batches.flatMap((batch) => batch.items.map((each) => each.key))).toEqual(['k-lever']);
-    expect(withheld).toEqual(STUBS.map(({ platform }) => ({ key: `k-${platform}`, category: null, why: 'unknown-field' })));
+    expect(batches.flatMap((batch) => batch.items.map((each) => each.key))).toEqual(['k-lever', 'k-ukgready', 'k-paycom',
+      'k-jobdiva', 'k-eightfold']);
+    expect(withheld).toEqual([{ key: 'k-jibe', category: null, why: 'unknown-field' }]);
+  });
+});
+
+// jr7 INT-7 round 2 (TAILORIT-7 7b's notes): TailorIT's API 7 reads the four ATSs' pages as their parsers do. A posting
+// (and Eightfold's form) is the same platform, board and job on both sides; the pages TailorIT reads as no job on
+// purpose are UKG Ready's applicant session and Paycom's /applications (an application page that names no job: its
+// number is the person's own, D-10), JobDiva's routes other than a job, and Eightfold's pages without exactly one
+// numeric pid. Jibe is no TailorIT kind: its job goes to TailorIT as the iCIMS posting its Apply leads to (D-6).
+describe('the four ATSs in TailorIT’s API 7 (jr7 INT-7 round 2)', () => {
+  it('reads each candidate posting as the extension does, and on purpose no job from an application page that names none', () => {
+    for (const { platform, parse, candidate } of STUBS.filter((each) => each.platform !== 'jibe')) {
+      for (const url of candidate) {
+        const read = parse(new URL(url)) as { board: string; jobId: string; page: string } | null;
+        expect(read, url).not.toBeNull();
+        if (read!.jobId === '') {
+          expect(parseAtsUrl(url), url).toBeNull();
+          continue;
+        }
+        expect(parseAtsUrl(url), url).toMatchObject({ kind: platform, board: read!.board, externalId: read!.jobId });
+      }
+    }
+    for (const url of ['https://www2.jobdiva.com/portal/?a=abcdefghij0123456789#/jobs',
+      'https://acme.eightfold.ai/careers?pid=123&pid=456', 'https://acme.eightfold.ai/careers']) {
+      expect(parseAtsUrl(url), url).toBeNull();
+    }
+    expect(parseAtsUrl('https://acme.jibeapply.com/jobs/12345')).toBeNull();
   });
 });
 

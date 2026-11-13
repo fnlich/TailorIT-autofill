@@ -1,0 +1,17 @@
+{
+  "ats": {
+    "kind": "eightfold",
+    "board": "northwind",
+    "externalId": "1234567890123"
+  },
+  "job": null,
+  "application": null,
+  "suggestedResume": null,
+  "match": null,
+  "page": {
+    "kind": "ats",
+    "linkedInUrl": null,
+    "employer": null,
+    "addWith": "page"
+  }
+}

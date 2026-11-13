@@ -1,0 +1,15 @@
+{
+  "id": "5d7f9b1c-3e5a-4c7e-9a1b-4f6d8e0a2c35",
+  "questionKey": "why do you want to work at northwind",
+  "optionSetHash": "",
+  "scope": "ukgready:1234567",
+  "fieldKind": "textarea",
+  "questionLabel": "Why do you want to work at Northwind?",
+  "platform": "ukgready",
+  "answer": {
+    "kind": "text",
+    "text": "Northwind's ordering platform is the kind of system I have spent four years building, and I want to help it grow."
+  },
+  "createdAt": "2026-11-13T12:00:00.000Z",
+  "updatedAt": "2026-11-13T12:00:00.000Z"
+}

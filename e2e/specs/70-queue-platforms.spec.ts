@@ -12,11 +12,12 @@
  *   pressed; the row says Submit is the person's there.
  * - Jobvite, whose confirmation is read (/applyConfirmation): Next and Submit Auto walk its three steps and press Send
  *   Application; the page's route to its confirmation records the job submitted (POST …/result {submitted}).
- *   The background agent's half of "both runs" is TAILORIT-7 7b's (Jobvite joins AUTOFILL_AGENT_ATS there, O-9).
+ *   The background agent's half of "both runs" (INT-7 round 2, after TAILORIT-7 7b's API 7 put Jobvite in
+ *   AUTOFILL_AGENT_ATS, O-9): Run auto-apply opens the same address and finishes the job submitted.
  */
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
-import { queueApplicationUrl } from '../../src/contract/tailorit';
+import { agentApplicationUrl, queueApplicationUrl } from '../../src/contract/tailorit';
 import type { FrameReport } from '../../src/shared/report';
 import { expect, test } from '../fixtures.ts';
 import type { Extension } from '../helpers/extension.ts';
@@ -188,5 +189,43 @@ test.describe('the Queue tab on every platform the extension fills (jr7 AUTO-7, 
       .toEqual([{ id: task(3, POSTING, '').id, body: { state: 'submitted', reason: null, aiGuesses: expect.any(Number) } }]);
     await expect.poll(async () => (await listed(ext)).items[0]?.status, { timeout: 15_000 }).toBe('submitted');
     expect(routeLog.submitted).toEqual([]);
+  });
+
+  // jr7 INT-7 round 2: the background agent's half of "both runs". TailorIT's API 7 (TAILORIT-7 7b) puts Jobvite in
+  // AUTOFILL_AGENT_ATS (INT-7's readiness verdict): Run auto-apply opens the job at agentApplicationUrl (…/job/<id>/apply,
+  // the address the Queue tab opens too), walks its steps on Next and Submit Auto, and the route to its confirmation
+  // finishes the job submitted, its window closed.
+  test('Jobvite through Run auto-apply (API 7): the agent opens …/apply, walks its steps, and its confirmation finishes the job submitted', async ({ connected: ext, routeLog }) => {
+    const POSTING = 'https://jobs.jobvite.com/tailorit-fixture/job/oAgent70';
+    const OPENED = agentApplicationUrl(POSTING)!;
+    expect(OPENED).toBe(`${POSTING}/apply`);
+    expect(queueApplicationUrl(POSTING)).toBe(OPENED);
+    const script = `(() => {
+      document.querySelector('form').addEventListener('submit', () => {
+        setTimeout(() => {
+          history.pushState({}, '', location.pathname.replace(/\\/apply$/, '/applyConfirmation'));
+          const done = document.createElement('h2');
+          done.textContent = 'Application Sent!';
+          document.querySelector('form').replaceWith(done);
+        }, 300);
+      });
+    })();`;
+    routeLog.serve({ [OPENED]: withScript('fixtures/synthetic/jobvite/apply.html', script) });
+    await mock.queueAgent([task(4, POSTING, 'Platform Engineer')]);
+    const opened = ext.context.waitForEvent('page', { predicate: (page) => page.url().startsWith(OPENED)
+      || page.url() === 'about:blank', timeout: 30_000 });
+    const on = await ext.data<{ on: boolean }>({ v: 1, type: 'agent/set', on: true, confirmed: true });
+    expect(on.on).toBe(true);
+    try {
+      const page = await opened;
+      await page.waitForURL((address) => address.href.startsWith(OPENED), { timeout: 30_000 });
+      await expect.poll(async () => (await mock.agent()).results, { timeout: 90_000 })
+        .toEqual([{ id: task(4, POSTING, '').id, body: { state: 'submitted', reason: null, aiGuesses: expect.any(Number) } }]);
+      await expect.poll(() => page.isClosed(), { timeout: 15_000 }).toBe(true);
+      expect(await mock.requestsTo('POST /api/autofill/applied')).toEqual([]);
+      expect(routeLog.submitted).toEqual([]);
+    } finally {
+      await ext.send({ v: 1, type: 'agent/set', on: false });
+    }
   });
 });

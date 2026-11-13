@@ -779,10 +779,19 @@ describe('the URL table', () => {
       }
     });
 
-  it('offers Add on none of the ATSs API 6 added, nor on Workable\'s job-search site (none has a posting API)', () => {
-    const added: readonly string[] = ATS_KINDS.slice(ATS_KINDS.indexOf('oracle') + 1);
+  it('offers Add on none of the ATSs API 6 or 7 added, nor on Workable\'s job-search site (none has a posting API)', () => {
+    const added: readonly string[] = ATS_KINDS.slice(ATS_KINDS.indexOf('oracle') + 1, ATS_KINDS.indexOf('smartrecruiters') + 1);
     expect(added).toEqual(['jobvite', 'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor',
       'hibob', 'ultipro', 'dayforce', 'paylocity', 'dice', 'clearcompany', 'adp', 'smartrecruiters']);
+    // jr7 INT-7 round 2: API 7's four kinds come after them, none addable either (the table holds no row of theirs:
+    // their own url tests and jr7-platforms.test.ts read them).
+    expect(ATS_KINDS.slice(ATS_KINDS.indexOf('smartrecruiters') + 1)).toEqual(['ukgready', 'paycom', 'jobdiva', 'eightfold']);
+    for (const posting of ['https://secure7.saashr.com/ta/1234567.careers?ShowJob=987654321',
+      `https://www.paycomonline.net/v4/ats/web.php/portal/${'0123456789abcdef'.repeat(2)}/jobs/123456`,
+      'https://www2.jobdiva.com/portal/?a=abcdefghij0123456789#/jobs/12345', 'https://acme.eightfold.ai/careers?pid=123456789']) {
+      expect(parseAtsUrl(posting), posting).not.toBeNull();
+      expect(addablePosting(parseAtsUrl(posting)), posting).toBeNull();
+    }
     const theirs = ROWS.filter((row) => {
       const kind = parseAtsUrl(row.url)?.kind;
       return kind !== undefined && (added.includes(kind) || new URL(row.url).hostname === 'jobs.workable.com');

@@ -1,8 +1,8 @@
 {
-  "apiVersion": 6,
+  "apiVersion": 7,
   "zod": "4.6.7",
   "files": {
-    "agent.ts": "7409f777c8ff8c65952f29bd2b0b8b1c3235cc74c6156ba89fc9789308c47c6f",
+    "agent.ts": "47a3185cd06dfd076cf69a03b42bdf98e0f8ef8167d693d412a4bf5d01d1941b",
     "ai.ts": "cb3290749fdc383f7712d72f40ad90cca189fc5bf0c16cef23d11aa712d4bbdb",
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "49960ec62489547d78a01bdc51d82142b6ce44168c31a81f060a282774da20f1",
@@ -11,14 +11,14 @@
     "credentials.ts": "5cf3103ad52c8208e34cbcf00081700eec66e26ed75f84c71e09efab6c8f7f35",
     "forms.ts": "90095d14dc80ae456cdf121f05ae63e302fe04e1eb8223d74dda5a301b07df3e",
     "index.ts": "d82fa73c2ad73e1c69f6bd2914dbac7fc0ac329a3b0b57313094d9d1b4c1f827",
-    "lookup.ts": "845ee780f0ddd003e724fb6e23bc5395ab96080e3777968b3d773bf893728e17",
+    "lookup.ts": "5d8c0286c2d5e98d50cfa12a5d88c6db87e6d8e6a6c4bc1342ab28c37fd82f49",
     "profile.ts": "83865e029fbf8d67bb6ffe93a7eac8e3b555d853b2125199afce03706d4db15b",
     "registry.ts": "3513fcdcd94e7be83816f6697477062568d8fe7742f317f5e930ebe8be51ac31",
     "resumes.ts": "4ff18ed3654e5127b36f7c747f665dcd5e8c3f301e238a20f85fef1655de46f4",
     "sites.ts": "8277ea2ad73f9b4253f89c460af91c4635d3aee2b6f29b94024e5482e3abf3ef",
     "tailor.ts": "b7348760e889d54974f4f05af36a1c24c17a8aaeca99ed21c2af120d7adb5a92",
     "tracker.ts": "5ac61739e8e46add184682de1a0bed52fa2fc5f4284db24fdf23cc4d2ee0c7cf",
-    "version.ts": "b7b8b226bc99eea0a83e9e59e2150ac0ddc48142739946c5fe2bb0a0f614cd5d"
+    "version.ts": "dc904ea0a7bbca2810d2eb62ed95da9643fff3019f485564c30b5e9743d4866e"
   },
   "fixtures": {
     "AutofillAddJobRequest/invalid/empty-url.json": "f1928aa6e8d457480cd6177764fdc943720b90340a16dfd718c2c541471fd8bb",
@@ -43,6 +43,7 @@
     "AutofillAgentNext/valid/nothing-to-do.json": "a73ebc758b664f98871eb9325cd7ac5ed0e557b7a2b9957e67981f299e9f606b",
     "AutofillAgentNext/valid/pinpoint.json": "321df56547c6ae64e02eb1270039d058cf805625a7e462444fb52e3bf71ece2d",
     "AutofillAgentNext/valid/workable.json": "f496f17f3cb73eafdc6dc8d423d5ca1a4683d26be6caa80157167c6ea391d99e",
+    "AutofillAgentNext/valid/workday.json": "5c8b013f10a5d723bfbe55f3be54da5fcef6c7cddefe7226ece02544eb270f60",
     "AutofillAgentOpened/invalid/unknown-state.json": "ec51554793ef683937d80e2e012ad03c91c8a0e2735344cd113cb4a48a2b8eac",
     "AutofillAgentOpened/valid/finished-at-claim.json": "f2d9c3b502de36f98f70099b362182eb908087b93efec2fd3735f0f8fb6201d6",
     "AutofillAgentOpened/valid/golden.json": "18c4ff12ddbb60a905a2aaf59855b0a3cd5a984013a5ce40f4538e95f020feaa",
@@ -231,6 +232,7 @@
     "AutofillLookupRequest/valid/with-resume.json": "44af6080b069cd777a946b6a169d8a6c1251ab43334eb3ae349ef492ecaa5e54",
     "AutofillLookupRequest/valid/without-posting-text.json": "631b0ad52abc890fa841aa8766989037021fb9f4c88bfe8a7606370b50e56df3",
     "AutofillLookupRequest/valid/workable.json": "036e0aa0de154f372f6f9998f6b195beb6ac020f12e82789c0b405c179b2159b",
+    "AutofillLookupResponse/invalid/jibe-ats.json": "ad48b60e16d698b0430248dafb318d5377a6adcac1a0b73d6f0fb81ac665a21e",
     "AutofillLookupResponse/invalid/match-over-100.json": "9a662e535c370a74b29c19d4c3ce8466dc6285b71b675a7695123522a6df0c8b",
     "AutofillLookupResponse/invalid/unknown-add-route.json": "a0380eceea1d9c2e6afefac635b9757986f4ac51f40cf4a51f4eba3052342160",
     "AutofillLookupResponse/invalid/unknown-ats.json": "8e31e528301785b6cd65ad46d519537b5fce0fc9be9a2f811578bbd44930107b",
@@ -239,6 +241,7 @@
     "AutofillLookupResponse/valid/chosen.json": "b582a87f4bcc4e0d9fcbcc919526992ea9cce55d336782ef0fb169a1b31d6a7b",
     "AutofillLookupResponse/valid/company-page.json": "0a5a01e6ab565a1142e254a01698c7c62ba324528ab3079a1456d0d8272e65ce",
     "AutofillLookupResponse/valid/draft-ready.json": "7346af9623641997071393f10065f7a700aac1538e4116d7c389a5a733017c83",
+    "AutofillLookupResponse/valid/eightfold.json": "d9dba3a4799c0412ec5aa257e4738c72ce5746a6a92b3cfc7d2ab8a0fbd22b6f",
     "AutofillLookupResponse/valid/form-known.json": "e642f8483c1287f12ae3fbc848983ae6a37f0311703d7b11fce93fa600d0e401",
     "AutofillLookupResponse/valid/golden.json": "13f44f268aa9f7d261cc25d79154a07bd35457cfac6d6e2a53b5b27df677a6b2",
     "AutofillLookupResponse/valid/job-chosen.json": "de4c5205f98603a88b3c8c8afca0e467a1497014bbd92e47e34e1e6126933df1",
@@ -325,6 +328,7 @@
     "AutofillSavedAnswer/valid/golden.json": "4f3153db1bb8cefb3d7770ea4d7a230da7d64c726bd2905b163bdd02a444239f",
     "AutofillSavedAnswer/valid/one-option.json": "d40b455c9a05aed4995931feb43239d1f9a7f1fa1b88378183f72174d21be2bd",
     "AutofillSavedAnswer/valid/several-options.json": "f730cee0bed596558cb9343902f01a6bec2815eb8567dc239c98dc575886e3be",
+    "AutofillSavedAnswer/valid/ukgready-company.json": "318ebb86110c88b51741e499ea920ad70971fd953f9dcaac20c7a0115297d722",
     "AutofillSavedAnswer/valid/workable-company.json": "df729cf77cc4760c080c4619d8a621ab0c064aecc54df79d93416d9305ee65e2",
     "AutofillSavedAnswerList/invalid/no-limit.json": "70687c8fa319500122348b82c7c442f45cb27c5e4c1791a0fae18d46acc50f05",
     "AutofillSavedAnswerList/valid/golden.json": "aa0f54d0092800debebe05785e8f62de197aff860307226e5d4edae300d02273",
@@ -10528,7 +10532,11 @@
                     "dice",
                     "clearcompany",
                     "adp",
-                    "smartrecruiters"
+                    "smartrecruiters",
+                    "ukgready",
+                    "paycom",
+                    "jobdiva",
+                    "eightfold"
                   ]
                 },
                 "board": {
@@ -10885,7 +10893,11 @@
                         "dice",
                         "clearcompany",
                         "adp",
-                        "smartrecruiters"
+                        "smartrecruiters",
+                        "ukgready",
+                        "paycom",
+                        "jobdiva",
+                        "eightfold"
                       ]
                     },
                     "board": {
@@ -11013,7 +11025,11 @@
                         "dice",
                         "clearcompany",
                         "adp",
-                        "smartrecruiters"
+                        "smartrecruiters",
+                        "ukgready",
+                        "paycom",
+                        "jobdiva",
+                        "eightfold"
                       ]
                     },
                     "board": {
@@ -11370,7 +11386,11 @@
                             "dice",
                             "clearcompany",
                             "adp",
-                            "smartrecruiters"
+                            "smartrecruiters",
+                            "ukgready",
+                            "paycom",
+                            "jobdiva",
+                            "eightfold"
                           ]
                         },
                         "board": {
@@ -11924,7 +11944,11 @@
             "dice",
             "clearcompany",
             "adp",
-            "smartrecruiters"
+            "smartrecruiters",
+            "ukgready",
+            "paycom",
+            "jobdiva",
+            "eightfold"
           ]
         },
         "items": {
@@ -12804,7 +12828,11 @@
             "dice",
             "clearcompany",
             "adp",
-            "smartrecruiters"
+            "smartrecruiters",
+            "ukgready",
+            "paycom",
+            "jobdiva",
+            "eightfold"
           ]
         }
       },
@@ -15108,7 +15136,7 @@
             {
               "type": "string",
               "maxLength": 250,
-              "pattern": "^(?:greenhouse|lever|ashby|workday|workable|icims|taleo|successfactors|oracle|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|ultipro|dayforce|paylocity|dice|clearcompany|adp|smartrecruiters):\\S{1,200}$"
+              "pattern": "^(?:greenhouse|lever|ashby|workday|workable|icims|taleo|successfactors|oracle|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|ultipro|dayforce|paylocity|dice|clearcompany|adp|smartrecruiters|ukgready|paycom|jobdiva|eightfold):\\S{1,200}$"
             }
           ]
         },
@@ -15161,7 +15189,11 @@
                 "dice",
                 "clearcompany",
                 "adp",
-                "smartrecruiters"
+                "smartrecruiters",
+                "ukgready",
+                "paycom",
+                "jobdiva",
+                "eightfold"
               ]
             },
             {
@@ -15298,7 +15330,7 @@
                   {
                     "type": "string",
                     "maxLength": 250,
-                    "pattern": "^(?:greenhouse|lever|ashby|workday|workable|icims|taleo|successfactors|oracle|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|ultipro|dayforce|paylocity|dice|clearcompany|adp|smartrecruiters):\\S{1,200}$"
+                    "pattern": "^(?:greenhouse|lever|ashby|workday|workable|icims|taleo|successfactors|oracle|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|ultipro|dayforce|paylocity|dice|clearcompany|adp|smartrecruiters|ukgready|paycom|jobdiva|eightfold):\\S{1,200}$"
                   }
                 ]
               },
@@ -15351,7 +15383,11 @@
                       "dice",
                       "clearcompany",
                       "adp",
-                      "smartrecruiters"
+                      "smartrecruiters",
+                      "ukgready",
+                      "paycom",
+                      "jobdiva",
+                      "eightfold"
                     ]
                   },
                   {
@@ -15497,7 +15533,7 @@
             {
               "type": "string",
               "maxLength": 250,
-              "pattern": "^(?:greenhouse|lever|ashby|workday|workable|icims|taleo|successfactors|oracle|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|ultipro|dayforce|paylocity|dice|clearcompany|adp|smartrecruiters):\\S{1,200}$"
+              "pattern": "^(?:greenhouse|lever|ashby|workday|workable|icims|taleo|successfactors|oracle|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|ultipro|dayforce|paylocity|dice|clearcompany|adp|smartrecruiters|ukgready|paycom|jobdiva|eightfold):\\S{1,200}$"
             }
           ]
         },
@@ -15550,7 +15586,11 @@
                 "dice",
                 "clearcompany",
                 "adp",
-                "smartrecruiters"
+                "smartrecruiters",
+                "ukgready",
+                "paycom",
+                "jobdiva",
+                "eightfold"
               ]
             },
             {
@@ -17615,7 +17655,11 @@
                         "dice",
                         "clearcompany",
                         "adp",
-                        "smartrecruiters"
+                        "smartrecruiters",
+                        "ukgready",
+                        "paycom",
+                        "jobdiva",
+                        "eightfold"
                       ]
                     },
                     "board": {
@@ -17972,7 +18016,11 @@
                             "dice",
                             "clearcompany",
                             "adp",
-                            "smartrecruiters"
+                            "smartrecruiters",
+                            "ukgready",
+                            "paycom",
+                            "jobdiva",
+                            "eightfold"
                           ]
                         },
                         "board": {

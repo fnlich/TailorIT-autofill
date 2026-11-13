@@ -1,0 +1,10 @@
+{
+  "ats": {
+    "kind": "jibe",
+    "board": "northwind",
+    "externalId": "12345"
+  },
+  "job": null,
+  "application": null,
+  "suggestedResume": null
+}

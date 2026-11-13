@@ -121,9 +121,9 @@ describe("the copy of TailorIT's contract (src/contract/tailorit)", () => {
     }
   });
 
-  it('names API version 6 and the zod this extension pins, as SOURCE.json does', () => {
+  it('names API version 7 and the zod this extension pins, as SOURCE.json does', () => {
     const zod = (createRequire(import.meta.url)('zod/package.json') as { version: string }).version;
-    expect(record.apiVersion).toBe(6);
+    expect(record.apiVersion).toBe(7); // jr7 INT-7 round 2: TAILORIT-7's 7b (jr7-tailorit-b)
     expect(AUTOFILL_API_VERSION).toBe(record.apiVersion);
     expect(zod).toBe('4.6.7');
     expect(record.zod).toBe(zod);
@@ -234,11 +234,13 @@ describe('the value lists the two sides share', () => {
     // SmartRecruiters since its API 6, which leaves `site` alone, a company's own page, which is no ATS).
     expect(ATS_KINDS).toEqual(PLATFORMS.filter((platform) => !PLATFORMS_AHEAD_OF_CONTRACT.includes(platform)));
     expect(PLATFORMS_AHEAD_OF_CONTRACT.some((platform) => (ATS_KINDS as readonly string[]).includes(platform))).toBe(false);
-    // jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 1): the snapshot7 platforms, ahead until TailorIT's API 7 (INT-7 then puts
-    // the list back to site and jibe, which TailorIT keeps as the iCIMS job its Apply leads to: FIX7PLAN §5 D-6).
-    expect(PLATFORMS_AHEAD_OF_CONTRACT).toEqual(['site', 'ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe']);
+    // jr7: the snapshot7 platforms were ahead until TailorIT's API 7 (TAILORIT-7 7b, pulled by INT-7 round 2), which
+    // lists UKG Ready, Paycom, JobDiva and Eightfold; site and jibe stay (TailorIT keeps a Jibe job as the iCIMS job its
+    // Apply leads to: FIX7PLAN §5 D-6).
+    expect(PLATFORMS_AHEAD_OF_CONTRACT).toEqual(['site', 'jibe']);
+    expect(ATS_KINDS.slice(-4)).toEqual(['ukgready', 'paycom', 'jobdiva', 'eightfold']);
     expect(PLATFORMS.slice(-5)).toEqual(['ukgready', 'paycom', 'jobdiva', 'eightfold', 'jibe']);
-    // Each ATS's name, as TailorIT's pages write it (its ATS_NAMES, version 6), is the one the panel and the report show.
+    // Each ATS's name, as TailorIT's pages write it (its ATS_NAMES, version 7), is the one the panel and the report show.
     expect(ATS_KINDS.filter((kind) => ATS_NAMES[kind] !== COPY.platforms[kind])).toEqual([]);
     expect(CONTRACT_DEGREE_LEVELS).toEqual(DEGREE_LEVELS);
     expect(LANGUAGE_PROFICIENCIES).toEqual(PROFICIENCIES);
