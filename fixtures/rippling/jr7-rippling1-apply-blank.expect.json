@@ -146,7 +146,7 @@
       "section": "Application: Forward Deployed Engineer",
       "fillable": true,
       "control": "[id=\"field-88\"]",
-      "note": "RBP7-07: its help (div.marginBottom--4 + div, 536 characters) is its description; the typed-name signature RULES-7 reads from it waits for SP\\jr7\\rbp7\\rules-rbp7-07.patch (the jr7 test's it.fails)."
+      "note": "RBP7-07: its help (div.marginBottom--4 + div, 536 characters) is its description. RULES-7 R4 reads its sentence asking for the typed full name first, so the field is consent.signature, planned per the Consents mode (src/adapters/rippling/jr7-rippling.browser.test.ts, \"rippling1's typed-name attestation\")."
     },
     {
       "label": "Gender",

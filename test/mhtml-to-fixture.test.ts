@@ -2473,6 +2473,15 @@ describe('every committed fixture', () => {
     // runs in parallel (snapshot round 2 brought it near 500 files).
   }, 60_000);
 
+  // jr7 review D-9: an expectation states what the code does, never what a builder's scratch work was waiting for.
+  it("holds no expectation that points at a builder's scratch files, a patch or an it.fails", () => {
+    const files = committedFixtureFiles(join(ROOT, 'fixtures'), '', /\.expect\.json$/);
+    expect(files.length).toBeGreaterThan(250);
+    expect(files).toContain('rippling/jr7-rippling1-apply-blank.expect.json');
+    const scratch = /\bit\.fails\b|\.patch\b|\bSP\\|scratchpad|AppData[\\/]Local[\\/]Temp/;
+    expect(files.filter((file) => scratch.test(readFileSync(join(ROOT, 'fixtures', file), 'utf8')))).toEqual([]);
+  });
+
   it("refuses a per-load token's percent-encoded padding left after REDACTED (greenhouse/asana-embed.html's canonical link)", () => {
     const perLoad = tokenNeedles().find(({ label }) => label === 'a per-load token')!.pattern;
     const link = (value: string) => checkedForms(`<link rel="canonical" href="http://job-boards.greenhouse.io/embed/job_app?for=x&amp;validityToken=${value}&amp;token=1">`);
