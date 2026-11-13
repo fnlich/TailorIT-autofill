@@ -328,11 +328,11 @@ describe('jr7 P2 UP7-04: the Register\'s sign-in path (ENGINE-7 E1 item 8, E2: a
     return { page, worker };
   }
 
-  // Held: the Register is not-final with no Next (the behaviour review of 2026-11-06, minor 2), so the run rests in
-  // wait-transition (orchestrator.ts awaitStep), and signInContainerNow is called only at a 'review' rest: Sign-in Auto
-  // never presses Create account through the runtime. ENGINE-7 / INT-7's edit (ULTIPRO-7 handoff): in awaitStep, after
-  // `this.end('waiting');`, `void this.signInContainerNow().catch(() => undefined);` (measured: this test then passes).
-  it.fails('jr7-ultipro1-register through the runtime: Consents All said, the step filled, the box ticked, Create '
+  // The Register is not-final with no Next (the behaviour review of 2026-11-06, minor 2), so the run rests in
+  // wait-transition (orchestrator.ts awaitStep). ENGINE-7 E5 (jr7-engine-e5) calls signInContainerNow at that rest too,
+  // and AUTO-7 r2 carries the Consents mode to it, so Sign-in Auto presses Create account through the runtime (flipped
+  // by INT-7 once e5 merged).
+  it('jr7-ultipro1-register through the runtime: Consents All said, the step filled, the box ticked, Create '
     + 'account pressed once', async () => {
     const { page, worker } = await autofill(true);
     await vi.waitFor(() => expect(page.clicks.at(-1)).toBe(page.native), { timeout: 15_000 });
