@@ -384,7 +384,9 @@ const REFUSAL_ALONE = { message: 'a refusal names why an entry was refused, besi
  *  a label or an address (content/chain-frame.ts, background/chain.ts). */
 export const ChainStepFactsSchema = z.strictObject({ stepId: z.string().regex(/^Step_[A-Za-z]{1,48}$/),
   lastStep: z.boolean(), packet: z.strictObject({ n: Count.max(999), m: Count.max(999) }).nullable(),
-  counters: Count.max(99) });
+  counters: Count.max(99),
+  // jr8 ICIMS (r2): whether the claim frame's page and its wrapper show the forms frame (content/claim-seen.ts).
+  shown: z.boolean().optional() });
 // ── end jr6 SHELL-B ──
 
 // ── v1.5 X (PLAN decisions 2 and 3): the documents' dialogs on the page ──

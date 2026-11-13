@@ -220,7 +220,7 @@ import { signInFormOf } from '../dom/sign-in-form'; // jr6 SHELL-A
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { chainFactsOf, claimFrameFacts, holdChainFacts, saysChainFacts, watchChainFacts } from './chain-frame'; // jr6 SHELL-B
 import { declaredChildOrigins, leafAdapter, parentOriginOf, watchLeafPress } from './chain-frame'; // jr7 CHAIN-7
-import { claimFrameSeen } from './claim-seen'; // jr8 ICIMS
+import { claimFrameSeen, formsFrameShown, withFormsShown } from './claim-seen'; // jr8 ICIMS (r2: the forms frame)
 import { createReportLimiter } from './report';
 // v1.3 B
 import { captureStep, createFormCapture, stepNameOf } from './form-capture';
@@ -1291,6 +1291,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         // jr8 ICIMS: a claim frame is seen when its wrapper's page shows its frame element (claim-seen.ts).
         const seen = claimed ? claimFrameSeen(options.wrapper !== undefined ? options.wrapper() : wrapperOf(view)) : null;
         if (seen !== null) return Promise.resolve(seen); // jr8 ICIMS
+        // jr8 ICIMS r2: an IForm leaf is seen as its claim frame says (the facts it holds: ChainStepFacts.shown).
+        const said = isTop ? undefined : chainFactsOf(doc)?.shown; // jr8 ICIMS r2
+        if (typeof said === 'boolean') return Promise.resolve(said); // jr8 ICIMS r2
         return ui === null ? Promise.resolve(false) : ui.launcherShown(signal, fresh);
       },
       page: on,
@@ -2788,7 +2791,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // jr6 SHELL-B (ICIMS-17; chain-frame.ts): the claim frame's step facts, for the IForm leaf it frames.
       watchChainFacts({ view, doc, signal: lifetime.signal, // jr6 SHELL-B
         active: () => !stopped && (isTop || claimed) && saysChainFacts(urlOf(readHref()), adapters), // jr6 SHELL-B
-        read: () => claimFrameFacts(doc, urlOf(readHref()), adapters, isTop || claimed, page !== null), // jr6 SHELL-B
+        read: () => withFormsShown(claimFrameFacts(doc, urlOf(readHref()), adapters, isTop || claimed, page !== null), // jr8 ICIMS r2
+          formsFrameShown(doc, declaredChildOrigins(doc, urlOf(readHref()), adapters, isTop || claimed), // jr8 ICIMS r2
+            isTop ? 'top' : (options.wrapper !== undefined ? options.wrapper() : wrapperOf(view)))), // jr8 ICIMS r2
+        wrapper: isTop ? null : (options.wrapper !== undefined ? options.wrapper() : wrapperOf(view))?.doc ?? null, // jr8 ICIMS r2
         send: async (facts) => (await channel.request({ v: 1, type: 'chain/facts', facts })).ok }); // jr6 SHELL-B
       // jr7 CHAIN-7 (ICIMS7-V1; chain-frame.ts): an IForm leaf the worker keyed tells it when its form's Submit is pressed.
       if (!isTop && startChain?.role === 'frame') { // jr7 CHAIN-7
