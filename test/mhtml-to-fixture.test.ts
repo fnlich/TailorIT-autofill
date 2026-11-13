@@ -2482,6 +2482,25 @@ describe('every committed fixture', () => {
     expect(files.filter((file) => scratch.test(readFileSync(join(ROOT, 'fixtures', file), 'utf8')))).toEqual([]);
   });
 
+  // jr7 INT-7's round-2 note: a made-up text of the jr6 and jr7 conversions (--replace-text, fixtures/synthetic/jr<n>-*)
+  // is committed only while a page holds it.
+  it('holds each jr6 and jr7 replacement text (fixtures/synthetic/jr<n>-*/*.txt) in a converted page', () => {
+    const texts = committedFixtureFiles(join(ROOT, 'fixtures', 'synthetic'), 'synthetic/', /\.txt$/)
+      .filter((file) => /^synthetic\/jr\d+-[^/]+\/[^/]+\.txt$/.test(file));
+    expect(texts.length).toBeGreaterThan(20);
+    expect(texts).toContain('synthetic/jr7-workday/illustration.txt');
+    const pages = committedFixtureFiles().filter((file) => file.endsWith('.html') && !file.startsWith('synthetic/'))
+      .map((file) => readFileSync(join(ROOT, 'fixtures', file), 'utf8'));
+    const escaped = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+    const unused = texts.filter((file) => {
+      const first = readFileSync(join(ROOT, 'fixtures', file), 'utf8').split(/\r?\n/).map((line) => line.trim())
+        .find((line) => line !== '') ?? '';
+      return !pages.some((page) => page.includes(first) || page.includes(escaped(first)));
+    });
+    expect(unused).toEqual([]);
+  }, 60_000);
+
   it("refuses a per-load token's percent-encoded padding left after REDACTED (greenhouse/asana-embed.html's canonical link)", () => {
     const perLoad = tokenNeedles().find(({ label }) => label === 'a per-load token')!.pattern;
     const link = (value: string) => checkedForms(`<link rel="canonical" href="http://job-boards.greenhouse.io/embed/job_app?for=x&amp;validityToken=${value}&amp;token=1">`);
@@ -3930,9 +3949,11 @@ describe('jr6 fixes: where the person came from (PRIV-4)', () => {
     expect(text).toContain(`<a href="${ADP_PAGE}&amp;source=REDACTED&amp;jobId=1">Engineer</a>`);
     expect(text).not.toMatch(/source=XB/);
     // Every name and prefix, plain, after &amp;, or percent-encoded once or twice; the value ends at the next separator.
-    // jr7 TOOLING-7: and Jobvite's __jvsc.
-    // jr7 TOOLING-7: and Jobvite's __jvsc; (r2) and src.
+    // jr7 TOOLING-7: and Jobvite's __jvsc; (r3, UKGREADY-7's open item 1) and src.
     expect(REFERRAL_PARAMS).toEqual(['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source', '__jvsc', 'src']);
+    // INT-7's round-2 note: src came with TOOLING-7's r3 (bbc947e), and the converter's own comment says so.
+    expect(readFileSync(join(ROOT, 'scripts', 'mhtml-to-fixture.mjs'), 'utf8'))
+      .toMatch(/\/\/ jr7 TOOLING-7 \(r3[^)]*\)\s*'src'\];/);
     expect(REFERRAL_PREFIXES).toEqual(['utm_']);
     const cases: Array<[string, string]> = [
       ['https://jobs.jobvite.com/acme/job/oX1?__jvst=Job%20Board&__jvsd=FixtureBoard&nl=0',

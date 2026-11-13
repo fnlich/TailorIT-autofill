@@ -943,7 +943,7 @@ const PER_LOAD_SOURCE = `([?&](?:${PER_LOAD_PARAMS.join('|')})=)[^&#]*`;
 export const REFERRAL_PARAMS = ['iis', 'iisn', 'source', '__jvst', '__jvsd', 'gh_src', 'lever-source',
   // jr7 TOOLING-7
   '__jvsc',
-  // jr7 TOOLING-7 (r2)
+  // jr7 TOOLING-7 (r3, UKGREADY-7's open item 1)
   'src'];
 /** The prefixes of referral parameters: every utm_* (utm_source, utm_medium, utm_campaign, utm_term, utm_content...;
  *  careers-sentinel's address and frame, a company's own links). */
