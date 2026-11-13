@@ -172,6 +172,33 @@ type Submitted = z.infer<typeof SubmittedSchema>;
 export const ROUTE_WAITS_FOR_SIGN: ReadonlySet<string> = new Set(['oracle']);
 // ── end jr7 AUTO-7 ──
 
+// ── jr7 FIX-background (the review's A-5) ──
+/** The pages after submitting that, read by their address alone (Adapter.confirmationAfter), keep the arm waiting for
+ *  the platform's own sign, as Oracle's every route does (ROUTE_WAITS_FOR_SIGN): Workday's candidate home's completed
+ *  task (/[<locale>/]<site>/jobTasks/completed/application: adapters/workday/index.ts COMPLETED_TASK), which is also
+ *  where a person opens their applications after a Submit Workday refused. Its finalize answered (the arming document's
+ *  network sign) or its "Application Submitted" task dialog drawn there (WORKDAY_SUCCESS, a success message) records
+ *  it, within SUBMIT_ARM_MS. Workday's page that names a new Job_Application_ID stays a sign by its address. Read in
+ *  any case, with or without a trailing '/': a page this reads waits, never one more is recorded. */
+const ROUTE_ADDRESS_WAITS: Readonly<Record<string, (here: URL) => boolean>> = {
+  workday: (here) => /\/jobtasks\/completed\/application\/?$/i.test(here.pathname),
+};
+
+/** Whether `platform`'s page after submitting at `here`, read by its route alone, keeps the arm waiting for its sign
+ *  (ROUTE_WAITS_FOR_SIGN: every route of the platform; ROUTE_ADDRESS_WAITS: that address). An address that does not
+ *  read waits. */
+export function routeWaitsForSign(platform: string, here: string): boolean {
+  if (ROUTE_WAITS_FOR_SIGN.has(platform)) return true;
+  const waits = ROUTE_ADDRESS_WAITS[platform];
+  if (waits === undefined) return false;
+  try {
+    return waits(new URL(here));
+  } catch {
+    return true;
+  }
+}
+// ── end jr7 FIX-background ──
+
 // ── jr7 AUTO-7 (AUTO7-06) ──
 /** Whether `here` is the page after submitting the application of `platform` armed at `armed`, by that platform's own
  *  adapter (Adapter.confirmationAfter), on the armed page's origin alone (the hook's own rule, held here too): a pure
@@ -310,8 +337,9 @@ export function createSubmissions(deps: SubmissionsDeps) {
    *  canonical address the arm keeps), by its platform's adapter (confirmationAfter). */
   function afterSubmit(applicationKey: string, armedUrl: string, here: string): boolean {
     if (deps.confirmationAfter === undefined) return false;
-    // The coordinator's decision (ROUTE_WAITS_FOR_SIGN): Oracle's route alone pairs no arm.
-    if (ROUTE_WAITS_FOR_SIGN.has(applicationKey.split(':')[0] ?? '')) return false;
+    // The coordinator's decision (ROUTE_WAITS_FOR_SIGN): Oracle's route alone pairs no arm. jr7 FIX-background (A-5):
+    // nor Workday's completed task (routeWaitsForSign).
+    if (routeWaitsForSign(applicationKey.split(':')[0] ?? '', here)) return false;
     try {
       return deps.confirmationAfter(applicationKey.split(':')[0] ?? '', new URL(armedUrl), new URL(here));
     } catch {
@@ -544,7 +572,8 @@ export function createSubmissions(deps: SubmissionsDeps) {
       // The coordinator's decision (ROUTE_WAITS_FOR_SIGN): on Oracle a page after submitting counts only where its own
       // address reads as that application's page after submitting (none does today); its route (my-profile, read by
       // confirmationAfter in the arming document) keeps the arm waiting for the keyed tile, never recording it.
-      if (page && ROUTE_WAITS_FOR_SIGN.has(applicationKey.split(':')[0] ?? '')) {
+      // jr7 FIX-background (A-5): so does Workday's completed task (routeWaitsForSign), for its finalize or its dialog.
+      if (page && routeWaitsForSign(applicationKey.split(':')[0] ?? '', own?.url ?? from.url)) {
         const ownPage = refOf(own?.url ?? from.url);
         if (ownPage === null || ownPage.applicationKey !== applicationKey || ownPage.page !== 'confirmation') {
           log('submit.refused', { armed: true, route: true });
