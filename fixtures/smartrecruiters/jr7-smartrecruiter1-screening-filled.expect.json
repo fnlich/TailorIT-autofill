@@ -1,0 +1,126 @@
+{
+  "fixture": "smartrecruiters/jr7-smartrecruiter1-screening-filled",
+  "source": "https://jobs.smartrecruiters.com/oneclick-ui/company/CityStateEntertainmentLLC/publication/91ec1084-80c7-49ce-94e7-6c895e6e88a9/screening?dcr_ci=CityStateEntertainmentLLC",
+  "captured": "2026-11-11T13:47:43.000Z",
+  "note": "The screening step (\"Preliminary questions\"), answered by the owner (every answer cleared by the converter): three Yes/No questions, a language and its level (one repeated row), the salary, attachments, an acknowledgement, the EEO Gender and Race/Ethnicity lists and the privacy notice; every question optional but the privacy notice. The labels are the page's, the privacy notice's cut at the scanner's 300 characters. Controls are written as shadow-piercing chains, \" >>> \" between steps: the first step is looked for anywhere in the document, each next one anywhere inside the open shadow root of the element before it (smartrecruiters.browser.test.ts deepControl).",
+  "fields": [
+    {
+      "label": "Are you authorized to work in the job's location?",
+      "kind": "radio",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 2,
+      "control": "spl-radio-group#spl-form-element_18",
+      "note": "A screening Yes/No question (widgetRoots, widgetFor, labelFor, requiredFor), optional on this page."
+    },
+    {
+      "label": "Have you been convicted, pleaded guilty or no contest to a crime, or are criminal charges pending against you?",
+      "kind": "radio",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 2,
+      "control": "spl-radio-group#spl-form-element_21",
+      "note": "A screening Yes/No question (widgetRoots, widgetFor, labelFor, requiredFor), optional on this page."
+    },
+    {
+      "label": "Have you ever been terminated from or asked to leave any previous position?",
+      "kind": "radio",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 2,
+      "control": "spl-radio-group#spl-form-element_24",
+      "note": "A screening Yes/No question (widgetRoots, widgetFor, labelFor, requiredFor), optional on this page."
+    },
+    {
+      "label": "Please type in a language that you speak",
+      "kind": "text",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-input#question_700818f9-5dfc-4689-b656-a316bcd4ac1e-0-lang >>> input",
+      "note": "A repeated row's text field (\"lang\"), labelled by its placeholder."
+    },
+    {
+      "label": "Select your level",
+      "kind": "combobox",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 5,
+      "control": "spl-autocomplete#question_700818f9-5dfc-4689-b656-a316bcd4ac1e-0-level >>> spl-input >>> input[role=\"combobox\"]",
+      "note": "jr7 J7-SR-3: the repeated row's \"level\" field (question_<UUID>-0-level), its own list of 5 from the definition."
+    },
+    {
+      "label": "Salary expectation per year",
+      "kind": "text",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-input#question_63c67d5e-0a29-48d2-89b9-fb42b1494a67 >>> input"
+    },
+    {
+      "label": "Additional attachments",
+      "kind": "file",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-dropzone[multiple] >>> input[type=\"file\"]",
+      "note": "A screening question's drop zone, labelled by its question (labelFor)."
+    },
+    {
+      "label": "I understand and acknowledge conditions stated above.",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-checkbox#spl-form-element_30 >>> input[type=\"checkbox\"]"
+    },
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 3,
+      "control": "spl-autocomplete#question_9177d8a6-2d80-420e-b700-5b236a2f480d_gender >>> spl-input >>> input[role=\"combobox\"]",
+      "note": "jr7 J7-SR-3: one field (\"gender\") of a question of two (question_<UUID>_gender), its own list of 3."
+    },
+    {
+      "label": "Race/Ethnicity",
+      "kind": "combobox",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 8,
+      "control": "spl-autocomplete#question_9177d8a6-2d80-420e-b700-5b236a2f480d_ethnicity >>> spl-input >>> input[role=\"combobox\"]",
+      "note": "jr7 J7-SR-3: the same question's \"ethnicity\" field, its own list of 8."
+    },
+    {
+      "label": "Please be informed that your application to this job offer will trigger some processing of your personal data by the recruiting company, the data controller. SmartRecruiters, the data processor, has no control over such personal data processing. For more information on these personal data processing",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-checkbox#noPolicy >>> input[type=\"checkbox\"]",
+      "note": "The privacy notice's required consent."
+    }
+  ],
+  "hooks": {
+    "detect": "oc-screening-questions",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "oc-button[data-test=\"footer-back\"] spl-button",
+      ".ot-sdk-show-settings"
+    ],
+    "pressable": [
+      "oc-button[data-test=\"footer-submit\"]"
+    ]
+  }
+}

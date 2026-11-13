@@ -2594,14 +2594,11 @@ const CHOSEN_STATE_FIXTURES = [
  * hjf-apply-section, which kept each answered pill group's tab stop on the chosen pill (ORACLE); HiBob's form, which
  * kept Angular's state classes on its components (the jr6 privacy check).
  */
-const MARKED_FIXTURES: Record<string, string[]> = {
-  // jr7 TOOLING-7 (r2, BOARDS-7's finding): SmartRecruiters' one-click pages keep their phone country list's chosen row
-  // drawn apart (c-spl-dropdown-item--with-suffix and its suffix check icon), which the converter clears since r2: a
-  // privacy finding, handed to BOARDS-7 to convert again (SP\jr7\build\TOOLING-7.md, r2).
-  'smartrecruiters/jr6-wiser-one-click.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
-  'smartrecruiters/jr6-xplor-one-click-filled.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
-  'smartrecruiters/xplor-one-click.html': ['a chosen class CHOSEN_MARKS names', CHOSEN_MARK_LABELS.drawing],
-};
+// jr7 TOOLING-7 (r2, BOARDS-7's finding): SmartRecruiters' one-click pages kept their phone country list's chosen row
+// drawn apart (c-spl-dropdown-item--with-suffix and its suffix check icon), which the converter clears since r2;
+// jr6-wiser-one-click, jr6-xplor-one-click-filled and xplor-one-click were converted again with it (jr7 BOARDS-7 P2), so
+// their entries went and the map is empty again.
+const MARKED_FIXTURES: Record<string, string[]> = {};
 
 /**
  * jr6 (jobvite-new-4): the committed fixtures converted before the converter cleared AngularJS's state classes, which
