@@ -184,6 +184,23 @@ describe("check-build's development-only assertions", () => {
     expect(status).toBe(1);
   });
 
+  // jr7 INT-7 (the content script's budget): the configured rules' provenance never ships (__PROVENANCE__ false).
+  it("fail any build, the e2e one included, whose bundles hold a configured rule's provenance", () => {
+    for (const [script, said] of [
+      ['var c=[{css:"#ats-portal",from:"jr7-paycomonline1-signature"}];', '("jr7-paycomonline1-signature")'],
+      ['var c=[{css:"section.submit_success",from:`jazzhr-3`}];', '(a "from" naming a capture)'],
+      ['var c={snapshots:["jr7-saashr-confirmation"]};', '("jr7-saashr-confirmation")'],
+    ] as const) {
+      const { status, output } = checkBuild(project((write) => write(`${BUILDS.e2e}/content-script.js`, script)));
+      expect(output, script).toContain(`.output-e2e/chrome-mv3: content-script.js holds rule provenance ${said}`);
+      expect(status, script).toBe(1);
+    }
+    // Another `from` (a date range's, a message's) is no provenance.
+    const clean = checkBuild(project((write) => write(`${BUILDS.chrome}/content-script.js`,
+      'var r={from:"2020-01",to:"2021-02"},m={from:e.frameId,chain:{from:"0123456789abcdef"}};')));
+    expect(clean.output).not.toContain('rule provenance');
+  });
+
   it("fail any build, the e2e one included, whose bundles hold the hotkeys' marker", () => {
     const { status, output } = checkBuild(project((write) => write(`${BUILDS.e2e}/background.js`,
       'var background=(function(){chrome.commands.onCommand.addListener(e=>{e==="tailorit-dev-capture-now"})})();')));

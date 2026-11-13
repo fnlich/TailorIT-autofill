@@ -227,6 +227,16 @@ const E2E_ONLY = ['e2e:events', 'e2e/probe', 'storage-local-probe', 'localhost:3
 const DEV_ONLY = ['tailorit-dev-capture', 'saveAsMHTML', 'capture.html'];
 /** Pages only a development build has: the capture page (wxt.config.ts skips it in every other mode). */
 const DEV_ONLY_PAGES = ['capture.html'];
+/**
+ * jr7 INT-7 (the content script's budget): the configured rules' provenance, their `from` and each AtsConfig's
+ * `snapshots`, is written `...(__PROVENANCE__ && { … })` and every build (chrome, edge, e2e) defines __PROVENANCE__
+ * false, so no bundle holds it (src/adapters/configured/types.ts). A bundle that does fails: one of these known
+ * provenance values (a rule's `from` or a snapshot list's case, of five platforms), or any `from` key whose value is a
+ * capture's or a snapshot's name (jr6-…, jr7-…, <platform>-<n>).
+ */
+const PROVENANCE_NEEDLES = ['jr7-paycomonline1-signature', 'jr7-saashr-confirmation', 'jr7-jobdiva2-confirmation',
+  'jr7-twillio-success', 'jr7-ultipro1-submitted', 'jr7-dayforce1-posting'];
+const PROVENANCE_FROM = /\bfrom:\s*[`'"](?:jr[67]-|[a-z][a-z0-9]*-\d)/;
 
 /** The manifest's icon sizes; the toolbar's action uses the two smallest. */
 const ICON_SIZES = ['16', '32', '48', '128'];
@@ -861,6 +871,9 @@ for (const build of BUILDS) {
   for (const file of all) {
     const text = readFileSync(file, 'utf8');
     for (const needle of DEV_ONLY) if (text.includes(needle)) fail(build, `${relative(dir, file)} contains the development-only "${needle}"`);
+    // jr7 INT-7: no configured rule's provenance in any bundle (PROVENANCE_NEEDLES).
+    for (const needle of PROVENANCE_NEEDLES) if (text.includes(needle)) fail(build, `${relative(dir, file)} holds rule provenance ("${needle}")`);
+    if (PROVENANCE_FROM.test(text)) fail(build, `${relative(dir, file)} holds rule provenance (a "from" naming a capture)`);
     const own = new URL(build.origin).host;
     for (const host of ORIGIN_HOSTS.filter((other) => other !== own && !(build.production && E2E_ONLY.includes(other)))) {
       if (namesHost(text, host)) fail(build, `${relative(dir, file)} holds another build's TailorIT, "${host}"`);
