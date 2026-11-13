@@ -1,0 +1,140 @@
+{
+  "fixture": "icims/jr7-icims3-questions.frame-1",
+  "source": "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/questions?global=1&in_iframe=1",
+  "captured": "2026-11-11T15:06:54.000Z",
+  "note": "jr7 P2: careers-quartzbenefits' Candidate Questions (step 2 of 5). Its fields as the scan reads them once ENGINE-7 E2 and RULES-7 R2 merged (FIX7PLAN §6.7 P2); what a run decides on them is held by src/adapters/icims/jr7-icims-p2.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Are you legally eligible to work in the U.S.?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"Q10\"]"
+    },
+    {
+      "label": "Will you now or in the future, require sponsorship for employment Visa status?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"Q38\"]"
+    },
+    {
+      "label": "Quartz supports a safe, drug-free workplace. All employment offers are contingent upon successful completion of a pre-employment criminal background check. Are you willing to submit to a pre-employment background check if offered a position?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"Q47\"]"
+    },
+    {
+      "label": "Desired Salary",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"Q44\"]"
+    },
+    {
+      "label": "What is your preferred work location?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 4,
+      "control": "select[id=\"Q42\"]"
+    },
+    {
+      "label": "Date available to start work",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"Q45\"]"
+    },
+    {
+      "label": "Do you have any relatives employed here?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"Q33\"]"
+    },
+    {
+      "label": "Have you ever been employed by Quartz, Unity Health Insurance, Physicians Plus or Gundersen Health Plan before?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"Q32\"]"
+    },
+    {
+      "label": "What is the highest level of education you have attained?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 7,
+      "control": "select[id=\"Q41\"]"
+    },
+    {
+      "label": "Which computer applications are you comfortable using with little-to-no training?",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"Q37\"]"
+    },
+    {
+      "label": "What hours are you available to work?",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"Q35\"]"
+    },
+    {
+      "label": "Will you work overtime if required?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"Q39\"]"
+    },
+    {
+      "label": "This role has the ability to work remotely. Employees who work remotely need to have access to their own secure, high-speed, non-satellite Internet connection. Do you have access to a secure, high-speed, non-satellite Internet connection?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"Q95\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#questions",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_Faq_Link",
+      "a[href*=\"icims.com/platform_help\"]",
+      "input[type=\"submit\" i][name=\"save\"]",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#quesp_form_submit_i"
+    ]
+  }
+}

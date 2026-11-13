@@ -1,0 +1,40 @@
+{
+  "fixture": "icims/jr7-icims3-login.frame-1",
+  "source": "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/login?in_iframe=1",
+  "captured": "2026-11-11T15:05:25.000Z",
+  "note": "jr7 P2: careers-quartzbenefits' email gate. Its fields as the scan reads them once ENGINE-7 E2 and RULES-7 R2 merged (FIX7PLAN §6.7 P2); what a run decides on them is held by src/adapters/icims/jr7-icims-p2.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"email\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#enterEmailForm",
+    "authState": "email-gate",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "email-gate",
+      "email": "input#email",
+      "password": null,
+      "confirm": null,
+      "terms": [],
+      "button": "input#enterEmailSubmitButton",
+      "form": "form#enterEmailForm"
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_Faq_Link",
+      "a[href*=\"icims.com/platform_help\"]",
+      "a.iCIMS_Anchor_Nav"
+    ],
+    "pressable": [
+      "input#enterEmailSubmitButton"
+    ]
+  }
+}

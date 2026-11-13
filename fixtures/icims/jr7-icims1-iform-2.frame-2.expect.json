@@ -1,0 +1,73 @@
+{
+  "fixture": "icims/jr7-icims1-iform-2.frame-2",
+  "source": "https://oneblood.icims.com/forms?token=REDACTED&isPacket=1&brandtype=ccc&portalid=112885&selected=Voluntary_Self_Identification_of_Disability_template&in_iframe=1&step=6",
+  "captured": "2026-11-11T12:43:28.000Z",
+  "note": "jr7 P2: arc-onesolutions' disability self-ID IForm (2/2), the application's last form, on oneblood.icims.com/forms. Its fields as the scan reads them once ENGINE-7 E2 and RULES-7 R2 merged (FIX7PLAN §6.7 P2); what a run decides on them is held by src/adapters/icims/jr7-icims-p2.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"icims_f_Name\"]"
+    },
+    {
+      "label": "Date signature month",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"icims_f_Date_Month\"]"
+    },
+    {
+      "label": "Date signature day",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"icims_f_Date_Date\"]"
+    },
+    {
+      "label": "Date signature year",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"icims_f_Date_Year\"]"
+    },
+    {
+      "label": "Voluntary Self-Identification of Disability",
+      "kind": "radio",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"icims_f_Disability\"]"
+    },
+    {
+      "label": "Signature",
+      "kind": "checkbox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[id=\"icims_f_signature\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form[name=\"icims_form\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input[type=\"submit\" i][name=\"icims_save\"]"
+    ],
+    "pressable": [
+      "input[name=\"icims_submit\"]"
+    ]
+  }
+}

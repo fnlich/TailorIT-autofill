@@ -1,0 +1,24 @@
+{
+  "fixture": "icims/jr7-icims3-assessment.frame-1",
+  "source": "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/assessment?in_iframe=1",
+  "captured": "2026-11-11T15:08:52.000Z",
+  "note": "Hooks only (jr7 P2): careers-quartzbenefits' Assessments step (handOver 'assessment', ICIMS7-04): no root, its Continue never pressed.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_Faq_Link",
+      "a[href*=\"icims.com/platform_help\"]",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a",
+      "a.iCIMS_Assessment_Recovery"
+    ],
+    "pressable": []
+  }
+}

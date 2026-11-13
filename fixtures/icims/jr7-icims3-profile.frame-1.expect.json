@@ -1,0 +1,200 @@
+{
+  "fixture": "icims/jr7-icims3-profile.frame-1",
+  "source": "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/candidate?from=login&eem=REDACTED&code=REDACTED&in_iframe=1",
+  "captured": "2026-11-11T15:05:37.000Z",
+  "note": "jr7 P2: careers-quartzbenefits' Candidate Profile, blank (step 1 of 5). Its fields as the scan reads them once ENGINE-7 E2 and RULES-7 R2 merged (FIX7PLAN §6.7 P2); what a run decides on them is held by src/adapters/icims/jr7-icims-p2.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Please upload your resume (Max size: 5 MB)",
+      "kind": "file",
+      "required": true,
+      "section": "resume",
+      "fillable": true,
+      "control": "input[id=\"PortalProfileFields.Resume_File\"]"
+    },
+    {
+      "label": "Upload Resume at a later time.",
+      "kind": "checkbox",
+      "required": false,
+      "section": "resume",
+      "fillable": true,
+      "control": "input[id=\"resume_skip_checkbox\"]"
+    },
+    {
+      "label": "(OPTIONAL) Please upload your cover letter. For Intern applicants, please upload a copy of your current transcripts. (Max size: 5 MB)",
+      "kind": "file",
+      "required": false,
+      "section": "resume",
+      "fillable": true,
+      "control": "input[id=\"rcf2008_File\"]"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "enter-your-information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.FirstName\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "enter-your-information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.LastName\"]"
+    },
+    {
+      "label": "Preferred First Name",
+      "kind": "text",
+      "required": true,
+      "section": "enter-your-information",
+      "fillable": true,
+      "control": "input[id=\"rcf2005\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "enter-your-information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.Email\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "select",
+      "required": true,
+      "section": "phones-1",
+      "fillable": true,
+      "options": 2,
+      "control": "select[id=\"-1_PersonProfileFields.PhoneType\"]"
+    },
+    {
+      "label": "Number",
+      "kind": "text",
+      "required": true,
+      "section": "phones-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.PhoneNumber\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "select",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "options": 1,
+      "control": "select[id=\"-1_PersonProfileFields.AddressType\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet1\"]"
+    },
+    {
+      "label": "Address 2",
+      "kind": "text",
+      "required": false,
+      "section": "addresses-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet2\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressCity\"]"
+    },
+    {
+      "label": "Zip/Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressZip\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressCountry_icimsDropdown\"]"
+    },
+    {
+      "label": "State/Province",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressState_icimsDropdown\"]"
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "select",
+      "required": true,
+      "section": "enter-your-information",
+      "fillable": true,
+      "options": 21,
+      "control": "select[id=\"rcf3048\"]"
+    },
+    {
+      "label": "Please specify",
+      "kind": "select",
+      "required": true,
+      "section": "enter-your-information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "options": 1,
+      "control": "select[id=\"rcf3049\"]"
+    },
+    {
+      "label": "I certify that the information provided in this application, and any supporting documents, is true, accurate, and completed to the best of my knowledge. I confirm that all statements regarding my skills, qualifications, and experiences, are my own. I understand that any misrepresentation, falsificat",
+      "kind": "combobox",
+      "required": true,
+      "section": "enter-your-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"rcf2035_icimsDropdown\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input[id=\"PersonProfileFields.Login\"]",
+      "password": "input[id=\"PersonProfileFields.Password\"]",
+      "confirm": "input[id=\"PersonProfileFields.Password_Confirm\"]",
+      "terms": [],
+      "button": "input#cp_form_submit_i",
+      "form": "form#profileForm",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "a[href*=\"loginOnly=1\"]",
+      "a.iCIMS_Faq_Link",
+      "a[href*=\"icims.com/platform_help\"]",
+      "button.icims-social-login",
+      "button.iCIMS_googleDriveButton",
+      "button.iCIMS_dropboxButton",
+      "button.iCIMS_oneDriveButton",
+      "button.iCIMS_DeleteButton",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#cp_form_submit_i"
+    ]
+  }
+}

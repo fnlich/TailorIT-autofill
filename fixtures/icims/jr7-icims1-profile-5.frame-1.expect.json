@@ -1,0 +1,771 @@
+{
+  "fixture": "icims/jr7-icims1-profile-5.frame-1",
+  "source": "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/candidate?from=login&csrf=REDACTED&in_iframe=1&hashed=REDACTED&uploadResume=1&uploadResume=1",
+  "captured": "2026-11-11T12:37:54.000Z",
+  "note": "jr7 P2: arc-onesolutions' Candidate Profile, Time Zone's list open. Its fields as the scan reads them once ENGINE-7 E2 and RULES-7 R2 merged (FIX7PLAN §6.7 P2); what a run decides on them is held by src/adapters/icims/jr7-icims-p2.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Please upload your resume (max size: 5 MB)",
+      "kind": "file",
+      "required": true,
+      "section": "resume",
+      "fillable": true,
+      "control": "input[id=\"PortalProfileFields.Resume_File\"]"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "contact-information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.FirstName\"]"
+    },
+    {
+      "label": "Preferred Name",
+      "kind": "text",
+      "required": false,
+      "section": "contact-information",
+      "fillable": true,
+      "control": "input[id=\"rcf2103\"]"
+    },
+    {
+      "label": "Middle Name",
+      "kind": "text",
+      "required": false,
+      "section": "contact-information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.MiddleName\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "contact-information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.LastName\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "contact-information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.Email\"]"
+    },
+    {
+      "label": "Number",
+      "kind": "text",
+      "required": true,
+      "section": "phones-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.PhoneNumber\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "select",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "options": 1,
+      "control": "select[id=\"-1_PersonProfileFields.AddressType\"]"
+    },
+    {
+      "label": "Street Address",
+      "kind": "text",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet1\"]"
+    },
+    {
+      "label": "Suite/Apartment",
+      "kind": "text",
+      "required": false,
+      "section": "addresses-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet2\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressCity\"]"
+    },
+    {
+      "label": "Zip/Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressZip\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressCountry_icimsDropdown\"]"
+    },
+    {
+      "label": "State/Province",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "addresses-1",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressState_icimsDropdown\"]"
+    },
+    {
+      "label": "Employer",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381897_PersonProfileFields.rcf3212\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381897_PersonProfileFields.rcf3216\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-381897_PersonProfileFields.rcf3218_icimsDropdown\"]"
+    },
+    {
+      "label": "State",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-381897_PersonProfileFields.rcf3217_icimsDropdown\"]"
+    },
+    {
+      "label": "Your Job Title",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381897_PersonProfileFields.rcf3213\"]"
+    },
+    {
+      "label": "Start Date month",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-381897_PersonProfileFields.rcf3214_Month\"]"
+    },
+    {
+      "label": "Start Date day",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-381897_PersonProfileFields.rcf3214_Date\"]"
+    },
+    {
+      "label": "Start Date year",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381897_PersonProfileFields.rcf3214_Year\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) month",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-381897_PersonProfileFields.rcf3215_Month\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) day",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-381897_PersonProfileFields.rcf3215_Date\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) year",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381897_PersonProfileFields.rcf3215_Year\"]"
+    },
+    {
+      "label": "Duties",
+      "kind": "textarea",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "textarea[id=\"-381897_PersonProfileFields.rcf3219\"]"
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "textarea",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "textarea[id=\"-381897_PersonProfileFields.rcf3268\"]"
+    },
+    {
+      "label": "Employer",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381896_PersonProfileFields.rcf3212\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381896_PersonProfileFields.rcf3216\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-381896_PersonProfileFields.rcf3218_icimsDropdown\"]"
+    },
+    {
+      "label": "State",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-381896_PersonProfileFields.rcf3217_icimsDropdown\"]"
+    },
+    {
+      "label": "Your Job Title",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381896_PersonProfileFields.rcf3213\"]"
+    },
+    {
+      "label": "Start Date month",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-381896_PersonProfileFields.rcf3214_Month\"]"
+    },
+    {
+      "label": "Start Date day",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-381896_PersonProfileFields.rcf3214_Date\"]"
+    },
+    {
+      "label": "Start Date year",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381896_PersonProfileFields.rcf3214_Year\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) month",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-381896_PersonProfileFields.rcf3215_Month\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) day",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-381896_PersonProfileFields.rcf3215_Date\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) year",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381896_PersonProfileFields.rcf3215_Year\"]"
+    },
+    {
+      "label": "Duties",
+      "kind": "textarea",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "textarea[id=\"-381896_PersonProfileFields.rcf3219\"]"
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "textarea",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "textarea[id=\"-381896_PersonProfileFields.rcf3268\"]"
+    },
+    {
+      "label": "Employer",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381899_PersonProfileFields.rcf3212\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381899_PersonProfileFields.rcf3216\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-381899_PersonProfileFields.rcf3218_icimsDropdown\"]"
+    },
+    {
+      "label": "State",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-381899_PersonProfileFields.rcf3217_icimsDropdown\"]"
+    },
+    {
+      "label": "Your Job Title",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381899_PersonProfileFields.rcf3213\"]"
+    },
+    {
+      "label": "Start Date month",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-381899_PersonProfileFields.rcf3214_Month\"]"
+    },
+    {
+      "label": "Start Date day",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-381899_PersonProfileFields.rcf3214_Date\"]"
+    },
+    {
+      "label": "Start Date year",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381899_PersonProfileFields.rcf3214_Year\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) month",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-381899_PersonProfileFields.rcf3215_Month\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) day",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-381899_PersonProfileFields.rcf3215_Date\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) year",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381899_PersonProfileFields.rcf3215_Year\"]"
+    },
+    {
+      "label": "Duties",
+      "kind": "textarea",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "textarea[id=\"-381899_PersonProfileFields.rcf3219\"]"
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "textarea",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "textarea[id=\"-381899_PersonProfileFields.rcf3268\"]"
+    },
+    {
+      "label": "Employer",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381898_PersonProfileFields.rcf3212\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381898_PersonProfileFields.rcf3216\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-381898_PersonProfileFields.rcf3218_icimsDropdown\"]"
+    },
+    {
+      "label": "State",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-381898_PersonProfileFields.rcf3217_icimsDropdown\"]"
+    },
+    {
+      "label": "Your Job Title",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381898_PersonProfileFields.rcf3213\"]"
+    },
+    {
+      "label": "Start Date month",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-381898_PersonProfileFields.rcf3214_Month\"]"
+    },
+    {
+      "label": "Start Date day",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-381898_PersonProfileFields.rcf3214_Date\"]"
+    },
+    {
+      "label": "Start Date year",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381898_PersonProfileFields.rcf3214_Year\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) month",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-381898_PersonProfileFields.rcf3215_Month\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) day",
+      "kind": "select",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-381898_PersonProfileFields.rcf3215_Date\"]"
+    },
+    {
+      "label": "End Date (If presently employed put today's date) year",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"-381898_PersonProfileFields.rcf3215_Year\"]"
+    },
+    {
+      "label": "Duties",
+      "kind": "textarea",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "textarea[id=\"-381898_PersonProfileFields.rcf3219\"]"
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "textarea",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "textarea[id=\"-381898_PersonProfileFields.rcf3268\"]"
+    },
+    {
+      "label": "What is your highest level of education",
+      "kind": "combobox",
+      "required": true,
+      "section": "education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"rcf2131_icimsDropdown\"]"
+    },
+    {
+      "label": "School",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.School_icimsDropdown\"]"
+    },
+    {
+      "label": "Other School",
+      "kind": "text",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "input[id=\"-1_CandProfileFields.OtherSchool\"]"
+    },
+    {
+      "label": "Degree",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.Degree_icimsDropdown\"]"
+    },
+    {
+      "label": "Major",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.Major_icimsDropdown\"]"
+    },
+    {
+      "label": "Did You Graduate?",
+      "kind": "select",
+      "required": true,
+      "section": "education",
+      "fillable": true,
+      "options": 2,
+      "control": "select[id=\"-1_CandProfileFields.IsGraduated\"]"
+    },
+    {
+      "label": "License/Certification Name/Type",
+      "kind": "text",
+      "required": false,
+      "section": "license-certification-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.rcf3261\"]"
+    },
+    {
+      "label": "License/Certification Number",
+      "kind": "text",
+      "required": false,
+      "section": "license-certification-1",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.rcf3262\"]"
+    },
+    {
+      "label": "License/Certification State",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "license-certification-1",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.rcf3263_icimsDropdown\"]"
+    },
+    {
+      "label": "Time Zone",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "additional-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"rcf3077_icimsDropdown\"]"
+    },
+    {
+      "label": "Desired Type of Employment",
+      "kind": "combobox",
+      "required": true,
+      "section": "additional-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"rcf2132_icimsDropdown\"]"
+    },
+    {
+      "label": "Desired Salary currency",
+      "kind": "select",
+      "required": true,
+      "section": "additional-information",
+      "fillable": true,
+      "options": 13,
+      "control": "select[id=\"CandProfileFields.Salary_Currency\"]"
+    },
+    {
+      "label": "Desired Salary amount",
+      "kind": "text",
+      "required": true,
+      "section": "additional-information",
+      "fillable": true,
+      "control": "input[id=\"CandProfileFields.Salary\"]"
+    },
+    {
+      "label": "Desired Salary time frame",
+      "kind": "select",
+      "required": true,
+      "section": "additional-information",
+      "fillable": true,
+      "options": 5,
+      "control": "select[id=\"CandProfileFields.Salary_Timeframe\"]"
+    },
+    {
+      "label": "Are you age 18 or over",
+      "kind": "combobox",
+      "required": true,
+      "section": "additional-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"rcf2133_icimsDropdown\"]"
+    },
+    {
+      "label": "Are you eligible to work in the US",
+      "kind": "combobox",
+      "required": true,
+      "section": "additional-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"rcf2134_icimsDropdown\"]"
+    },
+    {
+      "label": "Will you now, or in the future, require sponsorship for employment visa status (e.g. H-1B visa status)",
+      "kind": "combobox",
+      "required": true,
+      "section": "additional-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"rcf2135_icimsDropdown\"]"
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "select",
+      "required": false,
+      "section": "additional-information",
+      "fillable": true,
+      "options": 20,
+      "control": "select[id=\"rcf3048\"]"
+    },
+    {
+      "label": "Please specify further",
+      "kind": "select",
+      "required": false,
+      "section": "additional-information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "options": 1,
+      "control": "select[id=\"rcf3049\"]"
+    },
+    {
+      "label": "I hereby certify and affirm that the information provided in connection with the application process is true, accurate and complete, and that I have withheld nothing that would, if disclosed, affect this application adversely. I hereby authorize ARC-One Solutions to investigate all information perti",
+      "kind": "combobox",
+      "required": true,
+      "section": "additional-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "a[id=\"rcf2140_icimsDropdown\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input[id=\"PersonProfileFields.Login\"]",
+      "password": "input[id=\"PersonProfileFields.Password\"]",
+      "confirm": "input[id=\"PersonProfileFields.Password_Confirm\"]",
+      "terms": [],
+      "button": "input#cp_form_submit_i",
+      "form": "form#profileForm",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "a[href*=\"loginOnly=1\"]",
+      "button.icims-social-login",
+      "button.iCIMS_googleDriveButton",
+      "button.iCIMS_dropboxButton",
+      "button.iCIMS_oneDriveButton",
+      "button.iCIMS_DeleteButton",
+      "a.iCIMS_Anchor[id*=\"Button2_\"]",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#cp_form_submit_i"
+    ]
+  }
+}

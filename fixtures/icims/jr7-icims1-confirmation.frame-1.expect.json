@@ -1,0 +1,24 @@
+{
+  "fixture": "icims/jr7-icims1-confirmation.frame-1",
+  "source": "https://arc-onesolutions.icims.com/jobs/17204/platform-engineer/job?mode=submit_apply&in_iframe=1",
+  "captured": "2026-11-11T12:43:38.000Z",
+  "note": "Hooks only (jr7 P2): arc-onesolutions' page after submitting (job?mode=submit_apply). No root.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": "div.iCIMS_JobContent",
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_JobShareButton",
+      "a[href*=\"/referral\"]",
+      ".icimsSD_widget",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": []
+  }
+}

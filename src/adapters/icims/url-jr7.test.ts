@@ -3,10 +3,11 @@
  * after the last form's Submit (the owner's snapshot7 of 2026-11-11, icims3: careers-quartzbenefits, its wrapper and its
  * frame, fixtures/icims/jr7-icims3-assessment), is a page of the application: it keeps the application's key, as the
  * gate and every step after it do, so the page after it (/job?mode=submit_apply&from=assessment) confirms the same
- * application. TailorIT's contract (src/contract/tailorit/lookup.ts ICIMS_PAGES) does not read the word until TAILORIT-7's
- * 7a is pulled (FIX7PLAN §0.6): the row is held here ahead of the contract, and the address the extension names the page
- * to TailorIT by (tailorit-address.ts: the posting's canonical address) is one TailorIT reads today. INT-7 moves it into
- * src/adapters/url.test.ts once the contract reads it. Made-up job ids in the captured shapes.
+ * application. P1 held the row ahead of TailorIT's contract; since TAILORIT-7's 7a was pulled (jr7-auto-done, its
+ * src/contract/tailorit/lookup.ts ICIMS_PAGES reads the word), the contract reads the page as the same posting, platform,
+ * board and job id (P2: out of the ahead-of-contract set, the coordinator's note of 2026-11-12), and the address the
+ * extension names the page to TailorIT by (tailorit-address.ts: the posting's canonical address) reads alike. INT-7 may
+ * fold the rows into src/adapters/url.test.ts. Made-up job ids in the captured shapes.
  */
 import { describe, expect, it } from 'vitest';
 import { parseAtsUrl } from '../../contract/tailorit/lookup';
@@ -36,19 +37,21 @@ describe('iCIMS’s Assessments step (jr7 ICIMS7-04 (1))', () => {
     expect(applicationKey('icims', read!.applicationUrl)).toBe(applicationKey('icims', done.applicationUrl));
   });
 
-  it('is ahead of TailorIT’s contract, and named to TailorIT by the posting’s address, which TailorIT reads', () => {
+  it('reads in TailorIT’s contract as the same posting, and is named to TailorIT by the posting’s address', () => {
     for (const address of ASSESSMENT) {
-      // TAILORIT-7's 7a adds the word to ICIMS_PAGES; until its pull the contract reads the page as none.
-      expect(parseAtsUrl(address), address).toBeNull();
+      // TAILORIT-7's 7a (pulled): ICIMS_PAGES reads the word; platform, board and job id agree with ours.
+      expect(parseAtsUrl(address), address).toMatchObject({ kind: 'icims', board: 'careers-acme', externalId: '2446' });
       expect(tailoritAddressOf(address), address).toBe(CANONICAL);
       expect(parseAtsUrl(tailoritAddressOf(address)), address)
         .toMatchObject({ kind: 'icims', board: 'careers-acme', externalId: '2446' });
     }
   });
 
-  it('reads no other word after the posting as the application (the referral, a made-up step, a deeper path)', () => {
+  it('reads no other word after the posting as the application (the referral, a made-up step, a deeper path), as the '
+    + 'contract reads none of them', () => {
     for (const address of [`${BASE}/referral`, `${BASE}/assessments`, `${BASE}/assessment/x`, `${BASE}/Assessment`]) {
       expect(parseIcimsUrl(new URL(address)), address).toBeNull();
+      expect(parseAtsUrl(address), address).toBeNull();
     }
   });
 });

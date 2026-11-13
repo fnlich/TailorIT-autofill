@@ -1,0 +1,45 @@
+{
+  "fixture": "icims/jr7-icims3-eeo.frame-1",
+  "source": "https://careers-quartzbenefits.icims.com/jobs/2446/technical-delivery-specialist/eeo?back=&in_iframe=1",
+  "captured": "2026-11-11T15:08:23.000Z",
+  "note": "jr7 P2: careers-quartzbenefits' EEO (step 3 of 5). Its fields as the scan reads them once ENGINE-7 E2 and RULES-7 R2 merged (FIX7PLAN §6.7 P2); what a run decides on them is held by src/adapters/icims/jr7-icims-p2.browser.test.ts.",
+  "fields": [
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": true,
+      "section": "voluntary-information",
+      "fillable": true,
+      "options": 5,
+      "control": "select[id=\"CandProfileFields.Gender\"]"
+    },
+    {
+      "label": "Race",
+      "kind": "select",
+      "required": true,
+      "section": "voluntary-information",
+      "fillable": true,
+      "options": 9,
+      "control": "select[id=\"CandProfileFields.Race\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_Faq_Link",
+      "a[href*=\"icims.com/platform_help\"]",
+      "input[type=\"submit\" i][name=\"save\"]",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#eeop_form_submit_i"
+    ]
+  }
+}
