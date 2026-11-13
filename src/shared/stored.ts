@@ -89,11 +89,16 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  fixes: the button named as it reads, a download Apply told there is no Apply to press); 16, jr7 (the owner's words
  *  of 2026-11-11 on auto-apply everywhere: UKG Ready, Paycom, JobDiva and Eightfold among the sites, their staff pages
  *  never; Run auto-apply taking only the sites whose application it walks to the end and whose confirmation it reads,
- *  never a site with a human check or a code, the others Queue tab only; a tab with a code or a check after its Submit
- *  left open and TailorIT told the job needs the person; the Queue tab opening every site it fills, pressing a job
- *  page's Apply first and leaving Submit to the person where it cannot read the confirmation; a privacy notice before a
- *  resume upload agreed under Consent boxes; a Jibe job page's iCIMS address told to TailorIT). Raise it whenever the
- *  disclosure's substance changes; copy.test.ts pins each version's words (DISCLOSURE_HASHES). */
+ *  the others Queue tab only; a site joining it only when none of its tested applications showed a human check or a
+ *  code, the sites already in staying (Greenhouse's and iCIMS's emailed code or link); a tab with a code or a check
+ *  after its Submit, or a step after it that is the person's (an assessment), left open and TailorIT told the job needs
+ *  the person; Workday's jobs taken whatever the tenant asks, its sign-in or new account done with the job-site sign-in
+ *  on Sign-in Auto, the job left to the person there on Manual; the Queue tab opening every site it fills, pressing a
+ *  job page's Apply first and leaving Submit to the person where it cannot read the confirmation; a privacy notice
+ *  before a resume upload agreed under Consent boxes; a Jibe job page's iCIMS address told to TailorIT; its words
+ *  corrected before it reached anyone, by the jr7 review fixes, C-1 and A-6, and a typed national identity number named
+ *  among what is never sent, A-7). Raise it whenever the disclosure's substance changes; copy.test.ts pins each
+ *  version's words (DISCLOSURE_HASHES). */
 export const DISCLOSURE_VERSION = 16;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 

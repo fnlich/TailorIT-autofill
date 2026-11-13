@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CONSENT_CATEGORIES, FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES } from '../core/enums';
+import { platformAdapter } from '../adapters'; // the jr7 review's C-2: read only
+import { ATS_CONFIGS } from '../adapters/configured/registry'; // the jr7 review's C-2: read only
+import { CONSENT_CATEGORIES, FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES, type Platform } from '../core/enums';
+import { isNetPlatform } from '../dom/submit-net-protocol'; // the jr7 review's C-2: read only
 import { AI_OPENED_CATEGORIES } from '../core/resolver/categories';
 import { TELEMETRY_FIELDS } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
@@ -9,7 +12,7 @@ import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
 import { SAVE_ANSWER_OUTCOMES } from '../messaging/schemas';
 import { SIGNUP_COPY } from '../ui/page/signup-copy';
 import { CAPTURE_COPY, COPY, PAGE_COPY } from './copy';
-import { QUEUE_SUBMIT_PLATFORMS } from './queue-submit';
+import { QUEUE_SUBMIT_PLATFORMS, RECORDED_SUBMIT_PLATFORMS } from './queue-submit';
 import { NOTICE_CODES } from './report';
 import { DISCLOSURE_VERSION } from './stored';
 
@@ -22,12 +25,15 @@ const SENTENCE = /^["A-Z(].*[.]$/s;
  * browser that acknowledged an older version is asked again (stored.ts DISCLOSURE_VERSION), so new words need a new
  * version: changing them without a row here fails, and so does a version with no row. Versions before 14 predate this
  * table. 15 (jr6) had reached no one when the jr6 integration fixes reworded it (the button's name as it reads, and what
- * a download Apply is told), so it kept its number.
+ * a download Apply is told), so it kept its number. 16 (jr7) had reached no one (the extension's main is at 15) when
+ * the jr7 review fixes reworded it (C-1, A-6: who joins Run auto-apply as built, the sites already in that may email a
+ * code, the step that is the person's, Workday's jobs whatever the tenant asks; A-7: a national id never sent), so it
+ * kept its number too.
  */
 const DISCLOSURE_HASHES: readonly { version: number; sha256: string }[] = [
   { version: 14, sha256: 'ad97b204db52277072884bbc2168b5f85d7d2edad738e7a10885428ad03f0532' }, // v1.5 part 2
   { version: 15, sha256: '3383e740883fcc6c5fe8048c3c0d6df52db758235fbe6b33d69433fd14da3e1d' }, // jr6
-  { version: 16, sha256: '5be8fdc5bd3506b9b058e786cebf3aa508ac6cd3126bb14067ffd78e6f9f5fb6' }, // jr7 (INT-7 round 2)
+  { version: 16, sha256: 'db3f71fc98b8c79f5449044fb2d4f6335c4002bab7b7be1f536d152506c08e88' }, // jr7 (its review fixes)
 ];
 
 /** The disclosure's words as DISCLOSURE_HASHES pins them. */
@@ -364,7 +370,21 @@ describe('the copy', () => {
     expect(words).not.toMatch(/\.$/); // read inside "Needs you (…)", as the assessment's note is
     expect(COPY.queue.notes.assessment).not.toMatch(/\.$/);
     expect(COPY.agent.line({ phase: 'off', job: null, doneToday: 0,
-      last: { state: 'needs-you', reason: 'other', note: 'documents' } })).toContain(`(${words})`);
+      last: { state: 'needs-you', reason: 'other', note: 'documents' } }))
+      .toContain('(this site asks whether to save your documents to your profile there)');
+  });
+
+  // jr7 review C-5: a note read inside the agent's "Needs you (…)" starts in lower case, as the reasons there do; the
+  // Queue tab's row shows it alone, as written.
+  it('lower-cases a hand-over note inside the agent’s status line, and keeps it as written on its own', () => {
+    const line = (note: 'assessment' | 'documents') => COPY.agent.line({ phase: 'off', job: null, doneToday: 0,
+      last: { state: 'needs-you', reason: 'other', note } });
+    expect(line('assessment')).toContain('Needs you (this application continues with an assessment)');
+    expect(line('documents')).toContain('Needs you (this site asks whether to save your documents');
+    for (const note of ['assessment', 'documents'] as const) {
+      expect(line(note), note).not.toContain(`(${COPY.queue.notes[note]})`);
+      expect(COPY.queue.notes[note], note).toMatch(/^[A-Z]/);
+    }
   });
 
   it('says a field the page kept locked was not filled, and what the person can do, never only that it is locked', () => {
@@ -388,8 +408,17 @@ describe('the copy', () => {
       expect(COPY.options.sites.intro, name).toContain(name);
     }
     expect(first).toContain("UKG Ready's saashr.com, Paycom, JobDiva, Eightfold and others), it runs only on the job pages");
-    // Run auto-apply's rule (D-3) and the Queue tab (D-4), as TailorIT labels them.
-    expect(first).toContain('never a site that shows a check that you are human or sends you a code');
+    // Run auto-apply's rule (D-3) and the Queue tab (D-4), as TailorIT labels them. The jr7 review (C-1, A-6): as
+    // built, a new site joins only when its tested applications showed no check and no code, the sites already in stay
+    // (Greenhouse's and iCIMS's emailed code or link), and Workday's jobs are taken whatever the tenant asks.
+    expect(first).not.toContain('never a site that shows a check that you are human or sends you a code');
+    expect(first).toContain('A site joins Run auto-apply only when none of the applications it was tested on there '
+      + 'showed a check that you are human or asked for a code, but a site it already took stays');
+    expect(first).toContain('may still email you a code or a link (Greenhouse, iCIMS)');
+    expect(first).toContain('or the application goes on to a step that is yours (an assessment, say), it leaves that tab open');
+    expect(first).toContain('On Workday it takes any job TailorIT can add, also where the employer asks you to sign in or make an account there: with Sign-in on Auto it signs in, or makes the account Workday asks for, with your job-site email and password');
+    expect(first).toContain('and on Manual it stops there and tells your TailorIT the job needs you');
+    expect(first).not.toMatch(/guest tenant/);
     expect(first).toContain('Queue tab only');
     expect(first).toContain('waits for the Queue tab');
     expect(first).toContain('it leaves that tab open for you and tells your TailorIT the job needs you');
@@ -397,11 +426,49 @@ describe('the copy', () => {
     expect(second).toContain("On an iCIMS Jibe job page it tells your TailorIT the job's iCIMS address");
   });
 
-  it('names in Record applications I submit myself the sites whose confirmation it reads, from their one list', () => {
+  // The jr7 review (C-2): the person's own Submit is armed on any platform (content/runtime.ts personSubmitted) and
+  // recorded wherever the extension reads a sign after it, so the help names every such platform, derived here from the
+  // adapters (read only): a configured success rule, a drawn sign of the platform's own (content/submitted.ts
+  // platformSignsOf), an adapter's successSigns or confirmationAfter, a network sign, or an address its url.ts reads as
+  // the page after submitting.
+  // The jr7 review fixes (A-7, the background fixer's): a national id the person typed is never sent with a submitted
+  // application, question or answer (background/submitted-forms.ts NEVER_SENT), as passwords and codes are not; the
+  // disclosure and Keep my submitted answers say so.
+  it('says a national identity number is never sent with the submitted answers, in the disclosure and the setting', () => {
+    const third = COPY.options.connection.disclosure[2]!;
+    expect(third).toContain('Passwords, checks that you are human, a national identity number you type (a Social Security number, say), hidden fields and what your files contain are never sent');
+    expect(COPY.options.modes.keepAnswers.help).toContain('Never sent: passwords, CAPTCHAs, a national identity number such as a Social Security number (its question too)');
+  });
+
+  it('names in Record applications I submit myself every site where it reads that an application went through', () => {
     const help = COPY.options.modes.recordOwn.help;
-    for (const platform of QUEUE_SUBMIT_PLATFORMS) expect(help, platform).toContain(COPY.platforms[platform]);
-    for (const name of ['Breezy HR', 'Dayforce', 'Taleo', 'Dice']) expect(help, name).not.toContain(name);
-    expect(help).toContain('JobDiva and Eightfold), your TailorIT tracker');
+    const source = (path: string) => {
+      try {
+        return readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
+      } catch {
+        return '';
+      }
+    };
+    const drawn = source('../content/submitted.ts').split('function platformSignsOf(')[1]!.split('\n}\n')[0]!;
+    const readsSign = (platform: Platform) => {
+      const adapter = platformAdapter(platform);
+      return ATS_CONFIGS[platform]?.success !== undefined || isNetPlatform(platform)
+        || adapter?.successSigns !== undefined || adapter?.confirmationAfter !== undefined
+        || drawn.includes(`platform === '${platform}'`)
+        || /\bpage: [^,;]*'confirmation'|\['[^']*', 'confirmation'\]|\? 'confirmation'/
+          .test(source(`../adapters/${platform}/url.ts`));
+    };
+    const reading = PLATFORMS.filter(readsSign);
+    expect(new Set(reading), 'the list is the platforms that read a sign').toEqual(new Set(RECORDED_SUBMIT_PLATFORMS));
+    for (const platform of QUEUE_SUBMIT_PLATFORMS) expect(reading, platform).toContain(platform);
+    for (const platform of PLATFORMS) {
+      if (reading.includes(platform)) expect(help, platform).toContain(COPY.platforms[platform]);
+      else expect(help, platform).not.toContain(COPY.platforms[platform]);
+    }
+    for (const name of ['Breezy HR', 'Dayforce', 'CareerPlug', 'Paycor', 'Paylocity', 'SuccessFactors', 'ClearCompany']) {
+      expect(help, name).toContain(name);
+    }
+    expect(help).toContain('SuccessFactors and ClearCompany), your TailorIT tracker');
   });
   // ── end jr7 INT-7 ──
 });
