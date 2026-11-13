@@ -1205,6 +1205,36 @@ describe('the audit of 2026-11-06: outages, the person closing the window, and t
     expect(await other.agent.status()).toMatchObject({ on: false, paused: null });
   });
 
+  // jr7 FIX-background (the review's B-2; AUTO7-01's rule, as the Queue's tabRemoved). Undo proof: tabRemoved's, or the
+  // tick's, `run.pressedAt !== null ? 'timed_out' : 'cancelled'` back to 'cancelled' and this fails.
+  it('the person closing its tab after the job’s Submit: timed_out (it may have been sent), by tabRemoved or the tick',
+    async () => {
+      for (const seen of ['tabRemoved', 'tick'] as const) {
+        const h = harness({ tasks: [task(1)] });
+        await on(h);
+        const { tabId, key } = await running(h);
+        await h.agent.hello(tabId, form(key, 'doc-1'));
+        await h.agent.pressed(tabId, key, 'doc-1');
+        h.windows.tabs.delete(tabId);
+        if (seen === 'tabRemoved') await h.agent.tabRemoved(tabId);
+        else await h.agent.tick();
+        expect(h.results, seen).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'timed_out', aiGuesses: 0 } }]);
+        expect(await h.agent.status(), seen).toMatchObject({ on: false, paused: 'window-closed' });
+        expect(h.windows.closedTabs, seen).toEqual([]);
+      }
+      // Control: closed before any Submit, by either path, is the person's Stop (cancelled).
+      for (const seen of ['tabRemoved', 'tick'] as const) {
+        const h = harness({ tasks: [task(1)] });
+        await on(h);
+        const { tabId, key } = await running(h);
+        await h.agent.hello(tabId, form(key, 'doc-1'));
+        h.windows.tabs.delete(tabId);
+        if (seen === 'tabRemoved') await h.agent.tabRemoved(tabId);
+        else await h.agent.tick();
+        expect(h.results, seen).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0 } }]);
+      }
+    });
+
   it('another tab closing leaves the job running (the tab check)', async () => {
     const h = harness({ tasks: [task(1)] });
     await on(h);

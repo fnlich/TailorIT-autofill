@@ -462,7 +462,8 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       if (item.tabId === null || !OPEN.has(item.status)) continue;
       const tabId = item.tabId;
       if ((await deps.tabs.state(tabId)) === 'gone') {
-        finish(item, 'skipped', { state: 'needs-you', reason: 'cancelled' });
+        // jr7 FIX-background (the review's B-2): as tabRemoved (AUTO7-01, D-4): a Submit armed in it may have sent it.
+        finish(item, 'skipped', { state: 'needs-you', reason: item.pressedAt !== null ? 'timed_out' : 'cancelled' });
         item.tabId = null;
         continue;
       }
