@@ -150,7 +150,7 @@ describe('jr8 integration: Ashby’s Yes/No the page shows answered, through the
     await vi.waitFor(() => expect(runtime.run?.ended).toBeDefined(), { timeout: 60_000 });
     const rows = worker.reports.at(-1)!.fields;
     const left = () => requiredUnfilledOf(scan(ashbyAdapter.detect(fixture.doc)!.formRoot, ashbyAdapter,
-      { platform: 'ashby' }), rows as readonly FillResult[], () => false);
+      { platform: 'ashby' }), rows.map((row) => row as FillResult), () => false);
     return { fixture, log, worker, runtime, nexts, rows, left };
   }
 
