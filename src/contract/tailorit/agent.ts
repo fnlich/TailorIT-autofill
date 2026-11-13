@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { InstantSchema } from './common';
-import { greenhouseBoardPage, parseAtsUrl, type AtsKind, type ParsedAtsUrl } from './lookup';
+import { addablePosting, greenhouseBoardPage, parseAtsUrl, type AtsKind, type ParsedAtsUrl } from './lookup';
 
 // The auto-apply agent's queue (version 3). The person queues jobs from TailorIT's Jobs and Tracker pages ("Auto-apply")
 // and may turn on a rule ("auto-apply to new jobs of at least N% match", off until they turn it on); there is no daily
@@ -74,7 +74,7 @@ export const AUTOFILL_AGENT_RUN_TIMEOUT_MS = 30 * 60_000;
  * and Pinpoint (its one-page form, and /applications/thanks's section#application-thanks). Not yet: Workday, Taleo,
  * SuccessFactors, Oracle Recruiting Cloud and SmartRecruiters (no page after submitting seen, so no success sign), Breezy
  * HR (its confirmation is in the form's markup, hidden in both snapshots: never seen shown), and the other new ATSs (no
- * confirmation in any snapshot).
+ * confirmation in any snapshot). The extension's Queue tab, which the person watches, opens more (AUTOFILL_QUEUE_ATS).
  */
 export const AUTOFILL_AGENT_ATS = [
   'greenhouse',
@@ -140,6 +140,94 @@ function formAddress({ kind, board, externalId, canonical }: ParsedAtsUrl): stri
 export function agentCanApply(url: string): boolean {
   return agentApplicationUrl(url) !== null;
 }
+
+// jr7 7a (additive within version 6; APPLYPLAN F4b, the owner's snapshot7 of 2026-11-11): the extension's Queue tab
+// opens every platform the extension fills, not only the agent's.
+/**
+ * The platforms whose jobs the extension's Queue tab opens (POST /api/autofill/agent/:id/opened): every platform the
+ * extension fills with a posting TailorIT reads, the agent's (AUTOFILL_AGENT_ATS) among them, but Dice (no page after
+ * submitting captured, and its posting is outside the pages the extension runs on). The Queue tab is attended: the
+ * person is at the browser, so a CAPTCHA, a code or a sign-in a platform asks for (JazzHR's and BambooHR's reCAPTCHA,
+ * ADP's and Oracle's codes, UKG's sign-in for UltiPro, Dayforce's image check) is theirs there, in that tab. Run
+ * auto-apply, unattended, still takes only AUTOFILL_AGENT_ATS. Provisional in jr7's step 7a, for the extension's
+ * development and tests; jr7's step 7b sets the released list from the integration's readiness tests.
+ */
+export const AUTOFILL_QUEUE_ATS = [
+  'greenhouse',
+  'lever',
+  'ashby',
+  'workday',
+  'workable',
+  'icims',
+  'taleo',
+  'successfactors',
+  'oracle',
+  'jobvite',
+  'jazzhr',
+  'bamboohr',
+  'rippling',
+  'breezy',
+  'careerplug',
+  'pinpoint',
+  'paycor',
+  'hibob',
+  'ultipro',
+  'dayforce',
+  'paylocity',
+  'clearcompany',
+  'adp',
+  'smartrecruiters',
+] as const satisfies readonly AtsKind[];
+
+/**
+ * The address the Queue tab opens for a posting at `url`, or null when neither run can open it: the agent's
+ * (agentApplicationUrl) when it has one, else, on a platform of AUTOFILL_QUEUE_ATS the agent does not take, an address
+ * built from the posting's board and id alone (parseAtsUrl's canonical addresses) that says hello before any redirect:
+ * the posting, whose own Apply the extension presses (Workday, Oracle Recruiting Cloud, SmartRecruiters' posting, never
+ * its one-click application; Dayforce's posting, before its way-to-apply choice; UltiPro's OpportunityDetail, never
+ * OpportunityApply, which sends a new visitor to UKG's sign-in first), or the application form where the platform has
+ * one address for it (ADP's guest page, which opens the posting's details; BambooHR's /careers/<id>; JazzHR's page;
+ * Rippling's form; Jobvite's …/apply; Taleo, SuccessFactors, Breezy HR, CareerPlug, Paycor, HiBob, Paylocity and
+ * ClearCompany as parseAtsUrl names them first). The answer reads as itself again, at most AUTOFILL_AGENT_URL_MAX
+ * characters.
+ */
+export function queueApplicationUrl(url: string): string | null {
+  const agent = agentApplicationUrl(url);
+  if (agent !== null) return agent;
+  const read = url.length <= AUTOFILL_AGENT_URL_MAX ? parseAtsUrl(url) : null;
+  const address = read ? queueFormAddress(read) : null;
+  return address !== null && address.length <= AUTOFILL_AGENT_URL_MAX ? address : null;
+}
+
+/** The address the Queue tab opens on a platform it alone takes (queueApplicationUrl); null on any other. */
+function queueFormAddress(posting: ParsedAtsUrl): string | null {
+  const { kind, canonical } = posting;
+  if (!(AUTOFILL_QUEUE_ATS as readonly AtsKind[]).includes(kind)) return null;
+  // The agent's platforms open at the agent's address, or not at all (an EU Greenhouse board, a link naming no account).
+  if ((AUTOFILL_AGENT_ATS as readonly AtsKind[]).includes(kind)) return null;
+  switch (kind) {
+    case 'workday':
+      // The posting (its first canonical address, without its locale), only when its location and posting segments
+      // are ones TailorIT puts into an address of its own (addablePosting's check: no dot segment, no encoded '/').
+      return addablePosting(posting) !== null ? (canonical[0] ?? null) : null;
+    case 'ultipro':
+      // [OpportunityApply, OpportunityDetail]: the posting, on the page's own host.
+      return canonical.find((address) => address.includes('/OpportunityDetail?')) ?? null;
+    case 'dayforce':
+      // [step 1 of the guest application, the posting]: the posting, whose Apply leads to the choice.
+      return canonical[1] ?? null;
+    case 'smartrecruiters':
+      // The posting by its number; a one-click application names no posting to open.
+      return canonical[0] !== undefined && !canonical[0].includes('/oneclick-ui/') ? canonical[0] : null;
+    default:
+      return canonical[0] ?? null;
+  }
+}
+
+/** True when the Queue tab can open the posting at `url` (queueApplicationUrl): the Jobs and Tracker pages' `queueApply`. */
+export function queueCanOpen(url: string): boolean {
+  return queueApplicationUrl(url) !== null;
+}
 /** The most jobs one Auto-apply click queues, and the most rows an account's queue holds. */
 export const AUTOFILL_AGENT_ENQUEUE_MAX = 100;
 export const AUTOFILL_AGENT_QUEUE_MAX = 500;
@@ -155,7 +243,8 @@ export const AutofillAgentIdSchema = z
  * The job the agent applies to now: open `url`, the application form's address (agentApplicationUrl: Greenhouse's job
  * page on job-boards.greenhouse.io, Lever's `…/apply`, Ashby's `…/application`, Workable's `…/apply/`, and since
  * version 6 iCIMS's posting page `…/jobs/<id>/job` and Pinpoint's `…/applications/new`), and attach `resumeId` when
- * set.
+ * set. jr7 7a: the Queue tab's task (POST …/agent/:id/opened) carries queueApplicationUrl's address instead, which is
+ * the agent's on the agent's platforms.
  */
 export const AutofillAgentTaskSchema = z.object({
   id: AutofillAgentIdSchema,
@@ -177,7 +266,9 @@ export type AutofillAgentTask = z.infer<typeof AutofillAgentTaskSchema>;
  * TailorIT reads (not an import alone), not tracked, never queued, never taken out of the queue by the person, on a
  * platform the agent fills (agentCanApply), and whose match with the account's best resume for it is at least the
  * rule's `minMatch`; weighed in the order TailorIT first saw them, each once, and counted toward
- * AUTOFILL_AGENT_QUEUE_MAX. `item` null: nothing to do.
+ * AUTOFILL_AGENT_QUEUE_MAX. `item` null: nothing to do. jr7 7a: the queued jobs the agent takes are those whose posting
+ * it opens (agentApplicationUrl); a queued job only the Queue tab opens (queueCanOpen) is left queued for it, never
+ * failed, and the next is looked at.
  */
 export const AutofillAgentNextSchema = z.object({ item: AutofillAgentTaskSchema.nullable() });
 export type AutofillAgentNext = z.infer<typeof AutofillAgentNextSchema>;
@@ -218,8 +309,9 @@ export type AutofillAgentEnqueueBody = z.infer<typeof AutofillAgentEnqueueBodySc
  * Why a job was not queued: `already_queued` (queued or running now), `already_applied` (its tracker entry is past
  * Saved, or the agent submitted it), `posting_closed` (the posting has closed), `unsupported_site` (the agent cannot
  * open its posting's form: not on a platform the agent fills, or a company's own page naming a Greenhouse posting in
- * ?gh_jid=: agentCanApply), `not_found` (TailorIT has no such job). `timed_out` is never answered by POST …/queue; it
- * is listed so one set of words labels both these skips and the rows' reasons.
+ * ?gh_jid=: agentCanApply; jr7 7a: nor can the Queue tab, queueCanOpen), `not_found` (TailorIT has no such job).
+ * `timed_out` is never answered by POST …/queue; it is listed so one set of words labels both these skips and the
+ * rows' reasons.
  */
 export const AUTOFILL_AGENT_SKIPS = [
   'already_queued',
@@ -303,11 +395,23 @@ export const AutofillAgentQueueItemSchema = z.object({
   startedAt: InstantSchema.nullable(),
   finishedAt: InstantSchema.nullable(),
   // v1.5 Q2 (optional, so an older server's list still parses)
-  /** The application form's address a run opens (agentApplicationUrl), or null when the agent cannot open it. */
+  /**
+   * The application form's address a run opens (agentApplicationUrl), or null when the agent cannot open it. jr7 7a:
+   * the Queue tab's address (queueApplicationUrl, the agent's on the agent's platforms), or null when neither run can
+   * open it.
+   */
   applyUrl: z.string().max(AUTOFILL_AGENT_URL_MAX).nullable().optional(),
   /** Which run took the row (AUTOFILL_AGENT_RUNS); null while no run took it. */
   run: z.enum(AUTOFILL_AGENT_RUNS).nullable().optional(),
   // end v1.5 Q2
+  // jr7 7a (optional, so an older server's list still parses)
+  /**
+   * The runs that can take the row (AUTOFILL_AGENT_RUNS, in that order): `agent` when Run auto-apply opens its posting
+   * (agentApplicationUrl), `tab` when the Queue tab does (queueApplicationUrl); `['tab']` alone is a job that waits for
+   * the Queue tab, `[]` one neither opens.
+   */
+  runs: z.array(z.enum(AUTOFILL_AGENT_RUNS)).max(AUTOFILL_AGENT_RUNS.length).optional(),
+  // end jr7 7a
 });
 export type AutofillAgentQueueItem = z.infer<typeof AutofillAgentQueueItemSchema>;
 
@@ -341,7 +445,8 @@ export type AutofillAgentQueueList = z.infer<typeof AutofillAgentQueueListSchema
  * open `failed` (`unsupported_site`); `item` is then null, with that state and reason (open the next one). The same
  * browser asking again for its own tab run gets the same `item` (a worker that restarted). 409 `conflict` when the row
  * is running for the background agent or for another browser, or finished; 404 for another account's row or one
- * removed.
+ * removed. jr7 7a: the item's `url` is the Queue tab's address (queueApplicationUrl), and `unsupported_site` is a job
+ * the Queue tab can no longer open (queueCanOpen).
  */
 export const AutofillAgentOpenedSchema = z.object({
   item: AutofillAgentTaskSchema.nullable(),

@@ -240,6 +240,23 @@ export function ticksAccountTerms(consents: AccountConsents | undefined): boolea
     || (consents.preapproved.includes('privacy') && consents.preapproved.includes('terms'));
 }
 
+// ── jr7 AUTO-7 (ENGINE-7 E2's edit 1, the coordinator's request of 2026-11-12) ──
+/** The Consents mode and the pre-approved consents a content settings message carries (ContentSettings.modes.consents,
+ *  preapprovedConsent), or undefined where it names no mode (a test's, an older worker's): such terms stay left. */
+export function accountConsentsOf(settings: { modes: { consents?: 'all' | 'required' | undefined };
+  preapprovedConsent?: readonly ConsentCategory[] | undefined }): AccountConsents | undefined {
+  const mode = settings.modes.consents;
+  return mode === undefined ? undefined : { mode, preapproved: [...(settings.preapprovedConsent ?? [])] };
+}
+
+/** EFA-6 (FIX7PLAN D-9: "a privacy acknowledgement under the Consents mode"): whether a site's upload prompt asking the
+ *  person to agree to its data-privacy terms (Eightfold's Data Privacy Agreement) is answered for them: Consents All, or
+ *  Required with privacy pre-approved. Undefined (no mode said): the person's. */
+export function ticksUploadConsent(consents: AccountConsents | undefined): boolean {
+  return consents !== undefined && (consents.mode === 'all' || consents.preapproved.includes('privacy'));
+}
+// ── end jr7 AUTO-7 ──
+
 function urlOf(href: string): URL | null {
   try {
     return new URL(href);

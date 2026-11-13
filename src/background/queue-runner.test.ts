@@ -23,12 +23,13 @@ import { DEFAULT_SETTINGS, type QueueSettings, type Settings } from '../core/typ
 import { QUEUE_ITEM_STATUSES } from '../messaging/page-schemas';
 import type { AgentAlarms, AtsPage, QueueTabs, StorageArea } from '../platform/types';
 import type { FrameReport } from '../shared/report';
-import { agentAddressOf } from './agent';
+import { agentAddressOf, queueAddressOf } from './agent';
 import {
   createQueueRunner, QUEUE_ALARM, QUEUE_CLOSE_SUBMITTED_MS, QUEUE_ENTRY_WAIT_MS, QUEUE_FORM_WAIT_MS, QUEUE_RETRY_MS,
   QUEUE_RUN_KEY, statusOfReports, type QueueRunnerDeps,
 } from './queue-runner';
 import type { ServerResult } from './server-client';
+import { queueSubmitIsPersons } from './settings';
 import { manualTimers } from './timers';
 
 /** A storage area over a Map, as chrome.storage keeps JSON. */
@@ -1195,3 +1196,129 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
     expect(statusOfReports([report({ status: 'review' }), report({ frameId: 2, status: 'fill-step' })])).toBe('filling');
   });
 });
+
+// ── jr7 AUTO-7 (SP\jr7\FIX7PLAN.md §6.4 items 3 to 6 and 14): the Queue tab on every platform it fills (F4b) ──
+describe('jr7 AUTO-7: the Queue tab on every platform the extension fills', () => {
+  // Synthetic addresses of the shapes TailorIT 7a's queueApplicationUrl reads (jr7-tailorit-a).
+  const ADP = 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=00000000-0000-4000-8000-000000000001&jobId=590196&ccId=19000101_000001';
+  const DAYFORCE = 'https://jobs.dayforcehcm.com/en-US/acme/candidateportal/jobs/9234';
+  const JOBVITE = 'https://jobs.jobvite.com/acme/job/oABC1234';
+  const ULTIPRO_APPLY = 'https://recruiting.ultipro.com/ACME1000/JobBoard/54a25c3a-e399-42b0-a553-16ed056e0517/OpportunityApply?opportunityId=772ddf9d-79f1-4752-bf3b-688ded6980c7';
+  const DICE = 'https://www.dice.com/job-detail/00000000-0000-4000-8000-000000000001';
+  const keyOf = (url: string) => queueAddressOf(url)!.applicationKey;
+
+  /** A run over `urls`, started, every tab opened at once (maxOpenTabs 5, no wait between them). */
+  async function started(urls: string[], queue: Partial<QueueSettings> = {}): Promise<Harness> {
+    const h = harness({ durationSec: 1, accelerationSec: 0, maxOpenTabs: 5, ...queue });
+    urls.forEach((url, n) => h.rows.push({ task: queued(n + 1, url), state: 'queued' }));
+    await h.runner.start();
+    await h.advance(urls.length * 1_000 + 100);
+    return h;
+  }
+
+  it('AUTO7-01: opens a queue-only job at the Queue tab’s address (UltiPro at OpportunityDetail); Dice never', async () => {
+    expect(agentAddressOf(ADP)).toBeNull();
+    expect(queueAddressOf(ULTIPRO_APPLY)!.address).toContain('/OpportunityDetail?');
+    expect(queueAddressOf(DICE)).toBeNull();
+    // The agent's own platforms open at the agent's address, as before.
+    expect(queueAddressOf(URL_OF(1))).toEqual(agentAddressOf(URL_OF(1)));
+    const h = await started([ADP, DAYFORCE, JOBVITE, ULTIPRO_APPLY, DICE]);
+    expect(h.tabs.map((tab) => tab.url)).toEqual([ADP, DAYFORCE, `${JOBVITE}/apply`,
+      queueAddressOf(ULTIPRO_APPLY)!.address]);
+    expect(h.results).toEqual([{ id: ID(5), body: { state: 'failed', reason: 'unsupported_site', aiGuesses: 0 } }]);
+  });
+
+  it('D-4: Submit is the person’s in a queued tab whose platform shows no sign read; a Submit armed there is Ready for you',
+    async () => {
+      const h = await started([DAYFORCE, JOBVITE]);
+      const [dayforce, jobvite] = h.tabs.map((tab) => tab.tabId) as [number, number];
+      expect(await h.runner.submitHeld(dayforce, keyOf(DAYFORCE))).toBe(true);
+      expect(await h.runner.submitHeld(dayforce, null)).toBe(true);
+      expect(await h.runner.submitHeld(jobvite, keyOf(JOBVITE))).toBe(false);
+      expect(await h.runner.submitHeld(999, keyOf(DAYFORCE))).toBe(false);
+      expect(queueSubmitIsPersons(keyOf(DAYFORCE))).toBe(true);
+      expect(queueSubmitIsPersons(keyOf(JOBVITE))).toBe(false);
+      const listedNow = await h.runner.list(0);
+      expect(listedNow.ok && listedNow.data.items.map((item) => item.submitYours ?? false)).toEqual([true, false]);
+      // The person's Submit on Dayforce: Ready for you, never cancelled when the tab then closes (it may have gone).
+      await h.runner.hello(dayforce, { frameId: 0, documentId: 'doc-d', hasForm: true, applicationKey: keyOf(DAYFORCE) },
+        true);
+      await h.runner.pressed(dayforce, keyOf(DAYFORCE));
+      const after = await h.runner.list(0);
+      expect(after.ok && after.data.items[0]!.status).toBe('ready');
+      h.open.delete(dayforce);
+      await h.runner.tabRemoved(dayforce);
+      expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'timed_out', aiGuesses: 0 } }]);
+      // Jobvite's Submit (its sign is read) leaves its status to its reports; its sign records it.
+      await h.runner.pressed(jobvite, keyOf(JOBVITE));
+      expect(await h.runner.submitted(jobvite, keyOf(JOBVITE))).toBe('recorded');
+      expect(h.results.at(-1)).toEqual({ id: ID(2), body: { state: 'submitted', reason: null, aiGuesses: 0 } });
+    });
+
+  it('AUTO7-04: with Automatically, a page that says hello with no form, wall, choice or entry is Ready for you',
+    async () => {
+      for (const autofillOnOpen of ['auto', 'manual'] as const) {
+        const h = await started([ADP], { autofillOnOpen });
+        const tabId = h.tabs[0]!.tabId;
+        await h.runner.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, applicationKey: keyOf(ADP) }, true);
+        await h.advance(QUEUE_ENTRY_WAIT_MS + 1_000, 1_000);
+        const page = await h.runner.list(0);
+        expect(page.ok && page.data.items[0]!.status, autofillOnOpen).toBe(autofillOnOpen === 'auto' ? 'ready' : 'opened');
+      }
+      // A wall, a choice or an entry it then shows starts the panel's Autofill: F4a's entry wait leads, not this one.
+      const h = await started([ADP]);
+      const tabId = h.tabs[0]!.tabId;
+      await h.runner.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, applicationKey: keyOf(ADP) }, true);
+      await h.runner.wall(tabId, { applicationKey: keyOf(ADP), wall: false });
+      expect(h.filled).toEqual([tabId]);
+      await h.advance(30_000, 1_000);
+      const page = await h.runner.list(0);
+      expect(page.ok && page.data.items[0]!.status).toBe('filling');
+    });
+
+  it('AUTO7-05 (c): a tab at its platform’s identity host is Ready for you, never page_error, and fills after sign-in',
+    async () => {
+      for (const identity of [true, false]) {
+        const h = await started([ULTIPRO_APPLY]);
+        const tabId = h.tabs[0]!.tabId;
+        h.deps.hostOf = async () => 'signin.idp.example';
+        h.deps.identityHost = (platform, host) => identity && platform === 'ultipro' && host === 'signin.idp.example';
+        await h.advance(QUEUE_FORM_WAIT_MS + 1_000, 1_000);
+        const page = await h.runner.list(0);
+        expect(page.ok && page.data.items[0]!.status, String(identity)).toBe(identity ? 'ready' : 'failed');
+        if (!identity) continue;
+        expect(h.results).toEqual([]);
+        // The person signed in: the Register page's form at the job's key fills (Automatically).
+        await h.runner.hello(tabId, { frameId: 0, documentId: 'doc-register', hasForm: true,
+          applicationKey: keyOf(ULTIPRO_APPLY) }, true);
+        await vi.waitFor(() => expect(h.sent.filter((each) => (each.message as { type: string }).type === 'run/start'))
+          .toHaveLength(1));
+      }
+    });
+
+  it('ICIMS7-04: a step that is the person’s by design is Ready for you with its words; nothing is pressed', async () => {
+    const h = await started([URL_OF(1)]);
+    const tabId = h.tabs[0]!.tabId;
+    await h.runner.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, applicationKey: await KEY_OF(h, 1) },
+      true, { handOver: 'assessment' });
+    const page = await h.runner.list(0);
+    expect(page.ok && page.data.items[0]).toMatchObject({ status: 'ready', note: 'assessment' });
+    expect(h.filled).toEqual([]);
+    expect(h.sent).toEqual([]);
+  });
+
+  it('UP7-07: a documents hand-over is Ready for you with its words, nothing pressed, its Submit the person\'s', async () => {
+    const h = await started([URL_OF(1)]);
+    const tabId = h.tabs[0]!.tabId;
+    const key = await KEY_OF(h, 1);
+    await h.runner.pressed(tabId, key);
+    await h.runner.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, applicationKey: key }, true,
+      { handOver: 'documents' });
+    const page = await h.runner.list(0);
+    expect(page.ok && page.data.items[0]).toMatchObject({ status: 'ready', note: 'documents' });
+    expect(h.filled).toEqual([]);
+    expect(h.sent).toEqual([]);
+    expect(h.results).toEqual([]);
+  });
+});
+// ── end jr7 AUTO-7 ──

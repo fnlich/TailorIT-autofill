@@ -370,6 +370,16 @@ export const LOG_CODES = [
   'queue.stopped',
   'queue.done',
   // ── end v1.5 QX ──
+  // ── jr7 AUTO-7: an arm's confirmation waited longer after a hand-over (ICIMS7-04); the queue's item held for its
+  // person (an identity host, a Submit armed where it is theirs) or told of a hand-over; the agent's kept tab; a
+  // tailoritAddress refused by the worker's check (ICIMS7-11). ──
+  'submit.handed-over',
+  'queue.held',
+  'queue.pressed',
+  'tailorit.address-refused',
+  // r3 (UP7-07): a hand-over drawn after an armed Submit, said once in a hello of its own.
+  'content.hand-over',
+  // ── end jr7 AUTO-7 ──
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

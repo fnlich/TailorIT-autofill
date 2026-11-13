@@ -26,6 +26,7 @@ import {
   migrateSettingsV6, migrateSettingsV7, migrateSettingsV8, migrateSettingsV9, migrateSettingsV10, SETTINGS_VERSION,
   type Settings,
 } from '../core/types/settings';
+import type { Platform } from '../core/enums';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { SETTINGS_KEY, SettingsSchema, type ContentSettings } from '../shared/settings';
@@ -61,7 +62,29 @@ export interface ContentHolds {
   agentSubmitHeld?: boolean;
   /** v4: the tab holds a Sign up & Autofill grant (background/sign-up.ts): Sign-in acts as Auto there, unless held. */
   signUp?: boolean;
+  /** jr7 AUTO-7 (AUTO7-01, FIX7PLAN D-4): a queued tab on a platform whose success sign no capture shows read
+   *  (queueSubmitIsPersons): Submit stays the person's there, whatever Submit is set to. */
+  queueSubmitHeld?: boolean;
 }
+
+// ── jr7 AUTO-7 (AUTO7-01, FIX7PLAN D-4 and §8; the constant INT-7 finalises from §8's readiness verdicts, O-9) ──
+/** The platforms whose success sign a capture of the page after submitting shows, and a test asserts it read: in the
+ *  Queue tab only these submit as the person's Submit mode says (Auto included). Any other platform's queued tab keeps
+ *  Submit on Manual: an application sent there could not be recorded, and a re-queue would send it twice. Provisional
+ *  (FIX7PLAN §8's "seen" rows): INT-7 sets it from the readiness tests' verdict. Not in it: Dayforce (no capture after
+ *  Submit), Taleo, SuccessFactors, Breezy HR, CareerPlug, Paycor, HiBob, Paylocity, ClearCompany, Dice, a company's
+ *  own site. */
+export const QUEUE_SUBMIT_PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workable', 'icims', 'pinpoint', 'jobvite',
+  'workday', 'smartrecruiters', 'jazzhr', 'bamboohr', 'adp', 'oracle', 'ultipro', 'rippling', 'ukgready', 'paycom',
+  'jobdiva', 'eightfold'] as const satisfies readonly Platform[];
+
+/** Whether the Queue tab leaves the Submit of the application `applicationKey` (`${platform}:${hex16}`) to the person
+ *  (its platform is not in QUEUE_SUBMIT_PLATFORMS). */
+export function queueSubmitIsPersons(applicationKey: string): boolean {
+  const platform = applicationKey.split(':')[0] ?? '';
+  return !(QUEUE_SUBMIT_PLATFORMS as readonly string[]).includes(platform);
+}
+// ── end jr7 AUTO-7 ──
 
 /** What a content script may know of the settings. In the agent's window Next and Submit are Auto (Submit on Manual in
  *  any document but the one the job's Submit was pressed in, once it was) and every new page fills as it appears, with
@@ -74,13 +97,16 @@ export function contentSettingsOf(settings: Settings, options: ContentHolds = {}
     next: agent ? 'auto' : settings.modes.next,
     afterPageTurn: agent ? 'auto' : settings.modes.afterPageTurn,
     submit: agent ? (options.agentSubmitHeld === true ? 'manual' : 'auto')
-      : options.holdSubmit === true ? 'manual' : settings.modes.submit,
+      : options.holdSubmit === true || options.queueSubmitHeld === true ? 'manual' : settings.modes.submit, // jr7 AUTO-7
     agentSkip: { ...settings.modes.agentSkip },
     signIn: options.holdSignIn === true ? 'manual' : options.signUp === true ? 'auto' : settings.modes.signIn,
     // Version 7 (s2 profile): the person's own, everywhere (the agent's window too).
-    noMatch: settings.modes.noMatch, notifications: settings.modes.notifications },
+    noMatch: settings.modes.noMatch, notifications: settings.modes.notifications,
+    // jr7 AUTO-7 (ENGINE-7 E2's edit 1; FIX7PLAN D-9): the person's Consents mode, everywhere (the agent's window too).
+    consents: settings.modes.consents },
     llm: { ...settings.llm },
     offerToSaveAnswers: settings.offerToSaveAnswers,
+    preapprovedConsent: [...settings.preapprovedConsent], // jr7 AUTO-7 (ENGINE-7 E2's edit 1)
     // jr6: never where Sign-in is held (no password saved, or the disclosure not acknowledged); the jr6 review (sec-3):
     // never in the auto-apply agent's window, where nobody is there to press what Manual types (its Sign-in on Auto
     // still signs in).

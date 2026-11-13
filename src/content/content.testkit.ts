@@ -282,6 +282,10 @@ export interface FakeWorkerOptions {
   settings?: Settings;
   /** jr6: a job-site password is saved and may be typed (ContentSettings.typeSignIn): false by default. */
   typeSignIn?: boolean;
+  /** jr7 AUTO-7 (ENGINE-7 E2's edit 1): the content settings carry the planned settings' Consents mode and pre-approved
+   *  consents, as the worker sends them (background/settings.ts contentSettingsOf). Absent: none said (an older
+   *  worker's), so a sign-in leaves an account's optional ARIA terms and an upload prompt's agreement to the person. */
+  consentModes?: true;
   /** The LLM's answers (Phase 4), which the next plan/poll brings: by default no tiebreak picks anything and no
    *  classification names a category. `picked` is a candidate's position, as the worker hands it to the core. */
   ai?: {
@@ -376,7 +380,10 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   const settings = { panel: planned.panel, modes: { next: planned.modes.next, afterPageTurn: planned.modes.afterPageTurn, submit: planned.modes.submit, agentSkip: planned.modes.agentSkip, signIn: planned.modes.signIn,
     // s2 profile (settings version 7).
     noMatch: planned.modes.noMatch, notifications: planned.modes.notifications },
-    llm: { ...planned.llm }, offerToSaveAnswers: planned.offerToSaveAnswers, typeSignIn: options.typeSignIn === true };
+    llm: { ...planned.llm }, offerToSaveAnswers: planned.offerToSaveAnswers, typeSignIn: options.typeSignIn === true,
+    // jr7 AUTO-7 (consentModes)
+    ...(options.consentModes === true ? { preapprovedConsent: [...planned.preapprovedConsent] } : {}) };
+  if (options.consentModes === true) Object.assign(settings.modes, { consents: planned.modes.consents });
 
   const scripted = (type: string): unknown => {
     const queue = options.script?.[type as ContentMessage['type']];

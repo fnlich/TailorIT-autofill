@@ -228,7 +228,8 @@ import { postingNamesOf } from './job-relay';
 import { chainFactsOf } from './chain-frame'; // jr6 SHELL-B (ICIMS-17)
 import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
 import {
-  signInChallenged, signInDetailOf, signInHandedOver, signInRefusalWaits, type SignInDetail, type SignInOutcome,
+  accountConsentsOf, signInChallenged, signInDetailOf, signInHandedOver, signInRefusalWaits, ticksUploadConsent,
+  type AccountConsents, type SignInDetail, type SignInOutcome,
 } from './sign-in';
 import type { PressSnapshot } from './submitted';
 import type { Heard, HeardType, TouchLog } from './touches';
@@ -587,6 +588,9 @@ export class FillRun {
   /** jr6: a job-site password is saved here and may be typed (ContentSettings.typeSignIn): on Manual, a sign-in or
    *  create-account page gets it typed and its button is left to the person. */
   private signInTypes = false;
+  /** jr7 AUTO-7 (ENGINE-7 E2's edit 1; EFA-6, FIX7PLAN D-9): the person's Consents mode and pre-approved consents
+   *  (run/begin's, then settings/changed's), for the upload prompts the pass answers (consentPrompts). */
+  private consents: AccountConsents | undefined;
   /** The run paused at a sign-in and signs in once it rests (sign-in-auto). */
   private signInDue = false;
   /** jr6: the sign-in due is Manual's: typed, never pressed. */
@@ -899,6 +903,7 @@ export class FillRun {
     this.skipRules = { ...settings.modes.agentSkip };
     this.signInAuto = settings.modes.signIn === 'auto';
     this.signInTypes = settings.typeSignIn === true;
+    this.consents = accountConsentsOf(settings); // jr7 AUTO-7
     // jr6 SHELL-A (WD-04): a job-site password may be typed now (one was saved): the run that waits for one goes on.
     if (this.signInTypes) this.passwordArrived?.();
     this.llm = settings.llm;
@@ -1767,6 +1772,7 @@ export class FillRun {
         this.skipRules = { ...answer.data.settings.modes.agentSkip };
         this.signInAuto = answer.data.settings.modes.signIn === 'auto';
         this.signInTypes = answer.data.settings.typeSignIn === true;
+        this.consents = accountConsentsOf(answer.data.settings); // jr7 AUTO-7
       }
       return;
     }
@@ -3548,8 +3554,14 @@ export class FillRun {
     const hasher = await this.valueHasher();
     this.alive();
     await this.askLists();
+    const consentsNow = () => this.consents; // jr7 AUTO-7
     return runLoop({
       content: env.content,
+      // jr7 AUTO-7 (ENGINE-7 E2's edit 1; EFA-6): an upload prompt asking for the person's privacy agreement is answered
+      // per the Consents mode as it stands at that upload.
+      get consentPrompts() {
+        return ticksUploadConsent(consentsNow());
+      },
       adapter: env.page.adapter,
       // The form root the adapter finds at each read: a form the page draws again mid-fill is found again, and the
       // loop's next scan reads the new one.
