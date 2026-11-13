@@ -332,7 +332,7 @@ function widgetFor(control: Element): WidgetDecl | null {
     const parts = Array.from(control.children).filter((child) => child.matches('input[type="checkbox" i]')
       && !isUserVisible(child));
     return members.length >= 2 ? { kind: 'radio', opener: control as HTMLElement, members, parts,
-      snapshot: ASHBY_SNAPSHOTS[0] } : null;
+      ...(__PROVENANCE__ && { snapshot: ASHBY_SNAPSHOTS[0] }) } : null;
   }
   // openai-closed.html: <div class="_inputContainer_d7ago_28"><input class="_input_d7ago_28
   // ashby-application-form-input-autocomplete" placeholder="Start typing..." aria-autocomplete="list"
@@ -355,7 +355,7 @@ function widgetFor(control: Element): WidgetDecl | null {
   return { kind: search ? 'typeahead-remote' : 'combobox', opener: toggle as HTMLElement, expanded: input,
     keys: ['Escape'], hidesFormWhileOpen: true, highlightIsNoChoice: true,
     ...(search ? { emptyAfterMs: ASHBY_SEARCH_EMPTY_MS } : {}),
-    snapshot: school ? ASHBY_SNAPSHOTS[1] : search ? ASHBY_SNAPSHOTS[0] : ASHBY_SNAPSHOTS[2],
+    ...(__PROVENANCE__ && { snapshot: school ? ASHBY_SNAPSHOTS[1] : search ? ASHBY_SNAPSHOTS[0] : ASHBY_SNAPSHOTS[2] }),
     ...(school ? { optionLabel: schoolName } : {}) };
 }
 

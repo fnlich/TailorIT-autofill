@@ -347,7 +347,8 @@ function widgetFor(control: Element): WidgetDecl | null {
   if (isCountryButton(control)) {
     if (control.closest(FORM) === null || !control.hasAttribute('aria-controls')) return null;
     return { kind: 'combobox', opener: control as HTMLElement, expanded: control, keys: ['Escape'], keyTarget: 'list',
-      shownAnswer: countryShown(control), snapshot: 'fixtures/workable/labella-phone-countries-open.html' };
+      shownAnswer: countryShown(control),
+      ...(__PROVENANCE__ && { snapshot: 'fixtures/workable/labella-phone-countries-open.html' }) };
   }
   // fixtures/workable/labella-closed.html: <div data-ui="QA_11713820" class="styles--2N29s" data-open="false"
   // data-input-type="select"><label class="styles--2bW8g"><div data-role="illustrated-input" ...><div ...><input
@@ -364,7 +365,7 @@ function widgetFor(control: Element): WidgetDecl | null {
   return { kind: 'combobox', opener: control as HTMLElement, expanded: control, keys: ['Escape'], keyTarget: 'list',
     readOnlyBox: true, listFollowsField: true, highlightIsNoChoice: true,
     optionLabel: (option) => option.querySelector('[data-role="option-label"]'),
-    snapshot: WORKABLE_SNAPSHOTS[0] };
+    ...(__PROVENANCE__ && { snapshot: WORKABLE_SNAPSHOTS[0] }) };
 }
 
 /** The "Autofill application" box: the form's own part that holds [data-ui=autofill-button]. */

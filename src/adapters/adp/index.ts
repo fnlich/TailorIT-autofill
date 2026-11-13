@@ -505,8 +505,8 @@ function selectDecl(host: Element): WidgetDecl | null {
     drawnWhole: true,
     ...(context === null ? {} : { learnContext: context }),
     ...(filter === null ? {} : { parts: [filter] }),
-    snapshot: host.matches('wfn-dropdown-list') ? 'fixtures/adp/jr6-personal-us-errors.html'
-      : 'fixtures/adp/jr6-questions2-blank.html' };
+    ...(__PROVENANCE__ && { snapshot: host.matches('wfn-dropdown-list') ? 'fixtures/adp/jr6-personal-us-errors.html'
+      : 'fixtures/adp/jr6-questions2-blank.html' }) };
 }
 
 /** The outermost ADP lists in a root (a wfn-dropdown-list's own sdf-select-simple sits in its shadow root). */
@@ -698,7 +698,7 @@ function widgetFor(control: Element): WidgetDecl | null {
         const shown = box.querySelector('.MDFSelectBox__single-value');
         const text = shown === null ? '' : textOf(shown);
         return text === '' ? null : text;
-      }, snapshot: 'fixtures/adp/self-id.html' };
+      }, ...(__PROVENANCE__ && { snapshot: 'fixtures/adp/self-id.html' }) };
   }
   if (control.matches(REFERRAL_OPTIONS)) {
     // adp-2: <wfn-radio-button class="addition-Info-radio-type addition-Info-rd-referral-yes hydrated" id="yes"
@@ -712,7 +712,8 @@ function widgetFor(control: Element): WidgetDecl | null {
       .find((child): child is HTMLElement => child.matches('sdf-radio-button[role="radio" i]')) ?? null);
     const members = radios.every((radio): radio is HTMLElement => radio !== null) ? radios : hosts;
     return members.length < 2 ? null
-      : { kind: 'radio', opener: control as HTMLElement, members, snapshot: 'fixtures/adp/questions.html' };
+      : { kind: 'radio', opener: control as HTMLElement, members,
+        ...(__PROVENANCE__ && { snapshot: 'fixtures/adp/questions.html' }) };
   }
   // jr6 ADP-2, ADP-3, ADP-15: ADP's own lists (selectDecl).
   if (control.matches(SELECT_HOSTS)) return selectDecl(control);

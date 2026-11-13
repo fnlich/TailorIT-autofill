@@ -252,7 +252,7 @@ function datePartsOf(control: Element): DatePartsDecl | null {
     const input = shadow.querySelector<HTMLInputElement>(`input[data-automation="ukg-date-input-text-${part}"]`);
     return input === null ? [] : [{ part, input, display: null }];
   }).sort((a, b) => (a.input.compareDocumentPosition(b.input) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-  return parts.length === 0 ? null : { parts, keys: 'digits', snapshot: 'ultipro-0' };
+  return parts.length === 0 ? null : { parts, keys: 'digits', ...(__PROVENANCE__ && { snapshot: 'ultipro-0' }) };
 }
 
 /** The boxes of every date component under `root` (jr6 U-07): parts of their date, never fields of their own. */
@@ -461,7 +461,7 @@ function educationSearch(control: Element): WidgetDecl | null {
     emptyAfterMs: ULTIPRO_TYPEAHEAD_EMPTY_MS,
     ...(school ? { freeText: true as const } : {}),
     ...(known.length > 0 ? { knownOptions: known } : {}),
-    snapshot: 'ultipro-1',
+    ...(__PROVENANCE__ && { snapshot: 'ultipro-1' }),
   };
 }
 
@@ -493,7 +493,7 @@ function skillsBox(control: Element): WidgetDecl | null {
         return button !== null && isUserVisible(button) ? button : null;
       },
     },
-    snapshot: 'ultipro-1',
+    ...(__PROVENANCE__ && { snapshot: 'ultipro-1' }),
   };
 }
 // ── end jr6 ULTIPRO P1 (U-04, U-05) ──

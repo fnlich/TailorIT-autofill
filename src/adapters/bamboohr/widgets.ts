@@ -13,7 +13,8 @@
  */
 import type { WidgetDecl } from '../types';
 
-/** The capture the list was read from (State's menu open). */
+/** The capture the list was read from (State's menu open). Provenance, read only under __PROVENANCE__ (jr7 review
+ *  A-4), so no build holds it. */
 export const BAMBOOHR_MENU_CAPTURE = 'jr7-bamboohr1-form-filled';
 
 /** One option of a Fabric menu (module header). */
@@ -40,6 +41,6 @@ export function withFabricMenu(decl: WidgetDecl | null): WidgetDecl | null {
   // fixtures/bamboohr/jr7-bamboohr1-form-filled.html: <button data-menu-id="fab-menu55" aria-expanded="true"
   // aria-haspopup="true" aria-controls="fab-menu55" class="fab-SelectToggle …"> and, at the body's end, <div
   // id="fab-menu55" role="menu" class="fab-MenuList">…<div class="fab-MenuOption …" role="menuitem">.
-  return { ...decl, snapshot: `${decl.snapshot}; ${BAMBOOHR_MENU_CAPTURE}`,
+  return { ...decl, ...(__PROVENANCE__ && { snapshot: `${decl.snapshot ?? ''}; ${BAMBOOHR_MENU_CAPTURE}` }),
     results: { list: () => menuOf(toggle), option: MENU_OPTION } };
 }

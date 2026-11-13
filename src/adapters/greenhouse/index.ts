@@ -228,7 +228,7 @@ function widgetFor(control: Element): WidgetDecl | null {
     expanded: control, box, busy: BUSY_SIGNS, shownAnswer: answerOf(box, control),
     // s2 lists: a stored list, whose react-select draws its whole menu at once (rushdown-country-open: all 244 options).
     ...(stored === null ? {} : { storedList: stored, drawnWhole: true as const }),
-    snapshot: GREENHOUSE_WIDGET_SNAPSHOTS[0] };
+    ...(__PROVENANCE__ && { snapshot: GREENHOUSE_WIDGET_SNAPSHOTS[0] }) };
 }
 
 /** s2 lists (decisions 1 and 2): the id of a react-select's stored list (lists.ts; its labels live in the worker), or

@@ -345,7 +345,7 @@ function dateFor(control: Element): DatePartsDecl | null {
     const input = control.querySelector<HTMLInputElement>(`input[id="${CSS.escape(`${host.id}-${part}`)}"]`);
     return input === null ? [] : [{ part, input, display: null }];
   });
-  return parts.length === 0 ? null : { parts, snapshot: 'jr7-paycomonline1-apply-2' };
+  return parts.length === 0 ? null : { parts, ...(__PROVENANCE__ && { snapshot: 'jr7-paycomonline1-apply-2' }) };
 }
 
 /** The elements the scanner takes as candidates besides its ARIA roles: the rules' (the country combo box) and each

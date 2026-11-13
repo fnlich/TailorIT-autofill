@@ -465,8 +465,8 @@ function widgetFor(control: Element): WidgetDecl | null {
     busy: ['[aria-busy="true"]'],
     emptyAfterMs: ORACLE_EMPTY_AFTER_MS,
     ...(context === null ? {} : { learnContext: context }),
-    snapshot: input.closest('timeline-form-inline') === null ? 'fixtures/oracle/hjf-apply-section.html'
-      : 'fixtures/oracle/hjf-after-submit.html',
+    ...(__PROVENANCE__ && { snapshot: input.closest('timeline-form-inline') === null
+      ? 'fixtures/oracle/hjf-apply-section.html' : 'fixtures/oracle/hjf-after-submit.html' }),
   };
 }
 

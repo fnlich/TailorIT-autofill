@@ -284,7 +284,7 @@ export function dateFor(control: Element): DatePartsDecl | null {
       .find((each) => fieldOf(each) === field && isUserVisible(each)) ?? null;
   };
   return parts.length === 0 ? null : { parts, keys: 'digits', alert,
-    snapshot: 'fixtures/workday/s2-exelixis-my-experience.html' };
+    ...(__PROVENANCE__ && { snapshot: 'fixtures/workday/s2-exelixis-my-experience.html' }) };
 }
 
 /** s2 wd: whether a part of Workday's date input shows nothing: its display shows no digits (its placeholder, "MM") and
@@ -526,7 +526,7 @@ export function widgetFor(control: Element): WidgetDecl | null {
     return { kind: 'combobox', opener: button, expanded: button, shownAnswer: dropdownAnswer(button),
       drawnWhole: true, ...(stored === null ? {} : { storedList: stored }),
       ...(context === null ? {} : { learnContext: context }),
-      snapshot: 'fixtures/workday/resolvetech-source-open.html' };
+      ...(__PROVENANCE__ && { snapshot: 'fixtures/workday/resolvetech-source-open.html' }) };
   }
   const container = control.localName === 'input' ? control.closest('[data-automation-id="multiSelectContainer"]') : null;
   if (container !== null && fieldOf(container) !== null) {
@@ -543,7 +543,7 @@ export function widgetFor(control: Element): WidgetDecl | null {
       results: { list: () => promptListOf(container), option: PROMPT_ROW, choose: 'label', unchoosable: UNCHOOSABLE_ROW },
       optionLabel: (row) => byId(row, 'promptOption'), queryKey: 'Enter',
       ...(fieldNameOf(container) === 'skills' ? { tags: skillsTags(container) } : {}),
-      snapshot: 'fixtures/workday/s2-verily-field-of-study-open.html' };
+      ...(__PROVENANCE__ && { snapshot: 'fixtures/workday/s2-verily-field-of-study-open.html' }) };
   }
   return null;
 }

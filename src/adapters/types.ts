@@ -137,8 +137,10 @@ export interface WidgetDecl {
    *  takes several answers one at a time (WidgetTags). Read from ENGINE E3 on (FIXPLAN §6.2 item 13). */
   tags?: WidgetTags;
   // ── end jr6 ENGINE E0 ──
-  /** The snapshot this declaration was written from. */
-  snapshot: string;
+  /** The snapshot this declaration was written from. Provenance (jr7 review A-4): written
+   *  `...(__PROVENANCE__ && { snapshot: '…' })`, so it is set under Vitest and absent from every build
+   *  (configured/types.ts); nothing at run time reads it. */
+  snapshot?: string;
 }
 
 /** jr6 FIXPLAN §3.1 item 5 (WD-18, U-05): a box that takes several answers one at a time, each shown as a chip once it
@@ -201,8 +203,8 @@ export interface DatePartsDecl {
    *  none (Workday's field alert under the date, snapshot5): a date that holds the planned value but shows its alert
    *  (left before it was whole) is left once more, so the page validates it again. */
   alert?: () => Element | null;
-  /** The snapshot this declaration was written from. */
-  snapshot: string;
+  /** The snapshot this declaration was written from. Provenance, as WidgetDecl's (jr7 review A-4). */
+  snapshot?: string;
 }
 // ── end s2 wd ──
 

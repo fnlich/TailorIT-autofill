@@ -152,7 +152,8 @@ function labelsOf(control: Element): Element[] {
 function declOf(rule: WidgetRule, match: Element): WidgetDecl | null {
   const opener = rule.opener === undefined ? match : near(match, rule.opener);
   if (opener === null) return null;
-  const decl: WidgetDecl = { kind: rule.kind, opener: opener as HTMLElement, snapshot: rule.from ?? '' }; // jr7 INT-7
+  const decl: WidgetDecl = { kind: rule.kind, opener: opener as HTMLElement,
+    ...(__PROVENANCE__ && { snapshot: rule.from ?? '' }) }; // jr7 INT-7, jr7 review A-4
   if (rule.expanded !== undefined) {
     const expanded = near(match, rule.expanded);
     if (expanded !== null) decl.expanded = expanded;

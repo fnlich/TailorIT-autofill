@@ -138,7 +138,8 @@ function widgetFor(control: Element): WidgetDecl | null {
   // dropdown-location width-full py1 px2" id="location-0">...</div></div>, and its loading row <div
   // class="dropdown-loading-results ...">.
   const list = question.querySelector('.dropdown-results');
-  return { kind: 'typeahead-remote', opener: control as HTMLElement, snapshot: LEVER_LOCATION_CAPTURE,
+  return { kind: 'typeahead-remote', opener: control as HTMLElement,
+    ...(__PROVENANCE__ && { snapshot: LEVER_LOCATION_CAPTURE }),
     ...(list === null ? {} : { results: { list, option: '.dropdown-location', choose: 'mousedown' as const },
       queryKey: 'Escape' as const, busy: ['.dropdown-loading-results'] }) };
 }

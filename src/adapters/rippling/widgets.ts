@@ -24,7 +24,8 @@
 import { isUserVisible } from '../../dom/visibility';
 import type { WidgetDecl } from '../types';
 
-/** The captures these declarations were read from. */
+/** The captures these declarations were read from. Provenance, read only under __PROVENANCE__ (jr7 review A-4), so
+ *  no build holds it. */
 export const RIPPLING_WIDGETS_CAPTURE = 'jr7-rippling1-apply-blank, jr7-rippling2-apply-blank';
 
 /** Pebble's select controller around a select combobox (module header). */
@@ -66,14 +67,16 @@ export function ripplingWidgetFor(control: Element): WidgetDecl | null {
   // aria-required="true">, and the phone's code <div data-testid="select-search-input"><input id="field-27"
   // role="combobox" aria-label="Search" aria-haspopup="listbox" aria-expanded="false">.
   if (control.matches('[role="combobox"]') && control.closest(SELECT_CONTROLLER) !== null) {
-    return { kind: 'combobox', opener: control as HTMLElement, expanded: control, snapshot: RIPPLING_WIDGETS_CAPTURE,
+    return { kind: 'combobox', opener: control as HTMLElement, expanded: control,
+      ...(__PROVENANCE__ && { snapshot: RIPPLING_WIDGETS_CAPTURE }),
       results: { list: () => selectList(control), option: OPTION } };
   }
   // fixtures/rippling/jr7-rippling1-apply-blank.html: <div data-testid="location">…<input id="field-35"
   // aria-required="true" autocomplete="off" aria-labelledby="field-35-label" aria-autocomplete="list"
   // aria-haspopup="listbox">.
   if (control.localName === 'input' && control.closest(LOCATION) !== null) {
-    return { kind: 'typeahead-remote', opener: control as HTMLElement, snapshot: RIPPLING_WIDGETS_CAPTURE,
+    return { kind: 'typeahead-remote', opener: control as HTMLElement,
+      ...(__PROVENANCE__ && { snapshot: RIPPLING_WIDGETS_CAPTURE }),
       results: { list: () => controlled(control) ?? shownPopperList(control.ownerDocument), option: OPTION } };
   }
   return null;

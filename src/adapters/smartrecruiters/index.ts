@@ -203,7 +203,7 @@ function widgetFor(control: Element): WidgetDecl | null {
   const members = Array.from(control.children).filter((child): child is HTMLElement =>
     child.localName === 'spl-radio' && child.getAttribute('role') === 'radio');
   return members.length >= 2 ? { kind: 'radio', opener: control as HTMLElement, members,
-    snapshot: SMARTRECRUITERS_SNAPSHOTS[3] } : null;
+    ...(__PROVENANCE__ && { snapshot: SMARTRECRUITERS_SNAPSHOTS[3] }) } : null;
 }
 
 // ── jr6 (FIXPLAN §6.9 items 1 to 3; SR-1, SR-2, SR-6): SmartRecruiters' lists ──
@@ -348,18 +348,19 @@ function autocompleteFor(box: HTMLElement, autocomplete: Element): WidgetDecl | 
   if (place === 'location-autocomplete-search') {
     // SR-2: the City search, its rows found by the typed query (FIXPLAN §6.9 item 2: no expanded).
     return { kind: 'typeahead-remote', ...base, results: resultsOf(box, true),
-      emptyAfterMs: SMARTRECRUITERS_SEARCH_EMPTY_MS, snapshot: SMARTRECRUITERS_SNAPSHOTS[2] };
+      emptyAfterMs: SMARTRECRUITERS_SEARCH_EMPTY_MS,
+      ...(__PROVENANCE__ && { snapshot: SMARTRECRUITERS_SNAPSHOTS[2] }) };
   }
   if (place === 'location-autocomplete-country') {
     // SR-2 with SR-10: the manual location mode's Country/Region, read by opening it.
     return { kind: 'combobox', ...base, expanded: box, results: resultsOf(box, false),
-      snapshot: SMARTRECRUITERS_JR6_SNAPSHOTS[0] };
+      ...(__PROVENANCE__ && { snapshot: SMARTRECRUITERS_JR6_SNAPSHOTS[0] }) };
   }
   const published = publishedOptions(autocomplete);
   if (published === null || published === 'several') return null;
   // SR-1: a screening question, its whole list published by the page.
   return { kind: 'combobox', ...base, expanded: box, knownOptions: published, results: resultsOf(box, false),
-    snapshot: SMARTRECRUITERS_SNAPSHOTS[3] };
+    ...(__PROVENANCE__ && { snapshot: SMARTRECRUITERS_SNAPSHOTS[3] }) };
 }
 
 /** The phone's country select's own value, its country's ISO code ("US"): the element's property, else its reflected
@@ -397,7 +398,7 @@ function phoneCountryFor(button: HTMLElement, select: Element): WidgetDecl {
       const flat = shown.replace(/\s/g, '');
       return known.find((label) => label.replace(/\s/g, '') === flat) ?? shown;
     },
-    snapshot: SMARTRECRUITERS_SNAPSHOTS[2] };
+    ...(__PROVENANCE__ && { snapshot: SMARTRECRUITERS_SNAPSHOTS[2] }) };
 }
 
 /** The phone's country select a button opens (module header), or null for any other button. */

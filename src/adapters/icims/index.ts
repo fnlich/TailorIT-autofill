@@ -924,7 +924,7 @@ function widgetFor(control: Element): WidgetDecl | null {
       results: { list: () => doc.getElementById(`${id}_dropdown-results`), option: DROPDOWN_RESULT },
       busy: [DROPDOWN_LOADING], emptyAfterMs: DROPDOWN_EMPTY_MS,
       shownAnswer: () => shownChoiceOf(doc.getElementById(`${id}_fakeSelected_icimsDropdown`)),
-      snapshot: 'fixtures/icims/jr6-ars-profile.html' };
+      ...(__PROVENANCE__ && { snapshot: 'fixtures/icims/jr6-ars-profile.html' }) };
   }
   const code = gateCodeOf(control);
   if (code === null) return null;
@@ -935,7 +935,7 @@ function widgetFor(control: Element): WidgetDecl | null {
     ...(list === null ? {} : { results: { list,
       option: 'li.dropdown-result.result-selectable[role="option" i]:not([dropdown-result="-1"])' } }),
     drawnWhole: true, shownAnswer: () => shownChoiceOf(anchor.querySelector('#dropdown-select-span')),
-    snapshot: 'fixtures/icims/ars-gate-phone.html' };
+    ...(__PROVENANCE__ && { snapshot: 'fixtures/icims/ars-gate-phone.html' }) };
 }
 
 // ── ICIMS-10: the date parts ──
