@@ -30,7 +30,9 @@
  * whose upload the bucket refuses (.../0000000A05/) is flagged upload-failed after every other field was written; a
  * salary is asked as a number (API 4's format) and goes in as 85000, "$85,000" being no answer of that layout, and a
  * profile's start date as MM/DD/YYYY; an entry the page's draft restored (.../0000000A06/) is matched by its summary
- * and never added again. The auto-apply agent takes a queued Workable job (API 4) and submits it.
+ * and never added again. The auto-apply agent takes a queued Workable job (API 4) and submits it. jr8 (the owner's live
+ * run of 2026-11-13, snapshot9): the page draws each new editor at the top of its list and the saved entries
+ * newest-added first, as live Workable does.
  */
 import type { Page } from '@playwright/test';
 import { COPY } from '../../src/shared/copy';
@@ -163,8 +165,10 @@ test.describe("Workable's application form", () => {
         current: true }),
       expect.objectContaining({ title: 'Software Engineer', company: 'Marrowgate Systems', start_date: '07/2019',
         end_date: '05/2021' })]);
-    await expect(page.locator('[data-ui="experience"] dd[data-ui="company"]')).toHaveText(['Quillfeather Labs',
-      'Marrowgate Systems']);
+    // jr8: the page draws its saved entries newest-added first, as live Workable does (snapshot9), so the job kept
+    // second shows first.
+    await expect(page.locator('[data-ui="experience"] dd[data-ui="company"]')).toHaveText(['Marrowgate Systems',
+      'Quillfeather Labs']);
     for (const label of ['School', 'Title', 'Company']) expect(row(report, label)).toMatchObject(verified);
     // A saved block's rows are those its round left (its fields folded away), listed after the fields still shown.
     expect(report.fields.filter((field) => field.label === 'Start date').map((field) => `${field.section} ${field.status}`)
@@ -359,8 +363,9 @@ test.describe("Workable's application form", () => {
     const log = await pageValue<Log>(page, '__workable');
     // The restored job is the profile's second: only the first is added (one Add for Experience, one for Education).
     expect(log.adds).toBe(2);
-    await expect(page.locator('[data-ui="experience"] dd[data-ui="company"]')).toHaveText(['Marrowgate Systems',
-      'Quillfeather Labs']);
+    // jr8: the job added now shows above the restored one, newest-added first, as live Workable draws them (snapshot9).
+    await expect(page.locator('[data-ui="experience"] dd[data-ui="company"]')).toHaveText(['Quillfeather Labs',
+      'Marrowgate Systems']);
     expect(log.entries.experience).toEqual([expect.objectContaining({ company: 'Marrowgate Systems' }),
       expect.objectContaining({ company: 'Quillfeather Labs', title: 'Senior Software Engineer', current: true })]);
     expect(report.notices.map((notice) => notice.code)).not.toContain('needs-click');

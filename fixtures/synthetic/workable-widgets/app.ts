@@ -44,7 +44,9 @@
  * - Education and Experience: "+ Add" opens one editor (Add disabled while it is open: School, Field of study and
  *   Degree, or Title, Company, Industry and Summary, then MM/YYYY Start and End dates, and "I currently work here" in
  *   Experience, which disables the End date); "Update" keeps the entry only once its first field holds something,
- *   folded into a summary with Edit and Delete (log.entries); "Cancel" drops it.
+ *   folded into a summary with Edit and Delete (log.entries, in the order kept); "Cancel" drops it. As the owner's
+ *   capture of 2026-11-13 (snapshot9) shows live Workable drawing them, the open editor is the list's first item and
+ *   the saved entries follow it newest-added first (jr8: the page drew them oldest first, the editor last, before).
  * - The buttons the extension must never press record every press (log.pressed): "Import resume from", each section's
  *   Clear, "Choose file", an editor's Cancel, a saved entry's Edit and Delete, the cookie banner's buttons.
  * - Submit (button[data-ui=apply-button][type=submit], disabled until the first change): refuses an application with a
@@ -494,7 +496,8 @@ const EDITOR_FIELDS: Record<'education' | 'experience', ReadonlyArray<{ id: stri
 
 /** An Education or Experience section (see the header): "+ Add" opens one editor at a time (Add disabled meanwhile);
  *  its "Update" keeps the entry, folded into a summary, only when its required field holds something; "Cancel" drops
- *  it. Each kept entry is log.entries[kind]. */
+ *  it. Each kept entry is log.entries[kind], in the order their Update kept them. Drawn as the live page draws it (the
+ *  owner's capture of 2026-11-13): the open editor at the top of the list, then the saved entries newest-added first. */
 function Repeatable(props: { kind: 'education' | 'experience'; title: string; log: WorkableLog; keep: Keep;
   restored: ReadonlyArray<Record<string, unknown>> }): ReactElement {
   const [saved, setSaved] = useState<Array<Record<string, unknown>>>(() => [...props.restored]);
@@ -506,6 +509,45 @@ function Repeatable(props: { kind: 'education' | 'experience'; title: string; lo
   };
   const fields = EDITOR_FIELDS[props.kind];
   const required = fields.filter((each) => each.required === true).map((each) => each.id);
+  const editor = () => h('li', { key: 'editor' }, h('div', { 'data-ui': 'editor' },
+    ...fields.map((each) => (each.month
+      ? h(DateField, { key: each.id, id: each.id, title: each.title, required: false, keep, log: props.log, month: true,
+        disabled: each.id === 'end_date' && current })
+      : h(TextField, { key: each.id, id: each.id, title: each.title, required: each.required === true, editor: true,
+        textarea: each.textarea === true, keep }))),
+    props.kind === 'experience' ? h('label', { 'data-checked': String(current), className: 'wk-choice' },
+      h('div', { role: 'checkbox', 'aria-labelledby': 'checkbox_label_current', 'aria-checked': String(current),
+        tabIndex: 0, id: 'current', className: 'wk-box' },
+      h('input', { tabIndex: -1, 'aria-hidden': 'true', type: 'checkbox', name: 'current', checked: current,
+        onChange: () => {
+          setCurrent(!current);
+          draft.current.current = !current;
+        } })),
+      h('span', { id: 'checkbox_label_current' }, 'I currently work here')) : null,
+    h('div', null, h('button', { 'data-ui': 'save-section', type: 'button', onClick: () => {
+      if (required.some((id) => (draft.current[id] ?? '') === '')) return;
+      const entry = { ...draft.current };
+      const all = [...saved, entry];
+      setSaved(all);
+      setEditing(false);
+      props.log.entries[props.kind] = all;
+      props.keep(props.kind, all);
+    } }, 'Update'),
+    h('button', { 'data-ui': 'cancel-section', type: 'button', onClick: () => {
+      props.log.pressed.push('Cancel');
+      setEditing(false);
+    } }, 'Cancel'))));
+  const summary = (entry: Record<string, unknown>, at: number) => h('li', { key: at, className: 'wk-saved' },
+    h('div', { 'data-ui': 'group' },
+      ...SUMMARY_FIELDS[props.kind].filter((id) => String(entry[id] ?? '') !== '').map((id) => h('dl', { key: id },
+        h('dt', null, fields.find((each) => each.id === id)!.title),
+        h('dd', { 'data-ui': id }, h('span', null, String(entry[id]))))),
+      h('dl', { 'data-ui': 'date-range' }, h('dt', null, 'Period '),
+        h('dd', { 'data-ui': 'period' }, h('span', null, periodOf(entry)))),
+      h('div', null, h('a', { 'data-ui': 'edit-section', title: 'Edit', role: 'button', tabIndex: 0,
+        onClick: () => props.log.pressed.push('Edit') }, 'Edit'),
+      h('a', { 'data-ui': 'remove-section', title: 'Delete', role: 'button', tabIndex: 0,
+        onClick: () => props.log.pressed.push('Delete') }, 'Delete'))));
   return h('div', { 'data-ui': props.kind, className: 'wk-repeat' },
     h('div', null, h('p', { id: `${props.kind}_label` }, `${props.title}\u00a0`, h('small', null, '(Optional)')),
       h('button', { 'data-ui': 'add-section', 'aria-label': `Add ${props.title}`, type: 'button', disabled: editing,
@@ -515,45 +557,8 @@ function Repeatable(props: { kind: 'education' | 'experience'; title: string; lo
           setCurrent(false);
           setEditing(true);
         } }, '+ Add')),
-    saved.length === 0 && !editing ? null : h('ul', null,
-      ...saved.map((entry, at) => h('li', { key: at, className: 'wk-saved' }, h('div', { 'data-ui': 'group' },
-        ...SUMMARY_FIELDS[props.kind].filter((id) => String(entry[id] ?? '') !== '').map((id) => h('dl', { key: id },
-          h('dt', null, fields.find((each) => each.id === id)!.title),
-          h('dd', { 'data-ui': id }, h('span', null, String(entry[id]))))),
-        h('dl', { 'data-ui': 'date-range' }, h('dt', null, 'Period '),
-          h('dd', { 'data-ui': 'period' }, h('span', null, periodOf(entry)))),
-        h('div', null, h('a', { 'data-ui': 'edit-section', title: 'Edit', role: 'button', tabIndex: 0,
-          onClick: () => props.log.pressed.push('Edit') }, 'Edit'),
-        h('a', { 'data-ui': 'remove-section', title: 'Delete', role: 'button', tabIndex: 0,
-          onClick: () => props.log.pressed.push('Delete') }, 'Delete'))))),
-      editing ? h('li', { key: 'editor' }, h('div', { 'data-ui': 'editor' },
-        ...fields.map((each) => (each.month
-          ? h(DateField, { key: each.id, id: each.id, title: each.title, required: false, keep, log: props.log, month: true,
-            disabled: each.id === 'end_date' && current })
-          : h(TextField, { key: each.id, id: each.id, title: each.title, required: each.required === true, editor: true,
-            textarea: each.textarea === true, keep }))),
-        props.kind === 'experience' ? h('label', { 'data-checked': String(current), className: 'wk-choice' },
-          h('div', { role: 'checkbox', 'aria-labelledby': 'checkbox_label_current', 'aria-checked': String(current),
-            tabIndex: 0, id: 'current', className: 'wk-box' },
-          h('input', { tabIndex: -1, 'aria-hidden': 'true', type: 'checkbox', name: 'current', checked: current,
-            onChange: () => {
-              setCurrent(!current);
-              draft.current.current = !current;
-            } })),
-          h('span', { id: 'checkbox_label_current' }, 'I currently work here')) : null,
-        h('div', null, h('button', { 'data-ui': 'save-section', type: 'button', onClick: () => {
-          if (required.some((id) => (draft.current[id] ?? '') === '')) return;
-          const entry = { ...draft.current };
-          const all = [...saved, entry];
-          setSaved(all);
-          setEditing(false);
-          props.log.entries[props.kind] = all;
-          props.keep(props.kind, all);
-        } }, 'Update'),
-        h('button', { 'data-ui': 'cancel-section', type: 'button', onClick: () => {
-          props.log.pressed.push('Cancel');
-          setEditing(false);
-        } }, 'Cancel')))) : null));
+    saved.length === 0 && !editing ? null : h('ul', null, editing ? editor() : null,
+      ...saved.map((entry, at) => summary(entry, at)).reverse()));
 }
 
 /** A section: its heading and Clear (none for the consent's), then its fields. */

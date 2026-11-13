@@ -16,7 +16,8 @@
  *   file button, failed when an alert names it, or once the page fell over (the form gone);
  * - the Education and Experience editors: each block its section (Education 1, Experience 1), MM/YYYY dates written
  *   with the keys around them, and the block's own Update pressed once the fill wrote into it and left no required field
- *   open (saveBlocks), the entry then kept by the page; a block with its required field open left for the person;
+ *   open (saveBlocks), the entry then kept by the page; a block with its required field open left for the person; the
+ *   blocks numbered with the saved entries first, then the editor live Workable draws at the top of its list (jr8);
  * - the buttons never pressed, and Submit.
  * Every event is untrusted, and is the fillers' or a declared key: never a mousedown, a mouseup, a pointer event or a
  * focus of ours.
@@ -467,7 +468,11 @@ describe("Workable's widgets, as the adapter declares them", () => {
       { category: 'experience.startDate', text: 'July 2019' }] }]);
     experience.addButton()!.click();
     await until(fixture, () => experience.blocks().length === 2);
-    // The editor (block 1) is no summary; the restored entry stays block 0.
+    // The editor is no summary. jr8: the page draws it at the top of the list, as live Workable does (snapshot9), and
+    // the adapter numbers the saved entries first, so the restored entry stays block 0 and the editor is block 1.
+    const items = Array.from(fixture.doc.querySelectorAll('[data-ui="experience"] > ul > li'));
+    expect(items[0]!.querySelector('[data-ui="editor"]')).not.toBeNull();
+    expect(experience.blocks()).toEqual([items[1], items[0]]);
     expect(workableAdapter.prefill!.readEntries!('experience', experience.blocks()).map((entry) => entry.block)).toEqual([0]);
   });
 
@@ -492,5 +497,49 @@ describe("Workable's widgets, as the adapter declares them", () => {
       { category: 'experience.startDate', text: 'September 2018' }] }]);
     // A summary has no Save: never pressed, never filled.
     expect(education!.save!(education!.blocks()[0]!)).toBeNull();
+  });
+
+  it('numbers the saved entries first, then the editor live Workable draws at the top (jr8, snapshot9)', async () => {
+    // The owner's capture of 2026-11-13 (snapshot9), its shape only: Experience's list holds the open editor first
+    // (Add disabled), then the two entries kept, newest-added first. Values here are synthetic.
+    const saved = (title: string, company: string, period: string) => `<li><div data-ui="group"><dl><dt>Title</dt><dd
+      data-ui="title"><span>${title}</span></dd></dl><dl><dt>Company</dt><dd data-ui="company"><span>${company}</span></dd>
+      </dl><dl data-ui="date-range"><dt>Period </dt><dd data-ui="period"><span>${period}</span></dd></dl><div><a
+      data-ui="edit-section" title="Edit" role="button" tabindex="0">Edit</a><a data-ui="remove-section" title="Delete"
+      role="button" tabindex="0">Delete</a></div></div></li>`;
+    const box = (id: string, title: string, extra = '') => `<div><label><span><span><span id="${id}_label"><strong>${title}
+      </strong></span></span></span><div data-role="illustrated-input"><div><input id="${id}" name="${id}"
+      aria-labelledby="${id}_label" type="text" dir="auto" value="" ${extra}></div></div></label></div>`;
+    const fixture = await loadFixture(document, `<!doctype html><body><form data-ui="application-form"><section
+      data-ui="section"><h2 id="section-1_section_name">Profile</h2><div data-ui="section-fields"><div
+      data-ui="experience"><div><p id="experience_label">Experience</p><button data-ui="add-section" aria-label="Add
+      Experience" type="button" disabled="" aria-disabled="true">+ Add</button></div><ul><li><div data-ui="editor">
+      ${box('title', 'Title', 'required=""')}${box('company', 'Company')}<div><label><span><span><span
+      id="start_date_label"><strong>Start date</strong></span></span></span><div class="react-datepicker-wrapper"><div
+      class="react-datepicker__input-container"><div data-role="illustrated-input"><input type="text" inputmode="tel"
+      name="start_date" placeholder="MM/YYYY" dir="auto" value=""></div></div></div></label></div><label
+      data-checked="false"><div role="checkbox" aria-labelledby="checkbox_label_current" aria-checked="false"
+      tabindex="0" id="current"><input tabindex="-1" aria-hidden="true" type="checkbox" name="current"></div><span
+      id="checkbox_label_current">I currently work here</span></label><div><button data-ui="save-section"
+      type="button">Update</button><button data-ui="cancel-section" type="button">Cancel</button></div></div></li>
+      ${saved('Platform Engineer', 'Larkspur Analytics', 'March 2017 - June 2019')}
+      ${saved('Senior Software Engineer', 'Quillfeather Labs', 'June 2021 - Present')}</ul></div></div></section>
+      </form></body>`, { width: 1280, height: 1600 });
+    const root = fixture.doc.querySelector('form')!;
+    const [li0, li1, li2] = Array.from(fixture.doc.querySelectorAll('[data-ui="experience"] > ul > li'));
+    const experience = sectionsOf(workableAdapter, root).find((section) => section.kind === 'experience')!;
+    // The saved entries first, in page order, then the editor: a new editor never takes a saved entry's index.
+    expect(experience.blocks()).toEqual([li1, li2, li0]);
+    expect(workableAdapter.prefill!.readEntries!('experience', experience.blocks()).map((entry) => [entry.block,
+      entry.values.find((value) => value.category === 'experience.company')?.text])).toEqual([[0, 'Larkspur Analytics'],
+      [1, 'Quillfeather Labs']]);
+    expect(experience.save!(experience.blocks()[2]!)).toBe(li0!.querySelector('[data-ui="save-section"]'));
+    expect(experience.save!(experience.blocks()[0]!)).toBeNull();
+    expect(experience.currentlyHere!(experience.blocks()[2]!)).toBe(li0!.querySelector('input[name="current"]'));
+    // The scan names the editor's fields block 2, the number of saved entries.
+    const scanned = scan(root, workableAdapter, { platform: 'workable' });
+    const editorFields = scanned.fields.filter((field) => li0!.contains(scanned.target(field.key)!.control));
+    expect(editorFields.map((field) => field.label)).toEqual(['Title', 'Company', 'Start date', 'I currently work here']);
+    expect(editorFields.every((field) => field.section.id === 'experience' && field.section.block === 2)).toBe(true);
   });
 });

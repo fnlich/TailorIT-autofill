@@ -62,6 +62,8 @@
  *   is pressed the entry is not in the form (content/repeatables.ts saveBlocks presses it after the fill); Experience's
  *   "I currently work here" is its input[name=current]. A saved entry's summary names its school, or its title and
  *   company, and its period (prefill.readEntries), so the planner finds the profile entry it holds by its fingerprint.
+ *   The blocks are the saved entries first, then the open editor (each in page order), never the page's own order: see
+ *   the owner's capture of 2026-11-13 below.
  * - Never pressed (neverPress): the autofill box and "Import resume from", every section's Clear, "Choose file" and the
  *   drop zones, a saved entry's Edit and Delete, an editor's Cancel, the cookie banner's buttons and the footer's cookie
  *   settings, the Overview and Application tabs, the company logo, "View all jobs" and "Apply for this job". Submit is
@@ -91,6 +93,20 @@
  *   posting (postingText) is its job breakdown: [data-ui=job-breakdown-description-parsed-html] and
  *   [data-ui=job-breakdown-requirements-parsed-html], side by side. No entryControl there: TailorIT's agent does not
  *   queue Workable, and no capture shows what "Apply now" does but the dialog already open.
+ * The owner's capture of 2026-11-13 (F:\Develop\Refer\snapshot9, read for its structure only; jr8: a profile of four
+ * jobs, of which a live fill kept two) adds, of Education and Experience:
+ * - Live Workable draws each new entry, and the open editor, at the TOP of its list: the editor first, then the saved
+ *   entries newest-added first (their periods ascending top to bottom where the profile is newest-first):
+ *   <div data-ui="experience"> ... <button data-ui="add-section" ... disabled="">+ Add</button> ... <ul><li><div
+ *   data-ui="editor"> title, company, industry, summary, start_date, end_date, current ... <button
+ *   data-ui="save-section">Update</button><button data-ui="cancel-section">Cancel</button></div></li><li><div
+ *   data-ui="group"> (the second entry kept) </div></li><li><div data-ui="group"> (the first) </div></li></ul>.
+ * - So the blocks (repeatables' blocks, the scanner's block index, readEntries' indices) are the blocks that show a
+ *   saved entry first, in page order, then the open editors, in page order: a new editor always takes a fresh index (the
+ *   number of saved entries), never the index of the entry an earlier round of the fill step saved, whose fields' books
+ *   that round holds (content/orchestrator.ts fillStep). In page order the editor was block 0 every round, the key of
+ *   the entry saved in round 1, so its empty fields read as our value reset by the page, and round 3's passed
+ *   MAX_VALUE_FLIPS (core/loop/bookkeeping.ts): value-oscillated, never written, the entry never kept.
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
@@ -506,7 +522,8 @@ function isFinalStep(doc: Document): 'final' | 'unknown' {
   return root !== null && submitButton(root) !== null ? 'final' : 'unknown';
 }
 
-/** The Education and Experience blocks (see the header): each entry's li, saved (its summary) or in its editor. */
+/** The Education and Experience blocks (see the header): each entry's li, saved (its summary) or in its editor, the
+ *  saved ones first. */
 function repeatables(root: Element): ReturnType<NonNullable<Adapter['repeatables']>> {
   // fixtures/workable/labella-closed.html: <div class="styles--1YIkW" data-ui="education"><div ...><p
   // id="education_label">Education ...</p><button data-ui="add-section" aria-label="Add Education" ... type="button">+
@@ -516,6 +533,8 @@ function repeatables(root: Element): ReturnType<NonNullable<Adapter['repeatables
   // open; a saved entry (the capture's wk-education-saved): <ul><li ...><div data-ui="group"><dl><dt>School</dt><dd ...
   // data-ui="school"> ... </dd></dl> ... <a data-ui="edit-section" ...><a data-ui="remove-section" ...></li></ul>; the
   // Experience editor's (wk-experience-editor) "I currently work here": <input ... type="checkbox" name="current" ...>.
+  // The owner's capture of 2026-11-13 (snapshot9, see the header): the open editor is the list's first li, so the blocks
+  // are the saved entries first, then the editors, each in page order.
   return (['education', 'experience'] as const).flatMap((kind) => {
     const section = root.querySelector(`[data-ui="${kind}"]`);
     if (section === null) return [];
@@ -524,7 +543,11 @@ function repeatables(root: Element): ReturnType<NonNullable<Adapter['repeatables
       ?? null;
     return [{
       kind,
-      blocks: () => Array.from(section.querySelectorAll(':scope > ul > li')),
+      blocks: () => {
+        const items = Array.from(section.querySelectorAll(':scope > ul > li'));
+        const open = (item: Element) => item.querySelector('[data-ui="editor"]') !== null;
+        return [...items.filter((item) => !open(item)), ...items.filter(open)];
+      },
       addButton: add,
       currentlyHere: (block: Element) =>
         block.querySelector<HTMLInputElement>('[data-ui="editor"] input[type="checkbox" i][name="current"]'),
