@@ -324,6 +324,19 @@ export function createSubmissions(deps: SubmissionsDeps) {
   const pageWindowOf = (arm: Arm) => (arm.handOverAt !== undefined ? SUBMIT_ARM_MS : CONFIRMATION_PAGE_MS);
   // ── end jr7 AUTO-7 ──
 
+  // ── jr7 FIX-background (the review's B-1, the worker's half) ──
+  /** The hand-over a new arm at `key` keeps (submit/armed): the earlier arm's `handOverAt`, where that arm was made in
+   *  the same frame and document, is not yet confirmed, and is still within its window (pageWindowOf); else none. */
+  async function handOverKept(key: string, from: Pick<ContentChannel, 'frameId' | 'documentId'>):
+    Promise<number | undefined> {
+    const prev = await armOf(key);
+    if (prev === null || prev.handOverAt === undefined || prev.detectedAt !== undefined) return undefined;
+    if (prev.frameId !== from.frameId || prev.documentId !== (from.documentId ?? null)) return undefined;
+    const age = deps.now() - prev.at;
+    return age >= 0 && age <= pageWindowOf(prev) ? prev.handOverAt : undefined;
+  }
+  // ── end jr7 FIX-background ──
+
   // ── jr7 AUTO-7 A1 (ICIMS7-02) ──
   /** Whether `from` is the tab's claim frame now (frames.ts claimFrameOf over the registry: its frame and document), at
    *  `applicationKey`: where a chained subframe's Submit (iCIMS's IForm leaf) shows its confirmation. Read when asked, so
@@ -455,9 +468,14 @@ export function createSubmissions(deps: SubmissionsDeps) {
       const ownKey = own === undefined ? null : refOf(own.url)?.applicationKey ?? null;
       const pageKey = ownKey !== null && ownKey !== message.applicationKey ? ownKey : undefined;
       // ── end jr7 AUTO-7 A1 ──
+      // jr7 FIX-background (the review's B-1, the worker's half): a Submit pressed again in the same frame and document
+      // while its earlier arm still waits after a hand-over (UltiPro's documents dialog closed, then Submit again) keeps
+      // that hand-over: its confirmation page is still waited for SUBMIT_ARM_MS, though the step is not said again.
+      const handOverAt = await handOverKept(key, from);
       const arm: Arm = { at: deps.now(), by: message.by, frameId: from.frameId, documentId: from.documentId ?? null,
         jobId: chosen ?? looked, resumeId, ...(url !== null && url.length <= AUTOFILL_LOOKUP_URL_MAX ? { url } : {}),
-        ...(chainedFrom === undefined ? {} : { chainedFrom }), ...(pageKey === undefined ? {} : { pageKey }) }; // jr7 AUTO-7 A1
+        ...(chainedFrom === undefined ? {} : { chainedFrom }), ...(pageKey === undefined ? {} : { pageKey }), // jr7 AUTO-7 A1
+        ...(handOverAt === undefined ? {} : { handOverAt }) }; // jr7 FIX-background (B-1)
       await deps.session.set({ [key]: arm });
       log('submit.armed', { page: message.by === 'page', panel: message.by === 'panel', auto: message.by === 'auto',
         run: run !== null });

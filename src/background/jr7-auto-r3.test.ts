@@ -10,7 +10,10 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { applicationOf } from '../adapters';
 import type { QueueTabs, WorkerPlatform } from '../platform/types';
 import { AGENT_RUN_KEY } from './agent';
-import { contentSender, pageSender, sentToFrames, startTestWorker, tokenRecord, typeOfSent } from './worker.testkit';
+import { CONFIRMATION_PAGE_MS, SUBMIT_ARM_PREFIX } from './submissions';
+import {
+  contentSender, goldens, pageSender, sentToFrames, startTestWorker, tokenRecord, typeOfSent, type TestWorker,
+} from './worker.testkit';
 
 let logs: MockInstance;
 beforeEach(() => {
@@ -109,3 +112,61 @@ describe('jr7 AUTO-7 r3, UP7-07: the documents hand-over the document says after
     expect(worker.tailorit.count(`POST /api/autofill/agent/${TASK.id}/result`)).toBe(0);
   });
 });
+
+// ── jr7 FIX-background (the review's B-1, the worker's half) ──
+describe('jr7 FIX-background, B-1: a Submit pressed again after a hand-over keeps it (submissions.ts armed)', () => {
+  // UltiPro's shapes (synthetic): the form, and its page after submitting, keyed by its board (UP7-01).
+  const BOARD = 'https://recruiting.ultipro.com/acme1000/JobBoard/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+  const FORM = `${BOARD}/OpportunityApply?opportunityId=2c3d4e5f-6a7b-4c8d-8e9f-1a2b3c4d5e6f`;
+  const CONFIRM = `${BOARD}/OpportunityApply/ApplicationSubmitted?applicationId=3d4e5f6a-7b8c-4d9e-9f0a-2b3c4d5e6f7a`;
+  const FORM_KEY = applicationOf(new URL(FORM))!.applicationKey;
+  const at = (url: string, documentId: string) => contentSender({ url, tab: { id: 7, url }, documentId });
+  const arm = (worker: TestWorker, documentId = 'doc-form') => worker.deliver({ v: 1, type: 'submit/armed',
+    applicationKey: FORM_KEY, by: 'page' }, at(FORM, documentId));
+  const handOverAt = async (worker: TestWorker) => (Object.values(await worker.platform.storage.session
+    .getMany(SUBMIT_ARM_PREFIX))[0] as { handOverAt?: number } | undefined)?.handOverAt;
+
+  /** The person's Submit, its documents dialog said (`said`), then Submit again `again`, from the same document or not. */
+  async function pressedTwice(said: boolean, again: 'same' | 'new'): Promise<TestWorker> {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    worker.tailorit.reply('POST /api/autofill/applied', { json: goldens.lookup });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, at(FORM, 'doc-form'));
+    expect(await arm(worker)).toEqual({ ok: true, data: {} });
+    if (said) {
+      await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true, handOver: 'documents' },
+        at(FORM, 'doc-form'));
+      await vi.waitFor(async () => expect(await handOverAt(worker)).toBeDefined());
+    }
+    // The person closes the dialog and presses the page's Submit again; the dialog shows again, nothing said of it.
+    worker.clock.now += 20_000;
+    if (again === 'new') {
+      await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, at(FORM, 'doc-form-2'));
+    }
+    expect(await arm(worker, again === 'same' ? 'doc-form' : 'doc-form-2')).toEqual({ ok: true, data: {} });
+    // The person answers the dialog a minute and more after that second press: the page after submitting loads.
+    worker.clock.now += CONFIRMATION_PAGE_MS + 1_000;
+    return worker;
+  }
+  const confirmed = (worker: TestWorker) => worker.deliver({ v: 1, type: 'submit/detected',
+    applicationKey: applicationOf(new URL(CONFIRM))!.applicationKey, evidence: 'confirmation-page' }, at(CONFIRM, 'doc-done'));
+
+  // Undo proof: armed() writes the new arm without handOverKept's `handOverAt` and this fails ('expired', nothing posted).
+  it('takes the confirmation 61 s after the second press once: the hand-over is kept', async () => {
+    const worker = await pressedTwice(true, 'same');
+    expect(await handOverAt(worker)).toBeDefined();
+    expect(await confirmed(worker)).toEqual({ ok: true, data: {} });
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(1);
+    expect(await confirmed(worker)).toMatchObject({ ok: false, error: 'expired' });
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(1);
+  });
+
+  it('controls: no hand-over, or a second press from another document, keeps CONFIRMATION_PAGE_MS', async () => {
+    for (const [said, again] of [[false, 'same'], [true, 'new']] as const) {
+      const worker = await pressedTwice(said, again);
+      expect(await handOverAt(worker), `${said} ${again}`).toBeUndefined();
+      expect(await confirmed(worker), `${said} ${again}`).toMatchObject({ ok: false, error: 'expired' });
+      expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
+    }
+  });
+});
+// ── end jr7 FIX-background ──
