@@ -25,6 +25,8 @@ import jr7OneClickExpect from '../../../fixtures/smartrecruiters/jr7-smartrecrui
 import jr7OneClickHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-oneclick-filled.html?raw';
 import jr7PostingExpect from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-posting.expect.json';
 import jr7PostingHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-posting.html?raw';
+import jr7ScreeningExpect from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-screening-filled.expect.json';
+import jr7ScreeningHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-screening-filled.html?raw';
 import jr7SuccessExpect from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-success.expect.json';
 import jr7SuccessHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-success.html?raw';
 import { pressEntry } from '../../content/press';
@@ -60,6 +62,8 @@ const JR7_CASES = [
   { name: 'jr7-smartrecruiter1-posting', html: jr7PostingHtml, json: jr7PostingExpect, address: sourceOf(jr7PostingHtml) },
   { name: 'jr7-smartrecruiter1-oneclick-filled', html: jr7OneClickHtml, json: jr7OneClickExpect,
     address: sourceOf(jr7OneClickHtml) },
+  { name: 'jr7-smartrecruiter1-screening-filled', html: jr7ScreeningHtml, json: jr7ScreeningExpect,
+    address: sourceOf(jr7ScreeningHtml) },
   { name: 'jr7-smartrecruiter1-success', html: jr7SuccessHtml, json: jr7SuccessExpect, address: sourceOf(jr7SuccessHtml) },
 ] as const;
 
@@ -219,8 +223,7 @@ describe('the SmartRecruiters adapter: its hooks on the snapshots', () => {
     expect(compareHooks(fixture.doc, smartRecruitersAdapter, readHooks(json))).toEqual([]);
   });
 
-  it('jr7-smartrecruiter1-oneclick-filled: the scan of its root is the expectation', async () => {
-    const { html, json, address } = JR7_CASES[1];
+  it.each([JR7_CASES[1], JR7_CASES[2]])('$name: the scan of its root is the expectation', async ({ html, json, address }) => {
     const fixture = await load(html, address);
     const root = smartRecruitersAdapter.detect(fixture.doc)!.formRoot;
     const result = scan(root, smartRecruitersAdapter, { platform: 'smartrecruiters' });

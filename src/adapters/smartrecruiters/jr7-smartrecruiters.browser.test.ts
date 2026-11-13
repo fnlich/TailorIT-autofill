@@ -6,9 +6,10 @@
  *   company as it spells itself; a link to another company is still refused.
  * - J7-SR-3 (the verifier's narrowed fix: the question id anchored to its UUID): a screening list whose id names one
  *   field of a question of several (question_<question id>_gender, _ethnicity) or a repeated row's field
- *   (question_<question id>-0-level) takes that field's own published list. The answered screening capture
- *   (jr7-smartrecruiter1-screening-filled) waits for the converter (BOARDS-7's handoff), so its three lists (3, 8 and
- *   5 options, the definition's counts as the verifier read them) are made on xplor-screening's own definition here.
+ *   (question_<question id>-0-level) takes that field's own published list: on the answered screening capture
+ *   (jr7-smartrecruiter1-screening-filled, converted since TOOLING-7's r2) Gender, Race/Ethnicity and the level read 3,
+ *   8 and 5 options, and the golden profile's declined gender and race are planned "Prefer not to answer" (P2: RULES'
+ *   reading of the lists); the same shapes on xplor-screening's own definition, made into them here (P1).
  * - J7-SR-4 (raised to high): the page after Submit draws "Application submitted!", the adapter's successSigns for an
  *   arm of SmartRecruiters; none on every other SmartRecruiters page, none for another platform's arm, none hidden.
  * Nothing here reads or prints a value of the owner's: the pages' values are the converter's REDACTED or cleared ones,
@@ -21,12 +22,17 @@ import wiserScreeningHtml from '../../../fixtures/smartrecruiters/jr6-wiser-scre
 import xplorFilledHtml from '../../../fixtures/smartrecruiters/jr6-xplor-one-click-filled.html?raw';
 import jr7OneClickHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-oneclick-filled.html?raw';
 import jr7PostingHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-posting.html?raw';
+import jr7ScreeningHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-screening-filled.html?raw';
 import jr7SuccessHtml from '../../../fixtures/smartrecruiters/jr7-smartrecruiter1-success.html?raw';
 import xplorOneClickHtml from '../../../fixtures/smartrecruiters/xplor-one-click.html?raw';
 import xplorPostingHtml from '../../../fixtures/smartrecruiters/xplor-posting.html?raw';
 import xplorScreeningHtml from '../../../fixtures/smartrecruiters/xplor-screening.html?raw';
-import { applicationKey } from '../application-key';
+import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { planFrame } from '../../core/plan/frame';
+import { DEFAULT_SETTINGS } from '../../core/types/settings';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
+import { scan, toFieldSpec } from '../../dom/scan';
+import { applicationKey } from '../application-key';
 import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { SMARTRECRUITERS_SUCCESS, smartRecruitersAdapter } from './index';
 import { parseSmartRecruitersUrl } from './url';
@@ -132,6 +138,35 @@ describe("J7-SR-3: a screening list of one field of a question takes that field'
 
   const known = (box: HTMLElement) => smartRecruitersAdapter.widgetFor!(box)?.knownOptions ?? null;
 
+  it('jr7-smartrecruiter1-screening-filled: Gender 3, Race/Ethnicity 8 and the level 5, each the list of its own field',
+    async () => {
+      testVocab();
+      const fixture = await load(jr7ScreeningHtml, sourceOf(jr7ScreeningHtml));
+      const EEO = '9177d8a6-2d80-420e-b700-5b236a2f480d';
+      const LANG = '700818f9-5dfc-4689-b656-a316bcd4ac1e';
+      const box = (id: string) => deepAll(fixture.doc, `spl-autocomplete#${id}`)[0]!.shadowRoot!
+        .querySelector('spl-input')!.shadowRoot!.querySelector<HTMLElement>('input[role="combobox"]')!;
+      const lists = [`question_${EEO}_gender`, `question_${EEO}_ethnicity`, `question_${LANG}-0-level`]
+        .map((id) => known(box(id))?.length ?? null);
+      expect(lists).toEqual([3, 8, 5]);
+      // Through the scan and the plan (RULES' reading, merged in P2): the golden profile declines both EEO questions.
+      const root = smartRecruitersAdapter.detect(fixture.doc)!.formRoot;
+      const result = scan(root, smartRecruitersAdapter, { platform: 'smartrecruiters' });
+      const out = planFrame({ specs: result.fields.map(toFieldSpec), canaries: [], profile: goldenProfile(),
+        sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false,
+        now: NOW, posting: { company: 'Company', location: 'Austin, TX, USA' } });
+      const planned = (label: string) => {
+        const field = result.fields.find((each) => each.label === label)!;
+        const write = out.writes.find((each) => each.key === field.key);
+        return [field.kind, field.options === 'lazy' ? 'lazy' : field.options.length,
+          out.results.find((each) => each.key === field.key)?.category,
+          write?.value.kind === 'option' ? write.value.cleanLabel : null];
+      };
+      expect([planned('Gender'), planned('Race/Ethnicity')]).toEqual([
+        ['combobox', 3, 'eeo.gender', 'Prefer not to answer'], ['combobox', 8, 'eeo.race', 'Prefer not to answer']]);
+      expect(planned('Select your level').slice(0, 2)).toEqual(['combobox', 5]);
+    });
+
   it("declares the three lists (3, 8 and 5 options), each its own field's, and leaves a single field's list whole", async () => {
     const boxes = await variant();
     expect([known(boxes.gender)?.length, known(boxes.ethnicity)?.length, known(boxes.level)?.length])
@@ -183,6 +218,7 @@ describe('J7-SR-4: "Application submitted!" after an armed Submit (successSigns)
     ['xplor-screening', xplorScreeningHtml], ['jr6-xplor-one-click-filled', xplorFilledHtml],
     ['jr6-wiser-one-click', wiserOneClickHtml], ['jr6-wiser-screening', wiserScreeningHtml],
     ['jr7-smartrecruiter1-posting', jr7PostingHtml], ['jr7-smartrecruiter1-oneclick-filled', jr7OneClickHtml],
+    ['jr7-smartrecruiter1-screening-filled', jr7ScreeningHtml],
   ])('reads none on %s (no sign before the press)', async (_name, html) => {
     const fixture = await load(html, sourceOf(html));
     expect(smartRecruitersAdapter.successSigns!(fixture.doc, ARM)).toEqual([]);

@@ -98,10 +98,11 @@ export const SMARTRECRUITERS_JR6_SNAPSHOTS = ['fixtures/smartrecruiters/jr6-xplo
   'fixtures/smartrecruiters/jr6-wiser-one-click.html', 'fixtures/smartrecruiters/jr6-wiser-screening.html'] as const;
 
 /** jr7 BOARDS-7 (FIX7PLAN §6.13, §11): the owner's snapshot7 application (smartrecruiter1) converted with the jr7
- *  converter: the posting at its lower-case address, the first page filled (manual location mode), and the page after
- *  Submit. Its answered screening step waits for the converter (BOARDS-7's handoff: a chosen list row's marks). */
+ *  converter: the posting at its lower-case address, the first page filled (manual location mode), the screening step
+ *  answered (converted since TOOLING-7's r2: a chosen list row's marks), and the page after Submit. */
 export const SMARTRECRUITERS_JR7_SNAPSHOTS = ['fixtures/smartrecruiters/jr7-smartrecruiter1-posting.html',
   'fixtures/smartrecruiters/jr7-smartrecruiter1-oneclick-filled.html',
+  'fixtures/smartrecruiters/jr7-smartrecruiter1-screening-filled.html',
   'fixtures/smartrecruiters/jr7-smartrecruiter1-success.html'] as const;
 
 /** Every element under `scope` matching `selector`, in its open shadow roots too (each root's after its tree's own). */
