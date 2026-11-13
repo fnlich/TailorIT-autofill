@@ -54,6 +54,24 @@ describe('scan: kinds', () => {
     expect(byId(result.fields, 'f')?.constraints).toEqual({ accept: ['.pdf', '.docx'] });
   });
 
+  // jr7 FIX-content D-4 (DF7-04: "only when the field's min/max allow it"): the bounds the resolver keeps a date in.
+  it("reads a date or month control's min and max as its value without its dashes, and no other shape", async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <label for="d">Start date</label><input id="d" type="date" min="2021-03-15" max="2024-12-31">
+      <label for="mo">Graduation</label><input id="mo" type="month" min="2019-09" max="2026-06">
+      <label for="x">End date</label><input id="x" type="date" min="soon" max="2024-12">
+      <label for="t">Started</label><input id="t" type="text" min="2021-03-15" max="2024-12-31">
+    </form></body>`);
+    const result = scan(fixture.doc.querySelector('form')!, null, OPTIONS);
+    expect(byId(result.fields, 'd')?.constraints).toEqual({ format: 'date', min: 20210315, max: 20241231 });
+    expect(byId(result.fields, 'mo')?.constraints).toEqual({ format: 'month-year', min: 201909, max: 202606 });
+    expect(byId(result.fields, 'x')?.constraints).toEqual({ format: 'date' });
+    expect(byId(result.fields, 't')?.constraints).toEqual({});
+    // They travel as the numbers the worker's schema already takes.
+    expect(FieldSpecSchema.parse(toFieldSpec(byId(result.fields, 'd')!)).constraints)
+      .toEqual({ format: 'date', min: 20210315, max: 20241231 });
+  });
+
   it('reports a combobox input (react-select) as a lazy combobox, never as text, and never fills it before Phase 4',
     async () => {
       // Greenhouse's markup, from its snapshots: a borderless input inside the widget's own box.

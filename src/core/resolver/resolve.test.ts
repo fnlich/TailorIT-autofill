@@ -116,6 +116,12 @@ describe('confidence and actions (§8.6)', () => {
     const yearOnly = { ...golden, education: [{ ...golden.education[0]!, startDate: { y: 2015 } }] };
     expect(resolveField(control, ctx({ profile: yearOnly }))).toMatchObject({ shaped: null,
       resolution: { action: 'leave-blank', reason: 'format-unsupported' } });
+    // jr7 FIX-content D-4 (DF7-04): the 1st only inside the control's min/max; else nothing, flagged for the person.
+    const bounded = (min: number) => ({ ...control, constraints: { format: 'date' as const, min } });
+    expect(resolveField(bounded(20150802), ctx())).toMatchObject({ shaped: null,
+      resolution: { action: 'leave-blank', reason: 'format-unsupported' } });
+    expect(resolveField(bounded(20150801), ctx())).toMatchObject({ shaped: { shape: 'date', iso: '2015-08-01' },
+      resolution: { action: 'fill-and-flag', reason: 'filled-low-confidence' } });
   });
 
   it('flags a classification another source contradicts', () => {

@@ -30,6 +30,8 @@ export interface Constraints {
   /** A pattern from the placeholder or the adapter ("MM/YYYY", "(###) ###-####"). Shapes formatting, never values. */
   pattern?: string;
   maxLength?: number;
+  /** A number control's bounds. jr7 FIX-content D-4 (DF7-04): a date or month control's, as its value reads with its
+   *  dashes taken out (20210315; a month 202103). */
   min?: number;
   max?: number;
   /** A file input's accept tokens, lower case. */

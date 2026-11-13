@@ -43,6 +43,27 @@ describe('dateIso', () => {
     expect(dateIso({ y: 2015 }, {})).toBeNull();
     expect(dateIso({ y: 2015, m: 8 }, { format: 'year' })).toEqual({ iso: '2015', guessed: false });
   });
+
+  // jr7 FIX-content D-4 (DF7-04: "only when the field's min/max allow it"): bounds as the value without dashes.
+  it('gives nothing outside the control’s min and max, the month’s 1st included', () => {
+    const month = { y: 2021, m: 3 };
+    // A month-precision date: the 1st inside the bounds, on each side of each bound.
+    expect(dateIso(month, { format: 'date', min: 20210302 })).toBeNull();
+    expect(dateIso(month, { format: 'date', min: 20210301 })).toEqual({ iso: '2021-03-01', guessed: true });
+    expect(dateIso(month, { format: 'date', min: 20210228 })).toEqual({ iso: '2021-03-01', guessed: true });
+    expect(dateIso(month, { format: 'date', max: 20210228 })).toBeNull();
+    expect(dateIso(month, { format: 'date', max: 20210301 })).toEqual({ iso: '2021-03-01', guessed: true });
+    expect(dateIso(month, { min: 20210315, max: 20211231 })).toBeNull();
+    // A full date the same way.
+    const day = { y: 2021, m: 3, d: 15 };
+    expect(dateIso(day, { format: 'date', min: 20210316 })).toBeNull();
+    expect(dateIso(day, { format: 'date', min: 20210315, max: 20210315 })).toEqual({ iso: '2021-03-15', guessed: false });
+    expect(dateIso(day, { format: 'date', max: 20210314 })).toBeNull();
+    // A month control's bounds are months.
+    expect(dateIso(month, { format: 'month-year', min: 202104 })).toBeNull();
+    expect(dateIso(month, { format: 'month-year', min: 202103, max: 202103 })).toEqual({ iso: '2021-03', guessed: false });
+    expect(dateIso(month, { format: 'month-year', max: 202102 })).toBeNull();
+  });
 });
 
 describe('phoneText (phone.format)', () => {
