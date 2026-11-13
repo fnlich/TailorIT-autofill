@@ -14,10 +14,13 @@ const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'side' as const, view: 'minimized' 
 /** CHOSEN as a frame receives it: its content settings. */
 const CHOSEN_CONTENT = { panel: 'side', view: 'minimized', modes: { next: CHOSEN.modes.next, afterPageTurn: CHOSEN.modes.afterPageTurn,
   submit: CHOSEN.modes.submit, agentSkip: CHOSEN.modes.agentSkip, signIn: CHOSEN.modes.signIn,
-  noMatch: CHOSEN.modes.noMatch, notifications: CHOSEN.modes.notifications }, llm: CHOSEN.llm,
+  noMatch: CHOSEN.modes.noMatch, notifications: CHOSEN.modes.notifications,
+  // jr7 AUTO-7 (ENGINE-7 E2's edit 1: UP7-04, EFA-6): the Consents mode, for the account terms and upload prompts.
+  consents: CHOSEN.modes.consents }, llm: CHOSEN.llm,
   offerToSaveAnswers: false,
   // jr6: no job-site password saved in this browser.
-  typeSignIn: false };
+  typeSignIn: false,
+  preapprovedConsent: CHOSEN.preapprovedConsent }; // jr7 AUTO-7 (ENGINE-7 E2's edit 1)
 /** v5 p1-shell: CHOSEN as versions 1 to 7 stored it, Chrome's side panel; and where every version 8 migration puts
  *  the panel, the page (the owner, 2026-11-08: the Jobright-like sidebar for everyone). */
 const OLD_PANEL = { panel: 'side' as const };

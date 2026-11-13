@@ -214,7 +214,8 @@ import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter,
   // jr6 apply F2
   ENTRY_MAX_PRESSES, pressSecondStep, type EntryResult } from './press';
 import { loadPagePatches } from './page-patches';
-import { dropKeptSignIns, signIn, signInDetailOf, type SignInDetail } from './sign-in';
+import { accountConsentsOf, dropKeptSignIns, signIn, signInDetailOf, type AccountConsents, type SignInDetail } from
+  './sign-in';
 import { signInFormOf } from '../dom/sign-in-form'; // jr6 SHELL-A
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { chainFactsOf, claimFrameFacts, holdChainFacts, saysChainFacts, watchChainFacts } from './chain-frame'; // jr6 SHELL-B
@@ -413,6 +414,13 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** jr6: a job-site password is saved and may be typed (ContentSettings.typeSignIn): frame/hello's, then each
    *  settings/changed. */
   let signInTypes = false;
+  // ── jr7 AUTO-7 (ENGINE-7 E2's edit 1: UP7-04; FIX7PLAN D-9) ──
+  /** The person's Consents mode and pre-approved consents (frame/hello's, then each settings/changed), for every sign-in
+   *  step (SignInContext.consents: an account's optional terms ticked per the mode). Undefined until a worker says it. */
+  let consentsNow: AccountConsents | undefined;
+  /** The sign-in context's consents now, when known. */
+  const consentsArg = (): { consents?: AccountConsents } => (consentsNow === undefined ? {} : { consents: consentsNow });
+  // ── end jr7 AUTO-7 ──
   /** jr6 SHELL-A (WD-04): the wall steps that wait for a job-site password to be saved (wallStep), each ended when a
    *  settings/changed says one may be typed (true). jr6 ifix B1: or when hello's answer says so, and dropped (false)
    *  when the browser keeps the document in the back/forward cache. */
@@ -566,6 +574,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         placementChanged(msg.settings.panel);
         signInMode = msg.settings.modes.signIn;
         signInTypes = msg.settings.typeSignIn === true;
+        consentsNow = accountConsentsOf(msg.settings); // jr7 AUTO-7 (ENGINE-7 E2's edit 1)
         // The jr6 review (sec-8): no saved password may be typed any more (it was deleted): none typed for the person's
         // press stays in this document.
         if (!signInTypes) dropKeptSignIns(doc);
@@ -729,6 +738,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     signInMode = answer.data.settings.modes.signIn;
     const typedBefore = signInTypes;
     signInTypes = answer.data.settings.typeSignIn === true;
+    // jr7 AUTO-7 (ENGINE-7 E2's edit 2, jr6 L3): a paused run hears it too (a password saved while the document was away
+    // ends its wait for one).
+    current?.helloAnswered(answer.data.settings);
+    consentsNow = accountConsentsOf(answer.data.settings); // jr7 AUTO-7 (ENGINE-7 E2's edit 1)
     // jr6 INT-2 (the jr6 review's sec-8, as at settings/changed): a password deleted while no settings/changed reached
     // this document (it was away, in the back/forward cache): none typed for the person's press stays in it.
     if (!signInTypes) dropKeptSignIns(doc);
@@ -1287,15 +1300,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // The jr6 review (sec-1): `page`, the document's own life, which guards a password left for the person's press.
       signIn: (signal, typeOnly) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
         // jr6: Sign-in on Manual with a password saved: typed, the press the person's.
-        ...(typeOnly === true ? { typeOnly: true as const } : {}),
+        ...(typeOnly === true ? { typeOnly: true as const } : {}), ...consentsArg(), // jr7 AUTO-7
         signal: AbortSignal.any([signal, lifetime.signal]), page: lifetime.signal }),
       // core-x, item 2: Sign-in Auto types into the form's account section, pressing nothing; jr6: on Manual too.
       signInSection: (signal, typeOnly) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
-        section: true, ...(typeOnly === true ? { typeOnly: true as const } : {}),
+        section: true, ...(typeOnly === true ? { typeOnly: true as const } : {}), ...consentsArg(), // jr7 AUTO-7
         signal: AbortSignal.any([signal, lifetime.signal]), page: lifetime.signal }),
       // Core pass Z1, item 24: Sign-in Auto presses the step's declared sign-in container once the run rests there.
       signInContainer: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
-        container: true, signal: AbortSignal.any([signal, lifetime.signal]), page: lifetime.signal }),
+        container: true, ...consentsArg(), // jr7 AUTO-7
+        signal: AbortSignal.any([signal, lifetime.signal]), page: lifetime.signal }),
       afterSignIn: () => {
         if (current !== run) return;
         // v4: a pause that went carries the run on by itself, a bounded number of times in a document.
@@ -1469,7 +1483,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (page === null || app === null) return;
     const state = await storedRunState(app.applicationKey);
     if (state === null || stopped || current !== null) return;
-    const mode = resumeMode(state, { now: platform.now(), sameTab: true });
+    // jr7 AUTO-7 (ENGINE-7 E2's edit 3): the application this document shows, so the log says auto for a run past its
+    // email code or sign-in wall (machine.ts pastPause; the orchestrator goes on by itself already).
+    const mode = resumeMode(state, { now: platform.now(), sameTab: true, formOf: app.applicationKey });
     log('content.run-resumed', { auto: mode === 'auto', offered: mode === 'continue' });
     if (mode === 'none') return;
     startRun({ trigger: 'resume', dryRun: false, from: { state, event: { type: 'RESUMED', by: 'load', sameTab: true } } });
@@ -1996,7 +2012,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       return;
     }
     const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, claimed,
-      ...(typeOnly ? { typeOnly: true as const } : {}), signal, page: lifetime.signal });
+      ...(typeOnly ? { typeOnly: true as const } : {}), ...consentsArg(), signal, page: lifetime.signal }); // jr7 AUTO-7
     // The line P review (revA-2): a step its entry's end stopped took nothing, and says nothing more.
     const cancelled = signal.aborted && !stopped;
     log('content.sign-up', { taken: !cancelled && (outcome === 'continue' || outcome === 'left'),
@@ -2359,7 +2375,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   async function agentSignIn(own: readonly Adapter[], signal: AbortSignal): Promise<EntryAnswer> {
     if (signInMode !== 'auto' || own.length === 0 || signal.aborted) return { outcome: 'blocked', block: 'sign-in' };
     const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, claimed,
-      signal, page: lifetime.signal });
+      ...consentsArg(), signal, page: lifetime.signal }); // jr7 AUTO-7
     // 'left': the page went on (the next document's run takes over); the line P review (revA-2): or the entry ended
     // first, which signed in nowhere.
     if (outcome === 'left') return signal.aborted && !stopped ? { outcome: 'blocked', block: 'sign-in' }

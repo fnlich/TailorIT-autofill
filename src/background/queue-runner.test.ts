@@ -1306,5 +1306,19 @@ describe('jr7 AUTO-7: the Queue tab on every platform the extension fills', () =
     expect(h.filled).toEqual([]);
     expect(h.sent).toEqual([]);
   });
+
+  it('UP7-07: a documents hand-over is Ready for you with its words, nothing pressed, its Submit the person\'s', async () => {
+    const h = await started([URL_OF(1)]);
+    const tabId = h.tabs[0]!.tabId;
+    const key = await KEY_OF(h, 1);
+    await h.runner.pressed(tabId, key);
+    await h.runner.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, applicationKey: key }, true,
+      { handOver: 'documents' });
+    const page = await h.runner.list(0);
+    expect(page.ok && page.data.items[0]).toMatchObject({ status: 'ready', note: 'documents' });
+    expect(h.filled).toEqual([]);
+    expect(h.sent).toEqual([]);
+    expect(h.results).toEqual([]);
+  });
 });
 // ── end jr7 AUTO-7 ──

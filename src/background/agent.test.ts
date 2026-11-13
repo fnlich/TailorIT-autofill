@@ -1667,5 +1667,23 @@ describe('jr7 AUTO-7: the agent', () => {
       expect(before.results).toEqual([]);
       expect(before.sent.filter((sent) => sent.message.type === 'agent/enter')).toHaveLength(1);
     });
+
+  // jr7 AUTO-7 r2 (DFPC-7's edit 7; UP7-07): UltiPro's documents dialog after the Submit, the shared HAND_OVER_KINDS'
+  // 'documents', is handed over as 'assessment' is: needs-you with its words, the tab kept, nothing pressed.
+  it('UP7-07: a documents hand-over after the job\'s Submit reaches needs-you, its words and its tab kept', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    await h.agent.hello(tabId, form(key, 'doc-1'));
+    await h.agent.pressed(tabId, key, 'doc-1');
+    const sentBefore = h.sent.length;
+    await h.agent.hello(tabId, posting(key, 'doc-1'), { handOver: 'documents' });
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'other', aiGuesses: 0 } }]);
+    expect(h.windows.closedTabs).toEqual([]);
+    expect(h.sent.slice(sentBefore).filter((sent) => sent.message.type !== 'run/cancel')).toEqual([]);
+    expect((await h.agent.status()).last).toEqual({ state: 'needs-you', reason: 'other', note: 'documents' });
+    expect(COPY.agent.line({ phase: 'waiting', job: null, doneToday: 1, last: (await h.agent.status()).last }))
+      .toContain(COPY.queue.notes.documents);
+  });
 });
 // ── end jr7 AUTO-7 ──
