@@ -27,6 +27,26 @@ import caesarsPostingExpect from '../../../fixtures/oracle/jr6-caesars-posting.e
 import caesarsPostingHtml from '../../../fixtures/oracle/jr6-caesars-posting.html?raw';
 import caesarsGateExpect from '../../../fixtures/oracle/jr6-caesars-email-gate.expect.json';
 import caesarsGateHtml from '../../../fixtures/oracle/jr6-caesars-email-gate.html?raw';
+// ── jr7 ORACLE-7 P2: the owner's snapshot7 oraclecloud1, from the posting to my-profile ──
+import jr7PostingExpect from '../../../fixtures/oracle/jr7-oraclecloud1-posting.expect.json';
+import jr7PostingHtml from '../../../fixtures/oracle/jr7-oraclecloud1-posting.html?raw';
+import jr7EmailGateExpect from '../../../fixtures/oracle/jr7-oraclecloud1-email-gate.expect.json';
+import jr7EmailGateHtml from '../../../fixtures/oracle/jr7-oraclecloud1-email-gate.html?raw';
+import jr7SectionBlankExpect from '../../../fixtures/oracle/jr7-oraclecloud1-section-blank.expect.json';
+import jr7SectionBlankHtml from '../../../fixtures/oracle/jr7-oraclecloud1-section-blank.html?raw';
+import jr7SectionFilledExpect from '../../../fixtures/oracle/jr7-oraclecloud1-section-filled.expect.json';
+import jr7SectionFilledHtml from '../../../fixtures/oracle/jr7-oraclecloud1-section-filled.html?raw';
+import jr7SectionEditorAExpect from '../../../fixtures/oracle/jr7-oraclecloud1-section-editor-a.expect.json';
+import jr7SectionEditorAHtml from '../../../fixtures/oracle/jr7-oraclecloud1-section-editor-a.html?raw';
+import jr7SectionEditorBExpect from '../../../fixtures/oracle/jr7-oraclecloud1-section-editor-b.expect.json';
+import jr7SectionEditorBHtml from '../../../fixtures/oracle/jr7-oraclecloud1-section-editor-b.html?raw';
+import jr7SectionReadyExpect from '../../../fixtures/oracle/jr7-oraclecloud1-section-ready.expect.json';
+import jr7SectionReadyHtml from '../../../fixtures/oracle/jr7-oraclecloud1-section-ready.html?raw';
+import jr7SubmitCodeExpect from '../../../fixtures/oracle/jr7-oraclecloud1-submit-code.expect.json';
+import jr7SubmitCodeHtml from '../../../fixtures/oracle/jr7-oraclecloud1-submit-code.html?raw';
+import jr7ConfirmationExpect from '../../../fixtures/oracle/jr7-oraclecloud1-confirmation.expect.json';
+import jr7ConfirmationHtml from '../../../fixtures/oracle/jr7-oraclecloud1-confirmation.html?raw';
+// ── end jr7 ORACLE-7 ──
 import { isUserVisible } from '../../dom/visibility';
 // The P2 review (security 1)
 import { oracleCandidateExperienceShown, oracleShellShown } from '../../dom/page-signals';
@@ -37,7 +57,12 @@ import { pressEntry } from '../../content/press';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { compareWithExpectation, fillabilityOf, readExpectation, scanCase, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { compareHooks, readHooks } from '../test/hooks.testkit';
+import { adaptersFor } from '../index';
 import { ORACLE_SNAPSHOTS, oracleAdapter } from './index';
+
+// jr7 ORACLE-7 P2: snapshot7 oraclecloud1's tenant site and its one-page flow's section.
+const JR7_SITE = 'https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1';
+const JR7_SECTION = `${JR7_SITE}/job/4285/apply/section/1/`;
 
 const CASES = [
   { name: 'jpmc-posting', html: jpmcPostingHtml, json: jpmcPostingExpect, address: 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/210734835' },
@@ -50,6 +75,16 @@ const CASES = [
   // ── jr6 ORACLE (FIXPLAN §6.11): the owner's snapshots of a us2 tenant's posting and its email gate ──
   { name: 'jr6-caesars-posting', html: caesarsPostingHtml, json: caesarsPostingExpect, address: 'https://edmn.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/78569' },
   { name: 'jr6-caesars-email-gate', html: caesarsGateHtml, json: caesarsGateExpect, address: 'https://edmn.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/78569/apply/email' },
+  // ── jr7 ORACLE-7 P2: snapshot7 oraclecloud1 (fixtures/oracle/jr7-oraclecloud1-*) ──
+  { name: 'jr7-oraclecloud1-posting', html: jr7PostingHtml, json: jr7PostingExpect, address: `${JR7_SITE}/job/4285` },
+  { name: 'jr7-oraclecloud1-email-gate', html: jr7EmailGateHtml, json: jr7EmailGateExpect, address: `${JR7_SITE}/job/4285/apply/email` },
+  { name: 'jr7-oraclecloud1-section-blank', html: jr7SectionBlankHtml, json: jr7SectionBlankExpect, address: JR7_SECTION },
+  { name: 'jr7-oraclecloud1-section-filled', html: jr7SectionFilledHtml, json: jr7SectionFilledExpect, address: JR7_SECTION },
+  { name: 'jr7-oraclecloud1-section-editor-a', html: jr7SectionEditorAHtml, json: jr7SectionEditorAExpect, address: JR7_SECTION },
+  { name: 'jr7-oraclecloud1-section-editor-b', html: jr7SectionEditorBHtml, json: jr7SectionEditorBExpect, address: JR7_SECTION },
+  { name: 'jr7-oraclecloud1-section-ready', html: jr7SectionReadyHtml, json: jr7SectionReadyExpect, address: JR7_SECTION },
+  { name: 'jr7-oraclecloud1-submit-code', html: jr7SubmitCodeHtml, json: jr7SubmitCodeExpect, address: JR7_SECTION },
+  { name: 'jr7-oraclecloud1-confirmation', html: jr7ConfirmationHtml, json: jr7ConfirmationExpect, address: `${JR7_SITE}/my-profile` },
 ] as const;
 
 /** A page's own base address (a srcdoc page's is about:srcdoc), after it loaded: its forms and links resolve there. */
@@ -77,6 +112,12 @@ async function load(html: string, address: string) {
 const KNOWN: Record<string, ReadonlyArray<{ control: string; property: string }>> = {
   // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
   'fortive-email-code': [1, 2, 3, 4, 5, 6].map((n) => ({ control: `input#pin-code-${n}`, property: 'fillable' })),
+  // ── jr7 ORACLE-7 P2 ── the section's read-only email box (the email the gate took) reads camouflaged rather than
+  // read-only, as hjf-apply-section's does (KNOWN_PLAIN): drawn without a border of its own.
+  'jr7-oraclecloud1-section-blank': [{ control: 'input#email-20', property: 'fillable' }],
+  'jr7-oraclecloud1-section-filled': [{ control: 'input#email-16', property: 'fillable' }],
+  'jr7-oraclecloud1-section-editor-a': [{ control: 'input#email-16', property: 'fillable' }],
+  'jr7-oraclecloud1-section-editor-b': [{ control: 'input#email-16', property: 'fillable' }],
 };
 
 /** The flow's panel made thinner (a white veil of alpha 0.2), as a page hiding words behind it would draw it: its words
@@ -112,6 +153,19 @@ const KNOWN_PLAIN: ReadonlyArray<{ control: string; property: string }> = [
 
 afterEach(() => removeFixtures(document));
 
+/** jr7 ORACLE-7 P2: a snapshot loaded, its fade-ins run (faded) and its root scanned with the first adapter whose detect
+ *  finds one, as scanCase does once a person can see the page. */
+async function scanFaded(html: string, address: string) {
+  const fixture = await loadFixture(document, html, SNAPSHOT_VIEWPORT);
+  faded(fixture.doc);
+  const url = new URL(address);
+  for (const adapter of adaptersFor(url)) {
+    const found = adapter.detect(fixture.doc);
+    if (found !== null) return { ...fixture, adapter, root: found.formRoot, result: scan(found.formRoot, adapter, { platform: 'oracle' }) };
+  }
+  throw new Error(`no adapter found a form root on ${address}`);
+}
+
 describe('the Oracle Recruiting Cloud adapter: its hooks on the snapshots', () => {
   it('names each snapshot it was written from', () => {
     expect([...new Set(CASES.map((each) => `fixtures/oracle/${each.name.replace(/\.frame-\d+$/, '')}.html`))].sort())
@@ -126,7 +180,9 @@ describe('the Oracle Recruiting Cloud adapter: its hooks on the snapshots', () =
   it.each(CASES.filter((each) => readHooks(each.json).detect !== null && each.name !== 'hjf-apply-section'))(
     '$name: the scan of its root is the expectation',
     async ({ name, html, json, address }) => {
-      const scanned = await scanCase(document, html, address);
+      // jr7 ORACLE-7 P2: snapshot7 oraclecloud1's pages are scanned as a person sees them, their fade-ins run (the
+      // section's document drop zones fade in over 0.4 s: until then their upload reads hidden).
+      const scanned = name.startsWith('jr7-') ? await scanFaded(html, address) : await scanCase(document, html, address);
       expect(scanned.adapter).toBe(oracleAdapter);
       const known = KNOWN[name] ?? [];
       const found = compareWithExpectation(scanned.doc, scanned.result, readExpectation(json));

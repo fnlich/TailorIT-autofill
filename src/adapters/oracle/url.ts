@@ -124,3 +124,35 @@ export function canonicalApplicationUrl(url: URL): string | null {
   const parsed = parseOracleUrl(url);
   return parsed?.page === 'application' ? parsed.applicationUrl : null;
 }
+
+// ── jr7 ORACLE-7 (FIX7PLAN §6.10 item 2, jr7-O2): the page after submitting ─────────────────────────────────────────
+
+/** jr7-O2: the site an address is the candidate's own "My Applications" page of, .../sites/<site>/my-profile (snapshot7
+ *  oraclecloud1's page after its Submit and the emailed code, reached by a route change in the same document:
+ *  fixtures/oracle/jr7-oraclecloud1-confirmation.html, at .../sites/CX_1/my-profile), as the application writes it in
+ *  upper case; null for every other address (the profile's own pages below it, such as its sign-in; a posting; another
+ *  site's page). It names no job and no person: nothing of it is read into a key (FIX7PLAN §5 D-10). Jobright 1.25.2's
+ *  isOraclecloudSubmissionConfirmationUrl (~core/ats-submission-sites) takes <site>/my-profile as the page an Oracle
+ *  application ends on, read as its behaviour. */
+export function oracleMyProfileSite(url: URL): string | null {
+  const root = rootOf(url);
+  if (root === null) return null;
+  const path = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+  const parts = path.slice(root.length).split('/');
+  if (parts.length !== 4) return null;
+  const [language, sites, site, page] = parts as [string, string, string, string];
+  return LANGUAGE.test(language) && sites === 'sites' && SITE.test(site) && page === 'my-profile'
+    ? site.toUpperCase() : null;
+}
+
+/** jr7-O2 (FIX7PLAN §3.1 confirmationAfter): whether `here` is the page after submitting the application whose Submit
+ *  was armed at `armed`: `armed` is that application's (its posting or a page of its apply flow, as parseOracleUrl reads
+ *  it), and `here` is the same site's my-profile (oracleMyProfileSite) on the same origin. The language may differ (the
+ *  canonical address writes en). Pure: the addresses' parts alone, no id of a person (D-10). The application that page
+ *  lists is the success sign's to match (index.ts successSigns: the tile keyed to the armed application). */
+export function oracleConfirmationAfter(armed: URL, here: URL): boolean {
+  const application = parseOracleUrl(armed);
+  const site = oracleMyProfileSite(here);
+  return application !== null && site !== null && armed.origin === here.origin && application.board === site;
+}
+// ── end jr7 ORACLE-7 ──

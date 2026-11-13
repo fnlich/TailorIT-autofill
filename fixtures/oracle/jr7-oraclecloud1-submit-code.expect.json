@@ -1,0 +1,31 @@
+{
+  "fixture": "oracle/jr7-oraclecloud1-submit-code",
+  "source": "https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/4285/apply/section/1/",
+  "captured": "2026-11-11T12:24:39.000Z",
+  "note": "The code Oracle asks for at the Submit (\"You're almost done\"), drawn beside the hidden form (jr7-O1): email-code; its Verify and \"Send New Code\" are never pressed. Oracle's detect reads no form root here (the generic adapter claims the dialog's own form, whose six boxes are the person's), so no scan is held against this page.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": "email-code",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      ".apply-flow-summary-pin-code-required button[type=\"submit\"]",
+      "button.pin-code-form__action-button",
+      "button.icon-clear",
+      "button.communication-channel__value-edit",
+      "button.app-header__close",
+      "button.apply-flow-profile-item-tile__new-tile",
+      "button.candidate-links__add-link",
+      "button.app-dialog__close",
+      ".app-dialog__footer-button",
+      "button.attachment-upload-button__download",
+      "button.attachment-upload-button__bottom-button",
+      "button.apply-flow-profile-item-tile__edit-item-icon",
+      "button.apply-flow-profile-item-tile__delete-icon"
+    ],
+    "pressable": []
+  }
+}

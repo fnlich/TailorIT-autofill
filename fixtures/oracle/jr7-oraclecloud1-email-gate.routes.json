@@ -1,0 +1,4 @@
+{
+  "https://fa-extu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/4285/apply/email": "fixtures/oracle/jr7-oraclecloud1-email-gate.html",
+  "https://jsv3.recruitics.com/38a90408-327c-11f1-88b9-31be70448a0b-iframe?e=%7B%22viewer%22%3A%7B%22v2_first%22%3Anull%2C%22v2_local%22%3Anull%2C%22v3_first%22%3A%REDACTED%22%2C%22v3_first_samesite%22%3A%REDACTED%22%2C%22v3_local%22%3A%REDACTED%22%2C%22v3_param%22%3Anull%7D%2C%22referrer%22%3A%22https%3A%2F%2Ffa-extu-saasfaprod1.fa.ocs.oraclecloud.com%2FhcmUI%2FCandidateExperience%2Fen%2Fsites%2FCX_1%2Fjob%2F4285": "fixtures/oracle/jr7-oraclecloud1-email-gate.third-party-frame.html"
+}
