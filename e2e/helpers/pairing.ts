@@ -64,10 +64,38 @@ export async function pairThroughConnectPage(ext: Extension, options: { includeS
   return page;
 }
 
-/** Makes sure the extension is paired with the mock, pairing through the connect page when it is not. */
+/** The extension's replies the stand-in page recorded (value-free): null where it heard none within its 3 s. */
+async function pairingReplies(page: Page): Promise<PairingRecord['replies']> {
+  return page.evaluate(() => (window as unknown as { __pairing: PairingRecord }).__pairing.replies);
+}
+
+/**
+ * Makes sure the extension is paired with the mock, pairing through the connect page when it is not.
+ * jr7 INT-7 (the "code-shown" flake of e2e 45 and 46 under load): the stand-in page gives each pair/complete 3 s, and on
+ * a loaded machine a fresh browser's worker (the code's exchange and the session's read) answered after that, so the
+ * page showed its code with no reply heard. Only that case, a hand-off that heard no reply at all, is not a failure
+ * here: the worker that took the state late connects by itself (polled), else one more hand-off is made with a new
+ * state. A refusal (a reply not ok), another outcome or a second silence fails as before. The pairing spec (10) drives
+ * the hand-off itself and keeps its own checks; this is the behaviour specs' setup.
+ */
 export async function ensureConnected(ext: Extension): Promise<void> {
   if ((await ext.authStatus()).connection === 'connected') return;
-  const page = await pairThroughConnectPage(ext);
-  await page.close();
+  for (let attempt = 1; ; attempt += 1) {
+    await ext.page();
+    const opened = nextConnectPage(ext.context);
+    const started = await ext.send<{ expiresAt: number }>({ v: 1, type: 'auth/startPairing' });
+    expect(started.ok, 'auth/startPairing was refused').toBe(true);
+    const page = await opened;
+    const state = await connectOnPage(page);
+    const replies = state === 'code-shown' ? await pairingReplies(page) : [];
+    await page.close();
+    if (state === 'connected') break;
+    const unheard = state === 'code-shown' && replies.length > 0 && replies.every((reply) => reply === null);
+    expect(unheard && attempt === 1, `the hand-off ended ${state} (replies ${JSON.stringify(replies)})`).toBe(true);
+    // The worker may still be completing the state it took: give it time before another hand-off replaces the state.
+    const late = await expect.poll(async () => (await ext.authStatus()).connection, { timeout: 15_000 })
+      .toBe('connected').then(() => true, () => false);
+    if (late) break;
+  }
   await expect.poll(async () => (await ext.authStatus()).connection).toBe('connected');
 }
