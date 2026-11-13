@@ -45,6 +45,11 @@
  * - A question of one box (the data consent), and the EEO survey: gender and veteran status radios, in their own form.
  * - The buttons the extension must never press record every press: "Autofill from resume"'s Upload file (and a file
  *   put into its input), Upload File, Delete, the tabs, Submit Application.
+ * - jr8 (the owner's snapshot10, Ashby's Honeydew form, 2026-11-13), each only when asked: Yes/No answers drawn pressed
+ *   when the form is drawn (MountOptions.answered, as Ashby draws an application's answers saved before), and a required
+ *   ValueSelect "What is your primary state of residence?" of the options given (MountOptions.residence: Honeydew's are
+ *   the states' two-letter codes), drawn as the capture draws it (its entry a div with no class around the question's
+ *   fieldset), which may draw only its first results (MountOptions.residenceDraws).
  * The page script never dispatches an event, focuses, clicks or submits: every event on a control is the extension's.
  * What React holds, and what the page saw and saved, is written to the log object the caller gives (window.__ashby).
  */
@@ -102,6 +107,17 @@ export interface MountOptions {
   view?: AshbyView;
   /** The overview's description, as paragraphs. */
   description?: readonly string[];
+  /** jr8 (the owner's snapshot10, Honeydew's form, 2026-11-13): the Yes/No answers the form shows pressed when it is
+   *  drawn, as Ashby draws an application's answers saved before (its autosave) or the person's own choice. */
+  answered?: Partial<Record<'authorized' | 'sponsorship', boolean>>;
+  /** jr8: a required ValueSelect "What is your primary state of residence?" after the sponsorship, of these options
+   *  (Honeydew's lists the two-letter codes), drawn as the capture draws it: its entry a div with no class, the
+   *  question's fieldset in it. */
+  residence?: readonly string[];
+  /** jr8: the most results the state's list draws at once, the first ones (a list longer than it draws, read whole
+   *  only by typing): whether Ashby's own ValueSelect caps its results is not known (snapshot10 shows it closed), so
+   *  this stands for any list the run cannot read whole. Every result by default. */
+  residenceDraws?: number;
 }
 
 /** The two tabs' panels. */
@@ -124,7 +140,13 @@ export const PATHS = {
   degree: '6f1b584f-0005-4000-8000-000000000005', phone: '6f1b584f-0006-4000-8000-000000000006',
   linkedin: '6f1b584f-0007-4000-8000-000000000007', start: '6f1b584f-0008-4000-8000-000000000008',
   why: '6f1b584f-0009-4000-8000-000000000009', consent: '_systemfield_data_consent_ack',
+  residence: '6f1b584f-0010-4000-8000-000000000010',
 } as const;
+
+/** jr8: the two-letter codes of the US states and DC, as snapshot10's state of residence lists them. */
+export const STATE_CODES = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN',
+  'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND',
+  'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'] as const;
 
 const HEARD = ['LinkedIn', 'Referral', 'Company website', 'Job board', 'Other'];
 const SKILLS = ['TypeScript', 'Ruby', 'PostgreSQL', 'Kubernetes', 'Scala', 'Go'];
@@ -290,9 +312,10 @@ function PhoneQuestion(props: { page: Page }): ReactElement {
         radio('notGiven', 'No - I do not consent to receiving text messages'))));
 }
 
-/** A Yes/No question. */
-function YesNoQuestion(props: { page: Page; path: string; title: string; description?: string }): ReactElement {
-  const [value, setValue] = useState<boolean | null>(null);
+/** A Yes/No question (`initial`: the answer it shows when drawn, MountOptions.answered). */
+function YesNoQuestion(props: { page: Page; path: string; title: string; description?: string; initial?: boolean }):
+  ReactElement {
+  const [value, setValue] = useState<boolean | null>(props.initial ?? null);
   const press = (answer: boolean) => {
     const next = value === answer ? null : answer;
     setValue(next);
@@ -381,7 +404,7 @@ let nextListId = 0;
 
 /** A combobox: a ValueSelect (its own list, filtered as typed) or a remote search (Location, School). */
 function Combobox(props: { page: Page; path: string; placeholder?: string; items?: readonly ListItem[];
-  search?: (text: string) => Promise<ListItem[]> }): ReactElement {
+  search?: (text: string) => Promise<ListItem[]>; draws?: number }): ReactElement {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [chosen, setChosen] = useState<ListItem | null>(null);
@@ -394,6 +417,7 @@ function Combobox(props: { page: Page; path: string; placeholder?: string; items
   const page = props.page;
   const shownItems = props.items !== undefined
     ? props.items.filter((item) => text === '' || text === chosen?.shown || item.label.toLowerCase().includes(text.toLowerCase()))
+      .slice(0, props.draws)
     : results ?? [];
   useEffect(() => {
     if (!open || box.current === null || portal.current === null) return undefined;
@@ -466,6 +490,19 @@ function ComboboxQuestion(props: { page: Page; path: string; title: string; requ
   search?: (text: string) => Promise<ListItem[]> }): ReactElement {
   return h(Entry, { path: props.path, title: props.title, required: props.required },
     h(Combobox, { page: props.page, path: props.path, items: props.items, search: props.search }));
+}
+
+/** jr8: the state of residence, a ValueSelect as snapshot10 draws it: <div data-field-path=... data-field-entry-id=...>
+ *  <fieldset class="_container_wz442_28 _fieldEntry_1e3gg_28"><label class="... ashby-application-form-question-title"
+ *  for=...>What is your primary state of residence?</label><div class="_inputContainer_d7ago_28"><input ... role=
+ *  "combobox" ...><button class="_container_pjyt6_1 _toggleButton_d7ago_32">. */
+function ResidenceQuestion(props: { page: Page; options: readonly string[]; draws?: number }): ReactElement {
+  const path = PATHS.residence;
+  return h('div', { 'data-field-path': path, 'data-field-entry-id': `${RENDER_ID}_${path}` },
+    h('fieldset', { className: '_container_wz442_28 _fieldEntry_1e3gg_28' },
+      h('label', { className: titleClass(true), htmlFor: path }, 'What is your primary state of residence?'),
+      h(Combobox, { page: props.page, path, items: props.options.map((label) => ({ label, shown: label })),
+        draws: props.draws })));
 }
 
 /** The date question: a text box whose focus or click opens a calendar. */
@@ -583,7 +620,8 @@ function EducationQuestion(props: { page: Page; schoolSearch: (text: string) => 
 }
 
 /** The whole application form. */
-function Form(props: { page: Page }): ReactElement {
+function Form(props: { page: Page; answered?: MountOptions['answered']; residence?: readonly string[];
+  residenceDraws?: number }): ReactElement {
   const { page } = props;
   const placeSearch = async (text: string): Promise<ListItem[]> => {
     page.log.places.push(text);
@@ -621,9 +659,13 @@ function Form(props: { page: Page }): ReactElement {
         h(ComboboxQuestion, { page, path: '_systemfield_location', title: 'Where are you currently located?', required: true,
           search: placeSearch }),
         h(DateQuestion, { page, path: PATHS.start, title: 'When can you start a new role?' }),
-        h(YesNoQuestion, { page, path: PATHS.authorized, title: 'Are you legally authorized to work in the United States?' }),
+        h(YesNoQuestion, { page, path: PATHS.authorized, title: 'Are you legally authorized to work in the United States?',
+          initial: props.answered?.authorized }),
         h(YesNoQuestion, { page, path: PATHS.sponsorship, title: 'Will you now or in the future require sponsorship for '
-          + 'employment visa status?', description: 'We may provide immigration and sponsorship support to new employees.' })),
+          + 'employment visa status?', description: 'We may provide immigration and sponsorship support to new employees.',
+        initial: props.answered?.sponsorship }),
+        props.residence === undefined ? null : h(ResidenceQuestion, { page, options: props.residence,
+          draws: props.residenceDraws })),
       section('Background',
         h(RadioQuestion, { page, path: PATHS.heard, title: 'How did you hear about us?', options: HEARD, required: true }),
         h(CheckboxQuestion, { page, path: PATHS.skills, title: 'Which of these skills have you used?', options: SKILLS }),
@@ -679,7 +721,8 @@ export function mountAshbyForm(container: HTMLElement, options: MountOptions = {
   const render = () => {
     root.render(h(Fragment, null,
       view === 'application'
-        ? h('div', { tabIndex: 0, role: 'tabpanel', 'aria-labelledby': 'job-application-form', id: 'form' }, h(Form, { page }))
+        ? h('div', { tabIndex: 0, role: 'tabpanel', 'aria-labelledby': 'job-application-form', id: 'form' }, h(Form, { page,
+          answered: options.answered, residence: options.residence, residenceDraws: options.residenceDraws }))
         : h(Overview, { description: options.description ?? DESCRIPTION }),
       h(Toasts, { page, listen: (next) => {
         add = next;
