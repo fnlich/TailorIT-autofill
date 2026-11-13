@@ -84,6 +84,9 @@ export const ULTIPRO_SNAPSHOTS = ['fixtures/ultipro/register.html', 'fixtures/ul
  *  contactInfoViewModel" data-automation="contact-information-section"> ...; empty in ultipro-0). */
 const REVIEW = 'div[data-bind="if: isParsingResume()"]';
 
+/** jr7 ULTIPRO-7 (UP7-07): UltiPro's documents dialog after Submit (jr7-ultipro1-apply-11). */
+const DOCUMENTS_DIALOG_CSS = 'div#AttachmentsChangedModal[role="dialog" i]';
+
 /** The rules the configured layer builds hooks from, each naming its snapshot. */
 export const ULTIPRO_CONFIG: AtsConfig = {
   platform: 'ultipro',
@@ -98,7 +101,7 @@ export const ULTIPRO_CONFIG: AtsConfig = {
     // (neverPress below). The application is not sent until it is answered. No root and no Next: while it shows,
     // nothing is filled and nothing pressed (final 'unknown'); the person answers it. Jobright has no rule for it (no
     // AttachmentsChanged reference in its bundles).
-    { name: 'documents-dialog', when: 'div#AttachmentsChangedModal[role="dialog" i]', from: 'jr7-ultipro1-apply-11' },
+    { name: 'documents-dialog', when: DOCUMENTS_DIALOG_CSS, from: 'jr7-ultipro1-apply-11' },
     // ── end jr7 ULTIPRO-7 (UP7-07) ──
     // ultipro-2: <body class="authcode-controller candidate-layout white-background"> ... <form method="post"
     // id="registrationDetailsForm" ...> with three <ukg-field>s.
@@ -606,6 +609,13 @@ function consentQuestionOf(control: Element): Element | null {
  *  and another region's signin-<x>.ultipro.com. Nothing of ours runs there (shared/hosts.ts: an HR host, no static
  *  match); AUTO-7 reads these hosts (FIX7PLAN §6.4 item 6). */
 export const ULTIPRO_IDENTITY_HOSTS: readonly RegExp[] = [/^signin(?:-[a-z0-9]+)?\.ultipro\.com$/];
+
+/** UP7-07 (P2): whether the documents dialog after Submit shows (the documents-dialog state's own `when`:
+ *  jr7-ultipro1-apply-11's div#AttachmentsChangedModal[role=dialog], display: block). */
+function documentsDialogShown(doc: Document): boolean {
+  const cache = newScanCache();
+  return Array.from(doc.querySelectorAll(DOCUMENTS_DIALOG_CSS)).some((dialog) => isUserVisible(dialog, cache));
+}
 // ── end jr7 ULTIPRO-7 ──
 
 /** The UltiPro adapter. */
@@ -647,5 +657,8 @@ export const ultiproAdapter: Adapter = {
   confirmationAfter,
   // UP7-02: UKG's sign-in hosts.
   identityHosts: ULTIPRO_IDENTITY_HOSTS,
+  // UP7-07 (P2; E2's HandOverKind 'documents'; owner question Q7-8's default): the documents dialog after Submit is the
+  // person's: the agent and the Queue tab leave it to them, and the arm waits for the confirmation it leads to.
+  handOver: (doc) => (documentsDialogShown(doc) ? 'documents' : null),
   // ── end jr7 ULTIPRO-7 ──
 };

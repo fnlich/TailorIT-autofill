@@ -2,10 +2,12 @@
  * jr7 AUTO-7 (SP\jr7\FIX7PLAN.md §6.4 items 7, 14 and 16; AUTO7-06, UP7-01, WD7-05, ICIMS7-04 (3)): the page after
  * submitting that names no application, and the confirmation an assessment holds back, through the real worker
  * (index.ts, submissions.ts) over WXT's fake browser and a fake TailorIT. Synthetic addresses of the snapshot7 shapes.
- * - submit/after: a frame whose page no parser reads (UltiPro's …/OpportunityApply/ApplicationSubmitted) is the
- *   confirmation of the Submit it armed within CONFIRMATION_PAGE_MS, only where its platform's adapter reads that
- *   address as its page after submitting (Adapter.confirmationAfter, ULTIPRO-7's to implement: a stand-in here), on the
- *   armed page's origin; refused from another frame, late, on another origin, for a page a parser reads, with no hook.
+ * - submit/after: a frame whose page no parser reads (here UltiPro's route with no applicationId; jr7 ULTIPRO-7 P2: its
+ *   real …/ApplicationSubmitted?applicationId=… is keyed by its board and takes the confirmation-page route instead,
+ *   src/adapters/ultipro/jr7-ultipro-confirm.test.ts) is the confirmation of the Submit it armed within
+ *   CONFIRMATION_PAGE_MS, only where its platform's adapter reads that address as its page after submitting
+ *   (Adapter.confirmationAfter: a stand-in here, by the route alone), on the armed page's origin; refused from another
+ *   frame, late, on another origin, for a page a parser reads, with no hook.
  * - ICIMS7-04 (3): a step that is the person's by design shown after the Submit (frame/hello's handOver) makes the arm
  *   wait SUBMIT_ARM_MS for its confirmation page, not CONFIRMATION_PAGE_MS.
  */
@@ -17,12 +19,14 @@ import { confirmationAfterOf, CONFIRMATION_PAGE_MS, ROUTE_WAITS_FOR_SIGN, SUBMIT
 import { contentSender, goldens, startTestWorker, tokenRecord, type TestWorker } from './worker.testkit';
 
 let logs: MockInstance;
+// jr7 ULTIPRO-7 P2: UltiPro's own hook (url.ts confirmationAfter), put back after each test's stand-in.
+const ultiproAfter = ultiproAdapter.confirmationAfter;
 beforeEach(() => {
   logs = vi.spyOn(console, 'info').mockImplementation(() => undefined);
 });
 afterEach(() => {
   logs.mockRestore();
-  delete (ultiproAdapter as { confirmationAfter?: unknown }).confirmationAfter;
+  (ultiproAdapter as { confirmationAfter?: unknown }).confirmationAfter = ultiproAfter; // jr7 ULTIPRO-7 P2
   delete (oracleAdapter as { confirmationAfter?: unknown }).confirmationAfter;
 });
 
@@ -30,6 +34,10 @@ const TAB = 7;
 const BOARD = 'https://recruiting.ultipro.com/ACME1000/JobBoard/54a25c3a-e399-42b0-a553-16ed056e0517';
 const FORM = `${BOARD}/OpportunityApply?opportunityId=772ddf9d-79f1-4752-bf3b-688ded6980c7`;
 const SUBMITTED = `${BOARD}/OpportunityApply/ApplicationSubmitted?applicationId=11111111-2222-4333-8444-555555555555`;
+/** jr7 ULTIPRO-7 P2: the same route with no applicationId, which no parser reads (a keyless page after submitting). */
+const KEYLESS = `${BOARD}/OpportunityApply/ApplicationSubmitted`;
+/** jr7 ULTIPRO-7 P2: no hook at all on UltiPro's adapter. */
+const withoutHook = () => delete (ultiproAdapter as { confirmationAfter?: unknown }).confirmationAfter;
 const keyOf = (href: string) => applicationOf(new URL(href))!.applicationKey;
 type Answer = { ok: boolean; error?: string };
 
@@ -56,30 +64,37 @@ const after = (worker: TestWorker, sender: ReturnType<typeof frame>) =>
 const applied = (worker: TestWorker) => worker.tailorit.count('POST /api/autofill/applied');
 
 describe('jr7 AUTO-7: submit/after, a page after submitting that names no application', () => {
-  it('reads no application on UltiPro’s ApplicationSubmitted (no per-person id read into a key)', () => {
-    expect(applicationOf(new URL(SUBMITTED))).toBeNull();
+  // jr7 ULTIPRO-7 P2: UltiPro's real reading keys its page after submitting by the board, never by the applicationId.
+  it('reads UltiPro’s ApplicationSubmitted as its board’s confirmation, no per-person id read into a key', () => {
+    expect(applicationOf(new URL(SUBMITTED))).toMatchObject({ page: 'confirmation' });
+    expect(keyOf(SUBMITTED)).toBe(keyOf(SUBMITTED.replace('11111111', '99999999')));
+    expect(keyOf(SUBMITTED)).not.toBe(keyOf(FORM));
+    expect(applicationOf(new URL(KEYLESS))).toBeNull();
   });
 
   it('takes it once as the arm’s confirmation where the platform’s adapter reads it (a new document)', async () => {
     standIn();
     const worker = await armedForm();
-    expect(await after(worker, frame(SUBMITTED, 'doc-done'))).toEqual({ ok: true, data: {} });
+    expect(await after(worker, frame(KEYLESS, 'doc-done'))).toEqual({ ok: true, data: {} });
     expect(applied(worker)).toBe(1);
-    expect(await after(worker, frame(SUBMITTED, 'doc-done'))).toMatchObject({ ok: false, error: 'expired' });
+    expect(await after(worker, frame(KEYLESS, 'doc-done'))).toMatchObject({ ok: false, error: 'expired' });
     expect(applied(worker)).toBe(1);
   });
 
   it('refuses it with no hook, from another frame, late, on another origin, and on a page a parser reads', async () => {
+    withoutHook(); // jr7 ULTIPRO-7 P2
     const none = await armedForm();
-    expect(await after(none, frame(SUBMITTED, 'doc-done'))).toMatchObject({ ok: false, error: 'expired' });
+    expect(await after(none, frame(KEYLESS, 'doc-done'))).toMatchObject({ ok: false, error: 'expired' });
     standIn();
     const other = await armedForm();
-    expect(await after(other, frame(SUBMITTED, 'doc-done', 4))).toMatchObject({ ok: false, error: 'expired' });
+    expect(await after(other, frame(KEYLESS, 'doc-done', 4))).toMatchObject({ ok: false, error: 'expired' });
     const late = await armedForm();
     late.clock.now += CONFIRMATION_PAGE_MS + 1;
-    expect(await after(late, frame(SUBMITTED, 'doc-done'))).toMatchObject({ ok: false, error: 'expired' });
+    expect(await after(late, frame(KEYLESS, 'doc-done'))).toMatchObject({ ok: false, error: 'expired' });
     const keyed = await armedForm();
     expect(await after(keyed, frame(FORM, 'doc-form'))).toMatchObject({ ok: false, error: 'bad_message' });
+    // jr7 ULTIPRO-7 P2: UltiPro's keyed confirmation is a page a parser reads too (its confirmation-page route).
+    expect(await after(keyed, frame(SUBMITTED, 'doc-done'))).toMatchObject({ ok: false, error: 'bad_message' });
     for (const worker of [none, other, late, keyed]) expect(applied(worker)).toBe(0);
     // The hook's own rule, held by the worker: never across origins.
     expect(confirmationAfterOf('ultipro', new URL(FORM),

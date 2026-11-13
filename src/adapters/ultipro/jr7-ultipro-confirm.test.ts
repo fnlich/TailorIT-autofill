@@ -4,8 +4,8 @@
  * confirmation names no opportunity (its applicationId is never read: FIX7PLAN §5 D-10), so its key is the board's page,
  * not the form's: the worker takes it for the tab's Submit armed in the same frame on the same board, once, by the
  * adapter's confirmationAfter. That reading is AUTO-7's (FIX7PLAN §6.4 item 7: submissions.ts confirmedArm asks
- * confirmationAfter); until it lands the confirmation is refused, so the recording case is held `it.fails` here and is
- * flipped when jr7-auto-done is merged (ULTIPRO-7 P2 or INT-7). Synthetic addresses only.
+ * confirmationAfter, by the arm's canonical posting address), in since jr7-auto-done (the recording case was held
+ * `it.fails` in P1, flipped in P2). Synthetic addresses only.
  */
 import { describe, expect, it } from 'vitest';
 import { applicationOf } from '../index';
@@ -39,8 +39,8 @@ describe("UltiPro's page after submitting, through the worker (jr7 UP7-01)", () 
     expect(ultiproAdapter.confirmationAfter!(new URL(FORM), new URL(OTHER))).toBe(false);
   });
 
-  // Held until AUTO-7 item 7 (submissions.ts confirmedArm asks the adapter's confirmationAfter): flip to `it` then.
-  it.fails("records it for the tab's Submit armed on the same board, once", async () => {
+  // Flipped in P2: jr7-auto-done's confirmedArm asks the adapter's confirmationAfter (AUTO-7 item 7).
+  it("records it for the tab's Submit armed on the same board, once", async () => {
     const worker = await armed();
     expect(await confirmed(worker)).toEqual({ ok: true, data: {} });
     expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(1);

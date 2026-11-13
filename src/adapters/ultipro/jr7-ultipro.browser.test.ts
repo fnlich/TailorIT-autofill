@@ -244,15 +244,31 @@ describe('jr7 UP7-07: the documents dialog after Submit (owner question Q7-8: th
       const button = doc.querySelector(`button[data-automation="${answer}"]`)!;
       expect(never.some((el) => el.contains(button)), answer).toBe(true);
     }
-    // Answered (gone), the application is the page again, its Submit the same host.
+    // P2 (E2's HandOverKind): the step is the person's by design.
+    expect(ultiproAdapter.handOver?.(doc)).toBe('documents');
+    // Answered (gone), the application is the page again, its Submit the same host; no hand-over.
     dialog.remove();
     expect(ultiproAdapter.detect(doc)?.formRoot).toBe(doc.getElementById('OpportunityApply'));
+    expect(ultiproAdapter.handOver?.(doc)).toBeNull();
   });
+
+  it("is said in the top frame's hello (the runtime), the agent and the Queue tab leave it", async () => {
+    const address = addressOf('jr7-ultipro1-apply-11');
+    const { doc } = await openAt(page('jr7-ultipro1-apply-11').html, address);
+    const { worker, runtime } = await runtimeAt(doc, address, (url) => adaptersFor(url, doc)
+      .map((adapter) => (adapter.id === 'generic' ? adapter : servedAdapter(adapter, address))));
+    try {
+      await vi.waitFor(() => expect(worker.of('frame/hello').at(-1)?.handOver).toBe('documents'), { timeout: 10_000 });
+    } finally {
+      runtime.stop();
+    }
+  }, 60_000);
 
   it('is no state on any other application capture', async () => {
     for (const each of JR7.filter((one) => /-apply-\d+$/.test(one.name) && one.name !== 'jr7-ultipro1-apply-11')) {
       const doc = await open(each.name);
       expect(ultiproAdapter.detect(doc)?.formRoot.id, each.name).toBe('OpportunityApply');
+      expect(ultiproAdapter.handOver?.(doc) ?? null, each.name).toBeNull();
       removeFixtures(document);
     }
   }, 240_000);
