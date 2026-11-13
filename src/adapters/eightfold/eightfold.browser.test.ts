@@ -154,9 +154,10 @@ describe('Eightfold (jr7 JDEF-7 P1): the adapter and its registration', () => {
       const { doc } = await open('jr7-twillio-apply');
       const rows = (adapter: Adapter) => fieldsOf(doc, adapter).filter((field) => field.kind !== 'radio')
         .map((field) => [field.kind, field.required, field.label]);
-      expect(rows(eightfoldAdapter).slice(0, 6)).toEqual([['file', true, 'Upload your resume'], ['text', true, 'Email'],
+      // P2 (jr7-engine-e1 item 4, EFA-3): the Phone number beside its country code is a field now, no code box.
+      expect(rows(eightfoldAdapter).slice(0, 7)).toEqual([['file', true, 'Upload your resume'], ['text', true, 'Email'],
         ['text', true, 'First name'], ['text', true, 'Last name'], ['combobox', true, 'Country code'],
-        ['combobox', true, 'Country']]);
+        ['text', true, 'Phone'], ['combobox', true, 'Country']]);
       // EFA-11 undone: the résumé's input says nothing of its own, so it reads optional.
       expect(rows(variant({ required: [] }))[0]).toEqual(['file', false, 'Upload your resume']);
       // EFA-V5 undone: the group's legend renames the country code "Phone".
