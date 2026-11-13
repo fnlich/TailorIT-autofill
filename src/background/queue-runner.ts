@@ -351,11 +351,14 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
     return changed;
   }
 
-  /** A job ends: its status and reason, and what TailorIT is told (nothing for a job it no longer had queued). */
+  /** A job ends: its status and reason, and what TailorIT is told (nothing for a job it no longer had queued).
+   *  jr7 FIX-background (the review's B-3): why it rested with the person (its hand-over's note) goes with it, so a job
+   *  recorded submitted after its documents dialog or its assessment no longer shows those words. */
   function finish(item: Item, status: 'submitted' | 'skipped' | 'failed', result: { state: AutofillAgentFinishedState;
     reason: AutofillAgentReason | null } | null, aiGuesses = 0): void {
     item.status = status;
     item.reason = result?.reason ?? null;
+    item.note = null; // jr7 FIX-background (B-3)
     item.tell = result === null ? null : { ...result, aiGuesses };
     log('queue.finished', { status: QUEUE_ITEM_STATUSES.indexOf(status),
       reason: result?.reason == null ? -1 : AUTOFILL_AGENT_REASONS.indexOf(result.reason) });
