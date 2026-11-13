@@ -11,7 +11,7 @@ import { UKGREADY_CASES, UKGREADY_CONFIG } from './config';
 export { UKGREADY_CONFIG } from './config';
 
 /** The fixtures the config was read from (fixtures/ukgready/<case>.html). */
-export const UKGREADY_SNAPSHOTS = UKGREADY_CASES.map((name) => `fixtures/ukgready/${name}.html`);
+export const UKGREADY_SNAPSHOTS = /* @__PURE__ */ UKGREADY_CASES.map((name) => `fixtures/ukgready/${name}.html`);
 
 /** The UKG Ready adapter. */
 export const ukgReadyAdapter: Adapter = configuredAdapter(UKGREADY_CONFIG);

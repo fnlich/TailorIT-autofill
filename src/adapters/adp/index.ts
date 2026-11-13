@@ -98,7 +98,7 @@ export const ADP_SNAPSHOTS = ['fixtures/adp/guest.html', 'fixtures/adp/code-dial
 
 /** jr6: the owner's captures of 2026-11-10 (snapshot6 adp1 and adp2), as fixtures/adp/<case>.html, each a page the jr6
  *  rules were read from (the module header). */
-export const ADP_JR6_SNAPSHOTS = ['jr6-posting', 'jr6-consent', 'jr6-guest-blank', 'jr6-guest-send-code',
+export const ADP_JR6_SNAPSHOTS = /* @__PURE__ */ ['jr6-posting', 'jr6-consent', 'jr6-guest-blank', 'jr6-guest-send-code',
   'jr6-code-dialog', 'jr6-landing', 'jr6-personal-blank', 'jr6-personal-us-errors', 'jr6-personal-us-state',
   'jr6-personal-filled', 'jr6-resume-choice', 'jr6-resume-blank', 'jr6-resume-uploaded', 'jr6-questions-filled',
   'jr6-questions2-blank', 'jr6-questions2-filled', 'jr6-self-id-blank', 'jr6-self-id-filled', 'jr6-review',
@@ -107,7 +107,7 @@ export const ADP_JR6_SNAPSHOTS = ['jr6-posting', 'jr6-consent', 'jr6-guest-blank
 
 /** jr7: the owner's captures of 2026-11-11 (snapshot7 adp1), as fixtures/adp/<case>.html, in the order they were taken
  *  (the module header). */
-export const ADP_JR7_SNAPSHOTS = ['posting', 'posting-2', 'consent', 'guest', 'code-choice', 'code-choice-2', 'code',
+export const ADP_JR7_SNAPSHOTS = /* @__PURE__ */ ['posting', 'posting-2', 'consent', 'guest', 'code-choice', 'code-choice-2', 'code',
   'personal-blank', 'personal-filled', 'resume', 'questions-filled', 'review', 'self-attest-blank', 'self-attest-ticked',
   'self-attest-signed', 'confirmation'].map((step) => `fixtures/adp/jr7-adp1-${step}.html`);
 

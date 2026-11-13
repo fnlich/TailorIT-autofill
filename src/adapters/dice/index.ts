@@ -9,6 +9,6 @@ import { DICE_CONFIG, DICE_SNAPSHOTS } from './config';
 export { DICE_CONFIG } from './config';
 
 /** The fixtures the adapter was written from. */
-export const DICE_FIXTURES = DICE_SNAPSHOTS.map((name) => `fixtures/dice/${name}.html`);
+export const DICE_FIXTURES = /* @__PURE__ */ DICE_SNAPSHOTS.map((name) => `fixtures/dice/${name}.html`);
 
 export const diceAdapter: Adapter = configuredAdapter(DICE_CONFIG);

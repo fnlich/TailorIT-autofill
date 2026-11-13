@@ -134,7 +134,7 @@ export const WORKDAY_STEP_SNAPSHOTS = ['fixtures/workday/cisive-autofill-resume.
 /** jr6 (FIXPLAN §6.4): the owner's captures of 2026-11-06 the jr6 hooks were written from and are held against
  *  (jr6-workday.browser.test.ts), converted with the jr6 converter: Application Questions, Voluntary Disclosures, My
  *  Information, My Experience, Create Account, Sign In and Autofill with Resume of eleven tenants. */
-export const WORKDAY_JR6_SNAPSHOTS = ['gnw-application-questions', 'parsons-application-questions',
+export const WORKDAY_JR6_SNAPSHOTS = /* @__PURE__ */ ['gnw-application-questions', 'parsons-application-questions',
   'travelers-application-questions', 'verily-application-questions', 'cisive-application-questions',
   'danafarber-application-questions-1', 'danafarber-application-questions-2', 'resolvetech-voluntary-disclosures',
   'cisive-voluntary-disclosures', 'web-voluntary-disclosures', 'gnw-voluntary-disclosures',

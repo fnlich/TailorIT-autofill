@@ -9,6 +9,6 @@ import { CLEARCOMPANY_CONFIG, CLEARCOMPANY_SNAPSHOTS } from './config';
 export { CLEARCOMPANY_CONFIG } from './config';
 
 /** The fixtures the adapter was written from. */
-export const CLEARCOMPANY_FIXTURES = CLEARCOMPANY_SNAPSHOTS.map((name) => `fixtures/clearcompany/${name}.html`);
+export const CLEARCOMPANY_FIXTURES = /* @__PURE__ */ CLEARCOMPANY_SNAPSHOTS.map((name) => `fixtures/clearcompany/${name}.html`);
 
 export const clearCompanyAdapter: Adapter = configuredAdapter(CLEARCOMPANY_CONFIG);

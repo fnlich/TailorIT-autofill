@@ -9,6 +9,6 @@ import { PAYLOCITY_CONFIG, PAYLOCITY_SNAPSHOTS } from './config';
 export { PAYLOCITY_CONFIG } from './config';
 
 /** The fixtures the adapter was written from. */
-export const PAYLOCITY_FIXTURES = PAYLOCITY_SNAPSHOTS.map((name) => `fixtures/paylocity/${name}.html`);
+export const PAYLOCITY_FIXTURES = /* @__PURE__ */ PAYLOCITY_SNAPSHOTS.map((name) => `fixtures/paylocity/${name}.html`);
 
 export const paylocityAdapter: Adapter = configuredAdapter(PAYLOCITY_CONFIG);

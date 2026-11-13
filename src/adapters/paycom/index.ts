@@ -11,6 +11,6 @@ import { PAYCOM_CONFIG, PAYCOM_SNAPSHOTS } from './config';
 export { PAYCOM_CONFIG } from './config';
 
 /** The fixtures the adapter was written from. */
-export const PAYCOM_FIXTURES = PAYCOM_SNAPSHOTS.map((name) => `fixtures/paycom/${name}.html`);
+export const PAYCOM_FIXTURES = /* @__PURE__ */ PAYCOM_SNAPSHOTS.map((name) => `fixtures/paycom/${name}.html`);
 
 export const paycomAdapter: Adapter = configuredAdapter(PAYCOM_CONFIG);

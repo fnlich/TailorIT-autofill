@@ -10,6 +10,6 @@ import { JOBDIVA_CONFIG, JOBDIVA_SNAPSHOTS } from './config';
 export { JOBDIVA_CONFIG, JOBDIVA_PHONE_PATTERN } from './config';
 
 /** The fixtures the adapter was written from. */
-export const JOBDIVA_FIXTURES = JOBDIVA_SNAPSHOTS.map((name) => `fixtures/jobdiva/${name}.html`);
+export const JOBDIVA_FIXTURES = /* @__PURE__ */ JOBDIVA_SNAPSHOTS.map((name) => `fixtures/jobdiva/${name}.html`);
 
 export const jobDivaAdapter: Adapter = configuredAdapter(JOBDIVA_CONFIG);
