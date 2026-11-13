@@ -11,14 +11,18 @@
  *   attestation;
  * - EFA-6 (ENGINE-7 E2 item 4, the upload-prompt door): the Data Privacy Agreement's I Agree pressed once the dialog
  *   the capture caught opening shows, where the Consents mode ticks such a box; left where it does not; its Cancel
- *   never pressed.
+ *   never pressed. And (after jr7-auto-r2, which carries the person's Consents mode to the run's upload prompts) a
+ *   real run on the form: its own résumé upload, the dialog the site draws for it, I Agree pressed once where the
+ *   worker says the mode (All), left where it says none.
  * Country code and Country stay lazy comboboxes, the person's until an open list is captured (EFA-9, gated Q7-1).
  * Nothing here prints a page.
  */
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import applyHtml from '../../../fixtures/eightfold/jr7-twillio-apply.html?raw';
 import apply2Html from '../../../fixtures/eightfold/jr7-twillio-apply-2.html?raw';
-import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { createFakeWorker, fakePdf, GOLDEN_RESUME, goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { startContentRuntime, type ContentRuntime } from '../../content/runtime';
+import { deadline } from '../../dom/time';
 import { planFrame } from '../../core/plan/frame';
 import type { PlanOutput } from '../../core/plan/types';
 import { classifyByRules } from '../../core/resolver/classifyRules';
@@ -34,10 +38,14 @@ import { wordsOf } from '../success';
 import type { Adapter } from '../types';
 import { EIGHTFOLD_CONFIG, eightfoldAdapter } from './index';
 
+const runtimes: ContentRuntime[] = [];
 beforeAll(() => {
   testVocab();
 });
-afterEach(() => removeFixtures(document));
+afterEach(() => {
+  for (const runtime of runtimes.splice(0)) runtime.stop();
+  removeFixtures(document);
+});
 
 /** The window the capture was laid out for (its footer's geometry). */
 const WIDE = { width: 1920, height: 1080 } as const;
@@ -154,4 +162,55 @@ describe('Eightfold (jr7 JDEF-7 P2): the shared outcomes on the application', ()
       removeFixtures(document);
     }
   });
+
+  it('EFA-6 in a run (jr7-auto-r2): its own résumé upload\'s I Agree pressed once under Consents All; no mode, left',
+    async () => {
+      /** The address the form was captured at (its header's source). */
+      const source = (JSON.parse(/<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(applyHtml)![1]!) as
+        { source: string }).source;
+      for (const consentModes of [true, false]) {
+        const { doc, view } = await open(applyHtml);
+        const pressed: string[] = [];
+        const backdrop = doc.querySelector<HTMLElement>('[role="dialog"]:has(> [class*="privacyAgreementDialog-"])')!;
+        const panel = backdrop.querySelector<HTMLElement>(':scope > [class*="privacyAgreementDialog-"]')!;
+        doc.addEventListener('click', (event) => {
+          const words = wordsOf(event.target as Element);
+          pressed.push(words);
+          event.preventDefault();
+          // As the site does: the agreement closes on either of its buttons.
+          if (words === 'I Agree' || words === 'Cancel') backdrop.style.setProperty('visibility', 'hidden', 'important');
+        }, true);
+        // The site's own script, stood in: once the résumé's input takes a file, it draws its Data Privacy Agreement
+        // (jr7-twillio-apply-2), shown a moment later.
+        doc.querySelector('.upload-resume-dropzone input[type="file"]')!.addEventListener('change', () => {
+          view.setTimeout(() => {
+            for (const [el, opacity] of [[backdrop, '1'], [panel, '1']] as const) {
+              el.style.setProperty('visibility', 'visible', 'important');
+              el.style.setProperty('opacity', opacity, 'important');
+              el.style.setProperty('transform', 'none', 'important');
+              el.style.setProperty('animation', 'none', 'important');
+            }
+          }, 150);
+        });
+        const worker = createFakeWorker({ settings: DEFAULT_SETTINGS,
+          ...(consentModes ? { consentModes: true as const } : {}),
+          resume: { bytes: fakePdf(48_213), name: GOLDEN_RESUME.fileName, mime: 'application/pdf' } });
+        const runtime = await startContentRuntime(worker.platform, doc, { href: () => source, isTop: true,
+          adapters: () => [eightfoldAdapter], settle: { quietMs: 40 } });
+        runtimes.push(runtime);
+        void runtime.fill();
+        if (consentModes) {
+          await vi.waitFor(() => expect(pressed).toContain('I Agree'), { timeout: 20_000, interval: 100 });
+          await deadline(500);
+          expect(pressed.filter((words) => words === 'I Agree')).toHaveLength(1);
+        } else {
+          await vi.waitFor(() => expect(getComputedStyle(panel).opacity).toBe('1'), { timeout: 20_000, interval: 100 });
+          await deadline(5_000);
+          expect(pressed, 'no mode').not.toContain('I Agree');
+        }
+        expect(pressed, String(consentModes)).not.toContain('Cancel');
+        for (const each of runtimes.splice(0)) each.stop();
+        removeFixtures(document);
+      }
+    }, 90_000);
 });

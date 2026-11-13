@@ -11,15 +11,14 @@
  * from jr7-jobdiva2-eeo, -veteran and -confirmation), and a step's button enables once its questions are answered, as
  * the captures show (Next and Save disabled until answered). The plan's answers are the golden synthetic profile's.
  */
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import confirmationHtml from '../../../fixtures/jobdiva/jr7-jobdiva2-confirmation.html?raw';
 import eeoHtml from '../../../fixtures/jobdiva/jr7-jobdiva2-eeo.html?raw';
 import filledHtml from '../../../fixtures/jobdiva/jr7-jobdiva2-quick-apply-filled.html?raw';
 import veteranHtml from '../../../fixtures/jobdiva/jr7-jobdiva2-veteran.html?raw';
 import { createFakeWorker, testVocab } from '../../content/content.testkit';
 import { startContentRuntime, type ContentRuntime } from '../../content/runtime';
-import { DEFAULT_SETTINGS } from '../../core/types/settings';
+import { DEFAULT_SETTINGS, type Settings } from '../../core/types/settings';
 import { loadFixture, removeFixtures, type Fixture } from '../../dom/fixture.testkit';
 import { deadline } from '../../dom/time';
 import { applicationOf } from '../index';
@@ -87,7 +86,7 @@ function portal(fixture: Fixture): { pressed: string[]; answers: string[][] } {
   return { pressed, answers };
 }
 
-async function start(settings = AUTO) {
+async function start(settings: Settings = AUTO) {
   const fixture = await loadFixture(document, filledHtml, { width: 1280, height: 900 });
   const worker = createFakeWorker({ settings });
   const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => SOURCE, isTop: true,
