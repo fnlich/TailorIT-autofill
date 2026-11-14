@@ -316,9 +316,10 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
 
   async function load(): Promise<Run | null> {
     if (cached !== undefined) return cached;
-    // v2.0 fix wave (BEH-4): another browser session's open jobs are taken up first, before this worker writes its own.
+    const stored = (await deps.session.get(QUEUE_RUN_KEY)) ?? null;
+    // v2.0 fix wave (BEH-4): another browser session's open jobs are taken up before this worker writes its own.
     await recoverOnce();
-    const parsed = RunSchema.nullable().safeParse((await deps.session.get(QUEUE_RUN_KEY)) ?? null);
+    const parsed = RunSchema.nullable().safeParse(stored);
     cached = parsed.success ? parsed.data : null;
     return cached;
   }
