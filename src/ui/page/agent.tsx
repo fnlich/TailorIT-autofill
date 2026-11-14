@@ -6,16 +6,21 @@
  * useAgentStatus reads agent/status when the page opens, when it is seen again, when the worker says the agent changed
  * (panel/changed {what: 'agent'}: the side panel's port; the options page listens on a port of its own) and after the
  * person's own actions.
+ * v2.0 P9 (autofill API 8): while TailorIT's daily auto-apply limit holds the agent (blocked 'daily-limit'), the line is
+ * followed by TailorIT's own words for it, as they are, and Subscribe (TailorIT's Settings › Account, in a new tab).
  */
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { AgentStatus } from '../../messaging/schemas';
 import { PanelPortMessageSchema } from '../../messaging/page-schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
+import { API8_COPY } from '../options/copy-api8'; // v2.0 P9
 import { request } from './request';
 
 /** TailorIT's Auto-apply page, where the queue and every result are listed. */
 export const AUTO_APPLY_URL = `${__TAILORIT_ORIGIN__}/auto-apply`;
+/** v2.0 P9: TailorIT's Settings › Account, where a Free account subscribes. */
+export const SUBSCRIBE_URL = `${__TAILORIT_ORIGIN__}/settings#account`;
 
 /** The agent's status, and how to refresh it or show one an answer carried. */
 export interface AgentState {
@@ -109,6 +114,13 @@ export function AgentStatusLine({ platform, agent, className }: {
   return (
     <div className={className ?? 'tia-strip tia-agent'} data-tone="neutral" data-agent={status.phase} role="status">
       <span data-agent-line="">{COPY.agent.line(status)}</span>
+      {/* v2.0 P9 (API 8): TailorIT's daily auto-apply limit, in its own words, and Subscribe. */}
+      {status.blocked === 'daily-limit' && (
+        <span data-agent-limit="" style={{ flexBasis: '100%' }}>
+          {status.limit?.message ?? API8_COPY.limitReached(status.limit?.resetsAt ?? null)}{' '}
+          <a href={SUBSCRIBE_URL} target="_blank" rel="noreferrer" data-tailorit-link="subscribe">{API8_COPY.subscribe}</a>
+        </span>
+      )}
       <span className="tia-agent__actions">
         {status.on && (
           <button type="button" className="tia-button" data-action="agent-stop" disabled={stopping} onClick={stop}>

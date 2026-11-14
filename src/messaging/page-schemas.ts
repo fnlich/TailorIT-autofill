@@ -73,6 +73,11 @@ export type QueueHold = (typeof QUEUE_HOLDS)[number];
  *  changed, went or lacks agent:run; the disclosure changed; Chrome opened no tab. */
 export const QUEUE_STOPS = ['person', 'agent', 'connection', 'disclosure', 'no-tab'] as const;
 export type QueueStop = (typeof QUEUE_STOPS)[number];
+/** v2.0 P9 (autofill API 8): why a run stopped (QueueStatus.stoppedBy): QUEUE_STOPS, or 'daily-limit' (TailorIT's
+ *  claim of the next job answered that the account's daily auto-apply limit is reached; the jobs left stay queued).
+ *  Kept apart from QUEUE_STOPS, whose words src/shared/copy.ts holds: the limit's words are TailorIT's own. */
+export const QUEUE_STATUS_STOPS = [...QUEUE_STOPS, 'daily-limit'] as const;
+export type QueueStatusStop = (typeof QUEUE_STATUS_STOPS)[number];
 /** Why the queue cannot start now (the agent's blocks that apply). */
 export const QUEUE_BLOCKS = ['not-connected', 'no-scope', 'disclosure'] as const;
 export type QueueBlock = (typeof QUEUE_BLOCKS)[number];
@@ -257,6 +262,11 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
    *  (credentials:read): the every-site sign-in TailorIT keeps, saved here when its password meets the rules. */
   z.strictObject({ v, type: z.literal('signup/import') }),
   // ── end jr6 ──
+  // ── v2.0 P9 (A20) ──
+  /** Options › Auto-apply › "Close the application tab when it's submitted": read (no `on`) or set. The options page's
+   *  own (never the sidebar's: background/senders.ts SIDEBAR_PAGE_MESSAGES names it not). */
+  z.strictObject({ v, type: z.literal('autoApply/closeTab'), on: z.boolean().optional() }),
+  // ── end v2.0 P9 ──
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
@@ -563,6 +573,20 @@ export type PanelSaveProfileAnswer = z.infer<typeof PanelSaveProfileAnswerSchema
  *  of 2026-11-06, M5) the browser offline, so no job is taken. */
 export const AGENT_BLOCKS = ['not-connected', 'no-scope', 'disclosure', 'no-window', 'offline'] as const;
 export type AgentBlock = (typeof AGENT_BLOCKS)[number];
+// ── v2.0 P9 (autofill API 8: the claim's daily limit) ──
+/** What the agent's status says blocks it (AgentStatus.blocked): AGENT_BLOCKS, or 'daily-limit' (TailorIT's claim
+ *  answered that the account's daily auto-apply limit is reached: the agent waits for the reset, Run auto-apply on).
+ *  Kept apart from AGENT_BLOCKS, whose words src/shared/copy.ts holds (the content script reads that file): the limit's
+ *  words are TailorIT's own (AutoApplyLimit.message). */
+export const AGENT_STATUS_BLOCKS = [...AGENT_BLOCKS, 'daily-limit'] as const;
+export type AgentStatusBlock = (typeof AGENT_STATUS_BLOCKS)[number];
+/** TailorIT's daily auto-apply limit, as a claim answered it reached (the contract's AutofillDailyLimit): its words for
+ *  the person, shown as they are (null: it sent none), and when it resets (ms since the epoch). */
+export const AutoApplyLimitSchema = z.strictObject({ message: Text(400).nullable(), resetsAt: Count });
+export type AutoApplyLimit = z.infer<typeof AutoApplyLimitSchema>;
+/** autoApply/closeTab's answer (A20): whether a tab auto-apply opened closes once its application is submitted. */
+export const CloseTabAnswerSchema = z.strictObject({ on: z.boolean() });
+// ── end v2.0 P9 ──
 /** Why the agent paused itself, Run auto-apply off until the person turns it on again (the audit of 2026-11-06): the
  *  browser opened no window for a job, jobs in a row whose pages did not load (M5), or the person closed its window,
  *  which is their Stop (m14). */
@@ -581,7 +605,9 @@ export const AgentStatusSchema = z.strictObject({
   /** The person confirmed, once, that applications will be submitted unattended with AI-guessed answers. */
   confirmed: z.boolean(),
   phase: z.enum(AGENT_PHASES),
-  blocked: z.enum(AGENT_BLOCKS).nullable(),
+  blocked: z.enum(AGENT_STATUS_BLOCKS).nullable(), // v2.0 P9: 'daily-limit' too
+  /** v2.0 P9 (API 8): while blocked 'daily-limit', TailorIT's words and its reset; absent otherwise. */
+  limit: AutoApplyLimitSchema.optional(),
   /** While off: why the agent paused itself (AGENT_PAUSES); null or absent when the person turned it off. */
   paused: z.enum(AGENT_PAUSES).nullable().optional(),
   /** Run auto-apply may be turned on now: connected with agent:run, the disclosure acknowledged. */
@@ -633,7 +659,9 @@ export const QueueStatusSchema = z.strictObject({
   counts: QueueCountsSchema,
   openTabs: Count,
   maxOpenTabs: Count,
-  stoppedBy: z.enum(QUEUE_STOPS).nullable(),
+  stoppedBy: z.enum(QUEUE_STATUS_STOPS).nullable(), // v2.0 P9: 'daily-limit' too
+  /** v2.0 P9 (API 8): stopped by 'daily-limit', TailorIT's words and its reset; absent otherwise. */
+  limit: AutoApplyLimitSchema.optional(),
   /** Start turned Run auto-apply off (the two never run together). */
   agentStopped: z.boolean(),
   /** Run auto-apply is on now: Start turns it off. */
@@ -775,6 +803,7 @@ export const PAGE_ANSWER_SCHEMAS = {
   'signup/save': SignupStatusSchema,
   'signup/delete': SignupDeleteAnswerSchema,
   'signup/import': SignupImportAnswerSchema,
+  'autoApply/closeTab': CloseTabAnswerSchema, // v2.0 P9
 } as const satisfies Record<PageMessage['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */

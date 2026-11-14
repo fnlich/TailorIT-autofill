@@ -60,6 +60,18 @@
  *   It holds ids, titles, companies, statuses, the tabs' ids and the application's key (a hash), never an address: the
  *   address comes from TailorIT's answer as each job opens, and goes straight to its tab. Logs carry counts, phases and
  *   places in closed lists only.
+ * - v2.0 P9 (autofill API 8):
+ *   - TailorIT's claim of the next job (POST …/opened) may answer that the account's daily auto-apply limit is reached
+ *     (its `dailyLimit`, no job): the run stops ('daily-limit'), keeping TailorIT's words and reset for the Queue tab;
+ *     that job and every later one stay queued, and the tabs already open go on to their end. Start again before the
+ *     reset asks again, and gets the same answer.
+ *   - Every result says whether the job's Submit was pressed (`submitPressed`), by which TailorIT keeps or gives back its
+ *     count.
+ *   - A job TailorIT queued for the person to apply to by hand (run kind `manual`) is never read into a run, so never
+ *     opened (queue-source.ts pageOf).
+ *   - A submitted job's tab closes QUEUE_CLOSE_SUBMITTED_MS after the platform's sign, whether it is in front or not,
+ *     while "Close the application tab when it's submitted" is on (close-tab.ts), and never while it is off; a tab the
+ *     person was handed (a step that is theirs by design, a CAPTCHA, a bot check or a code at rest) is kept.
  */
 import { z } from 'zod';
 import {
@@ -69,8 +81,8 @@ import {
 import { queueWaitMs, type Settings } from '../core/types/settings';
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import {
-  QUEUE_HOLDS, QUEUE_ITEM_STATUSES, QUEUE_LIST_PAGE, QUEUE_STOPS, type QueueBlock, type QueueItemStatus,
-  type QueueListAnswer, type QueueStatus, type QueueStop,
+  QUEUE_HOLDS, QUEUE_ITEM_STATUSES, QUEUE_LIST_PAGE, QUEUE_STATUS_STOPS, type AutoApplyLimit, type QueueBlock,
+  type QueueItemStatus, type QueueListAnswer, type QueueStatus, type QueueStatusStop, type QueueStop,
 } from '../messaging/page-schemas';
 import { AGENT_NOTES, type AgentNote } from '../messaging/schemas';
 import type { AgentAlarms, AtsPage, QueueTabs, StorageArea } from '../platform/types';
@@ -147,6 +159,9 @@ const ItemSchema = z.strictObject({
 });
 type Item = z.infer<typeof ItemSchema>;
 
+/** v2.0 P9: TailorIT's daily auto-apply limit, as the claim that stopped the run answered it (AutoApplyLimit). */
+const LimitSchema = z.strictObject({ message: z.string().max(400).nullable(), resetsAt: Count });
+
 const RunSchema = z.strictObject({
   phase: z.enum(['running', 'paused', 'finished', 'stopped']),
   startedAt: Count,
@@ -157,9 +172,11 @@ const RunSchema = z.strictObject({
   /** The ms kept while paused or held. */
   leftMs: Count.nullable(),
   hold: z.enum(QUEUE_HOLDS).nullable(),
-  stoppedBy: z.enum(QUEUE_STOPS).nullable(),
+  stoppedBy: z.enum(QUEUE_STATUS_STOPS).nullable(), // v2.0 P9: 'daily-limit' too
   agentStopped: z.boolean(),
   items: z.array(ItemSchema).max(QUEUE_RUN_MAX),
+  /** v2.0 P9: stopped by 'daily-limit', TailorIT's words and its reset; null otherwise (a run saved without it too). */
+  limit: LimitSchema.nullable().default(null),
 });
 type Run = z.infer<typeof RunSchema>;
 
@@ -170,6 +187,10 @@ const PASSING: ReadonlySet<ServerFailure> = new Set(['unreachable', 'timeout', '
   'not-connected', 'version-mismatch']);
 /** The refusals that drop even a submitted result. */
 const DROPS_SUBMITTED: ReadonlySet<ServerFailure> = new Set(['not-found', 'bad-request', 'refused-path']);
+/** v2.0 P9 (A20): the pauses a run rests at for the person after a Submit: a check or a code. A tab showing one when the
+ *  platform's sign comes is theirs, never closed. */
+const PERSONS_PAUSES: ReadonlySet<FrameReport['pauseReason']> = new Set<FrameReport['pauseReason']>(['captcha',
+  'bot-check', 'email-code']);
 /** The refusals of an opening that mean TailorIT no longer has the job queued for this browser: it is skipped. */
 const NOT_QUEUED: ReadonlySet<ServerFailure> = new Set(['not-found', 'conflict', 'bad-request', 'refused-path', 'forbidden']);
 
@@ -212,6 +233,8 @@ export interface QueueRunnerDeps {
   /** Whether `host` is one the platform's own sign-in leaves to (its adapter's identityHosts). Absent: none is. */
   identityHost?(platform: string, host: string): boolean;
   // ── end jr7 AUTO-7 ──
+  /** v2.0 P9: "Close the application tab when it's submitted" (close-tab.ts closeTabOnSubmit). Absent: on. */
+  closeTab?(): Promise<boolean>;
 }
 
 /** A frame of a queued tab, as its hello registered it. */
@@ -327,8 +350,9 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
     const result = item.tell;
     if (result === null) return true;
     if ((await deps.scopes())?.includes('agent:run') !== true) return false;
+    // v2.0 P9 (API 8): whether the job's Submit was pressed, by which TailorIT keeps or gives back its daily count.
     const answer = await deps.server.agentResult(item.id, { state: result.state, reason: result.reason,
-      aiGuesses: result.aiGuesses });
+      aiGuesses: result.aiGuesses, submitPressed: item.pressedAt !== null });
     const kept = !answer.ok && (result.state === 'submitted' ? !DROPS_SUBMITTED.has(answer.failure)
       : PASSING.has(answer.failure));
     if (kept) {
@@ -398,9 +422,10 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
   }
 
   /** Opens the next queued job that can be: TailorIT takes it for this run first, then a background tab, then the
-   *  task's own address. Answers 'opened', 'none' (nothing left), 'retry' (TailorIT did not answer) or 'stopped'
-   *  (Chrome opened no tab). */
-  async function openNext(run: Run): Promise<'opened' | 'none' | 'retry' | 'stopped'> {
+   *  task's own address. Answers 'opened', 'none' (nothing left), 'retry' (TailorIT did not answer), 'stopped'
+   *  (Chrome opened no tab) or, v2.0 P9, 'limit' (TailorIT's daily auto-apply limit is reached: the job stays queued,
+   *  the limit kept on the run). */
+  async function openNext(run: Run): Promise<'opened' | 'none' | 'retry' | 'stopped' | 'limit'> {
     for (const item of run.items) {
       if (item.status !== 'queued') continue;
       const answer = await deps.server.queueOpened(item.id);
@@ -415,6 +440,15 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
         return 'retry';
       }
       const task = answer.value.item;
+      // v2.0 P9 (API 8): the account's daily auto-apply limit is reached: TailorIT kept the job queued, and so does the
+      // run, with every later one; the run stops with TailorIT's words.
+      const limit = answer.value.dailyLimit;
+      if (task === null && limit?.reached === true) {
+        const resetsAt = Date.parse(limit.resetsAt);
+        run.limit = { message: limit.message ?? null,
+          resetsAt: Number.isFinite(resetsAt) && resetsAt > 0 ? resetsAt : deps.now() } satisfies AutoApplyLimit;
+        return 'limit';
+      }
       if (task === null) {
         // TailorIT finished it at the claim (applied already, closed, not one the agent opens): shown as it said.
         finishAs(item, answer.value.state, answer.value.reason);
@@ -523,12 +557,12 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
   }
 
   /** Stops the run (nothing more opens; the open tabs stay the person's, their results still told). */
-  function stopRun(run: Run, by: QueueStop): void {
+  function stopRun(run: Run, by: QueueStatusStop): void {
     if (run.phase !== 'running' && run.phase !== 'paused') return;
     Object.assign(run, { phase: 'stopped', nextAt: null, leftMs: null, hold: null, stoppedBy: by });
     soon?.cancel();
     soon = null;
-    log('queue.stopped', { by: QUEUE_STOPS.indexOf(by) });
+    log('queue.stopped', { by: QUEUE_STATUS_STOPS.indexOf(by) });
   }
 
   /** A tick (a timer, the alarm, an event, start-up): results told, tabs looked at, the cap and the timer, the next tab
@@ -591,6 +625,11 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       stopRun(run, 'no-tab');
       return;
     }
+    // v2.0 P9 (API 8): TailorIT's daily limit: nothing more opens; the tabs open go on to their end.
+    if (outcome === 'limit') {
+      stopRun(run, 'daily-limit');
+      return;
+    }
     if (outcome === 'retry') {
       // TailorIT did not answer: tried again shortly, the schedule unchanged.
       run.hold = 'server';
@@ -630,6 +669,8 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       openTabs: run?.items.filter(isOpen).length ?? 0,
       maxOpenTabs: settings.queue.maxOpenTabs,
       stoppedBy: run?.phase === 'stopped' ? run.stoppedBy : null,
+      // v2.0 P9: TailorIT's words for the limit that stopped the run.
+      ...(run?.phase === 'stopped' && run.stoppedBy === 'daily-limit' && run.limit !== null ? { limit: run.limit } : {}),
       agentStopped: run?.agentStopped === true && (run.phase === 'running' || run.phase === 'paused'),
       agentOn,
       blocked,
@@ -679,7 +720,7 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       const ids = new Set(carried.map((item) => item.id));
       const items = [...carried, ...tasks.filter((task) => !ids.has(task.id)).map(itemOf)].slice(0, QUEUE_RUN_MAX);
       const run: Run = { phase: 'running', startedAt: deps.now(), opened: 0, nextAt: deps.now(), leftMs: null, hold: null,
-        stoppedBy: null, agentStopped, items };
+        stoppedBy: null, agentStopped, items, limit: null };
       preview = null;
       await save(run);
       log('queue.started', { jobs: items.length, agent: agentStopped });
@@ -889,19 +930,27 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
     }),
 
     /** The platform confirmed a Submit in a queued tab (submissions.ts took its sign): for the job's own application,
-     *  submitted, TailorIT told (it marks the job Applied), and the tab closed a little later unless the person looks at
-     *  it; another posting's, or a tab the queue did not open, is 'not-ours' (recorded the normal way). */
+     *  submitted, TailorIT told (it marks the job Applied), and, v2.0 P9 (A20), the tab closed QUEUE_CLOSE_SUBMITTED_MS
+     *  later, in front or not, while "Close the application tab when it's submitted" is on, unless it was handed to the
+     *  person (a step that is theirs by design, a check or a code at rest); another posting's, or a tab the queue did
+     *  not open, is 'not-ours' (recorded the normal way, its tab never closed here). */
     async submitted(tabId: number, applicationKey: string): Promise<'not-ours' | 'recorded' | 'not-recorded'> {
       let outcome: 'not-ours' | 'recorded' | 'not-recorded' = 'not-ours';
       await onItem(tabId, async (_run, item) => {
         if (item.status === 'submitted' || item.status === 'skipped' || item.applicationKey !== applicationKey) {
           return false;
         }
-        finish(item, 'submitted', { state: 'submitted', reason: null }, guessesOf(await deps.reports(tabId).catch(() => [])));
+        const reports = await deps.reports(tabId).catch(() => []);
+        // v2.0 P9 (A20): read before finish() clears the note.
+        const handed = item.note !== null || reports.some((report) => report.mode === 'fill'
+          && report.status === 'handoff' && PERSONS_PAUSES.has(report.pauseReason));
+        finish(item, 'submitted', { state: 'submitted', reason: null }, guessesOf(reports));
         outcome = (await tellOne(item)) ? 'recorded' : 'not-recorded';
-        deps.timers.after(QUEUE_CLOSE_SUBMITTED_MS, () => void (async () => {
-          if ((await deps.tabs.state(tabId)) === 'background') await deps.tabs.close(tabId);
-        })().catch(() => undefined));
+        if (!handed && (deps.closeTab === undefined || await deps.closeTab().catch(() => true))) {
+          deps.timers.after(QUEUE_CLOSE_SUBMITTED_MS, () => void (async () => {
+            if ((await deps.tabs.state(tabId)) !== 'gone') await deps.tabs.close(tabId);
+          })().catch(() => undefined));
+        }
         return true;
       }, true);
       return outcome;

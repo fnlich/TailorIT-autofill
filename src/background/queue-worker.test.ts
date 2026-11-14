@@ -129,7 +129,7 @@ describe('the sequential auto-apply in the worker (v1.5 QX)', () => {
     expect(await worker.deliver({ v: 1, type: 'submit/detected', applicationKey: key, evidence: 'success-message' },
       frame)).toEqual({ ok: true, data: {} });
     const results = worker.tailorit.requests.filter((request) => request.path === `/api/autofill/agent/${ROW.id}/result`);
-    expect(results.map((request) => JSON.parse(request.body!))).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0 }]);
+    expect(results.map((request) => JSON.parse(request.body!))).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true }]);
     expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
     expect(await worker.deliver({ v: 1, type: 'queue/status' }, OPTIONS)).toMatchObject({ ok: true,
       data: { counts: { submitted: 1, queued: 1 } } });

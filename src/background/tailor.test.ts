@@ -366,3 +366,21 @@ it('keeps the report of a run that went profile-only from tailoring the tab (the
   expect((await tailor(worker, 'resume')).data).toEqual({ state: 'failed', kind: 'resume', reason: 'ai-off' });
   expect(worker.tailorit.count(POST)).toBe(0);
 });
+
+// ── v2.0 P9 (autofill API 8: ai_usage_exhausted) ──
+describe('v2.0 P9: a tailoring when the person’s AI usage is used up', () => {
+  // Undo proof: drop either ai_usage_exhausted in tailor.ts and that case says 'unavailable' or 'failed'.
+  it('says TailorIT’s AI is unavailable, refused at the start (429) or a task TailorIT failed for it', async () => {
+    const worker = await withForm();
+    worker.tailorit.reply(POST, { ...refused(429, 'ai_usage_exhausted'), headers: { 'retry-after': '36000' } });
+    expect((await tailor(worker, 'resume')).data).toEqual({ state: 'failed', kind: 'resume', reason: 'ai-unavailable' });
+    const failed = await withForm();
+    failed.tailorit.reply(POST, accepted());
+    failed.tailorit.reply(GET, task({ status: 'failed', step: null, message: null,
+      error: { code: 'ai_usage_exhausted', message: 'No.' }, finishedAt: '2026-11-09T12:01:00.000Z' }));
+    await tailor(failed, 'resume');
+    await tick(failed);
+    expect((await tailor(failed)).data).toEqual({ state: 'failed', kind: 'resume', reason: 'ai-unavailable' });
+  });
+});
+// ── end v2.0 P9 ──

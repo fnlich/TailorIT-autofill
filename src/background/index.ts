@@ -19,6 +19,7 @@ import type { PortLike, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { AGENT_ALARM, createAgent, identityHostOf, type Agent } from './agent';
 import { createQueueRunner, QUEUE_ALARM, type QueueRunner } from './queue-runner'; // v1.5 QX
+import { closeTabOnSubmit, setCloseTabOnSubmit } from './close-tab'; // v2.0 P9
 import { createAuth, createTokenKeeper } from './auth';
 import { toBase64Url } from './bytes';
 import { createAiTasks } from './ai-tasks';
@@ -522,7 +523,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     windowSettleMs: __E2E__ ? AGENT_E2E_SETTLE_MS : 0,
     // jr7 AUTO-7 (AUTO7-05 b): the tab's host, and the job's platform's identity hosts (its adapter's list).
     ...(platform.tabs.hostOf === undefined ? {} : { hostOf: (tabId: number) => platform.tabs.hostOf!(tabId) }),
-    identityHost: (on, host) => identityHostOf(on, host) });
+    identityHost: (on, host) => identityHostOf(on, host),
+    // v2.0 P9 (A20): "Close the application tab when it's submitted".
+    closeTab: () => closeTabOnSubmit(local) });
   agentRef = agent;
   // v1.5 QX: the sequential auto-apply (queue-runner.ts). Its alarm's listener is registered below, with the others.
   const queueRunner = createQueueRunner({ server, session, tabs: platform.queueTabs, alarms: platform.alarms, timers,
@@ -544,7 +547,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     tabSettleMs: __E2E__ ? AGENT_E2E_SETTLE_MS : 0,
     // jr7 AUTO-7 (AUTO7-05 c): the tab's host, and the job's platform's identity hosts (its adapter's list).
     ...(platform.tabs.hostOf === undefined ? {} : { hostOf: (tabId: number) => platform.tabs.hostOf!(tabId) }),
-    identityHost: (on, host) => identityHostOf(on, host) });
+    identityHost: (on, host) => identityHostOf(on, host),
+    // v2.0 P9 (A20): "Close the application tab when it's submitted".
+    closeTab: () => closeTabOnSubmit(local) });
   queueRef = queueRunner;
   /** The e2e build only: a test event in storage.session (e2e:events), never an address; one write at a time, so two
    *  frames' events at once both land. */
@@ -1412,6 +1417,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'queue/pause': () => queueRunner.pause(),
         'queue/resume': () => queueRunner.resume(),
         'queue/focus': (message) => queueRunner.focus(message.id),
+        // v2.0 P9 (A20): Options › Auto-apply › "Close the application tab when it's submitted", read or set.
+        'autoApply/closeTab': async (message) => ok({ on: message.on === undefined ? await closeTabOnSubmit(local)
+          : await setCloseTabOnSubmit(local, message.on) }),
         // v3 Phase 8: Options › "Where Autofill works".
         'sites/get': async () => ok(await sites.state()),
         'sites/set': async (message) => ok(await sites.set(message.on)),

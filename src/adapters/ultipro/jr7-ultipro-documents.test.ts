@@ -83,7 +83,7 @@ describe('jr7 UP7-07: UltiPro\'s documents dialog in a queued tab (jr7-auto-r3)'
     // The queued job's own result records it (the Queue tab's, as the agent's: TailorIT marks it Applied), once.
     await vi.waitFor(() => expect(worker.tailorit.requests.filter((request) =>
       request.path === `/api/autofill/agent/${TASK.id}/result`).map((request) => JSON.parse(request.body!)))
-      .toEqual([{ state: 'submitted', reason: null, aiGuesses: 0 }]));
+      .toEqual([{ state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true }]));
     expect(await worker.deliver({ v: 1, type: 'submit/detected',
       applicationKey: applicationOf(new URL(CONFIRM))!.applicationKey, evidence: 'confirmation-page' }, done))
       .toEqual({ ok: false, error: 'expired' });

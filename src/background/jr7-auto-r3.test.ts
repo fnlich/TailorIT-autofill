@@ -64,7 +64,7 @@ describe('jr7 AUTO-7 r3, UP7-07: the documents hand-over the document says after
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true, handOver: 'documents' }, frame);
     await vi.waitFor(() => expect(worker.tailorit.requests.filter((request) =>
       request.path === `/api/autofill/agent/${TASK.id}/result`).map((request) => JSON.parse(request.body!)))
-      .toEqual([{ state: 'needs-you', reason: 'other', aiGuesses: 0 }]));
+      .toEqual([{ state: 'needs-you', reason: 'other', aiGuesses: 0, submitPressed: true }]));
     expect(closed).toEqual([]);
     expect(await worker.deliver({ v: 1, type: 'agent/status' }, OPTIONS)).toMatchObject({ ok: true,
       data: { last: { state: 'needs-you', reason: 'other', note: 'documents' } } });

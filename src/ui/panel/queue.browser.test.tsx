@@ -22,6 +22,7 @@ import {
 } from '../ui.testkit';
 import { Panel } from './Panel';
 import { CONTROL_SEEN_MS } from './seen';
+import { API8_COPY } from '../options/copy-api8'; // v2.0 P9
 
 const WORDS = COPY.queue;
 
@@ -402,3 +403,26 @@ describe('the settings’ layout (v1.5 QX, PLAN decision 10)', () => {
     expect(button(root, WORDS.start)).toBeNull();
   });
 });
+
+// ── v2.0 P9 (autofill API 8; docs/design/v2.0/09-extension-api8.md) ──
+describe('the Queue tab on autofill API 8 (v2.0 P9)', () => {
+  // Undo proof: drop lineOf's 'daily-limit' case and the line reads nothing of TailorIT's.
+  it('says a run stopped by TailorIT’s daily limit in TailorIT’s own words, and Start stays offered', async () => {
+    const worker = createFakeWorker();
+    const message = 'You have used today’s 7 auto-applies on the Free plan. They start again tomorrow at 7:00.';
+    worker.script.queue = { source: 'run', items: [queueItem(1, { status: 'opened', tab: true }), queueItem(2)],
+      status: queueStatus({ phase: 'stopped', stoppedBy: 'daily-limit', total: 2, opened: 1,
+        counts: { queued: 1, opening: 0, opened: 1, filling: 0, ready: 0, submitted: 0, skipped: 0, failed: 0 },
+        limit: { message, resetsAt: Date.UTC(2026, 10, 3, 7) } }) };
+    const root = await open(worker);
+    await queueTab(root);
+    expect(lineOf(root)).toBe(message);
+    expect(control(root, 'start')?.disabled).toBe(false);
+    // Without words of TailorIT's: the extension's own.
+    worker.script.queue.status = { ...worker.script.queue.status, limit: { message: null, resetsAt: 0 } };
+    await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'queue' }));
+    await settle();
+    expect(lineOf(root)).toBe(API8_COPY.limitReached(null));
+  });
+});
+// ── end v2.0 P9 ──

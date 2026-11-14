@@ -130,7 +130,7 @@ describe('jr7 BOARDS-7 P2, O-8: SmartRecruiters\' chained run recorded once (the
       await hello(worker, SUCCESS, 'doc-app', { hasForm: false, nav: 2 });
       expect(await detected(worker, SUCCESS, 'doc-app', keyOf(SUCCESS), 'confirmation-page')).toEqual({ ok: true,
         data: {} });
-      expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0 }]);
+      expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true }]);
       expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
       // Once: the drawn sign the arming document's watch reports after it records nothing more.
       expect(await detected(worker, SUCCESS, 'doc-app', keyOf(POSTING), 'success-message'))
@@ -145,7 +145,7 @@ describe('jr7 BOARDS-7 P2, O-8: SmartRecruiters\' chained run recorded once (the
       const { worker, posting } = await armedAtScreening();
       await hello(worker, SUCCESS, 'doc-app', { hasForm: false, nav: 2 });
       expect(await detected(worker, SUCCESS, 'doc-app', posting, 'success-message')).toEqual({ ok: true, data: {} });
-      expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0 }]);
+      expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true }]);
       expect(await detected(worker, SUCCESS, 'doc-app', keyOf(SUCCESS), 'confirmation-page'))
         .toMatchObject({ ok: false });
       expect(results(worker)).toHaveLength(1);

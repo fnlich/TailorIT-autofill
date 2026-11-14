@@ -112,7 +112,8 @@ export function tailorRefusalOf(failure: Extract<ServerResult<unknown>, { ok: fa
   if (failure.failure === 'rate-limited') return 'rate-limited';
   if (failure.code === 'needs_editable_copy') return 'needs-copy';
   if (failure.code === 'ai_busy') return 'busy';
-  if (failure.code === 'ai_unavailable') return 'ai-unavailable';
+  // v2.0 P9 (API 8): the person's AI usage used up is said as TailorIT's AI being unavailable.
+  if (failure.code === 'ai_unavailable' || failure.code === 'ai_usage_exhausted') return 'ai-unavailable';
   return 'unavailable';
 }
 
@@ -230,7 +231,9 @@ export function createTailoring(deps: TailoringDeps) {
         return done(tabId, entry, task.result, live);
       }
       const code = task.error?.code ?? '';
-      return end(code === 'ai_unavailable' ? 'ai-unavailable' : code === 'needs_editable_copy' ? 'needs-copy' : 'failed');
+      // v2.0 P9 (API 8): a task TailorIT failed because the person's AI usage ran out is said as AI unavailable.
+      return end(code === 'ai_unavailable' || code === 'ai_usage_exhausted' ? 'ai-unavailable'
+        : code === 'needs_editable_copy' ? 'needs-copy' : 'failed');
     }
   }
 

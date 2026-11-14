@@ -99,7 +99,9 @@ interface Harness {
   reports: Map<number, FrameReport[]>;
   agent: { on: boolean; stopped: number };
   state: { scopes: string[] | null; disclosed: boolean; online: boolean; settings: Settings; refuseTab: boolean;
-    refuseOpened: 'not-found' | 'conflict' | 'unreachable' | null; refuseResult: 'unreachable' | null };
+    refuseOpened: 'not-found' | 'conflict' | 'unreachable' | null; refuseResult: 'unreachable' | null;
+    /** v2.0 P9: "Close the application tab when it's submitted" (on by default). */
+    closeTab: boolean };
   changes: { count: number };
   /** Moves the clock and the timers by `ms`, in steps, letting each tick finish. */
   advance(ms: number, step?: number): Promise<void>;
@@ -127,7 +129,7 @@ function harness(queue: Partial<QueueSettings> = {}, kept?: Harness): Harness {
   const changes = kept?.changes ?? { count: 0 };
   const state = kept?.state ?? { scopes: ['profile:read', 'agent:run'], disclosed: true, online: true,
     settings: { ...DEFAULT_SETTINGS, queue: { ...DEFAULT_SETTINGS.queue, ...queue } }, refuseTab: false,
-    refuseOpened: null, refuseResult: null };
+    refuseOpened: null, refuseResult: null, closeTab: true };
   let nextTab = kept === undefined ? 40 : Math.max(40, ...tabs.map((tab) => tab.tabId + 1));
   const queueTabs: QueueTabs = {
     async open() {
@@ -222,6 +224,7 @@ function harness(queue: Partial<QueueSettings> = {}, kept?: Harness): Harness {
     fill: async (tabId) => void filled.push(tabId),
     assign: (tabId, _key, task) => void assigned.push({ tabId, ...task }),
     changed: () => void (changes.count += 1),
+    closeTab: async () => state.closeTab, // v2.0 P9
   };
   const runner = createQueueRunner(deps);
   const self: Harness = {
@@ -380,7 +383,7 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
     expect(h.openedRoute).toEqual([ID(1), ID(2)]);
     // The person submits the second afterwards: TailorIT hears it.
     expect(await h.runner.submitted(h.tabs[1]!.tabId, await KEY_OF(h, 2))).toBe('recorded');
-    expect(h.results).toEqual([{ id: ID(2), body: { state: 'submitted', reason: null, aiGuesses: 0 } }]);
+    expect(h.results).toEqual([{ id: ID(2), body: { state: 'submitted', reason: null, aiGuesses: 0, submitPressed: false } }]);
     expect(await h.runner.status()).toMatchObject({ phase: 'stopped', counts: { submitted: 1, opened: 1, queued: 1 } });
   });
 
@@ -399,7 +402,7 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
     // The first tab is still the run's: its close is the person's skip.
     again.open.delete(again.tabs[0]!.tabId);
     await again.runner.tabRemoved(again.tabs[0]!.tabId);
-    expect(again.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0 } }]);
+    expect(again.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0, submitPressed: false } }]);
     // Never opened twice.
     expect(again.openedRoute).toEqual([ID(1), ID(2)]);
   });
@@ -444,22 +447,26 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
         reason: 'ai-guess' } as unknown as FrameReport['fields'][number]] })]);
     await h.runner.reported(tab);
     expect(await h.runner.submitted(tab, key)).toBe('recorded');
-    expect(h.results).toEqual([{ id: ID(1), body: { state: 'submitted', reason: null, aiGuesses: 1 } }]);
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'submitted', reason: null, aiGuesses: 1, submitPressed: false } }]);
     expect((await h.runner.status()).counts).toMatchObject({ submitted: 1, ready: 0 });
     // Its tab closes a few seconds later, while the person looks elsewhere.
     await h.advance(QUEUE_CLOSE_SUBMITTED_MS);
     expect(h.closed).toEqual([tab]);
   });
 
-  it('leaves a submitted job’s tab open while it is the active tab', async () => {
+  // v2.0 P9 (A20): the person looking at it no longer keeps it; "Close the application tab when it's submitted" off does
+  // (close-tab tests below).
+  it('closes a submitted job’s tab a few seconds after its sign even while it is the active tab', async () => {
     seed(h, 1);
     await h.runner.start();
     const tab = h.tabs[0]!.tabId;
     await h.runner.focus(ID(1));
     expect(h.focused).toEqual([tab]);
     await h.runner.submitted(tab, await KEY_OF(h, 1));
-    await h.advance(QUEUE_CLOSE_SUBMITTED_MS + 1_000);
+    await h.advance(QUEUE_CLOSE_SUBMITTED_MS - 200);
     expect(h.closed).toEqual([]);
+    await h.advance(1_000);
+    expect(h.closed).toEqual([tab]);
     expect((await h.runner.status()).phase).toBe('finished');
   });
 
@@ -477,10 +484,10 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
     await h.runner.start();
     h.open.delete(h.tabs[0]!.tabId);
     await h.runner.tabRemoved(h.tabs[0]!.tabId);
-    expect(h.results.at(-1)).toEqual({ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0 } });
+    expect(h.results.at(-1)).toEqual({ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0, submitPressed: false } });
     // The second opens, and no frame of ours ever says hello.
     await h.advance(8_000 + QUEUE_FORM_WAIT_MS);
-    expect(h.results.at(-1)).toEqual({ id: ID(2), body: { state: 'failed', reason: 'page_error', aiGuesses: 0 } });
+    expect(h.results.at(-1)).toEqual({ id: ID(2), body: { state: 'failed', reason: 'page_error', aiGuesses: 0, submitPressed: false } });
     // Its tab stays the person's.
     expect(h.open.has(h.tabs[1]!.tabId)).toBe(true);
     expect(h.closed).toEqual([]);
@@ -491,7 +498,7 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
     await h.runner.start();
     h.tabs[0]!.url = `${URL_OF(1)}?closed=1`;
     await h.advance(QUEUE_FORM_WAIT_MS);
-    expect(h.results).toEqual([{ id: ID(1), body: { state: 'failed', reason: 'posting_closed', aiGuesses: 0 } }]);
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'failed', reason: 'posting_closed', aiGuesses: 0, submitPressed: false } }]);
   });
 
   it('never opens a job with no address the extension fills: failed unsupported_site, the next opened at once', async () => {
@@ -501,8 +508,8 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
     await h.runner.start();
     expect(h.tabs.map((tab) => tab.url)).toEqual([URL_OF(3)]);
     expect(h.results).toEqual([
-      { id: ID(1), body: { state: 'failed', reason: 'unsupported_site', aiGuesses: 0 } },
-      { id: ID(2), body: { state: 'failed', reason: 'unsupported_site', aiGuesses: 0 } }]);
+      { id: ID(1), body: { state: 'failed', reason: 'unsupported_site', aiGuesses: 0, submitPressed: false } },
+      { id: ID(2), body: { state: 'failed', reason: 'unsupported_site', aiGuesses: 0, submitPressed: false } }]);
     expect((await h.runner.status()).counts).toMatchObject({ failed: 2, opening: 1 });
   });
 
@@ -564,7 +571,7 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
     expect((await h.runner.status()).pending).toBe(true);
     h.state.refuseResult = null;
     await h.advance(100);
-    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0 } }]);
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0, submitPressed: false } }]);
     expect((await h.runner.status()).pending).toBe(false);
   });
 
@@ -613,7 +620,7 @@ describe('the sequential auto-apply (v1.5 QX)', () => {
     seed(h, 2);
     h.state.refuseTab = true;
     expect(await h.runner.start()).toMatchObject({ data: { phase: 'stopped', stoppedBy: 'no-tab' } });
-    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0 } }]);
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0, submitPressed: false } }]);
   });
 
   it('with Automatically, starts the first form of the job’s own application once, names its job and resume', async () => {
@@ -1225,7 +1232,7 @@ describe('jr7 AUTO-7: the Queue tab on every platform the extension fills', () =
     const h = await started([ADP, DAYFORCE, JOBVITE, ULTIPRO_APPLY, DICE]);
     expect(h.tabs.map((tab) => tab.url)).toEqual([ADP, DAYFORCE, `${JOBVITE}/apply`,
       queueAddressOf(ULTIPRO_APPLY)!.address]);
-    expect(h.results).toEqual([{ id: ID(5), body: { state: 'failed', reason: 'unsupported_site', aiGuesses: 0 } }]);
+    expect(h.results).toEqual([{ id: ID(5), body: { state: 'failed', reason: 'unsupported_site', aiGuesses: 0, submitPressed: false } }]);
   });
 
   it('D-4: Submit is the person’s in a queued tab whose platform shows no sign read; a Submit armed there is Ready for you',
@@ -1248,11 +1255,11 @@ describe('jr7 AUTO-7: the Queue tab on every platform the extension fills', () =
       expect(after.ok && after.data.items[0]!.status).toBe('ready');
       h.open.delete(dayforce);
       await h.runner.tabRemoved(dayforce);
-      expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'timed_out', aiGuesses: 0 } }]);
+      expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'timed_out', aiGuesses: 0, submitPressed: true } }]);
       // Jobvite's Submit (its sign is read) leaves its status to its reports; its sign records it.
       await h.runner.pressed(jobvite, keyOf(JOBVITE));
       expect(await h.runner.submitted(jobvite, keyOf(JOBVITE))).toBe('recorded');
-      expect(h.results.at(-1)).toEqual({ id: ID(2), body: { state: 'submitted', reason: null, aiGuesses: 0 } });
+      expect(h.results.at(-1)).toEqual({ id: ID(2), body: { state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true } });
     });
 
   it('AUTO7-04: with Automatically, a page that says hello with no form, wall, choice or entry is Ready for you',
@@ -1334,7 +1341,7 @@ describe('jr7 AUTO-7: the Queue tab on every platform the extension fills', () =
       h.open.delete(tabId);
       await h.advance(1_000);
       expect(h.results, String(pressed)).toEqual([{ id: ID(1), body: { state: 'needs-you',
-        reason: pressed ? 'timed_out' : 'cancelled', aiGuesses: 0 } }]);
+        reason: pressed ? 'timed_out' : 'cancelled', aiGuesses: 0, submitPressed: pressed } }]);
       const page = await h.runner.list(0);
       expect(page.ok && page.data.items[0], String(pressed)).toMatchObject({ status: 'skipped', tab: false });
     }
@@ -1361,3 +1368,168 @@ describe('jr7 AUTO-7: the Queue tab on every platform the extension fills', () =
   // ── end jr7 FIX-background ──
 });
 // ── end jr7 AUTO-7 ──
+
+// ── v2.0 P9 (autofill API 8; docs/design/v2.0/09-extension-api8.md) ──
+describe('v2.0 P9: the Queue tab on autofill API 8', () => {
+  const RESETS = 1_000_000 + 6 * 60 * 60_000;
+  const MESSAGE = 'You have used today’s 7 auto-applies on the Free plan. They start again tomorrow.';
+  const REACHED = { reached: true, used: 7, limit: 7, resetsAt: new Date(RESETS).toISOString(), message: MESSAGE };
+
+  /** TailorIT's claim answering the daily limit reached from the `after`-th claim on while `held.on`. */
+  function limitedAfter(h: Harness, after: number, held = { on: true }): { on: boolean } {
+    const opened = h.deps.server.queueOpened.bind(h.deps.server);
+    let claims = 0;
+    h.deps.server.queueOpened = async (id) => {
+      claims += 1;
+      if (held.on && claims > after) {
+        h.openedRoute.push(id);
+        return { ok: true, value: { item: null, state: 'queued', reason: null, dailyLimit: REACHED } };
+      }
+      return opened(id);
+    };
+    return held;
+  }
+
+  // Undo proof: drop openNext's dailyLimit branch and the third job is skipped (finishAs 'queued'), the run going on.
+  it('stops at the daily limit with TailorIT’s words, keeps the jobs left queued, and lets the open tabs finish', async () => {
+    const h = harness({ maxOpenTabs: 10 });
+    seed(h, 4);
+    const held = limitedAfter(h, 2);
+    await h.runner.start();
+    await h.advance(20_000);
+    expect(h.tabs).toHaveLength(2);
+    const status = await h.runner.status();
+    expect(status).toMatchObject({ phase: 'stopped', stoppedBy: 'daily-limit',
+      limit: { message: MESSAGE, resetsAt: RESETS }, counts: { queued: 2, opening: 2 } });
+    // TailorIT kept them queued, and so does the run: nothing told for them.
+    expect(h.results).toEqual([]);
+    const page = await h.runner.list(0);
+    expect(page.ok && page.data.items.map((item) => item.status)).toEqual(['opening', 'opening', 'queued', 'queued']);
+    // Nothing more opens, however long it waits; the open tabs go on: a sign is still taken and told.
+    await heardAll(h);
+    await h.advance(60_000);
+    expect(h.tabs).toHaveLength(2);
+    expect(await h.runner.submitted(h.tabs[0]!.tabId, await KEY_OF(h, 1))).toBe('recorded');
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'submitted', reason: null, aiGuesses: 0,
+      submitPressed: false } }]);
+    // Start again before the reset: asked again, the same answer.
+    const asked = h.openedRoute.length;
+    expect(await h.runner.start()).toMatchObject({ ok: true, data: { phase: 'stopped', stoppedBy: 'daily-limit' } });
+    expect(h.openedRoute.length).toBe(asked + 1);
+    expect(h.tabs).toHaveLength(2);
+    // After the reset it runs.
+    held.on = false;
+    h.clock.now = RESETS + 1;
+    expect(await h.runner.start()).toMatchObject({ ok: true, data: { phase: 'running', stoppedBy: null } });
+    expect(h.tabs).toHaveLength(3);
+    expect(await h.runner.status()).not.toHaveProperty('limit');
+  });
+
+  it('says the limit as it stopped the run, and the person’s Stop as before', async () => {
+    const h = harness();
+    seed(h, 2);
+    limitedAfter(h, 0);
+    await h.runner.start();
+    expect(await h.runner.status()).toMatchObject({ phase: 'stopped', stoppedBy: 'daily-limit', opened: 0 });
+    // A run stopped by the person says no limit.
+    const p = harness();
+    seed(p, 2);
+    await p.runner.start();
+    await p.runner.stop();
+    const stopped = await p.runner.status();
+    expect(stopped).toMatchObject({ phase: 'stopped', stoppedBy: 'person' });
+    expect(stopped).not.toHaveProperty('limit');
+  });
+
+  // Undo proof: drop pageOf's filter and the manual row is claimed (POST …/opened) and listed.
+  it('never reads, lists, claims or opens a job TailorIT queued for the person to apply to by hand (run kind manual)',
+    async () => {
+      const h = harness();
+      seed(h, 2);
+      const page = h.deps.server.queuePage.bind(h.deps.server);
+      h.deps.server.queuePage = async (cursor) => {
+        const answer = await page(cursor);
+        if (!answer.ok) return answer;
+        const manual = { ...listed(queued(9), 'queued'), run: 'manual' as const, source: 'prepare' as const };
+        return { ok: true, value: { ...answer.value, items: [manual, ...answer.value.items] } };
+      };
+      const before = await h.runner.list(0);
+      expect(before.ok && before.data.items.map((item) => item.id)).toEqual([ID(1), ID(2)]);
+      await h.runner.start();
+      await h.advance(30_000);
+      expect(h.openedRoute).not.toContain(ID(9));
+      expect(h.tabs.map((tab) => tab.url)).toEqual([URL_OF(1), URL_OF(2)]);
+    });
+
+  describe('"Close the application tab when it’s submitted" (A20)', () => {
+    async function submittedTab(h: Harness, focus: boolean): Promise<number> {
+      seed(h, 1);
+      await h.runner.start();
+      const tab = h.tabs[0]!.tabId;
+      if (focus) await h.runner.focus(ID(1));
+      expect(await h.runner.submitted(tab, await KEY_OF(h, 1))).toBe('recorded');
+      return tab;
+    }
+
+    // Undo proof: keep v1.5's rule (closed only in the background) and the tab in front stays open.
+    it('on (the default): closes the tab QUEUE_CLOSE_SUBMITTED_MS after the sign, in front or not', async () => {
+      for (const focus of [false, true]) {
+        const h = harness();
+        const tab = await submittedTab(h, focus);
+        await h.advance(QUEUE_CLOSE_SUBMITTED_MS - 200);
+        expect(h.closed, String(focus)).toEqual([]);
+        await h.advance(1_000);
+        expect(h.closed, String(focus)).toEqual([tab]);
+      }
+    });
+
+    // Undo proof: ignore deps.closeTab and the tab closes.
+    it('off: never closes it', async () => {
+      for (const focus of [false, true]) {
+        const h = harness();
+        h.state.closeTab = false;
+        await submittedTab(h, focus);
+        await h.advance(QUEUE_CLOSE_SUBMITTED_MS * 4);
+        expect(h.closed, String(focus)).toEqual([]);
+        expect((await h.runner.status()).counts.submitted).toBe(1);
+      }
+    });
+
+    // Undo proof: drop submitted()'s `handed` and these tabs close.
+    it('keeps a tab handed to the person: a step that is theirs by design, a check or a code at rest', async () => {
+      // A hand-over (iCIMS's assessment after the Submit), then the platform's sign.
+      const a = harness();
+      seed(a, 1);
+      await a.runner.start();
+      const tab = a.tabs[0]!.tabId;
+      const key = await KEY_OF(a, 1);
+      await a.runner.hello(tab, { frameId: 0, documentId: 'doc-1', hasForm: false, applicationKey: key }, true,
+        { handOver: 'assessment' });
+      expect(await a.runner.submitted(tab, key)).toBe('recorded');
+      await a.advance(QUEUE_CLOSE_SUBMITTED_MS * 2);
+      expect(a.closed).toEqual([]);
+      // A code or a check its run rests at when the sign comes.
+      for (const pauseReason of ['email-code', 'captcha', 'bot-check'] as const) {
+        const h = harness();
+        seed(h, 1);
+        await h.runner.start();
+        const at = h.tabs[0]!.tabId;
+        h.reports.set(at, [report({ status: 'handoff', pauseReason })]);
+        expect(await h.runner.submitted(at, await KEY_OF(h, 1))).toBe('recorded');
+        await h.advance(QUEUE_CLOSE_SUBMITTED_MS * 2);
+        expect(h.closed, pauseReason).toEqual([]);
+      }
+    });
+
+    it('never closes a tab the queue did not open (the person’s own), nor one whose sign is another posting’s', async () => {
+      const h = harness();
+      seed(h, 1);
+      await h.runner.start();
+      expect(await h.runner.submitted(999, await KEY_OF(h, 1))).toBe('not-ours');
+      expect(await h.runner.submitted(h.tabs[0]!.tabId, 'greenhouse:00000000000000ff')).toBe('not-ours');
+      await h.advance(QUEUE_CLOSE_SUBMITTED_MS * 2);
+      expect(h.closed).toEqual([]);
+    });
+  });
+});
+// ── end v2.0 P9 ──

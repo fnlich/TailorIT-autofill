@@ -123,7 +123,7 @@ describe('jr7 BOARDS-7 P2: Jobvite\'s run to submitted in the Queue tab (the sna
       const key = await armed(worker, APPLY, 'doc-apply');
       await hello(worker, CONFIRMATION, doc, extra);
       expect(await detected(worker, CONFIRMATION, doc, key)).toEqual({ ok: true, data: {} });
-      expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0 }]);
+      expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true }]);
       expect(await detected(worker, CONFIRMATION, doc, key)).toMatchObject({ ok: false, error: 'expired' });
       expect(results(worker)).toHaveLength(1);
       expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
@@ -149,7 +149,7 @@ describe('jr7 BOARDS-7 P2: JazzHR\'s confirm page recorded by its address (the s
     await armed(worker, FORM, 'doc-form');
     await hello(worker, CONFIRM, 'doc-confirm', { hasForm: false });
     expect(await detected(worker, CONFIRM, 'doc-confirm', keyOf(CONFIRM))).toEqual({ ok: true, data: {} });
-    expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0 }]);
+    expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true }]);
     expect(await detected(worker, CONFIRM, 'doc-confirm', keyOf(CONFIRM))).toMatchObject({ ok: false, error: 'expired' });
     expect(results(worker)).toHaveLength(1);
     expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);

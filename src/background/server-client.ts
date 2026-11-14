@@ -362,6 +362,15 @@ type Raw = { ok: true; value: unknown; response: Response } | Extract<ServerResu
 const failure = (reason: ServerFailure, extra: { status?: number; code?: string; retryAfterSeconds?: number } = {}) =>
   ({ ok: false as const, failure: reason, ...extra });
 
+/** A refused call's failure, by its status and TailorIT's code. v2.0 P9 (autofill API 8): `ai_usage_exhausted` (429:
+ *  the person's AI usage is used up until TailorIT's daily reset, which its Retry-After names) is taken as
+ *  `ai_unavailable` is (503, a server error): the run fills without AI, and nothing waits for that reset; its code is
+ *  kept for the callers that tell the two apart. */
+function refusalOf(status: number, detail: { code?: string; retryAfterSeconds?: number }) {
+  if (detail.code === 'ai_usage_exhausted') return failure('server-error', { status, code: detail.code });
+  return failure(failureOfStatus(status), { status, ...detail });
+}
+
 function failureOfStatus(status: number): ServerFailure {
   if (status === 401) return 'unauthorized';
   if (status === 403) return 'forbidden';
@@ -497,7 +506,7 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
         const detail = await errorOf(response);
         log('server.refused', { status: response.status });
         if (response.status === 401 && token !== null) await deps.onUnauthorized(token);
-        return failure(failureOfStatus(response.status), { status: response.status, ...detail });
+        return refusalOf(response.status, detail);
       }
 
       let value: unknown = null;
@@ -640,7 +649,7 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
       const detail = await errorOf(response);
       log('server.refused', { status: response.status, stream: true });
       if (response.status === 401) await deps.onUnauthorized(token);
-      return failure(failureOfStatus(response.status), { status: response.status, ...detail });
+      return refusalOf(response.status, detail);
     }
     const reader = response.body?.getReader();
     if (!(response.headers.get('content-type') ?? '').startsWith('text/event-stream') || reader === undefined) {

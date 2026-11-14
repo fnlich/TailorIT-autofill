@@ -59,6 +59,12 @@
  *   claimFrameOf: its hello's `claimed`, on the wrapper's origin and at its application), and a chain frame it framed
  *   (agentFramesOf): its run, its entry, its report, its retry and its Submit's document are there, never the
  *   wrapper's. Any other subframe is never acted on.
+ * - v2.0 P9 (autofill API 8): a claim that answers TailorIT's daily auto-apply limit reached (the claim's `dailyLimit`,
+ *   no job) keeps Run auto-apply on and waits: the next claim at its reset (AGENT_LIMIT_JITTER_MS later at most), the
+ *   status blocked 'daily-limit' with TailorIT's words (AGENT_LIMIT_KEY); a claim that gives a job, or says the limit is
+ *   not reached, ends that. Every result says whether the job's Submit was pressed (`submitPressed`), by which TailorIT
+ *   keeps or gives back the job's count. A submitted job's tab is closed only while "Close the application tab when it's
+ *   submitted" is on (close-tab.ts); off, it is let go of and left open, its window never counted as the person's.
  * Commands come only from the worker's own poll of TailorIT with its token: no page, frame or message can start the
  * agent, choose its job or make it submit. Nothing here logs a job, an address or a value: states and reasons are
  * logged as their places in the contract's lists.
@@ -67,13 +73,13 @@ import { z } from 'zod';
 import { applicationOf, platformAdapter } from '../adapters';
 import {
   agentApplicationUrl, AUTOFILL_AGENT_FINISHED_STATES, AUTOFILL_AGENT_REASONS, AutofillAgentIdSchema,
-  queueApplicationUrl, type AutofillAgentFinishedState, type AutofillAgentReason,
+  queueApplicationUrl, type AutofillAgentFinishedState, type AutofillAgentNext, type AutofillAgentReason,
 } from '../contract/tailorit';
 import { ok, type Answer } from '../messaging/envelope';
 import {
   AGENT_NOTES, type AgentBlock, type AgentNote, type AgentPause, type AgentStatus, type EntryAnswer, type EntryBlock,
 } from '../messaging/schemas';
-import { AGENT_PAUSES } from '../messaging/page-schemas';
+import { AGENT_PAUSES, type AgentStatusBlock, type AutoApplyLimit } from '../messaging/page-schemas';
 import type { AgentAlarms, AgentWindows, AtsPage, StorageArea } from '../platform/types';
 import { staticPlatformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
@@ -127,6 +133,14 @@ export const AGENT_POLL_KEY = 'agent:poll';
 export const AGENT_SESSION_KEY = 'agent:session';
 /** storage.session: how many jobs in a row ended page_error (a count; M5). */
 export const AGENT_ERRORS_KEY = 'agent:errors';
+// ── v2.0 P9 (autofill API 8) ──
+/** storage.session: TailorIT's daily auto-apply limit while the latest claim answered it reached (AutoApplyLimit: its
+ *  words and its reset, never a job); gone once a claim gives a job or says it is not reached. */
+export const AGENT_LIMIT_KEY = 'agent:limit';
+/** The next claim after the limit's reset comes up to this much later, at random, so browsers do not all ask at once. */
+export const AGENT_LIMIT_JITTER_MS = 60_000;
+const LimitSchema = z.strictObject({ message: z.string().max(400).nullable(), resetsAt: z.number().int().nonnegative() });
+// ── end v2.0 P9 ──
 
 const Count = z.number().int().nonnegative();
 const ResultSchema = z.strictObject({
@@ -382,6 +396,12 @@ export interface AgentDeps {
    *  none is. */
   identityHost?(platform: string, host: string): boolean;
   // ── end jr7 AUTO-7 ──
+  // ── v2.0 P9 ──
+  /** "Close the application tab when it's submitted" (close-tab.ts closeTabOnSubmit). Absent: on. */
+  closeTab?(): Promise<boolean>;
+  /** A number in [0, 1), for the wait after the daily limit's reset (AGENT_LIMIT_JITTER_MS). Absent: Math.random. */
+  random?(): number;
+  // ── end v2.0 P9 ──
 }
 
 // ── jr7 AUTO-7 ──
@@ -496,6 +516,26 @@ export function createAgent(deps: AgentDeps) {
     : deps.local.set({ [AGENT_RUN_KEY]: run }));
   const savePoll = (poll: AgentPoll) => deps.session.set({ [AGENT_POLL_KEY]: poll });
   const errorsOf = () => read<number>(deps.session, AGENT_ERRORS_KEY, Count, 0);
+  // ── v2.0 P9 ──
+  const limitOf = () => read<AutoApplyLimit | null>(deps.session, AGENT_LIMIT_KEY, LimitSchema.nullable(), null);
+
+  /** What a claim's answer says of TailorIT's daily auto-apply limit: reached (no job), its words and reset kept, and
+   *  when to ask again (its reset, AGENT_LIMIT_JITTER_MS later at most; a reset not read or already past: the first
+   *  backoff); else null, and any limit kept before is gone. */
+  async function noteLimit(answer: AutofillAgentNext): Promise<number | null> {
+    const limit = answer.dailyLimit;
+    if (answer.item !== null || limit === undefined || !limit.reached) {
+      if ((await limitOf()) !== null) await deps.session.remove([AGENT_LIMIT_KEY]);
+      return null;
+    }
+    const now = deps.now();
+    const read = Date.parse(limit.resetsAt);
+    const resetsAt = Number.isFinite(read) && read > now ? read : now + AGENT_BACKOFF_MS[0];
+    await deps.session.set({ [AGENT_LIMIT_KEY]: { message: limit.message ?? null, resetsAt } satisfies AutoApplyLimit });
+    log('agent.empty', { misses: 0, limit: true });
+    return resetsAt + Math.floor((deps.random ?? Math.random)() * AGENT_LIMIT_JITTER_MS);
+  }
+  // ── end v2.0 P9 ──
   const guessesOf = (run: AgentRun) => Object.values(run.guesses).reduce((sum, count) => sum + count, 0);
   /** Whether the job has begun (the v3 Phase 6/7b review's round 2, K4): an entry answered 'pressed', or a form showed. */
   const begun = (run: AgentRun) => (run.pressedEntryAt ?? null) !== null || run.formAt !== null;
@@ -596,16 +636,21 @@ export function createAgent(deps: AgentDeps) {
   }
 
   async function status(): Promise<AgentStatus> {
-    const [on, run, tally, blocked] = [await switchOf(), await runOf(), await tallyOf(), await blockOf()];
+    const [on, run, tally, blocked, held] = [await switchOf(), await runOf(), await tallyOf(), await blockOf(),
+      await limitOf()];
     const today = dayOf(deps.now());
     const running = run !== null && run.result === null;
-    const block: AgentBlock | null = blocked
-      ?? (on.on && !running && noWindow ? 'no-window' : on.on && !running && offline ? 'offline' : null);
+    // v2.0 P9: TailorIT's daily limit, until its reset (the next claim then says), before a window or the network.
+    const limit = held !== null && held.resetsAt > deps.now() ? held : null;
+    const block: AgentStatusBlock | null = blocked
+      ?? (on.on && !running && limit !== null ? 'daily-limit'
+        : on.on && !running && noWindow ? 'no-window' : on.on && !running && offline ? 'offline' : null);
     return {
       on: on.on,
       confirmed: on.confirmed,
       phase: !on.on ? 'off' : running ? 'running' : block !== null ? 'blocked' : 'waiting',
       blocked: on.on ? block : blocked,
+      ...(on.on && block === 'daily-limit' && limit !== null ? { limit } : {}), // v2.0 P9
       paused: on.on ? null : on.paused ?? null,
       allowed: blocked === null,
       pending: run !== null && run.result !== null,
@@ -634,14 +679,15 @@ export function createAgent(deps: AgentDeps) {
    *  it): run/cancel and the person's settings to its frames (deps.release), never closed; the runtime's armed Submit
    *  stays, so a later sign is recorded the normal way (POST /applied). Its window is flagged and is never counted as
    *  the person's (claim: othersOpen). Only a tab of this session that is still there. */
-  async function keep(run: AgentRun): Promise<void> {
+  async function keep(run: AgentRun, flag = true): Promise<void> {
     if (run.tabId === null || !(await ofThisSession(run))) return;
     if (!(await deps.windows.tabExists(run.tabId))) return;
     await deps.release(run.tabId).catch(() => undefined);
     if (run.windowId !== null) {
       const kept = (await keptWindows()).filter((id) => id !== run.windowId);
       await deps.session.set({ [AGENT_KEPT_KEY]: [...kept, run.windowId].slice(-AGENT_KEPT_MAX) });
-      await deps.windows.drawAttention?.(run.windowId).catch(() => undefined);
+      // v2.0 P9: a submitted job's tab left open by the person's choice (close-tab.ts) is not flagged.
+      if (flag) await deps.windows.drawAttention?.(run.windowId).catch(() => undefined);
     }
   }
   // ── end jr7 AUTO-7 ──
@@ -680,6 +726,9 @@ export function createAgent(deps: AgentDeps) {
     if (errors >= AGENT_MAX_PAGE_ERRORS) await pause('page-errors');
     // jr7 AUTO-7 (jr7-O1 part 4, ICIMS7-04): a tab the person must finish in is let go of, never closed.
     if (options.keepTab === true) await keep(done);
+    // v2.0 P9 (A20): a submitted job's tab, with "Close the application tab when it's submitted" off: let go of and left
+    // open (its window still never counted as the person's), not flagged.
+    else if (state === 'submitted' && !(await closesOnSubmit())) await keep(done, false);
     else await release(done);
     if (!(await mayTell())) {
       await keepAlarm();
@@ -689,14 +738,19 @@ export function createAgent(deps: AgentDeps) {
     return reportResult(done);
   }
 
+  /** v2.0 P9 (A20): whether a submitted job's tab closes (close-tab.ts; on when not known). */
+  const closesOnSubmit = async (): Promise<boolean> => (deps.closeTab === undefined ? true
+    : deps.closeTab().catch(() => true));
+
   /** POST …/result for a finished job: answers whether TailorIT took it. Taken, or refused for good: the job is over,
    *  counted, and the next is taken soon. A submitted result is kept for every refusal but 404 and 400; any other result
    *  for TailorIT's failure or none (offline): kept, and sent again at the next tick. */
   async function reportResult(run: AgentRun): Promise<boolean> {
     const result = run.result;
     if (result === null) return false;
+    // v2.0 P9 (API 8): whether the job's Submit was pressed, by which TailorIT keeps or gives back its daily count.
     const answer = await deps.server.agentResult(run.id, { state: result.state, reason: result.reason,
-      aiGuesses: Math.min(result.aiGuesses, 1000) });
+      aiGuesses: Math.min(result.aiGuesses, 1000), submitPressed: run.pressedAt !== null });
     const kept = !answer.ok && (result.state === 'submitted' ? !DROPS_SUBMITTED.has(answer.failure)
       : PASSING.has(answer.failure));
     if (kept) {
@@ -782,6 +836,13 @@ export function createAgent(deps: AgentDeps) {
     if (offline) deps.changed();
     offline = false;
     const answer = await deps.server.agentNext();
+    // v2.0 P9 (API 8): TailorIT's daily limit reached: Run auto-apply stays on, and the next claim waits for its reset.
+    const resumeAt = answer.ok ? await noteLimit(answer.value) : null;
+    if (resumeAt !== null) {
+      await savePoll({ nextAt: resumeAt, misses: 0 });
+      deps.changed();
+      return;
+    }
     if (!answer.ok || answer.value.item === null) {
       const misses = poll.misses + 1;
       await savePoll({ nextAt: now + AGENT_BACKOFF_MS[Math.min(misses, AGENT_BACKOFF_MS.length) - 1]!, misses });
@@ -815,6 +876,10 @@ export function createAgent(deps: AgentDeps) {
     if (run.tabId === null) {
       const again = await deps.server.agentNext();
       if (!again.ok) return;
+      // v2.0 P9 (API 8): a claim refused for the daily limit leaves the run as any other refusal does (below); the next
+      // claim waits for the reset.
+      const resumeAt = await noteLimit(again.value);
+      if (resumeAt !== null) await savePoll({ nextAt: resumeAt, misses: 0 });
       const item = again.value.item;
       if (item === null || item.id !== run.id) {
         // Another job, or none: this one is no longer running for this browser (TailorIT left it for the person).

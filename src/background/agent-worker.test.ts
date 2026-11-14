@@ -125,7 +125,7 @@ describe('Run auto-apply in the worker (v3 Phase 5)', () => {
     expect(await worker.deliver({ v: 1, type: 'submit/detected', applicationKey: key, evidence: 'success-message' },
       agentFrame)).toEqual({ ok: true, data: {} });
     const results = worker.tailorit.requests.filter((request) => request.path === `/api/autofill/agent/${TASK.id}/result`);
-    expect(results.map((request) => JSON.parse(request.body!))).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0 }]);
+    expect(results.map((request) => JSON.parse(request.body!))).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true }]);
     expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
     // Its tab let go of (its frame's run cancelled, the person's own settings back), then that tab closed.
     const toTab = sentToFrames(worker).filter((sent) => sent.tabId === AGENT_TAB).map(typeOfSent);
@@ -245,7 +245,7 @@ describe('Run auto-apply in the worker (v3 Phase 5)', () => {
     await worker.deliver({ v: 1, type: 'report/put', runId: begun.data.runId, report: frameReport(begun.data.runId, 0,
       { platform: 'greenhouse', adapter: 'greenhouse', status: 'handoff', pauseReason: 'captcha' }) }, agentFrame);
     await vi.waitFor(() => expect(worker.tailorit.requests.filter((request) => request.path.endsWith('/result'))
-      .map((request) => JSON.parse(request.body!))).toEqual([{ state: 'needs-you', reason: 'captcha', aiGuesses: 0 }]));
+      .map((request) => JSON.parse(request.body!))).toEqual([{ state: 'needs-you', reason: 'captcha', aiGuesses: 0, submitPressed: false }]));
     expect(win.closed).toEqual([AGENT_TAB]);
   });
 

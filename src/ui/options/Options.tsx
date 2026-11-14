@@ -69,6 +69,7 @@ import { SIGNUP_COPY } from '../page/signup-copy';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
 import { animationFrames, clockText, useSecondsLeft, type FrameScheduler } from './countdown';
 import { useSettings, type SettingsState } from './settings';
+import { API8_COPY } from './copy-api8'; // v2.0 P9
 
 const TEXT = COPY.options;
 
@@ -443,7 +444,11 @@ function AutoApply({ platform, auth }: { platform: PagePlatform; auth: AuthState
           <>
             <Toggle setting="agent.on" name={words.run} help={words.runHelp} checked={pending ?? (status.on || asking)}
               disabled={working || (!status.on && !status.allowed)} onChange={toggle} />
-            {status.blocked !== null && <p className="tia-note" data-agent-blocked={status.blocked}>{words.blocked[status.blocked]}</p>}
+            {/* v2.0 P9 (A20): "Close the application tab when it's submitted". */}
+            <CloseTab platform={platform} />
+            {/* v2.0 P9: TailorIT's daily limit is said by the status line below, in TailorIT's own words. */}
+            {status.blocked !== null && status.blocked !== 'daily-limit'
+              && <p className="tia-note" data-agent-blocked={status.blocked}>{words.blocked[status.blocked]}</p>}
             {asking && (
               <div className="tia-confirm" role="alertdialog" aria-labelledby="agent-confirm-heading" data-agent-confirm="">
                 <h3 className="tia-disclosure__title" id="agent-confirm-heading">{words.confirmHeading}</h3>
@@ -461,6 +466,38 @@ function AutoApply({ platform, auth }: { platform: PagePlatform; auth: AuthState
         )}
       </div>
     </Card>
+  );
+}
+
+// ── v2.0 P9 (A20) ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** "Close the application tab when it's submitted" (autoApply/closeTab: storage.local, on by default), read when the
+ *  card opens; a refused change shows the switch as it was. */
+function CloseTab({ platform }: { platform: PagePlatform }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void request(platform, { v: 1, type: 'autoApply/closeTab' }).then((answer) => {
+      if (live && answer.ok) setOn(answer.data.on);
+    });
+    return () => {
+      live = false;
+    };
+  }, [platform]);
+  if (on === null) return null;
+  const change = (next: boolean) => {
+    const before = on;
+    setSaving(true);
+    setOn(next);
+    void request(platform, { v: 1, type: 'autoApply/closeTab', on: next }).then((answer) => {
+      setSaving(false);
+      setOn(answer.ok ? answer.data.on : before);
+    });
+  };
+  return (
+    <Toggle setting="autoApply.closeTab" name={API8_COPY.closeTab} help={API8_COPY.closeTabHelp} checked={on}
+      disabled={saving} onChange={change} />
   );
 }
 

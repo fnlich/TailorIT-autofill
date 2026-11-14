@@ -3,6 +3,7 @@ import { AUTOFILL_API_VERSION } from '../contract/tailorit';
 import {
   AI_STREAM_IDLE_MS, createServerClient, isAllowedRequest, SERVER_TIMEOUT_MS, type ServerClientDeps,
 } from './server-client';
+import { tailorRefusalOf } from './tailor'; // v2.0 P9
 import { createFakeTailorIT, fakePdf, fileReply, goldens, GOLDEN_TOKEN, ORIGIN, START_MS, type FakeTailorIT } from './worker.testkit';
 
 const REDEEM_BODY = { code: 'K7QM2XRD9VHTPA3C', client: { browser: 'chrome' as const, extensionVersion: '0.1.0', os: 'windows' as const } };
@@ -491,3 +492,36 @@ describe('the AI task stream (v5 p2-stream)', () => {
     expect(tailorit.requests.at(-1)!.headers.prefer).toBeUndefined();
   });
 });
+
+// ── v2.0 P9 (autofill API 8: ai_usage_exhausted) ──
+describe('v2.0 P9: the person’s AI usage used up (ai_usage_exhausted, API 8)', () => {
+  const PICK_BODY = { items: [{ key: 'lever|main|source|9d4c2b7e1f0a3c58|0', category: 'referral_source' as const,
+    optionSetHash: '9d4c2b7e1f0a3c58', intendedValue: 'LinkedIn', aliases: [], label: 'How did you hear about us?',
+    options: [{ index: 0, label: 'LinkedIn job post' }] }] };
+
+  // Undo proof: drop refusalOf's ai_usage_exhausted branch and the 429 reads rate-limited, with its long wait.
+  it('reads it as TailorIT’s AI unavailable: a server error with its code, and no wait for the daily reset', async () => {
+    const { server, tailorit } = client();
+    tailorit.reply('POST /api/autofill/ai/pick', { status: 429, headers: { 'retry-after': '36000' },
+      json: errorBody('ai_usage_exhausted', { retryAfterSeconds: 36_000 }) }, { once: true });
+    const answer = await server.aiPick(PICK_BODY);
+    expect(answer).toEqual({ ok: false, failure: 'server-error', status: 429, code: 'ai_usage_exhausted' });
+    // As a 503 ai_unavailable reads.
+    tailorit.reply('POST /api/autofill/ai/pick', { status: 503, json: errorBody('ai_unavailable') }, { once: true });
+    expect(await server.aiPick(PICK_BODY)).toMatchObject({ ok: false, failure: 'server-error', code: 'ai_unavailable' });
+    // Any other 429 is TailorIT's rate limit, as before.
+    tailorit.reply('POST /api/autofill/ai/pick', { status: 429, json: errorBody('rate_limited', { retryAfterSeconds: 12 }) },
+      { once: true });
+    expect(await server.aiPick(PICK_BODY)).toMatchObject({ ok: false, failure: 'rate-limited', retryAfterSeconds: 12 });
+  });
+
+  // Undo proof: drop tailor.ts's ai_usage_exhausted and these say 'unavailable' and 'failed'.
+  it('ends a tailoring as AI unavailable, refused at its start or failed by TailorIT', () => {
+    expect(tailorRefusalOf({ ok: false, failure: 'server-error', status: 429, code: 'ai_usage_exhausted' }))
+      .toBe('ai-unavailable');
+    expect(tailorRefusalOf({ ok: false, failure: 'server-error', status: 503, code: 'ai_unavailable' }))
+      .toBe('ai-unavailable');
+    expect(tailorRefusalOf({ ok: false, failure: 'rate-limited', status: 429, code: 'rate_limited' })).toBe('rate-limited');
+  });
+});
+// ── end v2.0 P9 ──

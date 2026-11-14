@@ -14,6 +14,7 @@
  *   More, so thousands of jobs never draw at once.
  * - Empty (nothing queued), disconnected and error states, each saying what to do.
  * It shows only what the worker answers: titles and companies as TailorIT named them, statuses and counts. No address.
+ * v2.0 P9 (autofill API 8): a run stopped by TailorIT's daily auto-apply limit says so in TailorIT's own words.
  */
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import type { QueueListItem, QueueStatus } from '../../messaging/schemas';
@@ -21,6 +22,7 @@ import { QUEUE_LIST_PAGE } from '../../messaging/page-schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
+import { API8_COPY } from '../options/copy-api8'; // v2.0 P9
 import { AUTO_APPLY_URL } from '../page/agent';
 import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
@@ -247,6 +249,10 @@ function lineOf(status: QueueStatus, msLeft: number | null, total: number): stri
     case 'finished':
       return WORDS.finished;
     case 'stopped':
+      // v2.0 P9 (API 8): TailorIT's daily auto-apply limit, in its own words.
+      if (status.stoppedBy === 'daily-limit') {
+        return status.limit?.message ?? API8_COPY.limitReached(status.limit?.resetsAt ?? null);
+      }
       return status.stoppedBy === null ? WORDS.stopped.person : WORDS.stopped[status.stoppedBy];
   }
 }

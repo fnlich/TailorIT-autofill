@@ -144,7 +144,7 @@ describe('jr7 FIX-background, D-1: SmartRecruiters’ chained run through the ag
       expect(results(worker)).toEqual([]);
       expect(await detected(worker, SUCCESS, 'doc-app', keyOf(SUCCESS), 'confirmation-page'))
         .toEqual({ ok: true, data: {} });
-      expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0 }]);
+      expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true }]);
       expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
       // Once: the drawn sign the arming document's watch reports after it records nothing more.
       expect(await detected(worker, SUCCESS, 'doc-app', posting, 'success-message')).toMatchObject({ ok: false });
@@ -165,7 +165,7 @@ describe('jr7 FIX-background, D-1: SmartRecruiters’ chained run through the ag
     expect(await runRecord()).toMatchObject({ result: null });
     expect(await detected(worker, SUCCESS, 'doc-success', keyOf(SUCCESS), 'confirmation-page'))
       .toEqual({ ok: true, data: {} });
-    expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0 }]);
+    expect(results(worker)).toEqual([{ state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true }]);
     expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
     expect(await detected(worker, SUCCESS, 'doc-success', keyOf(SUCCESS), 'confirmation-page'))
       .toMatchObject({ ok: false });
@@ -188,7 +188,7 @@ describe('jr7 FIX-background, D-1: SmartRecruiters’ chained run through the ag
     // (it may have been sent), never submitted.
     worker.clock.now += AGENT_CONFIRM_MS + 100;
     worker.timers.advance(AGENT_CONFIRM_MS + 100);
-    await vi.waitFor(() => expect(results(worker)).toEqual([{ state: 'needs-you', reason: 'timed_out', aiGuesses: 0 }]));
+    await vi.waitFor(() => expect(results(worker)).toEqual([{ state: 'needs-you', reason: 'timed_out', aiGuesses: 0, submitPressed: true }]));
     expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(0);
   });
 });

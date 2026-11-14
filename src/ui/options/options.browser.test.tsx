@@ -6,6 +6,7 @@ import { COPY } from '../../shared/copy';
 import { authStatus, button, click, createFakeWorker, mount, settle, typeInto, unmountAll, type FakeWorker } from '../ui.testkit';
 import type { FrameScheduler } from './countdown';
 import { Options } from './Options';
+import { API8_COPY } from './copy-api8'; // v2.0 P9
 
 const TEXT = COPY.options;
 
@@ -566,3 +567,68 @@ describe('the Documents card (v1.4 F, PLAN decision 18)', () => {
     expect(card(refused).querySelector('[data-documents="ready"]')).not.toBeNull();
   });
 });
+
+// ── v2.0 P9 (autofill API 8; docs/design/v2.0/09-extension-api8.md) ──
+describe('Options › Auto-apply on autofill API 8 (v2.0 P9)', () => {
+  afterEach(() => unmountAll());
+
+  // Undo proof: drop AgentStatusLine's limit line and nothing shows TailorIT's words.
+  it('shows TailorIT’s daily-limit words as they are, with Subscribe, and no blocked note of its own', async () => {
+    const worker = createFakeWorker();
+    const message = 'You have used today’s 7 auto-applies on the Free plan. They start again tomorrow at 7:00.';
+    worker.script.agent = { ...worker.script.agent, on: true, confirmed: true, phase: 'blocked', blocked: 'daily-limit',
+      limit: { message, resetsAt: Date.UTC(2026, 10, 3, 7) } };
+    const root = await open(worker);
+    const card = root.querySelector<HTMLElement>('[data-card="agent"]')!;
+    const limit = card.querySelector<HTMLElement>('[data-agent-limit]')!;
+    expect(limit.textContent).toBe(`${message} ${API8_COPY.subscribe}`);
+    const subscribe = limit.querySelector<HTMLAnchorElement>('a[data-tailorit-link="subscribe"]')!;
+    expect(subscribe.href).toMatch(/\/settings#account$/);
+    expect(subscribe.target).toBe('_blank');
+    expect(card.querySelector('[data-agent-blocked]')).toBeNull();
+    // Run auto-apply stays on (the agent waits for the reset by itself).
+    expect(setting(card, 'agent.on').checked).toBe(true);
+    unmountAll();
+    // A TailorIT that sent no words: the extension's own.
+    const plain = createFakeWorker();
+    plain.script.agent = { ...plain.script.agent, on: true, confirmed: true, phase: 'blocked', blocked: 'daily-limit',
+      limit: { message: null, resetsAt: Date.UTC(2026, 10, 3, 7) } };
+    const again = await open(plain);
+    expect(again.querySelector('[data-agent-limit]')?.textContent)
+      .toBe(`${API8_COPY.limitReached(Date.UTC(2026, 10, 3, 7))} ${API8_COPY.subscribe}`);
+    // Any other block: no limit line.
+    unmountAll();
+    const other = createFakeWorker();
+    other.script.agent = { ...other.script.agent, allowed: false, blocked: 'no-scope' };
+    const third = await open(other);
+    expect(third.querySelector('[data-agent-limit]')).toBeNull();
+  });
+
+  // Undo proof: drop <CloseTab> and the switch is not there.
+  it('offers "Close the application tab when it’s submitted", on by default, saved through the worker', async () => {
+    const worker = createFakeWorker();
+    let stored = true;
+    let refuse = false;
+    worker.on('autoApply/closeTab', (message) => {
+      if (refuse) return { ok: false, error: 'unavailable' };
+      if (typeof message.on === 'boolean') stored = message.on;
+      return { ok: true, data: { on: stored } };
+    });
+    const root = await open(worker);
+    const card = root.querySelector<HTMLElement>('[data-card="agent"]')!;
+    const close = setting(card, 'autoApply.closeTab');
+    expect(close.checked).toBe(true);
+    expect(card.textContent).toContain(API8_COPY.closeTab);
+    await click(close);
+    await settle();
+    expect(worker.sentOfType('autoApply/closeTab').at(-1)).toEqual({ v: 1, type: 'autoApply/closeTab', on: false });
+    expect(setting(card, 'autoApply.closeTab').checked).toBe(false);
+    // A refused change shows the switch as it was.
+    refuse = true;
+    await click(setting(card, 'autoApply.closeTab'));
+    await settle();
+    expect(setting(card, 'autoApply.closeTab').checked).toBe(false);
+    expect(stored).toBe(false);
+  });
+});
+// ── end v2.0 P9 ──
