@@ -16,7 +16,7 @@ const SUBMISSIONS = 'POST /api/autofill/submissions';
 const asked = async () => (await mock.requestsTo(ANSWER)).some((request) => request.body.includes('hiking'));
 
 test.describe('prepared draft answers (v1.5 X, API 8)', () => {
-  test('fills a question from its ready draft, with no AI request about it, and names it prepared on Submit', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  test('fills a question from its ready draft, provenance prebuilt, with no AI request about it', async ({ extContext, connected: ext, routeLog, tailorit }) => {
     await tailorit.scenario('form-drafts', { value: [{ label: HIKING, kind: 'radio', options: ['Yes', 'No'],
       answer: { kind: 'options', labels: ['Yes'] } }] });
     const url = 'https://job-boards.greenhouse.io/tailoritfixture/jobs/6601';
@@ -28,18 +28,6 @@ test.describe('prepared draft answers (v1.5 X, API 8)', () => {
     expect(row(report, HIKING)).toMatchObject({ provenance: 'prebuilt', reason: 'prebuilt-answer', wrote: true });
     await expect(page.getByLabel('Yes', { exact: true })).toBeChecked();
     expect(await asked()).toBe(false);
-    // v2.0 P9 (API 8): the person's Submit names the prepared answer `prepared` to TailorIT, never `prebuilt`.
-    await page.bringToFront();
-    await page.getByRole('button', { name: 'Submit application' }).click();
-    await expect.poll(async () => (await ext.data<{ page?: { submitted?: string } }>({ v: 1, type: 'panel/reports', tabId }))
-      .page?.submitted).toBe('recorded');
-    await expect.poll(async () => (await mock.requestsTo(SUBMISSIONS)).length).toBe(1);
-    const [sent] = await mock.requestsTo(SUBMISSIONS);
-    const body = JSON.parse(sent!.body) as { questions: Array<{ ref: string; label: string }>;
-      answers: Array<{ ref: string; provenance: string | null }> };
-    const hiking = body.questions.find((question) => question.label === HIKING)!;
-    expect(body.answers.find((answer) => answer.ref === hiking.ref)?.provenance).toBe('prepared');
-    expect(sent!.body).not.toContain('prebuilt');
   });
 
   test('leaves a not-ready draft to the fill’s own AI path', async ({ extContext, connected: ext, routeLog, tailorit }) => {
@@ -53,5 +41,30 @@ test.describe('prepared draft answers (v1.5 X, API 8)', () => {
     const report = await ext.settled(tabId);
     expect(row(report, HIKING).provenance).not.toBe('prebuilt');
     expect(await asked()).toBe(true);
+  });
+
+  // v2.0 P9 (API 8). Last: the person's Submit keeps the filled answer among the accepted matches (storage.local), which
+  // a later fill of the same question takes first; no later spec asks it.
+  test('names the prepared answer `prepared` to TailorIT on the person’s Submit, never `prebuilt`', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+    await tailorit.scenario('form-drafts', { value: [{ label: HIKING, kind: 'radio', options: ['Yes', 'No'],
+      answer: { kind: 'options', labels: ['Yes'] } }] });
+    const url = 'https://job-boards.greenhouse.io/tailoritfixture/jobs/6603';
+    routeLog.serve({ [url]: FIXTURE });
+    const page = await extContext.newPage();
+    await page.goto(url);
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId);
+    expect(row(report, HIKING)).toMatchObject({ provenance: 'prebuilt', wrote: true });
+    await page.bringToFront();
+    await page.getByRole('button', { name: 'Submit application' }).click();
+    await expect.poll(async () => (await ext.data<{ page?: { submitted?: string } }>({ v: 1, type: 'panel/reports', tabId }))
+      .page?.submitted).toBe('recorded');
+    await expect.poll(async () => (await mock.requestsTo(SUBMISSIONS)).length).toBe(1);
+    const [sent] = await mock.requestsTo(SUBMISSIONS);
+    const body = JSON.parse(sent!.body) as { questions: Array<{ ref: string; label: string }>;
+      answers: Array<{ ref: string; provenance: string | null }> };
+    const hiking = body.questions.find((question) => question.label === HIKING)!;
+    expect(body.answers.find((answer) => answer.ref === hiking.ref)?.provenance).toBe('prepared');
+    expect(sent!.body).not.toContain('prebuilt');
   });
 });

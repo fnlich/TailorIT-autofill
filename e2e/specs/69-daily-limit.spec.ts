@@ -8,6 +8,9 @@
  *   Subscribe, and nothing more opens; the job left stays queued;
  * - the Queue tab opens the job the limit allows, then stops ('daily-limit'): nothing more opens, the jobs left stay
  *   queued, its line says TailorIT's words, and Start again before the reset gets the same answer.
+ * Named 69 (the design's 67-daily-limit), so it runs after 67-queue: the specs share one browser, and the Queue tab's
+ * run this spec leaves (stopped, its jobs listed) stays until a Start replaces it, while 67-queue's first test reads
+ * the list before any run.
  */
 import type { Page } from '@playwright/test';
 import { COPY } from '../../src/shared/copy';

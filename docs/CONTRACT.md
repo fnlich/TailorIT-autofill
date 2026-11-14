@@ -360,7 +360,7 @@ docs/ARCHITECTURE.md "v2.0: autofill API 8" has the extension's side; TailorIT's
 - `test/contract.test.ts`: the copy unedited, API version 8 as `SOURCE.json` and `version.ts` say, every example.
 - `src/background/provenance-wire.test.ts`: `prepared` in (forms/known's drafts become `draft` answers), `prebuilt` inside (the core fills with it), `prepared` out; the two names never cross.
 
-### The mock in v2.0 (`e2e/mock-server/mock.mjs`; `test/mock-server.test.ts` checks it; e2e `66-prepared-drafts`, `67-daily-limit` and `68-close-tab` read it)
+### The mock in v2.0 (`e2e/mock-server/mock.mjs`; `test/mock-server.test.ts` checks it; e2e `66-prepared-drafts`, `68-close-tab` and `69-daily-limit` read it)
 - **`MOCK_API_VERSION` 8** (7 before): every answer to a `tia_` bearer names 8; `version-mismatch` speaks 9.
 - **The scenario `daily-limit`** (`value`: the limit, default 7; it holds until the reset): GET `/agent/next` and POST `/agent/:id/opened` count each row they take (`state.agent.used`, the row `counted`) and name the count (`dailyLimit`, `reached` once as many count as allowed, the last one taken included); past it they answer `item: null` with `dailyLimit` reached, TailorIT's words (`DAILY_LIMIT_MESSAGE`, the contract's own example) and the next UTC midnight, the row left queued. A result `failed`, `skipped` or `needs-you` whose `submitPressed` is not true gives its count back; `submitted` keeps it. Without the scenario a claim names no limit (an older TailorIT, or a Paid account's answer read as none).
 - **`manual` rows:** POST `/__mock/agent` takes an item's `run: 'manual'` (not part of the task): GET `/agent/next` skips the row, POST `/agent/:id/opened` answers 409, and a token's GET `/agent/queue` leaves it out (and out of `total`).
