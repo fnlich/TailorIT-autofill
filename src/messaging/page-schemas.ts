@@ -439,7 +439,9 @@ export const ASK_OUTCOMES = ['answered', ...ASK_REFUSALS] as const;
 export type AskOutcome = (typeof ASK_OUTCOMES)[number];
 export const PanelAskAnswerSchema = z.discriminatedUnion('outcome', [
   z.strictObject({ outcome: z.literal('answered'), text: Text(3000).min(1), resumeLabel: Text(200), policy: z.boolean() }),
-  z.strictObject({ outcome: z.enum(ASK_REFUSALS) }),
+  z.strictObject({ outcome: z.enum(ASK_REFUSALS),
+    /** v2.0 fix wave (REQ-1): TailorIT's words for its AI's refusal (ai-notice.ts aiRefusalOf), shown as they are. */
+    message: Text(400).optional() }),
 ]);
 export type PanelAskAnswer = z.infer<typeof PanelAskAnswerSchema>;
 

@@ -155,7 +155,8 @@ describe('the custom question (v2)', () => {
     worker.tailorit.reply(DRAFT, refusal(429, 'rate_limited'), { once: true });
     expect(await ask(worker)).toEqual({ ok: true, data: { outcome: 'rate-limited' } });
     worker.tailorit.reply(DRAFT, refusal(503, 'ai_unavailable'), { once: true });
-    expect(await ask(worker)).toEqual({ ok: true, data: { outcome: 'unavailable' } });
+    // v2.0 fix wave (REQ-1): with TailorIT's words for it.
+    expect(await ask(worker)).toEqual({ ok: true, data: { outcome: 'unavailable', message: 'x' } });
     for (let i = 2; i < ASK_LIMIT.count; i += 1) await ask(worker);
     expect(await ask(worker)).toEqual({ ok: true, data: { outcome: 'rate-limited' } });
     expect(await worker.deliver({ v: 1, type: 'panel/ask', tabId: 7, question: '   ', length: 'short' }, pageSender()))
@@ -222,3 +223,31 @@ describe('the custom question (v2)', () => {
     for (const text of [QUESTION, 'ordering platforms', POSTING, 'Northwind']) expect(kept).not.toContain(text);
   });
 });
+
+// ── v2.0 fix wave (REQ-1): TailorIT's own words for its two blocked states ──
+describe('v2.0 fix wave REQ-1: the custom question says TailorIT’s words when its AI refuses', () => {
+  const USAGE = 'You’ve used your AI usage. Get extra credit or use your own AI via MCP.';
+  const UNAVAILABLE = 'TailorIT’s AI isn’t available right now. Please try again later.';
+
+  // Undo proof: drop ask.ts's refusedWith (back to `{ outcome }`) and no answer carries TailorIT's words.
+  it('answers TailorIT’s message for a 429 ai_usage_exhausted, a 503 ai_unavailable and a task it failed; none else',
+    async () => {
+      const worker = await withForm();
+      worker.tailorit.reply(DRAFT, { status: 429, headers: { 'retry-after': '36000' },
+        json: { error: { code: 'ai_usage_exhausted', message: USAGE, retryAfterSeconds: 36000 } } }, { once: true });
+      expect(await ask(worker)).toEqual({ ok: true, data: { outcome: 'unavailable', message: USAGE } });
+      worker.tailorit.reply(DRAFT, { status: 503, json: { error: { code: 'ai_unavailable', message: UNAVAILABLE } } },
+        { once: true });
+      expect(await ask(worker)).toEqual({ ok: true, data: { outcome: 'unavailable', message: UNAVAILABLE } });
+      const failed = await withForm();
+      failed.tailorit.reply(DRAFT, { json: { ...taskView('autofill_draft', 'failed', null),
+        error: { code: 'ai_usage_exhausted', message: USAGE } } }, { once: true });
+      expect(await ask(failed)).toEqual({ ok: true, data: { outcome: 'unavailable', message: USAGE } });
+      // Another refusal's words are never passed on.
+      const other = await withForm();
+      other.tailorit.reply(DRAFT, { status: 409, json: { error: { code: 'ai_busy', message: 'Busy words.' } } },
+        { once: true });
+      expect(await ask(other)).toEqual({ ok: true, data: { outcome: 'unavailable' } });
+    });
+});
+// ── end v2.0 fix wave ──

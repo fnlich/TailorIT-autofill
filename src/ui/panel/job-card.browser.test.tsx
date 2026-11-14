@@ -386,6 +386,18 @@ describe('Ask a custom question (v2)', () => {
     expect(root.querySelector('[data-ask-answer]')).toBeNull();
   });
 
+  // v2.0 fix wave (REQ-1). Undo proof: drop Ask.tsx's `data.message ??` and the extension's own words show.
+  it('says TailorIT’s own words when its AI refused the question', async () => {
+    const message = 'You’ve used your AI usage. Get extra credit or use your own AI via MCP.';
+    const worker = withForm();
+    worker.script.askAnswer = { outcome: 'unavailable', message };
+    const root = await open(worker);
+    await click(summaryOf(root));
+    await typeInto(root.querySelector<HTMLTextAreaElement>('[data-ask] textarea')!, 'Why do you want to work here?');
+    await click(button(root, COPY.ask.submit));
+    expect(root.querySelector('[data-ask-refused]')?.textContent).toBe(message);
+  });
+
   it('is disabled with a reason when there is no resume, and shows the no-AI notice above the box', async () => {
     const noResume = await open(withForm(jobCard({ resume: null, match: null })));
     expect(noResume.querySelector('[data-ask-disabled]')?.textContent).toBe(COPY.ask.outcomes['no-resume']);

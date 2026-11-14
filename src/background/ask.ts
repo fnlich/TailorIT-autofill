@@ -35,6 +35,7 @@ import { frameTarget } from './frames';
 import type { JobCards } from './job-cards';
 import type { createRateLimit } from './locks';
 import type { ProfileCache } from './profile-cache';
+import { aiRefusalOf } from './ai-notice'; // v2.0 fix wave (REQ-1)
 import type { ServerClient, ServerResult } from './server-client';
 import type { SettingsStore } from './settings';
 import type { Timers } from './timers';
@@ -71,6 +72,12 @@ export interface AskDeps {
 /** Whether a question may never go to the AI: a sensitive topic, or an attention check. */
 export function screenQuestion(question: string): 'sensitive' | null {
   return namesSensitiveTopic(question) || attentionHits(question, '').length > 0 ? 'sensitive' : null;
+}
+
+/** v2.0 fix wave (REQ-1): a refusal with TailorIT's words, when its AI refused (unavailable, or the usage used up). */
+function refusedWith(outcome: Refused, words: { code?: string; message?: string } | null | undefined): PanelAskAnswer {
+  const message = aiRefusalOf(words)?.message;
+  return message === undefined ? { outcome } : { outcome, message };
 }
 
 /** What a refused AI call means to the person. */
@@ -154,16 +161,19 @@ export function createAsk(deps: AskDeps): (message: Ask) => Promise<Answer<Panel
       canaries: canaries.filter((canary) => canary.length >= 2).map((canary) => canary.slice(0, limits.canary))
         .slice(0, limits.canaries),
     });
-    if (!submitted.ok) return { outcome: refusalOf(submitted) };
+    if (!submitted.ok) return refusedWith(refusalOf(submitted), submitted); // v2.0 fix wave (REQ-1)
     let task: AutofillTaskView;
     if (submitted.value.done) task = submitted.value.task;
     else {
       const view = await finished(started, submitted.value.taskId);
       if (view === null) return { outcome: 'unavailable' };
-      if (!view.ok) return { outcome: refusalOf(view) };
+      if (!view.ok) return refusedWith(refusalOf(view), view); // v2.0 fix wave (REQ-1)
       task = view.value;
     }
-    if (task.kind !== 'autofill_draft' || task.status !== 'succeeded' || task.result === null) return { outcome: 'unavailable' };
+    // v2.0 fix wave (REQ-1): a task TailorIT failed for its AI's refusal says its words.
+    if (task.kind !== 'autofill_draft' || task.status !== 'succeeded' || task.result === null) {
+      return refusedWith('unavailable', task.error);
+    }
     const draft = (task as AutofillDraftTask).result?.drafts.find((each) => each.key === ASK_KEY);
     if (draft === undefined) return { outcome: 'unusable' };
     if (draft.reason === 'sensitive') return { outcome: 'sensitive' };

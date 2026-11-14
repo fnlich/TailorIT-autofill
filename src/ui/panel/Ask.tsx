@@ -66,7 +66,8 @@ export function AskQuestion({ ask, copy, connected, aiOff = false, noResume, pol
     const data = answer.data;
     setResult(data.outcome === 'answered'
       ? { state: 'answered', text: data.text, label: data.resumeLabel, policy: data.policy, copied: null }
-      : { state: 'refused', text: COPY.ask.outcomes[data.outcome] });
+      // v2.0 fix wave (REQ-1): TailorIT's own words for its AI's refusal, as they are.
+      : { state: 'refused', text: data.message ?? COPY.ask.outcomes[data.outcome] });
   };
 
   const copyAnswer = async (text: string) => {
