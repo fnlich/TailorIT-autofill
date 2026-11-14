@@ -15,6 +15,7 @@
  * - Empty (nothing queued), disconnected and error states, each saying what to do.
  * It shows only what the worker answers: titles and companies as TailorIT named them, statuses and counts. No address.
  * v2.0 P9 (autofill API 8): a run stopped by TailorIT's daily auto-apply limit says so in TailorIT's own words.
+ * v2.0 fix wave (REQ-7): with Subscribe under them (TailorIT's Settings › Account, in a new tab), as Options says it.
  */
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import type { QueueListItem, QueueStatus } from '../../messaging/schemas';
@@ -23,7 +24,7 @@ import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
 import { API8_COPY } from '../options/copy-api8'; // v2.0 P9
-import { AUTO_APPLY_URL } from '../page/agent';
+import { AUTO_APPLY_URL, SUBSCRIBE_URL } from '../page/agent';
 import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
 import { useShownFor, type SeenClock } from './seen';
@@ -185,6 +186,12 @@ export function QueueView({ platform, changes, clock, id, labelledBy }: QueueVie
         {line !== null && (
           <p className="tia-queue__line" data-queue-line={status.hold ?? status.phase}
             data-queue-next={countdown === null ? undefined : ''} aria-live="off">{line}</p>
+        )}
+        {/* v2.0 fix wave (REQ-7): under TailorIT's daily-limit words, Subscribe, as the Options status line has it. */}
+        {status.phase === 'stopped' && status.stoppedBy === 'daily-limit' && (
+          <p className="tia-queue__note" data-queue-note="subscribe">
+            <a href={SUBSCRIBE_URL} target="_blank" rel="noreferrer" data-tailorit-link="subscribe">{API8_COPY.subscribe}</a>
+          </p>
         )}
         {counts !== '' && <p className="tia-queue__counts" data-queue-counts="">{counts}</p>}
         {!disconnected && (

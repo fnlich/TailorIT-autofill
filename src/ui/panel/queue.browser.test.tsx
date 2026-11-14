@@ -424,5 +424,30 @@ describe('the Queue tab on autofill API 8 (v2.0 P9)', () => {
     await settle();
     expect(lineOf(root)).toBe(API8_COPY.limitReached(null));
   });
+
+  // v2.0 fix wave (REQ-7). Undo proof: drop QueueView's Subscribe note and the link is not found.
+  it('offers Subscribe under TailorIT’s daily-limit words, and only for that stop', async () => {
+    const worker = createFakeWorker();
+    const message = 'You have used today’s 7 auto-applies on the Free plan. Subscribe for unlimited auto-apply.';
+    worker.script.queue = { source: 'run', items: [queueItem(1), queueItem(2)],
+      status: queueStatus({ phase: 'stopped', stoppedBy: 'daily-limit', total: 2, opened: 0,
+        limit: { message, resetsAt: Date.UTC(2026, 10, 3, 7) } }) };
+    const root = await open(worker);
+    await queueTab(root);
+    expect(lineOf(root)).toBe(message);
+    const subscribe = root.querySelector<HTMLAnchorElement>('[data-queue-note="subscribe"] a[data-tailorit-link="subscribe"]');
+    expect(subscribe?.textContent).toBe(API8_COPY.subscribe);
+    expect(subscribe?.href).toMatch(/\/settings#account$/);
+    expect(subscribe?.target).toBe('_blank');
+    expect(subscribe?.rel).toBe('noreferrer');
+    // The note follows the limit's line.
+    expect(root.querySelector('[data-queue-line]')?.nextElementSibling?.getAttribute('data-queue-note')).toBe('subscribe');
+    // Stopped for another reason: no Subscribe.
+    const { limit: _limit, ...rest } = worker.script.queue.status;
+    worker.script.queue.status = { ...rest, stoppedBy: 'person' };
+    await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'queue' }));
+    await settle();
+    expect(root.querySelector('a[data-tailorit-link="subscribe"]')).toBeNull();
+  });
 });
 // ── end v2.0 P9 ──
