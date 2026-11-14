@@ -215,6 +215,14 @@ function agentWindows(): AgentWindows {
         // Gone already.
       }
     },
+    // v2.0 fix wave (BEH-9): a kept window the person closed is dropped from the agent's list.
+    async windowExists(windowId) {
+      try {
+        return (await browser.windows.get(windowId)) !== undefined;
+      } catch {
+        return false;
+      }
+    },
   };
 }
 

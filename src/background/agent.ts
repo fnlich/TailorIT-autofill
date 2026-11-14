@@ -413,8 +413,11 @@ interface PendingEntry {
 /** storage.session: the windows of jobs the agent left open for the person (jr7-O1 part 4, D-9: a code or a check after
  *  its own Submit; ICIMS7-04: an assessment after it), their ids alone: never counted as a window of the person's. */
 export const AGENT_KEPT_KEY = 'agent:kept';
-/** The most such windows remembered (the oldest forgotten first). */
-export const AGENT_KEPT_MAX = 20;
+/** The most such windows remembered: a bound on what storage holds, not a cap that bites. v2.0 fix wave (BEH-9): it was
+ *  20, the oldest forgotten first, so with "Close the application tab when it's submitted" off the 21st-oldest window,
+ *  still open, counted as the person's; now the windows the person closed are dropped at each write (windowExists), so
+ *  the list holds only open ones, and this many are never open at once. */
+export const AGENT_KEPT_MAX = 1000;
 /** How a finished job's tab goes: closed (as before), or kept for the person (`keepTab`), its window flagged
  *  (windows.update drawAttention, no permission); `note` says why in the extension's words. */
 interface FinishOptions {
@@ -684,7 +687,12 @@ export function createAgent(deps: AgentDeps) {
     if (!(await deps.windows.tabExists(run.tabId))) return;
     await deps.release(run.tabId).catch(() => undefined);
     if (run.windowId !== null) {
-      const kept = (await keptWindows()).filter((id) => id !== run.windowId);
+      // v2.0 fix wave (BEH-9): the windows already closed are dropped, so every open one stays in the list.
+      const kept: number[] = [];
+      for (const id of await keptWindows()) {
+        if (id !== run.windowId && (deps.windows.windowExists === undefined
+          || await deps.windows.windowExists(id).catch(() => true))) kept.push(id);
+      }
       await deps.session.set({ [AGENT_KEPT_KEY]: [...kept, run.windowId].slice(-AGENT_KEPT_MAX) });
       // v2.0 P9: a submitted job's tab left open by the person's choice (close-tab.ts) is not flagged.
       if (flag) await deps.windows.drawAttention?.(run.windowId).catch(() => undefined);

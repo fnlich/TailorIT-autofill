@@ -1924,6 +1924,54 @@ describe('v2.0 P9: the agent on autofill API 8', () => {
     expect(k.windows.closedTabs).toEqual([]);
   });
 
+  // v2.0 fix wave (BEH-9). Undo proof: put back the cap of 20 (AGENT_KEPT_MAX 20, no windowExists) and the first
+  // window, still open, falls out of the list the claim leaves out, so it counts as a window of the person's.
+  it('with the switch off, never counts a job’s window left open as the person’s, past 20, and drops those closed',
+    async () => {
+      const count = 22;
+      // ID() names nine jobs at most: these ids hold two digits.
+      const many = (n: number) => ({ ...task(n), id: `0000${String(n).padStart(4, '0')}-aaaa-4bbb-8ccc-${String(n).padStart(12, '0')}` });
+      const h = harness({ tasks: Array.from({ length: count }, (_, n) => many(n + 1)) });
+      h.deps.closeTab = async () => false;
+      const open = new Set<number>();
+      h.deps.windows.windowExists = async (windowId) => open.has(windowId);
+      const asked: Array<readonly number[]> = [];
+      h.deps.windows.othersOpen = async (except) => {
+        asked.push(Array.isArray(except) ? [...(except as readonly number[])] : []);
+        return true;
+      };
+      await on(h);
+      const windows: number[] = [];
+      for (let n = 1; n <= count; n += 1) {
+        const { tabId, key } = await running(h);
+        const windowId = (await runRecord(h))!.windowId!;
+        windows.push(windowId);
+        open.add(windowId);
+        await h.agent.hello(tabId, form(key, 'doc-1'));
+        await h.agent.pressed(tabId, key, 'doc-1');
+        expect(await h.agent.submitted(tabId, key), String(n)).toBe('recorded');
+        await h.agent.tick();
+      }
+      expect(h.results).toHaveLength(count);
+      expect(h.windows.closedTabs).toEqual([]);
+      // Every window still open is in the list (the first, of 22, too), and the look for the person's leaves all out.
+      expect(await h.session.get(AGENT_KEPT_KEY)).toEqual(windows);
+      expect(asked.at(-1)).toEqual(windows);
+      // The person closes the first two: the next write drops them, and keeps the others.
+      open.delete(windows[0]!);
+      open.delete(windows[1]!);
+      const more = harness({ local: h.local, session: h.session, tasks: [many(30)], firstWindow: 500 });
+      more.deps.closeTab = async () => false;
+      more.deps.windows.windowExists = async (windowId) => open.has(windowId) || windowId > 500;
+      await on(more);
+      const last = await running(more);
+      const lastWindow = (await runRecord(more))!.windowId!;
+      await more.agent.hello(last.tabId, form(last.key, 'doc-1'));
+      await more.agent.pressed(last.tabId, last.key, 'doc-1');
+      expect(await more.agent.submitted(last.tabId, last.key)).toBe('recorded');
+      expect(await more.session.get(AGENT_KEPT_KEY)).toEqual([...windows.slice(2), lastWindow]);
+    });
+
   // Undo proof: drop reportResult's submitPressed and every result here lacks it.
   it('tells TailorIT on every result whether the job’s Submit was pressed', async () => {
     const before = harness({ tasks: [task(1)] });

@@ -187,6 +187,10 @@ export interface AgentWindows {
    *  windows.update drawAttention: its taskbar entry flashes; no permission), never focusing it. A window gone is no
    *  error. Absent: nothing is flagged. */
   drawAttention?(windowId: number): Promise<void>;
+  /** v2.0 fix wave (BEH-9): whether a window is still open (chrome.windows.get; no permission). The agent drops the
+   *  windows it left open for the person once they are gone, so the list holds only open ones and needs no cap.
+   *  Absent: none is dropped. */
+  windowExists?(windowId: number): Promise<boolean>;
 }
 
 // v1.5 QX
