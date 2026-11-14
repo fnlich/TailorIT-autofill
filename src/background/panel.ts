@@ -251,7 +251,9 @@ export function createPanelHandlers(deps: PanelDeps) {
     async reports(message: Of<'panel/reports'>) {
       deps.check?.(message.tabId);
       const [reports, page] = await Promise.all([deps.reports.ofTab(message.tabId), deps.reports.page(message.tabId)]);
-      return ok({ tabId: message.tabId, reports, page });
+      // v2.0 fix wave (REQ-1): the words of TailorIT's AI's refusal the tab's shown run met.
+      const aiNotice = deps.reports.aiNoticeOf?.(message.tabId, reports) ?? null;
+      return ok({ tabId: message.tabId, reports, page, ...(aiNotice === null ? {} : { aiNotice }) });
     },
   };
 }

@@ -116,6 +116,8 @@ export const LOG_CODES = [
   'ai.busy',
   'ai.failed',
   'ai.timed-out',
+  // v2.0 fix wave (REQ-1): a run met a refusal of TailorIT's AI whose words the panels show (whether it was usage).
+  'ai.refused-notice',
   'ai.cancelled',
   'ai.withheld',
   'content.ai-waited',

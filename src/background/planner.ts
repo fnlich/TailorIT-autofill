@@ -95,6 +95,7 @@ import { PlanAnswerSchema, type ContentMessage } from '../messaging/schemas';
 import { log } from '../shared/log';
 import type { RunRecord } from '../shared/stored';
 import { createRunAi, type AiTasks, type AskContext, type RunAi } from './ai-tasks';
+import type { AiNotices } from './ai-notice'; // v2.0 fix wave (REQ-1)
 import { createRunLetter, type LetterDeps } from './cover-letters';
 import { ymdOf, type CoreFunctions } from './core';
 import type { AcceptBook, MatchCache } from './match-cache';
@@ -154,6 +155,9 @@ export interface PlannerDeps {
   knownForms?: Pick<KnownForms, 'fields'>;
   /** v1.3 B: how long a plan waits for a read of the known form (KNOWN_FORM_WAIT_MS). Absent: it waits for it. */
   timers?: Timers;
+  /** v2.0 fix wave (REQ-1): where a run's refusal by TailorIT's AI (its tasks, its letter) is noted for its tab, once
+   *  per run, for the panels (ai-notice.ts). Absent: not noted. */
+  aiNotices?: Pick<AiNotices, 'note'>;
 }
 
 const profileRefusal = (failure: 'not-connected' | 'unavailable' | 'internal') =>
@@ -293,7 +297,7 @@ export function createPlanner(deps: PlannerDeps) {
   function aiOf(run: RunRecord): RunAi {
     const memo = deps.runs.memo(run.runId);
     memo.ai ??= createRunAi(deps.ai, deps.aiTaskIds.aiTasks(run.applicationKey, run.tabId), deps.core.vocab(),
-      () => ready(run));
+      () => ready(run), (refusal) => deps.aiNotices?.note(run.tabId, run.runId, refusal)); // v2.0 fix wave (REQ-1)
     return memo.ai;
   }
 
@@ -425,7 +429,8 @@ export function createPlanner(deps: PlannerDeps) {
     const wanted = output.coverLetter;
     if (wanted === undefined || wanted.keys.length === 0 || deps.letters === undefined) return [];
     const memo = deps.runs.memo(run.runId);
-    memo.letter ??= createRunLetter(deps.letters, () => void deps.runs.noteLetterWritten(run.runId).catch(() => undefined));
+    memo.letter ??= createRunLetter(deps.letters, () => void deps.runs.noteLetterWritten(run.runId).catch(() => undefined),
+      (refusal) => deps.aiNotices?.note(run.tabId, run.runId, refusal)); // v2.0 fix wave (REQ-1)
     if (memo.letter.input() === undefined) {
       const resume = await deps.chooseResume(run.runId, url);
       const job = memo.lookup?.job ?? null;

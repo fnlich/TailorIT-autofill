@@ -70,9 +70,11 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
   changes: PanelChanges;
   /** How many times the port was opened again after a drop (or by hand): the worker may have restarted. */
   relinked: number;
+  /** v2.0 fix wave (REQ-1): TailorIT's words for its AI's refusal the tab's shown run met, or null. */
+  aiNotice: string | null;
 } {
-  const [shown, setShown] = useState<{ tabId: number | null; reports: readonly FrameReport[]; page: PageState | null }>(
-    { tabId: null, reports: NO_REPORTS, page: null });
+  const [shown, setShown] = useState<{ tabId: number | null; reports: readonly FrameReport[]; page: PageState | null;
+    aiNotice: string | null }>({ tabId: null, reports: NO_REPORTS, page: null, aiNotice: null });
   const [changes, setChanges] = useState<PanelChanges>({ connection: 0, settings: 0, agent: 0, tailor: 0,
     queue: 0, signup: 0 }); // v1.5 QX, jr6
   const [link, setLink] = useState<LinkState>('live');
@@ -110,7 +112,8 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
         }
         if (!parsed.success || parsed.data.type !== 'panel/update' || parsed.data.tabId !== watched.current) return;
         pushes.current += 1;
-        setShown({ tabId: parsed.data.tabId, reports: parsed.data.reports, page: parsed.data.page ?? null });
+        setShown({ tabId: parsed.data.tabId, reports: parsed.data.reports, page: parsed.data.page ?? null,
+          aiNotice: parsed.data.aiNotice ?? null });
       });
       next.onDisconnect(() => {
         if (closed || port.current !== next) return;
@@ -148,7 +151,8 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
       const before = pushes.current;
       void request(platform, { v: 1, type: 'panel/reports', tabId }).then((answer) => {
         if (!live || !answer.ok || pushes.current > before || watched.current !== tabId || answer.data.tabId !== tabId) return;
-        setShown({ tabId, reports: answer.data.reports, page: answer.data.page ?? null });
+        setShown({ tabId, reports: answer.data.reports, page: answer.data.page ?? null,
+          aiNotice: answer.data.aiNotice ?? null });
       });
     };
     read();
@@ -168,5 +172,5 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
   }, []);
   const current = shown.tabId === tabId && tabId !== null;
   return { reports: current ? shown.reports : NO_REPORTS, page: current ? shown.page : null, link, reconnect, changes,
-    relinked };
+    relinked, aiNotice: current ? shown.aiNotice : null };
 }

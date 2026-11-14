@@ -28,7 +28,9 @@
  *   (documentOf) and the letter's preview.
  * - Refusals: 409 needs_editable_copy ('needs-copy': "Make an editable copy in TailorIT"), 429 ('rate-limited'), 503
  *   ai_unavailable ('ai-unavailable'), 409 ai_busy ('busy'), 403 ('not-allowed'), 401 ('not-connected'); a task that
- *   failed says 'failed' (or its own code's reason).
+ *   failed says 'failed' (or its own code's reason). v2.0 fix wave (REQ-1): TailorIT's AI unavailable, or the person's
+ *   AI usage used up (ai_usage_exhausted), refused at the start or failing the task, carries TailorIT's words
+ *   (`message`), which the card shows as they are.
  *
  * Memory only, per tab: a worker that stops loses its poll (TailorIT goes on, and links what it made to the tracker
  * entry, which the next lookup reads). It goes with the tab, the token, and a start for another application. No log
@@ -49,6 +51,7 @@ import type { createRateLimit } from './locks';
 import type { ServerClient, ServerResult } from './server-client';
 import type { SettingsStore } from './settings';
 import type { Timers } from './timers';
+import { aiRefusalOf } from './ai-notice'; // v2.0 fix wave (REQ-1)
 
 /** Starts per tab and minute: each one is several Claude calls on TailorIT, which allows 10 an hour per account. */
 export const TAILOR_LIMIT = { count: 4, windowMs: 60_000 } as const;
@@ -179,8 +182,10 @@ export function createTailoring(deps: TailoringDeps) {
   async function follow(tabId: number, entry: Held, first: { taskId: string; deduped: boolean },
     request: AutofillTailorRequest): Promise<void> {
     const live = () => !entry.stopped && entry.generation === deps.generation() && held.get(tabId) === entry;
-    const end = (reason: TailorFailure) => {
-      entry.view = { state: 'failed', kind: entry.kind, reason };
+    // v2.0 fix wave (REQ-1): with TailorIT's words for its AI's refusal, when it gave them.
+    const end = (reason: TailorFailure, words?: { code?: string; message?: string } | null) => {
+      const message = aiRefusalOf(words)?.message;
+      entry.view = { state: 'failed', kind: entry.kind, reason, ...(message === undefined ? {} : { message }) };
       log('tailor.failed', { reason: FAILURE_LOG[reason] });
       deps.changed();
     };
@@ -202,7 +207,7 @@ export function createTailoring(deps: TailoringDeps) {
           continue;
         }
         if (TRANSIENT.has(read.failure)) continue;
-        return end(tailorRefusalOf(read));
+        return end(tailorRefusalOf(read), read);
       }
       const task = read.value;
       if (task.status === 'queued' || task.status === 'running') {
@@ -223,7 +228,7 @@ export function createTailoring(deps: TailoringDeps) {
           forced = true;
           const again = await deps.server.tailor({ ...request, force: true });
           if (!live()) return;
-          if (!again.ok) return end(tailorRefusalOf(again));
+          if (!again.ok) return end(tailorRefusalOf(again), again);
           taskId = again.value.taskId;
           delay = again.value.deduped ? 0 : AUTOFILL_TAILOR_POLL_MS;
           continue;
@@ -233,7 +238,7 @@ export function createTailoring(deps: TailoringDeps) {
       const code = task.error?.code ?? '';
       // v2.0 P9 (API 8): a task TailorIT failed because the person's AI usage ran out is said as AI unavailable.
       return end(code === 'ai_unavailable' || code === 'ai_usage_exhausted' ? 'ai-unavailable'
-        : code === 'needs_editable_copy' ? 'needs-copy' : 'failed');
+        : code === 'needs_editable_copy' ? 'needs-copy' : 'failed', task.error);
     }
   }
 
@@ -252,9 +257,11 @@ export function createTailoring(deps: TailoringDeps) {
 
   /** "Tailor resume for this job" or "Generate cover letter" (the module header). */
   async function start(tabId: number, kind: TailorKind): Promise<TailorView> {
-    const failed = (reason: TailorFailure): TailorView => {
+    const failed = (reason: TailorFailure, words?: { code?: string; message?: string }): TailorView => {
       log('tailor.refused', { reason: FAILURE_LOG[reason] });
-      return { state: 'failed', kind, reason };
+      // v2.0 fix wave (REQ-1): TailorIT's words for its AI's refusal, when it gave them.
+      const message = aiRefusalOf(words)?.message;
+      return { state: 'failed', kind, reason, ...(message === undefined ? {} : { message }) };
     };
     if (!(await deps.connected())) return failed('not-connected');
     const settings = await deps.settings.get();
@@ -289,7 +296,7 @@ export function createTailoring(deps: TailoringDeps) {
     // The tab closed meanwhile: nothing to show.
     if (entry.stopped) return { state: 'idle' };
     if (!answer.ok) {
-      entry.view = failed(tailorRefusalOf(answer));
+      entry.view = failed(tailorRefusalOf(answer), answer);
       deps.changed();
       return entry.view;
     }

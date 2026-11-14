@@ -264,7 +264,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     if (node !== null) adoptPanelV5Styles(node);
   }, []);
   const tabId = useFollowedTab(platform, pinnedTabId);
-  const { reports, page, link, reconnect, changes, relinked } = useTabReports(platform, tabId, now,
+  const { reports, page, link, reconnect, changes, relinked, aiNotice } = useTabReports(platform, tabId, now,
     { side: pinnedTabId === null });
   const auth = useAuthStatus(platform, root);
   // v3 Phase 5: the auto-apply agent's status, read again at each change the worker announces.
@@ -768,6 +768,11 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             <p className="tia-strip" data-strip="page-waits" data-page-waits={pageWaits} data-tone="warning" role="status">
               {PAGE_WAITS[pageWaits]}
             </p>
+          )}
+          {/* v2.0 fix wave (REQ-1): TailorIT's own words, once for the run, when its AI refused the run's steps (its AI
+              unavailable, or the person's AI usage used up): the run fills on without AI. */}
+          {tabId !== null && aiNotice !== null && (
+            <p className="tia-strip" data-strip="ai-refused" data-tone="warning" role="status">{aiNotice}</p>
           )}
           {offersFill && tabId !== null && (
             <MainButton tabId={tabId} meaning={meaning} working={busy || working || entering} clock={seenClock}

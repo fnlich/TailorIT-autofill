@@ -63,6 +63,7 @@ import {
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import type { AskContext, AwaitState } from './ai-tasks';
+import { aiRefusalOf, type AiRefusal } from './ai-notice'; // v2.0 fix wave (REQ-1)
 import { frameTarget } from './frames';
 import { JOB_CARD_TTL_MS, type JobCards } from './job-cards';
 import type { createRateLimit } from './locks';
@@ -109,7 +110,9 @@ export interface LetterAsk {
  *  wait out). */
 export type LetterResult =
   | { state: 'ready'; letterId: string; aiWritten: boolean }
-  | { state: 'none'; reason: CoverLetterGap; limited?: true };
+  | { state: 'none'; reason: CoverLetterGap; limited?: true;
+      /** v2.0 fix wave (REQ-1): TailorIT's AI refused to write it (unavailable, or the usage used up), in its words. */
+      refusal?: AiRefusal };
 
 /** What asking needs. */
 export interface LetterDeps {
@@ -202,7 +205,10 @@ export async function fetchLetter(deps: LetterDeps, ask: LetterAsk, active: () =
       if (!isBusy && !limited) {
         log('letter.refused', { status: answer.status ?? 0 });
         if (answer.failure === 'not-found' && !request.generate) return { missing: true };
-        return { ended: { state: 'none', reason: refusalOf(answer, request.generate) } };
+        // v2.0 fix wave (REQ-1): TailorIT's words for its AI's refusal, when it gave them.
+        const refusal = aiRefusalOf(answer);
+        return { ended: { state: 'none', reason: refusalOf(answer, request.generate),
+          ...(refusal === null ? {} : { refusal }) } };
       }
       const delay = limited ? hinted(answer) : LETTER_BUSY_MS[Math.min(busy, LETTER_BUSY_MS.length - 1)]!;
       if (isBusy) busy += 1;
@@ -306,8 +312,10 @@ export interface RunLetter {
   stop(): void;
 }
 
-/** A run's letter over `deps`; `onWriting` marks the run's record when TailorIT starts writing it. */
-export function createRunLetter(deps: LetterDeps, onWriting: () => void = () => undefined): RunLetter {
+/** A run's letter over `deps`; `onWriting` marks the run's record when TailorIT starts writing it; `onRefused` (v2.0
+ *  fix wave, REQ-1) hears TailorIT's AI's refusal to write it, with its words. */
+export function createRunLetter(deps: LetterDeps, onWriting: () => void = () => undefined,
+  onRefused: (refusal: AiRefusal) => void = () => undefined): RunLetter {
   let status: CoverLetterState | undefined;
   let letterId: string | null = null;
   let stopped = false;
@@ -374,6 +382,7 @@ export function createRunLetter(deps: LetterDeps, onWriting: () => void = () => 
           readWords();
         } else {
           status = { state: 'none', reason: result.reason };
+          if (result.refusal !== undefined) onRefused(result.refusal); // v2.0 fix wave (REQ-1)
         }
       }, () => {
         if (!stopped) status = { state: 'none', reason: 'cover-letter-unavailable' };

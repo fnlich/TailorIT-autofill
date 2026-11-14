@@ -505,7 +505,9 @@ describe('v2.0 P9: the person’s AI usage used up (ai_usage_exhausted, API 8)',
     tailorit.reply('POST /api/autofill/ai/pick', { status: 429, headers: { 'retry-after': '36000' },
       json: errorBody('ai_usage_exhausted', { retryAfterSeconds: 36_000 }) }, { once: true });
     const answer = await server.aiPick(PICK_BODY);
-    expect(answer).toEqual({ ok: false, failure: 'server-error', status: 429, code: 'ai_usage_exhausted' });
+    // v2.0 fix wave (REQ-1): with TailorIT's words for it.
+    expect(answer).toEqual({ ok: false, failure: 'server-error', status: 429, code: 'ai_usage_exhausted',
+      message: 'Refused.' });
     // As a 503 ai_unavailable reads.
     tailorit.reply('POST /api/autofill/ai/pick', { status: 503, json: errorBody('ai_unavailable') }, { once: true });
     expect(await server.aiPick(PICK_BODY)).toMatchObject({ ok: false, failure: 'server-error', code: 'ai_unavailable' });
@@ -525,3 +527,29 @@ describe('v2.0 P9: the person’s AI usage used up (ai_usage_exhausted, API 8)',
   });
 });
 // ── end v2.0 P9 ──
+
+// ── v2.0 fix wave (REQ-1) ──
+describe('v2.0 fix wave REQ-1: TailorIT’s words kept for its AI’s two refusals alone', () => {
+  const PICK_BODY = { items: [{ key: 'lever|main|source|9d4c2b7e1f0a3c58|0', category: 'referral_source' as const,
+    optionSetHash: '9d4c2b7e1f0a3c58', intendedValue: 'LinkedIn', aliases: [], label: 'How did you hear about us?',
+    options: [{ index: 0, label: 'LinkedIn job post' }] }] };
+  const USAGE = 'You’ve used your AI usage. Get extra credit or use your own AI via MCP.';
+
+  // Undo proof: drop refusalOf's kept words (or errorOf's message) and neither answer carries them.
+  it('keeps the message of ai_usage_exhausted and ai_unavailable, and drops every other refusal’s', async () => {
+    const { server, tailorit } = client();
+    tailorit.reply('POST /api/autofill/ai/pick', { status: 429, headers: { 'retry-after': '36000' },
+      json: { error: { code: 'ai_usage_exhausted', message: USAGE, retryAfterSeconds: 36_000 } } }, { once: true });
+    expect(await server.aiPick(PICK_BODY)).toEqual({ ok: false, failure: 'server-error', status: 429,
+      code: 'ai_usage_exhausted', message: USAGE });
+    tailorit.reply('POST /api/autofill/ai/pick', { status: 503, json: errorBody('ai_unavailable') }, { once: true });
+    expect(await server.aiPick(PICK_BODY)).toMatchObject({ ok: false, failure: 'server-error', status: 503,
+      code: 'ai_unavailable', message: 'Refused.' });
+    for (const [status, code] of [[409, 'ai_busy'], [429, 'rate_limited'], [400, 'validation_failed'], [403, 'forbidden'],
+      [500, 'internal']] as const) {
+      tailorit.reply('POST /api/autofill/ai/pick', { status, json: errorBody(code) }, { once: true });
+      expect(await server.aiPick(PICK_BODY), code).not.toHaveProperty('message');
+    }
+  });
+});
+// ── end v2.0 fix wave ──

@@ -23,6 +23,7 @@ import { closeTabOnSubmit, setCloseTabOnSubmit } from './close-tab'; // v2.0 P9
 import { createAuth, createTokenKeeper } from './auth';
 import { toBase64Url } from './bytes';
 import { createAiTasks } from './ai-tasks';
+import { createAiNotices } from './ai-notice'; // v2.0 fix wave (REQ-1)
 import { ASK_LIMIT, createAsk } from './ask';
 import { checkLetter, createPanelLetters, LETTER_LIMIT } from './cover-letters';
 import { createAnswerHandlers } from './row-actions';
@@ -176,8 +177,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   let queueRef: QueueRunner | null = null; // v1.5 QX
   // v1.3 B
   let knownFormsRef: KnownForms | null = null;
+  // v2.0 fix wave (REQ-1): TailorIT's words for its AI's refusal a tab's run met, for the panels (memory only).
+  const aiNotices = createAiNotices({ changed: (tabId) => void panelReports?.refresh(tabId).catch(() => undefined) });
   const keeper = createTokenKeeper(platform, () => {
     profiles?.drop();
+    aiNotices.dropTokenData(); // v2.0 fix wave (REQ-1)
     void runRegistry?.dropTokenData().catch(() => undefined);
     jobCards?.dropTokenData();
     letterRows?.dropTokenData();
@@ -230,7 +234,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     // v3 Phase 8 (the review's B10): the career sites act, so a company page no frame of ours is on waits for a reload.
     sitesActive: () => sites.active(),
     // jr6 apply F3a: the tab's entry grant, armed and waiting, or ended on another origin (sign-up.ts).
-    entryOf: (tabId) => ({ waiting: signUps.waiting(tabId), elsewhere: signUps.elsewhere(tabId) }) });
+    entryOf: (tabId) => ({ waiting: signUps.waiting(tabId), elsewhere: signUps.elsewhere(tabId) }),
+    // v2.0 fix wave (REQ-1): the words of TailorIT's AI's refusal the tab's shown run met.
+    aiNoticeOf: (tabId, runIds) => aiNotices.of(tabId, runIds) });
   // The launcher's place and hiding per site (v3 Phase 3): storage.local, a hash of the host only.
   const launchers = createLauncherStore(local);
   const launcherLimit = createRateLimit(LAUNCHER_LIMIT.count, LAUNCHER_LIMIT.windowMs, now);
@@ -265,7 +271,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     aiTaskIds: runStates, cache: matchCache, accepts, letters, now, knownForms, timers,
     withoutResume: (tabId, applicationKey) => jobs.without(tabId, applicationKey),
     // v5 p2-stream: a run's frame is told when its AI answers come in (plan/ready).
-    tabs: platform.tabs });
+    tabs: platform.tabs,
+    // v2.0 fix wave (REQ-1): a run's refusal by TailorIT's AI, noted once for its tab's panels.
+    aiNotices });
   const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes),
     choose: chooseResume, letters });
   /** v4: the tabs' Sign up & Autofill grants, and the forms to start after a wall (sign-up.ts). The v4 review (M1): one
@@ -1614,6 +1622,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     sites.forgetTab(tabId);
     panelLetters.forgetTab(tabId);
     tailoring.forgetTab(tabId); // v1.4 F
+    aiNotices.forgetTab(tabId); // v2.0 fix wave (REQ-1)
     openLimit.forget(`${tabId}/`);
     submitted.forgetTab(tabId);
     void Promise.all([

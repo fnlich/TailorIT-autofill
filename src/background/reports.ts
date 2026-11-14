@@ -88,6 +88,10 @@ export interface Reports {
   /** Whether a side panel shows the tab now (v3 Phase 3 review): a top frame's hello hears it, so a page reloaded or
    *  navigated beside an open side panel keeps its launcher hidden. */
   sideShows(tabId: number): boolean;
+  /** v2.0 fix wave (REQ-1): the words of TailorIT's AI's refusal the tab's shown run met (deps.aiNoticeOf), or null. */
+  aiNoticeOf(tabId: number, reports: readonly FrameReport[]): string | null;
+  /** v2.0 fix wave (REQ-1): the tab's notice changed: its watchers get the tab again (the panels only). */
+  refresh(tabId: number): Promise<void>;
 }
 
 type PanelChange = (typeof PANEL_CHANGES)[number];
@@ -115,6 +119,9 @@ export interface ReportsDeps {
   sitesActive?(): Promise<boolean>;
   /** jr6 apply F3a: what the tab's entry grant says (sign-up.ts waiting and elsewhere). */
   entryOf?(tabId: number): { waiting: boolean; elsewhere: boolean };
+  /** v2.0 fix wave (REQ-1): TailorIT's words for its AI's refusal that a run among the tab's `runIds` met (ai-notice.ts
+   *  of), or null. Absent: none. */
+  aiNoticeOf?(tabId: number, runIds: readonly string[]): string | null;
 }
 
 /** The reports over storage.session, with no panel watching yet. */
@@ -192,9 +199,14 @@ export function createReports(deps: ReportsDeps): Reports {
     return reports.sort((a, b) => a.frameId - b.frameId).slice(0, MAX_FRAME_REPORTS);
   }
 
+  /** v2.0 fix wave (REQ-1): the notice of the tab's shown run, or null. */
+  const aiNoticeOf = (tabId: number, reports: readonly FrameReport[]): string | null =>
+    deps.aiNoticeOf?.(tabId, reports.map((report) => report.runId)) ?? null;
+
   function post(port: PortLike, tabId: number, reports: FrameReport[], page: PageState): void {
     try {
-      port.post({ v: 1, type: 'panel/update', tabId, reports, page });
+      const aiNotice = aiNoticeOf(tabId, reports); // v2.0 fix wave (REQ-1)
+      port.post({ v: 1, type: 'panel/update', tabId, reports, page, ...(aiNotice === null ? {} : { aiNotice }) });
       const watching = watchers.get(port);
       if (watching !== undefined && watching.tabId === tabId) watching.page = JSON.stringify(page);
     } catch {
@@ -308,6 +320,13 @@ export function createReports(deps: ReportsDeps): Reports {
     },
     ofTab,
     sideShows: (tabId) => [...sides.values()].includes(tabId),
+    // v2.0 fix wave (REQ-1)
+    aiNoticeOf,
+    refresh(tabId) {
+      return push(tabId, (reports, page) => {
+        for (const [port, watched] of watchers) if (watched.tabId === tabId) post(port, tabId, reports, page);
+      });
+    },
     async forgetDocument(tabId, frameId, documentId) {
       await forgetPanelFrame(tabId, frameId, documentId);
       if (await removeIfFrom(tabId, frameId, documentId)) await changed(tabId);

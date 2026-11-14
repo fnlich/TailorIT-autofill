@@ -133,6 +133,7 @@ import type { Settings } from '../core/types/settings';
 import type { VisibleText } from '../core/types/text';
 import type { Vocab } from '../core/vocab/types';
 import { log } from '../shared/log';
+import { aiRefusalOf, type AiRefusal } from './ai-notice'; // v2.0 fix wave (REQ-1)
 import type { AiStreamOptions, ServerClient, ServerResult } from './server-client';
 import type { Timers } from './timers';
 
@@ -694,7 +695,15 @@ export interface AiTaskIds {
 export type TaskOutcome =
   | { ok: true; taskId: string; result: AutofillPickResult | AutofillClassifyResult | AutofillDraftResult
       | AutofillAnswerResult }
-  | { ok: false; why: 'llm-unavailable' | 'llm-invalid-output'; timedOut?: boolean };
+  | { ok: false; why: 'llm-unavailable' | 'llm-invalid-output'; timedOut?: boolean;
+      /** v2.0 fix wave (REQ-1): TailorIT's AI refused it (unavailable, or the person's usage used up), in its words. */
+      refusal?: AiRefusal };
+
+/** v2.0 fix wave (REQ-1): the refusal's words as a TaskOutcome field, for TailorIT's AI's two refusals alone. */
+const refusalField = (failure: { code?: string | undefined; message?: string | undefined } | null | undefined) => {
+  const refusal = aiRefusalOf(failure);
+  return refusal === null ? {} : { refusal };
+};
 
 /** What the task client needs. Never a cancel: a task TailorIT deduplicated may be another caller's too, and TailorIT
  *  prunes every task within its hour (the review, T-F2). */
@@ -757,7 +766,8 @@ export function createAiTasks(deps: AiTasksDeps): AiTasks {
     if (view.kind !== TASK_KIND[batch.kind]) return { ok: false, why: 'llm-invalid-output' };
     if (view.status === 'queued' || view.status === 'running') return null;
     if (view.status === 'cancelled') return 'cancelled';
-    if (view.status !== 'succeeded') return { ok: false, why: 'llm-unavailable' };
+    // v2.0 fix wave (REQ-1): a task TailorIT failed for its AI's refusal keeps its words.
+    if (view.status !== 'succeeded') return { ok: false, why: 'llm-unavailable', ...refusalField(view.error) };
     return view.result === null ? { ok: false, why: 'llm-invalid-output' } : { ok: true, taskId: view.id, result: view.result };
   }
 
@@ -855,7 +865,8 @@ export function createAiTasks(deps: AiTasksDeps): AiTasks {
         const busy = answer.failure === 'conflict' && answer.code === 'ai_busy';
         if (!busy) {
           log('ai.failed', { items: batch.items.length, ...(answer.status === undefined ? {} : { status: answer.status }) });
-          return { ok: false, why: answer.failure === 'bad-answer' ? 'llm-invalid-output' : 'llm-unavailable' };
+          return { ok: false, why: answer.failure === 'bad-answer' ? 'llm-invalid-output' : 'llm-unavailable',
+            ...refusalField(answer) }; // v2.0 fix wave (REQ-1)
         }
         // TailorIT holds two of this kind for the account: finish one in flight, then try again.
         log('ai.busy', { items: batch.items.length });
@@ -1042,7 +1053,9 @@ const fieldKeyOf = (item: { id: string }): string => item.id.split('#')[0]!;
  *  (draftBatches). v5 p2-stream: `onReady` hears the keys whose answers came in (an item on its task's stream, or a
  *  batch's end), so the frame is told to plan them now. */
 export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
-  onReady?: (keys: readonly FieldKey[]) => void): RunAi {
+  onReady?: (keys: readonly FieldKey[]) => void,
+  /** v2.0 fix wave (REQ-1): a batch TailorIT's AI refused, with its words (the planner keeps the run's notice). */
+  onRefused?: (refusal: AiRefusal) => void): RunAi {
   const verdicts = new Map<string, AnsweredVerdict>();
   const classifications = new Map<string, ClassifyVerdict>();
   const drafts = new Map<string, DraftVerdict>();
@@ -1238,6 +1251,14 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab,
         : await tasks.run(batch, ids, () => !stopped,
           { signal: halt.signal, onItem: (item, taskId) => streamedItem(batch, hash, item, taskId) });
       record(batch, hash, outcome);
+      // v2.0 fix wave (REQ-1): TailorIT's AI refused the batch: the run fills on without it, and its words are told.
+      if (!outcome.ok && outcome.refusal !== undefined && !stopped) {
+        try {
+          onRefused?.(outcome.refusal);
+        } catch {
+          // The notice is the panels'; the run goes on either way.
+        }
+      }
       entry.done = true;
       // v1.3 B: the fields that took this batch's prefetched answers have them now.
       settleClaims(hash);

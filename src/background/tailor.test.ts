@@ -147,9 +147,11 @@ describe('tailoring for the tab’s job (panel/tailor)', () => {
       [refused(404, 'not_found'), 'unavailable']] as const) {
       const worker = await withForm();
       worker.tailorit.reply(POST, reply);
-      expect((await tailor(worker, 'resume')).data, reason).toEqual({ state: 'failed', kind: 'resume', reason });
+      // v2.0 fix wave (REQ-1): TailorIT's words go with its AI's refusal alone.
+      const words = reason === 'ai-unavailable' ? { message: 'No.' } : {};
+      expect((await tailor(worker, 'resume')).data, reason).toEqual({ state: 'failed', kind: 'resume', reason, ...words });
       // Kept for the tab's reads.
-      expect((await tailor(worker)).data).toEqual({ state: 'failed', kind: 'resume', reason });
+      expect((await tailor(worker)).data).toEqual({ state: 'failed', kind: 'resume', reason, ...words });
     }
   });
 
@@ -373,14 +375,65 @@ describe('v2.0 P9: a tailoring when the person’s AI usage is used up', () => {
   it('says TailorIT’s AI is unavailable, refused at the start (429) or a task TailorIT failed for it', async () => {
     const worker = await withForm();
     worker.tailorit.reply(POST, { ...refused(429, 'ai_usage_exhausted'), headers: { 'retry-after': '36000' } });
-    expect((await tailor(worker, 'resume')).data).toEqual({ state: 'failed', kind: 'resume', reason: 'ai-unavailable' });
+    expect((await tailor(worker, 'resume')).data).toEqual({ state: 'failed', kind: 'resume', reason: 'ai-unavailable',
+      message: 'No.' });
     const failed = await withForm();
     failed.tailorit.reply(POST, accepted());
     failed.tailorit.reply(GET, task({ status: 'failed', step: null, message: null,
       error: { code: 'ai_usage_exhausted', message: 'No.' }, finishedAt: '2026-11-09T12:01:00.000Z' }));
     await tailor(failed, 'resume');
     await tick(failed);
-    expect((await tailor(failed)).data).toEqual({ state: 'failed', kind: 'resume', reason: 'ai-unavailable' });
+    expect((await tailor(failed)).data).toEqual({ state: 'failed', kind: 'resume', reason: 'ai-unavailable',
+      message: 'No.' });
   });
 });
 // ── end v2.0 P9 ──
+
+// ── v2.0 fix wave (REQ-1): TailorIT's own words for its two blocked states ──
+describe('v2.0 fix wave REQ-1: the tailor card says TailorIT’s words when its AI refuses', () => {
+  const USAGE = 'You’ve used your AI usage. Get extra credit or use your own AI via MCP.';
+  const UNAVAILABLE = 'TailorIT’s AI isn’t available right now. Please try again later.';
+  const words = (status: number, code: string, message: string) => ({ status, json: { error: { code, message } } });
+
+  // Undo proof: drop tailor.ts's aiRefusalOf (start's `failed` and follow's `end`), or refusalOf's kept words in
+  // server-client.ts, and each view lacks TailorIT's words.
+  it('ends with TailorIT’s message: a 429 ai_usage_exhausted and a 503 ai_unavailable at the start, and a task it failed',
+    async () => {
+      const usage = await withForm();
+      usage.tailorit.reply(POST, { ...words(429, 'ai_usage_exhausted', USAGE), headers: { 'retry-after': '36000' } });
+      expect((await tailor(usage, 'resume')).data).toEqual({ state: 'failed', kind: 'resume', reason: 'ai-unavailable',
+        message: USAGE });
+      expect((await tailor(usage)).data).toMatchObject({ message: USAGE });
+      const unavailable = await withForm();
+      unavailable.tailorit.reply(POST, words(503, 'ai_unavailable', UNAVAILABLE));
+      expect((await tailor(unavailable, 'coverLetter')).data).toEqual({ state: 'failed', kind: 'coverLetter',
+        reason: 'ai-unavailable', message: UNAVAILABLE });
+      for (const [code, message] of [['ai_usage_exhausted', USAGE], ['ai_unavailable', UNAVAILABLE]] as const) {
+        const failed = await withForm();
+        failed.tailorit.reply(POST, accepted());
+        failed.tailorit.reply(GET, task({ status: 'failed', step: null, message: null, error: { code, message },
+          finishedAt: '2026-11-09T12:01:00.000Z' }));
+        await tailor(failed, 'resume');
+        await tick(failed);
+        expect((await tailor(failed)).data, code).toEqual({ state: 'failed', kind: 'resume', reason: 'ai-unavailable',
+          message });
+      }
+    });
+
+  it('keeps no words of any other refusal or failure', async () => {
+    for (const reply of [words(409, 'ai_busy', 'Busy words.'), words(409, 'needs_editable_copy', 'Copy words.'),
+      words(429, 'rate_limited', 'Limit words.'), words(500, 'internal', 'Internal words.')]) {
+      const worker = await withForm();
+      worker.tailorit.reply(POST, reply);
+      expect((await tailor(worker, 'resume')).data).not.toHaveProperty('message');
+    }
+    const failed = await withForm();
+    failed.tailorit.reply(POST, accepted());
+    failed.tailorit.reply(GET, task({ status: 'failed', step: null, message: null,
+      error: { code: 'ai_failed', message: 'The AI request failed.' }, finishedAt: '2026-11-09T12:01:00.000Z' }));
+    await tailor(failed, 'resume');
+    await tick(failed);
+    expect((await tailor(failed)).data).toEqual({ state: 'failed', kind: 'resume', reason: 'failed' });
+  });
+});
+// ── end v2.0 fix wave ──

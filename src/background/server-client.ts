@@ -115,6 +115,7 @@ import {
 import { tailoritAddressOf } from '../adapters/tailorit-address';
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
+import { aiRefusalOf } from './ai-notice'; // v2.0 fix wave (REQ-1)
 
 /** Every request's limit: under the 30 s after which Chrome may stop a worker that waits on a fetch. */
 export const SERVER_TIMEOUT_MS = 25_000;
@@ -137,6 +138,9 @@ export type ServerResult<T> =
       /** TailorIT's error code ('ai_busy', 'not_signed_in', ...), for decisions only: never logged or shown. */
       code?: string;
       retryAfterSeconds?: number;
+      /** v2.0 fix wave (REQ-1): TailorIT's words, kept for its AI's two refusals alone (ai-notice.ts aiRefusalOf:
+       *  ai_unavailable, ai_usage_exhausted), which the person is shown as they are; never logged. */
+      message?: string;
     };
 
 /** An AI route's answer (Phase 4): its task, finished within TailorIT's wait (200), or the id to poll (202). */
@@ -359,16 +363,20 @@ interface Call {
 
 type Raw = { ok: true; value: unknown; response: Response } | Extract<ServerResult<never>, { ok: false }>;
 
-const failure = (reason: ServerFailure, extra: { status?: number; code?: string; retryAfterSeconds?: number } = {}) =>
-  ({ ok: false as const, failure: reason, ...extra });
+const failure = (reason: ServerFailure, extra: { status?: number; code?: string; retryAfterSeconds?: number;
+  message?: string } = {}) => ({ ok: false as const, failure: reason, ...extra });
 
 /** A refused call's failure, by its status and TailorIT's code. v2.0 P9 (autofill API 8): `ai_usage_exhausted` (429:
  *  the person's AI usage is used up until TailorIT's daily reset, which its Retry-After names) is taken as
  *  `ai_unavailable` is (503, a server error): the run fills without AI, and nothing waits for that reset; its code is
- *  kept for the callers that tell the two apart. */
-function refusalOf(status: number, detail: { code?: string; retryAfterSeconds?: number }) {
-  if (detail.code === 'ai_usage_exhausted') return failure('server-error', { status, code: detail.code });
-  return failure(failureOfStatus(status), { status, ...detail });
+ *  kept for the callers that tell the two apart. v2.0 fix wave (REQ-1): TailorIT's words are kept for those two codes
+ *  alone (aiRefusalOf), and dropped for every other. */
+function refusalOf(status: number, detail: { code?: string; message?: string; retryAfterSeconds?: number }) {
+  const { message: _words, ...rest } = detail;
+  const words = aiRefusalOf(detail);
+  const kept = words === null ? {} : { message: words.message };
+  if (detail.code === 'ai_usage_exhausted') return failure('server-error', { status, code: detail.code, ...kept });
+  return failure(failureOfStatus(status), { status, ...rest, ...kept });
 }
 
 function failureOfStatus(status: number): ServerFailure {
@@ -435,8 +443,9 @@ function lookupOf(wire: z.infer<typeof LookupWireSchema>): AutofillLookupRespons
   return { ...rest, match: parsed.success ? parsed.data : null };
 }
 
-/** TailorIT's error body, when it sent one: its code and retry hint only. */
-async function errorOf(response: Response): Promise<{ code?: string; retryAfterSeconds?: number }> {
+/** TailorIT's error body, when it sent one: its code and retry hint; v2.0 fix wave (REQ-1), its words, which refusalOf
+ *  keeps for its AI's two refusals alone. */
+async function errorOf(response: Response): Promise<{ code?: string; message?: string; retryAfterSeconds?: number }> {
   let parsed: ReturnType<typeof AutofillErrorBodySchema.safeParse> | null = null;
   try {
     parsed = AutofillErrorBodySchema.safeParse(await response.json());
@@ -447,7 +456,9 @@ async function errorOf(response: Response): Promise<{ code?: string; retryAfterS
   const fromHeader = Number.isInteger(header) && header >= 0 ? header : undefined;
   if (!parsed?.success) return fromHeader === undefined ? {} : { retryAfterSeconds: fromHeader };
   const retry = parsed.data.error.retryAfterSeconds ?? fromHeader;
-  return retry === undefined ? { code: parsed.data.error.code } : { code: parsed.data.error.code, retryAfterSeconds: retry };
+  // v2.0 fix wave (REQ-1): the words too, which refusalOf keeps for the AI's two refusals alone.
+  const { code, message } = parsed.data.error;
+  return retry === undefined ? { code, message } : { code, message, retryAfterSeconds: retry };
 }
 
 /** The client for one origin. */

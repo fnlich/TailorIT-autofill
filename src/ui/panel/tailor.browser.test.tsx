@@ -136,6 +136,43 @@ describe('the job card’s tailoring (v1.4 F)', () => {
   });
 });
 
+// ── v2.0 fix wave (REQ-1): TailorIT's own words for its two blocked states ──
+describe('TailorIT’s words when its AI refuses (v2.0 fix wave, REQ-1)', () => {
+  const USAGE = 'You’ve used your AI usage. Get extra credit or use your own AI via MCP.';
+  const UNAVAILABLE = 'TailorIT’s AI isn’t available right now. Please try again later.';
+
+  // Undo proof: drop tailor.tsx's `mine.message ??` and the card says the extension's own "AI is off" words.
+  it('the tailor card shows TailorIT’s message as it is, in place of the extension’s words', async () => {
+    const worker = withForm();
+    const root = await open(worker);
+    for (const message of [USAGE, UNAVAILABLE]) {
+      await moved(worker, { state: 'failed', kind: 'resume', reason: 'ai-unavailable', message });
+      expect(rowOf(root, 'resume').querySelector('[data-tailor-failed="ai-unavailable"]')?.textContent).toBe(message);
+    }
+    // Without TailorIT's words (an older TailorIT): the extension's own, as before.
+    await moved(worker, { state: 'failed', kind: 'resume', reason: 'ai-unavailable' });
+    expect(rowOf(root, 'resume').querySelector('[data-tailor-failed="ai-unavailable"]')?.textContent)
+      .toBe(WORDS.failures['ai-unavailable']);
+  });
+
+  // Undo proof: drop Panel.tsx's ai-refused strip (or reports.ts's aiNotice) and nothing shows it.
+  it('the panel shows the run’s notice once, from the tab’s reports, and drops it when the reports carry none', async () => {
+    const worker = withForm();
+    const root = await open(worker);
+    const strips = () => [...root.querySelectorAll('[data-strip="ai-refused"]')];
+    expect(strips()).toEqual([]);
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [], page: formPage({ letter: true }),
+      aiNotice: USAGE }));
+    await settle();
+    expect(strips().map((strip) => strip.textContent)).toEqual([USAGE]);
+    expect(strips()[0]!.getAttribute('role')).toBe('status');
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [], page: formPage({ letter: true }) }));
+    await settle();
+    expect(strips()).toEqual([]);
+  });
+});
+// ── end v2.0 fix wave ──
+
 describe('the templates in the panel’s Settings view (v1.4 F, PLAN decision 18)', () => {
   it('reads them, saves the two choices alone, and shows what was saved', async () => {
     const worker = withForm();

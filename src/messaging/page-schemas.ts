@@ -272,7 +272,10 @@ export type PageMessage = z.infer<typeof PageMessageSchema>;
 
 /** A tab's reports, one per frame that reported, by frame id. They hold labels and statuses, never a value. `page` is
  *  the tab's page state (v2; absent from an older worker). */
-const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(20), page: PageStateSchema.optional() };
+const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(20), page: PageStateSchema.optional(),
+  /** v2.0 fix wave (REQ-1): TailorIT's words for its AI's refusal that the tab's run met (ai-notice.ts), once per run,
+   *  while that run's report is among `reports`. */
+  aiNotice: Text(400).optional() };
 
 /** What changed for every side panel (v2): the connection (a token stored or dropped, perhaps from another window) or
  *  the settings. */
@@ -478,7 +481,9 @@ export const TailorViewSchema = z.discriminatedUnion('state', [
     message: Text(200).nullable() }),
   z.strictObject({ state: z.literal('done'), kind: z.enum(TAILOR_KINDS), title: Text(200), letter: z.boolean(),
     score: Score.nullable(), scoreBefore: Score.nullable() }),
-  z.strictObject({ state: z.literal('failed'), kind: z.enum(TAILOR_KINDS), reason: z.enum(TAILOR_FAILURES) }),
+  z.strictObject({ state: z.literal('failed'), kind: z.enum(TAILOR_KINDS), reason: z.enum(TAILOR_FAILURES),
+    /** v2.0 fix wave (REQ-1): TailorIT's words for its AI's refusal (ai-notice.ts aiRefusalOf), shown as they are. */
+    message: Text(400).optional() }),
 ]);
 export type TailorView = z.infer<typeof TailorViewSchema>;
 

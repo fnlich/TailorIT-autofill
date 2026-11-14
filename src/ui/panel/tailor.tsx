@@ -109,7 +109,8 @@ export function TailorRow({ kind, tabId, view, clock, onStart }: { kind: TailorK
       )}
       {mine?.state === 'failed' && (
         <p className="tia-tailor__note" role="status" data-tailor-failed={mine.reason}>
-          {WORDS.failures[mine.reason]}
+          {/* v2.0 fix wave (REQ-1): TailorIT's own words for its AI's refusal, as they are. */}
+          {mine.message ?? WORDS.failures[mine.reason]}
           {mine.reason === 'needs-copy' && (
             <>{' '}<a href={DOCUMENTS_URL} target="_blank" rel="noreferrer" data-tailor-copy="">{WORDS.makeCopy}</a></>
           )}
