@@ -58,7 +58,8 @@ export const AUTOFILL_FORM_LIMITS = {
 /**
  * Where an answer came from, as the extension's report names a fill (its PROVENANCES), plus `submitted-before` (a
  * previous submission's answer, from POST /api/autofill/forms/known) and `person` (typed or changed by the person).
- * v1.5 (additive): `prebuilt`, a ready answer of the person's prebuilt draft (forms/known's `drafts`).
+ * v1.5 (additive): a ready answer of the person's prepared kit (forms/known's `drafts`), named `prebuilt` until version
+ * 8 and `prepared` since (v2.0's Prepare & Queue).
  */
 export const AUTOFILL_ANSWER_PROVENANCES = [
   'profile',
@@ -69,8 +70,8 @@ export const AUTOFILL_ANSWER_PROVENANCES = [
   'llm-answer',
   'submitted-before',
   'person',
-  // v1.5 P
-  'prebuilt',
+  // v1.5 P; version 8 renamed it from 'prebuilt'
+  'prepared',
   // end v1.5 P
 ] as const;
 export type AutofillAnswerProvenance = (typeof AUTOFILL_ANSWER_PROVENANCES)[number];
@@ -365,7 +366,7 @@ export type AutofillDraftProvenance = (typeof AUTOFILL_DRAFT_PROVENANCES)[number
  * always `match: 'draft'`, always one of `questions` (`questionId`), and only ever the person's own. A `ready` one has
  * its `answer` (a text, the chosen options' labels, or a checkbox's state; never a file); a `not_ready` one has none
  * (null) and is answered during the fill as before. A draft never answers a self-identification, legal, pay, consent,
- * attention-check or file question: the profile fills those. Fill a ready one with the provenance `prebuilt`, below the
+ * attention-check or file question: the profile fills those. Fill a ready one with the provenance `prepared`, below the
  * profile, a saved answer and the person's own earlier answer to this job, and flag it when the field's options no
  * longer hold it.
  */

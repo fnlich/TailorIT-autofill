@@ -121,9 +121,9 @@ describe("the copy of TailorIT's contract (src/contract/tailorit)", () => {
     }
   });
 
-  it('names API version 7 and the zod this extension pins, as SOURCE.json does', () => {
+  it('names API version 8 and the zod this extension pins, as SOURCE.json does', () => {
     const zod = (createRequire(import.meta.url)('zod/package.json') as { version: string }).version;
-    expect(record.apiVersion).toBe(7); // jr7 INT-7 round 2: TAILORIT-7's 7b (jr7-tailorit-b)
+    expect(record.apiVersion).toBe(8); // v2.0 P9: TailorIT v20-w0c's API 8 (Prepare & Queue)
     expect(AUTOFILL_API_VERSION).toBe(record.apiVersion);
     expect(zod).toBe('4.6.7');
     expect(record.zod).toBe(zod);

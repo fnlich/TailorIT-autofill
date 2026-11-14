@@ -42,6 +42,13 @@ export type LanguageProficiency = (typeof LANGUAGE_PROFICIENCIES)[number];
 export const WORK_ARRANGEMENTS = ['remote', 'hybrid', 'onsite'] as const;
 export type WorkArrangement = (typeof WORK_ARRANGEMENTS)[number];
 
+/**
+ * Version 8: documents.coverLetters, when Prepare & Queue writes a cover letter: `required`, only when the
+ * application requires one (a required cover-letter question, or a posting that says so); `always`, for every job.
+ */
+export const AUTOFILL_COVER_LETTER_MODES = ['required', 'always'] as const;
+export type AutofillCoverLetterMode = (typeof AUTOFILL_COVER_LETTER_MODES)[number];
+
 /** A repeatable entry's id, kept across edits so the page can tell the entries apart (a UUID will do). */
 const EntryIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/);
 
@@ -213,11 +220,12 @@ export const AutofillProfileSchema = z.object({
     resumeTemplateId: z.string().max(64).nullable().default(null),
     coverLetterTemplateId: z.string().max(64).nullable().default(null),
     // end v1.4 D
-    // v1.5 P: whether Prebuild (TailorIT's Auto-apply page) writes a cover letter for each saved job beside its tailored
-    // resume; on unless turned off. Optional in what is sent: a save without it (an older page or extension) keeps the
-    // stored choice.
-    prebuildCoverLetters: z.boolean().default(true),
-    // end v1.5 P
+    // Version 8 (v2.0, replacing v1.5's boolean `prebuildCoverLetters`): when TailorIT's Prepare & Queue writes a
+    // cover letter beside a saved job's tailored resume: `required`, only when the application requires one (the
+    // default), or `always`. Optional in what is sent: a save without it (an older page or extension) keeps the stored
+    // choice.
+    coverLetters: z.enum(AUTOFILL_COVER_LETTER_MODES).default('required'),
+    // end version 8
   }),
   /**
    * "Anything else we should know?" (version 3): the person's standing note to TailorIT's AI, which reads it beside
@@ -591,7 +599,7 @@ export const EMPTY_AUTOFILL_PROFILE: AutofillProfile = {
     relocationPlaces: [],
   },
   certifications: [],
-  documents: { resumeId: null, resumeTemplateId: null, coverLetterTemplateId: null, prebuildCoverLetters: true },
+  documents: { resumeId: null, resumeTemplateId: null, coverLetterTemplateId: null, coverLetters: 'required' },
   anythingElse: '',
 };
 

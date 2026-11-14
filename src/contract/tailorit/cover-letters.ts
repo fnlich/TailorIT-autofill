@@ -109,13 +109,15 @@ export type AutofillCoverLetterText = z.infer<typeof AutofillCoverLetterTextSche
  * (GET …/file of a letter that is not ready: still being written, or `failed`), `ai_busy` (two letters are being
  * written for the account already: wait for one), `ai_unavailable` (Claude is off, signed out or paused),
  * `file_too_large` (a PDF over AUTOFILL_COVER_LETTER_MAX_BYTES), `render_failed` and `browser_unavailable` (the print
- * failed, or this server has no browser to print with).
+ * failed, or this server has no browser to print with), and, version 8, `ai_usage_exhausted` (the person's AI usage
+ * is used up until the daily reset).
  */
 export const AUTOFILL_COVER_LETTER_REFUSALS = {
   validation_failed: 400,
   not_found: 404,
   conflict: 409,
   ai_busy: 409,
+  ai_usage_exhausted: 429,
   file_too_large: 413,
   render_failed: 500,
   ai_unavailable: 503,

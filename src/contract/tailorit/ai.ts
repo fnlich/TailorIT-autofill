@@ -105,13 +105,15 @@ export const AUTOFILL_CUSTOM_QUESTION_LENGTHS = { short: 600, medium: 1500, long
  * What an AI route refuses with, besides every token route's refusals (401, 403, 409 `conflict`, 429), and the status
  * of each: `validation_failed` (a body over a cap, a pick category not in the list), `not_found` (a draft's or an
  * answer's resume),
- * `ai_busy` (finish polling the task in flight, then retry; no Retry-After) and `ai_unavailable` (Claude is off, signed
- * out or paused on this server, or this server has no handler for the kind yet).
+ * `ai_busy` (finish polling the task in flight, then retry; no Retry-After), `ai_unavailable` (TailorIT's AI is not
+ * available now; the message says no more) and, version 8, `ai_usage_exhausted` (the person's AI usage is used up
+ * until the daily reset, `retryAfterSeconds`; fill without AI, as for `ai_unavailable`, and show the message once).
  */
 export const AUTOFILL_AI_REFUSALS = {
   validation_failed: 400,
   not_found: 404,
   ai_busy: 409,
+  ai_usage_exhausted: 429,
   ai_unavailable: 503,
 } as const;
 

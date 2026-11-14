@@ -119,7 +119,7 @@
     "resumeId": null,
     "resumeTemplateId": null,
     "coverLetterTemplateId": null,
-    "prebuildCoverLetters": true
+    "coverLetters": "always"
   },
   "anythingElse": ""
 }

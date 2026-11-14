@@ -123,8 +123,8 @@ export function example(schema, name = 'golden') {
   return readJson(join(CONTRACT, 'fixtures', schema, 'valid', `${name}.json`));
 }
 
-/** The API version TailorIT speaks, as the contract's version.ts names it (7 since jr7's 7b, pulled by INT-7 round 2). */
-export const MOCK_API_VERSION = 7;
+/** The API version TailorIT speaks, as the contract's version.ts names it (8 since v2.0, TailorIT v20-w0c, pulled by P9). */
+export const MOCK_API_VERSION = 8;
 /** The header TailorIT names its version in, on every answer to a request that presents a `tia_` bearer. */
 export const API_HEADER = 'X-TailorIT-Autofill-Api';
 const FILE_KIND_HEADER = 'X-TailorIT-File-Kind';
@@ -145,6 +145,10 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const CONTRACT_RECORD = readJson(join(CONTRACT, 'contract.json'));
 /** The contract's route table: what the mock answers. @type {ContractRoute[]} */
 export const CONTRACT_ROUTES = CONTRACT_RECORD.routes;
+/** v2.0 P9 (API 8): where a submitted answer may say it came from (AUTOFILL_ANSWER_PROVENANCES: `prepared`, never
+ *  v1.5's `prebuilt`); an answer naming another is refused with 400, as TailorIT's contract refuses it. @type {string[]} */
+const ANSWER_PROVENANCES = CONTRACT_RECORD.schemas.AutofillSubmissionRequest.properties.answers.items.properties.provenance
+  .anyOf.find((/** @type {{ enum?: string[] }} */ each) => Array.isArray(each.enum)).enum;
 /** The pick categories TailorIT takes (a pick of any other, country or region, is refused with 400). @type {string[]} */
 const PICK_CATEGORIES = CONTRACT_RECORD.schemas.AutofillPickRequest.properties.items.items.properties.category.enum;
 /** The ATSs the contract names (ATS_KINDS). @type {string[]} */
@@ -926,6 +930,10 @@ export function createMock() {
     for (const item of answers ?? []) {
       const kind = kinds.get(item?.ref);
       if (kind === undefined || !answerFits(item.answer, kind)) return invalid('answers: This answer does not fit the field');
+      // v2.0 P9 (API 8): a provenance the contract does not list (v1.5's `prebuilt`) is refused.
+      if (item.provenance != null && !ANSWER_PROVENANCES.includes(item.provenance)) {
+        return invalid('answers: Name where the answer came from as the contract lists it');
+      }
     }
     state.applied.push({ ...(json.jobId === undefined ? { url: json.url } : { jobId: json.jobId }),
       ...(json.resumeId === undefined ? {} : { resumeId: json.resumeId }) });

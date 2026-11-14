@@ -1,0 +1,11 @@
+{
+  "item": null,
+  "state": "queued",
+  "reason": null,
+  "dailyLimit": {
+    "reached": true,
+    "used": -1,
+    "limit": 7,
+    "resetsAt": "2026-11-14T08:00:00.000Z"
+  }
+}

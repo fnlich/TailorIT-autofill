@@ -43,8 +43,20 @@
  * agent's platforms (AUTOFILL_AGENT_ATS, by the integration's readiness tests). Add job is unchanged. It adds no scope:
  * an extension updated to 7 keeps its connection, and one still speaking 6 gets 409 `conflict` on every token request
  * until it is updated.
+ *
+ * 8 (v2.0, Prepare & Queue): a saved answer's provenance `prebuilt` is renamed `prepared` (AUTOFILL_ANSWER_PROVENANCES,
+ * both ways: forms/known's drafts and the submissions); the profile's `documents.prebuildCoverLetters` (a boolean) is
+ * replaced by `documents.coverLetters`, `required` (the default: a letter only when the application requires one) or
+ * `always`; a queue row's `source` gains `prepare` and its `run` gains `manual` (AUTOFILL_AGENT_RUN_KINDS: a job the
+ * person applies to by hand, which no run ever takes; AUTOFILL_AGENT_RUNS keeps the two runs a row's `runs` names); and
+ * TailorIT's refusals gain the codes `ai_usage_exhausted` (429: the person's AI usage is used up; fill without AI, as
+ * for `ai_unavailable`), `resume_limit_reached` and `paid_feature` (403), new values the extension meets in an error
+ * body's `code`. Additive within 8: the claim's `dailyLimit` (GET …/agent/next and POST …/agent/:id/opened, the Free
+ * account's daily auto-apply limit), the result's `submitPressed`, and the token's queue list's `autoApply` counts.
+ * It adds no scope: an extension updated to 8 keeps its connection, and one still speaking 7 gets 409 `conflict` on
+ * every token request until it is updated.
  */
-export const AUTOFILL_API_VERSION = 7;
+export const AUTOFILL_API_VERSION = 8;
 
 /**
  * Sent by the extension on every request, and by the server on every answer to a request that presents a tia_ bearer,

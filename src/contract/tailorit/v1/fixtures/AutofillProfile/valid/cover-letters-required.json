@@ -159,7 +159,7 @@
     "resumeId": "3f6a9c2e-81d4-4b7f-a5e0-2c9d8b1e4f73",
     "resumeTemplateId": "one-column-slate",
     "coverLetterTemplateId": "9b2e4f61-7c3a-4d8e-b1f0-5a6c2d9e8f47",
-    "prebuildCoverLetters": "yes"
+    "coverLetters": "required"
   },
   "anythingElse": "I am happy to work across time zones and I mentor junior engineers. I prefer roles with on-call shared across the team."
 }

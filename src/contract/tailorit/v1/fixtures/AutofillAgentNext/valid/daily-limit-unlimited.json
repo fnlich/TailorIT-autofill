@@ -1,0 +1,16 @@
+{
+  "item": {
+    "id": "7c1e4f2a-9b3d-4a6e-8f50-2d9c1b7e3a64",
+    "jobId": 1042,
+    "url": "https://job-boards.greenhouse.io/northwind/jobs/5512345002",
+    "company": "Northwind",
+    "title": "Senior Backend Engineer",
+    "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13"
+  },
+  "dailyLimit": {
+    "reached": false,
+    "used": 12,
+    "limit": null,
+    "resetsAt": "2026-11-14T08:00:00.000Z"
+  }
+}

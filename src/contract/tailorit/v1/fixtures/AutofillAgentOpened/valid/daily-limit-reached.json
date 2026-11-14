@@ -1,0 +1,12 @@
+{
+  "item": null,
+  "state": "queued",
+  "reason": null,
+  "dailyLimit": {
+    "reached": true,
+    "used": 7,
+    "limit": 7,
+    "resetsAt": "2026-11-14T08:00:00.000Z",
+    "message": "You've reached the Free account limit of 7 auto-applies per day. Your limit resets at 12:00 AM Pacific Time. Subscribe for unlimited auto-apply."
+  }
+}

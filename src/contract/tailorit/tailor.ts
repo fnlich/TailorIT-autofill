@@ -184,14 +184,18 @@ export type AutofillTemplateList = z.infer<typeof AutofillTemplateListSchema>;
  * `not_found` (a job, a resume or a template that is not the account's), `needs_editable_copy` (the resume to tailor
  * from is an upload with no editable copy: make one in Documents first), `conflict` (no room for another resume),
  * `ai_busy` (two tailorings of the account are running already), `rate_limited` (AUTOFILL_TAILOR_PER_HOUR reached) and
- * `ai_unavailable` (Claude is off, signed out or paused).
+ * `ai_unavailable` (TailorIT's AI is not available now); version 8: `resume_limit_reached` (a Free account at its
+ * resume limit: no tailored resume can be stored) and `ai_usage_exhausted` (the person's AI usage is used up until the
+ * daily reset).
  */
 export const AUTOFILL_TAILOR_REFUSALS = {
   validation_failed: 400,
+  resume_limit_reached: 403,
   not_found: 404,
   needs_editable_copy: 409,
   conflict: 409,
   ai_busy: 409,
   rate_limited: 429,
+  ai_usage_exhausted: 429,
   ai_unavailable: 503,
 } as const;

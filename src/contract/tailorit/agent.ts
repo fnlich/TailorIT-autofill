@@ -4,7 +4,10 @@ import { addablePosting, greenhouseBoardPage, parseAtsUrl, type AtsKind, type Pa
 
 // The auto-apply agent's queue (version 3). The person queues jobs from TailorIT's Jobs and Tracker pages ("Auto-apply")
 // and may turn on a rule ("auto-apply to new jobs of at least N% match", off until they turn it on); there is no daily
-// limit. The extension's worker, with its token (scope agent:run) and only when the person turned on "Run auto-apply"
+// limit. Version 8 (v2.0): a job reaches the queue only through TailorIT's Prepare & Queue (source `prepare`), which
+// queues a job the extension cannot open with the run kind `manual` (the person applies by hand; no run takes it); the
+// rule saves new jobs instead of queueing them; and a Free account may auto-apply to a limited number of jobs a day,
+// counted when a run takes a row (the claim's `dailyLimit`). The extension's worker, with its token (scope agent:run) and only when the person turned on "Run auto-apply"
 // in its options, takes one job at a time (GET /api/autofill/agent/next), opens its application page, fills and
 // submits it, and reports how it went (POST /api/autofill/agent/:id/result); a submitted one is marked Applied in the
 // tracker. The queue keeps states and reason codes only: never a value the form was filled with.
@@ -24,8 +27,11 @@ export type AutofillAgentState = (typeof AUTOFILL_AGENT_STATES)[number];
 export const AUTOFILL_AGENT_FINISHED_STATES = ['submitted', 'skipped', 'needs-you', 'failed'] as const;
 export type AutofillAgentFinishedState = (typeof AUTOFILL_AGENT_FINISHED_STATES)[number];
 
-/** How a job came into the queue: the person's Auto-apply, or the rule. */
-export const AUTOFILL_AGENT_SOURCES = ['manual', 'rule'] as const;
+/**
+ * How a job came into the queue: the person's Auto-apply, or the rule (both before v2.0), or (version 8) TailorIT's
+ * Prepare & Queue, the only way in from v2.0.
+ */
+export const AUTOFILL_AGENT_SOURCES = ['manual', 'rule', 'prepare'] as const;
 export type AutofillAgentSource = (typeof AUTOFILL_AGENT_SOURCES)[number];
 
 /**
@@ -281,7 +287,11 @@ function queueFormAddress({ kind, canonical }: ParsedAtsUrl): string | null {
 export function queueCanOpen(url: string): boolean {
   return queueApplicationUrl(url) !== null;
 }
-/** The most jobs one Auto-apply click queues, and the most rows an account's queue holds. */
+/**
+ * The most jobs one Auto-apply click queued (unused from v2.0: POST /api/autofill/agent/queue answers 409 `conflict`;
+ * kept until version 9), and the most rows an account's queue holds by default (TailorIT enforces its own
+ * QUEUE_SIZE_MAX, whose default this is).
+ */
 export const AUTOFILL_AGENT_ENQUEUE_MAX = 100;
 export const AUTOFILL_AGENT_QUEUE_MAX = 500;
 /** The rule's default threshold, used until the person sets one. */
@@ -313,6 +323,25 @@ export const AutofillAgentTaskSchema = z.object({
 export type AutofillAgentTask = z.infer<typeof AutofillAgentTaskSchema>;
 
 /**
+ * Version 8: a Free account's daily auto-apply limit, as the claim answers it (GET …/agent/next, POST …/:id/opened).
+ * Each run that takes a row counts once in the current window (a day by default, from TailorIT's reset time); a run
+ * that ends `failed`, `skipped`, or `needs-you` before Submit was pressed gives its count back. When `reached`, the
+ * claim's `item` is null and the rows stay queued: wait until `resetsAt` (Run auto-apply stays on), and show
+ * `message` as it is.
+ */
+export const AutofillDailyLimitSchema = z.object({
+  /** True when this account may not start another auto-apply until resetsAt. */
+  reached: z.boolean(),
+  used: z.number().int().nonnegative(),
+  /** null: unlimited (a Paid account). */
+  limit: z.number().int().nonnegative().nullable(),
+  resetsAt: InstantSchema,
+  /** TailorIT's words for the person when reached (MSG_LIMIT_AUTO_APPLY); show them as they are. */
+  message: z.string().max(400).optional(),
+});
+export type AutofillDailyLimit = z.infer<typeof AutofillDailyLimitSchema>;
+
+/**
  * GET /api/autofill/agent/next (scope agent:run): this browser's own running job again, when it has one (a worker that
  * restarted asks anew; nothing changes); else the account's oldest queued job, now `running` for this browser (checked
  * again as it is taken: one tracked past Saved by now is `skipped`, a closed one `failed`, and the next taken); else,
@@ -324,7 +353,14 @@ export type AutofillAgentTask = z.infer<typeof AutofillAgentTaskSchema>;
  * it opens (agentApplicationUrl); a queued job only the Queue tab opens (queueCanOpen) is left queued for it, never
  * failed, and the next is looked at.
  */
-export const AutofillAgentNextSchema = z.object({ item: AutofillAgentTaskSchema.nullable() });
+export const AutofillAgentNextSchema = z.object({
+  item: AutofillAgentTaskSchema.nullable(),
+  /**
+   * Version 8: the account's daily auto-apply count after this claim (absent from an older server). When `reached`,
+   * `item` is null and the queued rows stay queued: poll again at `resetsAt`.
+   */
+  dailyLimit: AutofillDailyLimitSchema.optional(),
+});
 export type AutofillAgentNext = z.infer<typeof AutofillAgentNextSchema>;
 
 /**
@@ -342,6 +378,11 @@ export const AutofillAgentResultBodySchema = z
     state: z.enum(AUTOFILL_AGENT_FINISHED_STATES),
     reason: z.enum(AUTOFILL_AGENT_REASONS).nullable(),
     aiGuesses: z.number().int().min(0).max(1000).optional(),
+    /**
+     * Version 8: Submit was pressed in this run. TailorIT keeps the run's daily auto-apply count when it was (a form
+     * that may have been sent), and gives it back otherwise for a run that `failed`, was `skipped` or `needs-you`.
+     */
+    submitPressed: z.boolean().optional(),
   })
   .superRefine((body, ctx) => {
     if (body.state === 'submitted' && body.reason !== null) {
@@ -396,6 +437,14 @@ export type AutofillAgentEnqueueResponse = z.infer<typeof AutofillAgentEnqueueRe
  */
 export const AUTOFILL_AGENT_RUNS = ['agent', 'tab'] as const;
 export type AutofillAgentRun = (typeof AUTOFILL_AGENT_RUNS)[number];
+
+/**
+ * Version 8: who applies to a row. The two runs, or `manual`: a job neither run can open, queued by Prepare & Queue
+ * for the person to apply to by hand on TailorIT's Auto-apply page. No run ever takes a `manual` row: GET …/next skips
+ * it, POST …/:id/opened refuses it (409), and a token's queue list leaves it out. A row's `run` is one of these.
+ */
+export const AUTOFILL_AGENT_RUN_KINDS = ['agent', 'tab', 'manual'] as const;
+export type AutofillAgentRunKind = (typeof AUTOFILL_AGENT_RUN_KINDS)[number];
 
 /** The most rows one page of GET /api/autofill/agent/queue answers, and the page size when `cursor` comes alone. */
 export const AUTOFILL_AGENT_QUEUE_PAGE_MAX = 100;
@@ -455,8 +504,11 @@ export const AutofillAgentQueueItemSchema = z.object({
    * open it.
    */
   applyUrl: z.string().max(AUTOFILL_AGENT_URL_MAX).nullable().optional(),
-  /** Which run took the row (AUTOFILL_AGENT_RUNS); null while no run took it. */
-  run: z.enum(AUTOFILL_AGENT_RUNS).nullable().optional(),
+  /**
+   * Which run took the row (AUTOFILL_AGENT_RUNS); null while no run took it. Version 8: `manual`, a row the person
+   * applies to by hand (AUTOFILL_AGENT_RUN_KINDS), set when Prepare & Queue inserts it.
+   */
+  run: z.enum(AUTOFILL_AGENT_RUN_KINDS).nullable().optional(),
   // end v1.5 Q2
   // jr7 7a (optional, so an older server's list still parses)
   /**
@@ -485,6 +537,17 @@ export const AutofillAgentQueueListSchema = z.object({
   // v1.5 Q2
   nextCursor: z.string().max(AUTOFILL_AGENT_QUEUE_CURSOR_MAX).optional(),
   // end v1.5 Q2
+  /**
+   * Version 8 (additive): the account's auto-applies in the current window, for "3 of 7 used today" (`limit` null:
+   * unlimited).
+   */
+  autoApply: z
+    .object({
+      used: z.number().int().nonnegative(),
+      limit: z.number().int().nonnegative().nullable(),
+      resetsAt: InstantSchema,
+    })
+    .optional(),
 });
 export type AutofillAgentQueueList = z.infer<typeof AutofillAgentQueueListSchema>;
 
@@ -506,6 +569,11 @@ export const AutofillAgentOpenedSchema = z.object({
   item: AutofillAgentTaskSchema.nullable(),
   state: z.enum(AUTOFILL_AGENT_STATES),
   reason: z.enum(AUTOFILL_AGENT_REASONS).nullable(),
+  /**
+   * Version 8: the account's daily auto-apply count after this claim. When `reached`, `item` is null and the row stays
+   * `queued` (state `queued`, reason null): stop the run with the limit's message. A `manual` row is refused (409).
+   */
+  dailyLimit: AutofillDailyLimitSchema.optional(),
 });
 export type AutofillAgentOpened = z.infer<typeof AutofillAgentOpenedSchema>;
 // end v1.5 Q2

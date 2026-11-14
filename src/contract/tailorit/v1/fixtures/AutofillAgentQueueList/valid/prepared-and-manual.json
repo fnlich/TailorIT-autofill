@@ -1,0 +1,54 @@
+{
+  "items": [
+    {
+      "id": "2b9d6e1f-4c7a-4f3e-9a12-6e8b0c5d7f41",
+      "jobId": 1077,
+      "title": "Backend Engineer, Payments",
+      "company": "Northwind",
+      "location": "",
+      "url": "https://jobs.ashbyhq.com/northwind/d3bc1ced-3ce4-4086-a050-555055dbb1ff",
+      "active": true,
+      "state": "queued",
+      "reason": null,
+      "source": "prepare",
+      "attempts": 0,
+      "aiGuesses": null,
+      "createdAt": "2026-11-01T15:00:00.000Z",
+      "startedAt": null,
+      "finishedAt": null,
+      "applyUrl": "https://jobs.ashbyhq.com/northwind/d3bc1ced-3ce4-4086-a050-555055dbb1ff/application",
+      "run": null,
+      "runs": [
+        "agent",
+        "tab"
+      ]
+    },
+    {
+      "id": "9d2f4b6a-1c3e-4a5b-8c7d-0e1f2a3b4c5d",
+      "jobId": 1188,
+      "title": "Data Analyst",
+      "company": "Northwind",
+      "location": "Remote in USA",
+      "url": "https://careers.example.com/jobs/data-analyst-1188",
+      "active": true,
+      "state": "queued",
+      "reason": null,
+      "source": "prepare",
+      "attempts": 0,
+      "aiGuesses": null,
+      "createdAt": "2026-11-01T14:58:00.000Z",
+      "startedAt": null,
+      "finishedAt": null,
+      "applyUrl": null,
+      "run": "manual",
+      "runs": []
+    }
+  ],
+  "total": 2,
+  "limit": 500,
+  "autoApply": {
+    "used": 3,
+    "limit": 7,
+    "resetsAt": "2026-11-14T08:00:00.000Z"
+  }
+}

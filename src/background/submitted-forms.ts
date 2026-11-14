@@ -118,14 +118,17 @@ export function provenanceOf(row: Pick<Row, 'provenance' | 'wrote' | 'reason' | 
   if (row.reason === 'changed-by-you' || row.detail?.userEdited === true || row.detail?.filledByYou === true) {
     return 'person';
   }
-  // v1.5 X: an answer TailorIT prepared for the job is its AI's (a TailorIT that names `prebuilt` takes it so).
-  if (row.wrote && row.provenance !== null) return row.provenance === 'prebuilt' ? PREBUILT_AS : row.provenance;
+  // v1.5 X: an answer TailorIT prepared for the job is its AI's (a TailorIT that names it takes it so). v2.0 (API 8):
+  // the extension's own name for it stays `prebuilt` (src/core, which the content script reads); the wire's is
+  // `prepared` (PREPARED_AS).
+  if (row.wrote && row.provenance !== null) return row.provenance === 'prebuilt' ? PREPARED_AS : row.provenance;
   return 'person';
 }
 
-/** v1.5 X: how /submissions names a prepared answer: `prebuilt` where TailorIT's contract has it, else an AI answer. */
-const PREBUILT_AS: AutofillAnswerProvenance = (AUTOFILL_ANSWER_PROVENANCES as readonly string[]).includes('prebuilt')
-  ? 'prebuilt' as AutofillAnswerProvenance : 'llm-answer';
+/** v1.5 X, renamed by API 8 (v2.0): how /submissions names an answer TailorIT prepared for the job: `prepared` where
+ *  TailorIT's contract has it, else an AI answer. The internal `prebuilt` never goes on the wire. */
+const PREPARED_AS: AutofillAnswerProvenance = (AUTOFILL_ANSWER_PROVENANCES as readonly string[]).includes('prepared')
+  ? 'prepared' as AutofillAnswerProvenance : 'llm-answer';
 
 /** A question's options as TailorIT keeps them: each clean label once, at most AUTOFILL_FORM_LIMITS.options. */
 function optionsOf(spec: FieldSpec): string[] {
