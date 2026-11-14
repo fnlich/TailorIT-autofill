@@ -3,9 +3,9 @@
  * before each test, script its answers, and read its request log (Authorization redacted). It talks to 127.0.0.1, so
  * the test process never depends on how localhost resolves; the extension calls the same server as localhost.
  */
-import { GOLDEN_LETTER, GOLDEN_RESUME, MOCK_SCENARIOS } from '../mock-server/mock.mjs';
+import { DAILY_LIMIT_MESSAGE, GOLDEN_LETTER, GOLDEN_RESUME, MOCK_SCENARIOS } from '../mock-server/mock.mjs';
 
-export { GOLDEN_LETTER, GOLDEN_RESUME, MOCK_SCENARIOS };
+export { DAILY_LIMIT_MESSAGE, GOLDEN_LETTER, GOLDEN_RESUME, MOCK_SCENARIOS };
 
 /** The mock's address for the test process. */
 export const MOCK_CONTROL = 'http://127.0.0.1:3190';
@@ -55,7 +55,8 @@ export const mock = {
   async agent(): Promise<{ queue: unknown[]; running: { id: string } | null;
     rows: Array<{ task: { id: string }; state: string; reason: string | null; claimedBy: number | null }>;
     refused: Array<{ id: string; body: unknown; status: number }>;
-    results: Array<{ id: string; body: { state: string; reason: string | null; aiGuesses?: number } }> }> {
+    results: Array<{ id: string; body: { state: string; reason: string | null; aiGuesses?: number;
+      submitPressed?: boolean } }> }> {
     return (await (await control('/__mock/agent')).json()) as Awaited<ReturnType<typeof mock.agent>>;
   },
   /** v3 Phase 5: replaces the job-site sign-ins the mock holds ({host, email, password}; `*` for every site). */

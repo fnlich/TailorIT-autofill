@@ -99,7 +99,7 @@ test.describe('the auto-apply agent (v3 Phase 5)', () => {
     const greenhouse = await first;
     const second = agentPage(ext, leverAt('02'));
     await expect.poll(async () => (await results()).length, { timeout: 45_000 }).toBeGreaterThanOrEqual(1);
-    expect((await results())[0]).toEqual({ id: task(1, '', '').id, body: { state: 'submitted', reason: null, aiGuesses: 0 } });
+    expect((await results())[0]).toEqual({ id: task(1, '', '').id, body: { state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true } });
     await expect.poll(() => greenhouse.isClosed(), { timeout: 15_000 }).toBe(true);
 
     // Lever: /apply sends it to its posting page first, whose Apply the agent presses (the entry), then the form, then
@@ -107,13 +107,13 @@ test.describe('the auto-apply agent (v3 Phase 5)', () => {
     const lever = await second;
     const third = agentPage(ext, ashbyAt('03'));
     await expect.poll(async () => (await results()).length, { timeout: 45_000 }).toBeGreaterThanOrEqual(2);
-    expect((await results())[1]).toEqual({ id: task(2, '', '').id, body: { state: 'submitted', reason: null, aiGuesses: 0 } });
+    expect((await results())[1]).toEqual({ id: task(2, '', '').id, body: { state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true } });
     await expect.poll(() => lever.isClosed(), { timeout: 15_000 }).toBe(true);
 
     // Ashby: its success message after the agent's Submit.
     const ashby = await third;
     await expect.poll(async () => (await results()).length, { timeout: 45_000 }).toBe(3);
-    expect((await results())[2]).toEqual({ id: task(3, '', '').id, body: { state: 'submitted', reason: null, aiGuesses: 0 } });
+    expect((await results())[2]).toEqual({ id: task(3, '', '').id, body: { state: 'submitted', reason: null, aiGuesses: 0, submitPressed: true } });
     await expect.poll(() => ashby.isClosed(), { timeout: 15_000 }).toBe(true);
 
     // TailorIT marks them Applied with the result: the extension never called POST /applied for them.

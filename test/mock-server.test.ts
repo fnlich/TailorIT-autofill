@@ -57,6 +57,7 @@ import {
   MOCK_API_VERSION,
   MOCK_SCENARIOS,
   connectScopes,
+  DAILY_LIMIT_MESSAGE,
   example,
   extensionIdOf,
   goldenLetterBytes,
@@ -1263,3 +1264,67 @@ describe('v1.4 F: tailoring and the templates, as the contract shapes them', () 
     expect(await read(GOLDEN_TAILOR_TASK.id)).toEqual(example('AutofillTailorTask'));
   });
 });
+
+// ── v2.0 P9 (autofill API 8) ──
+describe('the mock on autofill API 8 (v2.0 P9)', () => {
+  const task = (n: number) => ({ id: `0000000${n}-aaaa-4bbb-8ccc-00000000000${n}`, jobId: 100 + n,
+    url: `https://job-boards.greenhouse.io/northwind/jobs/55${n}`, company: 'Northwind', title: `Engineer ${n}`,
+    resumeId: null });
+  /** What these routes answer, as far as the tests read it. */
+  type Answered = { item?: { id: string } | null; queue: Array<{ id: string }>; items: Array<{ id: string }>;
+    total: number; error: { code: string } };
+  const json = async (response: Response) => (await response.json()) as Answered;
+  const next = async () => json(await call('/api/autofill/agent/next', { headers: asToken() }));
+  const opened = async (id: string) => call(`/api/autofill/agent/${id}/opened`, { method: 'POST', headers: asToken() });
+  const result = async (id: string, body: Record<string, unknown>) => (await call(`/api/autofill/agent/${id}/result`,
+    { method: 'POST', headers: asToken(), json: { aiGuesses: 0, ...body } })).status;
+
+  it('counts each claim against the daily limit, answers it reached with TailorIT’s words, and gives a count back', async () => {
+    await call('/__mock/agent', { method: 'POST', json: { items: [task(1), task(2), task(3)] } });
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'daily-limit', value: 2 } });
+    const first = await next();
+    expect(first).toMatchObject({ item: { id: task(1).id }, dailyLimit: { reached: false, used: 1, limit: 2 } });
+    const tab = await opened(task(2).id);
+    // The last one allowed: taken, and the limit reached from now on.
+    expect(await json(tab)).toMatchObject({ item: { id: task(2).id }, dailyLimit: { reached: true, used: 2 } });
+    // Reached: nothing taken, the row left queued, by either claim.
+    expect(await result(task(1).id, { state: 'submitted', reason: null, submitPressed: true })).toBe(204);
+    const refused = await next();
+    expect(refused).toEqual({ item: null, dailyLimit: { reached: true, used: 2, limit: 2,
+      resetsAt: expect.any(String), message: DAILY_LIMIT_MESSAGE } });
+    expect(await json(await opened(task(3).id))).toMatchObject({ item: null, state: 'queued', reason: null,
+      dailyLimit: { reached: true } });
+    const held = await json(await call('/__mock/agent'));
+    expect(held.queue.map((each) => each.id)).toEqual([task(3).id]);
+    // A run that ended before its Submit gives its count back; one whose Submit was pressed keeps it.
+    expect(await result(task(2).id, { state: 'needs-you', reason: 'captcha', submitPressed: false })).toBe(204);
+    expect(await next()).toMatchObject({ item: { id: task(3).id }, dailyLimit: { used: 2 } });
+    expect(await result(task(3).id, { state: 'needs-you', reason: 'timed_out', submitPressed: true })).toBe(204);
+    expect(await next()).toEqual({ item: null });
+  });
+
+  it('never hands a run a row the person applies to by hand, nor lists it for a token', async () => {
+    await call('/__mock/agent', { method: 'POST', json: { items: [{ ...task(1), run: 'manual' }, task(2)] } });
+    expect((await next()).item?.id).toBe(task(2).id);
+    const refusedOpen = await opened(task(1).id);
+    expect(refusedOpen.status).toBe(409);
+    const page = await json(await call('/api/autofill/agent/queue?state=queued,running&limit=10', { headers: asToken() }));
+    expect(page.items.map((item) => item.id)).toEqual([task(2).id]);
+    expect(page.total).toBe(1);
+  });
+
+  it('answers ai-usage-exhausted with 429 ai_usage_exhausted, and refuses a submitted answer named `prebuilt`', async () => {
+    await scenario('ai-usage-exhausted', { times: 1 });
+    const refused = await call('/api/autofill/tailor', { method: 'POST', headers: asToken(), json: {} });
+    expect(refused.status).toBe(429);
+    expect((await json(refused)).error.code).toBe('ai_usage_exhausted');
+    const body = (provenance: string) => ({ jobId: 1042, questions: [{ ref: 'q1', questionKey: 'why', label: 'Why?',
+      kind: 'textarea', options: [], optionSetHash: '', section: 'main', required: false, step: 0, position: 0,
+      category: null }], answers: [{ ref: 'q1', answer: { kind: 'text', text: 'Calm deploys.' }, provenance }] });
+    expect((await call('/api/autofill/submissions', { method: 'POST', headers: asToken(), json: body('prebuilt') }))
+      .status).toBe(400);
+    expect((await call('/api/autofill/submissions', { method: 'POST', headers: asToken(), json: body('prepared') }))
+      .status).toBe(200);
+  });
+});
+// ── end v2.0 P9 ──

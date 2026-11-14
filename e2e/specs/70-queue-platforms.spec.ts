@@ -186,7 +186,7 @@ test.describe('the Queue tab on every platform the extension fills (jr7 AUTO-7, 
     const page = await pageAt(ext, OPENED);
     await page.waitForURL(`${POSTING}/applyConfirmation`, { timeout: 90_000 });
     await expect.poll(async () => (await mock.agent()).results, { timeout: 30_000 })
-      .toEqual([{ id: task(3, POSTING, '').id, body: { state: 'submitted', reason: null, aiGuesses: expect.any(Number) } }]);
+      .toEqual([{ id: task(3, POSTING, '').id, body: { state: 'submitted', reason: null, aiGuesses: expect.any(Number), submitPressed: true } }]);
     await expect.poll(async () => (await listed(ext)).items[0]?.status, { timeout: 15_000 }).toBe('submitted');
     expect(routeLog.submitted).toEqual([]);
   });
@@ -220,7 +220,7 @@ test.describe('the Queue tab on every platform the extension fills (jr7 AUTO-7, 
       const page = await opened;
       await page.waitForURL((address) => address.href.startsWith(OPENED), { timeout: 30_000 });
       await expect.poll(async () => (await mock.agent()).results, { timeout: 90_000 })
-        .toEqual([{ id: task(4, POSTING, '').id, body: { state: 'submitted', reason: null, aiGuesses: expect.any(Number) } }]);
+        .toEqual([{ id: task(4, POSTING, '').id, body: { state: 'submitted', reason: null, aiGuesses: expect.any(Number), submitPressed: true } }]);
       await expect.poll(() => page.isClosed(), { timeout: 15_000 }).toBe(true);
       expect(await mock.requestsTo('POST /api/autofill/applied')).toEqual([]);
       expect(routeLog.submitted).toEqual([]);

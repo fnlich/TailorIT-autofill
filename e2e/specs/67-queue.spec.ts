@@ -108,7 +108,7 @@ test.describe('the sequential auto-apply (v1.5 QX)', () => {
     await pages[0]!.close();
     await expect.poll(async () => (await mock.agent()).results.length, { timeout: 15_000 }).toBe(1);
     expect((await mock.agent()).results[0]).toEqual({ id: task(1, '').id,
-      body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0 } });
+      body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0, submitPressed: false } });
     await expect.poll(async () => (await listed(ext)).items[0]!.status).toBe('skipped');
   });
 

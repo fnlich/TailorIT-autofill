@@ -97,6 +97,13 @@
  * - v1.5 X: GET /resumes names how each resume was made and when (the contract's golden list, and the tailored resume:
  *   `tailor`, now); POST /forms/known answers `drafts` under the form-drafts scenario (the person's prebuilt draft
  *   answers, ready or not ready, each for one of the job's questions).
+ * - v2.0 P9 (API 8): the claim's daily limit (scenario daily-limit: GET /agent/next and POST /agent/:id/opened count
+ *   each row they take; past the limit they answer `item: null` with `dailyLimit` reached, TailorIT's words and the
+ *   next day's reset, the row left queued; a result failed, skipped or needs-you that says Submit was not pressed gives
+ *   its count back, as TailorIT does); a row POST /__mock/agent queues with `run: 'manual'` (the person applies by hand):
+ *   GET /agent/next skips it, POST /agent/:id/opened refuses it (409), and a token's GET /agent/queue leaves it out; the
+ *   scenario ai-usage-exhausted (429 ai_usage_exhausted on the AI routes, POST /tailor and POST /cover-letters); and a
+ *   submitted answer's provenance only as the contract lists it (`prepared`, never `prebuilt`).
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -398,7 +405,20 @@ export const MOCK_SCENARIOS = Object.freeze({
     + 'a list of {label, kind, options?, answer} (answer null: not_ready), each one of the job’s questions (added as '
     + 'Greenhouse board-API questions where the job keeps none of that label). It holds until the next reset (times '
     + 'does not apply).',
+  // v2.0 P9 (API 8)
+  'daily-limit': 'A Free account’s daily auto-apply limit of `value` (default 7): GET /agent/next and POST '
+    + '/agent/:id/opened count each row they take, and once as many are counted they answer item null with dailyLimit '
+    + 'reached (TailorIT’s words, the next day’s reset), the row left queued; a result failed, skipped or needs-you '
+    + 'whose submitPressed is not true gives its count back. Every claim names the count. It holds until the next '
+    + 'reset (times does not apply).',
+  'ai-usage-exhausted': 'An AI route, POST /tailor and POST /cover-letters answer 429 ai_usage_exhausted (the person’s '
+    + 'AI usage is used up until the daily reset, its Retry-After).',
 });
+
+/** v2.0 P9: TailorIT's words for a reached daily auto-apply limit (MSG_LIMIT_AUTO_APPLY), as its contract's example
+ *  names them. */
+export const DAILY_LIMIT_MESSAGE = /** @type {{ dailyLimit: { message: string } }} */ (
+  example('AutofillAgentOpened', 'daily-limit-reached')).dailyLimit.message;
 
 /** The words GET /cover-letters/:id/text answers (v3 Phase 3b): `GOLDEN_LETTER.sentinel` among them, so a spec can
  *  find where they went. */
@@ -700,10 +720,13 @@ export function createMock() {
     questionId: 7001,
     /** v3 Phase 5: the agent's queue: its rows (the task, its state and reason, the connection that claimed it), every
      *  result taken and every one refused.
+     *  v2.0 P9: `run` 'manual' for a row the person applies to by hand; `counted` while its claim counts against the
+     *  daily limit; `used`, how many do (the daily-limit scenario).
      *  @type {{ rows: Array<{ task: Record<string, unknown>; state: string; reason: string | null;
-     *    claimedBy: number | null; run?: 'agent' | 'tab' | null }>; results: Array<{ id: string; body: unknown }>;
-     *    refused: Array<{ id: string; body: unknown; status: number }> }} */
-    agent: { rows: [], results: [], refused: [] },
+     *    claimedBy: number | null; run?: 'agent' | 'tab' | 'manual' | null; counted?: boolean }>;
+     *    results: Array<{ id: string; body: unknown }>; refused: Array<{ id: string; body: unknown; status: number }>;
+     *    used: number }} */
+    agent: { rows: [], results: [], refused: [], used: 0 },
     /** v3 Phase 5: the job-site sign-ins saved, the golden one for every site by default.
      *  @type {Array<{ host: string; email: string; password: string }>} */
     credentials: [/** @type {{ host: string; email: string; password: string }} */ (example('AutofillCredential', 'every-site'))],
@@ -733,6 +756,38 @@ export function createMock() {
   const isOn = (name) => state.scenarios.some((scenario) => scenario.name === name);
 
   const iso = (/** @type {number} */ ms) => new Date(ms).toISOString();
+
+  // ── v2.0 P9 (API 8) ──
+  /** The daily-limit scenario's limit, or null while it is off (an account with no limit: the claim names none). */
+  const dailyLimitOf = () => {
+    const on = state.scenarios.find((scenario) => scenario.name === 'daily-limit');
+    if (on === undefined) return null;
+    return Number.isInteger(on.value) && Number(on.value) >= 0 ? Number(on.value) : 7;
+  };
+  /** The claim's dailyLimit as TailorIT answers it (AutofillDailyLimit): reached once as many claims count as allowed.
+   *  @param {number} limit */
+  const dailyLimitAnswer = (limit) => {
+    const reached = state.agent.used >= limit;
+    const tomorrow = new Date();
+    tomorrow.setUTCHours(24, 0, 0, 0);
+    return { reached, used: state.agent.used, limit, resetsAt: iso(tomorrow.getTime()),
+      ...(reached ? { message: DAILY_LIMIT_MESSAGE } : {}) };
+  };
+  /** A claim of a queued row under the daily limit: counted, or refused (null) once it is reached.
+   *  @param {{ counted?: boolean }} row */
+  const countClaim = (row) => {
+    const limit = dailyLimitOf();
+    if (limit === null) return {};
+    if (state.agent.used >= limit) return null;
+    state.agent.used += 1;
+    row.counted = true;
+    return { dailyLimit: dailyLimitAnswer(limit) };
+  };
+  /** TailorIT's refusal when the person's AI usage is used up (ai_usage_exhausted, 429, until the daily reset). */
+  const usageExhausted = () => ({ status: 429, headers: { 'Retry-After': '3600' }, json: { error: {
+    code: 'ai_usage_exhausted', message: 'You\u2019ve used your AI usage. Get extra credit or use your own AI via MCP.',
+    retryAfterSeconds: 3600 } } });
+  // ── end v2.0 P9 ──
 
   /** The token's scopes now: the last redeemed code's, with credentials:read while sign-in-allowed is on (version 3),
    *  in the contract's order. */
@@ -1299,6 +1354,7 @@ export function createMock() {
     }
     if (take('ai-busy') !== null) return { status: 409, json: example('AutofillErrorBody', 'ai-busy') };
     if (take('ai-unavailable') !== null) return { status: 503, json: example('AutofillErrorBody', 'ai-unavailable') };
+    if (take('ai-usage-exhausted') !== null) return usageExhausted(); // v2.0 P9
     const slow = take('ai-slow');
     const endless = take('ai-timeout');
     // v5 p2-stream: an ai-paced task's items land one at a time; a TailorIT with the stream hears respond-async.
@@ -1644,21 +1700,35 @@ export function createMock() {
       const own = rows.find((row) => row.state === 'running' && row.claimedBy === state.token.generation
         && row.run !== 'tab');
       if (own !== undefined) return jsonAnswer(200, { item: own.task });
-      const queued = rows.find((row) => row.state === 'queued');
+      // v2.0 P9: never a row the person applies to by hand.
+      const queued = rows.find((row) => row.state === 'queued' && row.run !== 'manual');
       if (queued === undefined) return jsonAnswer(200, { item: null });
+      // v2.0 P9: the daily limit reached: nothing taken, the row left queued.
+      const counted = countClaim(queued);
+      const limit = dailyLimitOf();
+      if (counted === null && limit !== null) return jsonAnswer(200, { item: null, dailyLimit: dailyLimitAnswer(limit) });
       Object.assign(queued, { state: 'running', claimedBy: state.token.generation, run: 'agent' });
-      return jsonAnswer(200, { item: queued.task });
+      return jsonAnswer(200, { item: queued.task, ...counted });
     },
     // v1.5 QX (TailorIT v1.5 Q2): the Queue tab's run takes a queued row before it opens its tab.
     'POST /api/autofill/agent/:id/opened': ({ params }) => {
       const row = state.agent.rows.find((each) => each.task.id === params[0]);
       if (row === undefined) return notFound();
+      // v2.0 P9: a row the person applies to by hand is never a run's.
+      if (row.run === 'manual') return refusal(409, 'conflict', 'This job is applied to by hand.');
       const mine = row.state === 'running' && row.run === 'tab' && row.claimedBy === state.token.generation;
       if (!mine && row.state !== 'queued') {
         return refusal(409, 'conflict', 'That auto-apply job is not queued any more.');
       }
+      if (mine) return jsonAnswer(200, { item: row.task, state: 'running', reason: null });
+      // v2.0 P9: the daily limit reached: nothing taken, the row left queued.
+      const counted = countClaim(row);
+      const limit = dailyLimitOf();
+      if (counted === null && limit !== null) {
+        return jsonAnswer(200, { item: null, state: 'queued', reason: null, dailyLimit: dailyLimitAnswer(limit) });
+      }
       Object.assign(row, { state: 'running', claimedBy: state.token.generation, run: 'tab' });
-      return jsonAnswer(200, { item: row.task, state: 'running', reason: null });
+      return jsonAnswer(200, { item: row.task, state: 'running', reason: null, ...counted });
     },
     'POST /api/autofill/agent/:id/result': ({ json, params }) => {
       const id = params[0] ?? '';
@@ -1681,6 +1751,11 @@ export function createMock() {
       } else if (row.state !== json.state || row.reason !== (json.reason ?? null)) {
         return conflict();
       }
+      // v2.0 P9: a run that ended before its Submit was pressed gives its count back (submitted keeps it).
+      if (row.counted === true && json.state !== 'submitted' && json.submitPressed !== true) {
+        row.counted = false;
+        state.agent.used = Math.max(0, state.agent.used - 1);
+      }
       state.agent.results.push({ id, body: json });
       return { status: 204 };
     },
@@ -1698,7 +1773,9 @@ export function createMock() {
         return invalid('Name the page as the query takes it.');
       }
       const order = { running: 0, queued: 1 };
-      const rows = state.agent.rows.filter((row) => states.length === 0 || states.includes(row.state))
+      // v2.0 P9: a token's list leaves out the rows the person applies to by hand.
+      const rows = state.agent.rows.filter((row) => row.run !== 'manual')
+        .filter((row) => states.length === 0 || states.includes(row.state))
         .map((row, index) => ({ row, index }))
         .sort((a, b) => (order[/** @type {'running'} */ (a.row.state)] ?? 2) - (order[/** @type {'running'} */ (b.row.state)] ?? 2)
           || a.index - b.index);
@@ -1744,7 +1821,8 @@ export function createMock() {
     // v5 p2-stream: the task's streamed view.
     'GET /api/ai/tasks/:id/stream': ({ params }) => taskStream(params[0] ?? ''),
     'DELETE /api/ai/tasks/:id': ({ params }) => taskAnswer(params[0] ?? '', true),
-    'POST /api/autofill/cover-letters': ({ json }) => coverLetter(json),
+    'POST /api/autofill/cover-letters': ({ json }) => (take('ai-usage-exhausted') !== null ? usageExhausted() // v2.0 P9
+      : coverLetter(json)),
     'GET /api/autofill/cover-letters/:id': ({ params }) => {
       const letter = letterOf(params[0] ?? '');
       return letter === null ? refusal(404, 'not_found', 'That cover letter was not found.')
@@ -1753,7 +1831,8 @@ export function createMock() {
     'GET /api/autofill/cover-letters/:id/file': ({ params }) => coverLetterFile(params[0] ?? ''),
     'GET /api/autofill/cover-letters/:id/text': ({ params }) => coverLetterText(params[0] ?? ''),
     // v1.4 F
-    'POST /api/autofill/tailor': ({ json }) => tailor(json),
+    'POST /api/autofill/tailor': ({ json }) => (take('ai-usage-exhausted') !== null ? usageExhausted() // v2.0 P9
+      : tailor(json)),
     'GET /api/autofill/tailor/:id': ({ params }) => tailorTask(params[0] ?? ''),
     'GET /api/autofill/templates': () => jsonAnswer(200, example('AutofillTemplateList')),
     'GET /api/autofill/resumes/:id/file': ({ params }) => {
@@ -1870,8 +1949,12 @@ export function createMock() {
         return invalid('items: A list of objects');
       }
       if (path === '/__mock/agent') {
-        state.agent.rows.push(...items.map((item) => ({ task: { ...item }, state: 'queued', reason: null, claimedBy: null,
-          run: null })));
+        // v2.0 P9: an item's `run: 'manual'` queues it for the person to apply to by hand (not part of the task).
+        state.agent.rows.push(...items.map((/** @type {Record<string, unknown>} */ item) => {
+          const { run, ...task } = item;
+          return { task, state: 'queued', reason: null, claimedBy: null,
+            run: /** @type {'manual' | null} */ (run === 'manual' ? 'manual' : null) };
+        }));
       }
       else state.credentials = items.map((item) => ({ ...item }));
       return { status: 204 };
