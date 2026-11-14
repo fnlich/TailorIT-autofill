@@ -25,8 +25,8 @@ import type { AgentAlarms, AtsPage, QueueTabs, StorageArea } from '../platform/t
 import type { FrameReport } from '../shared/report';
 import { agentAddressOf, queueAddressOf } from './agent';
 import {
-  createQueueRunner, QUEUE_ALARM, QUEUE_CLOSE_SUBMITTED_MS, QUEUE_ENTRY_WAIT_MS, QUEUE_FORM_WAIT_MS, QUEUE_RETRY_MS,
-  QUEUE_RUN_KEY, statusOfReports, type QueueRunnerDeps,
+  createQueueRunner, QUEUE_ALARM, QUEUE_CLOSE_SUBMITTED_MS, QUEUE_ENTRY_WAIT_MS, QUEUE_FORM_WAIT_MS, QUEUE_OPEN_KEY,
+  QUEUE_ORPHANS_KEY, QUEUE_RETRY_MS, QUEUE_RUN_KEY, QUEUE_SESSION_KEY, statusOfReports, type QueueRunnerDeps,
 } from './queue-runner';
 import type { ServerResult } from './server-client';
 import { queueSubmitIsPersons } from './settings';
@@ -82,6 +82,8 @@ interface Harness {
   clock: { now: number };
   timers: ReturnType<typeof manualTimers>;
   session: ReturnType<typeof memoryArea>;
+  /** v2.0 fix wave (BEH-4): storage.local, which a browser restart keeps. */
+  local: ReturnType<typeof memoryArea>;
   /** TailorIT's queue: its rows and what it was told. */
   rows: Array<{ task: AutofillAgentTask; state: string; finish?: { state: AutofillAgentState;
     reason: AutofillAgentReason | null } }>;
@@ -107,12 +109,18 @@ interface Harness {
   advance(ms: number, step?: number): Promise<void>;
   /** A fresh runner over the same storage, as after a worker restart. */
   restart(): Harness;
+  /** v2.0 fix wave (BEH-4): a fresh runner over an empty storage.session and the same storage.local, as after a browser
+   *  restart (its tabs gone) or an update (`tabsKept`: its tabs still open). */
+  browserRestart(tabsKept?: boolean): Harness;
 }
+
+let nonces = 0;
 
 function harness(queue: Partial<QueueSettings> = {}, kept?: Harness): Harness {
   const clock = kept?.clock ?? { now: 1_000_000 };
   const timers = manualTimers();
   const session = kept?.session ?? memoryArea();
+  const local = kept?.local ?? memoryArea();
   const rows = kept?.rows ?? [];
   const results = kept?.results ?? [];
   const openedRoute = kept?.openedRoute ?? [];
@@ -200,6 +208,8 @@ function harness(queue: Partial<QueueSettings> = {}, kept?: Harness): Harness {
       },
     },
     session,
+    local, // v2.0 fix wave (BEH-4)
+    nonce: () => `session-nonce-${(nonces += 1)}`,
     tabs: queueTabs,
     alarms,
     timers,
@@ -228,8 +238,8 @@ function harness(queue: Partial<QueueSettings> = {}, kept?: Harness): Harness {
   };
   const runner = createQueueRunner(deps);
   const self: Harness = {
-    deps, runner, clock, timers, session, rows, results, openedRoute, tabs, open, focused, closed, alarm, sent, filled,
-    assigned, reports, agent, state, changes,
+    deps, runner, clock, timers, session, local, rows, results, openedRoute, tabs, open, focused, closed, alarm, sent,
+    filled, assigned, reports, agent, state, changes,
     async advance(ms, step = 100) {
       for (let passed = 0; passed < ms; passed += step) {
         const by = Math.min(step, ms - passed);
@@ -239,6 +249,10 @@ function harness(queue: Partial<QueueSettings> = {}, kept?: Harness): Harness {
       }
     },
     restart: () => harness(queue, self),
+    browserRestart(tabsKept = false) {
+      if (!tabsKept) open.clear();
+      return harness(queue, { ...self, session: memoryArea(), alarm: { on: false } });
+    },
   };
   return self;
 }
@@ -1370,6 +1384,129 @@ describe('jr7 AUTO-7: the Queue tab on every platform the extension fills', () =
 // ── end jr7 AUTO-7 ──
 
 // ── v2.0 P9 (autofill API 8; docs/design/v2.0/09-extension-api8.md) ──
+// ── v2.0 fix wave (BEH-4) ──
+describe('v2.0 fix wave BEH-4: the Queue tab’s open jobs across a browser restart or an update', () => {
+  /** A run with three tabs open: the first said hello with its form, and its Submit was armed. */
+  async function threeOpen(): Promise<Harness> {
+    const h = harness({ durationSec: 1, accelerationSec: 0, maxOpenTabs: 3 });
+    seed(h, 4);
+    await h.runner.start();
+    await h.advance(2_100);
+    expect(h.tabs).toHaveLength(3);
+    const key = await KEY_OF(h, 1);
+    await h.runner.hello(h.tabs[0]!.tabId, { frameId: 0, documentId: 'doc-1', hasForm: true, applicationKey: key }, true);
+    await h.runner.pressed(h.tabs[0]!.tabId, key);
+    return h;
+  }
+
+  // Undo proof (BEH-4's probe): drop save's keepOpen, or load's recoverOnce, and nothing is ever told: TailorIT keeps
+  // the three uses.
+  it('tells TailorIT each open job’s end after a browser restart: cancelled and not pressed, or timed_out once pressed',
+    async () => {
+      const h = await threeOpen();
+      expect(h.results).toEqual([]);
+      expect((h.local.data.get(QUEUE_OPEN_KEY) as { items: unknown[] }).items).toHaveLength(3);
+      // Only queue ids, times and results: never a title, a company or a tab.
+      expect(JSON.stringify(h.local.data.get(QUEUE_OPEN_KEY))).not.toMatch(/Engineer|Northwind|tabId/);
+      const after = h.browserRestart();
+      await after.runner.boot();
+      expect(after.results).toEqual([
+        { id: ID(1), body: { state: 'needs-you', reason: 'timed_out', aiGuesses: 0, submitPressed: true } },
+        { id: ID(2), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0, submitPressed: false } },
+        { id: ID(3), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0, submitPressed: false } },
+      ]);
+      // TailorIT took them: nothing kept, nothing waits, and the fourth job is still queued for the next Start.
+      expect(after.local.data.has(QUEUE_OPEN_KEY)).toBe(false);
+      expect(after.local.data.has(QUEUE_ORPHANS_KEY)).toBe(false);
+      expect(await after.runner.status()).toMatchObject({ phase: 'idle', pending: false });
+      expect(after.rows.map((row) => row.state)).toEqual(['needs-you', 'needs-you', 'needs-you', 'queued']);
+      // Told once: a later worker of the same session tells nothing more.
+      const again = after.restart();
+      await again.runner.boot();
+      await again.advance(1_000);
+      expect(again.results).toHaveLength(3);
+    });
+
+  it('tells the same after an update, whose tabs stay open, and opens nothing of the old run again', async () => {
+    const h = await threeOpen();
+    const after = h.browserRestart(true);
+    await after.runner.boot();
+    expect(after.results.map((each) => each.body.reason)).toEqual(['timed_out', 'cancelled', 'cancelled']);
+    expect(after.closed).toEqual([]);
+    expect(after.openedRoute).toEqual([ID(1), ID(2), ID(3)]);
+  });
+
+  it('sends a result that was waiting as it was, with whether its Submit was pressed', async () => {
+    const h = await threeOpen();
+    h.state.refuseResult = 'unreachable';
+    expect(await h.runner.submitted(h.tabs[0]!.tabId, await KEY_OF(h, 1))).toBe('not-recorded');
+    const after = h.browserRestart();
+    after.state.refuseResult = null;
+    await after.runner.boot();
+    expect(after.results[0]).toEqual({ id: ID(1), body: { state: 'submitted', reason: null, aiGuesses: 0,
+      submitPressed: true } });
+    expect(after.results.slice(1).map((each) => each.body.reason)).toEqual(['cancelled', 'cancelled']);
+  });
+
+  it('keeps what TailorIT could not take yet, says so, keeps the alarm, and tells it at a later tick', async () => {
+    const h = await threeOpen();
+    const after = h.browserRestart();
+    after.state.refuseResult = 'unreachable';
+    await after.runner.boot();
+    expect(after.results).toEqual([]);
+    expect(await after.runner.status()).toMatchObject({ phase: 'idle', pending: true });
+    expect(after.alarm.on).toBe(true);
+    expect(after.local.data.get(QUEUE_ORPHANS_KEY) as unknown[]).toHaveLength(3);
+    // Not connected for the agent's routes: still kept.
+    after.state.refuseResult = null;
+    after.state.scopes = ['profile:read'];
+    await after.runner.tick();
+    expect(after.results).toEqual([]);
+    after.state.scopes = ['profile:read', 'agent:run'];
+    const changes = after.changes.count;
+    await after.runner.tick();
+    expect(after.results.map((each) => each.body.submitPressed)).toEqual([true, false, false]);
+    expect(after.local.data.has(QUEUE_ORPHANS_KEY)).toBe(false);
+    expect(after.changes.count).toBeGreaterThan(changes);
+    expect(await after.runner.status()).toMatchObject({ pending: false });
+    expect(after.alarm.on).toBe(false);
+  });
+
+  it('a worker restart in the same browser session tells nothing: the run is still its own', async () => {
+    const h = await threeOpen();
+    const again = h.restart();
+    await again.runner.boot();
+    expect(again.results).toEqual([]);
+    expect(await again.runner.status()).toMatchObject({ phase: 'running', counts: { opening: 2, filling: 1 } });
+    expect(again.session.data.get(QUEUE_SESSION_KEY)).toBe(h.session.data.get(QUEUE_SESSION_KEY));
+  });
+
+  it('a Start before the first look still tells the old session’s jobs, never overwritten by the new run', async () => {
+    const h = await threeOpen();
+    const after = h.browserRestart();
+    // The person presses Start before the worker's boot ran.
+    await after.runner.start();
+    expect(after.results.slice(0, 3).map((each) => each.id)).toEqual([ID(1), ID(2), ID(3)]);
+    expect(after.results.slice(0, 3).map((each) => each.body.state)).toEqual(['needs-you', 'needs-you', 'needs-you']);
+    // The new run opened the job still queued, and keeps its own open job under this session.
+    expect(after.openedRoute.at(-1)).toBe(ID(4));
+    expect(after.local.data.get(QUEUE_OPEN_KEY) as { session: string; items: Array<{ id: string }> })
+      .toMatchObject({ session: after.session.data.get(QUEUE_SESSION_KEY), items: [{ id: ID(4) }] });
+  });
+
+  it('forgets the open jobs once none is open and no result waits', async () => {
+    const h = await threeOpen();
+    await h.runner.stop();
+    for (const tab of [...h.tabs]) {
+      h.open.delete(tab.tabId);
+      await h.runner.tabRemoved(tab.tabId);
+    }
+    expect(h.results).toHaveLength(3);
+    expect(h.local.data.has(QUEUE_OPEN_KEY)).toBe(false);
+  });
+});
+// ── end v2.0 fix wave ──
+
 describe('v2.0 P9: the Queue tab on autofill API 8', () => {
   const RESETS = 1_000_000 + 6 * 60 * 60_000;
   const MESSAGE = 'You have used today’s 7 auto-applies on the Free plan. They start again tomorrow.';

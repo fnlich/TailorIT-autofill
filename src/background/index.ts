@@ -529,6 +529,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   agentRef = agent;
   // v1.5 QX: the sequential auto-apply (queue-runner.ts). Its alarm's listener is registered below, with the others.
   const queueRunner = createQueueRunner({ server, session, tabs: platform.queueTabs, alarms: platform.alarms, timers,
+    // v2.0 fix wave (BEH-4): the run's open jobs outlive the browser session in storage.local, under its nonce.
+    local, nonce: () => toBase64Url(platform.randomBytes(16)),
     now, settings: () => settings.get(),
     scopes: async () => (await keeper.current())?.scopes ?? null,
     disclosed: () => auth.disclosed(),

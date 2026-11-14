@@ -370,6 +370,9 @@ export const LOG_CODES = [
   'queue.stopped',
   'queue.done',
   // ── end v1.5 QX ──
+  // v2.0 fix wave (BEH-4): another browser session's open jobs taken up (how many), and storage.local refusing them.
+  'queue.orphaned',
+  'queue.keep-failed',
   // ── jr7 AUTO-7: an arm's confirmation waited longer after a hand-over (ICIMS7-04); the queue's item held for its
   // person (an identity host, a Submit armed where it is theirs) or told of a hand-over; the agent's kept tab; a
   // tailoritAddress refused by the worker's check (ICIMS7-11). ──

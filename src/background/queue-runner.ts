@@ -60,6 +60,14 @@
  *   It holds ids, titles, companies, statuses, the tabs' ids and the application's key (a hash), never an address: the
  *   address comes from TailorIT's answer as each job opens, and goes straight to its tab. Logs carry counts, phases and
  *   places in closed lists only.
+ * - v2.0 fix wave (BEH-4): a browser restart or an update empties storage.session, and the run with it, while TailorIT
+ *   still holds its open jobs running, each with a use of the day's auto-applies. So the run's open jobs (and those
+ *   whose result waits) are kept in storage.local too (QUEUE_OPEN_KEY: TailorIT's queue ids, when their Submit was
+ *   armed, the result not yet told; never a title, a company or a tab), with the browser session they belong to (a
+ *   nonce in storage.session, QUEUE_SESSION_KEY, as the agent's). A worker of another browser session finds them
+ *   there, and tells TailorIT each one's end (QUEUE_ORPHANS_KEY until it is taken): its result when one waited; else
+ *   needs-you cancelled with submitPressed false, so TailorIT gives the use back; or, once its Submit was armed (it may
+ *   have been sent), needs-you timed_out with submitPressed true, as a tab the person closed after it is told.
  * - v2.0 P9 (autofill API 8):
  *   - TailorIT's claim of the next job (POST …/opened) may answer that the account's daily auto-apply limit is reached
  *     (its `dailyLimit`, no job): the run stops ('daily-limit'), keeping TailorIT's words and reset for the Queue tab;
@@ -101,6 +109,14 @@ export const QUEUE_ALARM = 'queue-tick';
 export const QUEUE_TICK_MINUTES = 0.5;
 /** storage.session: the run. */
 export const QUEUE_RUN_KEY = 'queue:run';
+// ── v2.0 fix wave (BEH-4) ──
+/** storage.local: the run's open jobs and those whose result waits (OpenSchema), with their browser session. */
+export const QUEUE_OPEN_KEY = 'queue:open';
+/** storage.session: this browser session's nonce (a browser restart or an update empties it). */
+export const QUEUE_SESSION_KEY = 'queue:session';
+/** storage.local: the results of a run another browser session left (OrphanSchema), until TailorIT takes them. */
+export const QUEUE_ORPHANS_KEY = 'queue:orphans';
+// ── end v2.0 fix wave ──
 /** The most jobs one run holds (the owner: "a lot of saved or applied jobs (about 3000)"). */
 export const QUEUE_RUN_MAX = 3000;
 /** A queued tab no frame of ours said hello in this long after it opened: failed (page_error, or posting_closed). */
@@ -159,6 +175,20 @@ const ItemSchema = z.strictObject({
 });
 type Item = z.infer<typeof ItemSchema>;
 
+// ── v2.0 fix wave (BEH-4) ──
+const NONCE = /^[A-Za-z0-9_-]{8,64}$/;
+/** QUEUE_OPEN_KEY: per open job (or one whose result waits) its queue id, when its Submit was armed, and the result not
+ *  yet told; the browser session they belong to. Never a title, a company, a tab or an address. */
+const OpenSchema = z.strictObject({ session: z.string().regex(NONCE), items: z.array(z.strictObject({
+  id: AutofillAgentIdSchema, pressedAt: Count.nullable(), tell: ResultSchema.nullable() })).max(QUEUE_RUN_MAX) });
+type OpenRecord = z.infer<typeof OpenSchema>;
+/** QUEUE_ORPHANS_KEY: what TailorIT is told of each job of a run another browser session left. */
+const OrphanSchema = z.strictObject({ id: AutofillAgentIdSchema, state: z.enum(AUTOFILL_AGENT_FINISHED_STATES),
+  reason: z.enum(AUTOFILL_AGENT_REASONS).nullable(), aiGuesses: Count.max(1000), submitPressed: z.boolean() });
+type Orphan = z.infer<typeof OrphanSchema>;
+const OrphansSchema = z.array(OrphanSchema).max(QUEUE_RUN_MAX);
+// ── end v2.0 fix wave ──
+
 /** v2.0 P9: TailorIT's daily auto-apply limit, as the claim that stopped the run answered it (AutoApplyLimit). */
 const LimitSchema = z.strictObject({ message: z.string().max(400).nullable(), resetsAt: Count });
 
@@ -198,6 +228,10 @@ const NOT_QUEUED: ReadonlySet<ServerFailure> = new Set(['not-found', 'conflict',
 export interface QueueRunnerDeps {
   server: Pick<ServerClient, 'queuePage' | 'queueOpened' | 'agentResult'>;
   session: StorageArea;
+  /** v2.0 fix wave (BEH-4): where the run's open jobs outlive the browser session (QUEUE_OPEN_KEY, QUEUE_ORPHANS_KEY). */
+  local: StorageArea;
+  /** v2.0 fix wave (BEH-4): a fresh random nonce (8 to 64 of [A-Za-z0-9_-]): the browser session's, made once. */
+  nonce(): string;
   tabs: QueueTabs;
   alarms: AgentAlarms;
   timers: Timers;
@@ -282,6 +316,8 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
 
   async function load(): Promise<Run | null> {
     if (cached !== undefined) return cached;
+    // v2.0 fix wave (BEH-4): another browser session's open jobs are taken up first, before this worker writes its own.
+    await recoverOnce();
     const parsed = RunSchema.nullable().safeParse((await deps.session.get(QUEUE_RUN_KEY)) ?? null);
     cached = parsed.success ? parsed.data : null;
     return cached;
@@ -290,7 +326,91 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
     cached = run;
     if (run === null) await deps.session.remove([QUEUE_RUN_KEY]);
     else await deps.session.set({ [QUEUE_RUN_KEY]: run });
+    await keepOpen(run); // v2.0 fix wave (BEH-4)
   }
+
+  // ── v2.0 fix wave (BEH-4): the open jobs across a browser restart or an update (the module header) ──
+  /** This browser session's nonce, once read or made (storage.session holds it across worker restarts). */
+  let heldNonce: Promise<string> | null = null;
+  /** The open jobs as this worker last wrote them to storage.local (JSON), so an unchanged set is not written again. */
+  let writtenOpen: string | null = null;
+  /** The take-up of another session's open jobs, once per worker. */
+  let recovered: Promise<void> | null = null;
+
+  function sessionNonce(): Promise<string> {
+    heldNonce ??= (async () => {
+      const stored = await deps.session.get(QUEUE_SESSION_KEY);
+      if (typeof stored === 'string' && NONCE.test(stored)) return stored;
+      const made = deps.nonce();
+      await deps.session.set({ [QUEUE_SESSION_KEY]: made });
+      return made;
+    })();
+    return heldNonce;
+  }
+
+  /** The run's open jobs and those whose result waits, in storage.local with this session's nonce (none: removed). */
+  async function keepOpen(run: Run | null): Promise<void> {
+    const items = (run?.items ?? []).filter((item) => isOpen(item) || item.tell !== null)
+      .map((item) => ({ id: item.id, pressedAt: item.pressedAt, tell: item.tell }));
+    const json = JSON.stringify(items);
+    if (json === writtenOpen) return;
+    try {
+      if (items.length === 0) await deps.local.remove([QUEUE_OPEN_KEY]);
+      else await deps.local.set({ [QUEUE_OPEN_KEY]: { session: await sessionNonce(), items } satisfies OpenRecord });
+      writtenOpen = json;
+    } catch {
+      log('queue.keep-failed');
+    }
+  }
+
+  async function orphansOf(): Promise<Orphan[]> {
+    const parsed = OrphansSchema.safeParse((await deps.local.get(QUEUE_ORPHANS_KEY)) ?? []);
+    return parsed.success ? parsed.data : [];
+  }
+  async function saveOrphans(orphans: readonly Orphan[]): Promise<void> {
+    if (orphans.length === 0) await deps.local.remove([QUEUE_ORPHANS_KEY]);
+    else await deps.local.set({ [QUEUE_ORPHANS_KEY]: orphans.slice(-QUEUE_RUN_MAX) });
+  }
+
+  /** Another browser session's open jobs (a browser restart, an update): their tabs are not the queue's any more, so
+   *  each one's end waits to be told TailorIT (tellOrphans). */
+  async function recover(): Promise<void> {
+    const raw = await deps.local.get(QUEUE_OPEN_KEY);
+    if (raw === undefined) return;
+    const parsed = OpenSchema.safeParse(raw);
+    if (parsed.success && parsed.data.session === (await sessionNonce())) return;
+    const left: Orphan[] = (parsed.success ? parsed.data.items : []).map((item) => ({ id: item.id,
+      ...(item.tell ?? { state: 'needs-you' as const, reason: item.pressedAt !== null ? 'timed_out' as const
+        : 'cancelled' as const, aiGuesses: 0 }),
+      submitPressed: item.pressedAt !== null }));
+    await saveOrphans([...(await orphansOf()), ...left]);
+    await deps.local.remove([QUEUE_OPEN_KEY]);
+    log('queue.orphaned', { jobs: left.length });
+  }
+  const recoverOnce = (): Promise<void> => {
+    recovered ??= recover().catch(() => log('queue.keep-failed'));
+    return recovered;
+  };
+
+  /** Every orphan's end told TailorIT: taken, or refused for good, dropped; else kept for the next tick. */
+  async function tellOrphans(): Promise<boolean> {
+    const orphans = await orphansOf();
+    if (orphans.length === 0) return false;
+    if ((await deps.scopes())?.includes('agent:run') !== true) return false;
+    const left: Orphan[] = [];
+    for (const orphan of orphans) {
+      const { id, ...body } = orphan;
+      const answer = await deps.server.agentResult(id, body);
+      const kept = !answer.ok && (orphan.state === 'submitted' ? !DROPS_SUBMITTED.has(answer.failure)
+        : PASSING.has(answer.failure));
+      if (kept) left.push(orphan);
+      else if (!answer.ok) log('queue.report-failed', { status: answer.status ?? 0, dropped: true, orphan: true });
+    }
+    if (left.length > 0) log('queue.report-failed', { status: 0, orphans: left.length });
+    await saveOrphans(left);
+    return left.length !== orphans.length;
+  }
+  // ── end v2.0 fix wave ──
 
   /** Why the queue may not run now, or null. */
   async function blockOf(): Promise<QueueBlock | null> {
@@ -311,10 +431,11 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
   const waitingForRun = (run: Run | null) => run?.items.some((item) => item.status === 'filling' && isOpen(item)) === true;
 
   /** Keeps the alarm while there is a reason to wake: the run going, a tab waiting for its page or for its entry's run,
-   *  a result to tell; jr6 SHELL-B, a job filling. */
+   *  a result to tell; jr6 SHELL-B, a job filling; v2.0 fix wave (BEH-4), another session's job's end to tell. */
   async function keepAlarm(run: Run | null): Promise<void> {
-    if (run !== null && (run.phase === 'running' || pending(run) || waitingForPage(run) || waitingForEntry(run)
-      || waitingForRun(run))) { // jr6 SHELL-B
+    if ((run !== null && (run.phase === 'running' || pending(run) || waitingForPage(run) || waitingForEntry(run)
+      || waitingForRun(run))) // jr6 SHELL-B
+      || (await orphansOf()).length > 0) { // v2.0 fix wave (BEH-4)
       await deps.alarms.start(QUEUE_ALARM, QUEUE_TICK_MINUTES).catch(() => undefined);
     } else {
       await deps.alarms.stop(QUEUE_ALARM).catch(() => undefined);
@@ -570,8 +691,11 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
   async function tick(): Promise<void> {
     await serial(async () => {
       const run = await load();
+      // v2.0 fix wave (BEH-4): another session's jobs' ends, told first.
+      const orphansTold = await tellOrphans();
       if (run === null) {
         await keepAlarm(null);
+        if (orphansTold) deps.changed();
         return;
       }
       const before = signatureOf(run);
@@ -588,7 +712,7 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       if (moved) await save(run);
       await keepAlarm(run);
       schedule(run);
-      if (moved) deps.changed();
+      if (moved || orphansTold) deps.changed();
     });
   }
 
@@ -674,7 +798,7 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
       agentStopped: run?.agentStopped === true && (run.phase === 'running' || run.phase === 'paused'),
       agentOn,
       blocked,
-      pending: pending(run),
+      pending: pending(run) || (await orphansOf()).length > 0, // v2.0 fix wave (BEH-4)
       autofillOnOpen: settings.queue.autofillOnOpen,
       submit: settings.modes.submit === 'auto' && blocked !== 'disclosure' ? 'auto' : 'manual',
     };
