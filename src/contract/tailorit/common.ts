@@ -88,6 +88,8 @@ export const AutofillErrorBodySchema = z.object({
     fields: z.record(z.string(), z.string()).optional(),
     retryAfterSeconds: z.number().int().nonnegative().optional(),
     requestId: z.string().optional(),
+    /** Version 9: when a daily limit resets (the closed reports' cap: automatic reports wait until then). */
+    resetAt: InstantSchema.optional(),
   }),
 });
 export type AutofillErrorBody = z.infer<typeof AutofillErrorBodySchema>;

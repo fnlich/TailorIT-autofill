@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "Try again tomorrow.",
+    "resetAt": "2026-11-15 00:00"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "You can report up to 50 closed jobs a day. You can report more after 12:00 AM Pacific Time.",
+    "resetAt": "2026-11-15T08:00:00.000Z",
+    "requestId": "r_Qm4tY7cB"
+  }
+}

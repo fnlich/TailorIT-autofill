@@ -90,6 +90,8 @@ import {
   AutofillSubmissionResponseSchema,
 } from './forms';
 // end v1.3 A
+// v30 CT (version 9): the closed-link reports.
+import { AutofillClosedReportRequestSchema, AutofillClosedReportResponseSchema } from './closed';
 
 /**
  * Every schema of the autofill API, by name. `npm run autofill:contract` writes each one's JSON Schema into
@@ -174,6 +176,10 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillFormsKnownRequest: AutofillFormsKnownRequestSchema,
   AutofillFormsKnownResponse: AutofillFormsKnownResponseSchema,
   // end v1.3 A
+  // v30 CT (version 9): a closed-link report and its answer.
+  AutofillClosedReportRequest: AutofillClosedReportRequestSchema,
+  AutofillClosedReportResponse: AutofillClosedReportResponseSchema,
+  // end v30 CT
 } satisfies Record<string, z.ZodType>;
 export type AutofillContractName = keyof typeof AUTOFILL_CONTRACT_SCHEMAS;
 
@@ -190,7 +196,8 @@ export interface AutofillRoute {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   /**
    * The whole path; ':id' is a path parameter: a UUID (an AI task's, a connection's, a resume's, a saved answer's, a
-   * cover letter's, an auto-apply queue row's or a job-site sign-in's).
+   * cover letter's, an auto-apply queue row's or a job-site sign-in's); (version 9) ':jobId' is a TailorIT job's id,
+   * a positive integer.
    */
   path: string;
   caller: AutofillRouteCaller;
@@ -221,7 +228,8 @@ export interface AutofillRoute {
  * AUTOFILL_APPLIED_REFUSALS (version 3). The extension reads the saved answers (GET /api/autofill/answers, with
  * profile:read) together with GET /api/autofill/profile, once per run. A GET's query (the job search's, the
  * credential's) is named as its request. Version 3's session-only routes (the auto-apply queue, its rule, the job-site
- * sign-ins and the site requests' list) are the Settings and Auto-apply pages'.
+ * sign-ins and the site requests' list) are the Settings and Auto-apply pages'. Version 9's closed-link report refuses
+ * with AUTOFILL_CLOSED_REFUSALS.
  */
 export const AUTOFILL_ROUTES = [
   {
@@ -743,4 +751,16 @@ export const AUTOFILL_ROUTES = [
     accepted: null,
   },
   // end v1.3 A
+  // v30 CT (version 9): the posting of a job TailorIT shows as open looks closed (14-extension-reports.md §3.2).
+  {
+    method: 'POST',
+    path: '/api/autofill/jobs/:jobId/closed',
+    caller: 'either',
+    scope: 'jobs:add',
+    request: 'AutofillClosedReportRequest',
+    status: 200,
+    response: 'AutofillClosedReportResponse',
+    accepted: null,
+  },
+  // end v30 CT
 ] as const satisfies readonly AutofillRoute[];

@@ -1,11 +1,11 @@
 {
   "repository": "TailorIT",
-  "branch": "v20",
-  "commit": "d323b33d387d036e5e6bbb24b06ecce9759d149c",
+  "branch": "wip30-ct",
+  "commit": "6d4b98d0953cc0a59854d4a03a33aa411867d176",
   "folders": [
     "packages/shared/src/autofill",
     "packages/shared/contract/autofill/v1"
   ],
-  "apiVersion": 8,
+  "apiVersion": 9,
   "zod": "4.6.7"
 }

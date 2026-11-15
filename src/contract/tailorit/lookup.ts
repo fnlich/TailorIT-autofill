@@ -303,6 +303,16 @@ export const AutofillLookupResponseSchema = z.object({
       workArrangement: z.enum(WORK_ARRANGEMENTS).nullable().optional(),
       /** The industry as the Jobs page names it ("Finance"), the job's own else its company's; null when unknown. */
       industry: z.string().max(120).nullable().optional(),
+      // v30 CT
+      /**
+       * Version 9: the job is held for review (a posting first read through the extension from a board no enabled
+       * source runs): it is in this person's Saved Jobs, and in nobody's search until an admin approves it. The card
+       * says so. Absent or false: not held.
+       */
+      held: z.boolean().optional(),
+      /** Version 9: this account has a pending closed report on the job ("You reported this posting as closed"). */
+      reported: z.boolean().optional(),
+      // end v30 CT
     })
     .nullable(),
   /** The person's own tracker entry for this posting: the extension warns before a second application. */

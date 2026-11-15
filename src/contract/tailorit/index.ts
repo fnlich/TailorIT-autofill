@@ -20,3 +20,5 @@ export * from './credentials';
 export * from './tailor';
 export * from './forms';
 export * from './registry';
+// v30 CT (version 9): the closed-link reports and their closed lists.
+export * from './closed';

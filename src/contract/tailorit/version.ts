@@ -55,8 +55,21 @@
  * account's daily auto-apply limit), the result's `submitPressed`, and the token's queue list's `autoApply` counts.
  * It adds no scope: an extension updated to 8 keeps its connection, and one still speaking 7 gets 409 `conflict` on
  * every token request until it is updated.
+ *
+ * 9 (v3.0, the extension's closed-link reports, docs/design/part2/14-extension-reports.md §10): POST
+ * /api/autofill/jobs/:jobId/closed (scope jobs:add) with AutofillClosedReportRequest, answered
+ * AutofillClosedReportResponse (`queued`, `closed` or `already_closed`), refusing with AUTOFILL_CLOSED_REFUSALS (429
+ * `rate_limited` for the day's cap, its error's `resetAt` the next reset); the closed lists (closed.ts:
+ * AUTOFILL_CLOSED_SIGNALS, AUTOFILL_CLOSED_VIA, AUTOFILL_CLOSED_MARKERS, AUTOFILL_CLOSED_PROBES_PER_MINUTE) and the
+ * in-page check's result (AutofillClosedProbeResult); the lookup's `job.held` (held for review: only this account sees
+ * it in TailorIT until it is approved) and `job.reported` (this account has a pending closed report on it), which Add
+ * job's and From page's answers carry through their lookup; and an error body's `resetAt`. The fields are additive,
+ * but Add job's meaning changes (a posting TailorIT first reads from a board no enabled source runs is held for
+ * review), and the extension's copy must say so: the bump makes both land together. It adds no scope: an extension
+ * updated to 9 keeps its connection, and one still speaking 8 gets 409 `conflict` on every token request until it is
+ * updated.
  */
-export const AUTOFILL_API_VERSION = 8;
+export const AUTOFILL_API_VERSION = 9;
 
 /**
  * Sent by the extension on every request, and by the server on every answer to a request that presents a tia_ bearer,

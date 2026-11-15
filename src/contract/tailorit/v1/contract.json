@@ -1,24 +1,25 @@
 {
-  "apiVersion": 8,
+  "apiVersion": 9,
   "zod": "4.6.7",
   "files": {
     "agent.ts": "0b3fde5cc838da2b03a146185e1f2dec65933d2837d6f57f57a98486cecdc70a",
     "ai.ts": "249382954dd275de9aa864a2b504a8f81c54775ea5aeeb15096516001a35111b",
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
-    "common.ts": "49960ec62489547d78a01bdc51d82142b6ce44168c31a81f060a282774da20f1",
+    "closed.ts": "7e74eb2aed8205e52f9b088f80eab4e2323bccc16ae2d65f5c3941126bbb47e4",
+    "common.ts": "59991e1a6b8f838080dac0eb140b43c6c9b2d0982dc8b5e7f5d82cff53522ea4",
     "connect.ts": "c7c32bda21eb64b78ec9e8085549144384fbf1d5c676b72918dbe726588b0071",
     "cover-letters.ts": "b53295eb22f5abd6b3d94803d75759a8f7f2e757a656e8d1ae3c4bbaf0516eb7",
     "credentials.ts": "447f5662174deb4a35ea9ccb0d5481a3e19df57e4e34ac03bdfc7aec483f47b4",
     "forms.ts": "0424b1ccf862c7f07dbaeadf107bfa625ba339f8c2a086349aa79b60ff556c6d",
-    "index.ts": "d82fa73c2ad73e1c69f6bd2914dbac7fc0ac329a3b0b57313094d9d1b4c1f827",
-    "lookup.ts": "6c517214f77da07804d754aec0ef38652020c2049cd1a7be4271c96a126f96ed",
+    "index.ts": "86cab394a8793ebd0f760d842347b29e2d7eed9fea531b91d8286f7619ed0cad",
+    "lookup.ts": "f1fd1587a68dc2059ed262e0bdc8deaf118299f36bc52cc6acf1c398bc8500ad",
     "profile.ts": "5d278777659bd2f81fe9976d92c9ad6934cb8ade8988102960d1a2b2d9023035",
-    "registry.ts": "3513fcdcd94e7be83816f6697477062568d8fe7742f317f5e930ebe8be51ac31",
+    "registry.ts": "bd3445241a3d391844e2a053a1919785d0b82c2e0b10162a3bdc9acdd3099ce5",
     "resumes.ts": "4ff18ed3654e5127b36f7c747f665dcd5e8c3f301e238a20f85fef1655de46f4",
     "sites.ts": "8277ea2ad73f9b4253f89c460af91c4635d3aee2b6f29b94024e5482e3abf3ef",
     "tailor.ts": "d1dbd11c6717a0da6ab4090b5cd14c353ea5e8a91cccfc8bbdd3c54a5f3491cc",
     "tracker.ts": "5ac61739e8e46add184682de1a0bed52fa2fc5f4284db24fdf23cc4d2ee0c7cf",
-    "version.ts": "e221478d9ff3b2647e83c4428d1beeefd6582d10ab080b51077975ba70ae4a9f"
+    "version.ts": "03cbd66c832a2cfb84928ccf7e14e5ca6d711c4faa852cbad4e03f0d0c1caa98"
   },
   "fixtures": {
     "AutofillAddJobRequest/invalid/empty-url.json": "f1928aa6e8d457480cd6177764fdc943720b90340a16dfd718c2c541471fd8bb",
@@ -30,6 +31,7 @@
     "AutofillAddJobResponse/valid/existing.json": "2df7f8db68891446d316c0479d97b8c66a3f5b39065d7fb8775a4ef8314522a6",
     "AutofillAddJobResponse/valid/from-page.json": "33159ced565af935ba868ba915c41a4aa1500e210c5228dffa8016896fd8eb05",
     "AutofillAddJobResponse/valid/golden.json": "ae76eb602a99787d15a4e9a446c01b6783d55618cd6129d249d8eb733fee62ef",
+    "AutofillAddJobResponse/valid/held.json": "a674bba763950cc898f755f67b65b999ce7ff2dbd8b67bbe1e3e9dde71b59a0c",
     "AutofillAddJobResponse/valid/workable.json": "c779cf54d690995d798e8d210e74e2cf43e51045eead3ba2594858c2a5bddc15",
     "AutofillAgentCleared/invalid/negative.json": "6143c8d778b2d8313270f2cba99abbdc559ee3f138ef3805618f5c64348228f9",
     "AutofillAgentCleared/valid/golden.json": "b076fefbea72b77f5771eb172f290f60558952b51f07958a0cd9b851c8bb4d1c",
@@ -138,6 +140,30 @@
     "AutofillClassifyTask/invalid/pick-result.json": "6569699e2338f64c979b460f2fcd210c55919e130f7bba1efa0bd0b8cd88e611",
     "AutofillClassifyTask/valid/golden.json": "e7157d124a56fde918347077e5fa47df03eb7c1c65d0a58bf6c73a2d63e12a37",
     "AutofillClassifyTask/valid/queued.json": "8e295b338f59fc47633a558d1764b977df093bb88734f2911cf7eb5ac5f153ba",
+    "AutofillClosedReportRequest/invalid/local-time.json": "17e3649cbb4e68903677571fba802aa38398b37001e111adfc5212b8a77c9a95",
+    "AutofillClosedReportRequest/invalid/long-url.json": "fb21032d04aa59fb2cda4ab945ef6a2e33afd3a39f7a926c77d8ea8d17ea61b9",
+    "AutofillClosedReportRequest/invalid/marker-missing.json": "ec51e21b2a8e2219107561fdf1f4d60d40cbfd38939008057a0a799d02e6d76d",
+    "AutofillClosedReportRequest/invalid/marker-on-valid-through.json": "a5eaffc50f5c296d9cadc20f0af63d05509037b644c709bcd960b33727c27de8",
+    "AutofillClosedReportRequest/invalid/no-posting-from-page.json": "0babe85203784888a2a1831ca1056dcdee6fd2636f49d2878d742c1d24ca10f8",
+    "AutofillClosedReportRequest/invalid/person-from-page.json": "58c9c19d017670c254c9d36cddc308a968643bebbe97c736ca8890311277c4cf",
+    "AutofillClosedReportRequest/invalid/posting-marker-on-redirect.json": "ff67d7ea4622c5662a926a5ca7e46af4a8922571457772e28db74ad4e03e218e",
+    "AutofillClosedReportRequest/invalid/unknown-marker.json": "084ad5f51e85b8f709b259373224d8e9a9c7de933ba0fe1eb5372ab2fac0e493",
+    "AutofillClosedReportRequest/invalid/unknown-signal.json": "53d9d9c5ef985db2b0f2ee24b77b6679516ca997f012a1df3b66f23c1dae2156",
+    "AutofillClosedReportRequest/invalid/web-via.json": "1715cee830905546d5303df043aaef81f61085126258487f1d8bfac19d933089",
+    "AutofillClosedReportRequest/valid/golden.json": "ad47549e8f8f57b326cd0557f0db15fe57ace27232824ad668fd5d2a832ae1e2",
+    "AutofillClosedReportRequest/valid/marker-generic-job-expired.json": "6868604f703aeb11e504d6479fe1808ab07047621542efa5dd4cfc0d8a1a0030",
+    "AutofillClosedReportRequest/valid/marker-generic-job-not-found.json": "e01a73813d82832d72bca4e0bfa3ce33947b0e97c5232fbaab79b3b364759c43",
+    "AutofillClosedReportRequest/valid/marker-generic-no-longer-accepting.json": "87c9c1d532e4a54de10ee02c81056dddbf0b3abfdc0beb21fa242e30848b328f",
+    "AutofillClosedReportRequest/valid/marker-generic-position-filled.json": "2e1ab4160024fd363e76c29a6beed62299261b1d6b04bed1d626c44443171ca9",
+    "AutofillClosedReportRequest/valid/marker-smartrecruiters-expired.json": "3ea2a111ba9e2c429c1bcbc618abb9e1a48af670fdedafef4691863c1dcbd029",
+    "AutofillClosedReportRequest/valid/no-posting.json": "a4480a04b8d4d9107dd26c4e81c6344139597d2c073792d467b872a992478f62",
+    "AutofillClosedReportRequest/valid/person.json": "e1d5935437ed840da06eeb940e3828e303216116802c8b53218c459edf0c86bb",
+    "AutofillClosedReportRequest/valid/redirected.json": "74509c8e0d6311da7afab9ddf44bdbe3f082c66fb5f9d71de5eba08783c10035",
+    "AutofillClosedReportResponse/invalid/missing-outcome.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+    "AutofillClosedReportResponse/invalid/unknown-outcome.json": "433f31ebbd1ec44852ae310b6fb220f37653d72ac1c4750e6289052731d613c5",
+    "AutofillClosedReportResponse/valid/already-closed.json": "40b2b5d57c9d71efb2ef882502b63bfc111c48f598bda16f72aa0edf1dd86083",
+    "AutofillClosedReportResponse/valid/closed.json": "c43a1754c93517ac0c93484fddccff1d3c13b7335f5cece5233532b7b6677b63",
+    "AutofillClosedReportResponse/valid/golden.json": "f1eb97b2d23a5e9f794d5834e377b3f9f2818078391d157e50e4b84b3445e500",
     "AutofillConnectBody/invalid/choice-as-text.json": "79c3d3e6ee8d51985a8e97a481c238ecf85f15723320ade6c1af957b7b140728",
     "AutofillConnectBody/invalid/no-choice.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
     "AutofillConnectBody/invalid/sign-in-not-a-boolean.json": "3c9d3473d076b52b1880045d7242812b2af670c0fd0e141f8d7462b7971121df",
@@ -201,11 +227,13 @@
     "AutofillDraftTask/valid/cancelled.json": "fab6945b39094127b2fb3663c5b1e6437ea18c808181f993b22716ef3c30c790",
     "AutofillDraftTask/valid/golden.json": "91a1d1d476544eec69a883b12f7a88d848b5e165e9631d960219a31e135f84ec",
     "AutofillErrorBody/invalid/not-wrapped.json": "abc775365bbf10c22476cd5c76492f5f7f3d791433375e52d8a0465a8567be16",
+    "AutofillErrorBody/invalid/reset-local-time.json": "a338065b6c91b0d4cbb12cb333337f189c32e86dc726373948f18e05335a626e",
     "AutofillErrorBody/valid/ai-busy.json": "f4284927d641caea7ee065fc3cc78aed5c1354b372bf8f08a2db8f2a24c93592",
     "AutofillErrorBody/valid/ai-unavailable.json": "23b3d5cede69ce5321c343ec1bba6931529762d6e8ff8af8e480a51447c3e8a4",
     "AutofillErrorBody/valid/golden.json": "c9b84d27e579fee85b5ac11e93ef2f95e52dd80341ec2d1c8886aa0f989edf71",
     "AutofillErrorBody/valid/other-api-version.json": "50242c36adc8591d00199b16ec1eda268341a186fc41c70a42ca8853e9bb0c4f",
     "AutofillErrorBody/valid/rate-limited.json": "b24c201b6f016bcdc9a7eb5722e1f83c8de9983105d24368d19a6a7596625e0e",
+    "AutofillErrorBody/valid/report-limit.json": "50ac2a79d4c69884d8d616e2200aefa82424295927df907ef4a227586d08f526",
     "AutofillErrorBody/valid/validation-failed.json": "2aecc3b8ebc0dccc7b374a399827a641bc2e14948c3fe0806274277b887befb2",
     "AutofillFormsKnownRequest/invalid/neither.json": "3d27f8b64c1917d7dfc88987efd6e6c4fa27aebf2f9a1042763c2014dc734e42",
     "AutofillFormsKnownRequest/invalid/option-set-not-hex.json": "77f4e84a4bcf4565f09b99420d412699ecca622e859391123dff1c5cb012efd0",
@@ -244,6 +272,7 @@
     "AutofillLookupRequest/valid/with-resume.json": "44af6080b069cd777a946b6a169d8a6c1251ab43334eb3ae349ef492ecaa5e54",
     "AutofillLookupRequest/valid/without-posting-text.json": "631b0ad52abc890fa841aa8766989037021fb9f4c88bfe8a7606370b50e56df3",
     "AutofillLookupRequest/valid/workable.json": "036e0aa0de154f372f6f9998f6b195beb6ac020f12e82789c0b405c179b2159b",
+    "AutofillLookupResponse/invalid/held-not-boolean.json": "073805a2ff9f548f27810223560766392c11ed06cd89d02554d6773b3904f9f9",
     "AutofillLookupResponse/invalid/jibe-ats.json": "ad48b60e16d698b0430248dafb318d5377a6adcac1a0b73d6f0fb81ac665a21e",
     "AutofillLookupResponse/invalid/match-over-100.json": "9a662e535c370a74b29c19d4c3ce8466dc6285b71b675a7695123522a6df0c8b",
     "AutofillLookupResponse/invalid/unknown-add-route.json": "a0380eceea1d9c2e6afefac635b9757986f4ac51f40cf4a51f4eba3052342160",
@@ -256,6 +285,7 @@
     "AutofillLookupResponse/valid/eightfold.json": "d9dba3a4799c0412ec5aa257e4738c72ce5746a6a92b3cfc7d2ab8a0fbd22b6f",
     "AutofillLookupResponse/valid/form-known.json": "e642f8483c1287f12ae3fbc848983ae6a37f0311703d7b11fce93fa600d0e401",
     "AutofillLookupResponse/valid/golden.json": "13f44f268aa9f7d261cc25d79154a07bd35457cfac6d6e2a53b5b27df677a6b2",
+    "AutofillLookupResponse/valid/held-reported.json": "5c743a8a90bdc06b7607803a6fe538f6b8daf8208c013398865fb45498f8dee0",
     "AutofillLookupResponse/valid/job-chosen.json": "de4c5205f98603a88b3c8c8afca0e467a1497014bbd92e47e34e1e6126933df1",
     "AutofillLookupResponse/valid/linkedin.json": "724c65444746bbcdb0c86c4d3abacbf6f95c39a84828c53b2395bd1e5b502762",
     "AutofillLookupResponse/valid/new-ats.json": "784199249339f2d1d48361868ff17e3890f2ad6b4cadfeaa7827c8b950a505f9",
@@ -501,6 +531,11 @@
             },
             "requestId": {
               "type": "string"
+            },
+            "resetAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
             }
           },
           "required": [
@@ -10676,6 +10711,12 @@
                       "type": "null"
                     }
                   ]
+                },
+                "held": {
+                  "type": "boolean"
+                },
+                "reported": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -11169,6 +11210,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "held": {
+                      "type": "boolean"
+                    },
+                    "reported": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -17919,6 +17966,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "held": {
+                      "type": "boolean"
+                    },
+                    "reported": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -18826,6 +18879,76 @@
         "answers"
       ],
       "additionalProperties": false
+    },
+    "AutofillClosedReportRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "signal": {
+          "type": "string",
+          "enum": [
+            "marker",
+            "valid_through_past",
+            "no_posting",
+            "redirected",
+            "person"
+          ]
+        },
+        "marker": {
+          "type": "string",
+          "enum": [
+            "smartrecruiters.expired",
+            "generic.no_longer_accepting",
+            "generic.job_expired",
+            "generic.position_filled",
+            "generic.job_not_found"
+          ]
+        },
+        "via": {
+          "type": "string",
+          "enum": [
+            "page",
+            "agent",
+            "queue",
+            "person"
+          ]
+        },
+        "seenAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        }
+      },
+      "required": [
+        "url",
+        "signal",
+        "via",
+        "seenAt"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillClosedReportResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "closed",
+            "already_closed"
+          ]
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "additionalProperties": false
     }
   },
   "routes": [
@@ -19337,6 +19460,16 @@
       "request": "AutofillFormsKnownRequest",
       "status": 200,
       "response": "AutofillFormsKnownResponse",
+      "accepted": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/autofill/jobs/:jobId/closed",
+      "caller": "either",
+      "scope": "jobs:add",
+      "request": "AutofillClosedReportRequest",
+      "status": 200,
+      "response": "AutofillClosedReportResponse",
       "accepted": null
     }
   ]

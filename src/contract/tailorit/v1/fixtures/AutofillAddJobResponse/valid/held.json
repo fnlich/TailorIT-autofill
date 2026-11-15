@@ -1,0 +1,46 @@
+{
+  "created": true,
+  "lookup": {
+    "ats": {
+      "kind": "lever",
+      "board": "northwind",
+      "externalId": "3b2f8c1e-7a4d-4e9b-b6c0-5d1a2e3f4b5c"
+    },
+    "job": {
+      "id": 1187,
+      "title": "Staff Platform Engineer",
+      "companyName": "Northwind",
+      "location": "Remote, USA",
+      "active": true,
+      "matchedBy": "source_link",
+      "postedAt": "2026-10-30T17:05:00.000Z",
+      "salary": "$190k - $230k/yr",
+      "workArrangement": "remote",
+      "held": true,
+      "reported": false
+    },
+    "application": {
+      "id": "9a4c1e7b-3d52-4f86-b0e9-6c2d8a1f5b37",
+      "status": 1,
+      "trackedOn": "2026-10-31",
+      "archived": false,
+      "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+      "matchedBy": "job"
+    },
+    "suggestedResume": {
+      "id": "3f6a9c2e-81d4-4b7f-a5e0-2c9d8b1e4f73",
+      "label": "Platform Engineer",
+      "kind": "built",
+      "fileKind": "pdf",
+      "fileName": "Elena Ruiz Resume.pdf",
+      "reason": "chosen"
+    },
+    "match": {
+      "state": "ok",
+      "resumeId": "3f6a9c2e-81d4-4b7f-a5e0-2c9d8b1e4f73",
+      "matchedCount": 10,
+      "total": 14,
+      "percentage": 71
+    }
+  }
+}

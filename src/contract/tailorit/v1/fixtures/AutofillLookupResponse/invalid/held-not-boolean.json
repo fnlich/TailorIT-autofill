@@ -1,0 +1,42 @@
+{
+  "ats": {
+    "kind": "greenhouse",
+    "board": "northwind",
+    "externalId": "5512345002"
+  },
+  "job": {
+    "id": 1042,
+    "title": "Senior Backend Engineer",
+    "companyName": "Northwind",
+    "location": "Austin, TX, USA",
+    "active": true,
+    "matchedBy": "source_link",
+    "postedAt": "2026-10-18T15:20:00.000Z",
+    "salary": "$150k - $185k/yr",
+    "workArrangement": "hybrid",
+    "held": "yes"
+  },
+  "application": {
+    "id": "5e1c9a7b-2d84-4f36-a0b9-8c7d3e2f1a64",
+    "status": 1,
+    "trackedOn": "2026-10-20",
+    "archived": false,
+    "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+    "matchedBy": "job"
+  },
+  "suggestedResume": {
+    "id": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+    "label": "Senior Software Engineer",
+    "kind": "built",
+    "fileKind": "pdf",
+    "fileName": "Elena Ruiz Resume.pdf",
+    "reason": "application"
+  },
+  "match": {
+    "state": "ok",
+    "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+    "matchedCount": 9,
+    "total": 12,
+    "percentage": 75
+  }
+}
