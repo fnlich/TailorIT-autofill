@@ -9,7 +9,9 @@
  *   whose press says TailorIT's own words for its daily cap, then, pressed again, sends the person's report and says
  *   "You reported this posting as closed.".
  * Nothing of the page's text reaches the mock. Each test disconnects at its end, so the next one pairs again and starts
- * with no report remembered (what was reported goes with the token).
+ * with no report remembered (what was reported goes with the token). The side panel opens as the page loads: its own
+ * read of the card hands the document to the check too, whether or not this run's lookups as pages load (four a minute
+ * across every tab) are spent by the specs before.
  */
 import { expect, test } from '../fixtures.ts';
 import type { Extension } from '../helpers/extension.ts';
@@ -41,6 +43,7 @@ test.describe('closed-link reports (v3.0 X1-EXT, autofill API 9)', () => {
     const page = await extContext.newPage();
     await page.goto(POSTING);
     const tabId = await ext.tabIdOf(page);
+    const panel = await ext.reportPage(tabId);
     const asked = await lookedUpAs();
     await expect.poll(async () => (await mock.closedReports()).length, { timeout: 30_000 }).toBe(1);
     const [report] = await mock.closedReports();
@@ -50,7 +53,6 @@ test.describe('closed-link reports (v3.0 X1-EXT, autofill API 9)', () => {
     // Nothing of the page's text: not its words, its title or its company.
     const sent = (await mock.requestsTo(CLOSED)).map((request) => request.body).join('\n');
     for (const text of ['Sorry', 'Senior Infrastructure Engineer', 'Penguin Random House']) expect(sent).not.toContain(text);
-    const panel = await ext.reportPage(tabId);
     const card = panel.locator('[data-job-card]');
     await expect(card.locator('[data-job-closed]')).toHaveText(`${words.looksClosed} ${words.reportedAuto}`);
     await expect(card.locator('[data-job-action="report-closed"]')).toHaveCount(0);
@@ -67,8 +69,8 @@ test.describe('closed-link reports (v3.0 X1-EXT, autofill API 9)', () => {
         const page = await extContext.newPage();
         await page.goto(POSTING);
         const tabId = await ext.tabIdOf(page);
-        const asked = await lookedUpAs();
         const panel = await ext.reportPage(tabId);
+        const asked = await lookedUpAs();
         const card = panel.locator('[data-job-card]');
         await expect(card.locator('[data-job-closed="seen"]')).toContainText(words.looksClosed, { timeout: 30_000 });
         expect(await mock.closedReports()).toEqual([]);
