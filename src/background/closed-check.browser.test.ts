@@ -113,7 +113,7 @@ describe('the closed check’s in-page function (closedProbe)', () => {
 
   it('runs from its own source text, as Chrome serialises it: no closure, the same answer', async () => {
     const { doc } = await loadFixture(document, bertelsmannExpiredHtml);
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- the test rebuilds the function as Chrome does
+    // eslint-disable-next-line no-restricted-syntax -- rebuilt from its source text, as Chrome serialises it for executeScript
     const fresh = new Function(`return (${closedProbe.toString()});`)() as typeof closedProbe;
     const markers = JSON.parse(JSON.stringify(probeMarkersFor('smartrecruiters'))) as ProbeMarker[];
     expect(fresh(markers, CLOSED_POSTING_MAX_CHARS, doc)).toEqual(closedProbe(markers, CLOSED_POSTING_MAX_CHARS, doc));

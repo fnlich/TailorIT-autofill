@@ -2031,7 +2031,9 @@ describe('v3.0 X1-EXT: a job whose posting is gone is told for its closed-link r
     expect(h.results).toEqual([{ id: ID(1), body: { state: 'failed', reason: 'posting_closed', aiGuesses: 0, submitPressed: false } }]);
     expect(heard[1]).toEqual({ kind: 'ended', key: `agent:${ID(1)}`,
       detail: { tabId, signal: 'redirected', via: 'agent', platform: 'greenhouse' } });
-    // Told while its tab was still there: closed after.
+    // Told while its tab was still there: closed after; the wait's timer goes with it.
+    expect(order).toEqual(['ended', 'closed']);
+    h.timers.advance(CLOSED_RUN_WAIT_MS);
     expect(order).toEqual(['ended', 'closed']);
   });
 

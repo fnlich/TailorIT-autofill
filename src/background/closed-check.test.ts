@@ -49,10 +49,7 @@ const sentReports = (worker: TestWorker) => worker.tailorit.requests.filter((req
 /** The timers run on, and the worker's work after them settles. */
 async function after(worker: TestWorker, ms: number): Promise<void> {
   worker.timers.advance(ms);
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  await vi.waitFor(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+  for (let tick = 0; tick < 30; tick += 1) await new Promise((resolve) => setImmediate(resolve));
 }
 
 afterEach(() => {

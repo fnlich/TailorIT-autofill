@@ -745,7 +745,11 @@ export function createAgent(deps: AgentDeps) {
       const told = deps.closedRuns.ended(`agent:${run.id}`, tabId === null || options.closed === undefined ? null
         : { tabId, signal: options.closed, via: 'agent', platform: run.applicationKey.split(':')[0] ?? null })
         .catch(() => undefined);
-      await Promise.race([told, new Promise<void>((resolve) => deps.timers.after(CLOSED_RUN_WAIT_MS, resolve))]);
+      let stopWaiting = (): void => undefined;
+      await Promise.race([told, new Promise<void>((resolve) => {
+        stopWaiting = deps.timers.after(CLOSED_RUN_WAIT_MS, resolve);
+      })]);
+      stopWaiting();
     }
     log('agent.finished', { state: AUTOFILL_AGENT_FINISHED_STATES.indexOf(state),
       reason: reason === null ? -1 : AUTOFILL_AGENT_REASONS.indexOf(reason), ...(options.keepTab ? { kept: true } : {}) });
