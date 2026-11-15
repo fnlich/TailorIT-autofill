@@ -553,3 +553,54 @@ describe('v2.0 fix wave REQ-1: TailorIT’s words kept for its AI’s two refusa
   });
 });
 // ── end v2.0 fix wave ──
+
+// ── v3.0 X1-EXT (autofill API 9) ──
+describe('v3.0 X1-EXT: POST /jobs/:jobId/closed, the closed-link report', () => {
+  const REPORT = { url: 'https://jobs.smartrecruiters.com/Northwind/744000159908317-engineer?trid=abc', signal: 'marker' as const,
+    marker: 'smartrecruiters.expired' as const, via: 'page' as const, seenAt: '2026-11-14T18:00:00.000Z' };
+  const LIMIT = 'You can report up to 50 closed jobs a day. You can report more after 12:00 AM Pacific Time.';
+
+  it('posts the report for the job, naming the page to TailorIT as every address is, and reads its outcome', async () => {
+    const { server, tailorit } = client();
+    tailorit.reply('POST /api/autofill/jobs/1042/closed', { json: { outcome: 'queued' } });
+    expect(await server.closedReport(1042, REPORT)).toEqual({ ok: true, value: { outcome: 'queued' } });
+    const [request] = tailorit.requests;
+    expect([request!.method, request!.path]).toEqual(['POST', '/api/autofill/jobs/1042/closed']);
+    expect(request!.headers['x-tailorit-autofill-api']).toBe(String(AUTOFILL_API_VERSION));
+    // SmartRecruiters' page is named by its posting's canonical address (tailoritAddressOf): no tracking parameter.
+    expect(JSON.parse(request!.body!)).toEqual({ ...REPORT,
+      url: 'https://jobs.smartrecruiters.com/Northwind/744000159908317' });
+  });
+
+  it('refuses a job id that is no positive integer, or a body the contract refuses, before any request', async () => {
+    const { server, tailorit } = client();
+    tailorit.reply('POST /api/autofill/jobs/1042/closed', { json: { outcome: 'queued' } });
+    for (const jobId of [0, -1, 1.5, Number.NaN]) {
+      expect(await server.closedReport(jobId, REPORT), String(jobId)).toEqual({ ok: false, failure: 'bad-request' });
+    }
+    expect(await server.closedReport(1042, { ...REPORT, signal: 'person' })).toEqual({ ok: false, failure: 'bad-request' });
+    expect(await server.closedReport(1042, { ...REPORT, extra: 'page text' } as never)).toMatchObject({ ok: true });
+    // A key the contract does not name is stripped by its schema, never sent.
+    expect(JSON.parse(tailorit.requests.at(-1)!.body!)).not.toHaveProperty('extra');
+    expect(tailorit.requests).toHaveLength(1);
+  });
+
+  it("keeps TailorIT's words and its reset for the daily cap (429 rate_limited), and drops them for any other refusal", async () => {
+    const { server, tailorit } = client();
+    tailorit.reply('POST /api/autofill/jobs/1042/closed', { status: 429, json: { error: { code: 'rate_limited', message: LIMIT,
+      resetAt: '2026-11-15T08:00:00.000Z' } } }, { once: true });
+    expect(await server.closedReport(1042, REPORT)).toMatchObject({ ok: false, failure: 'rate-limited', status: 429,
+      code: 'rate_limited', message: LIMIT, resetAt: '2026-11-15T08:00:00.000Z' });
+    tailorit.reply('POST /api/autofill/jobs/1042/closed', { status: 404, json: errorBody('not_found') }, { once: true });
+    const missing = await server.closedReport(1042, REPORT);
+    expect(missing).toMatchObject({ ok: false, failure: 'not-found', status: 404, code: 'not_found' });
+    expect(missing).not.toHaveProperty('message');
+    // Another route's 429 keeps neither (the lookup's rate limit).
+    tailorit.reply('POST /api/autofill/lookup', { status: 429, json: { error: { code: 'rate_limited', message: LIMIT,
+      resetAt: '2026-11-15T08:00:00.000Z' } } }, { once: true });
+    const lookup = await server.lookup({ url: REPORT.url, includePostingText: false });
+    expect(lookup).not.toHaveProperty('message');
+    expect(lookup).not.toHaveProperty('resetAt');
+  });
+});
+// ── end v3.0 X1-EXT ──

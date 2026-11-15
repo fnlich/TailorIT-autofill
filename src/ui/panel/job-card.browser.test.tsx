@@ -11,6 +11,7 @@ import { authStatus, button, click, createFakeWorker, formPage, frameReport, job
   SEEN_AT_ONCE, settle, typeInto, unmountAll, type FakeWorker } from '../ui.testkit';
 import { adoptPageStyles } from '../page/styles';
 import { JobCard, ResumeLine, type JobCardProps } from './JobCard';
+import { API9_COPY } from '../options/copy-api9'; // v3.0 X1-EXT
 import { Panel } from './Panel';
 
 const NOW = Date.UTC(2026, 9, 31, 12);
@@ -728,3 +729,94 @@ describe('the audit of 2026-11-06 (M1, m7, m8)', () => {
     expect(worker.sentOfType('panel/letter')).toHaveLength(2);
   });
 });
+
+// ── v3.0 X1-EXT (autofill API 9) ──
+describe('v3.0 X1-EXT: the card’s lines about a closed posting, Report as closed, and a held job', () => {
+  const words = API9_COPY.card;
+  const closedLine = (root: ParentNode) => root.querySelector<HTMLElement>('[data-job-closed]');
+  const reportButton = (root: ParentNode) => root.querySelector<HTMLButtonElement>('[data-job-action="report-closed"]');
+
+  it('says "This posting looks closed. Reported to TailorIT." once it went by itself, with no button', async () => {
+    const card = cardOf(await drawCard(jobCard({ closedSeen: true, reported: 'auto' }), { onReportClosed: () => undefined }))!;
+    expect(closedLine(card)?.textContent).toBe(`${words.looksClosed} ${words.reportedAuto}`);
+    expect(closedLine(card)?.dataset.jobClosed).toBe('reported');
+    expect(reportButton(card)).toBeNull();
+  });
+
+  it('offers Report as closed after "This posting looks closed." when it did not go by itself (the setting off)', async () => {
+    const pressed: string[] = [];
+    const card = cardOf(await drawCard(jobCard({ closedSeen: true, reportable: true }),
+      { onReportClosed: () => void pressed.push('report') }))!;
+    expect(closedLine(card)?.dataset.jobClosed).toBe('seen');
+    expect(closedLine(card)?.textContent).toContain(words.looksClosed);
+    await click(reportButton(card));
+    expect(pressed).toEqual(['report']);
+    expect(reportButton(card)?.textContent).toBe(words.report);
+    // While it is on its way.
+    const busy = cardOf(await drawCard(jobCard({ closedSeen: true, reportable: true }),
+      { onReportClosed: () => undefined, reporting: true }))!;
+    expect(reportButton(busy)?.disabled).toBe(true);
+    expect(reportButton(busy)?.textContent).toBe(words.reporting);
+  });
+
+  it('says "You reported this posting as closed." for the person’s own report, with no button', async () => {
+    const card = cardOf(await drawCard(jobCard({ closedSeen: true, reported: 'person' }), { onReportClosed: () => undefined }))!;
+    expect(closedLine(card)?.textContent).toBe(words.reportedYours);
+    expect(reportButton(card)).toBeNull();
+  });
+
+  it('offers Report as closed under the card for any open job it may, and never for a closed job or without `reportable`', async () => {
+    const open = cardOf(await drawCard(jobCard({ reportable: true }), { onReportClosed: () => undefined }))!;
+    expect(closedLine(open)).toBeNull();
+    expect(reportButton(open)?.className).toBe('tia-linkbutton');
+    expect(reportButton(cardOf(await drawCard(jobCard(), { onReportClosed: () => undefined }))!)).toBeNull();
+    expect(reportButton(cardOf(await drawCard(jobCard({ reportable: true, job: { ...JOB, closed: true } }),
+      { onReportClosed: () => undefined }))!)).toBeNull();
+    expect(reportButton(cardOf(await drawCard(jobCard({ reportable: true })))!)).toBeNull();
+  });
+
+  it('says a held job is the person’s alone until approved', async () => {
+    const card = cardOf(await drawCard(jobCard({ held: true })))!;
+    expect(card.querySelector('[data-job-held]')?.textContent).toBe(words.held);
+    expect(cardOf(await drawCard(jobCard()))!.querySelector('[data-job-held]')).toBeNull();
+  });
+
+  it('says what came of Report as closed, in TailorIT’s own words for its daily cap', async () => {
+    const limited = cardOf(await drawCard(jobCard({ reportable: true }), { onReportClosed: () => undefined,
+      reportOutcome: { outcome: 'limited', message: 'You can report up to 50 closed jobs a day.' } }))!;
+    expect(limited.querySelector('[data-report-outcome]')?.textContent).toBe('You can report up to 50 closed jobs a day.');
+    for (const outcome of ['closed', 'already-closed', 'not-allowed', 'private', 'not-connected', 'unavailable'] as const) {
+      const card = cardOf(await drawCard(jobCard({ reportable: true }), { onReportClosed: () => undefined,
+        reportOutcome: { outcome } }))!;
+      expect(card.querySelector('[data-report-outcome]')?.textContent, outcome).toBe(words.outcomes[outcome]);
+    }
+    const without = cardOf(await drawCard(jobCard(), { reportOutcome: { outcome: 'limited' } }))!;
+    expect(without.querySelector('[data-report-outcome]')?.textContent).toBe(words.outcomes.limited);
+    // 'reported': the card's own line says it.
+    expect(cardOf(await drawCard(jobCard(), { reportOutcome: { outcome: 'reported' } }))!
+      .querySelector('[data-report-outcome]')).toBeNull();
+  });
+
+  it('in the panel: Report as closed asks the worker for the tab, says what came of it and reads the card again', async () => {
+    const worker = withForm(jobCard({ closedSeen: true, reportable: true }));
+    worker.script.reportClosed = { outcome: 'limited', message: 'You can report up to 50 closed jobs a day.' };
+    const root = await open(worker);
+    expect(reads(worker, 'panel/job')).toBe(1);
+    await click(reportButton(root));
+    expect(worker.sentOfType('panel/reportClosed')).toEqual([{ v: 1, type: 'panel/reportClosed', tabId: 5 }]);
+    expect(root.querySelector('[data-report-outcome]')?.textContent).toBe('You can report up to 50 closed jobs a day.');
+    expect(reads(worker, 'panel/job')).toBe(2);
+  });
+
+  it('in the panel: reads the card again when the worker says what a card says of a closed posting changed', async () => {
+    const worker = withForm(jobCard());
+    const root = await open(worker);
+    expect(closedLine(root)).toBeNull();
+    worker.script.cards.set(5, jobCard({ closedSeen: true, reported: 'auto' }));
+    await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'job' }));
+    await settle();
+    expect(reads(worker, 'panel/job')).toBe(2);
+    expect(closedLine(root)?.textContent).toBe(`${words.looksClosed} ${words.reportedAuto}`);
+  });
+});
+// ── end v3.0 X1-EXT ──

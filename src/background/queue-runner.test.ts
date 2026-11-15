@@ -1670,3 +1670,31 @@ describe('v2.0 P9: the Queue tab on autofill API 8', () => {
   });
 });
 // ── end v2.0 P9 ──
+
+// ── v3.0 X1-EXT (autofill API 9; closed-reports.ts ClosedRunHooks) ──
+describe('v3.0 X1-EXT: a queued job whose posting is gone is told for its closed-link report', () => {
+  it('names the job and its posting address as it opens; a tab on a page that names no posting is told as redirected', async () => {
+    const h = harness();
+    const heard: Array<{ kind: string; key: string; detail: unknown }> = [];
+    h.deps.closedRuns = {
+      opened: async (key, jobId, url) => void heard.push({ kind: 'opened', key, detail: { jobId, url } }),
+      ended: async (key, closed) => void heard.push({ kind: 'ended', key, detail: closed }),
+    };
+    h.rows.push({ task: queued(1), state: 'queued' });
+    h.rows.push({ task: queued(2), state: 'queued' });
+    await h.runner.start();
+    expect(heard).toEqual([{ kind: 'opened', key: `queue:${ID(1)}`, detail: { jobId: 501, url: URL_OF(1) } }]);
+    h.tabs[0]!.url = `${URL_OF(1)}?closed=1`;
+    await h.advance(QUEUE_FORM_WAIT_MS);
+    expect(h.results[0]).toEqual({ id: ID(1), body: { state: 'failed', reason: 'posting_closed', aiGuesses: 0, submitPressed: false } });
+    expect(heard).toContainEqual({ kind: 'ended', key: `queue:${ID(1)}`,
+      detail: { tabId: h.tabs[0]!.tabId, signal: 'redirected', via: 'queue', platform: 'greenhouse' } });
+    // Its tab stays the person's.
+    expect(h.open.has(h.tabs[0]!.tabId)).toBe(true);
+    // The second never says hello on its own posting's address: page_error, its address let go of (null).
+    await h.advance(8_000 + QUEUE_FORM_WAIT_MS);
+    expect(h.results.at(-1)?.body.reason).toBe('page_error');
+    expect(heard).toContainEqual({ kind: 'ended', key: `queue:${ID(2)}`, detail: null });
+  });
+});
+// ── end v3.0 X1-EXT ──

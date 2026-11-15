@@ -531,12 +531,12 @@ function ReportClosed({ platform }: { platform: PagePlatform }) {
       setOn(answer.ok ? answer.data.on : before);
     });
   };
+  // Shown once read, as the close-tab switch is: a worker that did not answer shows no card.
+  if (on === null) return null;
   return (
     <Card title={words.heading} name="reports" help={words.intro}>
-      {on === null ? <p className="tia-note">{TEXT.loading}</p> : (
-        <Toggle setting="reports.closedAuto" name={words.toggle} help={words.toggleHelp} checked={on} disabled={saving}
-          onChange={change} />
-      )}
+      <Toggle setting="reports.closedAuto" name={words.toggle} help={words.toggleHelp} checked={on} disabled={saving}
+        onChange={change} />
     </Card>
   );
 }

@@ -39,6 +39,7 @@ import {
   type AgentTask,
 } from './agent';
 import type { ServerResult } from './server-client';
+import { CLOSED_RUN_WAIT_MS } from './closed-reports'; // v3.0 X1-EXT
 import { manualTimers } from './timers';
 
 /** A storage area over a Map, as chrome.storage keeps JSON. */
@@ -1993,3 +1994,79 @@ describe('v2.0 P9: the agent on autofill API 8', () => {
   });
 });
 // ── end v2.0 P9 ──
+
+// ── v3.0 X1-EXT (autofill API 9; closed-reports.ts ClosedRunHooks) ──
+describe('v3.0 X1-EXT: a job whose posting is gone is told for its closed-link report, before its tab closes', () => {
+  /** The hooks, recording what they hear, in order with the tab's closing. */
+  function hooked(h: Harness, options: { never?: boolean } = {}) {
+    const heard: Array<{ kind: 'opened' | 'ended'; key: string; detail: unknown }> = [];
+    const order: string[] = [];
+    const closeTab = h.deps.windows.closeTab.bind(h.deps.windows);
+    h.deps.windows.closeTab = async (tabId) => {
+      order.push('closed');
+      await closeTab(tabId);
+    };
+    h.deps.closedRuns = {
+      async opened(key, jobId, url) {
+        heard.push({ kind: 'opened', key, detail: { jobId, url } });
+      },
+      async ended(key, closed) {
+        heard.push({ kind: 'ended', key, detail: closed });
+        order.push('ended');
+        if (options.never) await new Promise(() => undefined);
+      },
+    };
+    return { heard, order };
+  }
+
+  it('names the job and its posting address as it opens, and a tab sent to a page that names no posting as redirected', async () => {
+    const h = harness({ tasks: [task(1)] });
+    const { heard, order } = hooked(h);
+    await on(h);
+    const { tabId } = await running(h);
+    expect(heard).toEqual([{ kind: 'opened', key: `agent:${ID(1)}`,
+      detail: { jobId: 101, url: 'https://job-boards.greenhouse.io/northwind/jobs/551' } }]);
+    // The platform's board, or its "not found": an address on its host that names no posting, before the job began.
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, platform: 'greenhouse' });
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'failed', reason: 'posting_closed', aiGuesses: 0, submitPressed: false } }]);
+    expect(heard[1]).toEqual({ kind: 'ended', key: `agent:${ID(1)}`,
+      detail: { tabId, signal: 'redirected', via: 'agent', platform: 'greenhouse' } });
+    // Told while its tab was still there: closed after.
+    expect(order).toEqual(['ended', 'closed']);
+  });
+
+  it('tells a posting page that said hello and showed no form in time as no_posting; any other end lets the address go', async () => {
+    const h = harness({ tasks: [task(1), task(2)] });
+    const { heard } = hooked(h);
+    await on(h);
+    const { tabId, key } = await running(h);
+    h.entry.answer = { outcome: 'not-offered' };
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, applicationKey: key });
+    h.clock.now += AGENT_FORM_WAIT_MS;
+    await h.agent.tick();
+    expect(h.results.at(-1)?.body.reason).toBe('posting_closed');
+    expect(heard.filter((each) => each.kind === 'ended').at(-1)).toEqual({ kind: 'ended', key: `agent:${ID(1)}`,
+      detail: { tabId, signal: 'no_posting', via: 'agent', platform: 'greenhouse' } });
+    // The next job never loads: page_error, no closed posting, its address let go of (null).
+    h.timers.advance(1_000);
+    await h.agent.tick();
+    h.clock.now += AGENT_FORM_WAIT_MS;
+    await h.agent.tick();
+    expect(h.results.at(-1)?.body.reason).toBe('page_error');
+    expect(heard.filter((each) => each.kind === 'ended').at(-1)).toEqual({ kind: 'ended', key: `agent:${ID(2)}`, detail: null });
+  });
+
+  it('closes the tab after CLOSED_RUN_WAIT_MS when the report is not taken by then', async () => {
+    const h = harness({ tasks: [task(1)] });
+    const { order } = hooked(h, { never: true });
+    await on(h);
+    const { tabId } = await running(h);
+    const hello = h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, platform: 'greenhouse' });
+    await vi.waitFor(() => expect(order).toEqual(['ended']));
+    h.timers.advance(CLOSED_RUN_WAIT_MS);
+    await hello;
+    expect(order).toEqual(['ended', 'closed']);
+    expect(h.results.at(-1)?.body.reason).toBe('posting_closed');
+  });
+});
+// ── end v3.0 X1-EXT ──

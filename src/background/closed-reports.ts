@@ -156,11 +156,14 @@ export function createClosedReports(deps: ClosedReportsDeps): ClosedReports {
     else await deps.session.set({ [CLOSED_RUNS_KEY]: Object.fromEntries(kept) });
   }
 
-  /** The hold TailorIT's 429 names: its resetAt, else Retry-After, else an hour. */
+  /** The hold TailorIT's 429 names: its resetAt, else a Retry-After of some seconds (the server client reads a missing
+   *  header as 0, which is none), else an hour: never a hold that is already over, which would ask again at once. */
   function holdOf(failure: { resetAt?: string; retryAfterSeconds?: number }): number {
     const reset = failure.resetAt === undefined ? Number.NaN : Date.parse(failure.resetAt);
     if (Number.isFinite(reset) && reset > deps.now()) return reset;
-    if (failure.retryAfterSeconds !== undefined) return deps.now() + failure.retryAfterSeconds * 1000;
+    if (failure.retryAfterSeconds !== undefined && failure.retryAfterSeconds > 0) {
+      return deps.now() + failure.retryAfterSeconds * 1000;
+    }
     return deps.now() + CLOSED_HOLD_FALLBACK_MS;
   }
 

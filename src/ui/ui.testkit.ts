@@ -15,7 +15,9 @@ import type { TelemetryCount } from '../core/types/telemetry';
 import type {
   AgentStatus, AuthStatus, JobCard, LetterOutcome, PageState, PanelAskAnswer, ResumeListAnswer,
 } from '../messaging/schemas';
-import type { DocumentsAnswer, QueueListItem, QueueStatus, SignupStatus, TailorView } from '../messaging/page-schemas';
+import type {
+  DocumentsAnswer, QueueListItem, QueueStatus, ReportClosedAnswer, SignupStatus, TailorView,
+} from '../messaging/page-schemas';
 import { signupPasswordValid } from '../core/signup-password';
 import { QUEUE_LIST_PAGE } from '../messaging/page-schemas'; // v1.5 QX
 import { createMemoryPagePlatform, type MemoryPagePlatform } from '../platform/memory';
@@ -176,6 +178,10 @@ export interface WorkerScript {
    *  password kept here only to tell a save's rules: the real worker never answers it). `importAs`: what signup/import
    *  finds in TailorIT; `reverted`: what signup/delete answers. */
   signup: SignupStatus & { importAs: 'none' | 'weak' | 'imported' | 'unavailable'; reverted: boolean };
+  /** v3.0 X1-EXT: what panel/reportClosed answers, and Report closed jobs to TailorIT automatically (reports/closedAuto
+   *  reads it; a set changes it). */
+  reportClosed: ReportClosedAnswer;
+  reportClosedAuto: boolean;
 }
 
 /** jr6: Sign-up Information as signup/status answers it: none saved, the profile's email suggested. */
@@ -232,7 +238,9 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
     // jr6
     signup: { ...signupStatus(), importAs: 'none', reverted: false },
     // v1.5 QX
-    queue: { status: queueStatus(), items: [], source: 'queue' } };
+    queue: { status: queueStatus(), items: [], source: 'queue' },
+    // v3.0 X1-EXT
+    reportClosed: { outcome: 'reported' }, reportClosedAuto: true };
   /** A tab's page state, when the script names one (an older worker sends none). */
   const pageOf = (tabId: number) => (script.pages.has(tabId) ? { page: script.pages.get(tabId) } : {});
   const replies = new Map<string, (message: Record<string, unknown>) => unknown>();
@@ -247,6 +255,12 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
       ...pageOf(message.tabId as number) }),
     'panel/job': (message) => ok({ tabId: message.tabId, card: script.cards.get(message.tabId as number) ?? null }),
     'panel/addJob': () => ok({ outcome: script.addOutcome }),
+    // v3.0 X1-EXT
+    'panel/reportClosed': () => ok(script.reportClosed),
+    'reports/closedAuto': (message) => {
+      if (typeof message.on === 'boolean') script.reportClosedAuto = message.on;
+      return ok({ on: script.reportClosedAuto });
+    },
     'panel/resumes': () => ok({ items: script.resumes }),
     'panel/setResume': () => ok({}),
     'panel/ask': () => ok(script.askAnswer),

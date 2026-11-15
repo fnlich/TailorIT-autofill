@@ -652,7 +652,11 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       if (shown.state === 'answered' && own !== null && deps.closedCard !== undefined) {
         const closed = await deps.closedCard({ tabId, frameId: read.frame.frameId, documentId: read.frame.documentId,
           jobId: own, privateTab: read.entry!.privateTab });
-        shown = { ...shown, ...closed, ...(shown.reported === 'person' ? { reported: 'person' as const } : {}) };
+        // The lookup's own word that this account reported it comes first; a job reported offers no button.
+        const reported = shown.reported ?? closed.reported;
+        shown = { ...shown, ...(closed.closedSeen === true ? { closedSeen: true as const } : {}),
+          ...(reported === undefined ? {} : { reported }),
+          ...(closed.reportable === true && reported === undefined ? { reportable: true as const } : {}) };
       }
       return ok({ tabId, card: shown });
     },

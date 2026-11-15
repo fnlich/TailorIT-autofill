@@ -7,6 +7,7 @@ import { authStatus, button, click, createFakeWorker, mount, settle, typeInto, u
 import type { FrameScheduler } from './countdown';
 import { Options } from './Options';
 import { API8_COPY } from './copy-api8'; // v2.0 P9
+import { API9_COPY, DISCLOSURE_PARAGRAPHS } from './copy-api9'; // v3.0 X1-EXT
 
 const TEXT = COPY.options;
 
@@ -632,3 +633,38 @@ describe('Options › Auto-apply on autofill API 8 (v2.0 P9)', () => {
   });
 });
 // ── end v2.0 P9 ──
+
+// ── v3.0 X1-EXT (autofill API 9) ──
+describe('Options › Closed job postings (v3.0 X1-EXT)', () => {
+  // Undo proof: drop <ReportClosed> and the card is not there.
+  it('offers "Report closed jobs to TailorIT automatically", on by default, saved through the worker', async () => {
+    const worker = createFakeWorker();
+    const root = await open(worker);
+    const card = root.querySelector<HTMLElement>('[data-card="reports"]')!;
+    expect(card.querySelector('h2')?.textContent).toBe(API9_COPY.options.heading);
+    expect(card.textContent).toContain(API9_COPY.options.toggle);
+    expect(setting(card, 'reports.closedAuto').checked).toBe(true);
+    await click(setting(card, 'reports.closedAuto'));
+    await settle();
+    expect(worker.sentOfType('reports/closedAuto').at(-1)).toEqual({ v: 1, type: 'reports/closedAuto', on: false });
+    expect(worker.script.reportClosedAuto).toBe(false);
+    expect(setting(card, 'reports.closedAuto').checked).toBe(false);
+    // A refused change shows the switch as it was.
+    worker.on('reports/closedAuto', () => ({ ok: false, error: 'unavailable' }));
+    await click(setting(card, 'reports.closedAuto'));
+    await settle();
+    expect(setting(card, 'reports.closedAuto').checked).toBe(false);
+  });
+
+  it('shows the disclosure with the reports’ line after its second paragraph (version 17)', async () => {
+    const worker = createFakeWorker();
+    worker.script.auth = authStatus({ connection: 'not-connected', account: null, scopes: [], expiresAt: null });
+    const root = await open(worker);
+    const paragraphs = [...root.querySelectorAll('[data-disclosure] p')].map((p) => p.textContent);
+    expect(paragraphs.slice(0, 4)).toEqual([...DISCLOSURE_PARAGRAPHS.slice(0, 4)]);
+    expect(paragraphs[2]).toBe(API9_COPY.disclosure);
+    expect(DISCLOSURE_PARAGRAPHS).toEqual([TEXT.connection.disclosure[0], TEXT.connection.disclosure[1], API9_COPY.disclosure,
+      ...TEXT.connection.disclosure.slice(2)]);
+  });
+});
+// ── end v3.0 X1-EXT ──
