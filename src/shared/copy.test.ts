@@ -169,7 +169,8 @@ describe('the copy', () => {
 
   it('gives docs/PRIVACY.md the disclosure the options page shows, word for word', () => {
     const privacy = readFileSync(new URL('../../docs/PRIVACY.md', import.meta.url), 'utf8');
-    for (const paragraph of [...COPY.options.connection.disclosure, COPY.options.connection.consentLine]) {
+    // v3.0 X1-EXT: as the pages draw it, the closed-link reports' line among it (DISCLOSURE_PARAGRAPHS).
+    for (const paragraph of [...DISCLOSURE_PARAGRAPHS, COPY.options.connection.consentLine]) {
       expect(privacy, paragraph.slice(0, 40)).toContain(paragraph);
     }
   });
