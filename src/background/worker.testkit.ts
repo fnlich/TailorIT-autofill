@@ -417,6 +417,9 @@ export interface TestWorkerOptions {
   queueTabs?: WorkerPlatform['queueTabs'];
   /** v5 p1-shell (S11): TailorIT's origin as the worker knows it; ORIGIN by default. */
   origin?: string;
+  /** v3.0 X1-EXT: a lookup that answers an open job sets the closed check's looks off (the worker's default). Off by
+   *  default here, as lookupOnLoad is; a test of the closed check turns it on. */
+  closedCheck?: boolean;
 }
 
 /** Resets the fake browser, installs the hand fakes and starts the real worker over them. */
@@ -477,7 +480,8 @@ async function launch(
     ...(options.windows === undefined ? {} : { windows: options.windows }),
     ...(options.queueTabs === undefined ? {} : { queueTabs: options.queueTabs }), // v1.5 QX
   };
-  const state = startWorker({ platform, core, timers, origin: options.origin ?? ORIGIN, lookupOnLoad: options.lookupOnLoad === true });
+  const state = startWorker({ platform, core, timers, origin: options.origin ?? ORIGIN, lookupOnLoad: options.lookupOnLoad === true,
+    closedCheck: options.closedCheck === true });
   if (options.awaitStartUp !== false) await state.ready;
   const answerOf = (event: { trigger(...args: never[]): unknown }, message: unknown, sender: RawSender) =>
     new Promise<unknown>((resolve) => {

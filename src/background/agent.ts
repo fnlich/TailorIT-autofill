@@ -65,6 +65,12 @@
  *   not reached, ends that. Every result says whether the job's Submit was pressed (`submitPressed`), by which TailorIT
  *   keeps or gives back the job's count. A submitted job's tab is closed only while "Close the application tab when it's
  *   submitted" is on (close-tab.ts); off, it is let go of and left open, its window never counted as the person's.
+ * - v3.0 X1-EXT (autofill API 9; closed-reports.ts): the job's posting address TailorIT named is kept for the run in
+ *   storage.session by the closed-link reports (closedRuns.opened), never in the agent's own record; a job that ends
+ *   posting_closed is told there (closedRuns.ended, with its tab and the signal its rule saw: `redirected` where the tab
+ *   shows a page of the platform's host that names no posting, `no_posting` where the posting's page showed no posting
+ *   or form), waited for CLOSED_RUN_WAIT_MS at most, before its tab closes as before; any other end lets the address go.
+ *   Whether a report goes is the person's setting (index.ts).
  * Commands come only from the worker's own poll of TailorIT with its token: no page, frame or message can start the
  * agent, choose its job or make it submit. Nothing here logs a job, an address or a value: states and reasons are
  * logged as their places in the contract's lists.
@@ -86,6 +92,7 @@ import { log } from '../shared/log';
 import type { HandOverKind } from '../adapters/types';
 import type { FrameReport } from '../shared/report';
 import type { FrameEntry } from './frames';
+import { CLOSED_RUN_WAIT_MS, type ClosedRunHooks, type ClosedRunSignal } from './closed-reports'; // v3.0 X1-EXT
 import { createKeyedQueue } from './locks';
 import type { ServerClient, ServerFailure } from './server-client';
 import type { Timers } from './timers';
@@ -402,6 +409,8 @@ export interface AgentDeps {
   /** A number in [0, 1), for the wait after the daily limit's reset (AGENT_LIMIT_JITTER_MS). Absent: Math.random. */
   random?(): number;
   // ── end v2.0 P9 ──
+  /** v3.0 X1-EXT: the closed-link reports' side of a run (closed-reports.ts). Absent: none. */
+  closedRuns?: ClosedRunHooks;
 }
 
 // ── jr7 AUTO-7 ──
@@ -423,6 +432,8 @@ export const AGENT_KEPT_MAX = 1000;
 interface FinishOptions {
   keepTab?: boolean;
   note?: AgentNote;
+  /** v3.0 X1-EXT: a posting_closed end, with the signal its rule saw (for the closed-link report). */
+  closed?: ClosedRunSignal;
 }
 // ── end jr7 AUTO-7 ──
 
@@ -562,7 +573,8 @@ export function createAgent(deps: AgentDeps) {
       await finishRun(run, 'needs-you', samePlatform === true ? 'sign_in' : 'other');
       return;
     }
-    await finishRun(run, 'failed', 'posting_closed');
+    // v3.0 X1-EXT: the tab ended on a page of an ATS host that names no posting.
+    await finishRun(run, 'failed', 'posting_closed', { closed: 'redirected' });
   }
 
   /** Whether a page of `platform`'s host is the job's own platform's. */
@@ -727,6 +739,14 @@ export function createAgent(deps: AgentDeps) {
     const done: AgentRun = { ...run, result: { state, reason, aiGuesses: guessesOf(run),
       ...(options.note === undefined ? {} : { note: options.note }) }, waiting: null };
     await saveRun(done);
+    // v3.0 X1-EXT: a posting gone is told from its own tab, before that tab closes; any other end lets its address go.
+    if (deps.closedRuns !== undefined) {
+      const tabId = options.closed !== undefined && run.tabId !== null && await ofThisSession(run) ? run.tabId : null;
+      const told = deps.closedRuns.ended(`agent:${run.id}`, tabId === null || options.closed === undefined ? null
+        : { tabId, signal: options.closed, via: 'agent', platform: run.applicationKey.split(':')[0] ?? null })
+        .catch(() => undefined);
+      await Promise.race([told, new Promise<void>((resolve) => deps.timers.after(CLOSED_RUN_WAIT_MS, resolve))]);
+    }
     log('agent.finished', { state: AUTOFILL_AGENT_FINISHED_STATES.indexOf(state),
       reason: reason === null ? -1 : AUTOFILL_AGENT_REASONS.indexOf(reason), ...(options.keepTab ? { kept: true } : {}) });
     const errors = reason === 'page_error' ? (await errorsOf()) + 1 : 0;
@@ -874,6 +894,7 @@ export function createAgent(deps: AgentDeps) {
       await finishRun(run, 'failed', 'unsupported_site');
       return;
     }
+    await deps.closedRuns?.opened(`agent:${run.id}`, run.jobId, item.url).catch(() => undefined); // v3.0 X1-EXT
     await open(run, target.address);
   }
 
@@ -902,6 +923,7 @@ export function createAgent(deps: AgentDeps) {
         await finishRun(run, 'failed', 'unsupported_site');
         return;
       }
+      await deps.closedRuns?.opened(`agent:${run.id}`, run.jobId, item.url).catch(() => undefined); // v3.0 X1-EXT
       await open(run, target.address);
       return;
     }
@@ -944,7 +966,9 @@ export function createAgent(deps: AgentDeps) {
           await finishRun(run, 'needs-you', 'unsupported_site');
           return;
         }
-        await finishRun(run, begun(run) ? 'needs-you' : 'failed', begun(run) ? 'other' : 'posting_closed');
+        // v3.0 X1-EXT: before it began, the posting's own page showed no posting or form in time.
+        await finishRun(run, begun(run) ? 'needs-you' : 'failed', begun(run) ? 'other' : 'posting_closed',
+          begun(run) ? {} : { closed: 'no_posting' });
         return;
       }
       await finishRun(run, 'failed', 'page_error');

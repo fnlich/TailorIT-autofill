@@ -91,6 +91,7 @@ import type { Answer } from '../../messaging/envelope';
 import type {
   AddJobOutcome, AskLength, PageMessage, PageState, PanelLauncherAnswer, SiteRequestOutcome, WallWaits,
 } from '../../messaging/schemas';
+import type { ReportClosedAnswer } from '../../messaging/page-schemas'; // v3.0 X1-EXT
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { leftOut, saysNoAi, type FrameReport } from '../../shared/report';
@@ -276,6 +277,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const [adding, setAdding] = useState(false);
   /** What the last Add came to, for the page it was asked on (the audit's m7: `view`). */
   const [added, setAdded] = useState<{ view: string; outcome: AddJobOutcome } | null>(null);
+  /** v3.0 X1-EXT: Report as closed on its way, and what it came to, for the page it was asked on. */
+  const [reporting, setReporting] = useState(false);
+  const [reported, setReported] = useState<{ view: string; answer: ReportClosedAnswer } | null>(null);
   /** The settings as last read or saved (null until read): the AI switches, the modes and the view. */
   const [settings, setSettings] = useState<Settings | null>(null);
   /** Whether the first read of the settings has answered, either way: the review waits for it, so the Minimized view
@@ -294,7 +298,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   // connected or disconnected), so a card read with the old connection is dropped the moment the change is heard.
   const connection = auth.status === null ? undefined
     : auth.status.connection === 'connected' ? `${auth.status.expiresAt ?? 0}|${changes.connection}` : null;
-  const job = useTabJob(platform, tabId, { page, connection, reports, relinked });
+  const job = useTabJob(platform, tabId, { page, connection, reports, relinked, heard: changes.job });
   /** The audit of 2026-11-06 (m7): what the panel shows for a page belongs to that tab's page under that connection, so
    *  an Add's outcome or a custom answer never shows under the next posting the tab moves to. */
   const viewKey = `${tabId ?? ''}|${page?.formKey ?? ''}|${connection ?? ''}`;
@@ -443,6 +447,17 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     setAdding(false);
     setAdded({ view: shown, outcome: answer.ok ? answer.data.outcome
       : answer.error === 'not_connected' ? 'not-connected' : 'unavailable' });
+    job.reload();
+  };
+
+  /** v3.0 X1-EXT: Report as closed: what came of it, then the card read again. */
+  const reportClosed = async (target: number) => {
+    const shown = viewKey;
+    setReporting(true);
+    const answer = await request(platform, { v: 1, type: 'panel/reportClosed', tabId: target });
+    setReporting(false);
+    setReported({ view: shown, answer: answer.ok ? answer.data
+      : { outcome: answer.error === 'not_connected' ? 'not-connected' : 'unavailable' } });
     job.reload();
   };
 
@@ -753,6 +768,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
           {tabId !== null && page?.support !== 'none' && (
             <JobCard view={job.view} adding={adding} outcome={added !== null && added.view === viewKey ? added.outcome : null}
               now={now()} working={working} onAdd={() => void addJob(tabId)}
+              onReportClosed={() => void reportClosed(tabId)} reporting={reporting}
+              reportOutcome={reported !== null && reported.view === viewKey ? reported.answer : null}
               searchJobs={async (query) => {
                 const answer = await request(platform, { v: 1, type: 'panel/jobSearch', tabId, query });
                 return answer.ok ? answer.data : null;

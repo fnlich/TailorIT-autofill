@@ -177,6 +177,9 @@ export const SIDEBAR_PAGE_MESSAGES: ReadonlySet<string> = new Set([
   // on a control seen CONTROL_SEEN_MS), and a row's tab brought to the front. What opens is only what the person queued
   // in TailorIT, at the address the agent's own reading gives, and each tab fills with the person's own settings.
   'queue/status', 'queue/list', 'queue/start', 'queue/stop', 'queue/pause', 'queue/resume', 'queue/focus',
+  // v3.0 X1-EXT (autofill API 9): the job card's Report as closed (the worker reads the card frame's own job and address:
+  // the page names neither).
+  'panel/reportClosed',
 ]);
 
 /** The ports the sidebar's views open: the panel's live reports. The review's S6 and F10: never the preview's transfer,

@@ -19,6 +19,12 @@
  * extension page, never the job page) and Edit TailorIT's editor, each in a tab of its own (panel/openDocument); the
  * tailoring's row (tailor.tsx) comes under the line.
  *
+ * v3.0 X1-EXT (autofill API 9; background/closed-check.ts, closed-reports.ts), for a job TailorIT shows as open: "This
+ * posting looks closed." when the extension's look in the page found a closed sign, then "Reported to TailorIT." when it
+ * went by itself, or the Report as closed button; "You reported this posting as closed." once the person did (or
+ * TailorIT says this account did); Report as closed as a quiet link under the card at any other time it may be offered
+ * (`reportable`); and, for a job held for review, "Only you see this job in TailorIT until it is approved."
+ *
  * It never shows an id, an address, the posting text or a file name: the card holds none. The resume's title is the
  * person's own and may be their name; it is shown on purpose, as the resume the fill attaches.
  */
@@ -34,7 +40,8 @@ import type { JobView } from './job';
 import { postedDaysAgo } from './posted';
 import { DocumentLinks } from './tailor';
 import { dayLabel, folderOf, foldersOf, type ResumeFolder } from './resume-folders'; // v1.5 X
-import type { TailorKind } from '../../messaging/page-schemas';
+import type { ReportClosedAnswer, TailorKind } from '../../messaging/page-schemas';
+import { API9_COPY } from '../options/copy-api9'; // v3.0 X1-EXT
 
 type Answered = Extract<Card, { state: 'answered' }>;
 type ResumeItem = ResumeListAnswer['items'][number];
@@ -68,6 +75,8 @@ export interface JobCardActions {
   /** v3 Phase 3b: "Autofill for another job"'s search and choice (absent: not offered). */
   searchJobs?(query: string): Promise<PanelJobSearchAnswer | null>;
   chooseJob?(ref: string | null): void;
+  /** v3.0 X1-EXT: Report as closed (absent: not offered). */
+  onReportClosed?(): void;
 }
 
 export interface JobCardProps extends JobCardActions {
@@ -80,6 +89,9 @@ export interface JobCardProps extends JobCardActions {
   now: number;
   /** A run works: "Not this job?" waits until it rests. */
   working?: boolean;
+  /** v3.0 X1-EXT: Report as closed is on its way, and what came of the last one (null: none for this page). */
+  reporting?: boolean;
+  reportOutcome?: ReportClosedAnswer | null;
 }
 
 export function JobCard(props: JobCardProps) {
@@ -126,8 +138,8 @@ function metaOf(job: NonNullable<Answered['job']>, now: number): string | null {
   return parts.length === 0 ? null : parts.join(' · ');
 }
 
-function AnsweredCard({ card, adding, outcome, now, onAdd, working = false, searchJobs, chooseJob }: JobCardProps
-  & { card: Answered }) {
+function AnsweredCard({ card, adding, outcome, now, onAdd, working = false, searchJobs, chooseJob, onReportClosed,
+  reporting = false, reportOutcome = null }: JobCardProps & { card: Answered }) {
   const { job, tracked } = card;
   const applied = tracked !== null && tracked.status >= APPLIED_STATUS;
   const ok = card.match?.state === 'ok' ? card.match : null;
@@ -159,9 +171,20 @@ function AnsweredCard({ card, adding, outcome, now, onAdd, working = false, sear
           </p>
         )}
         {meta !== null && <p className="tia-job__meta" data-job-meta="">{meta}</p>}
+        {job !== null && !job.closed && (
+          <ClosedLines card={card} reporting={reporting} {...(onReportClosed === undefined ? {} : { onReport: onReportClosed })} />
+        )}
         {searchJobs !== undefined && chooseJob !== undefined && !working && (
           <div className="tia-job__foot">
             <AnotherJob search={searchJobs} choose={chooseJob} chosen={card.chosen === true} />
+          </div>
+        )}
+        {/* v3.0 X1-EXT: Report as closed, at any time it may be offered and nothing closed was seen or reported. */}
+        {job !== null && !job.closed && card.reportable === true && card.closedSeen !== true && card.reported === undefined
+          && onReportClosed !== undefined && (
+          <div className="tia-job__foot">
+            <button type="button" className="tia-linkbutton" data-job-action="report-closed" disabled={reporting}
+              onClick={onReportClosed}>{reporting ? API9_COPY.card.reporting : API9_COPY.card.report}</button>
           </div>
         )}
       </div>
@@ -175,7 +198,41 @@ function AnsweredCard({ card, adding, outcome, now, onAdd, working = false, sear
         </div>
       )}
       {outcome !== null && <p className="tia-job__note" role="status" data-job-outcome={outcome}>{COPY.job.addOutcomes[outcome]}</p>}
+      {/* v3.0 X1-EXT: what came of Report as closed (its card line says 'reported' already); TailorIT's own words for
+          its daily cap. */}
+      {reportOutcome !== null && reportOutcome.outcome !== 'reported' && (
+        <p className="tia-job__note" role="status" data-report-outcome={reportOutcome.outcome}>
+          {reportOutcome.outcome === 'limited' && reportOutcome.message !== undefined && reportOutcome.message.trim() !== ''
+            ? reportOutcome.message : API9_COPY.card.outcomes[reportOutcome.outcome]}
+        </p>
+      )}
     </section>
+  );
+}
+
+/** v3.0 X1-EXT: the card's lines about a closed posting and a held job, with Report as closed after "This posting looks
+ *  closed." when it did not go by itself. */
+function ClosedLines({ card, reporting, onReport }: { card: Answered; reporting: boolean; onReport?: () => void }) {
+  const words = API9_COPY.card;
+  const yours = card.reported === 'person';
+  const auto = card.reported === 'auto';
+  return (
+    <>
+      {yours && <p className="tia-job__note" data-job-closed="yours">{words.reportedYours}</p>}
+      {!yours && card.closedSeen === true && (
+        <div className="tia-job__closed" data-job-closed={auto ? 'reported' : 'seen'}>
+          <p className="tia-job__note">{auto ? `${words.looksClosed} ${words.reportedAuto}` : words.looksClosed}</p>
+          {!auto && card.reportable === true && onReport !== undefined && (
+            <button type="button" className="tia-button tia-button--quiet" data-job-action="report-closed"
+              disabled={reporting} onClick={onReport}>{reporting ? words.reporting : words.report}</button>
+          )}
+        </div>
+      )}
+      {!yours && card.closedSeen !== true && auto && (
+        <p className="tia-job__note" data-job-closed="reported">{words.reportedAuto}</p>
+      )}
+      {card.held === true && <p className="tia-job__note" data-job-held="">{words.held}</p>}
+    </>
   );
 }
 

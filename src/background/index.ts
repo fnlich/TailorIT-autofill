@@ -20,6 +20,10 @@ import { log } from '../shared/log';
 import { AGENT_ALARM, createAgent, identityHostOf, type Agent } from './agent';
 import { createQueueRunner, QUEUE_ALARM, type QueueRunner } from './queue-runner'; // v1.5 QX
 import { closeTabOnSubmit, setCloseTabOnSubmit } from './close-tab'; // v2.0 P9
+// v3.0 X1-EXT (autofill API 9): the closed check, its reports and their setting.
+import { CLOSED_PROBE_LIMIT, createClosedChecks, type ClosedChecks, type ClosedFinding } from './closed-check';
+import { CLOSED_ALARM, createClosedReports, isoOf, type ClosedReports, type ClosedRunHooks } from './closed-reports';
+import { reportClosedAutomatically, setReportClosedAutomatically } from './report-closed-setting';
 import { createAuth, createTokenKeeper } from './auth';
 import { toBase64Url } from './bytes';
 import { createAiTasks } from './ai-tasks';
@@ -34,7 +38,7 @@ import {
 } from './frames';
 import { createChains } from './chain';
 import { chainPageOf } from '../adapters/chain'; // jr7 CHAIN-7 (PC7-03)
-import { createJobCards, JOB_RELAY_LIMIT, LOOKUP_ON_LOAD_LIMIT, type JobCards } from './job-cards';
+import { createJobCards, JOB_RELAY_LIMIT, lookupAddressOf, LOOKUP_ON_LOAD_LIMIT, type JobCards } from './job-cards';
 import { createLauncherStore, LAUNCHER_LIMIT } from './launcher';
 import { createLearnedListStore, LEARNED_LISTS_LIMIT } from './learned-lists';
 import { storedListsOf } from './stored-lists';
@@ -76,7 +80,7 @@ import { createSites, RECOGNISED_LIMIT } from './sites';
 import { createTelemetry } from './telemetry';
 import { systemTimers, type Timers } from './timers';
 import { bundledVocab } from './vocab';
-import { createCaptureWorkerPlatform } from '../platform/chrome';
+import { createCaptureWorkerPlatform, createClosedScripting } from '../platform/chrome';
 import type { CaptureWorkerPlatform } from '../platform/types';
 import { registerCaptureHotkeys } from './capture';
 
@@ -100,6 +104,9 @@ export interface WorkerOptions {
   /** v3 Phase 3: whether a form's hello looks its job up as the page loads (true by default; the worker's tests of
    *  other messages turn it off, so they see only the messages those set off). */
   lookupOnLoad?: boolean;
+  /** v3.0 X1-EXT: whether a lookup that answers an open job sets the closed check's looks off (true by default; the
+   *  worker's tests of other messages turn it off, so they see only the timers and injections those set off). */
+  closedCheck?: boolean;
 }
 
 /** The real core. */
@@ -124,6 +131,10 @@ function originOf(url: string): string {
     return '';
   }
 }
+
+/** v3.0 X1-EXT: a look's finding as a report's signal and marker. */
+const signalOf = (finding: ClosedFinding) => (finding.signal === 'marker'
+  ? { signal: 'marker' as const, marker: finding.marker } : { signal: 'valid_through_past' as const });
 
 /** Content messages that skip the access-level wait. */
 const UNGATED: ReadonlySet<string> = new Set(['ping', 'panel/open']);
@@ -177,6 +188,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   let queueRef: QueueRunner | null = null; // v1.5 QX
   // v1.3 B
   let knownFormsRef: KnownForms | null = null;
+  // v3.0 X1-EXT: the closed check and its reports (what they hold goes with the token).
+  let closedChecksRef: ClosedChecks | null = null;
+  let closedReportsRef: ClosedReports | null = null;
   // v2.0 fix wave (REQ-1): TailorIT's words for its AI's refusal a tab's run met, for the panels (memory only).
   const aiNotices = createAiNotices({ changed: (tabId) => void panelReports?.refresh(tabId).catch(() => undefined) });
   const keeper = createTokenKeeper(platform, () => {
@@ -188,6 +202,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     tailorings?.dropTokenData(); // v1.4 F
     submissions?.dropTokenData();
     knownFormsRef?.dropTokenData();
+    closedChecksRef?.dropTokenData(); // v3.0 X1-EXT
+    void closedReportsRef?.dropTokenData().catch(() => undefined);
     // v3 Phase 5: the agent's job closes; its result waits for a connection to tell it.
     void agentRef?.tokenChanged().catch(() => undefined);
     // v1.5 QX: the sequential auto-apply stops; its results wait for a connection to tell them.
@@ -251,9 +267,52 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // v1.3 B: the jobs' known questions and the person's earlier answers (known-forms.ts), memory only.
   const knownForms = createKnownForms({ server, now, generation: () => keeper.generation });
   knownFormsRef = knownForms;
+  // v3.0 X1-EXT (autofill API 9): closed-link reports (closed-reports.ts) and the closed check (closed-check.ts), which
+  // looks only in a document a lookup answered an open job for, the setting and the disclosure deciding what is sent.
+  const scopesNow = async () => (await keeper.current())?.scopes ?? null;
+  const closedReports = createClosedReports({ server, session, automatic: () => reportClosedAutomatically(local), timers,
+    alarms: platform.alarms, now, nonce: () => toBase64Url(platform.randomBytes(16)), connected: () => auth.connected(),
+    disclosed: () => auth.disclosed(), scopes: scopesNow, changed: () => reports.tellPanels('job') });
+  closedReportsRef = closedReports;
+  const closedChecks = createClosedChecks({ scripting: createClosedScripting(), timers, now,
+    limit: createRateLimit(CLOSED_PROBE_LIMIT.count, CLOSED_PROBE_LIMIT.windowMs, now),
+    connected: () => auth.connected(), disclosed: () => auth.disclosed(),
+    current: async (target) => (await frameEntry(session, target.tabId, target.frameId))?.documentId === target.documentId,
+    hasForm: async (tabId) => (await framesOfTab(session, tabId)).some((frame) => frame.hasForm),
+    // A look in a posting the person opened found a closed sign: the card says so, and with the setting on it goes.
+    found: async (target, finding) => {
+      if (await reportClosedAutomatically(local)) {
+        await closedReports.automatic(target.jobId, { url: target.url, ...signalOf(finding), via: 'page',
+          seenAt: isoOf(now()) });
+      }
+      reports.tellPanels('job');
+    } });
+  closedChecksRef = closedChecks;
+  /** The auto-apply runs' side: a posting gone is reported (the setting deciding), looked at first in the tab only
+   *  where it still shows the posting's own address (no_posting); a tab sent elsewhere is not the posting's page. */
+  const closedRuns: ClosedRunHooks = {
+    opened: (key, jobId, url) => closedReports.runOpened(key, jobId, lookupAddressOf(url)),
+    async ended(key, closed) {
+      const run = await closedReports.runOf(key, true);
+      if (closed === null || run === null || !(await reportClosedAutomatically(local))) return;
+      const finding = closed.signal === 'no_posting' ? await closedChecks.probeTab(closed.tabId, closed.platform) : null;
+      await closedReports.automatic(run.jobId, { url: run.url, ...(finding === null ? { signal: closed.signal }
+        : signalOf(finding)), via: closed.via, seenAt: isoOf(now()) });
+    },
+  };
   const jobs = createJobCards({ session, tabs: platform.tabs, server, connected: () => auth.connected(),
     onLoadLimit: createRateLimit(LOOKUP_ON_LOAD_LIMIT.count, LOOKUP_ON_LOAD_LIMIT.windowMs, now),
-    generation: () => keeper.generation, now, limit: relayLimit, prefetchForm: (jobId) => knownForms.prefetch(jobId) });
+    generation: () => keeper.generation, now, limit: relayLimit, prefetchForm: (jobId) => knownForms.prefetch(jobId),
+    // v3.0 X1-EXT
+    ...(options.closedCheck === false ? {} : { openJob: (target: Parameters<ClosedChecks['openJob']>[0]) =>
+      closedChecks.openJob(target) }),
+    closedCard: async (at) => {
+      const seen = closedChecks.seen(at.tabId, at.frameId, at.documentId, at.jobId);
+      const reported = closedReports.reportedOf(at.jobId);
+      const reportable = !at.privateTab && reported === null && (await auth.disclosed());
+      return { ...(seen === null ? {} : { closedSeen: true as const }), ...(reported === null ? {} : { reported }),
+        ...(reportable ? { reportable: true as const } : {}) };
+    } });
   jobCards = jobs;
   // One chooser for the planner and the resume port: it follows the token and the tab's resume choice (v2: a Change
   // mid-run applies to every file not uploaded yet).
@@ -533,7 +592,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     ...(platform.tabs.hostOf === undefined ? {} : { hostOf: (tabId: number) => platform.tabs.hostOf!(tabId) }),
     identityHost: (on, host) => identityHostOf(on, host),
     // v2.0 P9 (A20): "Close the application tab when it's submitted".
-    closeTab: () => closeTabOnSubmit(local) });
+    closeTab: () => closeTabOnSubmit(local),
+    closedRuns }); // v3.0 X1-EXT
   agentRef = agent;
   // v1.5 QX: the sequential auto-apply (queue-runner.ts). Its alarm's listener is registered below, with the others.
   const queueRunner = createQueueRunner({ server, session, tabs: platform.queueTabs, alarms: platform.alarms, timers,
@@ -559,7 +619,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     ...(platform.tabs.hostOf === undefined ? {} : { hostOf: (tabId: number) => platform.tabs.hostOf!(tabId) }),
     identityHost: (on, host) => identityHostOf(on, host),
     // v2.0 P9 (A20): "Close the application tab when it's submitted".
-    closeTab: () => closeTabOnSubmit(local) });
+    closeTab: () => closeTabOnSubmit(local),
+    closedRuns }); // v3.0 X1-EXT
   queueRef = queueRunner;
   /** The e2e build only: a test event in storage.session (e2e:events), never an address; one write at a time, so two
    *  frames' events at once both land. */
@@ -678,6 +739,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
    *  says no hello, keeps its run and report. */
   async function forgetDocument(tabId: number, frameId: number, documentId: string | null): Promise<void> {
     jobs.forgetDocument(tabId, frameId, documentId);
+    closedChecks.forgetDocument(tabId, frameId, documentId); // v3.0 X1-EXT
     await Promise.all([reports.forgetDocument(tabId, frameId, documentId), runs.forgetDocument(tabId, frameId, documentId),
       submitted.forgetDocument(tabId, frameId, documentId)]);
   }
@@ -928,6 +990,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             // when Chrome's address for the frame follows its moves (the tab's own); a subframe's may be its first.
             if (previous.applicationKey !== entry.applicationKey || from.addressFrom !== 'tab') {
               jobs.forgetDocument(from.tabId, from.frameId, entry.documentId);
+              closedChecks.forgetDocument(from.tabId, from.frameId, entry.documentId); // v3.0 X1-EXT
             }
             // What the document saw submitted goes too, unless the address is the same application's (its confirmation
             // page, drawn in place: the review, 20).
@@ -1430,6 +1493,16 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // v2.0 P9 (A20): Options › Auto-apply › "Close the application tab when it's submitted", read or set.
         'autoApply/closeTab': async (message) => ok({ on: message.on === undefined ? await closeTabOnSubmit(local)
           : await setCloseTabOnSubmit(local, message.on) }),
+        // v3.0 X1-EXT: the card's Report as closed (the person's own report: whatever the setting says), and Options ›
+        // "Report closed jobs to TailorIT automatically".
+        'panel/reportClosed': async ({ tabId }) => {
+          const target = await jobs.reportTarget(tabId);
+          if (target === null) return ok({ outcome: (await auth.connected()) ? 'unavailable' as const : 'not-connected' as const });
+          if (target.privateTab) return ok({ outcome: 'private' as const });
+          return ok(await closedReports.person(target.jobId, target.url));
+        },
+        'reports/closedAuto': async (message) => ok({ on: message.on === undefined ? await reportClosedAutomatically(local)
+          : await setReportClosedAutomatically(local, message.on) }),
         // v3 Phase 8: Options › "Where Autofill works".
         'sites/get': async () => ok(await sites.state()),
         'sites/set': async (message) => ok(await sites.set(message.on)),
@@ -1594,6 +1667,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     if (name === AGENT_ALARM) void agent.tick().catch(() => undefined);
     // v1.5 QX: the sequential auto-apply's, while it runs, a tab waits for its page or a result waits to be told.
     if (name === QUEUE_ALARM) void queueRunner.tick().catch(() => undefined);
+    // v3.0 X1-EXT: the closed-link reports', while one waits to go.
+    if (name === CLOSED_ALARM) void closedReports.flush().catch(() => undefined);
   });
 
   // Round 2 of the v3 Phase 6/7b review (K3): the agent's tab at a page that says no hello is answered at its load
@@ -1619,6 +1694,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     askLimit.forget(`${tabId}/`);
     letterLimit.forget(`${tabId}/`);
     jobs.forgetTab(tabId);
+    closedChecks.forgetTab(tabId); // v3.0 X1-EXT
     sites.forgetTab(tabId);
     panelLetters.forgetTab(tabId);
     tailoring.forgetTab(tabId); // v1.4 F

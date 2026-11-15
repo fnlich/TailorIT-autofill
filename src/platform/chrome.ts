@@ -337,6 +337,30 @@ function sitesScripting(): SitesScripting {
   };
 }
 
+/**
+ * v3.0 X1-EXT (autofill API 9; background/closed-check.ts): a function of the worker's own run in one document of a
+ * tab, in the isolated world, with its JSON arguments (chrome.scripting.executeScript `func` and `args`): what it
+ * returned there, or undefined when Chrome named no result for that document. Rejects when Chrome refused (no host
+ * permission, the document gone). The content script never imports this: nothing of the closed check is in its bundle.
+ */
+export function createClosedScripting<A extends unknown[]>(): {
+  run(tabId: number, target: { frameId: number; documentId?: string }, func: (...args: A) => unknown, args: A):
+    Promise<unknown>;
+} {
+  type Run = (injection: { target: { tabId: number; frameIds?: number[]; documentIds?: string[] };
+    func: (...args: A) => unknown; args: A }) => Promise<Array<{ documentId?: string; frameId?: number; result?: unknown }>>;
+  return {
+    async run(tabId, target, func, args) {
+      const { scripting } = browser as unknown as { scripting: { executeScript: Run } };
+      const results = await scripting.executeScript({ target: target.documentId === undefined
+        ? { tabId, frameIds: [target.frameId] } : { tabId, documentIds: [target.documentId] }, func, args });
+      const own = results.find((result) => (target.documentId === undefined ? result.frameId === target.frameId
+        : result.documentId === target.documentId));
+      return own?.result;
+    },
+  };
+}
+
 /** v3 Phase 8: the optional host permissions, read, given back and heard of. */
 function hostPermissions(): HostPermissions {
   return {

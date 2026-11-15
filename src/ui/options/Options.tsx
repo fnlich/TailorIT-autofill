@@ -70,6 +70,7 @@ import { useAuthStatus, type AuthState } from '../page/use-auth';
 import { animationFrames, clockText, useSecondsLeft, type FrameScheduler } from './countdown';
 import { useSettings, type SettingsState } from './settings';
 import { API8_COPY } from './copy-api8'; // v2.0 P9
+import { API9_COPY, DISCLOSURE_PARAGRAPHS } from './copy-api9'; // v3.0 X1-EXT
 
 const TEXT = COPY.options;
 
@@ -270,7 +271,7 @@ function Connection({ platform, auth, now, frames }: {
               {status.connection === 'revoked' && <p className="tia-warning">{TEXT.connection.revoked}</p>}
               <div className="tia-disclosure" data-disclosure="">
                 <h3 className="tia-disclosure__title">{TEXT.connection.disclosureHeading}</h3>
-                {TEXT.connection.disclosure.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                {DISCLOSURE_PARAGRAPHS.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                 <p>{TEXT.connection.consentLine}</p>
               </div>
               <div className="tia-row-of-buttons">
@@ -343,6 +344,9 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
       <AutoApply platform={platform} auth={auth} />
 
       <WhereItWorks platform={platform} />
+
+      {/* v3.0 X1-EXT (autofill API 9): "Report closed jobs to TailorIT automatically". */}
+      <ReportClosed platform={platform} />
 
       <Card title={TEXT.consent.heading} name="consent" help={`${TEXT.consent.intro} ${TEXT.consent.never}`}>
         {/* Under All agreements every kind is ticked, whatever its toggle: each shows ticked and cannot be changed, and
@@ -498,6 +502,42 @@ function CloseTab({ platform }: { platform: PagePlatform }) {
   return (
     <Toggle setting="autoApply.closeTab" name={API8_COPY.closeTab} help={API8_COPY.closeTabHelp} checked={on}
       disabled={saving} onChange={change} />
+  );
+}
+
+// ── v3.0 X1-EXT (autofill API 9) ──────────────────────────────────────────────────────────────────────────────────
+
+/** "Report closed jobs to TailorIT automatically" (reports/closedAuto: storage.local, on by default), read when the card
+ *  opens; a refused change shows the switch as it was. */
+function ReportClosed({ platform }: { platform: PagePlatform }) {
+  const words = API9_COPY.options;
+  const [on, setOn] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void request(platform, { v: 1, type: 'reports/closedAuto' }).then((answer) => {
+      if (live && answer.ok) setOn(answer.data.on);
+    });
+    return () => {
+      live = false;
+    };
+  }, [platform]);
+  const change = (next: boolean) => {
+    const before = on;
+    setSaving(true);
+    setOn(next);
+    void request(platform, { v: 1, type: 'reports/closedAuto', on: next }).then((answer) => {
+      setSaving(false);
+      setOn(answer.ok ? answer.data.on : before);
+    });
+  };
+  return (
+    <Card title={words.heading} name="reports" help={words.intro}>
+      {on === null ? <p className="tia-note">{TEXT.loading}</p> : (
+        <Toggle setting="reports.closedAuto" name={words.toggle} help={words.toggleHelp} checked={on} disabled={saving}
+          onChange={change} />
+      )}
+    </Card>
   );
 }
 

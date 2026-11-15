@@ -57,6 +57,8 @@ export interface PanelChanges {
   queue: number;
   /** jr6: the job-site password was saved or deleted (the panel reads the connection's status again). */
   signup: number;
+  /** v3.0 X1-EXT: what a job card says of a closed posting changed (the panel reads its own tab's card again). */
+  job: number;
 }
 
 /** The tab's reports and page state as last read or pushed, the link's state, a way to reconnect by hand, and the
@@ -76,7 +78,7 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
   const [shown, setShown] = useState<{ tabId: number | null; reports: readonly FrameReport[]; page: PageState | null;
     aiNotice: string | null }>({ tabId: null, reports: NO_REPORTS, page: null, aiNotice: null });
   const [changes, setChanges] = useState<PanelChanges>({ connection: 0, settings: 0, agent: 0, tailor: 0,
-    queue: 0, signup: 0 }); // v1.5 QX, jr6
+    queue: 0, signup: 0, job: 0 }); // v1.5 QX, jr6, v3.0 X1-EXT
   const [link, setLink] = useState<LinkState>('live');
   const [generation, setGeneration] = useState(0);
   const [relinked, setRelinked] = useState(0);

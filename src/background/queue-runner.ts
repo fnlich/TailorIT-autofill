@@ -99,6 +99,7 @@ import type { FrameReport } from '../shared/report';
 import { agentAddressOf, queueAddressOf } from './agent';
 import { queueSubmitIsPersons } from './settings';
 import type { FrameEntry } from './frames';
+import type { ClosedRunHooks, ClosedRunSignal } from './closed-reports'; // v3.0 X1-EXT
 import { createKeyedQueue } from './locks';
 import { pageOf, type QueueTask } from './queue-source';
 import type { ServerClient, ServerFailure } from './server-client';
@@ -269,6 +270,10 @@ export interface QueueRunnerDeps {
   // ── end jr7 AUTO-7 ──
   /** v2.0 P9: "Close the application tab when it's submitted" (close-tab.ts closeTabOnSubmit). Absent: on. */
   closeTab?(): Promise<boolean>;
+  /** v3.0 X1-EXT: the closed-link reports' side of a job (closed-reports.ts): the posting address TailorIT named for it
+   *  kept while it is open (never in the run's own record), and a job failed posting_closed told with its tab, which
+   *  stays the person's. Absent: none. */
+  closedRuns?: ClosedRunHooks;
 }
 
 /** A frame of a queued tab, as its hello registered it. */
@@ -501,7 +506,14 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
    *  jr7 FIX-background (the review's B-3): why it rested with the person (its hand-over's note) goes with it, so a job
    *  recorded submitted after its documents dialog or its assessment no longer shows those words. */
   function finish(item: Item, status: 'submitted' | 'skipped' | 'failed', result: { state: AutofillAgentFinishedState;
-    reason: AutofillAgentReason | null } | null, aiGuesses = 0): void {
+    reason: AutofillAgentReason | null } | null, aiGuesses = 0, closed?: ClosedRunSignal): void {
+    // v3.0 X1-EXT: the job's address goes; a posting gone is told from its tab (`closed`: the signal its rule saw).
+    if (deps.closedRuns !== undefined) {
+      const tabId = item.tabId;
+      void deps.closedRuns.ended(`queue:${item.id}`, closed === undefined || tabId === null ? null
+        : { tabId, signal: closed, via: 'queue', platform: item.applicationKey?.split(':')[0] ?? null })
+        .catch(() => undefined);
+    }
     item.status = status;
     item.reason = result?.reason ?? null;
     item.note = null; // jr7 FIX-background (B-3)
@@ -585,6 +597,8 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
         await tellOne(item);
         continue;
       }
+      // v3.0 X1-EXT: the posting address TailorIT named, kept for a closed-link report while the job is open.
+      await deps.closedRuns?.opened(`queue:${item.id}`, item.jobId, task.url).catch(() => undefined);
       const tabId = await deps.tabs.open();
       if (tabId === null) {
         log('queue.open-failed', { tab: false });
@@ -636,7 +650,9 @@ export function createQueueRunner(deps: QueueRunnerDeps) {
           continue;
         }
         const shown = deps.atsPageOf === undefined ? null : await deps.atsPageOf(tabId).catch(() => null);
-        finish(item, 'failed', { state: 'failed', reason: shown?.page === 'other' ? 'posting_closed' : 'page_error' });
+        // v3.0 X1-EXT: posting_closed is a tab that ended on a page of the platform's host that names no posting.
+        finish(item, 'failed', { state: 'failed', reason: shown?.page === 'other' ? 'posting_closed' : 'page_error' }, 0,
+          shown?.page === 'other' ? 'redirected' : undefined);
         continue;
       }
       const status = statusOfReports(await deps.reports(tabId).catch(() => []));

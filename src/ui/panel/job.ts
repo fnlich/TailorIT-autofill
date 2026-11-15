@@ -42,6 +42,9 @@ export function useTabJob(platform: PagePlatform, tabId: number | null, options:
   reports: readonly FrameReport[];
   /** How many times the panel's port was opened again (useTabReports relinked). */
   relinked?: number;
+  /** v3.0 X1-EXT: how many times the worker said what a card says of a closed posting changed (panel/changed 'job'):
+   *  the card is read again, the one shown kept meanwhile. */
+  heard?: number;
 }): { view: JobView; reload(): void } {
   const [bump, setBump] = useState(0);
   const [answer, setAnswer] = useState<{ base: string; key: string; view: JobView } | null>(null);
@@ -53,7 +56,8 @@ export function useTabJob(platform: PagePlatform, tabId: number | null, options:
   const runs = runsKeyOf(options.reports);
   const base = form && typeof connection === 'string' ? `${tabId}|${page.formKey ?? ''}|${connection}` : null;
   // v3 Phase 4: a submitted application's tracker answer becomes the card (Applied): read again when it lands.
-  const key = base === null ? null : `${base}|${runs}|${bump}|${page?.submitted ?? ''}|${options.relinked ?? 0}`;
+  const key = base === null ? null
+    : `${base}|${runs}|${bump}|${page?.submitted ?? ''}|${options.relinked ?? 0}|${options.heard ?? 0}`;
 
   useEffect(() => {
     if (key === null || base === null || tabId === null) return undefined;

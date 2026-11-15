@@ -267,6 +267,15 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
    *  own (never the sidebar's: background/senders.ts SIDEBAR_PAGE_MESSAGES names it not). */
   z.strictObject({ v, type: z.literal('autoApply/closeTab'), on: z.boolean().optional() }),
   // ── end v2.0 P9 ──
+  // ── v3.0 X1-EXT (autofill API 9; background/closed-check.ts, closed-reports.ts) ──
+  /** The job card's Report as closed: the posting of the tab's card frame's job, which TailorIT shows as open, is
+   *  closed, in the person's own words (signal and via `person`): sent at once, whatever "Report closed jobs to TailorIT
+   *  automatically" says. */
+  z.strictObject({ v, type: z.literal('panel/reportClosed'), tabId: TabId }),
+  /** Options › "Report closed jobs to TailorIT automatically": read (no `on`) or set. The options page's own (never the
+   *  sidebar's: background/senders.ts SIDEBAR_PAGE_MESSAGES names it not). */
+  z.strictObject({ v, type: z.literal('reports/closedAuto'), on: z.boolean().optional() }),
+  // ── end v3.0 X1-EXT ──
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
@@ -285,7 +294,10 @@ export const PANEL_CHANGES = ['connection', 'settings', 'agent',
   // v1.5 QX: the sequential auto-apply moved on (a tab opened, a job's status, a phase).
   'queue',
   // jr6: the job-site password was saved or deleted: each panel reads the connection's status again (its `signUp`).
-  'signup'] as const;
+  'signup',
+  // v3.0 X1-EXT: what a job card says of a closed posting changed (a look found one, a report went or was refused):
+  // each panel reads its own tab's card again (from the worker's memory: nothing is asked of TailorIT for it).
+  'job'] as const;
 
 export const PanelPortMessageSchema = z.discriminatedUnion('type', [
   /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). `side` (v3 Phase 3):
@@ -386,6 +398,19 @@ export const JobCardSchema = z.discriminatedUnion('state', [
     withoutResume: z.literal(true).optional(),
     /** v3 Phase 3b: the job is the one the person chose with "Autofill for another job" (the lookup's `chosen`). */
     chosen: z.literal(true).optional(),
+    // ── v3.0 X1-EXT (autofill API 9) ──
+    /** The job is held for review (the lookup's `held`): only this person sees it in TailorIT until it is approved. */
+    held: z.literal(true).optional(),
+    /** The extension's look in this page found a closed sign (background/closed-check.ts): "This posting looks
+     *  closed." */
+    closedSeen: z.literal(true).optional(),
+    /** The posting was reported closed to TailorIT: by itself ('auto', "Reported to TailorIT"), or by the person
+     *  ('person': the button, or the lookup's `reported`, "You reported this posting as closed"). */
+    reported: z.enum(['auto', 'person']).optional(),
+    /** The card may offer Report as closed: a job TailorIT shows as open, the page's own (not one chosen for it), the
+     *  disclosure acknowledged, and not a private window. */
+    reportable: z.literal(true).optional(),
+    // ── end v3.0 X1-EXT ──
   }),
 ]);
 export type JobCard = z.infer<typeof JobCardSchema>;
@@ -594,6 +619,24 @@ export type AutoApplyLimit = z.infer<typeof AutoApplyLimitSchema>;
 /** autoApply/closeTab's answer (A20): whether a tab auto-apply opened closes once its application is submitted. */
 export const CloseTabAnswerSchema = z.strictObject({ on: z.boolean() });
 // ── end v2.0 P9 ──
+
+// ── v3.0 X1-EXT (autofill API 9) ──
+/**
+ * What came of Report as closed, which the card says: 'reported' (TailorIT took it for review), 'closed' (the person's
+ * own page job, closed now), 'already-closed' (TailorIT shows the job as closed already), 'limited' (the day's reports
+ * are used up: `message`, TailorIT's own words, says until when), 'not-allowed' (a connection made before adding jobs:
+ * connect again), 'private' (never from a private window), 'not-connected', 'unavailable' (no open job on the card,
+ * TailorIT could not be reached, or it refused).
+ */
+export const REPORT_CLOSED_OUTCOMES = ['reported', 'closed', 'already-closed', 'limited', 'not-allowed', 'private',
+  'not-connected', 'unavailable'] as const;
+export type ReportClosedOutcome = (typeof REPORT_CLOSED_OUTCOMES)[number];
+export const ReportClosedAnswerSchema = z.strictObject({ outcome: z.enum(REPORT_CLOSED_OUTCOMES),
+  message: Text(400).optional() });
+export type ReportClosedAnswer = z.infer<typeof ReportClosedAnswerSchema>;
+/** reports/closedAuto's answer: whether closed postings are reported to TailorIT by themselves. */
+export const ReportClosedAutoAnswerSchema = z.strictObject({ on: z.boolean() });
+// ── end v3.0 X1-EXT ──
 /** Why the agent paused itself, Run auto-apply off until the person turns it on again (the audit of 2026-11-06): the
  *  browser opened no window for a job, jobs in a row whose pages did not load (M5), or the person closed its window,
  *  which is their Stop (m14). */
@@ -811,6 +854,9 @@ export const PAGE_ANSWER_SCHEMAS = {
   'signup/delete': SignupDeleteAnswerSchema,
   'signup/import': SignupImportAnswerSchema,
   'autoApply/closeTab': CloseTabAnswerSchema, // v2.0 P9
+  // v3.0 X1-EXT
+  'panel/reportClosed': ReportClosedAnswerSchema,
+  'reports/closedAuto': ReportClosedAutoAnswerSchema,
 } as const satisfies Record<PageMessage['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */

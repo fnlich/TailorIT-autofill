@@ -89,6 +89,12 @@ export interface HandFakes {
   /** v5 p1-shell: a tab's top frame as executeScript names it for a function run there: its document id and the address
    *  the function reads (null: Chrome refused). */
   topDocument: (tabId: number) => { documentId: string; url: string } | null;
+  /** v3.0 X1-EXT: every function the worker ran with arguments (the closed check: platform/chrome.ts
+   *  createClosedScripting), in order: its target and its arguments, never the function. */
+  probes: Array<{ target: { tabId: number; frameIds?: number[]; documentIds?: string[] }; args: unknown[] }>;
+  /** What such a function returned in its document (undefined: none); a thrown error is Chrome refusing. By default
+   *  undefined, which the check reads as no answer. */
+  probeAnswer: (probe: HandFakes['probes'][number]) => unknown;
   /** v3 Phase 8: the optional host permissions Chrome holds (permissions.contains reads them; the every-https-page
    *  pattern covers every https origin). */
   granted: Set<string>;
@@ -188,6 +194,8 @@ export function installHandFakes(): HandFakes {
     injections: [],
     injectAnswer: () => undefined,
     topDocument: () => ({ documentId: 'doc-top', url: 'https://careers.example.com/jobs/1' }),
+    probes: [],
+    probeAnswer: () => undefined,
     granted: new Set(),
     grant(origins) {
       for (const origin of origins) fakes.granted.add(origin);
@@ -265,7 +273,18 @@ export function installHandFakes(): HandFakes {
         if (!fakes.registrations.delete(id)) throw new Error(`Nonexistent script ID '${id}'`);
       }
     },
-    executeScript: async (injection: HandFakes['injections'][number] & { func?: () => unknown }) => {
+    executeScript: async (injection: HandFakes['injections'][number] & { func?: () => unknown; args?: unknown[] }) => {
+      // v3.0 X1-EXT: a function run with arguments (the closed check) answers what the test says it returned there, in
+      // the document or frame it was run in.
+      if (injection.func !== undefined && injection.args !== undefined) {
+        const probe = JSON.parse(JSON.stringify({ target: injection.target, args: injection.args })) as
+          HandFakes['probes'][number];
+        fakes.probes.push(probe);
+        const result = await fakes.probeAnswer(probe);
+        const documentId = probe.target.documentIds?.[0];
+        return [{ frameId: probe.target.frameIds?.[0] ?? 0, ...(documentId === undefined ? {} : { documentId }),
+          ...(result === undefined ? {} : { result }) }];
+      }
       // v5 p1-shell: a function run in the top frame (topDocument) names its document and answers its address, and is
       // no file's injection.
       if (injection.func !== undefined) {

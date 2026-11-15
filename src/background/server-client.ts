@@ -108,6 +108,11 @@ import {
   type AutofillFormsKnownResponse,
   type AutofillSubmissionRequest,
   type AutofillSubmissionResponse,
+  // v3.0 X1-EXT (API 9)
+  AutofillClosedReportRequestSchema,
+  AutofillClosedReportResponseSchema,
+  type AutofillClosedReportRequest,
+  type AutofillClosedReportResponse,
 } from '../contract/tailorit';
 // The snapshot build of 2026-11-06 (core-x, item 6): every address named to TailorIT goes through tailoritAddressOf, which
 // keeps v3 Phase 8's company-page rule (addressForTailorIT) and names iCIMS's, SmartRecruiters' and jobs.workable.com's
@@ -139,8 +144,11 @@ export type ServerResult<T> =
       code?: string;
       retryAfterSeconds?: number;
       /** v2.0 fix wave (REQ-1): TailorIT's words, kept for its AI's two refusals alone (ai-notice.ts aiRefusalOf:
-       *  ai_unavailable, ai_usage_exhausted), which the person is shown as they are; never logged. */
+       *  ai_unavailable, ai_usage_exhausted), which the person is shown as they are; never logged. v3.0 X1-EXT: and for
+       *  the closed-link report's daily cap (429 rate_limited), with `resetAt`. */
       message?: string;
+      /** v3.0 X1-EXT (API 9): when TailorIT's daily cap resets (the closed-link report's 429). */
+      resetAt?: string;
     };
 
 /** An AI route's answer (Phase 4): its task, finished within TailorIT's wait (200), or the id to poll (202). */
@@ -305,6 +313,11 @@ export interface ServerClient {
    *  any request. */
   queueOpened(id: string): Promise<ServerResult<AutofillAgentOpened>>;
   // ── end v1.5 QX ──
+  /** v3.0 X1-EXT (API 9): POST /jobs/:jobId/closed (scope jobs:add): the posting of TailorIT job `jobId` looks closed.
+   *  Its `url` is named to TailorIT as every address is (tailoritAddressOf). A job id that is not a positive integer, or
+   *  a body the contract refuses, is refused before any request (bad-request). TailorIT's daily cap (429 rate_limited)
+   *  keeps its words (`message`) and its next reset (`resetAt`); nothing of the report is logged. */
+  closedReport(jobId: number, body: AutofillClosedReportRequest): Promise<ServerResult<AutofillClosedReportResponse>>;
 }
 
 /** What the server client needs. */
@@ -359,22 +372,29 @@ interface Call {
   answer: Body;
   /** v5 p2-stream: an AI route asked to answer 202 at once (Prefer: respond-async). */
   async?: boolean;
+  /** v3.0 X1-EXT: a refusal for a daily cap (429 rate_limited) keeps TailorIT's words and its resetAt. */
+  keepLimit?: boolean;
 }
 
 type Raw = { ok: true; value: unknown; response: Response } | Extract<ServerResult<never>, { ok: false }>;
 
 const failure = (reason: ServerFailure, extra: { status?: number; code?: string; retryAfterSeconds?: number;
-  message?: string } = {}) => ({ ok: false as const, failure: reason, ...extra });
+  message?: string; resetAt?: string } = {}) => ({ ok: false as const, failure: reason, ...extra });
 
 /** A refused call's failure, by its status and TailorIT's code. v2.0 P9 (autofill API 8): `ai_usage_exhausted` (429:
  *  the person's AI usage is used up until TailorIT's daily reset, which its Retry-After names) is taken as
  *  `ai_unavailable` is (503, a server error): the run fills without AI, and nothing waits for that reset; its code is
  *  kept for the callers that tell the two apart. v2.0 fix wave (REQ-1): TailorIT's words are kept for those two codes
  *  alone (aiRefusalOf), and dropped for every other. */
-function refusalOf(status: number, detail: { code?: string; message?: string; retryAfterSeconds?: number }) {
-  const { message: _words, ...rest } = detail;
+function refusalOf(status: number, detail: { code?: string; message?: string; retryAfterSeconds?: number;
+  resetAt?: string }, keepLimit = false) {
+  const { message: _words, resetAt: _reset, ...rest } = detail;
   const words = aiRefusalOf(detail);
-  const kept = words === null ? {} : { message: words.message };
+  // v3.0 X1-EXT: the closed-link report's daily cap, said in TailorIT's words, with its reset.
+  const limit = keepLimit && status === 429 && detail.code === 'rate_limited';
+  const kept = words !== null ? { message: words.message } : !limit ? {} : {
+    ...(detail.message === undefined ? {} : { message: detail.message.slice(0, 400) }),
+    ...(detail.resetAt === undefined ? {} : { resetAt: detail.resetAt }) };
   if (detail.code === 'ai_usage_exhausted') return failure('server-error', { status, code: detail.code, ...kept });
   return failure(failureOfStatus(status), { status, ...rest, ...kept });
 }
@@ -445,7 +465,8 @@ function lookupOf(wire: z.infer<typeof LookupWireSchema>): AutofillLookupRespons
 
 /** TailorIT's error body, when it sent one: its code and retry hint; v2.0 fix wave (REQ-1), its words, which refusalOf
  *  keeps for its AI's two refusals alone. */
-async function errorOf(response: Response): Promise<{ code?: string; message?: string; retryAfterSeconds?: number }> {
+async function errorOf(response: Response): Promise<{ code?: string; message?: string; retryAfterSeconds?: number;
+  resetAt?: string }> {
   let parsed: ReturnType<typeof AutofillErrorBodySchema.safeParse> | null = null;
   try {
     parsed = AutofillErrorBodySchema.safeParse(await response.json());
@@ -456,9 +477,11 @@ async function errorOf(response: Response): Promise<{ code?: string; message?: s
   const fromHeader = Number.isInteger(header) && header >= 0 ? header : undefined;
   if (!parsed?.success) return fromHeader === undefined ? {} : { retryAfterSeconds: fromHeader };
   const retry = parsed.data.error.retryAfterSeconds ?? fromHeader;
-  // v2.0 fix wave (REQ-1): the words too, which refusalOf keeps for the AI's two refusals alone.
-  const { code, message } = parsed.data.error;
-  return retry === undefined ? { code, message } : { code, message, retryAfterSeconds: retry };
+  // v2.0 fix wave (REQ-1): the words too, which refusalOf keeps for the AI's two refusals alone (v3.0 X1-EXT: and the
+  // closed-link report's daily cap, with its resetAt).
+  const { code, message, resetAt } = parsed.data.error;
+  return { code, message, ...(retry === undefined ? {} : { retryAfterSeconds: retry }),
+    ...(resetAt === undefined ? {} : { resetAt }) };
 }
 
 /** The client for one origin. */
@@ -517,7 +540,7 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
         const detail = await errorOf(response);
         log('server.refused', { status: response.status });
         if (response.status === 401 && token !== null) await deps.onUnauthorized(token);
-        return refusalOf(response.status, detail);
+        return refusalOf(response.status, detail, call.keepLimit === true);
       }
 
       let value: unknown = null;
@@ -814,6 +837,16 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     knownForm: (body) => json({ method: 'POST', path: '/api/autofill/forms/known', token: 'current',
       json: body.url === undefined ? body : { ...body, url: tailoritAddressOf(body.url) } },
     AutofillFormsKnownResponseSchema),
+    // v3.0 X1-EXT (API 9)
+    async closedReport(jobId, body) {
+      const parsed = AutofillClosedReportRequestSchema.safeParse(body);
+      if (!Number.isSafeInteger(jobId) || jobId <= 0 || !parsed.success) {
+        log('server.path-refused');
+        return failure('bad-request');
+      }
+      return json({ method: 'POST', path: `/api/autofill/jobs/${jobId}/closed`, token: 'current', keepLimit: true,
+        json: { ...parsed.data, url: tailoritAddressOf(parsed.data.url) } }, AutofillClosedReportResponseSchema);
+    },
     async siteRequest(host) {
       const raw = await send({ method: 'POST', path: '/api/autofill/site-requests', token: 'current', json: { host },
         answer: { kind: 'none' } });

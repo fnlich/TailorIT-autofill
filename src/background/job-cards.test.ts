@@ -68,6 +68,8 @@ describe('the job card (v2)', () => {
       resume: { label: 'Senior Software Engineer', fileKind: 'pdf', reason: 'application' },
       match: { state: 'ok', matchedCount: 9, total: 12, percentage: 75 },
       addable: true,
+      // v3.0 X1-EXT: an open job of the page's own, the disclosure acknowledged: Report as closed may be offered.
+      reportable: true,
     } } });
     expect(bodyOf(worker, LOOKUP)).toEqual([{ url: LEVER_POSTING_URL, includePostingText: false }]);
     // The frame was asked to relay, and nothing it was sent holds what TailorIT said.

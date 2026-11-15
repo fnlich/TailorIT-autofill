@@ -21,6 +21,7 @@ import { useId, useState } from 'react';
 import type { AuthStatus } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
+import { DISCLOSURE_PARAGRAPHS } from '../options/copy-api9'; // v3.0 X1-EXT: with the reports' line
 import { Icon } from '../brand/Icon';
 import { clockText, useSecondsLeft } from '../options/countdown';
 import { animationFrames, type FrameScheduler } from '../page/frames';
@@ -110,7 +111,7 @@ export function SetupView({ platform, status, refresh, profile, withAccount, onE
                 <h3 className="tia-consent__heading">{COPY.options.connection.disclosureHeading}</h3>
                 <div className="tia-consent__text" tabIndex={0} role="region"
                   aria-label={COPY.options.connection.disclosureHeading}>
-                  {COPY.options.connection.disclosure.map((paragraph) => <p key={paragraph.slice(0, 40)}>{paragraph}</p>)}
+                  {DISCLOSURE_PARAGRAPHS.map((paragraph) => <p key={paragraph.slice(0, 40)}>{paragraph}</p>)}
                 </div>
                 <p className="tia-consent__line">{COPY.options.connection.consentLine}</p>
                 <div className="tia-consent__actions">

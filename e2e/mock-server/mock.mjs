@@ -104,6 +104,15 @@
  *   GET /agent/next skips it, POST /agent/:id/opened refuses it (409), and a token's GET /agent/queue leaves it out; the
  *   scenario ai-usage-exhausted (429 ai_usage_exhausted on the AI routes, POST /tailor and POST /cover-letters); and a
  *   submitted answer's provenance only as the contract lists it (`prepared`, never `prebuilt`).
+ * - v3.0 X1-EXT (API 9, TailorIT v30-ct): every answer names 9. POST /jobs/:jobId/closed checks its body as the
+ *   contract's AutofillClosedReportRequest does in brief (the closed lists below, copied from closed.ts and checked
+ *   against it by test/mock-server.test.ts; a marker signal names a title or posting marker, a redirected one an address
+ *   marker or none, no other signal one; person only via person and back; no_posting and redirected only via agent or
+ *   queue; seenAt an instant with its offset), keeps each report (GET /__mock/closed lists them: {jobId, body}) and
+ *   answers {outcome: 'queued'}; every later lookup of that job says `reported`. Scenarios: closed-report-limit (429
+ *   rate_limited with TailorIT's words and resetAt, CLOSED_LIMIT_MESSAGE), closed-report-fails (500),
+ *   closed-report-not-found (404), closed-report-closed (outcome closed: the person's own page job), and lookup-held
+ *   (the lookup's job held for review).
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -130,8 +139,53 @@ export function example(schema, name = 'golden') {
   return readJson(join(CONTRACT, 'fixtures', schema, 'valid', `${name}.json`));
 }
 
-/** The API version TailorIT speaks, as the contract's version.ts names it (8 since v2.0, TailorIT v20-w0c, pulled by P9). */
-export const MOCK_API_VERSION = 8;
+/** The API version TailorIT speaks, as the contract's version.ts names it (9 since v3.0, TailorIT v30-ct, pulled by
+ *  X1-EXT; 8 since v2.0, TailorIT v20-w0c). */
+export const MOCK_API_VERSION = 9;
+
+// ── v3.0 X1-EXT (API 9): the contract's closed lists (closed.ts), copied; test/mock-server.test.ts checks them ──
+export const CLOSED_SIGNALS = Object.freeze(['marker', 'valid_through_past', 'no_posting', 'redirected', 'person']);
+export const CLOSED_VIA = Object.freeze(['page', 'agent', 'queue', 'person']);
+/** Each marker's id and where it is read. */
+export const CLOSED_MARKER_PLACES = Object.freeze({
+  'smartrecruiters.expired': 'posting',
+  'generic.no_longer_accepting': 'posting',
+  'generic.job_expired': 'posting',
+  'generic.position_filled': 'posting',
+  'generic.job_not_found': 'title',
+});
+/** TailorIT's words for the closed reports' daily cap (MSG_EXT_REPORT_LIMIT), as its contract's example names them. */
+export const CLOSED_LIMIT_MESSAGE = /** @type {{ error: { message: string } }} */ (
+  example('AutofillErrorBody', 'report-limit')).error.message;
+/** An ISO 8601 instant with its offset, as the contract's InstantSchema takes it. */
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** Why a closed report's body breaks the contract (AutofillClosedReportRequest, in brief), or null.
+ *  @param {Record<string, unknown>} json */
+export function closedReportProblem(json) {
+  const allowed = new Set(['url', 'signal', 'marker', 'via', 'seenAt']);
+  if (Object.keys(json).some((key) => !allowed.has(key))) return 'Unrecognized key';
+  if (typeof json.url !== 'string' || json.url.length < 1 || json.url.length > 2048) return 'url: Required';
+  if (typeof json.signal !== 'string' || !CLOSED_SIGNALS.includes(json.signal)) return 'signal: Invalid option';
+  if (typeof json.via !== 'string' || !CLOSED_VIA.includes(json.via)) return 'via: Invalid option';
+  if (typeof json.seenAt !== 'string' || !INSTANT.test(json.seenAt) || !Number.isFinite(Date.parse(json.seenAt))) {
+    return 'seenAt: Invalid ISO datetime';
+  }
+  if (json.marker !== undefined && (typeof json.marker !== 'string' || !Object.hasOwn(CLOSED_MARKER_PLACES, json.marker))) {
+    return 'marker: Invalid option';
+  }
+  /** @type {string | null} */
+  const place = typeof json.marker === 'string' ? CLOSED_MARKER_PLACES[/** @type {keyof typeof CLOSED_MARKER_PLACES} */ (json.marker)] : null;
+  if (json.signal === 'marker' && (place === null || place === 'address')) return 'marker: A marker signal names its marker';
+  if (json.signal === 'redirected' && place !== null && place !== 'address') return 'marker: An address marker only';
+  if (json.signal !== 'marker' && json.signal !== 'redirected' && place !== null) return 'marker: Only a marker signal names one';
+  if ((json.signal === 'person') !== (json.via === 'person')) return 'via: The button sends the person signal, and only it';
+  if ((json.signal === 'no_posting' || json.signal === 'redirected') && json.via !== 'agent' && json.via !== 'queue') {
+    return 'via: Only the agent and the Queue tab see this signal';
+  }
+  return null;
+}
+// ── end v3.0 X1-EXT ──
 /** The header TailorIT names its version in, on every answer to a request that presents a `tia_` bearer. */
 export const API_HEADER = 'X-TailorIT-Autofill-Api';
 const FILE_KIND_HEADER = 'X-TailorIT-File-Kind';
@@ -413,6 +467,13 @@ export const MOCK_SCENARIOS = Object.freeze({
     + 'reset (times does not apply).',
   'ai-usage-exhausted': 'An AI route, POST /tailor and POST /cover-letters answer 429 ai_usage_exhausted (the person’s '
     + 'AI usage is used up until the daily reset, its Retry-After).',
+  // v3.0 X1-EXT (API 9)
+  'closed-report-limit': 'POST /jobs/:jobId/closed gets 429 rate_limited: the account’s closed reports for the day are '
+    + 'used up (TailorIT’s words, CLOSED_LIMIT_MESSAGE, and the next day’s resetAt).',
+  'closed-report-fails': 'POST /jobs/:jobId/closed gets 500.',
+  'closed-report-not-found': 'POST /jobs/:jobId/closed gets 404 not_found: no such job for this account.',
+  'closed-report-closed': 'POST /jobs/:jobId/closed answers outcome closed: the job was the person’s own page job.',
+  'lookup-held': 'POST /lookup answers its job held for review (job.held: only this person sees it until approved).',
 });
 
 /** v2.0 P9: TailorIT's words for a reached daily auto-apply limit (MSG_LIMIT_AUTO_APPLY), as its contract's example
@@ -639,7 +700,8 @@ const AI_TASK_STREAM_PATH = /^\/api\/ai\/tasks\/[0-9a-f-]{36}\/stream$/;
 
 const ROUTE_MATCHERS = CONTRACT_ROUTES.map((route) => ({
   route,
-  re: new RegExp(`^${route.path.replace(/:[a-z]+/g, '([^/]+)')}$`),
+  // v3.0 X1-EXT: a parameter's name may hold capitals (version 9's :jobId).
+  re: new RegExp(`^${route.path.replace(/:[A-Za-z]+/g, '([^/]+)')}$`),
 }));
 
 /** @param {string} method @param {string} path */
@@ -712,6 +774,9 @@ export function createMock() {
     tailored: false,
     /** v3 Phase 4: the bodies POST /applied took; every later lookup says Applied. @type {Array<Record<string, unknown>>} */
     applied: [],
+    /** v3.0 X1-EXT: the closed reports POST /jobs/:jobId/closed took, in order; every later lookup of a job reported
+     *  says `reported`. @type {Array<{ jobId: number; body: Record<string, unknown> }>} */
+    closedReports: [],
     /** v1.3 B: the forms POST /submissions kept, by `job:<id>` or `url:<address>`: their questions by id, and the latest
      *  submission's answers by question id. @type {Map<string, { questions: Array<Record<string, any>>;
      *  answers: Map<number, { answer: unknown; submittedAt: string }> }>} */
@@ -928,6 +993,9 @@ export function createMock() {
     }
     // v1.3 B: a job whose form POST /submissions kept.
     if (answer.job && state.forms.has(`job:${answer.job.id}`)) answer.formKnown = true;
+    // v3.0 X1-EXT (API 9): a job held for review, and one this account reported closed.
+    if (answer.job && take('lookup-held') !== null) answer.job.held = true;
+    if (answer.job && state.closedReports.some((report) => report.jobId === answer.job.id)) answer.job.reported = true;
     // v3 Phase 4: a job POST /applied marked is Applied in the tracker from then on.
     if (state.applied.length > 0 && answer.job) {
       answer.application = { ...(answer.application ?? { id: 'app-applied', trackedOn: iso(Date.now()), archived: false,
@@ -1658,6 +1726,23 @@ export function createMock() {
     },
     'POST /api/autofill/jobs': ({ json }) => addJob(json),
     'POST /api/autofill/jobs/from-page': ({ json }) => addJobFromPage(json),
+    // v3.0 X1-EXT (API 9): a closed report (module header).
+    'POST /api/autofill/jobs/:jobId/closed': ({ json, params }) => {
+      const jobId = Number(params[0]);
+      if (!/^[1-9][0-9]{0,15}$/.test(params[0] ?? '') || !Number.isSafeInteger(jobId)) return invalid('jobId: A job id');
+      const problem = closedReportProblem(json);
+      if (problem !== null) return invalid(problem);
+      if (take('closed-report-fails') !== null) return serverError();
+      if (take('closed-report-not-found') !== null) return refusal(404, 'not_found', 'That job was not found.');
+      if (take('closed-report-limit') !== null) {
+        const tomorrow = new Date();
+        tomorrow.setUTCHours(32, 0, 0, 0);
+        return { status: 429, json: { error: { code: 'rate_limited', message: CLOSED_LIMIT_MESSAGE,
+          resetAt: iso(tomorrow.getTime()) } } };
+      }
+      state.closedReports.push({ jobId, body: json });
+      return jsonAnswer(200, { outcome: take('closed-report-closed') !== null ? 'closed' : 'queued' });
+    },
     // Version 3's routes (v3 Phase 3b and 4): as TailorIT's would answer them.
     'GET /api/autofill/jobs/search': ({ query }) => {
       if (take('job-search-forbidden') !== null) return refusal(403, 'forbidden', 'Connect the extension again.');
@@ -1930,6 +2015,8 @@ export function createMock() {
         answers: [...form.answers.entries()].map(([questionId, held]) => ({ questionId, ...held })) })));
     }
     if (path === '/__mock/resume' && method === 'GET') return jsonAnswer(200, GOLDEN_RESUME);
+    // v3.0 X1-EXT: the closed reports taken.
+    if (path === '/__mock/closed' && method === 'GET') return jsonAnswer(200, state.closedReports);
     if (path === '/__mock/letter' && method === 'GET') return jsonAnswer(200, GOLDEN_LETTER);
     if (path === '/__mock/agent' && method === 'GET') {
       const { rows, results, refused } = state.agent;

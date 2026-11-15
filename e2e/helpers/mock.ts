@@ -3,9 +3,9 @@
  * before each test, script its answers, and read its request log (Authorization redacted). It talks to 127.0.0.1, so
  * the test process never depends on how localhost resolves; the extension calls the same server as localhost.
  */
-import { DAILY_LIMIT_MESSAGE, GOLDEN_LETTER, GOLDEN_RESUME, MOCK_SCENARIOS } from '../mock-server/mock.mjs';
+import { CLOSED_LIMIT_MESSAGE, DAILY_LIMIT_MESSAGE, GOLDEN_LETTER, GOLDEN_RESUME, MOCK_SCENARIOS } from '../mock-server/mock.mjs';
 
-export { DAILY_LIMIT_MESSAGE, GOLDEN_LETTER, GOLDEN_RESUME, MOCK_SCENARIOS };
+export { CLOSED_LIMIT_MESSAGE, DAILY_LIMIT_MESSAGE, GOLDEN_LETTER, GOLDEN_RESUME, MOCK_SCENARIOS };
 
 /** The mock's address for the test process. */
 export const MOCK_CONTROL = 'http://127.0.0.1:3190';
@@ -68,6 +68,10 @@ export const mock = {
   async forms(): Promise<Array<{ key: string; questions: Array<Record<string, unknown> & { id: number; label: string }>;
     answers: Array<{ questionId: number; answer: Record<string, unknown> }> }>> {
     return (await control('/__mock/forms')).json() as never;
+  },
+  /** v3.0 X1-EXT: the closed reports the mock took (POST /jobs/:jobId/closed), in order. */
+  async closedReports(): Promise<Array<{ jobId: number; body: Record<string, unknown> }>> {
+    return (await control('/__mock/closed')).json() as never;
   },
   /** The requests to one route ("POST /api/autofill/lookup"); a path ending in * matches its prefix. */
   async requestsTo(route: string): Promise<MockRequest[]> {

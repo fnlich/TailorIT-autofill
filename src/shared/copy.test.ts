@@ -11,6 +11,7 @@ import { REASON_CODES } from '../core/types/fill';
 import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
 import { SAVE_ANSWER_OUTCOMES } from '../messaging/schemas';
 import { SIGNUP_COPY } from '../ui/page/signup-copy';
+import { DISCLOSURE_PARAGRAPHS } from '../ui/options/copy-api9'; // v3.0 X1-EXT
 import { CAPTURE_COPY, COPY, PAGE_COPY } from './copy';
 import { QUEUE_SUBMIT_PLATFORMS, RECORDED_SUBMIT_PLATFORMS } from './queue-submit';
 import { NOTICE_CODES } from './report';
@@ -28,18 +29,22 @@ const SENTENCE = /^["A-Z(].*[.]$/s;
  * a download Apply is told), so it kept its number. 16 (jr7) had reached no one (the extension's main is at 15) when
  * the jr7 review fixes reworded it (C-1, A-6: who joins Run auto-apply as built, the sites already in that may email a
  * code, the step that is the person's, Workday's jobs whatever the tenant asks; A-7: a national id never sent), so it
- * kept its number too.
+ * kept its number too. 17 (v3.0 X1-EXT, autofill API 9) adds the closed-link reports' line after the second paragraph,
+ * outside copy.ts (ui/options/copy-api9.ts DISCLOSURE_PARAGRAPHS, the disclosure as every page shows it), so the hash
+ * reads the shown paragraphs from 17 on.
  */
 const DISCLOSURE_HASHES: readonly { version: number; sha256: string }[] = [
   { version: 14, sha256: 'ad97b204db52277072884bbc2168b5f85d7d2edad738e7a10885428ad03f0532' }, // v1.5 part 2
   { version: 15, sha256: '3383e740883fcc6c5fe8048c3c0d6df52db758235fbe6b33d69433fd14da3e1d' }, // jr6
   { version: 16, sha256: 'db3f71fc98b8c79f5449044fb2d4f6335c4002bab7b7be1f536d152506c08e88' }, // jr7 (its review fixes)
+  { version: 17, sha256: '574ae5cf21149300f2ed23f424fb138d100c917c1ebe667f540abf2ca14934b6' }, // v3.0 X1-EXT (API 9)
 ];
 
-/** The disclosure's words as DISCLOSURE_HASHES pins them. */
+/** The disclosure's words as DISCLOSURE_HASHES pins them: the paragraphs every page shows (v3.0 X1-EXT: copy.ts's with
+ *  the reports' line), and the consent line. */
 function disclosureHash(): string {
-  const { disclosure, consentLine } = COPY.options.connection;
-  return createHash('sha256').update(JSON.stringify([...disclosure, consentLine])).digest('hex');
+  const { consentLine } = COPY.options.connection;
+  return createHash('sha256').update(JSON.stringify([...DISCLOSURE_PARAGRAPHS, consentLine])).digest('hex');
 }
 
 /** Every string a COPY tree holds (a function's own source too, for the words it builds). */

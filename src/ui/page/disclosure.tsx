@@ -10,6 +10,7 @@
  */
 import { useId } from 'react';
 import { COPY } from '../../shared/copy';
+import { DISCLOSURE_PARAGRAPHS } from '../options/copy-api9'; // v3.0 X1-EXT: with the reports' line
 import { InSidePanel, useOnPage } from '../panel/on-page';
 import { HelpTip } from './HelpTip';
 
@@ -26,7 +27,7 @@ export function DisclosureChanged({ onUnderstand }: { onUnderstand(): void }) {
         <HelpTip text={`${COPY.panel.disclosureChanged.intro} ${COPY.panel.disclosureChanged.held}`}
           topic={COPY.panel.disclosureChanged.heading} />
       </div>
-      {COPY.options.connection.disclosure.map((paragraph) => <p key={paragraph.slice(0, 40)}>{paragraph}</p>)}
+      {DISCLOSURE_PARAGRAPHS.map((paragraph) => <p key={paragraph.slice(0, 40)}>{paragraph}</p>)}
       {onPage !== null ? <InSidePanel text={COPY.onPage.disclosure} onPage={onPage} /> : (
         <button type="button" className="tia-button tia-button--primary" data-action="acknowledge-disclosure"
           onClick={onUnderstand}>{COPY.panel.disclosureChanged.understand}</button>

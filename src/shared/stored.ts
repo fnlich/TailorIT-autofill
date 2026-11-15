@@ -97,9 +97,15 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  job page's Apply first and leaving Submit to the person where it cannot read the confirmation; a privacy notice
  *  before a resume upload agreed under Consent boxes; a Jibe job page's iCIMS address told to TailorIT; its words
  *  corrected before it reached anyone, by the jr7 review fixes, C-1 and A-6, and a typed national identity number named
- *  among what is never sent, A-7). Raise it whenever the disclosure's substance changes; copy.test.ts pins each
+ *  among what is never sent, A-7); 17, v3.0 X1-EXT (autofill API 9, TailorIT docs/design/part2/14-extension-reports.md
+ *  §3.1 and owner question 26: a line after the second paragraph, ui/options/copy-api9.ts DISCLOSURE_PARAGRAPHS, outside
+ *  copy.ts, which the content script reads: a closed job page the person opens, or an auto-apply job whose posting is
+ *  gone, told to TailorIT with the job, its address and the sign seen, never the page's text, unless Report closed jobs
+ *  to TailorIT automatically is off; Report as closed on the card; only pages open anyway, never a fetch, never a
+ *  private window; who reported kept for TailorIT's admins; a job added from a board TailorIT does not list yet visible
+ *  to the person alone until approved). Raise it whenever the disclosure's substance changes; copy.test.ts pins each
  *  version's words (DISCLOSURE_HASHES). */
-export const DISCLOSURE_VERSION = 16;
+export const DISCLOSURE_VERSION = 17;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */

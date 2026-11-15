@@ -38,6 +38,11 @@ import {
   ConnectCodeSchema,
   normalizeConnectCode,
   signInHostCovered,
+  // v3.0 X1-EXT (API 9)
+  AUTOFILL_CLOSED_MARKERS,
+  AUTOFILL_CLOSED_SIGNALS,
+  AUTOFILL_CLOSED_VIA,
+  AutofillClosedReportResponseSchema,
 } from '../src/contract/tailorit';
 import {
   AMOUNT_ANSWER,
@@ -64,6 +69,11 @@ import {
   goldenResumeBytes,
   normalizeCode,
   startMock,
+  // v3.0 X1-EXT (API 9)
+  CLOSED_LIMIT_MESSAGE,
+  CLOSED_MARKER_PLACES,
+  CLOSED_SIGNALS,
+  CLOSED_VIA,
 } from '../e2e/mock-server/mock.mjs';
 
 /** A file of this repository, wherever the tests run from. */
@@ -131,7 +141,8 @@ function sseEvents(text: string): Array<{ type: string } & Record<string, unknow
 
 /** The contract's golden pick task, which the mock always holds. */
 const GOLDEN_TASK_ID = (example('AutofillPickTask') as { id: string }).id;
-const pathOf = (route: { path: string }) => route.path.replace(':id', route.path.startsWith('/api/ai/tasks/') ? GOLDEN_TASK_ID
+const pathOf = (route: { path: string }) => route.path.replace(':jobId', '1042') // v3.0 X1-EXT: a job id (API 9)
+  .replace(':id', route.path.startsWith('/api/ai/tasks/') ? GOLDEN_TASK_ID
   : route.path.startsWith('/api/autofill/cover-letters/') ? GOLDEN_LETTER.id
     // v1.4 F: the contract's golden tailoring, which the mock always holds.
     : route.path.startsWith('/api/autofill/tailor/') ? GOLDEN_TAILOR_TASK.id : GOLDEN_RESUME.id);
@@ -1328,3 +1339,67 @@ describe('the mock on autofill API 8 (v2.0 P9)', () => {
   });
 });
 // ── end v2.0 P9 ──
+
+// ── v3.0 X1-EXT (autofill API 9) ──
+describe('the mock on autofill API 9 (v3.0 X1-EXT): closed reports and held jobs', () => {
+  const CLOSED = '/api/autofill/jobs/1042/closed';
+  const report = (json: unknown, path = CLOSED) => call(path, { method: 'POST', headers: asToken(), json });
+  const valid = (name: string) => example('AutofillClosedReportRequest', name) as Record<string, unknown>;
+  const lookup = async () => AutofillLookupResponseSchema.parse(await (await call('/api/autofill/lookup',
+    { method: 'POST', headers: asToken(), json: { url: 'https://jobs.lever.co/x/y/apply' } })).json());
+
+  it("copies the contract's closed lists, each marker where the contract reads it", () => {
+    expect([...CLOSED_SIGNALS]).toEqual([...AUTOFILL_CLOSED_SIGNALS]);
+    expect([...CLOSED_VIA]).toEqual([...AUTOFILL_CLOSED_VIA]);
+    expect(CLOSED_MARKER_PLACES).toEqual(Object.fromEntries(AUTOFILL_CLOSED_MARKERS.map((marker) => [marker.id, marker.where])));
+    expect(CLOSED_LIMIT_MESSAGE).toMatch(/closed jobs a day/);
+  });
+
+  it('takes every valid example, keeps it, and says the job is reported in every later lookup', async () => {
+    expect((await lookup()).job?.reported).toBeUndefined();
+    for (const name of ['golden', 'marker-smartrecruiters-expired', 'no-posting', 'person', 'redirected']) {
+      const answer = await report(valid(name));
+      expect([name, answer.status, AutofillClosedReportResponseSchema.parse(await answer.json())]).toEqual(
+        [name, 200, { outcome: 'queued' }]);
+    }
+    const kept = (await (await call('/__mock/closed')).json()) as Array<{ jobId: number; body: unknown }>;
+    expect(kept.map((each) => each.jobId)).toEqual([1042, 1042, 1042, 1042, 1042]);
+    expect(kept[0]!.body).toEqual(valid('golden'));
+    expect((await lookup()).job?.reported).toBe(true);
+  });
+
+  it('refuses each invalid example and a job id that is no positive integer, 400 validation_failed', async () => {
+    for (const name of ['local-time', 'long-url', 'marker-missing', 'marker-on-valid-through', 'no-posting-from-page',
+      'person-from-page', 'posting-marker-on-redirect', 'unknown-marker', 'unknown-signal', 'web-via']) {
+      const json = JSON.parse(repoFile(`src/contract/tailorit/v1/fixtures/AutofillClosedReportRequest/invalid/${name}.json`)
+        .toString('utf8')) as unknown;
+      const answer = await report(json);
+      expect([name, answer.status]).toEqual([name, 400]);
+    }
+    expect((await report(valid('golden'), '/api/autofill/jobs/0/closed')).status).toBe(400);
+    expect((await report({ ...valid('golden'), extra: 1 })).status).toBe(400);
+    expect(await (await call('/__mock/closed')).json()).toEqual([]);
+  });
+
+  it("answers the day's cap with 429 rate_limited, TailorIT's words and resetAt; and the other scenarios", async () => {
+    await scenario('closed-report-limit', { times: 1 });
+    const limited = await report(valid('golden'));
+    expect(limited.status).toBe(429);
+    const body = AutofillErrorBodySchema.parse(await limited.json());
+    expect(body.error).toMatchObject({ code: 'rate_limited', message: CLOSED_LIMIT_MESSAGE });
+    expect(Date.parse(body.error.resetAt!)).toBeGreaterThan(Date.now());
+    await scenario('closed-report-fails', { times: 1 });
+    expect((await report(valid('golden'))).status).toBe(500);
+    await scenario('closed-report-not-found', { times: 1 });
+    expect((await report(valid('golden'))).status).toBe(404);
+    await scenario('closed-report-closed', { times: 1 });
+    expect(await (await report(valid('person'))).json()).toEqual({ outcome: 'closed' });
+  });
+
+  it('answers a lookup held for review under lookup-held', async () => {
+    await scenario('lookup-held', { times: 1 });
+    expect((await lookup()).job?.held).toBe(true);
+    expect((await lookup()).job?.held).toBeUndefined();
+  });
+});
+// ── end v3.0 X1-EXT ──

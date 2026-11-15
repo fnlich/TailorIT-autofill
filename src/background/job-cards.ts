@@ -57,6 +57,12 @@
  *   the idle worker loses none of it: the worker reads them back at start (`ready`, which the content messages and the
  *   panel's reads wait for). A resume chosen with Change belongs to the application it was chosen for, as the job
  *   chosen and "Apply without resume" do: another application shown in the tab lets it go (applicationShown).
+ * - v3.0 X1-EXT (autofill API 9; closed-check.ts, closed-reports.ts): a lookup through the frame (as the page loads,
+ *   or the panel's own read) that answers the page's own job as open (not one chosen for the page, nor a run's) hands
+ *   that document to the closed check (openJob), with the posting's address as lookupAddressOf names it, never from a
+ *   private tab; the card then says what the check found and whether the posting was reported (closedSeen, reported,
+ *   reportable), and the lookup's `held` and `reported`. Report as closed takes the card frame's own open job and
+ *   address (reportTarget). The address stays in this file's memory with the card.
  * The cards themselves are memory only, and no log line names the job, the address, the resume or the person.
  */
 import { applicationOf } from '../adapters';
@@ -75,6 +81,7 @@ import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { JOB_CHOICE_PREFIX, JobChoiceRecordSchema, type JobChoiceRecord } from '../shared/stored';
 import { cardFrameOf, frameEntry, framesOfTab, frameTarget, navOf, type FrameEntry } from './frames';
+import type { ClosedTarget } from './closed-check'; // v3.0 X1-EXT
 import { createKeyedQueue, type createRateLimit } from './locks';
 import type { ContentChannel } from './router';
 import type { ServerClient, ServerResult } from './server-client';
@@ -146,7 +153,19 @@ export interface JobCardsDeps {
   /** v1.3 B: a lookup as the page loaded says TailorIT keeps the job's questions: they are read ahead (known-forms.ts).
    *  Absent: nothing is read ahead. */
   prefetchForm?(jobId: number): void;
+  // ── v3.0 X1-EXT (autofill API 9) ──
+  /** A lookup through the frame answered the page's own job as open for a document: the closed check looks there
+   *  (closed-check.ts openJob). Absent: none. */
+  openJob?(target: ClosedTarget): void;
+  /** What the card says of a closed posting for the page's own open job: what the check found, whether it was reported
+   *  in this connection, and whether Report as closed may be offered (closed-check.ts, closed-reports.ts). Absent:
+   *  nothing. */
+  closedCard?(at: { tabId: number; frameId: number; documentId: string | null; jobId: number; privateTab: boolean }):
+    Promise<Pick<AnsweredCard, 'closedSeen' | 'reported' | 'reportable'>>;
+  // ── end v3.0 X1-EXT ──
 }
+
+type AnsweredCard = Extract<JobCard, { state: 'answered' }>;
 
 /** What the card a document's lookup gives the active resume and a custom question. */
 export interface TabJob {
@@ -209,6 +228,10 @@ export interface JobCards {
   forgetTab(tabId: number): void;
   /** The token changed: every card and choice goes. */
   dropTokenData(): void;
+  /** v3.0 X1-EXT: the job Report as closed is about: the tab's card frame's own open job (read through the frame when no
+   *  card is held), with the posting's address as its lookup was asked and whether the tab is private; null when the
+   *  card shows none. */
+  reportTarget(tabId: number): Promise<{ jobId: number; url: string; privateTab: boolean } | null>;
 }
 
 /** A frame as its address's freshness needs it: where its document is, and where Chrome's address came from. */
@@ -231,6 +254,10 @@ interface CardEntry {
   generation: number;
   chosen: string | null;
   job: number | null;
+  /** v3.0 X1-EXT: the posting's address as the lookup names it (lookupAddressOf), for a closed report; memory only. */
+  asked: string;
+  /** v3.0 X1-EXT: the tab is a private (incognito) one: nothing is reported from it. */
+  privateTab: boolean;
 }
 
 /** A refresh in flight: what it was asked with, whether the frame relayed it, and an add's outcome. */
@@ -297,7 +324,17 @@ export function jobCardOf(lookup: AutofillLookupResponse, addable: boolean): Job
     match: shown,
     addable,
     ...(job?.matchedBy === 'chosen' ? { chosen: true as const } : {}),
+    // v3.0 X1-EXT (API 9): held for review, and reported closed by this account (absent from a TailorIT older than 9).
+    ...(job?.held === true ? { held: true as const } : {}),
+    ...(job !== null && job.active && job.reported === true ? { reported: 'person' as const } : {}),
   };
+}
+
+/** v3.0 X1-EXT: the page's own job when TailorIT shows it as open (never one the person chose for the page, nor the
+ *  one a run named): its id, else null. */
+function ownOpenJob(entry: Pick<CardEntry, 'lookup' | 'job'>): number | null {
+  const job = entry.lookup?.job ?? null;
+  return job === null || !job.active || job.matchedBy === 'chosen' || entry.job !== null ? null : job.id;
 }
 
 /** What a refused POST /jobs means to the person. */
@@ -459,8 +496,8 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
 
   /** Keeps a lookup as a document's card, unless the token, the tab's choice or the document's epoch (it, or its tab,
    *  was forgotten) changed since it was asked. */
-  function keep(from: Pick<ContentChannel, 'tabId' | 'frameId' | 'documentId' | 'url'>, lookup: AutofillLookupResponse | null,
-    read: CardRead): void {
+  function keep(from: Pick<ContentChannel, 'tabId' | 'frameId' | 'documentId' | 'url'>
+    & Partial<Pick<ContentChannel, 'incognito'>>, lookup: AutofillLookupResponse | null, read: CardRead): void {
     const key = docKeyOf(from.tabId, from.frameId, from.documentId);
     const job = read.job ?? null;
     const app = appOfFrom(from);
@@ -474,6 +511,8 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       generation: read.generation,
       chosen: read.chosen,
       job,
+      asked: lookupAddressOf(from.url), // v3.0 X1-EXT
+      privateTab: from.incognito === true,
     });
   }
 
@@ -530,6 +569,18 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       ...(relay.chosen === null ? {} : { resumeId: relay.chosen }), ...(job === null ? {} : { jobId: job }) });
     log('job.looked-up', { status: answer.ok ? 200 : answer.status ?? 0, job: answer.ok && answer.value.job !== null });
     keep(from, answer.ok ? answer.value : null, relay);
+    // v3.0 X1-EXT: the page's own job, open in TailorIT, its card kept: the closed check looks in this document.
+    const own = answer.ok ? ownOpenJob({ lookup: answer.value, job }) : null;
+    if (own !== null && from.incognito !== true && stillCurrent(from, relay)) {
+      let platform: string | null = null;
+      try {
+        platform = applicationOf(new URL(from.url))?.platform ?? null;
+      } catch {
+        platform = null;
+      }
+      deps.openJob?.({ tabId: from.tabId, frameId: from.frameId, documentId: from.documentId ?? null, jobId: own,
+        url: lookupAddressOf(from.url), platform, incognito: false });
+    }
     // v1.3 B: the job's known questions and the person's earlier answers, read ahead for the fill (loadCard).
     if (relay.onLoad && answer.ok && answer.value.formKnown === true && answer.value.job !== null
       && stillCurrent(from, relay)) deps.prefetchForm?.(answer.value.job.id);
@@ -595,7 +646,15 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       if (lookup === null) return ok({ tabId, card: { state: 'unavailable' } });
       const card = jobCardOf(lookup, read.entry!.addable);
       const without = withouts.get(tabId) === appOfFrame(tabId, read.frame);
-      return ok({ tabId, card: card.state === 'answered' && without ? { ...card, withoutResume: true } : card });
+      let shown: JobCard = card.state === 'answered' && without ? { ...card, withoutResume: true } : card;
+      // v3.0 X1-EXT: what the closed check found, and what was reported, for the page's own open job.
+      const own = ownOpenJob(read.entry!);
+      if (shown.state === 'answered' && own !== null && deps.closedCard !== undefined) {
+        const closed = await deps.closedCard({ tabId, frameId: read.frame.frameId, documentId: read.frame.documentId,
+          jobId: own, privateTab: read.entry!.privateTab });
+        shown = { ...shown, ...closed, ...(shown.reported === 'person' ? { reported: 'person' as const } : {}) };
+      }
+      return ok({ tabId, card: shown });
     },
     async loadCard(tabId, from) {
       await ready;
@@ -794,6 +853,14 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       withouts.delete(tabId);
       void persist(tabId);
       deps.limit.forget(`${tabId}/`);
+    },
+    async reportTarget(tabId) {
+      await ready;
+      if (!(await deps.connected())) return null;
+      const read = await cardOfTab(tabId);
+      const entry = read?.entry ?? null;
+      const jobId = entry === null ? null : ownOpenJob(entry);
+      return entry === null || jobId === null ? null : { jobId, url: entry.asked, privateTab: entry.privateTab };
     },
     dropTokenData() {
       cards.clear();
