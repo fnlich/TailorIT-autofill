@@ -63,6 +63,8 @@
  *   private tab; the card then says what the check found and whether the posting was reported (closedSeen, reported,
  *   reportable), and the lookup's `held` and `reported`. Report as closed takes the card frame's own open job and
  *   address (reportTarget). The address stays in this file's memory with the card.
+ * - v3.0 FIX-EXT (REQ-1): the lookup's job and each job a search found carry their source's credit, when TailorIT sends
+ *   one ("Source: Himalayas", the name and the source's https link: job-credit.ts), for the card and the search's list.
  * The cards themselves are memory only, and no log line names the job, the address, the resume or the person.
  */
 import { applicationOf } from '../adapters';
@@ -82,6 +84,7 @@ import { log } from '../shared/log';
 import { JOB_CHOICE_PREFIX, JobChoiceRecordSchema, type JobChoiceRecord } from '../shared/stored';
 import { cardFrameOf, frameEntry, framesOfTab, frameTarget, navOf, type FrameEntry } from './frames';
 import type { ClosedTarget } from './closed-check'; // v3.0 X1-EXT
+import { creditIn, type JobCredit } from './job-credit'; // v3.0 FIX-EXT (REQ-1)
 import { createKeyedQueue, type createRateLimit } from './locks';
 import type { ContentChannel } from './router';
 import type { ServerClient, ServerResult } from './server-client';
@@ -288,9 +291,16 @@ function msOf(instant: string | null | undefined): number | null {
   return Number.isFinite(ms) && ms >= 0 ? ms : null;
 }
 
+/** v3.0 FIX-EXT (REQ-1): a job's source credit for a card, when the answer carried one (job-credit.ts): `{credit}`,
+ *  else nothing. */
+function creditCard(job: object): { credit?: JobCredit } {
+  const credit = creditIn(job);
+  return credit === undefined ? {} : { credit };
+}
+
 /**
  * What the side panel shows of a lookup: the job's title, company, location, whether it closed, when it was posted,
- * its pay and arrangement; the tracker entry's status; the resume's title, file kind and reason; and its match, kept
+ * its pay and arrangement, its source's credit; the tracker entry's status; the resume's title, file kind and reason; and its match, kept
  * only when it scores that resume and its counts agree. Never an id, an address, the posting text or a file name.
  */
 export function jobCardOf(lookup: AutofillLookupResponse, addable: boolean): JobCard {
@@ -317,6 +327,8 @@ export function jobCardOf(lookup: AutofillLookupResponse, addable: boolean): Job
       // v4: the card names the industry under the company (absent from a TailorIT older than it).
       ...(job.industry === undefined ? {} : { industry: job.industry === null || job.industry.trim() === '' ? null
         : cutAtWord(job.industry, 120) }),
+      // v3.0 FIX-EXT (REQ-1): the source's credit, when its terms ask for one ("Source: Himalayas").
+      ...creditCard(job),
     },
     tracked: application === null ? null : { status: application.status, archived: application.archived },
     resume: suggestedResume === null ? null
@@ -733,7 +745,7 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       searches.set(tabId, { docKey: docKeyOf(tabId, frame.frameId, frame.documentId), ids: items.map((item) => item.jobId) });
       await persist(tabId);
       return ok({ outcome: 'found', items: items.map((item, at) => ({ ref: `j${at}`, title: cutAtWord(item.title, 300),
-        company: cutAtWord(item.company, 200), location: cutAtWord(item.location, 300) })) });
+        company: cutAtWord(item.company, 200), location: cutAtWord(item.location, 300), ...creditCard(item) })) });
     },
     async chooseJob({ tabId, ref }) {
       await ready;

@@ -19,13 +19,17 @@
  * extension page, never the job page) and Edit TailorIT's editor, each in a tab of its own (panel/openDocument); the
  * tailoring's row (tailor.tsx) comes under the line.
  *
+ * v3.0 FIX-EXT (REQ-1): the job's source credit under its date and location, "Source: Himalayas" (credit.tsx), when
+ * the source's terms ask for one.
+ *
  * v3.0 X1-EXT (autofill API 9; background/closed-check.ts, closed-reports.ts), for a job TailorIT shows as open: "This
  * posting looks closed." when the extension's look in the page found a closed sign, then "Reported to TailorIT." when it
  * went by itself, or the Report as closed button; "You reported this posting as closed." once the person did (or
  * TailorIT says this account did); Report as closed as a quiet link under the card at any other time it may be offered
  * (`reportable`); and, for a job held for review, "Only you see this job in TailorIT until it is approved."
  *
- * It never shows an id, an address, the posting text or a file name: the card holds none. The resume's title is the
+ * It never shows an id, an address, the posting text or a file name: the card holds none (the credit's link is the
+ * job's source's own). The resume's title is the
  * person's own and may be their name; it is shown on purpose, as the resume the fill attaches.
  */
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
@@ -42,6 +46,7 @@ import { DocumentLinks } from './tailor';
 import { dayLabel, folderOf, foldersOf, type ResumeFolder } from './resume-folders'; // v1.5 X
 import type { ReportClosedAnswer, TailorKind } from '../../messaging/page-schemas';
 import { API9_COPY } from '../options/copy-api9'; // v3.0 X1-EXT
+import { CreditLine } from './credit'; // v3.0 FIX-EXT (REQ-1)
 
 type Answered = Extract<Card, { state: 'answered' }>;
 type ResumeItem = ResumeListAnswer['items'][number];
@@ -171,6 +176,7 @@ function AnsweredCard({ card, adding, outcome, now, onAdd, working = false, sear
           </p>
         )}
         {meta !== null && <p className="tia-job__meta" data-job-meta="">{meta}</p>}
+        {job !== null && <CreditLine credit={job.credit} className="tia-job__credit" />}
         {job !== null && !job.closed && (
           <ClosedLines card={card} reporting={reporting} {...(onReportClosed === undefined ? {} : { onReport: onReportClosed })} />
         )}

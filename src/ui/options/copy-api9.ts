@@ -2,6 +2,7 @@
  * v3.0 X1-EXT (autofill API 9; TailorIT docs/design/part2/14-extension-reports.md §3-4): the words the closed-link
  * reports add, apart from src/shared/copy.ts, which the content script reads (its bundle must not change). Only the
  * options page and the sidebar's views (the job card, the disclosure shown again, the set-up view) read this file.
+ * v3.0 FIX-EXT (REQ-1): and the job's source credit (ui/panel/credit.tsx).
  * Drafts for the owner's review. TailorIT's daily cap is said in TailorIT's own words (its 429's message, shown as it
  * is); `limited` stands in only where a TailorIT sent none.
  */
@@ -32,6 +33,13 @@ export const API9_COPY = {
       'not-connected': 'Connect to TailorIT in the settings first.',
       unavailable: "TailorIT couldn't take the report just now. Try again.",
     } satisfies Record<ReportClosedOutcome, string>,
+  },
+  /** v3.0 FIX-EXT (REQ-1): a job's source credit, on the job card and in "Autofill for another job"'s list, as
+   *  TailorIT's own pages write it ("Source: Himalayas", the name a link to the source). */
+  credit: {
+    lead: 'Source:',
+    /** After the linked name, for a screen reader. */
+    newTab: '(opens in a new tab)',
   },
   /** Options › Closed job postings. */
   options: {

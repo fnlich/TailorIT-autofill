@@ -32,8 +32,10 @@ import {
   AUTOFILL_COVER_LETTER_MAX_BYTES,
   AutofillCoverLetterTextSchema,
   type AutofillCoverLetterText,
+  AutofillJobSearchItemSchema,
   AutofillJobSearchResponseSchema,
   type AutofillJobSearchResponse,
+  AUTOFILL_JOB_SEARCH_MAX,
   AUTOFILL_JOB_SEARCH_QUERY_MAX,
   PutAutofillProfileResponseSchema,
   type PutAutofillProfileBody,
@@ -118,6 +120,7 @@ import {
 // keeps v3 Phase 8's company-page rule (addressForTailorIT) and names iCIMS's, SmartRecruiters' and jobs.workable.com's
 // pages by their posting's canonical address.
 import { tailoritAddressOf } from '../adapters/tailorit-address';
+import { withCredit } from './job-credit'; // v3.0 FIX-EXT (REQ-1)
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { aiRefusalOf } from './ai-notice'; // v2.0 fix wave (REQ-1)
@@ -449,19 +452,30 @@ async function readCapped(response: Response, max: number): Promise<Uint8Array |
 }
 
 /** A lookup as the wire may carry it, its match read apart (lookupOf): a cosmetic field never decides whether the rest,
- *  the stored copy's policy check among it, is read (the v2 review, M1). */
-const LookupWireSchema = AutofillLookupResponseSchema.extend({ match: z.unknown().optional() });
+ *  the stored copy's policy check among it, is read (the v2 review, M1). v3.0 FIX-EXT (REQ-1): the job's source credit
+ *  likewise (job-credit.ts). */
+const LookupWireSchema = AutofillLookupResponseSchema.extend({
+  match: z.unknown().optional(),
+  job: AutofillLookupResponseSchema.shape.job.unwrap().extend({ credit: z.unknown().optional() }).nullable(),
+});
 const AddJobWireSchema = AutofillAddJobResponseSchema.extend({ lookup: LookupWireSchema });
 
 /** The lookup with its match checked on its own: absent stays absent (a TailorIT older than the field), and one that
- *  breaks the contract becomes null, logged as a code. */
+ *  breaks the contract becomes null, logged as a code. v3.0 FIX-EXT (REQ-1): the job keeps its credit beside the
+ *  contract's fields when it reads (job-credit.ts creditIn), else none. */
 function lookupOf(wire: z.infer<typeof LookupWireSchema>): AutofillLookupResponse {
-  const { match, ...rest } = wire;
-  if (match === undefined) return rest;
+  const { match, job, ...rest } = wire;
+  const read = { ...rest, job: job === null ? null : withCredit(job) };
+  if (match === undefined) return read;
   const parsed = AutofillLookupMatchSchema.nullable().safeParse(match);
   if (!parsed.success) log('server.lookup-match-dropped');
-  return { ...rest, match: parsed.success ? parsed.data : null };
+  return { ...read, match: parsed.success ? parsed.data : null };
 }
+
+/** v3.0 FIX-EXT (REQ-1): a job search as the wire may carry it, each job's source credit read apart (job-credit.ts). */
+const JobSearchWireSchema = AutofillJobSearchResponseSchema.extend({
+  items: z.array(AutofillJobSearchItemSchema.extend({ credit: z.unknown().optional() })).max(AUTOFILL_JOB_SEARCH_MAX),
+});
 
 /** TailorIT's error body, when it sent one: its code and retry hint; v2.0 fix wave (REQ-1), its words, which refusalOf
  *  keeps for its AI's two refusals alone. */
@@ -820,8 +834,12 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
       return json({ method: 'GET', path: `/api/autofill/cover-letters/${id}/text`, token: 'current' },
         AutofillCoverLetterTextSchema);
     },
-    searchJobs: (query) => json({ method: 'GET', path: '/api/autofill/jobs/search', token: 'current',
-      query: { q: [...query].slice(0, AUTOFILL_JOB_SEARCH_QUERY_MAX).join('') } }, AutofillJobSearchResponseSchema),
+    async searchJobs(query) {
+      const raw = await json({ method: 'GET', path: '/api/autofill/jobs/search', token: 'current',
+        query: { q: [...query].slice(0, AUTOFILL_JOB_SEARCH_QUERY_MAX).join('') } }, JobSearchWireSchema);
+      // v3.0 FIX-EXT (REQ-1): each job keeps its credit beside the contract's fields when it reads, else none.
+      return raw.ok ? { ok: true, value: { items: raw.value.items.map((item) => withCredit(item)) } } : raw;
+    },
     async applied(body) {
       const raw = await json({ method: 'POST', path: '/api/autofill/applied', token: 'current',
         json: body.url === undefined ? body : { ...body, url: tailoritAddressOf(body.url) } }, LookupWireSchema);

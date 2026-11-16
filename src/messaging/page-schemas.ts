@@ -372,12 +372,22 @@ export const JobCardMatchSchema = z.discriminatedUnion('state', [
 ]);
 export type JobCardMatch = z.infer<typeof JobCardMatchSchema>;
 
+/** v3.0 FIX-EXT (REQ-1): a job's source credit on the card and in "Autofill for another job"'s list ("Source:
+ *  Himalayas"), where the source's terms ask for one: its name, and the source's https link (background/job-credit.ts;
+ *  the source's address, never the posting's). */
+export const JobCardCreditSchema = z.strictObject({
+  text: Text(200).min(1),
+  url: Text(2048).regex(/^https:\/\/\S+$/i).optional(),
+});
+export type JobCardCredit = z.infer<typeof JobCardCreditSchema>;
+
 /**
  * What the side panel's job card shows (v2): 'unavailable' when TailorIT could not say (it failed, or the frame did not
  * relay); else the job (null: not in the person's TailorIT jobs), their tracker entry, the resume a fill attaches (its
  * title, which may be the person's name, its file kind and why it was chosen), its match, and whether "Add this job to
  * TailorIT" can work from this page's address (Greenhouse's and Lever's own pages). Never an id, an address, the posting
- * text, a file name or the ATS reading; the date it was posted only as a time (ms), to say "2 days ago".
+ * text, a file name or the ATS reading; the date it was posted only as a time (ms), to say "2 days ago". (v3.0 FIX-EXT:
+ * the one link it may hold is the job's source's own, in its credit.)
  */
 export const JobCardSchema = z.discriminatedUnion('state', [
   z.strictObject({ state: z.literal('unavailable') }),
@@ -387,7 +397,9 @@ export const JobCardSchema = z.discriminatedUnion('state', [
       postedAt: Count.nullable(), salary: Text(120).nullable(), workArrangement: z.enum(WORK_ARRANGEMENTS).nullable(),
       /** v4: the industry as TailorIT's Jobs page names it ("Finance"), under the company on the card; absent or null
        *  when TailorIT does not say. */
-      industry: Text(120).nullable().optional() })
+      industry: Text(120).nullable().optional(),
+      /** v3.0 FIX-EXT (REQ-1): the source's credit; absent when its source asks for none (or TailorIT sends none). */
+      credit: JobCardCreditSchema.optional() })
       .nullable(),
     tracked: z.strictObject({ status: z.number().int(), archived: z.boolean() }).nullable(),
     resume: z.strictObject({ label: Text(200), fileKind: z.enum(AUTOFILL_FILE_KINDS), reason: z.enum(RESUME_CHOICE_REASONS) })
@@ -543,13 +555,13 @@ export const PanelLauncherAnswerSchema = z.strictObject({ hidden: z.enum(['none'
 export type PanelLauncherAnswer = z.infer<typeof PanelLauncherAnswerSchema>;
 
 /** panel/jobSearch (v3 Phase 3b): the jobs found, each with the reference panel/chooseJob takes, its title, company and
- *  where it is; or why there are none ('not-allowed': a connection made before version 3; 'not-connected';
- *  'rate-limited'; 'unavailable'). Never TailorIT's id. */
+ *  where it is (v3.0 FIX-EXT, REQ-1: and its source's credit, when it has one); or why there are none ('not-allowed':
+ *  a connection made before version 3; 'not-connected'; 'rate-limited'; 'unavailable'). Never TailorIT's id. */
 export const JOB_SEARCH_REFUSALS = ['not-allowed', 'not-connected', 'rate-limited', 'unavailable'] as const;
 export type JobSearchRefusal = (typeof JOB_SEARCH_REFUSALS)[number];
 export const PanelJobSearchAnswerSchema = z.discriminatedUnion('outcome', [
   z.strictObject({ outcome: z.literal('found'), items: z.array(z.strictObject({ ref: JobRefSchema, title: Text(300),
-    company: Text(200), location: Text(300) })).max(AUTOFILL_JOB_SEARCH_MAX) }),
+    company: Text(200), location: Text(300), credit: JobCardCreditSchema.optional() })).max(AUTOFILL_JOB_SEARCH_MAX) }),
   z.strictObject({ outcome: z.enum(JOB_SEARCH_REFUSALS) }),
 ]);
 export type PanelJobSearchAnswer = z.infer<typeof PanelJobSearchAnswerSchema>;

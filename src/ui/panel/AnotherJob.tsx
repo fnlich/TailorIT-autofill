@@ -5,12 +5,14 @@
  * page (panel/chooseJob). The worker answers each job by its place in the search, never TailorIT's id. A job chosen so
  * says so on the card, with "Use this page's own job" to undo it. Presentational: the requests come in as callbacks.
  * v4 ui: opened by the card's compact "Not this job?" link; its explanation is the "?" beside its heading.
+ * v3.0 FIX-EXT (REQ-1): a job whose source asks for a credit shows it under its company ("Source: Himalayas").
  */
 import { useId, useState, type FormEvent } from 'react';
 import type { PanelJobSearchAnswer } from '../../messaging/schemas';
 import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
 import { HelpTip } from '../page/HelpTip';
+import { CreditLine } from './credit'; // v3.0 FIX-EXT (REQ-1)
 
 type Found = Extract<PanelJobSearchAnswer, { outcome: 'found' }>['items'];
 
@@ -88,6 +90,7 @@ export function AnotherJob({ search, choose, chosen }: AnotherJobProps) {
                     <strong className="tia-another__title">{item.title}</strong>
                     <span className="tia-another__where">{[item.company, item.location].filter((part) => part !== '')
                       .join(' · ')}</span>
+                    <CreditLine credit={item.credit} as="span" className="tia-another__credit" />
                   </span>
                   <button type="button" className="tia-button tia-button--quiet" data-job-choice={item.ref}
                     aria-label={`${WORDS.use}: ${item.title}`} onClick={() => {

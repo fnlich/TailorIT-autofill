@@ -143,6 +143,8 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
   -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 .tia-job__meta { margin: -6px 0 0; font-size: 13px; color: var(--tia-fg); }
+/* v3.0 FIX-EXT (REQ-1): the job's source credit ("Source: Himalayas"), on the card and in the search's list. */
+.tia-job__credit { margin: -6px 0 0; font-size: 12px; color: var(--tia-muted); overflow-wrap: anywhere; }
 /* v4 ui: "Not this job?" under a rule at the card's foot (where Jobright puts its connections row). */
 .tia-job__foot { margin: 2px -16px -4px; padding: 8px 16px 0; border-top: 1px solid var(--tia-line); }
 /* v4 ui: "+ Add this job in one click", a mint pill with a sparkle on its corner (screenshot 2). */
@@ -346,6 +348,7 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-another__what { display: grid; flex: 1 1 auto; min-width: 0; }
 .tia-another__title { overflow-wrap: anywhere; }
 .tia-another__where { font-size: 12px; color: var(--tia-muted); overflow-wrap: anywhere; }
+.tia-another__credit { font-size: 12px; color: var(--tia-muted); overflow-wrap: anywhere; }
 .tia-preview { display: grid; gap: 8px; }
 .tia-preview__frame {
   width: 100%; height: 520px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-control); background: var(--tia-bg);
