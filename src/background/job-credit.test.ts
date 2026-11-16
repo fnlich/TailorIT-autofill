@@ -1,8 +1,8 @@
 /*
  * v3.0 FIX-EXT (REQ-1): a job's source credit ("Source: Himalayas"), from TailorIT's lookup and job search to the side
  * panel's card and "Autofill for another job"'s list (job-credit.ts, server-client.ts, job-cards.ts), against fixtures
- * of the optional `credit` field (TailorIT's JobCreditSchema shape) until the contract carries it. A broken credit is
- * dropped alone, a link that is not https leaves the name, and an answer without one shows none.
+ * of the optional `credit` field (API 9, the contract's AutofillJobCreditSchema). A broken credit is dropped alone, a
+ * link that is not https leaves the name, and an answer without one shows none.
  * Undo proof: read the lookup and the search with the contract's schemas alone (server-client.ts LookupWireSchema and
  * JobSearchWireSchema without `credit`) and the card and the list lose the credit.
  */
