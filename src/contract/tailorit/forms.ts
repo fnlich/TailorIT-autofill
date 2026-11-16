@@ -16,9 +16,10 @@ import { AUTOFILL_APPLIED_REFUSALS } from './tracker';
 // - POST /api/autofill/submissions (tracker:write), once the site confirmed the Submit: what POST /api/autofill/applied
 //   does (the job's tracker entry at Applied), and, in the same transaction, the form's questions kept for the job and
 //   this person's answers kept for this application, replacing the ones a submission kept before. A posting TailorIT
-//   shares with no one yet becomes shared: the person's own job made from a page joins TailorIT's shared jobs, and a
-//   posting TailorIT lacks is added (read from its ATS as POST /api/autofill/jobs reads one, else made from the
-//   `posting` text the person saw, as POST /api/autofill/jobs/from-page makes one, but shared).
+//   shares with no one yet is offered to the shared jobs: the person's own job made from a page joins its page
+//   review in Admin › Review (v3.0: shared once an admin approves it), and a posting TailorIT lacks is added (read from
+//   its ATS as POST /api/autofill/jobs reads one, else made from the `posting` text the person saw, as POST
+//   /api/autofill/jobs/from-page makes one, the person's own and offered for review the same way).
 // - POST /api/autofill/forms/known (jobs:lookup): the job's questions as TailorIT keeps them, and this person's earlier
 //   answers (the same job's; and, for questions that are no self-identification, legal, pay, consent or attention
 //   check, the latest answer to the same question and option set on another job), so a form fills before any AI.
@@ -204,10 +205,11 @@ function namesPageOrJob(request: { url?: string | undefined; jobId?: number | un
  * POST /api/autofill/submissions (scope tracker:write), sent once the site confirmed the Submit. The job is found as
  * POST /api/autofill/applied finds it (`jobId`, else the job the lookup finds at `url` and `employerUrl`); TailorIT's
  * job of a posting it lacks is added (with jobs:add, or the session) from its ATS, else from `posting`; and a job the
- * person made from a page becomes shared. The entry moves to Applied as /applied moves it. `questions` are every
- * question the form asked (each step's, as the person left it), kept for the job: a question TailorIT lacks is added,
- * none is deleted. `answers` are the person's, each naming its question's `ref` (one answer a question at most; a ref
- * no question has is refused): they replace the answers kept for this application, every question of the body kept
+ * person made from a page is offered to the shared jobs (v3.0: through its page review, shared once approved). The
+ * entry moves to Applied as /applied moves it. `questions` are every question the form asked (each step's, as the
+ * person left it), kept for the job: a question TailorIT lacks is added, none is deleted. `answers` are the person's,
+ * each naming its question's `ref` (one answer a question at most; a ref no question has is refused): they replace the
+ * answers kept for this application, every question of the body kept
  * with its answer or as not answered. Absent when the person's "Keep my submitted answers in TailorIT" is off: then
  * only the questions are kept, and the answers kept before stay as they were. A 400 changes nothing: send POST
  * /api/autofill/applied then, so the application is still marked.
@@ -252,8 +254,10 @@ export type AutofillSubmissionRequest = z.infer<typeof AutofillSubmissionRequest
 
 /**
  * What the submission did to the job: `shared`, a job TailorIT already shared; `promoted`, the person's own job made
- * from a page, now shared; `added`, a posting TailorIT lacked, added now and shared; `none`, no job (an entry the person
- * added by hand was moved: the questions are kept under the posting when the page names one).
+ * from a page, offered to the shared jobs (v3.0: its page review holds the person's report; it is shared once an admin
+ * approves it); `added`, a posting TailorIT lacked, added now (read from its ATS, or the person's own page job made from
+ * `posting` and offered the same way); `none`, no job (an entry the person added by hand was moved: the questions are
+ * kept under the posting when the page names one).
  */
 export const AUTOFILL_SUBMISSION_JOB_STATES = ['shared', 'promoted', 'added', 'none'] as const;
 export type AutofillSubmissionJobState = (typeof AUTOFILL_SUBMISSION_JOB_STATES)[number];
