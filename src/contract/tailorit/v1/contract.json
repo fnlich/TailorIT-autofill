@@ -10,15 +10,15 @@
     "connect.ts": "c7c32bda21eb64b78ec9e8085549144384fbf1d5c676b72918dbe726588b0071",
     "cover-letters.ts": "b53295eb22f5abd6b3d94803d75759a8f7f2e757a656e8d1ae3c4bbaf0516eb7",
     "credentials.ts": "447f5662174deb4a35ea9ccb0d5481a3e19df57e4e34ac03bdfc7aec483f47b4",
-    "forms.ts": "4f65bb95f8e160aeb764b2a44928f91ed4283e3296904b3ab35270896c7b8434",
+    "forms.ts": "6ad2fc38d6d9b6bde9714c52a1deb7e4403d7f6ec31f821ae7170d9a651d10f3",
     "index.ts": "86cab394a8793ebd0f760d842347b29e2d7eed9fea531b91d8286f7619ed0cad",
-    "lookup.ts": "f1fd1587a68dc2059ed262e0bdc8deaf118299f36bc52cc6acf1c398bc8500ad",
+    "lookup.ts": "730605868816638ac7e82baa00fe54ebba96994a81ce776531503d77cedc7a11",
     "profile.ts": "5d278777659bd2f81fe9976d92c9ad6934cb8ade8988102960d1a2b2d9023035",
     "registry.ts": "bd3445241a3d391844e2a053a1919785d0b82c2e0b10162a3bdc9acdd3099ce5",
     "resumes.ts": "4ff18ed3654e5127b36f7c747f665dcd5e8c3f301e238a20f85fef1655de46f4",
     "sites.ts": "8277ea2ad73f9b4253f89c460af91c4635d3aee2b6f29b94024e5482e3abf3ef",
     "tailor.ts": "d1dbd11c6717a0da6ab4090b5cd14c353ea5e8a91cccfc8bbdd3c54a5f3491cc",
-    "tracker.ts": "5ac61739e8e46add184682de1a0bed52fa2fc5f4284db24fdf23cc4d2ee0c7cf",
+    "tracker.ts": "eedd57d9587aa6766d17e68fec1e6ab5af12d42dc10893ee25877169930d880c",
     "version.ts": "03cbd66c832a2cfb84928ccf7e14e5ca6d711c4faa852cbad4e03f0d0c1caa98"
   },
   "fixtures": {
@@ -428,7 +428,7 @@
     "AutofillSubmissionRequest/valid/prepared-answer.json": "327a2fba5baa42e6fb2d165d6131e75214609e6cd892858ec934b7ae0c283915",
     "AutofillSubmissionResponse/invalid/unknown-job-state.json": "803f30b1587e34c103890f03a09332be13560e1d24ec8b9c40d9904b4280c3b9",
     "AutofillSubmissionResponse/valid/golden.json": "ff9588760048f58ac74df2ee780942cda7510a32b3716abbf384e9682e50d817",
-    "AutofillSubmissionResponse/valid/keep-answers-off.json": "5fc8200689aaf5b4cce577fda582beab2d0564d4e63566a7aeee2e77a9418155",
+    "AutofillSubmissionResponse/valid/keep-answers-off.json": "d70205b04595d9c7a9bbe131a11388b9ee6b9e8dbf14e5b87e6347b981b5c43b",
     "AutofillTailorAccepted/invalid/upper-case-id.json": "968e3eab4a47c9c0d9072c8b8099080d59565033f6363aa7b4fb9118e69c74d0",
     "AutofillTailorAccepted/valid/deduped.json": "134b5f3c4ed3c61b4ad1256dd7ea0971a8482959b834ad6f9ad101045b26363a",
     "AutofillTailorAccepted/valid/golden.json": "77611cbac425546f4d796945957d1f193e36ebb3ac37fdd5c1c7cbee79553b3c",
@@ -10717,6 +10717,25 @@
                 },
                 "reported": {
                   "type": "boolean"
+                },
+                "credit": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "url": {
+                      "type": "string",
+                      "maxLength": 2048,
+                      "pattern": "^https:\\/\\/\\S+$"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -11216,6 +11235,25 @@
                     },
                     "reported": {
                       "type": "boolean"
+                    },
+                    "credit": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "url": {
+                          "type": "string",
+                          "maxLength": 2048,
+                          "pattern": "^https:\\/\\/\\S+$"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -15959,6 +15997,25 @@
               },
               "location": {
                 "type": "string"
+              },
+              "credit": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "pattern": "^https:\\/\\/\\S+$"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -17972,6 +18029,25 @@
                     },
                     "reported": {
                       "type": "boolean"
+                    },
+                    "credit": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "url": {
+                          "type": "string",
+                          "maxLength": 2048,
+                          "pattern": "^https:\\/\\/\\S+$"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -18297,7 +18373,7 @@
           "type": "string",
           "enum": [
             "shared",
-            "promoted",
+            "offered",
             "added",
             "none"
           ]

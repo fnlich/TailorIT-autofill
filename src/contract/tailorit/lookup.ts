@@ -200,6 +200,20 @@ export const LOOKUP_JOB_MATCHES = ['source_link', 'link_key', 'chosen', 'alias']
 /** How the application was found: by its job, or by the posting link saved on it. */
 export const LOOKUP_APPLICATION_MATCHES = ['job', 'posting_url'] as const;
 
+// v30 FIX-B
+/**
+ * Version 9 (additive, REV-REQ REQ-1): the credit line a job's source asks for wherever the job is shown (Himalayas'
+ * "visible credit with a link", Jobicy's: docs/design/part2/12-job-sourcing.md §3.6-3.7), as the Jobs card shows it:
+ * its words, and its https link when it has one. The same shape as the web's JobCredit (jobs/dto.ts), kept here so
+ * this folder stays the extension's own copy.
+ */
+export const AutofillJobCreditSchema = z.object({
+  text: z.string().trim().min(1).max(200),
+  url: z.string().max(2048).regex(/^https:\/\/\S+$/).optional(),
+});
+export type AutofillJobCredit = z.infer<typeof AutofillJobCreditSchema>;
+// end v30 FIX-B
+
 /**
  * The tracker's statuses as TailorIT names them (tracker/statuses.ts STATUS_INFO, in its order): the extension names a
  * tracked application's status with them. A code not listed is one added later.
@@ -313,6 +327,8 @@ export const AutofillLookupResponseSchema = z.object({
       /** Version 9: this account has a pending closed report on the job ("You reported this posting as closed"). */
       reported: z.boolean().optional(),
       // end v30 CT
+      /** Version 9 (v30 FIX-B, REQ-1): the source's credit line the card shows; absent when the source asks none. */
+      credit: AutofillJobCreditSchema.optional(),
     })
     .nullable(),
   /** The person's own tracker entry for this posting: the extension warns before a second application. */

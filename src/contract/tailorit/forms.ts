@@ -253,13 +253,15 @@ export const AutofillSubmissionRequestSchema = z
 export type AutofillSubmissionRequest = z.infer<typeof AutofillSubmissionRequestSchema>;
 
 /**
- * What the submission did to the job: `shared`, a job TailorIT already shared; `promoted`, the person's own job made
- * from a page, offered to the shared jobs (v3.0: its page review holds the person's report; it is shared once an admin
- * approves it); `added`, a posting TailorIT lacked, added now (read from its ATS, or the person's own page job made from
- * `posting` and offered the same way); `none`, no job (an entry the person added by hand was moved: the questions are
- * kept under the posting when the page names one).
+ * What the submission did to the job: `shared`, a job TailorIT already shared; `offered`, the person's own job made
+ * from a page, offered to the shared jobs (its page review holds the person's report; it stays theirs, and is shared
+ * only once an admin approves it); `added`, a posting TailorIT lacked, added now (read from its ATS, or the person's own
+ * page job made from `posting` and offered the same way); `none`, no job (an entry the person added by hand was moved:
+ * the questions are kept under the posting when the page names one).
+ * Version 9 (v30 FIX-B, INT-3 open item 12): `offered` replaces v1.3's `promoted`, which said the job was shared while
+ * it waits for an admin. A version 8 extension is refused (409) before any answer, so none reads the old word.
  */
-export const AUTOFILL_SUBMISSION_JOB_STATES = ['shared', 'promoted', 'added', 'none'] as const;
+export const AUTOFILL_SUBMISSION_JOB_STATES = ['shared', 'offered', 'added', 'none'] as const;
 export type AutofillSubmissionJobState = (typeof AUTOFILL_SUBMISSION_JOB_STATES)[number];
 
 /**

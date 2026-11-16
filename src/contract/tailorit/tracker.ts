@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AUTOFILL_LOOKUP_URL_MAX } from './lookup';
+import { AUTOFILL_LOOKUP_URL_MAX, AutofillJobCreditSchema } from './lookup';
 
 // The person's tracker from the extension (version 3): the jobs it can fill a form for when the page is not the one
 // TailorIT matched (the side panel's "Autofill for another job"), and marking a job Applied once its form was sent
@@ -29,6 +29,8 @@ export const AutofillJobSearchItemSchema = z.object({
   company: z.string(),
   /** Where it is, as the lookup writes it; '' when the posting does not say. */
   location: z.string(),
+  /** Version 9 (v30 FIX-B, REQ-1): the source's credit line, as the lookup's job carries it; absent: none asked. */
+  credit: AutofillJobCreditSchema.optional(),
 });
 export type AutofillJobSearchItem = z.infer<typeof AutofillJobSearchItemSchema>;
 
