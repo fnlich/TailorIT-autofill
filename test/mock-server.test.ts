@@ -74,7 +74,9 @@ import {
   CLOSED_MARKER_PLACES,
   CLOSED_SIGNALS,
   CLOSED_VIA,
+  JOB_CREDIT, // v3.0 FIX-EXT (REQ-1)
 } from '../e2e/mock-server/mock.mjs';
+import { creditOf } from '../src/background/job-credit'; // v3.0 FIX-EXT (REQ-1)
 
 /** A file of this repository, wherever the tests run from. */
 const repoFile = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url));
@@ -1403,3 +1405,23 @@ describe('the mock on autofill API 9 (v3.0 X1-EXT): closed reports and held jobs
   });
 });
 // ── end v3.0 X1-EXT ──
+
+// ── v3.0 FIX-EXT (REQ-1) ──
+describe("the mock's job credits (v3.0 FIX-EXT, REQ-1)", () => {
+  it("gives the lookup's job and every searched job their source's credit under job-credit, and none without it", async () => {
+    const lookup = async () => (await (await call('/api/autofill/lookup', { method: 'POST', headers: asToken(),
+      json: { url: 'https://jobs.lever.co/x/y/apply' } })).json()) as { job: { credit?: unknown } | null };
+    const search = async () => (await (await call('/api/autofill/jobs/search?q=', { headers: asToken() })).json()) as
+      { items: Array<{ credit?: unknown }> };
+    expect((await lookup()).job?.credit).toBeUndefined();
+    expect((await search()).items.map((item) => item.credit)).not.toContainEqual(JOB_CREDIT);
+    await scenario('job-credit');
+    expect((await lookup()).job?.credit).toEqual(JOB_CREDIT);
+    const { items } = await search();
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) expect(item.credit).toEqual(JOB_CREDIT);
+    // The extension reads it whole (background/job-credit.ts).
+    expect(creditOf(JOB_CREDIT)).toEqual(JOB_CREDIT);
+  });
+});
+// ── end v3.0 FIX-EXT ──

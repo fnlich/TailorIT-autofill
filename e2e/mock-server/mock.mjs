@@ -113,6 +113,8 @@
  *   rate_limited with TailorIT's words and resetAt, CLOSED_LIMIT_MESSAGE), closed-report-fails (500),
  *   closed-report-not-found (404), closed-report-closed (outcome closed: the person's own page job), and lookup-held
  *   (the lookup's job held for review).
+ * - v3.0 FIX-EXT (REQ-1): the scenario job-credit gives the lookup's job and every job GET /jobs/search finds their
+ *   source's credit (JOB_CREDIT, "Source: Himalayas" with its https link), the optional field TailorIT's FIX-B adds.
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -474,7 +476,13 @@ export const MOCK_SCENARIOS = Object.freeze({
   'closed-report-not-found': 'POST /jobs/:jobId/closed gets 404 not_found: no such job for this account.',
   'closed-report-closed': 'POST /jobs/:jobId/closed answers outcome closed: the job was the person’s own page job.',
   'lookup-held': 'POST /lookup answers its job held for review (job.held: only this person sees it until approved).',
+  // v3.0 FIX-EXT (REQ-1)
+  'job-credit': 'POST /lookup’s job and every job GET /jobs/search finds carry their source’s credit (JOB_CREDIT: '
+    + '“Source: Himalayas”, its https link), until the reset.',
 });
+
+/** v3.0 FIX-EXT (REQ-1): a job's source credit as TailorIT sends it (its JobCreditSchema: the name, the https link). */
+export const JOB_CREDIT = Object.freeze({ text: 'Himalayas', url: 'https://himalayas.app/jobs' });
 
 /** v2.0 P9: TailorIT's words for a reached daily auto-apply limit (MSG_LIMIT_AUTO_APPLY), as its contract's example
  *  names them. */
@@ -995,6 +1003,8 @@ export function createMock() {
     if (answer.job && state.forms.has(`job:${answer.job.id}`)) answer.formKnown = true;
     // v3.0 X1-EXT (API 9): a job held for review, and one this account reported closed.
     if (answer.job && take('lookup-held') !== null) answer.job.held = true;
+    // v3.0 FIX-EXT (REQ-1): the job's source credit.
+    if (answer.job && isOn('job-credit')) answer.job.credit = { ...JOB_CREDIT };
     if (answer.job && state.closedReports.some((report) => report.jobId === answer.job.id)) answer.job.reported = true;
     // v3 Phase 4: a job POST /applied marked is Applied in the tracker from then on.
     if (state.applied.length > 0 && answer.job) {
@@ -1749,7 +1759,9 @@ export function createMock() {
       const q = (query.get('q') ?? '').toLowerCase().split(/\s+/).filter((word) => word !== '');
       const items = example('AutofillJobSearchResponse').items.filter((/** @type {{ title: string; company: string }} */ item) =>
         q.every((word) => `${item.title} ${item.company}`.toLowerCase().includes(word)));
-      return jsonAnswer(200, { items });
+      // v3.0 FIX-EXT (REQ-1): each job's source credit.
+      if (!isOn('job-credit')) return jsonAnswer(200, { items });
+      return jsonAnswer(200, { items: items.map((/** @type {object} */ item) => ({ ...item, credit: { ...JOB_CREDIT } })) });
     },
     'POST /api/autofill/applied': ({ json }) => {
       const urlOk = json.url === undefined || (typeof json.url === 'string' && json.url.length >= 1 && json.url.length <= 2048);
