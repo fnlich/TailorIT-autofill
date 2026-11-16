@@ -13,6 +13,7 @@ import { ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CONTENT_SCRIPT_FILE, WEB_ACCES
 import { CAPTURE_PAGE, captureCommands } from './src/background/capture';
 import { CAPTURE_COPY } from './src/shared/copy';
 import { tailoritOrigin } from './scripts/tailorit-origin.mjs';
+import { addZodPure } from './scripts/zod-pure.mjs';
 
 const E2E = process.env.TAILORIT_BUILD === 'e2e';
 /** The fallback when Chromium injects no content script into routed pages: fixtures served from 127.0.0.1 instead. */
@@ -72,6 +73,12 @@ export default defineConfig({
       : {}),
   }),
   hooks: {
+    // v3.0 FIX-EXT: the content script's build alone marks the zod schemas its modules build at their top level as
+    // pure, so Rolldown drops the ones it never reads (scripts/zod-pure.mjs; the content script's budget). Every other
+    // build is as before.
+    'vite:build:extendConfig': (entrypoints, config) => {
+      addZodPure(entrypoints, config, resolve('src'));
+    },
     'build:manifestGenerated': (_wxt, manifest) => {
       // Our content script, in the isolated world: an unlisted script (src/entrypoints/content-script.ts), listed here
       // rather than built as a WXT content script, whose wrapper announces the extension to the page with an event
