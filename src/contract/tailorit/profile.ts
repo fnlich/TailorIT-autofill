@@ -203,7 +203,7 @@ export const AutofillProfileSchema = z.object({
     referralSource: textOf(100),
     /** Snapshot round 2: the kind of that answer, for a list of kinds; null when not said. */
     referralSourceCategory: z.enum(REFERRAL_CATEGORIES).nullable().default(null),
-    /** Snapshot round 2: the places the person would relocate to or work hybrid from ("Denver, CO"), at most ten. */
+    /** Snapshot round 2: the places the person would relocate to or work hybrid from ("Boulder, CO"), at most ten. */
     relocationPlaces: z.array(textOf(100).min(1, 'Required')).max(10).default([]),
   }),
   /** Snapshot round 2: the person's certifications, at most twenty. */
