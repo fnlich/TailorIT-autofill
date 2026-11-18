@@ -573,7 +573,7 @@ test('the options page', async ({ extContext, connected: ext }) => {
   await still(options);
   await options.goto(ext.url('options.html'));
   await expect(options.locator('h1')).toBeVisible();
-  await expect(options.locator('[data-card="panel"]')).toBeVisible();
+  await expect(options.locator('[data-card="modes"]')).toBeVisible();
   await shoot(options, '07-options.png', 'The options page', { fullPage: true });
   await options.locator('[data-card="modes"]').scrollIntoViewIfNeeded();
   await shoot(options, '07b-options-modes.png', 'The options page: Modes', {
