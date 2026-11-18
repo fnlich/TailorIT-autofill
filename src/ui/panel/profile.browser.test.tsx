@@ -417,6 +417,10 @@ describe('Your autofill information (v3 Phase 3b)', () => {
     await click(button(root, WORDS.save));
     const prompt = root.querySelector('[data-profile-outcome="conflict"]')!;
     expect(prompt.querySelector('[role="tooltip"]')?.textContent).toBe(WORDS.conflictHelp);
+    // Named after the line, so Load The Latest stays the one button of that name.
+    expect(prompt.querySelector('.tia-helptip__button')?.getAttribute('aria-label')).toBe(COPY.help.about(WORDS.conflict));
+    expect([...prompt.querySelectorAll('button')].filter((each) => (each.getAttribute('aria-label') ?? each.textContent)
+      ?.includes(WORDS.loadLatest))).toHaveLength(1);
     expect(prompt.querySelector('.tia-help')).toBeNull();
   });
 });

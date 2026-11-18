@@ -692,10 +692,11 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
         )}
         {(save.kind === 'refused' && save.outcome === 'conflict') || save.kind === 'merging' ? (
           <div className="tia-profile__conflict" role="status" data-profile-outcome="conflict">
-            {/* v3.2 EXT (E5): what Load the latest does is the "?" beside the line. */}
+            {/* v3.2 EXT (E5): what Load the latest does is the "?" beside the line, named after the line (never the
+                button's own name, which a "?" beside it would share). */}
             <p className="tia-profile__conflict-title">
               <span>{WORDS.conflict}</span>
-              <HelpTip text={WORDS.conflictHelp} topic={WORDS.loadLatest} />
+              <HelpTip text={WORDS.conflictHelp} topic={WORDS.conflict} />
             </p>
             <button type="button" className="tia-button" disabled={save.kind === 'merging'}
               aria-busy={save.kind === 'merging' ? 'true' : undefined} onClick={() => void loadLatest()}>
