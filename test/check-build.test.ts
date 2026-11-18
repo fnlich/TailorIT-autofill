@@ -550,7 +550,7 @@ describe("check-build's three content scripts: ours, the page-world bridge and (
       expect(output, message).toContain(`.output/chrome-mv3: ${message}`);
       expect(status, message).toBe(1);
     }
-  });
+  }, 30_000); // v3.2 EXT: as the file's other many-build cases (nine builds checked; a loaded machine takes over 5 s).
 
   // (The snapshot build of 2026-11-06, core pass Z1 items 26 and 39: the bridge reads only the shared domains' address
   // parsers, under a budget of 24 KiB; v5 p2-detect: 26 KiB, for the address variants its parsers read; jr7 ENGINE-7
