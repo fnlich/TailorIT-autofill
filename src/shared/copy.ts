@@ -583,10 +583,8 @@ const PANEL = {
       { name: 'Eightfold', hosts: '<company>.eightfold.ai/careers', note: null },
       // ── end jr7 INT-7 ──
     ],
-    embedded: 'A company page embedding one of these forms works too.',
-    /** v3 Phase 8 review (B10): the company career sites, off or not reaching this page. v5 p1-rules (PLAN decision 10):
-     *  on by default. */
-    companySites: "Employers' careers sites work while Company career sites is on; never LinkedIn or HR systems.",
+    // v3.2 EXT (E5): with the company career sites, one sentence (companySites folded in).
+    embedded: "Company pages embedding these forms work too, and employers' careers sites while Company career sites is on; never LinkedIn.",
     /** A page on one of those sites that opened before the extension could read it (installed or updated since). */
     reloadHeading: 'Reload This Page To Use Autofill', // v5 p1-panel
     reloadIntro: 'This page opened before Autofill could read it; reload it to use Autofill.',
@@ -1864,7 +1862,7 @@ const MAIN_VIEW = {
     return `${Math.floor(days / 30)} months ago`;
   },
   /** A page Autofill does not work on: its explanations, the "?" beside its heading. */
-  unsupportedHelp: `${PANEL.unsupported.embedded} ${PANEL.unsupported.companySites}`,
+  unsupportedHelp: PANEL.unsupported.embedded, // v3.2 EXT: one sentence (the company career sites in it)
   /** The cover letter's preview (the résumé's words are COPY.job.preview). */
   letterPreview: {
     loading: 'Loading the cover letter…',

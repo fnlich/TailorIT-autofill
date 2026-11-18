@@ -234,7 +234,7 @@ describe('the copy', () => {
       'setup.expired': COPY.setup.accountExpired, 'setup.revoked': COPY.setup.accountRevoked,
       'setup.profile': COPY.setup.profileHelp, 'setup.unreadable': COPY.setup.profileUnreadable,
       'main.signUp': COPY.mainView.signUpHelp, 'main.entry': COPY.mainView.entryHelp,
-      'unsupported.embedded': COPY.panel.unsupported.embedded, 'unsupported.company': COPY.panel.unsupported.companySites,
+      'unsupported.help': COPY.mainView.unsupportedHelp,
       'unsupported.reload': COPY.panel.unsupported.reloadIntro, 'unsupported.reloadSite': COPY.panel.unsupported.reloadSiteIntro,
       'siteRequest.help': COPY.panel.siteRequest.help, 'disclosureChanged.held': COPY.panel.disclosureChanged.held,
       'another.help': COPY.job.another.help, 'job.matchTip': COPY.job.matchTip(12, 20),

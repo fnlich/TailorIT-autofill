@@ -654,3 +654,55 @@ test('v1.5 QX: the tab bar and the Queue tab, the Settings view in the owner’s
   await options.close();
   await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
 });
+
+// v3.2 EXT (E5, the owner, 2026-11-18: "All description including extension should be very brief and all description
+// should be ?tooltip"): a "?" shown from the keyboard on the options page and in the Settings view, then (disconnected)
+// the set-up view's heading "?", the disclosure’s summary before Connect and its full notice opened from the keyboard,
+// and the options page's Connection card.
+test('v3.2 EXT: brief words, each "?" from the keyboard, the disclosure summary and its full notice', async ({ extContext, connected: ext, routeLog }) => {
+  const options = await extContext.newPage();
+  await options.setViewportSize({ width: 1000, height: 900 });
+  await still(options);
+  await options.goto(ext.url('options.html'));
+  const modes = options.locator('[data-card="modes"]');
+  await modes.scrollIntoViewIfNeeded();
+  await modes.locator('.tia-card__head .tia-helptip__button').focus();
+  await expect(modes.locator('.tia-card__head [role="tooltip"]')).toBeVisible();
+  await shoot(options, 'v32-01-options-modes-tip.png', 'v3.2: Options › Modes, the card’s "?" focused from the keyboard');
+  const counters = options.locator('[data-card="telemetry"]');
+  await counters.scrollIntoViewIfNeeded();
+  await counters.locator('.tia-field .tia-helptip__button').focus();
+  await expect(counters.locator('.tia-field [role="tooltip"]')).toBeVisible();
+  await shoot(options, 'v32-02-options-counters-tip.png', 'v3.2: Options › Anonymous counters, what they count in the opt-in’s "?"');
+  await options.close();
+  const { panel } = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('099'));
+  await still(panel);
+  await panel.locator('button[data-panel-settings]').click();
+  const next = panel.locator('[data-setting-group="modes.next"]');
+  await next.scrollIntoViewIfNeeded();
+  await next.locator('.tia-helptip__button').focus();
+  await expect(next.locator('[role="tooltip"]')).toBeVisible();
+  await shoot(panel, 'v32-03-settings-tip.png', 'v3.2: the Settings view, a mode’s "?" in one sentence');
+  await ext.data({ v: 1, type: 'auth/disconnect' });
+  await panel.reload();
+  await expect(panel.locator('[data-setup]')).toBeVisible();
+  await panel.locator('.tia-setup__head .tia-helptip__button').focus();
+  await expect(panel.locator('.tia-setup__head [role="tooltip"]')).toBeVisible();
+  await shoot(panel, 'v32-04-setup-tip.png', 'v3.2: the set-up view, its heading’s "?" (the line it had) from the keyboard');
+  await panel.locator('button[data-step-action="account"]').click();
+  await expect(panel.locator('[data-consent] [data-disclosure-summary]')).toBeVisible();
+  await shoot(panel, 'v32-05-setup-summary.png', 'v3.2: before Connect, the disclosure’s summary; the full notice one click away');
+  await panel.locator('[data-consent] summary').focus();
+  await panel.keyboard.press('Enter');
+  await expect(panel.locator('[data-consent] details[data-disclosure-full][open]')).toBeVisible();
+  await shoot(panel, 'v32-06-setup-full-notice.png', 'v3.2: Read the full notice, opened from the keyboard');
+  const disconnected = await extContext.newPage();
+  await disconnected.setViewportSize({ width: 1000, height: 900 });
+  await still(disconnected);
+  await disconnected.goto(ext.url('options.html'));
+  const connection = disconnected.locator('[data-card="connection"]');
+  await expect(connection.locator('[data-disclosure-summary]')).toBeVisible();
+  await shoot(disconnected, 'v32-07-options-connection.png', 'v3.2: Options › Connection, not connected: the summary, the full notice one click away',
+    { clip: (await connection.boundingBox()) ?? undefined });
+  await disconnected.close();
+});

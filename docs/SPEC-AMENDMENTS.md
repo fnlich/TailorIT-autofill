@@ -861,6 +861,14 @@ Five reports of one day, each fixed on a branch of its own and merged together. 
 - **Next mode Auto** presses a step's Next only once the fill has ended and every required field the step shows is filled as the page shows it (whoever filled it; a native select's or radio's own default is no answer unless the run wrote it, the person chose it, or the run could not decide the question), read at the validation and again right before the click; with one left, the run rests for the person. This adds to §12 Decision 6's checks and replaces none.
 - **The panel's "Continue to the next page"** shows on every step before the last (the step whose final action is Submit has Submit instead), enabled only when the page's own Next is there and every required field is filled by the same reading, otherwise disabled with its reason as a tooltip. Its press presses Next alone, never Submit, and is refused while a required field is empty (no "anyway", unlike Submit's).
 
+## 22. v3.2: brief words, every description a "?" (the owner, 2026-11-18)
+
+**The owner's words (verbatim, from TailorIT's v3.2 request):** "All description including extension should be very brief(user like only brief) and all description should be ?tooltip".
+
+- **Amends §13 U7:** every explanation on the extension's own pages (the panel, on the page or in Chrome's side panel, its set-up view, Settings view and profile editor, the options page, Sign-up Information) is a "?" beside its title or control, in one short sentence. Visible text is labels, values, actions, what a setting is now, states, warnings and errors. The plan's sentence on what never goes to the AI stays text, in its exact words.
+- **The first-run disclosure** shows a short summary, with the full notice word for word one click away ("Read the full notice"), on the options page, the set-up view and the changed-disclosure block; the consent line ("Choosing Connect means you agree to this.") follows both. The full notice and its version (17) are unchanged.
+- No behaviour, message, permission or contract change.
+
 ## The hard rules that stay
 
 None of the amendments changes these, but as §11 notes in each:
