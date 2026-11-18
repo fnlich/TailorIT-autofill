@@ -22,8 +22,9 @@ export const QUEUE_SUBMIT_PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workable
  * jr7 review C-2: the platforms whose page after submitting the extension reads a sign on (a drawn success rule, a
  * confirmation address or the site's own request that sends the application: src/content/submitted.ts), so an
  * application the person submits there by themselves is recorded while "Record applications I submit myself" is on;
- * its help names them all. QUEUE_SUBMIT_PLATFORMS, which a capture must also show, and seven more whose sign no
- * capture has shown yet. src/shared/copy.test.ts derives the list from the adapters and holds it equal.
+ * its help named them all until v3.2 EXT (E5: one short sentence, "on sites where Autofill sees it go through").
+ * QUEUE_SUBMIT_PLATFORMS, which a capture must also show, and seven more whose sign no capture has shown yet.
+ * src/shared/copy.test.ts derives the list from the adapters and holds it equal.
  */
 export const RECORDED_SUBMIT_PLATFORMS = [...QUEUE_SUBMIT_PLATFORMS, 'breezy', 'dayforce', 'careerplug', 'paycor',
   'paylocity', 'successfactors', 'clearcompany'] as const satisfies readonly Platform[];

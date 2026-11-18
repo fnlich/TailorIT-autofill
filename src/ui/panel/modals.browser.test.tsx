@@ -132,7 +132,7 @@ describe('the main view’s modals (v5)', () => {
     expect(modal.dataset.modal).toBe('history');
     expect(modal.textContent).toContain(COPY.modals.history.text(['experience', 'education']));
     expect(COPY.modals.history.text(['experience', 'education']))
-      .toBe('Your autofill information has no work experience or education. Add them before you autofill, so applications that ask for them are filled.');
+      .toBe('Your autofill information has no work experience or education. Add them before you autofill?'); // v3.2 EXT
     expect(COPY.modals.history.text(['education'])).toContain('has no education. Add it before');
     expect([historyGaps(completeProfile()), historyGaps(completeProfile({ education: [] }))]).toEqual([[], ['education']]);
     // Nothing went: the fill waits for the person's word.

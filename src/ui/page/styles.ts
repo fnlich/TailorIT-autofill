@@ -298,6 +298,18 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 }
 .tia-disclosure__title { margin: 0 0 6px; font: 700 14px/1.4 var(--tia-font); }
 .tia-disclosure p { margin: 0 0 8px; }
+/* v3.2 EXT (E5): the disclosure's summary in short lines, then the full notice one click away (ui/page/disclosure.tsx). */
+.tia-disclosure__summary { display: grid; gap: 4px; margin: 0 0 8px; padding-left: 18px; font-size: 13px; line-height: 1.45; }
+.tia-disclosure__full { margin: 0 0 8px; }
+.tia-disclosure__more {
+  width: fit-content; padding: 2px 0; border-radius: 4px; color: var(--tia-ink); font: 600 13px/1.4 var(--tia-font);
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.tia-disclosure__more:hover { color: var(--tia-ink-hover); }
+.tia-disclosure__more:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-disclosure__full[open] > .tia-disclosure__more { margin: 0 0 6px; }
+.tia-disclosure__paragraphs { font-size: 13px; }
+.tia-disclosure__consent { font-weight: 600; }
 .tia-row-of-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 0; }
 .tia-row-of-buttons .tia-button { min-height: 36px; padding: 0 16px; }
 .tia-code { display: grid; gap: 4px; margin: 14px 0 0; }
@@ -314,7 +326,6 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
   font-size: 13px; color: var(--tia-on-ink); background: var(--tia-fg); box-shadow: var(--tia-shadow-card);
 }
 .tia-capture { max-width: 640px; margin: 0 auto; padding: 24px 20px; }
-.tia-list { margin: 4px 0 6px; padding-left: 20px; font-size: 13px; color: var(--tia-muted); }
 .tia-table-wrap { max-width: 100%; overflow-x: auto; margin: 10px 0 0; }
 .tia-table { border-collapse: collapse; font-size: 13px; }
 .tia-table caption { text-align: left; font-weight: 600; margin: 0 0 4px; }
@@ -368,6 +379,8 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-disclosure-changed { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--tia-line);
   border-radius: var(--tia-r-card); background: var(--tia-tone-warning-bg); color: var(--tia-fg); }
 .tia-disclosure-changed p { margin: 0; font-size: 13px; }
+.tia-disclosure-changed .tia-disclosure__summary, .tia-disclosure-changed .tia-disclosure__full { margin: 0; }
+.tia-disclosure-changed .tia-consent__text p { margin: 0 0 8px; }
 .tia-disclosure-changed__heading { margin: 0; font: 800 15px/1.3 var(--tia-font); }
 .tia-disclosure-changed .tia-button { justify-self: start; }
 /* v3 Phase 5: the skip rules' boxes, the auto-apply agent's status line (the side panel's strip and the options
@@ -413,7 +426,8 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-setup { display: grid; justify-items: center; gap: 10px; padding: 40px 4px 12px; text-align: center; }
 .tia-setup__bolt { color: var(--tia-fg); }
 .tia-setup__heading { margin: 6px 0 0; font: 700 18px/1.3 var(--tia-font); }
-.tia-setup__intro { max-width: 300px; margin: 0; font-size: 14px; color: var(--tia-fg); }
+.tia-setup__head { display: flex; align-items: center; justify-content: center; gap: 2px; margin: 6px 0 0; }
+.tia-setup__head .tia-setup__heading { margin: 0; }
 .tia-setup__steps { display: grid; gap: 10px; width: 100%; margin: 14px 0 6px; padding: 0; list-style: none; text-align: left; }
 .tia-step {
   display: grid; gap: 10px; padding: 10px 10px 10px 12px; border: 1px solid var(--tia-line); border-radius: 999px;

@@ -44,9 +44,9 @@ export const API9_COPY = {
   /** Options › Closed job postings. */
   options: {
     heading: 'Closed job postings',
-    intro: 'When a job page you open shows that the job has closed, TailorIT can take it out of everyone\'s job search once it is checked.',
+    intro: 'TailorIT can take a closed posting you open out of its job search, once checked.',
     toggle: 'Report closed jobs to TailorIT automatically',
-    toggleHelp: 'Checks only job pages you open, and jobs auto-apply opens. Sends the job, its address and the sign it saw, never the page\'s text. Off: the job card offers Report as closed instead.',
+    toggleHelp: 'Sends the job, its address and the closed sign, never the page\'s text; off, use Report as closed.',
   },
   /** The first-run disclosure's line for the reports (stored.ts DISCLOSURE_VERSION 17), after its second paragraph. */
   disclosure: 'When a job page you open on those sites shows that the job has closed (the site says it has expired or is no longer accepting applications, or the posting\'s own end date has passed), or a job auto-apply opened has no posting any more, it tells your TailorIT which job it was, the posting\'s address and the sign it saw, never the page\'s text, unless you turn off Report closed jobs to TailorIT automatically in its settings; the job card also offers Report as closed. It looks only at pages that are open anyway, never fetching a job page by itself, and never in a private window. Your TailorIT keeps who reported a job for its admins, and a job you add from a board TailorIT does not list yet stays visible to you alone in TailorIT until its admins approve it.',

@@ -398,4 +398,25 @@ describe('Your autofill information (v3 Phase 3b)', () => {
     await click(button(root, WORDS.back));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  // v3.2 EXT (E5, the owner: "all description should be ?tooltip"): a list's explanation is the "?" beside its legend,
+  // still describing the group, which the legend's words alone name; Load the latest's is a "?" beside the conflict.
+  it('puts a list’s explanation in a "?" beside its legend, and Load the latest’s in a "?" (v3.2 EXT)', async () => {
+    const fake = worker(view(), { outcome: 'conflict' });
+    const root = await open(fake);
+    const group = [...root.querySelectorAll<HTMLFieldSetElement>('fieldset')]
+      .find((each) => each.querySelector(':scope > legend span')?.textContent === WORDS.fields.relocationPlaces)!;
+    expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe(WORDS.fields.relocationPlaces);
+    const tip = group.querySelector(':scope > legend [role="tooltip"]')!;
+    expect(tip.textContent).toBe(WORDS.relocationHelp);
+    expect(group.getAttribute('aria-describedby')?.split(' ')).toContain(tip.id);
+    expect(group.querySelector(':scope > legend .tia-helptip__button')?.getAttribute('aria-label'))
+      .toBe(COPY.help.about(WORDS.fields.relocationPlaces));
+    expect(root.querySelectorAll('.tia-help:not([role="status"])')).toHaveLength(0);
+    await typeInto(control(root, WORDS.fields.first), 'Morgana');
+    await click(button(root, WORDS.save));
+    const prompt = root.querySelector('[data-profile-outcome="conflict"]')!;
+    expect(prompt.querySelector('[role="tooltip"]')?.textContent).toBe(WORDS.conflictHelp);
+    expect(prompt.querySelector('.tia-help')).toBeNull();
+  });
 });

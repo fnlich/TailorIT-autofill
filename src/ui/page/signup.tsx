@@ -26,6 +26,7 @@
  * - sec-8: what Show reveals (a generated password included) is masked again REMASK_MS later, and at once when the page
  *   is hidden or loses the focus (a side panel stays open across tabs and screen shares).
  * - R6: that a saved password is not shown again is said beside Save; R12: what the worker did by itself (`notice`).
+ * v3.2 EXT (E5): what Import from TailorIT does is the "?" beside it (it was a line before it).
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import {
@@ -37,6 +38,7 @@ import type { SignupStatus } from '../../messaging/schemas';
 import { Icon } from '../brand/Icon';
 import { adoptStyles } from '../report/styles';
 import { afterFrames, animationFrames } from './frames';
+import { HelpTip } from './HelpTip';
 import { request } from './request';
 import { SIGNUP_COPY as WORDS } from './signup-copy';
 import type { SignUpFieldsProps } from './signup-slot';
@@ -277,11 +279,11 @@ export function SignUpFields({ platform, onChanged, accountEmail = null, random 
         </ul>
       </div>
       {status?.importable === true && (
-        <p className="tia-note" data-signup-import="">
-          {WORDS.importOffer}{' '}
+        <p className="tia-note tia-field__head" data-signup-import="">
           <button type="button" className="tia-linkbutton" data-action="signup-import" disabled={busy} onClick={() => void importNow()}>
             {WORDS.importButton}
           </button>
+          <HelpTip text={WORDS.importOffer} topic={WORDS.importButton} />
         </p>
       )}
       {confirming ? (

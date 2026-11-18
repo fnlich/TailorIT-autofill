@@ -75,9 +75,11 @@ describe('the snapshot7 platforms (jr7 ENGINE-7 E0, FIX7PLAN §3.2)', () => {
       else expect(PLATFORMS_AHEAD_OF_CONTRACT, platform).not.toContain(platform);
       expect(COPY.platforms[platform], platform).toBe(name);
     }
-    // The panel's list of sites names the four ATSs; Jibe is iCIMS's front, its application on iCIMS.
-    for (const name of ['UKG Ready', 'Paycom', 'JobDiva', 'Eightfold']) expect(COPY.strip.none, name).toContain(name);
-    expect(COPY.strip.none).not.toContain('Jibe');
+    // The panel's list of sites names the four ATSs; Jibe is iCIMS's front, its application on iCIMS. v3.2 EXT (E5):
+    // the unsupported view's list (the strip says it in one line).
+    const listed = COPY.panel.unsupported.sites.map((site) => site.name);
+    for (const name of ['UKG Ready', 'Paycom', 'JobDiva', 'Eightfold']) expect(listed, name).toContain(name);
+    expect(listed).not.toContain('Jibe');
   });
 
   it('gives each candidate page its stub, then the generic adapter, and no application: the page stays dormant', () => {

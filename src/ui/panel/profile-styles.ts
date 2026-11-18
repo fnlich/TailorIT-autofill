@@ -58,7 +58,7 @@ export const PROFILE_CSS = `
   display: grid; gap: 6px; justify-items: start; padding: 10px 14px; border-radius: var(--tia-r-row);
   background: var(--tia-tone-warning-bg);
 }
-.tia-profile__conflict-title { margin: 0; font-weight: 600; }
+.tia-profile__conflict-title { display: flex; align-items: center; gap: 2px; margin: 0; font-weight: 600; }
 .tia-profile__conflict .tia-help { color: var(--tia-fg); }
 /* The review of v3 Phase 3b: what Load the latest kept of the person's edits. */
 .tia-profile__merged {

@@ -24,7 +24,6 @@ import type {
 } from '../messaging/schemas';
 import type { TailorFailure, TailorKind } from '../messaging/page-schemas'; // v1.4 F
 import type { QueueBlock, QueueItemStatus, QueuePhase, QueueStop } from '../messaging/page-schemas'; // v1.5 QX
-import { RECORDED_SUBMIT_PLATFORMS } from './queue-submit'; // jr7 INT-7; the jr7 review's C-2
 import type { FrameReport } from './report';
 
 /** A report notice's code. */
@@ -393,13 +392,6 @@ const PLATFORM_NAMES = {
   // ── end jr7 ENGINE-7 E0 ──
 } as const satisfies Record<Platform, string>;
 
-/** jr7 INT-7: platforms' names as a sentence lists them: "A, B and C". */
-const namesOf = (platforms: readonly Platform[]): string => {
-  const names = platforms.map((platform) => PLATFORM_NAMES[platform]);
-  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)!}`;
-};
-/** jr7 INT-7: "Record applications I submit myself"'s help, naming the sites whose confirmation it reads. */
-const recordOwnHelp = (platforms: readonly Platform[]): string => `On: when you submit an application yourself, without Autofill, on a site where it reads that the application went through (today ${namesOf(platforms)}), your TailorIT tracker marks the job Applied. Off: only applications Autofill filled are recorded.`;
 
 /** The report's own words (src/ui/report), shared by the side panel and the in-page panel. */
 const REPORT = {
@@ -433,7 +425,7 @@ const REPORT = {
   // v5 p1-panel: Title Case headings (PLAN decision 3): the progress sheet's header and its scanning block.
   scanning: 'Scanning The Page',
   scanningTitle: 'Reading The Form',
-  scanningHelp: 'TailorIT is checking this page for what the application asks.',
+  scanningHelp: 'Checking what the application asks.',
   autofilling: 'Autofilling',
   percent: (value: number) => `${value}%`,
   // v4 ui: Jobright's "7/7 required fields filled" (the owner's screenshot 4); v5 p1-panel: in Title Case.
@@ -513,8 +505,8 @@ const PANEL = {
   expired: 'Your connection to TailorIT expired.',
   revoked: "TailorIT no longer accepts this browser's connection.",
   openSettings: 'Open settings',
-  versionMismatch: 'This extension and your TailorIT use different versions, so nothing is filled. Update the older one, then connect again in the settings.',
-  storageRefused: "Filling is blocked: this browser would not keep the extension's storage away from web pages. Update it to Chrome or Edge 144 or later.",
+  versionMismatch: 'This extension and your TailorIT use different versions, so nothing is filled. Update the older one, then connect again.',
+  storageRefused: 'Filling is blocked: update to Chrome or Edge 144 or later.',
   started: (count: number) => (count === 0 ? 'No application form was found in this tab.' : `Filling ${forms(count)}.`),
   dryRunStarted: (count: number) =>
     (count === 0 ? 'No application form was found in this tab.' : `Dry run on ${forms(count)}: nothing will be written.`),
@@ -549,7 +541,7 @@ const PANEL = {
   unsupported: {
     // v5 p1-panel: Title Case headings.
     heading: "Autofill Isn't Supported On This Page",
-    intro: 'TailorIT Autofill fills job applications on these sites:',
+    intro: 'Supported sites:', // v3.2 EXT (E5): a label; the explanations are the heading's "?"
     // v3 Phases 6 and 7b: Workday, iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud, their sign-in and posting
     // pages known. The owner's snapshots of 2026-11-06 showed the application forms of Workday, iCIMS and Oracle (each
     // note says what is left to the person) and added SmartRecruiters and Workable's job-search site; Taleo's and
@@ -591,22 +583,22 @@ const PANEL = {
       { name: 'Eightfold', hosts: '<company>.eightfold.ai/careers', note: null },
       // ── end jr7 INT-7 ──
     ],
-    embedded: 'A company page that shows one of these forms inside it works too.',
+    embedded: 'A company page embedding one of these forms works too.',
     /** v3 Phase 8 review (B10): the company career sites, off or not reaching this page. v5 p1-rules (PLAN decision 10):
      *  on by default. */
-    companySites: "On employers' own careers sites, it works while Company career sites is on in its settings (Where Autofill works), as it is unless you turned it off. It never works on LinkedIn or on an employer's HR system.",
+    companySites: "Employers' careers sites work while Company career sites is on; never LinkedIn or HR systems.",
     /** A page on one of those sites that opened before the extension could read it (installed or updated since). */
     reloadHeading: 'Reload This Page To Use Autofill', // v5 p1-panel
-    reloadIntro: 'This page opened before TailorIT Autofill could read it. Reload it, and Autofill works here.',
+    reloadIntro: 'This page opened before Autofill could read it; reload it to use Autofill.',
     /** v3 Phase 8 review (B10): a company's own page while Company career sites is on, with no frame of ours on it. */
     reloadSiteHeading: 'No Application Form Found Here Yet', // v5 p1-panel
-    reloadSiteIntro: "Company career sites is on. Autofill reads an employer's careers page as it loads, so if this page shows a job application and opened before you turned it on, reload it.",
+    reloadSiteIntro: 'If this page shows a job application, reload it so Autofill can read it.',
   },
   /** v3 Phase 3b: "Ask TailorIT to support this site", on a page Autofill does not work on. Drafts for the owner. */
   siteRequest: {
     ask: 'Ask TailorIT To Support This Site', // v5 p1-panel
     asking: 'Sending…',
-    help: 'Only the site\'s name (like careers.example.com) goes to your TailorIT, which lists it in Settings › Autofill.',
+    help: 'Only the site\'s name (like careers.example.com) goes to your TailorIT.',
     outcomes: {
       sent: 'Sent. TailorIT lists this site in Settings › Autofill.',
       'no-host': "The browser didn't say which site this is. Open this panel with the TailorIT Autofill icon in the toolbar while this page shows, then ask again.",
@@ -664,9 +656,9 @@ const PANEL = {
   /** The v3 Phase 4 review: the disclosure changed since the person connected. Drafts for the owner's review. */
   disclosureChanged: {
     heading: 'What TailorIT Autofill does has changed',
-    intro: 'Read what changed before Autofill submits for you, signs in for you, applies by itself or tells your TailorIT about pages as they load.',
     understand: 'I understand',
-    held: 'Until you choose I understand, Submit and Sign-in stay Manual, auto-apply stays off, submitted applications are not recorded, and pages are looked up only when you open the side panel.',
+    // v3.2 EXT (E5): the heading's "?" alone (it was `intro` and this).
+    held: 'Until you choose I understand, Submit and Sign-in stay Manual, auto-apply stays off and nothing is recorded.',
   },
   /** The links at the panel's foot, to the person's TailorIT. */
   autofillInfo: 'Your autofill information',
@@ -694,9 +686,9 @@ const STRIP = {
   // no frame of ours is on) promises no Apply; a posting (`posting`) says Autofill presses its Apply first.
   noForm: `${NO_FORM_HERE}. ${OPEN_A_JOB}`,
   posting: `${NO_FORM_HERE} yet. Autofill presses the site's Apply first.`, // jr6 apply F1
-  // DESIGN-NEW-ATS Phase 0: the new ATSs too. jr7 ENGINE-7 E0 (FIX7PLAN §3.2 item 2): and the four ATSs of snapshot7
-  // (Jibe is iCIMS's front, whose application is on iCIMS).
-  none: 'Open a job application on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now, UKG Ready, Paycom, JobDiva or Eightfold to use Autofill.',
+  // DESIGN-NEW-ATS Phase 0, jr7 ENGINE-7 E0: it named every site. v3.2 EXT (E5): brief; the unsupported view
+  // (PANEL.unsupported.sites) lists them.
+  none: 'Open a job application on a supported site to use Autofill.',
 } as const;
 
 /** "Posted 2 days ago", from whole days since it was posted. */
@@ -714,7 +706,7 @@ const JOB = {
   region: 'This job',
   loading: 'Reading what TailorIT knows of this job…',
   unavailable: "TailorIT couldn't say which job this is. Autofill still works.",
-  disconnected: 'Connect to TailorIT to see this job, your match and the resume it attaches.',
+  disconnected: 'Connect to TailorIT to see this job and your match.',
   notFound: 'Not in your TailorIT jobs',
   notFoundHelp: 'Autofill still works. Add the job to TailorIT to track it and see your match.',
   cannotAdd: "TailorIT can't add jobs from this site yet. Autofill still works.",
@@ -736,8 +728,7 @@ const JOB = {
   /** The match's band by its percentage (v3 Phase 3, Jobright's wording): MATCH_BANDS. Drafts for the owner's review. */
   bands: { excellent: 'Excellent', good: 'Good', fair: 'Fair', poor: 'Poor' },
   matchLabel: (percentage: number, band: string) => `${percentage}% match: ${band}`,
-  matchTip: (matched: number, total: number) =>
-    `${matched} of ${total} keywords in this posting are in your resume. The score is how well your resume covers what the job asks for.`,
+  matchTip: (matched: number, total: number) => `${matched} of ${total} keywords in this posting are in your resume.`,
   keywords: (matched: number, total: number) => `${matched} of ${total} keywords`,
   /** The badge on a job the tracker holds as Applied or later. */
   applied: 'Applied',
@@ -796,7 +787,7 @@ const JOB = {
     // v5 p1-panel: Title Case button and heading.
     open: 'Autofill For Another Job',
     heading: 'Autofill For Another Job',
-    help: 'Fill this form for a job in your TailorIT tracker: its match, its resume and its details are used.',
+    help: 'Fill this form for a job from your tracker, with its resume and details.',
     label: 'Search your tracked jobs',
     placeholder: 'Job title or company',
     searching: 'Searching…',
@@ -856,7 +847,7 @@ const ASK = {
   copyFailed: 'It could not be copied. Select the text and copy it yourself.',
   regenerate: 'Regenerate',
   notConnected: 'Connect to TailorIT to ask a question.',
-  policy: 'This posting says AI-assisted applications are not allowed. An answer you ask for here is still written by AI.',
+  policy: "This posting doesn't allow AI; an answer here is still AI-written.",
   outcomes: {
     'no-resume': 'You have no resume to answer from. Add one in TailorIT.',
     sensitive: "This question wasn't sent: questions about self-identification, work authorization, pay or consent, and checks that you read the form, never go to the AI.",
@@ -872,7 +863,7 @@ const ASK = {
  *  owner's review. */
 const PROFILE = {
   heading: 'Your Autofill Information', // v5 p1-panel
-  intro: 'What TailorIT fills applications with. Your changes are saved to your TailorIT.',
+  intro: 'What TailorIT fills applications with; changes are saved to your TailorIT.',
   back: 'Back',
   loading: 'Loading your autofill information…',
   /** Why panel/profile gave no profile: by the worker's refusal. */
@@ -882,20 +873,20 @@ const PROFILE = {
     unavailable: "Your autofill information couldn't be read just now.",
   },
   retry: 'Try Again', // v5 p1-panel
-  readOnly: "This connection can read your autofill information but not change it. To edit it here, connect the extension again from TailorIT's Settings › Autofill.",
+  readOnly: "This connection can't change your autofill information. Connect again from TailorIT's Settings › Autofill to edit it.",
   openInTailorit: 'Open In TailorIT', // v5 p1-panel
   save: 'Save',
   saving: 'Saving…',
   saved: 'Saved.',
   fixFirst: (count: number) => (count === 1 ? 'Fix 1 thing before saving:' : `Fix ${count} things before saving:`),
   conflict: 'Your autofill information changed elsewhere since you opened it.',
-  conflictHelp: 'Load the latest to see it. Your changes here are kept on it, for you to check before you save.',
+  conflictHelp: 'Load the latest: your changes here are kept on it, to check before you save.',
   loadLatest: 'Load The Latest', // v5 p1-panel
   loadingLatest: 'Loading the latest…',
   /** Load the latest kept the person's edits on what TailorIT holds now (the review of v3 Phase 3b). */
-  merged: 'Loaded the latest from TailorIT, with your changes kept on it. Check them, then save.',
+  merged: 'Loaded the latest, with your changes kept. Check them, then save.',
   mergedBoth: (fields: string) => `Also changed elsewhere, with your version kept: ${fields}.`,
-  sensitiveDropped: "Your changes to work authorization and self-identification couldn't be kept: this browser may no longer read them.",
+  sensitiveDropped: "Your work authorization and self-identification changes couldn't be kept: this browser may no longer read them.",
   outcomes: {
     conflict: 'Your autofill information changed elsewhere since you opened it.',
     invalid: "TailorIT didn't accept a value. Check the fields, then save again.",
@@ -1021,23 +1012,23 @@ const PROFILE = {
   },
   placeholders: { month: 'YYYY-MM', country: 'US', currency: 'USD', skills: 'TypeScript, PostgreSQL, Leadership' },
   /** An entry's date TailorIT holds as a year alone, which a month picker cannot show. */
-  yearOnly: (year: string) => `Saved as ${year}, without a month. Choose one to change it.`,
+  yearOnly: (year: string) => `Saved as ${year}, with no month.`,
   /** An empty email is the account's sign-in address (TailorIT's rule), named here. */
-  emailHelp: (email: string) => `Leave it empty to use your TailorIT sign-in email, ${email}.`,
+  emailHelp: (email: string) => `Empty uses your TailorIT sign-in email, ${email}.`,
   /** An expected pay of 0 or less. */
   salaryAboveZero: { min: 'Enter an amount above 0, or choose Not provided.', max: 'Enter an amount above 0, or leave it empty.' },
   skillsHelp: 'Separate them with commas.',
-  anythingElseHelp: "Add any details you want TailorIT's AI to consider when it answers applications for you.",
+  anythingElseHelp: "Details for TailorIT's AI to consider when it answers for you.",
   /** The note's lines TailorIT keeps from the AI (its anythingElseFlaggedLines, from 0), named from 1. */
   flagged: (lines: readonly number[]) => {
     const named = lines.map((line) => line + 1);
     const list = named.length === 1 ? `Line ${named[0]}`
       : `Lines ${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`;
-    return `${list} ${named.length === 1 ? 'states' : 'state'} a sensitive answer (a visa, a salary, an age…). ${named.length === 1 ? 'It is saved, but never reaches' : 'They are saved, but never reach'} the AI: put those answers in the sections for them.`;
+    return `${list} ${named.length === 1 ? 'states' : 'state'} a sensitive answer (a visa, a salary, an age…), which never reaches the AI: use its own section.`;
   },
-  sensitiveHelp: 'These answers fill the questions that ask for them, and never go to the AI.',
-  sensitiveNotShared: 'This browser may not read your work authorization and self-identification answers. Edit them in TailorIT.',
-  sensitiveUnavailable: "Your work authorization and self-identification answers couldn't be read just now.",
+  sensitiveHelp: 'These fill the questions that ask for them, and never go to the AI.',
+  sensitiveNotShared: 'This browser may not read these answers. Edit them in TailorIT.',
+  sensitiveUnavailable: "These answers couldn't be read just now.",
   choices: {
     notProvided: 'Not provided',
     declined: 'Prefer not to say',
@@ -1088,10 +1079,10 @@ const PROFILE = {
   /** A citizenship's select, by its place (from 1): the first is a "Country of Origin". */
   citizenship: (place: number) => (place === 1 ? 'Citizenship (your country of origin)' : 'Another citizenship'),
   socialHelp: 'The address, or your @handle.',
-  relocationHelp: 'For "Where would you relocate?" and "Which of these locations could you work from?"',
-  relativesHelp: "None listed: no relative of yours works at a company you apply to. No relative's name is kept.",
+  relocationHelp: 'For "Where would you relocate?" and "Which locations could you work from?"',
+  relativesHelp: 'None listed: no relative works where you apply; no names are kept.',
   serviceYearHelp: 'Empty: you serve now.',
-  raceSelfDescribedHelp: 'For a form\'s "I prefer to self-describe". Empty: that choice is never taken.',
+  raceSelfDescribedHelp: 'For a form\'s "I prefer to self-describe"; empty, that choice is never taken.',
 } as const;
 
 /** The in-page review panel (src/content/ui/panel.tsx): the same report, in the page's closed root. */
@@ -1138,23 +1129,39 @@ const OPTIONS = {
       'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Your TailorIT sends the answers back as a stream, each as soon as it is ready, and the extension fills each in as it arrives. Picking from lists, working out unusual questions, drafting open answers (a cover letter too, when the form asks for one and you have none for the job) and answering the questions your profile does not are on unless you turn them off below; drafts, cover letters and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. Where your TailorIT already keeps a job\'s questions, those your profile, earlier answers and prepared answers leave open go to the AI together as a fill starts, for every step of the form at once. When you choose Tailor Resume For This Job or Generate Cover Letter in its panel, your TailorIT asks Claude to write a resume tailored to the job, and with Generate Cover Letter a cover letter beside it, from the resume it would attach and the posting (the job TailorIT has, or the posting\'s visible text, company and title when it has none), on the templates you chose; your TailorIT keeps them and links them to the job in your tracker, and the extension attaches them from then on. An answer with nothing to go on is the AI\'s best guess. On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in its panel. That question, Edit with AI in a text box and tailoring go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Unless you choose Profile only for AI answers under Modes, questions about work authorization, sponsorship, a visa, a clearance, government service, military training, age, criminal history, a non-compete, relatives or pay that your profile does not answer, and attention checks, get the AI\'s best guess too, from the question and its options alone. Your self-identification (sexual orientation included), work authorization, sponsorship, citizenship, clearance, criminal record, non-compete, government service, relatives, essential functions, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
     ],
     consentLine: 'Choosing Connect means you agree to this.',
+    // ── v3.2 EXT (E5, the owner: "All description including extension should be very brief"): the disclosure as the
+    // pages show it: this summary, then the full notice above (DISCLOSURE_PARAGRAPHS) one click away in a <details>
+    // (ui/page/disclosure.tsx DisclosureText). The full words, the consent line and DISCLOSURE_VERSION are unchanged;
+    // docs/PRIVACY.md quotes the summary too (copy.test.ts). Drafts for the owner's review. ──
+    summary: [
+      'Fills job applications on the sites you open, from your TailorIT profile (kept in memory only).',
+      'Looks for application forms on the pages you open: why Chrome says it can read and change your data on all websites.',
+      'Tells your TailorIT which job page you are on, and which postings look closed (unless you turn that off).',
+      "Sends questions' visible text and the posting to your TailorIT's AI (Claude); your self-identification, legal, pay and consent answers never go to it.",
+      'Sends your TailorIT the questions of applications you submit (shared with everyone on it) and your answers (yours alone; can be turned off).',
+      'Submits only when you press Submit, set Submit to Auto or turn on auto-apply.',
+      'Keeps your job-site password encrypted in this browser; it never goes to TailorIT.',
+      'Talks only to your TailorIT.',
+    ],
+    fullNotice: 'Read the full notice',
+    // ── end v3.2 EXT ──
     connect: 'Connect to TailorIT',
     connectedAs: (name: string, email: string) => `Connected as ${name} (${email}).`,
     connectedNoAccount: 'Connected to TailorIT.',
-    sensitiveShared: 'This browser may read your work authorization and self-identification answers.',
+    sensitiveShared: 'Can read your work authorization and self-identification answers.',
     sensitiveNotShared: SENSITIVE_NOT_SHARED, // v5 p1-panel: named once, not read off REASONS
-    lastsUntil: (date: string) => `The connection lasts until ${date}.`,
+    lastsUntil: (date: string) => `Lasts until ${date}.`,
     disconnect: 'Disconnect',
-    disconnected: "Disconnected. TailorIT was asked to revoke this browser's connection too.",
-    expired: 'Your connection expired: connections last 90 days. Connect again to keep filling.',
-    revoked: "TailorIT stopped accepting this browser's connection: it was revoked in TailorIT, or the account was disabled. Connect again to keep filling.",
-    versionMismatch: 'This version of the extension and your TailorIT use different versions of their connection, so nothing is filled. Update the older one, then connect again here.',
-    storageRefused: "Filling is blocked. This browser would not keep the extension's storage away from web pages, which needs Chrome or Edge 144 or later. Update the browser, then open these settings again.",
-    waiting: 'Waiting for TailorIT. On the page that opened, choose "Connect the extension".',
+    disconnected: 'Disconnected. TailorIT was asked to revoke this browser too.',
+    expired: 'Your connection expired (they last 90 days). Connect again.',
+    revoked: "TailorIT no longer accepts this browser's connection. Connect again.",
+    versionMismatch: 'This extension and your TailorIT use different connection versions, so nothing is filled. Update the older one, then connect again.',
+    storageRefused: 'Filling is blocked: update to Chrome or Edge 144 or later, then open these settings again.',
+    waiting: 'Waiting for TailorIT: choose "Connect the extension" on the page that opened.',
     endsIn: (time: string) => `This request ends in ${time}.`,
     lapsed: 'The request timed out. Choose Connect to try again.',
     codeLabel: 'Or type the code TailorIT shows',
-    codeHelp: '16 letters and digits, from Settings › Autofill in TailorIT.',
+    codeHelp: "16 letters and digits, from TailorIT's Settings › Autofill.",
     codeSubmit: 'Connect with this code',
     codeInvalid: 'That is not a connect code. It has 16 letters and digits.',
     codeRefused: "TailorIT did not accept that code: it is wrong, already used or expired. Get a new one in TailorIT's Settings › Autofill.",
@@ -1169,18 +1176,19 @@ const OPTIONS = {
    *  owner's review. */
   modes: {
     heading: 'Modes',
-    intro: 'How much TailorIT Autofill does by itself. The gear in the side panel shows these too.',
+    // v3.2 EXT (E5): every "?" below is one short sentence; the full notice holds the detail.
+    intro: 'How much Autofill does by itself; the panel\'s gear shows these too.',
     next: {
       name: 'Next page',
       manual: 'Manual',
       auto: 'Auto',
-      help: 'Auto presses Next once a page of the application is filled and settled. The last page\'s Submit is the Submit mode\'s.',
+      help: 'Auto presses Next once a page is filled; the last page follows Submit.',
     },
     submit: {
       name: 'Submit',
       manual: 'Manual',
       auto: 'Auto',
-      help: 'Auto presses Submit once the last page of the application is filled and checked, unless a required field is still empty, the posting says AI is not allowed, or the page asks you to prove you are human: then a TailorIT notice on the page says why, and you submit. Manual: you submit, on the page or with Submit application in the side panel.',
+      help: 'Auto submits once the last page is filled and checked, unless something needs you; Manual leaves it to you.',
     },
     signIn: {
       name: 'Sign-in',
@@ -1188,15 +1196,15 @@ const OPTIONS = {
       auto: 'Auto',
       // jr6: the password is the one saved in this browser's Sign-up Information (TailorIT's Job-site sign-in before).
       // The jr6 review (R16): kept short, for the sidebar's budget.
-      help: 'Auto signs in, or creates your account, on job sites that ask (Workday, iCIMS and others) with your Sign-up Information, and presses the button. Manual types it and leaves the button to you. Human checks and email codes stay yours.',
+      help: 'Auto signs in or creates the account with your Sign-up Information; Manual types it and leaves the button to you.',
       /** Why Auto cannot be chosen now. */
-      needsPassword: 'Sign-in Auto needs a job-site password saved in Sign-up Information.',
-      needsDisclosure: 'Sign-in Auto can be chosen once you choose I understand on the updated notice.',
-      needsConnection: 'Sign-in Auto can be chosen once this browser is connected to TailorIT.',
+      needsPassword: 'Auto needs a job-site password saved in Sign-up Information.',
+      needsDisclosure: 'Auto needs I understand on the updated notice.',
+      needsConnection: 'Auto needs this browser connected to TailorIT.',
     },
     agentSkip: {
       name: 'Auto-apply leaves a job for you when',
-      help: 'Auto-apply and Submit on Auto leave the application unsubmitted, and auto-apply lists it for you in TailorIT, when one of these is true. A check that you are human, a sign-in it cannot do and an email code always stop it.',
+      help: 'Auto-apply and Submit on Auto leave a job unsubmitted for you when any of these is true.',
       requiredEmpty: 'A required field is still empty',
       noAi: 'The posting says AI-assisted applications are not allowed',
       legalGuess: "A work authorization, sponsorship or other legal answer is the AI's guess",
@@ -1205,64 +1213,64 @@ const OPTIONS = {
       name: 'Record applications I submit myself',
       on: 'On',
       off: 'Off',
-      // jr7 INT-7: the sites named from the platforms whose confirmation it reads (shared/queue-submit.ts); one pure
-      // call, so a bundle that never shows the options' words (the content script) drops it and the list. The jr7
-      // review (C-2): every platform where it reads a sign, not only the Queue tab's (copy.test.ts derives them).
-      help: /* @__PURE__ */ recordOwnHelp(RECORDED_SUBMIT_PLATFORMS),
+      // jr7 INT-7, the jr7 review (C-2): the help named every site where it reads a sign (shared/queue-submit.ts
+      // RECORDED_SUBMIT_PLATFORMS, which copy.test.ts still derives from the adapters). v3.2 EXT (E5): brief, no list.
+      help: 'On: an application you submit yourself is marked Applied, on sites where Autofill sees it go through.',
     },
     // v1.3 B (settings version 9): the answers of an application the person submits, kept in their own TailorIT.
+    // v3.2 EXT (E5): brief; the jr7 review's A-7 (a national ID number is never sent) kept.
     keepAnswers: {
       name: 'Keep my submitted answers in TailorIT',
       on: 'On',
       off: 'Off',
-      help: "On: when a site confirms an application you submitted, its questions and your answers go to your TailorIT. The questions are kept for everyone who uses your TailorIT, never shown on Jobs; your answers are yours alone, shown in the Tracker's Submitted answers, and fill the same questions for you next time. Off: only the questions go. Never sent: passwords, CAPTCHAs, a national identity number such as a Social Security number (its question too), hidden fields, or what your files contain (only that a file was attached, and its name).",
+      help: 'On: your submitted answers go to your TailorIT for reuse; never passwords, a national ID number or file contents.',
     },
     afterPageTurn: {
       name: 'Autofill after page turn',
       auto: 'Automatically',
       manual: 'Manually',
-      help: 'On applications with several pages (Workday and others), fill each new page as it appears, or wait until you choose Autofill again on it.',
+      help: 'On multi-page applications, fill each new page as it appears, or wait for your Autofill.',
     },
     consents: {
       name: 'Consent boxes',
       all: 'All agreements',
       required: 'Required only',
-      help: 'All ticks every agreement box the form shows: privacy, terms, accuracy, keeping your application on file and future jobs, background checks, news and job alerts, and text messages. Required only ticks a box the form requires, and an optional one only when you pre-approve its kind on the options page, under Consent boxes. A box saying you did not use AI is ticked only when the fill used no AI, in either.',
+      help: 'All ticks every agreement box; Required only ticks required ones and the kinds you pre-approve.',
     },
     ai: {
       name: 'AI answers',
       all: 'All',
       profile: 'Profile only',
-      // jr6 integration (RULES revD-01 and revD-04, owner question 435): a non-compete, relatives and military training
-      // too, always marked an AI guess (GUESS_ONLY_CATEGORIES); never a job's essential functions.
-      help: 'All lets the AI answer work authorization, sponsorship, visa, clearance, age, criminal history, pay, non-compete, relatives, military training and "select PURPLE to show you read this" questions your profile doesn\'t answer, with its best guess unless your resume settles it (always marked an AI guess for a non-compete, relatives or military training): only the question and its options are sent. Profile only answers them from your profile, and leaves the rest empty. It acts while "Answer the questions my profile does not" is on.',
+      // jr6 integration (RULES revD-01 and revD-04, owner question 435): never a job's essential functions. v3.2 EXT
+      // (E5): brief; the full notice names the topics.
+      help: 'All lets the AI guess legal, pay and attention-check questions your profile skips; Profile only leaves them empty.',
     },
     /** The behaviour review of 2026-11-06 (M2), the owner's setting: a résumé the page already shows. */
     resumeOnPage: {
       name: 'Résumé already on the page',
       keep: 'Keep it',
       upload: 'Upload mine again',
-      help: "When the site already shows a résumé in its résumé field: Keep it leaves that file as your résumé there. Upload mine again uploads the résumé you chose in TailorIT into that field through the site's own upload, which replaces the file or adds yours beside it. Neither presses the site's Remove or Delete; where the site gives no way to add a file, the field is left to you.",
+      help: "When the site already shows a résumé: keep it, or upload yours through the site's own upload.",
     },
     // v5 p1-shell (settings version 8): the view's new meaning, and where the panel shows.
     view: {
       name: 'Default view',
       expanded: 'Expanded',
       minimized: 'Minimized',
-      help: "Expanded opens the TailorIT panel by itself on a job application or posting. Minimized shows only the TailorIT button at the page's edge, which opens it. With Chrome's side panel, the panel opens from the button or the toolbar icon either way.",
+      help: 'Expanded opens the panel by itself on a job page; Minimized shows only the TailorIT button.',
     },
     panel: {
       name: 'Where the panel shows',
       page: 'On the page',
       side: "Chrome's side panel",
-      help: "On the page: a panel at the page's right edge, which pushes the page left. Chrome's side panel: Chrome's own panel beside the page.",
+      help: "On the page, at its right edge, or in Chrome's own side panel.",
     },
     // ── s2 profile (snapshot round 2, settings version 7): drafts for the owner's review ──
     noMatch: {
       name: 'When a list has no match',
       other: 'Choose its Other',
       leave: 'Leave it empty',
-      help: "When a list you search (a school, a field of study, a place, how you heard about the job) shows no match after three differently written answers: Choose its Other picks the list's own \"Other\" or \"Not listed\". Leave it empty leaves the field to you. Never for self-identification, legal, consent or yes-or-no questions.",
+      help: 'When a searched list has no match after three tries: pick its "Other", or leave the field to you.',
     },
     notifications: {
       name: 'TailorIT notifications on the page',
@@ -1271,17 +1279,17 @@ const OPTIONS = {
       '10s': '10 seconds',
       '5s': '5 seconds',
       off: 'Never show them',
-      help: "How long TailorIT's notifications stay on the application page (a check to solve, a sign-in, Submit held back, the end of a run). Each still goes once its cause is gone. Autofill still waits and carries on by itself whatever you choose, and unless they stay until you close them, the side panel says what it waits for. The notice that a page holds text addressed to AI tools always shows.",
+      help: "How long TailorIT's notifications stay on the application page.",
     },
   },
   /** v3 Phase 5: Options › Auto-apply. Drafts for the owner's review. */
   agent: {
     heading: 'Auto-apply',
-    intro: 'Auto-apply applies to the jobs you queue in TailorIT (Jobs or Job Tracker › Auto-apply), one at a time, in a window of its own, while this browser is open. It fills each application, presses Next and Submit by itself, and tells your TailorIT how each one went. Jobs it leaves for you stay listed there.',
+    intro: 'Applies to the jobs you queue in TailorIT, one at a time, in a window of its own.',
     run: 'Run auto-apply',
-    runHelp: 'Off until you turn it on. Leave the window it opens alone: closing it leaves that job for you.',
+    runHelp: 'Off until you turn it on; closing its window leaves that job for you.',
     confirmHeading: 'Submit applications without you?',
-    confirm: 'With auto-apply on, applications are submitted without you watching, with the answers Autofill fills in, the AI\'s guesses included, unless the rules under Modes leave a job for you. You can stop it at any time.',
+    confirm: "Applications go out without you watching, AI guesses included, unless a rule under Modes leaves a job for you. You can stop it any time.",
     confirmYes: 'Turn on auto-apply',
     confirmNo: 'Cancel',
     open: 'Open Auto-apply in TailorIT',
@@ -1296,43 +1304,43 @@ const OPTIONS = {
   },
   consent: {
     heading: 'Consent boxes',
-    intro: 'Under Consent boxes: Required only (Modes, above), a box the form requires is ticked for you, since you cannot apply without it, and an optional box only when you pre-approve its kind here; the usual ones start on, marketing and text messages start off. Under All agreements every kind is ticked.',
-    allMode: 'Consent boxes is set to All agreements, so every kind below is ticked. To choose kind by kind, set Consent boxes to Required only under Modes, above.',
+    // v3.2 EXT (E5): the card's "?" in one sentence (it held `never` too, now part of it).
+    intro: 'The optional boxes Required only may tick; "I did not use AI" only when no AI was used.',
+    allMode: 'All agreements is on, so every kind is ticked. Choose Required only under Modes to pick.',
     categories: CONSENT,
-    certifyWarning: 'Certifying states that everything in an application is true and complete. Turn this on only if you check every application before you submit it.',
-    never: 'A statement that you did not use AI is ticked only when the fill used no AI at all, so it is true. Otherwise it is left for you.',
+    certifyWarning: 'Turn this on only if you check every application before you submit it.',
   },
   ai: {
     heading: 'AI help',
-    intro: 'Through your TailorIT, which asks Claude. When nothing in your resume or profile settles a question, the AI gives its best guess.',
+    intro: 'Through your TailorIT, which asks Claude; with nothing to go on, the AI gives its best guess.',
     tiebreak: 'Pick from a list when unsure',
-    tiebreakHelp: 'When your answer could match more than one option, the AI picks among the visible options.',
+    tiebreakHelp: 'When your answer fits several options, the AI picks one.',
     classify: 'Work out unusual questions',
-    classifyHelp: 'When no rule recognises a question, the AI says what it asks, so your profile can answer it.',
+    classifyHelp: 'When no rule knows a question, the AI says what it asks.',
     drafts: 'Draft open answers',
-    draftsHelp: 'Drafts answers to questions like "Why this company?" from your resume and the posting, and writes them in.',
+    draftsHelp: 'Writes answers like "Why this company?" from your resume and the posting.',
     answers: 'Answer the questions my profile does not',
-    answersHelp: 'Questions like "How many years of Go have you used?" or "Are you open to travel?" are answered from your resume and profile. When nothing settles one, the AI gives its best guess.',
+    answersHelp: 'Answers questions like "Open to travel?" from your resume and profile, or with its best guess.',
     confirmDrafts: 'Wait for me to confirm each draft',
     whenForbidden: {
       heading: 'When a posting says AI is not allowed',
       'profile-only': 'Fill from my profile only',
-      'profile-onlyHelp': 'Nothing is sent to the AI for that posting, and questions only the AI could answer are left for you. The same goes for a form that asks you to confirm you did not use AI.',
+      'profile-onlyHelp': 'Nothing goes to the AI for that posting; what only the AI could answer is left for you.',
       ask: 'Ask me each time',
       'use-ai': 'Use AI anyway',
-      'use-aiHelp': 'The notice is shown, and filling goes on with the AI.',
+      'use-aiHelp': 'The notice shows, and filling goes on with the AI.',
     },
     never: 'Your EEO, authorization, sponsorship, criminal record and pay answers never go to the AI. Self-identification and consent questions are never sent to it.',
   },
   interpretations: {
     heading: 'Interpretations',
-    intro: 'Readings that go further than the rules say. Each is on unless you turn it off.',
+    intro: 'Readings beyond the rules; each is on unless you turn it off.',
     postingCountryForLegal: 'Answer work authorization questions that name no country',
-    postingCountryForLegalHelp: 'Uses your answer for the country of the posting, or for your only country when the posting names none.',
+    postingCountryForLegalHelp: "Uses your answer for the posting's country, or your only country.",
     twoOrMoreRaces: 'Answer "Two or More Races"',
-    twoOrMoreRacesHelp: 'When you gave several races and the question takes one answer.',
+    twoOrMoreRacesHelp: 'When you gave several races and the question takes one.',
     eeoDeclineByDefault: 'Decline self-identification questions I have not answered',
-    eeoDeclineByDefaultHelp: 'Chooses the form\'s "Decline to self-identify" option when TailorIT holds no answer of yours. With no such option, the question is left empty.',
+    eeoDeclineByDefaultHelp: 'Picks "Decline to self-identify" where you have no answer; with no such option, leaves it empty.',
   },
   answers: {
     heading: 'Your fixes',
@@ -1341,17 +1349,11 @@ const OPTIONS = {
   },
   telemetry: {
     heading: 'Anonymous counters',
-    intro: 'Counts of how well filling works, kept only in this browser. They are never sent anywhere.',
+    intro: 'Counts of how well filling works, kept only in this browser and never sent.',
     optIn: 'Keep anonymous counters',
-    optInHelp: 'Each field the extension fills, or leaves for you, adds one to a count of these five things, and nothing else:',
-    fields: {
-      platform: 'the site: Greenhouse, Lever, Ashby, Workday, Workable, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now, UKG Ready, Paycom, JobDiva, Eightfold or a company\'s own careers site;',
-      fieldKind: 'the kind of field: a text box, a list, a checkbox and so on;',
-      matcherStage: 'how its answer was matched: exactly, by a known alias, by a close match and so on;',
-      outcome: 'whether it was filled or left for you;',
-      tripwireTriggered: 'whether the page held text addressed to AI tools.',
-    },
-    never: 'No question, answer, address, account, time or version is counted.',
+    // v3.2 EXT (E5): the opt-in's "?" names the five counted things (the table's columns, copy.test.ts) in one sentence,
+    // in place of the visible list.
+    optInHelp: 'Counts, per field, only the site, field kind, match, outcome and text for AI tools; never a question or answer.',
     caption: 'Counts so far',
     columns: { platform: 'Site', fieldKind: 'Field kind', matcherStage: 'Match', outcome: 'Outcome', tripwireTriggered: 'Text for AI tools', count: 'Count' },
     outcomes: { success: 'Filled', fail: 'Left for you' },
@@ -1366,13 +1368,14 @@ const OPTIONS = {
     cleared: 'The counters were cleared.',
     clearFailed: 'The counters could not be cleared. Try again.',
   },
-  /** v3 Phase 8: Options › "Where Autofill works". Drafts for the owner's review. */
+  /** v3 Phase 8: Options › "Where Autofill works". Drafts for the owner's review. v3.2 EXT (E5): brief; the panel's
+   *  unsupported view lists the sites. */
   sites: {
     heading: 'Where Autofill works',
-    intro: "Autofill always works on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now, UKG Ready, Paycom, JobDiva and Eightfold. With this on, as it is unless you turn it off, it works on employers' own careers sites too. Chrome gave it the permission when you installed it.",
+    intro: "Always on the supported job sites; this adds employers' own careers sites.",
     // v5 p1-rules (PLAN decision 10): the intro above, on by default with the permission held from install.
     toggle: 'Company career sites',
-    hint: "On employers' own careers pages, Autofill recognises an application form (a resume upload, or your name, email and phone on a job page) and fills it as it fills any form. Chrome calls this reading your data on all websites: the extension's watcher reads each https page you open, and says and does nothing until it recognises one. It never runs on LinkedIn or on an employer's HR system (Workday, SAP SuccessFactors, Oracle, and the employee pages of ADP Workforce Now, BambooHR, Paycom and ClearCompany).",
+    hint: "Finds application forms on employers' careers pages; never LinkedIn or an employer's HR system.",
     needsPermission: "Chrome's permission is off, so this does nothing. Turn it on again to give it back.",
     refused: "Chrome didn't give the permission, so this stays off.",
     failed: "This couldn't be changed just now. Try again.",
@@ -1380,24 +1383,24 @@ const OPTIONS = {
   // ── v1.5 QX (settings version 11): the sequential auto-apply's settings. Drafts for the owner's review. ──
   queue: {
     heading: 'Queue',
-    intro: "How the panel's Queue tab opens the jobs you queue in TailorIT: one new tab after another, each the job's application, at most so many at once.",
+    intro: "How the panel's Queue tab opens your queued jobs, one new tab after another.",
     durationSec: {
       name: 'Seconds between tabs',
-      help: 'How long after a queued tab opens the next one opens. 1 to 600 seconds.',
+      help: 'The wait before the next queued tab opens: 1 to 600 seconds.',
     },
     accelerationSec: {
       name: 'Seconds added each time',
-      help: 'Added to the wait after every tab, so the waits grow: with 8 and 0.5 they are 8, 8.5, 9, 9.5 seconds and so on. 0 to 60 seconds.',
+      help: 'Added to the wait after each tab, so the waits grow: 0 to 60 seconds.',
     },
     autofillOnOpen: {
       name: 'Autofill when a queued tab opens',
       auto: 'Automatically',
       manual: 'Manually',
-      help: 'Automatically fills each queued application as its tab opens, as Autofill would. Manually waits until you choose Autofill in that tab. Either way Submit follows the Submit mode below, and a check that you are human, a sign-in or a field it cannot fill waits for you.',
+      help: 'Fill each queued tab as it opens, or wait for your Autofill there.',
     },
     maxOpenTabs: {
       name: 'Queued tabs open at once',
-      help: 'At most this many queued tabs are open and not done. While they are, the timer waits; a tab submitted or closed makes room. 1 to 10.',
+      help: 'The most unfinished queued tabs open at once: 1 to 10.',
     },
     seconds: 'seconds',
     tabs: 'tabs',
@@ -1412,7 +1415,7 @@ const OPTIONS = {
   // ── end v1.5 QX ──
   data: {
     heading: 'Saved runs',
-    intro: 'So that an application with several steps can continue after a reload, the extension keeps notes on each run for 24 hours: steps, field keys and counts, never your answers.',
+    intro: 'Notes that let a multi-step application go on after a reload, kept 24 hours; never your answers.',
     clear: 'Clear saved runs',
     cleared: (count: number) =>
       (count === 0 ? 'There were no saved runs.' : count === 1 ? 'Cleared 1 saved run.' : `Cleared ${count} saved runs.`),
@@ -1530,8 +1533,8 @@ const QUEUE = {
     disclosure: 'Stopped: choose I understand on the updated notice, then Start again.',
     'no-tab': "Stopped: Chrome didn't open a tab for the next job.",
   } satisfies Record<QueueStop, string>,
-  agentStopped: 'Run auto-apply was turned off, so it never runs beside the queue.',
-  agentOn: 'Run auto-apply is on. Start turns it off: the two never run together.',
+  agentStopped: 'Run auto-apply was turned off: it never runs beside the queue.',
+  agentOn: 'Run auto-apply is on; Start turns it off.',
   blocked: {
     'not-connected': 'Connect this browser to TailorIT to use the queue.',
     'no-scope': "This browser's connection was made before auto-apply. Disconnect, then connect again.",
@@ -1542,7 +1545,7 @@ const QUEUE = {
   pause: 'Pause',
   resume: 'Resume',
   /** What Start does, by the settings as they act now. */
-  startHelp: (autofill: 'auto' | 'manual', submit: 'auto' | 'manual') => `Start opens your queued jobs one by one in new tabs, in the background. ${autofill === 'auto' ? 'Each fills by itself as it opens' : 'Each waits for you to choose Autofill in it'}, and ${submit === 'auto' ? 'Submit mode Auto submits it unless a rule leaves it for you' : 'you press Submit in each (Submit mode Manual)'}. Change this in Settings.`,
+  startHelp: (autofill: 'auto' | 'manual', submit: 'auto' | 'manual') => `Opens your queued jobs one by one in new tabs; ${autofill === 'auto' ? 'each fills itself' : 'you choose Autofill in each'} and ${submit === 'auto' ? 'Submit Auto submits it' : 'you submit it'}.`,
   statuses: QUEUE_STATUS_WORDS,
   reasons: AGENT_REASONS,
   // ── jr7 AUTO-7 ──
@@ -1778,22 +1781,23 @@ const PROFILE_GAP_WORDS = {
 /** The set-up view (Setup.tsx): shown while the extension is not connected, or the profile is not complete. */
 const SETUP = {
   heading: 'Autofill With TailorIT', // v5 p1-panel
-  intro: 'Complete your setup to start autofilling applications in one click.',
+  // v3.2 EXT (E5): the heading's "?" (it was a line under the heading).
+  intro: 'Finish these steps to autofill applications in one click.',
   steps: 'Setup steps',
   account: 'Set Up Your TailorIT Account', // v5 p1-panel
-  accountHelp: 'Opens TailorIT, where you sign in, or sign up if you are new, and connect this browser. Your autofill information and resumes come from there.',
-  /** Why step 1 shows GO again (its tooltip), after the general help. */
-  accountExpired: 'Your connection expired: connections last 90 days. Choose GO to connect again.',
-  accountRevoked: "TailorIT stopped accepting this browser's connection. Choose GO to connect again.",
+  accountHelp: 'Opens TailorIT to sign in, or sign up, and connect this browser.',
+  /** Why step 1 shows GO again (its tooltip, in place of the general help since v3.2 EXT). */
+  accountExpired: 'Your connection expired (they last 90 days); choose GO to connect again.',
+  accountRevoked: "TailorIT no longer accepts this browser's connection; choose GO to connect again.",
   accountDone: (name: string | null) => (name === null ? 'This browser is connected to TailorIT.'
     : `This browser is connected to TailorIT as ${name}.`),
   profile: 'Complete Your Profile Details', // v5 p1-panel
-  profileHelp: 'Autofill needs your first and last name, an email, a phone number, and a city or a country. Add them here; they are saved to your TailorIT.',
+  profileHelp: 'Autofill needs your name, an email, a phone number, and a city or a country.',
   profileMissing: (items: readonly string[]) => `Still missing: ${listed(items)}.`,
   gaps: PROFILE_GAP_WORDS,
   profileDone: 'Your autofill information has what Autofill needs.',
   // v4 review (fix B): step 2's "?" when the profile could not be read; Start applying stays open.
-  profileUnreadable: "TailorIT couldn't read your autofill information just now, so it can't say what is missing. You can start applying: Autofill reads it again as it fills.",
+  profileUnreadable: "Your autofill information couldn't be read just now; you can still start applying.",
   go: 'GO',
   /** The pills' accessible names: the step, then what the pill does or says. */
   goLabel: (step: string) => `${step}: go`,
@@ -1818,7 +1822,7 @@ const MAIN_VIEW = {
   settings: 'Settings',
   signUpFill: 'Sign Up & Autofill', // v5 p1-panel
   // The jr6 review (R3, R5): the email and password saved in Sign-up Information; none saved, the "?" says so.
-  signUpHelp: 'This site asks you to sign in or create an account first. Sign Up & Autofill does it with your Sign-up Information, then fills the application.',
+  signUpHelp: 'Signs in or creates the account with your Sign-up Information, then fills the application.',
   signUpNeedsPassword: 'Save a job-site password in Settings › Sign-up Information first.',
   // v5 p1-panel: Title Case buttons.
   ask: 'Ask Custom Question',
@@ -1827,7 +1831,7 @@ const MAIN_VIEW = {
   // ── jr6 apply F1 (the owner, 2026-11-10: "`Autofill` word will be kept"; APPLYPLAN F1 item 5, OQ10's drafts): on a
   // page whose site offers its own Apply the main button reads Autofill (PANEL.fill); its "?", and why an entry was
   // refused, in one line each (Panel.tsx; 'none' is also the "no form" modal's, MODALS.errors). Drafts for the owner. ──
-  entryHelp: "This page shows the job. Autofill presses the site's own Apply first, then fills the application it opens.",
+  entryHelp: "Autofill presses the site's own Apply first, then fills the application it opens.",
   // The F1 fixer (the line P review, C4): the panel's status for a screen reader while the frame presses or waits.
   entering: "Autofill is pressing the site's Apply.",
   // jr6 SHELL-A (APPLY-MERGE round 2 §8 item 10): the same status while the frame does a wall's sign-in step (its
@@ -1914,7 +1918,7 @@ const MODALS = {
   /** The autofill information has no work experience, or no education (Jobright's resume check). */
   history: {
     text: (missing: ReadonlyArray<keyof typeof HISTORY_WORDS>) =>
-      `Your autofill information has no ${listed(missing.map((kind) => HISTORY_WORDS[kind])).replace(' and ', ' or ')}. Add ${missing.length === 1 ? 'it' : 'them'} before you autofill, so applications that ask for ${missing.length === 1 ? 'it' : 'them'} are filled.`,
+      `Your autofill information has no ${listed(missing.map((kind) => HISTORY_WORDS[kind])).replace(' and ', ' or ')}. Add ${missing.length === 1 ? 'it' : 'them'} before you autofill?`,
     edit: 'Edit Autofill Information',
     anyway: 'Autofill Anyway',
   },
@@ -1928,8 +1932,8 @@ const MODALS = {
 const TAILOR = {
   start: { resume: 'Tailor Resume For This Job', coverLetter: 'Generate Cover Letter' } satisfies Record<TailorKind, string>,
   help: {
-    resume: 'TailorIT writes a new resume for this job from the one attached, on the template chosen in your settings, and links it to this job in your tracker. Autofill attaches it from then on.',
-    coverLetter: 'TailorIT writes a resume for this job and a cover letter beside it, on the templates chosen in your settings, and links both to this job in your tracker. Autofill attaches them from then on.',
+    resume: 'TailorIT writes a resume for this job on your template; Autofill attaches it from then on.',
+    coverLetter: 'TailorIT writes a resume and a cover letter for this job; Autofill attaches both from then on.',
   } satisfies Record<TailorKind, string>,
   /** TailorIT's steps, when it sends no line of its own (TAILOR_STEPS). */
   steps: { waiting: 'Waiting for TailorIT…', analyzing: 'Reading the job…', writing: 'Writing…',
@@ -1974,7 +1978,7 @@ const PREVIEW_PAGE = {
  *  profile editor's Documents section: ui/page/documents.tsx). */
 const DOCUMENTS = {
   title: 'Documents',
-  help: 'The templates TailorIT writes a tailored resume and its cover letter on. They are kept in your TailorIT profile.',
+  help: 'The templates for tailored resumes and cover letters, kept in your TailorIT profile.',
   resumeTemplate: 'Resume template',
   letterTemplate: 'Cover letter template',
   ownTemplate: "Resume's own template",
@@ -1989,7 +1993,7 @@ const DOCUMENTS = {
   tryAgain: 'Try Again',
   // v1.5 X (PLAN decision 3): settings version 10's ui.skipUploadEditConfirm, shown the other way round.
   askBeforeUploadEdit: 'Ask before editing an uploaded resume',
-  askBeforeUploadEditHelp: "Edit on an uploaded resume opens an editable copy that TailorIT's AI makes from your file. With this on, the extension asks first; \"Don't show this again\" turns it off.",
+  askBeforeUploadEditHelp: "Editing an uploaded resume makes an AI-made editable copy; this asks you first.",
   refusals: {
     conflict: 'Your profile changed elsewhere meanwhile. Try again.',
     invalid: "TailorIT doesn't have that template any more. Choose another.",
@@ -2026,9 +2030,9 @@ export const COPY = {
   // the owner's review.
   onPage: {
     openSidePanel: "Open Chrome's Side Panel",
-    sensitive: "Your self-identification, legal, pay and consent answers are edited in Chrome's side panel, not on the job page.",
-    disclosure: "Choose I Understand in Chrome's side panel: the job page's own scripts can see what happens here.",
-    raise: "Auto is chosen on the settings page or in Chrome's side panel, not on the job page.",
+    sensitive: "Edit self-identification, legal, pay and consent answers in Chrome's side panel.",
+    disclosure: "Choose I Understand in Chrome's side panel, out of the job page's reach.",
+    raise: "Choose Auto on the settings page or in Chrome's side panel.",
   },
   // v5 p1-panel: moved from PAGE_COPY (no page UI draws them since v4): one sentence per reason code, and the words of
   // the statuses, the provenances and the matcher's stages (the options page's counters).

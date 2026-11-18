@@ -45,6 +45,10 @@
  * v4 ui (the owner, 2026-11-07: "all explanation will be tooltip"): each card's and each setting's explanation is a "?"
  * (HelpTip) beside its title or its name, still describing its control; what a setting is now, the first-run
  * disclosure, the plan's sentence on what never goes to the AI and the list of what the counters count stay as text.
+ * v3.2 EXT (E5, the owner, 2026-11-18: "All description including extension should be very brief and all description
+ * should be ?tooltip"): each "?" is one short sentence; the first-run disclosure is its summary with the full notice one
+ * click away (ui/page/disclosure.tsx DisclosureText); what the counters count is the opt-in's "?". Still text: what a
+ * setting is now, warnings and errors, and the plan's sentence on what never goes to the AI (its exact words).
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { formatConnectCode, normalizeConnectCode } from '../../contract/tailorit/connect';
@@ -58,7 +62,7 @@ import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { SITES_MATCH } from '../../shared/hosts';
 import { LogoMark, Wordmark } from '../brand/Logo';
-import { DisclosureChanged } from '../page/disclosure';
+import { DisclosureChanged, DisclosureText } from '../page/disclosure';
 import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
 import { AgentStatusLine, useAgentStatus, type AgentState } from '../page/agent';
@@ -70,7 +74,7 @@ import { useAuthStatus, type AuthState } from '../page/use-auth';
 import { animationFrames, clockText, useSecondsLeft, type FrameScheduler } from './countdown';
 import { useSettings, type SettingsState } from './settings';
 import { API8_COPY } from './copy-api8'; // v2.0 P9
-import { API9_COPY, DISCLOSURE_PARAGRAPHS } from './copy-api9'; // v3.0 X1-EXT
+import { API9_COPY } from './copy-api9'; // v3.0 X1-EXT
 
 const TEXT = COPY.options;
 
@@ -271,8 +275,9 @@ function Connection({ platform, auth, now, frames }: {
               {status.connection === 'revoked' && <p className="tia-warning">{TEXT.connection.revoked}</p>}
               <div className="tia-disclosure" data-disclosure="">
                 <h3 className="tia-disclosure__title">{TEXT.connection.disclosureHeading}</h3>
-                {DISCLOSURE_PARAGRAPHS.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
-                <p>{TEXT.connection.consentLine}</p>
+                {/* v3.2 EXT (E5): the summary, the full notice one click away. */}
+                <DisclosureText />
+                <p className="tia-disclosure__consent">{TEXT.connection.consentLine}</p>
               </div>
               <div className="tia-row-of-buttons">
                 <button type="button" className="tia-button tia-button--primary" disabled={working} onClick={() => void connect()}>
@@ -348,7 +353,7 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
       {/* v3.0 X1-EXT (autofill API 9): "Report closed jobs to TailorIT automatically". */}
       <ReportClosed platform={platform} />
 
-      <Card title={TEXT.consent.heading} name="consent" help={`${TEXT.consent.intro} ${TEXT.consent.never}`}>
+      <Card title={TEXT.consent.heading} name="consent" help={TEXT.consent.intro}>
         {/* Under All agreements every kind is ticked, whatever its toggle: each shows ticked and cannot be changed, and
             the line says where the choice is (v3 Phase 3 review). The kinds pre-approved are kept for Required only. */}
         {shown.modes.consents === 'all' && (
@@ -642,7 +647,6 @@ function Counters({ platform, settings }: { platform: PagePlatform; settings: Se
   const [working, setWorking] = useState(false);
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
   const optIn = shown?.telemetry.optIn ?? false;
-  const listId = useId();
   const captionId = useId();
 
   // Read again whenever the opt-in changes: turning it on starts from what is kept; off keeps the counts until cleared.
@@ -678,14 +682,9 @@ function Counters({ platform, settings }: { platform: PagePlatform; settings: Se
   return (
     <Card title={COUNTERS.heading} name="telemetry" help={COUNTERS.intro}>
       {shown !== null && (
-        <Toggle setting="telemetry.optIn" name={COUNTERS.optIn} checked={optIn} disabled={saving}
-          onChange={(checked) => save({ ...shown, telemetry: { optIn: checked } })}>
-          <p className="tia-help" id={listId}>{COUNTERS.optInHelp}</p>
-          <ul className="tia-list" aria-labelledby={listId} data-telemetry-fields="">
-            {TELEMETRY_FIELDS.map((field) => <li key={field} data-field={field}>{COUNTERS.fields[field]}</li>)}
-          </ul>
-          <p className="tia-help">{COUNTERS.never}</p>
-        </Toggle>
+        // v3.2 EXT (E5): what it counts, and nothing else, is the opt-in's "?" (it was a list under it).
+        <Toggle setting="telemetry.optIn" name={COUNTERS.optIn} help={COUNTERS.optInHelp} checked={optIn} disabled={saving}
+          onChange={(checked) => save({ ...shown, telemetry: { optIn: checked } })} />
       )}
       {counts === null ? (
         <p className={failed ? 'tia-error' : 'tia-note'}>{failed ? COUNTERS.unreadable : COUNTERS.loading}</p>

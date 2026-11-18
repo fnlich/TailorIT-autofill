@@ -692,8 +692,11 @@ export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: Profi
         )}
         {(save.kind === 'refused' && save.outcome === 'conflict') || save.kind === 'merging' ? (
           <div className="tia-profile__conflict" role="status" data-profile-outcome="conflict">
-            <p className="tia-profile__conflict-title">{WORDS.conflict}</p>
-            <p className="tia-help">{WORDS.conflictHelp}</p>
+            {/* v3.2 EXT (E5): what Load the latest does is the "?" beside the line. */}
+            <p className="tia-profile__conflict-title">
+              <span>{WORDS.conflict}</span>
+              <HelpTip text={WORDS.conflictHelp} topic={WORDS.loadLatest} />
+            </p>
             <button type="button" className="tia-button" disabled={save.kind === 'merging'}
               aria-busy={save.kind === 'merging' ? 'true' : undefined} onClick={() => void loadLatest()}>
               {save.kind === 'merging' ? WORDS.loadingLatest : WORDS.loadLatest}
@@ -904,13 +907,19 @@ function Checks<T extends string>({ legend, chosen, choices, onChange, error }: 
 function TextList({ legend, itemLabel, add, items, onChange, max, help, error }: { legend: string; itemLabel: string;
   add: string; items: readonly string[]; onChange(items: string[]): void; max: number; help?: string;
   error?: string | undefined }) {
+  const legendId = useId();
   const helpId = useId();
   const errorId = useId();
   const described = [help === undefined ? null : helpId, error === undefined ? null : errorId].filter(Boolean);
+  // v3.2 EXT (E5): the list's explanation is the "?" beside its legend (it was a line under it), still describing the
+  // group; the group is named by the legend's words alone, never the "?"'s name.
   return (
-    <fieldset className="tia-profile__checks" aria-describedby={described.length === 0 ? undefined : described.join(' ')}>
-      <legend className="tia-profile__label">{legend}</legend>
-      {help !== undefined && <p className="tia-help" id={helpId}>{help}</p>}
+    <fieldset className="tia-profile__checks" aria-labelledby={legendId}
+      aria-describedby={described.length === 0 ? undefined : described.join(' ')}>
+      <legend className="tia-profile__label tia-profile__labelrow">
+        <span id={legendId}>{legend}</span>
+        {help !== undefined && <HelpTip text={help} topic={legend} id={helpId} />}
+      </legend>
       {items.map((item, at) => (
         <div key={at} className="tia-profile__grid">
           <Text label={`${itemLabel} ${at + 1}`} value={item}

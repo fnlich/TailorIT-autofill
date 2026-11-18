@@ -60,7 +60,11 @@ describe('the set-up view (v4 ui)', () => {
     const root = await open(worker);
     expect(viewOf(root)).toBe('setup');
     expect(root.querySelector('h2')?.textContent).toBe(WORDS.heading);
-    expect(root.textContent).toContain(WORDS.intro);
+    // v3.2 EXT (E5): the line under the heading is the heading's "?", keyboard-reachable and describing its button.
+    const headTip = root.querySelector<HTMLElement>('.tia-setup__head [data-helptip]')!;
+    expect(headTip.querySelector('[role="tooltip"]')?.textContent).toBe(WORDS.intro);
+    expect(headTip.querySelector('button')?.getAttribute('aria-label')).toBe(COPY.help.about(WORDS.heading));
+    expect(root.querySelector('.tia-setup__intro')).toBeNull();
     expect(stepsOf(root)).toEqual([['account', 'go'], ['profile', 'go']]);
     // Jobright has no gear here; and nothing of the main view.
     expect(root.querySelector('button[data-panel-settings], .tia-cta[data-main-action], [data-job-card]')).toBeNull();
@@ -77,6 +81,10 @@ describe('the set-up view (v4 ui)', () => {
     const consent = root.querySelector('[data-consent]')!;
     expect(consent.textContent).toContain(COPY.options.connection.disclosure[0]);
     expect(consent.textContent).toContain(COPY.options.connection.consentLine);
+    // v3.2 EXT (E5): the summary shows; the full notice is one click away.
+    expect([...consent.querySelectorAll('[data-disclosure-summary] li')].map((li) => li.textContent))
+      .toEqual([...COPY.options.connection.summary]);
+    expect(consent.querySelector<HTMLDetailsElement>('details[data-disclosure-full]')!.open).toBe(false);
     await click(button(consent, COPY.options.connection.connect));
     expect(worker.sentOfType('auth/startPairing')).toEqual([{ v: 1, type: 'auth/startPairing' }]);
     await settle();
@@ -93,7 +101,7 @@ describe('the set-up view (v4 ui)', () => {
     expect(viewOf(root)).toBe('setup');
     expect(stepsOf(root)).toEqual([['profile', 'go']]);
     expect(root.querySelector('[data-step="profile"] .tia-step__number')?.textContent).toBe('1');
-    expect(tipOf(root, 'profile')).toBe(`${WORDS.profileHelp} ${WORDS.profileMissing([WORDS.gaps.phone, WORDS.gaps.place])}`);
+    expect(tipOf(root, 'profile')).toBe(WORDS.profileMissing([WORDS.gaps.phone, WORDS.gaps.place])); // v3.2 EXT: one sentence
     expect(start(root).disabled).toBe(true);
   });
 
@@ -112,7 +120,7 @@ describe('the set-up view (v4 ui)', () => {
     await settle();
     expect(viewOf(root)).toBe('setup');
     expect(stepsOf(root)).toEqual([['account', 'go'], ['profile', 'go']]);
-    expect(tipOf(root, 'account')).toBe(`${WORDS.accountHelp} ${WORDS.accountExpired}`);
+    expect(tipOf(root, 'account')).toBe(WORDS.accountExpired); // v3.2 EXT: the reason alone
   });
 
   it('shows the main view when the profile cannot be read: nothing locks the person out', async () => {
@@ -173,7 +181,7 @@ describe('the set-up view (v4 ui)', () => {
     // The view stays, step 1 ticked; step 2 a GO whose "?" says the profile could not be read; Start applying opens.
     expect(viewOf(root)).toBe('setup');
     expect(stepsOf(root)).toEqual([['account', 'done'], ['profile', 'go']]);
-    expect(tipOf(root, 'profile')).toBe(`${WORDS.profileHelp} ${WORDS.profileUnreadable}`);
+    expect(tipOf(root, 'profile')).toBe(WORDS.profileUnreadable); // v3.2 EXT: one sentence
     expect(root.querySelector<HTMLButtonElement>('button[data-step-action="profile"]')!.disabled).toBe(false);
     expect(start(root).disabled).toBe(false);
     await click(start(root));

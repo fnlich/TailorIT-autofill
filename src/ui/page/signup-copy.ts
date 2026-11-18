@@ -11,7 +11,8 @@ import { SIGNUP_PASSWORD_MAX, SIGNUP_PASSWORD_MIN, type SignupPasswordRule } fro
 
 export const SIGNUP_COPY = {
   heading: 'Sign-up Information',
-  help: "The email and password TailorIT Autofill types into job sites' own sign-in and create-account forms (Workday, iCIMS and others). They stay in this browser and are never sent to TailorIT. The password is encrypted: other extensions, exports, sync and the job sites' pages can't read it, but someone who can open this browser's files on this computer could. So use a password you keep for job sites alone, such as a generated one. Once saved, the password is not shown here again: note it somewhere safe, or let your browser save it when you sign in.",
+  // v3.2 EXT (E5): one sentence; what the encryption does not keep it from (the jr6 review's sec-7) stays in its words.
+  help: "Typed into job sites' sign-in forms; kept encrypted in this browser only, but readable from its files, so use a job-sites-only password.",
   email: 'Job-site email',
   password: 'Job-site password',
   passwordSaved: 'Saved. Type a new one to replace it',
@@ -20,7 +21,7 @@ export const SIGNUP_COPY = {
   showLabel: 'Show the password you typed',
   hideLabel: 'Hide the password',
   generate: 'Generate strong password',
-  generated: 'A new password was made. Note it somewhere safe, then Save.',
+  generated: 'New password made: note it somewhere safe, then Save.',
   rulesHeading: 'The password needs',
   rules: {
     length: `${SIGNUP_PASSWORD_MIN} to ${SIGNUP_PASSWORD_MAX} characters`,
@@ -35,15 +36,16 @@ export const SIGNUP_COPY = {
   save: 'Save',
   saving: 'Saving…',
   /** The jr6 review (R6): said beside Save, not only in the card's "?". */
-  notShownAgain: 'Once saved, the password is not shown here again: note it somewhere safe first.',
+  notShownAgain: 'Not shown again once saved: note it first.',
   remove: 'Delete password',
   removeConfirm: 'Delete the saved password? Accounts you made with it will need "Forgot password" to sign in again.',
   removeYes: 'Delete',
   removeNo: 'Keep it',
-  importOffer: 'If you saved a job-site sign-in for every site in TailorIT (Settings › Autofill), copy it into this browser once:',
+  // v3.2 EXT (E5): the Import button's "?" (it was a line before it).
+  importOffer: "Copies the job-site sign-in you saved for every site in TailorIT's Settings › Autofill into this browser, once.",
   importButton: 'Import from TailorIT',
   setOn: (when: string) => `A password is saved in this browser (${when}).`,
-  notSet: 'No password is saved yet. Sign-in Auto needs one.',
+  notSet: 'No password saved yet; Sign-in Auto needs one.',
   saved: 'Saved in this browser.',
   notSaved: 'Not saved. Check the email and the rules, then try again.',
   removed: 'Deleted.',
@@ -55,7 +57,7 @@ export const SIGNUP_COPY = {
   unreadable: "Sign-up Information couldn't be read. Reload this page.",
   /** The jr6 review (R12): what the worker did by itself, said until the person next saves, imports or deletes one. */
   notices: {
-    gone: 'Your saved password could no longer be read in this browser and was removed. Save a new one here: Sign-in Auto needs one.',
-    reverted: 'Sign-in is back on Manual: Auto needs a job-site password saved here (or Import from TailorIT).',
+    gone: 'Your saved password could no longer be read here and was removed. Save a new one.',
+    reverted: 'Sign-in is back on Manual: Auto needs a job-site password saved here.',
   } satisfies Record<SignupNotice, string>,
 } as const;

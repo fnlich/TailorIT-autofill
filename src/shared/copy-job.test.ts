@@ -16,7 +16,8 @@ describe('the v2 copy', () => {
     expect(COPY.job.matchLabel(75, COPY.job.bands.good)).toBe('75% match: Good');
     // v3 Phase 3: Jobright's bands, and the tip saying what the score counts.
     expect(Object.values(COPY.job.bands)).toEqual(['Excellent', 'Good', 'Fair', 'Poor']);
-    expect(COPY.job.matchTip(9, 12)).toMatch(/^9 of 12 keywords in this posting are in your resume\. /);
+    // v3.2 EXT (E5): one sentence.
+    expect(COPY.job.matchTip(9, 12)).toBe('9 of 12 keywords in this posting are in your resume.');
     expect(COPY.job.applied).toBe('Applied');
     expect([0, 1, 2, 13, 21, 90].map(COPY.job.posted)).toEqual(['Posted today', 'Posted yesterday', 'Posted 2 days ago',
       'Posted 13 days ago', 'Posted 3 weeks ago', 'Posted 3 months ago']);

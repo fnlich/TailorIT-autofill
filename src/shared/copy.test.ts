@@ -11,7 +11,8 @@ import { REASON_CODES } from '../core/types/fill';
 import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
 import { SAVE_ANSWER_OUTCOMES } from '../messaging/schemas';
 import { SIGNUP_COPY } from '../ui/page/signup-copy';
-import { DISCLOSURE_PARAGRAPHS } from '../ui/options/copy-api9'; // v3.0 X1-EXT
+import { API8_COPY } from '../ui/options/copy-api8'; // v3.2 EXT
+import { API9_COPY, DISCLOSURE_PARAGRAPHS } from '../ui/options/copy-api9'; // v3.0 X1-EXT
 import { CAPTURE_COPY, COPY, PAGE_COPY } from './copy';
 import { QUEUE_SUBMIT_PLATFORMS, RECORDED_SUBMIT_PLATFORMS } from './queue-submit';
 import { NOTICE_CODES } from './report';
@@ -96,8 +97,14 @@ describe('the copy', () => {
 
   it('names every field kind, and on the options page each of the five counted fields and nothing more', () => {
     expect(Object.keys(COPY.fieldKinds).sort()).toEqual([...FIELD_KINDS].sort());
-    expect(Object.keys(COPY.options.telemetry.fields)).toEqual([...TELEMETRY_FIELDS]);
     expect(Object.keys(COPY.options.telemetry.columns)).toEqual([...TELEMETRY_FIELDS, 'count']);
+    // v3.2 EXT (E5): the opt-in's "?" names the five, as the table's columns do, and says nothing else is counted.
+    const { optInHelp } = COPY.options.telemetry;
+    for (const field of TELEMETRY_FIELDS) {
+      expect(optInHelp.toLowerCase(), field).toContain(COPY.options.telemetry.columns[field].toLowerCase());
+    }
+    expect(optInHelp).toMatch(/\bonly\b/);
+    expect(optInHelp).toMatch(/never a question or answer/);
   });
 
   it("names the launcher's progress, never a count of fields that need the person (v4, D11), and draws nothing on the page (the owner's decision of 2026-11-01)", () => {
@@ -169,9 +176,79 @@ describe('the copy', () => {
 
   it('gives docs/PRIVACY.md the disclosure the options page shows, word for word', () => {
     const privacy = readFileSync(new URL('../../docs/PRIVACY.md', import.meta.url), 'utf8');
-    // v3.0 X1-EXT: as the pages draw it, the closed-link reports' line among it (DISCLOSURE_PARAGRAPHS).
+    // v3.0 X1-EXT: as the pages draw it, the closed-link reports' line among it (DISCLOSURE_PARAGRAPHS). v3.2 EXT (E5):
+    // and the summary the pages show above it, each line a "- " item of PRIVACY.md's quote.
     for (const paragraph of [...DISCLOSURE_PARAGRAPHS, COPY.options.connection.consentLine]) {
       expect(privacy, paragraph.slice(0, 40)).toContain(paragraph);
+    }
+    for (const line of COPY.options.connection.summary) expect(privacy, line).toContain(`> - ${line}`);
+  });
+
+  // v3.2 EXT (E5, the owner: "All description including extension should be very brief"): the summary says, in short
+  // lines, each thing the full notice asks consent for: what it reads, what it tells and sends TailorIT, what goes to
+  // the AI and what never does, when it submits, the password kept here, and that it talks only to TailorIT.
+  it('sums up the disclosure in short lines that keep its meaning', () => {
+    const { summary } = COPY.options.connection;
+    for (const line of summary) {
+      expect(line, line).toMatch(SENTENCE);
+      expect(line.length, line).toBeLessThanOrEqual(160);
+    }
+    const said = summary.join(' ');
+    for (const words of ['all websites', 'which job page you are on', 'look closed', "TailorIT's AI (Claude)",
+      'never go to it', 'questions of applications you submit', 'shared with everyone', 'can be turned off',
+      'Submits only when you press Submit', 'Submit to Auto', 'auto-apply', 'encrypted in this browser',
+      'never goes to TailorIT', 'in memory only', 'Talks only to your TailorIT']) expect(said, words).toContain(words);
+    expect(COPY.options.connection.fullNotice).toBe('Read the full notice');
+  });
+
+  // v3.2 EXT (E5): every "?" the extension's pages show is one short sentence (the reason a choice is blocked, appended
+  // to a mode's, is its own); the full notice holds the detail.
+  it('keeps every "?" explanation to one short sentence', () => {
+    const tips: Record<string, string> = {};
+    const add = (name: string, text: string) => {
+      tips[name] = text;
+    };
+    const modes = COPY.options.modes;
+    for (const key of ['next', 'submit', 'signIn', 'agentSkip', 'recordOwn', 'keepAnswers', 'afterPageTurn', 'consents',
+      'ai', 'resumeOnPage', 'view', 'panel', 'noMatch', 'notifications'] as const) add(`modes.${key}`, modes[key].help);
+    for (const key of ['needsPassword', 'needsDisclosure', 'needsConnection'] as const) add(`signIn.${key}`, modes.signIn[key]);
+    for (const category of CONSENT_CATEGORIES) add(`consent.${category}`, COPY.options.consent.categories[category].help);
+    const { options } = COPY;
+    for (const [name, text] of Object.entries({
+      'modes.intro': options.modes.intro, 'agent.intro': options.agent.intro, 'agent.runHelp': options.agent.runHelp,
+      'consent.intro': options.consent.intro, 'ai.intro': options.ai.intro, 'ai.tiebreak': options.ai.tiebreakHelp,
+      'ai.classify': options.ai.classifyHelp, 'ai.drafts': options.ai.draftsHelp, 'ai.answers': options.ai.answersHelp,
+      'ai.profile-only': options.ai.whenForbidden['profile-onlyHelp'], 'ai.use-ai': options.ai.whenForbidden['use-aiHelp'],
+      'interpretations.intro': options.interpretations.intro,
+      'interpretations.country': options.interpretations.postingCountryForLegalHelp,
+      'interpretations.races': options.interpretations.twoOrMoreRacesHelp,
+      'interpretations.decline': options.interpretations.eeoDeclineByDefaultHelp,
+      'telemetry.intro': options.telemetry.intro, 'telemetry.optIn': options.telemetry.optInHelp,
+      'sites.intro': options.sites.intro, 'sites.hint': options.sites.hint, 'queue.intro': options.queue.intro,
+      'queue.duration': options.queue.durationSec.help, 'queue.acceleration': options.queue.accelerationSec.help,
+      'queue.autofill': options.queue.autofillOnOpen.help, 'queue.tabs': options.queue.maxOpenTabs.help,
+      'data.intro': options.data.intro, 'connection.code': options.connection.codeHelp,
+      'api8.closeTab': API8_COPY.closeTabHelp, 'api9.intro': API9_COPY.options.intro,
+      'api9.toggle': API9_COPY.options.toggleHelp, 'signup.help': SIGNUP_COPY.help, 'signup.import': SIGNUP_COPY.importOffer,
+      'setup.intro': COPY.setup.intro, 'setup.account': COPY.setup.accountHelp,
+      'setup.expired': COPY.setup.accountExpired, 'setup.revoked': COPY.setup.accountRevoked,
+      'setup.profile': COPY.setup.profileHelp, 'setup.unreadable': COPY.setup.profileUnreadable,
+      'main.signUp': COPY.mainView.signUpHelp, 'main.entry': COPY.mainView.entryHelp,
+      'unsupported.embedded': COPY.panel.unsupported.embedded, 'unsupported.company': COPY.panel.unsupported.companySites,
+      'unsupported.reload': COPY.panel.unsupported.reloadIntro, 'unsupported.reloadSite': COPY.panel.unsupported.reloadSiteIntro,
+      'siteRequest.help': COPY.panel.siteRequest.help, 'disclosureChanged.held': COPY.panel.disclosureChanged.held,
+      'another.help': COPY.job.another.help, 'job.matchTip': COPY.job.matchTip(12, 20),
+      'tailor.resume': COPY.tailor.help.resume, 'tailor.coverLetter': COPY.tailor.help.coverLetter,
+      'documents.help': COPY.documents.help, 'documents.ask': COPY.documents.askBeforeUploadEditHelp,
+      'profile.intro': COPY.profile.intro, 'profile.conflict': COPY.profile.conflictHelp,
+      'profile.email': COPY.profile.emailHelp('morgan@example.test'), 'profile.anythingElse': COPY.profile.anythingElseHelp,
+      'profile.sensitive': COPY.profile.sensitiveHelp, 'profile.relocation': COPY.profile.relocationHelp,
+      'profile.relatives': COPY.profile.relativesHelp, 'profile.race': COPY.profile.raceSelfDescribedHelp,
+      'queue.start.auto': COPY.queue.startHelp('auto', 'auto'), 'queue.start.manual': COPY.queue.startHelp('manual', 'manual'),
+    })) add(name, text);
+    for (const [name, text] of Object.entries(tips)) {
+      expect(text.length, `${name}: ${text}`).toBeLessThanOrEqual(140);
+      expect(text.split(/(?<=[.!?])\s+(?=["A-Z])/), `${name}: one sentence`).toHaveLength(1);
     }
   });
 
@@ -245,10 +322,11 @@ describe('the copy', () => {
   // The jr6 integration (RULES revD-01 and revD-04, owner question 435): AI answers' All also guesses a non-compete,
   // relatives and military training where the profile does not answer, each always marked an AI guess
   // (GUESS_ONLY_CATEGORIES); a job's essential functions never go to the AI, so the help never names them.
-  it('says what AI answers: All guesses, the guess-only topics marked so, never the essential functions', () => {
+  // v3.2 EXT (E5): in one short sentence; the full notice names the topics.
+  it('says what AI answers: All guesses, never the essential functions', () => {
     const { help } = COPY.options.modes.ai;
-    for (const words of ['non-compete', 'relatives', 'military training', 'always marked an AI guess',
-      'only the question and its options are sent']) expect(help).toContain(words);
+    for (const words of ['All lets the AI guess', 'legal', 'pay', 'attention-check', 'your profile skips',
+      'Profile only leaves them empty']) expect(help).toContain(words);
     expect(help).not.toMatch(/essential function/i);
     expect(help).toMatch(SENTENCE);
   });
@@ -409,9 +487,11 @@ describe('the copy', () => {
   // Round 2: disclosure 16 (FIX7PLAN §12 item 4, Q7-15's drafts in TailorIT's own words).
   it('says in disclosure 16 where Run auto-apply and the Queue tab go, in TailorIT’s words, and the Jibe address', () => {
     const [first, second] = COPY.options.connection.disclosure;
+    // v3.2 EXT (E5): Where Autofill works no longer lists the sites; the panel's unsupported view does.
+    const listed = COPY.panel.unsupported.sites.map((site) => site.name);
     for (const name of ['UKG Ready', 'Paycom', 'JobDiva', 'Eightfold']) {
       expect(first, name).toContain(name);
-      expect(COPY.options.sites.intro, name).toContain(name);
+      expect(listed, name).toContain(name);
     }
     expect(first).toContain("UKG Ready's saashr.com, Paycom, JobDiva, Eightfold and others), it runs only on the job pages");
     // Run auto-apply's rule (D-3) and the Queue tab (D-4), as TailorIT labels them. The jr7 review (C-1, A-6): as
@@ -443,7 +523,8 @@ describe('the copy', () => {
   it('says a national identity number is never sent with the submitted answers, in the disclosure and the setting', () => {
     const third = COPY.options.connection.disclosure[2]!;
     expect(third).toContain('Passwords, checks that you are human, a national identity number you type (a Social Security number, say), hidden fields and what your files contain are never sent');
-    expect(COPY.options.modes.keepAnswers.help).toContain('Never sent: passwords, CAPTCHAs, a national identity number such as a Social Security number (its question too)');
+    // v3.2 EXT (E5): the setting's "?" in one sentence, still naming it.
+    expect(COPY.options.modes.keepAnswers.help).toContain('never passwords, a national ID number or file contents');
   });
 
   it('names in Record applications I submit myself every site where it reads that an application went through', () => {
@@ -467,14 +548,9 @@ describe('the copy', () => {
     const reading = PLATFORMS.filter(readsSign);
     expect(new Set(reading), 'the list is the platforms that read a sign').toEqual(new Set(RECORDED_SUBMIT_PLATFORMS));
     for (const platform of QUEUE_SUBMIT_PLATFORMS) expect(reading, platform).toContain(platform);
-    for (const platform of PLATFORMS) {
-      if (reading.includes(platform)) expect(help, platform).toContain(COPY.platforms[platform]);
-      else expect(help, platform).not.toContain(COPY.platforms[platform]);
-    }
-    for (const name of ['Breezy HR', 'Dayforce', 'CareerPlug', 'Paycor', 'Paylocity', 'SuccessFactors', 'ClearCompany']) {
-      expect(help, name).toContain(name);
-    }
-    expect(help).toContain('SuccessFactors and ClearCompany), your TailorIT tracker');
+    // v3.2 EXT (E5): the help no longer names them (one short sentence); it says where, without a list that could drift.
+    for (const platform of PLATFORMS) expect(help, platform).not.toContain(COPY.platforms[platform]);
+    expect(help).toContain('on sites where Autofill sees it go through');
   });
   // ── end jr7 INT-7 ──
 });

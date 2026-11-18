@@ -26,5 +26,5 @@ export const API8_COPY = {
   subscribe: 'Subscribe',
   /** Options › Auto-apply (A20). */
   closeTab: "Close the application tab when it's submitted",
-  closeTabHelp: 'Applies to tabs auto-apply opened. Tabs you opened yourself are never closed.',
+  closeTabHelp: 'Only tabs auto-apply opened; never the ones you opened.',
 } as const;

@@ -16,14 +16,17 @@
  * Then "Start applying", grey until both are done (or, once connected, the profile could not be read: the v4 review,
  * M-L6, nothing locks the person out); it opens the main view. The panel decides when this view shows
  * (Panel.tsx). No gear here (Jobright has none). It shows no value: the account's name only, in the done step's "?".
+ * v3.2 EXT (E5, the owner: "all description should be ?tooltip"): the line under the heading is the heading's "?"; a
+ * step's "?" says only why it shows GO again, or what is still missing, where it can; the disclosure is its summary
+ * with the full notice one click away (ui/page/disclosure.tsx DisclosureText).
  */
 import { useId, useState } from 'react';
 import type { AuthStatus } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
-import { DISCLOSURE_PARAGRAPHS } from '../options/copy-api9'; // v3.0 X1-EXT: with the reports' line
 import { Icon } from '../brand/Icon';
 import { clockText, useSecondsLeft } from '../options/countdown';
+import { DisclosureText } from '../page/disclosure';
 import { animationFrames, type FrameScheduler } from '../page/frames';
 import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
@@ -78,18 +81,21 @@ export function SetupView({ platform, status, refresh, profile, withAccount, onE
     refresh();
   };
 
+  // v3.2 EXT (E5): one sentence each: the reason where there is one, else what the step does.
   const accountHelp = connected ? WORDS.accountDone(status.account?.name ?? null)
-    : status.connection === 'expired' ? `${WORDS.accountHelp} ${WORDS.accountExpired}`
-      : status.connection === 'revoked' ? `${WORDS.accountHelp} ${WORDS.accountRevoked}` : WORDS.accountHelp;
+    : status.connection === 'expired' ? WORDS.accountExpired
+      : status.connection === 'revoked' ? WORDS.accountRevoked : WORDS.accountHelp;
   const missing = profile.state === 'read' ? profile.gaps.map((gap) => WORDS.gaps[gap]) : [];
-  const profileHelp = profileDone ? WORDS.profileDone : unreadable ? `${WORDS.profileHelp} ${WORDS.profileUnreadable}`
-    : missing.length > 0 ? `${WORDS.profileHelp} ${WORDS.profileMissing(missing)}` : WORDS.profileHelp;
+  const profileHelp = profileDone ? WORDS.profileDone : unreadable ? WORDS.profileUnreadable
+    : missing.length > 0 ? WORDS.profileMissing(missing) : WORDS.profileHelp;
 
   return (
     <section className="tia-setup" aria-labelledby={headingId} data-setup="">
       <Icon name="bolt" size={44} className="tia-icon tia-setup__bolt" />
-      <h2 className="tia-setup__heading" id={headingId}>{WORDS.heading}</h2>
-      <p className="tia-setup__intro">{WORDS.intro}</p>
+      <div className="tia-setup__head">
+        <h2 className="tia-setup__heading" id={headingId}>{WORDS.heading}</h2>
+        <HelpTip text={WORDS.intro} topic={WORDS.heading} />
+      </div>
       <ol className="tia-setup__steps" aria-label={WORDS.steps}>
         {withAccount && (
           <li className="tia-step" data-step="account" data-step-state={connected ? 'done' : waiting ? 'waiting' : 'go'}>
@@ -109,10 +115,7 @@ export function SetupView({ platform, status, refresh, profile, withAccount, onE
             {!connected && consent && !waiting && (
               <div className="tia-consent" id={consentId} data-consent="">
                 <h3 className="tia-consent__heading">{COPY.options.connection.disclosureHeading}</h3>
-                <div className="tia-consent__text" tabIndex={0} role="region"
-                  aria-label={COPY.options.connection.disclosureHeading}>
-                  {DISCLOSURE_PARAGRAPHS.map((paragraph) => <p key={paragraph.slice(0, 40)}>{paragraph}</p>)}
-                </div>
+                <DisclosureText scroll />
                 <p className="tia-consent__line">{COPY.options.connection.consentLine}</p>
                 <div className="tia-consent__actions">
                   <button type="button" className="tia-button tia-button--primary" data-step-action="connect"

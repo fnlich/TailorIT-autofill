@@ -138,6 +138,11 @@ describe('Sign-up Information’s fields (jr6)', () => {
       const worker = createFakeWorker();
       worker.script.signup = { ...worker.script.signup, importable: true, importAs };
       const { root } = await fields(worker);
+      // v3.2 EXT (E5): what it does is the "?" beside the button, no line before it.
+      const offer = root.querySelector('[data-signup-import]')!;
+      expect(offer.querySelector('[role="tooltip"]')?.textContent).toBe(WORDS.importOffer);
+      expect(offer.querySelector('.tia-helptip__button')?.getAttribute('aria-label')).toBe(COPY.help.about(WORDS.importButton));
+      expect(offer.textContent?.replace(WORDS.importOffer, '')).toBe(WORDS.importButton);
       await click(root.querySelector('button[data-action="signup-import"]'));
       expect(noteOf(root), importAs).toBe(said);
       unmountAll();

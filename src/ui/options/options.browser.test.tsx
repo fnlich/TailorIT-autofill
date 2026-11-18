@@ -184,12 +184,13 @@ describe('the options page', () => {
     expect(group.querySelector('.tia-mode__name')?.textContent).toBe('Résumé already on the page');
     expect([...group.querySelectorAll('label')].map((label) => label.textContent)).toEqual(['Keep it', 'Upload mine again']);
     expect(setting(root, 'modes.resumeOnPage.keep').checked).toBe(true);
-    // The "?" says what each choice does: the page's file kept; the person's uploaded through the site's own upload,
-    // the site's Remove and Delete never pressed, and a field with no way to add a file left to them.
+    // The "?" says what each choice does: the page's file kept, or the person's uploaded through the site's own upload
+    // (v3.2 EXT, E5: in one short sentence).
     const help = group.querySelector('[role="tooltip"]')?.textContent ?? '';
     expect(help).toBe(TEXT.modes.resumeOnPage.help);
-    for (const words of ['Keep it leaves that file', 'Upload mine again uploads the résumé you chose',
-      "Neither presses the site's Remove or Delete", 'the field is left to you']) expect(help).toContain(words);
+    for (const words of ['already shows a résumé', 'keep it', "upload yours through the site's own upload"]) {
+      expect(help).toContain(words);
+    }
     // D4: a kept résumé counts as filled: nothing "flags" it.
     expect(help).not.toContain('flag');
     await click(setting(root, 'modes.resumeOnPage.upload'));
@@ -235,7 +236,9 @@ describe('the options page', () => {
     const offered = [...root.querySelectorAll<HTMLInputElement>('input[data-setting^="consent."]')].map((input) => input.dataset.setting);
     expect(offered).toEqual(CONSENT_CATEGORIES.map((category) => `consent.${category}`));
     expect(root.querySelector('[data-warning="certify"]')?.textContent).toBe(TEXT.consent.certifyWarning);
-    expect(root.textContent).toContain(TEXT.consent.never);
+    // v3.2 EXT (E5): the card's "?" says, in one sentence, that "I did not use AI" is ticked only when no AI was used.
+    expect(root.querySelector('[data-card="consent"] .tia-card__head [role="tooltip"]')?.textContent).toBe(TEXT.consent.intro);
+    expect(TEXT.consent.intro).toContain('"I did not use AI" only when no AI was used');
     expect(root.querySelector('[data-ai-never]')?.textContent).toBe(TEXT.ai.never);
     expect(root.textContent).toContain(TEXT.modes.next.help);
     // v5 p1-shell: "Where the panel shows" with the modes.
@@ -265,8 +268,10 @@ describe('the options page', () => {
     expect(tip.closest('[data-helptip]')).not.toBeNull();
     // What stays as text: the plan's sentence on what never goes to the AI.
     expect(root.querySelector('[data-ai-never]')?.textContent).toBe(TEXT.ai.never);
-    // No explanatory paragraph left outside the counters' list of what they count.
-    expect([...root.querySelectorAll('.tia-help')].every((help) => help.closest('[data-card="telemetry"]') !== null)).toBe(true);
+    // v3.2 EXT (E5): no explanatory paragraph left at all: what the counters count is the opt-in's "?".
+    expect(root.querySelectorAll('.tia-help, .tia-list, [data-telemetry-fields]')).toHaveLength(0);
+    const optIn = setting(root, 'telemetry.optIn');
+    expect(document.getElementById(optIn.getAttribute('aria-describedby')!)?.textContent).toBe(TEXT.telemetry.optInHelp);
   });
   it('shows the first-run disclosure before Connect, and Connect opens TailorIT with its countdown', async () => {
     const worker = createFakeWorker();
@@ -281,6 +286,13 @@ describe('the options page', () => {
     const connect = button(root, TEXT.connection.connect)!;
     expect(disclosure.textContent).toContain(TEXT.connection.disclosure[0]);
     expect(disclosure.textContent).toContain(TEXT.connection.consentLine);
+    // v3.2 EXT (E5): the summary shows, the full notice one click away, the consent line after both.
+    expect([...disclosure.querySelectorAll('[data-disclosure-summary] li')].map((li) => li.textContent))
+      .toEqual([...TEXT.connection.summary]);
+    const full = disclosure.querySelector<HTMLDetailsElement>('details[data-disclosure-full]')!;
+    expect([full.open, full.querySelector('summary')?.textContent]).toEqual([false, TEXT.connection.fullNotice]);
+    expect(full.compareDocumentPosition(disclosure.querySelector('.tia-disclosure__consent')!)
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(disclosure.compareDocumentPosition(connect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await click(connect);
